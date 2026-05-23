@@ -51,6 +51,14 @@ function localTypeTrackingEnabled(): boolean {
 export function extractFromPythonFile(input: PythonExtractInput): FileExtraction {
   const imports = collectPythonImports(input.tree.rootNode);
   const calls = collectPythonCalls(input.tree.rootNode);
+  // bd tea-rags-mcp-zvsw — Decorator applications are calls. Append the
+  // synthetic call edges so `get_callers(decoratorName)` returns every
+  // decorated method/function.
+  const decoratorCalls = collectPythonDecoratorCalls(input.tree.rootNode);
+  for (const dc of decoratorCalls) calls.push(dc);
+  // bd tea-rags-mcp-pic4 — Python class single-base map for super()
+  // resolution. Single inheritance only (first listed base).
+  const classExtends = collectPythonClassExtends(input.tree.rootNode);
   const trackTypes = localTypeTrackingEnabled();
   const byChunk: ChunkExtraction[] = input.chunks.map((c) => {
     const base: ChunkExtraction = {
@@ -66,13 +74,100 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
     }
     return base;
   });
-  return {
+  const out: FileExtraction = {
     relPath: input.relPath,
     language: input.language,
     imports,
     chunks: byChunk,
     fileScope: [],
   };
+  if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
+  return out;
+}
+
+/**
+ * Collect `class Child(Parent):` relationships keyed by class name.
+ * Python supports multi-inheritance; we record only the FIRST base
+ * class — sufficient for `super()` resolution in the common single-base
+ * case, which covers the vast majority of real codebases. Multi-base
+ * MRO (e.g. mixin chains) is left as a follow-up.
+ *
+ * Returns a plain object (Record) for NDJSON round-trip — Map would
+ * serialise to `{}`.
+ */
+function collectPythonClassExtends(root: Parser.SyntaxNode): Record<string, string> {
+  const out: Record<string, string> = {};
+  walk(root, (node) => {
+    if (node.type !== "class_definition") return;
+    const nameNode = node.childForFieldName("name");
+    if (!nameNode) return;
+    const className = nameNode.text;
+    // Tree-sitter-python wraps the base-list in a `superclasses`
+    // argument_list child. The first argument is the primary parent.
+    const supers = node.childForFieldName("superclasses");
+    if (!supers) return;
+    const firstBase = supers.namedChildren.find(
+      (c) => c.type === "identifier" || c.type === "attribute" || c.type === "dotted_name",
+    );
+    if (!firstBase) return;
+    const parentText = firstBase.text;
+    if (parentText.length > 0 && parentText !== "object") {
+      out[className] = parentText;
+    }
+  });
+  return out;
+}
+
+/**
+ * Synthesize a CallRef for each decorator application. Tree-sitter-python
+ * exposes `decorated_definition` with one or more `decorator` children
+ * preceding the inner `function_definition` / `class_definition`. Each
+ * decorator's expression is the callee. Common shapes:
+ *
+ *   - `@setupmethod`        → bare identifier   → receiver=null, member="setupmethod"
+ *   - `@app.route('/')`     → call on attribute → receiver="app",  member="route"
+ *   - `@functools.cache`    → attribute access  → receiver="functools", member="cache"
+ *
+ * The decorator node wraps a `call` node OR a single `identifier` /
+ * `attribute`. For the call shape we extract the function position; for
+ * the bare shape we treat the decorator text as the member name.
+ */
+function collectPythonDecoratorCalls(root: Parser.SyntaxNode): CallRef[] {
+  const out: CallRef[] = [];
+  walk(root, (node) => {
+    if (node.type !== "decorator") return;
+    // `decorator` has a single named child which is the callee expression.
+    const expr = node.namedChildren[0];
+    if (!expr) return;
+    const startLine = node.startPosition.row + 1;
+    if (expr.type === "call") {
+      // `@app.route('/')` — the call expression's function position is
+      // an attribute / identifier; reuse the same shape extraction the
+      // regular call collector uses.
+      const fn = expr.childForFieldName("function");
+      if (!fn) return;
+      if (fn.type === "attribute") {
+        const obj = fn.childForFieldName("object");
+        const attr = fn.childForFieldName("attribute");
+        if (!obj || !attr) return;
+        out.push({ callText: node.text, receiver: obj.text, member: attr.text, startLine });
+      } else if (fn.type === "identifier") {
+        out.push({ callText: node.text, receiver: null, member: fn.text, startLine });
+      }
+      return;
+    }
+    if (expr.type === "identifier") {
+      out.push({ callText: node.text, receiver: null, member: expr.text, startLine });
+      return;
+    }
+    if (expr.type === "attribute") {
+      const obj = expr.childForFieldName("object");
+      const attr = expr.childForFieldName("attribute");
+      if (!obj || !attr) return;
+      out.push({ callText: node.text, receiver: obj.text, member: attr.text, startLine });
+    }
+  });
+  return out;
 }
 
 /**

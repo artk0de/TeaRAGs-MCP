@@ -515,4 +515,170 @@ describe("PythonCallResolver", () => {
       expect(target?.targetSymbolId).toBeNull();
     });
   });
+
+  // bd tea-rags-mcp-pic4 — `super().method()` Python call. Walker
+  // emits `class App(Scaffold):` into `ctx.classExtends["App"] =
+  // "Scaffold"`. Resolver detects call `super().__init__()` (member
+  // call on super()), walks classExtends from the enclosing class to
+  // the parent, and resolves `Scaffold#__init__` against the symbol
+  // table.
+  describe("super().method() resolution (bd pic4)", () => {
+    function makeCtxSuper(
+      callerFile: string,
+      callerScope: string[],
+      symbolTable: InMemoryGlobalSymbolTable,
+      classExtends: Record<string, string>,
+    ): CallContext {
+      return {
+        callerFile,
+        callerScope,
+        imports: [],
+        symbolTable,
+        classExtends,
+      };
+    }
+
+    it("resolves super().__init__() to Parent#__init__ even when short-name is ambiguous", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // Two classes define `__init__` in the project — the fallback
+      // `lookupByShortName("__init__")` is ambiguous and strict-mode
+      // returns null. Only an explicit super() walk via classExtends
+      // can disambiguate to the parent class.
+      table.upsertFile("scaffold.py", [
+        {
+          symbolId: "Scaffold#__init__",
+          fqName: "Scaffold#__init__",
+          shortName: "__init__",
+          relPath: "scaffold.py",
+          scope: ["Scaffold"],
+        },
+      ]);
+      table.upsertFile("blueprint.py", [
+        {
+          symbolId: "Blueprint#__init__",
+          fqName: "Blueprint#__init__",
+          shortName: "__init__",
+          relPath: "blueprint.py",
+          scope: ["Blueprint"],
+        },
+      ]);
+      const target = resolver.resolve(
+        // The Python walker produces receiver="super()" for super().method() calls.
+        { callText: "super().__init__()", receiver: "super()", member: "__init__", startLine: 5 },
+        makeCtxSuper("app.py", ["App"], table, { App: "Scaffold" }),
+      );
+      expect(target?.targetRelPath).toBe("scaffold.py");
+      expect(target?.targetSymbolId).toBe("Scaffold#__init__");
+    });
+
+    it("returns null when the enclosing class is unknown to classExtends", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      const target = resolver.resolve(
+        { callText: "super().method()", receiver: "super()", member: "method", startLine: 5 },
+        makeCtxSuper("app.py", ["App"], table, {}),
+      );
+      expect(target).toBeNull();
+    });
+
+    it("walks transitively to grandparent when direct parent lacks the method", () => {
+      // Child → Mid → Base — `foo` lives on Base only. The resolver
+      // walks the chain through Mid (no foo) up to Base.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("base.py", [
+        {
+          symbolId: "Base#foo",
+          fqName: "Base#foo",
+          shortName: "foo",
+          relPath: "base.py",
+          scope: ["Base"],
+        },
+      ]);
+      const target = resolver.resolve(
+        { callText: "super().foo()", receiver: "super()", member: "foo", startLine: 1 },
+        makeCtxSuper("child.py", ["Child"], table, { Child: "Mid", Mid: "Base" }),
+      );
+      expect(target?.targetSymbolId).toBe("Base#foo");
+      expect(target?.targetRelPath).toBe("base.py");
+    });
+
+    it("falls back to static (.) form on parent when instance (#) form is missing", () => {
+      // Parent defines `Parent.classMethod` (classmethod-style),
+      // not `Parent#classMethod`. The resolver tries the instance
+      // form first, then the static form.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("parent.py", [
+        {
+          symbolId: "Parent.classMethod",
+          fqName: "Parent.classMethod",
+          shortName: "classMethod",
+          relPath: "parent.py",
+          scope: ["Parent"],
+        },
+      ]);
+      const target = resolver.resolve(
+        { callText: "super().classMethod()", receiver: "super()", member: "classMethod", startLine: 1 },
+        makeCtxSuper("child.py", ["Child"], table, { Child: "Parent" }),
+      );
+      expect(target?.targetSymbolId).toBe("Parent.classMethod");
+      expect(target?.targetRelPath).toBe("parent.py");
+    });
+
+    it("returns null when classExtends cycles back to a visited class (no method found)", () => {
+      // A → B → A — the visited guard breaks the walk. Without a hit,
+      // returns null. Defensive coverage for malformed extends data.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      const target = resolver.resolve(
+        { callText: "super().method()", receiver: "super()", member: "method", startLine: 1 },
+        makeCtxSuper("a.py", ["A"], table, { A: "B", B: "A" }),
+      );
+      expect(target).toBeNull();
+    });
+  });
+
+  // bd tea-rags-mcp-w3pr — Lazy / function-scoped imports. When a Python
+  // function body opens with `from asgiref.sync import async_to_sync as
+  // _async_to_sync` and the body calls `_async_to_sync(...)`, the
+  // resolver must see that scoped import in addition to the module-level
+  // ones. The walker carries scoped imports on the chunk; the provider
+  // merges them into `ctx.imports` before the resolver dispatches.
+  describe("function-scoped imports (bd w3pr)", () => {
+    it("resolves a bare call whose import lives inside the function body via scoped imports", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("asgiref/sync.py", [
+        {
+          symbolId: "async_to_sync",
+          fqName: "async_to_sync",
+          shortName: "async_to_sync",
+          relPath: "asgiref/sync.py",
+          scope: [],
+        },
+      ]);
+      // Resolver must work when imports[] contains the function-scoped
+      // import (the walker's job — `extractFromPythonFile` puts both
+      // module + scoped imports on the chunk's contextual import list
+      // via the provider's merge step).
+      const target = resolver.resolve(
+        {
+          callText: "async_to_sync(awaitable)",
+          receiver: null,
+          member: "async_to_sync",
+          startLine: 3,
+        },
+        {
+          callerFile: "x.py",
+          callerScope: [],
+          imports: [{ importText: "asgiref.sync", startLine: 2 }],
+          symbolTable: table,
+        },
+      );
+      expect(target?.targetRelPath).toBe("asgiref/sync.py");
+      expect(target?.targetSymbolId).toBe("async_to_sync");
+    });
+  });
 });

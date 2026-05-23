@@ -99,3 +99,61 @@ describe("extractFromGoFile — call dispatch", () => {
     expect(helper?.receiver).toBeNull();
   });
 });
+
+// bd tea-rags-mcp-e6xx — per-chunk localBindings (receiver + parameters).
+// The resolver consumes `ctx.localBindings[receiver]` to turn a typed-call
+// like `c.JSON(...)` inside `(c *Context) Render(...)` into the qualified
+// `Context#JSON` target. Without the walker emitting bindings, the resolver
+// has no type info and the edge is dropped, yielding 0 callgraph edges
+// across an entire Go project (e.g. gin's 1000+ method calls all unresolved).
+describe("extractFromGoFile — localBindings", () => {
+  it("captures pointer-receiver type binding `c *Context` → { c: 'Context' }", () => {
+    const src = ["package gin", "func (c *Context) Render() {", "  c.JSON()", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "context.go",
+      language: "go",
+      chunks: [{ symbolId: "Context#Render", scope: [], startLine: 2, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings?.c).toBe("Context");
+  });
+
+  it("captures value-receiver type binding `s Service` → { s: 'Service' }", () => {
+    const src = ["package gin", "func (s Service) Open() {", "  s.connect()", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "service.go",
+      language: "go",
+      chunks: [{ symbolId: "Service#Open", scope: [], startLine: 2, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings?.s).toBe("Service");
+  });
+
+  it("captures parameter pointer-type bindings `func f(c *Context)` → { c: 'Context' }", () => {
+    const src = ["package gin", "func render(c *Context, status int) {", "  c.JSON()", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "render.go",
+      language: "go",
+      chunks: [{ symbolId: "render", scope: [], startLine: 2, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings?.c).toBe("Context");
+  });
+
+  it("top-level function without typed pointer params has no bindings (or empty)", () => {
+    const src = "package gin\nfunc helper() int { return 1 }\n";
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "h.go",
+      language: "go",
+      chunks: [{ symbolId: "helper", scope: [], startLine: 2, endLine: 2 }],
+    });
+    // Either undefined (preferred — walker omits empty maps) or an empty object.
+    const bindings = r.chunks[0].localBindings;
+    if (bindings) expect(Object.keys(bindings)).toHaveLength(0);
+  });
+});

@@ -98,7 +98,12 @@ export default defineConfig({
         lines: 97,
         functions: 97,
         branches: 87,
-        statements: 96.9,
+        // statements lowered from 96.9 → 96.2 by explicit user override:
+        // codegraph slice added many defensive null-guards in walker/provider
+        // for partial-parse AST shapes (tree-sitter ERROR nodes) that valid
+        // OSS fixtures don't trigger. Restore to 96.9 once integration tests
+        // with malformed-input fixtures land (follow-up bead).
+        statements: 96.2,
         // File-specific thresholds
         "src/core/adapters/qdrant/client.ts": {
           lines: 90,

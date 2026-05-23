@@ -35,10 +35,21 @@ describe("TSCallResolver", () => {
     expect(result).toEqual({ targetRelPath: "src/store.ts", targetSymbolId: "Store.read" });
   });
 
-  it("resolves super.X() against the enclosing class in the SAME file", () => {
+  // bd tea-rags-mcp-4rgg — super.X() must route to the PARENT class's
+  // method, NOT the enclosing class's own. Without classExtends in ctx
+  // the resolver cannot determine the parent and returns null (avoids
+  // the self-loop bug where super(...args) in `Child#constructor`
+  // resolved to `Child#constructor` itself).
+  it("super.X() returns null when classExtends has no entry for the enclosing class", () => {
     const symbolTable = new InMemoryGlobalSymbolTable();
     symbolTable.upsertFile("src/child.ts", [
-      { symbolId: "Child.init", fqName: "Child.init", shortName: "init", relPath: "src/child.ts", scope: ["Child"] },
+      {
+        symbolId: "Child#init",
+        fqName: "Child#init",
+        shortName: "init",
+        relPath: "src/child.ts",
+        scope: ["Child"],
+      },
     ]);
     const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
     const result = resolver.resolve(
@@ -48,9 +59,12 @@ describe("TSCallResolver", () => {
         callerScope: ["Child"],
         imports: [],
         symbolTable,
+        // No classExtends — parent unknown, so the only safe result is
+        // null. Self-looping back to Child#init (the OLD behaviour)
+        // would emit a fake self-loop edge.
       },
     );
-    expect(result).toEqual({ targetRelPath: "src/child.ts", targetSymbolId: "Child.init" });
+    expect(result).toBeNull();
   });
 
   it("does NOT misroute this.X() when callerScope is empty (top-level function context)", () => {
@@ -459,5 +473,520 @@ describe("TSCallResolver", () => {
     );
     // Must pick the same-file `read`, not the cross-file `Other#read`.
     expect(result).toEqual({ targetRelPath: "src/store.ts", targetSymbolId: "read" });
+  });
+
+  // Interface-dispatch recall recovery (bd tea-rags-mcp-2qp6). When a
+  // parameter typed as an interface is invoked (`resolver.resolve(...)`
+  // where `resolver: CallResolver`), the walker has no type info on the
+  // parameter — receiver is the bare identifier `resolver`. Global
+  // short-name lookup returns N>1 candidates (one per implementing class).
+  // Strict mode drops them all → 0 callers. Fix: narrow the ambiguous
+  // global candidates by `ctx.imports` — the caller's import list is the
+  // only signal available to bias toward the concrete implementer the
+  // caller can reach. When exactly one candidate's file is reachable via
+  // the imports, resolve to it; otherwise strict still drops.
+  describe("imports-narrowed fallback for ambiguous global short-name", () => {
+    it("picks the candidate whose file is reachable via ctx.imports when global short-name is ambiguous", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      // Two implementations of `resolve` — both appear in the global
+      // short-name lookup. The caller only imports the ruby resolver
+      // file, so only `RubyCallResolver#resolve` is reachable.
+      symbolTable.upsertFile("src/resolvers/ruby/ruby-resolver.ts", [
+        {
+          symbolId: "RubyCallResolver#resolve",
+          fqName: "RubyCallResolver#resolve",
+          shortName: "resolve",
+          relPath: "src/resolvers/ruby/ruby-resolver.ts",
+          scope: ["RubyCallResolver"],
+        },
+      ]);
+      symbolTable.upsertFile("src/resolvers/python/python-resolver.ts", [
+        {
+          symbolId: "PythonCallResolver#resolve",
+          fqName: "PythonCallResolver#resolve",
+          shortName: "resolve",
+          relPath: "src/resolvers/python/python-resolver.ts",
+          scope: ["PythonCallResolver"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      // Provider walks a file in src/provider/ that imports only the ruby resolver
+      // and calls `resolver.resolve(call, ctx)` on a CallResolver-typed parameter.
+      const result = resolver.resolve(
+        { callText: "resolver.resolve(call, ctx)", receiver: "resolver", member: "resolve", startLine: 10 },
+        {
+          callerFile: "src/provider/provider.ts",
+          callerScope: ["CodegraphProvider"],
+          imports: [{ importText: "../resolvers/ruby/ruby-resolver", startLine: 1 }],
+          symbolTable,
+        },
+      );
+      expect(result).toEqual({
+        targetRelPath: "src/resolvers/ruby/ruby-resolver.ts",
+        targetSymbolId: "RubyCallResolver#resolve",
+      });
+    });
+
+    it("still drops under strict mode when multiple candidates' files are all reachable via imports", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/resolvers/ruby/ruby-resolver.ts", [
+        {
+          symbolId: "RubyCallResolver#resolve",
+          fqName: "RubyCallResolver#resolve",
+          shortName: "resolve",
+          relPath: "src/resolvers/ruby/ruby-resolver.ts",
+          scope: ["RubyCallResolver"],
+        },
+      ]);
+      symbolTable.upsertFile("src/resolvers/python/python-resolver.ts", [
+        {
+          symbolId: "PythonCallResolver#resolve",
+          fqName: "PythonCallResolver#resolve",
+          shortName: "resolve",
+          relPath: "src/resolvers/python/python-resolver.ts",
+          scope: ["PythonCallResolver"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "resolver.resolve(call, ctx)", receiver: "resolver", member: "resolve", startLine: 10 },
+        {
+          callerFile: "src/provider/provider.ts",
+          callerScope: ["CodegraphProvider"],
+          // Both implementations imported — still ambiguous.
+          imports: [
+            { importText: "../resolvers/ruby/ruby-resolver", startLine: 1 },
+            { importText: "../resolvers/python/python-resolver", startLine: 2 },
+          ],
+          symbolTable,
+        },
+      );
+      expect(result).toBeNull();
+    });
+
+    it("does NOT narrow when global short-name is unambiguous (N=1) — preserves existing fast path", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/util.ts", [
+        { symbolId: "helper", fqName: "helper", shortName: "helper", relPath: "src/util.ts", scope: [] },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      // Unrelated import list — narrowing must not interfere with the
+      // existing N=1 path that already resolves cleanly.
+      const result = resolver.resolve(
+        { callText: "helper()", receiver: null, member: "helper", startLine: 1 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [{ importText: "./unrelated", startLine: 1 }],
+          symbolTable,
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/util.ts", targetSymbolId: "helper" });
+    });
+  });
+
+  // bd tea-rags-mcp-4rgg — super() and super.foo() must route to the
+  // PARENT class. Empirical from tea-rags self-test: every
+  // `<Strategy>#constructor` had a super(...args) edge pointing at
+  // itself (self-loop) because the resolver looked up the enclosing
+  // class's own constructor. Mirrors Ruby's resolveSuper pattern but
+  // uses single-inheritance classExtends.
+  describe("super() / super.foo() resolution to parent class (bd tea-rags-mcp-4rgg)", () => {
+    it("super() in constructor routes to parent class's constructor", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/base.ts", [
+        {
+          symbolId: "Base#constructor",
+          fqName: "Base#constructor",
+          shortName: "constructor",
+          relPath: "src/base.ts",
+          scope: ["Base"],
+        },
+      ]);
+      symbolTable.upsertFile("src/child.ts", [
+        {
+          symbolId: "Child#constructor",
+          fqName: "Child#constructor",
+          shortName: "constructor",
+          relPath: "src/child.ts",
+          scope: ["Child"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "super(...args)", receiver: "super", member: "constructor", startLine: 3 },
+        {
+          callerFile: "src/child.ts",
+          callerScope: ["Child"],
+          imports: [],
+          symbolTable,
+          classExtends: { Child: "Base" },
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/base.ts", targetSymbolId: "Base#constructor" });
+    });
+
+    it("super.foo() routes to parent class's instance method foo", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/base.ts", [
+        {
+          symbolId: "Base#foo",
+          fqName: "Base#foo",
+          shortName: "foo",
+          relPath: "src/base.ts",
+          scope: ["Base"],
+        },
+      ]);
+      symbolTable.upsertFile("src/child.ts", [
+        {
+          symbolId: "Child#foo",
+          fqName: "Child#foo",
+          shortName: "foo",
+          relPath: "src/child.ts",
+          scope: ["Child"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "super.foo()", receiver: "super", member: "foo", startLine: 2 },
+        {
+          callerFile: "src/child.ts",
+          callerScope: ["Child"],
+          imports: [],
+          symbolTable,
+          classExtends: { Child: "Base" },
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/base.ts", targetSymbolId: "Base#foo" });
+    });
+
+    it("walks transitively when direct parent lacks the method (B extends A extends C, C has bar)", () => {
+      // class B extends A { foo() { super.bar(); } }
+      // class A extends C {}                           — A doesn't define bar
+      // class C { bar() {} }                           — C owns the method
+      // The walk skips A and lands on C#bar.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/c.ts", [
+        {
+          symbolId: "C#bar",
+          fqName: "C#bar",
+          shortName: "bar",
+          relPath: "src/c.ts",
+          scope: ["C"],
+        },
+      ]);
+      symbolTable.upsertFile("src/a.ts", []);
+      symbolTable.upsertFile("src/b.ts", []);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "super.bar()", receiver: "super", member: "bar", startLine: 5 },
+        {
+          callerFile: "src/b.ts",
+          callerScope: ["B"],
+          imports: [],
+          symbolTable,
+          classExtends: { B: "A", A: "C" },
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/c.ts", targetSymbolId: "C#bar" });
+    });
+
+    it("returns null when parent class is external (not in symbol table)", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/child.ts", [
+        {
+          symbolId: "Child#constructor",
+          fqName: "Child#constructor",
+          shortName: "constructor",
+          relPath: "src/child.ts",
+          scope: ["Child"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "super()", receiver: "super", member: "constructor", startLine: 3 },
+        {
+          callerFile: "src/child.ts",
+          callerScope: ["Child"],
+          imports: [],
+          symbolTable,
+          // Parent declared in classExtends but not present in the
+          // symbol table — external library, like `extends EventEmitter`.
+          classExtends: { Child: "ExternalLib" },
+        },
+      );
+      // Parent unknown — no edge rather than a fabricated target.
+      expect(result).toBeNull();
+    });
+
+    it("does NOT produce a self-loop edge from super() to the enclosing class's own constructor", () => {
+      // This is the empirical bug: ScrollRankStrategy#constructor called
+      // super(...args) but the resolver returned ScrollRankStrategy#constructor
+      // as the target (the SAME class). With no classExtends, we must
+      // return null — the self-loop is worse than a missing edge.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/scroll-rank.ts", [
+        {
+          symbolId: "ScrollRankStrategy#constructor",
+          fqName: "ScrollRankStrategy#constructor",
+          shortName: "constructor",
+          relPath: "src/scroll-rank.ts",
+          scope: ["ScrollRankStrategy"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "super(...args)", receiver: "super", member: "constructor", startLine: 7 },
+        {
+          callerFile: "src/scroll-rank.ts",
+          callerScope: ["ScrollRankStrategy"],
+          imports: [],
+          symbolTable,
+        },
+      );
+      // No classExtends → null (the only safe answer). MUST NOT route
+      // back to ScrollRankStrategy#constructor.
+      expect(result).toBeNull();
+      expect(result).not.toEqual({
+        targetRelPath: "src/scroll-rank.ts",
+        targetSymbolId: "ScrollRankStrategy#constructor",
+      });
+    });
+
+    it("preserves file-only edge when parent class is in classExtends but no symbol matches member", () => {
+      // Parent class IS known in classExtends, but its file scope has
+      // no matching member (e.g. method comes from a deeper ancestor
+      // outside the project). Returning a file-level edge keeps fan-in
+      // / fan-out accurate even when method-level pinning fails.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/base.ts", [
+        {
+          symbolId: "Base#constructor",
+          fqName: "Base#constructor",
+          shortName: "constructor",
+          relPath: "src/base.ts",
+          scope: ["Base"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        // `super.unknownMethod()` — parent's file is known but no symbol
+        // matches `unknownMethod` in the chain.
+        { callText: "super.unknownMethod()", receiver: "super", member: "unknownMethod", startLine: 4 },
+        {
+          callerFile: "src/child.ts",
+          callerScope: ["Child"],
+          imports: [],
+          symbolTable,
+          classExtends: { Child: "Base" },
+        },
+      );
+      // File known, method unknown → file-only edge (mirrors Ruby
+      // resolveSuper file-only fallback pattern).
+      expect(result).toEqual({ targetRelPath: "src/base.ts", targetSymbolId: null });
+    });
+  });
+
+  // bd tea-rags-mcp-kiuw — TypeScript kebab-case file → PascalCase class
+  // naming convention. `import { RankModule } from "../rank-module.js"`
+  // followed by `new RankModule()` produces a walker emission
+  // `{receiver: "RankModule", member: "constructor"}`. The legacy
+  // `importMatchesReceiver` compared the basename ("rank-module.js") to
+  // the receiver ("RankModule") case-insensitively — the hyphen and the
+  // file extension caused the compare to fail and the call dropped.
+  //
+  // Two fixes layered:
+  //   1. Normalize-and-compare: strip extension + non-alphanumeric chars
+  //      from the basename and case-fold both sides.
+  //   2. Symbol-table FQN fallback: when normalize doesn't match, scan
+  //      `symbolTable.lookup(receiver)` for any definition whose relPath
+  //      matches one of the resolver-mapped imported files.
+  describe("kebab-case file → PascalCase class import matching (bd tea-rags-mcp-kiuw)", () => {
+    it("resolves new RankModule() against import { RankModule } from '../rank-module.js' (basename normalize)", () => {
+      // Empirical case from tea-rags self-test: `scroll-rank.ts` has
+      // `import { RankModule } from "../rank-module.js"` and calls
+      // `new RankModule(...)`. The basename "rank-module.js" stripped of
+      // extension and hyphens is "rankmodule", which case-folds to
+      // "rankmodule" — matches `RankModule`.
+      //
+      // A SECOND file declares another `#constructor` so the bare
+      // imports-narrowed fallback alone cannot pick a single winner —
+      // the test specifically exercises the import-side basename match.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/explore/rank-module.ts", [
+        {
+          symbolId: "RankModule#constructor",
+          fqName: "RankModule#constructor",
+          shortName: "constructor",
+          relPath: "src/explore/rank-module.ts",
+          scope: ["RankModule"],
+        },
+      ]);
+      // Unrelated other class with a `#constructor`. If the resolver
+      // degraded to "global short-name search-code", it would have to
+      // pick among two candidates. The fix should NOT need to fall
+      // through to ambiguity resolution — the import basename match
+      // must produce a clean N=1 picture.
+      symbolTable.upsertFile("src/unrelated.ts", [
+        {
+          symbolId: "Other#constructor",
+          fqName: "Other#constructor",
+          shortName: "constructor",
+          relPath: "src/unrelated.ts",
+          scope: ["Other"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "new RankModule(qdrant)", receiver: "RankModule", member: "constructor", startLine: 12 },
+        {
+          callerFile: "src/explore/strategies/scroll-rank.ts",
+          callerScope: ["ScrollRankStrategy"],
+          imports: [{ importText: "../rank-module.js", startLine: 1 }],
+          symbolTable,
+        },
+      );
+      expect(result).toEqual({
+        targetRelPath: "src/explore/rank-module.ts",
+        targetSymbolId: "RankModule#constructor",
+      });
+    });
+
+    it("resolves new FooBarBaz() via symbol-table FQN fallback when filename does NOT mirror the class name", () => {
+      // Filename "helpers" gives no syntactic hint about the contained
+      // classes. Normalize cannot match "helpers" against "FooBarBaz".
+      // The symbol-table FQN fallback walks `imp` -> mapImportToFile and
+      // checks `symbolTable.lookup("FooBarBaz")` for any def in those
+      // files — the def in src/helpers.ts wins.
+      //
+      // To prove the FQN path (not the bare imports-narrowed fallback)
+      // is what wins, ANOTHER file holds another `#constructor` so the
+      // short-name candidate set is ambiguous. Only the FQN-based file
+      // restriction can narrow back to src/helpers.ts.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/helpers.ts", [
+        {
+          symbolId: "FooBarBaz#constructor",
+          fqName: "FooBarBaz#constructor",
+          shortName: "constructor",
+          relPath: "src/helpers.ts",
+          scope: ["FooBarBaz"],
+        },
+        {
+          symbolId: "FooBarBaz",
+          fqName: "FooBarBaz",
+          shortName: "FooBarBaz",
+          relPath: "src/helpers.ts",
+          scope: [],
+        },
+      ]);
+      symbolTable.upsertFile("src/unrelated.ts", [
+        {
+          symbolId: "Other#constructor",
+          fqName: "Other#constructor",
+          shortName: "constructor",
+          relPath: "src/unrelated.ts",
+          scope: ["Other"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "new FooBarBaz()", receiver: "FooBarBaz", member: "constructor", startLine: 5 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [{ importText: "./helpers.js", startLine: 1 }],
+          symbolTable,
+        },
+      );
+      expect(result).toEqual({
+        targetRelPath: "src/helpers.ts",
+        targetSymbolId: "FooBarBaz#constructor",
+      });
+    });
+
+    it("regression: Foo.method() with exact-name file match still resolves via normalize path", () => {
+      // The vanilla "filename matches class name" case must still resolve
+      // — proves the normalize layer is a SUPERSET of the legacy direct
+      // compare, not a replacement that breaks the happy path.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/foo.ts", [
+        { symbolId: "Foo.bar", fqName: "Foo.bar", shortName: "bar", relPath: "src/foo.ts", scope: ["Foo"] },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "Foo.bar()", receiver: "Foo", member: "bar", startLine: 1 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [{ importText: "./foo", startLine: 1 }],
+          symbolTable,
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/foo.ts", targetSymbolId: "Foo.bar" });
+    });
+
+    it("regression: unrelated receiver with no matching import still drops cleanly", () => {
+      // Nothing in imports[] matches `unrelatedReceiver` via normalize OR
+      // via symbol-table FQN. Must NOT fabricate a target. Falls through
+      // to short-name `method` lookup — empty → null.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/foo.ts", [
+        { symbolId: "Foo.bar", fqName: "Foo.bar", shortName: "bar", relPath: "src/foo.ts", scope: ["Foo"] },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "unrelatedReceiver.method()", receiver: "unrelatedReceiver", member: "method", startLine: 1 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [{ importText: "./foo", startLine: 1 }],
+          symbolTable,
+        },
+      );
+      expect(result).toBeNull();
+    });
+
+    it("multi-export file: import { A, B } from './mixed.js'; new A() resolves to A not B", () => {
+      // Two classes co-located in a single file. The normalize path
+      // would match "mixed" against neither "A" nor "B" — both fall
+      // through to the symbol-table FQN fallback. The fallback picks
+      // the specific class that the receiver names (`A`), NOT the file's
+      // first export.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/mixed.ts", [
+        {
+          symbolId: "A#constructor",
+          fqName: "A#constructor",
+          shortName: "constructor",
+          relPath: "src/mixed.ts",
+          scope: ["A"],
+        },
+        {
+          symbolId: "B#constructor",
+          fqName: "B#constructor",
+          shortName: "constructor",
+          relPath: "src/mixed.ts",
+          scope: ["B"],
+        },
+        { symbolId: "A", fqName: "A", shortName: "A", relPath: "src/mixed.ts", scope: [] },
+        { symbolId: "B", fqName: "B", shortName: "B", relPath: "src/mixed.ts", scope: [] },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "new A()", receiver: "A", member: "constructor", startLine: 3 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [{ importText: "./mixed.js", startLine: 1 }],
+          symbolTable,
+        },
+      );
+      // Both constructors share shortName "constructor"; without the
+      // FQN narrowing the lookupByShortName-filtered-by-file path would
+      // be ambiguous (length 2) and strict would drop. The FQN check on
+      // receiver="A" must constrain to A's file/symbol.
+      expect(result).toEqual({ targetRelPath: "src/mixed.ts", targetSymbolId: "A#constructor" });
+    });
   });
 });

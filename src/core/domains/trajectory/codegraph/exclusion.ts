@@ -31,6 +31,13 @@ export const CODEGRAPH_GENERATED_PATTERNS: readonly string[] = [
   // Rails generated AR schema — re-authored by `rails db:migrate`, declarative
   // table defs with no method calls into the rest of the application.
   "**/db/schema.rb",
+  // Vendored third-party code (bd tea-rags-mcp-pl7k). `vendor/` is the
+  // conventional location for bundled gems (`vendor/bundle/`) and asset
+  // libraries (`vendor/assets/javascripts/*.js`). These never participate
+  // in the project author's call graph — including them pollutes the
+  // global short-name lookup with cross-language ghost callees (e.g.
+  // huginn's `agents.map(&:id)` mis-resolving to `d3.js#map`).
+  "**/vendor/**",
 ];
 
 export const CODEGRAPH_TEST_PATTERNS: readonly string[] = [

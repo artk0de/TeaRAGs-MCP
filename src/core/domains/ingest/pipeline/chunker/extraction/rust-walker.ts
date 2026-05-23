@@ -68,6 +68,28 @@ function collectRustImports(root: Parser.SyntaxNode): ImportRef[] {
 function collectRustCalls(root: Parser.SyntaxNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
+    // bd tea-rags-mcp-jyzb — macro_invocation (`println!()`, `my_macro!()`)
+    // is a separate node type in tree-sitter-rust, not a `call_expression`.
+    // The macro name lives on the `macro` field (an `identifier` or
+    // `scoped_identifier`). We treat the macro name as the call member
+    // with no receiver — usually unresolvable (std-lib macros), but
+    // user-defined `macro_rules!` symbols emit a definition (see
+    // provider.ts `rustNameOf`) so the resolver can link them.
+    if (node.type === "macro_invocation") {
+      const macroField = node.childForFieldName("macro");
+      if (!macroField) return;
+      const startLine = node.startPosition.row + 1;
+      if (macroField.type === "scoped_identifier") {
+        const path = macroField.childForFieldName("path");
+        const name = macroField.childForFieldName("name");
+        if (!name) return;
+        out.push({ callText: node.text, receiver: path?.text ?? null, member: name.text, startLine });
+        return;
+      }
+      // Plain `identifier` — bare macro name.
+      out.push({ callText: node.text, receiver: null, member: macroField.text, startLine });
+      return;
+    }
     if (node.type !== "call_expression") return;
     const fn = node.childForFieldName("function");
     if (!fn) return;

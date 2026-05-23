@@ -961,6 +961,114 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
   });
 });
 
+// bd tea-rags-mcp-3jvn — `prepend M` inserts M BEFORE the class in MRO. When
+// a bound variable's class A both prepends M and defines the same method
+// itself, instance-method dispatch lands on M#foo (not A#foo). The walker
+// emits prepended modules into a separate classPrependedAncestors map so
+// the resolver walks them BEFORE the bound class's own methods.
+describe("RubyCallResolver — Module#prepend ancestor priority (bd 3jvn)", () => {
+  it("resolves instance method to prepended module instead of class's own method", () => {
+    // class A; prepend M; def foo; ...end; end with M#foo also defined.
+    // var: A → var.foo MUST land on M#foo (prepend shadows), not A#foo.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("a.rb", [
+      { symbolId: "A", fqName: "A", shortName: "A", relPath: "a.rb", scope: [] },
+      { symbolId: "A#foo", fqName: "A#foo", shortName: "foo", relPath: "a.rb", scope: ["A"] },
+    ]);
+    table.upsertFile("m.rb", [
+      { symbolId: "M", fqName: "M", shortName: "M", relPath: "m.rb", scope: [] },
+      { symbolId: "M#foo", fqName: "M#foo", shortName: "foo", relPath: "m.rb", scope: ["M"] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { x: "A" },
+      classPrependedAncestors: { A: ["M"] },
+    };
+    const target = resolver.resolve({ callText: "x.foo", receiver: "x", member: "foo", startLine: 1 }, ctx);
+    expect(target?.targetSymbolId).toBe("M#foo");
+    expect(target?.targetRelPath).toBe("m.rb");
+  });
+
+  it("iterates multiple prepends in REVERSE source order (last prepend wins in MRO)", () => {
+    // class A; prepend M1; prepend M2; end → MRO walks M2 → M1 → A.
+    // Both M1 and M2 define `foo`; M2 must win because it was prepended last.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("a.rb", [
+      { symbolId: "A", fqName: "A", shortName: "A", relPath: "a.rb", scope: [] },
+      { symbolId: "A#foo", fqName: "A#foo", shortName: "foo", relPath: "a.rb", scope: ["A"] },
+    ]);
+    table.upsertFile("m1.rb", [
+      { symbolId: "M1", fqName: "M1", shortName: "M1", relPath: "m1.rb", scope: [] },
+      { symbolId: "M1#foo", fqName: "M1#foo", shortName: "foo", relPath: "m1.rb", scope: ["M1"] },
+    ]);
+    table.upsertFile("m2.rb", [
+      { symbolId: "M2", fqName: "M2", shortName: "M2", relPath: "m2.rb", scope: [] },
+      { symbolId: "M2#foo", fqName: "M2#foo", shortName: "foo", relPath: "m2.rb", scope: ["M2"] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { x: "A" },
+      // Source order: M1 first, M2 second — resolver iterates in reverse.
+      classPrependedAncestors: { A: ["M1", "M2"] },
+    };
+    const target = resolver.resolve({ callText: "x.foo", receiver: "x", member: "foo", startLine: 1 }, ctx);
+    expect(target?.targetSymbolId).toBe("M2#foo");
+  });
+
+  it("falls through to the class itself when prepended modules don't define the member", () => {
+    // class A; prepend M; def foo; end; end where M does NOT define foo.
+    // var.foo lands on A#foo (prepend miss + class hit).
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("a.rb", [
+      { symbolId: "A", fqName: "A", shortName: "A", relPath: "a.rb", scope: [] },
+      { symbolId: "A#foo", fqName: "A#foo", shortName: "foo", relPath: "a.rb", scope: ["A"] },
+    ]);
+    table.upsertFile("m.rb", [{ symbolId: "M", fqName: "M", shortName: "M", relPath: "m.rb", scope: [] }]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { x: "A" },
+      classPrependedAncestors: { A: ["M"] },
+    };
+    const target = resolver.resolve({ callText: "x.foo", receiver: "x", member: "foo", startLine: 1 }, ctx);
+    expect(target?.targetSymbolId).toBe("A#foo");
+  });
+
+  it("regression: include `Mod` still resolves through classAncestors (no prepend interference)", () => {
+    // class Foo; include Bar; end with Bar#m — unchanged behaviour, the
+    // include path must still work after the prepend wiring lands.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("foo.rb", [{ symbolId: "Foo", fqName: "Foo", shortName: "Foo", relPath: "foo.rb", scope: [] }]);
+    table.upsertFile("bar.rb", [
+      { symbolId: "Bar", fqName: "Bar", shortName: "Bar", relPath: "bar.rb", scope: [] },
+      { symbolId: "Bar#m", fqName: "Bar#m", shortName: "m", relPath: "bar.rb", scope: ["Bar"] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { x: "Foo" },
+      classAncestors: { Foo: ["Bar"] },
+      // No prepended ancestors — exercises the missing-map branch.
+    };
+    const target = resolver.resolve({ callText: "x.m", receiver: "x", member: "m", startLine: 1 }, ctx);
+    expect(target?.targetSymbolId).toBe("Bar#m");
+  });
+});
+
 describe("RubyCallResolver — AR Relation chain guard", () => {
   it("drops resolution when receiver is a chained AR-relation call (.ransack/.where/...)", () => {
     const resolver = new RubyCallResolver();
@@ -1030,7 +1138,19 @@ describe("RubyCallResolver — AR Relation chain guard", () => {
     }
   });
 
-  it("does NOT trigger the guard for plain receivers without dot-chained relation calls", () => {
+  it("does NOT trigger the AR-relation guard for plain receivers without dot-chained relation calls", () => {
+    // The AR guard is keyed off dot-prefixed relation builders in the
+    // receiver text (`.where(`, `.order(` etc.). A plain `obj.go`
+    // receiver lacks any of those markers — the AR guard must NOT fire,
+    // and resolution proceeds through the normal channels. With bug
+    // tea-rags-mcp-lttd fixed the receiver-set drop guard returns null
+    // when no channel matched (no zeitwerk constant, no require, no
+    // local binding). The point of THIS test is to confirm the AR
+    // guard's predicate doesn't over-match — assertion is on
+    // `receiverLooksLikeArRelationChain("obj")` returning false, which
+    // we observe indirectly: the AR guard's "drop on AR relation" path
+    // is not the path that returns null here (the receiver-set drop
+    // guard is).
     const resolver = new RubyCallResolver();
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("app/services/x.rb", [
@@ -1048,8 +1168,11 @@ describe("RubyCallResolver — AR Relation chain guard", () => {
       imports: [],
       symbolTable: table,
     };
+    // With receiver set + no import / zeitwerk / local-binding match,
+    // the resolver drops the edge (lttd fix). The AR guard is irrelevant
+    // here — what matters is that `obj` doesn't look like an AR chain.
     const target = resolver.resolve({ callText: "obj.go", receiver: "obj", member: "go", startLine: 1 }, ctx);
-    expect(target?.targetSymbolId).toBe("Helper#go");
+    expect(target).toBeNull();
   });
 });
 
@@ -1057,20 +1180,905 @@ describe("RubyCallResolver — looksLikeConstant guard", () => {
   // Receiver text that doesn't match constant grammar (lowercase start,
   // e.g. `obj.method` rather than `Klass.method`) skips the
   // looksLikeConstant branch. Covers the false-branch of the regex on
-  // line 132.
-  it("skips Zeitwerk resolution for lowercase-receiver calls (regular method calls)", () => {
+  // line 132. With bug tea-rags-mcp-lttd fixed, the global short-name
+  // fallback fires ONLY when receiver is null. A lowercase receiver
+  // identifier (`obj.render`) means the dynamic type is unknown — falling
+  // back to global short-name fabricated false-positive edges (huginn:
+  // `agents.map(&:id)` → JS `d3.js#map`; sinatra: `Regexp.escape(domain)`
+  // → `Rack::Protection::EscapedParams#escape`). Drop instead.
+  it("drops the edge when lowercase receiver has no matching import/zeitwerk/local-binding", () => {
     const resolver = new RubyCallResolver();
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("helpers.rb", [
       { symbolId: "render", fqName: "render", shortName: "render", relPath: "helpers.rb", scope: [] },
     ]);
-    // `obj` is lowercase — looksLikeConstant returns false, so the
-    // Zeitwerk branch is skipped. No matching require import either.
-    // Falls to global short-name lookup → unique render.
+    // `obj` is lowercase — looksLikeConstant returns false. No matching
+    // require import. No local binding. Receiver-set + no resolution =
+    // drop edge.
     const target = resolver.resolve(
       { callText: "obj.render", receiver: "obj", member: "render", startLine: 1 },
       makeCtx("main.rb", [], table),
     );
+    expect(target).toBeNull();
+  });
+});
+
+describe("RubyCallResolver — receiver-set drops edge when no resolution succeeds (bug lttd)", () => {
+  // Mirrors java-resolver.test.ts (lines 105-176) drop-edge patterns —
+  // when a receiver is set but no import / zeitwerk / local-binding
+  // resolution succeeds, the resolver MUST return null instead of
+  // falling through to the global short-name fallback. The fallback
+  // fabricated false-positive edges across unrelated classes (and
+  // across LANGUAGES in vendored / mixed-language repos).
+
+  it("drops the edge for a chained-expression receiver with no import match (sinatra Regexp.escape case)", () => {
+    // Real sinatra case: `host_authorization.rb` does `Regexp.escape(domain)`.
+    // Old: global short-name "escape" matched the unique
+    // `Rack::Protection::EscapedParams#escape` → false-positive cycle.
+    // `Regexp` is a Ruby core constant (no project file backs it). Drop.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("rack/protection/escaped_params.rb", [
+      {
+        symbolId: "Rack::Protection::EscapedParams#escape",
+        fqName: "Rack::Protection::EscapedParams#escape",
+        shortName: "escape",
+        relPath: "rack/protection/escaped_params.rb",
+        scope: ["Rack", "Protection", "EscapedParams"],
+      },
+    ]);
+    const target = resolver.resolve(
+      { callText: "Regexp.escape(domain)", receiver: "Regexp", member: "escape", startLine: 1 },
+      makeCtx("rack/protection/host_authorization.rb", [], table),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("drops the edge for a local-variable receiver with no import or local binding", () => {
+    // `serializer.is_valid` where `serializer` is a local with no
+    // walker-inferred binding. Global short-name "is_valid" would match
+    // some unrelated class — drop.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/forms/some_form.rb", [
+      {
+        symbolId: "SomeForm#is_valid",
+        fqName: "SomeForm#is_valid",
+        shortName: "is_valid",
+        relPath: "app/forms/some_form.rb",
+        scope: ["SomeForm"],
+      },
+    ]);
+    const target = resolver.resolve(
+      { callText: "serializer.is_valid", receiver: "serializer", member: "is_valid", startLine: 1 },
+      makeCtx("app/controllers/x.rb", [], table),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("drops the edge for a chained-method-call receiver (e.g. `agents.map`) with no resolution", () => {
+    // Real huginn case: `agents.map(&:id)` — receiver `agents` is a local
+    // collection. Without binding, the old global short-name fallback for
+    // "map" matched the unique non-ruby `map` defined in
+    // `vendor/assets/javascripts/d3.js` (parsed as a JS top-level
+    // function). Drop the edge — cross-language pollution must never
+    // surface as a Ruby caller→callee edge.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("vendor/assets/javascripts/d3.js", [
+      {
+        symbolId: "map",
+        fqName: "map",
+        shortName: "map",
+        relPath: "vendor/assets/javascripts/d3.js",
+        scope: [],
+      },
+    ]);
+    const target = resolver.resolve(
+      { callText: "agents.map(&:id)", receiver: "agents", member: "map", startLine: 1 },
+      makeCtx("app/concerns/file_handling.rb", [], table),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("drops the edge for an external (core-Ruby) class receiver with no project file backing", () => {
+    // `Hash.new` where `Hash` is a Ruby builtin — no project file
+    // defines it. With Zeitwerk pass 2 nothing matches; old global
+    // short-name "new" would pick a unique project-defined `new` if any.
+    // Drop instead.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/services/builder.rb", [
+      {
+        symbolId: "Builder.new",
+        fqName: "Builder.new",
+        shortName: "new",
+        relPath: "app/services/builder.rb",
+        scope: ["Builder"],
+      },
+    ]);
+    const target = resolver.resolve(
+      { callText: "Hash.new", receiver: "Hash", member: "new", startLine: 1 },
+      makeCtx("app/controllers/x.rb", [], table),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("still falls back to global short-name when receiver is null (bare top-level call)", () => {
+    // Defense-in-depth: confirms the receiver-set drop does NOT regress
+    // bare-call resolution. `do_thing` with no receiver, unique target →
+    // resolves via global short-name fallback as before.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("helpers.rb", [
+      { symbolId: "do_thing", fqName: "do_thing", shortName: "do_thing", relPath: "helpers.rb", scope: [] },
+    ]);
+    const target = resolver.resolve(
+      { callText: "do_thing", receiver: null, member: "do_thing", startLine: 1 },
+      makeCtx("main.rb", [], table),
+    );
     expect(target?.targetRelPath).toBe("helpers.rb");
+  });
+});
+
+describe("RubyCallResolver — bare-call same-class scope preference (bug t5iw)", () => {
+  // Mirrors java-resolver.ts:50-54 scope-filter fallback. When a bare
+  // call (no receiver) has multiple short-name candidates, prefer
+  // candidates whose `scope[last]` matches the caller's enclosing class
+  // (`callerScope[last]`). Without this, strict-mode pickSingleCandidate
+  // returned null on ambiguity and dropped the edge — observed on huginn:
+  // `Agents::PhantomJsCloudAgent#page_request_settings` contains a bare
+  // `user_agent` call but `WebRequestConcern#user_agent` AND
+  // `Agents::PhantomJsCloudAgent#user_agent` both exist with shortName
+  // "user_agent", so the edge dropped silently.
+
+  it("prefers same-class candidate when bare-call short-name is ambiguous across classes", () => {
+    // Two definitions of `user_agent` — one on a concern, one on the
+    // caller's own class. The bare `user_agent` call from inside
+    // `Agents::PhantomJsCloudAgent#page_request_settings` must resolve to
+    // the same-class definition, not be dropped as ambiguous.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/concerns/web_request_concern.rb", [
+      {
+        symbolId: "WebRequestConcern#user_agent",
+        fqName: "WebRequestConcern#user_agent",
+        shortName: "user_agent",
+        relPath: "app/concerns/web_request_concern.rb",
+        scope: ["WebRequestConcern"],
+      },
+    ]);
+    table.upsertFile("app/models/agents/phantom_js_cloud_agent.rb", [
+      {
+        symbolId: "Agents::PhantomJsCloudAgent#user_agent",
+        fqName: "Agents::PhantomJsCloudAgent#user_agent",
+        shortName: "user_agent",
+        relPath: "app/models/agents/phantom_js_cloud_agent.rb",
+        scope: ["Agents", "PhantomJsCloudAgent"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/models/agents/phantom_js_cloud_agent.rb",
+      callerScope: ["Agents", "PhantomJsCloudAgent"],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve(
+      { callText: "user_agent", receiver: null, member: "user_agent", startLine: 96 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("Agents::PhantomJsCloudAgent#user_agent");
+    expect(target?.targetRelPath).toBe("app/models/agents/phantom_js_cloud_agent.rb");
+  });
+
+  it("returns null when caller scope matches NEITHER ambiguous candidate", () => {
+    // Same two definitions, but caller is in a third unrelated class.
+    // Scope filter narrows to zero same-class candidates → fall back to
+    // strict pickSingleCandidate over the original ambiguous list → null.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("a.rb", [
+      { symbolId: "ClassA#foo", fqName: "ClassA#foo", shortName: "foo", relPath: "a.rb", scope: ["ClassA"] },
+    ]);
+    table.upsertFile("b.rb", [
+      { symbolId: "ClassB#foo", fqName: "ClassB#foo", shortName: "foo", relPath: "b.rb", scope: ["ClassB"] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "c.rb",
+      callerScope: ["ClassC"],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve({ callText: "foo", receiver: null, member: "foo", startLine: 1 }, ctx);
+    expect(target).toBeNull();
+  });
+
+  it("does NOT prefer ancestor-class candidates — only same-class wins (ancestor preference is out of scope for t5iw)", () => {
+    // `WebRequestConcern#user_agent` is mixed into PhantomJsCloudAgent
+    // via `include WebRequestConcern`. The caller scope is the agent
+    // class, ancestor candidate is in a different class. With ONLY the
+    // ancestor-class candidate present, the scope filter narrows to
+    // zero same-class candidates → fall back to global pickSingleCandidate
+    // on the unfiltered list (one candidate left) → resolves to the
+    // ancestor. This documents that t5iw fixes ONLY same-class
+    // disambiguation; deeper ancestor-walk preference is follow-up brp1.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/concerns/web_request_concern.rb", [
+      {
+        symbolId: "WebRequestConcern#user_agent",
+        fqName: "WebRequestConcern#user_agent",
+        shortName: "user_agent",
+        relPath: "app/concerns/web_request_concern.rb",
+        scope: ["WebRequestConcern"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/models/agents/phantom_js_cloud_agent.rb",
+      callerScope: ["Agents", "PhantomJsCloudAgent"],
+      imports: [],
+      symbolTable: table,
+      classAncestors: { "Agents::PhantomJsCloudAgent": ["WebRequestConcern"] },
+    };
+    const target = resolver.resolve(
+      { callText: "user_agent", receiver: null, member: "user_agent", startLine: 96 },
+      ctx,
+    );
+    // Only one candidate exists → unambiguous global short-name fallback.
+    expect(target?.targetSymbolId).toBe("WebRequestConcern#user_agent");
+  });
+
+  it("regression: bare call with empty callerScope still resolves unambiguously when only one candidate exists", () => {
+    // Top-level helper call from a file with no enclosing class
+    // (callerScope=[]). Scope-filter yields zero (no last element to
+    // match), fall back to global short-name lookup with unique target.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("helpers.rb", [
+      { symbolId: "do_thing", fqName: "do_thing", shortName: "do_thing", relPath: "helpers.rb", scope: [] },
+    ]);
+    const target = resolver.resolve(
+      { callText: "do_thing", receiver: null, member: "do_thing", startLine: 1 },
+      makeCtx("main.rb", [], table),
+    );
+    expect(target?.targetRelPath).toBe("helpers.rb");
+  });
+});
+
+// bd tea-rags-mcp-jsa0 — requireMatch predicate must not unconditionally accept
+// bare calls. Pre-fix, `call.receiver === null || ...` made the predicate
+// always return true for bare calls — every bare call short-circuited into the
+// requireMatch branch with an arbitrary import file as target, blocking the
+// t5iw same-class fallback below it. Live huginn confirmed:
+// `Agents::PhantomJsCloudAgent#page_request_settings` calls `user_agent` (bare)
+// but `get_callers(Agents::PhantomJsCloudAgent#user_agent)` returned `[]`
+// because the bare call was absorbed into a file edge to an unrelated require'd
+// file. Fix: require receiver to be non-null AND match the import text.
+describe("RubyCallResolver — bare call must not shortcut into requireMatch (bug jsa0)", () => {
+  it("bare call falls through to t5iw same-class fallback when unrelated require exists", () => {
+    // Reproduces the huginn case. Caller is inside Agents::PhantomJsCloudAgent;
+    // the file has unrelated `require 'json'`-style imports plus a same-class
+    // `user_agent` definition. Pre-fix: bare `user_agent` resolved to the
+    // unrelated 'json' file (file-only, targetSymbolId=null). Post-fix: it
+    // resolves via t5iw same-class preference to the agent's own user_agent.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/concerns/web_request_concern.rb", [
+      {
+        symbolId: "WebRequestConcern#user_agent",
+        fqName: "WebRequestConcern#user_agent",
+        shortName: "user_agent",
+        relPath: "app/concerns/web_request_concern.rb",
+        scope: ["WebRequestConcern"],
+      },
+    ]);
+    table.upsertFile("app/models/agents/phantom_js_cloud_agent.rb", [
+      {
+        symbolId: "Agents::PhantomJsCloudAgent#user_agent",
+        fqName: "Agents::PhantomJsCloudAgent#user_agent",
+        shortName: "user_agent",
+        relPath: "app/models/agents/phantom_js_cloud_agent.rb",
+        scope: ["Agents", "PhantomJsCloudAgent"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/models/agents/phantom_js_cloud_agent.rb",
+      callerScope: ["Agents", "PhantomJsCloudAgent"],
+      // The actual file `require 'json'` — unrelated to the user_agent call,
+      // but pre-fix it was treated as a viable requireMatch target.
+      imports: [{ importText: "json", startLine: 1 }],
+      symbolTable: table,
+    };
+    const target = resolver.resolve(
+      { callText: "user_agent", receiver: null, member: "user_agent", startLine: 96 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("Agents::PhantomJsCloudAgent#user_agent");
+    expect(target?.targetRelPath).toBe("app/models/agents/phantom_js_cloud_agent.rb");
+  });
+
+  it("bare call to nonexistent symbol with unrelated require returns null (not file edge to the require'd file)", () => {
+    // Pre-fix: bare `nonexistent_helper` with `require 'json'` resolved to
+    // { targetRelPath: <some json file from knownPaths>, targetSymbolId: null }
+    // because the requireMatch predicate accepted any bare-call+import combo.
+    // Post-fix: the require predicate skips bare calls; global short-name
+    // fallback finds zero candidates → null.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    // Plant an unrelated indexed file so knownPaths contains a basename
+    // matching the import. Pre-fix the resolver would attribute the bare
+    // call to this file.
+    table.upsertFile("vendor/lib/json.rb", [
+      {
+        symbolId: "JSON",
+        fqName: "JSON",
+        shortName: "JSON",
+        relPath: "vendor/lib/json.rb",
+        scope: [],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/services/something.rb",
+      callerScope: ["Something"],
+      imports: [
+        { importText: "json", startLine: 1 },
+        { importText: "vendor/lib/json.rb", startLine: 2 },
+      ],
+      symbolTable: table,
+    };
+    const target = resolver.resolve(
+      { callText: "nonexistent_helper", receiver: null, member: "nonexistent_helper", startLine: 5 },
+      ctx,
+    );
+    expect(target).toBeNull();
+  });
+
+  it("require_relative './foo' branch does not match unrelated bare calls", () => {
+    // Pre-fix: line 108 had `return target === ctx.callerFile || true;` which
+    // is ALWAYS true — any bare call with any require_relative in scope
+    // shortcuts to file-edge of that relative file. Post-fix: predicate
+    // requires receiver to non-null AND match the import basename.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    // Plant a same-class helper so the t5iw fallback can pin the bare call.
+    table.upsertFile("app/services/something.rb", [
+      {
+        symbolId: "Something#helper",
+        fqName: "Something#helper",
+        shortName: "helper",
+        relPath: "app/services/something.rb",
+        scope: ["Something"],
+      },
+    ]);
+    // Also plant a different shortName helper in the require_relative target
+    // so we'd see the wrong attribution if the bug were still present.
+    table.upsertFile("app/services/foo.rb", [
+      {
+        symbolId: "Foo#bar",
+        fqName: "Foo#bar",
+        shortName: "bar",
+        relPath: "app/services/foo.rb",
+        scope: ["Foo"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/services/something.rb",
+      callerScope: ["Something"],
+      imports: [{ importText: "./foo", startLine: 1 }],
+      symbolTable: table,
+    };
+    const target = resolver.resolve({ callText: "helper", receiver: null, member: "helper", startLine: 5 }, ctx);
+    // t5iw same-class wins; require_relative does NOT shortcut.
+    expect(target?.targetSymbolId).toBe("Something#helper");
+    expect(target?.targetRelPath).toBe("app/services/something.rb");
+  });
+
+  it("regression: explicit-receiver bare-require call still matches importText (call.receiver === imp.importText)", () => {
+    // The pre-existing happy path: `require 'foo'` then `foo.bar` (where
+    // `foo` is the receiver text and `foo` matches the importText). Must
+    // still resolve to the require'd file. This documents that the fix
+    // tightens but does not break receiver===importText matching.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("vendor/lib/foo.rb", [
+      { symbolId: "Foo", fqName: "Foo", shortName: "Foo", relPath: "vendor/lib/foo.rb", scope: [] },
+      { symbolId: "Foo#bar", fqName: "Foo#bar", shortName: "bar", relPath: "vendor/lib/foo.rb", scope: ["Foo"] },
+    ]);
+    const target = resolver.resolve(
+      { callText: "bar", receiver: "foo", member: "bar", startLine: 1 },
+      makeCtx(
+        "main.rb",
+        [
+          { importText: "foo", startLine: 1 },
+          { importText: "vendor/lib/foo.rb", startLine: 2 },
+        ],
+        table,
+      ),
+    );
+    expect(target?.targetRelPath).toBe("vendor/lib/foo.rb");
+    expect(target?.targetSymbolId).toBe("Foo#bar");
+  });
+});
+
+describe("RubyCallResolver — nested class constant lookup via enclosing scope walk (bug ohz5)", () => {
+  // Mirrors Ruby's runtime Module.nesting constant lookup. When a method
+  // inside `class Agents::StubhubAgent` references a bare constant
+  // `StubhubFetcher`, Ruby walks the enclosing scopes upward looking for
+  // `Agents::StubhubAgent::StubhubFetcher`, then `Agents::StubhubFetcher`,
+  // then top-level `StubhubFetcher`. The resolver must mirror this so the
+  // call edge from `fetch_stubhub_data` to the nested class's class method
+  // is preserved instead of dropped.
+
+  it("resolves a sibling-nested constant via the enclosing class scope", () => {
+    // Real huginn case (app/models/agents/stubhub_agent.rb): inside
+    // `Agents::StubhubAgent#fetch_stubhub_data`, `StubhubFetcher.call(url)`
+    // refers to the inner class `Agents::StubhubAgent::StubhubFetcher`
+    // declared lexically in the same file.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/agents/stubhub_agent.rb", [
+      {
+        symbolId: "Agents::StubhubAgent",
+        fqName: "Agents::StubhubAgent",
+        shortName: "StubhubAgent",
+        relPath: "app/models/agents/stubhub_agent.rb",
+        scope: ["Agents"],
+      },
+      {
+        symbolId: "Agents::StubhubAgent::StubhubFetcher",
+        fqName: "Agents::StubhubAgent::StubhubFetcher",
+        shortName: "StubhubFetcher",
+        relPath: "app/models/agents/stubhub_agent.rb",
+        scope: ["Agents", "StubhubAgent"],
+      },
+      {
+        symbolId: "Agents::StubhubAgent::StubhubFetcher.call",
+        fqName: "Agents::StubhubAgent::StubhubFetcher.call",
+        shortName: "call",
+        relPath: "app/models/agents/stubhub_agent.rb",
+        scope: ["Agents", "StubhubAgent", "StubhubFetcher"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/models/agents/stubhub_agent.rb",
+      // Walker emits scope as the class-name segments leading to the
+      // enclosing method's owner — for a method in
+      // `class Agents::StubhubAgent`, that's ["Agents", "StubhubAgent"].
+      callerScope: ["Agents", "StubhubAgent"],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve(
+      { callText: "StubhubFetcher.call(url)", receiver: "StubhubFetcher", member: "call", startLine: 49 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("Agents::StubhubAgent::StubhubFetcher.call");
+    expect(target?.targetRelPath).toBe("app/models/agents/stubhub_agent.rb");
+  });
+
+  it("resolves a cousin constant declared under a shared outer module", () => {
+    // `module A::B; class C; def self.go; end; end; class D; def hop; C.go; end; end; end`
+    // From inside `A::B::D#hop`, the bare reference `C` should walk up to
+    // the enclosing `A::B` scope and find `A::B::C`.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("a/b/c.rb", [
+      {
+        symbolId: "A::B::C",
+        fqName: "A::B::C",
+        shortName: "C",
+        relPath: "a/b/c.rb",
+        scope: ["A", "B"],
+      },
+      {
+        symbolId: "A::B::C.go",
+        fqName: "A::B::C.go",
+        shortName: "go",
+        relPath: "a/b/c.rb",
+        scope: ["A", "B", "C"],
+      },
+    ]);
+    table.upsertFile("a/b/d.rb", [
+      {
+        symbolId: "A::B::D",
+        fqName: "A::B::D",
+        shortName: "D",
+        relPath: "a/b/d.rb",
+        scope: ["A", "B"],
+      },
+      {
+        symbolId: "A::B::D#hop",
+        fqName: "A::B::D#hop",
+        shortName: "hop",
+        relPath: "a/b/d.rb",
+        scope: ["A", "B", "D"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "a/b/d.rb",
+      callerScope: ["A", "B", "D"],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve({ callText: "C.go", receiver: "C", member: "go", startLine: 3 }, ctx);
+    expect(target?.targetSymbolId).toBe("A::B::C.go");
+    expect(target?.targetRelPath).toBe("a/b/c.rb");
+  });
+
+  it("returns null when the same bare constant exists under multiple enclosing-scope prefixes (ambiguous)", () => {
+    // Both `Agents::StubhubAgent::Helper` and `Agents::Helper` exist —
+    // the walk produces two candidates from different prefix levels.
+    // Without a deterministic tie-breaker the resolver MUST return null
+    // rather than guess (mirrors pickSingleCandidate strict semantics).
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("inner.rb", [
+      {
+        symbolId: "Agents::StubhubAgent::Helper",
+        fqName: "Agents::StubhubAgent::Helper",
+        shortName: "Helper",
+        relPath: "inner.rb",
+        scope: ["Agents", "StubhubAgent"],
+      },
+      {
+        symbolId: "Agents::StubhubAgent::Helper.run",
+        fqName: "Agents::StubhubAgent::Helper.run",
+        shortName: "run",
+        relPath: "inner.rb",
+        scope: ["Agents", "StubhubAgent", "Helper"],
+      },
+    ]);
+    table.upsertFile("outer.rb", [
+      {
+        symbolId: "Agents::Helper",
+        fqName: "Agents::Helper",
+        shortName: "Helper",
+        relPath: "outer.rb",
+        scope: ["Agents"],
+      },
+      {
+        symbolId: "Agents::Helper.run",
+        fqName: "Agents::Helper.run",
+        shortName: "run",
+        relPath: "outer.rb",
+        scope: ["Agents", "Helper"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "caller.rb",
+      callerScope: ["Agents", "StubhubAgent"],
+      imports: [],
+      symbolTable: table,
+    };
+    // Ruby's actual lookup would pick the innermost — but the resolver
+    // walks each prefix as an INDEPENDENT lookup and would find one
+    // candidate at the innermost prefix and one at the outer prefix.
+    // The innermost SHOULD win deterministically (Ruby semantics).
+    const target = resolver.resolve({ callText: "Helper.run", receiver: "Helper", member: "run", startLine: 3 }, ctx);
+    // Innermost wins (Module.nesting semantics).
+    expect(target?.targetSymbolId).toBe("Agents::StubhubAgent::Helper.run");
+    expect(target?.targetRelPath).toBe("inner.rb");
+  });
+
+  it("regression: top-level constant lookup still works when no enclosing-scope match exists", () => {
+    // `User.find` from a controller at callerScope=[] (top-level file).
+    // The enclosing-scope walk should produce zero candidates (empty
+    // scope) and fall through to the existing direct-fqName +
+    // Zeitwerk-convention passes.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/user.rb", [
+      { symbolId: "User", fqName: "User", shortName: "User", relPath: "app/models/user.rb", scope: [] },
+      {
+        symbolId: "User.find",
+        fqName: "User.find",
+        shortName: "find",
+        relPath: "app/models/user.rb",
+        scope: ["User"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/controllers/users_controller.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve({ callText: "User.find(1)", receiver: "User", member: "find", startLine: 4 }, ctx);
+    expect(target?.targetSymbolId).toBe("User.find");
+    expect(target?.targetRelPath).toBe("app/models/user.rb");
+  });
+});
+
+// bd tea-rags-mcp-brp1 — `super` walks the parent class chain via classAncestors
+// rather than dispatching on a textual receiver. Walker emits CallRef with
+// receiver = SUPER_RECEIVER_SENTINEL ("<super>") and member = enclosing method
+// name. Resolver detects the sentinel and reuses the same ancestor-walk logic
+// the Zeitwerk `Class.method` branch uses, scoped to instance-method shapes.
+describe("RubyCallResolver — super keyword resolution (bd brp1)", () => {
+  it("resolves bare `super` to the parent class's same-named instance method", () => {
+    // class A < B; def foo; super; end; end + B has def foo → resolves to B#foo.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("a.rb", [{ symbolId: "A", fqName: "A", shortName: "A", relPath: "a.rb", scope: [] }]);
+    table.upsertFile("b.rb", [
+      { symbolId: "B", fqName: "B", shortName: "B", relPath: "b.rb", scope: [] },
+      { symbolId: "B#foo", fqName: "B#foo", shortName: "foo", relPath: "b.rb", scope: ["B"] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "a.rb",
+      callerScope: ["A"],
+      imports: [],
+      symbolTable: table,
+      classAncestors: { A: ["B"] },
+    };
+    const target = resolver.resolve({ callText: "super", receiver: "<super>", member: "foo", startLine: 3 }, ctx);
+    expect(target?.targetSymbolId).toBe("B#foo");
+    expect(target?.targetRelPath).toBe("b.rb");
+  });
+
+  it("walks multi-level inheritance — A < B < C resolves `super` from A through to C#foo", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("a.rb", [{ symbolId: "A", fqName: "A", shortName: "A", relPath: "a.rb", scope: [] }]);
+    table.upsertFile("b.rb", [{ symbolId: "B", fqName: "B", shortName: "B", relPath: "b.rb", scope: [] }]);
+    table.upsertFile("c.rb", [
+      { symbolId: "C", fqName: "C", shortName: "C", relPath: "c.rb", scope: [] },
+      { symbolId: "C#foo", fqName: "C#foo", shortName: "foo", relPath: "c.rb", scope: ["C"] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "a.rb",
+      callerScope: ["A"],
+      imports: [],
+      symbolTable: table,
+      // B defines no foo — chain walks past it to C.
+      classAncestors: { A: ["B"], B: ["C"] },
+    };
+    const target = resolver.resolve({ callText: "super", receiver: "<super>", member: "foo", startLine: 3 }, ctx);
+    expect(target?.targetSymbolId).toBe("C#foo");
+    expect(target?.targetRelPath).toBe("c.rb");
+  });
+
+  it("returns null targetSymbolId when parent class is outside the project (ApplicationRecord case)", () => {
+    // class User < ApplicationRecord; def save; super; end; end — ApplicationRecord
+    // is indexed but its parent ActiveRecord::Base lives outside the project.
+    // Resolver returns file-only edge when ancestor's file known but method missing;
+    // returns null entirely when neither ancestor file nor method is found.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("user.rb", [
+      { symbolId: "User", fqName: "User", shortName: "User", relPath: "user.rb", scope: [] },
+    ]);
+    // ApplicationRecord NOT in symbol table — represents an out-of-project parent.
+    const ctx: CallContext = {
+      callerFile: "user.rb",
+      callerScope: ["User"],
+      imports: [],
+      symbolTable: table,
+      classAncestors: { User: ["ApplicationRecord"] },
+    };
+    const target = resolver.resolve({ callText: "super", receiver: "<super>", member: "save", startLine: 5 }, ctx);
+    // Parent class file unknown, method unknown — drop the edge cleanly.
+    expect(target).toBeNull();
+  });
+
+  it("returns null when no classAncestors entry exists for the caller's class", () => {
+    // Defensive: bare `class A` with no superclass declared — super can't resolve.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("a.rb", [{ symbolId: "A", fqName: "A", shortName: "A", relPath: "a.rb", scope: [] }]);
+    const ctx: CallContext = {
+      callerFile: "a.rb",
+      callerScope: ["A"],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve({ callText: "super", receiver: "<super>", member: "foo", startLine: 3 }, ctx);
+    expect(target).toBeNull();
+  });
+
+  it("resolves super for qualified enclosing class (`Acme::User`)", () => {
+    // huginn-shape: class Agents::JavaScriptAgent::ConditionalFollowRedirects < Faraday::Middleware.
+    // callerScope is the lexical scope chain, joined by `::` to obtain the FQ class key.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("middleware.rb", [
+      {
+        symbolId: "Faraday::Middleware",
+        fqName: "Faraday::Middleware",
+        shortName: "Middleware",
+        relPath: "middleware.rb",
+        scope: ["Faraday"],
+      },
+      {
+        symbolId: "Faraday::Middleware#call",
+        fqName: "Faraday::Middleware#call",
+        shortName: "call",
+        relPath: "middleware.rb",
+        scope: ["Faraday", "Middleware"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "javascript_agent.rb",
+      callerScope: ["Agents", "JavaScriptAgent", "ConditionalFollowRedirects"],
+      imports: [],
+      symbolTable: table,
+      classAncestors: {
+        "Agents::JavaScriptAgent::ConditionalFollowRedirects": ["Faraday::Middleware"],
+      },
+    };
+    const target = resolver.resolve({ callText: "super", receiver: "<super>", member: "call", startLine: 30 }, ctx);
+    expect(target?.targetSymbolId).toBe("Faraday::Middleware#call");
+    expect(target?.targetRelPath).toBe("middleware.rb");
+  });
+});
+
+// bd tea-rags-mcp-hbie — Bare-identifier CallRefs emitted by the walker for
+// parenless method references must reach the global short-name fallback path
+// (since they have receiver=null) and bind to a real edge when the symbol
+// table holds a same-class candidate.
+describe("RubyCallResolver — bare identifier calls (bd hbie)", () => {
+  it("resolves a bare CallRef to a same-class method via the t5iw scope filter", () => {
+    // Fixture: class A defines two methods; `foo` calls `bar` as a bare
+    // identifier (`receiver = null`). With the walker now emitting bare
+    // identifiers, the resolver's same-class scope filter should bind the
+    // bare call to A#bar.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("a.rb", [
+      { symbolId: "A", fqName: "A", shortName: "A", relPath: "a.rb", scope: [] },
+      { symbolId: "A#foo", fqName: "A#foo", shortName: "foo", relPath: "a.rb", scope: ["A"] },
+      { symbolId: "A#bar", fqName: "A#bar", shortName: "bar", relPath: "a.rb", scope: ["A"] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "a.rb",
+      callerScope: ["A"],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve({ callText: "bar", receiver: null, member: "bar", startLine: 3 }, ctx);
+    expect(target?.targetRelPath).toBe("a.rb");
+    expect(target?.targetSymbolId).toBe("A#bar");
+  });
+
+  it("resolves a bare CallRef to a same-class override across multiple definitions", () => {
+    // huginn shape: WebRequestConcern#user_agent + PhantomJsCloudAgent#user_agent
+    // both exist. Bare `user_agent` inside PhantomJsCloudAgent must bind to
+    // the same-class override via the t5iw scope filter, not to the concern.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/concerns/web_request_concern.rb", [
+      {
+        symbolId: "WebRequestConcern#user_agent",
+        fqName: "WebRequestConcern#user_agent",
+        shortName: "user_agent",
+        relPath: "app/concerns/web_request_concern.rb",
+        scope: ["WebRequestConcern"],
+      },
+    ]);
+    table.upsertFile("app/models/agents/phantom_js_cloud_agent.rb", [
+      {
+        symbolId: "Agents::PhantomJsCloudAgent#user_agent",
+        fqName: "Agents::PhantomJsCloudAgent#user_agent",
+        shortName: "user_agent",
+        relPath: "app/models/agents/phantom_js_cloud_agent.rb",
+        scope: ["Agents", "PhantomJsCloudAgent"],
+      },
+      {
+        symbolId: "Agents::PhantomJsCloudAgent#page_request_settings",
+        fqName: "Agents::PhantomJsCloudAgent#page_request_settings",
+        shortName: "page_request_settings",
+        relPath: "app/models/agents/phantom_js_cloud_agent.rb",
+        scope: ["Agents", "PhantomJsCloudAgent"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/models/agents/phantom_js_cloud_agent.rb",
+      callerScope: ["Agents", "PhantomJsCloudAgent"],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve(
+      { callText: "user_agent", receiver: null, member: "user_agent", startLine: 12 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("Agents::PhantomJsCloudAgent#user_agent");
+  });
+});
+
+// Bug tea-rags-mcp-8ss5 — end-to-end resolver check for send-dispatch.
+// The walker normalises `self.send(:foo)` and bare `send(:foo)` to a bare
+// CallRef (receiver=null, member="foo"). The resolver's existing same-class
+// bare-call fallback then picks the enclosing class via callerScope. This
+// test asserts the union of the two pieces lands the edge on the right
+// instance method.
+describe("RubyCallResolver — send-dispatch end-to-end with literal symbol", () => {
+  it("resolves `self.send(:foo)` (walker-unwrapped to bare member) to enclosing class member", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    // Two same-shortName entries to make pickSingleCandidate fail without
+    // the callerScope filter — only callerScope discriminates here.
+    table.upsertFile("app/services/foo.rb", [
+      {
+        symbolId: "Foo#helper",
+        fqName: "Foo#helper",
+        shortName: "helper",
+        relPath: "app/services/foo.rb",
+        scope: ["Foo"],
+      },
+    ]);
+    table.upsertFile("app/services/bar.rb", [
+      {
+        symbolId: "Bar#helper",
+        fqName: "Bar#helper",
+        shortName: "helper",
+        relPath: "app/services/bar.rb",
+        scope: ["Bar"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/services/foo.rb",
+      callerScope: ["Foo"],
+      imports: [],
+      symbolTable: table,
+    };
+    // The walker would have emitted this CallRef from `self.send(:helper)`.
+    const target = resolver.resolve(
+      { callText: "self.send(:helper)", receiver: null, member: "helper", startLine: 2 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("Foo#helper");
+  });
+});
+
+// bd tea-rags-mcp-meh1 — Symbol#to_proc synthetic call edges. The walker emits
+// the to-proc symbol as a bare CallRef (receiver=null, member=symbol-text).
+// Resolution piggybacks on the existing same-class scope filter (t5iw): when
+// the synthetic call sits inside a class whose `scope[last]` matches one of
+// the global short-name candidates, that candidate wins.
+describe("RubyCallResolver — Symbol#to_proc bare-call resolution (bd meh1)", () => {
+  it("resolves &:active? synthetic call to the same class's #active? method", () => {
+    // class User; def active?; end; def filter_active; users.filter(&:active?); end; end
+    // Walker emits a synthetic `active?` CallRef with receiver=null inside
+    // `User#filter_active`'s chunk. The resolver's same-class scope filter
+    // picks `User#active?` over any other class-level `active?` definition.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/user.rb", [
+      { symbolId: "User", fqName: "User", shortName: "User", relPath: "app/models/user.rb", scope: [] },
+      {
+        symbolId: "User#active?",
+        fqName: "User#active?",
+        shortName: "active?",
+        relPath: "app/models/user.rb",
+        scope: ["User"],
+      },
+      {
+        symbolId: "User#filter_active",
+        fqName: "User#filter_active",
+        shortName: "filter_active",
+        relPath: "app/models/user.rb",
+        scope: ["User"],
+      },
+    ]);
+    // Another class with a same-short-name method would otherwise be
+    // selected by global lookup; the same-class filter must prefer User.
+    table.upsertFile("app/models/post.rb", [
+      {
+        symbolId: "Post#active?",
+        fqName: "Post#active?",
+        shortName: "active?",
+        relPath: "app/models/post.rb",
+        scope: ["Post"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/models/user.rb",
+      callerScope: ["User"],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve({ callText: "&:active?", receiver: null, member: "active?", startLine: 3 }, ctx);
+    expect(target?.targetSymbolId).toBe("User#active?");
+    expect(target?.targetRelPath).toBe("app/models/user.rb");
   });
 });

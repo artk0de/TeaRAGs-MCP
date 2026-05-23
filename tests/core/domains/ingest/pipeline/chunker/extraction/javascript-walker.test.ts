@@ -246,3 +246,312 @@ describe("extractFromJavascriptFile — require vs dynamic import distinguishing
     expect(r.imports.map((i) => i.importText)).toEqual(["./foo"]);
   });
 });
+
+// BUG tea-rags-mcp-otjs — mirror of Ruby tea-rags-mcp-8fnu fix. The walker
+// must attribute each call to ONE chunk only — the smallest containing
+// line range, ties broken by deeper scope. Without this, a call inside a
+// class method lands on both the class chunk AND the method chunk, doubling
+// caller-edge counts. Same root cause and same fix shape as the TS walker.
+describe("extractFromJavascriptFile — innermost-chunk call attribution (bd tea-rags-mcp-otjs)", () => {
+  it("assigns each call to only the innermost containing chunk (class + method)", () => {
+    const src = ["class Resolver {", "  resolve() {", "    pickOne(a, b);", "  }", "}", ""].join("\n");
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/resolver.js",
+      language: "javascript",
+      chunks: [
+        { symbolId: "Resolver", startLine: 1, endLine: 5, scope: [] },
+        { symbolId: "Resolver#resolve", startLine: 2, endLine: 4, scope: ["Resolver"] },
+      ],
+    });
+    const method = r.chunks.find((c) => c.symbolId === "Resolver#resolve");
+    const cls = r.chunks.find((c) => c.symbolId === "Resolver");
+    expect(method?.calls.map((c) => c.member)).toContain("pickOne");
+    expect(cls?.calls.filter((c) => c.member === "pickOne")).toEqual([]);
+  });
+
+  it("routes constructor and method calls to their own enclosing chunks", () => {
+    const src = [
+      "class Service {",
+      "  constructor() {",
+      "    initLogger();",
+      "  }",
+      "  run() {",
+      "    doWork();",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/service.js",
+      language: "javascript",
+      chunks: [
+        { symbolId: "Service", startLine: 1, endLine: 8, scope: [] },
+        { symbolId: "Service#constructor", startLine: 2, endLine: 4, scope: ["Service"] },
+        { symbolId: "Service#run", startLine: 5, endLine: 7, scope: ["Service"] },
+      ],
+    });
+    const ctor = r.chunks.find((c) => c.symbolId === "Service#constructor");
+    const run = r.chunks.find((c) => c.symbolId === "Service#run");
+    const cls = r.chunks.find((c) => c.symbolId === "Service");
+    expect(ctor?.calls.map((c) => c.member)).toEqual(["initLogger"]);
+    expect(run?.calls.map((c) => c.member)).toEqual(["doWork"]);
+    expect(cls?.calls.filter((c) => c.member === "initLogger" || c.member === "doWork")).toEqual([]);
+  });
+
+  it("keeps top-level function calls in the function chunk (no class scope)", () => {
+    const src = ["function postProcess() {", "  doX();", "}", ""].join("\n");
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/p.js",
+      language: "javascript",
+      chunks: [{ symbolId: "postProcess", startLine: 1, endLine: 3, scope: [] }],
+    });
+    expect(r.chunks[0].calls.map((c) => c.member)).toEqual(["doX"]);
+  });
+
+  it("does not cross-contaminate calls between sibling methods", () => {
+    const src = [
+      "class RankModule {",
+      "  rankChunks() {",
+      "    rerank();",
+      "  }",
+      "  rankFiles() {",
+      "    sortFiles();",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/rank.js",
+      language: "javascript",
+      chunks: [
+        { symbolId: "RankModule", startLine: 1, endLine: 8, scope: [] },
+        { symbolId: "RankModule#rankChunks", startLine: 2, endLine: 4, scope: ["RankModule"] },
+        { symbolId: "RankModule#rankFiles", startLine: 5, endLine: 7, scope: ["RankModule"] },
+      ],
+    });
+    const rc = r.chunks.find((c) => c.symbolId === "RankModule#rankChunks");
+    const rf = r.chunks.find((c) => c.symbolId === "RankModule#rankFiles");
+    const cls = r.chunks.find((c) => c.symbolId === "RankModule");
+    expect(rc?.calls.map((c) => c.member)).toEqual(["rerank"]);
+    expect(rf?.calls.map((c) => c.member)).toEqual(["sortFiles"]);
+    expect(cls?.calls.filter((c) => c.member === "rerank" || c.member === "sortFiles")).toEqual([]);
+  });
+
+  it("breaks innermost-chunk ties by deeper scope (longer scope wins)", () => {
+    const src = ["class A {", "  m() {", "    x();", "  }", "}", ""].join("\n");
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/a.js",
+      language: "javascript",
+      chunks: [
+        { symbolId: "A", startLine: 1, endLine: 4, scope: [] },
+        { symbolId: "A#m", startLine: 2, endLine: 5, scope: ["A"] },
+      ],
+    });
+    const inner = r.chunks.find((c) => c.symbolId === "A#m");
+    const outer = r.chunks.find((c) => c.symbolId === "A");
+    expect(inner?.calls.map((c) => c.member)).toContain("x");
+    expect(outer?.calls.filter((c) => c.member === "x")).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-i252 — JS mirror of the TS walker fix. `new
+  // ClassName(args)` must surface as a CallRef so the resolver routes
+  // it to ClassName#constructor.
+  describe("new ClassName(args) constructor calls (bd tea-rags-mcp-i252)", () => {
+    it("emits 'new RankModule(a)' with receiver='RankModule' member='constructor'", () => {
+      const src = ["function build() {", "  return new RankModule(a);", "}", ""].join("\n");
+      const r = extractFromJavascriptFile({
+        tree: parse(src),
+        code: src,
+        relPath: "src/build.js",
+        language: "javascript",
+        chunks: [{ symbolId: "build", startLine: 1, endLine: 3, scope: [] }],
+      });
+      const calls = r.chunks[0]?.calls ?? [];
+      const newCall = calls.find((c) => c.callText.startsWith("new RankModule"));
+      expect(newCall).toBeDefined();
+      expect(newCall?.receiver).toBe("RankModule");
+      expect(newCall?.member).toBe("constructor");
+    });
+
+    it("preserves qualified class names: 'new ns.Foo()' → receiver='ns.Foo'", () => {
+      const src = ["function build() {", "  return new ns.Foo();", "}", ""].join("\n");
+      const r = extractFromJavascriptFile({
+        tree: parse(src),
+        code: src,
+        relPath: "src/build.js",
+        language: "javascript",
+        chunks: [{ symbolId: "build", startLine: 1, endLine: 3, scope: [] }],
+      });
+      const calls = r.chunks[0]?.calls ?? [];
+      const newCall = calls.find((c) => c.callText.startsWith("new ns.Foo"));
+      expect(newCall).toBeDefined();
+      expect(newCall?.receiver).toBe("ns.Foo");
+      expect(newCall?.member).toBe("constructor");
+    });
+  });
+});
+
+// bd tea-rags-mcp-3a84 — mirror of the TS walker fix. Bare `super(arg)` inside
+// a constructor was emitted as a free call `{ receiver: null, member: "super" }`
+// because the call's `function` field is the `super` keyword node (no member
+// expression). The resolver then looked up `super` by short-name, found
+// nothing, and dropped the edge. Emit as `{ receiver: "super",
+// member: "constructor" }` so the JS resolver's super-branch can route
+// to the PARENT class's constructor via classExtends.
+describe("extractFromJavascriptFile — super() constructor calls (bd tea-rags-mcp-3a84)", () => {
+  it("emits super() as receiver='super' member='constructor', not as a free call", () => {
+    const src = `class Child extends Base {\n  constructor() { super(arg); }\n}\n`;
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/child.js",
+      language: "javascript",
+      chunks: [{ symbolId: "Child#constructor", startLine: 2, endLine: 2, scope: ["Child"] }],
+    });
+    const calls = r.chunks[0]?.calls ?? [];
+    const superCall = calls.find((c) => c.callText.startsWith("super("));
+    expect(superCall).toBeDefined();
+    expect(superCall?.receiver).toBe("super");
+    expect(superCall?.member).toBe("constructor");
+  });
+
+  it("does not regress super.method() — still receiver='super' member=<methodName>", () => {
+    const src = `class Child extends Base {\n  foo() { super.foo(); }\n}\n`;
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/child.js",
+      language: "javascript",
+      chunks: [{ symbolId: "Child#foo", startLine: 2, endLine: 2, scope: ["Child"] }],
+    });
+    const calls = r.chunks[0]?.calls ?? [];
+    const superCall = calls.find((c) => c.member === "foo" && c.receiver === "super");
+    expect(superCall).toBeDefined();
+  });
+});
+
+// bd tea-rags-mcp-d29r — Walker must extract `class Child extends Parent`
+// relationships so the resolver can route `super()` calls to the PARENT
+// class instead of self-looping back to the enclosing class's own
+// constructor. JS has identical single-inheritance shape to TS.
+describe("extractFromJavascriptFile — classExtends (bd tea-rags-mcp-d29r)", () => {
+  it("records direct extends: class B extends A", () => {
+    const src = `class A {}\nclass B extends A {}\n`;
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/a.js",
+      language: "javascript",
+      chunks: [],
+    });
+    expect(r.classExtends).toBeDefined();
+    expect(r.classExtends?.["B"]).toBe("A");
+    // Class A has no extends — must not appear in the map.
+    expect(r.classExtends?.["A"]).toBeUndefined();
+  });
+
+  it("records qualified extends: class C extends A.B.C", () => {
+    const src = `class C extends A.B.C {}\n`;
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/c.js",
+      language: "javascript",
+      chunks: [],
+    });
+    expect(r.classExtends?.["C"]).toBe("A.B.C");
+  });
+
+  it("leaves classExtends undefined or empty when no class extends anything", () => {
+    const src = `class A {}\nfunction helper() {}\n`;
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/a.js",
+      language: "javascript",
+      chunks: [],
+    });
+    const map = r.classExtends ?? {};
+    expect(Object.keys(map).length).toBe(0);
+  });
+
+  it("survives NDJSON spill — classExtends round-trips through JSON.stringify", () => {
+    // The codegraph provider spills FileExtraction to NDJSON between
+    // walker pass and resolver pass. Plain Record round-trips; Map
+    // would serialise to `{}` and lose every entry.
+    const src = `class B extends A {}\n`;
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/b.js",
+      language: "javascript",
+      chunks: [],
+    });
+    const restored = JSON.parse(JSON.stringify(r)) as typeof r;
+    expect(restored.classExtends?.["B"]).toBe("A");
+  });
+
+  it("class with qualified extends `class B extends ns.A` keeps full chain", () => {
+    const src = `class B extends ns.A {}\n`;
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/b.js",
+      language: "javascript",
+      chunks: [],
+    });
+    expect(r.classExtends?.["B"]).toBe("ns.A");
+  });
+
+  it("anonymous class expression does NOT appear in classExtends", () => {
+    // `const Foo = class extends Base {...}` — no class_declaration with name,
+    // so collectJsClassExtends skips it.
+    const src = `const Foo = class extends Base { bar() {} };\n`;
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/anon.js",
+      language: "javascript",
+      chunks: [],
+    });
+    const map = r.classExtends ?? {};
+    expect(map["Foo"]).toBeUndefined();
+  });
+
+  it("class without `extends` produces no entry in classExtends", () => {
+    const src = `class Standalone { foo() { return 1; } }\n`;
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/s.js",
+      language: "javascript",
+      chunks: [],
+    });
+    const map = r.classExtends ?? {};
+    expect(Object.keys(map)).toEqual([]);
+  });
+
+  it("super() in JS constructor → receiver='super' member='constructor' (bd tea-rags-mcp-3a84)", () => {
+    const src = "class B extends A {\n  constructor() {\n    super();\n  }\n}\n";
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/sup.js",
+      language: "javascript",
+      chunks: [{ symbolId: "B#constructor", scope: ["B"], startLine: 2, endLine: 4 }],
+    });
+    const superCall = r.chunks[0]?.calls?.find((c) => c.receiver === "super");
+    expect(superCall).toBeDefined();
+    expect(superCall?.member).toBe("constructor");
+  });
+});

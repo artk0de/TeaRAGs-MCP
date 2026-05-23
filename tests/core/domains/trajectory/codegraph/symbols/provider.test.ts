@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../../../../../../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
+import { JavascriptCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/javascript/javascript-resolver.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { runMigrations } from "../../../../../../src/core/infra/migration/database/runner.js";
@@ -28,7 +29,14 @@ describe("CodegraphEnrichmentProvider", () => {
     provider = new CodegraphEnrichmentProvider({
       graphDb: client,
       symbolTable: new InMemoryGlobalSymbolTable(),
-      resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+      // bd tea-rags-mcp-mk45 — JS resolver registered so JS-file edge
+      // tests (synthetic constructor, new_expression dispatch, getter
+      // helpers) can verify cg_symbols_edges_method rows, not just
+      // symbol-table lookups.
+      resolvers: new Map([
+        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
+        ["javascript", new JavascriptCallResolver()],
+      ]),
     });
   });
   afterEach(async () => {
@@ -1204,6 +1212,64 @@ describe("CodegraphEnrichmentProvider", () => {
     }
   });
 
+  // bd tea-rags-mcp-y2z5 — `alias_method :new_name, :old_name` declares
+  // the new name as a synthetic instance method on the enclosing class.
+  // Exercises `rubyAliasMethodEmission` in provider.ts.
+  it("emits synthetic instance method for `alias_method :new_name, :old_name` (bd y2z5)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-am-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "foo.rb"),
+        ["class Foo", "  def old_name; end", "  alias_method :new_name, :old_name", "end", ""].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      expect(lookup.lookupByShortName("new_name").some((s) => s.symbolId === "Foo#new_name")).toBe(true);
+      // The target `old_name` is the regular def — still present.
+      expect(lookup.lookupByShortName("old_name").some((s) => s.symbolId === "Foo#old_name")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // The `alias` keyword form is a different AST node type than `call` —
+  // exercises `rubyAliasKeywordEmission` in provider.ts.
+  it("emits synthetic instance method for `alias new_name old_name` keyword form (bd y2z5)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-aliaskw-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "bar.rb"),
+        ["class Bar", "  def old_name; end", "  alias new_name old_name", "end", ""].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      expect(lookup.lookupByShortName("new_name").some((s) => s.symbolId === "Bar#new_name")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // Negative: receiver-qualified `obj.alias_method :a, :b` is NOT a
+  // class-body DSL — should NOT emit a synthetic symbol.
+  it("does NOT emit synthetic from receiver-qualified `obj.alias_method :a, :b`", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-am-recv-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "baz.rb"),
+        ["class Baz", "  def setup", "    obj.alias_method :a, :b", "  end", "end", ""].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // No Baz#a from the receiver-qualified call.
+      expect(lookup.lookupByShortName("a").some((s) => s.symbolId === "Baz#a")).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("does NOT index `define_method(var)` with a dynamic argument", async () => {
     const root = mkdtempSync(join(tmpdir(), "cg-rb-dm-dyn-"));
     try {
@@ -1422,6 +1488,133 @@ describe("CodegraphEnrichmentProvider", () => {
     }
   });
 
+  // bd tea-rags-mcp-08v2 — `extend self` in a module promotes every instance
+  // method to ALSO be callable as a module-level method. Provider must emit
+  // BOTH `M#foo` (instance) and `M.foo` (static) for each regular `def` in
+  // the module body. The chunker emits the single instance form (it walks
+  // each AST node once); the codegraph aliasing makes `M.foo(...)` call
+  // sites resolve to the same source.
+  it("emits both instance AND static form for methods in `module M; extend self` (bd 08v2)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-extend-self-"));
+    try {
+      mkdirSync(join(root, "lib"), { recursive: true });
+      writeFileSync(
+        join(root, "lib", "logger.rb"),
+        [
+          "module Logger",
+          "  extend self",
+          "  def info(msg)",
+          "    puts msg",
+          "  end",
+          "  def warn(msg)",
+          "    puts msg",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // Each method emits TWO symbols: instance + static.
+      const info = lookup.lookupByShortName("info");
+      const infoIds = info.map((s) => s.symbolId).sort();
+      expect(infoIds).toEqual(["Logger#info", "Logger.info"]);
+      const warn = lookup.lookupByShortName("warn");
+      const warnIds = warn.map((s) => s.symbolId).sort();
+      expect(warnIds).toEqual(["Logger#warn", "Logger.warn"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // Plain modules WITHOUT `extend self` must keep instance-only emission
+  // (no static-form alias). Guard against the dual-emission firing on
+  // every module.
+  it("does NOT dual-emit for plain `module M` without `extend self`", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-plain-mod-"));
+    try {
+      mkdirSync(join(root, "lib"), { recursive: true });
+      writeFileSync(
+        join(root, "lib", "helpers.rb"),
+        ["module Helpers", "  def humanize(s)", "    s", "  end", "end", ""].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      const ids = lookup
+        .lookupByShortName("humanize")
+        .map((s) => s.symbolId)
+        .sort();
+      // Only the instance form — no `Helpers.humanize` alias.
+      expect(ids).toEqual(["Helpers#humanize"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // `extend self` inside a CLASS body (rare, semantically different from
+  // module form) must NOT trigger the dual-emit. The class form opens the
+  // singleton class of the instance — `classifyMethod`'s singleton_class
+  // detection handles those `def`s separately. Module-only is the
+  // conventional case the dual-emit targets.
+  it("does NOT dual-emit when `extend self` appears inside a class (not a module)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-extend-self-class-"));
+    try {
+      mkdirSync(join(root, "lib"), { recursive: true });
+      writeFileSync(
+        join(root, "lib", "weird.rb"),
+        ["class Weird", "  extend self", "  def foo", "    1", "  end", "end", ""].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      const ids = lookup
+        .lookupByShortName("foo")
+        .map((s) => s.symbolId)
+        .sort();
+      // Class container — instance-only emission.
+      expect(ids).toEqual(["Weird#foo"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // `refine ClassName do ... def foo ... end end` — the refine block redefines
+  // instance methods of ClassName but only within the refinement's lexical
+  // scope (activated via `using Refinements`). Full refinement-aware
+  // resolution is out of scope for this slice; at minimum the provider must
+  // not crash AND must emit each `def` inside the refine block as a symbol
+  // (it lands at the surrounding module's scope per the current walker logic).
+  it("does not crash on `refine A do; def foo; end; end` and emits the method symbol", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-refine-"));
+    try {
+      mkdirSync(join(root, "lib"), { recursive: true });
+      writeFileSync(
+        join(root, "lib", "refinements.rb"),
+        [
+          "module StringRefinements",
+          "  refine String do",
+          "    def shout",
+          "      upcase + '!'",
+          "    end",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+      );
+      // The call must succeed — exercise the `do_block` interior walk path
+      // without throwing.
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // The `def shout` symbol exists — exact symbolId form is an
+      // implementation detail tracked in a follow-up bead (refine-aware
+      // resolution). At minimum the short-name is reachable so callers
+      // looking it up don't see zero rows.
+      const shout = lookup.lookupByShortName("shout");
+      expect(shout.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   // Slice 1 — LANGUAGES dispatch for polyglot walkers. Each of the five
   // new languages (.js, .go, .java, .rs, .sh) ships with its own walker
   // + nameOf in the dispatch table. These tests drive buildFileSignals
@@ -1568,6 +1761,40 @@ describe("CodegraphEnrichmentProvider", () => {
     }
   });
 
+  // bd tea-rags-mcp-iiq6 — `goNameOf` must emit ANY type_spec as a
+  // top-level symbol regardless of the type expression kind (func, map,
+  // slice, channel, pointer, array). Previously documented as struct-only
+  // in the inline comment but covered only by the struct + interface tests
+  // above. This test pins down the broader contract so future refactors
+  // can't silently drop alias forms.
+  it("goNameOf emits non-struct/interface type aliases (func, map, slice, channel) as top-level symbols", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-go-typespec-"));
+    try {
+      mkdirSync(join(root, "pkg"), { recursive: true });
+      writeFileSync(
+        join(root, "pkg", "aliases.go"),
+        [
+          "package pkg",
+          "",
+          "type HandlerFunc func(c *Context, payload interface{}) error",
+          "type H map[string]any",
+          "type Numbers []int",
+          "type Ch chan int",
+          "",
+        ].join("\n"),
+      );
+      const overlays = await provider.buildFileSignals(root);
+      expect([...overlays.keys()]).toEqual(["pkg/aliases.go"]);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      expect(lookup.lookupByShortName("HandlerFunc").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("H").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("Numbers").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("Ch").length).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("buildFileSignals dispatches .java files through extractFromJavaFile + javaNameOf", async () => {
     const root = mkdtempSync(join(tmpdir(), "cg-java-disp-"));
     try {
@@ -1652,6 +1879,110 @@ describe("CodegraphEnrichmentProvider", () => {
       const goEntries = lookup.lookupByShortName("go");
       expect(goEntries.length).toBeGreaterThan(0);
       expect(goEntries[0].symbolId).toBe("Handler#go");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // bd tea-rags-mcp-2hbd — `impl Trait for Type` must attribute methods
+  // to the TYPE (the receiver implementing the trait), NOT to the trait.
+  // Previously `impl Default for Searcher { fn default() }` registered
+  // `Default#default` and find_symbol("Default") returned 10+ unrelated
+  // chunks.
+  it("attributes `impl Trait for Type` methods to the implementing Type, not the trait", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rs-trait-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(
+        join(root, "src", "searcher.rs"),
+        [
+          "struct Searcher { count: usize }",
+          "",
+          "impl Default for Searcher {",
+          "    fn default() -> Searcher {",
+          "        return Searcher { count: 0 };",
+          "    }",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // The implementing type (Searcher) must be in the table; the
+      // trait name (Default) must NOT be registered as a class symbol.
+      expect(lookup.lookupByShortName("Searcher").length).toBeGreaterThan(0);
+      const defaultMethod = lookup.lookupByShortName("default");
+      expect(defaultMethod.length).toBeGreaterThan(0);
+      // `default` has no `self` param → associated function → `.`
+      expect(defaultMethod[0].symbolId).toBe("Searcher.default");
+      // The trait name should NOT appear as a class-level symbol — only
+      // the implementing type owns the method scope.
+      const defaultAsType = lookup.lookupByShortName("Default");
+      expect(defaultAsType).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // bd tea-rags-mcp-h82m — generics + lifetimes must be stripped from
+  // the impl type name in symbolId. `impl<'s> Worker<'s>` → `Worker#send`,
+  // not `Worker<'s>#send`.
+  it("strips generic parameters and lifetimes from Rust impl type name in symbolId", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rs-gen-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(
+        join(root, "src", "worker.rs"),
+        [
+          "struct Worker<'s> { msg: &'s str }",
+          "",
+          "impl<'s> Worker<'s> {",
+          "    pub fn send(&self, msg: &'s str) -> bool {",
+          "        return msg.len() > 0;",
+          "    }",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      const send = lookup.lookupByShortName("send");
+      expect(send.length).toBeGreaterThan(0);
+      expect(send[0].symbolId).toBe("Worker#send");
+      // The generic-laden form must NOT be in the table.
+      expect(lookup.lookupByShortName("Worker<'s>")).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // bd tea-rags-mcp-jyzb — Rust macro_rules! definitions must emit a
+  // symbol so find_symbol("my_macro") resolves. Macros are common in
+  // Rust crates and currently invisible to the codegraph.
+  it("emits a symbol for Rust `macro_rules!` definitions", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rs-macro-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(
+        join(root, "src", "macros.rs"),
+        [
+          "macro_rules! my_macro {",
+          "    () => {",
+          '        println!("hi");',
+          "    };",
+          "}",
+          "",
+          "fn caller() {",
+          "    my_macro!();",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      const macro = lookup.lookupByShortName("my_macro");
+      expect(macro.length).toBeGreaterThan(0);
+      expect(macro[0].symbolId).toBe("my_macro");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1789,5 +2120,911 @@ describe("CodegraphEnrichmentProvider", () => {
     // resolveExtraction path with runAncestors populated didn't break
     // resolver dispatch.
     expect(await client.getFanIn("src/foo.ts")).toBe(1);
+  });
+
+  // bd tea-rags-mcp-vw1u — Classes without an explicit `constructor() {}`
+  // body must still expose a synthetic `Class#constructor` symbol in
+  // cg_symbols / the global symbol table so `super()` resolution from a
+  // subclass finds a target on the parent. Without this synthetic, the
+  // resolver's `resolveSuper` walks `classExtends` to the parent, looks
+  // up `Parent#constructor`, finds nothing, falls through to file-only
+  // resolution, and `get_callers(Parent#constructor)` returns [].
+  describe("synthetic Class#constructor (bd tea-rags-mcp-vw1u)", () => {
+    it("emits a synthetic Class#constructor symbol for a class with NO explicit constructor", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-vw1u-implicit-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(join(root, "src", "base.ts"), `export class Base {\n  hello() { return 1; }\n}\n`);
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        const ctorHits = lookup.lookup("Base#constructor");
+        expect(ctorHits.length).toBe(1);
+        expect(ctorHits[0].relPath).toBe("src/base.ts");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("does NOT duplicate when an explicit constructor IS declared", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-vw1u-explicit-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(join(root, "src", "svc.ts"), `export class Svc {\n  constructor() {}\n  go() { return 1; }\n}\n`);
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        // Exactly one entry — explicit constructor only, no synthetic duplicate.
+        expect(lookup.lookup("Svc#constructor").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("end-to-end: super() in child resolves to parent's synthetic constructor", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-vw1u-super-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        // Base has NO explicit constructor — synthetic is the only target.
+        writeFileSync(join(root, "src", "base.ts"), `export class Base {\n  hello() { return 1; }\n}\n`);
+        // Child has explicit constructor that calls super().
+        writeFileSync(
+          join(root, "src", "child.ts"),
+          `import { Base } from "./base.js";\nexport class Child extends Base {\n  constructor() { super(); }\n}\n`,
+        );
+        await provider.buildFileSignals(root);
+        // Verify there is a method edge from Child#constructor → Base#constructor.
+        expect(await client.getCalledByCount("Base#constructor")).toBeGreaterThan(0);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("multi-level inheritance: super() walks the chain to the topmost synthetic", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-vw1u-chain-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        // Top of chain has no explicit constructor.
+        writeFileSync(join(root, "src", "a.ts"), `export class A {\n  one() {}\n}\n`);
+        // Middle: no explicit constructor either.
+        writeFileSync(
+          join(root, "src", "b.ts"),
+          `import { A } from "./a.js";\nexport class B extends A {\n  two() {}\n}\n`,
+        );
+        // Leaf: calls super() — walks B → A, lands on A#constructor (synthetic).
+        writeFileSync(
+          join(root, "src", "c.ts"),
+          `import { B } from "./b.js";\nexport class C extends B {\n  constructor() { super(); }\n}\n`,
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        // Both A and B contribute a synthetic constructor.
+        expect(lookup.lookup("A#constructor").length).toBe(1);
+        expect(lookup.lookup("B#constructor").length).toBe(1);
+        // super() in C resolves to B#constructor (the first ancestor with a
+        // matching constructor — synthetic is still a match).
+        expect(await client.getCalledByCount("B#constructor")).toBeGreaterThan(0);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // bd tea-rags-mcp-q3o2 — super() in a child ctor must reach the
+  // parent's EXPLICIT constructor in cg_symbols_edges_method. The vw1u
+  // suite covers the synthetic-ctor case; this suite covers the path
+  // where Parent HAS an explicit constructor (the BaseExploreStrategy
+  // shape: abstract base, real ctor body, children call `super(...args)`).
+  describe("super() to parent's EXPLICIT constructor (bd tea-rags-mcp-q3o2)", () => {
+    it("super(arg) in child ctor produces edge to parent's explicit constructor", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-q3o2-explicit-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "base.ts"),
+          `export class Base {\n  constructor(protected readonly dep: number) {}\n  hello() { return this.dep; }\n}\n`,
+        );
+        writeFileSync(
+          join(root, "src", "child.ts"),
+          `import { Base } from "./base.js";\nexport class Child extends Base {\n  constructor(dep: number) { super(dep); }\n}\n`,
+        );
+        await provider.buildFileSignals(root);
+        expect(await client.getCalledByCount("Base#constructor")).toBeGreaterThan(0);
+        const callers = await client.getCallers("Base#constructor");
+        expect(callers.map((c) => c.sourceSymbolId)).toContain("Child#constructor");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("super(...args) spread in child ctor produces edge to parent's explicit constructor", async () => {
+      // Mirrors ScrollRankStrategy / SymbolSearchStrategy shape: the
+      // child forwards every constructor parameter to super via spread.
+      // The walker must still emit a CallRef whose receiver is "super"
+      // regardless of the argument shape.
+      const root = mkdtempSync(join(tmpdir(), "cg-q3o2-spread-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "base.ts"),
+          `export class Base {\n  constructor(protected readonly a: number, protected readonly b: string) {}\n}\n`,
+        );
+        writeFileSync(
+          join(root, "src", "child.ts"),
+          `import { Base } from "./base.js";\nexport class Child extends Base {\n  constructor(...args: ConstructorParameters<typeof Base>) { super(...args); }\n}\n`,
+        );
+        await provider.buildFileSignals(root);
+        expect(await client.getCalledByCount("Base#constructor")).toBeGreaterThan(0);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("multiple children calling super to a shared explicit-ctor parent all produce edges", async () => {
+      // Reproduces the BaseExploreStrategy shape (one base, four child
+      // classes each calling super(...) in their own constructor).
+      const root = mkdtempSync(join(tmpdir(), "cg-q3o2-many-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "base.ts"),
+          `export abstract class Base {\n  abstract readonly type: string;\n  constructor(protected readonly dep: number) {}\n}\n`,
+        );
+        writeFileSync(
+          join(root, "src", "child-a.ts"),
+          `import { Base } from "./base.js";\nexport class ChildA extends Base {\n  readonly type = "a" as const;\n  constructor(...args: ConstructorParameters<typeof Base>) { super(...args); }\n}\n`,
+        );
+        writeFileSync(
+          join(root, "src", "child-b.ts"),
+          `import { Base } from "./base.js";\nexport class ChildB extends Base {\n  readonly type = "b" as const;\n  constructor(dep: number) { super(dep); }\n}\n`,
+        );
+        await provider.buildFileSignals(root);
+        const callers = await client.getCallers("Base#constructor");
+        const sources = new Set(callers.map((c) => c.sourceSymbolId));
+        expect(sources).toContain("ChildA#constructor");
+        expect(sources).toContain("ChildB#constructor");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // bd tea-rags-mcp-i252 — `new ClassName(args)` is a constructor call,
+  // not just an expression. The walker must emit a CallRef so the
+  // resolver routes it to ClassName#constructor.
+  describe("new ClassName(args) as constructor-call edges (bd tea-rags-mcp-i252)", () => {
+    it("'new RankModule(...)' produces a method edge to RankModule#constructor", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-i252-new-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "rank-module.ts"),
+          `export class RankModule {\n  constructor(a: number) { this.a = a; }\n  a: number;\n}\n`,
+        );
+        writeFileSync(
+          join(root, "src", "strategy.ts"),
+          `import { RankModule } from "./rank-module.js";\nexport class Strategy {\n  build() { return new RankModule(1); }\n}\n`,
+        );
+        await provider.buildFileSignals(root);
+        // The new call lands on RankModule#constructor.
+        expect(await client.getCalledByCount("RankModule#constructor")).toBeGreaterThanOrEqual(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("'new' on a class WITHOUT explicit constructor resolves to the synthetic constructor", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-i252-implicit-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(join(root, "src", "tag.ts"), `export class Tag {\n  label() { return "tag"; }\n}\n`);
+        writeFileSync(
+          join(root, "src", "owner.ts"),
+          `import { Tag } from "./tag.js";\nexport class Owner {\n  make() { return new Tag(); }\n}\n`,
+        );
+        await provider.buildFileSignals(root);
+        // Synthetic Tag#constructor catches the edge.
+        expect(await client.getCalledByCount("Tag#constructor")).toBeGreaterThanOrEqual(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // bd tea-rags-mcp-mwty — CommonJS assignment_expression definitions. The
+  // JS walker used to only emit symbols for `function_declaration` /
+  // `class_declaration` / `method_definition`. Express OSS's
+  // `lib/application.js` has ~30 `app.X = function X()` definitions; the
+  // walker extracted 2 of them. The fix wires a JS-specific nameOf
+  // (jsNameOf) into LANGUAGES["{.js,.jsx,.mjs,.cjs}"] that recognises
+  // assignment_expression + lexical_declaration shapes carrying a function
+  // value, restoring the missing symbol surface.
+  //
+  // Patterns covered (per .claude/rules/symbolid-convention.md):
+  //   #1  obj.method = function () {}                  → obj.method
+  //   #2  Foo.prototype.bar = function () {}           → Foo#bar (instance)
+  //   #3  exports.foo = function () {}                 → foo (top-level export)
+  //   #4  module.exports = function name() {}          → name (or skip if anon)
+  //   #5  const Foo = function () {} / arrow / let/var → Foo
+  //   #6  res.a = res.b = function () {}               → both res.a AND res.b
+  describe("JS assignment_expression definitions (bd tea-rags-mcp-mwty)", () => {
+    it("#1 emits `obj.method` for `obj.method = function () {}`", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-mwty-1-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "app.js"),
+          [
+            "var app = {};",
+            "app.use = function () { return 1; };",
+            "app.handle = function handle() { return 2; };",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        expect(lookup.lookup("app.use").length).toBe(1);
+        expect(lookup.lookup("app.handle").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("#2 emits `Foo#bar` for `Foo.prototype.bar = function () {}` (instance separator)", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-mwty-2-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "foo.js"),
+          [
+            "function Foo() {}",
+            "Foo.prototype.bar = function () { return 1; };",
+            "Foo.prototype.baz = function baz() { return 2; };",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        expect(lookup.lookup("Foo#bar").length).toBe(1);
+        expect(lookup.lookup("Foo#baz").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("#3 emits top-level `foo` for `exports.foo = function () {}`", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-mwty-3-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "mod.js"),
+          ["exports.foo = function () { return 1; };", "exports.bar = function bar() { return 2; };", ""].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        expect(lookup.lookup("foo").length).toBe(1);
+        expect(lookup.lookup("bar").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("#4 emits top-level `name` for `module.exports = function name() {}` (named only)", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-mwty-4-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(join(root, "src", "named.js"), "module.exports = function createApp() { return {}; };\n");
+        writeFileSync(
+          join(root, "src", "anon.js"),
+          // Anonymous module.exports has no useful name to emit — walker
+          // skips it. Lookup must not fabricate a placeholder symbol.
+          "module.exports = function () { return {}; };\n",
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        expect(lookup.lookup("createApp").length).toBe(1);
+        // Anonymous module.exports must NOT register a symbol — no
+        // synthetic "module.exports" identifier should leak.
+        expect(lookup.lookup("module.exports").length).toBe(0);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("#5 emits `Foo` for `const Foo = function () {}` / arrow / let / var", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-mwty-5-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "decl.js"),
+          [
+            "const Alpha = function () { return 1; };",
+            "let Beta = function Beta() { return 2; };",
+            "var Gamma = function () { return 3; };",
+            "const Delta = () => 4;",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        expect(lookup.lookup("Alpha").length).toBe(1);
+        expect(lookup.lookup("Beta").length).toBe(1);
+        expect(lookup.lookup("Gamma").length).toBe(1);
+        expect(lookup.lookup("Delta").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("#6 emits BOTH targets of an alias chain `res.a = res.b = function () {}`", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-mwty-6-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        // Pattern straight from express's lib/response.js.
+        writeFileSync(
+          join(root, "src", "res.js"),
+          ["var res = {};", "res.contentType = res.type = function (type) { return type; };", ""].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        expect(lookup.lookup("res.contentType").length).toBe(1);
+        expect(lookup.lookup("res.type").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // bd tea-rags-mcp-d1f8 — JS getters declared via `Object.defineProperty`
+  // and the project-specific `defineGetter` helper must surface as symbols.
+  // Express `lib/request.js` declares 8 getters (`req.query`, `req.protocol`,
+  // `req.secure`, `req.ip`, `req.ips`, `req.subdomains`, `req.path`,
+  // `req.host`, `req.hostname`) via a local `defineGetter(req, name, fn)`
+  // helper. Without these, `get_callers(req.query)` returns `[]` and agents
+  // navigating express lose visibility into the request-attribute layer.
+  //
+  // Symbol convention:
+  //   Object.defineProperty(obj, "name", { get: fn })  → `<obj>.name`
+  //   defineGetter(obj, "name", fn)                    → `<obj>.name`
+  //
+  // The `obj` text is taken verbatim from the receiver expression. When
+  // `obj` is `this`, the emitted name is `this.name` (out of scope:
+  // resolving `this` to the enclosing class — documented as a known
+  // limitation in the JS walker comment).
+  describe("JS getter helpers — defineProperty / defineGetter (bd tea-rags-mcp-d1f8)", () => {
+    it("Object.defineProperty(obj, 'name', { get: fn }) emits `obj.name`", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-d1f8-defineProperty-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "app.js"),
+          [
+            "var app = {};",
+            "Object.defineProperty(app, 'router', {",
+            "  configurable: true,",
+            "  enumerable: true,",
+            "  get: function () { return this._router; },",
+            "});",
+            "Object.defineProperty(app, 'mountpath', {",
+            "  configurable: true,",
+            "  get: function () { return '/'; },",
+            "});",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        expect(lookup.lookup("app.router").length).toBe(1);
+        expect(lookup.lookup("app.mountpath").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("defineGetter(obj, 'name', fn) helper emits `obj.name`", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-d1f8-defineGetter-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        // Pattern straight from express's lib/request.js — the helper
+        // is declared locally then used to install 8+ getters.
+        writeFileSync(
+          join(root, "src", "request.js"),
+          [
+            "var req = {};",
+            "function defineGetter(obj, name, getter) {",
+            "  Object.defineProperty(obj, name, {",
+            "    configurable: true,",
+            "    enumerable: true,",
+            "    get: getter,",
+            "  });",
+            "}",
+            "defineGetter(req, 'query', function query() { return this._query; });",
+            "defineGetter(req, 'protocol', function protocol() { return 'http'; });",
+            "defineGetter(req, 'secure', function secure() { return false; });",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        expect(lookup.lookup("req.query").length).toBe(1);
+        expect(lookup.lookup("req.protocol").length).toBe(1);
+        expect(lookup.lookup("req.secure").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // bd tea-rags-mcp-mk45 — Pre-ES6 constructor functions in JS.
+  // `function View(...) {}` followed by `View.prototype.X = ...` is the
+  // canonical pre-class constructor idiom (express `lib/view.js`). Walker
+  // already emits `View` (function_declaration) AND `View#X` (prototype
+  // assignment, via mwty) but did NOT emit a synthetic `View#constructor`,
+  // so `get_callers("View#constructor")` was empty despite `new View(...)`
+  // call edges existing in cg_symbols_edges_method (the i252 new_expression
+  // handler emits edges with `member: "constructor"`).
+  //
+  // Heuristic: function_declaration whose name starts uppercase AND the
+  // file has at least one `<Name>.prototype.<M> = ...` sibling assignment
+  // is treated as a constructor function — emit synthetic `<Name>#constructor`.
+  describe("synthetic constructor for `function Foo() {}` constructor function (bd tea-rags-mcp-mk45)", () => {
+    it("emits `View#constructor` for `function View(...) {}` with `View.prototype.X = fn` siblings", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-mk45-implicit-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        // Pattern straight from express's lib/view.js.
+        writeFileSync(
+          join(root, "src", "view.js"),
+          [
+            "function View(name, options) {",
+            "  this.name = name;",
+            "  this.opts = options;",
+            "}",
+            "View.prototype.lookup = function lookup(name) { return name; };",
+            "View.prototype.render = function render(options, callback) { return callback(null, ''); };",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        expect(lookup.lookup("View#constructor").length).toBe(1);
+        // Prototype methods still emit normally.
+        expect(lookup.lookup("View#lookup").length).toBe(1);
+        expect(lookup.lookup("View#render").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("end-to-end: `new View(...)` resolves to View#constructor", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-mk45-new-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "view.js"),
+          [
+            "function View(name) {",
+            "  this.name = name;",
+            "}",
+            "View.prototype.lookup = function lookup() { return this.name; };",
+            "module.exports = View;",
+            "",
+          ].join("\n"),
+        );
+        writeFileSync(
+          join(root, "src", "application.js"),
+          [
+            "var View = require('./view.js');",
+            "function makeView() {",
+            "  return new View('default');",
+            "}",
+            "module.exports = makeView;",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        // `new View(...)` edge must reach View#constructor.
+        expect(await client.getCalledByCount("View#constructor")).toBeGreaterThanOrEqual(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    // bd tea-rags-mcp-z95o — express dispatches HTTP-verb installers via
+    //   methods.forEach(function(method) { app[method] = function(){...} });
+    // where `methods` is the npm `methods` package — a static list of
+    // HTTP verbs. The LHS is `subscript_expression` (`app[method]`) which
+    // jsNameOf's normal LHS classifier rejects (it requires
+    // `member_expression` with a `property_identifier`). Without the
+    // heuristic, walker emits 0 symbols for the 9 `app.get`/`app.post`/
+    // ... handlers that express depends on.
+    //
+    // Heuristic (conservative — known-receivers allowlist):
+    //   <pkg>.forEach(function(<param>) { <obj>[<param>] = <fn-expr>; });
+    // where the file imports `<pkg>` from the npm `methods` package.
+    // Emit `<obj>.<verb>` for each verb in the hardcoded HTTP-verb list.
+    //
+    // Generic case (arbitrary user array) is structurally unresolvable
+    // without runtime info — out of scope.
+    it("methods.forEach(method => app[method] = fn) emits app.<verb> for HTTP verbs (bd tea-rags-mcp-z95o)", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-z95o-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        // Pattern from express lib/application.js:471-482.
+        writeFileSync(
+          join(root, "src", "application.js"),
+          [
+            "var methods = require('methods');",
+            "var app = {};",
+            "methods.forEach(function (method) {",
+            "  app[method] = function (path) {",
+            "    return this;",
+            "  };",
+            "});",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        // The 9 HTTP verbs from the npm `methods` package.
+        expect(lookup.lookup("app.get").length).toBe(1);
+        expect(lookup.lookup("app.post").length).toBe(1);
+        expect(lookup.lookup("app.put").length).toBe(1);
+        expect(lookup.lookup("app.delete").length).toBe(1);
+        expect(lookup.lookup("app.head").length).toBe(1);
+        expect(lookup.lookup("app.options").length).toBe(1);
+        expect(lookup.lookup("app.patch").length).toBe(1);
+        expect(lookup.lookup("app.connect").length).toBe(1);
+        expect(lookup.lookup("app.trace").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("does NOT emit synthetic constructor for plain (non-constructor) function", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-mk45-plain-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        // `helper` starts lowercase + no `helper.prototype.X` → NOT a constructor.
+        writeFileSync(
+          join(root, "src", "helper.js"),
+          ["function helper(x) { return x + 1; }", "function Plain(x) { return x; }", ""].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        // Plain has uppercase name but no prototype-assignment sibling → no
+        // synthetic constructor (the prototype-sibling signal is the
+        // strong indicator; uppercase alone is too weak — many factory
+        // functions follow PascalCase).
+        expect(lookup.lookup("helper#constructor").length).toBe(0);
+        expect(lookup.lookup("Plain#constructor").length).toBe(0);
+        // The function itself still emits as a top-level symbol.
+        expect(lookup.lookup("helper").length).toBe(1);
+        expect(lookup.lookup("Plain").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    // bd tea-rags-mcp-z95o widening — express does NOT do
+    // `var methods = require('methods')`. It does
+    // `var methods = require('./utils').methods` where `lib/utils.js`
+    // re-exports `http.METHODS`. The original narrow allowlist missed
+    // this case entirely. Widened heuristics:
+    //   1. require('methods') (npm package) — original
+    //   2. recv text === "methods" AND any import in the file is a local
+    //      path containing "util" (e.g., `require('./utils')`)
+    //   3. function body contains string-literal HTTP-verb comparisons
+    //      (`method === 'get'`, `method === 'post'`, …) — STRONGEST signal.
+    // The third heuristic catches express directly; the others are bonus
+    // signals when the agent imports utilities by convention.
+    it("methods.forEach with `method === 'get'` body emits app.<verb> (z95o-2)", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-z95o-2-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        // Pattern straight from express lib/application.js — `methods`
+        // comes from a local re-export, NOT the npm `methods` package.
+        // The HTTP-verb string-literal comparison inside the body is
+        // the strongest signal that this iterates HTTP verbs.
+        writeFileSync(
+          join(root, "src", "application.js"),
+          [
+            "var methods = require('./utils').methods;",
+            "var app = {};",
+            "methods.forEach(function (method) {",
+            "  app[method] = function (path) {",
+            "    if (method === 'get' && arguments.length === 1) { return this; }",
+            "    return this;",
+            "  };",
+            "});",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        expect(lookup.lookup("app.get").length).toBe(1);
+        expect(lookup.lookup("app.post").length).toBe(1);
+        expect(lookup.lookup("app.put").length).toBe(1);
+        expect(lookup.lookup("app.delete").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    // bd tea-rags-mcp-z95o — swapped operand form: `'get' === method`
+    // (string literal on the left, param on the right). The body-
+    // comparison heuristic must match BOTH orientations.
+    it("methods.forEach emits app.<verb> when body compares with swapped operand `'verb' === method`", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-z95o-swap-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "application.js"),
+          [
+            "var verbs = ['a', 'b'];",
+            "var app = {};",
+            "verbs.forEach(function (method) {",
+            "  app[method] = function () {",
+            // Operand-swapped form — string-literal on the LEFT.
+            "    if ('get' === method) return this;",
+            "    return null;",
+            "  };",
+            "});",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        expect(lookup.lookup("app.get").length).toBe(1);
+        expect(lookup.lookup("app.post").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    // bd tea-rags-mcp-z95o — anyImportPathContainsUtil branch: the
+    // receiver is named `methods` AND the file imports a LOCAL utility
+    // module (`require('./utils')`), but the body has NO HTTP-verb
+    // string comparisons. The util-import heuristic alone is sufficient
+    // to fire the HTTP-verb expansion.
+    it("methods.forEach emits app.<verb> from util-import signal alone (no body verb comparisons)", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-z95o-util-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "application.js"),
+          [
+            // Local relative require whose path contains `util` — the
+            // util-import heuristic recognises this as the express
+            // `lib/utils.js` re-export pattern.
+            "var methods = require('./lib/utils').methods;",
+            "var app = {};",
+            "methods.forEach(function (method) {",
+            // NO `method === 'verb'` comparisons in the body — the
+            // util-require signal must carry the dispatch on its own.
+            "  app[method] = function (path) {",
+            "    return this;",
+            "  };",
+            "});",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        expect(lookup.lookup("app.get").length).toBe(1);
+        expect(lookup.lookup("app.post").length).toBe(1);
+        expect(lookup.lookup("app.trace").length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    // Negative: the util-import heuristic requires a RELATIVE path —
+    // bare `require('util')` (node built-in) does NOT trigger the
+    // dispatch. Tests the startsWith('./')/startsWith('../') guard.
+    it("methods.forEach does NOT emit when require source is the bare 'util' built-in (not relative)", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-z95o-bareutil-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "application.js"),
+          [
+            "var methods = ['a', 'b'];",
+            // `require('util')` is the node built-in; the heuristic
+            // requires a relative path. Should NOT fire.
+            "var util = require('util');",
+            "var app = {};",
+            "methods.forEach(function (method) {",
+            "  app[method] = function () {};",
+            "});",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        // No HTTP-verb expansion — only literal `app.a`, `app.b` would
+        // appear if any symbolic detection misfired. The walker emits
+        // nothing because `methods` is not a `require('methods')` chain
+        // and no util-RELATIVE import exists.
+        expect(lookup.lookup("app.get").length).toBe(0);
+        expect(lookup.lookup("app.a").length).toBe(0);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("forEach without HTTP-verb body markers does NOT emit (z95o-3 no false-positive)", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-z95o-3-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        // A generic forEach over user-data: no HTTP-verb string literals
+        // in the body and `things` is not imported via `require('methods')`
+        // nor is it `methods` with a utility import. Should NOT emit.
+        writeFileSync(
+          join(root, "src", "config.js"),
+          [
+            "var things = ['alpha', 'beta', 'gamma'];",
+            "var obj = {};",
+            "things.forEach(function (thing) {",
+            "  obj[thing] = function () {",
+            "    return thing.length;",
+            "  };",
+            "});",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        // No HTTP verbs — must not emit obj.get / obj.post / etc.
+        expect(lookup.lookup("obj.get").length).toBe(0);
+        expect(lookup.lookup("obj.post").length).toBe(0);
+        expect(lookup.lookup("obj.alpha").length).toBe(0);
+        expect(lookup.lookup("obj.beta").length).toBe(0);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    // bd tea-rags-mcp-d1f8 this-resolution — when
+    // `Object.defineProperty(this, 'name', { get: fn })` appears inside
+    // a function_expression that is the RHS of an outer `app.method = fn`
+    // assignment, `this` binds to `app` at call time. Emit `app.name`,
+    // NOT the literal `app.init.this.router` chain. Express's
+    // `app.init = function init() { Object.defineProperty(this, 'router', ...) }`
+    // is the canonical case — without this resolution agents see a
+    // misleading `app.init.this.router` symbol that doesn't correspond
+    // to any real call site.
+    it("Object.defineProperty(this, ...) inside app.method = fn resolves `this` to outer receiver", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-d1f8-this-resolve-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        // Pattern straight from express lib/application.js `app.init`.
+        writeFileSync(
+          join(root, "src", "application.js"),
+          [
+            "var app = {};",
+            "app.init = function init() {",
+            "  Object.defineProperty(this, 'router', {",
+            "    configurable: true,",
+            "    enumerable: true,",
+            "    get: function () { return this._router; },",
+            "  });",
+            "};",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        // Resolved form — `this` rewritten to outer receiver `app`.
+        expect(lookup.lookup("app.router").length).toBe(1);
+        // Negative — the literal-this chain must NOT appear.
+        expect(lookup.lookup("app.init.this.router").length).toBe(0);
+        expect(lookup.lookup("this.router").length).toBe(0);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // bd tea-rags-mcp-d4ab — Duplicate top-level symbolId for overloaded
+  // Python decorators (functools.singledispatch / typing.overload). Two
+  // `def stream_with_context` declarations at module top-level emit the
+  // same symbolId. The dedup in `collectSymbols` (last line of the walk)
+  // keeps the FIRST occurrence; in singledispatch the LAST def is the
+  // real implementation. Per `.claude/rules/symbolid-convention.md` we
+  // expect a single canonical symbol entry — the chunker/codegraph keep
+  // the longest body (real impl), drop empty stubs.
+  describe("Python duplicate top-level function deduplication (bd d4ab)", () => {
+    it("keeps a single symbolId for two top-level defs sharing a name", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-py-d4ab-"));
+      try {
+        writeFileSync(
+          join(root, "helpers.py"),
+          [
+            "import functools",
+            "",
+            "@functools.singledispatch",
+            "def stream_with_context(generator_or_function):",
+            "    pass",
+            "",
+            "@stream_with_context.register",
+            "def stream_with_context(generator_or_function):",
+            "    body = list(generator_or_function)",
+            "    return body",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        const matches = lookup.lookupByShortName("stream_with_context");
+        // Codegraph emits exactly ONE canonical symbol per top-level name in
+        // the same file. Without dedup at the chunker/codegraph layer, two
+        // collisions would land at the same Qdrant point id and silently
+        // overwrite — making `find_symbol` non-deterministic.
+        const inHelpers = matches.filter((m) => m.relPath === "helpers.py");
+        expect(inHelpers.length).toBe(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // bd tea-rags-mcp-a466 — Java overload disambiguation. Multiple
+  // `method_declaration` nodes sharing a name composed under the same
+  // class produce identical symbolIds (e.g. two `upperCase` overloads →
+  // both compose as `StringUtils.upperCase`). The previous dedup in
+  // `collectSymbols` kept the first occurrence and dropped the rest,
+  // silently collapsing overloads. The codegraph must emit a distinct
+  // symbolId per overload — suffix the N-th occurrence (1-based, first
+  // unchanged) with `~N`. Mirrors the chunker convention so cg_symbols
+  // and Qdrant payload stay in lockstep.
+  describe("Java overload disambiguation (bd a466)", () => {
+    it("emits a distinct symbolId per overload via `~N` suffix", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-java-overload-"));
+      try {
+        writeFileSync(
+          join(root, "StringUtils.java"),
+          [
+            "package com.example;",
+            "",
+            "public class StringUtils {",
+            "  public static String upperCase(String value) {",
+            "    return value == null ? null : value.toUpperCase();",
+            "  }",
+            "  public static String upperCase(String value, java.util.Locale locale) {",
+            "    return value == null ? null : value.toUpperCase(locale);",
+            "  }",
+            "  public static String upperCase(String value, java.util.Locale locale, boolean strict) {",
+            "    return value == null ? null : value.toUpperCase(locale);",
+            "  }",
+            "}",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        const matches = lookup.lookupByShortName("upperCase");
+        // All three overloads MUST be present with distinct symbolIds.
+        const ids = matches.map((m) => m.symbolId).sort();
+        expect(ids).toEqual(["StringUtils.upperCase", "StringUtils.upperCase~2", "StringUtils.upperCase~3"]);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("preserves a single symbolId when there is no overload (no spurious suffix)", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-java-no-overload-"));
+      try {
+        writeFileSync(
+          join(root, "Solo.java"),
+          ["public class Solo {", "  public String only(String v) { return v; }", "}", ""].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+        const matches = lookup.lookupByShortName("only");
+        expect(matches.length).toBe(1);
+        expect(matches[0].symbolId).toBe("Solo#only");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
   });
 });

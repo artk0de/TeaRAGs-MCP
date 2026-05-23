@@ -141,3 +141,69 @@ describe("extractFromRustFile — call dispatch branches", () => {
     expect(run?.receiver).toBe("build()");
   });
 });
+
+// bd tea-rags-mcp-jyzb — macro_rules! definitions and macro_invocation
+// call sites. macro_invocation appears for `println!()`, `assert!()`,
+// and user-defined `my_macro!()` — receiver is null, member is the
+// macro name. macro_rules! definitions emit no calls but ARE captured
+// as symbols by the provider (see provider.test.ts).
+describe("extractFromRustFile — macros", () => {
+  it("captures `my_macro!()` invocations as bare calls", () => {
+    const src = "fn main() {\n  my_macro!();\n}\n";
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "main", scope: [], startLine: 1, endLine: 3 }],
+    });
+    const macro = r.chunks[0].calls.find((c) => c.member === "my_macro");
+    expect(macro).toBeDefined();
+    expect(macro?.receiver).toBeNull();
+  });
+
+  it("captures `println!()` macro invocations", () => {
+    const src = 'fn main() {\n  println!("hi");\n}\n';
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "main", scope: [], startLine: 1, endLine: 3 }],
+    });
+    const macro = r.chunks[0].calls.find((c) => c.member === "println");
+    expect(macro).toBeDefined();
+    expect(macro?.receiver).toBeNull();
+  });
+
+  it("captures scoped macro invocations `std::println!()` with receiver=path, member=name", () => {
+    // scoped_identifier branch (rust-walker.ts lines 82-87): the macro
+    // name is the `name` child, the namespace path lives on the `path`
+    // child. Receiver renders as the full path text.
+    const src = 'fn main() {\n  std::println!("hi");\n}\n';
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "main", scope: [], startLine: 1, endLine: 3 }],
+    });
+    const macro = r.chunks[0].calls.find((c) => c.member === "println");
+    expect(macro).toBeDefined();
+    expect(macro?.receiver).toBe("std");
+  });
+
+  it("captures multi-segment scoped macro invocations `foo::bar::baz!()`", () => {
+    const src = "fn main() {\n  foo::bar::baz!();\n}\n";
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "main", scope: [], startLine: 1, endLine: 3 }],
+    });
+    const macro = r.chunks[0].calls.find((c) => c.member === "baz");
+    expect(macro).toBeDefined();
+    expect(macro?.receiver).toBe("foo::bar");
+  });
+});

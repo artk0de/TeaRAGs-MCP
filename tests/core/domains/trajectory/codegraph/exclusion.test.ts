@@ -96,6 +96,25 @@ describe("buildCodegraphExclusionFilter", () => {
     expect(CODEGRAPH_GENERATED_PATTERNS).toContain("**/db/schema.rb");
   });
 
+  // BUG tea-rags-mcp-pl7k — `vendor/` directories hold third-party copies
+  // (vendored Ruby gems under `vendor/bundle/`, JavaScript libs under
+  // `vendor/assets/javascripts/`). They never participate in the project's
+  // own call graph; their presence pollutes the global short-name lookup
+  // with cross-language ghost callees (huginn: `agents.map(&:id)` →
+  // `vendor/assets/javascripts/d3.js#map`). Always-exclude, not opt-out.
+  it("always excludes vendor/ directories regardless of options", () => {
+    const igStrict = buildCodegraphExclusionFilter({ excludeTests: true, customPatterns: [] });
+    expect(igStrict.ignores("vendor/assets/javascripts/d3.js")).toBe(true);
+    expect(igStrict.ignores("vendor/bundle/ruby/3.0/gems/foo-1.0/lib/foo.rb")).toBe(true);
+    expect(igStrict.ignores("app/vendor/lib/some.rb")).toBe(true);
+    // excludeTests=false path — still excluded
+    const igLoose = buildCodegraphExclusionFilter({ excludeTests: false, customPatterns: [] });
+    expect(igLoose.ignores("vendor/assets/javascripts/d3.js")).toBe(true);
+    // Real project files outside vendor/ are NOT excluded.
+    expect(igStrict.ignores("app/models/user.rb")).toBe(false);
+    expect(igStrict.ignores("src/main.ts")).toBe(false);
+  });
+
   it("CODEGRAPH_TEST_PATTERNS is a non-empty readonly array covering all walker languages", () => {
     expect(CODEGRAPH_TEST_PATTERNS.length).toBeGreaterThan(0);
     // Sanity: every language with a codegraph walker has at least one entry.

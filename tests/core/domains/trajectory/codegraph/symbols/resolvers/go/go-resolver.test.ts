@@ -8,8 +8,9 @@ function ctx(
   callerFile: string,
   imports: { importText: string; startLine: number }[],
   table: InMemoryGlobalSymbolTable,
+  localBindings?: Record<string, string>,
 ): CallContext {
-  return { callerFile, callerScope: [], imports, symbolTable: table };
+  return { callerFile, callerScope: [], imports, symbolTable: table, localBindings };
 }
 
 describe("GoCallResolver", () => {
@@ -49,6 +50,78 @@ describe("GoCallResolver", () => {
       ctx("main.go", [], t),
     );
     expect(target?.targetRelPath).toBe("helpers.go");
+  });
+
+  // bd tea-rags-mcp-e6xx — typed-receiver resolution via localBindings.
+  // Inside `func (c *Context) Render() { c.JSON(...) }`, the receiver `c`
+  // is locally bound to type `Context`. The resolver must lift `c.JSON`
+  // to `Context#JSON` and resolve against the symbol table; otherwise
+  // every Go method-call site stays unresolved (no edges, no callgraph).
+  it("resolves `c.JSON(...)` to Context#JSON when localBindings binds c→Context (instance form)", () => {
+    const r = new GoCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("context.go", [
+      {
+        symbolId: "Context#JSON",
+        fqName: "Context#JSON",
+        shortName: "JSON",
+        relPath: "context.go",
+        scope: [],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "c.JSON(200, obj)", receiver: "c", member: "JSON", startLine: 5 },
+      ctx("context.go", [], t, { c: "Context" }),
+    );
+    expect(target?.targetSymbolId).toBe("Context#JSON");
+    expect(target?.targetRelPath).toBe("context.go");
+  });
+
+  it("falls back to Type.member (static form) when instance form not present", () => {
+    // Some Go projects emit class-level helpers via the static form
+    // (`.`) — the resolver should accept either form when the localType
+    // points at a type with that member as a static.
+    const r = new GoCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("ctx.go", [
+      {
+        symbolId: "Context.helper",
+        fqName: "Context.helper",
+        shortName: "helper",
+        relPath: "ctx.go",
+        scope: [],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "c.helper()", receiver: "c", member: "helper", startLine: 1 },
+      ctx("ctx.go", [], t, { c: "Context" }),
+    );
+    expect(target?.targetSymbolId).toBe("Context.helper");
+  });
+
+  it("drops edge when localBinding points at a Type that does NOT define the member (no global fallback)", () => {
+    // Real-world parity with python-resolver step 0 — when the walker
+    // knows the receiver's type but the type doesn't define the method
+    // (e.g. inherited via embedding the resolver doesn't model yet),
+    // dropping is safer than fabricating an edge via global short-name.
+    const r = new GoCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    // Symbol exists under a DIFFERENT type, not Context. Global short-name
+    // lookup would otherwise pick this up — must be suppressed.
+    t.upsertFile("other.go", [
+      {
+        symbolId: "Other#unrelated",
+        fqName: "Other#unrelated",
+        shortName: "unrelated",
+        relPath: "other.go",
+        scope: [],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "c.unrelated()", receiver: "c", member: "unrelated", startLine: 1 },
+      ctx("ctx.go", [], t, { c: "Context" }),
+    );
+    expect(target).toBeNull();
   });
 
   it("drops the edge when receiver does NOT match any import (no global short-name fallback)", () => {

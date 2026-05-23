@@ -15,6 +15,13 @@ import { isDebug } from "../infra/runtime.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import { LANGUAGE_DEFINITIONS, type LanguageConfig, type LanguageDefinition } from "./config.js";
+import { extractRubyMacroSymbols, type RubyMacroSymbol } from "./extraction/ruby-macros.js";
+import { extractGoSymbol } from "./hooks/go/index.js";
+import {
+  extractJsAssignmentSymbol,
+  extractJsForEachDispatchSymbols,
+  extractJsNestedDefinePropertyThisSymbols,
+} from "./hooks/javascript/index.js";
 import { MarkdownChunker } from "./hooks/markdown/index.js";
 import { createHookContext, type ChunkingHook, type HookContext } from "./hooks/types.js";
 
@@ -47,6 +54,113 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   /**
+   * Emit synthetic method-symbol chunks for Ruby class-body DSL macros
+   * (attr_accessor / attr_reader / attr_writer / cattr_* / mattr_* /
+   * delegate / define_method) found anywhere inside `containerNode`. Each
+   * macro can declare multiple methods at the enclosing class scope;
+   * without these chunks, the Ruby walker's bare-id call resolution can't
+   * land on `Class#accessor` / `Class#delegated_method` and
+   * `get_callers` / `get_callees` come up empty on Rails code
+   * (bd tea-rags-mcp-3nf3 + tea-rags-mcp-zy3f).
+   *
+   * No-op for non-Ruby languages.
+   *
+   * Recurses into every nested `class` / `module` so that nested-namespace
+   * cases (`class A; class B; attr_accessor :x; end; end` → `A::B#x`)
+   * compose the full scope qualifier via `composeParentSymbol`. Mirrors
+   * the bdvm fix for regular `def`-emitted symbols.
+   *
+   * The chunk content is the literal source line of the macro call
+   * (sufficient context for search hits to surface the declaration).
+   * `chunkType` is `"function"` so it lines up with regular method
+   * symbols in downstream filters / overlay masks.
+   */
+  private emitRubyMacroSymbols(
+    containerNode: Parser.SyntaxNode,
+    parentSymbolId: string | undefined,
+    parentType: string,
+    code: string,
+    filePath: string,
+    language: string,
+    chunks: CodeChunk[],
+  ): void {
+    if (language !== "ruby") return;
+    const lines = code.split("\n");
+    this.walkRubyMacroScopes(containerNode, parentSymbolId, parentType, code, filePath, language, chunks, lines);
+  }
+
+  /**
+   * Walk a Ruby container tree depth-first, emitting macro symbols at each
+   * scope with the correctly-composed `parentSymbolId`. When the walk
+   * crosses into a nested `class` / `module`, the parent qualifier is
+   * extended with that container's name using `scopeSeparator: "::"` (the
+   * Ruby convention). The container's own `parentType` is its tree-sitter
+   * node type (`class` or `module`) — same shape the regular def-emitted
+   * chunks carry.
+   */
+  private walkRubyMacroScopes(
+    containerNode: Parser.SyntaxNode,
+    currentParent: string | undefined,
+    parentType: string,
+    code: string,
+    filePath: string,
+    language: string,
+    chunks: CodeChunk[],
+    lines: string[],
+  ): void {
+    // Emit macros declared directly in this container's body.
+    const macros = extractRubyMacroSymbols(containerNode);
+    for (const macro of macros) {
+      const content = (lines[macro.startLine - 1] ?? "").trim() || `# ${macro.name}`;
+      this.pushMacroSymbolChunk(macro, content, currentParent, parentType, filePath, language, chunks);
+    }
+
+    // Recurse into nested class/module bodies. We descend the immediate
+    // body statements only — same one-step-deep convention as
+    // `extractRubyMacroSymbols`. Macros nested in `if` blocks or
+    // ActiveSupport::Concern `included do … end` are intentionally out of
+    // scope (matches the codegraph provider's `walkRubyTopLevel`).
+    const body = containerNode.childForFieldName("body");
+    const stmts = body ? body.children : containerNode.children;
+    for (const stmt of stmts) {
+      if (stmt.type !== "class" && stmt.type !== "module") continue;
+      const nameNode = stmt.childForFieldName("name");
+      if (!nameNode) continue;
+      const localName = this.extractName(stmt, code) ?? nameNode.text;
+      const nestedParent = currentParent ? `${currentParent}::${localName}` : localName;
+      this.walkRubyMacroScopes(stmt, nestedParent, stmt.type, code, filePath, language, chunks, lines);
+    }
+  }
+
+  private pushMacroSymbolChunk(
+    macro: RubyMacroSymbol,
+    content: string,
+    parentSymbolId: string | undefined,
+    parentType: string,
+    filePath: string,
+    language: string,
+    chunks: CodeChunk[],
+  ): void {
+    const isStatic = macro.kind === "static";
+    chunks.push({
+      content,
+      startLine: macro.startLine,
+      endLine: macro.endLine,
+      metadata: {
+        filePath,
+        language,
+        chunkIndex: chunks.length,
+        chunkType: "function",
+        name: macro.name,
+        parentSymbolId,
+        parentType,
+        symbolId: this.buildSymbolId(macro.name, parentSymbolId, isStatic),
+        methodLines: macro.endLine - macro.startLine + 1,
+      },
+    });
+  }
+
+  /**
    * Check if a tree-sitter node has a specific modifier (e.g., "static").
    */
   private hasModifier(node: Parser.SyntaxNode, modifier: string): boolean {
@@ -63,6 +177,33 @@ export class TreeSitterChunker implements CodeChunker {
    */
   private computeEndLine(node: Parser.SyntaxNode): number {
     return Math.max(node.startPosition.row + 2, node.endPosition.row + 1);
+  }
+
+  /**
+   * For Python's `decorated_definition` wrapper, return the inner
+   * `function_definition` / `class_definition` for semantic operations
+   * (name extraction, static-method classification, chunkType). The
+   * outer wrapper is kept for chunk content and line range so the
+   * decorator stays visible in the emitted chunk. Every other node
+   * passes through unchanged.
+   *
+   * Required for bd tea-rags-mcp-t6sr — `@classmethod` / `@staticmethod`
+   * methods would otherwise emit `chunkType: "block"` and `name: undefined`
+   * because the wrapper carries no `name` field and `classifyMethod`
+   * only branches on the inner `function_definition` type.
+   */
+  private unwrapDecoratedDefinition(node: Parser.SyntaxNode): Parser.SyntaxNode {
+    if (node.type !== "decorated_definition") return node;
+    const inner = node.childForFieldName("definition");
+    if (inner) return inner;
+    // Fall back to scanning children when the grammar omits the
+    // `definition` field name (older tree-sitter-python versions).
+    /* v8 ignore next 4 -- defensive: current grammar always emits field name */
+    for (const child of node.children) {
+      if (child.type === "function_definition" || child.type === "class_definition") return child;
+    }
+    /* v8 ignore next */
+    return node;
   }
 
   constructor(private readonly config: ChunkerConfig) {
@@ -138,6 +279,10 @@ export class TreeSitterChunker implements CodeChunker {
         isDocumentation: definition.isDocumentation,
         hooks: definition.hooks,
         nameExtractor: definition.nameExtractor,
+        scopeContainerTypes: definition.scopeContainerTypes,
+        scopeSeparator: definition.scopeSeparator,
+        keepShortChildChunkTypes: definition.keepShortChildChunkTypes,
+        disambiguateOverloads: definition.disambiguateOverloads,
       };
     } catch (error) {
       console.error(`[TreeSitter] Failed to load parser for ${language}:`, error);
@@ -165,7 +310,17 @@ export class TreeSitterChunker implements CodeChunker {
 
       for (const [index, node] of nodes.entries()) {
         const content = code.substring(node.startIndex, node.endIndex);
-        if (content.length < 50) continue;
+        // Go type_declaration aliases (`type H map[string]any`,
+        // `type Numbers []int`, `type Ch chan int`,
+        // `type HandlerFunc func(*Context)`) routinely fall under 50
+        // chars but are top-level NAMED symbols that `find_symbol`
+        // must resolve — gin OSS validation showed these invisible.
+        // The chunker's generic 50-char filter is a noise gate for
+        // statements (call_expression, expression_statement) without
+        // a stable symbolId; named type aliases have one and should
+        // pass through. bd tea-rags-mcp-iiq6.
+        const isGoNamedType = language === "go" && node.type === "type_declaration";
+        if (content.length < 50 && !isGoNamedType) continue;
 
         const hasChildTypes = langConfig.childChunkTypes && langConfig.childChunkTypes.length > 0;
         const isTooLarge = content.length > this.config.maxChunkSize;
@@ -251,7 +406,15 @@ export class TreeSitterChunker implements CodeChunker {
       filePath,
     );
 
-    const validChildren = childNodes.filter((c) => code.substring(c.startIndex, c.endIndex).length >= 50);
+    // bd tea-rags-mcp-52e8 — `keepShortChildChunkTypes` opts a node type
+    // out of the 50-char minimum (Java abstract / interface methods are
+    // signature-only and routinely under the floor; without the opt-out
+    // their chunks were dropped silently and `find_symbol("Pair#getLeft")`
+    // returned []). For all other types the historical floor stands.
+    const keepShortSet = new Set<string>(langConfig.keepShortChildChunkTypes ?? []);
+    const validChildren = childNodes.filter(
+      (c) => keepShortSet.has(c.type) || code.substring(c.startIndex, c.endIndex).length >= 50,
+    );
 
     if (validChildren.length > 0) {
       const ctx = createHookContext(node, validChildren, code, { maxChunkSize: this.config.maxChunkSize }, filePath);
@@ -276,6 +439,10 @@ export class TreeSitterChunker implements CodeChunker {
         [containerHeader],
       );
 
+      // Synthetic method symbols from Ruby DSL macros (attr_accessor /
+      // delegate / cattr_* / mattr_* / define_method). No-op for non-Ruby.
+      this.emitRubyMacroSymbols(node, parentName, parentType, code, filePath, language, chunks);
+
       if (langConfig.alwaysExtractChildren) {
         const hasHookChain = langConfig.hooks && langConfig.hooks.length > 0;
         if (hasHookChain) {
@@ -298,25 +465,26 @@ export class TreeSitterChunker implements CodeChunker {
               },
             });
           }
-        } /* v8 ignore next 19 -- defensive: all languages with alwaysExtractChildren have hooks */ else {
-          const bodyContent = this.extractContainerBody(node, validChildren, code);
-          if (bodyContent && bodyContent.trim().length >= 50) {
-            chunks.push({
-              content: bodyContent.trim(),
-              startLine: node.startPosition.row + 1,
-              endLine: this.computeEndLine(node),
-              metadata: {
-                filePath,
-                language,
-                chunkIndex: chunks.length,
-                chunkType: "block",
-                name: parentName,
-                parentSymbolId: parentName,
-                parentType,
-                symbolId: this.buildSymbolId(parentName),
-              },
-            });
-          }
+        } else {
+          // bd tea-rags-mcp-b7k3 — when methods are extracted as separate
+          // chunks but the language has no hook chain (Python), emit ONE
+          // narrow parent class chunk covering only the signature + leading
+          // class-level attributes BEFORE the first method declaration.
+          // Without this narrowing the parent chunk spans the FULL class
+          // range, exceeds maxChunkSize on real classes (e.g. Flask), and
+          // gets split by enforceMaxChunkSize into anonymous Foo#part1..N
+          // that duplicate method bodies and shadow the first method in
+          // find_symbol lookups.
+          this.emitNarrowParentClassChunk(
+            node,
+            validChildren,
+            parentName,
+            parentType,
+            code,
+            filePath,
+            language,
+            chunks,
+          );
         }
       }
       return true;
@@ -330,7 +498,14 @@ export class TreeSitterChunker implements CodeChunker {
       return true;
     }
 
-    // alwaysExtractChildren but no valid children — fall through to single chunk
+    // alwaysExtractChildren but no valid children — fall through to single
+    // chunk. But still emit Ruby DSL macro symbols at this scope, so a small
+    // class like `class A; attr_reader :foo; end` produces `A#foo` even when
+    // its body has no `def` large enough to trigger child extraction
+    // (bd tea-rags-mcp-3nf3 + tea-rags-mcp-zy3f). The caller will emit the
+    // single-class chunk via chunkSingleNode after this returns false; we
+    // emit the per-accessor function chunks here so they ship alongside it.
+    this.emitRubyMacroSymbols(node, parentName, parentType, code, filePath, language, chunks);
     return false;
   }
 
@@ -346,6 +521,127 @@ export class TreeSitterChunker implements CodeChunker {
     chunks: CodeChunk[],
   ): void {
     const content = code.substring(node.startIndex, node.endIndex);
+
+    // JavaScript: assignment_expression / lexical_declaration shapes that
+    // carry a function value need symbolId composition matching codegraph
+    // `jsNameOf` — `obj.method`, `Foo#bar` (prototype), `foo`
+    // (exports.foo), `Bar` (const Bar = fn). Without this the Qdrant
+    // payload symbolId diverges from cg_symbols.symbol_id on the same
+    // AST node. bd tea-rags-mcp-kfzx. See
+    // `.claude/rules/symbolid-convention.md`.
+    if (language === "javascript") {
+      // bd tea-rags-mcp-z95o — HTTP-verb dispatch via
+      // `methods.forEach(method => app[method] = fn)`. Emits ONE chunk
+      // per known HTTP verb (9 verbs) so find_symbol(app.get) resolves
+      // alongside cg_symbols rows from `provider.jsForEachDispatchEmission`.
+      // All chunks share the same source range — the dispatch lambda body.
+      const dispatchSymbols = extractJsForEachDispatchSymbols(node);
+      if (dispatchSymbols && dispatchSymbols.length > 0) {
+        for (let i = 0; i < dispatchSymbols.length; i++) {
+          const sym = dispatchSymbols[i];
+          chunks.push({
+            content: content.trim(),
+            startLine: node.startPosition.row + 1,
+            endLine: this.computeEndLine(node),
+            metadata: {
+              filePath,
+              language,
+              chunkIndex: index + i,
+              chunkType: "function",
+              name: sym.name,
+              symbolId: sym.symbolId,
+              methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
+            },
+          });
+        }
+        return;
+      }
+      const jsSymbol = extractJsAssignmentSymbol(node);
+      if (jsSymbol) {
+        chunks.push({
+          content: content.trim(),
+          startLine: node.startPosition.row + 1,
+          endLine: this.computeEndLine(node),
+          metadata: {
+            filePath,
+            language,
+            chunkIndex: index,
+            chunkType: "function",
+            name: jsSymbol.name,
+            symbolId: jsSymbol.symbolId,
+            methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
+          },
+        });
+        // bd tea-rags-mcp-d1f8 this-resolve — when the assigned function
+        // body contains `Object.defineProperty(this, '<n>', { get: fn })`
+        // or `defineGetter(this, '<n>', fn)`, also emit a sibling chunk
+        // labelled `<outer-receiver>.<n>`. `this` rebinds to the outer
+        // receiver inside the assigned function, so the getter installs
+        // on `app` (not `app.init`). Mirrors codegraph
+        // `jsGetterHelperEmission` with `absolute: true`.
+        const nested = extractJsNestedDefinePropertyThisSymbols(node);
+        for (let i = 0; i < nested.length; i++) {
+          const sym = nested[i];
+          chunks.push({
+            content: content.trim(),
+            startLine: node.startPosition.row + 1,
+            endLine: this.computeEndLine(node),
+            metadata: {
+              filePath,
+              language,
+              chunkIndex: index + 1 + i,
+              chunkType: "function",
+              name: sym.name,
+              symbolId: sym.symbolId,
+              methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
+            },
+          });
+        }
+        return;
+      }
+    }
+
+    // Go: method_declaration → `Receiver#Method` (instance form);
+    // type_declaration → reach into type_spec for the type identifier.
+    // The default `extractName` returns undefined for `type_declaration`
+    // because its `name` field lives on the `type_spec` child, and bare
+    // `method_declaration` lacks the receiver prefix in the symbolId.
+    // Mirrors codegraph `goNameOf` so Qdrant payload and cg_symbols
+    // agree on the same physical AST node. bd tea-rags-mcp-n7x5 + j2b7.
+    if (language === "go") {
+      const goSymbol = extractGoSymbol(node);
+      if (goSymbol) {
+        // Refine chunkType for type_declaration by inspecting the
+        // type_spec's body kind — tree-sitter-go node-type "type_declaration"
+        // alone reads as "block" through getChunkType, but the user-facing
+        // chunk should distinguish structs/interfaces from func/map/slice
+        // aliases so downstream filters (chunkType="class") keep working.
+        // bd tea-rags-mcp-iiq6.
+        let chunkType: ReturnType<typeof this.getChunkType> = this.getChunkType(node.type);
+        if (node.type === "type_declaration") {
+          const spec = node.children.find((c) => c.type === "type_spec" || c.type === "type_alias");
+          const body = spec?.childForFieldName("type");
+          if (body?.type === "struct_type") chunkType = "class";
+          else if (body?.type === "interface_type") chunkType = "interface";
+        }
+        chunks.push({
+          content: content.trim(),
+          startLine: node.startPosition.row + 1,
+          endLine: this.computeEndLine(node),
+          metadata: {
+            filePath,
+            language,
+            chunkIndex: index,
+            chunkType,
+            name: goSymbol.name,
+            symbolId: goSymbol.symbolId,
+            methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
+          },
+        });
+        return;
+      }
+    }
+
     const nodeName = this.extractName(node, code);
     chunks.push({
       content: content.trim(),
@@ -376,6 +672,21 @@ export class TreeSitterChunker implements CodeChunker {
 
     const isMergeable = (chunk: CodeChunk): boolean => {
       const lines = chunk.endLine - chunk.startLine;
+      // Go-specific carve-out (bd tea-rags-mcp-iiq6 follow-up): named Go
+      // `type_declaration` aliases — `type HandlerFunc func(*Context)`,
+      // `type HandlersChain []HandlerFunc`, etc. — emit `chunkType="block"`
+      // and would otherwise be collapsed by adjacent-merging into one
+      // umbrella block named "HandlerFunc..." with no symbolId. That
+      // umbrella loses every alias's symbolId, so `find_symbol("HandlerFunc")`
+      // returns nothing on real Go projects (gin OSS validation).
+      // The chunker explicitly assigns a symbolId for these via the Go
+      // type_declaration branch (extractGoSymbol), so the marker is reliable.
+      // TS small-type-alias merging is unaffected: TS chunks also get a
+      // symbolId but the existing test asserts they merge — gate is on
+      // `language === "go"`, not on having a symbolId in general.
+      if (chunk.metadata.language === "go" && chunk.metadata.symbolId) {
+        return false;
+      }
       return (
         lines <= TreeSitterChunker.MERGE_THRESHOLD &&
         !chunk.metadata.parentSymbolId &&
@@ -588,10 +899,16 @@ export class TreeSitterChunker implements CodeChunker {
 
   /**
    * Build full parent name path from hierarchy names.
+   *
+   * bd tea-rags-mcp-ksb8 — Previously joined with ` > ` (spaces),
+   * producing invalid `Scaffold > route#decorator` symbolIds. The
+   * canonical separator is the language's `scopeSeparator` (`.` for
+   * Python/TS/JS, `::` for Ruby/Rust). See
+   * `.claude/rules/symbolid-convention.md`.
    */
-  private buildParentPath(hierarchyNames: string[]): string | undefined {
+  private buildParentPath(hierarchyNames: string[], scopeSeparator?: string): string | undefined {
     if (hierarchyNames.length === 0) return undefined;
-    return hierarchyNames.join(" > ");
+    return hierarchyNames.join(scopeSeparator ?? ".");
   }
 
   /**
@@ -614,13 +931,57 @@ export class TreeSitterChunker implements CodeChunker {
     // skip child emission — all chunks are in ctx.bodyChunks
     if (ctx.skipChildren) return;
 
+    // bd tea-rags-mcp-a466 — overload disambiguation. Multiple
+    // `method_declaration` nodes with the same name produce identical
+    // composed symbolIds (e.g. three `upperCase(...)` overloads under
+    // `class StringUtils` all compose as `StringUtils.upperCase`). When
+    // the language opts in via `disambiguateOverloads: true`, track
+    // occurrences per composed symbolId WITHIN this processChildren
+    // pass and suffix every occurrence after the first with `~N`
+    // (1-based, first stays unchanged). The same convention runs on
+    // the codegraph provider's `collectSymbols` so cg_symbols + Qdrant
+    // payload agree on the same physical AST node. Per
+    // `.claude/rules/symbolid-convention.md`. Default-off so TS get/set
+    // pairs and Python `@functools.singledispatch` stub/impl pairs keep
+    // their first-occurrence behaviour.
+    const symbolIdOccurrences = new Map<string, number>();
+    const disambiguateOverloads = langConfig.disambiguateOverloads === true;
+    const disambiguateSymbolId = (baseId: string | undefined): string | undefined => {
+      if (baseId === undefined) return undefined;
+      if (!disambiguateOverloads) return baseId;
+      const seen = symbolIdOccurrences.get(baseId) ?? 0;
+      const next = seen + 1;
+      symbolIdOccurrences.set(baseId, next);
+      return next === 1 ? baseId : `${baseId}~${next}`;
+    };
+
     for (let ci = 0; ci < validChildren.length; ci++) {
       const childNode = validChildren[ci];
       const childContent = code.substring(childNode.startIndex, childNode.endIndex);
 
-      // If child is too large, use character fallback
+      // If child is too large, use character fallback. Mirror the
+      // `chunkOversizedNode` invariant at the method scope: every
+      // sub-chunk shares the composed method symbolId (`Foo#__init__`)
+      // and `chunkType: "function"`. Before bd tea-rags-mcp-5xie, the
+      // raw fallback chunks carried `symbolId: undefined` /
+      // `chunkType: "block"`, so `find_symbol("Flask#__init__")` came up
+      // empty even though cg_symbols had the entry. See
+      // .claude/rules/symbolid-convention.md and the regression test in
+      // tree-sitter.oversized-symbolid.test.ts.
       if (childContent.length > this.config.maxChunkSize) {
         const childMethodLines = childNode.endPosition.row - childNode.startPosition.row + 1;
+        const semanticNode = this.unwrapDecoratedDefinition(childNode);
+        const childName = this.extractName(semanticNode, code, langConfig.nameExtractor);
+        const isStatic = isStaticMethodNode(semanticNode);
+        const intermediateScopes = this.collectIntermediateScopes(childNode, langConfig, code);
+        const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
+        // bd tea-rags-mcp-a466 — disambiguate overloads BEFORE deciding
+        // the chunk's symbolId so oversized-method splits inherit the
+        // already-suffixed id (each split shares the composed method id;
+        // see bd tea-rags-mcp-5xie invariant). Without this, two oversized
+        // overloads would collapse into the same symbolId across parts.
+        const methodSymbolId = disambiguateSymbolId(this.buildSymbolId(childName, effectiveParent, isStatic));
+        const methodChunkType = this.getChunkType(semanticNode.type);
         const subChunks = await this.fallbackChunker.chunk(childContent, filePath, language);
         for (const subChunk of subChunks) {
           chunks.push({
@@ -630,7 +991,17 @@ export class TreeSitterChunker implements CodeChunker {
             metadata: {
               ...subChunk.metadata,
               chunkIndex: chunks.length,
-              parentSymbolId: parentName,
+              chunkType: methodChunkType,
+              name: childName,
+              // Every split shares the composed METHOD symbolId
+              // (bd tea-rags-mcp-5xie invariant).
+              symbolId: methodSymbolId,
+              // bd tea-rags-mcp-cpbv — parts point at the CLASS as their
+              // parent, not at the method itself. The 5xie self-reference
+              // (parentSymbolId === symbolId) created a self-loop that
+              // broke MCP navigation between parts and shadowed the
+              // class lineage.
+              parentSymbolId: effectiveParent ?? parentName,
               parentType,
               methodLines: childMethodLines,
             },
@@ -649,7 +1020,20 @@ export class TreeSitterChunker implements CodeChunker {
       );
       const validGrandChildren = grandChildren.filter((c) => code.substring(c.startIndex, c.endIndex).length >= 50);
 
-      if (validGrandChildren.length > 0 && langConfig.alwaysExtractChildren) {
+      // bd tea-rags-mcp-07fr — Recurse-as-container is correct only when
+      // the child is itself a SCOPE container (class / module). If a
+      // class method (`def route`) contains an inner function
+      // (`def decorator`), recursing here would emit ONLY the inner
+      // function and shadow the outer method. The outer method must be
+      // emitted as a leaf chunk so `find_symbol("Scaffold#route")`
+      // resolves. The grandchildren (inner defs) are intentionally NOT
+      // chunked separately — decorator-factories and helper closures
+      // rarely need standalone search hits.
+      const isScopeContainerChild = langConfig.scopeContainerTypes?.includes(childNode.type) ?? false;
+      const childIsRubyHookContainer = (langConfig.hooks?.length ?? 0) > 0;
+      const canRecurseAsContainer = isScopeContainerChild || childIsRubyHookContainer;
+
+      if (validGrandChildren.length > 0 && langConfig.alwaysExtractChildren && canRecurseAsContainer) {
         // Recurse: treat this child as a container
         const childName = this.extractName(childNode, code, langConfig.nameExtractor);
         const childHeader = this.extractContainerHeader(childNode, code);
@@ -667,10 +1051,10 @@ export class TreeSitterChunker implements CodeChunker {
           hook.process(childCtx);
         }
 
-        const fullParentName = this.buildParentPath([
-          ...(parentName ? [parentName] : []),
-          ...(childName ? [childName] : []),
-        ]);
+        const fullParentName = this.buildParentPath(
+          [...(parentName ? [parentName] : []), ...(childName ? [childName] : [])],
+          langConfig.scopeSeparator,
+        );
 
         await this.processChildren(
           validGrandChildren,
@@ -707,6 +1091,12 @@ export class TreeSitterChunker implements CodeChunker {
             },
           });
         }
+
+        // Note: Ruby DSL macros for nested class/module are emitted by the
+        // outer `chunkWithChildExtraction` call via `walkRubyMacroScopes`,
+        // which descends into every nested class/module from the top-level
+        // container. We do NOT call `emitRubyMacroSymbols` here — that
+        // would duplicate the synthetic method chunks.
         continue;
       }
 
@@ -729,11 +1119,32 @@ export class TreeSitterChunker implements CodeChunker {
         finalContent = `${hierarchyPrefix}${finalContent}`;
       }
 
-      const childName = this.extractName(childNode, code, langConfig.nameExtractor);
+      // Python `decorated_definition` wraps a `function_definition` whose
+      // decorators (@classmethod / @staticmethod) drive the instance vs
+      // class-method classification. The outer wrapper has no `name` field
+      // and `classifyMethod` only branches on the inner type, so name
+      // extraction and static detection must read the inner node — but
+      // chunk content/range stays on the outer wrapper so the decorator
+      // remains visible. See `.claude/rules/symbolid-convention.md`.
+      const semanticNode = this.unwrapDecoratedDefinition(childNode);
+      const childName = this.extractName(semanticNode, code, langConfig.nameExtractor);
       // Universal `#` (instance) vs `.` (class/static) — single source
       // of truth in `infra/symbolid`. See
       // `.claude/rules/symbolid-convention.md`.
-      const isStatic = isStaticMethodNode(childNode);
+      const isStatic = isStaticMethodNode(semanticNode);
+      // Accumulate intermediate scope-container ancestor names between
+      // the outer container and the leaf (Ruby: nested `module`/`class`).
+      // Without this, the leaf's parentSymbolId stays at the OUTERMOST
+      // container's name and diverges from the codegraph form
+      // (bd tea-rags-mcp-bdvm). When `scopeContainerTypes` is unset, the
+      // returned list is empty and behaviour is unchanged.
+      const intermediateScopes = this.collectIntermediateScopes(childNode, langConfig, code);
+      const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
+      // bd tea-rags-mcp-a466 — disambiguate per-overload (see comment at
+      // the top of processChildren). The first occurrence under a given
+      // (parent, name) keeps its symbolId; subsequent occurrences get
+      // a `~N` suffix.
+      const symbolId = disambiguateSymbolId(this.buildSymbolId(childName, effectiveParent, isStatic));
       chunks.push({
         content: finalContent,
         startLine,
@@ -742,15 +1153,76 @@ export class TreeSitterChunker implements CodeChunker {
           filePath,
           language,
           chunkIndex: chunks.length,
-          chunkType: this.getChunkType(childNode.type),
+          chunkType: this.getChunkType(semanticNode.type),
           name: childName,
-          parentSymbolId: parentName,
+          parentSymbolId: effectiveParent,
           parentType,
-          symbolId: this.buildSymbolId(childName, parentName, isStatic),
+          symbolId,
           methodLines: this.computeEndLine(childNode) - (childNode.startPosition.row + 1),
         },
       });
     }
+  }
+
+  /**
+   * Walk up from `leafNode` collecting names of intermediate scope
+   * containers (Ruby: `module A; module B; class C; def foo`) until the
+   * walk hits a node that is itself a chunkable container (the outer
+   * `parentName` already represents that level).
+   *
+   * Returns the chain ordered outermost-first WITHIN the intermediate
+   * range, e.g. for `module A; module B; class C; def foo` invoked on
+   * the `def foo` leaf when the outer container is `module A`, returns
+   * `["B", "C"]`. The leaf's own name is NOT included.
+   *
+   * When `scopeContainerTypes` is unset on the language config, the
+   * function bails out with `[]` — the existing single-level behaviour.
+   */
+  private collectIntermediateScopes(leafNode: Parser.SyntaxNode, langConfig: LanguageConfig, code: string): string[] {
+    const scopeTypes = langConfig.scopeContainerTypes;
+    if (!scopeTypes || scopeTypes.length === 0) return [];
+    const chain: string[] = [];
+    let p = leafNode.parent;
+    while (p) {
+      // Stop when we hit any node listed in chunkableTypes — that level
+      // is already represented by the outer `parentName`. We must not
+      // continue past it or we'd duplicate the outer container's name.
+      if (langConfig.chunkableTypes.includes(p.type) && !scopeTypes.includes(p.type)) {
+        break;
+      }
+      if (scopeTypes.includes(p.type)) {
+        const name = this.extractName(p, code, langConfig.nameExtractor);
+        if (name) chain.push(name);
+      }
+      p = p.parent;
+    }
+    // The walk produced names innermost-first; reverse to get
+    // outermost-first ordering for the symbolId join.
+    chain.reverse();
+    // Drop the outermost entry — that's the level already named by
+    // `parentName` in the caller. Without this, `module A; def foo`
+    // would emit parentName "A" AND chain ["A"], yielding "A::A#foo".
+    if (chain.length > 0) chain.shift();
+    return chain;
+  }
+
+  /**
+   * Compose the effective parent symbolId from the outer container name
+   * (`parentName`) and the chain of intermediate scope-container names.
+   * Joins with `scopeSeparator` (defaults to `"."` when unset to match
+   * the codegraph's default for `.` languages).
+   */
+  private composeParentSymbol(
+    parentName: string | undefined,
+    intermediateScopes: string[],
+    scopeSeparator?: string,
+  ): string | undefined {
+    if (!parentName) {
+      if (intermediateScopes.length === 0) return undefined;
+      return intermediateScopes.join(scopeSeparator ?? ".");
+    }
+    if (intermediateScopes.length === 0) return parentName;
+    return [parentName, ...intermediateScopes].join(scopeSeparator ?? ".");
   }
 
   private findChunkableNodes(
@@ -830,6 +1302,66 @@ export class TreeSitterChunker implements CodeChunker {
 
     traverse(parentNode);
     return nodes;
+  }
+
+  /**
+   * Emit ONE narrow parent class chunk covering the lines BEFORE the first
+   * extracted child (method) — class signature, docstring, class-level
+   * attributes. The parent chunk MUST NOT span the full class range when
+   * methods have been extracted into their own chunks: the parent's content
+   * would then duplicate method bodies AND get split by enforceMaxChunkSize
+   * into anonymous Foo#part1..partN whose line ranges are bogus linear
+   * interpolations across the full class span.
+   *
+   * Used by no-hook languages with `alwaysExtractChildren` (Python).
+   * Languages with hooks (TS/Ruby) emit narrow chunks via `ctx.bodyChunks`
+   * which the hook chain populates with proper ranges.
+   *
+   * bd tea-rags-mcp-b7k3.
+   */
+  private emitNarrowParentClassChunk(
+    containerNode: Parser.SyntaxNode,
+    validChildren: Parser.SyntaxNode[],
+    parentName: string | undefined,
+    parentType: string,
+    code: string,
+    filePath: string,
+    language: string,
+    chunks: CodeChunk[],
+  ): void {
+    // First child node is the first method (validChildren retains source order
+    // because findChildChunkableNodes does a depth-first traversal). Use its
+    // startPosition as the cutoff for the parent chunk.
+    const firstChild = validChildren.reduce(
+      (earliest, c) => (c.startPosition.row < earliest.startPosition.row ? c : earliest),
+      validChildren[0],
+    );
+    const classStartRow = containerNode.startPosition.row;
+    const cutoffRow = firstChild.startPosition.row;
+    const lines = code.split("\n");
+    // Slice [classStart, cutoff) — header row inclusive, first-method row
+    // exclusive. Methods live at cutoffRow onward and are emitted separately.
+    const headerLines = lines.slice(classStartRow, cutoffRow);
+    const content = headerLines.join("\n").trimEnd();
+    if (content.length < 50) return;
+    chunks.push({
+      content,
+      startLine: classStartRow + 1,
+      // endLine is the last header row (1-based, inclusive). cutoffRow is
+      // 0-based for firstChild.startPosition; the row above it is the last
+      // line of the header region.
+      endLine: Math.max(classStartRow + 1, cutoffRow),
+      metadata: {
+        filePath,
+        language,
+        chunkIndex: chunks.length,
+        chunkType: this.getChunkType(containerNode.type),
+        name: parentName,
+        parentSymbolId: parentName,
+        parentType,
+        symbolId: this.buildSymbolId(parentName),
+      },
+    });
   }
 
   /**
@@ -918,7 +1450,11 @@ export class TreeSitterChunker implements CodeChunker {
    * Map AST node type to chunk type
    */
   private getChunkType(nodeType: string): "function" | "class" | "interface" | "block" | "test" | "test_setup" {
-    if (nodeType.includes("function") || nodeType.includes("method")) {
+    // bd tea-rags-mcp-c5wt — Java `constructor_declaration` is method-like
+    // (instance-bound per .claude/rules/symbolid-convention.md, `Class#Class`).
+    // Without this, constructor chunks default to "block" and downstream
+    // filters scoping by chunkType === "function" miss them.
+    if (nodeType.includes("function") || nodeType.includes("method") || nodeType.includes("constructor")) {
       return "function";
     }
     if (nodeType.includes("class") || nodeType.includes("struct") || nodeType.includes("module")) {

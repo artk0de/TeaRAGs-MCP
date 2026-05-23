@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { extractClassHeader } from "../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/ruby/class-body-chunker.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
+import { generateChunkId } from "../../../../../../src/core/domains/ingest/pipeline/chunker/utils/chunk-id.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
 describe("TreeSitterChunker", () => {
@@ -254,6 +255,679 @@ class Calculator:
 
       const chunks = await chunker.chunk(code, "test.py", "python");
       expect(chunks.length).toBeGreaterThan(0);
+    });
+
+    // bd tea-rags-mcp-t6sr — chunker must emit class methods as separate
+    // chunks with symbolId matching the codegraph provider's pyNameOf
+    // output. Without these chunks, find_symbol("Flask#__init__") returns
+    // [] and large classes get split into anonymous `Foo#part1..partN`
+    // by enforceMaxChunkSize. See .claude/rules/symbolid-convention.md.
+    it("should emit Python class instance method as a separate chunk with symbolId Class#method", async () => {
+      // Pad each method body so chunks exceed the 50-char floor in
+      // chunkWithChildExtraction (childContent.length >= 50).
+      const code = `
+class Foo:
+    def bar(self):
+        """First instance method that is long enough to extract."""
+        result = self.compute_something(1, 2, 3)
+        return result + self.other_value
+
+    def baz(self):
+        """Second instance method, same shape."""
+        result = self.compute_other(4, 5, 6)
+        return result - self.other_value
+      `;
+      const chunks = await chunker.chunk(code, "test.py", "python");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThanOrEqual(2);
+      const bar = methodChunks.find((c) => c.metadata.name === "bar");
+      const baz = methodChunks.find((c) => c.metadata.name === "baz");
+      expect(bar?.metadata.symbolId).toBe("Foo#bar");
+      expect(bar?.metadata.parentSymbolId).toBe("Foo");
+      expect(bar?.metadata.parentType).toBe("class_definition");
+      expect(baz?.metadata.symbolId).toBe("Foo#baz");
+      expect(baz?.metadata.parentSymbolId).toBe("Foo");
+    });
+
+    it("should emit Python @classmethod as a separate chunk with symbolId Class.method (dot separator)", async () => {
+      const code = `
+class Foo:
+    @classmethod
+    def factory(cls, source):
+        """Class method long enough to clear the 50-char filter."""
+        instance = cls(source)
+        instance.prepare()
+        return instance
+
+    def helper(self):
+        """Instance sibling so the class extracts children."""
+        return self.factory("default-source-string")
+      `;
+      const chunks = await chunker.chunk(code, "test.py", "python");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const factory = methodChunks.find((c) => c.metadata.name === "factory");
+      // `.` separator per symbolid-convention.md — @classmethod is class-level.
+      expect(factory?.metadata.symbolId).toBe("Foo.factory");
+      expect(factory?.metadata.parentSymbolId).toBe("Foo");
+    });
+
+    it("should emit Python @staticmethod as a separate chunk with symbolId Class.method (dot separator)", async () => {
+      const code = `
+class Foo:
+    @staticmethod
+    def util(value):
+        """Static method long enough to clear the 50-char filter."""
+        normalized = value.strip().lower()
+        return normalized.replace(" ", "-")
+
+    def helper(self):
+        """Instance sibling so the class extracts children."""
+        return Foo.util("Some Source String")
+      `;
+      const chunks = await chunker.chunk(code, "test.py", "python");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const util = methodChunks.find((c) => c.metadata.name === "util");
+      expect(util?.metadata.symbolId).toBe("Foo.util");
+      expect(util?.metadata.parentSymbolId).toBe("Foo");
+    });
+
+    // bd tea-rags-mcp-b7k3 — when a Python class has methods, the parent
+    // class chunk MUST cover only the signature + class-level attributes
+    // BEFORE the first method declaration. Otherwise the parent chunk spans
+    // the FULL class range, gets split by enforceMaxChunkSize into anonymous
+    // Foo#part1..partN, duplicates method bodies inside those parts, and
+    // shadows the first method on Flask in find_symbol lookups.
+    it("should narrow Python class chunk to signature + leading attributes when methods are extracted", async () => {
+      const code = `
+class Foo:
+    """Class docstring kept inside the parent chunk."""
+    CLASS_LEVEL_CONSTANT = "value-long-enough-for-the-fifty-char-threshold"
+
+    def __init__(self):
+        """First instance method that must NOT be inside the parent class chunk."""
+        self.value = 1
+        self.other = 2
+
+    def bar(self):
+        """Second instance method, padding the class so the body is sizeable."""
+        result = self.compute_something(1, 2, 3)
+        return result + self.other
+      `;
+      const chunks = await chunker.chunk(code, "test.py", "python");
+
+      // Method chunks remain intact (t6sr behavior preserved).
+      const fooInit = chunks.find((c) => c.metadata.symbolId === "Foo#__init__");
+      const fooBar = chunks.find((c) => c.metadata.symbolId === "Foo#bar");
+      expect(fooInit).toBeDefined();
+      expect(fooBar).toBeDefined();
+
+      // Exactly one parent class chunk for Foo — no Foo#partN anonymous splits.
+      const classChunks = chunks.filter((c) => c.metadata.symbolId === "Foo");
+      expect(classChunks.length).toBe(1);
+      const partChunks = chunks.filter(
+        (c) => typeof c.metadata.symbolId === "string" && c.metadata.symbolId.startsWith("Foo#part"),
+      );
+      expect(partChunks.length).toBe(0);
+
+      // Parent class chunk has chunkType "class" and covers ONLY the header
+      // region before the first method's start line.
+      const fooClass = classChunks[0];
+      expect(fooClass.metadata.chunkType).toBe("class");
+      // First method (`__init__`) starts at line 6 in this source (1-based).
+      expect(fooClass.endLine).toBeLessThan(fooInit!.startLine);
+      // Class chunk content must NOT include method body lines.
+      expect(fooClass.content).not.toContain("def __init__");
+      expect(fooClass.content).not.toContain("def bar");
+    });
+
+    it("should NOT emit Foo#partN anonymous splits for a Python class with many methods", async () => {
+      // Synthesize a class large enough that, before the fix, the parent
+      // class chunk would have exceeded maxChunkSize (1000 chars) and been
+      // split by enforceMaxChunkSize into Foo#part1..partN. The docstring +
+      // class-level constants mimic Flask: substantial class-level content
+      // that survives extractContainerBody's method-line stripping.
+      const methods: string[] = [];
+      for (let i = 0; i < 12; i++) {
+        methods.push(`    def method_${i}(self):
+        """Method ${i} with enough body to clear the fifty-char floor easily."""
+        intermediate = self.compute_something(${i}, ${i + 1}, ${i + 2})
+        return intermediate + self.other_value_${i}`);
+      }
+      // Realistic class-level body — docstring + a few class-level
+      // attributes. Together small (< maxChunkSize), but the FULL class
+      // body (header + 12 methods) is several thousand characters and,
+      // before the fix, the parent chunk spanned the full range and got
+      // split by enforceMaxChunkSize into Foo#part1..partN.
+      const classLevelBody = `    """Class docstring with enough words to clear the fifty-char floor."""
+    default_config = {"key": "value-padding-the-class-level-attribute"}
+    version = "1.0.0"`;
+      const code = `
+class Foo:
+${classLevelBody}
+
+${methods.join("\n\n")}
+      `;
+
+      const chunks = await chunker.chunk(code, "test.py", "python");
+      const partChunks = chunks.filter(
+        (c) => typeof c.metadata.symbolId === "string" && c.metadata.symbolId.startsWith("Foo#part"),
+      );
+      expect(partChunks.length).toBe(0);
+
+      // All 12 method chunks present with the right symbolIds.
+      for (let i = 0; i < 12; i++) {
+        const methodChunk = chunks.find((c) => c.metadata.symbolId === `Foo#method_${i}`);
+        expect(methodChunk).toBeDefined();
+      }
+
+      // Exactly one parent class chunk.
+      const classChunks = chunks.filter((c) => c.metadata.symbolId === "Foo");
+      expect(classChunks.length).toBe(1);
+    });
+
+    // bd tea-rags-mcp-5xie — when a Python class method's body exceeds
+    // maxChunkSize, the character-fallback path in `processChildren` must
+    // mirror the `chunkOversizedNode` invariant: every sub-chunk inherits
+    // the method's composed symbolId (`Foo#__init__`) and `chunkType:
+    // "function"`. Without this fix, oversized `__init__` bodies (e.g.
+    // Flask's ~200-line constructor) emit sub-chunks with
+    // `symbolId: undefined` and `chunkType: "block"`, so the method
+    // vanishes from `find_symbol("Flask#__init__")` even though
+    // cg_symbols has the entry. Mirrors the regression invariant in
+    // tree-sitter.oversized-symbolid.test.ts at the method scope.
+    it("should preserve symbolId Foo#__init__ across split parts of an oversized Python method", async () => {
+      // Body must exceed maxChunkSize (1000 by default). 200 lines of
+      // ~22 chars each → ~4.4 KB, comfortably oversized.
+      const initBody = Array.from({ length: 200 }, (_, i) => `        self.value_${i} = 1`).join("\n");
+      const code = `
+class Foo:
+    def __init__(self):
+        """Oversized constructor that must be split by character fallback."""
+${initBody}
+
+    def helper(self):
+        """Small sibling method so the class extracts children."""
+        return self.value_0 + self.value_1
+      `;
+
+      const chunks = await chunker.chunk(code, "test.py", "python");
+
+      // The oversized __init__ produces multiple sub-chunks via character
+      // fallback. All splits share the method symbolId (5xie). The
+      // parentSymbolId / parentType refer to the enclosing CLASS now
+      // (cpbv), keeping the class-method lineage intact for MCP
+      // navigation.
+      const splits = chunks.filter((c) => c.metadata.symbolId === "Foo#__init__");
+      expect(splits.length).toBeGreaterThan(1);
+      for (const c of splits) {
+        expect(c.metadata.symbolId).toBe("Foo#__init__");
+        expect(c.metadata.chunkType).toBe("function");
+        expect(c.metadata.parentType).toBe("class_definition");
+        expect(c.metadata.parentSymbolId).toBe("Foo");
+      }
+
+      // The helper sibling is preserved with its own symbolId — the
+      // oversized branch doesn't accidentally consume sibling methods.
+      const helper = chunks.find((c) => c.metadata.symbolId === "Foo#helper");
+      expect(helper).toBeDefined();
+
+      // No anonymous `Foo#__init__#partN` symbolIds — splits share the
+      // composed symbolId. enforceMaxChunkSize is a no-op because the
+      // sub-chunks are already character-bounded to maxChunkSize.
+      const anonParts = chunks.filter(
+        (c) => typeof c.metadata.symbolId === "string" && c.metadata.symbolId.startsWith("Foo#__init__#part"),
+      );
+      expect(anonParts.length).toBe(0);
+    });
+
+    it("should keep parent class chunk covering the full body when class has no methods", async () => {
+      // Regression preservation: a method-less class should still emit a
+      // parent class chunk spanning its body (the only place its class-level
+      // declarations live).
+      const code = `
+class Settings:
+    """Class with attributes only — no methods at all."""
+    NAME = "settings-with-a-name-long-enough-for-50-char-floor"
+    VERSION = "1.0.0"
+    DESCRIPTION = "Pure data class without any method declarations whatsoever."
+    ENABLED = True
+      `;
+      const chunks = await chunker.chunk(code, "test.py", "python");
+      const settingsClass = chunks.find((c) => c.metadata.symbolId === "Settings");
+      expect(settingsClass).toBeDefined();
+      expect(settingsClass!.content).toContain("NAME");
+      expect(settingsClass!.content).toContain("DESCRIPTION");
+    });
+
+    it("should compose nested Python class scopes into method symbolId (Outer.Inner#method)", async () => {
+      // symbolid-convention.md: nested class declaration uses `.` between
+      // outer and inner (Outer.Inner), and method on that nested class
+      // uses `#` for instance methods → Outer.Inner#method.
+      const code = `
+class Outer:
+    class Inner:
+        def method(self):
+            """Method on nested class — long enough to chunk."""
+            value = self.compute_something(1, 2, 3)
+            return value + 100
+
+        def helper(self):
+            """Second method to keep child extraction stable."""
+            return self.method() * 2
+      `;
+      const chunks = await chunker.chunk(code, "test.py", "python");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const method = methodChunks.find((c) => c.metadata.name === "method");
+      expect(method?.metadata.symbolId).toBe("Outer.Inner#method");
+      expect(method?.metadata.parentSymbolId).toBe("Outer.Inner");
+    });
+  });
+
+  // bd tea-rags-mcp-c5wt — chunker must emit Java class methods as separate
+  // chunks with symbolId matching cg_symbols.symbol_id from the codegraph
+  // provider's javaNameOf. Without these chunks, find_symbol("StringUtils#isEmpty")
+  // returns [] and large Java classes (e.g. StringUtils.java with 199 method
+  // declarations) are chunked whole, then split by enforceMaxChunkSize into
+  // anonymous StringUtils#part1..partN. Mirrors Python t6sr / Go n7x5.
+  // See .claude/rules/symbolid-convention.md.
+  describe("chunk - Java", () => {
+    it("should emit Java class instance method as a separate chunk with symbolId Class#method", async () => {
+      // Method bodies padded to clear the 50-char floor in processChildren.
+      const code = `
+class Foo {
+  public boolean isEmpty(String value) {
+    return value == null || value.length() == 0;
+  }
+
+  public String trim(String value) {
+    return value == null ? null : value.trim();
+  }
+}
+      `;
+      const chunks = await chunker.chunk(code, "Foo.java", "java");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThanOrEqual(2);
+      const isEmpty = methodChunks.find((c) => c.metadata.name === "isEmpty");
+      const trim = methodChunks.find((c) => c.metadata.name === "trim");
+      expect(isEmpty?.metadata.symbolId).toBe("Foo#isEmpty");
+      expect(isEmpty?.metadata.parentSymbolId).toBe("Foo");
+      expect(isEmpty?.metadata.parentType).toBe("class_declaration");
+      expect(trim?.metadata.symbolId).toBe("Foo#trim");
+      expect(trim?.metadata.parentSymbolId).toBe("Foo");
+    });
+
+    it("should emit Java static method as a separate chunk with symbolId Class.method (dot separator)", async () => {
+      const code = `
+class Foo {
+  public static String upperCase(String value) {
+    return value == null ? null : value.toUpperCase();
+  }
+
+  public boolean helper(String value) {
+    return Foo.upperCase(value).startsWith("X");
+  }
+}
+      `;
+      const chunks = await chunker.chunk(code, "Foo.java", "java");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const upperCase = methodChunks.find((c) => c.metadata.name === "upperCase");
+      // `.` separator per symbolid-convention.md — `static` modifier is class-level.
+      expect(upperCase?.metadata.symbolId).toBe("Foo.upperCase");
+      expect(upperCase?.metadata.parentSymbolId).toBe("Foo");
+    });
+
+    it("should emit Java constructor as a separate chunk with symbolId Class#Class", async () => {
+      const code = `
+class Foo {
+  private final int value;
+
+  public Foo(int initialValue) {
+    this.value = initialValue + 1;
+  }
+
+  public int getValue() {
+    return this.value + 2;
+  }
+}
+      `;
+      const chunks = await chunker.chunk(code, "Foo.java", "java");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const ctor = methodChunks.find((c) => c.metadata.symbolId === "Foo#Foo");
+      expect(ctor).toBeDefined();
+      expect(ctor?.metadata.name).toBe("Foo");
+      expect(ctor?.metadata.parentSymbolId).toBe("Foo");
+      expect(ctor?.metadata.parentType).toBe("class_declaration");
+    });
+
+    it("should compose nested Java class scopes into method symbolId (Outer.Inner#method)", async () => {
+      // symbolid-convention.md: nested class declaration uses `.` between
+      // outer and inner (Outer.Inner), and method on that nested class
+      // uses `#` for instance methods → Outer.Inner#method.
+      const code = `
+class Outer {
+  static class Inner {
+    public String describe(String value) {
+      return "inner-result-for-" + value + "-padding-the-body-length";
+    }
+
+    public String helper(String value) {
+      return this.describe(value).toLowerCase();
+    }
+  }
+}
+      `;
+      const chunks = await chunker.chunk(code, "Outer.java", "java");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const describe = methodChunks.find((c) => c.metadata.name === "describe");
+      expect(describe?.metadata.symbolId).toBe("Outer.Inner#describe");
+      expect(describe?.metadata.parentSymbolId).toBe("Outer.Inner");
+    });
+
+    it("should NOT emit Foo#partN anonymous splits for a Java class with many methods", async () => {
+      // Synthesize a class large enough that, before the fix, the parent
+      // class chunk would have exceeded maxChunkSize (1000 chars) and been
+      // split by enforceMaxChunkSize into Foo#part1..partN. Mirrors the
+      // Python t6sr regression test for Java.
+      const methods: string[] = [];
+      for (let i = 0; i < 12; i++) {
+        methods.push(`  public String method_${i}(String value) {
+    return "result-${i}-" + value + "-with-enough-body-to-clear-the-fifty-char-floor";
+  }`);
+      }
+      const code = `class Foo {
+${methods.join("\n\n")}
+}`;
+
+      const chunks = await chunker.chunk(code, "Foo.java", "java");
+      const partChunks = chunks.filter(
+        (c) => typeof c.metadata.symbolId === "string" && c.metadata.symbolId.startsWith("Foo#part"),
+      );
+      expect(partChunks.length).toBe(0);
+
+      // All 12 method chunks present with the right symbolIds.
+      for (let i = 0; i < 12; i++) {
+        const methodChunk = chunks.find((c) => c.metadata.symbolId === `Foo#method_${i}`);
+        expect(methodChunk).toBeDefined();
+      }
+    });
+
+    it("should emit interface methods as separate chunks with symbolId Interface#method", async () => {
+      // Java interfaces also need method-level chunks. `interface_declaration`
+      // is both a chunkable scope and a scopeContainerType.
+      const code = `
+interface Repository {
+  String findById(String id);
+
+  default String findOrDefault(String id, String defaultValue) {
+    String result = this.findById(id);
+    return result == null ? defaultValue : result;
+  }
+}
+      `;
+      const chunks = await chunker.chunk(code, "Repository.java", "java");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const findOrDefault = methodChunks.find((c) => c.metadata.name === "findOrDefault");
+      expect(findOrDefault?.metadata.symbolId).toBe("Repository#findOrDefault");
+      expect(findOrDefault?.metadata.parentSymbolId).toBe("Repository");
+    });
+
+    // bd tea-rags-mcp-52e8 — abstract method declarations like
+    // `String findById(String id);` are short (<50 chars) and were
+    // previously filtered out by the validChildren length floor in
+    // processChildren. The chunker must emit a chunk for every
+    // method_declaration regardless of body presence so
+    // `find_symbol("Pair#getLeft")` resolves on abstract API surfaces.
+    it("should emit abstract method declarations on abstract class as chunks (no body, short signature)", async () => {
+      const code = `
+abstract class Pair {
+  public abstract String getLeft();
+  public abstract String getRight();
+
+  public String describe() {
+    return "pair: " + this.getLeft() + ", " + this.getRight();
+  }
+}
+      `;
+      const chunks = await chunker.chunk(code, "Pair.java", "java");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const getLeft = methodChunks.find((c) => c.metadata.name === "getLeft");
+      const getRight = methodChunks.find((c) => c.metadata.name === "getRight");
+      expect(getLeft?.metadata.symbolId).toBe("Pair#getLeft");
+      expect(getRight?.metadata.symbolId).toBe("Pair#getRight");
+    });
+
+    it("should emit interface abstract method declarations as chunks (short signature, no body)", async () => {
+      const code = `
+interface Repository {
+  String findById(String id);
+  void deleteById(String id);
+}
+      `;
+      const chunks = await chunker.chunk(code, "Repository.java", "java");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const findById = methodChunks.find((c) => c.metadata.name === "findById");
+      const deleteById = methodChunks.find((c) => c.metadata.name === "deleteById");
+      expect(findById?.metadata.symbolId).toBe("Repository#findById");
+      expect(deleteById?.metadata.symbolId).toBe("Repository#deleteById");
+    });
+
+    // bd tea-rags-mcp-a466 — Java overload resolution. Multiple
+    // method_declaration nodes with the same name share a symbolId, so
+    // `find_symbol("StringUtils.upperCase")` returns a single merged
+    // chunk for all overloads and get_callers/get_callees can't
+    // disambiguate. Suffix every overload after the first with `~N`
+    // (1-based index) so each overload has a distinct symbolId.
+    it("should suffix Java overload methods so each chunk has a distinct symbolId (~N convention)", async () => {
+      const code = `
+class StringUtils {
+  public static String upperCase(String value) {
+    return value == null ? null : value.toUpperCase();
+  }
+
+  public static String upperCase(String value, java.util.Locale locale) {
+    return value == null ? null : value.toUpperCase(locale);
+  }
+
+  public static String upperCase(String value, java.util.Locale locale, boolean strict) {
+    return value == null ? null : value.toUpperCase(locale);
+  }
+}
+      `;
+      const chunks = await chunker.chunk(code, "StringUtils.java", "java");
+      const ids = chunks
+        .filter((c) => c.metadata.chunkType === "function")
+        .map((c) => c.metadata.symbolId)
+        .filter((id): id is string => typeof id === "string" && id.includes("upperCase"));
+      // All three overloads must produce distinct symbolIds.
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(ids).toContain("StringUtils.upperCase");
+      expect(ids).toContain("StringUtils.upperCase~2");
+      expect(ids).toContain("StringUtils.upperCase~3");
+    });
+
+    it("should suffix Java instance-method overloads under the same class", async () => {
+      const code = `
+class HashCodeBuilder {
+  public HashCodeBuilder append(int value) {
+    return this;
+  }
+
+  public HashCodeBuilder append(long value) {
+    return this;
+  }
+
+  public HashCodeBuilder append(Object value) {
+    return this;
+  }
+}
+      `;
+      const chunks = await chunker.chunk(code, "HashCodeBuilder.java", "java");
+      const ids = chunks
+        .filter((c) => c.metadata.chunkType === "function")
+        .map((c) => c.metadata.symbolId)
+        .filter((id): id is string => typeof id === "string" && id.includes("append"));
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(ids).toContain("HashCodeBuilder#append");
+      expect(ids).toContain("HashCodeBuilder#append~2");
+      expect(ids).toContain("HashCodeBuilder#append~3");
+    });
+  });
+
+  // bd tea-rags-mcp-fwa1 / 2hbd / h82m / lk6i — chunker must emit Rust
+  // `impl` block methods as separate chunks with symbolId matching
+  // cg_symbols.symbol_id from the codegraph provider's `rustNameOf`.
+  // Without these chunks, find_symbol("Searcher#new") returns [] and
+  // `impl Searcher { fn new() {...} fn search_slice() {...} }` is
+  // chunked whole, then split by enforceMaxChunkSize into anonymous
+  // Searcher#part1..partN. Mirrors Python t6sr / Go n7x5 / Java c5wt.
+  // See .claude/rules/symbolid-convention.md.
+  describe("chunk - Rust", () => {
+    it("should emit Rust impl block instance method as a separate chunk with symbolId Type#method", async () => {
+      // Method bodies padded to clear the 50-char floor.
+      const code = `
+impl Searcher {
+    pub fn search_slice(&self, slice: &[u8]) -> bool {
+        return slice.len() > 0 && slice[0] == 42u8;
+    }
+
+    pub fn search_path(&self, path: &str) -> bool {
+        return path.len() > 0 && path.starts_with("/");
+    }
+}
+      `;
+      const chunks = await chunker.chunk(code, "searcher.rs", "rust");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThanOrEqual(2);
+      const searchSlice = methodChunks.find((c) => c.metadata.name === "search_slice");
+      const searchPath = methodChunks.find((c) => c.metadata.name === "search_path");
+      // `&self` → instance method → `#` separator.
+      expect(searchSlice?.metadata.symbolId).toBe("Searcher#search_slice");
+      expect(searchSlice?.metadata.parentSymbolId).toBe("Searcher");
+      expect(searchPath?.metadata.symbolId).toBe("Searcher#search_path");
+    });
+
+    it("should emit Rust associated function as a separate chunk with symbolId Type.method (dot separator)", async () => {
+      // `fn new()` without `self` is an associated function (class-level).
+      const code = `
+impl Searcher {
+    pub fn new(config: Config) -> Searcher {
+        return Searcher { config: config, count: 0 };
+    }
+
+    pub fn run(&self) -> usize {
+        return self.count + 1;
+    }
+}
+      `;
+      const chunks = await chunker.chunk(code, "searcher.rs", "rust");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const newFn = methodChunks.find((c) => c.metadata.name === "new");
+      // No `self` → static / associated function → `.` separator per
+      // symbolid-convention.md.
+      expect(newFn?.metadata.symbolId).toBe("Searcher.new");
+      expect(newFn?.metadata.parentSymbolId).toBe("Searcher");
+    });
+
+    // bd tea-rags-mcp-2hbd — `impl Default for Searcher { fn default() }`
+    // must register `Searcher#default`, NOT `Default#default`. The
+    // implementing TYPE owns the method, not the trait.
+    it("should attribute `impl Trait for Type` methods to Type, not the Trait", async () => {
+      const code = `
+impl Default for Searcher {
+    fn default() -> Searcher {
+        return Searcher { config: Config::new(), count: 0 };
+    }
+}
+      `;
+      const chunks = await chunker.chunk(code, "searcher.rs", "rust");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const defaultFn = methodChunks.find((c) => c.metadata.name === "default");
+      // The parent is the implementing TYPE (Searcher), not the trait
+      // (Default). `default` is an associated function (no `self`) so
+      // it joins with `.`.
+      expect(defaultFn?.metadata.symbolId).toBe("Searcher.default");
+      expect(defaultFn?.metadata.parentSymbolId).toBe("Searcher");
+    });
+
+    // bd tea-rags-mcp-h82m — generics + lifetimes must be stripped from
+    // symbolId. `impl<'s> Worker<'s>` → `Worker#send`, not
+    // `Worker<'s>#send`.
+    it("should strip generics and lifetimes from Rust impl type name in symbolId", async () => {
+      const code = `
+impl<'s> Worker<'s> {
+    pub fn send(&self, msg: &'s str) -> bool {
+        return msg.len() > 0 && msg.starts_with("hello");
+    }
+}
+      `;
+      const chunks = await chunker.chunk(code, "worker.rs", "rust");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const send = methodChunks.find((c) => c.metadata.name === "send");
+      // No `Worker<'s>`, no `Worker<'_>` — just the bare type identifier.
+      expect(send?.metadata.symbolId).toBe("Worker#send");
+      expect(send?.metadata.parentSymbolId).toBe("Worker");
+    });
+
+    it("should strip generic parameters from Rust impl type name in symbolId", async () => {
+      const code = `
+impl<T: Clone> Container<T> {
+    pub fn clone_inner(&self) -> T {
+        return self.value.clone();
+    }
+}
+      `;
+      const chunks = await chunker.chunk(code, "container.rs", "rust");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const cloneInner = methodChunks.find((c) => c.metadata.name === "clone_inner");
+      expect(cloneInner?.metadata.symbolId).toBe("Container#clone_inner");
+      expect(cloneInner?.metadata.parentSymbolId).toBe("Container");
+    });
+
+    // bd tea-rags-mcp-fwa1 — large impl block must NOT be split into
+    // anonymous `Searcher#part1..partN` chunks. Each method becomes its
+    // own chunk.
+    it("should NOT emit Type#partN anonymous splits for a Rust impl block with many methods", async () => {
+      const methods: string[] = [];
+      for (let i = 0; i < 12; i++) {
+        methods.push(`    pub fn method_${i}(&self) -> String {
+        return format!("result-${i}-{}-with-enough-body-to-clear-fifty", self.id);
+    }`);
+      }
+      const code = `impl Searcher {
+${methods.join("\n\n")}
+}`;
+      const chunks = await chunker.chunk(code, "searcher.rs", "rust");
+      const partChunks = chunks.filter(
+        (c) => typeof c.metadata.symbolId === "string" && c.metadata.symbolId.startsWith("Searcher#part"),
+      );
+      expect(partChunks.length).toBe(0);
+      for (let i = 0; i < 12; i++) {
+        const methodChunk = chunks.find((c) => c.metadata.symbolId === `Searcher#method_${i}`);
+        expect(methodChunk).toBeDefined();
+      }
+    });
+
+    // bd tea-rags-mcp-lk6i — a method literally named `chunk` must not
+    // be collapsed with the chunker's `(part N/M)` label. fwa1 fix makes
+    // each `fn chunk` get its own symbolId — no collision.
+    it("should emit `fn chunk` method with its own symbolId, not the chunker's part-N label", async () => {
+      const code = `
+impl Printer {
+    pub fn chunk(&self, data: &[u8]) -> usize {
+        return data.len() + self.offset + 1;
+    }
+
+    pub fn flush(&self) -> bool {
+        return self.offset == 0;
+    }
+}
+      `;
+      const chunks = await chunker.chunk(code, "printer.rs", "rust");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const chunkMethod = methodChunks.find((c) => c.metadata.name === "chunk");
+      expect(chunkMethod?.metadata.symbolId).toBe("Printer#chunk");
+      // The literal "(part N/M)" suffix must NOT appear on this symbolId.
+      expect(chunkMethod?.metadata.symbolId).not.toMatch(/part\s*\d+\s*\/\s*\d+/);
     });
   });
 
@@ -810,6 +1484,49 @@ end
       expect(chunks.length).toBe(1);
       expect(chunks[0].metadata.chunkType).toBe("class");
     });
+
+    // BUG tea-rags-mcp-bdvm — nested module/class scope must accumulate into
+    // the method's parent symbolId, not stop at the outermost. The chunker
+    // historically only used the OUTERMOST module's name as parentName for
+    // every method discovered inside, so `module A; module B; class C; def
+    // foo; end; end; end; end` emitted `A#foo` instead of `A::B::C#foo`.
+    // Codegraph correctly emits `A::B::C#foo` — chunker and codegraph MUST
+    // agree per .claude/rules/symbolid-convention.md or get_callers /
+    // get_callees produce ghost rows.
+    it("composes nested module/class scopes into method symbolId (Ruby :: separator)", async () => {
+      // Pad each method body so the chunker classifies the class as
+      // "large enough to extract methods" (>= 50 chars per child).
+      const code = `
+module A
+  module B
+    class C
+      def foo
+        # First method that is long enough to trigger child extraction
+        puts "doing foo work in C inside B inside A"
+        result = compute_foo_thing(arg1, arg2)
+        return result
+      end
+
+      def bar
+        # Second method with the same locality
+        puts "doing bar work in C inside B inside A"
+        result = compute_bar_thing(arg1, arg2)
+        return result
+      end
+    end
+  end
+end
+      `;
+      const chunks = await chunker.chunk(code, "a/b/c.rb", "ruby");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThanOrEqual(2);
+      const foo = methodChunks.find((c) => c.metadata.name === "foo");
+      const bar = methodChunks.find((c) => c.metadata.name === "bar");
+      expect(foo?.metadata.symbolId).toBe("A::B::C#foo");
+      expect(foo?.metadata.parentSymbolId).toBe("A::B::C");
+      expect(bar?.metadata.symbolId).toBe("A::B::C#bar");
+      expect(bar?.metadata.parentSymbolId).toBe("A::B::C");
+    });
   });
 
   describe("chunk - Markdown", () => {
@@ -1055,9 +1772,14 @@ function veryLargeFunction() {
 
       const splitChunks = chunks.filter((c) => c.metadata.parentSymbolId === "big_function");
       expect(splitChunks.length).toBeGreaterThan(0);
-      // Each split chunk is identifiable as a part of the original symbol
+      // bd tea-rags-mcp-t6sr — oversized top-level functions now flow
+      // through `chunkOversizedNode` (same path TS uses for big functions)
+      // so every sub-chunk shares `symbolId: "big_function"`. Codegraph
+      // invariant: all sub-chunks of one method share one symbolId.
+      // Matches the regression test in tree-sitter.oversized-symbolid.test.ts.
       for (const chunk of splitChunks) {
-        expect(chunk.metadata.symbolId).toMatch(/^big_function#part\d+$/);
+        expect(chunk.metadata.symbolId).toBe("big_function");
+        expect(chunk.metadata.chunkType).toBe("function");
       }
     });
 
@@ -1580,6 +2302,493 @@ class DataProcessor {
         }
       }
     });
+
+    // bd tea-rags-mcp-kfzx — chunker must mirror codegraph `jsNameOf` for
+    // JS assignment_expression / lexical_declaration shapes that carry a
+    // function value. Without this the Qdrant payload symbolId stays at
+    // the top-level function_declaration set (~2 symbols per express
+    // lib/application.js) while codegraph cg_symbols emits ~18 — the two
+    // diverge and `find_symbol(symbol="app.set")` returns empty even
+    // though `get_callers("app.set")` finds rows.
+    //
+    // Patterns covered (per .claude/rules/symbolid-convention.md):
+    //   #1  obj.method = function () {}                  → obj.method
+    //   #2  Foo.prototype.bar = function () {}           → Foo#bar (instance)
+    //   #3  exports.foo = function () {}                 → foo (top-level)
+    //   #5  const Bar = function () {} / arrow / let/var → Bar
+    describe("JS assignment_expression symbolId (bd tea-rags-mcp-kfzx)", () => {
+      it("#1 emits symbolId `obj.method` for `obj.method = function () {}`", async () => {
+        const code = [
+          "var app = {};",
+          "app.set = function set(setting, val) {",
+          "  // long enough body to clear the 50-char chunk-size filter",
+          "  this.settings = this.settings || {};",
+          "  this.settings[setting] = val;",
+          "  return this;",
+          "};",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "application.js", "javascript");
+        const setChunk = chunks.find((c) => c.metadata.symbolId === "app.set");
+        expect(setChunk).toBeDefined();
+        expect(setChunk!.metadata.name).toBe("app.set");
+      });
+
+      it("#2 emits symbolId `Foo#bar` for `Foo.prototype.bar = function () {}`", async () => {
+        const code = [
+          "function Foo() {}",
+          "Foo.prototype.bar = function bar(arg) {",
+          "  // prototype assignment is the canonical pre-class instance method",
+          "  this.value = arg;",
+          "  return this;",
+          "};",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "foo.js", "javascript");
+        const barChunk = chunks.find((c) => c.metadata.symbolId === "Foo#bar");
+        expect(barChunk).toBeDefined();
+        expect(barChunk!.metadata.name).toBe("Foo#bar");
+      });
+
+      it("#3 emits symbolId `foo` for `exports.foo = function () {}`", async () => {
+        const code = [
+          "exports.foo = function foo() {",
+          "  // CommonJS exports — emit top-level symbol just like a function decl",
+          "  return 'hello world from foo handler';",
+          "};",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "mod.js", "javascript");
+        const fooChunk = chunks.find((c) => c.metadata.symbolId === "foo");
+        expect(fooChunk).toBeDefined();
+        expect(fooChunk!.metadata.name).toBe("foo");
+      });
+
+      it("#5 emits symbolId `Bar` for `const Bar = function () {}`", async () => {
+        const code = [
+          "const Bar = function Bar() {",
+          "  // const-declared function expression — same emission as function_declaration",
+          "  return { kind: 'bar', value: 42 };",
+          "};",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "bar.js", "javascript");
+        const barChunk = chunks.find((c) => c.metadata.symbolId === "Bar");
+        expect(barChunk).toBeDefined();
+        expect(barChunk!.metadata.name).toBe("Bar");
+      });
+    });
+
+    // bd tea-rags-mcp-d1f8 — chunker must mirror codegraph for JS getter
+    // helpers so `find_symbol(symbol="app.router")` matches the chunk that
+    // contains the getter body. Without this the cg_symbols row exists but
+    // the Qdrant payload lacks the symbolId — find_symbol returns empty.
+    describe("JS getter helpers symbolId (bd tea-rags-mcp-d1f8)", () => {
+      it("Object.defineProperty(obj,'name',{get:fn}) emits chunk with symbolId `obj.name`", async () => {
+        const code = [
+          "var app = {};",
+          "Object.defineProperty(app, 'router', {",
+          "  configurable: true,",
+          "  enumerable: true,",
+          "  get: function () {",
+          "    // long enough body to clear the chunker minimum-size filter",
+          "    return this._router;",
+          "  },",
+          "});",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "application.js", "javascript");
+        const routerChunk = chunks.find((c) => c.metadata.symbolId === "app.router");
+        expect(routerChunk).toBeDefined();
+        expect(routerChunk!.metadata.name).toBe("app.router");
+      });
+
+      it("defineGetter(obj,'name',fn) helper emits chunk with symbolId `obj.name`", async () => {
+        const code = [
+          "var req = {};",
+          "function defineGetter(obj, name, getter) {",
+          "  Object.defineProperty(obj, name, { configurable: true, enumerable: true, get: getter });",
+          "}",
+          "defineGetter(req, 'query', function query() {",
+          "  // long enough body to clear the chunker minimum-size filter",
+          "  return this._query;",
+          "});",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "request.js", "javascript");
+        const queryChunk = chunks.find((c) => c.metadata.symbolId === "req.query");
+        expect(queryChunk).toBeDefined();
+        expect(queryChunk!.metadata.name).toBe("req.query");
+      });
+    });
+
+    // bd tea-rags-mcp-z95o — chunker must mirror provider's forEach-dispatch
+    // emission so find_symbol(app.get) resolves to a chunk.
+    describe("JS forEach HTTP-verb dispatch symbolId (bd tea-rags-mcp-z95o)", () => {
+      it("methods.forEach(m => app[m] = fn) emits one chunk per HTTP verb", async () => {
+        const code = [
+          "var methods = require('methods');",
+          "var app = {};",
+          "methods.forEach(function (method) {",
+          "  app[method] = function (path) {",
+          "    // long enough body to clear the chunker minimum-size filter",
+          "    return this;",
+          "  };",
+          "});",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "application.js", "javascript");
+        // 9 HTTP verbs from the npm `methods` package.
+        const verbs = ["get", "post", "put", "delete", "head", "options", "patch", "connect", "trace"];
+        for (const verb of verbs) {
+          const verbChunk = chunks.find((c) => c.metadata.symbolId === `app.${verb}`);
+          expect(verbChunk, `chunk for app.${verb} missing`).toBeDefined();
+          expect(verbChunk!.metadata.name).toBe(`app.${verb}`);
+        }
+        // bd tea-rags-mcp-z95o — sibling chunks share content / lines /
+        // filePath. If `generateChunkId` excludes symbolId, all 9 verb
+        // chunks collide on the same Qdrant point ID and only the LAST
+        // one survives the upsert. Assert that the 9 chunk IDs are
+        // pairwise distinct so the chunks reach Qdrant intact.
+        const verbChunks = verbs.map((v) => chunks.find((c) => c.metadata.symbolId === `app.${v}`)!);
+        const ids = verbChunks.map((c) => generateChunkId(c));
+        expect(new Set(ids).size).toBe(verbs.length);
+      });
+
+      // bd tea-rags-mcp-z95o widening — express does `require('./utils').methods`,
+      // not `require('methods')`. HTTP-verb string literals in the body are
+      // the strongest signal that the callback iterates HTTP verbs.
+      it("methods.forEach with `method === 'get'` body emits chunks for each verb (z95o-2)", async () => {
+        const code = [
+          "var methods = require('./utils').methods;",
+          "var app = {};",
+          "methods.forEach(function (method) {",
+          "  app[method] = function (path) {",
+          "    if (method === 'get' && arguments.length === 1) { return this; }",
+          "    // long enough body to clear the chunker minimum-size filter",
+          "    return this;",
+          "  };",
+          "});",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "application.js", "javascript");
+        const verbs = ["get", "post", "put", "delete"];
+        for (const verb of verbs) {
+          const verbChunk = chunks.find((c) => c.metadata.symbolId === `app.${verb}`);
+          expect(verbChunk, `chunk for app.${verb} missing`).toBeDefined();
+          expect(verbChunk!.metadata.name).toBe(`app.${verb}`);
+        }
+      });
+
+      it("forEach without HTTP-verb body markers does NOT emit verb chunks (z95o-3)", async () => {
+        const code = [
+          "var things = ['alpha', 'beta', 'gamma'];",
+          "var obj = {};",
+          "things.forEach(function (thing) {",
+          "  obj[thing] = function () {",
+          "    // long enough body to clear the chunker minimum-size filter",
+          "    return thing.length;",
+          "  };",
+          "});",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "config.js", "javascript");
+        // No HTTP verbs — must not emit obj.get / obj.post chunks.
+        const verbChunk = chunks.find((c) => c.metadata.symbolId === "obj.get" || c.metadata.symbolId === "obj.post");
+        expect(verbChunk).toBeUndefined();
+      });
+    });
+
+    // bd tea-rags-mcp-d1f8 — `Object.defineProperty(this, ...)` inside an
+    // outer `app.method = function ...` assignment must resolve `this` to
+    // the outer receiver `app`, emitting `app.<name>` not a literal
+    // `app.init.this.router` chain. Mirrors codegraph provider behaviour.
+    describe("JS defineProperty(this, ...) inside outer assignment (bd tea-rags-mcp-d1f8 this-resolve)", () => {
+      it("emits chunk with symbolId `app.router` not literal-this chain", async () => {
+        const code = [
+          "var app = {};",
+          "app.init = function init() {",
+          "  Object.defineProperty(this, 'router', {",
+          "    configurable: true,",
+          "    enumerable: true,",
+          "    get: function () {",
+          "      // long enough body to clear the chunker minimum-size filter",
+          "      return this._router;",
+          "    },",
+          "  });",
+          "};",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "application.js", "javascript");
+        const routerChunk = chunks.find((c) => c.metadata.symbolId === "app.router");
+        expect(routerChunk).toBeDefined();
+        expect(routerChunk!.metadata.name).toBe("app.router");
+        // Negative — no literal-this chain.
+        const literalThis = chunks.find(
+          (c) => c.metadata.symbolId === "app.init.this.router" || c.metadata.symbolId === "this.router",
+        );
+        expect(literalThis).toBeUndefined();
+      });
+
+      // bd tea-rags-mcp-d1f8 — the outer `app.init = function init() {...}`
+      // assignment AND the nested `Object.defineProperty(this, 'router', ...)`
+      // sibling must BOTH be emitted, with distinct chunk IDs. Previously
+      // both shared identical content / file / line range, so
+      // `generateChunkId` collided and Qdrant kept only one point — the
+      // chunker emitted two CodeChunk objects but only one survived
+      // upsert.
+      it("emits BOTH `app.init` and `app.router` sibling chunks with distinct chunk IDs", async () => {
+        const code = [
+          "var app = {};",
+          "app.init = function init() {",
+          "  Object.defineProperty(this, 'router', {",
+          "    configurable: true,",
+          "    enumerable: true,",
+          "    get: function () {",
+          "      // long enough body to clear the chunker minimum-size filter",
+          "      return this._router;",
+          "    },",
+          "  });",
+          "};",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "application.js", "javascript");
+        const initChunk = chunks.find((c) => c.metadata.symbolId === "app.init");
+        const routerChunk = chunks.find((c) => c.metadata.symbolId === "app.router");
+        expect(initChunk, "chunk for app.init missing").toBeDefined();
+        expect(routerChunk, "chunk for app.router missing").toBeDefined();
+        // Sibling chunks must produce distinct Qdrant point IDs so that
+        // both survive upsert.
+        expect(generateChunkId(initChunk!)).not.toBe(generateChunkId(routerChunk!));
+      });
+    });
+
+    // bd tea-rags-mcp-n7x5 + j2b7 — Go method/struct/interface symbolId in chunker.
+    // The chunker writes the Qdrant payload symbolId; the codegraph provider
+    // writes cg_symbols.symbol_id for the SAME AST node. Both must agree per
+    // .claude/rules/symbolid-convention.md. Before the fix:
+    //   - method_declaration emitted bare `JSON` instead of `Context#JSON`,
+    //   - type_declaration (struct/interface/alias) emitted name=undefined
+    //     and chunkType="block" because `extractName` could not find the
+    //     identifier (it lives on type_spec, not type_declaration).
+    describe("Go symbolId metadata (bd tea-rags-mcp-n7x5 + j2b7)", () => {
+      it("emits `Receiver#Method` symbolId for `func (c *Context) JSON(...)`", async () => {
+        const code = [
+          "package gin",
+          "",
+          "type Context struct{}",
+          "",
+          "func (c *Context) JSON(code int, obj interface{}) {",
+          "  // Body large enough to clear the 50-char filter on chunk content.",
+          "  _ = code",
+          "  _ = obj",
+          "  return",
+          "}",
+          "",
+        ].join("\n");
+        const chunks = await chunker.chunk(code, "context.go", "go");
+        const jsonChunk = chunks.find((c) => c.metadata.symbolId === "Context#JSON");
+        expect(jsonChunk, "chunk for Context#JSON missing").toBeDefined();
+        expect(jsonChunk!.metadata.name).toBe("Context#JSON");
+        expect(jsonChunk!.metadata.chunkType).toBe("function");
+      });
+
+      it("strips pointer-receiver `*` and value-receiver retains base type", async () => {
+        const code = [
+          "package gin",
+          "",
+          "type Service struct{}",
+          "",
+          'func (s Service) Open() string { return "opened by value receiver" }',
+          'func (s *Service) Close() string { return "closed by pointer receiver" }',
+          "",
+        ].join("\n");
+        const chunks = await chunker.chunk(code, "service.go", "go");
+        const open = chunks.find((c) => c.metadata.symbolId === "Service#Open");
+        const close_ = chunks.find((c) => c.metadata.symbolId === "Service#Close");
+        expect(open, "Service#Open missing").toBeDefined();
+        expect(close_, "Service#Close missing").toBeDefined();
+      });
+
+      it("emits struct type as top-level symbol via type_declaration", async () => {
+        const code = [
+          "package gin",
+          "",
+          "// Context carries a request scope.",
+          "type Context struct {",
+          "  Request  string",
+          "  Response string",
+          "  Params   string",
+          "  Keys     string",
+          "}",
+          "",
+        ].join("\n");
+        const chunks = await chunker.chunk(code, "context.go", "go");
+        const ctxChunk = chunks.find((c) => c.metadata.symbolId === "Context");
+        expect(ctxChunk, "chunk for struct Context missing").toBeDefined();
+        expect(ctxChunk!.metadata.name).toBe("Context");
+      });
+
+      it("emits interface type as top-level symbol via type_declaration", async () => {
+        const code = [
+          "package gin",
+          "",
+          "type IRouter interface {",
+          "  Use(middleware ...any) IRouter",
+          "  Handle(method, path string, handlers ...any) IRouter",
+          "  GET(path string, handlers ...any) IRouter",
+          "  POST(path string, handlers ...any) IRouter",
+          "}",
+          "",
+        ].join("\n");
+        const chunks = await chunker.chunk(code, "routergroup.go", "go");
+        const iface = chunks.find((c) => c.metadata.symbolId === "IRouter");
+        expect(iface, "chunk for interface IRouter missing").toBeDefined();
+        expect(iface!.metadata.name).toBe("IRouter");
+      });
+
+      it("emits function-type alias as top-level symbol via type_declaration", async () => {
+        // Single declaration MUST be ≥50 chars to clear the chunker's
+        // `content.length < 50` filter in the main loop. Without enough
+        // body length the node is dropped before symbolId composition;
+        // that is a generic chunker invariant, not Go-specific, so the
+        // realistic gin-style declaration uses the longer multi-line
+        // form which clears 50 chars without artificial padding.
+        const code = [
+          "package gin",
+          "",
+          "// HandlerFunc is the request handler signature used by gin.",
+          "// It carries a request scope to handlers registered on routes.",
+          "type HandlerFunc func(c *Context, status int, payload interface{}) error",
+          "",
+        ].join("\n");
+        const chunks = await chunker.chunk(code, "gin.go", "go");
+        const handler = chunks.find((c) => c.metadata.symbolId === "HandlerFunc");
+        expect(handler, "chunk for type HandlerFunc func(...) missing").toBeDefined();
+        expect(handler!.metadata.name).toBe("HandlerFunc");
+      });
+
+      // bd tea-rags-mcp-iiq6 — Go type-spec aliases beyond struct/interface.
+      // gin OSS validation showed `type HandlerFunc func(*Context)` and
+      // `type H map[string]any` invisible to `find_symbol`. The chunker's
+      // 50-char filter drops short declarations, and `mergeSmallChunks`
+      // collapses adjacent ones into anonymous "X..." blocks — but a
+      // standalone alias that DOES clear the 50-char threshold must
+      // still be emitted with its own symbolId. These tests exercise
+      // each non-struct/interface type kind end-to-end with padded
+      // declarations so the filter passes and the symbolId path runs.
+      it("emits map-type alias as top-level symbol via type_declaration", async () => {
+        const code = [
+          "package gin",
+          "",
+          "// H is a shortcut for map[string]any used by gin handlers",
+          "// when emitting JSON payloads with heterogeneous values.",
+          "type H map[string]any",
+          "",
+        ].join("\n");
+        const chunks = await chunker.chunk(code, "gin.go", "go");
+        const h = chunks.find((c) => c.metadata.symbolId === "H");
+        expect(h, "chunk for type H map[...] missing").toBeDefined();
+        expect(h!.metadata.name).toBe("H");
+      });
+
+      it("emits slice-type alias as top-level symbol via type_declaration", async () => {
+        const code = [
+          "package gin",
+          "",
+          "// Numbers carries a slice of integers used across handlers",
+          "// for batch operations on numeric payloads.",
+          "type Numbers []int",
+          "",
+        ].join("\n");
+        const chunks = await chunker.chunk(code, "gin.go", "go");
+        const numbers = chunks.find((c) => c.metadata.symbolId === "Numbers");
+        expect(numbers, "chunk for type Numbers []int missing").toBeDefined();
+        expect(numbers!.metadata.name).toBe("Numbers");
+      });
+
+      it("emits channel-type alias as top-level symbol via type_declaration", async () => {
+        const code = [
+          "package gin",
+          "",
+          "// Ch is a channel carrying integers from producer goroutines",
+          "// to the request-scoped consumer middleware in gin.",
+          "type Ch chan int",
+          "",
+        ].join("\n");
+        const chunks = await chunker.chunk(code, "gin.go", "go");
+        const ch = chunks.find((c) => c.metadata.symbolId === "Ch");
+        expect(ch, "chunk for type Ch chan int missing").toBeDefined();
+        expect(ch!.metadata.name).toBe("Ch");
+      });
+
+      // bd tea-rags-mcp-iiq6 follow-up — gin OSS validation showed that
+      // `type HandlerFunc func(*Context)` was invisible to `find_symbol`
+      // even after the 50-char filter bypass. Root cause: three short
+      // adjacent type aliases (HandlerFunc, OptionFunc, HandlersChain) are
+      // each emitted as `chunkType="block"` and then collapsed by
+      // `mergeSmallChunks` into one merged block named "HandlerFunc..."
+      // with no symbolId. Named Go type aliases MUST stay individually
+      // searchable so `find_symbol("HandlerFunc")` resolves.
+      it("does NOT merge adjacent short Go function-type aliases (gin.go HandlerFunc scenario)", async () => {
+        const code = [
+          "package gin",
+          "",
+          "// HandlerFunc defines the handler used by gin middleware as return value.",
+          "type HandlerFunc func(*Context)",
+          "",
+          "// OptionFunc defines the function to change the default configuration",
+          "type OptionFunc func(*Engine)",
+          "",
+          "// HandlersChain defines a HandlerFunc slice.",
+          "type HandlersChain []HandlerFunc",
+          "",
+        ].join("\n");
+        const chunks = await chunker.chunk(code, "gin.go", "go");
+        const handler = chunks.find((c) => c.metadata.symbolId === "HandlerFunc");
+        const option = chunks.find((c) => c.metadata.symbolId === "OptionFunc");
+        const chain = chunks.find((c) => c.metadata.symbolId === "HandlersChain");
+        expect(handler, "chunk for type HandlerFunc func(*Context) missing").toBeDefined();
+        expect(option, "chunk for type OptionFunc func(*Engine) missing").toBeDefined();
+        expect(chain, "chunk for type HandlersChain []HandlerFunc missing").toBeDefined();
+        expect(handler!.metadata.name).toBe("HandlerFunc");
+        expect(option!.metadata.name).toBe("OptionFunc");
+        expect(chain!.metadata.name).toBe("HandlersChain");
+        // No merged "HandlerFunc..."-style umbrella block should appear.
+        const mergedUmbrella = chunks.find((c) => c.metadata.name?.endsWith("..."));
+        expect(mergedUmbrella, "named Go type aliases must not collapse into a merged block").toBeUndefined();
+      });
+
+      it("top-level function_declaration emits bare name (no receiver prefix)", async () => {
+        const code = [
+          "package gin",
+          "",
+          "// New returns a new Engine with default middleware attached.",
+          "func New() *Engine {",
+          "  // body padding to clear the 50-char chunk-size filter",
+          "  _ = 1",
+          "  _ = 2",
+          "  return nil",
+          "}",
+          "",
+        ].join("\n");
+        const chunks = await chunker.chunk(code, "gin.go", "go");
+        const newFn = chunks.find((c) => c.metadata.symbolId === "New");
+        expect(newFn, "chunk for top-level New() missing").toBeDefined();
+        expect(newFn!.metadata.name).toBe("New");
+      });
+    });
   });
 
   describe("markdown preamble handling", () => {
@@ -1756,18 +2965,19 @@ class DataProcessor {
 
       const chunks = await smallChunker.chunk(code, "processor.rb", "ruby");
 
-      // The oversized method should be split into sub-chunks with parentName
-      const _subChunks = chunks.filter(
-        (c) =>
-          c.metadata.parentSymbolId === "DataProcessor" &&
-          c.metadata.chunkType !== "function" &&
-          c.metadata.chunkType !== "block",
-      );
       // At minimum we should have chunks; the large method produces sub-chunks
       expect(chunks.length).toBeGreaterThan(1);
 
-      // All chunks from this class should reference DataProcessor as parent
-      const processorChunks = chunks.filter((c) => c.metadata.parentSymbolId === "DataProcessor");
+      // All chunks from this class should reference DataProcessor in their
+      // parentSymbolId chain — either directly (the class itself, or a small
+      // sibling method's parent) or via a composed method symbolId
+      // (`DataProcessor#very_large_method` for oversized-method splits, since
+      // bd tea-rags-mcp-5xie).
+      const processorChunks = chunks.filter(
+        (c) =>
+          typeof c.metadata.parentSymbolId === "string" &&
+          (c.metadata.parentSymbolId === "DataProcessor" || c.metadata.parentSymbolId.startsWith("DataProcessor#")),
+      );
       expect(processorChunks.length).toBeGreaterThan(0);
     });
   });
@@ -2873,6 +4083,271 @@ end`;
     });
   });
 
+  // BUGs tea-rags-mcp-3nf3 + tea-rags-mcp-zy3f — Ruby DSL macros that synthesise
+  // methods at class-body level (attr_accessor / attr_reader / attr_writer /
+  // cattr_* / mattr_* / delegate / define_method) must emit chunker symbols so
+  // that bare-id call resolution in the walker can land on `Class#attr` /
+  // `Class#delegated_method`. Without these symbols, the same chunker/codegraph
+  // agreement that .claude/rules/symbolid-convention.md mandates is broken —
+  // codegraph (provider.ts:rubyMacroEmission) emits them, chunker did not,
+  // and get_callers/get_callees produce empty results for any method whose
+  // accessor or delegate target is the call receiver.
+  describe("chunk - Ruby DSL macros emit method symbols", () => {
+    it("emits getter+setter symbols for attr_accessor :foo, :bar", async () => {
+      const code = `
+class A
+  attr_accessor :foo, :bar
+  def initialize
+    @foo = nil
+    @bar = nil
+  end
+end
+      `;
+      const chunks = await chunker.chunk(code, "a.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      expect(symbolIds).toContain("A#foo");
+      expect(symbolIds).toContain("A#foo=");
+      expect(symbolIds).toContain("A#bar");
+      expect(symbolIds).toContain("A#bar=");
+      // Synthetic symbols inherit the enclosing class parent.
+      const foo = fnChunks.find((c) => c.metadata.symbolId === "A#foo");
+      expect(foo?.metadata.parentSymbolId).toBe("A");
+      expect(foo?.metadata.name).toBe("foo");
+    });
+
+    it("emits getter only for attr_reader :baz", async () => {
+      const code = `
+class A
+  attr_reader :baz
+  def initialize
+    @baz = 1
+  end
+end
+      `;
+      const chunks = await chunker.chunk(code, "a.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      expect(symbolIds).toContain("A#baz");
+      expect(symbolIds).not.toContain("A#baz=");
+    });
+
+    it("emits setter only for attr_writer :qux", async () => {
+      const code = `
+class A
+  attr_writer :qux
+  def initialize
+    @qux = 1
+  end
+end
+      `;
+      const chunks = await chunker.chunk(code, "a.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      expect(symbolIds).toContain("A#qux=");
+      expect(symbolIds).not.toContain("A#qux");
+    });
+
+    it("composes nested module/class scope for attr_accessor (bdvm parity)", async () => {
+      const code = `
+class A
+  class B
+    attr_accessor :x
+    def initialize
+      @x = nil
+    end
+
+    def do_work
+      # padding for child extraction
+      puts "doing work in A::B"
+      result = compute_thing(arg1, arg2)
+      return result
+    end
+  end
+end
+      `;
+      const chunks = await chunker.chunk(code, "a_b.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      expect(symbolIds).toContain("A::B#x");
+      expect(symbolIds).toContain("A::B#x=");
+    });
+
+    it("emits class-level methods for cattr_accessor / mattr_accessor", async () => {
+      const code = `
+class A
+  cattr_accessor :shared_a
+  mattr_accessor :shared_b
+  cattr_reader :ro_c
+  mattr_writer :wo_d
+  def initialize
+    @cfg = {}
+  end
+end
+      `;
+      const chunks = await chunker.chunk(code, "a.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      // cattr_* / mattr_* declare class-level methods → `.` separator.
+      expect(symbolIds).toContain("A.shared_a");
+      expect(symbolIds).toContain("A.shared_a=");
+      expect(symbolIds).toContain("A.shared_b");
+      expect(symbolIds).toContain("A.shared_b=");
+      expect(symbolIds).toContain("A.ro_c");
+      expect(symbolIds).not.toContain("A.ro_c=");
+      expect(symbolIds).toContain("A.wo_d=");
+      expect(symbolIds).not.toContain("A.wo_d");
+    });
+
+    it("emits forwarder methods for delegate :foo, :bar, to: :other", async () => {
+      const code = `
+class A
+  delegate :foo, :bar, to: :other
+  def initialize
+    @other = nil
+  end
+end
+      `;
+      const chunks = await chunker.chunk(code, "a.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      expect(symbolIds).toContain("A#foo");
+      expect(symbolIds).toContain("A#bar");
+      // Receiver `:other` (the `to:` kwarg value) must NOT be emitted as a method.
+      expect(symbolIds).not.toContain("A#other");
+    });
+
+    it("ignores extra delegate options (allow_nil, prefix, etc.)", async () => {
+      const code = `
+class A
+  delegate :foo, to: :other, allow_nil: true, prefix: true
+  def initialize
+    @other = nil
+  end
+end
+      `;
+      const chunks = await chunker.chunk(code, "a.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      expect(symbolIds).toContain("A#foo");
+      // The kwarg-only symbols are not method names.
+      expect(symbolIds).not.toContain("A#allow_nil");
+      expect(symbolIds).not.toContain("A#prefix");
+    });
+
+    it("emits delegate inside a nested class with full scope", async () => {
+      // Mirrors huginn evernote_agent's NoteStore wrapper class.
+      const code = `
+class EvernoteAgent
+  class NoteStore
+    attr_reader :en_note_store
+    delegate :createNote, :updateNote, :getNote, to: :en_note_store
+    def initialize(store)
+      @en_note_store = store
+    end
+  end
+end
+      `;
+      const chunks = await chunker.chunk(code, "evernote_agent.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      expect(symbolIds).toContain("EvernoteAgent::NoteStore#createNote");
+      expect(symbolIds).toContain("EvernoteAgent::NoteStore#updateNote");
+      expect(symbolIds).toContain("EvernoteAgent::NoteStore#getNote");
+      expect(symbolIds).toContain("EvernoteAgent::NoteStore#en_note_store");
+    });
+
+    it("does not emit DSL symbols for receiver-qualified macro calls", async () => {
+      // `obj.attr_accessor :name` is just a regular method call, not a class-body
+      // DSL declaration. Mirrors the codegraph provider guard (provider.test.ts:1310).
+      const code = `
+class A
+  def initialize
+    obj = build_obj_with_a_descriptive_name
+    obj.attr_accessor :forwarded
+  end
+end
+      `;
+      const chunks = await chunker.chunk(code, "a.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      expect(symbolIds).not.toContain("A#forwarded");
+      expect(symbolIds).not.toContain("A#forwarded=");
+    });
+
+    // Bug tea-rags-mcp-y2z5: alias_method / alias declare a new instance
+    // method on the enclosing class that points to an existing one. Without
+    // these emissions, callers of the alias name see null edges and the
+    // call graph misses the redirect chain.
+    it("emits synthetic method symbol for alias_method :new, :old", async () => {
+      const code = `
+class A
+  def old_name
+    42
+  end
+  alias_method :new_name, :old_name
+end
+      `;
+      const chunks = await chunker.chunk(code, "a.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      expect(symbolIds).toContain("A#new_name");
+      const newSym = fnChunks.find((c) => c.metadata.symbolId === "A#new_name");
+      expect(newSym?.metadata.parentSymbolId).toBe("A");
+      expect(newSym?.metadata.name).toBe("new_name");
+    });
+
+    it("emits synthetic method symbol for keyword form `alias new old`", async () => {
+      // `alias new old` is a Ruby keyword, NOT a method call — different
+      // AST node type (`alias`) than `alias_method`. The chunker must
+      // recognise both shapes.
+      const code = `
+class A
+  def old_name
+    42
+  end
+  alias new_name old_name
+end
+      `;
+      const chunks = await chunker.chunk(code, "a.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      expect(symbolIds).toContain("A#new_name");
+    });
+
+    it("composes nested module/class scope for alias_method", async () => {
+      const code = `
+class Outer
+  class Inner
+    def old_name
+      42
+    end
+    alias_method :new_name, :old_name
+  end
+end
+      `;
+      const chunks = await chunker.chunk(code, "outer.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      expect(symbolIds).toContain("Outer::Inner#new_name");
+    });
+
+    it("does not emit alias DSL symbol for receiver-qualified `obj.alias_method`", async () => {
+      const code = `
+class A
+  def initialize
+    obj = build_thing
+    obj.alias_method :forwarded, :original
+  end
+end
+      `;
+      const chunks = await chunker.chunk(code, "a.rb", "ruby");
+      const fnChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const symbolIds = fnChunks.map((c) => c.metadata.symbolId);
+      expect(symbolIds).not.toContain("A#forwarded");
+    });
+  });
+
   describe("chunk - Ruby RSpec with require and non-DSL calls", () => {
     it("should filter out require and non-RSpec call nodes in spec files", async () => {
       const code = `require 'rails_helper'
@@ -3300,6 +4775,101 @@ end`;
       expect(testChunk!.content).toContain("let(:card)");
       expect(testChunk!.content).toContain("let(:amount)");
       expect(testChunk!.content).toContain("processes the charge successfully");
+    });
+  });
+
+  // bd tea-rags-mcp-ksb8 — `buildParentPath` joined with ` > ` (spaces),
+  // producing `Scaffold > route#decorator` instead of the canonical
+  // `Scaffold.route#decorator` (or `Scaffold#route#decorator`). Per
+  // `.claude/rules/symbolid-convention.md` only `.`, `#`, and `::` are
+  // valid separators. The ` > ` separator MUST NOT appear in any
+  // symbolId or parentSymbolId in the chunker output.
+  describe("chunk - Python parent-path separator (bd ksb8)", () => {
+    it("should NOT use ' > ' as a separator in any Python chunk symbolId or parentSymbolId", async () => {
+      const code = `
+class Scaffold:
+    def route(self, rule, **options):
+        """Decorator factory — same shape as flask Scaffold.route."""
+        def decorator(f):
+            """Inner decorator long enough to clear the fifty char floor."""
+            endpoint = options.pop("endpoint", None)
+            self.add_url_rule(rule, endpoint, f, **options)
+            return f
+        return decorator
+      `;
+      const chunks = await chunker.chunk(code, "test.py", "python");
+      for (const chunk of chunks) {
+        expect(chunk.metadata.symbolId ?? "").not.toContain(" > ");
+        expect(chunk.metadata.parentSymbolId ?? "").not.toContain(" > ");
+      }
+    });
+  });
+
+  // bd tea-rags-mcp-07fr — When a Python class method contains an inner
+  // function (decorator-factory shape `def route → def decorator`), the
+  // chunker currently descends into the inner function and emits ONLY
+  // the inner chunk. The outer method (Scaffold#route) is shadowed and
+  // `find_symbol("Scaffold#route")` returns []. Walker must emit BOTH.
+  describe("chunk - Python nested-def-as-decorator-return (bd 07fr)", () => {
+    it("should emit the outer method chunk AND the inner function chunk", async () => {
+      const code = `
+class Scaffold:
+    def route(self, rule, **options):
+        """Decorator factory — same shape as flask Scaffold.route."""
+        def decorator(f):
+            """Inner decorator long enough to clear the fifty char floor."""
+            endpoint = options.pop("endpoint", None)
+            self.add_url_rule(rule, endpoint, f, **options)
+            return f
+        return decorator
+      `;
+      const chunks = await chunker.chunk(code, "test.py", "python");
+      const route = chunks.find((c) => c.metadata.symbolId === "Scaffold#route");
+      expect(route).toBeDefined();
+      // The chunker doesn't have to ALSO emit a chunk for the inner
+      // `decorator`, but the outer method MUST exist. The inner def, if
+      // emitted, MUST be parented to `Scaffold#route` with a canonical
+      // separator (no ` > `).
+      const decoratorChunk = chunks.find((c) => c.metadata.name === "decorator");
+      if (decoratorChunk) {
+        expect(decoratorChunk.metadata.parentSymbolId ?? "").not.toContain(" > ");
+      }
+    });
+  });
+
+  // bd tea-rags-mcp-cpbv — Split parts of an oversized Python method
+  // emitted via the `processChildren` character-fallback path currently
+  // overwrite `parentSymbolId = methodSymbolId` and `parentType =
+  // function_definition`. That loses the class-context lineage (the
+  // method's true parent is the class). The 5xie regression test
+  // (preserve symbolId across parts) still passes because that invariant
+  // is unaffected, but downstream MCP `find_symbol` navigation expects
+  // `parentSymbolId = Flask` / `parentType = class_definition` so the
+  // call chain reads `class → method → split-part` rather than
+  // self-looping on the method symbolId.
+  describe("chunk - Python multi-part method parent lineage (bd cpbv)", () => {
+    it("oversized method split-parts keep parentSymbolId pointing at the CLASS, not the method", async () => {
+      const initBody = Array.from({ length: 200 }, (_, i) => `        self.value_${i} = 1`).join("\n");
+      const code = `
+class Foo:
+    def __init__(self):
+        """Oversized constructor split by character fallback (cpbv)."""
+${initBody}
+
+    def helper(self):
+        """Small sibling method so the class extracts children."""
+        return self.value_0 + self.value_1
+      `;
+      const chunks = await chunker.chunk(code, "test.py", "python");
+      const splits = chunks.filter((c) => c.metadata.symbolId === "Foo#__init__");
+      // 5xie invariant — every split shares symbolId "Foo#__init__".
+      expect(splits.length).toBeGreaterThan(1);
+      for (const c of splits) {
+        // cpbv fix — parentSymbolId is the CLASS, not the method itself.
+        expect(c.metadata.parentSymbolId).toBe("Foo");
+        // parentType reflects the class declaration, not function.
+        expect(c.metadata.parentType).toBe("class_definition");
+      }
     });
   });
 });

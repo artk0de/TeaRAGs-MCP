@@ -29,7 +29,37 @@ export class RustCallResolver implements CallResolver {
   constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
 
   resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
+    // bd tea-rags-mcp-c5by — `self.method()` intra-impl call. Resolve to
+    // `<enclosingType>#method` (instance) or `<enclosingType>.method`
+    // (associated function) constrained to the caller's own file before
+    // falling through to import / global short-name resolution. Mirrors
+    // the Java resolver's `this.X()` branch — without this, `self.clone()`
+    // grabs the FIRST `clone` from the symbol table (e.g. `Error#clone`)
+    // and produces cross-receiver garbage edges.
+    if (call.receiver === "self" && ctx.callerScope.length > 0) {
+      const sameFileHit = this.lookupEnclosingMember(call.member, ctx);
+      if (sameFileHit) return sameFileHit;
+    }
     if (call.receiver) {
+      // bd tea-rags-mcp-c5by — when localBindings type-binds the receiver
+      // to a known class, resolve against THAT type's members first AND
+      // drop the global short-name fallback when the type lacks the
+      // member. Prevents `obj.clone()` (obj: Worker) silently routing to
+      // `Error#clone`. Mirrors Java 9t8z / Go e6xx "drop unsafe short-name
+      // fallback when receiver type known but member missing".
+      const boundType = ctx.localBindings?.[call.receiver];
+      if (boundType) {
+        const instanceFq = `${boundType}#${call.member}`;
+        const instanceHit = pickSingleCandidate(ctx.symbolTable.lookup(instanceFq), this.mode);
+        if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+        const staticFq = `${boundType}.${call.member}`;
+        const staticHit = pickSingleCandidate(ctx.symbolTable.lookup(staticFq), this.mode);
+        if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+        // Receiver type known but member not on it — DROP the edge.
+        // Falling through to short-name lookup would resolve to a method
+        // on an unrelated type, which is the c5by garbage.
+        return null;
+      }
       const match = ctx.imports.find((imp) => rustImportMatchesReceiver(imp.importText, call.receiver as string));
       if (match) {
         const suffix = rustImportSuffix(match.importText);
@@ -42,9 +72,36 @@ export class RustCallResolver implements CallResolver {
         }
       }
     }
+    // bd tea-rags-mcp-c5by — bare `helper()` inside an impl block is
+    // shorthand for `self.helper()` (instance) or an associated function
+    // of the enclosing type. Probe the enclosing-type lookup FIRST so a
+    // global collision (e.g. `helper` on both Worker and Other) doesn't
+    // misroute. Mirrors java-resolver's bare-call branch.
+    if (call.receiver === null && ctx.callerScope.length > 0) {
+      const sameFileHit = this.lookupEnclosingMember(call.member, ctx);
+      if (sameFileHit) return sameFileHit;
+    }
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     const target = pickSingleCandidate(fallback, this.mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+    return null;
+  }
+
+  /**
+   * bd tea-rags-mcp-c5by — look up `<enclosingType>#<member>` (instance)
+   * then `<enclosingType>.<member>` (associated function) constrained
+   * to the caller's own file. Mirrors `JavaCallResolver.lookupEnclosingMember`
+   * — Rust shares the convention (instance methods use `#`, associated
+   * functions use `.`) so the same lookup works.
+   */
+  private lookupEnclosingMember(member: string, ctx: CallContext): ResolvedTarget | null {
+    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+    const instanceFq = `${enclosing}#${member}`;
+    const instanceHit = ctx.symbolTable.lookup(instanceFq).find((def) => def.relPath === ctx.callerFile);
+    if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+    const staticFq = `${enclosing}.${member}`;
+    const staticHit = ctx.symbolTable.lookup(staticFq).find((def) => def.relPath === ctx.callerFile);
+    if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
     return null;
   }
 }

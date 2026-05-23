@@ -197,6 +197,21 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
     expect(r.chunks[0].localBindings).toEqual({ s: "ConfirmCode" });
   });
 
+  // PEP 526 with qualified type annotation `var: module.ClassName` —
+  // exercises extractTypeName's `attribute` branch (python-walker line 277).
+  it("infers PEP 526 annotation with qualified `var: module.ClassName`", () => {
+    const src = "def view():\n    s: rest_framework.Serializer = factory()\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ s: "rest_framework.Serializer" });
+  });
+
   it("infers PEP 526 annotation without RHS — var: SomeClass", () => {
     const src = "def view():\n    s: SomeClass\n";
     const tree = parse(src);
@@ -333,5 +348,221 @@ describe("extractFromPythonFile — edge cases", () => {
     const tree = parse(src);
     const r = extractFromPythonFile({ tree, code: src, relPath: "x.py", language: "python", chunks: [] });
     expect(r.imports.map((i) => i.importText)).toEqual(["foo"]);
+  });
+});
+
+// bd tea-rags-mcp-zvsw — Decorator application is a call. `@setupmethod`
+// on a method means `setupmethod(method)` is invoked at module load. The
+// walker must emit a `CallRef` for each decorator so `get_callers("setupmethod")`
+// returns every decorated method. Without this, decorator usage is
+// invisible to the call graph.
+describe("extractFromPythonFile — decorator call edges (bd zvsw)", () => {
+  it("emits a call edge per decorator on a top-level function", () => {
+    const src = "def setupmethod(f):\n    return f\n\n@setupmethod\ndef route():\n    pass\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      // chunk covers the decorated function (lines 4-5)
+      chunks: [{ symbolId: "route", scope: [], startLine: 4, endLine: 5 }],
+    });
+    const decoratorCall = r.chunks[0].calls.find((c) => c.member === "setupmethod");
+    expect(decoratorCall).toBeDefined();
+    expect(decoratorCall?.receiver).toBeNull();
+  });
+
+  it("emits one call edge per stacked decorator (multi-decorator)", () => {
+    const src = "@app.route('/')\n@setupmethod\ndef handler():\n    pass\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "handler", scope: [], startLine: 1, endLine: 4 }],
+    });
+    const members = r.chunks[0].calls.map((c) => c.member);
+    expect(members).toContain("setupmethod");
+    // app.route('/') is a method call on `app` — captured as receiver=app, member=route
+    expect(members).toContain("route");
+  });
+
+  // Decorator with bare-identifier call form `@cache()` — exercises the
+  // `expr.type === "call"` branch where fn.type === "identifier"
+  // (python-walker.ts lines 154-155).
+  it("emits call edge for `@cache()` (bare identifier called as decorator)", () => {
+    const src = "@cache()\ndef compute():\n    pass\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "compute", scope: [], startLine: 1, endLine: 3 }],
+    });
+    const decorator = r.chunks[0].calls.find((c) => c.member === "cache");
+    expect(decorator).toBeDefined();
+    expect(decorator?.receiver).toBeNull();
+  });
+});
+
+// bd tea-rags-mcp-pic4 — Python walker must populate `classExtends` so
+// the resolver can route `super().method()` calls to the parent class.
+// Without it, `super().__init__()` in `App(Scaffold)` cannot resolve
+// because the resolver has no parent-class lookup.
+describe("extractFromPythonFile — classExtends (bd pic4)", () => {
+  it("populates classExtends for single-base classes", () => {
+    const src = "class Scaffold:\n    pass\n\nclass App(Scaffold):\n    pass\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "app.py",
+      language: "python",
+      chunks: [],
+    });
+    expect(r.classExtends).toBeDefined();
+    expect(r.classExtends?.App).toBe("Scaffold");
+  });
+
+  it("captures only the first base class for multi-base classes", () => {
+    // Python supports multi-inheritance; we route super() to the first
+    // listed base (MRO approximation — sufficient for the common case).
+    const src = "class A: pass\nclass B: pass\nclass C(A, B): pass\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [],
+    });
+    expect(r.classExtends?.C).toBe("A");
+  });
+
+  it("leaves classExtends undefined or empty when no class extends another", () => {
+    const src = "class Foo:\n    pass\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [],
+    });
+    // Either the map is missing entirely or it has no entry for Foo.
+    expect(r.classExtends?.Foo).toBeUndefined();
+  });
+});
+
+// bd tea-rags-mcp-w3pr — Lazy / conditional imports inside function
+// bodies. Python's `def f(): from asgiref.sync import async_to_sync as _x;
+// _x(...)` is a runtime import. The walker must record the import as a
+// SCOPED import — keyed to the enclosing function — so the resolver can
+// resolve the inner call without polluting the module-level imports.
+describe("extractFromPythonFile — function-scoped imports (bd w3pr)", () => {
+  it("captures imports declared inside a function body", () => {
+    const src =
+      "def async_to_sync(awaitable):\n" +
+      "    from asgiref.sync import async_to_sync as _async_to_sync\n" +
+      "    return _async_to_sync(awaitable)\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "async_to_sync", scope: [], startLine: 1, endLine: 3 }],
+    });
+    // The function-scoped `from asgiref.sync import async_to_sync` must
+    // surface as an import — the walker uses tree-walking import
+    // collection, so imports inside function bodies are captured into
+    // the module-level imports[] list. The resolver then has the
+    // context it needs to route the inner call.
+    const allImports = r.imports.map((i) => i.importText);
+    expect(allImports).toContain("asgiref.sync");
+  });
+});
+
+// Additional decorator + class-extends edge cases — fill gaps in the
+// defensive branches of collectPythonClassExtends / collectPythonDecoratorCalls
+// not reached by the primary positive tests.
+describe("extractFromPythonFile — decorator edge cases", () => {
+  it("@functools.cache bare-attribute decorator → receiver='functools', member='cache'", () => {
+    const src = "@functools.cache\ndef expensive():\n    return 1\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "dec.py",
+      language: "python",
+      // Chunk spans BOTH the decorator line and the def line (lines 1-3).
+      chunks: [{ symbolId: "expensive", scope: [], startLine: 1, endLine: 3 }],
+    });
+    const dec = r.chunks[0].calls?.find((c) => c.member === "cache");
+    expect(dec).toBeDefined();
+    expect(dec?.receiver).toBe("functools");
+  });
+
+  it("@app.route('/path') called-attribute decorator → receiver='app', member='route'", () => {
+    const src = "@app.route('/path')\ndef handler():\n    return 1\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "dec.py",
+      language: "python",
+      chunks: [{ symbolId: "handler", scope: [], startLine: 1, endLine: 3 }],
+    });
+    const dec = r.chunks[0].calls?.find((c) => c.member === "route");
+    expect(dec).toBeDefined();
+    expect(dec?.receiver).toBe("app");
+  });
+
+  it("@setupmethod bare-identifier decorator → receiver=null, member='setupmethod'", () => {
+    const src = "@setupmethod\ndef handler():\n    return 1\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "dec.py",
+      language: "python",
+      chunks: [{ symbolId: "handler", scope: [], startLine: 1, endLine: 3 }],
+    });
+    const dec = r.chunks[0].calls?.find((c) => c.member === "setupmethod");
+    expect(dec).toBeDefined();
+    expect(dec?.receiver).toBeNull();
+  });
+});
+
+describe("extractFromPythonFile — classExtends edge cases", () => {
+  it("base class explicitly `object` is filtered out (`class X(object): ...`)", () => {
+    // Python 2 idiom `class Foo(object):` — base text === "object" → skipped.
+    const src = "class Foo(object):\n    def bar(self):\n        return 1\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "f.py",
+      language: "python",
+      chunks: [{ symbolId: "Foo", scope: [], startLine: 1, endLine: 3 }],
+    });
+    // Foo extends object → filtered. classExtends has no entry for Foo.
+    expect(r.classExtends?.["Foo"]).toBeUndefined();
+  });
+
+  it("class without parens → no classExtends entry (no superclasses field)", () => {
+    const src = "class Foo:\n    def bar(self):\n        return 1\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "f.py",
+      language: "python",
+      chunks: [{ symbolId: "Foo", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.classExtends?.["Foo"]).toBeUndefined();
   });
 });

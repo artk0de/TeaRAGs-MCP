@@ -6,6 +6,7 @@ import {
   blameFile,
   getCommitsByPathspec,
   getCommitsByPathspecBatched,
+  resolveRepoRoot,
 } from "../../../../src/core/adapters/git/client.js";
 import { parseBlameOutput, parsePathspecOutput } from "../../../../src/core/adapters/git/parsers.js";
 import type { BlameLine, CommitInfo } from "../../../../src/core/adapters/git/types.js";
@@ -267,5 +268,32 @@ describe("blameFile", () => {
     expect(result).toEqual([]);
     // Parser must not be called on failure
     expect(mockParseBlameOutput).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveRepoRoot", () => {
+  it("returns git toplevel when path is inside a git repo", async () => {
+    const { execFileSync } = await import("node:child_process");
+    (execFileSync as unknown as ReturnType<typeof vi.fn>).mockReturnValueOnce("/fake/repo/root\n");
+
+    const result = resolveRepoRoot("/fake/repo/root/sub");
+
+    expect(result).toBe("/fake/repo/root");
+    expect(execFileSync).toHaveBeenCalledWith(
+      "git",
+      ["rev-parse", "--show-toplevel"],
+      expect.objectContaining({ cwd: "/fake/repo/root/sub", encoding: "utf-8" }),
+    );
+  });
+
+  it("returns absolutePath when git rev-parse fails (not a git repo)", async () => {
+    const { execFileSync } = await import("node:child_process");
+    (execFileSync as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+      throw new Error("fatal: not a git repository");
+    });
+
+    const result = resolveRepoRoot("/tmp/not-a-repo");
+
+    expect(result).toBe("/tmp/not-a-repo");
   });
 });

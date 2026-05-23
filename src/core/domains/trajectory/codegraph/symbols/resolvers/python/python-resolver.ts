@@ -41,6 +41,15 @@ export class PythonCallResolver implements CallResolver {
   constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
 
   resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
+    // bd tea-rags-mcp-pic4 — `super().method()` walks `classExtends` from
+    // the enclosing class to its parent and resolves `<Parent>#<member>`
+    // / `<Parent>.<member>` against the symbol table. Without this branch
+    // the call would fall through to short-name fallback, which is
+    // ambiguous when multiple classes share the same `__init__` /
+    // `method` short-name. Mirrors the TS resolver's `resolveSuper`.
+    if (call.receiver === "super()" || call.receiver === "super") {
+      return this.resolveSuper(call.member, ctx);
+    }
     if (call.receiver) {
       // Step 0: walker-inferred local type wins over heuristic
       // resolution. When the receiver maps to a known class via
@@ -68,6 +77,50 @@ export class PythonCallResolver implements CallResolver {
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     const target = pickSingleCandidate(fallback, this.mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+    return null;
+  }
+
+  /**
+   * Resolve a `super().X()` call against the parent class determined by
+   * `ctx.classExtends`. Walks the single-inheritance chain (B extends A,
+   * A extends C, …) until an ancestor's file owns a symbol matching
+   * `member`. Returns:
+   *
+   *   - `{ relPath, symbolId }` when an ancestor in the chain has the
+   *     method — instance form preferred, static fallback.
+   *   - `null` when the enclosing class is unknown, the parent chain is
+   *     empty, or no ancestor in the project defines `member`.
+   *
+   * Mirrors `TSCallResolver.resolveSuper` (bd tea-rags-mcp-4rgg) with
+   * single-inheritance Python semantics.
+   */
+  private resolveSuper(member: string, ctx: CallContext): ResolvedTarget | null {
+    if (ctx.callerScope.length === 0) return null;
+    if (!ctx.classExtends) return null;
+    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+    let current: string | undefined = ctx.classExtends[enclosing];
+    if (!current) return null;
+    const visited = new Set<string>([enclosing]);
+    while (current && !visited.has(current)) {
+      visited.add(current);
+      // Instance form first — `super().__init__()` is an instance-method
+      // dispatch by definition. Static fallback covers the unusual
+      // `super().classmethod()` shape (legal Python but rare).
+      const instanceFq = `${current}#${member}`;
+      const instanceHit = ctx.symbolTable.lookup(instanceFq);
+      const instanceTarget = pickSingleCandidate(instanceHit, this.mode);
+      if (instanceTarget) {
+        return { targetRelPath: instanceTarget.relPath, targetSymbolId: instanceTarget.symbolId };
+      }
+      const staticFq = `${current}.${member}`;
+      const staticHit = ctx.symbolTable.lookup(staticFq);
+      const staticTarget = pickSingleCandidate(staticHit, this.mode);
+      if (staticTarget) {
+        return { targetRelPath: staticTarget.relPath, targetSymbolId: staticTarget.symbolId };
+      }
+      // Walk one step deeper.
+      current = ctx.classExtends[current];
+    }
     return null;
   }
 

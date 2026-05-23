@@ -60,6 +60,39 @@ export interface FileExtraction {
    * spill: `Map` serialises to `{}` and loses every entry.
    */
   classAncestors?: Record<string, readonly string[]>;
+  /**
+   * Optional per-class superclass map for languages with single inheritance
+   * via an `extends` clause (TypeScript / JavaScript / Java). Keyed by the
+   * fully-qualified class name (`Outer.Inner` for nested classes); value is
+   * the parent class as written at the call site, qualifying segments kept
+   * intact (`A.B.C` stays `A.B.C`). Resolvers walk this to route `super()`
+   * / `super.foo()` calls to the parent class's method — without it, the
+   * super branch self-loops to the enclosing class's own method.
+   *
+   * Differs from `classAncestors` in two ways:
+   *   1. Single value per class (TS/JS/Java have one extends parent), not
+   *      a list of mixin ancestors.
+   *   2. `implements` clauses and TS interface heritage do NOT populate
+   *      this map — those are type-only and carry no runtime dispatch.
+   *
+   * Plain Record (NOT Map) so the value round-trips through the NDJSON
+   * spill in the codegraph provider — Map serialises to `{}` and loses
+   * every entry.
+   */
+  classExtends?: Record<string, string>;
+  /**
+   * Optional per-class `prepend Module` list: `className → prepended[]`.
+   * Ruby's `prepend M` inserts M BEFORE the class itself in the method
+   * resolution order — `M#foo` wins over the class's own `def foo`. The
+   * walker collects every `prepend ModuleName` call at class body level
+   * here so the resolver walks prepended modules BEFORE the class's own
+   * method table. Later `prepend` calls take priority in MRO, so the
+   * walker emits them in source-declaration order and the resolver
+   * iterates the array in REVERSE when checking inheritance.
+   *
+   * Same plain-Record discipline as `classAncestors` for NDJSON round-trip.
+   */
+  classPrependedAncestors?: Record<string, readonly string[]>;
 }
 
 export interface ImportRef {
@@ -233,6 +266,26 @@ export interface CallContext {
    * Plain Record (NOT Map) for NDJSON-spill round-trip.
    */
   classAncestors?: Record<string, readonly string[]>;
+  /**
+   * Optional `className → parentClass` map propagated from
+   * `FileExtraction.classExtends`. Resolvers walk this on `super()` /
+   * `super.foo()` calls so the edge lands on the PARENT class's method
+   * instead of self-looping back to the enclosing class. Single value
+   * per class (TS / JS / Java single inheritance); `null` parent means
+   * an external library / unresolved class — resolver should return null
+   * or a file-only edge rather than fabricating a wrong target.
+   * Plain Record (NOT Map) for NDJSON-spill round-trip.
+   */
+  classExtends?: Record<string, string>;
+  /**
+   * Optional `className → prepended[]` map propagated from
+   * `FileExtraction.classPrependedAncestors`. Ruby `prepend M` overrides
+   * the class's own methods: resolvers MUST check prepended ancestors
+   * BEFORE the class itself in instance-method dispatch, then fall
+   * through to the class, then to regular ancestors. Last prepend wins
+   * in MRO so the resolver walks the array in REVERSE order.
+   */
+  classPrependedAncestors?: Record<string, readonly string[]>;
 }
 
 export interface ResolvedTarget {

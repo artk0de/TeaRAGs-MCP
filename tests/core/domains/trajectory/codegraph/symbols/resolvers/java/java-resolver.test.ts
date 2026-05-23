@@ -257,4 +257,122 @@ describe("JavaCallResolver", () => {
     );
     expect(target).toBeNull();
   });
+
+  // bd tea-rags-mcp-9t8z — implicit-receiver intra-class call. Java
+  // `append(element)` inside `HashCodeBuilder#append` is an implicit
+  // `this.append(element)` recursive call. Before the fix the resolver
+  // had no enclosing-class awareness, so bare calls walked straight
+  // into the global short-name lookup and were either ambiguous-dropped
+  // or pinned to the wrong file. Use `callerScope[last]` as the
+  // enclosing class and check `<Class>#<member>` / `<Class>.<member>`
+  // in the caller file before falling back to global short-name.
+  it("resolves an implicit-receiver bare call to the enclosing class's instance method (same file)", () => {
+    const r = new JavaCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("HashCodeBuilder.java", [
+      {
+        symbolId: "HashCodeBuilder#append",
+        fqName: "HashCodeBuilder#append",
+        shortName: "append",
+        relPath: "HashCodeBuilder.java",
+        scope: ["HashCodeBuilder"],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "append(element)", receiver: null, member: "append", startLine: 5 },
+      {
+        callerFile: "HashCodeBuilder.java",
+        callerScope: ["HashCodeBuilder"],
+        imports: [],
+        symbolTable: t,
+      },
+    );
+    expect(target?.targetRelPath).toBe("HashCodeBuilder.java");
+    expect(target?.targetSymbolId).toBe("HashCodeBuilder#append");
+  });
+
+  it("resolves an implicit-receiver bare call to the enclosing class's static method when only the static form exists", () => {
+    // `helper()` invoked inside an instance method but `helper` is declared
+    // static — the `.` form must win when the `#` form is absent.
+    const r = new JavaCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("Foo.java", [
+      { symbolId: "Foo.helper", fqName: "Foo.helper", shortName: "helper", relPath: "Foo.java", scope: ["Foo"] },
+    ]);
+    const target = r.resolve(
+      { callText: "helper()", receiver: null, member: "helper", startLine: 4 },
+      { callerFile: "Foo.java", callerScope: ["Foo"], imports: [], symbolTable: t },
+    );
+    expect(target?.targetRelPath).toBe("Foo.java");
+    expect(target?.targetSymbolId).toBe("Foo.helper");
+  });
+
+  it("resolves `this.X()` to the enclosing class's instance method (same file)", () => {
+    const r = new JavaCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("Foo.java", [
+      { symbolId: "Foo#helper", fqName: "Foo#helper", shortName: "helper", relPath: "Foo.java", scope: ["Foo"] },
+    ]);
+    const target = r.resolve(
+      { callText: "this.helper()", receiver: "this", member: "helper", startLine: 1 },
+      { callerFile: "Foo.java", callerScope: ["Foo"], imports: [], symbolTable: t },
+    );
+    expect(target?.targetRelPath).toBe("Foo.java");
+    expect(target?.targetSymbolId).toBe("Foo#helper");
+  });
+
+  it("prefers the enclosing-class instance method over an ambiguous global short-name (no misroute)", () => {
+    // `append` exists in BOTH the caller's class (HashCodeBuilder) AND
+    // another file (StringBuffer). Without the enclosing-class check the
+    // global short-name lookup is ambiguous (strict-mode → null). With
+    // the check the bare call must pin to HashCodeBuilder#append.
+    const r = new JavaCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("HashCodeBuilder.java", [
+      {
+        symbolId: "HashCodeBuilder#append",
+        fqName: "HashCodeBuilder#append",
+        shortName: "append",
+        relPath: "HashCodeBuilder.java",
+        scope: ["HashCodeBuilder"],
+      },
+    ]);
+    t.upsertFile("StringBuffer.java", [
+      {
+        symbolId: "StringBuffer#append",
+        fqName: "StringBuffer#append",
+        shortName: "append",
+        relPath: "StringBuffer.java",
+        scope: ["StringBuffer"],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "append(element)", receiver: null, member: "append", startLine: 5 },
+      {
+        callerFile: "HashCodeBuilder.java",
+        callerScope: ["HashCodeBuilder"],
+        imports: [],
+        symbolTable: t,
+      },
+    );
+    expect(target?.targetRelPath).toBe("HashCodeBuilder.java");
+    expect(target?.targetSymbolId).toBe("HashCodeBuilder#append");
+  });
+
+  it("does not misroute a bare call when the enclosing-class entry is absent (falls through to global lookup)", () => {
+    // Enclosing class `Foo` has no `helper` member, but a unique global
+    // `helper` exists. The enclosing-class check must miss cleanly and
+    // delegate to the existing no-receiver global fallback.
+    const r = new JavaCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("Helpers.java", [
+      { symbolId: "Helpers.run", fqName: "Helpers.run", shortName: "run", relPath: "Helpers.java", scope: ["Helpers"] },
+    ]);
+    const target = r.resolve(
+      { callText: "run()", receiver: null, member: "run", startLine: 2 },
+      { callerFile: "Foo.java", callerScope: ["Foo"], imports: [], symbolTable: t },
+    );
+    expect(target?.targetRelPath).toBe("Helpers.java");
+    expect(target?.targetSymbolId).toBe("Helpers.run");
+  });
 });

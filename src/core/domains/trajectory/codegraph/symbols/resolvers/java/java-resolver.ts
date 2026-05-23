@@ -24,6 +24,17 @@ export class JavaCallResolver implements CallResolver {
   constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
 
   resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
+    // bd tea-rags-mcp-9t8z — `this.X()` intra-class call. Resolve to
+    // `<enclosingClass>#X` (instance) or `<enclosingClass>.X` (static)
+    // constrained to the caller's own file before falling through to
+    // import / global short-name resolution. Mirrors the TS resolver's
+    // `this.X()` branch — without this an explicit `this.helper()` was
+    // treated as receiver "this" and dropped (no import matches "this",
+    // scope-filter rejects every candidate).
+    if (call.receiver === "this" && ctx.callerScope.length > 0) {
+      const sameFileHit = this.lookupEnclosingMember(call.member, ctx);
+      if (sameFileHit) return sameFileHit;
+    }
     if (call.receiver) {
       const match = ctx.imports.find((imp) => javaImportMatchesReceiver(imp.importText, call.receiver as string));
       if (match) {
@@ -54,9 +65,39 @@ export class JavaCallResolver implements CallResolver {
       if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
       return null;
     }
+    // bd tea-rags-mcp-9t8z — implicit-receiver bare call (Java `foo()`
+    // inside a class body is shorthand for `this.foo()` for instance
+    // methods, or a private/static helper of the enclosing class). Try
+    // the same enclosing-class lookup FIRST so a global short-name
+    // collision (e.g. `append` on both HashCodeBuilder and StringBuffer)
+    // doesn't drop the edge or misroute it.
+    if (ctx.callerScope.length > 0) {
+      const sameFileHit = this.lookupEnclosingMember(call.member, ctx);
+      if (sameFileHit) return sameFileHit;
+    }
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     const target = pickSingleCandidate(fallback, this.mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+    return null;
+  }
+
+  /**
+   * bd tea-rags-mcp-9t8z — look up `<enclosingClass>#<member>` (instance)
+   * then `<enclosingClass>.<member>` (static) constrained to the
+   * caller's own file. Mirrors `TSCallResolver`'s same-file enclosing
+   * lookup so Java agrees on intra-class dispatch.
+   *
+   * Returns the resolved target or null when neither form is present
+   * — the caller then falls through to import / global resolution.
+   */
+  private lookupEnclosingMember(member: string, ctx: CallContext): ResolvedTarget | null {
+    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+    const instanceFq = `${enclosing}#${member}`;
+    const instanceHit = ctx.symbolTable.lookup(instanceFq).find((def) => def.relPath === ctx.callerFile);
+    if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+    const staticFq = `${enclosing}.${member}`;
+    const staticHit = ctx.symbolTable.lookup(staticFq).find((def) => def.relPath === ctx.callerFile);
+    if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
     return null;
   }
 }
