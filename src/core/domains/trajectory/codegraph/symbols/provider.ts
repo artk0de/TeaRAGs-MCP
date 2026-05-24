@@ -1040,6 +1040,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         "codegraph.file.fanIn": fanIn,
         "codegraph.file.fanOut": fanOut,
         "codegraph.file.instability": denom === 0 ? 0 : fanOut / denom,
+        // Support signal for instability.confidence — derived inline so
+        // bytes hit Qdrant in the same payload as fanIn/fanOut.
+        "codegraph.file.connectionCount": denom,
         // isHub is finalised by the IsHubSignal derived signal against
         // the cohort p95 at rerank time. The payload field stays in
         // place with a stable default so reranker overlays don't churn.

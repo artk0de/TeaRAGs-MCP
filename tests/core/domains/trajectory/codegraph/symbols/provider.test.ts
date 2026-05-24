@@ -300,9 +300,13 @@ describe("CodegraphEnrichmentProvider", () => {
     const leafOverlay = overlays.get("src/leaf.ts");
     expect(leafOverlay?.["codegraph.file.fanIn"]).toBe(1);
     expect(leafOverlay?.["codegraph.file.isLeaf"]).toBe(true);
+    // btl8: connectionCount = fanIn + fanOut, support signal for instability
+    // confidence — written inline by buildFileSignals so no extra DB call.
+    expect(leafOverlay?.["codegraph.file.connectionCount"]).toBe(1);
     const mainOverlay = overlays.get("src/main.ts");
     expect(mainOverlay?.["codegraph.file.fanOut"]).toBe(1);
     expect(mainOverlay?.["codegraph.file.instability"]).toBeCloseTo(1, 5);
+    expect(mainOverlay?.["codegraph.file.connectionCount"]).toBe(1);
     // isHub stays false in buildFileSignals — IsHubSignal finalises it at rerank time.
     expect(mainOverlay?.["codegraph.file.isHub"]).toBe(false);
   });
