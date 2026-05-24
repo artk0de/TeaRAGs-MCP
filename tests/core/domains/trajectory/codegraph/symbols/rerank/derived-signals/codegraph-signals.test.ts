@@ -29,9 +29,64 @@ describe("codegraph derived signals", () => {
 
   it("InstabilitySignal passes through raw value clamped to [0,1]", () => {
     const sig = new InstabilitySignal();
-    expect(sig.extract({ "codegraph.file.instability": 0.42 }, {})).toBe(0.42);
-    expect(sig.extract({ "codegraph.file.instability": 1.5 }, {})).toBe(1);
-    expect(sig.extract({ "codegraph.file.instability": -0.1 }, {})).toBe(0);
+    // Use full connectionCount (≥ FALLBACK_K) so the dampening factor is 1.0
+    // and the test isolates the [0,1] clamp behavior from the confidence path.
+    const fullSupport = { "codegraph.file.connectionCount": 100 };
+    expect(sig.extract({ "codegraph.file.instability": 0.42, ...fullSupport }, {})).toBe(0.42);
+    expect(sig.extract({ "codegraph.file.instability": 1.5, ...fullSupport }, {})).toBe(1);
+    expect(sig.extract({ "codegraph.file.instability": -0.1, ...fullSupport }, {})).toBe(0);
+  });
+
+  // Score-side confidence dampening for the instability ratio. With
+  // connectionCount=1 the ratio swings 0↔1 from a single edge — classic
+  // small-denominator noise. `confidenceDampening(n, k) = min((n/k)^2, 1)`
+  // attenuates the contribution to ranking when support is below k.
+  // See `.claude/rules/signal-confidence.md` for the contract.
+  it("InstabilitySignal dampens score when connectionCount is below the support threshold", () => {
+    const sig = new InstabilitySignal();
+    const ctx = {
+      confidence: {
+        support: "connectionCount",
+        score: { threshold: 5, adaptivePercentile: 25 },
+      },
+    } as const;
+    // connectionCount=1, k=5 -> dampening factor = (1/5)^2 = 0.04
+    const raw = { "codegraph.file.instability": 1.0, "codegraph.file.connectionCount": 1 };
+    expect(sig.extract(raw, ctx)).toBeCloseTo(0.04, 5);
+  });
+
+  it("InstabilitySignal applies no dampening when connectionCount >= threshold", () => {
+    const sig = new InstabilitySignal();
+    const ctx = {
+      confidence: {
+        support: "connectionCount",
+        score: { threshold: 5, adaptivePercentile: 25 },
+      },
+    } as const;
+    // connectionCount=10, k=5 -> (10/5)^2 clamps to 1; raw 1.0 passes through.
+    const raw = { "codegraph.file.instability": 1.0, "codegraph.file.connectionCount": 10 };
+    expect(sig.extract(raw, ctx)).toBe(1);
+  });
+
+  it("InstabilitySignal reads connectionCount from nested codegraph payload for dampening", () => {
+    const sig = new InstabilitySignal();
+    const ctx = {
+      confidence: {
+        support: "connectionCount",
+        score: { threshold: 5 },
+      },
+    } as const;
+    const nested = {
+      codegraph: {
+        symbols: {
+          file: {
+            "codegraph.file.instability": 1.0,
+            "codegraph.file.connectionCount": 1,
+          },
+        },
+      },
+    };
+    expect(sig.extract(nested, ctx)).toBeCloseTo(0.04, 5);
   });
 
   // Defensive guard against a payload value that can't be coerced to a
@@ -187,6 +242,9 @@ describe("codegraph derived signals", () => {
   // Before the helper migration, derived signals read raw["codegraph.file.X"]
   // at the root of the payload — always undefined → scored 0 in production.
   describe("nested payload shape (real Qdrant write path)", () => {
+    // connectionCount is always written by buildFileSignals (denom = fanIn+fanOut).
+    // Set to 25 here (>> FALLBACK_K=5) so InstabilitySignal confidence dampening
+    // is a no-op and the test isolates payload-shape reading from score attenuation.
     const realFilePayload = {
       codegraph: {
         symbols: {
@@ -194,6 +252,7 @@ describe("codegraph derived signals", () => {
             "codegraph.file.fanIn": 10,
             "codegraph.file.fanOut": 15,
             "codegraph.file.instability": 0.42,
+            "codegraph.file.connectionCount": 25,
             "codegraph.file.isHub": true,
             "codegraph.file.isLeaf": false,
             "codegraph.file.transitiveImpact": 25,

@@ -568,9 +568,17 @@ export class Reranker {
 
   /**
    * Build a sibling-values map from the RAW payload at a given scope.
-   * Handles both nested (payload.git.file.*) and flat (payload['git.file.commitCount'])
-   * shapes. Returns bare-name keys (`commitCount`, not `git.file.commitCount`)
-   * so `SignalConfidence.support: "commitCount"` resolves directly.
+   * Handles all trajectory payload shapes:
+   *   • Git nested:        payload.git.{scope}.{signalName}        (bare keys)
+   *   • Git flat:          payload["git.{scope}.{signalName}"]     (Qdrant flattened)
+   *   • Codegraph nested:  payload.codegraph.symbols.{scope}["codegraph.{scope}.{signalName}"]
+   *   • Codegraph flat:    payload["codegraph.{scope}.{signalName}"]
+   * Returns bare-name keys (`commitCount`, `connectionCount`, not the
+   * fully-qualified payload key) so `SignalConfidence.support` resolves
+   * directly via same-scope lookup, regardless of which trajectory owns
+   * the support sibling. Codegraph's nested form (tea-rags-mcp-0am0) was
+   * invisible before this fix because EnrichmentApplier writes signals
+   * under providerKey `codegraph.symbols` with literal dotted inner keys.
    */
   private collectScopeSiblings(
     rawPayload: Record<string, unknown> | undefined,
@@ -579,7 +587,7 @@ export class Reranker {
     if (!rawPayload) return {};
     const out: Record<string, number> = {};
 
-    // Nested format: payload.git.{file,chunk}.{signalName}
+    // Git nested format: payload.git.{file,chunk}.{signalName}
     const { git } = rawPayload as { git?: unknown };
     if (git && typeof git === "object") {
       const scoped = (git as Record<string, unknown>)[scope];
@@ -590,13 +598,35 @@ export class Reranker {
       }
     }
 
-    // Flat-format fallback: payload["git.{scope}.{signalName}"]
-    const prefix = `git.${scope}.`;
-    for (const [k, v] of Object.entries(rawPayload)) {
-      if (typeof v === "number" && k.startsWith(prefix)) {
-        const bare = k.slice(prefix.length);
-        if (!(bare in out)) out[bare] = v;
+    // Codegraph nested format: payload.codegraph.symbols.{scope}["codegraph.{scope}.<bareKey>"]
+    const { codegraph } = rawPayload as { codegraph?: unknown };
+    if (codegraph && typeof codegraph === "object") {
+      const { symbols } = codegraph as Record<string, unknown>;
+      if (symbols && typeof symbols === "object") {
+        const scoped = (symbols as Record<string, unknown>)[scope];
+        if (scoped && typeof scoped === "object") {
+          const cgPrefix = `codegraph.${scope}.`;
+          for (const [k, v] of Object.entries(scoped as Record<string, unknown>)) {
+            if (typeof v !== "number") continue;
+            const bare = k.startsWith(cgPrefix) ? k.slice(cgPrefix.length) : k;
+            if (!(bare in out)) out[bare] = v;
+          }
+        }
       }
+    }
+
+    // Flat-format fallback for both trajectories:
+    //   payload["git.{scope}.{name}"] / payload["codegraph.{scope}.{name}"]
+    const gitPrefix = `git.${scope}.`;
+    const cgFlatPrefix = `codegraph.${scope}.`;
+    for (const [k, v] of Object.entries(rawPayload)) {
+      if (typeof v !== "number") continue;
+      const bare = k.startsWith(gitPrefix)
+        ? k.slice(gitPrefix.length)
+        : k.startsWith(cgFlatPrefix)
+          ? k.slice(cgFlatPrefix.length)
+          : undefined;
+      if (bare !== undefined && !(bare in out)) out[bare] = v;
     }
 
     return out;

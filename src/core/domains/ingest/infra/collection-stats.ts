@@ -28,10 +28,35 @@ const MIN_LANGUAGE_SHARE = 0.05;
 /**
  * Read a value from a nested object using dot-notation path.
  * Returns undefined if any segment is missing.
+ *
+ * Codegraph nested form (tea-rags-mcp-0am0): EnrichmentApplier writes
+ * codegraph signals under providerKey `codegraph.symbols`, which Qdrant
+ * interprets as a path. Inner keys retain their literal dotted form, so
+ * the real on-disk shape is:
+ *   { codegraph: { symbols: { file: { "codegraph.file.fanIn": N } } } }
+ * For `codegraph.{file|chunk}.<key>` paths we first try the nested-symbols
+ * form (matches production), then fall back to the literal traversal so
+ * test fixtures that feed flat or alternate shapes still work.
  */
 function readPayloadPath(payload: Record<string, unknown>, path: string): unknown {
   // Try flat key first (Qdrant stores dot-notation paths as flat keys)
   if (path in payload) return payload[path];
+
+  // Codegraph nested-symbols form: payload.codegraph.symbols.{scope}["codegraph.{scope}.<key>"]
+  const cgMatch = /^codegraph\.(file|chunk)\./.exec(path);
+  if (cgMatch) {
+    const { codegraph } = payload as { codegraph?: unknown };
+    if (codegraph && typeof codegraph === "object") {
+      const { symbols } = codegraph as { symbols?: unknown };
+      if (symbols && typeof symbols === "object") {
+        const scoped = (symbols as Record<string, unknown>)[cgMatch[1]];
+        if (scoped && typeof scoped === "object" && path in (scoped as Record<string, unknown>)) {
+          return (scoped as Record<string, unknown>)[path];
+        }
+      }
+    }
+  }
+
   // Fall back to nested traversal
   const parts = path.split(".");
   let current: unknown = payload;
@@ -266,20 +291,23 @@ function extractSignalValues(
  * percentiles each support signal must provide (via `labels` keys OR
  * `percentilesToCompute`). Returns Map<supportSignalKey, Set<percentile>>.
  *
- * Scope handling: descriptor's own key carries the scope prefix
- * (`git.{file|chunk}.X`). The support is bare-name (`commitCount`), resolved
- * at the SAME scope as the descriptor — so `git.file.bugFixRate` with
- * `support: "commitCount"` resolves to `git.file.commitCount`.
+ * Scope handling: descriptor's own key carries the trajectory namespace and
+ * scope prefix (`git.{file|chunk}.X` or `codegraph.{file|chunk}.X`). The
+ * support is bare-name (`commitCount`, `connectionCount`), resolved at the
+ * SAME (namespace, scope) as the descriptor — so
+ * `codegraph.file.instability` with `support: "connectionCount"` resolves
+ * to `codegraph.file.connectionCount`.
  */
 function collectReferencedPercentiles(signals: PayloadSignalDescriptor[]): Map<string, Set<number>> {
   const result = new Map<string, Set<number>>();
   for (const sig of signals) {
     const conf = sig.stats?.confidence;
     if (!conf?.support) continue;
-    const m = /^git\.(file|chunk)\./.exec(sig.key);
+    const m = /^(git|codegraph)\.(file|chunk)\./.exec(sig.key);
     if (!m) continue;
-    const scope = m[1];
-    const supportFullKey = `git.${scope}.${conf.support}`;
+    const namespace = m[1];
+    const scope = m[2];
+    const supportFullKey = `${namespace}.${scope}.${conf.support}`;
     let set = result.get(supportFullKey);
     if (!set) {
       set = new Set<number>();

@@ -775,6 +775,72 @@ describe("computeCollectionStats distributions", () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Codegraph nested payload reading (tea-rags-mcp-0am0)
+  // ---------------------------------------------------------------------------
+  //
+  // EnrichmentApplier writes codegraph file-level signals under providerKey
+  // "codegraph.symbols" — Qdrant treats the dotted key as a path, so the
+  // on-disk shape is:
+  //   { codegraph: { symbols: { file: { "codegraph.file.fanIn": N, ... } } } }
+  // Before this fix, readPayloadPath only walked literal dotted segments
+  // (payload.codegraph.file.fanIn) and missed the actual nested form, so
+  // codegraph signals never received percentile entries and
+  // IndexMetricsQuery silently skipped them.
+  describe("codegraph nested payload", () => {
+    function makeCodegraphPoint(
+      fanIn: number,
+      lang = "typescript",
+    ): {
+      payload: Record<string, unknown>;
+    } {
+      return {
+        payload: {
+          language: lang,
+          chunkType: "function",
+          isDocumentation: false,
+          relativePath: `src/file-${fanIn}.ts`,
+          codegraph: {
+            symbols: {
+              file: {
+                "codegraph.file.fanIn": fanIn,
+                "codegraph.file.connectionCount": fanIn + 1,
+              },
+            },
+          },
+        },
+      };
+    }
+
+    it("reads codegraph signals from nested codegraph.symbols.file payload", () => {
+      const codegraphSignals: PayloadSignalDescriptor[] = [
+        {
+          key: "codegraph.file.fanIn",
+          type: "number",
+          description: "test",
+          stats: { labels: { p25: "isolated", p50: "typical", p75: "popular", p95: "hub" } },
+        },
+        {
+          key: "codegraph.file.connectionCount",
+          type: "number",
+          description: "test",
+          stats: { labels: { p25: "sparse", p50: "typical", p75: "busy", p95: "highly-connected" } },
+        },
+      ];
+      const points = Array.from({ length: 10 }, (_, i) => makeCodegraphPoint(i + 1));
+      const result = computeCollectionStats(points, codegraphSignals, ALL_ACCS);
+      const fanInStats = result.perSignal.get("codegraph.file.fanIn");
+      const ccStats = result.perSignal.get("codegraph.file.connectionCount");
+      expect(fanInStats).toBeDefined();
+      expect(fanInStats!.count).toBe(10);
+      expect(fanInStats!.min).toBe(1);
+      expect(fanInStats!.max).toBe(10);
+      expect(fanInStats!.percentiles[50]).toBeDefined();
+      expect(ccStats).toBeDefined();
+      expect(ccStats!.count).toBe(10);
+    });
+  });
+
   describe("validateSignalDependencies", () => {
     const bugFixRateNeedsP10: PayloadSignalDescriptor = {
       key: "git.file.bugFixRate",
@@ -892,11 +958,11 @@ describe("computeCollectionStats distributions", () => {
       }).toThrow(/git\.chunk\.commitCount.*p10/);
     });
 
-    it("ignores confidence blocks on non-git keys (no scope prefix)", () => {
+    it("ignores confidence blocks on signals outside the git|codegraph scope prefixes", () => {
       // A descriptor with `confidence.support` but a key outside the
-      // `git.(file|chunk).` pattern is silently skipped — same-scope
-      // resolution only applies to git-scoped signals.
-      const nonGitSignal: PayloadSignalDescriptor = {
+      // `(git|codegraph).(file|chunk).` pattern is silently skipped —
+      // same-scope resolution only applies to validated trajectory scopes.
+      const nonScopedSignal: PayloadSignalDescriptor = {
         key: "methodLines",
         type: "number",
         description: "test",
@@ -911,8 +977,72 @@ describe("computeCollectionStats distributions", () => {
       // Without a matching support sibling, this would normally throw —
       // but the regex skip on collectReferencedPercentiles prevents that.
       expect(() => {
-        validateSignalDependencies([nonGitSignal]);
+        validateSignalDependencies([nonScopedSignal]);
       }).not.toThrow();
+    });
+
+    it("validates codegraph.file.* confidence references against codegraph.file.* support siblings", () => {
+      // Mirrors the btl8 InstabilitySignal wiring: instability.confidence
+      // references "connectionCount" via score.adaptivePercentile=25 plus
+      // label rules at p10/p25. The support sibling MUST declare those
+      // percentiles in stats.labels OR stats.percentilesToCompute.
+      const instability: PayloadSignalDescriptor = {
+        key: "codegraph.file.instability",
+        type: "number",
+        description: "instability",
+        stats: {
+          labels: { p50: "stable", p75: "mixed", p95: "unstable" },
+          confidence: {
+            support: "connectionCount",
+            score: { threshold: 5, adaptivePercentile: 25 },
+            label: {
+              rules: [
+                { whenSupportBelow: "p10", fallback: 2, ceiling: "stable" },
+                { whenSupportBelow: "p25", fallback: 5, ceiling: "mixed" },
+              ],
+            },
+          },
+        },
+      };
+      const supportWired: PayloadSignalDescriptor = {
+        key: "codegraph.file.connectionCount",
+        type: "number",
+        description: "connection count",
+        stats: {
+          labels: { p25: "sparse", p50: "typical", p75: "busy", p95: "highly-connected" },
+          percentilesToCompute: [10],
+        },
+      };
+      expect(() => {
+        validateSignalDependencies([instability, supportWired]);
+      }).not.toThrow();
+    });
+
+    it("throws when a codegraph confidence reference is not wired on the support sibling", () => {
+      const instability: PayloadSignalDescriptor = {
+        key: "codegraph.file.instability",
+        type: "number",
+        description: "instability",
+        stats: {
+          labels: { p50: "stable" },
+          confidence: {
+            support: "connectionCount",
+            label: {
+              rules: [{ whenSupportBelow: "p10", fallback: 2, ceiling: "stable" }],
+            },
+          },
+        },
+      };
+      const supportMissingP10: PayloadSignalDescriptor = {
+        key: "codegraph.file.connectionCount",
+        type: "number",
+        description: "connection count",
+        // p10 is not declared in labels and not in percentilesToCompute
+        stats: { labels: { p25: "sparse", p50: "typical" } },
+      };
+      expect(() => {
+        validateSignalDependencies([instability, supportMissingP10]);
+      }).toThrow(/codegraph\.file\.connectionCount.*p10/);
     });
   });
 
