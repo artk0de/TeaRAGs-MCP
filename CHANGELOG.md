@@ -1,3 +1,154 @@
+## [1.28.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.27.0...v1.28.0) (2026-05-24)
+
+### Features
+
+- **adapters:** add DuckDB graph adapter + migration runner with cg_symbols
+  schema
+  ([350e18c](https://github.com/artk0de/TeaRAGs-MCP/commit/350e18c0340c5c3e0b028436fb9708926a811836))
+- **api:** integrate codegraph slice 1 — App methods, GraphFacade, MCP tools
+  ([9bd4079](https://github.com/artk0de/TeaRAGs-MCP/commit/9bd40791e2591a8495c607e02ea68e505ef95a37))
+- **chunker:** add TypeScript extraction walker (file-level, sink wiring
+  deferred to T10)
+  ([762a92e](https://github.com/artk0de/TeaRAGs-MCP/commit/762a92e166b26f1f5c9025fb83d5c97650bdab70))
+- **codegraph:** add 7 derived signals and blastRadius preset
+  ([bb6659b](https://github.com/artk0de/TeaRAGs-MCP/commit/bb6659b2f72b91de5082e0170eb89abdbdfe88f3))
+- **codegraph:** add CodegraphEnrichmentProvider with sink + file/chunk signals
+  ([4d6cac1](https://github.com/artk0de/TeaRAGs-MCP/commit/4d6cac1f097846145355cad362e0f23d1129b462))
+- **codegraph:** add in-memory GlobalSymbolTable
+  ([99bb461](https://github.com/artk0de/TeaRAGs-MCP/commit/99bb4612106364a8c073a1980f548f30ac5945e6))
+- **codegraph:** add SymbolsTrajectory and L1 family factory
+  ([603ccc5](https://github.com/artk0de/TeaRAGs-MCP/commit/603ccc545ca9b9c8583bbfc71d3f8f32094f27ca))
+- **codegraph:** add TypeScript CallResolver with tsconfig path mapping
+  ([87641fb](https://github.com/artk0de/TeaRAGs-MCP/commit/87641fb33047a960ca4d1fb1c2805c183225a5fc))
+- **codegraph:** comprehensive multi-language corner-case fixes
+  (JS/Python/Go/Java/Rust)
+  ([6910269](https://github.com/artk0de/TeaRAGs-MCP/commit/69102692aef7c9b22d84d38273cd10bd5127a3f8))
+- **codegraph:** exclude Rails db/schema.rb from graph layer
+  ([d4bd523](https://github.com/artk0de/TeaRAGs-MCP/commit/d4bd523af80ff811f7b9e19a2323f5a38dc3f8b9))
+- **codegraph:** find_cycles MCP tool + Tarjan SCC over file and method graphs
+  ([efa72ca](https://github.com/artk0de/TeaRAGs-MCP/commit/efa72cac51a29b3625099daf480eb93369ec7611))
+- **codegraph:** PageRank method-graph signal + cg_symbols_metrics table
+  ([dc3e404](https://github.com/artk0de/TeaRAGs-MCP/commit/dc3e4045cd54e2ae73adadef937066459b70861f))
+- **codegraph:** per-collection DB pool, streaming spill, layered ignore, Python
+  types
+  ([d8e9e45](https://github.com/artk0de/TeaRAGs-MCP/commit/d8e9e454eff9489fc4a913db729a9dabaac17e10))
+- **codegraph:** persist symbol table to DuckDB with lazy hydration
+  ([8f3f232](https://github.com/artk0de/TeaRAGs-MCP/commit/8f3f232d3ee1f961a537628d9ed21b91b5aff294))
+- **codegraph:** polyglot walkers for JavaScript, Go, Java, Rust, Bash
+  ([f01ce06](https://github.com/artk0de/TeaRAGs-MCP/commit/f01ce06b4346f65e4afc058daac6ac50d7c987e8))
+- **codegraph:** Python + Ruby (Zeitwerk-aware) walkers + universal entryPoint
+  composite
+  ([ab41ab5](https://github.com/artk0de/TeaRAGs-MCP/commit/ab41ab5c5c615f447ca6c9c09af82772915458d7))
+- **codegraph:** Ruby `class << self` block → class methods
+  ([40d2277](https://github.com/artk0de/TeaRAGs-MCP/commit/40d2277b6795deabe5fcaf8c47ba9ea22fe2b86c)),
+  closes [Bar#inner](https://github.com/artk0de/Bar/issues/inner)
+- **codegraph:** Ruby DSL macro synthetic symbols (attr\_\* + AR associations)
+  ([56ebd77](https://github.com/artk0de/TeaRAGs-MCP/commit/56ebd777f7e6e4de2069f309226bce9197f1c104)),
+  closes [#name](https://github.com/artk0de/TeaRAGs-MCP/issues/name)
+  [#name](https://github.com/artk0de/TeaRAGs-MCP/issues/name)
+  [#name](https://github.com/artk0de/TeaRAGs-MCP/issues/name)
+  [#name](https://github.com/artk0de/TeaRAGs-MCP/issues/name)
+  [#name](https://github.com/artk0de/TeaRAGs-MCP/issues/name)
+  [#name_id](https://github.com/artk0de/TeaRAGs-MCP/issues/name_id)
+- **codegraph:** Ruby inheritance + mixin walk in resolver (closes x3in, u17l)
+  ([301c69e](https://github.com/artk0de/TeaRAGs-MCP/commit/301c69e9ae2cb743ead0610107fb388198ee7f2b))
+- **codegraph:** Ruby local type tracking via constructor + AR finders + YARD
+  ([e2c5092](https://github.com/artk0de/TeaRAGs-MCP/commit/e2c509220943aa6672758bb5667cdc9844ea584d))
+- **codegraph:** Ruby send/&block / delegate / habtm / define_method + AR chain
+  guard
+  ([7373068](https://github.com/artk0de/TeaRAGs-MCP/commit/7373068cd5d71e5f1fde71a262e73bfee9d6324f)),
+  closes [#name](https://github.com/artk0de/TeaRAGs-MCP/issues/name)
+  [#a](https://github.com/artk0de/TeaRAGs-MCP/issues/a)
+  [#b](https://github.com/artk0de/TeaRAGs-MCP/issues/b)
+  [AbstractPolicy#result](https://github.com/artk0de/AbstractPolicy/issues/result)
+- **codegraph:** transitiveImpact file signal via depth-capped reverse BFS
+  ([004d18b](https://github.com/artk0de/TeaRAGs-MCP/commit/004d18bfee9c6b69fbd1b3d36397a3254a11b1b6))
+- **codegraph:** wire end-to-end — env-driven CODEGRAPH_ENABLED + composition +
+  bootstrap
+  ([ee2570b](https://github.com/artk0de/TeaRAGs-MCP/commit/ee2570b6086bbafe11bf1bf9d48917b5e5e14f5f))
+- **composite-presets:** D4 overrides + architecturalHub (codegraph-aware
+  reranking)
+  ([e4efbf2](https://github.com/artk0de/TeaRAGs-MCP/commit/e4efbf2cc8eab2797041a784638e59c322850727))
+- **contracts:** add codegraph slice 1 contracts (FileExtraction, GraphDbClient,
+  CallResolver)
+  ([75c8ac1](https://github.com/artk0de/TeaRAGs-MCP/commit/75c8ac102c18d88cc7eafceeb8802238eebd1e21))
+- **contracts:** handleDeletedPaths hook on EnrichmentProvider + coordinator
+  dispatch
+  ([63d9547](https://github.com/artk0de/TeaRAGs-MCP/commit/63d954755c4dcaf73d7a777ff96bf9d38beeaca5))
+- **metrics:** per-provider EnrichmentMetrics with codegraph extraction stats
+  ([5214014](https://github.com/artk0de/TeaRAGs-MCP/commit/5214014ad5444c9306851c8470ad777bbf25abd1))
+- **presets:** introduce composite trajectory namespace and move blastRadius
+  ([188a317](https://github.com/artk0de/TeaRAGs-MCP/commit/188a317b0ca2ed7b005197970878624c112162a2))
+- **sync:** route file deletions through EnrichmentCoordinator before Qdrant
+  ([fc34474](https://github.com/artk0de/TeaRAGs-MCP/commit/fc34474ec08c38d45a496118d670acc885315591))
+
+### Bug Fixes
+
+- **chunker:** inherit symbolId + chunkType in chunkOversizedNode subChunks
+  ([d9e666f](https://github.com/artk0de/TeaRAGs-MCP/commit/d9e666fc87e44f1afaf95a83c46ccb2896bf6462))
+- **codegraph:** aggregate classAncestors across all files (global pass-1 →
+  pass-2)
+  ([6d44896](https://github.com/artk0de/TeaRAGs-MCP/commit/6d4489684257fc3bdedbac77786113254e55da4a)),
+  closes
+  [PaginatableForm#page](https://github.com/artk0de/PaginatableForm/issues/page)
+  [ProductsController#index](https://github.com/artk0de/ProductsController/issues/index)
+  [IndexForm#search_params](https://github.com/artk0de/IndexForm/issues/search_params)
+  [PaginatableForm#page](https://github.com/artk0de/PaginatableForm/issues/page)
+- **codegraph:** end-to-end live MCP integration on tea-rags + chunk metric
+  rename
+  ([a286df0](https://github.com/artk0de/TeaRAGs-MCP/commit/a286df00bbc02d49ee53d1eae5502b5f94823707))
+- **codegraph:** match qualified type name against scope tail in Ruby Step 0
+  ([491e2f5](https://github.com/artk0de/TeaRAGs-MCP/commit/491e2f5b9e274916d8df893f6c13ef6ba2064ab4)),
+  closes
+  [IndexForm#search_params](https://github.com/artk0de/IndexForm/issues/search_params)
+- **codegraph:** prefer Class.method over
+  Class[#method](https://github.com/artk0de/TeaRAGs-MCP/issues/method) for
+  Zeitwerk dispatch
+  ([53f48e1](https://github.com/artk0de/TeaRAGs-MCP/commit/53f48e1d0c8485343a3140e914386853675a5a3d))
+- **codegraph:** qualify Go methods + drop unsafe short-name fallback in Go/Java
+  resolvers
+  ([9965ae4](https://github.com/artk0de/TeaRAGs-MCP/commit/9965ae4fcb4f1311469d1212831f325a6caf1842))
+- **codegraph:** use Record (not Map) for classAncestors to survive NDJSON spill
+  ([13fad35](https://github.com/artk0de/TeaRAGs-MCP/commit/13fad35e84734e48f6cc91ff2d46c33f96d09356))
+- **codegraph:** use Record (not Map) for classFieldTypes to survive NDJSON
+  spill
+  ([735744d](https://github.com/artk0de/TeaRAGs-MCP/commit/735744dcad7dedfcb64de0be9632f6da62c83e7e))
+- **codegraph:** use Record (not Map) for classFieldTypes to survive NDJSON
+  spill
+  ([2908640](https://github.com/artk0de/TeaRAGs-MCP/commit/290864078324d3864ad972294cc1b84c9f9df7bb))
+- **codegraph:** walk ancestors for Class.method calls in Zeitwerk branch (Ruby)
+  ([13a2548](https://github.com/artk0de/TeaRAGs-MCP/commit/13a254838d2e851a846863451751f2a2477e83cc))
+- **skills:** correct DSL test-chunker language list to include Ruby
+  ([d87854a](https://github.com/artk0de/TeaRAGs-MCP/commit/d87854a8d5e2054450d6e89f717c2ca662662560))
+
+### Documentation
+
+- **codegraph:** implementation plan for symbols slice 1
+  ([1a755cf](https://github.com/artk0de/TeaRAGs-MCP/commit/1a755cff7652d388844846e762cb0c352c067d23))
+- **codegraph:** sync spec with plan-time refinements (walker, flat App,
+  duckdb-node-api)
+  ([2e12031](https://github.com/artk0de/TeaRAGs-MCP/commit/2e1203148605cebf4c810d6b870363e793d67bcb))
+- **plan:** clarify composite preset directory + reclassify Slice 1 blastRadius
+  ([bbf74df](https://github.com/artk0de/TeaRAGs-MCP/commit/bbf74df53502d53303ad8614539d65fbab5960a7))
+- **specs:** clarify track separation in static-complexity spec
+  ([8501af8](https://github.com/artk0de/TeaRAGs-MCP/commit/8501af80820e9d9b5e997537f0e4540c4b958f4d))
+- **specs:** composite preset overrides instead of modifying trajectory presets
+  ([8fdfac0](https://github.com/artk0de/TeaRAGs-MCP/commit/8fdfac017f7eeae6a057420f667dc0e9924eb79c))
+- **specs:** plan static complexity + universal fan-graph + temporal coupling
+  tracks
+  ([c9436a2](https://github.com/artk0de/TeaRAGs-MCP/commit/c9436a2feff20ef2529acb08503826e1fb3e5b0e))
+
+### Code Refactoring
+
+- **codegraph:** move graph algorithms to trajectory/codegraph/infra; adapter
+  becomes pure CRUD
+  ([720c4d4](https://github.com/artk0de/TeaRAGs-MCP/commit/720c4d409aececd0a6aa56b1ff58d87025142a48))
+- **facades:** drive IngestFacade enrichment providers from TrajectoryRegistry
+  ([5c8b6a4](https://github.com/artk0de/TeaRAGs-MCP/commit/5c8b6a475f6600f673e3ec26255133907351e50a))
+- **presets:** relocate fanOutPerLine to codegraph + add imports-field-semantics
+  rule
+  ([08367f6](https://github.com/artk0de/TeaRAGs-MCP/commit/08367f66d45fe5b2bac2e3e7db7c0d68d925503f))
+
 ## [1.27.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.26.0...v1.27.0) (2026-05-19)
 
 ### Features
