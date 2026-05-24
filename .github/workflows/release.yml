@@ -17,6 +17,9 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     if: "!startsWith(github.event.head_commit.message, 'chore(release)')"
+    concurrency:
+      group: release-main
+      cancel-in-progress: false
 
     steps:
       - name: Checkout code
@@ -24,6 +27,11 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Sync with remote main
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
