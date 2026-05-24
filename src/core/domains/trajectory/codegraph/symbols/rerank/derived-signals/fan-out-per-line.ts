@@ -1,6 +1,7 @@
 import type { DerivedSignalDescriptor } from "../../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../../contracts/types/trajectory.js";
 import { normalize } from "../../../../../../infra/signal-utils.js";
+import { codegraphFileNum } from "./helpers.js";
 
 /**
  * Size-moderated efferent coupling: fanOut per line of code.
@@ -37,7 +38,7 @@ export class FanOutPerLineSignal implements DerivedSignalDescriptor {
   readonly sources = ["codegraph.file.fanOut"];
   readonly defaultBound = 0.1;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    const fanOut = Number(rawSignals["codegraph.file.fanOut"] ?? 0);
+    const fanOut = codegraphFileNum(rawSignals, "fanOut");
     const size = Number(rawSignals.chunkSize ?? 1);
     const ratio = fanOut / Math.max(size, 1);
     const bound = ctx?.bounds?.["chunk.fanOutPerLine"] ?? this.defaultBound;

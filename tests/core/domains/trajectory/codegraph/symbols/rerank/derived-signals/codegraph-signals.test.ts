@@ -177,6 +177,89 @@ describe("codegraph derived signals", () => {
     });
   });
 
+  // Nested-payload regression suite (tea-rags-mcp-5ajg).
+  //
+  // EnrichmentApplier writes codegraph signals via batchSetPayload with
+  // key = "codegraph.symbols.file" / "codegraph.symbols.chunk", which Qdrant
+  // interprets as a path. Inner keys keep their literal dotted form, so the
+  // real on-disk payload looks like:
+  //   { codegraph: { symbols: { file: { "codegraph.file.fanIn": 5, ... } } } }
+  // Before the helper migration, derived signals read raw["codegraph.file.X"]
+  // at the root of the payload — always undefined → scored 0 in production.
+  describe("nested payload shape (real Qdrant write path)", () => {
+    const realFilePayload = {
+      codegraph: {
+        symbols: {
+          file: {
+            "codegraph.file.fanIn": 10,
+            "codegraph.file.fanOut": 15,
+            "codegraph.file.instability": 0.42,
+            "codegraph.file.isHub": true,
+            "codegraph.file.isLeaf": false,
+            "codegraph.file.transitiveImpact": 25,
+          },
+          chunk: {
+            "codegraph.chunk.fanIn": 20,
+            "codegraph.chunk.fanOut": 15,
+            "codegraph.chunk.pageRank": 0.005,
+          },
+        },
+      },
+      chunkSize: 100,
+    };
+
+    it("FanInSignal reads nested codegraph.symbols.file payload", () => {
+      const sig = new FanInSignal();
+      expect(sig.extract(realFilePayload, { bounds: { "file.fanIn": 20 } })).toBeCloseTo(0.5, 5);
+    });
+
+    it("FanOutSignal reads nested codegraph.symbols.file payload", () => {
+      const sig = new FanOutSignal();
+      expect(sig.extract(realFilePayload, { bounds: { "file.fanOut": 30 } })).toBeCloseTo(0.5, 5);
+    });
+
+    it("InstabilitySignal reads nested codegraph.symbols.file payload", () => {
+      const sig = new InstabilitySignal();
+      expect(sig.extract(realFilePayload, {})).toBe(0.42);
+    });
+
+    it("IsHubSignal reads nested codegraph.symbols.file payload", () => {
+      const sig = new IsHubSignal();
+      expect(sig.extract(realFilePayload, {})).toBe(1);
+    });
+
+    it("IsLeafSignal reads nested codegraph.symbols.file payload", () => {
+      const sig = new IsLeafSignal();
+      expect(sig.extract(realFilePayload, {})).toBe(0);
+    });
+
+    it("TransitiveImpactSignal reads nested codegraph.symbols.file payload", () => {
+      const sig = new TransitiveImpactSignal();
+      expect(sig.extract(realFilePayload, {})).toBeCloseTo(0.5, 5);
+    });
+
+    it("FanOutPerLineSignal reads nested codegraph.symbols.file payload and root chunkSize", () => {
+      const sig = new FanOutPerLineSignal();
+      // fanOut=15, chunkSize=100, ratio=0.15, defaultBound=0.1 → clamped to 1
+      expect(sig.extract(realFilePayload, {})).toBe(1);
+    });
+
+    it("ChunkFanInSignal reads nested codegraph.symbols.chunk payload", () => {
+      const sig = new ChunkFanInSignal();
+      expect(sig.extract(realFilePayload, { bounds: { "chunk.fanIn": 40 } })).toBeCloseTo(0.5, 5);
+    });
+
+    it("ChunkFanOutSignal reads nested codegraph.symbols.chunk payload", () => {
+      const sig = new ChunkFanOutSignal();
+      expect(sig.extract(realFilePayload, { bounds: { "chunk.fanOut": 30 } })).toBeCloseTo(0.5, 5);
+    });
+
+    it("PageRankSignal reads nested codegraph.symbols.chunk payload", () => {
+      const sig = new PageRankSignal();
+      expect(sig.extract(realFilePayload, {})).toBeCloseTo(0.5, 5);
+    });
+  });
+
   it("CODEGRAPH_SYMBOLS_DERIVED_SIGNALS contains all 10 signals (Slice 2 adds transitiveImpact + pageRank + fanOutPerLine)", () => {
     expect(CODEGRAPH_SYMBOLS_DERIVED_SIGNALS.map((s) => s.name).sort()).toEqual([
       "chunkFanIn",
