@@ -18,6 +18,21 @@ function fileGit(chunk: ScrollChunk): Record<string, unknown> | undefined {
   return git ? { file: git.file } : undefined;
 }
 
+/**
+ * Extract the file-level codegraph branch from a chunk, stripped to
+ * `{ symbols: { file } }` — mirrors fileGit. Codegraph signals are stored
+ * nested as `codegraph.symbols.{file,chunk}` (Qdrant treats the dotted
+ * EnrichmentApplier providerKey as a path; inner keys keep their literal
+ * dotted form). The outline projection (find_symbol relativePath / class
+ * mode) rebuilds the payload from an allowlist, so without this the codegraph
+ * section is silently dropped — tea-rags-mcp-0am0.
+ */
+function fileCodegraph(chunk: ScrollChunk): Record<string, unknown> | undefined {
+  const codegraph = chunk.payload.codegraph as { symbols?: Record<string, unknown> } | undefined;
+  const file = codegraph?.symbols?.file;
+  return file !== undefined ? { symbols: { file } } : undefined;
+}
+
 /** Determine member separator: # for instance, . for static. */
 function formatMember(symbolId: string): string {
   // Static members use ClassName.method, instance use ClassName#method
@@ -54,6 +69,7 @@ export const CodeChunkGrouper = {
       startLine: classChunk.payload.startLine,
       endLine: sorted.length > 0 ? sorted[sorted.length - 1].payload.endLine : classChunk.payload.endLine,
       git: fileGit(classChunk),
+      codegraph: fileCodegraph(classChunk),
       chunkCount: 1 + memberChunks.length,
       contentSize,
     };
@@ -108,6 +124,7 @@ export const CodeChunkGrouper = {
       chunkCount: sorted.length,
       contentSize,
       git: fileGit(first),
+      codegraph: fileCodegraph(first),
     };
 
     return { id: first.id, score: 1.0, payload };

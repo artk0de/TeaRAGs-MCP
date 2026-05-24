@@ -839,6 +839,33 @@ describe("computeCollectionStats distributions", () => {
       expect(ccStats).toBeDefined();
       expect(ccStats!.count).toBe(10);
     });
+
+    // tea-rags-mcp-0am0: get_index_metrics renders single-language projects
+    // (IndexMetricsQuery.appendGlobalSignalsIfPolyglot early-returns when only
+    // one code language is present) exclusively from CollectionSignalStats.
+    // perLanguage. The global perSignal bucket above is never consulted for a
+    // monolingual repo like tea-rags itself, so codegraph signals must reach
+    // perLanguage[lang][key].source — not just perSignal — or they stay
+    // invisible in the metrics tool.
+    it("places codegraph signals into perLanguage scoped stats (not just perSignal)", () => {
+      const codegraphSignals: PayloadSignalDescriptor[] = [
+        {
+          key: "codegraph.file.fanIn",
+          type: "number",
+          description: "test",
+          stats: { labels: { p25: "isolated", p50: "typical", p75: "popular", p95: "hub" } },
+        },
+      ];
+      const points = Array.from({ length: 12 }, (_, i) => makeCodegraphPoint(i + 1));
+      const result = computeCollectionStats(points, codegraphSignals, ALL_ACCS);
+
+      const langStats = result.perLanguage.get("typescript");
+      expect(langStats).toBeDefined();
+      const fanInScoped = langStats!.get("codegraph.file.fanIn");
+      expect(fanInScoped).toBeDefined();
+      expect(fanInScoped!.source.count).toBe(12);
+      expect(fanInScoped!.source.percentiles[50]).toBeDefined();
+    });
   });
 
   describe("validateSignalDependencies", () => {
