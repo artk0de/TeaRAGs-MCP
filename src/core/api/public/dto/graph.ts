@@ -1,12 +1,23 @@
 /**
  * Codegraph DTOs — request/response shapes for the `get_callers`,
  * `get_callees`, and `find_cycles` MCP tools.
+ *
+ * Each request carries the standard `{ collection, project, path }`
+ * triad every other tea-rags tool accepts (resolution priority:
+ * `collection > project > path`). All three fields are optional at
+ * the type level; the facade rejects requests that supply none of
+ * them with a typed `CollectionNotProvidedError`.
  */
 
 import type { CycleScope, RelPath, SymbolId } from "../../../contracts/types/codegraph.js";
 
 export interface GetCallersRequest {
-  path: string;
+  /** Project alias from the collection registry — RECOMMENDED. */
+  project?: string;
+  /** Explicit Qdrant collection name — highest priority. */
+  collection?: string;
+  /** Filesystem path to the indexed codebase — backward-compat fallback. */
+  path?: string;
   symbolId: SymbolId;
   limit?: number;
 }
@@ -22,7 +33,12 @@ export interface GetCallersResponse {
 }
 
 export interface GetCalleesRequest {
-  path: string;
+  /** Project alias from the collection registry — RECOMMENDED. */
+  project?: string;
+  /** Explicit Qdrant collection name — highest priority. */
+  collection?: string;
+  /** Filesystem path to the indexed codebase — backward-compat fallback. */
+  path?: string;
   symbolId: SymbolId;
   limit?: number;
 }
@@ -40,7 +56,12 @@ export interface GetCalleesResponse {
 // ── Slice 2 / B2 — find_cycles ──
 
 export interface FindCyclesRequest {
-  path: string;
+  /** Project alias from the collection registry — RECOMMENDED. */
+  project?: string;
+  /** Explicit Qdrant collection name — highest priority. */
+  collection?: string;
+  /** Filesystem path to the indexed codebase — backward-compat fallback. */
+  path?: string;
   /** 'file' = circular imports between files; 'method' = circular calls between symbols. */
   scope: CycleScope;
 }
