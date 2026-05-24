@@ -233,6 +233,14 @@ export function buildFiltersDoc(): string {
   md += "parameter for file-level filters. For time-based filters (maxAgeDays/minAgeDays), ";
   md += "prefer `level: \"file\"` — chunk-level ageDays=0 means 'no data', not 'recent'.\n\n";
   md += "**Imports:** imports[] — file-level imports\n\n";
+  md += "**Codegraph metadata** (requires codegraph indexing — typed filter params, not raw Qdrant keys):\n\n";
+  md += "File-level (default level): `minFanIn`, `minFanOut`, `minInstability`, `minTransitiveImpact`, ";
+  md += "`minConnectionCount`, `isHub` (boolean), `isLeaf` (boolean)\n\n";
+  md += 'Chunk-level (pass `level: "chunk"` to enable for fanIn/fanOut): `minFanIn`, `minFanOut`, `minPageRank`\n\n';
+  md +=
+    "Note: codegraph payload is stored under nested paths (`codegraph.symbols.{file,chunk}.codegraph.{file,chunk}.X`) ";
+  md += "to avoid colliding with similarly-named file-level signals. Raw Qdrant filter keys won't resolve — ";
+  md += "use the typed filter params above instead.\n\n";
   md += "## Filter Thresholds\n\n";
   md += "Thresholds vary by codebase. Use `get_index_metrics` to get actual percentile-based ";
   md += "label boundaries for your indexed collection. Signals are scoped by `source` and `test`:\n";

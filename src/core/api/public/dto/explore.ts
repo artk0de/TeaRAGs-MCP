@@ -41,6 +41,15 @@ export interface TypedFilterParams {
   maxAgeDays?: number;
   minCommitCount?: number;
   taskId?: string;
+  // Codegraph trajectory filters (level-aware where noted; default level: file)
+  minFanIn?: number;
+  minFanOut?: number;
+  minPageRank?: number;
+  minInstability?: number;
+  minTransitiveImpact?: number;
+  minConnectionCount?: number;
+  isHub?: boolean;
+  isLeaf?: boolean;
 }
 
 // ---------------------------------------------------------------------------

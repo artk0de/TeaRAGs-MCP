@@ -7,6 +7,7 @@
  */
 
 import type { Trajectory } from "../../../../contracts/types/trajectory.js";
+import { codegraphFilters } from "./filters.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 import { CodegraphEnrichmentProvider, type CodegraphProviderDeps } from "./provider.js";
 import { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "./rerank/derived-signals/index.js";
@@ -29,7 +30,7 @@ export function createSymbolsTrajectory(deps: SymbolsTrajectoryDeps): Trajectory
     description: "Symbol-level dependency graph and Tier 1 metrics",
     payloadSignals: [...CODEGRAPH_SYMBOLS_FILE_SIGNALS, ...CODEGRAPH_SYMBOLS_CHUNK_SIGNALS],
     derivedSignals: CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
-    filters: [],
+    filters: codegraphFilters,
     presets: CODEGRAPH_SYMBOLS_PRESETS,
     enrichment: provider,
   };
@@ -38,3 +39,4 @@ export function createSymbolsTrajectory(deps: SymbolsTrajectoryDeps): Trajectory
 export { CodegraphEnrichmentProvider } from "./provider.js";
 export { InMemoryGlobalSymbolTable } from "./symbol-table.js";
 export { CODEGRAPH_SYMBOLS_FILE_SIGNALS, CODEGRAPH_SYMBOLS_CHUNK_SIGNALS } from "./payload-signals.js";
+export { codegraphFilters } from "./filters.js";
