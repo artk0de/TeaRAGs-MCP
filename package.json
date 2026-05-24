@@ -7,7 +7,7 @@
     "tea-rags": "build/cli/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x build/cli/index.js",
     "dev": "tsx src/index.ts",
     "test": "vitest",
     "test:ui": "vitest --ui",
