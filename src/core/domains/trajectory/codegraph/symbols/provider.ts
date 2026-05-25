@@ -1022,6 +1022,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
     await sink.finish();
 
+    // Collection-wide p95 of fanIn, finalising `isHub` at index time. Read
+    // from the full graph in DuckDB (NOT the in-memory overlay subset):
+    // on incremental reindex `overlayPaths` holds only the changed files,
+    // so computing the percentile from that subset would misclassify hubs.
+    // The first pass above has just brought the whole graph up to date, so
+    // the DB query naturally spans the entire collection's file universe.
+    const fanInP95 = await graphDb.getFanInP95();
+
     // Second pass: emit the metric overlays per file. We emit a row for
     // every relPath the caller listed (or every file we walked), so the
     // enrichment coordinator sees a consistent overlay map shape.
@@ -1043,10 +1051,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // Support signal for instability.confidence — derived inline so
         // bytes hit Qdrant in the same payload as fanIn/fanOut.
         "codegraph.file.connectionCount": denom,
-        // isHub is finalised by the IsHubSignal derived signal against
-        // the cohort p95 at rerank time. The payload field stays in
-        // place with a stable default so reranker overlays don't churn.
-        "codegraph.file.isHub": false,
+        // isHub = fanIn above the collection-wide p95. Computed here at
+        // index time (p95 queried once above against the full graph), so
+        // the persisted payload boolean is truthful. IsHubSignal reads
+        // this boolean verbatim — there is no rerank-time finalisation.
+        "codegraph.file.isHub": fanIn > fanInP95,
         "codegraph.file.isLeaf": fanOut === 0 && fanIn > 0,
         "codegraph.file.transitiveImpact": transitiveImpact,
       });

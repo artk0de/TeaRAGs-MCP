@@ -207,4 +207,63 @@ describe("DuckDbGraphClient — slice 2 streaming primitives", () => {
       [...m.entries()].flatMap(([s, ts]) => ts.map((t) => `${s}->${t}`)).sort();
     expect(flatten(streamPairs)).toEqual(flatten(adjMap));
   });
+
+  describe("getFanInP95 — collection-wide fan-in percentile (isHub support)", () => {
+    it("computes p95 of per-file fanIn over the full file universe including zero-fanIn files", async () => {
+      client = new DuckDbGraphClient({ path: dbPath });
+      await client.init();
+      await runMigrations(client, MIG_DIR);
+      // Five files. Edges arranged so the per-file fanIn distribution is
+      // [a=0, b=3, c=0, d=0, e=1] → sorted [0,0,0,1,3].
+      // PERCENTILE_CONT(0.95) over n=5: idx 0.95*(5-1)=3.8 →
+      // interp(sorted[3]=1, sorted[4]=3, 0.8) = 1 + 0.8*(3-1) = 2.6.
+      // The zero-fanIn files (a,c,d) MUST be in the distribution — a hub
+      // is relative to ALL files, so they come from cg_symbols_files via
+      // LEFT JOIN, not only the rows that appear as edge targets.
+      await client.upsertFile(
+        { relPath: "src/a.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/b.ts", importText: "./b" }], methodEdges: [] },
+      );
+      await client.upsertFile(
+        { relPath: "src/c.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/b.ts", importText: "./b" }], methodEdges: [] },
+      );
+      await client.upsertFile(
+        { relPath: "src/d.ts", language: "typescript" },
+        {
+          fileEdges: [
+            { targetRelPath: "src/b.ts", importText: "./b" },
+            { targetRelPath: "src/e.ts", importText: "./e" },
+          ],
+          methodEdges: [],
+        },
+      );
+      // b and e exist as edge targets above, but also register them as
+      // file rows so they're in the universe with their own (zero) fanOut.
+      await client.upsertFile({ relPath: "src/b.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+      await client.upsertFile({ relPath: "src/e.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+
+      // Sanity: per-file fanIn matches the intended distribution.
+      expect(await client.getFanIn("src/b.ts")).toBe(3);
+      expect(await client.getFanIn("src/e.ts")).toBe(1);
+      expect(await client.getFanIn("src/a.ts")).toBe(0);
+
+      expect(await client.getFanInP95()).toBeCloseTo(2.6, 5);
+    });
+
+    it("returns 0 on an empty graph (no files) so fanIn > p95 degenerates sanely", async () => {
+      client = new DuckDbGraphClient({ path: dbPath });
+      await client.init();
+      await runMigrations(client, MIG_DIR);
+      expect(await client.getFanInP95()).toBe(0);
+    });
+
+    it("returns 0 for a single-file repo with no edges", async () => {
+      client = new DuckDbGraphClient({ path: dbPath });
+      await client.init();
+      await runMigrations(client, MIG_DIR);
+      await client.upsertFile({ relPath: "src/only.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+      expect(await client.getFanInP95()).toBe(0);
+    });
+  });
 });
