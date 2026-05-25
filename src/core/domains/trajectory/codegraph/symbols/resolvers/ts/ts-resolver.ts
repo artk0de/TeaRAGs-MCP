@@ -123,10 +123,38 @@ export class TSCallResolver implements CallResolver {
       }
     }
     if (call.receiver) {
-      // First pass: basename-normalized compare. Catches the common
+      // First pass (bd tea-rags-mcp-2v16): EXACT named-specifier match.
+      // The walker records the local binding names each import introduces
+      // in `ImportRef.importedNames` (`import { RankModule } from "./m"` →
+      // `["RankModule"]`). When the receiver is one of those names we know
+      // its source module precisely — no filename heuristic needed. This
+      // supersedes the kebab→Pascal basename hack below for any import that
+      // carries `importedNames` (i.e. freshly re-indexed TS files), while
+      // the hack stays as a fallback for stale-index imports lacking the
+      // field. Within the matched file we still FQN-narrow (scope[-1] ===
+      // receiver) before short-name so multi-export modules pin the right
+      // class.
+      const named = ctx.imports.find((imp) => imp.importedNames?.includes(call.receiver as string));
+      if (named) {
+        const targetFile = mapImportToFile(named.importText, ctx.callerFile, this.tsOptions);
+        if (targetFile) {
+          const scopedCandidates = ctx.symbolTable
+            .lookupByShortName(call.member)
+            .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === call.receiver);
+          const scopedHit = pickSingleCandidate(scopedCandidates, this.mode);
+          if (scopedHit) return { targetRelPath: scopedHit.relPath, targetSymbolId: scopedHit.symbolId };
+          const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
+          const target = pickSingleCandidate(candidates, this.mode);
+          if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+          return { targetRelPath: targetFile, targetSymbolId: null };
+        }
+      }
+      // Second pass: basename-normalized compare. Catches the common
       // kebab-case → PascalCase TS naming convention (`rank-module.js`
       // → `RankModule`) by stripping extensions and non-alphanumeric
       // characters before case-folded equality (bd tea-rags-mcp-kiuw).
+      // Retained as a LOWER-PRECEDENCE fallback for imports that lack
+      // `importedNames` (stale index re-indexed before the field landed).
       const match = ctx.imports.find((imp) => importMatchesReceiver(imp.importText, call.receiver as string));
       if (match) {
         const targetFile = mapImportToFile(match.importText, ctx.callerFile, this.tsOptions);
@@ -137,7 +165,7 @@ export class TSCallResolver implements CallResolver {
           return { targetRelPath: targetFile, targetSymbolId: null };
         }
       }
-      // Second pass: symbol-table FQN narrowing (bd tea-rags-mcp-kiuw).
+      // Third pass: symbol-table FQN narrowing (bd tea-rags-mcp-kiuw).
       // When basename normalize fails (filename unrelated to class
       // name, multi-export file, arbitrary aliasing), discover the
       // owning file by treating the receiver itself as a symbol.

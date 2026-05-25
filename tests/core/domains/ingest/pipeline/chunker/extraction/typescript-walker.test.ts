@@ -25,6 +25,95 @@ describe("extractFromTypescriptFile", () => {
     expect(extraction.imports.every((i) => i.startLine > 0)).toBe(true);
   });
 
+  // bd tea-rags-mcp-2v16 — record the NAMED SPECIFIERS per import so the
+  // resolver can map a call receiver directly to its source module instead
+  // of relying on the kebab→Pascal filename-normalize hack.
+  describe("importedNames — named specifier capture (bd tea-rags-mcp-2v16)", () => {
+    it("records multiple named specifiers for one import", () => {
+      const code = `import { RankModule, FooHelper } from "./rank-module.js";\nfunction main() { RankModule.go(); }\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/a.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "main", startLine: 2, endLine: 2, scope: [] }],
+      });
+      const ref = extraction.imports.find((i) => i.importText === "./rank-module.js");
+      expect(ref?.importedNames).toEqual(["RankModule", "FooHelper"]);
+    });
+
+    it("records the LOCAL name for aliased specifiers ({ A as B } → B)", () => {
+      const code = `import { Original as Local } from "./mod.js";\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/a.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      const ref = extraction.imports.find((i) => i.importText === "./mod.js");
+      expect(ref?.importedNames).toEqual(["Local"]);
+    });
+
+    it("records the default import binding", () => {
+      const code = `import RankModule from "./rank-module.js";\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/a.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      const ref = extraction.imports.find((i) => i.importText === "./rank-module.js");
+      expect(ref?.importedNames).toEqual(["RankModule"]);
+    });
+
+    it("records the namespace binding (* as ns)", () => {
+      const code = `import * as ns from "./mod.js";\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/a.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      const ref = extraction.imports.find((i) => i.importText === "./mod.js");
+      expect(ref?.importedNames).toEqual(["ns"]);
+    });
+
+    it("records combined default + named specifiers", () => {
+      const code = `import Default, { Named } from "./mod.js";\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/a.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      const ref = extraction.imports.find((i) => i.importText === "./mod.js");
+      expect(ref?.importedNames).toEqual(["Default", "Named"]);
+    });
+
+    it("omits importedNames for bare side-effect imports", () => {
+      const code = `import "./polyfill.js";\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/a.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      const ref = extraction.imports.find((i) => i.importText === "./polyfill.js");
+      expect(ref?.importedNames).toBeUndefined();
+    });
+  });
+
   it("attaches calls inside a chunk's line range to that chunk", () => {
     const code = `function main() {\n  Foo.bar();\n  baz();\n}\n`;
     const tree = parse(code);

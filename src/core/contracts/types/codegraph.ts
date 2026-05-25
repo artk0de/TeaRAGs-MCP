@@ -101,6 +101,19 @@ export interface ImportRef {
   /** Lexical position used by resolvers that need it (TS aliases, Python
    *  relative imports). 1-based line number. */
   startLine: number;
+  /**
+   * Optional LOCAL binding names introduced by this import statement
+   * (bd tea-rags-mcp-2v16). For `import { RankModule, Foo as Bar } from "./m"`
+   * this is `["RankModule", "Bar"]` — the names a call receiver can reference
+   * in the importing file. Captures named specifiers (local name for
+   * aliases), the default import binding, and the `* as ns` namespace
+   * binding. Lets a resolver map a receiver DIRECTLY to its source module
+   * via an exact name match instead of the kebab→Pascal filename-normalize
+   * heuristic. Omitted (undefined) for bare side-effect imports
+   * (`import "./polyfill"`) and for languages whose walkers don't populate
+   * it — every other-language walker keeps emitting `ImportRef` unchanged.
+   */
+  importedNames?: string[];
 }
 
 export interface ChunkExtraction {

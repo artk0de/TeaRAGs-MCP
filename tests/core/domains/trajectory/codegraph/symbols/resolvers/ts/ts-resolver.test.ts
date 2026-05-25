@@ -1138,4 +1138,117 @@ describe("TSCallResolver", () => {
       expect(result).toEqual({ targetRelPath: "src/mixed.ts", targetSymbolId: "A#constructor" });
     });
   });
+
+  // bd tea-rags-mcp-2v16 — PROPER fix: the walker records the named
+  // specifiers per import (`ImportRef.importedNames`), so the resolver maps
+  // a receiver to its source module by EXACT name match instead of the
+  // kebab→Pascal filename-normalize heuristic.
+  describe("named-specifier receiver match (bd tea-rags-mcp-2v16)", () => {
+    it("resolves RankModule.foo() via importedNames even when the filename does NOT mirror the class", () => {
+      // Filename "barrel" gives no syntactic hint — the kebab→Pascal
+      // normalize hack could NOT match "barrel" against "RankModule".
+      // Only the exact named-specifier map (RankModule → "./barrel.js")
+      // resolves it. A SECOND file also declares `foo` so the bare global
+      // short-name fallback is ambiguous and would drop in strict mode.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/barrel.ts", [
+        {
+          symbolId: "RankModule.foo",
+          fqName: "RankModule.foo",
+          shortName: "foo",
+          relPath: "src/barrel.ts",
+          scope: ["RankModule"],
+        },
+      ]);
+      symbolTable.upsertFile("src/other.ts", [
+        { symbolId: "Other.foo", fqName: "Other.foo", shortName: "foo", relPath: "src/other.ts", scope: ["Other"] },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "RankModule.foo()", receiver: "RankModule", member: "foo", startLine: 9 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [{ importText: "./barrel.js", startLine: 1, importedNames: ["RankModule"] }],
+          symbolTable,
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/barrel.ts", targetSymbolId: "RankModule.foo" });
+    });
+
+    it("kebab-filename case (rank-module.js exporting RankModule) resolves via importedNames", () => {
+      // The original kiuw case — now driven by the exact named-specifier
+      // map instead of basename normalization. A second `#constructor`
+      // elsewhere makes the bare short-name fallback ambiguous.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/explore/rank-module.ts", [
+        {
+          symbolId: "RankModule#constructor",
+          fqName: "RankModule#constructor",
+          shortName: "constructor",
+          relPath: "src/explore/rank-module.ts",
+          scope: ["RankModule"],
+        },
+      ]);
+      symbolTable.upsertFile("src/other.ts", [
+        {
+          symbolId: "Other#constructor",
+          fqName: "Other#constructor",
+          shortName: "constructor",
+          relPath: "src/other.ts",
+          scope: ["Other"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "new RankModule(qdrant)", receiver: "RankModule", member: "constructor", startLine: 12 },
+        {
+          callerFile: "src/explore/strategies/scroll-rank.ts",
+          callerScope: ["ScrollRankStrategy"],
+          imports: [{ importText: "../rank-module.js", startLine: 1, importedNames: ["RankModule"] }],
+          symbolTable,
+        },
+      );
+      expect(result).toEqual({
+        targetRelPath: "src/explore/rank-module.ts",
+        targetSymbolId: "RankModule#constructor",
+      });
+    });
+
+    it("multi-export named import: import { A, B } from './mixed.js'; new A() resolves to A not B", () => {
+      // importedNames carries both A and B → both map to mixed.js, but the
+      // receiver "A" must pin to A#constructor, not B's. Exercises the
+      // FQN-narrowing within the named-specifier-resolved file.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/mixed.ts", [
+        {
+          symbolId: "A#constructor",
+          fqName: "A#constructor",
+          shortName: "constructor",
+          relPath: "src/mixed.ts",
+          scope: ["A"],
+        },
+        {
+          symbolId: "B#constructor",
+          fqName: "B#constructor",
+          shortName: "constructor",
+          relPath: "src/mixed.ts",
+          scope: ["B"],
+        },
+        { symbolId: "A", fqName: "A", shortName: "A", relPath: "src/mixed.ts", scope: [] },
+        { symbolId: "B", fqName: "B", shortName: "B", relPath: "src/mixed.ts", scope: [] },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "new A()", receiver: "A", member: "constructor", startLine: 3 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [{ importText: "./mixed.js", startLine: 1, importedNames: ["A", "B"] }],
+          symbolTable,
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/mixed.ts", targetSymbolId: "A#constructor" });
+    });
+  });
 });

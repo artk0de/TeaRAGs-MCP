@@ -147,9 +147,57 @@ function collectImports(root: Parser.SyntaxNode): ImportRef[] {
     const src = node.children.find((c) => c.type === "string");
     if (!src) return;
     const text = src.text.replace(/^["']|["']$/g, "");
-    out.push({ importText: text, startLine: node.startPosition.row + 1 });
+    // bd tea-rags-mcp-2v16 — capture the LOCAL binding names this import
+    // introduces so the resolver can map `Receiver.method()` straight to
+    // this module by exact name. Populated in this ONE place (colocation):
+    // default import, `* as ns` namespace, and each named specifier's
+    // local name (alias when present, else the imported name). Bare
+    // side-effect imports have no `import_clause` → undefined.
+    const importedNames = collectImportedNames(node);
+    const ref: ImportRef = { importText: text, startLine: node.startPosition.row + 1 };
+    if (importedNames.length > 0) ref.importedNames = importedNames;
+    out.push(ref);
   });
   return out;
+}
+
+/**
+ * Read the local binding names introduced by an `import_statement`.
+ *
+ * tree-sitter-typescript shapes inside `import_clause`:
+ *   - default import:   `identifier "Foo"`                  → "Foo"
+ *   - namespace import: `namespace_import ("*" "as" name)`  → local name
+ *   - named imports:    `named_imports → import_specifier`  → alias if
+ *     present (`{ A as B }` → "B"), else the imported `name` (`{ A }` → "A").
+ *
+ * Returns the names in source order. Empty when the statement is a bare
+ * side-effect import (`import "./x"`) — no `import_clause` child.
+ */
+function collectImportedNames(node: Parser.SyntaxNode): string[] {
+  const clause = node.children.find((c) => c.type === "import_clause");
+  if (!clause) return [];
+  const names: string[] = [];
+  for (const child of clause.children) {
+    if (child.type === "identifier") {
+      // Default import binding — `import Foo from "..."`.
+      names.push(child.text);
+    } else if (child.type === "namespace_import") {
+      // `* as ns` — the local binding is the identifier after `as`.
+      const local = child.children.find((c) => c.type === "identifier");
+      if (local) names.push(local.text);
+    } else if (child.type === "named_imports") {
+      for (const spec of child.children) {
+        if (spec.type !== "import_specifier") continue;
+        // `alias` field is the local name for `{ A as B }`; otherwise the
+        // `name` field is both the imported and the local name.
+        const alias = spec.childForFieldName("alias");
+        const name = spec.childForFieldName("name");
+        const local = alias ?? name;
+        if (local) names.push(local.text);
+      }
+    }
+  }
+  return names;
 }
 
 function collectCalls(root: Parser.SyntaxNode): CallRef[] {
