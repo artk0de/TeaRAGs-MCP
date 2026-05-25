@@ -127,26 +127,27 @@ describe("JavaCallResolver", () => {
     expect(target).toBeNull();
   });
 
-  it("drops the edge when receiver is an external class identifier with no import match", () => {
-    // Real-world (commons-lang StringUtils#isBlank):
-    //   Character.isWhitespace(cs.charAt(i))
-    // Receiver "Character" is java.lang.* (implicit, no explicit import).
-    // Old behaviour: fallback to global short-name "isWhitespace" matched
-    // the unique same-class `StringUtils.isWhitespace`, fabricating a
-    // false-positive edge. Resolver must drop the edge.
+  it("drops the edge when receiver is a NON-whitelisted external class identifier with no import match", () => {
+    // Real-world false-positive shape (a non-java.lang capitalized receiver):
+    //   Helper.compute(x)  where `Helper` is neither imported, a local
+    //   binding, a field type, nor a java.lang auto-import.
+    // Old behaviour: fallback to global short-name "compute" matched
+    // the unique same-class `StringUtils.compute`, fabricating a
+    // false-positive edge. Resolver must drop the edge — the java.lang
+    // whitelist must NOT loosen to "any capitalized receiver".
     const r = new JavaCallResolver();
     const t = new InMemoryGlobalSymbolTable();
     t.upsertFile("StringUtils.java", [
       {
-        symbolId: "StringUtils.isWhitespace",
-        fqName: "StringUtils.isWhitespace",
-        shortName: "isWhitespace",
+        symbolId: "StringUtils.compute",
+        fqName: "StringUtils.compute",
+        shortName: "compute",
         relPath: "StringUtils.java",
         scope: ["StringUtils"],
       },
     ]);
     const target = r.resolve(
-      { callText: "Character.isWhitespace(cs.charAt(i))", receiver: "Character", member: "isWhitespace", startLine: 1 },
+      { callText: "Helper.compute(x)", receiver: "Helper", member: "compute", startLine: 1 },
       ctx("StringUtils.java", [], t),
     );
     expect(target).toBeNull();
@@ -464,6 +465,119 @@ describe("JavaCallResolver", () => {
         { callerFile: "StringUtils.java", callerScope: ["StringUtils"], imports: [], symbolTable: t },
       );
       expect(target).toBeNull();
+    });
+  });
+
+  // bd tea-rags-mcp — java.lang implicit static-call resolution. `Character`,
+  // `Math`, etc. are auto-imported (no `import java.lang.Character;` line), so
+  // `Character.isWhitespace(c)` has a bare capitalized receiver that matches no
+  // import / local / field / symbol-table entry. A WHITELIST of well-known
+  // java.lang public top-level types lets the resolver emit a type-qualified
+  // external target instead of dropping the edge — while keeping NON-whitelisted
+  // capitalized receivers dropped (no FP storm).
+  describe("java.lang implicit static-call resolution (whitelist)", () => {
+    it("resolves `Character.isWhitespace(c)` to external target `Character.isWhitespace` (no import)", () => {
+      // commons-lang StringUtils#isBlank: `Character.isWhitespace(cs.charAt(i))`.
+      // No import line for Character (java.lang auto-import). Static call —
+      // receiver is a TYPE name — so the static `Type.method` (dot) form is
+      // emitted, anchored to the bare type name as targetRelPath.
+      const r = new JavaCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      // An unrelated same-class `StringUtils.isWhitespace` exists — the old
+      // short-name fallback would have misrouted to it. The whitelist edge
+      // must route to Character instead.
+      t.upsertFile("StringUtils.java", [
+        {
+          symbolId: "StringUtils.isWhitespace",
+          fqName: "StringUtils.isWhitespace",
+          shortName: "isWhitespace",
+          relPath: "StringUtils.java",
+          scope: ["StringUtils"],
+        },
+      ]);
+      const target = r.resolve(
+        { callText: "Character.isWhitespace(c)", receiver: "Character", member: "isWhitespace", startLine: 3 },
+        ctx("StringUtils.java", [], t),
+      );
+      expect(target?.targetSymbolId).toBe("Character.isWhitespace");
+      expect(target?.targetRelPath).toBe("Character");
+    });
+
+    it("resolves `Math.max(a, b)` to external target `Math.max` (no import)", () => {
+      const r = new JavaCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      const target = r.resolve(
+        { callText: "Math.max(a, b)", receiver: "Math", member: "max", startLine: 2 },
+        ctx("X.java", [], t),
+      );
+      expect(target?.targetSymbolId).toBe("Math.max");
+      expect(target?.targetRelPath).toBe("Math");
+    });
+
+    it("NEGATIVE 1: drops `Foo.bar()` when `Foo` is capitalized but NOT in the whitelist and not imported/local", () => {
+      // The whitelist must NOT loosen to "any capitalized receiver". `Foo` is
+      // a project-unknown, non-java.lang type with no import / local / field
+      // binding → no edge.
+      const r = new JavaCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      const target = r.resolve(
+        { callText: "Foo.bar()", receiver: "Foo", member: "bar", startLine: 1 },
+        ctx("X.java", [], t),
+      );
+      expect(target).toBeNull();
+    });
+
+    it("NEGATIVE 2: an imported receiver still resolves to the in-repo target (whitelist does NOT override)", () => {
+      // `Integer` IS in the whitelist, but here it is ALSO an explicitly
+      // imported project class with an indexed static method. The earlier
+      // import-based resolution must win — the whitelist lookup sits AFTER it
+      // and never fires.
+      const r = new JavaCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("com/acme/Integer.java", [
+        {
+          symbolId: "Integer.parse",
+          fqName: "Integer.parse",
+          shortName: "parse",
+          relPath: "com/acme/Integer.java",
+          scope: ["Integer"],
+        },
+      ]);
+      const target = r.resolve(
+        { callText: "Integer.parse(s)", receiver: "Integer", member: "parse", startLine: 1 },
+        ctx("X.java", [{ importText: "com.acme.Integer", startLine: 1 }], t),
+      );
+      expect(target?.targetRelPath).toBe("com/acme/Integer.java");
+      expect(target?.targetSymbolId).toBe("Integer.parse");
+    });
+
+    it("NEGATIVE 2b: a whitelisted receiver bound as a local variable resolves via the binding, not the whitelist", () => {
+      // `Math` happens to be a local variable of an indexed project type here
+      // (contrived but exercises precedence). The localBindings lookup runs
+      // BEFORE the whitelist, so the bound type wins.
+      const r = new JavaCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("Calculator.java", [
+        {
+          symbolId: "Calculator#max",
+          fqName: "Calculator#max",
+          shortName: "max",
+          relPath: "Calculator.java",
+          scope: ["Calculator"],
+        },
+      ]);
+      const target = r.resolve(
+        { callText: "Math.max(a, b)", receiver: "Math", member: "max", startLine: 2 },
+        {
+          callerFile: "X.java",
+          callerScope: ["X"],
+          imports: [],
+          symbolTable: t,
+          localBindings: { Math: "Calculator" },
+        },
+      );
+      expect(target?.targetRelPath).toBe("Calculator.java");
+      expect(target?.targetSymbolId).toBe("Calculator#max");
     });
   });
 
