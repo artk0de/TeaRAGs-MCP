@@ -555,3 +555,79 @@ describe("extractFromJavascriptFile — classExtends (bd tea-rags-mcp-d29r)", ()
     expect(superCall?.member).toBe("constructor");
   });
 });
+
+// bd tea-rags-mcp-k05k — Express-style accessor properties declared via
+// `Object.defineProperty(obj, 'name', { get, set })` and the plural
+// `Object.defineProperties(obj, { name: { get, set }, ... })` define real
+// symbols (`app.router`, `trustProxyDefaultSymbol`, ...). Without extraction
+// they never enter fileScope, so the codegraph has no node for them and any
+// call routed through the accessor is unresolvable. The walker recognises the
+// `Object.defineProperty`/`Object.defineProperties` call shape and emits a
+// `<receiver>.<propertyName>` symbol into fileScope for each property whose
+// descriptor declares a get/set accessor.
+describe("extractFromJavascriptFile — Object.defineProperty getters/setters (bd tea-rags-mcp-k05k)", () => {
+  it("extracts a single Object.defineProperty accessor as <receiver>.<prop> in fileScope", () => {
+    const src = "Object.defineProperty(app, 'router', { get: function () { return this._router; } });\n";
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/application.js",
+      language: "javascript",
+      chunks: [],
+    });
+    expect(r.fileScope).toContain("app.router");
+  });
+
+  it("extracts a setter-only Object.defineProperty descriptor", () => {
+    const src = "Object.defineProperty(obj, 'baz', { set: function (v) { this._baz = v; } });\n";
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/x.js",
+      language: "javascript",
+      chunks: [],
+    });
+    expect(r.fileScope).toContain("obj.baz");
+  });
+
+  it("extracts every accessor property from Object.defineProperties (method-shorthand get/set)", () => {
+    const src = "Object.defineProperties(obj, { foo: { get() { return 1; } }, bar: { set(v) {} } });\n";
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/y.js",
+      language: "javascript",
+      chunks: [],
+    });
+    expect(r.fileScope).toContain("obj.foo");
+    expect(r.fileScope).toContain("obj.bar");
+  });
+
+  it("ignores Object.defineProperty data descriptors with no get/set (value only)", () => {
+    // A data descriptor (`{ value, writable }`) defines a plain data
+    // property, not an accessor — no getter/setter symbol to emit.
+    const src = "Object.defineProperty(obj, 'flag', { value: true, writable: false });\n";
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/z.js",
+      language: "javascript",
+      chunks: [],
+    });
+    expect(r.fileScope).not.toContain("obj.flag");
+  });
+
+  it("ignores Object.defineProperty with a non-string property name (computed key)", () => {
+    // `Object.defineProperty(obj, sym, {...})` uses a Symbol/variable as the
+    // key — not statically resolvable to a name, so no symbol is emitted.
+    const src = "Object.defineProperty(obj, sym, { get() { return 1; } });\n";
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/c.js",
+      language: "javascript",
+      chunks: [],
+    });
+    expect(r.fileScope).toEqual([]);
+  });
+});
