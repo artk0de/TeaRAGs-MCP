@@ -114,6 +114,66 @@ describe("SchemaManager", () => {
       expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", "symbolId", "text");
     });
 
+    it("should create payload indexes for nested codegraph filter paths", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      // The codegraph payload lives double-nested: the EnrichmentApplier writes
+      // under key `codegraph.symbols.{file,chunk}` and each leaf keeps its
+      // literal dotted name `codegraph.{level}.X`. The Qdrant index path MUST
+      // match the filter key emitted by codegraphFilters (filters.ts) exactly,
+      // or the index is never used and typed filters return zero results.
+      const expectedIntegerPaths = [
+        "codegraph.symbols.file.codegraph.file.fanIn",
+        "codegraph.symbols.file.codegraph.file.fanOut",
+        "codegraph.symbols.file.codegraph.file.connectionCount",
+        "codegraph.symbols.file.codegraph.file.transitiveImpact",
+        "codegraph.symbols.chunk.codegraph.chunk.fanIn",
+        "codegraph.symbols.chunk.codegraph.chunk.fanOut",
+      ];
+      for (const path of expectedIntegerPaths) {
+        expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", path, "integer");
+      }
+
+      const expectedFloatPaths = [
+        "codegraph.symbols.file.codegraph.file.instability",
+        "codegraph.symbols.chunk.codegraph.chunk.pageRank",
+      ];
+      for (const path of expectedFloatPaths) {
+        expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", path, "float");
+      }
+
+      const expectedBoolPaths = [
+        "codegraph.symbols.file.codegraph.file.isHub",
+        "codegraph.symbols.file.codegraph.file.isLeaf",
+      ];
+      for (const path of expectedBoolPaths) {
+        expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", path, "bool");
+      }
+    });
+
+    it("should record codegraph index paths in schema metadata", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      expect(mockQdrant.addPoints).toHaveBeenCalledWith(
+        "new-collection",
+        expect.arrayContaining([
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              indexes: expect.arrayContaining([
+                "codegraph.symbols.file.codegraph.file.fanIn",
+                "codegraph.symbols.file.codegraph.file.isHub",
+                "codegraph.symbols.chunk.codegraph.chunk.pageRank",
+              ]),
+            }),
+          }),
+        ]),
+      );
+    });
+
     it("should use sparse vector store for hybrid collections", async () => {
       mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
       mockQdrant.getCollectionInfo.mockResolvedValue({ vectorSize: 384, hybridEnabled: true });
