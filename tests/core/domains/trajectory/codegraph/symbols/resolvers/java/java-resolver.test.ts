@@ -359,6 +359,114 @@ describe("JavaCallResolver", () => {
     expect(target?.targetSymbolId).toBe("HashCodeBuilder#append");
   });
 
+  // bd tea-rags-mcp-cvv9 — receiver-type tracking. The walker now records
+  // `localBindings` (param + local-var types) and `classFieldTypes`
+  // (field types). The resolver consults them BEFORE the ambiguous
+  // short-name fallback/drop so `param.method()` / `localVar.method()` /
+  // `this.field.method()` pin to the receiver's declared type.
+  describe("local-type / field-type receiver resolution", () => {
+    it("resolves `cs.charAt(i)` to the type-qualified `CharSequence#charAt` for an external param type", () => {
+      // Real commons-lang StringUtils#isBlank: `cs` is a parameter typed
+      // CharSequence (a JDK interface NOT in the indexed repo). The walker
+      // binds `{ cs: "CharSequence" }`. The resolver emits the
+      // type-qualified best-effort target — `CharSequence#charAt` — anchored
+      // to the bare type name rather than fabricating a wrong project file.
+      const r = new JavaCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      // An unrelated `StrBuilder#charAt` exists — the OLD short-name fallback
+      // would have misrouted to it. The binding must win and route to
+      // CharSequence instead.
+      t.upsertFile("StrBuilder.java", [
+        {
+          symbolId: "StrBuilder#charAt",
+          fqName: "StrBuilder#charAt",
+          shortName: "charAt",
+          relPath: "StrBuilder.java",
+          scope: ["StrBuilder"],
+        },
+      ]);
+      const target = r.resolve(
+        { callText: "cs.charAt(i)", receiver: "cs", member: "charAt", startLine: 3 },
+        {
+          callerFile: "StringUtils.java",
+          callerScope: ["StringUtils"],
+          imports: [],
+          symbolTable: t,
+          localBindings: { cs: "CharSequence" },
+        },
+      );
+      expect(target?.targetSymbolId).toBe("CharSequence#charAt");
+      expect(target?.targetRelPath).toBe("CharSequence");
+    });
+
+    it("resolves `localVar.method()` to the indexed type's method when the bound type is in the table", () => {
+      // `Bar b = makeBar(); b.run();` — walker binds `{ b: "Bar" }`. Bar is
+      // an indexed project class with an instance method `run`, so the
+      // resolver returns the real `Bar#run` symbol + its file.
+      const r = new JavaCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("Bar.java", [
+        { symbolId: "Bar#run", fqName: "Bar#run", shortName: "run", relPath: "Bar.java", scope: ["Bar"] },
+      ]);
+      const target = r.resolve(
+        { callText: "b.run()", receiver: "b", member: "run", startLine: 4 },
+        {
+          callerFile: "X.java",
+          callerScope: ["X"],
+          imports: [],
+          symbolTable: t,
+          localBindings: { b: "Bar" },
+        },
+      );
+      expect(target?.targetRelPath).toBe("Bar.java");
+      expect(target?.targetSymbolId).toBe("Bar#run");
+    });
+
+    it("resolves `this.foo.bar()` to `Foo#bar` via classFieldTypes", () => {
+      // Field `private Foo foo;` → classFieldTypes { Owner: { foo: "Foo" } }.
+      // `this.foo.bar()` has receiver "this.foo"; the resolver reads the
+      // field type from the enclosing class and resolves `Foo#bar`.
+      const r = new JavaCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("Foo.java", [
+        { symbolId: "Foo#bar", fqName: "Foo#bar", shortName: "bar", relPath: "Foo.java", scope: ["Foo"] },
+      ]);
+      const target = r.resolve(
+        { callText: "this.foo.bar()", receiver: "this.foo", member: "bar", startLine: 3 },
+        {
+          callerFile: "Owner.java",
+          callerScope: ["Owner"],
+          imports: [],
+          symbolTable: t,
+          classFieldTypes: { Owner: { foo: "Foo" } },
+        },
+      );
+      expect(target?.targetRelPath).toBe("Foo.java");
+      expect(target?.targetSymbolId).toBe("Foo#bar");
+    });
+
+    it("NEGATIVE: drops the edge when the receiver has no binding and no import (no fabricated edge)", () => {
+      // `cs.charAt(i)` with NO localBindings and NO import — the resolver
+      // must NOT misroute to the unrelated `StrBuilder#charAt`. Drop.
+      const r = new JavaCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("StrBuilder.java", [
+        {
+          symbolId: "StrBuilder#charAt",
+          fqName: "StrBuilder#charAt",
+          shortName: "charAt",
+          relPath: "StrBuilder.java",
+          scope: ["StrBuilder"],
+        },
+      ]);
+      const target = r.resolve(
+        { callText: "cs.charAt(i)", receiver: "cs", member: "charAt", startLine: 3 },
+        { callerFile: "StringUtils.java", callerScope: ["StringUtils"], imports: [], symbolTable: t },
+      );
+      expect(target).toBeNull();
+    });
+  });
+
   it("does not misroute a bare call when the enclosing-class entry is absent (falls through to global lookup)", () => {
     // Enclosing class `Foo` has no `helper` member, but a unique global
     // `helper` exists. The enclosing-class check must miss cleanly and

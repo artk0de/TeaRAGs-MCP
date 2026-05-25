@@ -35,6 +35,31 @@ export class JavaCallResolver implements CallResolver {
       const sameFileHit = this.lookupEnclosingMember(call.member, ctx);
       if (sameFileHit) return sameFileHit;
     }
+    // bd tea-rags-mcp-cvv9 — `this.<field>.<method>()`. Read the field's
+    // declared type from `classFieldTypes[enclosingClass]` and resolve the
+    // method against that type. Mirrors the TS resolver's field-access
+    // branch. Only ONE level of access (`this.foo.bar()`) — a deeper chain
+    // (`this.foo.bar.baz()`) carries no single type and falls through to
+    // the existing drop. Consulted BEFORE the import-receiver pass so a
+    // known field type wins over ambiguous short-name resolution.
+    if (call.receiver && call.receiver.startsWith("this.") && ctx.callerScope.length > 0) {
+      const fieldSegment = call.receiver.slice("this.".length);
+      if (!fieldSegment.includes(".")) {
+        const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+        const typeName = ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
+        if (typeName) return this.resolveByLocalType(typeName, call.member, ctx);
+      }
+    }
+    // bd tea-rags-mcp-cvv9 — typed-receiver call (`param.method()` /
+    // `localVar.method()`) where the walker bound `receiver` to a type in
+    // `ctx.localBindings`. Resolve `<Type>#member` / `<Type>.member`.
+    // Consulted BEFORE the import-receiver pass and the ambiguous
+    // short-name fallback so an unambiguous local type wins instead of the
+    // call being dropped (e.g. `cs.charAt(i)` where `cs: CharSequence`).
+    if (call.receiver) {
+      const boundType = ctx.localBindings?.[call.receiver];
+      if (boundType) return this.resolveByLocalType(boundType, call.member, ctx);
+    }
     if (call.receiver) {
       const match = ctx.imports.find((imp) => javaImportMatchesReceiver(imp.importText, call.receiver as string));
       if (match) {
@@ -79,6 +104,37 @@ export class JavaCallResolver implements CallResolver {
     const target = pickSingleCandidate(fallback, this.mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
     return null;
+  }
+
+  /**
+   * bd tea-rags-mcp-cvv9 — resolve a typed-receiver call where the
+   * receiver was bound to `typeName` (a method parameter / local var /
+   * `this.field` type). Strategy:
+   *
+   *   1. Symbol-table first — try `typeName#member` (instance) then
+   *      `typeName.member` (static). A unique candidate wins → real edge.
+   *   2. External type — when the type is NOT a project symbol (JDK
+   *      interfaces like `CharSequence`, third-party classes), the method
+   *      cannot be pinned to a file but the receiver type IS known. Emit
+   *      the type-qualified best-effort target `typeName#member` anchored
+   *      to the bare type name as `targetRelPath`. This records the
+   *      type-qualified dependency without fabricating a wrong `.java`
+   *      file — the resolver already records type-qualified / file-only
+   *      targets for receivers whose method isn't in the table.
+   *
+   * Never falls through to the ambiguous short-name path — the bound type
+   * is authoritative, so a method that doesn't match still routes to that
+   * type (instance form) rather than a same-class false positive.
+   */
+  private resolveByLocalType(typeName: string, member: string, ctx: CallContext): ResolvedTarget {
+    const instanceCandidates = ctx.symbolTable.lookup(`${typeName}#${member}`);
+    const instanceHit = pickSingleCandidate(instanceCandidates, this.mode);
+    if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+    const staticCandidates = ctx.symbolTable.lookup(`${typeName}.${member}`);
+    const staticHit = pickSingleCandidate(staticCandidates, this.mode);
+    if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+    // External / not-yet-indexed type — record the type-qualified target.
+    return { targetRelPath: typeName, targetSymbolId: `${typeName}#${member}` };
   }
 
   /**

@@ -93,6 +93,102 @@ describe("extractFromJavaFile — mixed import forms", () => {
   });
 });
 
+// bd tea-rags-mcp-cvv9 — receiver-type tracking. The walker records
+// per-method-chunk `localBindings` (param + local-var types) and a
+// file-level `classFieldTypes` map so the resolver can pin
+// `param.method()` / `localVar.method()` / `this.field.method()` to the
+// receiver's declared type instead of dropping to ambiguous short-name.
+describe("extractFromJavaFile — parameter type bindings", () => {
+  it("binds a typed method parameter to its method chunk's localBindings", () => {
+    const src =
+      "class StringUtils {\n  static boolean isBlank(final CharSequence cs) {\n    return cs.charAt(0) > 0;\n  }\n}\n";
+    const r = extractFromJavaFile({
+      tree: parse(src),
+      code: src,
+      relPath: "StringUtils.java",
+      language: "java",
+      chunks: [{ symbolId: "StringUtils.isBlank", scope: ["StringUtils"], startLine: 2, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ cs: "CharSequence" });
+  });
+
+  it("strips generics on a parameter type (`List<String>` → `List`)", () => {
+    const src = "class X {\n  void go(List<String> items) {\n    items.size();\n  }\n}\n";
+    const r = extractFromJavaFile({
+      tree: parse(src),
+      code: src,
+      relPath: "X.java",
+      language: "java",
+      chunks: [{ symbolId: "X.go", scope: ["X"], startLine: 2, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ items: "List" });
+  });
+
+  it("does not bind primitive-typed parameters", () => {
+    const src = "class X {\n  void go(int n) {\n    something();\n  }\n}\n";
+    const r = extractFromJavaFile({
+      tree: parse(src),
+      code: src,
+      relPath: "X.java",
+      language: "java",
+      chunks: [{ symbolId: "X.go", scope: ["X"], startLine: 2, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+});
+
+describe("extractFromJavaFile — local variable type bindings", () => {
+  it("binds a typed local variable declaration to its method chunk", () => {
+    const src = "class X {\n  void go() {\n    Bar b = makeBar();\n    b.run();\n  }\n}\n";
+    const r = extractFromJavaFile({
+      tree: parse(src),
+      code: src,
+      relPath: "X.java",
+      language: "java",
+      chunks: [{ symbolId: "X.go", scope: ["X"], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ b: "Bar" });
+  });
+
+  it("does not bind primitive-typed local variables", () => {
+    const src = "class X {\n  void go() {\n    int strLen = length(cs);\n  }\n}\n";
+    const r = extractFromJavaFile({
+      tree: parse(src),
+      code: src,
+      relPath: "X.java",
+      language: "java",
+      chunks: [{ symbolId: "X.go", scope: ["X"], startLine: 2, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+});
+
+describe("extractFromJavaFile — class field types", () => {
+  it("records a class field declaration in classFieldTypes", () => {
+    const src = "class Owner {\n  private Foo foo;\n  void use() { this.foo.method(); }\n}\n";
+    const r = extractFromJavaFile({
+      tree: parse(src),
+      code: src,
+      relPath: "Owner.java",
+      language: "java",
+      chunks: [{ symbolId: "Owner.use", scope: ["Owner"], startLine: 3, endLine: 3 }],
+    });
+    expect(r.classFieldTypes?.Owner).toEqual({ foo: "Foo" });
+  });
+
+  it("strips generics on a field type (`List<String>` → `List`)", () => {
+    const src = "class Owner {\n  private List<String> items;\n}\n";
+    const r = extractFromJavaFile({
+      tree: parse(src),
+      code: src,
+      relPath: "Owner.java",
+      language: "java",
+      chunks: [],
+    });
+    expect(r.classFieldTypes?.Owner).toEqual({ items: "List" });
+  });
+});
+
 // method_invocation with vs without `object` field — both shapes coexist
 // in real Java; the walker must dispatch on `node.childForFieldName("object")`.
 describe("extractFromJavaFile — call shapes coexisting", () => {
