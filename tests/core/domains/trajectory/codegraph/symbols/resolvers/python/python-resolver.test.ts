@@ -864,4 +864,136 @@ describe("PythonCallResolver", () => {
       expect(target).toBeNull();
     });
   });
+
+  // bd tea-rags-mcp-yrs0 — inherited-method resolution via base-class walk.
+  // `self.method()` (and typed-receiver `var.method()`) where the method is
+  // NOT defined on the enclosing/bound class must walk that class's
+  // `classExtends` chain and resolve to the first IN-PROJECT ancestor that
+  // defines it. Restricted to base classes present in the symbol table —
+  // external bases (Django CBVs, werkzeug) stop the branch and the edge is
+  // dropped rather than fabricated.
+  describe("inherited method resolution via classExtends walk (bd yrs0)", () => {
+    function makeCtxExtends(
+      callerFile: string,
+      callerScope: string[],
+      symbolTable: InMemoryGlobalSymbolTable,
+      classExtends: Record<string, string>,
+    ): CallContext {
+      return { callerFile, callerScope, imports: [], symbolTable, classExtends };
+    }
+
+    it("resolves self.shared() to Base#shared walked Leaf → Mid → Base", () => {
+      // `shared` lives only on Base. Leaf and Mid do not define it. The
+      // resolver walks Leaf → Mid → Base and lands on Base#shared.
+      //
+      // A SECOND, unrelated class (`Decoy`) also defines `shared`, so the
+      // global short-name fallback is AMBIGUOUS (strict-mode would drop):
+      // only an explicit classExtends walk can disambiguate to Base.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("base.py", [
+        { symbolId: "Base#shared", fqName: "Base#shared", shortName: "shared", relPath: "base.py", scope: ["Base"] },
+      ]);
+      table.upsertFile("decoy.py", [
+        {
+          symbolId: "Decoy#shared",
+          fqName: "Decoy#shared",
+          shortName: "shared",
+          relPath: "decoy.py",
+          scope: ["Decoy"],
+        },
+      ]);
+      // Register Mid and Leaf as known classes so the bases are in-project.
+      table.upsertFile("mid.py", [{ symbolId: "Mid", fqName: "Mid", shortName: "Mid", relPath: "mid.py", scope: [] }]);
+      table.upsertFile("leaf.py", [
+        { symbolId: "Leaf", fqName: "Leaf", shortName: "Leaf", relPath: "leaf.py", scope: [] },
+        { symbolId: "Leaf#run", fqName: "Leaf#run", shortName: "run", relPath: "leaf.py", scope: ["Leaf"] },
+      ]);
+      const target = resolver.resolve(
+        { callText: "self.shared()", receiver: "self", member: "shared", startLine: 3 },
+        makeCtxExtends("leaf.py", ["Leaf"], table, { Leaf: "Mid", Mid: "Base" }),
+      );
+      expect(target?.targetSymbolId).toBe("Base#shared");
+      expect(target?.targetRelPath).toBe("base.py");
+    });
+
+    it("(a) method on the direct enclosing class wins — no walk", () => {
+      // Leaf defines `run` itself. The resolver must resolve to Leaf#run,
+      // never walk up to a parent that also defines `run`.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("base.py", [
+        { symbolId: "Base#run", fqName: "Base#run", shortName: "run", relPath: "base.py", scope: ["Base"] },
+      ]);
+      table.upsertFile("leaf.py", [
+        { symbolId: "Leaf#run", fqName: "Leaf#run", shortName: "run", relPath: "leaf.py", scope: ["Leaf"] },
+        { symbolId: "Leaf#go", fqName: "Leaf#go", shortName: "go", relPath: "leaf.py", scope: ["Leaf"] },
+      ]);
+      const target = resolver.resolve(
+        { callText: "self.run()", receiver: "self", member: "run", startLine: 4 },
+        makeCtxExtends("leaf.py", ["Leaf"], table, { Leaf: "Base" }),
+      );
+      expect(target?.targetSymbolId).toBe("Leaf#run");
+      expect(target?.targetRelPath).toBe("leaf.py");
+    });
+
+    it("(b) external/unknown base class → DROP (no fabricated edge)", () => {
+      // Leaf extends an external base (werkzeug.test.Client) that is NOT in
+      // the symbol table. `self.foo()` is defined nowhere in-project → the
+      // walk stops at the unknown base and the edge is dropped.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("leaf.py", [
+        { symbolId: "Leaf#run", fqName: "Leaf#run", shortName: "run", relPath: "leaf.py", scope: ["Leaf"] },
+      ]);
+      const target = resolver.resolve(
+        { callText: "self.foo()", receiver: "self", member: "foo", startLine: 5 },
+        makeCtxExtends("leaf.py", ["Leaf"], table, { Leaf: "werkzeug.test.Client" }),
+      );
+      expect(target).toBeNull();
+    });
+
+    it("(c) cyclic classExtends (A → B → A) terminates and drops", () => {
+      // A extends B, B extends A — a malformed cycle. The walk must
+      // terminate via the visited guard and drop (no infinite loop) when
+      // no ancestor defines `missing`.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("a.py", [{ symbolId: "A", fqName: "A", shortName: "A", relPath: "a.py", scope: [] }]);
+      table.upsertFile("b.py", [{ symbolId: "B", fqName: "B", shortName: "B", relPath: "b.py", scope: [] }]);
+      const target = resolver.resolve(
+        { callText: "self.missing()", receiver: "self", member: "missing", startLine: 2 },
+        makeCtxExtends("a.py", ["A"], table, { A: "B", B: "A" }),
+      );
+      expect(target).toBeNull();
+    });
+
+    it("resolves typed-receiver var.method() to an inherited Base#shared", () => {
+      // `leaf.shared()` where `leaf: Leaf` (localBindings) and `shared` is
+      // inherited from Base. The walk runs from Leaf's bound type up the
+      // classExtends chain rather than dropping to a file-only edge.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("base.py", [
+        { symbolId: "Base#shared", fqName: "Base#shared", shortName: "shared", relPath: "base.py", scope: ["Base"] },
+      ]);
+      table.upsertFile("leaf.py", [
+        { symbolId: "Leaf", fqName: "Leaf", shortName: "Leaf", relPath: "leaf.py", scope: [] },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "caller.py",
+        callerScope: ["Caller"],
+        imports: [],
+        symbolTable: table,
+        localBindings: { leaf: "Leaf" },
+        classExtends: { Leaf: "Base" },
+      };
+      const target = resolver.resolve(
+        { callText: "leaf.shared()", receiver: "leaf", member: "shared", startLine: 9 },
+        ctx,
+      );
+      expect(target?.targetSymbolId).toBe("Base#shared");
+      expect(target?.targetRelPath).toBe("base.py");
+    });
+  });
 });
