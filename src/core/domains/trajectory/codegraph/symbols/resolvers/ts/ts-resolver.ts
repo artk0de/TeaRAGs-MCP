@@ -106,6 +106,22 @@ export class TSCallResolver implements CallResolver {
         }
       }
     }
+    // Typed-parameter receiver — `param.method()` where `param` is a
+    // function / method / arrow parameter the walker bound to a type in
+    // `ctx.localBindings` (bd tea-rags-mcp-x6ta). Resolve `<Type>#member`
+    // (instance) then `<Type>.member` (static) against the global symbol
+    // table. Consulted BEFORE the import-receiver pass so an unambiguous
+    // local type wins over the ambiguous short-name fallback that drops
+    // interface-typed calls when the caller imports every implementer.
+    // On miss, fall through to the existing passes — never fabricate an
+    // edge (mirrors the Go / Python `resolveByLocalType` contract).
+    if (call.receiver) {
+      const boundType = ctx.localBindings?.[call.receiver];
+      if (boundType) {
+        const localHit = this.resolveByLocalType(boundType, call.member, ctx);
+        if (localHit) return localHit;
+      }
+    }
     if (call.receiver) {
       // First pass: basename-normalized compare. Catches the common
       // kebab-case → PascalCase TS naming convention (`rank-module.js`
@@ -177,6 +193,32 @@ export class TSCallResolver implements CallResolver {
         if (narrowedHit) return { targetRelPath: narrowedHit.relPath, targetSymbolId: narrowedHit.symbolId };
       }
     }
+    return null;
+  }
+
+  /**
+   * Resolve a typed-receiver call (`param.member()` where `param` was
+   * bound to `typeName` by the walker's parameter-type tracking). Tries
+   * `typeName#member` (instance form) first, then `typeName.member`
+   * (static form). Returns `null` on miss — the caller then falls
+   * through to the import-receiver / short-name passes rather than
+   * fabricating an edge. Mirrors the Go / Python `resolveByLocalType`
+   * contract.
+   *
+   * When `typeName` is an interface with multiple implementations and no
+   * single indexed `typeName#member` definition (interfaces declare no
+   * method bodies that become symbols), `lookup` returns no candidate
+   * and this method returns `null`, deferring to the import-narrowed
+   * fallback (bd tea-rags-mcp-2qp6) which biases toward the concrete
+   * implementer the caller imports.
+   */
+  private resolveByLocalType(typeName: string, member: string, ctx: CallContext): ResolvedTarget | null {
+    const instanceCandidates = ctx.symbolTable.lookup(`${typeName}#${member}`);
+    const instanceHit = pickSingleCandidate(instanceCandidates, this.mode);
+    if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+    const staticCandidates = ctx.symbolTable.lookup(`${typeName}.${member}`);
+    const staticHit = pickSingleCandidate(staticCandidates, this.mode);
+    if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
     return null;
   }
 

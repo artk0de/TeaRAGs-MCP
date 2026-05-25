@@ -585,6 +585,155 @@ describe("TSCallResolver", () => {
     });
   });
 
+  // bd tea-rags-mcp-x6ta — typed-parameter receiver resolution via
+  // localBindings. A call `resolver.resolve(...)` where `resolver` is a
+  // FUNCTION PARAMETER typed `CallResolver` previously dropped to the
+  // ambiguous short-name fallback (one `#resolve` per `*CallResolver`
+  // impl, all reachable via imports → nothing narrows → edge dropped).
+  // The walker now records `resolver → CallResolver` on the chunk's
+  // localBindings; the resolver consults it BEFORE the import-receiver
+  // pass and pins the call to `<Type>#<member>`. Mirrors the Go / Python
+  // `resolveByLocalType` contract: try `Type#member`, then `Type.member`,
+  // and on miss fall through to the existing fallbacks (never fabricate).
+  describe("typed-parameter receiver via localBindings (bd tea-rags-mcp-x6ta)", () => {
+    it("pins param.method() to <Type>#<member> when localBindings binds the receiver (instance form)", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      // A single concrete CallResolver class declares #resolve. There
+      // are ALSO other `resolve` short-name matches in sibling files —
+      // the import-narrowed fallback could not disambiguate because the
+      // caller imports all of them. localBindings resolves it directly.
+      symbolTable.upsertFile("src/resolvers/call-resolver.ts", [
+        {
+          symbolId: "CallResolver#resolve",
+          fqName: "CallResolver#resolve",
+          shortName: "resolve",
+          relPath: "src/resolvers/call-resolver.ts",
+          scope: ["CallResolver"],
+        },
+      ]);
+      symbolTable.upsertFile("src/resolvers/python-resolver.ts", [
+        {
+          symbolId: "PythonCallResolver#resolve",
+          fqName: "PythonCallResolver#resolve",
+          shortName: "resolve",
+          relPath: "src/resolvers/python-resolver.ts",
+          scope: ["PythonCallResolver"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "resolver.resolve(call, ctx)", receiver: "resolver", member: "resolve", startLine: 10 },
+        {
+          callerFile: "src/provider/provider.ts",
+          callerScope: ["CodegraphProvider"],
+          // Provider imports BOTH resolver files — short-name + import
+          // narrowing would still be ambiguous. The local binding wins.
+          imports: [
+            { importText: "../resolvers/call-resolver", startLine: 1 },
+            { importText: "../resolvers/python-resolver", startLine: 2 },
+          ],
+          symbolTable,
+          localBindings: { resolver: "CallResolver" },
+        },
+      );
+      expect(result).toEqual({
+        targetRelPath: "src/resolvers/call-resolver.ts",
+        targetSymbolId: "CallResolver#resolve",
+      });
+    });
+
+    it("falls back to the static form <Type>.<member> when no instance method matches", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/factory.ts", [
+        {
+          symbolId: "Factory.create",
+          fqName: "Factory.create",
+          shortName: "create",
+          relPath: "src/factory.ts",
+          scope: ["Factory"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "f.create()", receiver: "f", member: "create", startLine: 3 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [],
+          symbolTable,
+          localBindings: { f: "Factory" },
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/factory.ts", targetSymbolId: "Factory.create" });
+    });
+
+    it("falls through to existing fallbacks when the bound type has no matching member (interface with no indexed impl)", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      // `CallResolver` is an INTERFACE — no `CallResolver#resolve` symbol
+      // exists (interfaces declare no method bodies). The single concrete
+      // `resolve` short-name match is reachable via imports, so the
+      // import-narrowed fallback recovers it. localBindings must NOT
+      // fabricate a `CallResolver#resolve` edge — it returns nothing and
+      // lets the lower-precedence path run.
+      symbolTable.upsertFile("src/resolvers/ruby-resolver.ts", [
+        {
+          symbolId: "RubyCallResolver#resolve",
+          fqName: "RubyCallResolver#resolve",
+          shortName: "resolve",
+          relPath: "src/resolvers/ruby-resolver.ts",
+          scope: ["RubyCallResolver"],
+        },
+      ]);
+      symbolTable.upsertFile("src/resolvers/python-resolver.ts", [
+        {
+          symbolId: "PythonCallResolver#resolve",
+          fqName: "PythonCallResolver#resolve",
+          shortName: "resolve",
+          relPath: "src/resolvers/python-resolver.ts",
+          scope: ["PythonCallResolver"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "resolver.resolve()", receiver: "resolver", member: "resolve", startLine: 5 },
+        {
+          callerFile: "src/provider/provider.ts",
+          callerScope: ["CodegraphProvider"],
+          // Only the ruby impl is reachable via imports → import-narrowed
+          // fallback picks it. Confirms typed-param miss is non-destructive.
+          imports: [{ importText: "../resolvers/ruby-resolver", startLine: 1 }],
+          symbolTable,
+          localBindings: { resolver: "CallResolver" },
+        },
+      );
+      expect(result).toEqual({
+        targetRelPath: "src/resolvers/ruby-resolver.ts",
+        targetSymbolId: "RubyCallResolver#resolve",
+      });
+    });
+
+    it("does not consult localBindings for a receiver that is not a bound parameter", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/util.ts", [
+        { symbolId: "helper", fqName: "helper", shortName: "helper", relPath: "src/util.ts", scope: [] },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      // `other.helper()` — `other` is not in localBindings, so the typed
+      // path is skipped and global short-name resolves the single match.
+      const result = resolver.resolve(
+        { callText: "other.helper()", receiver: "other", member: "helper", startLine: 1 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [],
+          symbolTable,
+          localBindings: { resolver: "CallResolver" },
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/util.ts", targetSymbolId: "helper" });
+    });
+  });
+
   // bd tea-rags-mcp-4rgg — super() and super.foo() must route to the
   // PARENT class. Empirical from tea-rags self-test: every
   // `<Strategy>#constructor` had a super(...args) edge pointing at

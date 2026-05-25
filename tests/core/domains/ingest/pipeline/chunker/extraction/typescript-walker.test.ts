@@ -641,4 +641,93 @@ describe("extractFromTypescriptFile", () => {
       expect(extraction.imports.map((i) => i.importText)).toEqual(["./y"]);
     });
   });
+
+  // bd tea-rags-mcp-x6ta — parameter-type bindings for typed-receiver
+  // resolution. A call `resolver.resolve(...)` where `resolver` is a
+  // FUNCTION PARAMETER typed `CallResolver` previously dropped to the
+  // ambiguous short-name fallback (one match per `*CallResolver` impl).
+  // The walker now records `{ paramName → type }` per chunk on
+  // `localBindings` (same field the Python/Go walkers use) so the
+  // resolver can pin `resolver.resolve` to `CallResolver#resolve`.
+  describe("parameter-type bindings (localBindings) — bd tea-rags-mcp-x6ta", () => {
+    it("binds a top-level function's typed parameter to its type", () => {
+      const code = ["function run(resolver: CallResolver) {", "  resolver.resolve(call, ctx);", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/run.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["resolver"]).toBe("CallResolver");
+    });
+
+    it("binds a class method's typed parameter to its type, scoped to that method's chunk", () => {
+      const code = [
+        "class Foo {", //                line 1
+        "  handle(svc: BarService) {", // line 2
+        "    svc.go();", //              line 3
+        "  }", //                        line 4
+        "}", //                          line 5
+        "",
+      ].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/foo.ts",
+        language: "typescript",
+        chunks: [
+          { symbolId: "Foo", startLine: 1, endLine: 5, scope: [] },
+          { symbolId: "Foo#handle", startLine: 2, endLine: 4, scope: ["Foo"] },
+        ],
+      });
+      const handle = extraction.chunks.find((c) => c.symbolId === "Foo#handle");
+      expect(handle?.localBindings?.["svc"]).toBe("BarService");
+      // The enclosing class chunk must NOT carry the method's parameter
+      // binding — bindings are scoped to the declaring chunk's range.
+      const cls = extraction.chunks.find((c) => c.symbolId === "Foo");
+      expect(cls?.localBindings?.["svc"]).toBeUndefined();
+    });
+
+    it("binds a typed parameter of an arrow function assigned to a const", () => {
+      const code = ["const run = (resolver: CallResolver) => {", "  resolver.resolve();", "};", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/arrow.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["resolver"]).toBe("CallResolver");
+    });
+
+    it("strips generics — Repo<User> binds to Repo", () => {
+      const code = ["function load(repo: Repo<User>) {", "  repo.find();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/load.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "load", startLine: 1, endLine: 3, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["repo"]).toBe("Repo");
+    });
+
+    it("leaves localBindings undefined when no parameter carries a usable type annotation", () => {
+      const code = ["function plain(x, y) {", "  doThing();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/plain.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "plain", startLine: 1, endLine: 3, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings).toBeUndefined();
+    });
+  });
 });
