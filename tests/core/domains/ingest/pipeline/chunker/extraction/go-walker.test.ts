@@ -245,3 +245,105 @@ describe("extractFromGoFile — local var bindings", () => {
     expect(r.chunks[0].localBindings?.m).toBeUndefined();
   });
 });
+
+// bd tea-rags-mcp-6g9c (follow-up) — function-return-type binding. Real gin
+// `func Default() *Engine` does `engine := New(); engine.Use(...)`. `engine :=
+// New()` is a FUNCTION-RETURN assignment, not a composite literal, so the
+// walker can't know `engine`'s type from the chunk alone — but `New`'s DECLARED
+// return type IS static. The walker records two things:
+//   (a) file-level functionReturnTypes: `New → "Engine"` (strip leading `*`).
+//   (b) per-chunk localCallBindings: `engine → "New"` (varName → called func).
+// The resolver later composes (b)+(a) → `engine → "Engine"` and feeds the
+// existing resolveByLocalType. The walker stays pure — no resolution here.
+describe("extractFromGoFile — functionReturnTypes (file-level)", () => {
+  it("captures pointer return `func New() *Engine` → { New: 'Engine' }", () => {
+    const src = ["package gin", "func New() *Engine { return &Engine{} }", ""].join("\n");
+    const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "gin.go", language: "go", chunks: [] });
+    expect(r.functionReturnTypes?.New).toBe("Engine");
+  });
+
+  it("captures value return `func Make() Engine` → { Make: 'Engine' }", () => {
+    const src = ["package gin", "func Make() Engine { return Engine{} }", ""].join("\n");
+    const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "gin.go", language: "go", chunks: [] });
+    expect(r.functionReturnTypes?.Make).toBe("Engine");
+  });
+
+  it("captures method return `func (c *Context) Build() *Result` keyed by method name → { Build: 'Result' }", () => {
+    const src = ["package gin", "func (c *Context) Build() *Result { return nil }", ""].join("\n");
+    const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "ctx.go", language: "go", chunks: [] });
+    expect(r.functionReturnTypes?.Build).toBe("Result");
+  });
+
+  it("does NOT record multi-return `func New() (*Engine, error)` (ambiguous which return feeds the var)", () => {
+    const src = ["package gin", "func New() (*Engine, error) { return nil, nil }", ""].join("\n");
+    const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "gin.go", language: "go", chunks: [] });
+    expect(r.functionReturnTypes?.New).toBeUndefined();
+  });
+
+  it("does NOT record a function with no return type `func run()`", () => {
+    const src = ["package gin", "func run() { helper() }", ""].join("\n");
+    const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "gin.go", language: "go", chunks: [] });
+    expect(r.functionReturnTypes?.run).toBeUndefined();
+  });
+
+  it("records the bare type for a qualified return `func Pkg() pkg.Thing` → { Pkg: 'Thing' }", () => {
+    // pkg.Thing is an external type that won't be in the symbol table, so the
+    // resolver naturally drops it — but the walker still records the bare name.
+    const src = ["package gin", "func Pkg() pkg.Thing { return pkg.Thing{} }", ""].join("\n");
+    const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "gin.go", language: "go", chunks: [] });
+    expect(r.functionReturnTypes?.Pkg).toBe("Thing");
+  });
+});
+
+describe("extractFromGoFile — localCallBindings (per-chunk var := Call())", () => {
+  it("captures `engine := New()` → localCallBindings { engine: 'New' }", () => {
+    const src = ["package gin", "func Default() {", "  engine := New()", "  engine.Use()", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "gin.go",
+      language: "go",
+      chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localCallBindings?.engine).toBe("New");
+    // Walker must NOT pre-resolve the type — that's the resolver's job.
+    expect(r.chunks[0].localBindings?.engine).toBeUndefined();
+  });
+
+  it("captures `e := pkg.New()` → localCallBindings { e: 'New' } (selector func, bare last segment)", () => {
+    const src = ["package gin", "func Default() {", "  e := pkg.New()", "  e.Use()", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "gin.go",
+      language: "go",
+      chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localCallBindings?.e).toBe("New");
+  });
+
+  it("does NOT record multi-LHS `a, b := New(), Other()` (can't pair var↔return)", () => {
+    const src = ["package gin", "func Default() {", "  a, b := New(), Other()", "  _ = a", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "gin.go",
+      language: "go",
+      chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localCallBindings?.a).toBeUndefined();
+    expect(r.chunks[0].localCallBindings?.b).toBeUndefined();
+  });
+
+  it("does NOT record a chained-call RHS `x := New().Configure()` (operand is a call, not a pkg ident)", () => {
+    const src = ["package gin", "func Default() {", "  x := New().Configure()", "  _ = x", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "gin.go",
+      language: "go",
+      chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localCallBindings?.x).toBeUndefined();
+  });
+});

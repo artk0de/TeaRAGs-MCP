@@ -54,6 +54,25 @@ export class GoCallResolver implements CallResolver {
       if (localType) {
         return this.resolveByLocalType(localType, call.member, ctx);
       }
+      // Step 0b — function-return-type binding (bd tea-rags-mcp-6g9c). When
+      // the receiver was assigned from a function call (`engine := New()`),
+      // `localCallBindings[receiver]` carries the called func short name and
+      // `functionReturnTypes` carries that func's DECLARED return type. Bind
+      // the receiver to that type ONLY when the return type is a single
+      // concrete struct/type symbol that EXISTS in the table — interfaces,
+      // builtins (`string`, `error`), and external `pkg.Type`s have no type
+      // symbol and SKIP, falling through to the import / drop path. This is
+      // SAFE: declared return types are static, not guesses. `localBindings`
+      // (direct type) is checked first so it always wins.
+      const calledFunc = ctx.localCallBindings?.[call.receiver];
+      if (calledFunc) {
+        const returnType = ctx.functionReturnTypes?.[calledFunc];
+        if (returnType && this.isKnownTypeSymbol(returnType, ctx)) {
+          return this.resolveByLocalType(returnType, call.member, ctx);
+        }
+        // Return type unknown / not a concrete type symbol — never guess.
+        // Fall through to the import path below (and ultimately the drop).
+      }
       const match = ctx.imports.find((imp) => importMatchesReceiver(imp.importText, call.receiver as string));
       if (match) {
         // Look up by short name globally first; restrict to a
@@ -93,6 +112,20 @@ export class GoCallResolver implements CallResolver {
     const staticHit = pickSingleCandidate(staticHits, this.mode);
     if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
     return null;
+  }
+
+  /**
+   * Safety gate for function-return-type binding: a declared return type only
+   * binds when it names a concrete type that EXISTS as a symbol in the table
+   * (`type Engine struct {...}` → symbol `Engine`). Interfaces, builtins
+   * (`string`, `error`), and external `pkg.Type`s have no project-local type
+   * symbol, so they SKIP rather than fabricate an edge. Matched by exact fqName
+   * first (top-level type, `Engine`), then by short name (nested / scoped type
+   * declarations) — either match means a real type symbol was extracted.
+   */
+  private isKnownTypeSymbol(typeName: string, ctx: CallContext): boolean {
+    if (ctx.symbolTable.lookup(typeName).length > 0) return true;
+    return ctx.symbolTable.lookupByShortName(typeName).length > 0;
   }
 }
 

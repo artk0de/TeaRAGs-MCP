@@ -31,6 +31,7 @@ export interface GoExtractInput {
 export function extractFromGoFile(input: GoExtractInput): FileExtraction {
   const imports = collectGoImports(input.tree.rootNode);
   const calls = collectGoCalls(input.tree.rootNode);
+  const functionReturnTypes = collectGoFunctionReturnTypes(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -39,22 +40,80 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
       endLine: c.endLine,
       calls: calls.filter((cr) => cr.startLine >= c.startLine && cr.startLine <= c.endLine),
     };
-    // bd tea-rags-mcp-e6xx — per-chunk localBindings (receiver + params).
-    // The resolver consults `ctx.localBindings[receiver]` to turn typed
-    // calls like `c.JSON(...)` inside `(c *Context) Render(...)` into the
-    // qualified `Context#JSON` target. Without this every method-call
-    // site in a Go project stays unresolved.
-    const bindings = collectGoLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
-    if (Object.keys(bindings).length > 0) base.localBindings = bindings;
+    // bd tea-rags-mcp-e6xx / 6g9c — per-chunk bindings. `localBindings`
+    // (varName → TYPE) covers receivers, params, `var x Foo`, `x := Foo{}`.
+    // `localCallBindings` (varName → CALLED FUNC) covers `x := New()` where
+    // the return type can't be known in-chunk; the resolver pairs it with
+    // the file-level `functionReturnTypes`. The resolver consults both to
+    // turn typed/return-typed calls into qualified `Type#method` targets.
+    const { types, calls: callBindings } = collectGoLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
+    if (Object.keys(types).length > 0) base.localBindings = types;
+    if (Object.keys(callBindings).length > 0) base.localCallBindings = callBindings;
     return base;
   });
-  return {
+  const extraction: FileExtraction = {
     relPath: input.relPath,
     language: input.language,
     imports,
     chunks: byChunk,
     fileScope: [],
   };
+  if (Object.keys(functionReturnTypes).length > 0) extraction.functionReturnTypes = functionReturnTypes;
+  return extraction;
+}
+
+/**
+ * Collect `functionName → declaredReturnTypeName` for every top-level
+ * `function_declaration` / `method_declaration` with a SINGLE concrete
+ * named return type. bd tea-rags-mcp-6g9c.
+ *
+ * tree-sitter-go shapes of the `result` field:
+ *   - `func f() Foo`        → `type_identifier` (read text)
+ *   - `func f() *Foo`       → `pointer_type` (unwrap to inner type_identifier)
+ *   - `func f() pkg.Foo`    → `qualified_type` (read its `name` field — bare
+ *                             last segment; pkg-qualified externals naturally
+ *                             miss the symbol table at resolve time)
+ *   - `func f() (A, B)`     → `parameter_list` (multi-return) → SKIP: we don't
+ *                             guess which return value feeds the variable.
+ *   - `func f()`            → no `result` field → SKIP.
+ *
+ * Methods are keyed by the method name (`Build`), matching how the resolver
+ * reads `localCallBindings` short names. Last-write-wins on duplicate names;
+ * resolver-side ambiguity is gated by the symbol-table existence check.
+ */
+function collectGoFunctionReturnTypes(root: Parser.SyntaxNode): Record<string, string> {
+  const out: Record<string, string> = {};
+  walk(root, (node) => {
+    if (node.type !== "function_declaration" && node.type !== "method_declaration") return;
+    const name = node.childForFieldName("name");
+    const result = node.childForFieldName("result");
+    if (!name || !result) return;
+    const typeName = readReturnTypeNode(result);
+    if (typeName) out[name.text] = typeName;
+  });
+  return out;
+}
+
+/**
+ * Read the bare type name from a function/method `result` field node. Returns
+ * null for multi-return (`parameter_list`) and any non-named-type shape — the
+ * caller treats null as "not statically bindable". Multi-return is the key
+ * SKIP: `func New() (*Engine, error)` must not bind, because we can't tell
+ * which return value the variable receives.
+ */
+function readReturnTypeNode(result: Parser.SyntaxNode): string | null {
+  if (result.type === "type_identifier") return result.text;
+  if (result.type === "pointer_type") {
+    const inner = result.children.find((c) => c.type === "type_identifier");
+    return inner?.text ?? null;
+  }
+  if (result.type === "qualified_type") {
+    const name = result.childForFieldName("name");
+    return name?.type === "type_identifier" ? name.text : null;
+  }
+  // `parameter_list` (multi-return), `interface_type`, `map_type`,
+  // `slice_type`, `func_type`, generics with no single base — not bindable.
+  return null;
 }
 
 function collectGoImports(root: Parser.SyntaxNode): ImportRef[] {
@@ -117,18 +176,23 @@ function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): v
  *      (`unary_expression` wrapping `composite_literal`) →
  *      `{ x: "Foo" }`. bd tea-rags-mcp-6g9c.
  *
- * Constructor-return short decls `x := NewFoo()` are OUT OF SCOPE — the
- * return type can't be known statically without modelling every
- * constructor, and guessing reintroduces the false positives the m46z
- * receiver-drop removed. Go has no `self`/`this`: receivers AND local
- * vars are the only static type hints for `engine.Use()`-style calls.
+ * Function-return short decls `x := New()` are captured into the SEPARATE
+ * `calls` map (varName → called func short name), NOT `types` — the walker
+ * can't know the return type from the chunk alone (the function may be
+ * declared elsewhere). The resolver pairs `calls` with the file-level
+ * `functionReturnTypes` map and applies the symbol-table existence gate; this
+ * is SAFE because declared return types are static, not guesses, and only
+ * concrete struct types that exist in the table ever bind. bd tea-rags-mcp-6g9c.
+ * Go has no `self`/`this`: receivers, local vars, AND return-typed vars are
+ * the only static type hints for `engine.Use()`-style calls.
  */
 function collectGoLocalBindingsForChunk(
   root: Parser.SyntaxNode,
   startLine: number,
   endLine: number,
-): Record<string, string> {
+): { types: Record<string, string>; calls: Record<string, string> } {
   const bindings: Record<string, string> = {};
+  const callBindings: Record<string, string> = {};
   // Find the function/method declaration node whose span matches the
   // chunk's [startLine, endLine] range. Tree-sitter rows are 0-indexed;
   // we use the start row as the match anchor (chunks are anchored at
@@ -142,7 +206,7 @@ function collectGoLocalBindingsForChunk(
     // Container contains the chunk range (chunk equal or within node).
     if (ns <= startLine && ne >= endLine) target = node;
   });
-  if (!target) return bindings;
+  if (!target) return { types: bindings, calls: callBindings };
 
   // Method receiver.
   const receiver = (target as Parser.SyntaxNode).childForFieldName("receiver");
@@ -185,15 +249,55 @@ function collectGoLocalBindingsForChunk(
       const left = node.childForFieldName("left");
       const right = node.childForFieldName("right");
       if (!left || !right) return;
-      // Only single-name `x := Foo{}` / `x := &Foo{}` are knowable.
-      const name = left.children.find((c) => c.type === "identifier");
-      const value = right.children.find((c) => c.type === "composite_literal" || c.type === "unary_expression");
-      if (!name || !value) return;
-      const typeName = readCompositeLiteralType(value);
-      if (typeName) bindings[name.text] = typeName;
+      // Single-LHS only: `a, b := f(), g()` can't be paired var↔value
+      // unambiguously. tree-sitter emits one `expression_list` per side;
+      // require exactly one identifier on the left and one value on the right.
+      const lhsIdents = left.children.filter((c) => c.type === "identifier");
+      const rhsValues = right.children.filter((c) => c.type !== "," && c.type !== ":=");
+      if (lhsIdents.length !== 1 || rhsValues.length !== 1) return;
+      const name = lhsIdents[0];
+      const value = rhsValues[0];
+      // `x := Foo{}` / `x := &Foo{}` — directly-knowable type literal.
+      if (value.type === "composite_literal" || value.type === "unary_expression") {
+        const typeName = readCompositeLiteralType(value);
+        if (typeName) bindings[name.text] = typeName;
+        return;
+      }
+      // `x := New()` / `x := pkg.New()` — function-return assignment. Record
+      // the called function's short name; the resolver maps it to the
+      // declared return type. bd tea-rags-mcp-6g9c.
+      if (value.type === "call_expression") {
+        const funcName = readCalledFunctionName(value);
+        if (funcName) callBindings[name.text] = funcName;
+      }
     }
   });
-  return bindings;
+  return { types: bindings, calls: callBindings };
+}
+
+/**
+ * Read the called function's short name from a `call_expression` RHS, but
+ * ONLY for the two statically-pairable shapes:
+ *   - `New()`      → `function` field is an `identifier` → "New"
+ *   - `pkg.New()`  → `function` field is a `selector_expression` whose
+ *                    operand is a plain `identifier` (package qualifier) →
+ *                    bare last segment "New".
+ * Returns null for chained calls (`New().Configure()` — selector operand is
+ * itself a `call_expression`) and any other shape; the var↔return pairing is
+ * only sound when the RHS is a direct call to a named function.
+ */
+function readCalledFunctionName(call: Parser.SyntaxNode): string | null {
+  const fn = call.childForFieldName("function");
+  if (!fn) return null;
+  if (fn.type === "identifier") return fn.text;
+  if (fn.type === "selector_expression") {
+    const operand = fn.childForFieldName("operand");
+    const field = fn.childForFieldName("field");
+    // Only `pkg.New()` (operand is a bare package identifier), not
+    // `New().Configure()` (operand is a call) nor `a.b.New()` (chained).
+    if (operand?.type === "identifier" && field?.type === "field_identifier") return field.text;
+  }
+  return null;
 }
 
 /**

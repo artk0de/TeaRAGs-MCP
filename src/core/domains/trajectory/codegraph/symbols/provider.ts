@@ -462,6 +462,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runExtends: Record<string, string> = {};
   /**
+   * Per-run aggregation of `FileExtraction.functionReturnTypes`
+   * (bd tea-rags-mcp-6g9c). `functionName → declaredReturnTypeName` merged
+   * across pass-1 files so the Go resolver can bind `x := New(); x.method()`
+   * to `<New's return type>#method` even when `New` is declared in a
+   * different file. Same lifecycle as `runExtends` — reset on finish().
+   */
+  private runReturnTypes: Record<string, string> = {};
+  /**
    * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
    * Built once at construction from `deps.exclusion`. Empty filter
    * (`excludeTests:false`, no custom patterns) is a valid no-op — every
@@ -658,6 +666,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         if (extraction.classExtends) {
           for (const [k, v] of Object.entries(extraction.classExtends)) {
             this.runExtends[k] = v;
+          }
+        }
+        // Merge file-local function return types into the run-global map so
+        // the resolver in pass-2 can resolve `x := New()` return-type
+        // bindings keyed by function name regardless of which file declares
+        // the function. bd tea-rags-mcp-6g9c. Last write wins on duplicate
+        // names; the resolver's symbol-table existence gate suppresses any
+        // wrong type that survives the collision.
+        if (extraction.functionReturnTypes) {
+          for (const [k, v] of Object.entries(extraction.functionReturnTypes)) {
+            this.runReturnTypes[k] = v;
           }
         }
 
@@ -908,6 +927,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runAncestors = {};
       this.runPrependedAncestors = {};
       this.runExtends = {};
+      this.runReturnTypes = {};
       return undefined;
     }
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / callsAttempted;
@@ -1327,6 +1347,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         ? this.runPrependedAncestors
         : extraction.classPrependedAncestors;
     const extendsForResolver = Object.keys(this.runExtends).length > 0 ? this.runExtends : extraction.classExtends;
+    const returnTypesForResolver =
+      Object.keys(this.runReturnTypes).length > 0 ? this.runReturnTypes : extraction.functionReturnTypes;
     // File-level edges from imports. We synthesise a "call-shaped" lookup
     // so the same resolver contract handles both call resolution and
     // import-to-file resolution.
@@ -1363,6 +1385,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           symbolTable,
           classFieldTypes: extraction.classFieldTypes,
           localBindings: chunk.localBindings,
+          localCallBindings: chunk.localCallBindings,
+          functionReturnTypes: returnTypesForResolver,
           classAncestors: ancestorsForResolver,
           classPrependedAncestors: prependedAncestorsForResolver,
           classExtends: extendsForResolver,
