@@ -40,6 +40,35 @@ export class RustCallResolver implements CallResolver {
       const sameFileHit = this.lookupEnclosingMember(call.member, ctx);
       if (sameFileHit) return sameFileHit;
     }
+    // bd tea-rags-mcp-q1pl — `self.<field>.<method>()` where the struct
+    // declares `field: Type`. The walker records the field type in
+    // `classFieldTypes` keyed by the struct name (= the impl type name in
+    // `callerScope`). Look up the field's type, then resolve
+    // `<Type>#<member>` / `<Type>.<member>`. Mirrors the Java/Python
+    // resolver's `this.field` / `self.field` branch. Only one access level
+    // is supported (`self.foo.bar()`); chained `self.foo.bar.baz()` needs
+    // recursive type inference and is out of scope.
+    if (call.receiver && call.receiver.startsWith("self.") && ctx.callerScope.length > 0) {
+      const fieldSegment = call.receiver.slice("self.".length);
+      if (!fieldSegment.includes(".")) {
+        const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+        const typeName = ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
+        if (typeName) {
+          const instanceHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}#${call.member}`), this.mode);
+          if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+          const staticHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}.${call.member}`), this.mode);
+          if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+          // Receiver type known but member not on it — DROP, same as the
+          // localBindings branch below. Falling through to the global
+          // short-name lookup would route to an unrelated type's member.
+          return null;
+        }
+        // Field type NOT recorded. A `self.<field>` receiver is an
+        // instance-field access, never a module/import name — DROP rather
+        // than fall through to the import-match / global short-name paths.
+        return null;
+      }
+    }
     if (call.receiver) {
       // bd tea-rags-mcp-c5by — when localBindings type-binds the receiver
       // to a known class, resolve against THAT type's members first AND
