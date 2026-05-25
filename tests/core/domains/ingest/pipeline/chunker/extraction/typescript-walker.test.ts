@@ -25,6 +25,95 @@ describe("extractFromTypescriptFile", () => {
     expect(extraction.imports.every((i) => i.startLine > 0)).toBe(true);
   });
 
+  // bd tea-rags-mcp-2v16 — record the NAMED SPECIFIERS per import so the
+  // resolver can map a call receiver directly to its source module instead
+  // of relying on the kebab→Pascal filename-normalize hack.
+  describe("importedNames — named specifier capture (bd tea-rags-mcp-2v16)", () => {
+    it("records multiple named specifiers for one import", () => {
+      const code = `import { RankModule, FooHelper } from "./rank-module.js";\nfunction main() { RankModule.go(); }\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/a.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "main", startLine: 2, endLine: 2, scope: [] }],
+      });
+      const ref = extraction.imports.find((i) => i.importText === "./rank-module.js");
+      expect(ref?.importedNames).toEqual(["RankModule", "FooHelper"]);
+    });
+
+    it("records the LOCAL name for aliased specifiers ({ A as B } → B)", () => {
+      const code = `import { Original as Local } from "./mod.js";\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/a.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      const ref = extraction.imports.find((i) => i.importText === "./mod.js");
+      expect(ref?.importedNames).toEqual(["Local"]);
+    });
+
+    it("records the default import binding", () => {
+      const code = `import RankModule from "./rank-module.js";\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/a.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      const ref = extraction.imports.find((i) => i.importText === "./rank-module.js");
+      expect(ref?.importedNames).toEqual(["RankModule"]);
+    });
+
+    it("records the namespace binding (* as ns)", () => {
+      const code = `import * as ns from "./mod.js";\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/a.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      const ref = extraction.imports.find((i) => i.importText === "./mod.js");
+      expect(ref?.importedNames).toEqual(["ns"]);
+    });
+
+    it("records combined default + named specifiers", () => {
+      const code = `import Default, { Named } from "./mod.js";\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/a.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      const ref = extraction.imports.find((i) => i.importText === "./mod.js");
+      expect(ref?.importedNames).toEqual(["Default", "Named"]);
+    });
+
+    it("omits importedNames for bare side-effect imports", () => {
+      const code = `import "./polyfill.js";\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/a.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      const ref = extraction.imports.find((i) => i.importText === "./polyfill.js");
+      expect(ref?.importedNames).toBeUndefined();
+    });
+  });
+
   it("attaches calls inside a chunk's line range to that chunk", () => {
     const code = `function main() {\n  Foo.bar();\n  baz();\n}\n`;
     const tree = parse(code);
@@ -639,6 +728,136 @@ describe("extractFromTypescriptFile", () => {
       });
       // Only the runtime import lands.
       expect(extraction.imports.map((i) => i.importText)).toEqual(["./y"]);
+    });
+  });
+
+  // bd tea-rags-mcp-x6ta — parameter-type bindings for typed-receiver
+  // resolution. A call `resolver.resolve(...)` where `resolver` is a
+  // FUNCTION PARAMETER typed `CallResolver` previously dropped to the
+  // ambiguous short-name fallback (one match per `*CallResolver` impl).
+  // The walker now records `{ paramName → type }` per chunk on
+  // `localBindings` (same field the Python/Go walkers use) so the
+  // resolver can pin `resolver.resolve` to `CallResolver#resolve`.
+  describe("parameter-type bindings (localBindings) — bd tea-rags-mcp-x6ta", () => {
+    it("binds a top-level function's typed parameter to its type", () => {
+      const code = ["function run(resolver: CallResolver) {", "  resolver.resolve(call, ctx);", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/run.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["resolver"]).toBe("CallResolver");
+    });
+
+    it("binds a class method's typed parameter to its type, scoped to that method's chunk", () => {
+      const code = [
+        "class Foo {", //                line 1
+        "  handle(svc: BarService) {", // line 2
+        "    svc.go();", //              line 3
+        "  }", //                        line 4
+        "}", //                          line 5
+        "",
+      ].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/foo.ts",
+        language: "typescript",
+        chunks: [
+          { symbolId: "Foo", startLine: 1, endLine: 5, scope: [] },
+          { symbolId: "Foo#handle", startLine: 2, endLine: 4, scope: ["Foo"] },
+        ],
+      });
+      const handle = extraction.chunks.find((c) => c.symbolId === "Foo#handle");
+      expect(handle?.localBindings?.["svc"]).toBe("BarService");
+      // The enclosing class chunk must NOT carry the method's parameter
+      // binding — bindings are scoped to the declaring chunk's range.
+      const cls = extraction.chunks.find((c) => c.symbolId === "Foo");
+      expect(cls?.localBindings?.["svc"]).toBeUndefined();
+    });
+
+    it("binds a typed parameter of an arrow function assigned to a const", () => {
+      const code = ["const run = (resolver: CallResolver) => {", "  resolver.resolve();", "};", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/arrow.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["resolver"]).toBe("CallResolver");
+    });
+
+    it("strips generics — Repo<User> binds to Repo", () => {
+      const code = ["function load(repo: Repo<User>) {", "  repo.find();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/load.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "load", startLine: 1, endLine: 3, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["repo"]).toBe("Repo");
+    });
+
+    it("leaves localBindings undefined when no parameter carries a usable type annotation", () => {
+      const code = ["function plain(x, y) {", "  doThing();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/plain.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "plain", startLine: 1, endLine: 3, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings).toBeUndefined();
+    });
+
+    // BOUNDARY (bd tea-rags-mcp-x6ta) — non-identifier parameter patterns
+    // have no single receiver name, so `collectParamBindings` deliberately
+    // skips them (`pattern?.type !== "identifier"` guard). Locking the
+    // SAFE boundary: a destructured / rest parameter must NOT produce a
+    // binding for the destructured names, the binding object, or the rest
+    // array. A future change that started binding `{ a, b }` or `...args`
+    // to a type would create a phantom receiver the resolver could mis-pin,
+    // so these assert the current bind-nothing behavior.
+    it("destructured object param `{ a, b }: SomeType` produces NO localBinding for a/b/the object", () => {
+      const code = ["function f({ a, b }: SomeType) {", "  a.go();", "  b.go();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/destructure.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "f", startLine: 1, endLine: 4, scope: [] }],
+      });
+      // No single receiver name for a destructured pattern → nothing binds.
+      const bindings = extraction.chunks[0].localBindings;
+      expect(bindings?.["a"]).toBeUndefined();
+      expect(bindings?.["b"]).toBeUndefined();
+      // The walker emits no localBindings map at all when no param binds.
+      expect(bindings).toBeUndefined();
+    });
+
+    it("rest param `...args: T[]` produces NO localBinding for `args`", () => {
+      const code = ["function f(...args: number[]) {", "  doThing();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/rest.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "f", startLine: 1, endLine: 3, scope: [] }],
+      });
+      // `...args` is a rest_pattern, not a bare identifier pattern → no bind.
+      expect(extraction.chunks[0].localBindings?.["args"]).toBeUndefined();
+      expect(extraction.chunks[0].localBindings).toBeUndefined();
     });
   });
 });

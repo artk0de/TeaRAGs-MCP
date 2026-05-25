@@ -58,6 +58,36 @@ class Calculator {
       expect(methodChunks.every((c) => c.metadata.parentSymbolId === "Calculator")).toBe(true);
     });
 
+    // bd tea-rags-mcp-olc2 — tree-sitter-typescript emits `abstract_class_declaration`
+    // (NOT `class_declaration`) for `abstract class X {}`. Without that node type in
+    // chunkableTypes the abstract container is never recognized, so its methods never
+    // become standalone chunks and `find_symbol("Base#foo")` misses the body even though
+    // the codegraph layer has the symbol.
+    it("should chunk abstract TypeScript classes into methods", async () => {
+      // Method bodies padded to clear the 50-char floor in processChildren.
+      const code = `
+abstract class Base {
+  foo(value: string): string {
+    return value == null ? "" : value.toUpperCase();
+  }
+
+  bar(value: string): string {
+    return value == null ? "" : value.toLowerCase();
+  }
+}
+      `;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThanOrEqual(2);
+      const foo = methodChunks.find((c) => c.metadata.name === "foo");
+      const bar = methodChunks.find((c) => c.metadata.name === "bar");
+      expect(foo?.metadata.symbolId).toBe("Base#foo");
+      expect(foo?.metadata.parentSymbolId).toBe("Base");
+      expect(bar?.metadata.symbolId).toBe("Base#bar");
+      expect(bar?.metadata.parentSymbolId).toBe("Base");
+    });
+
     it("should chunk TypeScript interfaces", async () => {
       const code = `
 interface User {

@@ -93,6 +93,26 @@ export interface FileExtraction {
    * Same plain-Record discipline as `classAncestors` for NDJSON round-trip.
    */
   classPrependedAncestors?: Record<string, readonly string[]>;
+  /**
+   * Optional `functionName → declaredReturnTypeName` map for languages with
+   * static return-type declarations (Go). Lets a resolver bind a variable
+   * assigned from a function call (`x := New()`) to that function's DECLARED
+   * return type so `x.method()` resolves to `<ReturnType>#method` — even when
+   * the function is declared in a different file (the map is merged run-global
+   * by the codegraph provider in pass-1, mirroring `classExtends`).
+   *
+   * Recorded by the walker ONLY for single-return signatures whose return is
+   * a concrete named type (bare `type_identifier`, `*Type` pointer unwrapped,
+   * or the bare last segment of `pkg.Type`). Multi-return signatures
+   * (`func New() (*Engine, error)`) and untyped returns are OMITTED — guessing
+   * which return feeds the variable reintroduces the m46z false positives.
+   * The resolver applies the final safety gate (return type must exist as a
+   * struct/type symbol in the table). bd tea-rags-mcp-6g9c.
+   *
+   * Plain Record (NOT Map) so the value round-trips through the NDJSON spill.
+   * Languages without static return types leave this undefined.
+   */
+  functionReturnTypes?: Record<string, string>;
 }
 
 export interface ImportRef {
@@ -101,6 +121,19 @@ export interface ImportRef {
   /** Lexical position used by resolvers that need it (TS aliases, Python
    *  relative imports). 1-based line number. */
   startLine: number;
+  /**
+   * Optional LOCAL binding names introduced by this import statement
+   * (bd tea-rags-mcp-2v16). For `import { RankModule, Foo as Bar } from "./m"`
+   * this is `["RankModule", "Bar"]` — the names a call receiver can reference
+   * in the importing file. Captures named specifiers (local name for
+   * aliases), the default import binding, and the `* as ns` namespace
+   * binding. Lets a resolver map a receiver DIRECTLY to its source module
+   * via an exact name match instead of the kebab→Pascal filename-normalize
+   * heuristic. Omitted (undefined) for bare side-effect imports
+   * (`import "./polyfill"`) and for languages whose walkers don't populate
+   * it — every other-language walker keeps emitting `ImportRef` unchanged.
+   */
+  importedNames?: string[];
 }
 
 export interface ChunkExtraction {
@@ -132,6 +165,24 @@ export interface ChunkExtraction {
    * — `Map` would serialize to `{}` and silently lose data.
    */
   localBindings?: Record<string, string>;
+  /**
+   * Per-chunk `varName → calledFunctionName` map for variables assigned from
+   * a function call (`engine := New()` → `{ engine: "New" }`). DISTINCT from
+   * `localBindings` (which maps to a TYPE): this maps to the CALLED FUNCTION's
+   * short name, because the walker cannot know the function's return type from
+   * the chunk alone (the function may be declared in another file). The
+   * resolver looks the called name up in `CallContext.functionReturnTypes` to
+   * obtain the return type, then resolves `varName.method()` against it.
+   *
+   * Populated by the Go walker for single-LHS short-var-decls whose RHS is a
+   * call to a plain identifier (`New()`) or a package selector (`pkg.New()` →
+   * records the bare last segment `New`). Multi-LHS (`a, b := f(), g()`) and
+   * chained-call RHS (`New().Configure()`) are OMITTED — the var↔return pairing
+   * is not unambiguous. bd tea-rags-mcp-6g9c.
+   *
+   * Plain Record (NOT Map) for NDJSON-spill round-trip, same as localBindings.
+   */
+  localCallBindings?: Record<string, string>;
 }
 
 export interface CallRef {
@@ -256,6 +307,25 @@ export interface CallContext {
    * locally-typed variable wins over ambiguous short-name resolution.
    */
   localBindings?: Record<string, string>;
+  /**
+   * Per-chunk `varName → calledFunctionName` map propagated from
+   * `ChunkExtraction.localCallBindings`. Resolvers combine this with
+   * `functionReturnTypes` to bind `x := New(); x.method()` to
+   * `<New's return type>#method`. Set by the provider per-call from the
+   * caller chunk's `localCallBindings`. bd tea-rags-mcp-6g9c.
+   */
+  localCallBindings?: Record<string, string>;
+  /**
+   * Run-global `functionName → declaredReturnTypeName` map propagated from
+   * `FileExtraction.functionReturnTypes` (merged across all pass-1 files so
+   * a call's return type is available even when the function is declared in
+   * another file). Resolvers use it together with `localCallBindings` to
+   * resolve `x := New(); x.method()`. The resolver MUST still verify the
+   * return type exists as a concrete type symbol before binding — the walker
+   * records the declared name verbatim and does no symbol-table check.
+   * bd tea-rags-mcp-6g9c.
+   */
+  functionReturnTypes?: Record<string, string>;
   /**
    * Optional `className → ancestor[]` map propagated from
    * `FileExtraction.classAncestors`. Resolvers walk this list when a

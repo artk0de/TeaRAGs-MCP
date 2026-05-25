@@ -124,6 +124,54 @@ describe("GoCallResolver", () => {
     expect(target).toBeNull();
   });
 
+  // bd tea-rags-mcp-6g9c — local-var-typed receivers. `engine.Use()` inside
+  // `func Default()` where `var engine Engine` (or `engine := Engine{}`)
+  // declares the type. None of the imports match the bare receiver
+  // `engine`, so before this fix the m46z receiver-drop fired and the
+  // LEGITIMATE `Engine#Use` / `Engine#With` edges were lost. With the
+  // walker emitting `{ engine: "Engine" }` the resolver's step-0
+  // `resolveByLocalType` resolves them.
+  it("resolves `engine.Use()` to Engine#Use via local-var binding engine→Engine", () => {
+    const r = new GoCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("gin.go", [
+      { symbolId: "Engine#Use", fqName: "Engine#Use", shortName: "Use", relPath: "gin.go", scope: [] },
+      { symbolId: "Engine#With", fqName: "Engine#With", shortName: "With", relPath: "gin.go", scope: [] },
+    ]);
+    const useTarget = r.resolve(
+      { callText: "engine.Use(mw)", receiver: "engine", member: "Use", startLine: 4 },
+      ctx("gin.go", [], t, { engine: "Engine" }),
+    );
+    expect(useTarget?.targetSymbolId).toBe("Engine#Use");
+    const withTarget = r.resolve(
+      { callText: "engine.With(mw)", receiver: "engine", member: "With", startLine: 5 },
+      ctx("gin.go", [], t, { engine: "Engine" }),
+    );
+    expect(withTarget?.targetSymbolId).toBe("Engine#With");
+  });
+
+  it("resolves self-receiver `c.GetQuery()` to Context#GetQuery via receiver binding c→Context", () => {
+    // Go has no `this`: inside `func (c *Context) Query()` an intra-method
+    // call `c.GetQuery()` must resolve to `Context#GetQuery` through the
+    // receiver binding the walker emits.
+    const r = new GoCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("context.go", [
+      {
+        symbolId: "Context#GetQuery",
+        fqName: "Context#GetQuery",
+        shortName: "GetQuery",
+        relPath: "context.go",
+        scope: [],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "c.GetQuery(key)", receiver: "c", member: "GetQuery", startLine: 3 },
+      ctx("context.go", [], t, { c: "Context" }),
+    );
+    expect(target?.targetSymbolId).toBe("Context#GetQuery");
+  });
+
   it("drops the edge when receiver does NOT match any import (no global short-name fallback)", () => {
     // Real-world case (gin): inside `(c *Context) initQueryCache()` the
     // expression `c.Request.URL.Query()` has receiver "c.Request.URL".
@@ -147,5 +195,140 @@ describe("GoCallResolver", () => {
       ctx("context.go", [], t),
     );
     expect(target).toBeNull();
+  });
+
+  // bd tea-rags-mcp-6g9c (follow-up) — function-return-type binding. Real gin
+  // `func Default() *Engine` does `engine := New(); engine.Use(...)`. The
+  // walker emits localCallBindings `{ engine: "New" }` (var → called func) and
+  // file-level functionReturnTypes `{ New: "Engine" }` (func → declared return
+  // type, merged run-global so it's available cross-file). The resolver pairs
+  // them: engine → New → Engine, then resolveByLocalType pins
+  // `engine.Use()` → Engine#Use. Without this, no import matches the bare
+  // receiver `engine`, the m46z drop fires, and the LEGITIMATE Engine#Use /
+  // Engine#With edges from gin's Default() are lost. SAFE: declared return
+  // types are static, and binding happens ONLY when the return type exists as
+  // a concrete struct/type symbol in the table.
+  describe("function-return-type binding (localCallBindings + functionReturnTypes)", () => {
+    function ctxReturn(
+      callerFile: string,
+      table: InMemoryGlobalSymbolTable,
+      localCallBindings: Record<string, string>,
+      functionReturnTypes: Record<string, string>,
+    ): CallContext {
+      return { callerFile, callerScope: [], imports: [], symbolTable: table, localCallBindings, functionReturnTypes };
+    }
+
+    it("resolves `engine.Use()` / `engine.With()` to Engine#Use / Engine#With via engine→New→Engine", () => {
+      const r = new GoCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("gin.go", [
+        // The struct type symbol — its presence is the safety gate.
+        { symbolId: "Engine", fqName: "Engine", shortName: "Engine", relPath: "gin.go", scope: [] },
+        { symbolId: "Engine#Use", fqName: "Engine#Use", shortName: "Use", relPath: "gin.go", scope: [] },
+        { symbolId: "Engine#With", fqName: "Engine#With", shortName: "With", relPath: "gin.go", scope: [] },
+        // `New` is declared in a different file — exercises the cross-file
+        // run-global functionReturnTypes map.
+        { symbolId: "New", fqName: "New", shortName: "New", relPath: "engine.go", scope: [] },
+      ]);
+      const useTarget = r.resolve(
+        { callText: "engine.Use(mw)", receiver: "engine", member: "Use", startLine: 4 },
+        ctxReturn("gin.go", t, { engine: "New" }, { New: "Engine" }),
+      );
+      expect(useTarget?.targetSymbolId).toBe("Engine#Use");
+      const withTarget = r.resolve(
+        { callText: "engine.With(mw)", receiver: "engine", member: "With", startLine: 5 },
+        ctxReturn("gin.go", t, { engine: "New" }, { New: "Engine" }),
+      );
+      expect(withTarget?.targetSymbolId).toBe("Engine#With");
+    });
+
+    it("localBindings (direct type) wins over localCallBindings when both name the receiver", () => {
+      // Defensive precedence: a directly-known type should never be overridden
+      // by a return-type indirection for the same var.
+      const r = new GoCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("gin.go", [
+        { symbolId: "Engine", fqName: "Engine", shortName: "Engine", relPath: "gin.go", scope: [] },
+        { symbolId: "Engine#Use", fqName: "Engine#Use", shortName: "Use", relPath: "gin.go", scope: [] },
+      ]);
+      const target = r.resolve(
+        { callText: "engine.Use()", receiver: "engine", member: "Use", startLine: 4 },
+        {
+          callerFile: "gin.go",
+          callerScope: [],
+          imports: [],
+          symbolTable: t,
+          localBindings: { engine: "Engine" },
+          localCallBindings: { engine: "Bogus" },
+          functionReturnTypes: { Bogus: "Nonexistent" },
+        },
+      );
+      expect(target?.targetSymbolId).toBe("Engine#Use");
+    });
+
+    it("NEGATIVE: drops the edge when the return type is unknown / not a concrete type symbol", () => {
+      // `x := Unknown()` where Unknown's return type is an interface / external
+      // type that is NOT a struct symbol in the table. Binding it would
+      // fabricate an edge — the resolver must drop instead. Here `Handler` is
+      // an interface that has NO type symbol, only a method symbol elsewhere.
+      const r = new GoCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("other.go", [
+        // A method named ServeHTTP exists on some unrelated type; global
+        // short-name would otherwise fabricate an edge.
+        {
+          symbolId: "Server#ServeHTTP",
+          fqName: "Server#ServeHTTP",
+          shortName: "ServeHTTP",
+          relPath: "other.go",
+          scope: [],
+        },
+      ]);
+      const target = r.resolve(
+        { callText: "x.ServeHTTP()", receiver: "x", member: "ServeHTTP", startLine: 2 },
+        ctxReturn("main.go", t, { x: "Unknown" }, { Unknown: "Handler" }),
+      );
+      expect(target).toBeNull();
+    });
+
+    it("NEGATIVE: drops when the called func has no recorded return type", () => {
+      const r = new GoCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("gin.go", [
+        { symbolId: "Engine", fqName: "Engine", shortName: "Engine", relPath: "gin.go", scope: [] },
+        { symbolId: "Engine#Use", fqName: "Engine#Use", shortName: "Use", relPath: "gin.go", scope: [] },
+      ]);
+      const target = r.resolve(
+        { callText: "engine.Use()", receiver: "engine", member: "Use", startLine: 4 },
+        ctxReturn("gin.go", t, { engine: "Mystery" }, {}),
+      );
+      expect(target).toBeNull();
+    });
+
+    it("NEGATIVE: binds the type but drops when the type does NOT define the member", () => {
+      // engine→New→Engine resolves the TYPE, but Engine has no `Frobnicate`
+      // method. Mirrors the m46z drop — no global short-name fallback.
+      const r = new GoCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("gin.go", [
+        { symbolId: "Engine", fqName: "Engine", shortName: "Engine", relPath: "gin.go", scope: [] },
+        { symbolId: "Engine#Use", fqName: "Engine#Use", shortName: "Use", relPath: "gin.go", scope: [] },
+      ]);
+      // A Frobnicate on an unrelated type — global short-name would fabricate.
+      t.upsertFile("other.go", [
+        {
+          symbolId: "Other#Frobnicate",
+          fqName: "Other#Frobnicate",
+          shortName: "Frobnicate",
+          relPath: "other.go",
+          scope: [],
+        },
+      ]);
+      const target = r.resolve(
+        { callText: "engine.Frobnicate()", receiver: "engine", member: "Frobnicate", startLine: 4 },
+        ctxReturn("gin.go", t, { engine: "New" }, { New: "Engine" }),
+      );
+      expect(target).toBeNull();
+    });
   });
 });

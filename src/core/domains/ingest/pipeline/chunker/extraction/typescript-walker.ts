@@ -46,13 +46,28 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   // class chunk and the method chunk and inflates caller-edge counts by the
   // nesting depth (bd tea-rags-mcp-otjs — mirrors ruby tea-rags-mcp-8fnu).
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
-  const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => ({
-    symbolId: c.symbolId,
-    scope: c.scope,
-    startLine: c.startLine,
-    endLine: c.endLine,
-    calls: callOwnership.get(chunkIndex) ?? [],
-  }));
+  // bd tea-rags-mcp-x6ta — record `paramName → type` bindings for typed
+  // function / method / arrow parameters so the resolver can pin
+  // `param.method()` to `<Type>#<method>` instead of dropping to the
+  // ambiguous short-name fallback. Same `localBindings` field the
+  // Python / Go walkers use. Each binding is attributed to the INNERMOST
+  // chunk containing its declaration line — a method's parameter belongs
+  // to the method chunk, not the enclosing class chunk that also spans
+  // the `def` line (mirrors the innermost call-attribution discipline).
+  const paramBindings = collectParamBindings(input.tree.rootNode);
+  const bindingOwnership = assignParamBindingsToInnermostChunks(paramBindings, input.chunks);
+  const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
+    const chunk: ChunkExtraction = {
+      symbolId: c.symbolId,
+      scope: c.scope,
+      startLine: c.startLine,
+      endLine: c.endLine,
+      calls: callOwnership.get(chunkIndex) ?? [],
+    };
+    const bindings = bindingOwnership.get(chunkIndex);
+    if (bindings && Object.keys(bindings).length > 0) chunk.localBindings = bindings;
+    return chunk;
+  });
   const out: FileExtraction = {
     relPath: input.relPath,
     language: input.language,
@@ -132,9 +147,57 @@ function collectImports(root: Parser.SyntaxNode): ImportRef[] {
     const src = node.children.find((c) => c.type === "string");
     if (!src) return;
     const text = src.text.replace(/^["']|["']$/g, "");
-    out.push({ importText: text, startLine: node.startPosition.row + 1 });
+    // bd tea-rags-mcp-2v16 — capture the LOCAL binding names this import
+    // introduces so the resolver can map `Receiver.method()` straight to
+    // this module by exact name. Populated in this ONE place (colocation):
+    // default import, `* as ns` namespace, and each named specifier's
+    // local name (alias when present, else the imported name). Bare
+    // side-effect imports have no `import_clause` → undefined.
+    const importedNames = collectImportedNames(node);
+    const ref: ImportRef = { importText: text, startLine: node.startPosition.row + 1 };
+    if (importedNames.length > 0) ref.importedNames = importedNames;
+    out.push(ref);
   });
   return out;
+}
+
+/**
+ * Read the local binding names introduced by an `import_statement`.
+ *
+ * tree-sitter-typescript shapes inside `import_clause`:
+ *   - default import:   `identifier "Foo"`                  → "Foo"
+ *   - namespace import: `namespace_import ("*" "as" name)`  → local name
+ *   - named imports:    `named_imports → import_specifier`  → alias if
+ *     present (`{ A as B }` → "B"), else the imported `name` (`{ A }` → "A").
+ *
+ * Returns the names in source order. Empty when the statement is a bare
+ * side-effect import (`import "./x"`) — no `import_clause` child.
+ */
+function collectImportedNames(node: Parser.SyntaxNode): string[] {
+  const clause = node.children.find((c) => c.type === "import_clause");
+  if (!clause) return [];
+  const names: string[] = [];
+  for (const child of clause.children) {
+    if (child.type === "identifier") {
+      // Default import binding — `import Foo from "..."`.
+      names.push(child.text);
+    } else if (child.type === "namespace_import") {
+      // `* as ns` — the local binding is the identifier after `as`.
+      const local = child.children.find((c) => c.type === "identifier");
+      if (local) names.push(local.text);
+    } else if (child.type === "named_imports") {
+      for (const spec of child.children) {
+        if (spec.type !== "import_specifier") continue;
+        // `alias` field is the local name for `{ A as B }`; otherwise the
+        // `name` field is both the imported and the local name.
+        const alias = spec.childForFieldName("alias");
+        const name = spec.childForFieldName("name");
+        const local = alias ?? name;
+        if (local) names.push(local.text);
+      }
+    }
+  }
+  return names;
 }
 
 function collectCalls(root: Parser.SyntaxNode): CallRef[] {
@@ -248,6 +311,89 @@ function collectClassFieldTypes(root: Parser.SyntaxNode): ReadonlyMap<string, Re
     if (fields.size > 0) result.set(className, fields);
   });
   return result;
+}
+
+interface ParamBinding {
+  name: string;
+  type: string;
+  /** 1-based declaration line — used for innermost-chunk attribution. */
+  startLine: number;
+}
+
+/**
+ * Collect `{ name, type, startLine }` for every typed function / method /
+ * arrow parameter in the file.
+ *
+ * Mirrors the Python walker's `collectLocalBindingsForChunk` (function
+ * argument type hints) but for TS's static parameter annotations. The
+ * grammar emits a `required_parameter` / `optional_parameter` node for
+ * each parameter; its `pattern` field is the identifier and its
+ * `type_annotation` child carries the declared type. This shape is the
+ * same for top-level functions, class methods, and arrow functions, so
+ * one walk covers all three.
+ *
+ * Reuses `extractTypeNameFromAnnotation` so generics (`Repo<User>` →
+ * `Repo`) and qualified names (`ns.Foo`) strip identically to the
+ * `classFieldTypes` path. Skips constructor parameter properties (those
+ * with an accessibility modifier / `readonly`) — those are class fields
+ * owned by `collectClassFieldTypes`, not local parameter bindings.
+ * Untyped or destructured / rest parameters contribute nothing.
+ */
+function collectParamBindings(root: Parser.SyntaxNode): ParamBinding[] {
+  const out: ParamBinding[] = [];
+  walk(root, (node) => {
+    if (node.type !== "required_parameter" && node.type !== "optional_parameter") return;
+    const hasAccess = node.children.some(
+      (c) => c.type === "accessibility_modifier" || c.type === "readonly" || c.text === "readonly",
+    );
+    if (hasAccess) return;
+    const pattern = node.childForFieldName("pattern");
+    // Only bare-identifier patterns bind cleanly — destructured / rest
+    // patterns (`{ a }`, `...rest`) have no single receiver name.
+    if (pattern?.type !== "identifier") return;
+    const typeName = extractTypeNameFromAnnotation(node.children.find((c) => c.type === "type_annotation"));
+    if (typeName) out.push({ name: pattern.text, type: typeName, startLine: node.startPosition.row + 1 });
+  });
+  return out;
+}
+
+/**
+ * Attribute each parameter binding to the INNERMOST chunk whose line
+ * range contains the binding's declaration line. Tie-breaker: deeper
+ * scope wins — identical discipline to `assignCallsToInnermostChunks`,
+ * so a method parameter lands on the method chunk rather than the
+ * enclosing class chunk that also spans the `def` line.
+ *
+ * Returns a Map keyed by chunk index → `Record<paramName, typeName>`.
+ * Chunks with no bindings have no entry. Bindings whose line falls
+ * outside every chunk are dropped silently.
+ */
+function assignParamBindingsToInnermostChunks(
+  bindings: ParamBinding[],
+  chunks: { startLine: number; endLine: number; scope: string[] }[],
+): Map<number, Record<string, string>> {
+  const out = new Map<number, Record<string, string>>();
+  for (const binding of bindings) {
+    let bestIdx = -1;
+    let bestSpan = Number.POSITIVE_INFINITY;
+    let bestDepth = -1;
+    for (let i = 0; i < chunks.length; i++) {
+      const c = chunks[i];
+      if (binding.startLine < c.startLine || binding.startLine > c.endLine) continue;
+      const span = c.endLine - c.startLine;
+      const depth = c.scope.length;
+      if (span < bestSpan || (span === bestSpan && depth > bestDepth)) {
+        bestIdx = i;
+        bestSpan = span;
+        bestDepth = depth;
+      }
+    }
+    if (bestIdx === -1) continue;
+    const bucket = out.get(bestIdx);
+    if (bucket) bucket[binding.name] = binding.type;
+    else out.set(bestIdx, { [binding.name]: binding.type });
+  }
+  return out;
 }
 
 /**

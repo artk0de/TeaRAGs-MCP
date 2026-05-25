@@ -681,4 +681,431 @@ describe("PythonCallResolver", () => {
       expect(target?.targetSymbolId).toBe("async_to_sync");
     });
   });
+
+  // bd tea-rags-mcp-rjuc — cross-method `self.<field>.<method>()`.
+  // Instance fields declared in `__init__` (`self.service = SomeService()`)
+  // are recorded as class-level state in `classFieldTypes`; the resolver
+  // looks the field's type up keyed by the enclosing class and resolves
+  // `<Type>#<method>`. Mirrors the TS `this.field.method()` path.
+  describe("classFieldTypes (self.field cross-method)", () => {
+    it("resolves `self.service.process()` to the field's class instance method", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("service.py", [
+        {
+          symbolId: "SomeService#process",
+          fqName: "SomeService#process",
+          shortName: "process",
+          relPath: "service.py",
+          scope: ["SomeService"],
+        },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: ["Handler"],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { Handler: { service: "SomeService" } },
+      };
+      const target = resolver.resolve(
+        { callText: "self.service.process()", receiver: "self.service", member: "process", startLine: 8 },
+        ctx,
+      );
+      expect(target?.targetRelPath).toBe("service.py");
+      expect(target?.targetSymbolId).toBe("SomeService#process");
+    });
+
+    it("falls back to the static (`.`) form when no instance method exists", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("service.py", [
+        {
+          symbolId: "SomeService.build",
+          fqName: "SomeService.build",
+          shortName: "build",
+          relPath: "service.py",
+          scope: ["SomeService"],
+        },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: ["Handler"],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { Handler: { service: "SomeService" } },
+      };
+      const target = resolver.resolve(
+        { callText: "self.service.build()", receiver: "self.service", member: "build", startLine: 8 },
+        ctx,
+      );
+      expect(target?.targetRelPath).toBe("service.py");
+      expect(target?.targetSymbolId).toBe("SomeService.build");
+    });
+
+    it("NEGATIVE: `self.unknown.process()` (field has no recorded type) drops the edge — no fabrication", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // A `process` symbol exists on an UNRELATED class — must NOT be
+      // attributed to `self.unknown` since the field type is unknown.
+      table.upsertFile("other.py", [
+        {
+          symbolId: "Other#process",
+          fqName: "Other#process",
+          shortName: "process",
+          relPath: "other.py",
+          scope: ["Other"],
+        },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: ["Handler"],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { Handler: { service: "SomeService" } }, // no `unknown`
+      };
+      const target = resolver.resolve(
+        { callText: "self.unknown.process()", receiver: "self.unknown", member: "process", startLine: 8 },
+        ctx,
+      );
+      expect(target).toBeNull();
+    });
+
+    it("emits an external best-effort target when the field type is known but the method is external", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("service.py", [
+        {
+          symbolId: "SomeService#process",
+          fqName: "SomeService#process",
+          shortName: "process",
+          relPath: "service.py",
+          scope: ["SomeService"],
+        },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: ["Handler"],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { Handler: { service: "SomeService" } },
+      };
+      // `inherited()` not defined on SomeService anywhere in the table —
+      // inherited from a base class outside the project. The field type
+      // IS known, so emit a type-qualified best-effort target anchored to
+      // the bare type name rather than dropping. Mirrors the Java resolver's
+      // CharSequence#charAt external path.
+      const target = resolver.resolve(
+        { callText: "self.service.inherited()", receiver: "self.service", member: "inherited", startLine: 8 },
+        ctx,
+      );
+      expect(target?.targetRelPath).toBe("SomeService");
+      expect(target?.targetSymbolId).toBe("SomeService#inherited");
+    });
+
+    it("resolves `self._context_stack.close()` to an external `ExitStack#close` target (stdlib type, not in table)", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // ExitStack is `contextlib` stdlib — NOT in the indexed repo. The
+      // field's type is known from the `__init__` constructor assignment
+      // (`self._context_stack = ExitStack()`), so the call resolves to a
+      // type-qualified best-effort target instead of being dropped.
+      const ctx: CallContext = {
+        callerFile: "flask/testing.py",
+        callerScope: ["FlaskClient"],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { FlaskClient: { _context_stack: "ExitStack" } },
+      };
+      const target = resolver.resolve(
+        { callText: "self._context_stack.close()", receiver: "self._context_stack", member: "close", startLine: 12 },
+        ctx,
+      );
+      expect(target?.targetRelPath).toBe("ExitStack");
+      expect(target?.targetSymbolId).toBe("ExitStack#close");
+    });
+
+    it("resolves `self._context_stack.enter_context(cm)` to an external `ExitStack#enter_context` target", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      const ctx: CallContext = {
+        callerFile: "flask/testing.py",
+        callerScope: ["FlaskClient"],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { FlaskClient: { _context_stack: "ExitStack" } },
+      };
+      const target = resolver.resolve(
+        {
+          callText: "self._context_stack.enter_context(cm)",
+          receiver: "self._context_stack",
+          member: "enter_context",
+          startLine: 14,
+        },
+        ctx,
+      );
+      expect(target?.targetRelPath).toBe("ExitStack");
+      expect(target?.targetSymbolId).toBe("ExitStack#enter_context");
+    });
+
+    it("does not apply field resolution outside a class scope (callerScope empty)", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: [],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { Handler: { service: "SomeService" } },
+      };
+      const target = resolver.resolve(
+        { callText: "self.service.process()", receiver: "self.service", member: "process", startLine: 8 },
+        ctx,
+      );
+      expect(target).toBeNull();
+    });
+
+    // BOUNDARY (bd tea-rags-mcp-rjuc) — `self.x = <literal>` in `__init__`
+    // records NO field type (the walker only records a type for a call /
+    // PEP-526-annotated RHS; a list/dict/scalar literal has no class name
+    // to attribute). With no recorded type for the field, the `self.<field>`
+    // receiver path DROPS rather than fall through to the ambiguous
+    // short-name fallback — never attributing `self.x.method()` to an
+    // unrelated class that happens to define `method`. This is the genuine
+    // "no classFieldType -> drop" boundary. The walker side (literal RHS ->
+    // {}) is asserted in python-walker.test.ts; here we lock the resolver
+    // drop given the empty field map.
+    it("NEGATIVE: literal-assigned field (no recorded type) → `self.x.method()` DROPS — no fabrication", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // An unrelated class defines `method` — must NOT be attributed.
+      table.upsertFile("other.py", [
+        {
+          symbolId: "Other#method",
+          fqName: "Other#method",
+          shortName: "method",
+          relPath: "other.py",
+          scope: ["Other"],
+        },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: ["Handler"],
+        imports: [],
+        symbolTable: table,
+        // `self.x = []` records nothing → Handler has an empty field map.
+        classFieldTypes: { Handler: {} },
+      };
+      const target = resolver.resolve(
+        { callText: "self.x.method()", receiver: "self.x", member: "method", startLine: 8 },
+        ctx,
+      );
+      expect(target).toBeNull();
+    });
+
+    // BOUNDARY (bd tea-rags-mcp-m46z) — `self.x = some_func()` where the RHS
+    // is a NON-constructor function call (lowercase / unknown return type).
+    // The walker's CapWords gate (PEP8: classes are CapWords, functions
+    // lowercase) DROPS such an assignment — `some_func` is NOT recorded as a
+    // field type. So the resolver never receives a lowercase candidate from
+    // real code: `classFieldTypes` for the field is empty, the `self.<field>`
+    // branch finds no recorded type, and the call DROPS rather than emitting
+    // the phantom external edge `some_func#method` that earlier blessed this
+    // boundary. (Earlier the walker recorded the lowercase name and the
+    // resolver anchored an external best-effort — a phantom edge to a symbol
+    // that can never exist. The CapWords gate eliminates the phantom at the
+    // source; only genuine CapWords stdlib types like `ExitStack` reach the
+    // external best-effort path, covered by the tests above.)
+    it("function-call-assigned field (lowercase) is not recorded by the walker → resolver DROPS, never a phantom external edge", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // An unrelated class defines `method` — the resolver must NOT pick it.
+      table.upsertFile("other.py", [
+        {
+          symbolId: "Other#method",
+          fqName: "Other#method",
+          shortName: "method",
+          relPath: "other.py",
+          scope: ["Other"],
+        },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: ["Handler"],
+        imports: [],
+        symbolTable: table,
+        // Walker CapWords gate dropped `self.x = some_func()` → no field type
+        // recorded for `x`. This is the realistic post-gate input shape.
+        classFieldTypes: { Handler: {} },
+      };
+      const target = resolver.resolve(
+        { callText: "self.x.method()", receiver: "self.x", member: "method", startLine: 8 },
+        ctx,
+      );
+      // No recorded type → DROP. No phantom `some_func#method`, no unrelated
+      // `Other#method`, no fabricated `.py` file edge.
+      expect(target).toBeNull();
+    });
+  });
+
+  // bd tea-rags-mcp-yrs0 — inherited-method resolution via base-class walk.
+  // `self.method()` (and typed-receiver `var.method()`) where the method is
+  // NOT defined on the enclosing/bound class must walk that class's
+  // `classExtends` chain and resolve to the first IN-PROJECT ancestor that
+  // defines it. Restricted to base classes present in the symbol table —
+  // external bases (Django CBVs, werkzeug) stop the branch and the edge is
+  // dropped rather than fabricated.
+  describe("inherited method resolution via classExtends walk (bd yrs0)", () => {
+    function makeCtxExtends(
+      callerFile: string,
+      callerScope: string[],
+      symbolTable: InMemoryGlobalSymbolTable,
+      classExtends: Record<string, string>,
+    ): CallContext {
+      return { callerFile, callerScope, imports: [], symbolTable, classExtends };
+    }
+
+    it("resolves self.shared() to Base#shared walked Leaf → Mid → Base", () => {
+      // `shared` lives only on Base. Leaf and Mid do not define it. The
+      // resolver walks Leaf → Mid → Base and lands on Base#shared.
+      //
+      // A SECOND, unrelated class (`Decoy`) also defines `shared`, so the
+      // global short-name fallback is AMBIGUOUS (strict-mode would drop):
+      // only an explicit classExtends walk can disambiguate to Base.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("base.py", [
+        { symbolId: "Base#shared", fqName: "Base#shared", shortName: "shared", relPath: "base.py", scope: ["Base"] },
+      ]);
+      table.upsertFile("decoy.py", [
+        {
+          symbolId: "Decoy#shared",
+          fqName: "Decoy#shared",
+          shortName: "shared",
+          relPath: "decoy.py",
+          scope: ["Decoy"],
+        },
+      ]);
+      // Register Mid and Leaf as known classes so the bases are in-project.
+      table.upsertFile("mid.py", [{ symbolId: "Mid", fqName: "Mid", shortName: "Mid", relPath: "mid.py", scope: [] }]);
+      table.upsertFile("leaf.py", [
+        { symbolId: "Leaf", fqName: "Leaf", shortName: "Leaf", relPath: "leaf.py", scope: [] },
+        { symbolId: "Leaf#run", fqName: "Leaf#run", shortName: "run", relPath: "leaf.py", scope: ["Leaf"] },
+      ]);
+      const target = resolver.resolve(
+        { callText: "self.shared()", receiver: "self", member: "shared", startLine: 3 },
+        makeCtxExtends("leaf.py", ["Leaf"], table, { Leaf: "Mid", Mid: "Base" }),
+      );
+      expect(target?.targetSymbolId).toBe("Base#shared");
+      expect(target?.targetRelPath).toBe("base.py");
+    });
+
+    it("(a) method on the direct enclosing class wins — no walk", () => {
+      // Leaf defines `run` itself. The resolver must resolve to Leaf#run,
+      // never walk up to a parent that also defines `run`.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("base.py", [
+        { symbolId: "Base#run", fqName: "Base#run", shortName: "run", relPath: "base.py", scope: ["Base"] },
+      ]);
+      table.upsertFile("leaf.py", [
+        { symbolId: "Leaf#run", fqName: "Leaf#run", shortName: "run", relPath: "leaf.py", scope: ["Leaf"] },
+        { symbolId: "Leaf#go", fqName: "Leaf#go", shortName: "go", relPath: "leaf.py", scope: ["Leaf"] },
+      ]);
+      const target = resolver.resolve(
+        { callText: "self.run()", receiver: "self", member: "run", startLine: 4 },
+        makeCtxExtends("leaf.py", ["Leaf"], table, { Leaf: "Base" }),
+      );
+      expect(target?.targetSymbolId).toBe("Leaf#run");
+      expect(target?.targetRelPath).toBe("leaf.py");
+    });
+
+    it("(b) external/unknown base class → DROP (no fabricated edge)", () => {
+      // Leaf extends an external base (werkzeug.test.Client) that is NOT in
+      // the symbol table. `self.foo()` is defined nowhere in-project → the
+      // walk stops at the unknown base and the edge is dropped.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("leaf.py", [
+        { symbolId: "Leaf#run", fqName: "Leaf#run", shortName: "run", relPath: "leaf.py", scope: ["Leaf"] },
+      ]);
+      const target = resolver.resolve(
+        { callText: "self.foo()", receiver: "self", member: "foo", startLine: 5 },
+        makeCtxExtends("leaf.py", ["Leaf"], table, { Leaf: "werkzeug.test.Client" }),
+      );
+      expect(target).toBeNull();
+    });
+
+    it("(c) cyclic classExtends (A → B → A) terminates and drops", () => {
+      // A extends B, B extends A — a malformed cycle. The walk must
+      // terminate via the visited guard and drop (no infinite loop) when
+      // no ancestor defines `missing`.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("a.py", [{ symbolId: "A", fqName: "A", shortName: "A", relPath: "a.py", scope: [] }]);
+      table.upsertFile("b.py", [{ symbolId: "B", fqName: "B", shortName: "B", relPath: "b.py", scope: [] }]);
+      const target = resolver.resolve(
+        { callText: "self.missing()", receiver: "self", member: "missing", startLine: 2 },
+        makeCtxExtends("a.py", ["A"], table, { A: "B", B: "A" }),
+      );
+      expect(target).toBeNull();
+    });
+
+    // BOUNDARY (bd tea-rags-mcp-q1pl — multiple-inheritance follow-up).
+    // KNOWN SINGLE-BASE LIMITATION: the Python walker's
+    // `collectPythonClassExtends` records ONLY the FIRST base of a
+    // `class A(B, C)` declaration (`classExtends["A"] = "B"`). When the
+    // called method lives on the SECOND base `C` (not on `B` or `A`), the
+    // classExtends walk follows only the `B` chain, never reaches `C`, and
+    // DROPS the edge. This is the deliberate safe boundary — recording only
+    // the first base avoids modelling full MRO; the trade-off is that
+    // methods inherited from non-first bases are not resolved (dropped, not
+    // fabricated). A future multi-base walk (bd q1pl) would make this
+    // resolve to `C#second`; until then this test locks the current drop so
+    // a regression that started guessing wrongly is caught.
+    it("KNOWN LIMITATION: method on SECOND base `class A(B, C)` is DROPPED (single-base classExtends only)", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // `second` is defined ONLY on the second base C.
+      table.upsertFile("c.py", [
+        { symbolId: "C#second", fqName: "C#second", shortName: "second", relPath: "c.py", scope: ["C"] },
+      ]);
+      // B is a known in-project base but does not define `second`.
+      table.upsertFile("b.py", [{ symbolId: "B", fqName: "B", shortName: "B", relPath: "b.py", scope: [] }]);
+      // The walker would only have recorded the FIRST base → { A: "B" }.
+      // C is invisible to the classExtends chain, so the walk drops.
+      const target = resolver.resolve(
+        { callText: "self.second()", receiver: "self", member: "second", startLine: 5 },
+        makeCtxExtends("a.py", ["A"], table, { A: "B" }),
+      );
+      expect(target).toBeNull();
+    });
+
+    it("resolves typed-receiver var.method() to an inherited Base#shared", () => {
+      // `leaf.shared()` where `leaf: Leaf` (localBindings) and `shared` is
+      // inherited from Base. The walk runs from Leaf's bound type up the
+      // classExtends chain rather than dropping to a file-only edge.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("base.py", [
+        { symbolId: "Base#shared", fqName: "Base#shared", shortName: "shared", relPath: "base.py", scope: ["Base"] },
+      ]);
+      table.upsertFile("leaf.py", [
+        { symbolId: "Leaf", fqName: "Leaf", shortName: "Leaf", relPath: "leaf.py", scope: [] },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "caller.py",
+        callerScope: ["Caller"],
+        imports: [],
+        symbolTable: table,
+        localBindings: { leaf: "Leaf" },
+        classExtends: { Leaf: "Base" },
+      };
+      const target = resolver.resolve(
+        { callText: "leaf.shared()", receiver: "leaf", member: "shared", startLine: 9 },
+        ctx,
+      );
+      expect(target?.targetSymbolId).toBe("Base#shared");
+      expect(target?.targetRelPath).toBe("base.py");
+    });
+  });
 });

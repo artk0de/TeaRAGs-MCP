@@ -1,7 +1,9 @@
 import type Parser from "tree-sitter";
 
 /**
- * Find the class_body node within a class_declaration container.
+ * Find the class_body node within a class container. Works for both
+ * `class_declaration` and `abstract_class_declaration` (bd tea-rags-mcp-olc2)
+ * — both shapes nest a `class_body` child, so the lookup is type-agnostic.
  */
 export function findClassBody(containerNode: Parser.SyntaxNode): Parser.SyntaxNode | null {
   for (let i = 0; i < containerNode.namedChildCount; i++) {

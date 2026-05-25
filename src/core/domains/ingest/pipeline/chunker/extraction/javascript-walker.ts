@@ -34,6 +34,7 @@ export function extractFromJavascriptFile(input: JsExtractInput): FileExtraction
   const imports = collectJsImports(input.tree.rootNode);
   const calls = collectJsCalls(input.tree.rootNode);
   const classExtends = collectJsClassExtends(input.tree.rootNode);
+  const fileScope = collectJsDefinePropertySymbols(input.tree.rootNode);
   // Innermost-chunk attribution: assign each call to ONE chunk only — the
   // smallest containing range, ties broken by deeper scope length. Without
   // this guard, a call inside `class C { m() { foo() } }` lands on BOTH the
@@ -52,7 +53,7 @@ export function extractFromJavascriptFile(input: JsExtractInput): FileExtraction
     language: input.language,
     imports,
     chunks: byChunk,
-    fileScope: [],
+    fileScope,
   };
   if (classExtends.size > 0) {
     // Convert Map → Record so the field round-trips through the NDJSON
@@ -177,6 +178,108 @@ function collectJsCalls(root: Parser.SyntaxNode): CallRef[] {
     }
   });
   return out;
+}
+
+/**
+ * Collect accessor symbols declared via `Object.defineProperty` and
+ * `Object.defineProperties` (bd tea-rags-mcp-k05k). Express relies on this
+ * pattern heavily — `app.router`, `trustProxyDefaultSymbol`, etc. are defined
+ * as getters/setters on a prototype rather than as `method_definition`s, so
+ * without this pass they never enter `fileScope`, the codegraph has no node
+ * for them, and any call routed through the accessor is unresolvable.
+ *
+ * Two grammar shapes, both `call_expression` with a `member_expression`
+ * callee whose `.text` is `"Object.defineProperty"` / `"Object.defineProperties"`:
+ *
+ *   Object.defineProperty(receiver, 'name', { get, set })
+ *     arguments → [ <receiver-expr>, string('name'), object{ descriptor } ]
+ *
+ *   Object.defineProperties(receiver, { name: { get, set }, ... })
+ *     arguments → [ <receiver-expr>, object{ pair(name → object{descriptor}) } ]
+ *
+ * A descriptor counts as an accessor when it declares `get` or `set` either as
+ * a `pair` (`{ get: fn }`) or as a method shorthand `method_definition`
+ * (`{ get() {} }`). Data descriptors (`{ value, writable }`) declare a plain
+ * data property — no accessor symbol is emitted. The receiver text is taken
+ * verbatim from the first argument so qualified receivers (`app.proto`) stay
+ * intact; symbols are emitted as `<receiverText>.<propertyName>`.
+ *
+ * Computed property names (Symbol / variable keys) are skipped — they're not
+ * statically resolvable to a name.
+ */
+function collectJsDefinePropertySymbols(root: Parser.SyntaxNode): string[] {
+  const out: string[] = [];
+  walk(root, (node) => {
+    if (node.type !== "call_expression") return;
+    const callee = node.childForFieldName("function");
+    if (callee?.type !== "member_expression") return;
+    const calleeText = callee.text;
+    const isSingular = calleeText === "Object.defineProperty";
+    const isPlural = calleeText === "Object.defineProperties";
+    if (!isSingular && !isPlural) return;
+    const args = node.childForFieldName("arguments");
+    if (!args) return;
+    const argNodes = args.namedChildren;
+    const receiver = argNodes[0];
+    if (!receiver) return;
+    const receiverText = receiver.text;
+
+    if (isSingular) {
+      // arguments → [ receiver, string('name'), object{ descriptor } ]
+      const nameNode = argNodes[1];
+      if (nameNode?.type !== "string") return;
+      const propName = stripStringQuotes(nameNode);
+      if (!propName) return;
+      const descriptor = argNodes[2];
+      if (descriptor?.type !== "object") return;
+      if (descriptorHasAccessor(descriptor)) out.push(`${receiverText}.${propName}`);
+      return;
+    }
+
+    // Plural: arguments → [ receiver, object{ pair(name → descriptor) } ]
+    const propsObject = argNodes[1];
+    if (propsObject?.type !== "object") return;
+    for (const pair of propsObject.namedChildren) {
+      if (pair.type !== "pair") continue;
+      const keyNode = pair.childForFieldName("key");
+      if (!keyNode) continue;
+      const propName =
+        keyNode.type === "property_identifier"
+          ? keyNode.text
+          : keyNode.type === "string"
+            ? stripStringQuotes(keyNode)
+            : null;
+      if (!propName) continue;
+      const descriptor = pair.childForFieldName("value");
+      if (descriptor?.type !== "object") continue;
+      if (descriptorHasAccessor(descriptor)) out.push(`${receiverText}.${propName}`);
+    }
+  });
+  return out;
+}
+
+/**
+ * A property descriptor is an *accessor* descriptor when it declares a `get`
+ * or `set` member. Both grammar forms are recognised:
+ *   - `pair` with a `get`/`set` `property_identifier` key (`{ get: fn }`)
+ *   - `method_definition` named `get`/`set` (shorthand `{ get() {} }`)
+ */
+function descriptorHasAccessor(descriptor: Parser.SyntaxNode): boolean {
+  for (const member of descriptor.namedChildren) {
+    if (member.type === "pair") {
+      const key = member.childForFieldName("key");
+      if (key && (key.text === "get" || key.text === "set")) return true;
+    } else if (member.type === "method_definition") {
+      const name = member.childForFieldName("name");
+      if (name && (name.text === "get" || name.text === "set")) return true;
+    }
+  }
+  return false;
+}
+
+/** Strip the surrounding quotes from a `string` literal node. */
+function stripStringQuotes(stringNode: Parser.SyntaxNode): string {
+  return stringNode.text.replace(/^["']|["']$/g, "");
 }
 
 /**

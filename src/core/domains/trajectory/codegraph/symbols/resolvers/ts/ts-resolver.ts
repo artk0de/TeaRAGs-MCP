@@ -106,11 +106,55 @@ export class TSCallResolver implements CallResolver {
         }
       }
     }
+    // Typed-parameter receiver — `param.method()` where `param` is a
+    // function / method / arrow parameter the walker bound to a type in
+    // `ctx.localBindings` (bd tea-rags-mcp-x6ta). Resolve `<Type>#member`
+    // (instance) then `<Type>.member` (static) against the global symbol
+    // table. Consulted BEFORE the import-receiver pass so an unambiguous
+    // local type wins over the ambiguous short-name fallback that drops
+    // interface-typed calls when the caller imports every implementer.
+    // On miss, fall through to the existing passes — never fabricate an
+    // edge (mirrors the Go / Python `resolveByLocalType` contract).
     if (call.receiver) {
-      // First pass: basename-normalized compare. Catches the common
+      const boundType = ctx.localBindings?.[call.receiver];
+      if (boundType) {
+        const localHit = this.resolveByLocalType(boundType, call.member, ctx);
+        if (localHit) return localHit;
+      }
+    }
+    if (call.receiver) {
+      // First pass (bd tea-rags-mcp-2v16): EXACT named-specifier match.
+      // The walker records the local binding names each import introduces
+      // in `ImportRef.importedNames` (`import { RankModule } from "./m"` →
+      // `["RankModule"]`). When the receiver is one of those names we know
+      // its source module precisely — no filename heuristic needed. This
+      // supersedes the kebab→Pascal basename hack below for any import that
+      // carries `importedNames` (i.e. freshly re-indexed TS files), while
+      // the hack stays as a fallback for stale-index imports lacking the
+      // field. Within the matched file we still FQN-narrow (scope[-1] ===
+      // receiver) before short-name so multi-export modules pin the right
+      // class.
+      const named = ctx.imports.find((imp) => imp.importedNames?.includes(call.receiver as string));
+      if (named) {
+        const targetFile = mapImportToFile(named.importText, ctx.callerFile, this.tsOptions);
+        if (targetFile) {
+          const scopedCandidates = ctx.symbolTable
+            .lookupByShortName(call.member)
+            .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === call.receiver);
+          const scopedHit = pickSingleCandidate(scopedCandidates, this.mode);
+          if (scopedHit) return { targetRelPath: scopedHit.relPath, targetSymbolId: scopedHit.symbolId };
+          const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
+          const target = pickSingleCandidate(candidates, this.mode);
+          if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+          return { targetRelPath: targetFile, targetSymbolId: null };
+        }
+      }
+      // Second pass: basename-normalized compare. Catches the common
       // kebab-case → PascalCase TS naming convention (`rank-module.js`
       // → `RankModule`) by stripping extensions and non-alphanumeric
       // characters before case-folded equality (bd tea-rags-mcp-kiuw).
+      // Retained as a LOWER-PRECEDENCE fallback for imports that lack
+      // `importedNames` (stale index re-indexed before the field landed).
       const match = ctx.imports.find((imp) => importMatchesReceiver(imp.importText, call.receiver as string));
       if (match) {
         const targetFile = mapImportToFile(match.importText, ctx.callerFile, this.tsOptions);
@@ -121,7 +165,7 @@ export class TSCallResolver implements CallResolver {
           return { targetRelPath: targetFile, targetSymbolId: null };
         }
       }
-      // Second pass: symbol-table FQN narrowing (bd tea-rags-mcp-kiuw).
+      // Third pass: symbol-table FQN narrowing (bd tea-rags-mcp-kiuw).
       // When basename normalize fails (filename unrelated to class
       // name, multi-export file, arbitrary aliasing), discover the
       // owning file by treating the receiver itself as a symbol.
@@ -177,6 +221,32 @@ export class TSCallResolver implements CallResolver {
         if (narrowedHit) return { targetRelPath: narrowedHit.relPath, targetSymbolId: narrowedHit.symbolId };
       }
     }
+    return null;
+  }
+
+  /**
+   * Resolve a typed-receiver call (`param.member()` where `param` was
+   * bound to `typeName` by the walker's parameter-type tracking). Tries
+   * `typeName#member` (instance form) first, then `typeName.member`
+   * (static form). Returns `null` on miss — the caller then falls
+   * through to the import-receiver / short-name passes rather than
+   * fabricating an edge. Mirrors the Go / Python `resolveByLocalType`
+   * contract.
+   *
+   * When `typeName` is an interface with multiple implementations and no
+   * single indexed `typeName#member` definition (interfaces declare no
+   * method bodies that become symbols), `lookup` returns no candidate
+   * and this method returns `null`, deferring to the import-narrowed
+   * fallback (bd tea-rags-mcp-2qp6) which biases toward the concrete
+   * implementer the caller imports.
+   */
+  private resolveByLocalType(typeName: string, member: string, ctx: CallContext): ResolvedTarget | null {
+    const instanceCandidates = ctx.symbolTable.lookup(`${typeName}#${member}`);
+    const instanceHit = pickSingleCandidate(instanceCandidates, this.mode);
+    if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+    const staticCandidates = ctx.symbolTable.lookup(`${typeName}.${member}`);
+    const staticHit = pickSingleCandidate(staticCandidates, this.mode);
+    if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
     return null;
   }
 
