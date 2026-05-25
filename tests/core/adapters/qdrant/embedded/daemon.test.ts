@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildDaemonEnv,
@@ -12,6 +12,7 @@ import {
   gracefulKill,
   isDaemonAlive,
   isPidAlive,
+  makeReconnect,
   waitForDaemonReady,
 } from "../../../../../src/core/adapters/qdrant/embedded/daemon.js";
 
@@ -101,6 +102,56 @@ describe("isDaemonAlive", () => {
     const paths = getDaemonPaths(tempDir);
     writeFileSync(paths.pidFile, String(process.pid), "utf-8");
     expect(isDaemonAlive(paths)).toBe(true);
+  });
+});
+
+describe("makeReconnect", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "qdrant-reconnect-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("re-resolves by respawning when the daemon is dead", async () => {
+    const paths = getDaemonPaths(tempDir);
+    // No pid/port files written — daemon is gone (the rebuild/restart window).
+    const respawn = vi.fn().mockResolvedValue("http://127.0.0.1:55555");
+
+    const reconnect = makeReconnect(paths, 11111, respawn);
+    const url = await reconnect();
+
+    expect(respawn).toHaveBeenCalledOnce();
+    expect(url).toBe("http://127.0.0.1:55555");
+  });
+
+  it("returns the new URL without respawning when a live daemon moved ports", async () => {
+    const paths = getDaemonPaths(tempDir);
+    writeFileSync(paths.pidFile, String(process.pid), "utf-8"); // live daemon
+    writeFileSync(paths.portFile, "22222", "utf-8"); // moved from 11111
+    const respawn = vi.fn();
+
+    const reconnect = makeReconnect(paths, 11111, respawn);
+    const url = await reconnect();
+
+    expect(respawn).not.toHaveBeenCalled();
+    expect(url).toBe("http://127.0.0.1:22222");
+  });
+
+  it("returns null without respawning when a live daemon kept the same port", async () => {
+    const paths = getDaemonPaths(tempDir);
+    writeFileSync(paths.pidFile, String(process.pid), "utf-8"); // live daemon
+    writeFileSync(paths.portFile, "11111", "utf-8"); // unchanged
+    const respawn = vi.fn();
+
+    const reconnect = makeReconnect(paths, 11111, respawn);
+    const url = await reconnect();
+
+    expect(respawn).not.toHaveBeenCalled();
+    expect(url).toBeNull();
   });
 });
 

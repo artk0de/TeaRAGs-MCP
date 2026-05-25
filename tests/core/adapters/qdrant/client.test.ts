@@ -2611,6 +2611,22 @@ describe("QdrantManager", () => {
       expect(result).toEqual(["test"]);
     });
 
+    it("awaits an async reconnect that re-resolves to a respawned daemon", async () => {
+      // Embedded re-resolve respawns a fresh daemon — an async operation.
+      const reconnect = vi.fn().mockResolvedValue("http://127.0.0.1:88888");
+      const mgr = new QdrantManager("http://127.0.0.1:11111", undefined, reconnect);
+
+      mockClient.getCollections
+        .mockRejectedValueOnce(new Error("ECONNREFUSED"))
+        .mockResolvedValueOnce({ collections: [{ name: "respawned" }] });
+
+      const result = await mgr.listCollections();
+
+      expect(reconnect).toHaveBeenCalledOnce();
+      expect(mgr.url).toBe("http://127.0.0.1:88888");
+      expect(result).toEqual(["respawned"]);
+    });
+
     it("throws QdrantUnavailableError when reconnect returns null", async () => {
       const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
       const reconnect = vi.fn().mockReturnValue(null);
