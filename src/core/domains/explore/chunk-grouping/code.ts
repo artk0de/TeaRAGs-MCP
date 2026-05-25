@@ -22,8 +22,8 @@ function fileGit(chunk: ScrollChunk): Record<string, unknown> | undefined {
  * Extract the file-level codegraph branch from a chunk, stripped to
  * `{ symbols: { file } }` — mirrors fileGit. Codegraph signals are stored
  * nested as `codegraph.symbols.{file,chunk}` (Qdrant treats the dotted
- * EnrichmentApplier providerKey as a path; inner keys keep their literal
- * dotted form). The outline projection (find_symbol relativePath / class
+ * EnrichmentApplier providerKey as a path; inner keys are bare —
+ * tea-rags-mcp-k6xu). The outline projection (find_symbol relativePath / class
  * mode) rebuilds the payload from an allowlist, so without this the codegraph
  * section is silently dropped — tea-rags-mcp-0am0.
  */

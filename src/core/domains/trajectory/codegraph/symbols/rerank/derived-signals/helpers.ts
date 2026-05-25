@@ -2,12 +2,14 @@
  * Codegraph-specific payload accessors for derived signals.
  *
  * EnrichmentApplier writes codegraph signals with key `codegraph.symbols.file`
- * / `codegraph.symbols.chunk`. Qdrant interprets dotted keys as a path, so the
- * real on-disk shape is:
- *   { codegraph: { symbols: { file: { "codegraph.file.fanIn": N, ... } } } }
- * The inner keys keep their literal dotted form. These accessors read the
- * nested form first and fall back to flat (`raw["codegraph.file.X"]` at the
- * root) so unit tests can feed flat objects without restructuring.
+ * / `codegraph.symbols.chunk`. Qdrant interprets dotted keys as a path, and
+ * buildFileSignals/buildChunkSignals write BARE inner keys (tea-rags-mcp-k6xu),
+ * so the real on-disk shape is:
+ *   { codegraph: { symbols: { file: { fanIn: N, ... } } } }
+ * mirroring git's `payload.git.file.commitCount` shape. These accessors read
+ * the bare nested form first and fall back to the flat dotted form
+ * (`raw["codegraph.file.X"]` at the root) so unit tests can feed flat objects
+ * without restructuring.
  *
  * Mirrors the git helpers at
  * `src/core/domains/trajectory/git/rerank/derived-signals/helpers.ts`.
@@ -39,25 +41,23 @@ function readNested(scope: Record<string, unknown> | undefined, key: string): un
 
 /** Read a numeric `codegraph.file.<suffix>` value from nested or flat payload. */
 export function codegraphFileNum(payload: Record<string, unknown>, suffix: string): number {
-  const key = `codegraph.file.${suffix}`;
-  const nested = readNested(getSymbols(payload)?.file, key);
-  const raw = nested !== undefined ? nested : payload[key];
+  // Bare nested key first (production write path), then flat dotted fallback.
+  const nested = readNested(getSymbols(payload)?.file, suffix);
+  const raw = nested !== undefined ? nested : payload[`codegraph.file.${suffix}`];
   const n = Number(raw ?? 0);
   return Number.isNaN(n) ? 0 : n;
 }
 
 /** Read a boolean `codegraph.file.<suffix>` value from nested or flat payload. */
 export function codegraphFileBool(payload: Record<string, unknown>, suffix: string): boolean {
-  const key = `codegraph.file.${suffix}`;
-  const nested = readNested(getSymbols(payload)?.file, key);
-  return (nested !== undefined ? nested : payload[key]) === true;
+  const nested = readNested(getSymbols(payload)?.file, suffix);
+  return (nested !== undefined ? nested : payload[`codegraph.file.${suffix}`]) === true;
 }
 
 /** Read a numeric `codegraph.chunk.<suffix>` value from nested or flat payload. */
 export function codegraphChunkNum(payload: Record<string, unknown>, suffix: string): number {
-  const key = `codegraph.chunk.${suffix}`;
-  const nested = readNested(getSymbols(payload)?.chunk, key);
-  const raw = nested !== undefined ? nested : payload[key];
+  const nested = readNested(getSymbols(payload)?.chunk, suffix);
+  const raw = nested !== undefined ? nested : payload[`codegraph.chunk.${suffix}`];
   const n = Number(raw ?? 0);
   return Number.isNaN(n) ? 0 : n;
 }

@@ -58,7 +58,7 @@ describe("TrajectoryRegistry.buildMergedFilter", () => {
       expect(filter).toEqual({
         must: [
           {
-            key: "codegraph.symbols.chunk.codegraph.chunk.fanOut",
+            key: "codegraph.symbols.chunk.fanOut",
             range: { gte: 3 },
           },
         ],
@@ -71,7 +71,7 @@ describe("TrajectoryRegistry.buildMergedFilter", () => {
       expect(filter).toEqual({
         must: [
           {
-            key: "codegraph.symbols.file.codegraph.file.connectionCount",
+            key: "codegraph.symbols.file.connectionCount",
             range: { gte: 5 },
           },
         ],
@@ -84,7 +84,7 @@ describe("TrajectoryRegistry.buildMergedFilter", () => {
       expect(filter).toEqual({
         must: [
           {
-            key: "codegraph.symbols.file.codegraph.file.isHub",
+            key: "codegraph.symbols.file.isHub",
             match: { value: true },
           },
         ],

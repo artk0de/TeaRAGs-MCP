@@ -569,16 +569,17 @@ export class Reranker {
   /**
    * Build a sibling-values map from the RAW payload at a given scope.
    * Handles all trajectory payload shapes:
-   *   • Git nested:        payload.git.{scope}.{signalName}        (bare keys)
-   *   • Git flat:          payload["git.{scope}.{signalName}"]     (Qdrant flattened)
-   *   • Codegraph nested:  payload.codegraph.symbols.{scope}["codegraph.{scope}.{signalName}"]
+   *   • Git nested:        payload.git.{scope}.{signalName}              (bare keys)
+   *   • Git flat:          payload["git.{scope}.{signalName}"]           (Qdrant flattened)
+   *   • Codegraph nested:  payload.codegraph.symbols.{scope}.{signalName} (bare keys, k6xu)
    *   • Codegraph flat:    payload["codegraph.{scope}.{signalName}"]
    * Returns bare-name keys (`commitCount`, `connectionCount`, not the
    * fully-qualified payload key) so `SignalConfidence.support` resolves
    * directly via same-scope lookup, regardless of which trajectory owns
    * the support sibling. Codegraph's nested form (tea-rags-mcp-0am0) was
-   * invisible before this fix because EnrichmentApplier writes signals
-   * under providerKey `codegraph.symbols` with literal dotted inner keys.
+   * invisible before that fix because EnrichmentApplier writes signals under
+   * providerKey `codegraph.symbols`; inner keys are now BARE (tea-rags-mcp-k6xu),
+   * mirroring git's nested shape.
    */
   private collectScopeSiblings(
     rawPayload: Record<string, unknown> | undefined,
@@ -598,18 +599,17 @@ export class Reranker {
       }
     }
 
-    // Codegraph nested format: payload.codegraph.symbols.{scope}["codegraph.{scope}.<bareKey>"]
+    // Codegraph nested format: payload.codegraph.symbols.{scope}.<bareKey>
+    // (tea-rags-mcp-k6xu — inner keys are bare, like git's nested shape).
     const { codegraph } = rawPayload as { codegraph?: unknown };
     if (codegraph && typeof codegraph === "object") {
       const { symbols } = codegraph as Record<string, unknown>;
       if (symbols && typeof symbols === "object") {
         const scoped = (symbols as Record<string, unknown>)[scope];
         if (scoped && typeof scoped === "object") {
-          const cgPrefix = `codegraph.${scope}.`;
           for (const [k, v] of Object.entries(scoped as Record<string, unknown>)) {
             if (typeof v !== "number") continue;
-            const bare = k.startsWith(cgPrefix) ? k.slice(cgPrefix.length) : k;
-            if (!(bare in out)) out[bare] = v;
+            if (!(k in out)) out[k] = v;
           }
         }
       }

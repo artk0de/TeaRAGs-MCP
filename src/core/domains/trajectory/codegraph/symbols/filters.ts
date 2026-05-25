@@ -2,39 +2,40 @@
  * Codegraph filter descriptors — typed filter params backed by the codegraph
  * payload signals (Slice 1 + Slice 2 + connectionCount/instability confidence).
  *
- * Why the long Qdrant keys (`codegraph.symbols.${level}.codegraph.${level}.X`):
+ * Why the nested Qdrant keys (`codegraph.symbols.${level}.X`):
  * `EnrichmentApplier` writes codegraph signals via `batchSetPayload` with
  * `key: "codegraph.symbols.${level}"` (see
  * `src/core/domains/ingest/pipeline/enrichment/applier.ts:122-124`). Qdrant
  * interprets dotted keys as nested-path navigation, so on disk the payload
- * lives under `codegraph -> symbols -> ${level}`. The inner property names keep
- * their literal dotted form (`codegraph.${level}.fanIn`, …) — they were chosen
- * up-front to disambiguate file-scope vs chunk-scope siblings in the same
- * descriptor space, and that prefix survives the write. The full addressable
- * Qdrant path is therefore the outer nesting path concatenated with the inner
- * dotted key, which is the value passed as `key:` on each `toCondition`
- * result here.
+ * lives under `codegraph -> symbols -> ${level}`. The inner property names are
+ * BARE (`fanIn`, `instability`, …) — buildFileSignals/buildChunkSignals write
+ * them without a `codegraph.${level}.` prefix (tea-rags-mcp-k6xu), mirroring
+ * git's `git.file.commitCount` bare-key shape. The full addressable Qdrant path
+ * is therefore `codegraph.symbols.${level}.${suffix}` — a single prefix — which
+ * Qdrant filters can resolve. (The pre-k6xu duplicated prefix produced a
+ * literal dotted leaf that no filter path could reach: every codegraph filter
+ * returned 0.)
  *
- * Users of typed filters never see the long form: they pass `minFanIn: 3`
- * and the descriptor below translates to the right Qdrant key per-level.
- * Documented in `tea-rags://schema/filters`. bd tea-rags-mcp-tr5k.
+ * Users of typed filters never see the path: they pass `minFanIn: 3` and the
+ * descriptor below translates to the right Qdrant key per-level.
+ * Documented in `tea-rags://schema/filters`. bd tea-rags-mcp-tr5k + k6xu.
  */
 
 import type { FilterDescriptor, FilterLevel } from "../../../../contracts/types/provider.js";
 
 /** Build the nested Qdrant key for a level-aware codegraph payload signal. */
 function levelKey(level: FilterLevel, suffix: string): string {
-  return `codegraph.symbols.${level}.codegraph.${level}.${suffix}`;
+  return `codegraph.symbols.${level}.${suffix}`;
 }
 
 /** Build the nested Qdrant key for a file-only codegraph payload signal. */
 function fileKey(suffix: string): string {
-  return `codegraph.symbols.file.codegraph.file.${suffix}`;
+  return `codegraph.symbols.file.${suffix}`;
 }
 
 /** Build the nested Qdrant key for a chunk-only codegraph payload signal. */
 function chunkKey(suffix: string): string {
-  return `codegraph.symbols.chunk.codegraph.chunk.${suffix}`;
+  return `codegraph.symbols.chunk.${suffix}`;
 }
 
 export const codegraphFilters: FilterDescriptor[] = [

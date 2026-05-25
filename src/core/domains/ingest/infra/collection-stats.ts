@@ -29,29 +29,31 @@ const MIN_LANGUAGE_SHARE = 0.05;
  * Read a value from a nested object using dot-notation path.
  * Returns undefined if any segment is missing.
  *
- * Codegraph nested form (tea-rags-mcp-0am0): EnrichmentApplier writes
+ * Codegraph nested form (tea-rags-mcp-0am0 + k6xu): EnrichmentApplier writes
  * codegraph signals under providerKey `codegraph.symbols`, which Qdrant
- * interprets as a path. Inner keys retain their literal dotted form, so
- * the real on-disk shape is:
- *   { codegraph: { symbols: { file: { "codegraph.file.fanIn": N } } } }
- * For `codegraph.{file|chunk}.<key>` paths we first try the nested-symbols
- * form (matches production), then fall back to the literal traversal so
- * test fixtures that feed flat or alternate shapes still work.
+ * interprets as a path. Inner keys are BARE (tea-rags-mcp-k6xu), so the
+ * real on-disk shape is:
+ *   { codegraph: { symbols: { file: { fanIn: N } } } }
+ * The logical descriptor key is `codegraph.{file|chunk}.<bareKey>`; we map it
+ * to the nested-symbols form `codegraph.symbols.{scope}.<bareKey>` (matches
+ * production), then fall back to the literal traversal so test fixtures that
+ * feed flat or alternate shapes still work.
  */
 function readPayloadPath(payload: Record<string, unknown>, path: string): unknown {
   // Try flat key first (Qdrant stores dot-notation paths as flat keys)
   if (path in payload) return payload[path];
 
-  // Codegraph nested-symbols form: payload.codegraph.symbols.{scope}["codegraph.{scope}.<key>"]
-  const cgMatch = /^codegraph\.(file|chunk)\./.exec(path);
+  // Codegraph nested-symbols form: payload.codegraph.symbols.{scope}.<bareKey>
+  const cgMatch = /^codegraph\.(file|chunk)\.(.+)$/.exec(path);
   if (cgMatch) {
     const { codegraph } = payload as { codegraph?: unknown };
     if (codegraph && typeof codegraph === "object") {
       const { symbols } = codegraph as { symbols?: unknown };
       if (symbols && typeof symbols === "object") {
         const scoped = (symbols as Record<string, unknown>)[cgMatch[1]];
-        if (scoped && typeof scoped === "object" && path in (scoped as Record<string, unknown>)) {
-          return (scoped as Record<string, unknown>)[path];
+        const bareKey = cgMatch[2];
+        if (scoped && typeof scoped === "object" && bareKey in (scoped as Record<string, unknown>)) {
+          return (scoped as Record<string, unknown>)[bareKey];
         }
       }
     }

@@ -1044,20 +1044,27 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // small files (early-empty); on hub files the DuckDB recursive
       // CTE handles up to ~thousands of ancestors comfortably.
       const transitiveImpact = await graphDb.getTransitiveImpact(relPath);
+      // Bare inner keys (tea-rags-mcp-k6xu). EnrichmentApplier writes this
+      // overlay under providerKey `codegraph.symbols.file`, which Qdrant
+      // resolves as a path. Bare keys mean the on-disk shape is
+      // `codegraph.symbols.file.fanIn` (single prefix), natively addressable
+      // by Qdrant filters — mirroring git's `git.file.commitCount`. A dotted
+      // inner key would produce a literal leaf `"codegraph.file.fanIn"` that
+      // Qdrant cannot reach via a filter path.
       result.set(relPath, {
-        "codegraph.file.fanIn": fanIn,
-        "codegraph.file.fanOut": fanOut,
-        "codegraph.file.instability": denom === 0 ? 0 : fanOut / denom,
+        fanIn,
+        fanOut,
+        instability: denom === 0 ? 0 : fanOut / denom,
         // Support signal for instability.confidence — derived inline so
         // bytes hit Qdrant in the same payload as fanIn/fanOut.
-        "codegraph.file.connectionCount": denom,
+        connectionCount: denom,
         // isHub = fanIn above the collection-wide p95. Computed here at
         // index time (p95 queried once above against the full graph), so
         // the persisted payload boolean is truthful. IsHubSignal reads
         // this boolean verbatim — there is no rerank-time finalisation.
-        "codegraph.file.isHub": fanIn > fanInP95,
-        "codegraph.file.isLeaf": fanOut === 0 && fanIn > 0,
-        "codegraph.file.transitiveImpact": transitiveImpact,
+        isHub: fanIn > fanInP95,
+        isLeaf: fanOut === 0 && fanIn > 0,
+        transitiveImpact,
       });
     }
     return result;
@@ -1289,10 +1296,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // before recompute completes, or non-TS chunks without
         // extraction edges).
         const pageRankValue = await graphDb.getPageRank(symbolId);
+        // Bare inner keys (tea-rags-mcp-k6xu) — written under providerKey
+        // `codegraph.symbols.chunk`, so the addressable path is
+        // `codegraph.symbols.chunk.fanIn`. See buildFileSignals for rationale.
         perChunk.set(entry.chunkId, {
-          "codegraph.chunk.fanIn": fanIn,
-          "codegraph.chunk.fanOut": fanOut,
-          "codegraph.chunk.pageRank": pageRankValue,
+          fanIn,
+          fanOut,
+          pageRank: pageRankValue,
         });
       }
       out.set(relPath, perChunk);

@@ -80,8 +80,8 @@ describe("codegraph derived signals", () => {
       codegraph: {
         symbols: {
           file: {
-            "codegraph.file.instability": 1.0,
-            "codegraph.file.connectionCount": 1,
+            instability: 1.0,
+            connectionCount: 1,
           },
         },
       },
@@ -232,15 +232,14 @@ describe("codegraph derived signals", () => {
     });
   });
 
-  // Nested-payload regression suite (tea-rags-mcp-5ajg).
+  // Nested-payload regression suite (tea-rags-mcp-5ajg + tea-rags-mcp-k6xu).
   //
   // EnrichmentApplier writes codegraph signals via batchSetPayload with
   // key = "codegraph.symbols.file" / "codegraph.symbols.chunk", which Qdrant
-  // interprets as a path. Inner keys keep their literal dotted form, so the
-  // real on-disk payload looks like:
-  //   { codegraph: { symbols: { file: { "codegraph.file.fanIn": 5, ... } } } }
-  // Before the helper migration, derived signals read raw["codegraph.file.X"]
-  // at the root of the payload — always undefined → scored 0 in production.
+  // interprets as a path. buildFileSignals/buildChunkSignals now write BARE
+  // inner keys (tea-rags-mcp-k6xu), so the real on-disk payload looks like:
+  //   { codegraph: { symbols: { file: { fanIn: 5, ... } } } }
+  // mirroring git's bare-key shape. Derived signals read the bare nested form.
   describe("nested payload shape (real Qdrant write path)", () => {
     // connectionCount is always written by buildFileSignals (denom = fanIn+fanOut).
     // Set to 25 here (>> FALLBACK_K=5) so InstabilitySignal confidence dampening
@@ -249,18 +248,18 @@ describe("codegraph derived signals", () => {
       codegraph: {
         symbols: {
           file: {
-            "codegraph.file.fanIn": 10,
-            "codegraph.file.fanOut": 15,
-            "codegraph.file.instability": 0.42,
-            "codegraph.file.connectionCount": 25,
-            "codegraph.file.isHub": true,
-            "codegraph.file.isLeaf": false,
-            "codegraph.file.transitiveImpact": 25,
+            fanIn: 10,
+            fanOut: 15,
+            instability: 0.42,
+            connectionCount: 25,
+            isHub: true,
+            isLeaf: false,
+            transitiveImpact: 25,
           },
           chunk: {
-            "codegraph.chunk.fanIn": 20,
-            "codegraph.chunk.fanOut": 15,
-            "codegraph.chunk.pageRank": 0.005,
+            fanIn: 20,
+            fanOut: 15,
+            pageRank: 0.005,
           },
         },
       },

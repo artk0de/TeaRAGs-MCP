@@ -780,13 +780,13 @@ describe("computeCollectionStats distributions", () => {
   // ---------------------------------------------------------------------------
   //
   // EnrichmentApplier writes codegraph file-level signals under providerKey
-  // "codegraph.symbols" — Qdrant treats the dotted key as a path, so the
+  // "codegraph.symbols" — Qdrant treats the dotted key as a path, and
+  // buildFileSignals now writes BARE inner keys (tea-rags-mcp-k6xu), so the
   // on-disk shape is:
-  //   { codegraph: { symbols: { file: { "codegraph.file.fanIn": N, ... } } } }
-  // Before this fix, readPayloadPath only walked literal dotted segments
-  // (payload.codegraph.file.fanIn) and missed the actual nested form, so
-  // codegraph signals never received percentile entries and
-  // IndexMetricsQuery silently skipped them.
+  //   { codegraph: { symbols: { file: { fanIn: N, ... } } } }
+  // readPayloadPath maps the logical descriptor key `codegraph.file.fanIn` to
+  // the nested bare form `codegraph.symbols.file.fanIn`, so codegraph signals
+  // receive percentile entries and IndexMetricsQuery surfaces them.
   describe("codegraph nested payload", () => {
     function makeCodegraphPoint(
       fanIn: number,
@@ -803,8 +803,8 @@ describe("computeCollectionStats distributions", () => {
           codegraph: {
             symbols: {
               file: {
-                "codegraph.file.fanIn": fanIn,
-                "codegraph.file.connectionCount": fanIn + 1,
+                fanIn,
+                connectionCount: fanIn + 1,
               },
             },
           },

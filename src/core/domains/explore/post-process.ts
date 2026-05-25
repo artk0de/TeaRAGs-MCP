@@ -266,10 +266,10 @@ export function filterMetaOnly(
     // metaOnly mode need codegraph signals (fanIn/fanOut/instability/...)
     // visible alongside git, otherwise the architectural-hub/blastRadius
     // surfaces show only git-side context. The codegraph payload lives at
-    // payload.codegraph.symbols.{file,chunk} with literal dotted inner keys
-    // (Qdrant flattening of the `codegraph.symbols` providerKey path); we
-    // forward the whole nested branch unchanged so consumers see the same
-    // shape they would observe without metaOnly.
+    // payload.codegraph.symbols.{file,chunk} with bare inner keys
+    // (tea-rags-mcp-k6xu — Qdrant resolves the `codegraph.symbols` providerKey
+    // path); we forward the whole nested branch unchanged so consumers see the
+    // same shape they would observe without metaOnly.
     const codegraph = r.payload?.codegraph;
     if (codegraph && typeof codegraph === "object") {
       meta.codegraph = codegraph;

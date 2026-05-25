@@ -27,31 +27,33 @@ type IndexSchema = "keyword" | "integer" | "float" | "bool";
  * Codegraph filterable payload paths that need a Qdrant field index so the
  * typed filter params (`minFanIn`, `isHub`, …) actually match at query time.
  *
- * The codegraph payload is DOUBLE-nested: `EnrichmentApplier` writes signals
- * via `batchSetPayload` with `key: "codegraph.symbols.{file,chunk}"`, and each
- * leaf keeps its literal dotted name (`codegraph.{level}.X`). Qdrant treats
- * dotted keys as nested-path navigation, so on disk the value lives at
- * `codegraph -> symbols -> {file|chunk} -> "codegraph.{level}.X"`. The full
- * addressable field path is therefore the concatenation below.
+ * The codegraph payload is nested: `EnrichmentApplier` writes signals via
+ * `batchSetPayload` with `key: "codegraph.symbols.{file,chunk}"`, and each leaf
+ * is a BARE name (`fanIn`, `isHub`, …) — buildFileSignals/buildChunkSignals
+ * write them without a `codegraph.{level}.` prefix (tea-rags-mcp-k6xu). Qdrant
+ * treats dotted keys as nested-path navigation, so on disk the value lives at
+ * `codegraph -> symbols -> {file|chunk} -> X`. The addressable field path is
+ * therefore `codegraph.symbols.{level}.X` — a single prefix.
  *
  * These strings MUST stay byte-identical to the `key:` values emitted by
  * `codegraphFilters` (src/core/domains/trajectory/codegraph/symbols/filters.ts)
  * — the index path and the filter path must match exactly or Qdrant never uses
- * the index and the filter returns zero results (bd tea-rags-mcp-6yb8). The
- * adapter layer cannot import the domain descriptors (domain-boundaries rule),
- * so the list is mirrored here; keep both in lockstep when adding a signal.
+ * the index and the filter returns zero results (bd tea-rags-mcp-6yb8 +
+ * tea-rags-mcp-k6xu). The adapter layer cannot import the domain descriptors
+ * (domain-boundaries rule), so the list is mirrored here; keep both in lockstep
+ * when adding a signal OR changing the inner-key shape.
  */
 const CODEGRAPH_FILTER_INDEXES: readonly { readonly path: string; readonly schema: IndexSchema }[] = [
-  { path: "codegraph.symbols.file.codegraph.file.fanIn", schema: "integer" },
-  { path: "codegraph.symbols.file.codegraph.file.fanOut", schema: "integer" },
-  { path: "codegraph.symbols.file.codegraph.file.connectionCount", schema: "integer" },
-  { path: "codegraph.symbols.file.codegraph.file.transitiveImpact", schema: "integer" },
-  { path: "codegraph.symbols.file.codegraph.file.instability", schema: "float" },
-  { path: "codegraph.symbols.file.codegraph.file.isHub", schema: "bool" },
-  { path: "codegraph.symbols.file.codegraph.file.isLeaf", schema: "bool" },
-  { path: "codegraph.symbols.chunk.codegraph.chunk.fanIn", schema: "integer" },
-  { path: "codegraph.symbols.chunk.codegraph.chunk.fanOut", schema: "integer" },
-  { path: "codegraph.symbols.chunk.codegraph.chunk.pageRank", schema: "float" },
+  { path: "codegraph.symbols.file.fanIn", schema: "integer" },
+  { path: "codegraph.symbols.file.fanOut", schema: "integer" },
+  { path: "codegraph.symbols.file.connectionCount", schema: "integer" },
+  { path: "codegraph.symbols.file.transitiveImpact", schema: "integer" },
+  { path: "codegraph.symbols.file.instability", schema: "float" },
+  { path: "codegraph.symbols.file.isHub", schema: "bool" },
+  { path: "codegraph.symbols.file.isLeaf", schema: "bool" },
+  { path: "codegraph.symbols.chunk.fanIn", schema: "integer" },
+  { path: "codegraph.symbols.chunk.fanOut", schema: "integer" },
+  { path: "codegraph.symbols.chunk.pageRank", schema: "float" },
 ];
 
 /**

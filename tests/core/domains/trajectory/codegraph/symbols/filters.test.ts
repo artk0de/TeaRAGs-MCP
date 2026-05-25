@@ -5,11 +5,11 @@
  * params and that each `toCondition` translates the logical param name to the
  * actual nested Qdrant payload path created by EnrichmentApplier (see
  * `src/core/domains/ingest/pipeline/enrichment/applier.ts:122-124` — payload is
- * written under `key: "codegraph.symbols.${level}"`, and inner keys keep their
- * literal dotted form, so the addressable Qdrant path is
- * `codegraph.symbols.${level}.codegraph.${level}.<suffix>`).
+ * written under `key: "codegraph.symbols.${level}"` with BARE inner keys
+ * (tea-rags-mcp-k6xu), so the addressable Qdrant path is
+ * `codegraph.symbols.${level}.<suffix>`).
  *
- * bd tea-rags-mcp-tr5k.
+ * bd tea-rags-mcp-tr5k + tea-rags-mcp-k6xu.
  */
 import { describe, expect, it } from "vitest";
 
@@ -44,22 +44,22 @@ describe("codegraph filter descriptors", () => {
   describe("level-aware fanIn/fanOut filters", () => {
     it("minFanIn defaults to file level", () => {
       const result = findFilter("minFanIn").toCondition(3);
-      expect(result.must).toEqual([{ key: "codegraph.symbols.file.codegraph.file.fanIn", range: { gte: 3 } }]);
+      expect(result.must).toEqual([{ key: "codegraph.symbols.file.fanIn", range: { gte: 3 } }]);
     });
 
     it("minFanIn respects chunk level", () => {
       const result = findFilter("minFanIn").toCondition(3, "chunk");
-      expect(result.must).toEqual([{ key: "codegraph.symbols.chunk.codegraph.chunk.fanIn", range: { gte: 3 } }]);
+      expect(result.must).toEqual([{ key: "codegraph.symbols.chunk.fanIn", range: { gte: 3 } }]);
     });
 
     it("minFanOut defaults to file level", () => {
       const result = findFilter("minFanOut").toCondition(5);
-      expect(result.must).toEqual([{ key: "codegraph.symbols.file.codegraph.file.fanOut", range: { gte: 5 } }]);
+      expect(result.must).toEqual([{ key: "codegraph.symbols.file.fanOut", range: { gte: 5 } }]);
     });
 
     it("minFanOut respects chunk level", () => {
       const result = findFilter("minFanOut").toCondition(5, "chunk");
-      expect(result.must).toEqual([{ key: "codegraph.symbols.chunk.codegraph.chunk.fanOut", range: { gte: 5 } }]);
+      expect(result.must).toEqual([{ key: "codegraph.symbols.chunk.fanOut", range: { gte: 5 } }]);
     });
   });
 
@@ -68,7 +68,7 @@ describe("codegraph filter descriptors", () => {
       const result = findFilter("minPageRank").toCondition(0.001);
       expect(result.must).toEqual([
         {
-          key: "codegraph.symbols.chunk.codegraph.chunk.pageRank",
+          key: "codegraph.symbols.chunk.pageRank",
           range: { gte: 0.001 },
         },
       ]);
@@ -80,7 +80,7 @@ describe("codegraph filter descriptors", () => {
       const result = findFilter("minInstability").toCondition(0.5);
       expect(result.must).toEqual([
         {
-          key: "codegraph.symbols.file.codegraph.file.instability",
+          key: "codegraph.symbols.file.instability",
           range: { gte: 0.5 },
         },
       ]);
@@ -90,7 +90,7 @@ describe("codegraph filter descriptors", () => {
       const result = findFilter("minTransitiveImpact").toCondition(10);
       expect(result.must).toEqual([
         {
-          key: "codegraph.symbols.file.codegraph.file.transitiveImpact",
+          key: "codegraph.symbols.file.transitiveImpact",
           range: { gte: 10 },
         },
       ]);
@@ -100,7 +100,7 @@ describe("codegraph filter descriptors", () => {
       const result = findFilter("minConnectionCount").toCondition(5);
       expect(result.must).toEqual([
         {
-          key: "codegraph.symbols.file.codegraph.file.connectionCount",
+          key: "codegraph.symbols.file.connectionCount",
           range: { gte: 5 },
         },
       ]);
@@ -112,7 +112,7 @@ describe("codegraph filter descriptors", () => {
       const result = findFilter("isHub").toCondition(true);
       expect(result.must).toEqual([
         {
-          key: "codegraph.symbols.file.codegraph.file.isHub",
+          key: "codegraph.symbols.file.isHub",
           match: { value: true },
         },
       ]);
@@ -122,7 +122,7 @@ describe("codegraph filter descriptors", () => {
       const result = findFilter("isHub").toCondition(false);
       expect(result.must).toEqual([
         {
-          key: "codegraph.symbols.file.codegraph.file.isHub",
+          key: "codegraph.symbols.file.isHub",
           match: { value: false },
         },
       ]);
@@ -132,7 +132,7 @@ describe("codegraph filter descriptors", () => {
       const result = findFilter("isLeaf").toCondition(true);
       expect(result.must).toEqual([
         {
-          key: "codegraph.symbols.file.codegraph.file.isLeaf",
+          key: "codegraph.symbols.file.isLeaf",
           match: { value: true },
         },
       ]);

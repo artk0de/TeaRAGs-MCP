@@ -298,21 +298,21 @@ describe("CodegraphEnrichmentProvider", () => {
       paths: ["src/leaf.ts", "src/main.ts"],
     });
     const leafOverlay = overlays.get("src/leaf.ts");
-    expect(leafOverlay?.["codegraph.file.fanIn"]).toBe(1);
-    expect(leafOverlay?.["codegraph.file.isLeaf"]).toBe(true);
+    expect(leafOverlay?.["fanIn"]).toBe(1);
+    expect(leafOverlay?.["isLeaf"]).toBe(true);
     // btl8: connectionCount = fanIn + fanOut, support signal for instability
     // confidence — written inline by buildFileSignals so no extra DB call.
-    expect(leafOverlay?.["codegraph.file.connectionCount"]).toBe(1);
+    expect(leafOverlay?.["connectionCount"]).toBe(1);
     const mainOverlay = overlays.get("src/main.ts");
-    expect(mainOverlay?.["codegraph.file.fanOut"]).toBe(1);
-    expect(mainOverlay?.["codegraph.file.instability"]).toBeCloseTo(1, 5);
-    expect(mainOverlay?.["codegraph.file.connectionCount"]).toBe(1);
+    expect(mainOverlay?.["fanOut"]).toBe(1);
+    expect(mainOverlay?.["instability"]).toBeCloseTo(1, 5);
+    expect(mainOverlay?.["connectionCount"]).toBe(1);
     // isHub is computed at index time against collection p95 of fanIn.
     // Distribution here is [leaf=1, main=0] → p95 = 0.95. main (fanIn=0)
     // is not above p95, so it is not a hub.
-    expect(mainOverlay?.["codegraph.file.isHub"]).toBe(false);
+    expect(mainOverlay?.["isHub"]).toBe(false);
     // leaf has fanIn=1 > p95(0.95) → it IS the hub of this tiny graph.
-    expect(leafOverlay?.["codegraph.file.isHub"]).toBe(true);
+    expect(leafOverlay?.["isHub"]).toBe(true);
   });
 
   it("buildFileSignals marks the high-fanIn file isHub:true and low-fanIn files isHub:false (collection p95)", async () => {
@@ -361,12 +361,12 @@ describe("CodegraphEnrichmentProvider", () => {
     });
 
     // Sanity on the distribution before asserting the derived boolean.
-    expect(overlays.get("src/hub.ts")?.["codegraph.file.fanIn"]).toBe(5);
-    expect(overlays.get("src/mild.ts")?.["codegraph.file.fanIn"]).toBe(1);
+    expect(overlays.get("src/hub.ts")?.["fanIn"]).toBe(5);
+    expect(overlays.get("src/mild.ts")?.["fanIn"]).toBe(1);
 
-    expect(overlays.get("src/hub.ts")?.["codegraph.file.isHub"]).toBe(true);
-    expect(overlays.get("src/mild.ts")?.["codegraph.file.isHub"]).toBe(false);
-    expect(overlays.get("src/b.ts")?.["codegraph.file.isHub"]).toBe(false);
+    expect(overlays.get("src/hub.ts")?.["isHub"]).toBe(true);
+    expect(overlays.get("src/mild.ts")?.["isHub"]).toBe(false);
+    expect(overlays.get("src/b.ts")?.["isHub"]).toBe(false);
   });
 
   it("resolveRoot is identity — the slice scans the literal absolute path it is given", () => {
@@ -664,7 +664,7 @@ describe("CodegraphEnrichmentProvider", () => {
       // walked + extracted. b.md is reported with zero-valued signals.
       expect(overlays.has("src/a.ts")).toBe(true);
       expect(overlays.has("src/b.md")).toBe(true);
-      expect(overlays.get("src/b.md")?.["codegraph.file.fanIn"]).toBe(0);
+      expect(overlays.get("src/b.md")?.["fanIn"]).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -781,8 +781,8 @@ describe("CodegraphEnrichmentProvider", () => {
         paths: ["src/ok.ts", "src/missing.ts"],
       });
       expect(overlays.size).toBe(2);
-      expect(overlays.get("src/ok.ts")?.["codegraph.file.fanIn"]).toBe(0);
-      expect(overlays.get("src/missing.ts")?.["codegraph.file.fanIn"]).toBe(0);
+      expect(overlays.get("src/ok.ts")?.["fanIn"]).toBe(0);
+      expect(overlays.get("src/missing.ts")?.["fanIn"]).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -825,9 +825,9 @@ describe("CodegraphEnrichmentProvider", () => {
     ]);
     const overlays = await provider.buildChunkSignals("/", chunkMap);
     const main = overlays.get("src/main.ts")?.get("chunk-main");
-    expect(main?.["codegraph.chunk.fanOut"]).toBe(1);
+    expect(main?.["fanOut"]).toBe(1);
     const fooBar = overlays.get("src/foo.ts")?.get("chunk-foo-bar");
-    expect(fooBar?.["codegraph.chunk.fanIn"]).toBe(1);
+    expect(fooBar?.["fanIn"]).toBe(1);
   });
 
   // Slice 1 — resolveChunkSymbolId containment fallback. When the
@@ -885,8 +885,8 @@ describe("CodegraphEnrichmentProvider", () => {
     const head = overlays.get("src/big.ts")?.get("chunk-head");
     const tail = overlays.get("src/big.ts")?.get("chunk-tail");
     // Both head and tail must resolve to Big.method → same fanIn=1.
-    expect(head?.["codegraph.chunk.fanIn"]).toBe(1);
-    expect(tail?.["codegraph.chunk.fanIn"]).toBe(1);
+    expect(head?.["fanIn"]).toBe(1);
+    expect(tail?.["fanIn"]).toBe(1);
   });
 
   // resolveChunkSymbolId's `if (!lineMap) return undefined` branch fires

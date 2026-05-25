@@ -2512,11 +2512,12 @@ describe("scoreResults (private phase)", () => {
 //
 // The label resolver (`Reranker.applyLabelResolution`) reads sibling values
 // from the RAW payload to feed `SignalConfidence.support` lookups. Before
-// this fix, the helper only walked `payload.git.{scope}.*` — codegraph
-// signals stored under `payload.codegraph.symbols.{scope}.<dotted-keys>`
-// were invisible, so any confidence clamp against a codegraph sibling
-// (e.g. InstabilitySignal.confidence.support = "connectionCount") silently
-// fell back to `rule.fallback`.
+// 0am0 the helper only walked `payload.git.{scope}.*` — codegraph signals
+// stored under `payload.codegraph.symbols.{scope}.*` were invisible, so any
+// confidence clamp against a codegraph sibling (e.g.
+// InstabilitySignal.confidence.support = "connectionCount") silently fell
+// back to `rule.fallback`. Inner keys are now BARE (tea-rags-mcp-k6xu),
+// mirroring git's `payload.git.{scope}.{name}` shape.
 describe("collectScopeSiblings — multi-trajectory sibling lookup", () => {
   const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
 
@@ -2534,18 +2535,18 @@ describe("collectScopeSiblings — multi-trajectory sibling lookup", () => {
     expect(out.ageDays).toBe(30);
   });
 
-  it("reads dotted-inner-key siblings from nested payload.codegraph.symbols.file", () => {
+  it("reads bare-key siblings from nested payload.codegraph.symbols.file", () => {
     // Real on-disk shape produced by EnrichmentApplier writing under
     // providerKey "codegraph.symbols" — Qdrant resolves the dotted key as
-    // a path, leaving inner keys in literal `codegraph.file.X` form.
+    // a path, and buildFileSignals writes BARE inner keys (tea-rags-mcp-k6xu).
     const payload = {
       codegraph: {
         symbols: {
           file: {
-            "codegraph.file.connectionCount": 7,
-            "codegraph.file.fanIn": 3,
-            "codegraph.file.fanOut": 4,
-            "codegraph.file.isHub": true, // booleans must NOT pollute numeric siblings
+            connectionCount: 7,
+            fanIn: 3,
+            fanOut: 4,
+            isHub: true, // booleans must NOT pollute numeric siblings
           },
         },
       },
@@ -2560,7 +2561,7 @@ describe("collectScopeSiblings — multi-trajectory sibling lookup", () => {
   it("merges git + codegraph siblings at the same scope without collision", () => {
     const payload = {
       git: { file: { commitCount: 12 } },
-      codegraph: { symbols: { file: { "codegraph.file.connectionCount": 7 } } },
+      codegraph: { symbols: { file: { connectionCount: 7 } } },
     };
     const out = collect(payload, "file");
     expect(out.commitCount).toBe(12);
@@ -2572,8 +2573,8 @@ describe("collectScopeSiblings — multi-trajectory sibling lookup", () => {
       codegraph: {
         symbols: {
           chunk: {
-            "codegraph.chunk.fanIn": 5,
-            "codegraph.chunk.fanOut": 2,
+            fanIn: 5,
+            fanOut: 2,
           },
         },
       },
