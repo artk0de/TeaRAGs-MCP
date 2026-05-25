@@ -770,7 +770,7 @@ describe("PythonCallResolver", () => {
       expect(target).toBeNull();
     });
 
-    it("NEGATIVE: known field type but method not on that class → drops the edge, never wrong class", () => {
+    it("emits an external best-effort target when the field type is known but the method is external", () => {
       const resolver = new PythonCallResolver();
       const table = new InMemoryGlobalSymbolTable();
       table.upsertFile("service.py", [
@@ -789,12 +789,62 @@ describe("PythonCallResolver", () => {
         symbolTable: table,
         classFieldTypes: { Handler: { service: "SomeService" } },
       };
-      // `inherited()` not defined on SomeService anywhere in the table.
+      // `inherited()` not defined on SomeService anywhere in the table —
+      // inherited from a base class outside the project. The field type
+      // IS known, so emit a type-qualified best-effort target anchored to
+      // the bare type name rather than dropping. Mirrors the Java resolver's
+      // CharSequence#charAt external path.
       const target = resolver.resolve(
         { callText: "self.service.inherited()", receiver: "self.service", member: "inherited", startLine: 8 },
         ctx,
       );
-      expect(target).toBeNull();
+      expect(target?.targetRelPath).toBe("SomeService");
+      expect(target?.targetSymbolId).toBe("SomeService#inherited");
+    });
+
+    it("resolves `self._context_stack.close()` to an external `ExitStack#close` target (stdlib type, not in table)", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // ExitStack is `contextlib` stdlib — NOT in the indexed repo. The
+      // field's type is known from the `__init__` constructor assignment
+      // (`self._context_stack = ExitStack()`), so the call resolves to a
+      // type-qualified best-effort target instead of being dropped.
+      const ctx: CallContext = {
+        callerFile: "flask/testing.py",
+        callerScope: ["FlaskClient"],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { FlaskClient: { _context_stack: "ExitStack" } },
+      };
+      const target = resolver.resolve(
+        { callText: "self._context_stack.close()", receiver: "self._context_stack", member: "close", startLine: 12 },
+        ctx,
+      );
+      expect(target?.targetRelPath).toBe("ExitStack");
+      expect(target?.targetSymbolId).toBe("ExitStack#close");
+    });
+
+    it("resolves `self._context_stack.enter_context(cm)` to an external `ExitStack#enter_context` target", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      const ctx: CallContext = {
+        callerFile: "flask/testing.py",
+        callerScope: ["FlaskClient"],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { FlaskClient: { _context_stack: "ExitStack" } },
+      };
+      const target = resolver.resolve(
+        {
+          callText: "self._context_stack.enter_context(cm)",
+          receiver: "self._context_stack",
+          member: "enter_context",
+          startLine: 14,
+        },
+        ctx,
+      );
+      expect(target?.targetRelPath).toBe("ExitStack");
+      expect(target?.targetSymbolId).toBe("ExitStack#enter_context");
     });
 
     it("does not apply field resolution outside a class scope (callerScope empty)", () => {

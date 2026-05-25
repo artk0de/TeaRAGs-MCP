@@ -67,16 +67,21 @@ export class PythonCallResolver implements CallResolver {
         if (typeName) {
           // Field type known → resolution is CONSTRAINED to that class.
           // Instance form first (the common dispatch shape), static
-          // fallback. When neither matches we DROP rather than fall
-          // through to short-name lookup — falling through is exactly the
-          // false-positive source the feature exists to prevent
-          // (attributing `self.unknown.process()` to an unrelated class
-          // that happens to define `process`).
+          // fallback. When neither matches the type is EXTERNAL (stdlib /
+          // third-party — e.g. `self._context_stack = ExitStack()` from
+          // `contextlib`), so emit a type-qualified best-effort target
+          // anchored to the bare type name rather than dropping. This
+          // records the dependency without fabricating a wrong `.py` file
+          // and never falls through to the ambiguous short-name path —
+          // the type is KNOWN from a constructor assignment, so we attach
+          // it to that type (instance `#` form: the call is on a value),
+          // never to an unrelated class that happens to define `<member>`.
+          // Mirrors the Java resolver's CharSequence#charAt external path.
           const instanceHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}#${call.member}`), this.mode);
           if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
           const staticHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}.${call.member}`), this.mode);
           if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
-          return null;
+          return { targetRelPath: typeName, targetSymbolId: `${typeName}#${call.member}` };
         }
         // Field type NOT recorded. A `self.<field>` receiver is an
         // instance-field access, never a module/import name, so DROP
