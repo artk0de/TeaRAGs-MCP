@@ -265,17 +265,41 @@ export async function resolveQdrantUrl(qdrantUrl?: string, appDataPath?: string)
 }
 
 /**
- * Build a reconnect callback that re-reads daemon.port and returns a new URL
- * if the daemon restarted on a different port. Returns null if port unchanged.
+ * Build a reconnect callback that fully re-resolves the embedded daemon URL.
+ *
+ * Two paths:
+ *  - Live daemon: re-read daemon.port; return a new URL only if the port moved,
+ *    null if unchanged.
+ *  - Dead daemon (the rebuild / restart window — pid gone, files cleaned): the
+ *    daemon cannot be re-attached, so `respawn` spawns a fresh one and its URL
+ *    is returned. Without this the active connection would be stuck on a dead
+ *    port until the whole MCP process restarts, since `ensureDaemon` (the only
+ *    spawn path) otherwise runs just once at bootstrap.
+ *
+ * `respawn` is injected so the dead-daemon branch is testable without spawning a
+ * real Qdrant process; production wires it to `ensureDaemon`.
  */
-function makeReconnect(paths: DaemonPaths, currentPort: number): () => string | null {
-  return () => {
-    if (!existsSync(paths.portFile) || !isDaemonAlive(paths)) return null;
-    const newPort = parseInt(readFileSync(paths.portFile, "utf-8").trim(), 10);
-    if (newPort === currentPort || isNaN(newPort)) return null;
-    const newUrl = `http://127.0.0.1:${newPort}`;
-    console.error(`[tea-rags] Qdrant daemon port changed: ${currentPort} → ${newPort}`);
-    return newUrl;
+export function makeReconnect(
+  paths: DaemonPaths,
+  currentPort: number,
+  respawn: () => Promise<string>,
+): () => Promise<string | null> {
+  let knownPort = currentPort;
+  return async () => {
+    if (existsSync(paths.portFile) && isDaemonAlive(paths)) {
+      const newPort = parseInt(readFileSync(paths.portFile, "utf-8").trim(), 10);
+      if (isNaN(newPort) || newPort === knownPort) return null;
+      console.error(`[tea-rags] Qdrant daemon port changed: ${knownPort} → ${newPort}`);
+      knownPort = newPort;
+      return `http://127.0.0.1:${newPort}`;
+    }
+
+    // Daemon is gone — re-resolve by respawning a fresh one.
+    console.error(`[tea-rags] Qdrant daemon gone — re-resolving (respawn)`);
+    const url = await respawn();
+    const moved = /:(\d+)$/.exec(url);
+    if (moved) knownPort = parseInt(moved[1], 10);
+    return url;
   };
 }
 
@@ -298,7 +322,13 @@ function readPidFromFile(paths: DaemonPaths): number {
   return parseInt(readFileSync(paths.pidFile, "utf-8").trim(), 10);
 }
 
-function makeDaemonHandle(paths: DaemonPaths, port: number, url: string, pid: number): DaemonHandle {
+function makeDaemonHandle(
+  paths: DaemonPaths,
+  port: number,
+  url: string,
+  pid: number,
+  appDataPath?: string,
+): DaemonHandle {
   return {
     url,
     pid,
@@ -307,7 +337,7 @@ function makeDaemonHandle(paths: DaemonPaths, port: number, url: string, pid: nu
       const remaining = decrementRefs(paths);
       console.error(`[tea-rags] Released Qdrant ref (remaining=${remaining})`);
     },
-    reconnect: makeReconnect(paths, port),
+    reconnect: makeReconnect(paths, port, async () => (await ensureDaemon(appDataPath)).url),
     startupPhase: () => computeStartupPhase(paths),
   };
 }
@@ -328,7 +358,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
     const refs = incrementRefs(paths);
     console.error(`[tea-rags] Attached to Qdrant daemon (pid=${pid}, port=${port}, refs=${refs})`);
     warnIfStaleBinary(appDataPath);
-    return makeDaemonHandle(paths, port, url, pid);
+    return makeDaemonHandle(paths, port, url, pid, appDataPath);
   }
 
   // Slow path: acquire lock for daemon spawn
@@ -349,7 +379,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
       const pid = readPidFromFile(paths);
       const refs = incrementRefs(paths);
       console.error(`[tea-rags] Attached to Qdrant daemon (pid=${pid}, port=${port}, refs=${refs})`);
-      return makeDaemonHandle(paths, port, url, pid);
+      return makeDaemonHandle(paths, port, url, pid, appDataPath);
     }
 
     cleanupDaemonFiles(paths);
@@ -399,7 +429,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
 
     console.error(`[tea-rags] Qdrant daemon spawned (pid=${pid}, port=${port}, recovery may be in progress)`);
     scheduleIdleWatcher(paths, pid);
-    return makeDaemonHandle(paths, port, url, pid);
+    return makeDaemonHandle(paths, port, url, pid, appDataPath);
   } finally {
     daemonLock.release(lock.fd);
   }
