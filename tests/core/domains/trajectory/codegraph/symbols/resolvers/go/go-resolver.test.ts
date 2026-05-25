@@ -124,6 +124,54 @@ describe("GoCallResolver", () => {
     expect(target).toBeNull();
   });
 
+  // bd tea-rags-mcp-6g9c — local-var-typed receivers. `engine.Use()` inside
+  // `func Default()` where `var engine Engine` (or `engine := Engine{}`)
+  // declares the type. None of the imports match the bare receiver
+  // `engine`, so before this fix the m46z receiver-drop fired and the
+  // LEGITIMATE `Engine#Use` / `Engine#With` edges were lost. With the
+  // walker emitting `{ engine: "Engine" }` the resolver's step-0
+  // `resolveByLocalType` resolves them.
+  it("resolves `engine.Use()` to Engine#Use via local-var binding engine→Engine", () => {
+    const r = new GoCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("gin.go", [
+      { symbolId: "Engine#Use", fqName: "Engine#Use", shortName: "Use", relPath: "gin.go", scope: [] },
+      { symbolId: "Engine#With", fqName: "Engine#With", shortName: "With", relPath: "gin.go", scope: [] },
+    ]);
+    const useTarget = r.resolve(
+      { callText: "engine.Use(mw)", receiver: "engine", member: "Use", startLine: 4 },
+      ctx("gin.go", [], t, { engine: "Engine" }),
+    );
+    expect(useTarget?.targetSymbolId).toBe("Engine#Use");
+    const withTarget = r.resolve(
+      { callText: "engine.With(mw)", receiver: "engine", member: "With", startLine: 5 },
+      ctx("gin.go", [], t, { engine: "Engine" }),
+    );
+    expect(withTarget?.targetSymbolId).toBe("Engine#With");
+  });
+
+  it("resolves self-receiver `c.GetQuery()` to Context#GetQuery via receiver binding c→Context", () => {
+    // Go has no `this`: inside `func (c *Context) Query()` an intra-method
+    // call `c.GetQuery()` must resolve to `Context#GetQuery` through the
+    // receiver binding the walker emits.
+    const r = new GoCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("context.go", [
+      {
+        symbolId: "Context#GetQuery",
+        fqName: "Context#GetQuery",
+        shortName: "GetQuery",
+        relPath: "context.go",
+        scope: [],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "c.GetQuery(key)", receiver: "c", member: "GetQuery", startLine: 3 },
+      ctx("context.go", [], t, { c: "Context" }),
+    );
+    expect(target?.targetSymbolId).toBe("Context#GetQuery");
+  });
+
   it("drops the edge when receiver does NOT match any import (no global short-name fallback)", () => {
     // Real-world case (gin): inside `(c *Context) initQueryCache()` the
     // expression `c.Request.URL.Query()` has receiver "c.Request.URL".

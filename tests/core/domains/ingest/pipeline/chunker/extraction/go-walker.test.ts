@@ -157,3 +157,91 @@ describe("extractFromGoFile — localBindings", () => {
     if (bindings) expect(Object.keys(bindings)).toHaveLength(0);
   });
 });
+
+// bd tea-rags-mcp-6g9c — local-variable type bindings. Go has no `self`/
+// `this`: receivers are user-named AND local vars carry the only static
+// type hint for `engine.Use()`-style calls inside `func Default()`. Without
+// `var x Foo` / `x := Foo{}` / `x := &Foo{}` bindings, the resolver drops
+// every `engine.Use()` edge (no import matches the bare receiver `engine`,
+// so the m46z drop fires). Constructor-return `x := NewFoo()` is OUT OF
+// SCOPE — the return type can't be known statically without modelling
+// every constructor.
+describe("extractFromGoFile — local var bindings", () => {
+  it("captures `var engine Engine` → { engine: 'Engine' }", () => {
+    const src = ["package gin", "func Default() {", "  var engine Engine", "  engine.Use()", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "gin.go",
+      language: "go",
+      chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localBindings?.engine).toBe("Engine");
+  });
+
+  it("captures short composite-literal decl `x := Engine{}` → { x: 'Engine' }", () => {
+    const src = ["package gin", "func Default() {", "  x := Engine{}", "  x.With()", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "gin.go",
+      language: "go",
+      chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localBindings?.x).toBe("Engine");
+  });
+
+  it("captures short pointer composite-literal decl `y := &Engine{}` → { y: 'Engine' }", () => {
+    const src = ["package gin", "func Default() {", "  y := &Engine{}", "  y.Use()", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "gin.go",
+      language: "go",
+      chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localBindings?.y).toBe("Engine");
+  });
+
+  it("does NOT bind constructor-return `z := NewEngine()` (out of scope)", () => {
+    const src = ["package gin", "func Default() {", "  z := NewEngine()", "  z.Use()", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "gin.go",
+      language: "go",
+      chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localBindings?.z).toBeUndefined();
+  });
+
+  it("unwraps pointer + generic var types: `var p *Engine` / `var b Box[T]` → bare type", () => {
+    // `var p *Engine` exercises the pointer-type unwrap and `var b Box[T]`
+    // the generic-type base strip in the var-decl binding path — the same
+    // shapes readParamBareType handles for receivers / params.
+    const src = ["package gin", "func Default() {", "  var p *Engine", "  var b Box[Handler]", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "gin.go",
+      language: "go",
+      chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localBindings?.p).toBe("Engine");
+    expect(r.chunks[0].localBindings?.b).toBe("Box");
+  });
+
+  it("does NOT bind a pointer composite literal of a non-identifier type `m := &map[string]int{}`", () => {
+    // `&map[string]int{}` has no bare type_identifier — readCompositeLiteralType
+    // must return null rather than fabricate a binding.
+    const src = ["package gin", "func Default() {", "  m := &map[string]int{}", "  _ = m", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "gin.go",
+      language: "go",
+      chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localBindings?.m).toBeUndefined();
+  });
+});

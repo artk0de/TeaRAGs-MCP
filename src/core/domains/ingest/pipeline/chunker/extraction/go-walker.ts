@@ -109,11 +109,19 @@ function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): v
  *      ALSO captured because Go method dispatch on a value receiver
  *      resolves the same way — `var s Service; s.Open()` should resolve
  *      to `Service#Open`.
+ *   3. Local `var x Type` declarations (`var_declaration` → `var_spec`
+ *      with a `type` field) — `func Default() { var engine Engine }` →
+ *      `{ engine: "Engine" }`. bd tea-rags-mcp-6g9c.
+ *   4. Short var decls whose RHS is a directly-knowable type literal —
+ *      `x := Foo{}` (`composite_literal`) and `x := &Foo{}`
+ *      (`unary_expression` wrapping `composite_literal`) →
+ *      `{ x: "Foo" }`. bd tea-rags-mcp-6g9c.
  *
- * Local `var x Type` declarations and short `x := Constructor{...}`
- * literal bindings are left out for now — the receiver + parameter
- * surface covers the vast majority of method-call sites in Go projects
- * (gin's `Context` plumbing is parameter-based throughout).
+ * Constructor-return short decls `x := NewFoo()` are OUT OF SCOPE — the
+ * return type can't be known statically without modelling every
+ * constructor, and guessing reintroduces the false positives the m46z
+ * receiver-drop removed. Go has no `self`/`this`: receivers AND local
+ * vars are the only static type hints for `engine.Use()`-style calls.
  */
 function collectGoLocalBindingsForChunk(
   root: Parser.SyntaxNode,
@@ -157,7 +165,72 @@ function collectGoLocalBindingsForChunk(
       if (name && typeName) bindings[name] = typeName;
     }
   }
+
+  // Local variable declarations inside the body — `var x Foo`, `x :=
+  // Foo{}`, `x := &Foo{}` (bd tea-rags-mcp-6g9c). Walk the target
+  // declaration's descendants; both forms are nested in the function's
+  // `block` / `statement_list` regardless of nesting depth.
+  walk(target as Parser.SyntaxNode, (node) => {
+    if (node.type === "var_declaration") {
+      for (const spec of node.children) {
+        if (spec.type !== "var_spec") continue;
+        const name = spec.childForFieldName("name");
+        const typeNode = spec.childForFieldName("type");
+        const typeName = readBareTypeNode(typeNode);
+        if (name && typeName) bindings[name.text] = typeName;
+      }
+      return;
+    }
+    if (node.type === "short_var_declaration") {
+      const left = node.childForFieldName("left");
+      const right = node.childForFieldName("right");
+      if (!left || !right) return;
+      // Only single-name `x := Foo{}` / `x := &Foo{}` are knowable.
+      const name = left.children.find((c) => c.type === "identifier");
+      const value = right.children.find((c) => c.type === "composite_literal" || c.type === "unary_expression");
+      if (!name || !value) return;
+      const typeName = readCompositeLiteralType(value);
+      if (typeName) bindings[name.text] = typeName;
+    }
+  });
   return bindings;
+}
+
+/**
+ * Read the bare type name from a `var_spec` `type` field node. Mirrors
+ * `readParamBareType` — unwraps `*Foo` pointer types and `Box[T]` generic
+ * types down to the base `type_identifier`. Returns null for unsupported
+ * shapes (interface types, map/slice/func types — no single class name).
+ */
+function readBareTypeNode(typeNode: Parser.SyntaxNode | null): string | null {
+  if (!typeNode) return null;
+  if (typeNode.type === "pointer_type") {
+    const inner = typeNode.children.find((c) => c.type === "type_identifier");
+    return inner?.text ?? null;
+  }
+  if (typeNode.type === "generic_type") {
+    const base = typeNode.childForFieldName("type");
+    return base?.text ?? null;
+  }
+  if (typeNode.type === "type_identifier") return typeNode.text;
+  return null;
+}
+
+/**
+ * Read the struct type from a short-var-decl RHS literal: `Foo{}`
+ * (`composite_literal` whose `type` field is a `type_identifier`) or
+ * `&Foo{}` (`unary_expression` whose `operand` is the composite literal).
+ * Returns null for any RHS whose type isn't a bare `type_identifier`
+ * (e.g. `map[K]V{}`, anonymous struct literals).
+ */
+function readCompositeLiteralType(node: Parser.SyntaxNode): string | null {
+  let literal: Parser.SyntaxNode | null = node;
+  if (node.type === "unary_expression") {
+    literal = node.childForFieldName("operand");
+  }
+  if (literal?.type !== "composite_literal") return null;
+  const typeNode = literal.childForFieldName("type");
+  return typeNode?.type === "type_identifier" ? typeNode.text : null;
 }
 
 function readParamName(param: Parser.SyntaxNode): string | null {
