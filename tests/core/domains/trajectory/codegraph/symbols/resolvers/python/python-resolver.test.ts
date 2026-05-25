@@ -902,19 +902,20 @@ describe("PythonCallResolver", () => {
       expect(target).toBeNull();
     });
 
-    // BOUNDARY (bd tea-rags-mcp-rjuc) — `self.x = some_func()` where the RHS
-    // is a NON-constructor function call (lowercase / unknown). The walker
-    // DOES record `x -> "some_func"` as a candidate type name (it cannot
-    // distinguish a constructor from an arbitrary function by name; the
-    // safety gate lives in the resolver). When `some_func` is NOT a class in
-    // the symbol table and no import resolves to it, the resolver does NOT
-    // fall through to the ambiguous short-name path: it anchors a
-    // type-qualified BEST-EFFORT EXTERNAL target `some_func#method`, the
-    // identical mechanism used for genuine stdlib types (e.g. ExitStack).
-    // CRUCIALLY it never attributes the call to an unrelated real class —
-    // the dangerous false positive. This locks the actual safe behavior so a
-    // regression that started pointing the edge at `Other#method` is caught.
-    it("function-call-assigned field (lowercase, not in table) anchors a best-effort external target, never an unrelated class", () => {
+    // BOUNDARY (bd tea-rags-mcp-m46z) — `self.x = some_func()` where the RHS
+    // is a NON-constructor function call (lowercase / unknown return type).
+    // The walker's CapWords gate (PEP8: classes are CapWords, functions
+    // lowercase) DROPS such an assignment — `some_func` is NOT recorded as a
+    // field type. So the resolver never receives a lowercase candidate from
+    // real code: `classFieldTypes` for the field is empty, the `self.<field>`
+    // branch finds no recorded type, and the call DROPS rather than emitting
+    // the phantom external edge `some_func#method` that earlier blessed this
+    // boundary. (Earlier the walker recorded the lowercase name and the
+    // resolver anchored an external best-effort — a phantom edge to a symbol
+    // that can never exist. The CapWords gate eliminates the phantom at the
+    // source; only genuine CapWords stdlib types like `ExitStack` reach the
+    // external best-effort path, covered by the tests above.)
+    it("function-call-assigned field (lowercase) is not recorded by the walker → resolver DROPS, never a phantom external edge", () => {
       const resolver = new PythonCallResolver();
       const table = new InMemoryGlobalSymbolTable();
       // An unrelated class defines `method` — the resolver must NOT pick it.
@@ -932,19 +933,17 @@ describe("PythonCallResolver", () => {
         callerScope: ["Handler"],
         imports: [],
         symbolTable: table,
-        // walker recorded `self.x = some_func()` → candidate type "some_func".
-        classFieldTypes: { Handler: { x: "some_func" } },
+        // Walker CapWords gate dropped `self.x = some_func()` → no field type
+        // recorded for `x`. This is the realistic post-gate input shape.
+        classFieldTypes: { Handler: {} },
       };
       const target = resolver.resolve(
         { callText: "self.x.method()", receiver: "self.x", member: "method", startLine: 8 },
         ctx,
       );
-      // Best-effort external anchor on the (non-class) type name — NOT the
-      // unrelated Other#method, and NOT a fabricated `.py` file edge.
-      expect(target?.targetRelPath).toBe("some_func");
-      expect(target?.targetSymbolId).toBe("some_func#method");
-      // The dangerous false positive must never appear.
-      expect(target?.targetSymbolId).not.toBe("Other#method");
+      // No recorded type → DROP. No phantom `some_func#method`, no unrelated
+      // `Other#method`, no fabricated `.py` file edge.
+      expect(target).toBeNull();
     });
   });
 

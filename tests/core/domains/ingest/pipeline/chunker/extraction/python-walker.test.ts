@@ -691,4 +691,62 @@ describe("extractFromPythonFile — classFieldTypes (bd rjuc, self.field)", () =
     });
     expect(r.classFieldTypes?.Foo).toBeUndefined();
   });
+
+  // bd tea-rags-mcp-m46z — CapWords gate. `self.x = make_thing()` where the
+  // RHS callee is a lowercase NON-constructor function call. Its return type
+  // is unknown, so recording `make_thing` as a field type would let the
+  // resolver emit a phantom external edge `make_thing#method`. PEP8 says
+  // classes are CapWords and functions lowercase — so a lowercase final
+  // identifier is NOT a constructor and the field type is dropped.
+  it("does NOT record `self.field = make_thing()` (lowercase function-call RHS, not a constructor)", () => {
+    const src = `${["class Handler:", "    def __init__(self):", "        self.thing = make_thing()"].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "handler.py",
+      language: "python",
+      chunks: [{ symbolId: "Handler#__init__", scope: ["Handler"], startLine: 2, endLine: 3 }],
+    });
+    expect(r.classFieldTypes?.Handler?.thing).toBeUndefined();
+  });
+
+  it("does NOT record `self.field = some_func()` (lowercase qualified function via single name)", () => {
+    const src = `${["class Handler:", "    def __init__(self):", "        self.x = some_func()"].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "handler.py",
+      language: "python",
+      chunks: [{ symbolId: "Handler#__init__", scope: ["Handler"], startLine: 2, endLine: 3 }],
+    });
+    expect(r.classFieldTypes?.Handler?.x).toBeUndefined();
+  });
+
+  it("does NOT record `self.field = mod.make_thing()` (qualified lowercase final segment)", () => {
+    const src = `${["class Handler:", "    def __init__(self):", "        self.x = mod.make_thing()"].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "handler.py",
+      language: "python",
+      chunks: [{ symbolId: "Handler#__init__", scope: ["Handler"], startLine: 2, endLine: 3 }],
+    });
+    expect(r.classFieldTypes?.Handler?.x).toBeUndefined();
+  });
+
+  it("still records `self.field = ExitStack()` (external CapWords stdlib type) for best-effort resolution", () => {
+    const src = `${["class FlaskClient:", "    def __init__(self):", "        self._stack = ExitStack()"].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "client.py",
+      language: "python",
+      chunks: [{ symbolId: "FlaskClient#__init__", scope: ["FlaskClient"], startLine: 2, endLine: 3 }],
+    });
+    expect(r.classFieldTypes?.FlaskClient?._stack).toBe("ExitStack");
+  });
 });

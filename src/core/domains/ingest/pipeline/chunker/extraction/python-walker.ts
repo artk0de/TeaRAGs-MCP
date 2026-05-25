@@ -153,12 +153,24 @@ function collectPythonClassFieldTypes(root: Parser.SyntaxNode): Record<string, R
       // Constructor-call RHS — `self.x = ClassName(...)` /
       // `self.x = module.ClassName(...)`. Non-call RHS (literal, list,
       // lambda) is skipped — no class name to attribute.
+      //
+      // bd tea-rags-mcp-m46z — CapWords gate. The resolver emits a
+      // best-effort EXTERNAL target `<type>#<member>` for `self.x.method()`
+      // when `<type>` isn't in the symbol table (correct for real classes
+      // like `ExitStack`). But a lowercase callee (`make_thing`, `some_func`)
+      // is a FUNCTION, not a constructor — its return type is unknown, and
+      // recording it would fabricate a phantom edge `make_thing#method`. PEP8
+      // says classes are CapWords; only treat the RHS as a field type when the
+      // callee's FINAL identifier starts uppercase. Lowercase → record nothing
+      // so `self.x.method()` falls through to DROP. (Local-var tracking keeps
+      // the generous lowercase behavior — its resolver path DROPS rather than
+      // emitting an external best-effort, so no phantom can arise there.)
       const right = inner.childForFieldName("right");
       if (right?.type === "call") {
         const fnNode = right.childForFieldName("function");
         if (!fnNode) return;
         const typeName = extractConstructorTypeName(fnNode);
-        if (typeName) fields[fieldName] = typeName;
+        if (typeName && isCapWordsConstructor(typeName)) fields[fieldName] = typeName;
       }
     });
     if (Object.keys(fields).length > 0) {
@@ -376,6 +388,21 @@ function extractConstructorTypeName(fnNode: Parser.SyntaxNode): string | null {
   if (fnNode.type === "identifier") return fnNode.text;
   if (fnNode.type === "attribute") return fnNode.text;
   return null;
+}
+
+/**
+ * PEP8 CapWords heuristic — is this callee name a class constructor (vs a
+ * plain function)? Classes are CapWords (`SomeService`, `ExitStack`,
+ * `mod.ApiClient`); functions are lowercase (`make_thing`, `mod.some_func`).
+ * Checks the FINAL identifier segment of a possibly-qualified name so
+ * `mod.ApiClient` gates on `ApiClient` and `mod.make_thing` on `make_thing`.
+ * Used by `collectPythonClassFieldTypes` to avoid recording a function's
+ * unknown return type as a field type (which would let the resolver fabricate
+ * a phantom external edge `make_thing#method`).
+ */
+function isCapWordsConstructor(typeName: string): boolean {
+  const finalSegment = typeName.slice(typeName.lastIndexOf(".") + 1);
+  return /^[A-Z]/.test(finalSegment);
 }
 
 function collectPythonImports(root: Parser.SyntaxNode): ImportRef[] {
