@@ -681,4 +681,137 @@ describe("PythonCallResolver", () => {
       expect(target?.targetSymbolId).toBe("async_to_sync");
     });
   });
+
+  // bd tea-rags-mcp-rjuc — cross-method `self.<field>.<method>()`.
+  // Instance fields declared in `__init__` (`self.service = SomeService()`)
+  // are recorded as class-level state in `classFieldTypes`; the resolver
+  // looks the field's type up keyed by the enclosing class and resolves
+  // `<Type>#<method>`. Mirrors the TS `this.field.method()` path.
+  describe("classFieldTypes (self.field cross-method)", () => {
+    it("resolves `self.service.process()` to the field's class instance method", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("service.py", [
+        {
+          symbolId: "SomeService#process",
+          fqName: "SomeService#process",
+          shortName: "process",
+          relPath: "service.py",
+          scope: ["SomeService"],
+        },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: ["Handler"],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { Handler: { service: "SomeService" } },
+      };
+      const target = resolver.resolve(
+        { callText: "self.service.process()", receiver: "self.service", member: "process", startLine: 8 },
+        ctx,
+      );
+      expect(target?.targetRelPath).toBe("service.py");
+      expect(target?.targetSymbolId).toBe("SomeService#process");
+    });
+
+    it("falls back to the static (`.`) form when no instance method exists", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("service.py", [
+        {
+          symbolId: "SomeService.build",
+          fqName: "SomeService.build",
+          shortName: "build",
+          relPath: "service.py",
+          scope: ["SomeService"],
+        },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: ["Handler"],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { Handler: { service: "SomeService" } },
+      };
+      const target = resolver.resolve(
+        { callText: "self.service.build()", receiver: "self.service", member: "build", startLine: 8 },
+        ctx,
+      );
+      expect(target?.targetRelPath).toBe("service.py");
+      expect(target?.targetSymbolId).toBe("SomeService.build");
+    });
+
+    it("NEGATIVE: `self.unknown.process()` (field has no recorded type) drops the edge — no fabrication", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // A `process` symbol exists on an UNRELATED class — must NOT be
+      // attributed to `self.unknown` since the field type is unknown.
+      table.upsertFile("other.py", [
+        {
+          symbolId: "Other#process",
+          fqName: "Other#process",
+          shortName: "process",
+          relPath: "other.py",
+          scope: ["Other"],
+        },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: ["Handler"],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { Handler: { service: "SomeService" } }, // no `unknown`
+      };
+      const target = resolver.resolve(
+        { callText: "self.unknown.process()", receiver: "self.unknown", member: "process", startLine: 8 },
+        ctx,
+      );
+      expect(target).toBeNull();
+    });
+
+    it("NEGATIVE: known field type but method not on that class → drops the edge, never wrong class", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("service.py", [
+        {
+          symbolId: "SomeService#process",
+          fqName: "SomeService#process",
+          shortName: "process",
+          relPath: "service.py",
+          scope: ["SomeService"],
+        },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: ["Handler"],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { Handler: { service: "SomeService" } },
+      };
+      // `inherited()` not defined on SomeService anywhere in the table.
+      const target = resolver.resolve(
+        { callText: "self.service.inherited()", receiver: "self.service", member: "inherited", startLine: 8 },
+        ctx,
+      );
+      expect(target).toBeNull();
+    });
+
+    it("does not apply field resolution outside a class scope (callerScope empty)", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: [],
+        imports: [],
+        symbolTable: table,
+        classFieldTypes: { Handler: { service: "SomeService" } },
+      };
+      const target = resolver.resolve(
+        { callText: "self.service.process()", receiver: "self.service", member: "process", startLine: 8 },
+        ctx,
+      );
+      expect(target).toBeNull();
+    });
+  });
 });

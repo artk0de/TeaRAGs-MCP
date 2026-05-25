@@ -50,6 +50,43 @@ export class PythonCallResolver implements CallResolver {
     if (call.receiver === "super()" || call.receiver === "super") {
       return this.resolveSuper(call.member, ctx);
     }
+    // bd tea-rags-mcp-rjuc — cross-method instance-field dispatch.
+    // `self.<field>.<method>()` where `<field>` was bound to a class in
+    // `__init__` (recorded by the walker in `classFieldTypes` keyed by the
+    // enclosing class). Look up the field's type, then resolve
+    // `<Type>#<member>` / `<Type>.<member>` against the symbol table.
+    // Mirrors the TS resolver's `this.field.method()` path; Python binds
+    // fields via `self`. Only one access level is supported
+    // (`self.foo.bar()`); chained `self.foo.bar.baz()` needs recursive
+    // type inference and is out of scope.
+    if (call.receiver && call.receiver.startsWith("self.") && ctx.callerScope.length > 0) {
+      const fieldSegment = call.receiver.slice("self.".length);
+      if (!fieldSegment.includes(".")) {
+        const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+        const typeName = ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
+        if (typeName) {
+          // Field type known → resolution is CONSTRAINED to that class.
+          // Instance form first (the common dispatch shape), static
+          // fallback. When neither matches we DROP rather than fall
+          // through to short-name lookup — falling through is exactly the
+          // false-positive source the feature exists to prevent
+          // (attributing `self.unknown.process()` to an unrelated class
+          // that happens to define `process`).
+          const instanceHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}#${call.member}`), this.mode);
+          if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+          const staticHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}.${call.member}`), this.mode);
+          if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+          return null;
+        }
+        // Field type NOT recorded. A `self.<field>` receiver is an
+        // instance-field access, never a module/import name, so DROP
+        // rather than fall through to the import-match / global
+        // short-name paths below — falling through would attribute the
+        // call to any unrelated class that happens to define `<member>`
+        // (the precise false positive this feature prevents).
+        return null;
+      }
+    }
     if (call.receiver) {
       // Step 0: walker-inferred local type wins over heuristic
       // resolution. When the receiver maps to a known class via

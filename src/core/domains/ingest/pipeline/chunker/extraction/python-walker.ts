@@ -59,6 +59,11 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // bd tea-rags-mcp-pic4 — Python class single-base map for super()
   // resolution. Single inheritance only (first listed base).
   const classExtends = collectPythonClassExtends(input.tree.rootNode);
+  // bd tea-rags-mcp-rjuc — instance-field types declared in `__init__`
+  // (`self.service = SomeService()`) recorded as CLASS-LEVEL state so the
+  // resolver can pin `self.service.process()` cross-method. Mirrors the
+  // TS/Java `classFieldTypes` channel.
+  const classFieldTypes = collectPythonClassFieldTypes(input.tree.rootNode);
   const trackTypes = localTypeTrackingEnabled();
   const byChunk: ChunkExtraction[] = input.chunks.map((c) => {
     const base: ChunkExtraction = {
@@ -82,6 +87,86 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
     fileScope: [],
   };
   if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
+  if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
+  return out;
+}
+
+/**
+ * Collect per-class instance-field types from `self.<field> = <ctor>`
+ * assignments, keyed `className → fieldName → typeName`. Mirrors the
+ * TS/Java `classFieldTypes` channel — but Python binds fields via `self`
+ * inside methods rather than via class-body field declarations.
+ *
+ * Fields are attributed to the ENCLOSING class: we walk each
+ * `class_definition`, then scan its body's descendant `assignment` nodes
+ * for `self.<field> = ...`. `__init__` is the canonical site but ANY
+ * method that binds `self.<field>` contributes (tolerated, per bd rjuc).
+ *
+ * RHS forms recorded (constructor-only — same gate as `localBindings`):
+ *   - `self.x = ClassName()`        → `{ x: "ClassName" }`
+ *   - `self.x: ClassName = ...`     → `{ x: "ClassName" }`  (PEP 526)
+ *   - `self.x = mod.ClassName()`    → `{ x: "mod.ClassName" }`
+ *
+ * Deliberately NOT recorded (no class name to attribute, no FP guess):
+ *   - `self.x = []` / literals      (RHS not a call)
+ *   - `service = ClassName()`       (LHS not `self.<field>`)
+ *
+ * Non-constructor calls like `self.x = make_thing()` ARE recorded as a
+ * candidate type name — the resolver's `resolveByLocalType` applies the
+ * final safety gate (the bound name must resolve to a class symbol in the
+ * table) and drops the edge otherwise, so no false edge is fabricated.
+ * Function-return-type inference is explicitly out of scope here.
+ *
+ * Returns a plain object (Record) for NDJSON round-trip — Map would
+ * serialise to `{}`.
+ */
+function collectPythonClassFieldTypes(root: Parser.SyntaxNode): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  walk(root, (node) => {
+    if (node.type !== "class_definition") return;
+    const nameNode = node.childForFieldName("name");
+    if (!nameNode) return;
+    const className = nameNode.text;
+    const body = node.childForFieldName("body");
+    if (!body) return;
+    const fields: Record<string, string> = {};
+    walk(body, (inner) => {
+      if (inner.type !== "assignment") return;
+      // LHS must be `self.<field>` — an `attribute` whose object is the
+      // `self` identifier. Anything else (plain local, subscript) skips.
+      const lhs = inner.childForFieldName("left");
+      if (lhs?.type !== "attribute") return;
+      const obj = lhs.childForFieldName("object");
+      const attr = lhs.childForFieldName("attribute");
+      if (obj?.type !== "identifier" || obj.text !== "self") return;
+      if (!attr) return;
+      const fieldName = attr.text;
+
+      // PEP 526 annotation wins — `self.x: ClassName = ...`.
+      const typeField = inner.childForFieldName("type");
+      if (typeField) {
+        const typeName = extractTypeName(typeField);
+        if (typeName) fields[fieldName] = typeName;
+        return;
+      }
+
+      // Constructor-call RHS — `self.x = ClassName(...)` /
+      // `self.x = module.ClassName(...)`. Non-call RHS (literal, list,
+      // lambda) is skipped — no class name to attribute.
+      const right = inner.childForFieldName("right");
+      if (right?.type === "call") {
+        const fnNode = right.childForFieldName("function");
+        if (!fnNode) return;
+        const typeName = extractConstructorTypeName(fnNode);
+        if (typeName) fields[fieldName] = typeName;
+      }
+    });
+    if (Object.keys(fields).length > 0) {
+      // Merge when a class spans multiple definitions / re-walks; later
+      // writes win, mirroring localBindings' last-write-wins discipline.
+      out[className] = { ...(out[className] ?? {}), ...fields };
+    }
+  });
   return out;
 }
 

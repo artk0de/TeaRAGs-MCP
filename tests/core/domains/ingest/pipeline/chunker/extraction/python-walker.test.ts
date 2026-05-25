@@ -566,3 +566,129 @@ describe("extractFromPythonFile — classExtends edge cases", () => {
     expect(r.classExtends?.["Foo"]).toBeUndefined();
   });
 });
+
+// bd tea-rags-mcp-rjuc — instance-field types declared in `__init__`
+// (`self.service = SomeService()`) become CLASS-LEVEL state so the
+// resolver can pin `self.service.process()` to `SomeService#process` in
+// ANY method of the same class. Mirrors the TS/Java `classFieldTypes`
+// channel (`this.field` → type), but Python binds via `self`.
+describe("extractFromPythonFile — classFieldTypes (bd rjuc, self.field)", () => {
+  it("records `self.field = ClassName()` as a class-level field type", () => {
+    const src = `${["class Handler:", "    def __init__(self):", "        self.service = SomeService()"].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "handler.py",
+      language: "python",
+      chunks: [{ symbolId: "Handler#__init__", scope: ["Handler"], startLine: 2, endLine: 3 }],
+    });
+    expect(r.classFieldTypes).toBeDefined();
+    expect(r.classFieldTypes?.Handler?.service).toBe("SomeService");
+  });
+
+  it("records PEP 526 annotated `self.field: ClassName = ...`", () => {
+    const src = `${[
+      "class Handler:",
+      "    def __init__(self):",
+      "        self.client: ApiClient = build_client()",
+    ].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "handler.py",
+      language: "python",
+      chunks: [{ symbolId: "Handler#__init__", scope: ["Handler"], startLine: 2, endLine: 3 }],
+    });
+    expect(r.classFieldTypes?.Handler?.client).toBe("ApiClient");
+  });
+
+  it("records qualified constructor `self.field = mod.ClassName()`", () => {
+    const src = `${["class Handler:", "    def __init__(self):", "        self.api = mod.ApiClient()"].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "handler.py",
+      language: "python",
+      chunks: [{ symbolId: "Handler#__init__", scope: ["Handler"], startLine: 2, endLine: 3 }],
+    });
+    expect(r.classFieldTypes?.Handler?.api).toBe("mod.ApiClient");
+  });
+
+  it("tolerates fields bound outside __init__ (any method of the class)", () => {
+    const src = `${["class Handler:", "    def setup(self):", "        self.service = SomeService()"].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "handler.py",
+      language: "python",
+      chunks: [{ symbolId: "Handler#setup", scope: ["Handler"], startLine: 2, endLine: 3 }],
+    });
+    expect(r.classFieldTypes?.Handler?.service).toBe("SomeService");
+  });
+
+  it("skips non-constructor RHS — `self.items = []` records nothing", () => {
+    const src = `${["class Handler:", "    def __init__(self):", "        self.items = []"].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "handler.py",
+      language: "python",
+      chunks: [{ symbolId: "Handler#__init__", scope: ["Handler"], startLine: 2, endLine: 3 }],
+    });
+    expect(r.classFieldTypes?.Handler?.items).toBeUndefined();
+  });
+
+  it("does not record plain local var assignment as a class field", () => {
+    // `service = SomeService()` (no `self.`) is a local, NOT a field.
+    const src = `${["class Handler:", "    def __init__(self):", "        service = SomeService()"].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "handler.py",
+      language: "python",
+      chunks: [{ symbolId: "Handler#__init__", scope: ["Handler"], startLine: 2, endLine: 3 }],
+    });
+    expect(r.classFieldTypes?.Handler?.service).toBeUndefined();
+  });
+
+  it("attributes fields to the correct enclosing class with two classes in a file", () => {
+    const src = `${[
+      "class A:",
+      "    def __init__(self):",
+      "        self.x = TypeA()",
+      "class B:",
+      "    def __init__(self):",
+      "        self.y = TypeB()",
+    ].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "two.py",
+      language: "python",
+      chunks: [],
+    });
+    expect(r.classFieldTypes?.A?.x).toBe("TypeA");
+    expect(r.classFieldTypes?.B?.y).toBe("TypeB");
+    expect(r.classFieldTypes?.A?.y).toBeUndefined();
+  });
+
+  it("leaves classFieldTypes undefined/empty when no class binds a typed field", () => {
+    const src = `${["class Foo:", "    def bar(self):", "        return 1"].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "f.py",
+      language: "python",
+      chunks: [{ symbolId: "Foo#bar", scope: ["Foo"], startLine: 2, endLine: 3 }],
+    });
+    expect(r.classFieldTypes?.Foo).toBeUndefined();
+  });
+});
