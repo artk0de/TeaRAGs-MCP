@@ -113,6 +113,13 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
       "function_declaration",
       "method_definition",
       "class_declaration",
+      // tree-sitter-typescript emits `abstract_class_declaration` (NOT
+      // `class_declaration`) for `abstract class X {}` — bd tea-rags-mcp-olc2.
+      // Without it the abstract container is never recognized, so its methods
+      // never become standalone chunks and `find_symbol("Base#foo")` misses
+      // the body even though the codegraph layer has the symbol. The codegraph
+      // provider already treats both node types alike (symbols/provider.ts).
+      "abstract_class_declaration",
       "interface_declaration",
       "type_alias_declaration",
       "enum_declaration",
