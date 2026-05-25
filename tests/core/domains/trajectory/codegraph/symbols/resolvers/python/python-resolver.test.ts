@@ -863,6 +863,89 @@ describe("PythonCallResolver", () => {
       );
       expect(target).toBeNull();
     });
+
+    // BOUNDARY (bd tea-rags-mcp-rjuc) — `self.x = <literal>` in `__init__`
+    // records NO field type (the walker only records a type for a call /
+    // PEP-526-annotated RHS; a list/dict/scalar literal has no class name
+    // to attribute). With no recorded type for the field, the `self.<field>`
+    // receiver path DROPS rather than fall through to the ambiguous
+    // short-name fallback — never attributing `self.x.method()` to an
+    // unrelated class that happens to define `method`. This is the genuine
+    // "no classFieldType -> drop" boundary. The walker side (literal RHS ->
+    // {}) is asserted in python-walker.test.ts; here we lock the resolver
+    // drop given the empty field map.
+    it("NEGATIVE: literal-assigned field (no recorded type) → `self.x.method()` DROPS — no fabrication", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // An unrelated class defines `method` — must NOT be attributed.
+      table.upsertFile("other.py", [
+        {
+          symbolId: "Other#method",
+          fqName: "Other#method",
+          shortName: "method",
+          relPath: "other.py",
+          scope: ["Other"],
+        },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: ["Handler"],
+        imports: [],
+        symbolTable: table,
+        // `self.x = []` records nothing → Handler has an empty field map.
+        classFieldTypes: { Handler: {} },
+      };
+      const target = resolver.resolve(
+        { callText: "self.x.method()", receiver: "self.x", member: "method", startLine: 8 },
+        ctx,
+      );
+      expect(target).toBeNull();
+    });
+
+    // BOUNDARY (bd tea-rags-mcp-rjuc) — `self.x = some_func()` where the RHS
+    // is a NON-constructor function call (lowercase / unknown). The walker
+    // DOES record `x -> "some_func"` as a candidate type name (it cannot
+    // distinguish a constructor from an arbitrary function by name; the
+    // safety gate lives in the resolver). When `some_func` is NOT a class in
+    // the symbol table and no import resolves to it, the resolver does NOT
+    // fall through to the ambiguous short-name path: it anchors a
+    // type-qualified BEST-EFFORT EXTERNAL target `some_func#method`, the
+    // identical mechanism used for genuine stdlib types (e.g. ExitStack).
+    // CRUCIALLY it never attributes the call to an unrelated real class —
+    // the dangerous false positive. This locks the actual safe behavior so a
+    // regression that started pointing the edge at `Other#method` is caught.
+    it("function-call-assigned field (lowercase, not in table) anchors a best-effort external target, never an unrelated class", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // An unrelated class defines `method` — the resolver must NOT pick it.
+      table.upsertFile("other.py", [
+        {
+          symbolId: "Other#method",
+          fqName: "Other#method",
+          shortName: "method",
+          relPath: "other.py",
+          scope: ["Other"],
+        },
+      ]);
+      const ctx: CallContext = {
+        callerFile: "handler.py",
+        callerScope: ["Handler"],
+        imports: [],
+        symbolTable: table,
+        // walker recorded `self.x = some_func()` → candidate type "some_func".
+        classFieldTypes: { Handler: { x: "some_func" } },
+      };
+      const target = resolver.resolve(
+        { callText: "self.x.method()", receiver: "self.x", member: "method", startLine: 8 },
+        ctx,
+      );
+      // Best-effort external anchor on the (non-class) type name — NOT the
+      // unrelated Other#method, and NOT a fabricated `.py` file edge.
+      expect(target?.targetRelPath).toBe("some_func");
+      expect(target?.targetSymbolId).toBe("some_func#method");
+      // The dangerous false positive must never appear.
+      expect(target?.targetSymbolId).not.toBe("Other#method");
+    });
   });
 
   // bd tea-rags-mcp-yrs0 — inherited-method resolution via base-class walk.
@@ -964,6 +1047,36 @@ describe("PythonCallResolver", () => {
       const target = resolver.resolve(
         { callText: "self.missing()", receiver: "self", member: "missing", startLine: 2 },
         makeCtxExtends("a.py", ["A"], table, { A: "B", B: "A" }),
+      );
+      expect(target).toBeNull();
+    });
+
+    // BOUNDARY (bd tea-rags-mcp-q1pl — multiple-inheritance follow-up).
+    // KNOWN SINGLE-BASE LIMITATION: the Python walker's
+    // `collectPythonClassExtends` records ONLY the FIRST base of a
+    // `class A(B, C)` declaration (`classExtends["A"] = "B"`). When the
+    // called method lives on the SECOND base `C` (not on `B` or `A`), the
+    // classExtends walk follows only the `B` chain, never reaches `C`, and
+    // DROPS the edge. This is the deliberate safe boundary — recording only
+    // the first base avoids modelling full MRO; the trade-off is that
+    // methods inherited from non-first bases are not resolved (dropped, not
+    // fabricated). A future multi-base walk (bd q1pl) would make this
+    // resolve to `C#second`; until then this test locks the current drop so
+    // a regression that started guessing wrongly is caught.
+    it("KNOWN LIMITATION: method on SECOND base `class A(B, C)` is DROPPED (single-base classExtends only)", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // `second` is defined ONLY on the second base C.
+      table.upsertFile("c.py", [
+        { symbolId: "C#second", fqName: "C#second", shortName: "second", relPath: "c.py", scope: ["C"] },
+      ]);
+      // B is a known in-project base but does not define `second`.
+      table.upsertFile("b.py", [{ symbolId: "B", fqName: "B", shortName: "B", relPath: "b.py", scope: [] }]);
+      // The walker would only have recorded the FIRST base → { A: "B" }.
+      // C is invisible to the classExtends chain, so the walk drops.
+      const target = resolver.resolve(
+        { callText: "self.second()", receiver: "self", member: "second", startLine: 5 },
+        makeCtxExtends("a.py", ["A"], table, { A: "B" }),
       );
       expect(target).toBeNull();
     });

@@ -818,5 +818,46 @@ describe("extractFromTypescriptFile", () => {
       });
       expect(extraction.chunks[0].localBindings).toBeUndefined();
     });
+
+    // BOUNDARY (bd tea-rags-mcp-x6ta) — non-identifier parameter patterns
+    // have no single receiver name, so `collectParamBindings` deliberately
+    // skips them (`pattern?.type !== "identifier"` guard). Locking the
+    // SAFE boundary: a destructured / rest parameter must NOT produce a
+    // binding for the destructured names, the binding object, or the rest
+    // array. A future change that started binding `{ a, b }` or `...args`
+    // to a type would create a phantom receiver the resolver could mis-pin,
+    // so these assert the current bind-nothing behavior.
+    it("destructured object param `{ a, b }: SomeType` produces NO localBinding for a/b/the object", () => {
+      const code = ["function f({ a, b }: SomeType) {", "  a.go();", "  b.go();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/destructure.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "f", startLine: 1, endLine: 4, scope: [] }],
+      });
+      // No single receiver name for a destructured pattern → nothing binds.
+      const bindings = extraction.chunks[0].localBindings;
+      expect(bindings?.["a"]).toBeUndefined();
+      expect(bindings?.["b"]).toBeUndefined();
+      // The walker emits no localBindings map at all when no param binds.
+      expect(bindings).toBeUndefined();
+    });
+
+    it("rest param `...args: T[]` produces NO localBinding for `args`", () => {
+      const code = ["function f(...args: number[]) {", "  doThing();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/rest.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "f", startLine: 1, endLine: 3, scope: [] }],
+      });
+      // `...args` is a rest_pattern, not a bare identifier pattern → no bind.
+      expect(extraction.chunks[0].localBindings?.["args"]).toBeUndefined();
+      expect(extraction.chunks[0].localBindings).toBeUndefined();
+    });
   });
 });

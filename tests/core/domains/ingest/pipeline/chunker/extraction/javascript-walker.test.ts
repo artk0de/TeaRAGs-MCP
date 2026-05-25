@@ -630,4 +630,25 @@ describe("extractFromJavascriptFile — Object.defineProperty getters/setters (b
     });
     expect(r.fileScope).toEqual([]);
   });
+
+  // BOUNDARY (bd tea-rags-mcp-k05k) — a spread-only descriptor object
+  // `{ ...desc }` carries no statically-visible get/set property. The
+  // accessor's shape is hidden behind the spread, so the walker cannot
+  // know whether `desc` declares an accessor or a data descriptor. Locking
+  // the SAFE boundary: NO accessor symbol is emitted (empty fileScope), so
+  // a future change that started speculatively emitting `o.x` from a spread
+  // descriptor — fabricating a symbol whose accessor-ness is unknown — is
+  // caught.
+  it("ignores Object.defineProperty with a spread-only descriptor `{ ...desc }` (no static get/set)", () => {
+    const src = "Object.defineProperty(o, 'x', { ...desc });\n";
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/spread.js",
+      language: "javascript",
+      chunks: [],
+    });
+    expect(r.fileScope).not.toContain("o.x");
+    expect(r.fileScope).toEqual([]);
+  });
 });

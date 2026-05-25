@@ -346,4 +346,27 @@ describe("extractFromGoFile — localCallBindings (per-chunk var := Call())", ()
     });
     expect(r.chunks[0].localCallBindings?.x).toBeUndefined();
   });
+
+  // BOUNDARY (bd tea-rags-mcp-6g9c) — multi-name short decl whose RHS is a
+  // SINGLE call returning multiple values (`a, b := foo()`). This differs
+  // from the already-covered `a, b := New(), Other()` (two RHS calls): here
+  // one call feeds both vars, so the walker cannot statically pair `a` or
+  // `b` with a return type. Only the single-LHS, single-call form is
+  // handled — locking that this two-name single-call shape binds NOTHING
+  // (neither localCallBindings nor localBindings), so a regression that
+  // started attributing both vars to `foo`'s return is caught.
+  it("does NOT record multi-name single-call decl `a, b := foo()` (can't pair var↔return)", () => {
+    const src = ["package gin", "func Default() {", "  a, b := foo()", "  _ = a", "  _ = b", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "gin.go",
+      language: "go",
+      chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 6 }],
+    });
+    expect(r.chunks[0].localCallBindings?.a).toBeUndefined();
+    expect(r.chunks[0].localCallBindings?.b).toBeUndefined();
+    expect(r.chunks[0].localBindings?.a).toBeUndefined();
+    expect(r.chunks[0].localBindings?.b).toBeUndefined();
+  });
 });
