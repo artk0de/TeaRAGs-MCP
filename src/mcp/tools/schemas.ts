@@ -239,6 +239,41 @@ function typedFilterFields() {
           "'functionName' for top-level functions. Supports partial match: 'ClassName' finds all " +
           "methods of that class, 'methodName' finds that method in any class.",
       ),
+    // Codegraph trajectory — names map to nested Qdrant paths in codegraphFilters.toCondition().
+    minFanIn: coerceNumber()
+      .optional()
+      .describe(
+        "Filter by minimum fan-in (incoming references). Level-aware: file = files importing this file, " +
+          "chunk = call sites invoking this symbol. Default level: file.",
+      ),
+    minFanOut: coerceNumber()
+      .optional()
+      .describe(
+        "Filter by minimum fan-out (outgoing references). Level-aware: file = files this file imports, " +
+          "chunk = outgoing calls from this symbol. Default level: file.",
+      ),
+    minPageRank: coerceNumber()
+      .optional()
+      .describe("Filter by minimum chunk-level PageRank score in [0,1] over the method call graph."),
+    minInstability: coerceNumber()
+      .optional()
+      .describe("Filter by minimum Martin instability = fanOut / (fanIn + fanOut), in [0,1]. File-level only."),
+    minTransitiveImpact: coerceNumber()
+      .optional()
+      .describe(
+        "Filter by minimum distinct files transitively importing this file (reverse BFS, depth-capped). File-level only.",
+      ),
+    minConnectionCount: coerceNumber()
+      .optional()
+      .describe(
+        "Filter by minimum file-graph edges (fanIn + fanOut). Useful for excluding low-confidence instability values. File-level only.",
+      ),
+    isHub: coerceBoolean()
+      .optional()
+      .describe("Filter to files flagged as architectural hubs (fanIn above the collection p95). File-level only."),
+    isLeaf: coerceBoolean()
+      .optional()
+      .describe("Filter to files flagged as leaves (fanOut == 0 and fanIn > 0). File-level only."),
   };
 }
 

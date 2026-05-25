@@ -537,6 +537,35 @@ export class DuckDbGraphClient implements GraphDbClient {
     return Number(rows[0]?.n ?? 0);
   }
 
+  async getFanInP95(): Promise<number> {
+    // Per-file fanIn = COUNT of edges whose target is that file — the same
+    // metric `getFanIn(relPath)` returns for one file. The percentile is
+    // taken over the FULL file universe (cg_symbols_files), LEFT JOINed
+    // against per-target edge counts so files with zero incoming edges
+    // contribute fanIn=0 to the distribution. A hub is relative to ALL
+    // files (including leaves), so the zero-fanIn tail must be present.
+    //
+    // Anchoring on cg_symbols_files (not on the edge table's distinct
+    // targets) is what makes this correct under incremental reindex: the
+    // first pass has already brought the whole graph up to date, and this
+    // query reads the entire collection rather than the changed-file
+    // subset the overlay loop iterates.
+    //
+    // PERCENTILE_CONT yields NULL on an empty universe (no files) — COALESCE
+    // to 0 so the caller's `fanIn > p95` comparison degenerates sanely.
+    const rows = await this.queryAll<{ p95: number | null }>(
+      `WITH file_fan_in AS (
+         SELECT f.rel_path AS rel_path, COUNT(e.source_rel_path) AS fan_in
+         FROM cg_symbols_files f
+         LEFT JOIN cg_symbols_edges_file e ON e.target_rel_path = f.rel_path
+         GROUP BY f.rel_path
+       )
+       SELECT COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY fan_in), 0) AS p95
+       FROM file_fan_in`,
+    );
+    return Number(rows[0]?.p95 ?? 0);
+  }
+
   async getCallers(symbolId: SymbolId): Promise<CallerEdge[]> {
     return this.queryAll<CallerEdge>(
       'SELECT source_symbol_id AS "sourceSymbolId", source_rel_path AS "sourceRelPath", call_expression AS "callExpression" FROM cg_symbols_edges_method WHERE target_symbol_id = ? ORDER BY source_rel_path, source_symbol_id',

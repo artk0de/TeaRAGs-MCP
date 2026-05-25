@@ -4,29 +4,74 @@
  *
  * All tools read directly from the codegraph DuckDB via the App's
  * GraphFacade (wired in createApp()).
+ *
+ * Addressing: every tool accepts the standard `{ collection, project,
+ * path }` triad (resolution priority: collection > project > path) —
+ * same shape every other tea-rags tool exposes. `path` stays as the
+ * backward-compatible fallback so existing path-only callers keep
+ * working; project alias is the recommended way to address an indexed
+ * codebase.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { App } from "../../core/api/index.js";
+import { PROJECT_NAME_RE } from "../../core/infra/registry/index.js";
 import { formatMcpText } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 
+/**
+ * Shared `{ collection, project, path }` triad for codegraph tools.
+ * Mirrors `collectionPathFields()` in `mcp/tools/schemas.ts` and the
+ * `SchemaBuilder.collectionIdentifier()` mixin — kept inline here
+ * because the codegraph tool surface is independent of the dynamic
+ * search-tool schema pipeline. Resolution priority: collection >
+ * project > path.
+ */
+function collectionPathFields() {
+  return {
+    project: z
+      .string()
+      .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
+      .optional()
+      .describe(
+        "[RECOMMENDED] Project alias from registry — stable name that survives " +
+          "path moves. Use this when an alias exists; fall back to 'collection' or " +
+          "'path' only when no alias is registered. " +
+          "Resolution priority: collection > project > path.",
+      ),
+    collection: z
+      .string()
+      .optional()
+      .describe(
+        "Internal Qdrant collection name (lowest-level handle). " +
+          "Prefer 'project' when an alias is registered; provide one of 'project', 'collection', or 'path'.",
+      ),
+    path: z
+      .string()
+      .optional()
+      .describe(
+        "Filesystem path to indexed codebase (auto-resolves to a collection). " +
+          "Prefer 'project' when an alias is registered; provide one of 'project', 'collection', or 'path'.",
+      ),
+  };
+}
+
 const GetCallersInputShape = {
-  path: z.string().describe("Project path"),
+  ...collectionPathFields(),
   symbolId: z.string().describe("Target symbol id (e.g. Foo.bar)"),
   limit: z.number().int().positive().max(500).optional().describe("Maximum number of caller edges (default 50)"),
 };
 
 const GetCalleesInputShape = {
-  path: z.string().describe("Project path"),
+  ...collectionPathFields(),
   symbolId: z.string().describe("Source symbol id (e.g. main)"),
   limit: z.number().int().positive().max(500).optional().describe("Maximum number of callee edges (default 50)"),
 };
 
 const FindCyclesInputShape = {
-  path: z.string().describe("Project path"),
+  ...collectionPathFields(),
   scope: z
     .enum(["file", "method"])
     .default("file")
@@ -51,8 +96,8 @@ export function registerCodegraphTools(server: McpServer, deps: { app: App; regi
       inputSchema: GetCallersInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ path, symbolId, limit }) => {
-      const response = await app.getCallers({ path, symbolId, limit });
+    async ({ project, collection, path, symbolId, limit }) => {
+      const response = await app.getCallers({ project, collection, path, symbolId, limit });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );
@@ -66,8 +111,8 @@ export function registerCodegraphTools(server: McpServer, deps: { app: App; regi
       inputSchema: GetCalleesInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ path, symbolId, limit }) => {
-      const response = await app.getCallees({ path, symbolId, limit });
+    async ({ project, collection, path, symbolId, limit }) => {
+      const response = await app.getCallees({ project, collection, path, symbolId, limit });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );
@@ -84,8 +129,8 @@ export function registerCodegraphTools(server: McpServer, deps: { app: App; regi
       inputSchema: FindCyclesInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ path, scope }) => {
-      const response = await app.findCycles({ path, scope });
+    async ({ project, collection, path, scope }) => {
+      const response = await app.findCycles({ project, collection, path, scope });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );

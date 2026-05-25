@@ -316,6 +316,17 @@ export interface GraphDbClient {
   /** Reads for metric computation (Tier 1) and MCP tools. */
   getFanIn: (relPath: RelPath) => Promise<number>;
   getFanOut: (relPath: RelPath) => Promise<number>;
+
+  /**
+   * Collection-wide p95 of per-file fanIn over the FULL file universe
+   * (every row in `cg_symbols_files`, including files with zero incoming
+   * edges). Used at index time to finalise `codegraph.file.isHub`
+   * (`fanIn > p95`). Computed against the whole graph — not the
+   * incremental-reindex subset — so hub classification stays correct when
+   * only a few files changed. Returns 0 on an empty/single-file graph so
+   * the `fanIn > p95` comparison degenerates sanely.
+   */
+  getFanInP95: () => Promise<number>;
   getCallers: (symbolId: SymbolId) => Promise<CallerEdge[]>;
   getCallees: (symbolId: SymbolId) => Promise<CalleeEdge[]>;
   getCalledByCount: (symbolId: SymbolId) => Promise<number>;

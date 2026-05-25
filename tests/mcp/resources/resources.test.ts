@@ -320,5 +320,23 @@ describe("Resource builders", () => {
       expect(md).toContain("level");
       expect(md).toContain("ageDays=0");
     });
+
+    it("documents codegraph typed filter params (tea-rags-mcp-tr5k)", () => {
+      const md = buildFiltersDoc();
+      expect(md).toContain("Codegraph metadata");
+      // File-level codegraph params (default level)
+      expect(md).toContain("minFanIn");
+      expect(md).toContain("minFanOut");
+      expect(md).toContain("minInstability");
+      expect(md).toContain("minTransitiveImpact");
+      expect(md).toContain("minConnectionCount");
+      expect(md).toContain("isHub");
+      expect(md).toContain("isLeaf");
+      // Chunk-only codegraph params
+      expect(md).toContain("minPageRank");
+      // The doc must explain that raw Qdrant filter keys won't resolve
+      // (the bug users hit before the typed-filter wiring).
+      expect(md).toContain("codegraph.symbols");
+    });
   });
 });

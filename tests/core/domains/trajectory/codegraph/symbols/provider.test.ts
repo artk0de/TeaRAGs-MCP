@@ -298,13 +298,75 @@ describe("CodegraphEnrichmentProvider", () => {
       paths: ["src/leaf.ts", "src/main.ts"],
     });
     const leafOverlay = overlays.get("src/leaf.ts");
-    expect(leafOverlay?.["codegraph.file.fanIn"]).toBe(1);
-    expect(leafOverlay?.["codegraph.file.isLeaf"]).toBe(true);
+    expect(leafOverlay?.["fanIn"]).toBe(1);
+    expect(leafOverlay?.["isLeaf"]).toBe(true);
+    // btl8: connectionCount = fanIn + fanOut, support signal for instability
+    // confidence — written inline by buildFileSignals so no extra DB call.
+    expect(leafOverlay?.["connectionCount"]).toBe(1);
     const mainOverlay = overlays.get("src/main.ts");
-    expect(mainOverlay?.["codegraph.file.fanOut"]).toBe(1);
-    expect(mainOverlay?.["codegraph.file.instability"]).toBeCloseTo(1, 5);
-    // isHub stays false in buildFileSignals — IsHubSignal finalises it at rerank time.
-    expect(mainOverlay?.["codegraph.file.isHub"]).toBe(false);
+    expect(mainOverlay?.["fanOut"]).toBe(1);
+    expect(mainOverlay?.["instability"]).toBeCloseTo(1, 5);
+    expect(mainOverlay?.["connectionCount"]).toBe(1);
+    // isHub is computed at index time against collection p95 of fanIn.
+    // Distribution here is [leaf=1, main=0] → p95 = 0.95. main (fanIn=0)
+    // is not above p95, so it is not a hub.
+    expect(mainOverlay?.["isHub"]).toBe(false);
+    // leaf has fanIn=1 > p95(0.95) → it IS the hub of this tiny graph.
+    expect(leafOverlay?.["isHub"]).toBe(true);
+  });
+
+  it("buildFileSignals marks the high-fanIn file isHub:true and low-fanIn files isHub:false (collection p95)", async () => {
+    // Regression for tea-rags-mcp-he6g: isHub used to be hardcoded false
+    // in buildFileSignals (placeholder for a rerank-time finalisation that
+    // never existed), so every file was isHub:false and architecturalHub's
+    // 0.35 isHub weight scored zero. isHub is now computed at index time
+    // against the collection-wide p95 of fanIn pulled from the DuckDB graph.
+    //
+    // Graph: `hub.ts` is imported by a,b,c,d,e (fanIn=5); `mild.ts` is
+    // imported by a (fanIn=1); the five importers and any other file have
+    // fanIn=0. Distribution over the 7-file universe:
+    //   [a=0,b=0,c=0,d=0,e=0, hub=5, mild=1] → sorted [0,0,0,0,0,1,5].
+    // PERCENTILE_CONT(0.95) over n=7: idx 0.95*6=5.7 →
+    //   interp(sorted[5]=1, sorted[6]=5, 0.7) = 1 + 0.7*(5-1) = 3.8.
+    // hub fanIn=5 > 3.8 → isHub true. mild fanIn=1, importers fanIn=0 → false.
+    const sink = provider.asExtractionSink();
+    const importers = ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts", "src/e.ts"];
+    for (const relPath of importers) {
+      await sink.write({
+        relPath,
+        language: "typescript",
+        imports: [{ importText: "./hub", startLine: 1 }],
+        chunks: [],
+        fileScope: [],
+      });
+    }
+    // mild.ts imports hub too AND is imported by a (so a → mild edge).
+    await sink.write({
+      relPath: "src/a.ts",
+      language: "typescript",
+      imports: [
+        { importText: "./hub", startLine: 1 },
+        { importText: "./mild", startLine: 2 },
+      ],
+      chunks: [],
+      fileScope: [],
+    });
+    // Register hub.ts and mild.ts as file rows in the universe.
+    await sink.write({ relPath: "src/hub.ts", language: "typescript", imports: [], chunks: [], fileScope: [] });
+    await sink.write({ relPath: "src/mild.ts", language: "typescript", imports: [], chunks: [], fileScope: [] });
+    await sink.finish();
+
+    const overlays = await provider.buildFileSignals("/", {
+      paths: [...importers, "src/hub.ts", "src/mild.ts"],
+    });
+
+    // Sanity on the distribution before asserting the derived boolean.
+    expect(overlays.get("src/hub.ts")?.["fanIn"]).toBe(5);
+    expect(overlays.get("src/mild.ts")?.["fanIn"]).toBe(1);
+
+    expect(overlays.get("src/hub.ts")?.["isHub"]).toBe(true);
+    expect(overlays.get("src/mild.ts")?.["isHub"]).toBe(false);
+    expect(overlays.get("src/b.ts")?.["isHub"]).toBe(false);
   });
 
   it("resolveRoot is identity — the slice scans the literal absolute path it is given", () => {
@@ -602,7 +664,7 @@ describe("CodegraphEnrichmentProvider", () => {
       // walked + extracted. b.md is reported with zero-valued signals.
       expect(overlays.has("src/a.ts")).toBe(true);
       expect(overlays.has("src/b.md")).toBe(true);
-      expect(overlays.get("src/b.md")?.["codegraph.file.fanIn"]).toBe(0);
+      expect(overlays.get("src/b.md")?.["fanIn"]).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -719,8 +781,8 @@ describe("CodegraphEnrichmentProvider", () => {
         paths: ["src/ok.ts", "src/missing.ts"],
       });
       expect(overlays.size).toBe(2);
-      expect(overlays.get("src/ok.ts")?.["codegraph.file.fanIn"]).toBe(0);
-      expect(overlays.get("src/missing.ts")?.["codegraph.file.fanIn"]).toBe(0);
+      expect(overlays.get("src/ok.ts")?.["fanIn"]).toBe(0);
+      expect(overlays.get("src/missing.ts")?.["fanIn"]).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -763,9 +825,9 @@ describe("CodegraphEnrichmentProvider", () => {
     ]);
     const overlays = await provider.buildChunkSignals("/", chunkMap);
     const main = overlays.get("src/main.ts")?.get("chunk-main");
-    expect(main?.["codegraph.chunk.fanOut"]).toBe(1);
+    expect(main?.["fanOut"]).toBe(1);
     const fooBar = overlays.get("src/foo.ts")?.get("chunk-foo-bar");
-    expect(fooBar?.["codegraph.chunk.fanIn"]).toBe(1);
+    expect(fooBar?.["fanIn"]).toBe(1);
   });
 
   // Slice 1 — resolveChunkSymbolId containment fallback. When the
@@ -823,8 +885,8 @@ describe("CodegraphEnrichmentProvider", () => {
     const head = overlays.get("src/big.ts")?.get("chunk-head");
     const tail = overlays.get("src/big.ts")?.get("chunk-tail");
     // Both head and tail must resolve to Big.method → same fanIn=1.
-    expect(head?.["codegraph.chunk.fanIn"]).toBe(1);
-    expect(tail?.["codegraph.chunk.fanIn"]).toBe(1);
+    expect(head?.["fanIn"]).toBe(1);
+    expect(tail?.["fanIn"]).toBe(1);
   });
 
   // resolveChunkSymbolId's `if (!lineMap) return undefined` branch fires

@@ -29,9 +29,64 @@ describe("codegraph derived signals", () => {
 
   it("InstabilitySignal passes through raw value clamped to [0,1]", () => {
     const sig = new InstabilitySignal();
-    expect(sig.extract({ "codegraph.file.instability": 0.42 }, {})).toBe(0.42);
-    expect(sig.extract({ "codegraph.file.instability": 1.5 }, {})).toBe(1);
-    expect(sig.extract({ "codegraph.file.instability": -0.1 }, {})).toBe(0);
+    // Use full connectionCount (≥ FALLBACK_K) so the dampening factor is 1.0
+    // and the test isolates the [0,1] clamp behavior from the confidence path.
+    const fullSupport = { "codegraph.file.connectionCount": 100 };
+    expect(sig.extract({ "codegraph.file.instability": 0.42, ...fullSupport }, {})).toBe(0.42);
+    expect(sig.extract({ "codegraph.file.instability": 1.5, ...fullSupport }, {})).toBe(1);
+    expect(sig.extract({ "codegraph.file.instability": -0.1, ...fullSupport }, {})).toBe(0);
+  });
+
+  // Score-side confidence dampening for the instability ratio. With
+  // connectionCount=1 the ratio swings 0↔1 from a single edge — classic
+  // small-denominator noise. `confidenceDampening(n, k) = min((n/k)^2, 1)`
+  // attenuates the contribution to ranking when support is below k.
+  // See `.claude/rules/signal-confidence.md` for the contract.
+  it("InstabilitySignal dampens score when connectionCount is below the support threshold", () => {
+    const sig = new InstabilitySignal();
+    const ctx = {
+      confidence: {
+        support: "connectionCount",
+        score: { threshold: 5, adaptivePercentile: 25 },
+      },
+    } as const;
+    // connectionCount=1, k=5 -> dampening factor = (1/5)^2 = 0.04
+    const raw = { "codegraph.file.instability": 1.0, "codegraph.file.connectionCount": 1 };
+    expect(sig.extract(raw, ctx)).toBeCloseTo(0.04, 5);
+  });
+
+  it("InstabilitySignal applies no dampening when connectionCount >= threshold", () => {
+    const sig = new InstabilitySignal();
+    const ctx = {
+      confidence: {
+        support: "connectionCount",
+        score: { threshold: 5, adaptivePercentile: 25 },
+      },
+    } as const;
+    // connectionCount=10, k=5 -> (10/5)^2 clamps to 1; raw 1.0 passes through.
+    const raw = { "codegraph.file.instability": 1.0, "codegraph.file.connectionCount": 10 };
+    expect(sig.extract(raw, ctx)).toBe(1);
+  });
+
+  it("InstabilitySignal reads connectionCount from nested codegraph payload for dampening", () => {
+    const sig = new InstabilitySignal();
+    const ctx = {
+      confidence: {
+        support: "connectionCount",
+        score: { threshold: 5 },
+      },
+    } as const;
+    const nested = {
+      codegraph: {
+        symbols: {
+          file: {
+            instability: 1.0,
+            connectionCount: 1,
+          },
+        },
+      },
+    };
+    expect(sig.extract(nested, ctx)).toBeCloseTo(0.04, 5);
   });
 
   // Defensive guard against a payload value that can't be coerced to a
@@ -174,6 +229,92 @@ describe("codegraph derived signals", () => {
       expect(sig.name).toBe("transitiveImpact");
       expect(sig.sources).toEqual(["codegraph.file.transitiveImpact"]);
       expect(sig.defaultBound).toBe(50);
+    });
+  });
+
+  // Nested-payload regression suite (tea-rags-mcp-5ajg + tea-rags-mcp-k6xu).
+  //
+  // EnrichmentApplier writes codegraph signals via batchSetPayload with
+  // key = "codegraph.symbols.file" / "codegraph.symbols.chunk", which Qdrant
+  // interprets as a path. buildFileSignals/buildChunkSignals now write BARE
+  // inner keys (tea-rags-mcp-k6xu), so the real on-disk payload looks like:
+  //   { codegraph: { symbols: { file: { fanIn: 5, ... } } } }
+  // mirroring git's bare-key shape. Derived signals read the bare nested form.
+  describe("nested payload shape (real Qdrant write path)", () => {
+    // connectionCount is always written by buildFileSignals (denom = fanIn+fanOut).
+    // Set to 25 here (>> FALLBACK_K=5) so InstabilitySignal confidence dampening
+    // is a no-op and the test isolates payload-shape reading from score attenuation.
+    const realFilePayload = {
+      codegraph: {
+        symbols: {
+          file: {
+            fanIn: 10,
+            fanOut: 15,
+            instability: 0.42,
+            connectionCount: 25,
+            isHub: true,
+            isLeaf: false,
+            transitiveImpact: 25,
+          },
+          chunk: {
+            fanIn: 20,
+            fanOut: 15,
+            pageRank: 0.005,
+          },
+        },
+      },
+      chunkSize: 100,
+    };
+
+    it("FanInSignal reads nested codegraph.symbols.file payload", () => {
+      const sig = new FanInSignal();
+      expect(sig.extract(realFilePayload, { bounds: { "file.fanIn": 20 } })).toBeCloseTo(0.5, 5);
+    });
+
+    it("FanOutSignal reads nested codegraph.symbols.file payload", () => {
+      const sig = new FanOutSignal();
+      expect(sig.extract(realFilePayload, { bounds: { "file.fanOut": 30 } })).toBeCloseTo(0.5, 5);
+    });
+
+    it("InstabilitySignal reads nested codegraph.symbols.file payload", () => {
+      const sig = new InstabilitySignal();
+      expect(sig.extract(realFilePayload, {})).toBe(0.42);
+    });
+
+    it("IsHubSignal reads nested codegraph.symbols.file payload", () => {
+      const sig = new IsHubSignal();
+      expect(sig.extract(realFilePayload, {})).toBe(1);
+    });
+
+    it("IsLeafSignal reads nested codegraph.symbols.file payload", () => {
+      const sig = new IsLeafSignal();
+      expect(sig.extract(realFilePayload, {})).toBe(0);
+    });
+
+    it("TransitiveImpactSignal reads nested codegraph.symbols.file payload", () => {
+      const sig = new TransitiveImpactSignal();
+      expect(sig.extract(realFilePayload, {})).toBeCloseTo(0.5, 5);
+    });
+
+    it("FanOutPerLineSignal reads nested codegraph.symbols.file payload and root chunkSize", () => {
+      const sig = new FanOutPerLineSignal();
+      // fanOut=15, chunkSize=100, ratio=0.15, defaultBound=0.1 → clamped to 1
+      expect(sig.extract(realFilePayload, {})).toBe(1);
+    });
+
+    it("ChunkFanInSignal reads nested codegraph.symbols.chunk payload", () => {
+      const sig = new ChunkFanInSignal();
+      expect(sig.extract(realFilePayload, { bounds: { "chunk.fanIn": 40 } })).toBeCloseTo(0.5, 5);
+    });
+
+    it("ChunkFanOutSignal reads nested codegraph.symbols.chunk payload", () => {
+      const sig = new ChunkFanOutSignal();
+      expect(sig.extract(realFilePayload, { bounds: { "chunk.fanOut": 30 } })).toBeCloseTo(0.5, 5);
+    });
+
+    it("PageRankSignal reads nested codegraph.symbols.chunk payload", () => {
+      const sig = new PageRankSignal();
+      expect(sig.extract(realFilePayload, {})).toBeCloseTo(0.5, 5);
     });
   });
 

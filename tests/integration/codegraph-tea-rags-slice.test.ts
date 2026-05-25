@@ -169,7 +169,7 @@ describe("codegraph slice 1 on real tea-rags sources", () => {
     const overlays = await provider.buildFileSignals("/", { paths: SAMPLE_FILES });
     // At least one of the files should have a non-zero fanOut — composition.ts
     // and factory.ts import many siblings.
-    const fanOuts = SAMPLE_FILES.map((p) => Number(overlays.get(p)?.["codegraph.file.fanOut"] ?? 0));
+    const fanOuts = SAMPLE_FILES.map((p) => Number(overlays.get(p)?.["fanOut"] ?? 0));
     expect(Math.max(...fanOuts)).toBeGreaterThan(0);
   });
 
