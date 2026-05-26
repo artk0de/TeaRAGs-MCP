@@ -50,10 +50,16 @@ export default defineConfig({
         "src/core/domains/ingest/pipeline/index.ts",
         "src/core/adapters/qdrant/filters/index.ts",
         "src/mcp/prompts/index.ts",
+        "src/core/adapters/duckdb/daemon/index.ts",
+        "src/core/infra/graph/index.ts",
         // I/O-heavy runtime (child process spawn, HTTP download — tested via integration)
         "src/core/adapters/qdrant/embedded/daemon.ts",
         "src/core/adapters/qdrant/embedded/download.ts",
         "src/core/adapters/qdrant/embedded/types.ts",
+        // Codegraph daemon process entrypoint (unix-socket server + spawn-on-demand
+        // runtime; same I/O-heavy category as the qdrant daemon above — validated by
+        // build + full suite, exercised end-to-end via integration, not unit-covered).
+        "src/core/adapters/duckdb/daemon/entry.ts",
         // Abstract-only error base classes (no logic, just class declaration)
         "src/core/adapters/errors.ts",
         "src/core/adapters/embeddings/errors.ts",

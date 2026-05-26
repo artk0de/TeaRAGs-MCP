@@ -30,6 +30,7 @@ import { join } from "node:path";
 
 import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
 import { DuckDbGraphClient } from "./client.js";
+import type { DaemonGraphDbClient } from "./daemon/client.js";
 import { DuckDbCloseFailedError, DuckDbOpenFailedError } from "./errors.js";
 
 /**
@@ -70,11 +71,30 @@ export interface GraphDbClientPoolOptions {
     tempDirectory?: string;
     preserveInsertionOrder?: boolean;
   };
+  /**
+   * Unix socket of the running codegraph daemon. When set, `acquireWrite`
+   * routes mutations through a `DaemonGraphDbClient` over this socket — the
+   * single daemon process holds the RW DuckDB lock so concurrent MCP
+   * processes never contend on it. When absent (direct/test mode),
+   * `acquireWrite` falls back to the in-process RW handle (`acquire`).
+   * Reads (`acquireRead`) always go in-process READ_ONLY and ignore this.
+   */
+  daemonSocketPath?: string;
 }
 
 interface PoolEntry {
   graphDb: DuckDbGraphClient;
   symbolTable: GlobalSymbolTable;
+}
+
+/**
+ * Cached daemon-mode entry: the raw `DaemonGraphDbClient` (whose real `close`
+ * the pool calls in `closeAll`) plus a stable no-op-close wrapper handed to
+ * callers. Caching the wrapper keeps handle identity stable across acquires.
+ */
+interface DaemonClientEntry {
+  client: DaemonGraphDbClient;
+  wrapped: GraphDbClient;
 }
 
 export interface CollectionGraphHandle {
@@ -100,6 +120,17 @@ export class GraphDbClientPool {
    * the same file).
    */
   private readonly inflight = new Map<string, Promise<CollectionGraphHandle>>();
+  /**
+   * Daemon mode only: ONE `DaemonGraphDbClient` per collection (a single unix
+   * socket per (collection, process)). `acquireWrite` / `acquireReader` reuse
+   * the cached client instead of opening a fresh socket per call — the client
+   * multiplexes concurrent requests by id, so one socket is enough. Closed in
+   * `closeAll` so the daemon-side per-connection refcount decrements when this
+   * process exits, letting the idle watcher fire and release the RW lock.
+   */
+  private readonly daemonClients = new Map<string, DaemonClientEntry>();
+  /** In-flight daemon-client init so concurrent first-callers share one socket. */
+  private readonly daemonInflight = new Map<string, Promise<DaemonClientEntry>>();
 
   constructor(private readonly options: GraphDbClientPoolOptions) {
     mkdirSync(this.codegraphDir, { recursive: true });
@@ -176,6 +207,111 @@ export class GraphDbClientPool {
     });
     this.inflight.set(collectionName, promise);
     return promise;
+  }
+
+  /**
+   * Acquire a WRITE handle for `collectionName`. When `daemonSocketPath`
+   * is configured, returns a `DaemonGraphDbClient` that proxies mutations
+   * to the daemon (which owns the single RW DuckDB connection across all
+   * processes). Otherwise delegates to the in-process RW path (`acquire`)
+   * for direct/test mode.
+   *
+   * The import is dynamic so the daemon client module is only loaded when
+   * daemon mode is actually wired — direct/test mode never touches the
+   * `node:net` socket code.
+   */
+  async acquireWrite(collectionName: string): Promise<CollectionGraphHandle> {
+    if (this.options.daemonSocketPath) {
+      return this.acquireDaemonHandle(collectionName);
+    }
+    return this.acquire(collectionName);
+  }
+
+  /**
+   * Return a handle backed by the ONE cached `DaemonGraphDbClient` for
+   * `collectionName` (lazily created + init'd on first use, reused after).
+   * The handle's `graphDb` is a thin proxy whose `close()` is a NO-OP — the
+   * pool owns the real socket close via `closeAll`. If a per-call `close()`
+   * ended the shared socket, the next acquire would have to reconnect (the
+   * leak this fix removes), and `GraphFacade.withReadHandle`'s `finally`
+   * close would tear down the socket other in-flight callers share.
+   */
+  private async acquireDaemonHandle(collectionName: string): Promise<CollectionGraphHandle> {
+    const entry = await this.acquireDaemonClient(collectionName);
+    return { graphDb: entry.wrapped, symbolTable: this.options.symbolTableFactory() };
+  }
+
+  /**
+   * Lazily create + init the single cached `DaemonGraphDbClient` for a
+   * collection (plus its stable no-op-close wrapper). Concurrent first-callers
+   * share one init pass via `daemonInflight` (no duplicate sockets during a
+   * burst of acquires).
+   */
+  private async acquireDaemonClient(collectionName: string): Promise<DaemonClientEntry> {
+    const cached = this.daemonClients.get(collectionName);
+    if (cached) return cached;
+    const inflight = this.daemonInflight.get(collectionName);
+    if (inflight) return inflight;
+
+    const socketPath = this.options.daemonSocketPath;
+    /* v8 ignore next -- acquireDaemonClient is only reached when daemonSocketPath is set */
+    if (!socketPath) throw new Error("acquireDaemonClient called without daemonSocketPath");
+
+    const promise = (async (): Promise<DaemonClientEntry> => {
+      const { DaemonGraphDbClient } = await import("./daemon/client.js");
+      const client = new DaemonGraphDbClient(socketPath, collectionName);
+      await client.init();
+      const entry: DaemonClientEntry = { client, wrapped: wrapNoopClose(client) };
+      this.daemonClients.set(collectionName, entry);
+      return entry;
+    })().finally(() => {
+      this.daemonInflight.delete(collectionName);
+    });
+    this.daemonInflight.set(collectionName, promise);
+    return promise;
+  }
+
+  /**
+   * Acquire a READ-ONLY handle for `collectionName`. Always opens the live
+   * versioned DuckDB file in-process with `access_mode=READ_ONLY` — DuckDB
+   * permits unlimited concurrent cross-process readers, so this never
+   * contends with the daemon's RW lock. The full (unstripped) collection
+   * name resolves the same `<collection>.duckdb` file the write path
+   * populated.
+   *
+   * The returned handle is NOT cached in `clients` (each reader opens its
+   * own RO connection); callers MUST `close()` the returned `graphDb` when
+   * done — `closeAll`/`release` only manage the cached RW entries.
+   */
+  async acquireRead(collectionName: string): Promise<CollectionGraphHandle> {
+    const graphDb = new DuckDbGraphClient({
+      path: this.pathFor(collectionName),
+      accessMode: "READ_ONLY",
+    });
+    await graphDb.init();
+    return { graphDb, symbolTable: this.options.symbolTableFactory() };
+  }
+
+  /**
+   * Mode-aware READ handle for the GraphFacade. When `daemonSocketPath` is
+   * configured (production), returns a `DaemonGraphDbClient` that PROXIES the
+   * three facade reads (`getCallers` / `getCallees` / `findCycles`) through the
+   * daemon's own RW connection — DuckDB's RW lock is process-exclusive, so a
+   * cross-process READ_ONLY attach throws "Conflicting lock is held" while the
+   * daemon holds RW. Routing reads through the daemon (the sole file opener)
+   * eliminates the conflict entirely. In direct/test mode (no socket) falls back
+   * to the in-process READ_ONLY attach (`acquireRead`).
+   *
+   * Either handle's `close()` is safe to call in the facade's `finally`: in
+   * daemon mode it is a NO-OP (the pool owns the ONE cached socket per
+   * collection, closed in `closeAll`); in direct/test mode the in-process RO
+   * handle closes its own file.
+   */
+  async acquireReader(collectionName: string): Promise<CollectionGraphHandle> {
+    if (this.options.daemonSocketPath) {
+      return this.acquireDaemonHandle(collectionName);
+    }
+    return this.acquireRead(collectionName);
   }
 
   private async openCollection(collectionName: string): Promise<CollectionGraphHandle> {
@@ -274,12 +410,45 @@ export class GraphDbClientPool {
     return evicted;
   }
 
-  /** Close every cached client. Idempotent. Used at shutdown. */
+  /**
+   * Close every cached client — both the in-process RW clients AND the cached
+   * daemon-mode socket clients. Idempotent. Used at shutdown.
+   *
+   * Closing the daemon clients ends their unix sockets, which fires the
+   * daemon-side per-connection `close` handler (`decrementRefs`). When the last
+   * client process closes, the daemon's refcount reaches 0 and its idle watcher
+   * tears it down, releasing the RW DuckDB lock. Without this, the sockets stay
+   * open until the process dies and the daemon never sees refs hit 0.
+   */
   async closeAll(): Promise<void> {
     const all = [...this.clients.values()];
     this.clients.clear();
-    await Promise.all(all.map(async (e) => e.graphDb.close().catch(() => undefined)));
+    const daemons = [...this.daemonClients.values()];
+    this.daemonClients.clear();
+    await Promise.all([
+      ...all.map(async (e) => e.graphDb.close().catch(() => undefined)),
+      ...daemons.map(async (e) => e.client.close().catch(() => undefined)),
+    ]);
   }
+}
+
+/**
+ * Wrap a cached `DaemonGraphDbClient` so the handle handed to a caller has a
+ * NO-OP `close()`. Every other method/property forwards to the real client.
+ * The pool owns the single socket per collection and closes it in `closeAll`;
+ * a per-call `close()` (e.g. `GraphFacade.withReadHandle`'s `finally`) must NOT
+ * tear down the shared socket out from under other in-flight callers.
+ */
+function wrapNoopClose(client: DaemonGraphDbClient): GraphDbClient {
+  return new Proxy(client, {
+    get(target, prop, receiver) {
+      if (prop === "close") {
+        return async (): Promise<void> => undefined;
+      }
+      const value = Reflect.get(target, prop, receiver) as unknown;
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    },
+  }) as unknown as GraphDbClient;
 }
 
 /**

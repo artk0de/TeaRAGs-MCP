@@ -1,19 +1,18 @@
 # `domains/language` — Per-Language Code Consolidation
 
-**Date:** 2026-05-25
-**Status:** Design — pending implementation plan
-**Scope:** Full consolidation, all supported languages
+**Date:** 2026-05-25 **Status:** Design — pending implementation plan **Scope:**
+Full consolidation, all supported languages
 
 ## Problem
 
 Language-specific code is spread across **three** locations in **two** domains.
 For a single language (Ruby shown), the per-language code lives in:
 
-| Concern               | Current location                                                                 | Pipeline phase      |
-| --------------------- | -------------------------------------------------------------------------------- | ------------------- |
-| Chunking hooks + AST config | `domains/ingest/pipeline/chunker/hooks/ruby/**` + `LanguageDefinition` in `chunker/config.ts` | ingest              |
-| Symbol walker         | `domains/ingest/pipeline/chunker/extraction/ruby-walker.ts` + `ruby-macros.ts`   | codegraph (!)       |
-| Call resolver         | `domains/trajectory/codegraph/symbols/resolvers/ruby/**` + `LanguageConfig` in `symbols/provider.ts` | codegraph           |
+| Concern                     | Current location                                                                                     | Pipeline phase |
+| --------------------------- | ---------------------------------------------------------------------------------------------------- | -------------- |
+| Chunking hooks + AST config | `domains/ingest/pipeline/chunker/hooks/ruby/**` + `LanguageDefinition` in `chunker/config.ts`        | ingest         |
+| Symbol walker               | `domains/ingest/pipeline/chunker/extraction/ruby-walker.ts` + `ruby-macros.ts`                       | codegraph (!)  |
+| Call resolver               | `domains/trajectory/codegraph/symbols/resolvers/ruby/**` + `LanguageConfig` in `symbols/provider.ts` | codegraph      |
 
 Two concrete smells, confirmed by tea-rags signals:
 
@@ -22,9 +21,9 @@ Two concrete smells, confirmed by tea-rags signals:
    is `fanOut 15`, `instability 0.94`. The walker is a codegraph-extraction
    concern that physically lives in `ingest/chunker/`.
 2. **Duplicated per-language config.** `scopeSeparator` and
-   `disambiguateOverloads` are declared **twice** for the same language — once in
-   `LanguageDefinition` (chunker) and once in `LanguageConfig` (codegraph). Two
-   sources of truth for one language's properties.
+   `disambiguateOverloads` are declared **twice** for the same language — once
+   in `LanguageDefinition` (chunker) and once in `LanguageConfig` (codegraph).
+   Two sources of truth for one language's properties.
 
 Adding a new language today means touching two domains, ~3 directories, and two
 registries.
@@ -108,12 +107,11 @@ table that `composeSymbolId` must implement.
 A `LanguageProvider` is a **per-context instance** created by
 `LanguageFactory.create(lang)` — it owns a fresh tree-sitter `Parser` (parsers
 are stateful and per-thread; see §5). The capability **logic and config**
-(`composeSymbolId`, node-type tables, `scopeSeparator`, hook definitions)
-are pure, module-level immutables that instances merely reference — the cost of
-an instance is the Parser, not the logic. Within a context the `chunk()`
-(ingest) and `walk()`/`resolve()` (codegraph) capabilities share no mutable
-state with each other beyond that Parser, so a phase calls only the capability
-it needs.
+(`composeSymbolId`, node-type tables, `scopeSeparator`, hook definitions) are
+pure, module-level immutables that instances merely reference — the cost of an
+instance is the Parser, not the logic. Within a context the `chunk()` (ingest)
+and `walk()`/`resolve()` (codegraph) capabilities share no mutable state with
+each other beyond that Parser, so a phase calls only the capability it needs.
 
 ### 2. Dependency direction
 
@@ -121,7 +119,8 @@ it needs.
 etc.). The current `codegraph/provider.ts → ingest/.../walker.js` import is
 therefore already a **hard violation**, not just a smell. So consumers must NOT
 import `domains/language/` directly — they go through the `contracts/` interface
-+ DI, exactly the existing `EnrichmentProvider` / `TrajectoryRegistry` pattern.
+
+- DI, exactly the existing `EnrichmentProvider` / `TrajectoryRegistry` pattern.
 
 ```text
 contracts/  (interfaces: LanguageProvider, LanguageFactory, LanguageKernel,
@@ -146,11 +145,11 @@ domains/language/   ingest/chunker            codegraph/symbols
 Phase-orchestrator **engines stay** in their domains and consume capabilities
 through the injected `LanguageFactory`. Only per-language **descriptors move**.
 
-| Stays (phase engine)                                                              | Moves to `domains/language/<lang>/`                                  |
-| --------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `ingest/chunker/tree-sitter.ts`, `base.ts`, `infra/pool.ts`, `infra/worker.ts`    | `chunker/hooks/<lang>/**` → `chunking.ts`                            |
-| `codegraph/symbols/provider.ts` (`CodegraphEnrichmentProvider`)                   | `chunker/extraction/<lang>-walker.ts` + `ruby-macros.ts` → `symbols.ts` |
-| `codegraph/infra/` (page-rank, tarjan), `symbols/payload-signals.ts`, presets     | `codegraph/symbols/resolvers/<lang>/**` → `resolver.ts`             |
+| Stays (phase engine)                                                           | Moves to `domains/language/<lang>/`                                     |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `ingest/chunker/tree-sitter.ts`, `base.ts`, `infra/pool.ts`, `infra/worker.ts` | `chunker/hooks/<lang>/**` → `chunking.ts`                               |
+| `codegraph/symbols/provider.ts` (`CodegraphEnrichmentProvider`)                | `chunker/extraction/<lang>-walker.ts` + `ruby-macros.ts` → `symbols.ts` |
+| `codegraph/infra/` (page-rank, tarjan), `symbols/payload-signals.ts`, presets  | `codegraph/symbols/resolvers/<lang>/**` → `resolver.ts`                 |
 
 `tree-sitter.ts` and `provider.ts` are hotspot/deep-silo files. They are **not
 rewritten** — they swap their source of config from a local map to the injected
@@ -226,7 +225,8 @@ structured-cloneable across `postMessage`):
 
 - **Main process** — `api/composition.ts` constructs the concrete
   `LanguageFactory` and injects it (as the `contracts/` interface) into
-  `IngestFacade` and the codegraph provider. Same pattern as `TrajectoryRegistry`.
+  `IngestFacade` and the codegraph provider. Same pattern as
+  `TrajectoryRegistry`.
 - **Chunker worker** — `chunker/infra/worker.ts` is the second composition root:
   it imports the concrete factory module directly and calls `create(lang)` once
   per language, caching the instance for its single-threaded message loop
@@ -244,17 +244,17 @@ because the factory itself is injected rather than reached from a global.
   the factory is one module. A language folder is a set of small files, not one
   800-line class.
 - **Silo/hotspot migration.** `provider.ts`, `tree-sitter.ts`,
-  `contracts/types/codegraph.ts` are deep-silo/hotspot. Migrate one language at a
-  time; engines are not rewritten. Each language move keeps the per-concern files
-  intact (relocated, not flattened).
+  `contracts/types/codegraph.ts` are deep-silo/hotspot. Migrate one language at
+  a time; engines are not rewritten. Each language move keeps the per-concern
+  files intact (relocated, not flattened).
 - **Worker boundary / parallelism.** `LanguageFactory.create(lang)` spawns a
   fresh instance with its own Parser; instances are NEVER shared by reference
   across threads (tree-sitter parsers are per-thread). The worker is a second
   composition root — it imports the concrete factory directly; main injects it
   via DI. Do NOT "simplify" this into one shared provider object.
 - **Domain boundaries.** Interfaces live in `contracts/`; `ingest`/`codegraph`
-  import only the interface and receive the factory via DI — they MUST NOT import
-  `domains/language/` directly (that would re-introduce the domain↔domain
+  import only the interface and receive the factory via DI — they MUST NOT
+  import `domains/language/` directly (that would re-introduce the domain↔domain
   violation per `domain-boundaries.md`). Only the worker root imports the
   concrete factory.
 - **Factory cost / caching.** `create(lang)` is **expensive** — it loads the
@@ -271,7 +271,7 @@ because the factory itself is injected rather than reached from a global.
 0. **Dependency guard first.** Add a depcruise/eslint rule BEFORE moving any
    code: `domains/language/` must not import `ingest`/`codegraph`, and
    `ingest`/`codegraph` must not import `domains/language/` (only `api/` and the
-   worker root may). This is *adding* a rule, not weakening one (per
+   worker root may). This is _adding_ a rule, not weakening one (per
    `linter-config.md`), so every later step trips the guard immediately on a
    wrong-direction import.
 1. **Skeleton:** interfaces in `contracts/types/language.ts` + `LanguageFactory`
@@ -298,5 +298,5 @@ because the factory itself is injected rather than reached from a global.
 - **Changing the symbolId format.** `composeSymbolId` unifies two existing
   implementations (`buildSymbolId` + `joinSymbol`) but the id shape — `#`
   instance / `.` class / `::`|`.` namespace / `~N` overload from
-  `symbolid-convention.md` — does NOT change. Behavior-preserving extraction, not
-  a convention redesign.
+  `symbolid-convention.md` — does NOT change. Behavior-preserving extraction,
+  not a convention redesign.

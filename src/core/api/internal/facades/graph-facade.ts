@@ -53,48 +53,75 @@ export class GraphFacade {
   constructor(private readonly deps: GraphFacadeDeps) {}
 
   /**
-   * Resolve the `{ collection, project, path }` triad to a Qdrant
-   * collection name (throws typed `InputValidationError` on missing
-   * address or unknown project alias) and acquire the per-collection
-   * DuckDB handle. Returns `undefined` only on pool-level I/O failure
-   * (lock held, file missing, init error) — that's the empty-result
-   * fallback the codegraph spec mandates. Resolution-level errors
-   * propagate so the MCP middleware can surface them as schema errors.
+   * Resolve the request's address triad ({ collection, project, path }) to a
+   * Qdrant collection name via the registry (resolution-level errors propagate
+   * as typed `InputValidationError` so the MCP middleware surfaces them), then
+   * acquire a per-collection READ handle and run `fn` against it, always closing
+   * the handle afterwards. Reads route through `pool.acquireReader` — mode-aware:
+   * in production a daemon client that PROXIES the read through the daemon's own
+   * RW connection (DuckDB's RW lock is process-exclusive, so a cross-process
+   * READ_ONLY attach throws "Conflicting lock is held" while the daemon holds
+   * RW); in direct/test mode an in-process READ_ONLY attach. The handle is
+   * NON-cached and MUST be closed, so every read opens-queries-closes in one
+   * bounded scope. Returns `fallback` only on pool-level acquire failure (daemon
+   * unreachable, lock held, missing file, init error).
    */
-  private async acquire(addr: GraphAddressing): Promise<CollectionGraphHandle | undefined> {
+  private async withReadHandle<T>(
+    addr: GraphAddressing,
+    fn: (handle: CollectionGraphHandle) => Promise<T>,
+    fallback: T,
+  ): Promise<T> {
     const { collectionName } = resolveCollection(this.deps.collectionRegistry, addr);
+    let handle: CollectionGraphHandle | undefined;
     try {
-      return await this.deps.pool.acquire(collectionName);
+      handle = await this.deps.pool.acquireReader(collectionName);
     } catch {
-      return undefined;
+      return fallback;
+    }
+    try {
+      return await fn(handle);
+    } finally {
+      await handle.graphDb.close().catch(() => undefined);
     }
   }
 
   async getCallers(req: GetCallersRequest): Promise<GetCallersResponse> {
-    const handle = await this.acquire(req);
-    if (!handle) return { callers: [] };
-    const edges = await handle.graphDb.getCallers(req.symbolId);
-    return { callers: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
+    return this.withReadHandle(
+      req,
+      async (handle) => {
+        const edges = await handle.graphDb.getCallers(req.symbolId);
+        return { callers: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
+      },
+      { callers: [] },
+    );
   }
 
   async getCallees(req: GetCalleesRequest): Promise<GetCalleesResponse> {
-    const handle = await this.acquire(req);
-    if (!handle) return { callees: [] };
-    const edges = await handle.graphDb.getCallees(req.symbolId);
-    return { callees: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
+    return this.withReadHandle(
+      req,
+      async (handle) => {
+        const edges = await handle.graphDb.getCallees(req.symbolId);
+        return { callees: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
+      },
+      { callees: [] },
+    );
   }
 
   async findCycles(req: FindCyclesRequest): Promise<FindCyclesResponse> {
-    const handle = await this.acquire(req);
-    if (!handle) return { cycles: [] };
-    const entries = await handle.graphDb.findCycles(req.scope);
-    return {
-      cycles: entries.map((e) => ({
-        cycleId: e.cycleId,
-        scope: e.scope,
-        members: e.members,
-        length: e.members.length,
-      })),
-    };
+    return this.withReadHandle(
+      req,
+      async (handle) => {
+        const entries = await handle.graphDb.findCycles(req.scope);
+        return {
+          cycles: entries.map((e) => ({
+            cycleId: e.cycleId,
+            scope: e.scope,
+            members: e.members,
+            length: e.members.length,
+          })),
+        };
+      },
+      { cycles: [] },
+    );
   }
 }
