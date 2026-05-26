@@ -24,6 +24,10 @@ explicitly rather than omitting the block.
 
 - `.claude/rules/silo-pairing.md` — process rule for commits touching deep-silo
   files (must include `Why:` line).
+- `.claude/rules/domains-language.md` — Factory-encapsulates-construction,
+  worker-thread DI via injected module-path, and the language-migration test
+  rule (preserve examples, validate counts). Scoped to `domains/language`,
+  chunker, codegraph, `api/internal`.
 
 ## Terminology (MANDATORY)
 
