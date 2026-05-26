@@ -6,12 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import {
-  getDaemonPaths,
-  getStorageDir,
-  incrementRefs,
-  type CodegraphDaemonPaths,
-} from "../core/adapters/duckdb/daemon/index.js";
+import { getDaemonPaths, getStorageDir, type CodegraphDaemonPaths } from "../core/adapters/duckdb/daemon/index.js";
 import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
@@ -218,6 +213,15 @@ function isCodegraphDaemonAlive(paths: CodegraphDaemonPaths): boolean {
  * fallback. A spawn failure here is swallowed, but the subsequent
  * `DaemonGraphDbClient.init()` then surfaces the connect failure loudly after
  * its bounded retry window expires, rather than silently degrading.
+ *
+ * Refcounting is intentionally NOT done here. The daemon's per-connection
+ * refcount is owned SOLELY by `entry.ts` (connect = +1, socket close = -1), so
+ * `refs` equals the number of live `(collection, process)` sockets. The pool
+ * caches one socket per collection and closes them in `closeAll`, so when a
+ * client process exits or shuts down its pool the sockets close, `refs` decays
+ * to 0, and the idle watcher releases the RW lock. A per-process bump here
+ * would double-count (the connections already counted) and pin `refs` above 0
+ * forever — the exact bug that kept the daemon holding the lock.
  */
 function ensureCodegraphDaemon(
   paths: CodegraphDaemonPaths,
@@ -227,17 +231,11 @@ function ensureCodegraphDaemon(
     threads?: number;
   },
 ): void {
-  if (isCodegraphDaemonAlive(paths)) {
-    incrementRefs(paths);
-    return;
-  }
+  if (isCodegraphDaemonAlive(paths)) return;
   const lock = codegraphDaemonLock.acquire(paths.lockFile);
   if (!lock) return; // another process is spawning; it will own the daemon
   try {
-    if (isCodegraphDaemonAlive(paths)) {
-      incrementRefs(paths);
-      return;
-    }
+    if (isCodegraphDaemonAlive(paths)) return;
     const entryUrl = new URL("../core/adapters/duckdb/daemon/entry.js", import.meta.url);
     const entryPath = fileURLToPath(entryUrl);
     const child = spawn(process.execPath, [entryPath], {
@@ -252,7 +250,6 @@ function ensureCodegraphDaemon(
       },
     });
     child.unref();
-    incrementRefs(paths);
   } catch {
     /* best-effort: fall back to in-process write path */
   } finally {

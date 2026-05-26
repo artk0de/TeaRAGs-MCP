@@ -50,6 +50,67 @@ export interface DaemonRuntimeOptions {
   };
 }
 
+/** Hard ceiling on graceful teardown before the daemon force-exits anyway. */
+const SHUTDOWN_TIMEOUT_MS = 3_000;
+
+export interface ShutdownDeps {
+  /** The net server to stop accepting on (its `close(cb)` may hang). */
+  server: Pick<Server, "close">;
+  /** Pool whose cached clients/files must be closed (its `closeAll` may hang). */
+  pool: Pick<GraphDbClientPool, "closeAll">;
+  /** Sync lifecycle-file cleanup, always run after the bounded teardown. */
+  cleanup: () => void;
+  /** Override the hard timeout (tests pass a tiny value). */
+  timeoutMs?: number;
+}
+
+/**
+ * Build the daemon's single graceful-shutdown function. Both the idle watcher
+ * AND the SIGTERM/SIGINT handlers call it. The teardown (stop accepting, close
+ * the pool's cached daemon clients + DuckDB files) is wrapped in a hard timeout
+ * (`Promise.race`) so a wedged DuckDB driver close or a server that never fires
+ * its close callback can NEVER keep the process alive — the lock-leak root
+ * cause 2 ("daemon ignored SIGTERM, needed SIGKILL"). After the race resolves
+ * (cleanly or via timeout) the lifecycle files are unlinked and the caller
+ * force-exits. Idempotent: a second call is a no-op.
+ */
+export function createShutdown(deps: ShutdownDeps): () => Promise<void> {
+  const timeoutMs = deps.timeoutMs ?? SHUTDOWN_TIMEOUT_MS;
+  let shuttingDown = false;
+  return async (): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+
+    const teardown = (async (): Promise<void> => {
+      await new Promise<void>((resolve) => {
+        deps.server.close(() => {
+          resolve();
+        });
+      });
+      await deps.pool.closeAll().catch(() => undefined);
+    })();
+
+    // Race the teardown against a bounded timer. A hung teardown loses the race
+    // but does not block — `cleanup` + force-exit happen regardless.
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, timeoutMs);
+      timer.unref?.();
+      void teardown.then(
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+      );
+    });
+
+    deps.cleanup();
+  };
+}
+
 /**
  * Build the per-connection `data`/`close` handler pair for a socket. Extracted
  * so tests can drive framing + refcounting without a live `net.Server`.
@@ -109,18 +170,16 @@ export async function runDaemon(
   // Holder so `shutdown` can clear the watcher that is armed after it is
   // defined (avoids a forward-referenced `let` that prefer-const flags).
   const watcherRef: { current?: NodeJS.Timeout } = {};
-  let shuttingDown = false;
+  const boundedShutdown = createShutdown({
+    server,
+    pool,
+    cleanup: () => {
+      cleanupDaemonFiles(options.paths);
+    },
+  });
   const shutdown = async (): Promise<void> => {
-    if (shuttingDown) return;
-    shuttingDown = true;
     if (watcherRef.current) clearInterval(watcherRef.current);
-    await new Promise<void>((resolve) => {
-      server.close(() => {
-        resolve();
-      });
-    });
-    await pool.closeAll().catch(() => undefined);
-    cleanupDaemonFiles(options.paths);
+    await boundedShutdown();
   };
 
   // Clear any stale socket file left by a previously-crashed daemon. Without
