@@ -70,6 +70,15 @@ export interface GraphDbClientPoolOptions {
     tempDirectory?: string;
     preserveInsertionOrder?: boolean;
   };
+  /**
+   * Unix socket of the running codegraph daemon. When set, `acquireWrite`
+   * routes mutations through a `DaemonGraphDbClient` over this socket — the
+   * single daemon process holds the RW DuckDB lock so concurrent MCP
+   * processes never contend on it. When absent (direct/test mode),
+   * `acquireWrite` falls back to the in-process RW handle (`acquire`).
+   * Reads (`acquireRead`) always go in-process READ_ONLY and ignore this.
+   */
+  daemonSocketPath?: string;
 }
 
 interface PoolEntry {
@@ -176,6 +185,48 @@ export class GraphDbClientPool {
     });
     this.inflight.set(collectionName, promise);
     return promise;
+  }
+
+  /**
+   * Acquire a WRITE handle for `collectionName`. When `daemonSocketPath`
+   * is configured, returns a `DaemonGraphDbClient` that proxies mutations
+   * to the daemon (which owns the single RW DuckDB connection across all
+   * processes). Otherwise delegates to the in-process RW path (`acquire`)
+   * for direct/test mode.
+   *
+   * The import is dynamic so the daemon client module is only loaded when
+   * daemon mode is actually wired — direct/test mode never touches the
+   * `node:net` socket code.
+   */
+  async acquireWrite(collectionName: string): Promise<CollectionGraphHandle> {
+    if (this.options.daemonSocketPath) {
+      const { DaemonGraphDbClient } = await import("../codegraph-daemon/client.js");
+      const graphDb = new DaemonGraphDbClient(this.options.daemonSocketPath, collectionName);
+      await graphDb.init();
+      return { graphDb, symbolTable: this.options.symbolTableFactory() };
+    }
+    return this.acquire(collectionName);
+  }
+
+  /**
+   * Acquire a READ-ONLY handle for `collectionName`. Always opens the live
+   * versioned DuckDB file in-process with `access_mode=READ_ONLY` — DuckDB
+   * permits unlimited concurrent cross-process readers, so this never
+   * contends with the daemon's RW lock. The full (unstripped) collection
+   * name resolves the same `<collection>.duckdb` file the write path
+   * populated.
+   *
+   * The returned handle is NOT cached in `clients` (each reader opens its
+   * own RO connection); callers MUST `close()` the returned `graphDb` when
+   * done — `closeAll`/`release` only manage the cached RW entries.
+   */
+  async acquireRead(collectionName: string): Promise<CollectionGraphHandle> {
+    const graphDb = new DuckDbGraphClient({
+      path: this.pathFor(collectionName),
+      accessMode: "READ_ONLY",
+    });
+    await graphDb.init();
+    return { graphDb, symbolTable: this.options.symbolTableFactory() };
   }
 
   private async openCollection(collectionName: string): Promise<CollectionGraphHandle> {

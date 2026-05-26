@@ -292,3 +292,26 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     await pool.closeAll();
   });
 });
+
+describe("GraphDbClientPool — mode-aware acquireRead/acquireWrite", () => {
+  it("acquireRead opens a READ_ONLY in-process client on the full (unstripped) collection name", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pool-"));
+    const pool = new GraphDbClientPool({
+      rootDir: root,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    });
+    // populate code_x_v2 via write path
+    const w = await pool.acquireWrite("code_x_v2");
+    await w.graphDb.upsertFile(
+      { relPath: "a.ts", language: "typescript" },
+      { fileEdges: [], methodEdges: [] },
+    );
+    // read path resolves the SAME versioned file (no strip to code_x)
+    const r = await pool.acquireRead("code_x_v2");
+    expect(await r.graphDb.hasData()).toBe(true);
+    expect(pool.pathFor("code_x_v2")).toContain("code_x_v2.duckdb"); // not code_x.duckdb
+    await r.graphDb.close();
+    await pool.closeAll();
+    rmSync(root, { recursive: true, force: true });
+  });
+});
