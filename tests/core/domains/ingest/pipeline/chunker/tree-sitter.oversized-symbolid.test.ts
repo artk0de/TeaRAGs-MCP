@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
+import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/index.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
 /**
@@ -23,7 +24,7 @@ describe("TreeSitterChunker oversized method symbolId inheritance", () => {
       chunkOverlap: 50,
       maxChunkSize: 1500,
     };
-    const chunker = new TreeSitterChunker(config);
+    const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer());
     const chunks = await chunker.chunk(code, "src/big.ts", "typescript");
 
     const splits = chunks.filter((c) => c.metadata.parentSymbolId === fnName);

@@ -13,16 +13,28 @@ import { Worker } from "node:worker_threads";
 import type { ChunkerConfig, CodeChunk } from "../../../../../types.js";
 import { PipelineNotStartedError } from "../../../errors.js";
 import { isDebug } from "../../infra/runtime.js";
-import type { WorkerRequest, WorkerResponse } from "./worker.js";
+import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
 
 /**
  * Worker script path — always points to compiled JS in build/.
  *
- * worker_threads require compiled JS. import.meta.url resolves to:
- *   production: .../build/core/ingest/pipeline/chunker/utils/pool.js
- *   vitest:     .../src/core/ingest/pipeline/chunker/utils/pool.ts (remap to build/)
+ * worker_threads require compiled JS. The worker ENTRY is the second
+ * composition root and lives in `api/internal/` (spec §5), NOT next to this
+ * pool: it imports the concrete `DefaultSymbolIdComposer` from
+ * `domains/language`, which `domains/ingest` may not import (eslint leaf-domain
+ * guard). So resolve up from this pool's compiled dir
+ * (`build/core/domains/ingest/pipeline/chunker/infra/`) to `build/core/` and
+ * into `api/internal/chunker-worker.js`.
+ *
+ * import.meta.url resolves to:
+ *   production: .../build/core/domains/ingest/pipeline/chunker/infra/pool.js
+ *   vitest:     .../src/core/domains/ingest/pipeline/chunker/infra/pool.ts (remap to build/)
  */
-const WORKER_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)).replace("/src/", "/build/"), "worker.js");
+const POOL_DIR = path.dirname(fileURLToPath(import.meta.url)).replace("/src/", "/build/");
+// POOL_DIR = build/core/domains/ingest/pipeline/chunker/infra — five levels
+// below build/core (domains, ingest, pipeline, chunker, infra).
+const CORE_DIR = path.resolve(POOL_DIR, "../../../../..");
+const WORKER_PATH = path.join(CORE_DIR, "api", "internal", "chunker-worker.js");
 
 export interface FileChunkResult {
   filePath: string;

@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChunkerPool as ChunkerPoolType } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/infra/pool.js";
-import type { WorkerResponse } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/infra/worker.js";
+import type { WorkerResponse } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/infra/worker-protocol.js";
 import type { ChunkerConfig } from "../../../../../../../src/core/types.js";
 
 // --- Shared mock state (hoisted so vi.mock can reference it) ---

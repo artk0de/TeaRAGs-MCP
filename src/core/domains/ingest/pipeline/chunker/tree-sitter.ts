@@ -9,6 +9,7 @@
 
 import Parser from "tree-sitter";
 
+import type { SymbolIdComposer } from "../../../../contracts/types/language.js";
 import { isStaticMethodNode } from "../../../../infra/symbolid/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
 import { isDebug } from "../infra/runtime.js";
@@ -49,8 +50,7 @@ export class TreeSitterChunker implements CodeChunker {
   private buildSymbolId(name?: string, parentName?: string, isStatic?: boolean): string | undefined {
     if (!name) return undefined;
     if (!parentName) return name;
-    const separator = isStatic ? "." : "#";
-    return `${parentName}${separator}${name}`;
+    return this.symbolIds.compose(parentName, name, { methodKind: isStatic ? "static" : "instance" });
   }
 
   /**
@@ -127,7 +127,9 @@ export class TreeSitterChunker implements CodeChunker {
       const nameNode = stmt.childForFieldName("name");
       if (!nameNode) continue;
       const localName = this.extractName(stmt, code) ?? nameNode.text;
-      const nestedParent = currentParent ? `${currentParent}::${localName}` : localName;
+      // Ruby namespace join uses `::` (scopeSeparator) — route through the
+      // composer rather than hardcoding the separator (symbolid-convention).
+      const nestedParent = this.symbolIds.compose(currentParent ?? "", localName, { scopeSeparator: "::" });
       this.walkRubyMacroScopes(stmt, nestedParent, stmt.type, code, filePath, language, chunks, lines);
     }
   }
@@ -206,7 +208,21 @@ export class TreeSitterChunker implements CodeChunker {
     return node;
   }
 
-  constructor(private readonly config: ChunkerConfig) {
+  /**
+   * Cross-language symbolId mapper, injected via DI from the composition
+   * layer (`api/internal/`). The chunker engine never imports the concrete
+   * composer — `domains/ingest` may not import `domains/language` (eslint
+   * leaf-domain guard). The worker composition root constructs the concrete
+   * `DefaultSymbolIdComposer` and passes it here; tests inject it directly.
+   * See `.claude/rules/symbolid-convention.md` + spec §5.
+   */
+  private readonly symbolIds: SymbolIdComposer;
+
+  constructor(
+    private readonly config: ChunkerConfig,
+    symbolIds: SymbolIdComposer,
+  ) {
+    this.symbolIds = symbolIds;
     this.fallbackChunker = new CharacterChunker(config);
     this.markdownChunker = new MarkdownChunker({ maxChunkSize: this.config.chunkSize }, this.fallbackChunker);
     // NO parser initialization here - lazy load on demand!
@@ -908,7 +924,9 @@ export class TreeSitterChunker implements CodeChunker {
    */
   private buildParentPath(hierarchyNames: string[], scopeSeparator?: string): string | undefined {
     if (hierarchyNames.length === 0) return undefined;
-    return hierarchyNames.join(scopeSeparator ?? ".");
+    // Namespace fold through the composer (scopeSeparator), mirroring
+    // composeParentSymbol — keeps the separator rule in one place.
+    return hierarchyNames.reduce((acc, name) => this.symbolIds.compose(acc, name, { scopeSeparator }), "");
   }
 
   /**
@@ -1217,12 +1235,13 @@ export class TreeSitterChunker implements CodeChunker {
     intermediateScopes: string[],
     scopeSeparator?: string,
   ): string | undefined {
-    if (!parentName) {
-      if (intermediateScopes.length === 0) return undefined;
-      return intermediateScopes.join(scopeSeparator ?? ".");
-    }
-    if (intermediateScopes.length === 0) return parentName;
-    return [parentName, ...intermediateScopes].join(scopeSeparator ?? ".");
+    const segments = [...(parentName ? [parentName] : []), ...intermediateScopes];
+    if (segments.length === 0) return undefined;
+    // Fold the scope chain through the injected composer using the namespace
+    // separator (`scopeSeparator`), NOT the `#`/`.` method rule. compose("", s)
+    // returns `s` (empty-prefix branch), compose(acc, s, {scopeSeparator})
+    // joins `acc<sep>s` — reproduces the historical `segments.join(sep ?? ".")`.
+    return segments.reduce((acc, segment) => this.symbolIds.compose(acc, segment, { scopeSeparator }), "");
   }
 
   private findChunkableNodes(
