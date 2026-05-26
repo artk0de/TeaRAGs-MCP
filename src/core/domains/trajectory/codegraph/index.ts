@@ -59,5 +59,6 @@ export function createCodegraphTrajectories(deps: CodegraphDeps): Trajectory[] {
 }
 
 export { createSymbolsTrajectory } from "./symbols/index.js";
+export { CODEGRAPH_LANGUAGES, type CodegraphLanguageConfig } from "./symbols/index.js";
 export { buildCodegraphExclusionFilter, CODEGRAPH_TEST_PATTERNS } from "./exclusion.js";
 export type { CodegraphExclusionOptions } from "./exclusion.js";

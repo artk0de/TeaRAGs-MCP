@@ -2,24 +2,36 @@ import type { LanguageFactory, LanguageProvider } from "../../contracts/types/la
 import { UnsupportedLanguageError } from "./errors.js";
 
 /**
- * Skeleton `LanguageFactory` (spec §1, §4, migration step 1). It establishes
- * the composition-root surface — `create(lang)` (keyed family resolver) and
- * `supported()` — before any per-language vertical exists. Until the verticals
- * land (migration step 2: ruby, ts, …), `supported()` is empty and `create`
- * throws `UnsupportedLanguageError` for every language.
+ * Real `LanguageFactory` backed by a pre-built registry of
+ * `LanguageProvider`s keyed by language NAME (`typescript`, `ruby`, …).
  *
- * `create` is intended to spawn a FRESH `LanguageProvider` per call (each with
- * its own tree-sitter `Parser`, spec §5); callers cache per language. The
- * registration map and Parser construction are filled in per-language vertical.
+ * The registry is assembled by the composition layer (`api/internal/` /
+ * `bootstrap/`). During the consolidation it is built by `legacyLanguageRegistry`
+ * (the composition-root hybrid, spec §5) which wraps the EXISTING per-language
+ * sources (`LANGUAGE_DEFINITIONS`, the codegraph `LANGUAGES` map, the resolver
+ * map) into `LanguageProvider`s — no code is relocated yet. Per-language
+ * verticals later swap each adapter-backed entry for a native
+ * `domains/language/<lang>` provider.
+ *
+ * `create(lang)` returns the registered provider or throws
+ * `UnsupportedLanguageError`. The registry is built ONCE per process (each
+ * provider owns its own state), so `create` is a cheap map lookup — callers may
+ * still cache per language per the contract (spec §5) but the cost is bounded.
  */
 export class LanguageFactoryImpl implements LanguageFactory {
-  // TODO: wired in per-language verticals (spec migration step 2) — each vertical
-  //       registers its `LanguageProvider` builder here, keyed by language string.
+  private readonly registry: ReadonlyMap<string, LanguageProvider>;
+
+  constructor(registry: ReadonlyMap<string, LanguageProvider> | Record<string, LanguageProvider>) {
+    this.registry = registry instanceof Map ? registry : new Map(Object.entries(registry));
+  }
+
   create(lang: string): LanguageProvider {
-    throw new UnsupportedLanguageError(lang);
+    const provider = this.registry.get(lang);
+    if (!provider) throw new UnsupportedLanguageError(lang);
+    return provider;
   }
 
   supported(): string[] {
-    return [];
+    return [...this.registry.keys()];
   }
 }

@@ -1,0 +1,142 @@
+/**
+ * Composition-root hybrid (spec §5): wraps the EXISTING per-language sources
+ * into `LanguageProvider`s WITHOUT relocating any code yet. This module is the
+ * ONE place allowed to import BOTH the leaf `domains/language` consumer surface
+ * (via the `contracts/` interfaces) AND the old per-language maps that still
+ * live in `domains/ingest` (the chunker `LANGUAGE_DEFINITIONS`) and
+ * `domains/trajectory` (the codegraph `CODEGRAPH_LANGUAGES` map + resolver map).
+ *
+ * It lives in `api/internal/` — the composition layer — because the eslint
+ * leaf-domain guards forbid `domains/language` from importing ingest/trajectory
+ * AND forbid ingest/trajectory from importing `domains/language`. Only `api/`
+ * and `bootstrap/` may bridge the two. See `.claude/rules/domain-boundaries.md`
+ * + spec §2/§5. bd tea-rags-mcp-cat4.
+ *
+ * Per-language verticals later swap each adapter-backed entry for a native
+ * `domains/language/<lang>` provider; this adapter is deleted by the cleanup
+ * task (tea-rags-mcp-jh40) once every language has moved.
+ */
+
+import type { CallResolver } from "../../contracts/types/codegraph.js";
+import type {
+  LanguageChunkerHooks,
+  LanguageKernel,
+  LanguageProvider,
+  LanguageSymbolResolver,
+  LanguageWalker,
+} from "../../contracts/types/language.js";
+import {
+  LANGUAGE_DEFINITIONS,
+  type LanguageDefinition,
+} from "../../domains/ingest/pipeline/chunker/config.js";
+import { classifyMethod } from "../../infra/symbolid/index.js";
+import {
+  CODEGRAPH_LANGUAGES,
+  type CodegraphLanguageConfig,
+} from "../../domains/trajectory/codegraph/index.js";
+
+/**
+ * Build the chunker-side capability from a legacy `LanguageDefinition`. Mirrors
+ * the field set the chunker reads from `LANGUAGE_DEFINITIONS[lang]` 1:1 — no
+ * transformation, no defaults applied here (the chunker still applies its own
+ * defaults downstream).
+ */
+function chunkerHooksFrom(def: LanguageDefinition): LanguageChunkerHooks {
+  return {
+    chunkableTypes: def.chunkableTypes,
+    childChunkTypes: def.childChunkTypes,
+    alwaysExtractChildren: def.alwaysExtractChildren,
+    isDocumentation: def.isDocumentation,
+    hooks: def.hooks,
+    nameExtractor: def.nameExtractor,
+    keepShortChildChunkTypes: def.keepShortChildChunkTypes,
+  };
+}
+
+/**
+ * Build the per-language `kernel` — parser loading + the cross-engine detection
+ * + namespace config shared by chunker and walker. `isInstanceMethod` is
+ * derived from the existing `classifyMethod` (infra/symbolid): a node is an
+ * instance method iff `classifyMethod(node) === "instance"`. Using
+ * `classifyMethod` (not `!isStaticMethodNode`) preserves the interface contract
+ * that NON-method nodes return `false` (classifyMethod yields `null` → not
+ * "instance" → false), behaviour-identical to the per-engine static checks that
+ * only ever ask about method nodes.
+ */
+function kernelFrom(def: LanguageDefinition): LanguageKernel {
+  return {
+    loadModule: def.loadModule,
+    extractLanguage: def.extractLanguage,
+    scopeSeparator: def.scopeSeparator,
+    scopeContainerTypes: def.scopeContainerTypes,
+    disambiguateOverloads: def.disambiguateOverloads,
+    isInstanceMethod: (node) => classifyMethod(node) === "instance",
+  };
+}
+
+/**
+ * Build the codegraph `walker` capability from the legacy `CODEGRAPH_LANGUAGES`
+ * config (keyed by extension). The `LanguageWalker` interface exposes only
+ * `walk` + `nameOf`; the parser-load / scopeSeparator / disambiguateOverloads
+ * bits that the provider also reads from its map are carried by the kernel
+ * instead (and are numerically equal — verified in the fidelity test).
+ */
+function walkerFrom(cfg: CodegraphLanguageConfig): LanguageWalker {
+  return {
+    walk: cfg.walker,
+    nameOf: cfg.nameOf,
+  };
+}
+
+/**
+ * Wrap a legacy `CallResolver` into the language-domain `LanguageSymbolResolver`
+ * facade. `resolveDispatch` is optional on `CallResolver` (resolvers that don't
+ * support lookup-table dispatch omit it) but non-optional on
+ * `LanguageSymbolResolver` (returns `[]`), so the wrapper supplies the `[]`
+ * default — behaviour-identical to the provider's existing `resolver.resolveDispatch?.(...)
+ * ?? []` guard.
+ */
+function resolverFrom(resolver: CallResolver): LanguageSymbolResolver {
+  return {
+    resolve: (call, ctx) => resolver.resolve(call, ctx),
+    resolveDispatch: (call, ctx) => resolver.resolveDispatch?.(call, ctx) ?? [],
+  };
+}
+
+/**
+ * Assemble the full per-language `LanguageProvider` registry (keyed by language
+ * NAME) by wrapping every legacy source. Every language in `LANGUAGE_DEFINITIONS`
+ * gets an entry; the `walker`/`resolver` capabilities are attached only when the
+ * matching codegraph config / resolver exists (a doc language like markdown has
+ * neither — chunkerHooks only, spec §1a).
+ *
+ * @param resolvers The codegraph resolver map (`CallResolver` per language) —
+ *   wired by `bootstrap/factory.ts:wireCodegraph`. Optional: when codegraph is
+ *   disabled (no resolvers), every provider is built without a `resolver` and
+ *   the registry still serves the chunker.
+ */
+export function buildLegacyLanguageRegistry(
+  resolvers?: ReadonlyMap<string, CallResolver>,
+): Map<string, LanguageProvider> {
+  // Reverse-index the codegraph map (ext -> config) by language name so a
+  // language with multiple extensions (typescript: .ts/.tsx; javascript:
+  // .js/.jsx/.mjs/.cjs) resolves to the single shared config. The walker is
+  // identical across a language's extensions, so the first match wins.
+  const codegraphByLang = new Map<string, CodegraphLanguageConfig>();
+  for (const cfg of Object.values(CODEGRAPH_LANGUAGES)) {
+    if (!codegraphByLang.has(cfg.language)) codegraphByLang.set(cfg.language, cfg);
+  }
+
+  const registry = new Map<string, LanguageProvider>();
+  for (const [lang, def] of Object.entries(LANGUAGE_DEFINITIONS)) {
+    const cfg = codegraphByLang.get(lang);
+    const callResolver = resolvers?.get(lang);
+    registry.set(lang, {
+      kernel: kernelFrom(def),
+      chunkerHooks: chunkerHooksFrom(def),
+      walker: cfg ? walkerFrom(cfg) : undefined,
+      resolver: callResolver ? resolverFrom(callResolver) : undefined,
+    });
+  }
+  return registry;
+}

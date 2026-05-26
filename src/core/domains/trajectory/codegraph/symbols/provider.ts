@@ -179,8 +179,14 @@ function joinSymbol(composer: SymbolIdComposer, composed: string, child: NamedSy
  *
  * Adding a language: add a tree-sitter parser to deps, create a walker
  * in ingest/pipeline/chunker/extraction/, drop a row here.
+ *
+ * Exported (as `CodegraphLanguageConfig`) so the composition-layer
+ * `legacyLanguageRegistry` (api/internal/) can wrap the per-extension
+ * walker/nameOf into a `LanguageProvider.walker` without relocating this
+ * map. The `domains/language` consolidation later moves each language's
+ * walker into its native provider (spec §3). bd tea-rags-mcp-cat4.
  */
-interface LanguageConfig {
+export interface CodegraphLanguageConfig {
   language: string;
   loadParser: () => Parser.Language;
   walker: (input: {
@@ -237,7 +243,7 @@ interface LanguageConfig {
   disambiguateOverloads?: boolean;
 }
 
-const LANGUAGES: Record<string, LanguageConfig> = {
+export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   ".ts": {
     language: "typescript",
     loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript,
@@ -345,7 +351,7 @@ const LANGUAGES: Record<string, LanguageConfig> = {
     scopeSeparator: ".",
   },
 };
-const SUPPORTED_EXTS = new Set(Object.keys(LANGUAGES));
+const SUPPORTED_EXTS = new Set(Object.keys(CODEGRAPH_LANGUAGES));
 
 /**
  * Codegraph provider dependencies. Two routing modes are supported and
@@ -1189,7 +1195,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private extractOneFile(root: string, relPath: string): FileExtraction {
     const ext = extensionOf(relPath);
-    const langConfig = LANGUAGES[ext];
+    const langConfig = CODEGRAPH_LANGUAGES[ext];
     if (!langConfig) {
       // discoverSupportedFiles already filters by SUPPORTED_EXTS; this
       // is a defensive guard for callers that pass paths directly.

@@ -6,9 +6,11 @@
  * that knows which trajectories exist.
  */
 
+import type { LanguageFactory } from "../../contracts/types/language.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
+import { LanguageFactoryImpl } from "../../domains/language/index.js";
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
@@ -19,6 +21,7 @@ import type { SquashOptions } from "../../domains/trajectory/git/infra/metrics.j
 import type { GitProviderConfig } from "../../domains/trajectory/git/provider.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";
+import { buildLegacyLanguageRegistry } from "./legacy-language-adapter.js";
 
 export interface CompositionResult {
   registry: TrajectoryRegistry;
@@ -27,6 +30,18 @@ export interface CompositionResult {
   allDerivedSignals: DerivedSignalDescriptor[];
   allStatsAccumulators: StatsAccumulatorDescriptor[];
   resolvedPresets: RerankPreset[];
+  /**
+   * Real `LanguageFactory` backed by the composition-root hybrid adapter
+   * (`buildLegacyLanguageRegistry`) — wraps the legacy per-language maps into
+   * `LanguageProvider`s without relocating code (spec §5, bd tea-rags-mcp-cat4).
+   * DORMANT in this slice: constructed and exposed for reachability, but the
+   * chunker / codegraph engines still read the old maps directly until the
+   * consumer-switch commits land. The chunker worker is a SECOND composition
+   * root that builds its own factory (functions can't cross the worker
+   * boundary); this instance carries the codegraph resolvers for the
+   * provider-side switch.
+   */
+  languageFactory: LanguageFactory;
 }
 
 export interface CompositionOptions {
@@ -79,6 +94,14 @@ export function createComposition(options: CompositionOptions = {}): Composition
   const resolvedPresets = resolvePresets(registry.getAllPresets(), compositePresets);
   const reranker = new Reranker(allDerivedSignals, resolvedPresets, allPayloadSignalDescriptors);
 
+  // Real LanguageFactory via the legacy adapter (dormant in this slice — see
+  // CompositionResult.languageFactory). When codegraph is enabled its resolvers
+  // back the providers' `resolver` capability; otherwise providers are
+  // walker/chunker-only.
+  const languageFactory = new LanguageFactoryImpl(
+    buildLegacyLanguageRegistry(options.codegraph?.resolvers),
+  );
+
   return {
     registry,
     reranker,
@@ -86,5 +109,6 @@ export function createComposition(options: CompositionOptions = {}): Composition
     allDerivedSignals,
     allStatsAccumulators,
     resolvedPresets,
+    languageFactory,
   };
 }
