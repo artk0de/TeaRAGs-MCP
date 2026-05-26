@@ -1,37 +1,94 @@
+import type { AmbiguousResolveMode } from "../../contracts/types/codegraph.js";
+import { DEFAULT_AMBIGUOUS_RESOLVE_MODE } from "../../contracts/types/codegraph.js";
 import type { LanguageFactory, LanguageProvider } from "../../contracts/types/language.js";
 import { UnsupportedLanguageError } from "./errors.js";
+import { RubyLanguage } from "./ruby/index.js";
 
 /**
- * Real `LanguageFactory` backed by a pre-built registry of
- * `LanguageProvider`s keyed by language NAME (`typescript`, `ruby`, …).
+ * A deferred per-language provider builder. The composition layer
+ * (`api/internal/legacy-language-adapter.ts`) holds the legacy per-language
+ * config (the chunker `LANGUAGE_DEFINITIONS`, the codegraph `CODEGRAPH_LANGUAGES`
+ * map + resolver map) — sources the leaf `domains/language` domain may NOT import
+ * (domain-boundaries.md). It hands the factory a *thunk* per non-native language
+ * instead of a pre-built provider, so the factory — not the caller — decides WHEN
+ * the provider is constructed (lazily, on first `create(lang)`) and caches it.
+ */
+export type LegacyProviderBuilder = () => LanguageProvider;
+
+/**
+ * Languages the factory builds NATIVELY from a `domains/language/<lang>`
+ * provider rather than from an injected legacy thunk. The factory owns the
+ * construction (`new RubyLanguage(mode)`) so the native switch lives in ONE
+ * place — `create(lang)` — not at every composition root. Mirrors
+ * `NATIVE_LANGUAGES` in the legacy adapter (which skips these) and
+ * `NATIVE_CHUNKER_LANGUAGES` in the ingest-local registry. bd tea-rags-mcp-cen6.
+ */
+const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby"]);
+
+/**
+ * Real `LanguageFactory`. `create(lang)` ENCAPSULATES construction — it builds
+ * the `LanguageProvider` itself rather than reading one from a consumer-assembled
+ * registry:
  *
- * The registry is assembled by the composition layer (`api/internal/` /
- * `bootstrap/`). During the consolidation it is built by `legacyLanguageRegistry`
- * (the composition-root hybrid, spec §5) which wraps the EXISTING per-language
- * sources (`LANGUAGE_DEFINITIONS`, the codegraph `LANGUAGES` map, the resolver
- * map) into `LanguageProvider`s — no code is relocated yet. Per-language
- * verticals later swap each adapter-backed entry for a native
- * `domains/language/<lang>` provider.
+ *   - **Native** languages (`ruby`, …) → the factory constructs the native
+ *     `domains/language/<lang>` provider directly (`new RubyLanguage(mode)`),
+ *     applying the configured ambiguous-resolve `mode`.
+ *   - **Legacy** languages → the factory invokes the deferred builder thunk the
+ *     composition layer injected (built from `LANGUAGE_DEFINITIONS` /
+ *     `CODEGRAPH_LANGUAGES` in `api/internal/`, the only layer allowed to bridge
+ *     ingest + trajectory + language).
  *
- * `create(lang)` returns the registered provider or throws
- * `UnsupportedLanguageError`. The registry is built ONCE per process (each
- * provider owns its own state), so `create` is a cheap map lookup — callers may
- * still cache per language per the contract (spec §5) but the cost is bounded.
+ * Each built provider is cached per language (spec §5: `create` is expensive —
+ * it loads the grammar / builds a Parser — so callers MUST cache; the factory
+ * caches internally too, so repeat `create(lang)` is a map lookup). A native
+ * provider and a legacy thunk are NEVER both registered for the same language:
+ * the legacy adapter skips `NATIVE_LANGUAGES`, so the thunk map and the native
+ * set are disjoint by construction.
  */
 export class LanguageFactoryImpl implements LanguageFactory {
-  private readonly registry: ReadonlyMap<string, LanguageProvider>;
+  private readonly legacyBuilders: ReadonlyMap<string, LegacyProviderBuilder>;
+  private readonly rubyMode: AmbiguousResolveMode;
+  private readonly cache = new Map<string, LanguageProvider>();
 
-  constructor(registry: ReadonlyMap<string, LanguageProvider> | Record<string, LanguageProvider>) {
-    this.registry = registry instanceof Map ? registry : new Map(Object.entries(registry));
+  /**
+   * @param legacyBuilders Deferred provider builders for the non-native
+   *   languages, keyed by language NAME. Accepts a `Map` or a plain `Record`.
+   * @param options.ambiguousResolveMode Threaded into native resolvers
+   *   (`RubyLanguage`) so they stay behaviour-identical to the legacy
+   *   resolver-map entry. Defaults to the codegraph default (`strict`).
+   */
+  constructor(
+    legacyBuilders:
+      | ReadonlyMap<string, LegacyProviderBuilder>
+      | Record<string, LegacyProviderBuilder> = new Map(),
+    options: { ambiguousResolveMode?: AmbiguousResolveMode } = {},
+  ) {
+    this.legacyBuilders =
+      legacyBuilders instanceof Map ? legacyBuilders : new Map(Object.entries(legacyBuilders));
+    this.rubyMode = options.ambiguousResolveMode ?? DEFAULT_AMBIGUOUS_RESOLVE_MODE;
   }
 
   create(lang: string): LanguageProvider {
-    const provider = this.registry.get(lang);
-    if (!provider) throw new UnsupportedLanguageError(lang);
+    const cached = this.cache.get(lang);
+    if (cached) return cached;
+
+    const provider = this.build(lang);
+    this.cache.set(lang, provider);
     return provider;
   }
 
+  /** Construct (never cache) — `create` owns the cache. */
+  private build(lang: string): LanguageProvider {
+    if (NATIVE_LANGUAGES.has(lang)) {
+      // Native switch — extend with one branch per migrated vertical.
+      if (lang === "ruby") return new RubyLanguage(this.rubyMode);
+    }
+    const builder = this.legacyBuilders.get(lang);
+    if (builder) return builder();
+    throw new UnsupportedLanguageError(lang);
+  }
+
   supported(): string[] {
-    return [...this.registry.keys()];
+    return [...new Set([...this.legacyBuilders.keys(), ...NATIVE_LANGUAGES])];
   }
 }

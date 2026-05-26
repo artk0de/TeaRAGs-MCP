@@ -127,12 +127,21 @@ function resolverFrom(resolver: CallResolver): LanguageSymbolResolver {
 export const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby"]);
 
 /**
- * Assemble the per-language `LanguageProvider` registry (keyed by language NAME)
- * by wrapping every NON-native legacy source. Each language in
- * `LANGUAGE_DEFINITIONS` except `NATIVE_LANGUAGES` gets an entry; the
- * `walker`/`resolver` capabilities are attached only when the matching codegraph
- * config / resolver exists (a doc language like markdown has neither —
- * chunkerHooks only, spec §1a).
+ * Assemble the per-language **builder** map (keyed by language NAME) by wrapping
+ * every NON-native legacy source in a deferred thunk. `LanguageFactoryImpl`
+ * encapsulates construction: it invokes a language's thunk lazily on the first
+ * `create(lang)` and caches the result — so the heavy provider object (and its
+ * tree-sitter Parser, built downstream) is never constructed until the language
+ * is actually processed. Each language in `LANGUAGE_DEFINITIONS` except
+ * `NATIVE_LANGUAGES` gets a thunk; the `walker`/`resolver` capabilities are
+ * attached only when the matching codegraph config / resolver exists (a doc
+ * language like markdown has neither — chunkerHooks only, spec §1a).
+ *
+ * The thunks captured here close over `LANGUAGE_DEFINITIONS` / `CODEGRAPH_LANGUAGES`
+ * — ingest + trajectory sources the leaf `domains/language` domain may not import.
+ * Building them in this composition-layer adapter and handing the factory thunks
+ * is what lets the factory "build legacy langs from their config" without the
+ * factory reaching across domain boundaries (domain-boundaries.md, spec §5).
  *
  * @param resolvers The codegraph resolver map (`CallResolver` per language) —
  *   wired by `bootstrap/factory.ts:wireCodegraph`. Optional: when codegraph is
@@ -141,7 +150,7 @@ export const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby"]);
  */
 export function buildLegacyLanguageRegistry(
   resolvers?: ReadonlyMap<string, CallResolver>,
-): Map<string, LanguageProvider> {
+): Map<string, () => LanguageProvider> {
   // Reverse-index the codegraph map (ext -> config) by language name so a
   // language with multiple extensions (typescript: .ts/.tsx; javascript:
   // .js/.jsx/.mjs/.cjs) resolves to the single shared config. The walker is
@@ -151,17 +160,17 @@ export function buildLegacyLanguageRegistry(
     if (!codegraphByLang.has(cfg.language)) codegraphByLang.set(cfg.language, cfg);
   }
 
-  const registry = new Map<string, LanguageProvider>();
+  const builders = new Map<string, () => LanguageProvider>();
   for (const [lang, def] of Object.entries(LANGUAGE_DEFINITIONS)) {
-    if (NATIVE_LANGUAGES.has(lang)) continue; // native provider wired by composition root
+    if (NATIVE_LANGUAGES.has(lang)) continue; // native provider built by the factory
     const cfg = codegraphByLang.get(lang);
     const callResolver = resolvers?.get(lang);
-    registry.set(lang, {
+    builders.set(lang, () => ({
       kernel: kernelFrom(def),
       chunkerHooks: chunkerHooksFrom(def),
       walker: cfg ? walkerFrom(cfg) : undefined,
       resolver: callResolver ? resolverFrom(callResolver) : undefined,
-    });
+    }));
   }
-  return registry;
+  return builders;
 }

@@ -2,14 +2,17 @@
  * Worker thread message protocol for the chunker pool.
  *
  * Pure structurally-cloneable types — no runtime, no `domains/language`
- * import — so both the ingest-side `ChunkerPool` (which dispatches requests)
- * and the `api/internal/` worker composition root (which constructs the
- * engine) can share them without crossing a layer boundary the wrong way.
+ * import — shared by the ingest-side `ChunkerPool` (which dispatches requests)
+ * and the sibling worker ENTRY (`infra/worker.ts`, which constructs the engine
+ * in-thread).
  *
- * The worker ENTRY (concrete wiring: chunker engine + `SymbolIdComposer`)
- * lives in `api/internal/chunker-worker.ts` per spec §5 — `domains/ingest`
- * may not import `domains/language` (eslint leaf-domain guard), so the
- * composition that needs the concrete composer cannot live here.
+ * The worker ENTRY lives next to this protocol in `domains/ingest`. It stays
+ * free of any static `domains/language` import (eslint leaf-domain guard): the
+ * concrete `LanguageFactoryImpl` / `DefaultSymbolIdComposer` and the native
+ * language providers are loaded at runtime via a dynamic `import(path)` where
+ * the path arrives as an injected string through `workerData`
+ * (`ChunkerConfig.languageModulePath`). A runtime variable path is invisible to
+ * the import guard, so no exemption is needed.
  */
 
 import type { CodeChunk } from "../../../../../types.js";

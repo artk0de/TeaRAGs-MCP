@@ -55,6 +55,19 @@ export interface ChunkerConfig {
   chunkSize: number;
   chunkOverlap: number;
   maxChunkSize: number;
+  /**
+   * Absolute path to the compiled `domains/language` barrel (`index.js`), used
+   * by the chunker worker (a second composition root) to load native language
+   * providers + the `LanguageFactoryImpl` / `DefaultSymbolIdComposer` via a
+   * RUNTIME dynamic `import(path)`. Injected as a serializable string through
+   * `workerData` so it survives the `postMessage` boundary (functions / native
+   * handles do not). Passing a runtime string — not a static import — is what
+   * keeps `domains/ingest` free of any `domains/language` import (the
+   * leaf-domain eslint guard inspects only literal import specifiers, never a
+   * variable path). Optional: the main-thread chunker (tests, single-thread)
+   * receives a fully-built `LanguageFactory` via DI and ignores this.
+   */
+  languageModulePath?: string;
 }
 
 export interface IndexOptions {

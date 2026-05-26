@@ -41,9 +41,13 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
     (lang) => !NATIVE_LANGUAGES.has(lang),
   );
 
-  it("registers exactly the adapter-served languages (LANGUAGE_DEFINITIONS minus native)", () => {
+  it("supplies builder thunks for exactly the adapter-served languages (LANGUAGE_DEFINITIONS minus native)", () => {
+    // The adapter returns thunks for the non-native languages only; the factory
+    // builds the native ones (ruby) itself, so `supported()` is the adapter's
+    // thunk keys PLUS the factory's native set.
+    expect(new Set(buildLegacyLanguageRegistry().keys())).toEqual(new Set(adapterServedLangs));
     const factory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
-    expect(new Set(factory.supported())).toEqual(new Set(adapterServedLangs));
+    expect(new Set(factory.supported())).toEqual(new Set([...adapterServedLangs, ...NATIVE_LANGUAGES]));
   });
 
   it.each(adapterServedLangs)(

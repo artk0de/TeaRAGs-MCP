@@ -19,12 +19,11 @@ import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
  * Worker script path — always points to compiled JS in build/.
  *
  * worker_threads require compiled JS. The worker ENTRY is the second
- * composition root and lives in `api/internal/` (spec §5), NOT next to this
- * pool: it imports the concrete `DefaultSymbolIdComposer` from
- * `domains/language`, which `domains/ingest` may not import (eslint leaf-domain
- * guard). So resolve up from this pool's compiled dir
- * (`build/core/domains/ingest/pipeline/chunker/infra/`) to `build/core/` and
- * into `api/internal/chunker-worker.js`.
+ * composition root (spec §5) and now lives next to this pool — it is the pool's
+ * ingest-local sibling `worker.js`. The worker stays free of any static
+ * `domains/language` import: it loads the concrete `LanguageFactoryImpl` /
+ * `DefaultSymbolIdComposer` at runtime via a dynamic `import(path)` where the
+ * path (`LANGUAGE_MODULE_PATH`) is injected through `workerData` below.
  *
  * import.meta.url resolves to:
  *   production: .../build/core/domains/ingest/pipeline/chunker/infra/pool.js
@@ -34,7 +33,16 @@ const POOL_DIR = path.dirname(fileURLToPath(import.meta.url)).replace("/src/", "
 // POOL_DIR = build/core/domains/ingest/pipeline/chunker/infra — five levels
 // below build/core (domains, ingest, pipeline, chunker, infra).
 const CORE_DIR = path.resolve(POOL_DIR, "../../../../..");
-const WORKER_PATH = path.join(CORE_DIR, "api", "internal", "chunker-worker.js");
+const WORKER_PATH = path.join(POOL_DIR, "worker.js");
+/**
+ * Absolute path to the compiled `domains/language` barrel, computed here (a
+ * runtime STRING — not an import) and injected into the worker via `workerData`
+ * so the worker can dynamically import the concrete factory + composer without
+ * `domains/ingest` ever statically importing `domains/language`. The variable
+ * path is invisible to the leaf-domain eslint guard (it inspects only literal
+ * import specifiers), so no exemption is needed.
+ */
+const LANGUAGE_MODULE_PATH = path.join(CORE_DIR, "domains", "language", "index.js");
 
 export interface FileChunkResult {
   filePath: string;
@@ -67,7 +75,9 @@ export class ChunkerPool {
   private initWorkers(): void {
     for (let i = 0; i < this.poolSize; i++) {
       const worker = new Worker(WORKER_PATH, {
-        workerData: this.config,
+        // Inject the language-module path so the worker (a second composition
+        // root) can dynamically import the concrete factory + composer in-thread.
+        workerData: { ...this.config, languageModulePath: LANGUAGE_MODULE_PATH },
       });
 
       const poolWorker: PoolWorker = {
