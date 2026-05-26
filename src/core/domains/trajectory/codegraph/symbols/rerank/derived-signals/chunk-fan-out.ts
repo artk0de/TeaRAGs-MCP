@@ -1,6 +1,7 @@
 import type { DerivedSignalDescriptor } from "../../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../../contracts/types/trajectory.js";
 import { normalize } from "../../../../../../infra/signal-utils.js";
+import { codegraphChunkNum } from "./helpers.js";
 
 /**
  * Method-level (chunk-scope) fan-out: how many outgoing calls this
@@ -13,7 +14,7 @@ export class ChunkFanOutSignal implements DerivedSignalDescriptor {
   readonly sources = ["codegraph.chunk.fanOut"];
   readonly defaultBound = 30;
   extract(raw: Record<string, unknown>, ctx?: ExtractContext): number {
-    const v = Number(raw["codegraph.chunk.fanOut"] ?? 0);
+    const v = codegraphChunkNum(raw, "fanOut");
     const bound = ctx?.bounds?.["chunk.fanOut"] ?? this.defaultBound;
     return normalize(v, bound);
   }

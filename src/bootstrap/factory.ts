@@ -260,6 +260,7 @@ function ensureCodegraphDaemon(
 export function wireCodegraph(
   config: AppConfig,
   zodConfig: ReturnType<typeof getZodConfig>,
+  collectionRegistry: CollectionRegistry,
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -383,7 +384,7 @@ export function wireCodegraph(
       customPatterns: codegraph.customExcludePatterns ?? [],
     },
   };
-  const graphFacade = new GraphFacade({ pool });
+  const graphFacade = new GraphFacade({ pool, collectionRegistry });
   return { deps, graphFacade, pool };
 }
 
@@ -392,7 +393,12 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   setDebug(zodConfig.core.debug);
 
   const infra = await resolveInfrastructure(config, zodConfig);
-  const codegraphContext = wireCodegraph(config, zodConfig);
+  // Registry must exist before wireCodegraph because GraphFacade resolves
+  // the `{ collection, project, path }` triad through it. startWatching()
+  // is deferred until later — registry construction alone is side-effect
+  // free, so creating it early costs nothing.
+  const collectionRegistry = new CollectionRegistry(config.paths.appData);
+  const codegraphContext = wireCodegraph(config, zodConfig, collectionRegistry);
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 
   const statsCache = new StatsCache(config.paths.snapshots);
@@ -415,7 +421,6 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     ioConcurrency: zodConfig.ingest.tune.ioConcurrency,
   };
 
-  const collectionRegistry = new CollectionRegistry(config.paths.appData);
   const registryWatchStop = collectionRegistry.startWatching();
   // Registry is the single source of truth for enrichment providers. Git
   // is now constructed inside GitTrajectory at composition time with

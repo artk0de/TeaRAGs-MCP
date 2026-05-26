@@ -23,6 +23,61 @@ export type RelPath = string;
 export type SymbolId = string;
 
 /**
+ * A const dispatch table defined in one file (bd tea-rags-mcp-n0zj).
+ * `entries` preserves the source key→value mapping so a static
+ * string-literal key (`TABLE["ts"]`) resolves to the ONE matching entry
+ * while a dynamic key (`TABLE[ext]`) fans out to ALL of them. The value
+ * is either a function name (S2 direct-function map `{ k: fn }`) or a
+ * `fieldName → fnName` map (S1 wrapper-object map `{ k: { field: fn } }`).
+ * Only entries / fields whose value is a plain identifier are recorded —
+ * inline arrows, spreads, and computed values carry no symbol to point at
+ * and are dropped (m46z safety rule).
+ */
+export interface DispatchTable {
+  entries: Record<string, string | Record<string, string>>;
+}
+
+/**
+ * A `DispatchTable` paired with the repo-relative path of the file that
+ * declared it. The run-global aggregate keys these by table NAME (a name
+ * may be declared in more than one file), so the resolver disambiguates
+ * by the caller's import map before binding — and drops rather than
+ * guesses when the name is ambiguous across files with no import edge.
+ */
+export interface DispatchTableDef {
+  relPath: RelPath;
+  table: DispatchTable;
+}
+
+/**
+ * A reference to a dispatch candidate set, emitted by the walker and
+ * resolved by the resolver against the run-global tables.
+ *   - `field: null`  ⇒ S2: the entry IS the function (call `TABLE[k](x)`).
+ *   - `field: "fn"`  ⇒ S1: select that field of the entry object.
+ *   - `key: null`    ⇒ dynamic key: fan out to ALL entries.
+ *   - `key: "ts"`    ⇒ static string-literal key: the ONE matching entry.
+ */
+export interface DispatchRef {
+  table: string;
+  field: string | null;
+  key: string | null;
+}
+
+/**
+ * One fan-out edge produced by dispatch / callback-param resolution.
+ * `sourceSymbolId: null` ⇒ the edge originates from the calling chunk
+ * (the provider fills in the caller's symbolId). A non-null
+ * `sourceSymbolId` OVERRIDES the source — used by the bounded
+ * inter-procedural join where the edge originates from the CALLEE that
+ * invokes the passed-in callback, not from the call site.
+ */
+export interface DispatchEdge {
+  sourceSymbolId: SymbolId | null;
+  targetRelPath: RelPath;
+  targetSymbolId: SymbolId | null;
+}
+
+/**
  * Per-file extraction emitted by the TypeScript walker (and, in slice 3,
  * by other-language walkers) for graph construction. The walker calls
  * `ExtractionSink.write(extraction)` once per file after chunking
@@ -93,6 +148,49 @@ export interface FileExtraction {
    * Same plain-Record discipline as `classAncestors` for NDJSON round-trip.
    */
   classPrependedAncestors?: Record<string, readonly string[]>;
+  /**
+   * Optional `functionName → declaredReturnTypeName` map for languages with
+   * static return-type declarations (Go). Lets a resolver bind a variable
+   * assigned from a function call (`x := New()`) to that function's DECLARED
+   * return type so `x.method()` resolves to `<ReturnType>#method` — even when
+   * the function is declared in a different file (the map is merged run-global
+   * by the codegraph provider in pass-1, mirroring `classExtends`).
+   *
+   * Recorded by the walker ONLY for single-return signatures whose return is
+   * a concrete named type (bare `type_identifier`, `*Type` pointer unwrapped,
+   * or the bare last segment of `pkg.Type`). Multi-return signatures
+   * (`func New() (*Engine, error)`) and untyped returns are OMITTED — guessing
+   * which return feeds the variable reintroduces the m46z false positives.
+   * The resolver applies the final safety gate (return type must exist as a
+   * struct/type symbol in the table). bd tea-rags-mcp-6g9c.
+   *
+   * Plain Record (NOT Map) so the value round-trips through the NDJSON spill.
+   * Languages without static return types leave this undefined.
+   */
+  functionReturnTypes?: Record<string, string>;
+  /**
+   * Optional `tableName → DispatchTable` map for const lookup-table
+   * dispatch (bd tea-rags-mcp-n0zj). Populated by walkers that recognise
+   * module-level `const NAME = { … }` whose values are object literals
+   * (S1) or plain identifiers (S2). The provider merges these run-global
+   * (keyed by name + defining relpath) so the resolver can fan a
+   * `TABLE[key].field(...)` call out to every candidate function. Plain
+   * Record (NOT Map) for NDJSON-spill round-trip. Languages whose walkers
+   * don't emit dispatch tables leave this undefined.
+   */
+  dispatchTables?: Record<string, DispatchTable>;
+  /**
+   * Optional `fnSymbolId → invokedParamIndices` map for the bounded
+   * single-hop inter-procedural join (bd tea-rags-mcp-n0zj). For each
+   * in-file function / method, lists the parameter positions invoked as
+   * `param(...)` inside its body ("callback params"). The resolver joins
+   * this with a call site's `CallRef.dispatchArgs`: when a dispatch
+   * candidate-set is passed at a callback-param position, the CALLEE fans
+   * out to the candidates. Enables `collectSymbols(tree, langConfig.nameOf)`
+   * → `collectSymbols → {tsNameOf, rbNameOf, …}` edges. Plain Record for
+   * NDJSON-spill round-trip; undefined when no params are invoked.
+   */
+  callbackParams?: Record<string, number[]>;
 }
 
 export interface ImportRef {
@@ -101,6 +199,19 @@ export interface ImportRef {
   /** Lexical position used by resolvers that need it (TS aliases, Python
    *  relative imports). 1-based line number. */
   startLine: number;
+  /**
+   * Optional LOCAL binding names introduced by this import statement
+   * (bd tea-rags-mcp-2v16). For `import { RankModule, Foo as Bar } from "./m"`
+   * this is `["RankModule", "Bar"]` — the names a call receiver can reference
+   * in the importing file. Captures named specifiers (local name for
+   * aliases), the default import binding, and the `* as ns` namespace
+   * binding. Lets a resolver map a receiver DIRECTLY to its source module
+   * via an exact name match instead of the kebab→Pascal filename-normalize
+   * heuristic. Omitted (undefined) for bare side-effect imports
+   * (`import "./polyfill"`) and for languages whose walkers don't populate
+   * it — every other-language walker keeps emitting `ImportRef` unchanged.
+   */
+  importedNames?: string[];
 }
 
 export interface ChunkExtraction {
@@ -132,6 +243,24 @@ export interface ChunkExtraction {
    * — `Map` would serialize to `{}` and silently lose data.
    */
   localBindings?: Record<string, string>;
+  /**
+   * Per-chunk `varName → calledFunctionName` map for variables assigned from
+   * a function call (`engine := New()` → `{ engine: "New" }`). DISTINCT from
+   * `localBindings` (which maps to a TYPE): this maps to the CALLED FUNCTION's
+   * short name, because the walker cannot know the function's return type from
+   * the chunk alone (the function may be declared in another file). The
+   * resolver looks the called name up in `CallContext.functionReturnTypes` to
+   * obtain the return type, then resolves `varName.method()` against it.
+   *
+   * Populated by the Go walker for single-LHS short-var-decls whose RHS is a
+   * call to a plain identifier (`New()`) or a package selector (`pkg.New()` →
+   * records the bare last segment `New`). Multi-LHS (`a, b := f(), g()`) and
+   * chained-call RHS (`New().Configure()`) are OMITTED — the var↔return pairing
+   * is not unambiguous. bd tea-rags-mcp-6g9c.
+   *
+   * Plain Record (NOT Map) for NDJSON-spill round-trip, same as localBindings.
+   */
+  localCallBindings?: Record<string, string>;
 }
 
 export interface CallRef {
@@ -144,6 +273,24 @@ export interface CallRef {
    *  name otherwise. */
   member: string;
   startLine: number;
+  /**
+   * Present when this call dispatches through a lookup table
+   * (bd tea-rags-mcp-n0zj). The resolver expands it to fan-out edges over
+   * the run-global tables and SKIPS normal receiver resolution for this
+   * call. See `DispatchRef`: `field: null` ⇒ S2 (the entry is the
+   * function), `key: null` ⇒ dynamic key (fan-out all entries).
+   */
+  dispatch?: DispatchRef;
+  /**
+   * Present when this NORMAL call passes a dispatch candidate-set as an
+   * ARGUMENT (bd tea-rags-mcp-n0zj). `receiver`/`member` still identify
+   * the callee so the resolver can resolve which function is called, then
+   * join `argIndex` against that callee's `callbackParams`: if the callee
+   * invokes the parameter at `argIndex`, the callee fans out to the
+   * candidates. The candidate mirrors `dispatch` — it may itself be
+   * `TABLE[k].field` or a dispatch-bound local.
+   */
+  dispatchArgs?: { argIndex: number; candidate: DispatchRef }[];
 }
 
 /**
@@ -194,6 +341,18 @@ export interface SymbolDefinition {
 export interface CallResolver {
   readonly language: string;
   resolve: (call: CallRef, ctx: CallContext) => ResolvedTarget | null;
+  /**
+   * Optional fan-out resolution for lookup-table dispatch
+   * (bd tea-rags-mcp-n0zj). Given a `CallRef` carrying `dispatch` and/or
+   * `dispatchArgs`, returns every fan-out edge the call implies:
+   *   - `dispatch` → one edge per resolved candidate, `sourceSymbolId:
+   *     null` (the provider fills the caller's symbolId).
+   *   - `dispatchArgs` → the bounded inter-procedural join: edges from the
+   *     resolved CALLEE to each candidate (non-null `sourceSymbolId`).
+   * Resolvers that don't support dispatch tables omit this method; the
+   * provider guards with `?.` so other-language resolvers are unaffected.
+   */
+  resolveDispatch?: (call: CallRef, ctx: CallContext) => DispatchEdge[];
 }
 
 /**
@@ -257,6 +416,25 @@ export interface CallContext {
    */
   localBindings?: Record<string, string>;
   /**
+   * Per-chunk `varName → calledFunctionName` map propagated from
+   * `ChunkExtraction.localCallBindings`. Resolvers combine this with
+   * `functionReturnTypes` to bind `x := New(); x.method()` to
+   * `<New's return type>#method`. Set by the provider per-call from the
+   * caller chunk's `localCallBindings`. bd tea-rags-mcp-6g9c.
+   */
+  localCallBindings?: Record<string, string>;
+  /**
+   * Run-global `functionName → declaredReturnTypeName` map propagated from
+   * `FileExtraction.functionReturnTypes` (merged across all pass-1 files so
+   * a call's return type is available even when the function is declared in
+   * another file). Resolvers use it together with `localCallBindings` to
+   * resolve `x := New(); x.method()`. The resolver MUST still verify the
+   * return type exists as a concrete type symbol before binding — the walker
+   * records the declared name verbatim and does no symbol-table check.
+   * bd tea-rags-mcp-6g9c.
+   */
+  functionReturnTypes?: Record<string, string>;
+  /**
    * Optional `className → ancestor[]` map propagated from
    * `FileExtraction.classAncestors`. Resolvers walk this list when a
    * receiver-typed method lookup misses on the bound class so inherited
@@ -286,6 +464,24 @@ export interface CallContext {
    * in MRO so the resolver walks the array in REVERSE order.
    */
   classPrependedAncestors?: Record<string, readonly string[]>;
+  /**
+   * Run-global `tableName → DispatchTableDef[]` map propagated from every
+   * file's `FileExtraction.dispatchTables` (bd tea-rags-mcp-n0zj). Keyed
+   * by table NAME; the value is a LIST because the same name may be
+   * declared in more than one file. The resolver disambiguates by the
+   * caller's import map (prefers the imported file, falls back to a sole
+   * global, else drops). Consumed by `CallResolver.resolveDispatch`.
+   */
+  dispatchTables?: Record<string, DispatchTableDef[]>;
+  /**
+   * Run-global `fnSymbolId → invokedParamIndices` map merged across every
+   * file's `FileExtraction.callbackParams` (bd tea-rags-mcp-n0zj). The
+   * resolver reads it during the bounded inter-procedural join: when a
+   * call resolves to a callee `F` listed here and the call passed a
+   * dispatch candidate-set at one of `F`'s invoked param positions, `F`
+   * fans out to the candidates.
+   */
+  callbackParams?: Record<string, number[]>;
 }
 
 export interface ResolvedTarget {
@@ -316,6 +512,17 @@ export interface GraphDbClient {
   /** Reads for metric computation (Tier 1) and MCP tools. */
   getFanIn: (relPath: RelPath) => Promise<number>;
   getFanOut: (relPath: RelPath) => Promise<number>;
+
+  /**
+   * Collection-wide p95 of per-file fanIn over the FULL file universe
+   * (every row in `cg_symbols_files`, including files with zero incoming
+   * edges). Used at index time to finalise `codegraph.file.isHub`
+   * (`fanIn > p95`). Computed against the whole graph — not the
+   * incremental-reindex subset — so hub classification stays correct when
+   * only a few files changed. Returns 0 on an empty/single-file graph so
+   * the `fanIn > p95` comparison degenerates sanely.
+   */
+  getFanInP95: () => Promise<number>;
   getCallers: (symbolId: SymbolId) => Promise<CallerEdge[]>;
   getCallees: (symbolId: SymbolId) => Promise<CalleeEdge[]>;
   getCalledByCount: (symbolId: SymbolId) => Promise<number>;

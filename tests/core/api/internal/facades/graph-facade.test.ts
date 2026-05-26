@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
+import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../../../../../src/core/api/errors.js";
 import { GraphFacade } from "../../../../../src/core/api/internal/facades/graph-facade.js";
+import type { CollectionRegistry } from "../../../../../src/core/infra/registry/index.js";
 
 /**
  * Build a fake pool that returns the same graphDb (+ trivial symbolTable
@@ -9,7 +11,8 @@ import { GraphFacade } from "../../../../../src/core/api/internal/facades/graph-
  * facade's mapping behaviour without exercising real DuckDB I/O.
  *
  * Reads route through `acquireReader` (mode-aware: daemon client in prod,
- * in-process READ_ONLY attach in direct/test mode) — the facade closes the
+ * in-process READ_ONLY attach in direct/test mode); the facade resolves the
+ * address triad (collection > project > path) via the registry and closes the
  * returned `graphDb` after each query, so the stub graphDb gets a no-op
  * `close` injected when absent.
  */
@@ -25,6 +28,20 @@ function fakePool(graphDb: Record<string, unknown>): GraphDbClientPool {
   } as unknown as GraphDbClientPool;
 }
 
+/**
+ * Minimal CollectionRegistry stub — only the methods resolveCollection()
+ * touches (findByName + list). Returns the entry passed via the map.
+ */
+function fakeRegistry(entries: Record<string, { collectionName: string; path: string }>): CollectionRegistry {
+  return {
+    findByName: vi.fn((name: string) => {
+      const entry = entries[name];
+      return entry ? { ...entry, name } : null;
+    }),
+    list: vi.fn(() => Object.entries(entries).map(([name, e]) => ({ ...e, name }))),
+  } as unknown as CollectionRegistry;
+}
+
 describe("GraphFacade", () => {
   it("getCallers delegates to GraphDbClient and respects limit", async () => {
     const graphDb = {
@@ -34,7 +51,7 @@ describe("GraphFacade", () => {
       ]),
       getCallees: vi.fn(),
     };
-    const facade = new GraphFacade({ pool: fakePool(graphDb) });
+    const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
     const response = await facade.getCallers({ path: "/proj", symbolId: "B.x", limit: 50 });
     expect(graphDb.getCallers).toHaveBeenCalledWith("B.x");
     expect(response.callers).toHaveLength(2);
@@ -51,7 +68,7 @@ describe("GraphFacade", () => {
       ),
       getCallees: vi.fn(),
     };
-    const facade = new GraphFacade({ pool: fakePool(graphDb) });
+    const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
     const response = await facade.getCallers({ path: "/proj", symbolId: "B.x", limit: 3 });
     expect(response.callers).toHaveLength(3);
   });
@@ -66,7 +83,7 @@ describe("GraphFacade", () => {
       getCallers: vi.fn(),
       getCallees: vi.fn().mockResolvedValue(callees),
     };
-    const facade = new GraphFacade({ pool: fakePool(graphDb) });
+    const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
     const response = await facade.getCallees({ path: "/proj", symbolId: "main" });
     expect(graphDb.getCallees).toHaveBeenCalledWith("main");
     expect(response.callees).toHaveLength(50);
@@ -88,7 +105,7 @@ describe("GraphFacade", () => {
         { cycleId: 1, scope: "file", members: ["src/x.ts", "src/y.ts", "src/z.ts"] },
       ]),
     };
-    const facade = new GraphFacade({ pool: fakePool(graphDb) });
+    const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
     const response = await facade.findCycles({ path: "/proj", scope: "file" });
     expect(graphDb.findCycles).toHaveBeenCalledWith("file");
     expect(response.cycles).toHaveLength(2);
@@ -107,7 +124,7 @@ describe("GraphFacade", () => {
       getCallees: vi.fn(),
       findCycles: vi.fn().mockResolvedValue([]),
     };
-    const facade = new GraphFacade({ pool: fakePool(graphDb) });
+    const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
     const response = await facade.findCycles({ path: "/proj", scope: "method" });
     expect(graphDb.findCycles).toHaveBeenCalledWith("method");
     expect(response.cycles).toEqual([]);
@@ -123,9 +140,114 @@ describe("GraphFacade", () => {
       acquireReader: vi.fn().mockRejectedValue(new Error("lock held")),
       peek: vi.fn().mockReturnValue(undefined),
     } as unknown as GraphDbClientPool;
-    const facade = new GraphFacade({ pool });
+    const facade = new GraphFacade({ pool, collectionRegistry: fakeRegistry({}) });
     expect(await facade.getCallers({ path: "/proj", symbolId: "X" })).toEqual({ callers: [] });
     expect(await facade.getCallees({ path: "/proj", symbolId: "X" })).toEqual({ callees: [] });
     expect(await facade.findCycles({ path: "/proj", scope: "file" })).toEqual({ cycles: [] });
+  });
+
+  // Triad resolution — the three codegraph facade methods accept the same
+  // `{ collection, project, path }` mixin every other tea-rags facade uses
+  // (resolution priority: collection > project > path). Backward compatible:
+  // path-only callers keep working; project alias resolves via registry;
+  // explicit collection overrides both.
+  describe("triad resolution", () => {
+    it("resolves project alias via CollectionRegistry into a Qdrant collection name", async () => {
+      const graphDb = {
+        getCallers: vi.fn().mockResolvedValue([]),
+        getCallees: vi.fn(),
+        findCycles: vi.fn(),
+      };
+      const pool = fakePool(graphDb);
+      const registry = fakeRegistry({
+        "tea-rags-worktree": { collectionName: "code_abc123", path: "/projects/worktree" },
+      });
+      const facade = new GraphFacade({ pool, collectionRegistry: registry });
+
+      await facade.getCallers({ project: "tea-rags-worktree", symbolId: "X" });
+
+      // Pool must be queried with the registry-resolved collection name,
+      // NOT with a hash of any path.
+      expect(pool.acquireReader).toHaveBeenCalledWith("code_abc123");
+    });
+
+    it("uses explicit collection name when provided (highest priority)", async () => {
+      const graphDb = {
+        getCallers: vi.fn(),
+        getCallees: vi.fn().mockResolvedValue([]),
+        findCycles: vi.fn(),
+      };
+      const pool = fakePool(graphDb);
+      const facade = new GraphFacade({ pool, collectionRegistry: fakeRegistry({}) });
+
+      await facade.getCallees({ collection: "code_explicit", symbolId: "Y" });
+
+      expect(pool.acquireReader).toHaveBeenCalledWith("code_explicit");
+    });
+
+    it("priority: collection wins over project when both are supplied", async () => {
+      const graphDb = {
+        getCallers: vi.fn(),
+        getCallees: vi.fn(),
+        findCycles: vi.fn().mockResolvedValue([]),
+      };
+      const pool = fakePool(graphDb);
+      const registry = fakeRegistry({
+        "some-alias": { collectionName: "code_from_alias", path: "/projects/alias" },
+      });
+      const facade = new GraphFacade({ pool, collectionRegistry: registry });
+
+      await facade.findCycles({
+        collection: "code_explicit",
+        project: "some-alias",
+        path: "/some/path",
+        scope: "file",
+      });
+
+      expect(pool.acquireReader).toHaveBeenCalledWith("code_explicit");
+    });
+
+    it("falls back to path when neither collection nor project is supplied (backward compat)", async () => {
+      const graphDb = {
+        getCallers: vi.fn().mockResolvedValue([]),
+        getCallees: vi.fn(),
+        findCycles: vi.fn(),
+      };
+      const pool = fakePool(graphDb);
+      const facade = new GraphFacade({ pool, collectionRegistry: fakeRegistry({}) });
+
+      await facade.getCallers({ path: "/proj/legacy", symbolId: "Z" });
+
+      // Path mode delegates to resolveCollectionName(path) — a deterministic
+      // md5-prefix hash. We just assert the pool was called with SOMETHING
+      // and not with the literal path string.
+      expect(pool.acquireReader).toHaveBeenCalledTimes(1);
+      const calledWith = (pool.acquireReader as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(calledWith).toMatch(/^code_[0-9a-f]{8}$/);
+    });
+
+    it("throws CollectionNotProvidedError (typed InputValidationError) when none of collection/project/path is supplied", async () => {
+      const graphDb = { getCallers: vi.fn(), getCallees: vi.fn(), findCycles: vi.fn() };
+      const facade = new GraphFacade({
+        pool: fakePool(graphDb),
+        collectionRegistry: fakeRegistry({}),
+      });
+
+      await expect(facade.getCallers({ symbolId: "X" })).rejects.toBeInstanceOf(CollectionNotProvidedError);
+      await expect(facade.getCallees({ symbolId: "Y" })).rejects.toBeInstanceOf(CollectionNotProvidedError);
+      await expect(facade.findCycles({ scope: "file" })).rejects.toBeInstanceOf(CollectionNotProvidedError);
+    });
+
+    it("throws ProjectNotRegisteredError when project alias is unknown", async () => {
+      const graphDb = { getCallers: vi.fn(), getCallees: vi.fn(), findCycles: vi.fn() };
+      const facade = new GraphFacade({
+        pool: fakePool(graphDb),
+        collectionRegistry: fakeRegistry({}),
+      });
+
+      await expect(facade.getCallers({ project: "unknown", symbolId: "X" })).rejects.toBeInstanceOf(
+        ProjectNotRegisteredError,
+      );
+    });
   });
 });

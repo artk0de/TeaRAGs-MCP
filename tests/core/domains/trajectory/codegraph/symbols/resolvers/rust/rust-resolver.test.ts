@@ -281,4 +281,191 @@ describe("RustCallResolver", () => {
     // miss.
     expect(target).toBeDefined();
   });
+
+  // bd tea-rags-mcp-q1pl — END-TO-END: the walker now emits real
+  // localBindings for `let y = Worker::new(); y.run()`, so the
+  // resolver's `localBindings[receiver]` branch resolves the typed
+  // receiver to `Worker#run` instead of grabbing a global `run`.
+  it("resolves `x.run()` via walker-shaped localBindings { x: 'Worker' } → Worker#run", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("src/worker.rs", [
+      { symbolId: "Worker#run", fqName: "Worker#run", shortName: "run", relPath: "src/worker.rs", scope: ["Worker"] },
+    ]);
+    // A noisy global `run` on an unrelated type — the legacy short-name
+    // fallback would grab it. The typed binding must win.
+    t.upsertFile("src/server.rs", [
+      { symbolId: "Server#run", fqName: "Server#run", shortName: "run", relPath: "src/server.rs", scope: ["Server"] },
+    ]);
+    const target = r.resolve(
+      { callText: "x.run()", receiver: "x", member: "run", startLine: 5 },
+      {
+        callerFile: "src/main.rs",
+        callerScope: [],
+        imports: [],
+        symbolTable: t,
+        localBindings: { x: "Worker" },
+      },
+    );
+    expect(target?.targetRelPath).toBe("src/worker.rs");
+    expect(target?.targetSymbolId).toBe("Worker#run");
+  });
+
+  // bd tea-rags-mcp-p8wz — name collision: `Parser#parse` is defined in
+  // BOTH crates/core/flags/parse.rs and crates/globset/src/glob.rs (ripgrep).
+  // A typed binding `let parser = Parser::new(); parser.parse()` inside
+  // parse.rs must resolve to the SAME-FILE Parser#parse — the bound type is
+  // declared locally, so its method is local. Without same-file preference
+  // the localBindings branch drops the edge on cross-file ambiguity.
+  it("resolves bound-type method to the same-file definition when the type name collides across files", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("crates/core/flags/parse.rs", [
+      {
+        symbolId: "Parser#parse",
+        fqName: "Parser#parse",
+        shortName: "parse",
+        relPath: "crates/core/flags/parse.rs",
+        scope: ["Parser"],
+      },
+    ]);
+    t.upsertFile("crates/globset/src/glob.rs", [
+      {
+        symbolId: "Parser#parse",
+        fqName: "Parser#parse",
+        shortName: "parse",
+        relPath: "crates/globset/src/glob.rs",
+        scope: ["Parser"],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "parser.parse(args)", receiver: "parser", member: "parse", startLine: 72 },
+      {
+        callerFile: "crates/core/flags/parse.rs",
+        callerScope: [],
+        imports: [],
+        symbolTable: t,
+        localBindings: { parser: "Parser" },
+      },
+    );
+    expect(target?.targetRelPath).toBe("crates/core/flags/parse.rs");
+    expect(target?.targetSymbolId).toBe("Parser#parse");
+  });
+
+  // bd tea-rags-mcp-q1pl — END-TO-END: `self.field.method()` where the
+  // struct declares `field: Engine`. The walker emits
+  // classFieldTypes { Worker: { engine: "Engine" } }; the resolver's
+  // self.<field> branch looks up the field type via the enclosing impl
+  // type (callerScope) and resolves `<Engine>#start`.
+  it("resolves `self.engine.start()` via classFieldTypes → Engine#start", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("src/engine.rs", [
+      {
+        symbolId: "Engine#start",
+        fqName: "Engine#start",
+        shortName: "start",
+        relPath: "src/engine.rs",
+        scope: ["Engine"],
+      },
+    ]);
+    // Unrelated `start` on another type — must NOT be picked.
+    t.upsertFile("src/motor.rs", [
+      { symbolId: "Motor#start", fqName: "Motor#start", shortName: "start", relPath: "src/motor.rs", scope: ["Motor"] },
+    ]);
+    const target = r.resolve(
+      { callText: "self.engine.start()", receiver: "self.engine", member: "start", startLine: 5 },
+      {
+        callerFile: "src/worker.rs",
+        callerScope: ["Worker"],
+        imports: [],
+        symbolTable: t,
+        classFieldTypes: { Worker: { engine: "Engine" } },
+      },
+    );
+    expect(target?.targetRelPath).toBe("src/engine.rs");
+    expect(target?.targetSymbolId).toBe("Engine#start");
+  });
+
+  // bd tea-rags-mcp-q1pl — `self.field.assocFn()` resolves to the
+  // associated-function form `<Type>.member` when no instance method
+  // matches. Covers the static fallback in the self.field branch.
+  it("resolves `self.engine.make()` to associated-fn `Engine.make` when no instance method exists", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("src/engine.rs", [
+      {
+        symbolId: "Engine.make",
+        fqName: "Engine.make",
+        shortName: "make",
+        relPath: "src/engine.rs",
+        scope: ["Engine"],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "self.engine.make()", receiver: "self.engine", member: "make", startLine: 5 },
+      {
+        callerFile: "src/worker.rs",
+        callerScope: ["Worker"],
+        imports: [],
+        symbolTable: t,
+        classFieldTypes: { Worker: { engine: "Engine" } },
+      },
+    );
+    expect(target?.targetRelPath).toBe("src/engine.rs");
+    expect(target?.targetSymbolId).toBe("Engine.make");
+  });
+
+  // bd tea-rags-mcp-q1pl — field type IS recorded but the member is absent
+  // on that type. DROP the edge rather than route to an unrelated type's
+  // member via the global short-name fallback.
+  it("drops `self.engine.absent()` when the field type is known but lacks the member", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    // Engine has no `absent`; a same-named method lives on an unrelated
+    // type. The known field type must constrain resolution and DROP.
+    t.upsertFile("src/other.rs", [
+      {
+        symbolId: "Other#absent",
+        fqName: "Other#absent",
+        shortName: "absent",
+        relPath: "src/other.rs",
+        scope: ["Other"],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "self.engine.absent()", receiver: "self.engine", member: "absent", startLine: 5 },
+      {
+        callerFile: "src/worker.rs",
+        callerScope: ["Worker"],
+        imports: [],
+        symbolTable: t,
+        classFieldTypes: { Worker: { engine: "Engine" } },
+      },
+    );
+    expect(target).toBeNull();
+  });
+
+  // bd tea-rags-mcp-q1pl — `self.<field>` whose type is NOT recorded is an
+  // instance-field access, never a module/import name. DROP rather than
+  // fall through to the ambiguous global short-name path (mirrors the
+  // Python/Java self.field branch).
+  it("drops `self.unknown.foo()` when the field type is not recorded", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("src/other.rs", [
+      { symbolId: "Other#foo", fqName: "Other#foo", shortName: "foo", relPath: "src/other.rs", scope: ["Other"] },
+    ]);
+    const target = r.resolve(
+      { callText: "self.unknown.foo()", receiver: "self.unknown", member: "foo", startLine: 5 },
+      {
+        callerFile: "src/worker.rs",
+        callerScope: ["Worker"],
+        imports: [],
+        symbolTable: t,
+        classFieldTypes: { Worker: { engine: "Engine" } },
+      },
+    );
+    expect(target).toBeNull();
+  });
 });

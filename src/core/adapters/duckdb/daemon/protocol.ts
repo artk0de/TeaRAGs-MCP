@@ -31,6 +31,7 @@ export type DaemonOp =
   //    through its own RW connection instead of a conflicting cross-process
   //    READ_ONLY attach) ──
   | "getFanIn"
+  | "getFanInP95"
   | "getFanOut"
   | "getCallers"
   | "getCallees"

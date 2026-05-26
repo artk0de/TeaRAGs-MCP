@@ -207,3 +207,211 @@ describe("extractFromRustFile — macros", () => {
     expect(macro?.receiver).toBe("foo::bar");
   });
 });
+
+// bd tea-rags-mcp-q1pl — local binding emission. The Rust resolver's
+// `resolveByLocalType` branch (`localBindings[receiver]`) was dead in
+// production because the walker never produced `localBindings`. These
+// tests pin the three walker-only sources: typed `let`, associated-fn
+// constructors (`Foo::new()`), and parameter type annotations.
+describe("extractFromRustFile — localBindings", () => {
+  it("records typed `let x: Foo` → { x: 'Foo' }", () => {
+    const src = ["fn run() {", "  let x: Engine = make();", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ x: "Engine" });
+  });
+
+  it("strips reference from typed `let x: &mut Bar` → { x: 'Bar' }", () => {
+    const src = ["fn run() {", "  let x: &mut Bar = make();", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ x: "Bar" });
+  });
+
+  it("unwraps generic in typed `let v: Vec<Thing>` → { v: 'Vec' }", () => {
+    const src = ["fn run() {", "  let v: Vec<Thing> = make();", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ v: "Vec" });
+  });
+
+  it("records associated-fn constructor `let y = Worker::new()` → { y: 'Worker' }", () => {
+    const src = ["fn run() {", "  let y = Worker::new();", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ y: "Worker" });
+  });
+
+  it("records `Foo::from(...)` and `Foo::default()` associated-fn constructors", () => {
+    const src = ["fn run() {", "  let z = Helper::from(3);", "  let w = Other::default();", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ z: "Helper", w: "Other" });
+  });
+
+  it("skips non-constructor assoc fn `let q = Worker::query()` (not a ctor name)", () => {
+    const src = ["fn run() {", "  let q = Worker::query();", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+
+  it("skips non-CapWords assoc-fn receiver `let m = mymod::new()`", () => {
+    const src = ["fn run() {", "  let m = mymod::new();", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+
+  it("skips untyped `let x = build()` (return type unknown)", () => {
+    const src = ["fn run() {", "  let x = build();", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+
+  it("records parameter type annotations `fn bar(&self, p: Foo, q: &mut Bar, v: Vec<T>)`", () => {
+    const src = ["fn bar(&self, p: Foo, q: &mut Bar, v: Vec<Thing>) {", "  p.go();", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [{ symbolId: "Worker#bar", scope: ["Worker"], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ p: "Foo", q: "Bar", v: "Vec" });
+  });
+
+  it("attributes bindings to the innermost function chunk only", () => {
+    const src = [
+      "fn outer() {", //         1
+      "  let a: Alpha = m();", // 2
+      "}", //                    3
+      "fn inner() {", //         4
+      "  let b: Beta = m();", // 5
+      "}", //                    6
+      "",
+    ].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [
+        { symbolId: "outer", scope: [], startLine: 1, endLine: 3 },
+        { symbolId: "inner", scope: [], startLine: 4, endLine: 6 },
+      ],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ a: "Alpha" });
+    expect(r.chunks[1].localBindings).toEqual({ b: "Beta" });
+  });
+});
+
+// bd tea-rags-mcp-q1pl — struct field-type emission for the
+// `self.field.method()` resolver path. Keyed by struct name (= the impl
+// type name in `callerScope`), field name → declared type.
+describe("extractFromRustFile — classFieldTypes", () => {
+  it("records `struct S { f: Bar }` → { S: { f: 'Bar' } }", () => {
+    const src = ["struct S {", "  f: Bar,", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [],
+    });
+    expect(r.classFieldTypes).toEqual({ S: { f: "Bar" } });
+  });
+
+  it("records multiple fields and strips reference/generic types", () => {
+    const src = ["struct Worker {", "  engine: Engine,", "  items: Vec<Thing>,", "  parent: &Owner,", "}", ""].join(
+      "\n",
+    );
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [],
+    });
+    expect(r.classFieldTypes).toEqual({ Worker: { engine: "Engine", items: "Vec", parent: "Owner" } });
+  });
+
+  it("leaves classFieldTypes undefined for a struct with no fields", () => {
+    const src = "struct Empty {}\n";
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [],
+    });
+    expect(r.classFieldTypes).toBeUndefined();
+  });
+
+  it("reduces a scoped field type `f: std::vec::Vec` to its bare last segment 'Vec'", () => {
+    const src = ["struct S {", "  f: std::vec::Vec,", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [],
+    });
+    expect(r.classFieldTypes).toEqual({ S: { f: "Vec" } });
+  });
+
+  it("skips fields with no single named base type (tuple type)", () => {
+    // `(A, B)` is a `tuple_type` — no single class name to attribute, so the
+    // field is dropped and the struct contributes nothing.
+    const src = ["struct S {", "  pair: (A, B),", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.rs",
+      language: "rust",
+      chunks: [],
+    });
+    expect(r.classFieldTypes).toBeUndefined();
+  });
+});

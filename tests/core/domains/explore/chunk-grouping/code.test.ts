@@ -89,6 +89,53 @@ describe("CodeChunkGrouper", () => {
       );
     });
 
+    // tea-rags-mcp-0am0: find_symbol metaOnly outlines flow through
+    // CodeChunkGrouper, which rebuilt the payload from an explicit allowlist
+    // and dropped the codegraph.symbols section entirely. Architectural-signal
+    // presets (architecturalHub etc.) surface codegraph in their overlay, but
+    // the outline projection must also preserve the nested codegraph.file
+    // branch — mirroring how it strips git to file-level only.
+    it("preserves codegraph.symbols.file nested section (stripped to file-level)", () => {
+      const classChunk: ScrollChunk = {
+        id: "class-cg",
+        payload: {
+          name: "Reranker",
+          symbolId: "Reranker",
+          chunkType: "class",
+          relativePath: "src/reranker.ts",
+          content: "class Reranker { ... }",
+          startLine: 1,
+          endLine: 50,
+          language: "typescript",
+          codegraph: {
+            symbols: {
+              file: {
+                "codegraph.file.fanIn": 7,
+                "codegraph.file.fanOut": 2,
+                "codegraph.file.isHub": true,
+              },
+              chunk: { "codegraph.chunk.fanIn": 3 },
+            },
+          },
+        },
+      };
+
+      const result = CodeChunkGrouper.group(classChunk, []);
+
+      expect(result.payload?.codegraph).toEqual({
+        symbols: {
+          file: {
+            "codegraph.file.fanIn": 7,
+            "codegraph.file.fanOut": 2,
+            "codegraph.file.isHub": true,
+          },
+        },
+      });
+      // chunk-level codegraph stripped (file-level outline)
+      const cg = result.payload?.codegraph as { symbols?: { chunk?: unknown } };
+      expect(cg.symbols?.chunk).toBeUndefined();
+    });
+
     it("handles class with no members", () => {
       const classChunk: ScrollChunk = {
         id: "class-empty",
@@ -210,6 +257,47 @@ describe("CodeChunkGrouper", () => {
       expect(result.payload?.language).toBe("typescript");
       expect(result.payload?.chunkCount).toBe(5);
       expect(result.payload?.git).toEqual({ file: { commitCount: 10 } });
+    });
+
+    // tea-rags-mcp-0am0: file-level outline (find_symbol relativePath mode)
+    // must carry the codegraph.symbols.file branch like it carries git.file.
+    it("preserves codegraph.symbols.file nested section in file outline", () => {
+      const chunks: ScrollChunk[] = [
+        {
+          id: "fcg-1",
+          payload: {
+            name: "DEFAULTS",
+            symbolId: "DEFAULTS",
+            chunkType: "block",
+            relativePath: "src/reranker.ts",
+            content: "const DEFAULTS = {}",
+            startLine: 1,
+            endLine: 3,
+            language: "typescript",
+            git: { file: { commitCount: 10 } },
+            codegraph: {
+              symbols: {
+                file: {
+                  "codegraph.file.fanIn": 12,
+                  "codegraph.file.instability": 0.4,
+                },
+                chunk: { "codegraph.chunk.fanIn": 1 },
+              },
+            },
+          },
+        },
+      ];
+
+      const result = CodeChunkGrouper.groupFile(chunks);
+
+      expect(result.payload?.codegraph).toEqual({
+        symbols: {
+          file: {
+            "codegraph.file.fanIn": 12,
+            "codegraph.file.instability": 0.4,
+          },
+        },
+      });
     });
 
     it("handles file with only top-level symbols (no nesting)", () => {

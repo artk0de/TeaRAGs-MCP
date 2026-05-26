@@ -289,6 +289,73 @@ describe("filterMetaOnly", () => {
     // No git block produced since overlay had no data and no essentials requested.
     expect(meta[0].git).toBeUndefined();
   });
+
+  // tea-rags-mcp-0am0 — codegraph projection in metaOnly mode.
+  // EnrichmentApplier writes codegraph file-level signals under
+  // `payload.codegraph.symbols.{file,chunk}` with dotted inner keys. Before
+  // this fix, filterMetaOnly only forwarded the git namespace, so MCP
+  // callers requesting metaOnly never saw codegraph signals even when
+  // they were present in the payload.
+  it("preserves codegraph.symbols.file payload in metaOnly projection", () => {
+    const results: SearchResult[] = [
+      {
+        score: 0.9,
+        payload: {
+          relativePath: "src/hub.ts",
+          codegraph: {
+            symbols: {
+              file: {
+                "codegraph.file.fanIn": 12,
+                "codegraph.file.fanOut": 3,
+                "codegraph.file.isHub": true,
+              },
+            },
+          },
+        },
+      },
+    ];
+    const meta = filterMetaOnly(results, payloadSignals, []);
+    const codegraph = meta[0].codegraph as
+      | { symbols?: { file?: Record<string, unknown>; chunk?: Record<string, unknown> } }
+      | undefined;
+    expect(codegraph).toBeDefined();
+    expect(codegraph!.symbols).toBeDefined();
+    expect(codegraph!.symbols!.file).toEqual({
+      "codegraph.file.fanIn": 12,
+      "codegraph.file.fanOut": 3,
+      "codegraph.file.isHub": true,
+    });
+  });
+
+  it("preserves codegraph chunk section alongside git overlay", () => {
+    const results: SearchResult[] = [
+      {
+        score: 0.8,
+        payload: {
+          relativePath: "src/method.ts",
+          codegraph: {
+            symbols: {
+              chunk: {
+                "codegraph.chunk.fanIn": 5,
+                "codegraph.chunk.pageRank": 0.01,
+              },
+            },
+          },
+        },
+        rankingOverlay: {
+          preset: "hotspots",
+          chunk: { commitCount: 3 },
+        },
+      },
+    ];
+    const meta = filterMetaOnly(results, payloadSignals, []);
+    expect(meta[0].git).toEqual({ chunk: { commitCount: 3 } });
+    const codegraph = meta[0].codegraph as { symbols?: { chunk?: Record<string, unknown> } } | undefined;
+    expect(codegraph?.symbols?.chunk).toEqual({
+      "codegraph.chunk.fanIn": 5,
+      "codegraph.chunk.pageRank": 0.01,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

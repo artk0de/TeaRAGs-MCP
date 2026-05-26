@@ -12,8 +12,12 @@ export type StartupPhase = "starting" | "recovering";
 export interface DaemonHandle {
   url: string;
   release: () => void;
-  /** Re-read daemon.port and return new URL if daemon restarted on a different port. */
-  reconnect: () => string | null;
+  /**
+   * Fully re-resolve the daemon URL: re-read daemon.port if the daemon is alive,
+   * or respawn a fresh daemon if it is gone. Returns the new URL, or null if the
+   * live daemon kept the same port. Async because respawn spawns a process.
+   */
+  reconnect: () => Promise<string | null>;
   /**
    * Returns the current startup phase of the embedded daemon:
    *  - "starting" — spawned recently, HTTP not bound yet, expect <15s window
@@ -33,7 +37,7 @@ export type QdrantResolution =
       mode: "embedded";
       url: string;
       release: () => void;
-      reconnect: () => string | null;
+      reconnect: () => Promise<string | null>;
       startupPhase: () => StartupPhase | null;
       pid: number;
       storagePath: string;

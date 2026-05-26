@@ -17,7 +17,9 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import { decodeFrames, encodeFrame, type DaemonRequest } from "../../../../src/core/adapters/duckdb/daemon/protocol.js";
+import { DuckDbCloseFailedError, DuckDbOpenFailedError } from "../../../../src/core/adapters/duckdb/errors.js";
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
 import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -292,6 +294,78 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     expect(afterRows.map((r) => r.rel_path)).not.toContain("marker.ts");
 
     await pool.closeAll();
+  });
+
+  it("surfaces a typed DuckDbOpenFailedError when init/migrations fail and does NOT cache the failed collection", async () => {
+    // Real scenario: the DuckDB file lock is held by another tea-rags
+    // process (or the file is corrupted), so the driver rejects init().
+    // openCollection must close the partially-opened handle, wrap the raw
+    // driver error in a typed DuckDbOpenFailedError, and leave the pool
+    // un-mutated so a later retry (after the lock releases) reopens cleanly.
+    const initSpy = vi
+      .spyOn(DuckDbGraphClient.prototype, "init")
+      .mockRejectedValue(new Error("Conflicting lock is held"));
+
+    const pool = new GraphDbClientPool({
+      rootDir: tmp,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    });
+
+    const dbPath = pool.pathFor("locked");
+    expect(dbPath).toContain("locked.duckdb");
+    await expect(pool.acquire("locked")).rejects.toMatchObject({
+      code: "INFRA_DUCKDB_OPEN_FAILED",
+      // The raw driver message is preserved as the cause, not leaked into message.
+      cause: expect.objectContaining({ message: "Conflicting lock is held" }),
+    });
+    // A second acquire after a failed open still throws (the failed attempt was
+    // not cached as a poisoned entry) and again surfaces the typed error.
+    await expect(pool.acquire("locked")).rejects.toBeInstanceOf(DuckDbOpenFailedError);
+
+    // The failed collection was never cached / never left in flight.
+    expect(pool.peek("locked")).toBeUndefined();
+
+    // Once the underlying fault clears, the next acquire (real init) succeeds —
+    // proving the failed attempt left no poisoned inflight entry behind.
+    initSpy.mockRestore();
+    const recovered = await pool.acquire("locked");
+    expect(recovered.graphDb).toBeDefined();
+    expect(pool.peek("locked")).toBe(recovered);
+
+    await pool.closeAll();
+  });
+
+  it("removeCollection throws DuckDbCloseFailedError when the driver rejects close and leaves the file on disk", async () => {
+    // Real scenario: a hung DuckDB connection rejects close() during a
+    // clear/force-reindex eviction. removeCollection must NOT unlink a file
+    // the driver still holds open (undefined behaviour on some platforms) —
+    // it evicts from cache, then surfaces the typed close failure so the
+    // caller knows the file is still locked.
+    const pool = new GraphDbClientPool({
+      rootDir: tmp,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    });
+
+    const entry = await pool.acquire("hung");
+    const dbPath = pool.pathFor("hung");
+    expect(existsSync(dbPath)).toBe(true);
+
+    // The cached connection's close hangs/rejects on this eviction.
+    const closeSpy = vi.spyOn(entry.graphDb, "close").mockRejectedValueOnce(new Error("connection still busy"));
+
+    await expect(pool.removeCollection("hung")).rejects.toBeInstanceOf(DuckDbCloseFailedError);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+
+    // Contract: the entry is evicted from cache (so the pool is not left
+    // half-mutated) but the on-disk file is NOT unlinked while the driver
+    // still claims to hold it open.
+    expect(pool.peek("hung")).toBeUndefined();
+    expect(existsSync(dbPath)).toBe(true);
+
+    // Real close now succeeds — clean up the still-open handle so the temp
+    // dir teardown does not race a live file lock.
+    closeSpy.mockRestore();
+    await entry.graphDb.close();
   });
 });
 

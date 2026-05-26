@@ -114,6 +114,61 @@ describe("SchemaManager", () => {
       expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", "symbolId", "text");
     });
 
+    it("should create payload indexes for nested codegraph filter paths", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      // The codegraph payload lives nested: the EnrichmentApplier writes
+      // under key `codegraph.symbols.{file,chunk}` with BARE inner keys
+      // (tea-rags-mcp-k6xu), so the addressable path is
+      // `codegraph.symbols.{level}.X`. The Qdrant index path MUST match the
+      // filter key emitted by codegraphFilters (filters.ts) exactly, or the
+      // index is never used and typed filters return zero results.
+      const expectedIntegerPaths = [
+        "codegraph.symbols.file.fanIn",
+        "codegraph.symbols.file.fanOut",
+        "codegraph.symbols.file.connectionCount",
+        "codegraph.symbols.file.transitiveImpact",
+        "codegraph.symbols.chunk.fanIn",
+        "codegraph.symbols.chunk.fanOut",
+      ];
+      for (const path of expectedIntegerPaths) {
+        expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", path, "integer");
+      }
+
+      const expectedFloatPaths = ["codegraph.symbols.file.instability", "codegraph.symbols.chunk.pageRank"];
+      for (const path of expectedFloatPaths) {
+        expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", path, "float");
+      }
+
+      const expectedBoolPaths = ["codegraph.symbols.file.isHub", "codegraph.symbols.file.isLeaf"];
+      for (const path of expectedBoolPaths) {
+        expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", path, "bool");
+      }
+    });
+
+    it("should record codegraph index paths in schema metadata", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      expect(mockQdrant.addPoints).toHaveBeenCalledWith(
+        "new-collection",
+        expect.arrayContaining([
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              indexes: expect.arrayContaining([
+                "codegraph.symbols.file.fanIn",
+                "codegraph.symbols.file.isHub",
+                "codegraph.symbols.chunk.pageRank",
+              ]),
+            }),
+          }),
+        ]),
+      );
+    });
+
     it("should use sparse vector store for hybrid collections", async () => {
       mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
       mockQdrant.getCollectionInfo.mockResolvedValue({ vectorSize: 384, hybridEnabled: true });

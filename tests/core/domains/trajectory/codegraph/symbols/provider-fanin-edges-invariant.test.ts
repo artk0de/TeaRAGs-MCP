@@ -131,7 +131,7 @@ describe("Codegraph fanIn ↔ getCallers consistency (tea-rags-mcp-4nch)", () =>
 
     // The load-bearing assertion. If fanIn diverges from getCallers
     // length, this surface — not real user reports — is where it shows.
-    expect(target?.["codegraph.chunk.fanIn"]).toBe(callers.length);
+    expect(target?.["fanIn"]).toBe(callers.length);
   });
 
   /**
@@ -158,7 +158,7 @@ describe("Codegraph fanIn ↔ getCallers consistency (tea-rags-mcp-4nch)", () =>
     ]);
     const overlays = await provider.buildChunkSignals("/", chunkMap);
     const target = overlays.get("src/lonely.ts")?.get("chunk-lonely");
-    expect(target?.["codegraph.chunk.fanIn"]).toBe(callers.length);
+    expect(target?.["fanIn"]).toBe(callers.length);
   });
 
   /**
@@ -198,7 +198,7 @@ describe("Codegraph fanIn ↔ getCallers consistency (tea-rags-mcp-4nch)", () =>
       ["src/target.ts", [{ chunkId: "chunk-target", startLine: 10, endLine: 15 }]],
     ]);
     const before = await provider.buildChunkSignals("/", chunkMap);
-    const beforeFanIn = before.get("src/target.ts")?.get("chunk-target")?.["codegraph.chunk.fanIn"];
+    const beforeFanIn = before.get("src/target.ts")?.get("chunk-target")?.["fanIn"];
     const beforeCallers = await client.getCallers("Target.run");
     expect(beforeFanIn).toBe(beforeCallers.length);
 
@@ -226,7 +226,7 @@ describe("Codegraph fanIn ↔ getCallers consistency (tea-rags-mcp-4nch)", () =>
     await sink2.finish();
 
     const after = await provider.buildChunkSignals("/", chunkMap);
-    const afterFanIn = after.get("src/target.ts")?.get("chunk-target")?.["codegraph.chunk.fanIn"];
+    const afterFanIn = after.get("src/target.ts")?.get("chunk-target")?.["fanIn"];
     const afterCallers = await client.getCallers("Target.run");
     expect(afterFanIn).toBe(afterCallers.length);
     // Sanity: the second pass actually added an edge.
@@ -348,7 +348,7 @@ describe("Codegraph fanIn ↔ getCallers consistency — Ruby fixtures (tea-rags
       ["app/concerns/web_request_concern.rb", [{ chunkId: "chunk-ua", startLine: 2, endLine: 4 }]],
     ]);
     const overlays = await provider.buildChunkSignals("/", chunkMap);
-    const fanIn = overlays.get("app/concerns/web_request_concern.rb")?.get("chunk-ua")?.["codegraph.chunk.fanIn"];
+    const fanIn = overlays.get("app/concerns/web_request_concern.rb")?.get("chunk-ua")?.["fanIn"];
 
     // Load-bearing invariant. `chunk.fanIn` MUST equal the number of
     // rows `getCallers` returns for the same symbolId, period. If they

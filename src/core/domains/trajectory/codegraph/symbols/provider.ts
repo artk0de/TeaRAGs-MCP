@@ -40,6 +40,7 @@ import TsLang from "tree-sitter-typescript";
 import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
   CallResolver,
+  DispatchTableDef,
   ExtractionSink,
   FileExtraction,
   GlobalSymbolTable,
@@ -462,6 +463,30 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runExtends: Record<string, string> = {};
   /**
+   * Per-run aggregation of `FileExtraction.functionReturnTypes`
+   * (bd tea-rags-mcp-6g9c). `functionName → declaredReturnTypeName` merged
+   * across pass-1 files so the Go resolver can bind `x := New(); x.method()`
+   * to `<New's return type>#method` even when `New` is declared in a
+   * different file. Same lifecycle as `runExtends` — reset on finish().
+   */
+  private runReturnTypes: Record<string, string> = {};
+  /**
+   * Per-run aggregation of `FileExtraction.dispatchTables` keyed by table
+   * NAME (bd tea-rags-mcp-n0zj). The value is a `DispatchTableDef[]` because
+   * the same name may be declared in several files; the resolver
+   * disambiguates by the caller's import map. Re-walking a file replaces its
+   * own entry (dedup by relPath). Same lifecycle as `runExtends` —
+   * reset on the empty-run path of `getRunMetrics`.
+   */
+  private runDispatchTables: Record<string, DispatchTableDef[]> = {};
+  /**
+   * Per-run aggregation of `FileExtraction.callbackParams` keyed by the
+   * function/method symbolId (bd tea-rags-mcp-n0zj). Merged across pass-1
+   * files so the resolver's bounded inter-procedural join sees a callee's
+   * invoked param positions regardless of which file declared it.
+   */
+  private runCallbackParams: Record<string, number[]> = {};
+  /**
    * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
    * Built once at construction from `deps.exclusion`. Empty filter
    * (`excludeTests:false`, no custom patterns) is a valid no-op — every
@@ -663,6 +688,38 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         if (extraction.classExtends) {
           for (const [k, v] of Object.entries(extraction.classExtends)) {
             this.runExtends[k] = v;
+          }
+        }
+        // Merge file-local function return types into the run-global map so
+        // the resolver in pass-2 can resolve `x := New()` return-type
+        // bindings keyed by function name regardless of which file declares
+        // the function. bd tea-rags-mcp-6g9c. Last write wins on duplicate
+        // names; the resolver's symbol-table existence gate suppresses any
+        // wrong type that survives the collision.
+        if (extraction.functionReturnTypes) {
+          for (const [k, v] of Object.entries(extraction.functionReturnTypes)) {
+            this.runReturnTypes[k] = v;
+          }
+        }
+        // Merge dispatch tables run-global keyed by table name + defining
+        // relpath so the resolver can fan a `TABLE[key].field()` call out to
+        // every candidate regardless of which file declared the table (bd
+        // tea-rags-mcp-n0zj). Re-walking a file replaces its own def for that
+        // name (dedup by relPath) — incremental reindex stays idempotent.
+        if (extraction.dispatchTables) {
+          for (const [name, table] of Object.entries(extraction.dispatchTables)) {
+            const defs = (this.runDispatchTables[name] ??= []);
+            const at = defs.findIndex((d) => d.relPath === extraction.relPath);
+            if (at >= 0) defs[at] = { relPath: extraction.relPath, table };
+            else defs.push({ relPath: extraction.relPath, table });
+          }
+        }
+        // Merge callback-param maps run-global keyed by symbolId so the
+        // bounded inter-proc join sees a callee's invoked param positions
+        // even when the call site is in a different file.
+        if (extraction.callbackParams) {
+          for (const [symbolId, indices] of Object.entries(extraction.callbackParams)) {
+            this.runCallbackParams[symbolId] = indices;
           }
         }
 
@@ -923,6 +980,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runAncestors = {};
       this.runPrependedAncestors = {};
       this.runExtends = {};
+      this.runReturnTypes = {};
+      this.runDispatchTables = {};
+      this.runCallbackParams = {};
       return undefined;
     }
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / callsAttempted;
@@ -1037,6 +1097,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
     await sink.finish();
 
+    // Collection-wide p95 of fanIn, finalising `isHub` at index time. Read
+    // from the full graph in DuckDB (NOT the in-memory overlay subset):
+    // on incremental reindex `overlayPaths` holds only the changed files,
+    // so computing the percentile from that subset would misclassify hubs.
+    // The first pass above has just brought the whole graph up to date, so
+    // the DB query naturally spans the entire collection's file universe.
+    const fanInP95 = await graphDb.getFanInP95();
+
     // Second pass: emit the metric overlays per file. We emit a row for
     // every relPath the caller listed (or every file we walked), so the
     // enrichment coordinator sees a consistent overlay map shape.
@@ -1051,16 +1119,27 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // small files (early-empty); on hub files the DuckDB recursive
       // CTE handles up to ~thousands of ancestors comfortably.
       const transitiveImpact = await graphDb.getTransitiveImpact(relPath);
+      // Bare inner keys (tea-rags-mcp-k6xu). EnrichmentApplier writes this
+      // overlay under providerKey `codegraph.symbols.file`, which Qdrant
+      // resolves as a path. Bare keys mean the on-disk shape is
+      // `codegraph.symbols.file.fanIn` (single prefix), natively addressable
+      // by Qdrant filters — mirroring git's `git.file.commitCount`. A dotted
+      // inner key would produce a literal leaf `"codegraph.file.fanIn"` that
+      // Qdrant cannot reach via a filter path.
       result.set(relPath, {
-        "codegraph.file.fanIn": fanIn,
-        "codegraph.file.fanOut": fanOut,
-        "codegraph.file.instability": denom === 0 ? 0 : fanOut / denom,
-        // isHub is finalised by the IsHubSignal derived signal against
-        // the cohort p95 at rerank time. The payload field stays in
-        // place with a stable default so reranker overlays don't churn.
-        "codegraph.file.isHub": false,
-        "codegraph.file.isLeaf": fanOut === 0 && fanIn > 0,
-        "codegraph.file.transitiveImpact": transitiveImpact,
+        fanIn,
+        fanOut,
+        instability: denom === 0 ? 0 : fanOut / denom,
+        // Support signal for instability.confidence — derived inline so
+        // bytes hit Qdrant in the same payload as fanIn/fanOut.
+        connectionCount: denom,
+        // isHub = fanIn above the collection-wide p95. Computed here at
+        // index time (p95 queried once above against the full graph), so
+        // the persisted payload boolean is truthful. IsHubSignal reads
+        // this boolean verbatim — there is no rerank-time finalisation.
+        isHub: fanIn > fanInP95,
+        isLeaf: fanOut === 0 && fanIn > 0,
+        transitiveImpact,
       });
     }
     return result;
@@ -1292,10 +1371,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // before recompute completes, or non-TS chunks without
         // extraction edges).
         const pageRankValue = await graphDb.getPageRank(symbolId);
+        // Bare inner keys (tea-rags-mcp-k6xu) — written under providerKey
+        // `codegraph.symbols.chunk`, so the addressable path is
+        // `codegraph.symbols.chunk.fanIn`. See buildFileSignals for rationale.
         perChunk.set(entry.chunkId, {
-          "codegraph.chunk.fanIn": fanIn,
-          "codegraph.chunk.fanOut": fanOut,
-          "codegraph.chunk.pageRank": pageRankValue,
+          fanIn,
+          fanOut,
+          pageRank: pageRankValue,
         });
       }
       out.set(relPath, perChunk);
@@ -1320,6 +1402,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         ? this.runPrependedAncestors
         : extraction.classPrependedAncestors;
     const extendsForResolver = Object.keys(this.runExtends).length > 0 ? this.runExtends : extraction.classExtends;
+    const returnTypesForResolver =
+      Object.keys(this.runReturnTypes).length > 0 ? this.runReturnTypes : extraction.functionReturnTypes;
     // File-level edges from imports. We synthesise a "call-shaped" lookup
     // so the same resolver contract handles both call resolution and
     // import-to-file resolution.
@@ -1349,25 +1433,63 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     for (const chunk of extraction.chunks) {
       for (const call of chunk.calls) {
         this.runStats.callsAttempted += 1;
-        const target = resolver.resolve(call, {
+        const ctx = {
           callerFile: extraction.relPath,
           callerScope: chunk.scope,
           imports: extraction.imports,
           symbolTable,
           classFieldTypes: extraction.classFieldTypes,
           localBindings: chunk.localBindings,
+          localCallBindings: chunk.localCallBindings,
+          functionReturnTypes: returnTypesForResolver,
           classAncestors: ancestorsForResolver,
           classPrependedAncestors: prependedAncestorsForResolver,
           classExtends: extendsForResolver,
-        });
-        if (!target) continue;
-        this.runStats.callsResolved += 1;
-        methodEdges.push({
-          sourceSymbolId: chunk.symbolId,
-          targetSymbolId: target.targetSymbolId,
-          targetRelPath: target.targetRelPath,
-          callExpression: call.callText,
-        });
+          // bd tea-rags-mcp-n0zj — run-global dispatch tables + callback
+          // params drive the resolver's fan-out / inter-proc join.
+          dispatchTables: this.runDispatchTables,
+          callbackParams: this.runCallbackParams,
+        };
+        let resolved = false;
+        if (call.dispatch) {
+          // Dispatch call: fan out to candidates instead of normal
+          // resolution. `sourceSymbolId: null` ⇒ the caller chunk.
+          for (const edge of resolver.resolveDispatch?.(call, ctx) ?? []) {
+            methodEdges.push({
+              sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
+              targetSymbolId: edge.targetSymbolId,
+              targetRelPath: edge.targetRelPath,
+              callExpression: call.callText,
+            });
+            resolved = true;
+          }
+        } else {
+          const target = resolver.resolve(call, ctx);
+          if (target) {
+            methodEdges.push({
+              sourceSymbolId: chunk.symbolId,
+              targetSymbolId: target.targetSymbolId,
+              targetRelPath: target.targetRelPath,
+              callExpression: call.callText,
+            });
+            resolved = true;
+          }
+          // Bounded inter-proc join: a dispatch candidate-set passed as a
+          // callback argument fans out from the CALLEE (non-null
+          // sourceSymbolId on the edge), additive to the normal edge above.
+          if (call.dispatchArgs && call.dispatchArgs.length > 0) {
+            for (const edge of resolver.resolveDispatch?.(call, ctx) ?? []) {
+              methodEdges.push({
+                sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
+                targetSymbolId: edge.targetSymbolId,
+                targetRelPath: edge.targetRelPath,
+                callExpression: call.callText,
+              });
+              resolved = true;
+            }
+          }
+        }
+        if (resolved) this.runStats.callsResolved += 1;
       }
     }
 

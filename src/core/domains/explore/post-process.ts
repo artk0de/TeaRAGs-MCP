@@ -262,6 +262,19 @@ export function filterMetaOnly(
 
     if (Object.keys(gitResult).length > 0) meta.git = gitResult;
 
+    // Preserve codegraph nested section (tea-rags-mcp-0am0). MCP callers in
+    // metaOnly mode need codegraph signals (fanIn/fanOut/instability/...)
+    // visible alongside git, otherwise the architectural-hub/blastRadius
+    // surfaces show only git-side context. The codegraph payload lives at
+    // payload.codegraph.symbols.{file,chunk} with bare inner keys
+    // (tea-rags-mcp-k6xu — Qdrant resolves the `codegraph.symbols` providerKey
+    // path); we forward the whole nested branch unchanged so consumers see the
+    // same shape they would observe without metaOnly.
+    const codegraph = r.payload?.codegraph;
+    if (codegraph && typeof codegraph === "object") {
+      meta.codegraph = codegraph;
+    }
+
     return meta;
   });
 }

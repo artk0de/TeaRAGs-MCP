@@ -18,6 +18,54 @@ import {
   type ResolvedTarget,
 } from "../../../../../../contracts/types/codegraph.js";
 
+/**
+ * Well-known `java.lang` public top-level classes/interfaces. The JLS
+ * auto-imports every type in `java.lang` into every compilation unit, so a
+ * static call like `Character.isWhitespace(c)` or `Math.max(a, b)` carries NO
+ * `import` statement. Without this whitelist the resolver cannot distinguish a
+ * java.lang static receiver from a genuinely-unknown capitalized identifier and
+ * drops the edge. Membership here authorizes emitting an EXTERNAL
+ * type-qualified target (`Type.method`) for such receivers; everything NOT
+ * listed still drops, so the whitelist never devolves into "any capitalized
+ * receiver" (the false-positive guard).
+ *
+ * Curated to the common public top-level java.lang types. Exotic / rarely
+ * statically-called types are intentionally trimmed.
+ */
+const JAVA_LANG_AUTO_IMPORTED_TYPES: ReadonlySet<string> = new Set([
+  "String",
+  "Integer",
+  "Long",
+  "Double",
+  "Float",
+  "Boolean",
+  "Byte",
+  "Short",
+  "Character",
+  "Math",
+  "System",
+  "Object",
+  "Thread",
+  "Runtime",
+  "Class",
+  "Number",
+  "StringBuilder",
+  "StringBuffer",
+  "Iterable",
+  "Comparable",
+  "Runnable",
+  "CharSequence",
+  "Throwable",
+  "Exception",
+  "RuntimeException",
+  "Error",
+  "Void",
+  "Enum",
+  "Record",
+  "Process",
+  "ClassLoader",
+]);
+
 export class JavaCallResolver implements CallResolver {
   readonly language = "java";
 
@@ -34,6 +82,31 @@ export class JavaCallResolver implements CallResolver {
     if (call.receiver === "this" && ctx.callerScope.length > 0) {
       const sameFileHit = this.lookupEnclosingMember(call.member, ctx);
       if (sameFileHit) return sameFileHit;
+    }
+    // bd tea-rags-mcp-cvv9 — `this.<field>.<method>()`. Read the field's
+    // declared type from `classFieldTypes[enclosingClass]` and resolve the
+    // method against that type. Mirrors the TS resolver's field-access
+    // branch. Only ONE level of access (`this.foo.bar()`) — a deeper chain
+    // (`this.foo.bar.baz()`) carries no single type and falls through to
+    // the existing drop. Consulted BEFORE the import-receiver pass so a
+    // known field type wins over ambiguous short-name resolution.
+    if (call.receiver && call.receiver.startsWith("this.") && ctx.callerScope.length > 0) {
+      const fieldSegment = call.receiver.slice("this.".length);
+      if (!fieldSegment.includes(".")) {
+        const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+        const typeName = ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
+        if (typeName) return this.resolveByLocalType(typeName, call.member, ctx);
+      }
+    }
+    // bd tea-rags-mcp-cvv9 — typed-receiver call (`param.method()` /
+    // `localVar.method()`) where the walker bound `receiver` to a type in
+    // `ctx.localBindings`. Resolve `<Type>#member` / `<Type>.member`.
+    // Consulted BEFORE the import-receiver pass and the ambiguous
+    // short-name fallback so an unambiguous local type wins instead of the
+    // call being dropped (e.g. `cs.charAt(i)` where `cs: CharSequence`).
+    if (call.receiver) {
+      const boundType = ctx.localBindings?.[call.receiver];
+      if (boundType) return this.resolveByLocalType(boundType, call.member, ctx);
     }
     if (call.receiver) {
       const match = ctx.imports.find((imp) => javaImportMatchesReceiver(imp.importText, call.receiver as string));
@@ -63,6 +136,20 @@ export class JavaCallResolver implements CallResolver {
         .filter((def) => def.scope[def.scope.length - 1] === call.receiver);
       const target = pickSingleCandidate(filteredByScope, this.mode);
       if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+      // bd tea-rags-mcp — java.lang implicit static-call resolution. The
+      // receiver matched no import, no local/field binding, and no scoped
+      // symbol. `java.lang` types (`Character`, `Math`, `Integer`, …) are
+      // auto-imported with NO `import` line, so `Character.isWhitespace(c)`
+      // reaches here unresolved and would be dropped. When the receiver is a
+      // known java.lang public top-level type, emit an EXTERNAL
+      // type-qualified target — mirroring `resolveByLocalType`'s external
+      // anchoring for CharSequence. STATIC form (`Type.method` with a dot)
+      // because the receiver is a TYPE name, not a variable. Restricted to
+      // the WHITELIST so a genuinely-unknown capitalized receiver (`Foo.bar`)
+      // still drops — no false-positive edge storm.
+      if (JAVA_LANG_AUTO_IMPORTED_TYPES.has(call.receiver)) {
+        return { targetRelPath: call.receiver, targetSymbolId: `${call.receiver}.${call.member}` };
+      }
       return null;
     }
     // bd tea-rags-mcp-9t8z — implicit-receiver bare call (Java `foo()`
@@ -79,6 +166,37 @@ export class JavaCallResolver implements CallResolver {
     const target = pickSingleCandidate(fallback, this.mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
     return null;
+  }
+
+  /**
+   * bd tea-rags-mcp-cvv9 — resolve a typed-receiver call where the
+   * receiver was bound to `typeName` (a method parameter / local var /
+   * `this.field` type). Strategy:
+   *
+   *   1. Symbol-table first — try `typeName#member` (instance) then
+   *      `typeName.member` (static). A unique candidate wins → real edge.
+   *   2. External type — when the type is NOT a project symbol (JDK
+   *      interfaces like `CharSequence`, third-party classes), the method
+   *      cannot be pinned to a file but the receiver type IS known. Emit
+   *      the type-qualified best-effort target `typeName#member` anchored
+   *      to the bare type name as `targetRelPath`. This records the
+   *      type-qualified dependency without fabricating a wrong `.java`
+   *      file — the resolver already records type-qualified / file-only
+   *      targets for receivers whose method isn't in the table.
+   *
+   * Never falls through to the ambiguous short-name path — the bound type
+   * is authoritative, so a method that doesn't match still routes to that
+   * type (instance form) rather than a same-class false positive.
+   */
+  private resolveByLocalType(typeName: string, member: string, ctx: CallContext): ResolvedTarget {
+    const instanceCandidates = ctx.symbolTable.lookup(`${typeName}#${member}`);
+    const instanceHit = pickSingleCandidate(instanceCandidates, this.mode);
+    if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+    const staticCandidates = ctx.symbolTable.lookup(`${typeName}.${member}`);
+    const staticHit = pickSingleCandidate(staticCandidates, this.mode);
+    if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+    // External / not-yet-indexed type — record the type-qualified target.
+    return { targetRelPath: typeName, targetSymbolId: `${typeName}#${member}` };
   }
 
   /**

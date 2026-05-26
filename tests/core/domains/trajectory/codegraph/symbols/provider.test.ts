@@ -299,13 +299,75 @@ describe("CodegraphEnrichmentProvider", () => {
       paths: ["src/leaf.ts", "src/main.ts"],
     });
     const leafOverlay = overlays.get("src/leaf.ts");
-    expect(leafOverlay?.["codegraph.file.fanIn"]).toBe(1);
-    expect(leafOverlay?.["codegraph.file.isLeaf"]).toBe(true);
+    expect(leafOverlay?.["fanIn"]).toBe(1);
+    expect(leafOverlay?.["isLeaf"]).toBe(true);
+    // btl8: connectionCount = fanIn + fanOut, support signal for instability
+    // confidence — written inline by buildFileSignals so no extra DB call.
+    expect(leafOverlay?.["connectionCount"]).toBe(1);
     const mainOverlay = overlays.get("src/main.ts");
-    expect(mainOverlay?.["codegraph.file.fanOut"]).toBe(1);
-    expect(mainOverlay?.["codegraph.file.instability"]).toBeCloseTo(1, 5);
-    // isHub stays false in buildFileSignals — IsHubSignal finalises it at rerank time.
-    expect(mainOverlay?.["codegraph.file.isHub"]).toBe(false);
+    expect(mainOverlay?.["fanOut"]).toBe(1);
+    expect(mainOverlay?.["instability"]).toBeCloseTo(1, 5);
+    expect(mainOverlay?.["connectionCount"]).toBe(1);
+    // isHub is computed at index time against collection p95 of fanIn.
+    // Distribution here is [leaf=1, main=0] → p95 = 0.95. main (fanIn=0)
+    // is not above p95, so it is not a hub.
+    expect(mainOverlay?.["isHub"]).toBe(false);
+    // leaf has fanIn=1 > p95(0.95) → it IS the hub of this tiny graph.
+    expect(leafOverlay?.["isHub"]).toBe(true);
+  });
+
+  it("buildFileSignals marks the high-fanIn file isHub:true and low-fanIn files isHub:false (collection p95)", async () => {
+    // Regression for tea-rags-mcp-he6g: isHub used to be hardcoded false
+    // in buildFileSignals (placeholder for a rerank-time finalisation that
+    // never existed), so every file was isHub:false and architecturalHub's
+    // 0.35 isHub weight scored zero. isHub is now computed at index time
+    // against the collection-wide p95 of fanIn pulled from the DuckDB graph.
+    //
+    // Graph: `hub.ts` is imported by a,b,c,d,e (fanIn=5); `mild.ts` is
+    // imported by a (fanIn=1); the five importers and any other file have
+    // fanIn=0. Distribution over the 7-file universe:
+    //   [a=0,b=0,c=0,d=0,e=0, hub=5, mild=1] → sorted [0,0,0,0,0,1,5].
+    // PERCENTILE_CONT(0.95) over n=7: idx 0.95*6=5.7 →
+    //   interp(sorted[5]=1, sorted[6]=5, 0.7) = 1 + 0.7*(5-1) = 3.8.
+    // hub fanIn=5 > 3.8 → isHub true. mild fanIn=1, importers fanIn=0 → false.
+    const sink = provider.asExtractionSink();
+    const importers = ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts", "src/e.ts"];
+    for (const relPath of importers) {
+      await sink.write({
+        relPath,
+        language: "typescript",
+        imports: [{ importText: "./hub", startLine: 1 }],
+        chunks: [],
+        fileScope: [],
+      });
+    }
+    // mild.ts imports hub too AND is imported by a (so a → mild edge).
+    await sink.write({
+      relPath: "src/a.ts",
+      language: "typescript",
+      imports: [
+        { importText: "./hub", startLine: 1 },
+        { importText: "./mild", startLine: 2 },
+      ],
+      chunks: [],
+      fileScope: [],
+    });
+    // Register hub.ts and mild.ts as file rows in the universe.
+    await sink.write({ relPath: "src/hub.ts", language: "typescript", imports: [], chunks: [], fileScope: [] });
+    await sink.write({ relPath: "src/mild.ts", language: "typescript", imports: [], chunks: [], fileScope: [] });
+    await sink.finish();
+
+    const overlays = await provider.buildFileSignals("/", {
+      paths: [...importers, "src/hub.ts", "src/mild.ts"],
+    });
+
+    // Sanity on the distribution before asserting the derived boolean.
+    expect(overlays.get("src/hub.ts")?.["fanIn"]).toBe(5);
+    expect(overlays.get("src/mild.ts")?.["fanIn"]).toBe(1);
+
+    expect(overlays.get("src/hub.ts")?.["isHub"]).toBe(true);
+    expect(overlays.get("src/mild.ts")?.["isHub"]).toBe(false);
+    expect(overlays.get("src/b.ts")?.["isHub"]).toBe(false);
   });
 
   it("resolveRoot is identity — the slice scans the literal absolute path it is given", () => {
@@ -603,7 +665,7 @@ describe("CodegraphEnrichmentProvider", () => {
       // walked + extracted. b.md is reported with zero-valued signals.
       expect(overlays.has("src/a.ts")).toBe(true);
       expect(overlays.has("src/b.md")).toBe(true);
-      expect(overlays.get("src/b.md")?.["codegraph.file.fanIn"]).toBe(0);
+      expect(overlays.get("src/b.md")?.["fanIn"]).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -720,8 +782,8 @@ describe("CodegraphEnrichmentProvider", () => {
         paths: ["src/ok.ts", "src/missing.ts"],
       });
       expect(overlays.size).toBe(2);
-      expect(overlays.get("src/ok.ts")?.["codegraph.file.fanIn"]).toBe(0);
-      expect(overlays.get("src/missing.ts")?.["codegraph.file.fanIn"]).toBe(0);
+      expect(overlays.get("src/ok.ts")?.["fanIn"]).toBe(0);
+      expect(overlays.get("src/missing.ts")?.["fanIn"]).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -764,9 +826,9 @@ describe("CodegraphEnrichmentProvider", () => {
     ]);
     const overlays = await provider.buildChunkSignals("/", chunkMap);
     const main = overlays.get("src/main.ts")?.get("chunk-main");
-    expect(main?.["codegraph.chunk.fanOut"]).toBe(1);
+    expect(main?.["fanOut"]).toBe(1);
     const fooBar = overlays.get("src/foo.ts")?.get("chunk-foo-bar");
-    expect(fooBar?.["codegraph.chunk.fanIn"]).toBe(1);
+    expect(fooBar?.["fanIn"]).toBe(1);
   });
 
   // Slice 1 — resolveChunkSymbolId containment fallback. When the
@@ -824,8 +886,8 @@ describe("CodegraphEnrichmentProvider", () => {
     const head = overlays.get("src/big.ts")?.get("chunk-head");
     const tail = overlays.get("src/big.ts")?.get("chunk-tail");
     // Both head and tail must resolve to Big.method → same fanIn=1.
-    expect(head?.["codegraph.chunk.fanIn"]).toBe(1);
-    expect(tail?.["codegraph.chunk.fanIn"]).toBe(1);
+    expect(head?.["fanIn"]).toBe(1);
+    expect(tail?.["fanIn"]).toBe(1);
   });
 
   // resolveChunkSymbolId's `if (!lineMap) return undefined` branch fires
@@ -3023,6 +3085,261 @@ describe("CodegraphEnrichmentProvider", () => {
         const matches = lookup.lookupByShortName("only");
         expect(matches.length).toBe(1);
         expect(matches[0].symbolId).toBe("Solo#only");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────
+  // Lookup-table dispatch (bd tea-rags-mcp-n0zj) — run-global aggregation
+  // of dispatchTables / callbackParams + fan-out edges through the resolver.
+  // ───────────────────────────────────────────────────────────────────
+  describe("dispatch tables (n0zj)", () => {
+    it("fans an in-file dynamic-key dispatch out to every candidate walker", async () => {
+      const sink = provider.asExtractionSink();
+      // The walker functions live in another file (cross-file candidate
+      // resolution) — mirrors LANGUAGES referencing extractFromXFile.
+      await sink.write({
+        relPath: "src/walkers.ts",
+        language: "typescript",
+        imports: [],
+        chunks: [
+          { symbolId: "extractTs", scope: [], calls: [] },
+          { symbolId: "extractRb", scope: [], calls: [] },
+        ],
+        fileScope: [],
+      });
+      await sink.write({
+        relPath: "src/provider.ts",
+        language: "typescript",
+        imports: [],
+        dispatchTables: {
+          LANGUAGES: { entries: { ".ts": { walker: "extractTs" }, ".rb": { walker: "extractRb" } } },
+        },
+        chunks: [
+          {
+            symbolId: "dispatch",
+            scope: [],
+            calls: [
+              {
+                callText: "LANGUAGES[ext].walker(input)",
+                receiver: null,
+                member: "walker",
+                startLine: 5,
+                dispatch: { table: "LANGUAGES", field: "walker", key: null },
+              },
+            ],
+          },
+        ],
+        fileScope: [],
+      });
+      await sink.finish();
+      // Both orphaned walkers now have the dispatcher as a caller.
+      expect(await client.getCalledByCount("extractTs")).toBe(1);
+      expect(await client.getCalledByCount("extractRb")).toBe(1);
+      expect(await client.getCallSiteCount("dispatch")).toBe(2);
+    });
+
+    it("joins a callback-param: collectSymbols fans out to the passed nameOf candidates", async () => {
+      const sink = provider.asExtractionSink();
+      await sink.write({
+        relPath: "src/names.ts",
+        language: "typescript",
+        imports: [],
+        chunks: [
+          { symbolId: "tsNameOf", scope: [], calls: [] },
+          { symbolId: "rbNameOf", scope: [], calls: [] },
+        ],
+        fileScope: [],
+      });
+      await sink.write({
+        relPath: "src/provider.ts",
+        language: "typescript",
+        imports: [],
+        dispatchTables: {
+          LANGUAGES: { entries: { ".ts": { nameOf: "tsNameOf" }, ".rb": { nameOf: "rbNameOf" } } },
+        },
+        // collectSymbols invokes its 2nd param (index 1).
+        callbackParams: { collectSymbols: [1] },
+        chunks: [
+          { symbolId: "collectSymbols", scope: [], calls: [] },
+          {
+            symbolId: "dispatch",
+            scope: [],
+            calls: [
+              {
+                callText: "collectSymbols(tree, LANGUAGES[ext].nameOf)",
+                receiver: null,
+                member: "collectSymbols",
+                startLine: 7,
+                dispatchArgs: [{ argIndex: 1, candidate: { table: "LANGUAGES", field: "nameOf", key: null } }],
+              },
+            ],
+          },
+        ],
+        fileScope: [],
+      });
+      await sink.finish();
+      // The callee (collectSymbols), not the dispatcher, is the source of
+      // the nameOf edges — that is where the parameter is invoked.
+      const tsCallers = await client.getCallers("tsNameOf");
+      expect(tsCallers.map((c) => c.sourceSymbolId).sort()).toEqual(["collectSymbols"]);
+      expect(await client.getCalledByCount("rbNameOf")).toBe(1);
+      // The normal dispatcher → collectSymbols edge still exists.
+      expect(await client.getCalledByCount("collectSymbols")).toBe(1);
+    });
+
+    it("aggregates dispatch tables run-global so a cross-file dispatch resolves", async () => {
+      const sink = provider.asExtractionSink();
+      // Table defined in registry.ts, dispatched from caller.ts (imports it).
+      await sink.write({
+        relPath: "src/handlers.ts",
+        language: "typescript",
+        imports: [],
+        chunks: [{ symbolId: "handleA", scope: [], calls: [] }],
+        fileScope: [],
+      });
+      await sink.write({
+        relPath: "src/registry.ts",
+        language: "typescript",
+        imports: [],
+        dispatchTables: { CMD: { entries: { a: { run: "handleA" } } } },
+        chunks: [],
+        fileScope: [],
+      });
+      await sink.write({
+        relPath: "src/caller.ts",
+        language: "typescript",
+        imports: [{ importText: "./registry", startLine: 1, importedNames: ["CMD"] }],
+        chunks: [
+          {
+            symbolId: "dispatch",
+            scope: [],
+            calls: [
+              {
+                callText: "CMD[k].run(x)",
+                receiver: null,
+                member: "run",
+                startLine: 3,
+                dispatch: { table: "CMD", field: "run", key: null },
+              },
+            ],
+          },
+        ],
+        fileScope: [],
+      });
+      await sink.finish();
+      expect(await client.getCalledByCount("handleA")).toBe(1);
+    });
+
+    it("re-walking the same file replaces its table def (idempotent across reindex)", async () => {
+      const sink = provider.asExtractionSink();
+      // Candidate functions live in their own file.
+      await sink.write({
+        relPath: "src/handlers.ts",
+        language: "typescript",
+        imports: [],
+        chunks: [
+          { symbolId: "handleA", scope: [], calls: [] },
+          { symbolId: "handleB", scope: [], calls: [] },
+        ],
+        fileScope: [],
+      });
+      // registry.ts declares CMD. It is written TWICE for the same relPath —
+      // simulating an incremental reindex re-walking the file. The run-global
+      // aggregation must dedup by relPath (replace, not append) so the second
+      // definition (which adds entry `b`) wins without leaving a stale `a`-only
+      // duplicate that would double-count candidates.
+      const registry = (entries: Record<string, { run: string }>) => ({
+        relPath: "src/registry.ts",
+        language: "typescript",
+        imports: [],
+        dispatchTables: { CMD: { entries } },
+        chunks: [],
+        fileScope: [],
+      });
+      await sink.write(registry({ a: { run: "handleA" } }));
+      await sink.write(registry({ a: { run: "handleA" }, b: { run: "handleB" } }));
+      await sink.write({
+        relPath: "src/caller.ts",
+        language: "typescript",
+        imports: [{ importText: "./registry", startLine: 1, importedNames: ["CMD"] }],
+        chunks: [
+          {
+            symbolId: "dispatch",
+            scope: [],
+            calls: [
+              {
+                callText: "CMD[k].run(x)",
+                receiver: null,
+                member: "run",
+                startLine: 3,
+                dispatch: { table: "CMD", field: "run", key: null },
+              },
+            ],
+          },
+        ],
+        fileScope: [],
+      });
+      await sink.finish();
+      // The replacement (not append) means each candidate has exactly ONE
+      // caller edge — no duplicate from the first, superseded def.
+      expect(await client.getCalledByCount("handleA")).toBe(1);
+      expect(await client.getCalledByCount("handleB")).toBe(1);
+    });
+
+    // End-to-end through the REAL TypeScript walker + provider aggregation +
+    // resolver — not the synthetic FileExtraction sink. A single registry
+    // file declares a const lookup table, a dispatcher that fans a dynamic
+    // key over it, and a higher-order `forEachLang` whose invoked callback
+    // param receives a table candidate-set. Verifies the whole chain wires
+    // up: collectDispatchTables / collectCallbackParams in the walker →
+    // run-global aggregation → resolveDispatch fan-out → graph edges.
+    it("walks a real .ts dispatch table file end-to-end and fans edges to every candidate", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-ts-disp-e2e-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "walkers.ts"),
+          ["export function walkTs() {}", "export function walkRb() {}", ""].join("\n"),
+        );
+        writeFileSync(
+          join(root, "src", "registry.ts"),
+          [
+            "import { walkTs, walkRb } from './walkers';",
+            // S1 wrapper-object table keyed by extension (quoted string keys).
+            "const LANGUAGES = { '.ts': { walker: walkTs }, '.rb': { walker: walkRb } };",
+            // Higher-order helper that INVOKES its 2nd param (index 1) — makes
+            // it a callback-param target for the inter-proc join below.
+            "function forEachLang(input, walker) {",
+            "  return walker(input);",
+            "}",
+            "function dispatch(ext) {",
+            // dynamic-key dispatch — fans to BOTH walkers.
+            "  const fn = LANGUAGES[ext].walker;",
+            "  fn(0);",
+            // dispatch candidate-set passed at forEachLang's callback position.
+            "  forEachLang(0, LANGUAGES[ext].walker);",
+            "}",
+            // Typed destructured param — exercises paramName's null path
+            // (object_pattern inside required_parameter has no single name).
+            "function withOpts({ verbose }: { verbose: boolean }, run) {",
+            "  run();",
+            "}",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        // Both walker candidates are reached: once from the direct dynamic
+        // dispatch (source = dispatch) and once from the inter-proc join
+        // (source = forEachLang, the callee whose param is invoked).
+        expect(await client.getCalledByCount("walkTs")).toBeGreaterThanOrEqual(1);
+        expect(await client.getCalledByCount("walkRb")).toBeGreaterThanOrEqual(1);
+        const tsCallers = (await client.getCallers("walkTs")).map((c) => c.sourceSymbolId).sort();
+        // The dispatcher chunk and the invoked-callback callee both appear.
+        expect(tsCallers).toContain("dispatch");
+        expect(tsCallers).toContain("forEachLang");
       } finally {
         rmSync(root, { recursive: true, force: true });
       }

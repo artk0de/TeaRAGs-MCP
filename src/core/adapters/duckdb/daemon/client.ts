@@ -227,6 +227,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("getFanIn", { relPath })) as number;
   }
 
+  async getFanInP95(): Promise<number> {
+    return (await this.call("getFanInP95", {})) as number;
+  }
+
   async getFanOut(relPath: RelPath): Promise<number> {
     return (await this.call("getFanOut", { relPath })) as number;
   }

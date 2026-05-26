@@ -50,6 +50,62 @@ export class PythonCallResolver implements CallResolver {
     if (call.receiver === "super()" || call.receiver === "super") {
       return this.resolveSuper(call.member, ctx);
     }
+    // bd tea-rags-mcp-rjuc — cross-method instance-field dispatch.
+    // `self.<field>.<method>()` where `<field>` was bound to a class in
+    // `__init__` (recorded by the walker in `classFieldTypes` keyed by the
+    // enclosing class). Look up the field's type, then resolve
+    // `<Type>#<member>` / `<Type>.<member>` against the symbol table.
+    // Mirrors the TS resolver's `this.field.method()` path; Python binds
+    // fields via `self`. Only one access level is supported
+    // (`self.foo.bar()`); chained `self.foo.bar.baz()` needs recursive
+    // type inference and is out of scope.
+    if (call.receiver && call.receiver.startsWith("self.") && ctx.callerScope.length > 0) {
+      const fieldSegment = call.receiver.slice("self.".length);
+      if (!fieldSegment.includes(".")) {
+        const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+        const typeName = ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
+        if (typeName) {
+          // Field type known → resolution is CONSTRAINED to that class.
+          // Instance form first (the common dispatch shape), static
+          // fallback. When neither matches the type is EXTERNAL (stdlib /
+          // third-party — e.g. `self._context_stack = ExitStack()` from
+          // `contextlib`), so emit a type-qualified best-effort target
+          // anchored to the bare type name rather than dropping. This
+          // records the dependency without fabricating a wrong `.py` file
+          // and never falls through to the ambiguous short-name path —
+          // the type is KNOWN from a constructor assignment, so we attach
+          // it to that type (instance `#` form: the call is on a value),
+          // never to an unrelated class that happens to define `<member>`.
+          // Mirrors the Java resolver's CharSequence#charAt external path.
+          const instanceHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}#${call.member}`), this.mode);
+          if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+          const staticHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}.${call.member}`), this.mode);
+          if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+          return { targetRelPath: typeName, targetSymbolId: `${typeName}#${call.member}` };
+        }
+        // Field type NOT recorded. A `self.<field>` receiver is an
+        // instance-field access, never a module/import name, so DROP
+        // rather than fall through to the import-match / global
+        // short-name paths below — falling through would attribute the
+        // call to any unrelated class that happens to define `<member>`
+        // (the precise false positive this feature prevents).
+        return null;
+      }
+    }
+    // bd tea-rags-mcp-yrs0 — `self.<member>()` inside a class. Resolution
+    // is CONSTRAINED to the enclosing class and its IN-PROJECT base-class
+    // chain: try the enclosing class first (direct definition wins), then
+    // walk `classExtends` ancestors until one defines `member`. A `self`
+    // receiver is an instance call on the enclosing class, never a module
+    // / import name — so when no ancestor in the project defines `member`,
+    // DROP rather than fall through to the ambiguous global short-name
+    // path (which would attribute the call to any unrelated class that
+    // happens to define `<member>`). Mirrors the `super()` walk but starts
+    // at the enclosing class itself.
+    if (call.receiver === "self" && ctx.callerScope.length > 0) {
+      const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+      return this.walkClassExtendsForMethod(enclosing, call.member, ctx);
+    }
     if (call.receiver) {
       // Step 0: walker-inferred local type wins over heuristic
       // resolution. When the receiver maps to a known class via
@@ -125,6 +181,42 @@ export class PythonCallResolver implements CallResolver {
   }
 
   /**
+   * Resolve `<member>` against `startClass` and, on a miss, its IN-PROJECT
+   * base-class chain (`classExtends`). bd tea-rags-mcp-yrs0.
+   *
+   * Walk order: the class itself first (so a method defined on the direct
+   * class always wins over an inherited one), then each ancestor reached
+   * via single-inheritance `classExtends`, left-to-right MRO-ish. Instance
+   * form (`Class#member`) is preferred at each level, static form
+   * (`Class.member`) is the fallback.
+   *
+   * Safety:
+   *   - CYCLE GUARD: a `visited` set breaks `A extends B extends A` and
+   *     self-references — the walk always terminates.
+   *   - IN-PROJECT ONLY: an ancestor whose definition is not in the symbol
+   *     table (external base — Django CBVs, werkzeug) yields no lookup hit
+   *     and the branch simply continues to its parent (which is usually
+   *     undefined for an external base, ending the walk). No edge is
+   *     fabricated for an external method.
+   *   - DROP on miss: when no class in the chain defines `member`, returns
+   *     `null` so the caller does NOT fall through to ambiguous global
+   *     short-name resolution.
+   */
+  private walkClassExtendsForMethod(startClass: string, member: string, ctx: CallContext): ResolvedTarget | null {
+    const visited = new Set<string>();
+    let current: string | undefined = startClass;
+    while (current && !visited.has(current)) {
+      visited.add(current);
+      const instanceHit = pickSingleCandidate(ctx.symbolTable.lookup(`${current}#${member}`), this.mode);
+      if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+      const staticHit = pickSingleCandidate(ctx.symbolTable.lookup(`${current}.${member}`), this.mode);
+      if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+      current = ctx.classExtends?.[current];
+    }
+    return null;
+  }
+
+  /**
    * Look up `<typeName>.<member>` from the walker's local-binding
    * inference. Strategy:
    *   1. Resolve `typeName` to a file via the receiver-matches-import
@@ -156,10 +248,21 @@ export class PythonCallResolver implements CallResolver {
       .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType);
     const target = pickSingleCandidate(candidates, this.mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+    // bd tea-rags-mcp-yrs0 — `member` is not defined on the bound class
+    // itself. Walk the bound class's IN-PROJECT base chain (`classExtends`)
+    // before giving up: an inherited method like `Leaf().shared()` where
+    // `shared` lives on `Base` resolves to `Base#shared`. The walk starts
+    // one level up (the bound class was already checked above) and stops
+    // at the first ancestor that defines the method.
+    const parent = ctx.classExtends?.[bareType];
+    if (parent) {
+      const inherited = this.walkClassExtendsForMethod(parent, member, ctx);
+      if (inherited) return inherited;
+    }
     // The class itself lives in `targetFile` but `member` is inherited
-    // or defined elsewhere — record the file-level attribution so the
-    // file-edge stays accurate; drop the method-level edge by passing
-    // a null symbol id.
+    // from a base OUTSIDE the project (DRF `is_valid` on `Serializer`) —
+    // record the file-level attribution so the file-edge stays accurate;
+    // drop the method-level edge by passing a null symbol id.
     return { targetRelPath: targetFile, targetSymbolId: null };
   }
 }

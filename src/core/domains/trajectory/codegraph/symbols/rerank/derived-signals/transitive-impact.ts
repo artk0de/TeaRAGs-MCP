@@ -1,6 +1,7 @@
 import type { DerivedSignalDescriptor } from "../../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../../contracts/types/trajectory.js";
 import { normalize } from "../../../../../../infra/signal-utils.js";
+import { codegraphFileNum } from "./helpers.js";
 
 /**
  * File-level transitive blast radius. `codegraph.file.transitiveImpact`
@@ -21,7 +22,7 @@ export class TransitiveImpactSignal implements DerivedSignalDescriptor {
   readonly sources = ["codegraph.file.transitiveImpact"];
   readonly defaultBound = 50;
   extract(raw: Record<string, unknown>, ctx?: ExtractContext): number {
-    const v = Number(raw["codegraph.file.transitiveImpact"] ?? 0);
+    const v = codegraphFileNum(raw, "transitiveImpact");
     const bound = ctx?.bounds?.["file.transitiveImpact"] ?? this.defaultBound;
     return normalize(v, bound);
   }

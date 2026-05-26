@@ -94,6 +94,10 @@ export class CodegraphDaemonServer {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getFanIn(p.relPath as RelPath);
       }
+      case "getFanInP95": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getFanInP95();
+      }
       case "getFanOut": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getFanOut(p.relPath as RelPath);

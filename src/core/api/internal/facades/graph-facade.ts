@@ -9,17 +9,24 @@
  * from `find_symbol`), extract a `GraphOps` class. Slice 1+2's reads
  * are direct table reads so the facade itself is enough.
  *
- * Collection routing: each MCP request carries a `path` (the indexed
- * codebase) which resolves to a Qdrant collection name via
- * `resolveCollectionName`. The facade pulls the per-collection DuckDB
- * handle from the pool. When the pool can't open the file (lock held
- * by another process, or the collection has never been indexed) the
- * facade surfaces empty results — the graph tool degrades gracefully
- * instead of crashing the whole MCP request.
+ * Collection routing: each MCP request carries the shared
+ * `{ collection, project, path }` triad (resolution priority:
+ * `collection > project > path`) — same shape every other tea-rags
+ * tool accepts (`find_symbol`, `semantic_search`, etc.). The facade
+ * resolves it through `resolveCollection` to a Qdrant collection name
+ * and pulls the per-collection DuckDB handle from the pool. When the
+ * pool can't open the file (lock held by another process, or the
+ * collection has never been indexed) the facade surfaces empty results
+ * — the graph tool degrades gracefully instead of crashing the whole
+ * MCP request. Resolution-level errors (no addressing at all, unknown
+ * project alias) are typed `InputValidationError` subclasses and bubble
+ * to the MCP error middleware so the caller sees a clear schema-level
+ * message rather than a silent empty list.
  */
 
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
-import { resolveCollectionName } from "../../../infra/collection-name.js";
+import { resolveCollection } from "../../../infra/collection-name.js";
+import type { CollectionRegistry } from "../../../infra/registry/index.js";
 import type {
   FindCyclesRequest,
   FindCyclesResponse,
@@ -31,34 +38,40 @@ import type {
 
 export interface GraphFacadeDeps {
   pool: GraphDbClientPool;
+  collectionRegistry: CollectionRegistry;
 }
 
 const DEFAULT_LIMIT = 50;
+
+interface GraphAddressing {
+  collection?: string;
+  project?: string;
+  path?: string;
+}
 
 export class GraphFacade {
   constructor(private readonly deps: GraphFacadeDeps) {}
 
   /**
-   * Acquire a per-collection READ handle for the request's `path` and run `fn`
-   * against it, always closing the handle afterwards. Reads route through
-   * `pool.acquireReader` — mode-aware: in production it returns a daemon client
-   * that PROXIES the read through the daemon's own RW connection (DuckDB's RW
-   * lock is process-exclusive, so a cross-process READ_ONLY attach throws
-   * "Conflicting lock is held" while the daemon holds RW). In direct/test mode
-   * it falls back to an in-process READ_ONLY attach. Either handle is NON-cached
-   * and MUST be closed, so every read opens-queries-closes in one bounded scope.
-   *
-   * Returns `fallback` when the underlying handle cannot be acquired (daemon
-   * unreachable, lock held, missing file, init failure) — the graph tool
-   * degrades to an empty result rather than propagating the I/O error to the
-   * MCP request.
+   * Resolve the request's address triad ({ collection, project, path }) to a
+   * Qdrant collection name via the registry (resolution-level errors propagate
+   * as typed `InputValidationError` so the MCP middleware surfaces them), then
+   * acquire a per-collection READ handle and run `fn` against it, always closing
+   * the handle afterwards. Reads route through `pool.acquireReader` — mode-aware:
+   * in production a daemon client that PROXIES the read through the daemon's own
+   * RW connection (DuckDB's RW lock is process-exclusive, so a cross-process
+   * READ_ONLY attach throws "Conflicting lock is held" while the daemon holds
+   * RW); in direct/test mode an in-process READ_ONLY attach. The handle is
+   * NON-cached and MUST be closed, so every read opens-queries-closes in one
+   * bounded scope. Returns `fallback` only on pool-level acquire failure (daemon
+   * unreachable, lock held, missing file, init error).
    */
   private async withReadHandle<T>(
-    path: string,
+    addr: GraphAddressing,
     fn: (handle: CollectionGraphHandle) => Promise<T>,
     fallback: T,
   ): Promise<T> {
-    const collectionName = resolveCollectionName(path);
+    const { collectionName } = resolveCollection(this.deps.collectionRegistry, addr);
     let handle: CollectionGraphHandle | undefined;
     try {
       handle = await this.deps.pool.acquireReader(collectionName);
@@ -74,7 +87,7 @@ export class GraphFacade {
 
   async getCallers(req: GetCallersRequest): Promise<GetCallersResponse> {
     return this.withReadHandle(
-      req.path,
+      req,
       async (handle) => {
         const edges = await handle.graphDb.getCallers(req.symbolId);
         return { callers: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
@@ -85,7 +98,7 @@ export class GraphFacade {
 
   async getCallees(req: GetCalleesRequest): Promise<GetCalleesResponse> {
     return this.withReadHandle(
-      req.path,
+      req,
       async (handle) => {
         const edges = await handle.graphDb.getCallees(req.symbolId);
         return { callees: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
@@ -96,7 +109,7 @@ export class GraphFacade {
 
   async findCycles(req: FindCyclesRequest): Promise<FindCyclesResponse> {
     return this.withReadHandle(
-      req.path,
+      req,
       async (handle) => {
         const entries = await handle.graphDb.findCycles(req.scope);
         return {

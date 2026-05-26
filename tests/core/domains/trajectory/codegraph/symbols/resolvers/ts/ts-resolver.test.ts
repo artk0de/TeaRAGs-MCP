@@ -585,6 +585,155 @@ describe("TSCallResolver", () => {
     });
   });
 
+  // bd tea-rags-mcp-x6ta — typed-parameter receiver resolution via
+  // localBindings. A call `resolver.resolve(...)` where `resolver` is a
+  // FUNCTION PARAMETER typed `CallResolver` previously dropped to the
+  // ambiguous short-name fallback (one `#resolve` per `*CallResolver`
+  // impl, all reachable via imports → nothing narrows → edge dropped).
+  // The walker now records `resolver → CallResolver` on the chunk's
+  // localBindings; the resolver consults it BEFORE the import-receiver
+  // pass and pins the call to `<Type>#<member>`. Mirrors the Go / Python
+  // `resolveByLocalType` contract: try `Type#member`, then `Type.member`,
+  // and on miss fall through to the existing fallbacks (never fabricate).
+  describe("typed-parameter receiver via localBindings (bd tea-rags-mcp-x6ta)", () => {
+    it("pins param.method() to <Type>#<member> when localBindings binds the receiver (instance form)", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      // A single concrete CallResolver class declares #resolve. There
+      // are ALSO other `resolve` short-name matches in sibling files —
+      // the import-narrowed fallback could not disambiguate because the
+      // caller imports all of them. localBindings resolves it directly.
+      symbolTable.upsertFile("src/resolvers/call-resolver.ts", [
+        {
+          symbolId: "CallResolver#resolve",
+          fqName: "CallResolver#resolve",
+          shortName: "resolve",
+          relPath: "src/resolvers/call-resolver.ts",
+          scope: ["CallResolver"],
+        },
+      ]);
+      symbolTable.upsertFile("src/resolvers/python-resolver.ts", [
+        {
+          symbolId: "PythonCallResolver#resolve",
+          fqName: "PythonCallResolver#resolve",
+          shortName: "resolve",
+          relPath: "src/resolvers/python-resolver.ts",
+          scope: ["PythonCallResolver"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "resolver.resolve(call, ctx)", receiver: "resolver", member: "resolve", startLine: 10 },
+        {
+          callerFile: "src/provider/provider.ts",
+          callerScope: ["CodegraphProvider"],
+          // Provider imports BOTH resolver files — short-name + import
+          // narrowing would still be ambiguous. The local binding wins.
+          imports: [
+            { importText: "../resolvers/call-resolver", startLine: 1 },
+            { importText: "../resolvers/python-resolver", startLine: 2 },
+          ],
+          symbolTable,
+          localBindings: { resolver: "CallResolver" },
+        },
+      );
+      expect(result).toEqual({
+        targetRelPath: "src/resolvers/call-resolver.ts",
+        targetSymbolId: "CallResolver#resolve",
+      });
+    });
+
+    it("falls back to the static form <Type>.<member> when no instance method matches", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/factory.ts", [
+        {
+          symbolId: "Factory.create",
+          fqName: "Factory.create",
+          shortName: "create",
+          relPath: "src/factory.ts",
+          scope: ["Factory"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "f.create()", receiver: "f", member: "create", startLine: 3 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [],
+          symbolTable,
+          localBindings: { f: "Factory" },
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/factory.ts", targetSymbolId: "Factory.create" });
+    });
+
+    it("falls through to existing fallbacks when the bound type has no matching member (interface with no indexed impl)", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      // `CallResolver` is an INTERFACE — no `CallResolver#resolve` symbol
+      // exists (interfaces declare no method bodies). The single concrete
+      // `resolve` short-name match is reachable via imports, so the
+      // import-narrowed fallback recovers it. localBindings must NOT
+      // fabricate a `CallResolver#resolve` edge — it returns nothing and
+      // lets the lower-precedence path run.
+      symbolTable.upsertFile("src/resolvers/ruby-resolver.ts", [
+        {
+          symbolId: "RubyCallResolver#resolve",
+          fqName: "RubyCallResolver#resolve",
+          shortName: "resolve",
+          relPath: "src/resolvers/ruby-resolver.ts",
+          scope: ["RubyCallResolver"],
+        },
+      ]);
+      symbolTable.upsertFile("src/resolvers/python-resolver.ts", [
+        {
+          symbolId: "PythonCallResolver#resolve",
+          fqName: "PythonCallResolver#resolve",
+          shortName: "resolve",
+          relPath: "src/resolvers/python-resolver.ts",
+          scope: ["PythonCallResolver"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "resolver.resolve()", receiver: "resolver", member: "resolve", startLine: 5 },
+        {
+          callerFile: "src/provider/provider.ts",
+          callerScope: ["CodegraphProvider"],
+          // Only the ruby impl is reachable via imports → import-narrowed
+          // fallback picks it. Confirms typed-param miss is non-destructive.
+          imports: [{ importText: "../resolvers/ruby-resolver", startLine: 1 }],
+          symbolTable,
+          localBindings: { resolver: "CallResolver" },
+        },
+      );
+      expect(result).toEqual({
+        targetRelPath: "src/resolvers/ruby-resolver.ts",
+        targetSymbolId: "RubyCallResolver#resolve",
+      });
+    });
+
+    it("does not consult localBindings for a receiver that is not a bound parameter", () => {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/util.ts", [
+        { symbolId: "helper", fqName: "helper", shortName: "helper", relPath: "src/util.ts", scope: [] },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      // `other.helper()` — `other` is not in localBindings, so the typed
+      // path is skipped and global short-name resolves the single match.
+      const result = resolver.resolve(
+        { callText: "other.helper()", receiver: "other", member: "helper", startLine: 1 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [],
+          symbolTable,
+          localBindings: { resolver: "CallResolver" },
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/util.ts", targetSymbolId: "helper" });
+    });
+  });
+
   // bd tea-rags-mcp-4rgg — super() and super.foo() must route to the
   // PARENT class. Empirical from tea-rags self-test: every
   // `<Strategy>#constructor` had a super(...args) edge pointing at
@@ -852,6 +1001,41 @@ describe("TSCallResolver", () => {
       });
     });
 
+    it("normalizes a .mjs ESM import basename when matching the receiver", () => {
+      // ESM modules imported with an explicit `.mjs` extension must
+      // basename-normalize the same as `.js`/`.ts` — stripSourceExtension
+      // strips `.mjs` so `rank-module.mjs` → "rankmodule" matches the
+      // PascalCase receiver `RankModule`. The import basename match fires
+      // (proving the `.mjs` branch is exercised); the resolver maps the
+      // import to its file and, since that file owns the method, pins the
+      // member-level edge.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      // mapImportToFile resolves `./rank-module.mjs` under baseUrl "." to a
+      // `.ts` candidate; seed the symbol there so the member resolves.
+      symbolTable.upsertFile("src/rank-module.mjs.ts", [
+        {
+          symbolId: "RankModule#run",
+          fqName: "RankModule#run",
+          shortName: "run",
+          relPath: "src/rank-module.mjs.ts",
+          scope: ["RankModule"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "RankModule.run(x)", receiver: "RankModule", member: "run", startLine: 5 },
+        {
+          callerFile: "src/caller.ts",
+          callerScope: [],
+          imports: [{ importText: "./rank-module.mjs", startLine: 1 }],
+          symbolTable,
+        },
+      );
+      // The `.mjs` basename normalized to "rankmodule" and matched the
+      // receiver, routing the resolver to the imported module's method.
+      expect(result).toEqual({ targetRelPath: "src/rank-module.mjs.ts", targetSymbolId: "RankModule#run" });
+    });
+
     it("resolves new FooBarBaz() via symbol-table FQN fallback when filename does NOT mirror the class name", () => {
       // Filename "helpers" gives no syntactic hint about the contained
       // classes. Normalize cannot match "helpers" against "FooBarBaz".
@@ -988,5 +1172,400 @@ describe("TSCallResolver", () => {
       // receiver="A" must constrain to A's file/symbol.
       expect(result).toEqual({ targetRelPath: "src/mixed.ts", targetSymbolId: "A#constructor" });
     });
+  });
+
+  // bd tea-rags-mcp-2v16 — PROPER fix: the walker records the named
+  // specifiers per import (`ImportRef.importedNames`), so the resolver maps
+  // a receiver to its source module by EXACT name match instead of the
+  // kebab→Pascal filename-normalize heuristic.
+  describe("named-specifier receiver match (bd tea-rags-mcp-2v16)", () => {
+    it("resolves RankModule.foo() via importedNames even when the filename does NOT mirror the class", () => {
+      // Filename "barrel" gives no syntactic hint — the kebab→Pascal
+      // normalize hack could NOT match "barrel" against "RankModule".
+      // Only the exact named-specifier map (RankModule → "./barrel.js")
+      // resolves it. A SECOND file also declares `foo` so the bare global
+      // short-name fallback is ambiguous and would drop in strict mode.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/barrel.ts", [
+        {
+          symbolId: "RankModule.foo",
+          fqName: "RankModule.foo",
+          shortName: "foo",
+          relPath: "src/barrel.ts",
+          scope: ["RankModule"],
+        },
+      ]);
+      symbolTable.upsertFile("src/other.ts", [
+        { symbolId: "Other.foo", fqName: "Other.foo", shortName: "foo", relPath: "src/other.ts", scope: ["Other"] },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "RankModule.foo()", receiver: "RankModule", member: "foo", startLine: 9 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [{ importText: "./barrel.js", startLine: 1, importedNames: ["RankModule"] }],
+          symbolTable,
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/barrel.ts", targetSymbolId: "RankModule.foo" });
+    });
+
+    it("kebab-filename case (rank-module.js exporting RankModule) resolves via importedNames", () => {
+      // The original kiuw case — now driven by the exact named-specifier
+      // map instead of basename normalization. A second `#constructor`
+      // elsewhere makes the bare short-name fallback ambiguous.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/explore/rank-module.ts", [
+        {
+          symbolId: "RankModule#constructor",
+          fqName: "RankModule#constructor",
+          shortName: "constructor",
+          relPath: "src/explore/rank-module.ts",
+          scope: ["RankModule"],
+        },
+      ]);
+      symbolTable.upsertFile("src/other.ts", [
+        {
+          symbolId: "Other#constructor",
+          fqName: "Other#constructor",
+          shortName: "constructor",
+          relPath: "src/other.ts",
+          scope: ["Other"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "new RankModule(qdrant)", receiver: "RankModule", member: "constructor", startLine: 12 },
+        {
+          callerFile: "src/explore/strategies/scroll-rank.ts",
+          callerScope: ["ScrollRankStrategy"],
+          imports: [{ importText: "../rank-module.js", startLine: 1, importedNames: ["RankModule"] }],
+          symbolTable,
+        },
+      );
+      expect(result).toEqual({
+        targetRelPath: "src/explore/rank-module.ts",
+        targetSymbolId: "RankModule#constructor",
+      });
+    });
+
+    it("multi-export named import: import { A, B } from './mixed.js'; new A() resolves to A not B", () => {
+      // importedNames carries both A and B → both map to mixed.js, but the
+      // receiver "A" must pin to A#constructor, not B's. Exercises the
+      // FQN-narrowing within the named-specifier-resolved file.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/mixed.ts", [
+        {
+          symbolId: "A#constructor",
+          fqName: "A#constructor",
+          shortName: "constructor",
+          relPath: "src/mixed.ts",
+          scope: ["A"],
+        },
+        {
+          symbolId: "B#constructor",
+          fqName: "B#constructor",
+          shortName: "constructor",
+          relPath: "src/mixed.ts",
+          scope: ["B"],
+        },
+        { symbolId: "A", fqName: "A", shortName: "A", relPath: "src/mixed.ts", scope: [] },
+        { symbolId: "B", fqName: "B", shortName: "B", relPath: "src/mixed.ts", scope: [] },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const result = resolver.resolve(
+        { callText: "new A()", receiver: "A", member: "constructor", startLine: 3 },
+        {
+          callerFile: "src/main.ts",
+          callerScope: [],
+          imports: [{ importText: "./mixed.js", startLine: 1, importedNames: ["A", "B"] }],
+          symbolTable,
+        },
+      );
+      expect(result).toEqual({ targetRelPath: "src/mixed.ts", targetSymbolId: "A#constructor" });
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Lookup-table dispatch fan-out (bd tea-rags-mcp-n0zj) — resolveDispatch.
+// ─────────────────────────────────────────────────────────────────────
+describe("TSCallResolver.resolveDispatch", () => {
+  function tableWith(fns: string[]): InMemoryGlobalSymbolTable {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile(
+      "src/walkers.ts",
+      fns.map((fn) => ({ symbolId: fn, fqName: fn, shortName: fn, relPath: "src/walkers.ts", scope: [] })),
+    );
+    return symbolTable;
+  }
+  const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+
+  it("fans a dynamic key out to ALL entries of an S1 table (2 edges, source = caller)", () => {
+    const symbolTable = tableWith(["fnA", "fnB"]);
+    const ctx: CallContext = {
+      callerFile: "src/dispatch.ts",
+      callerScope: [],
+      imports: [],
+      symbolTable,
+      dispatchTables: { T: [{ relPath: "src/dispatch.ts", table: { entries: { a: { w: "fnA" }, b: { w: "fnB" } } } }] },
+    };
+    const call: CallRef = {
+      callText: "f(1)",
+      receiver: null,
+      member: "w",
+      startLine: 1,
+      dispatch: { table: "T", field: "w", key: null },
+    };
+    const edges = resolver.resolveDispatch(call, ctx);
+    expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["fnA", "fnB"]);
+    expect(edges.every((e) => e.sourceSymbolId === null)).toBe(true);
+  });
+
+  it("resolves a static string-literal key to the ONE matching entry (1 edge)", () => {
+    const symbolTable = tableWith(["fnA", "fnB"]);
+    const ctx: CallContext = {
+      callerFile: "src/dispatch.ts",
+      callerScope: [],
+      imports: [],
+      symbolTable,
+      dispatchTables: { T: [{ relPath: "src/dispatch.ts", table: { entries: { a: { w: "fnA" }, b: { w: "fnB" } } } }] },
+    };
+    const edges = resolver.resolveDispatch(
+      {
+        callText: 'T["a"].w(1)',
+        receiver: null,
+        member: "w",
+        startLine: 1,
+        dispatch: { table: "T", field: "w", key: "a" },
+      },
+      ctx,
+    );
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["fnA"]);
+  });
+
+  it("resolves an S2 direct-function table (field null → entry IS the function)", () => {
+    const symbolTable = tableWith(["fnA", "fnB"]);
+    const ctx: CallContext = {
+      callerFile: "src/dispatch.ts",
+      callerScope: [],
+      imports: [],
+      symbolTable,
+      dispatchTables: { H: [{ relPath: "src/dispatch.ts", table: { entries: { a: "fnA", b: "fnB" } } }] },
+    };
+    const edges = resolver.resolveDispatch(
+      {
+        callText: "H[k](1)",
+        receiver: null,
+        member: "H",
+        startLine: 1,
+        dispatch: { table: "H", field: null, key: null },
+      },
+      ctx,
+    );
+    expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["fnA", "fnB"]);
+  });
+
+  it("drops an unresolved candidate name (keeps the resolvable ones)", () => {
+    const symbolTable = tableWith(["fnA"]); // fnMissing is NOT in the table
+    const ctx: CallContext = {
+      callerFile: "src/dispatch.ts",
+      callerScope: [],
+      imports: [],
+      symbolTable,
+      dispatchTables: {
+        T: [{ relPath: "src/dispatch.ts", table: { entries: { a: { w: "fnA" }, b: { w: "fnMissing" } } } }],
+      },
+    };
+    const edges = resolver.resolveDispatch(
+      { callText: "f(1)", receiver: null, member: "w", startLine: 1, dispatch: { table: "T", field: "w", key: null } },
+      ctx,
+    );
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["fnA"]);
+  });
+
+  it("drops the whole call when the table name is unknown", () => {
+    const symbolTable = tableWith(["fnA"]);
+    const ctx: CallContext = {
+      callerFile: "src/dispatch.ts",
+      callerScope: [],
+      imports: [],
+      symbolTable,
+      dispatchTables: { T: [{ relPath: "src/dispatch.ts", table: { entries: { a: { w: "fnA" } } } }] },
+    };
+    const edges = resolver.resolveDispatch(
+      { callText: "f(1)", receiver: null, member: "w", startLine: 1, dispatch: { table: "Z", field: "w", key: null } },
+      ctx,
+    );
+    expect(edges).toEqual([]);
+  });
+
+  it("disambiguates a same-name table across files via the caller's import map", () => {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/a.ts", [
+      { symbolId: "fnA", fqName: "fnA", shortName: "fnA", relPath: "src/a.ts", scope: [] },
+    ]);
+    symbolTable.upsertFile("src/b.ts", [
+      { symbolId: "fnB", fqName: "fnB", shortName: "fnB", relPath: "src/b.ts", scope: [] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "src/dispatch.ts",
+      callerScope: [],
+      imports: [{ importText: "./a", startLine: 1 }], // → src/a.ts
+      symbolTable,
+      dispatchTables: {
+        T: [
+          { relPath: "src/a.ts", table: { entries: { x: { w: "fnA" } } } },
+          { relPath: "src/b.ts", table: { entries: { y: { w: "fnB" } } } },
+        ],
+      },
+    };
+    const edges = resolver.resolveDispatch(
+      { callText: "f(1)", receiver: null, member: "w", startLine: 1, dispatch: { table: "T", field: "w", key: null } },
+      ctx,
+    );
+    // Caller imports src/a.ts → the a-table wins; fnB never reached.
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["fnA"]);
+  });
+
+  it("drops a same-name ambiguous table when no import edge disambiguates", () => {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/a.ts", [
+      { symbolId: "fnA", fqName: "fnA", shortName: "fnA", relPath: "src/a.ts", scope: [] },
+    ]);
+    symbolTable.upsertFile("src/b.ts", [
+      { symbolId: "fnB", fqName: "fnB", shortName: "fnB", relPath: "src/b.ts", scope: [] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "src/dispatch.ts",
+      callerScope: [],
+      imports: [], // no import edge → ambiguous → drop
+      symbolTable,
+      dispatchTables: {
+        T: [
+          { relPath: "src/a.ts", table: { entries: { x: { w: "fnA" } } } },
+          { relPath: "src/b.ts", table: { entries: { y: { w: "fnB" } } } },
+        ],
+      },
+    };
+    const edges = resolver.resolveDispatch(
+      { callText: "f(1)", receiver: null, member: "w", startLine: 1, dispatch: { table: "T", field: "w", key: null } },
+      ctx,
+    );
+    expect(edges).toEqual([]);
+  });
+
+  // ── Bounded inter-procedural join (callback params) ──
+  function joinCtx(callbackParams: Record<string, number[]>): CallContext {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/collect.ts", [
+      {
+        symbolId: "collectSymbols",
+        fqName: "collectSymbols",
+        shortName: "collectSymbols",
+        relPath: "src/collect.ts",
+        scope: [],
+      },
+    ]);
+    symbolTable.upsertFile("src/names.ts", [
+      { symbolId: "tsNameOf", fqName: "tsNameOf", shortName: "tsNameOf", relPath: "src/names.ts", scope: [] },
+      { symbolId: "rbNameOf", fqName: "rbNameOf", shortName: "rbNameOf", relPath: "src/names.ts", scope: [] },
+    ]);
+    return {
+      callerFile: "src/dispatch.ts",
+      callerScope: [],
+      imports: [],
+      symbolTable,
+      callbackParams,
+      dispatchTables: {
+        T: [{ relPath: "src/dispatch.ts", table: { entries: { ts: { n: "tsNameOf" }, rb: { n: "rbNameOf" } } } }],
+      },
+    };
+  }
+  const joinCall: CallRef = {
+    callText: "collectSymbols(tree, T[k].n)",
+    receiver: null,
+    member: "collectSymbols",
+    startLine: 1,
+    dispatchArgs: [{ argIndex: 1, candidate: { table: "T", field: "n", key: null } }],
+  };
+
+  it("fans out from the CALLEE when a dispatch arg lands on a callback-param position", () => {
+    const edges = resolver.resolveDispatch(joinCall, joinCtx({ collectSymbols: [1] }));
+    expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["rbNameOf", "tsNameOf"]);
+    expect(edges.every((e) => e.sourceSymbolId === "collectSymbols")).toBe(true);
+  });
+
+  it("emits NO join edge when the dispatch arg is at a non-callback position", () => {
+    const edges = resolver.resolveDispatch(joinCall, joinCtx({ collectSymbols: [0] }));
+    expect(edges).toEqual([]);
+  });
+
+  it("emits NO join edge when the callee has no callbackParams entry", () => {
+    const edges = resolver.resolveDispatch(joinCall, joinCtx({}));
+    expect(edges).toEqual([]);
+  });
+
+  // A candidate function name that is declared at top level in MORE THAN ONE
+  // file is ambiguous for the plain short-name lookup (strict mode drops it).
+  // The caller's import map is the disambiguator: if exactly one of the
+  // ambiguous files is imported, that candidate wins. Otherwise drop.
+  it("narrows an ambiguous candidate name to the file the caller imports", () => {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    // Same top-level function name `handle` in two files.
+    symbolTable.upsertFile("src/handlers-a.ts", [
+      { symbolId: "handle", fqName: "handle", shortName: "handle", relPath: "src/handlers-a.ts", scope: [] },
+    ]);
+    symbolTable.upsertFile("src/handlers-b.ts", [
+      { symbolId: "handle", fqName: "handle", shortName: "handle", relPath: "src/handlers-b.ts", scope: [] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "src/dispatch.ts",
+      callerScope: [],
+      imports: [{ importText: "./handlers-a", startLine: 1 }], // → src/handlers-a.ts only
+      symbolTable,
+      dispatchTables: { CMD: [{ relPath: "src/dispatch.ts", table: { entries: { x: { run: "handle" } } } }] },
+    };
+    const edges = resolver.resolveDispatch(
+      {
+        callText: "CMD[k].run(x)",
+        receiver: null,
+        member: "run",
+        startLine: 1,
+        dispatch: { table: "CMD", field: "run", key: null },
+      },
+      ctx,
+    );
+    // Import biases to handlers-a; handlers-b's `handle` is never reached.
+    expect(edges.map((e) => e.targetRelPath)).toEqual(["src/handlers-a.ts"]);
+  });
+
+  it("drops an ambiguous candidate name when no import disambiguates it", () => {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/handlers-a.ts", [
+      { symbolId: "handle", fqName: "handle", shortName: "handle", relPath: "src/handlers-a.ts", scope: [] },
+    ]);
+    symbolTable.upsertFile("src/handlers-b.ts", [
+      { symbolId: "handle", fqName: "handle", shortName: "handle", relPath: "src/handlers-b.ts", scope: [] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "src/dispatch.ts",
+      callerScope: [],
+      imports: [], // no import edge → ambiguity is real → drop, never guess
+      symbolTable,
+      dispatchTables: { CMD: [{ relPath: "src/dispatch.ts", table: { entries: { x: { run: "handle" } } } }] },
+    };
+    const edges = resolver.resolveDispatch(
+      {
+        callText: "CMD[k].run(x)",
+        receiver: null,
+        member: "run",
+        startLine: 1,
+        dispatch: { table: "CMD", field: "run", key: null },
+      },
+      ctx,
+    );
+    expect(edges).toEqual([]);
   });
 });

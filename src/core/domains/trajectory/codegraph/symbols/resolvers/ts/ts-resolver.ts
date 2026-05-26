@@ -29,6 +29,10 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
+  type DispatchEdge,
+  type DispatchRef,
+  type DispatchTable,
+  type DispatchTableDef,
   type ResolvedTarget,
 } from "../../../../../../contracts/types/codegraph.js";
 import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
@@ -106,11 +110,55 @@ export class TSCallResolver implements CallResolver {
         }
       }
     }
+    // Typed-parameter receiver — `param.method()` where `param` is a
+    // function / method / arrow parameter the walker bound to a type in
+    // `ctx.localBindings` (bd tea-rags-mcp-x6ta). Resolve `<Type>#member`
+    // (instance) then `<Type>.member` (static) against the global symbol
+    // table. Consulted BEFORE the import-receiver pass so an unambiguous
+    // local type wins over the ambiguous short-name fallback that drops
+    // interface-typed calls when the caller imports every implementer.
+    // On miss, fall through to the existing passes — never fabricate an
+    // edge (mirrors the Go / Python `resolveByLocalType` contract).
     if (call.receiver) {
-      // First pass: basename-normalized compare. Catches the common
+      const boundType = ctx.localBindings?.[call.receiver];
+      if (boundType) {
+        const localHit = this.resolveByLocalType(boundType, call.member, ctx);
+        if (localHit) return localHit;
+      }
+    }
+    if (call.receiver) {
+      // First pass (bd tea-rags-mcp-2v16): EXACT named-specifier match.
+      // The walker records the local binding names each import introduces
+      // in `ImportRef.importedNames` (`import { RankModule } from "./m"` →
+      // `["RankModule"]`). When the receiver is one of those names we know
+      // its source module precisely — no filename heuristic needed. This
+      // supersedes the kebab→Pascal basename hack below for any import that
+      // carries `importedNames` (i.e. freshly re-indexed TS files), while
+      // the hack stays as a fallback for stale-index imports lacking the
+      // field. Within the matched file we still FQN-narrow (scope[-1] ===
+      // receiver) before short-name so multi-export modules pin the right
+      // class.
+      const named = ctx.imports.find((imp) => imp.importedNames?.includes(call.receiver as string));
+      if (named) {
+        const targetFile = mapImportToFile(named.importText, ctx.callerFile, this.tsOptions);
+        if (targetFile) {
+          const scopedCandidates = ctx.symbolTable
+            .lookupByShortName(call.member)
+            .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === call.receiver);
+          const scopedHit = pickSingleCandidate(scopedCandidates, this.mode);
+          if (scopedHit) return { targetRelPath: scopedHit.relPath, targetSymbolId: scopedHit.symbolId };
+          const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
+          const target = pickSingleCandidate(candidates, this.mode);
+          if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+          return { targetRelPath: targetFile, targetSymbolId: null };
+        }
+      }
+      // Second pass: basename-normalized compare. Catches the common
       // kebab-case → PascalCase TS naming convention (`rank-module.js`
       // → `RankModule`) by stripping extensions and non-alphanumeric
       // characters before case-folded equality (bd tea-rags-mcp-kiuw).
+      // Retained as a LOWER-PRECEDENCE fallback for imports that lack
+      // `importedNames` (stale index re-indexed before the field landed).
       const match = ctx.imports.find((imp) => importMatchesReceiver(imp.importText, call.receiver as string));
       if (match) {
         const targetFile = mapImportToFile(match.importText, ctx.callerFile, this.tsOptions);
@@ -121,7 +169,7 @@ export class TSCallResolver implements CallResolver {
           return { targetRelPath: targetFile, targetSymbolId: null };
         }
       }
-      // Second pass: symbol-table FQN narrowing (bd tea-rags-mcp-kiuw).
+      // Third pass: symbol-table FQN narrowing (bd tea-rags-mcp-kiuw).
       // When basename normalize fails (filename unrelated to class
       // name, multi-export file, arbitrary aliasing), discover the
       // owning file by treating the receiver itself as a symbol.
@@ -177,6 +225,147 @@ export class TSCallResolver implements CallResolver {
         if (narrowedHit) return { targetRelPath: narrowedHit.relPath, targetSymbolId: narrowedHit.symbolId };
       }
     }
+    return null;
+  }
+
+  /**
+   * Fan-out resolution for lookup-table dispatch (bd tea-rags-mcp-n0zj).
+   * Returns every edge a dispatching call implies:
+   *
+   *   - `call.dispatch` → fan out from the CALLER (sourceSymbolId null) to
+   *     each candidate function the table selects. A dynamic key spans all
+   *     entries; a static literal key picks the one matching entry.
+   *   - `call.dispatchArgs` → bounded single-hop inter-procedural join:
+   *     resolve the normal callee `F`, and for each dispatch candidate-set
+   *     passed at one of `F`'s invoked param positions (`ctx.callbackParams`),
+   *     fan out from `F` (sourceSymbolId = F) to each candidate.
+   *
+   * Unresolvable tables / candidate names are dropped (never fabricated).
+   * The provider calls `resolve` separately for the normal callee edge.
+   */
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+    const edges: DispatchEdge[] = [];
+    if (call.dispatch) {
+      for (const target of this.expandCandidate(call.dispatch, ctx)) {
+        edges.push({
+          sourceSymbolId: null,
+          targetRelPath: target.targetRelPath,
+          targetSymbolId: target.targetSymbolId,
+        });
+      }
+    }
+    if (call.dispatchArgs && call.dispatchArgs.length > 0) {
+      const callee = this.resolve(call, ctx);
+      const calleeSymbolId = callee?.targetSymbolId ?? null;
+      const invoked = calleeSymbolId ? ctx.callbackParams?.[calleeSymbolId] : undefined;
+      if (calleeSymbolId && invoked && invoked.length > 0) {
+        for (const arg of call.dispatchArgs) {
+          if (!invoked.includes(arg.argIndex)) continue;
+          for (const target of this.expandCandidate(arg.candidate, ctx)) {
+            edges.push({
+              sourceSymbolId: calleeSymbolId,
+              targetRelPath: target.targetRelPath,
+              targetSymbolId: target.targetSymbolId,
+            });
+          }
+        }
+      }
+    }
+    return edges;
+  }
+
+  /**
+   * Expand a `DispatchRef` to the concrete call targets it can reach:
+   * select the table (import-disambiguated), pull the candidate function
+   * names for the field/key, resolve each name against the symbol table.
+   * Deduped — a dynamic key over entries pointing at the same function
+   * emits one edge, not N.
+   */
+  private expandCandidate(ref: DispatchRef, ctx: CallContext): ResolvedTarget[] {
+    const def = this.selectTableDef(ref.table, ctx);
+    if (!def) return [];
+    const targets: ResolvedTarget[] = [];
+    const seen = new Set<string>();
+    for (const name of candidateNames(def.table, ref)) {
+      const target = this.resolveCandidateName(name, ctx);
+      if (!target) continue;
+      const key = `${target.targetRelPath}::${target.targetSymbolId ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      targets.push(target);
+    }
+    return targets;
+  }
+
+  /**
+   * Pick the `DispatchTableDef` for a table name. A name declared in a
+   * single file resolves directly. When the same name is declared in
+   * several files, the caller's import map disambiguates (prefer the
+   * imported file, else the caller's own in-file table); if still
+   * ambiguous, drop rather than guess (m46z safety).
+   */
+  private selectTableDef(name: string, ctx: CallContext): DispatchTableDef | null {
+    const defs = ctx.dispatchTables?.[name];
+    if (!defs || defs.length === 0) return null;
+    if (defs.length === 1) return defs[0];
+    const importedFiles = this.importedFiles(ctx);
+    const imported = defs.filter((d) => importedFiles.has(d.relPath));
+    if (imported.length === 1) return imported[0];
+    const inFile = defs.filter((d) => d.relPath === ctx.callerFile);
+    if (inFile.length === 1) return inFile[0];
+    return null;
+  }
+
+  /**
+   * Resolve a bare candidate function name (a top-level function the
+   * dispatch table points at) to its symbol. Single top-level definition
+   * wins; on ambiguity the caller's import map narrows; otherwise drop.
+   */
+  private resolveCandidateName(name: string, ctx: CallContext): ResolvedTarget | null {
+    const candidates = ctx.symbolTable.lookupByShortName(name).filter((def) => def.scope.length === 0);
+    const sole = pickSingleCandidate(candidates, this.mode);
+    if (sole) return { targetRelPath: sole.relPath, targetSymbolId: sole.symbolId };
+    if (candidates.length > 1) {
+      const importedFiles = this.importedFiles(ctx);
+      const narrowed = candidates.filter((def) => importedFiles.has(def.relPath));
+      const narrowedHit = pickSingleCandidate(narrowed, this.mode);
+      if (narrowedHit) return { targetRelPath: narrowedHit.relPath, targetSymbolId: narrowedHit.symbolId };
+    }
+    return null;
+  }
+
+  private importedFiles(ctx: CallContext): Set<string> {
+    const files = new Set<string>();
+    for (const imp of ctx.imports) {
+      const file = mapImportToFile(imp.importText, ctx.callerFile, this.tsOptions);
+      if (file) files.add(file);
+    }
+    return files;
+  }
+
+  /**
+   * Resolve a typed-receiver call (`param.member()` where `param` was
+   * bound to `typeName` by the walker's parameter-type tracking). Tries
+   * `typeName#member` (instance form) first, then `typeName.member`
+   * (static form). Returns `null` on miss — the caller then falls
+   * through to the import-receiver / short-name passes rather than
+   * fabricating an edge. Mirrors the Go / Python `resolveByLocalType`
+   * contract.
+   *
+   * When `typeName` is an interface with multiple implementations and no
+   * single indexed `typeName#member` definition (interfaces declare no
+   * method bodies that become symbols), `lookup` returns no candidate
+   * and this method returns `null`, deferring to the import-narrowed
+   * fallback (bd tea-rags-mcp-2qp6) which biases toward the concrete
+   * implementer the caller imports.
+   */
+  private resolveByLocalType(typeName: string, member: string, ctx: CallContext): ResolvedTarget | null {
+    const instanceCandidates = ctx.symbolTable.lookup(`${typeName}#${member}`);
+    const instanceHit = pickSingleCandidate(instanceCandidates, this.mode);
+    if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+    const staticCandidates = ctx.symbolTable.lookup(`${typeName}.${member}`);
+    const staticHit = pickSingleCandidate(staticCandidates, this.mode);
+    if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
     return null;
   }
 
@@ -281,6 +470,29 @@ export class TSCallResolver implements CallResolver {
     }
     return fileOnlyFallback;
   }
+}
+
+/**
+ * Candidate function names a `DispatchRef` selects from a table.
+ * Dynamic key → every entry; static key → the one matching entry.
+ * S2 (`field === null`) reads the entry directly (must be a string fn name);
+ * S1 reads `entry[field]`. Missing keys / wrong-shape entries contribute
+ * nothing — the resolver then drops or fans out the rest.
+ */
+function candidateNames(table: DispatchTable, ref: DispatchRef): string[] {
+  const keys = ref.key !== null ? [ref.key] : Object.keys(table.entries);
+  const names: string[] = [];
+  for (const key of keys) {
+    const entry = table.entries[key];
+    if (entry === undefined) continue;
+    if (ref.field === null) {
+      if (typeof entry === "string") names.push(entry);
+    } else if (typeof entry === "object") {
+      const fn = entry[ref.field];
+      if (typeof fn === "string") names.push(fn);
+    }
+  }
+  return names;
 }
 
 function lastSegment(qualified: string): string {

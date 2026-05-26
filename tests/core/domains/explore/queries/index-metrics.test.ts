@@ -217,4 +217,57 @@ describe("IndexMetricsQuery", () => {
 
     expect(result.enrichment).toBeUndefined();
   });
+
+  // btl8: codegraph signals with stats.labels must surface in labelMap just
+  // like git signals. Before this commit, the 7 codegraph numeric descriptors
+  // lacked stats.labels so IndexMetricsQuery skipped them (line 57 early
+  // continue), making fanIn/fanOut/instability/etc invisible to get_index_metrics.
+  it("renders labelMap for codegraph signals with stats.labels", async () => {
+    const { qdrant } = makeDeps();
+    const statsCache = {
+      load: vi.fn().mockReturnValue({
+        perSignal: new Map(),
+        perLanguage: new Map([
+          [
+            "typescript",
+            new Map([
+              [
+                "codegraph.file.fanIn",
+                {
+                  source: { count: 100, min: 0, max: 50, percentiles: { 25: 1, 50: 3, 75: 7, 95: 18 }, mean: 4.5 },
+                },
+              ],
+            ]),
+          ],
+        ]),
+        distributions: {
+          totalFiles: 50,
+          language: { typescript: 100 },
+          chunkType: {},
+          documentation: { docs: 0, code: 100 },
+          topAuthors: [],
+          othersCount: 0,
+        },
+        computedAt: Date.now(),
+      }),
+    } as any;
+    const payloadSignals = [
+      {
+        key: "codegraph.file.fanIn",
+        type: "number",
+        description: "Number of files importing this file",
+        stats: { labels: { p25: "isolated", p50: "typical", p75: "popular", p95: "hub" } },
+      },
+    ] as any;
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+
+    const result = await query.run("col", "/project");
+
+    expect(result.signals["typescript"]["codegraph.file.fanIn"]["source"].labelMap).toEqual({
+      isolated: 1,
+      typical: 3,
+      popular: 7,
+      hub: 18,
+    });
+  });
 });

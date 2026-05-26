@@ -54,14 +54,14 @@ export class QdrantManager {
   private client: QdrantClient;
   private qdrantUrl: string;
   private readonly apiKey?: string;
-  private readonly reconnect?: () => string | null;
+  private readonly reconnect?: () => Promise<string | null>;
   private readonly daemon?: EmbeddedDaemonProbe;
   private _aliases?: QdrantAliasManager;
 
   constructor(
     url = "http://localhost:6333",
     apiKey?: string,
-    reconnect?: () => string | null,
+    reconnect?: () => Promise<string | null>,
     daemon?: EmbeddedDaemonProbe,
   ) {
     this.qdrantUrl = url;
@@ -88,7 +88,7 @@ export class QdrantManager {
     try {
       return await fn();
     } catch (error: unknown) {
-      if (isConnectionError(error) && this.tryReconnect()) {
+      if (isConnectionError(error) && (await this.tryReconnect())) {
         return await fn();
       }
       if (isConnectionError(error)) {
@@ -115,12 +115,12 @@ export class QdrantManager {
   }
 
   /**
-   * Attempt to reconnect to embedded daemon on a new port.
-   * Returns true if URL was updated and retry is warranted.
+   * Attempt to re-resolve the embedded daemon URL (re-read port, or respawn a
+   * dead daemon). Returns true if the URL was updated and a retry is warranted.
    */
-  private tryReconnect(): boolean {
+  private async tryReconnect(): Promise<boolean> {
     if (!this.reconnect) return false;
-    const newUrl = this.reconnect();
+    const newUrl = await this.reconnect();
     if (!newUrl) return false;
     this.qdrantUrl = newUrl;
     this.client = new QdrantClient({ url: newUrl, apiKey: this.apiKey });
