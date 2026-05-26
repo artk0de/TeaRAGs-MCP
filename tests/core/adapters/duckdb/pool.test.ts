@@ -11,11 +11,13 @@
  */
 
 import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { decodeFrames, encodeFrame, type DaemonRequest } from "../../../../src/core/adapters/duckdb/daemon/protocol.js";
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
 import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -302,15 +304,108 @@ describe("GraphDbClientPool — mode-aware acquireRead/acquireWrite", () => {
     });
     // populate code_x_v2 via write path
     const w = await pool.acquireWrite("code_x_v2");
-    await w.graphDb.upsertFile(
-      { relPath: "a.ts", language: "typescript" },
-      { fileEdges: [], methodEdges: [] },
-    );
+    await w.graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     // read path resolves the SAME versioned file (no strip to code_x)
     const r = await pool.acquireRead("code_x_v2");
     expect(await r.graphDb.hasData()).toBe(true);
     expect(pool.pathFor("code_x_v2")).toContain("code_x_v2.duckdb"); // not code_x.duckdb
     await r.graphDb.close();
+    await pool.closeAll();
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("GraphDbClientPool — acquireReader (mode-aware facade read path)", () => {
+  let srv: Server | undefined;
+
+  afterEach(async () => {
+    await new Promise<void>((res) => {
+      if (srv) {
+        srv.close(() => {
+          res();
+        });
+      } else {
+        res();
+      }
+    });
+    srv = undefined;
+  });
+
+  it("direct mode (no daemon socket) falls back to an in-process READ_ONLY handle that reads the written file", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pool-reader-direct-"));
+    const pool = new GraphDbClientPool({
+      rootDir: root,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    });
+
+    // Populate via the write path so the file has data on disk.
+    const w = await pool.acquireWrite("code_r_v1");
+    await w.graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+
+    // No daemonSocketPath configured → acquireReader delegates to the
+    // in-process READ_ONLY attach and sees the freshly written data.
+    const reader = await pool.acquireReader("code_r_v1");
+    expect(reader.graphDb).toBeDefined();
+    expect(reader.symbolTable).toBeDefined();
+    expect(await reader.graphDb.hasData()).toBe(true);
+
+    await reader.graphDb.close();
+    await pool.closeAll();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("daemon mode routes the facade read through a DaemonGraphDbClient over the socket and injects the collection", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pool-reader-daemon-"));
+    const socketPath = join(root, "cg.sock");
+    const seen: DaemonRequest[] = [];
+
+    // Minimal echo daemon: records every request and answers each read op
+    // with a deterministic payload so the proxied round-trip is observable.
+    srv = createServer((sock) => {
+      let buf = "";
+      sock.on("data", (d) => {
+        buf += d.toString("utf8");
+        const { frames, rest } = decodeFrames(buf);
+        buf = rest;
+        for (const f of frames) {
+          const req = JSON.parse(f) as DaemonRequest;
+          seen.push(req);
+          const result =
+            req.op === "getCallers"
+              ? [{ sourceSymbolId: "A#run", sourceRelPath: "a.ts", callExpression: "b.help()" }]
+              : null;
+          sock.write(encodeFrame({ id: req.id, ok: true, result }));
+        }
+      });
+    });
+    srv.unref();
+    await new Promise<void>((res) => {
+      srv?.listen(socketPath, () => {
+        res();
+      });
+    });
+
+    const pool = new GraphDbClientPool({
+      rootDir: root,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      daemonSocketPath: socketPath,
+    });
+
+    // daemonSocketPath set → acquireReader returns a DaemonGraphDbClient that
+    // proxies reads through the daemon (the sole RW file opener) instead of a
+    // conflicting cross-process READ_ONLY attach.
+    const reader = await pool.acquireReader("code_proxy_v1");
+    expect(reader.graphDb).toBeDefined();
+    expect(reader.symbolTable).toBeDefined();
+
+    const callers = await reader.graphDb.getCallers("B#help");
+    expect(callers).toEqual([{ sourceSymbolId: "A#run", sourceRelPath: "a.ts", callExpression: "b.help()" }]);
+    // The proxied request carries the client-injected collection + query param.
+    const getCallers = seen.find((r) => r.op === "getCallers");
+    expect((getCallers?.params as { collection: string }).collection).toBe("code_proxy_v1");
+    expect((getCallers?.params as { symbolId: string }).symbolId).toBe("B#help");
+
+    await reader.graphDb.close();
     await pool.closeAll();
     rmSync(root, { recursive: true, force: true });
   });
