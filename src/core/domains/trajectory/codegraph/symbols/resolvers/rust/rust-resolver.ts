@@ -21,6 +21,7 @@ import {
   type CallRef,
   type CallResolver,
   type ResolvedTarget,
+  type SymbolDefinition,
 } from "../../../../../../contracts/types/codegraph.js";
 
 export class RustCallResolver implements CallResolver {
@@ -79,10 +80,10 @@ export class RustCallResolver implements CallResolver {
       const boundType = ctx.localBindings?.[call.receiver];
       if (boundType) {
         const instanceFq = `${boundType}#${call.member}`;
-        const instanceHit = pickSingleCandidate(ctx.symbolTable.lookup(instanceFq), this.mode);
+        const instanceHit = pickSameFileThenSingle(ctx.symbolTable.lookup(instanceFq), ctx.callerFile, this.mode);
         if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
         const staticFq = `${boundType}.${call.member}`;
-        const staticHit = pickSingleCandidate(ctx.symbolTable.lookup(staticFq), this.mode);
+        const staticHit = pickSameFileThenSingle(ctx.symbolTable.lookup(staticFq), ctx.callerFile, this.mode);
         if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
         // Receiver type known but member not on it — DROP the edge.
         // Falling through to short-name lookup would resolve to a method
@@ -133,6 +134,27 @@ export class RustCallResolver implements CallResolver {
     if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
     return null;
   }
+}
+
+/**
+ * bd tea-rags-mcp-p8wz — resolve a bound-type member (`<Type>#<member>` /
+ * `<Type>.<member>`) preferring the candidate in the caller's own file when the
+ * type name collides across files. ripgrep declares `Parser` in BOTH
+ * `crates/core/flags/parse.rs` and `crates/globset/src/glob.rs`, so a typed
+ * binding `let parser = Parser::new(); parser.parse()` inside parse.rs would
+ * otherwise hit two `Parser#parse` rows and drop on ambiguity. A locally
+ * declared type's method is local — Rust name resolution, not a guess. Only a
+ * unique same-file candidate shortcuts; everything else defers to the ambiguity
+ * policy (which still drops genuinely cross-file collisions).
+ */
+function pickSameFileThenSingle(
+  candidates: SymbolDefinition[],
+  callerFile: string,
+  mode: AmbiguousResolveMode,
+): SymbolDefinition | null {
+  const sameFile = candidates.filter((def) => def.relPath === callerFile);
+  if (sameFile.length === 1) return sameFile[0];
+  return pickSingleCandidate(candidates, mode);
 }
 
 function rustImportMatchesReceiver(importText: string, receiver: string): boolean {
