@@ -156,6 +156,55 @@ export default tseslint.config(
     },
   },
 
+  // ── Leaf-domain guard: domains/language must not import other domains ──
+  // domains/language is a leaf domain (spec
+  // docs/superpowers/specs/2026-05-25-domains-language-consolidation-design.md §2):
+  // it may import only contracts/, infra/, and tree-sitter. Forbidding the
+  // reverse (other domains importing it) lives in the next block. Follow-up
+  // tea-rags-mcp-* tracks extending this guard to the full domain-boundaries.md
+  // matrix (explore/ingest/trajectory mutual isolation).
+  {
+    files: ["src/core/domains/language/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/ingest/**", "**/trajectory/**", "**/explore/**"],
+              message:
+                "domains/language is a leaf domain — import only contracts/, infra/, tree-sitter. See spec §2 + domain-boundaries.md.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  // ── Reverse guard: ingest/codegraph must not import domains/language ──
+  // Consumers reach language capabilities via the injected LanguageFactory
+  // (contracts/ interface), never a direct import. Both composition roots that
+  // import the concrete factory live in api/ (main api/composition.ts + the
+  // worker entry in api/internal/, spec §5) — NOT under this guard, so no
+  // worker exception is needed here.
+  {
+    files: ["src/core/domains/ingest/**/*.ts", "src/core/domains/trajectory/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/domains/language/**", "**/language/index.js"],
+              message:
+                "Reach language capabilities via the injected LanguageFactory (contracts/ interface), not a direct import. Only api/ composition + the chunker worker root may. See spec §2.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // ── Ignore patterns ──────────────────────────────────────────────
   {
     ignores: [
