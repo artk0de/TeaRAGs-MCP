@@ -514,7 +514,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           "CodegraphEnrichmentProvider: pool mode requires options.collectionName — caller did not thread it through",
         );
       }
-      return this.deps.pool.acquire(stripVersionSuffix(collectionName));
+      // Acquire the FULL versioned collection name (no strip): the write
+      // path routes through `acquireWrite`, which hands back a daemon-backed
+      // handle when a socket is configured, else the in-process RW handle.
+      // The per-version DuckDB file matches what the RO reader opens via
+      // `acquireRead`, both keyed on the same unstripped name.
+      return this.deps.pool.acquireWrite(collectionName);
     }
     // Direct mode — both fields validated in the constructor.
     return {
@@ -584,7 +589,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // (DuckDbGraphClient.init when `tempDirectory` is set).
     const runId = randomUUID();
     const spillPath = this.deps.pool
-      ? this.deps.pool.spillPathFor(stripVersionSuffix(collectionName ?? "__direct__"), runId)
+      ? this.deps.pool.spillPathFor(collectionName ?? "__direct__", runId)
       : // Direct mode (tests) has no pool — keep spill colocated with
         // the test's working directory under a hidden subdir to avoid
         // polluting the project root.
@@ -870,6 +875,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private async recomputeGraphMetricsStreaming(collectionName?: string): Promise<void> {
     const { graphDb } = await this.getStore(collectionName);
+    // Daemon-routed write path: the daemon owns the RW connection and runs
+    // the (potentially 30 GB) SCC + PageRank build itself, so the MCP client
+    // process never allocates the adjacency. When the handle exposes the
+    // method (DaemonGraphDbClient) delegate and return; the in-process
+    // DuckDbGraphClient leaves it undefined, falling through to the inline
+    // path below (direct/test mode).
+    if (graphDb.computeAndPersistCyclesAndSignals) {
+      await graphDb.computeAndPersistCyclesAndSignals();
+      return;
+    }
     try {
       const fileAdj = await collectAdjacency(graphDb, "file");
       const fileSccs = tarjanScc(fileAdj);
