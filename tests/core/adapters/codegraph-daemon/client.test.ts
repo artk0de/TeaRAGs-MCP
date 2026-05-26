@@ -75,14 +75,48 @@ describe("DaemonGraphDbClient", () => {
     expect((upsert?.params as { collection: string }).collection).toBe("code_x_v1");
   });
 
-  it("read methods throw (reads go through in-process RO handle)", async () => {
+  it("getCallers / getCallees / findCycles proxy through the daemon socket and resolve the result", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "d.sock");
-    await echoServer(socketPath, () => null);
+    const seen: DaemonRequest[] = [];
+    // Echo server returns a deterministic payload per read op so the client
+    // proxy round-trip can be asserted end-to-end.
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      if (r.op === "getCallers") {
+        return [{ sourceSymbolId: "A#run", sourceRelPath: "a.ts", callExpression: "b.help()" }];
+      }
+      if (r.op === "getCallees") {
+        return [{ targetSymbolId: "B#help", targetRelPath: "b.ts", callExpression: "b.help()" }];
+      }
+      if (r.op === "findCycles") {
+        return [{ cycleId: 0, scope: "file", members: ["a.ts", "b.ts"] }];
+      }
+      return null;
+    });
+
     const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
     await client.init();
-    await expect(client.getCallers("Foo#bar")).rejects.toThrow();
+
+    const callers = await client.getCallers("B#help");
+    const callees = await client.getCallees("A#run");
+    const cycles = await client.findCycles("file");
     await client.close();
+
+    expect(callers).toEqual([
+      { sourceSymbolId: "A#run", sourceRelPath: "a.ts", callExpression: "b.help()" },
+    ]);
+    expect(callees).toEqual([
+      { targetSymbolId: "B#help", targetRelPath: "b.ts", callExpression: "b.help()" },
+    ]);
+    expect(cycles).toEqual([{ cycleId: 0, scope: "file", members: ["a.ts", "b.ts"] }]);
+    // Each read op carries the client-injected collection + its query param.
+    expect(seen.map((r) => r.op)).toEqual(["getCallers", "getCallees", "findCycles"]);
+    expect(seen.every((r) => (r.params as { collection: string }).collection === "code_x_v1")).toBe(
+      true,
+    );
+    expect((seen[0].params as { symbolId: string }).symbolId).toBe("B#help");
+    expect((seen[2].params as { scope: string }).scope).toBe("file");
   });
 
   it("the full write subset proxies the matching op + injected collection over the socket", async () => {
@@ -117,15 +151,16 @@ describe("DaemonGraphDbClient", () => {
     expect(fin?.params).toMatchObject({ oldVersion: "code_x_v8", newVersion: "code_x_v9" });
   });
 
-  it("every read method rejects with UnsupportedDaemonReadError naming the op", async () => {
+  it("every still-unsupported read method rejects with UnsupportedDaemonReadError naming the op", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "d.sock");
     await echoServer(socketPath, () => null);
     const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
     await client.init();
 
-    // Each read op throws; streamAdjacency throws on first iteration.
-    await expect(client.getCallees("Foo#bar")).rejects.toThrow(/getCallees/);
+    // getCallers/getCallees/findCycles now PROXY (covered above). Everything
+    // else is still unsupported on the daemon client and throws on call;
+    // streamAdjacency throws on first iteration.
     await expect(client.getFanIn("a.ts")).rejects.toThrow(/getFanIn/);
     await expect(client.getFanOut("a.ts")).rejects.toThrow(/getFanOut/);
     await expect(client.getCalledByCount("Foo#bar")).rejects.toThrow(/getCalledByCount/);
@@ -135,7 +170,6 @@ describe("DaemonGraphDbClient", () => {
     await expect(client.upsertSymbols("a.ts", [])).rejects.toThrow(/upsertSymbols/);
     await expect(client.listAllSymbols()).rejects.toThrow(/listAllSymbols/);
     await expect(client.getTransitiveImpact("a.ts")).rejects.toThrow(/getTransitiveImpact/);
-    await expect(client.findCycles("file")).rejects.toThrow(/findCycles/);
     await expect(client.listAdjacency("file")).rejects.toThrow(/listAdjacency/);
     await expect(client.replaceCycles("file", [])).rejects.toThrow(/replaceCycles/);
     await expect(client.replacePageRanks(new Map())).rejects.toThrow(/replacePageRanks/);

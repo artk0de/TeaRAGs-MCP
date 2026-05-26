@@ -1,4 +1,10 @@
-import type { GraphEdges, GraphFileNode, RelPath } from "../../contracts/types/codegraph.js";
+import type {
+  CycleScope,
+  GraphEdges,
+  GraphFileNode,
+  RelPath,
+  SymbolId,
+} from "../../contracts/types/codegraph.js";
 
 export type DaemonOp =
   | "handshake"
@@ -6,7 +12,13 @@ export type DaemonOp =
   | "removeSymbolsForFile"
   | "computeAndPersistCyclesAndSignals"
   | "checkpoint"
-  | "finalizeReindex";
+  | "finalizeReindex"
+  // Full-proxy reads — the daemon is the sole opener of the DuckDB file, so
+  // GraphFacade's three read methods route through the daemon's own RW
+  // connection instead of a (conflicting) cross-process READ_ONLY attach.
+  | "getCallers"
+  | "getCallees"
+  | "findCycles";
 
 export interface DaemonRequest {
   id: number;
@@ -15,7 +27,9 @@ export interface DaemonRequest {
     | { collection: string } // handshake | checkpoint | computeAndPersistCyclesAndSignals
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
     | { collection: string; relPath: RelPath } // removeSymbolsForFile
-    | { collection: string; oldVersion: string; newVersion: string }; // finalizeReindex
+    | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
+    | { collection: string; symbolId: SymbolId } // getCallers | getCallees
+    | { collection: string; scope: CycleScope }; // findCycles
 }
 
 export type DaemonResponse =

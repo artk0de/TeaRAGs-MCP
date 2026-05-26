@@ -229,6 +229,29 @@ export class GraphDbClientPool {
     return { graphDb, symbolTable: this.options.symbolTableFactory() };
   }
 
+  /**
+   * Mode-aware READ handle for the GraphFacade. When `daemonSocketPath` is
+   * configured (production), returns a `DaemonGraphDbClient` that PROXIES the
+   * three facade reads (`getCallers` / `getCallees` / `findCycles`) through the
+   * daemon's own RW connection — DuckDB's RW lock is process-exclusive, so a
+   * cross-process READ_ONLY attach throws "Conflicting lock is held" while the
+   * daemon holds RW. Routing reads through the daemon (the sole file opener)
+   * eliminates the conflict entirely. In direct/test mode (no socket) falls back
+   * to the in-process READ_ONLY attach (`acquireRead`).
+   *
+   * Either handle's `close()` is safe to call in the facade's `finally`: the
+   * daemon client ends the socket, the in-process RO handle closes the file.
+   */
+  async acquireReader(collectionName: string): Promise<CollectionGraphHandle> {
+    if (this.options.daemonSocketPath) {
+      const { DaemonGraphDbClient } = await import("../codegraph-daemon/client.js");
+      const graphDb = new DaemonGraphDbClient(this.options.daemonSocketPath, collectionName);
+      await graphDb.init();
+      return { graphDb, symbolTable: this.options.symbolTableFactory() };
+    }
+    return this.acquireRead(collectionName);
+  }
+
   private async openCollection(collectionName: string): Promise<CollectionGraphHandle> {
     const dbPath = this.pathFor(collectionName);
     const graphDb = new DuckDbGraphClient({

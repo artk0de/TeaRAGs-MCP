@@ -112,6 +112,71 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 
+  it("getCallers read op returns the caller edge array after an upsert that creates a caller relationship", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_reads_v1";
+    // a.ts: A#run calls B#help in b.ts → b's B#help has a caller A#run.
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: {
+          fileEdges: [],
+          methodEdges: [
+            {
+              sourceSymbolId: "A#run",
+              targetSymbolId: "B#help",
+              targetRelPath: "b.ts",
+              callExpression: "this.b.help()",
+            },
+          ],
+        },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "b.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+    const res = await server.handle({
+      id: 3,
+      op: "getCallers",
+      params: { collection: c, symbolId: "B#help" },
+    });
+    expect(res.ok).toBe(true);
+    expect(Array.isArray((res as { result: unknown }).result)).toBe(true);
+    const callers = (res as { result: { sourceSymbolId: string }[] }).result;
+    expect(callers.map((e) => e.sourceSymbolId)).toContain("A#run");
+    await pool.closeAll();
+  });
+
+  it("getCallees / findCycles read ops return clean empty arrays on an empty graph", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_reads_empty_v1";
+    await server.handle({ id: 1, op: "handshake", params: { collection: c } });
+    const callees = await server.handle({
+      id: 2,
+      op: "getCallees",
+      params: { collection: c, symbolId: "Nope#missing" },
+    });
+    const cycles = await server.handle({
+      id: 3,
+      op: "findCycles",
+      params: { collection: c, scope: "file" },
+    });
+    expect(callees.ok).toBe(true);
+    expect((callees as { result: unknown[] }).result).toEqual([]);
+    expect(cycles.ok).toBe(true);
+    expect((cycles as { result: unknown[] }).result).toEqual([]);
+    await pool.closeAll();
+  });
+
   it("finalizeReindex deletes the old version DB file, new version readable", async () => {
     const { server, pool } = makeServer();
     await server.handle({

@@ -39,16 +39,19 @@ export class GraphFacade {
   constructor(private readonly deps: GraphFacadeDeps) {}
 
   /**
-   * Acquire a per-collection READ-ONLY handle for the request's `path` and run
-   * `fn` against it, always closing the handle afterwards. Reads route through
-   * `pool.acquireRead` — an in-process READ_ONLY DuckDB attach that does NOT
-   * contend with the daemon's RW lock (DuckDB permits unlimited concurrent
-   * cross-process readers). `acquireRead` returns a NON-cached client the caller
-   * MUST close, so every read opens-queries-closes in one bounded scope.
+   * Acquire a per-collection READ handle for the request's `path` and run `fn`
+   * against it, always closing the handle afterwards. Reads route through
+   * `pool.acquireReader` — mode-aware: in production it returns a daemon client
+   * that PROXIES the read through the daemon's own RW connection (DuckDB's RW
+   * lock is process-exclusive, so a cross-process READ_ONLY attach throws
+   * "Conflicting lock is held" while the daemon holds RW). In direct/test mode
+   * it falls back to an in-process READ_ONLY attach. Either handle is NON-cached
+   * and MUST be closed, so every read opens-queries-closes in one bounded scope.
    *
-   * Returns `fallback` when the underlying DuckDB cannot be opened (lock held,
-   * missing file, init failure) — the graph tool degrades to an empty result
-   * rather than propagating the I/O error to the MCP request.
+   * Returns `fallback` when the underlying handle cannot be acquired (daemon
+   * unreachable, lock held, missing file, init failure) — the graph tool
+   * degrades to an empty result rather than propagating the I/O error to the
+   * MCP request.
    */
   private async withReadHandle<T>(
     path: string,
@@ -58,7 +61,7 @@ export class GraphFacade {
     const collectionName = resolveCollectionName(path);
     let handle: CollectionGraphHandle | undefined;
     try {
-      handle = await this.deps.pool.acquireRead(collectionName);
+      handle = await this.deps.pool.acquireReader(collectionName);
     } catch {
       return fallback;
     }

@@ -14,10 +14,12 @@ import type {
 import { encodeFrame, decodeFrames, type DaemonOp, type DaemonResponse } from "./protocol.js";
 
 /**
- * Thrown when a read op is invoked on the write-only daemon client. Reads must
- * go through the in-process READ_ONLY DuckDB handle (`pool.acquireRead`), never
- * the daemon socket — the daemon owns the single RW connection and does not
- * answer queries.
+ * Thrown when an unsupported read op is invoked on the daemon client. The three
+ * GraphFacade reads (`getCallers` / `getCallees` / `findCycles`) are now PROXIED
+ * over the socket — the daemon owns the single RW connection and DuckDB's RW
+ * lock is process-exclusive, so a cross-process READ_ONLY attach throws
+ * "Conflicting lock is held". All OTHER reads are daemon-internal / unused by
+ * the facade and still throw this error if called on the client.
  */
 export class UnsupportedDaemonReadError extends Error {
   constructor(op: string) {
@@ -29,11 +31,12 @@ export class UnsupportedDaemonReadError extends Error {
 }
 
 /**
- * Write-subset `GraphDbClient` that proxies mutations to the codegraph daemon
- * over a unix socket using newline-JSON framing. Each call gets a monotonic id;
- * responses are matched back by id through the `pending` map. Read methods throw
- * `UnsupportedDaemonReadError` — the read path opens the live-version DuckDB file
- * READ_ONLY in-process instead.
+ * `GraphDbClient` that proxies mutations AND the three GraphFacade reads
+ * (`getCallers` / `getCallees` / `findCycles`) to the codegraph daemon over a
+ * unix socket using newline-JSON framing. Each call gets a monotonic id;
+ * responses are matched back by id through the `pending` map. All other read
+ * methods throw `UnsupportedDaemonReadError` — they are daemon-internal and not
+ * part of the facade surface.
  */
 /** Tunable connect-readiness window for the spawn→connect race. */
 export interface DaemonClientOptions {
@@ -199,6 +202,25 @@ export class DaemonGraphDbClient implements GraphDbClient {
     await this.call("computeAndPersistCyclesAndSignals", {});
   }
 
+  // ── proxied reads (the GraphFacade read surface) ──
+  // These three reads route through the daemon's own RW connection: DuckDB's
+  // RW lock is process-exclusive, so a cross-process READ_ONLY attach throws
+  // "Conflicting lock is held" while the daemon holds RW. The daemon being the
+  // sole file opener means zero conflict. The remaining read methods below stay
+  // daemon-internal / unsupported — they are not part of the GraphFacade surface.
+
+  async getCallers(symbolId: SymbolId): Promise<CallerEdge[]> {
+    return (await this.call("getCallers", { symbolId })) as CallerEdge[];
+  }
+
+  async getCallees(symbolId: SymbolId): Promise<CalleeEdge[]> {
+    return (await this.call("getCallees", { symbolId })) as CalleeEdge[];
+  }
+
+  async findCycles(scope: CycleScope): Promise<CycleEntry[]> {
+    return (await this.call("findCycles", { scope })) as CycleEntry[];
+  }
+
   // ── read subset (unsupported on the daemon client — use in-process RO handle) ──
 
   async removeFile(_relPath: RelPath): Promise<void> {
@@ -211,14 +233,6 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async getFanOut(_relPath: RelPath): Promise<number> {
     throw new UnsupportedDaemonReadError("getFanOut");
-  }
-
-  async getCallers(_symbolId: SymbolId): Promise<CallerEdge[]> {
-    throw new UnsupportedDaemonReadError("getCallers");
-  }
-
-  async getCallees(_symbolId: SymbolId): Promise<CalleeEdge[]> {
-    throw new UnsupportedDaemonReadError("getCallees");
   }
 
   async getCalledByCount(_symbolId: SymbolId): Promise<number> {
@@ -243,10 +257,6 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async getTransitiveImpact(_relPath: RelPath, _maxDepth?: number): Promise<number> {
     throw new UnsupportedDaemonReadError("getTransitiveImpact");
-  }
-
-  async findCycles(_scope: CycleScope): Promise<CycleEntry[]> {
-    throw new UnsupportedDaemonReadError("findCycles");
   }
 
   async listAdjacency(_scope: CycleScope): Promise<Map<string, string[]>> {

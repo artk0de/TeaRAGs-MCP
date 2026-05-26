@@ -2,7 +2,7 @@ import type { GraphDbClientPool } from "../duckdb/pool.js";
 import type { DaemonRequest, DaemonResponse } from "./protocol.js";
 import { tarjanScc } from "../../domains/trajectory/codegraph/infra/tarjan-scc.js";
 import { pageRank } from "../../domains/trajectory/codegraph/infra/page-rank.js";
-import type { GraphDbClient, CycleScope } from "../../contracts/types/codegraph.js";
+import type { GraphDbClient, CycleScope, SymbolId } from "../../contracts/types/codegraph.js";
 
 /**
  * In-process request handler for the codegraph daemon. Owns the internal
@@ -56,6 +56,19 @@ export class CodegraphDaemonServer {
         const { graphDb } = await this.pool.acquire(collection);
         await computeAndPersistCyclesAndSignals(graphDb);
         return null;
+      }
+      // ── full-proxy reads (the daemon owns the sole DuckDB connection) ──
+      case "getCallers": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getCallers(p.symbolId as SymbolId);
+      }
+      case "getCallees": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getCallees(p.symbolId as SymbolId);
+      }
+      case "findCycles": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.findCycles(p.scope as CycleScope);
       }
       case "finalizeReindex":
         // The Qdrant alias swap (adapters/qdrant/aliases.ts:switchAlias) has
