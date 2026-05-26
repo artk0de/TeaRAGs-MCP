@@ -311,6 +311,47 @@ describe("RustCallResolver", () => {
     expect(target?.targetSymbolId).toBe("Worker#run");
   });
 
+  // bd tea-rags-mcp-p8wz — name collision: `Parser#parse` is defined in
+  // BOTH crates/core/flags/parse.rs and crates/globset/src/glob.rs (ripgrep).
+  // A typed binding `let parser = Parser::new(); parser.parse()` inside
+  // parse.rs must resolve to the SAME-FILE Parser#parse — the bound type is
+  // declared locally, so its method is local. Without same-file preference
+  // the localBindings branch drops the edge on cross-file ambiguity.
+  it("resolves bound-type method to the same-file definition when the type name collides across files", () => {
+    const r = new RustCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("crates/core/flags/parse.rs", [
+      {
+        symbolId: "Parser#parse",
+        fqName: "Parser#parse",
+        shortName: "parse",
+        relPath: "crates/core/flags/parse.rs",
+        scope: ["Parser"],
+      },
+    ]);
+    t.upsertFile("crates/globset/src/glob.rs", [
+      {
+        symbolId: "Parser#parse",
+        fqName: "Parser#parse",
+        shortName: "parse",
+        relPath: "crates/globset/src/glob.rs",
+        scope: ["Parser"],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "parser.parse(args)", receiver: "parser", member: "parse", startLine: 72 },
+      {
+        callerFile: "crates/core/flags/parse.rs",
+        callerScope: [],
+        imports: [],
+        symbolTable: t,
+        localBindings: { parser: "Parser" },
+      },
+    );
+    expect(target?.targetRelPath).toBe("crates/core/flags/parse.rs");
+    expect(target?.targetSymbolId).toBe("Parser#parse");
+  });
+
   // bd tea-rags-mcp-q1pl — END-TO-END: `self.field.method()` where the
   // struct declares `field: Engine`. The walker emits
   // classFieldTypes { Worker: { engine: "Engine" } }; the resolver's
