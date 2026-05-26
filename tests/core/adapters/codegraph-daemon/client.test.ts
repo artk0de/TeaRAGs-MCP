@@ -190,4 +190,51 @@ describe("DaemonGraphDbClient", () => {
     await client.close();
     await expect(client.checkpoint()).rejects.toThrow(/before init|after close/);
   });
+
+  it("init() retries the connect until the daemon's socket appears (spawn race)", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "late.sock");
+
+    // The server starts listening ~150ms AFTER init() is called — simulating
+    // the detached-spawn → connect race the daemon default exposes. init()
+    // must keep retrying the connect rather than reject on the first ENOENT.
+    const seen: DaemonRequest[] = [];
+    const startServerLate = setTimeout(() => {
+      void echoServer(socketPath, (r) => {
+        seen.push(r);
+        return null;
+      });
+    }, 150);
+
+    const client = new DaemonGraphDbClient(socketPath, "code_late_v1", {
+      connectTimeoutMs: 5000,
+      retryDelayMs: 50,
+    });
+    await client.init();
+    // A real round-trip after the late connect proves the socket is usable.
+    await client.upsertFile(
+      { relPath: "a.ts", language: "typescript" },
+      { fileEdges: [], methodEdges: [] },
+    );
+    await client.close();
+
+    clearTimeout(startServerLate);
+    expect(seen.map((r) => r.op)).toContain("upsertFile");
+  });
+
+  it("init() rejects within the configured timeout when no daemon ever appears", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "never.sock");
+    // No server is ever started. init() must give up after connectTimeoutMs
+    // rather than retry forever.
+    const client = new DaemonGraphDbClient(socketPath, "code_never_v1", {
+      connectTimeoutMs: 300,
+      retryDelayMs: 50,
+    });
+    const start = Date.now();
+    await expect(client.init()).rejects.toThrow();
+    const elapsed = Date.now() - start;
+    // Bounded: gave up near the configured timeout, not after the default 5s.
+    expect(elapsed).toBeLessThan(2000);
+  });
 });

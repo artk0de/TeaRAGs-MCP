@@ -229,32 +229,13 @@ describe("wireCodegraph", () => {
     } as unknown as ReturnType<typeof getZodConfig>;
   }
 
-  it("passes a daemonSocketPath into the pool when daemon mode is enabled", () => {
-    const prev = process.env.TEA_RAGS_CODEGRAPH_DAEMON;
-    process.env.TEA_RAGS_CODEGRAPH_DAEMON = "1";
-    try {
-      const ctx = wireCodegraph(makeConfig(), zodConfigWithCodegraph());
-      expect(ctx).toBeDefined();
-      const socketPath = (ctx!.pool as unknown as { options: { daemonSocketPath?: string } }).options
-        .daemonSocketPath;
-      expect(socketPath).toMatch(/codegraph-daemon\.sock$/);
-    } finally {
-      if (prev === undefined) delete process.env.TEA_RAGS_CODEGRAPH_DAEMON;
-      else process.env.TEA_RAGS_CODEGRAPH_DAEMON = prev;
-    }
-  });
-
-  it("leaves daemonSocketPath unset in direct mode (default — no env flag)", () => {
-    const prev = process.env.TEA_RAGS_CODEGRAPH_DAEMON;
-    delete process.env.TEA_RAGS_CODEGRAPH_DAEMON;
-    try {
-      const ctx = wireCodegraph(makeConfig(), zodConfigWithCodegraph());
-      expect(ctx).toBeDefined();
-      const socketPath = (ctx!.pool as unknown as { options: { daemonSocketPath?: string } }).options
-        .daemonSocketPath;
-      expect(socketPath).toBeUndefined();
-    } finally {
-      if (prev !== undefined) process.env.TEA_RAGS_CODEGRAPH_DAEMON = prev;
-    }
+  it("always passes a daemonSocketPath into the pool (daemon is the default write path)", () => {
+    // The daemon is base functionality — no opt-in env flag. Wiring always
+    // points the pool at the daemon socket regardless of environment.
+    const ctx = wireCodegraph(makeConfig(), zodConfigWithCodegraph());
+    expect(ctx).toBeDefined();
+    const socketPath = (ctx!.pool as unknown as { options: { daemonSocketPath?: string } }).options
+      .daemonSocketPath;
+    expect(socketPath).toMatch(/codegraph-daemon\.sock$/);
   });
 });

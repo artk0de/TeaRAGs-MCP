@@ -35,6 +35,27 @@ export class UnsupportedDaemonReadError extends Error {
  * `UnsupportedDaemonReadError` — the read path opens the live-version DuckDB file
  * READ_ONLY in-process instead.
  */
+/** Tunable connect-readiness window for the spawn→connect race. */
+export interface DaemonClientOptions {
+  /**
+   * Upper bound on how long `init()` keeps retrying the unix-socket connect
+   * before rejecting. Default ~5s — generous enough for a detached daemon to
+   * finish `server.listen` after a cold spawn, bounded so a permanently-absent
+   * daemon surfaces loudly instead of hanging.
+   */
+  connectTimeoutMs?: number;
+  /** Delay between connect attempts when the socket is not yet accepting. */
+  retryDelayMs?: number;
+}
+
+const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
+const DEFAULT_RETRY_DELAY_MS = 75;
+
+/** ENOENT (socket file not created yet) / ECONNREFUSED (server not listening yet). */
+function isRetryableConnectError(err: NodeJS.ErrnoException): boolean {
+  return err.code === "ENOENT" || err.code === "ECONNREFUSED";
+}
+
 export class DaemonGraphDbClient implements GraphDbClient {
   private sock?: Socket;
   private buf = "";
@@ -43,25 +64,67 @@ export class DaemonGraphDbClient implements GraphDbClient {
     number,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
+  private readonly connectTimeoutMs: number;
+  private readonly retryDelayMs: number;
 
   constructor(
     private readonly socketPath: string,
     private readonly collection: string,
-  ) {}
+    opts?: DaemonClientOptions,
+  ) {
+    this.connectTimeoutMs = opts?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+    this.retryDelayMs = opts?.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+  }
 
+  /**
+   * Connect to the daemon socket, retrying on ENOENT/ECONNREFUSED with a small
+   * backoff until the socket accepts or `connectTimeoutMs` elapses. This absorbs
+   * the detached-spawn race: the factory spawns the daemon process, then the
+   * very next `acquireWrite` calls `init()` before the daemon has reached
+   * `server.listen`. Without the retry that connect throws ENOENT and the whole
+   * write fails. A non-retryable error (or timeout) rejects with a clear cause.
+   */
   async init(): Promise<void> {
+    const deadline = Date.now() + this.connectTimeoutMs;
+    for (;;) {
+      try {
+        await this.connectOnce();
+        return;
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException;
+        const timedOut = Date.now() + this.retryDelayMs >= deadline;
+        if (!isRetryableConnectError(e) || timedOut) {
+          throw new Error(
+            `DaemonGraphDbClient failed to connect to ${this.socketPath} within ` +
+              `${this.connectTimeoutMs}ms: ${e.code ?? e.message}`,
+            { cause: err },
+          );
+        }
+        await new Promise<void>((r) => setTimeout(r, this.retryDelayMs));
+      }
+    }
+  }
+
+  /** Single connect attempt; resolves on `connect`, rejects on `error`. */
+  private async connectOnce(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const sock = connect(this.socketPath);
-      this.sock = sock;
+      const onError = (err: Error): void => {
+        sock.destroy();
+        reject(err);
+      };
       sock.once("connect", () => {
+        sock.removeListener("error", onError);
+        this.sock = sock;
+        sock.on("error", () => {
+          /* post-connect peer errors are surfaced via pending-call rejection */
+        });
+        sock.on("data", (d) => {
+          this.onData(d.toString("utf8"));
+        });
         resolve();
       });
-      sock.once("error", (err) => {
-        reject(err);
-      });
-      sock.on("data", (d) => {
-        this.onData(d.toString("utf8"));
-      });
+      sock.once("error", onError);
     });
   }
 

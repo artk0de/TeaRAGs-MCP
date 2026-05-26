@@ -124,6 +124,16 @@ export async function runDaemon(
     cleanupDaemonFiles(options.paths);
   };
 
+  // Clear any stale socket file left by a previously-crashed daemon. Without
+  // this, `server.listen` fails with EADDRINUSE because the unix socket inode
+  // still exists on disk even though no process is bound to it. Idempotent —
+  // a missing file (ENOENT, the common cold-spawn case) is swallowed.
+  try {
+    unlinkSync(options.paths.socketPath);
+  } catch {
+    /* no stale socket — fresh spawn */
+  }
+
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(options.paths.socketPath, () => {
