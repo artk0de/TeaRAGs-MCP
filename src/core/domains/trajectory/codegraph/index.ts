@@ -10,6 +10,7 @@
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { CallResolver } from "../../../contracts/types/codegraph.js";
+import type { SymbolIdComposer } from "../../../contracts/types/language.js";
 import type { Trajectory } from "../../../contracts/types/trajectory.js";
 import type { CodegraphExclusionOptions } from "./exclusion.js";
 import { createSymbolsTrajectory } from "./symbols/index.js";
@@ -30,6 +31,13 @@ import { createSymbolsTrajectory } from "./symbols/index.js";
 export interface CodegraphDeps {
   pool: GraphDbClientPool;
   resolvers: Map<string, CallResolver>;
+  /**
+   * Cross-language symbolId mapper injected into the provider's `joinSymbol`
+   * (replacing the local `#`/`.`/scopeSeparator convention logic). Typed as
+   * the contracts `SymbolIdComposer` interface — the concrete is wired by
+   * `bootstrap/factory.ts`, never imported here (leaf-domain guard).
+   */
+  composer: SymbolIdComposer;
   /**
    * Codegraph-layer exclusion config — applied AFTER FileScanner's
    * ignoreFilter inside `discoverSupportedFiles`. Wired from

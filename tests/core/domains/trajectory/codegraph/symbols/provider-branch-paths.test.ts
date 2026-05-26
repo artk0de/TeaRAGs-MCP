@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
+import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { JavascriptCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/javascript/javascript-resolver.js";
 import { RubyCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ruby/ruby-resolver.js";
@@ -47,6 +48,7 @@ describe("CodegraphEnrichmentProvider — additional branch coverage", () => {
         ["javascript", new JavascriptCallResolver()],
         ["ruby", new RubyCallResolver()],
       ]),
+      composer: new DefaultSymbolIdComposer(),
     });
   });
 

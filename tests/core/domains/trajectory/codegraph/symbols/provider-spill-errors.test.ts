@@ -24,6 +24,7 @@ import type {
   GraphEdges,
   SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -98,6 +99,7 @@ function makeProvider(graphDb: GraphDbClient): CodegraphEnrichmentProvider {
     graphDb,
     symbolTable: new InMemoryGlobalSymbolTable(),
     resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+    composer: new DefaultSymbolIdComposer(),
   });
 }
 
@@ -298,6 +300,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
           graphDb: makeStubGraphDb(),
           symbolTable: new InMemoryGlobalSymbolTable(),
           resolvers: new Map(),
+          composer: new DefaultSymbolIdComposer(),
         }),
     ).toThrow(/mutually exclusive/);
   });
@@ -307,6 +310,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
       () =>
         new CodegraphEnrichmentProvider({
           resolvers: new Map(),
+          composer: new DefaultSymbolIdComposer(),
         }),
     ).toThrow(/must provide either deps\.pool/);
   });
@@ -442,6 +446,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
     const provider = new CodegraphEnrichmentProvider({
       pool: fakePool,
       resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+      composer: new DefaultSymbolIdComposer(),
     });
     // handleDeletedPaths -> getStore() — pool mode + no collectionName -> throw.
     await expect(provider.handleDeletedPaths(["src/x.ts"])).rejects.toThrow(
@@ -482,6 +487,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
       symbolTable: new InMemoryGlobalSymbolTable(),
       resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
       exclusion: { excludeTests: true, customPatterns: [] },
+      composer: new DefaultSymbolIdComposer(),
     });
     const internalProv = provider as unknown as {
       discoverSupportedFiles: (root: string) => string[];

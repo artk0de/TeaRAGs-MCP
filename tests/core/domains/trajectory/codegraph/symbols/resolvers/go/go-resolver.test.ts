@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext } from "../../../../../../../../src/core/contracts/types/codegraph.js";
+import { DefaultSymbolIdComposer } from "../../../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { GoCallResolver } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/go/go-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -15,7 +16,7 @@ function ctx(
 
 describe("GoCallResolver", () => {
   it("resolves `pkg.Func()` to a file whose path contains the import suffix", () => {
-    const r = new GoCallResolver();
+    const r = new GoCallResolver(new DefaultSymbolIdComposer());
     const t = new InMemoryGlobalSymbolTable();
     t.upsertFile("foo/bar/x.go", [
       { symbolId: "Func", fqName: "Func", shortName: "Func", relPath: "foo/bar/x.go", scope: [] },
@@ -28,7 +29,7 @@ describe("GoCallResolver", () => {
   });
 
   it("returns null when import does not match receiver and global lookup ambiguous", () => {
-    const r = new GoCallResolver();
+    const r = new GoCallResolver(new DefaultSymbolIdComposer());
     const t = new InMemoryGlobalSymbolTable();
     t.upsertFile("a.go", [{ symbolId: "Func", fqName: "Func", shortName: "Func", relPath: "a.go", scope: [] }]);
     t.upsertFile("b.go", [{ symbolId: "Func", fqName: "Func", shortName: "Func", relPath: "b.go", scope: [] }]);
@@ -40,7 +41,7 @@ describe("GoCallResolver", () => {
   });
 
   it("falls back to global short-name when no receiver and unique", () => {
-    const r = new GoCallResolver();
+    const r = new GoCallResolver(new DefaultSymbolIdComposer());
     const t = new InMemoryGlobalSymbolTable();
     t.upsertFile("helpers.go", [
       { symbolId: "Util", fqName: "Util", shortName: "Util", relPath: "helpers.go", scope: [] },
@@ -58,7 +59,7 @@ describe("GoCallResolver", () => {
   // to `Context#JSON` and resolve against the symbol table; otherwise
   // every Go method-call site stays unresolved (no edges, no callgraph).
   it("resolves `c.JSON(...)` to Context#JSON when localBindings binds c→Context (instance form)", () => {
-    const r = new GoCallResolver();
+    const r = new GoCallResolver(new DefaultSymbolIdComposer());
     const t = new InMemoryGlobalSymbolTable();
     t.upsertFile("context.go", [
       {
@@ -81,7 +82,7 @@ describe("GoCallResolver", () => {
     // Some Go projects emit class-level helpers via the static form
     // (`.`) — the resolver should accept either form when the localType
     // points at a type with that member as a static.
-    const r = new GoCallResolver();
+    const r = new GoCallResolver(new DefaultSymbolIdComposer());
     const t = new InMemoryGlobalSymbolTable();
     t.upsertFile("ctx.go", [
       {
@@ -104,7 +105,7 @@ describe("GoCallResolver", () => {
     // knows the receiver's type but the type doesn't define the method
     // (e.g. inherited via embedding the resolver doesn't model yet),
     // dropping is safer than fabricating an edge via global short-name.
-    const r = new GoCallResolver();
+    const r = new GoCallResolver(new DefaultSymbolIdComposer());
     const t = new InMemoryGlobalSymbolTable();
     // Symbol exists under a DIFFERENT type, not Context. Global short-name
     // lookup would otherwise pick this up — must be suppressed.
@@ -132,7 +133,7 @@ describe("GoCallResolver", () => {
   // walker emitting `{ engine: "Engine" }` the resolver's step-0
   // `resolveByLocalType` resolves them.
   it("resolves `engine.Use()` to Engine#Use via local-var binding engine→Engine", () => {
-    const r = new GoCallResolver();
+    const r = new GoCallResolver(new DefaultSymbolIdComposer());
     const t = new InMemoryGlobalSymbolTable();
     t.upsertFile("gin.go", [
       { symbolId: "Engine#Use", fqName: "Engine#Use", shortName: "Use", relPath: "gin.go", scope: [] },
@@ -154,7 +155,7 @@ describe("GoCallResolver", () => {
     // Go has no `this`: inside `func (c *Context) Query()` an intra-method
     // call `c.GetQuery()` must resolve to `Context#GetQuery` through the
     // receiver binding the walker emits.
-    const r = new GoCallResolver();
+    const r = new GoCallResolver(new DefaultSymbolIdComposer());
     const t = new InMemoryGlobalSymbolTable();
     t.upsertFile("context.go", [
       {
@@ -179,7 +180,7 @@ describe("GoCallResolver", () => {
     // fell back to a global short-name lookup of "Query" and matched the
     // unique receiver-qualified `Context#Query` symbol, fabricating a
     // false-positive cycle. The resolver must drop the edge instead.
-    const r = new GoCallResolver();
+    const r = new GoCallResolver(new DefaultSymbolIdComposer());
     const t = new InMemoryGlobalSymbolTable();
     t.upsertFile("context.go", [
       {
@@ -219,7 +220,7 @@ describe("GoCallResolver", () => {
     }
 
     it("resolves `engine.Use()` / `engine.With()` to Engine#Use / Engine#With via engine→New→Engine", () => {
-      const r = new GoCallResolver();
+      const r = new GoCallResolver(new DefaultSymbolIdComposer());
       const t = new InMemoryGlobalSymbolTable();
       t.upsertFile("gin.go", [
         // The struct type symbol — its presence is the safety gate.
@@ -245,7 +246,7 @@ describe("GoCallResolver", () => {
     it("localBindings (direct type) wins over localCallBindings when both name the receiver", () => {
       // Defensive precedence: a directly-known type should never be overridden
       // by a return-type indirection for the same var.
-      const r = new GoCallResolver();
+      const r = new GoCallResolver(new DefaultSymbolIdComposer());
       const t = new InMemoryGlobalSymbolTable();
       t.upsertFile("gin.go", [
         { symbolId: "Engine", fqName: "Engine", shortName: "Engine", relPath: "gin.go", scope: [] },
@@ -271,7 +272,7 @@ describe("GoCallResolver", () => {
       // type that is NOT a struct symbol in the table. Binding it would
       // fabricate an edge — the resolver must drop instead. Here `Handler` is
       // an interface that has NO type symbol, only a method symbol elsewhere.
-      const r = new GoCallResolver();
+      const r = new GoCallResolver(new DefaultSymbolIdComposer());
       const t = new InMemoryGlobalSymbolTable();
       t.upsertFile("other.go", [
         // A method named ServeHTTP exists on some unrelated type; global
@@ -292,7 +293,7 @@ describe("GoCallResolver", () => {
     });
 
     it("NEGATIVE: drops when the called func has no recorded return type", () => {
-      const r = new GoCallResolver();
+      const r = new GoCallResolver(new DefaultSymbolIdComposer());
       const t = new InMemoryGlobalSymbolTable();
       t.upsertFile("gin.go", [
         { symbolId: "Engine", fqName: "Engine", shortName: "Engine", relPath: "gin.go", scope: [] },
@@ -308,7 +309,7 @@ describe("GoCallResolver", () => {
     it("NEGATIVE: binds the type but drops when the type does NOT define the member", () => {
       // engine→New→Engine resolves the TYPE, but Engine has no `Frobnicate`
       // method. Mirrors the m46z drop — no global short-name fallback.
-      const r = new GoCallResolver();
+      const r = new GoCallResolver(new DefaultSymbolIdComposer());
       const t = new InMemoryGlobalSymbolTable();
       t.upsertFile("gin.go", [
         { symbolId: "Engine", fqName: "Engine", shortName: "Engine", relPath: "gin.go", scope: [] },

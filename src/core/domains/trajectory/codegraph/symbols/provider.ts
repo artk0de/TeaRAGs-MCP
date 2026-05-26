@@ -48,6 +48,7 @@ import type {
   GraphEdges,
   NamedSymbol,
 } from "../../../../contracts/types/codegraph.js";
+import type { SymbolIdComposer } from "../../../../contracts/types/language.js";
 import type {
   ChunkLookupEntry,
   ChunkSignalOptions,
@@ -157,13 +158,18 @@ export function stripVersionSuffix(collectionName: string): string {
  *   - `methodKind: "instance"` → `composed#child.name` (any language).
  *   - `methodKind: "static"`   → `composed.child.name` (any language).
  *   - Otherwise → `composed{scopeSeparator}child.name` (language-local).
+ *
+ * Behaviour-preserving delegation to the injected `SymbolIdComposer` — the one
+ * cross-language symbolId mapper (spec §1a). The `{ methodKind, scopeSeparator,
+ * absolute }` mapping is exactly the `compose` contract; this wrapper only
+ * unpacks `NamedSymbol` into the option fields.
  */
-function joinSymbol(composed: string, child: NamedSymbol, scopeSeparator: string): string {
-  if (child.absolute) return child.name;
-  if (composed.length === 0) return child.name;
-  const sep =
-    child.methodKind === "instance" ? INSTANCE_METHOD_SEPARATOR : child.methodKind === "static" ? "." : scopeSeparator;
-  return `${composed}${sep}${child.name}`;
+function joinSymbol(composer: SymbolIdComposer, composed: string, child: NamedSymbol, scopeSeparator: string): string {
+  return composer.compose(composed, child.name, {
+    methodKind: child.methodKind,
+    scopeSeparator,
+    absolute: child.absolute,
+  });
 }
 
 /**
@@ -368,6 +374,14 @@ export interface CodegraphProviderDeps {
   /** Direct mode — pre-built symbol table. Mutually exclusive with `pool`. */
   symbolTable?: GlobalSymbolTable;
   resolvers: Map<string, CallResolver>;
+  /**
+   * Cross-language symbolId mapper used by `joinSymbol` to compose
+   * fully-qualified ids per `.claude/rules/symbolid-convention.md`. Injected as
+   * the contracts `SymbolIdComposer` interface (DI from bootstrap/api) — the
+   * concrete `DefaultSymbolIdComposer` is never imported here (leaf-domain
+   * guard forbids `trajectory/** -> domains/language/**`).
+   */
+  composer: SymbolIdComposer;
   /** Derived signals + presets are wired by `createSymbolsTrajectory` in T9. */
   derivedSignals?: DerivedSignalDescriptor[];
   presets?: RerankPreset[];
@@ -1223,7 +1237,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       if (Array.isArray(result)) {
         for (const ns of result) {
           out.push({
-            symbolId: joinSymbol(composed, ns, separator),
+            symbolId: joinSymbol(this.deps.composer, composed, ns, separator),
             startLine: node.startPosition.row + 1,
             endLine: node.endPosition.row + 1,
             scope,
@@ -1238,7 +1252,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       }
       const named = result;
       const childScope = named ? [...scope, named.name] : scope;
-      const childComposed = named ? joinSymbol(composed, named, separator) : composed;
+      const childComposed = named ? joinSymbol(this.deps.composer, composed, named, separator) : composed;
       if (named) {
         out.push({
           symbolId: childComposed,

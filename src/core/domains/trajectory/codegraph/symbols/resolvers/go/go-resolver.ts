@@ -35,12 +35,22 @@ import {
   type CallResolver,
   type ResolvedTarget,
 } from "../../../../../../contracts/types/codegraph.js";
-import { INSTANCE_METHOD_SEPARATOR } from "../../../../../../infra/symbolid/index.js";
+import type { SymbolIdComposer } from "../../../../../../contracts/types/language.js";
 
 export class GoCallResolver implements CallResolver {
   readonly language = "go";
 
-  constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
+  /**
+   * `composer` builds the `Type#member` / `Type.member` candidate ids per the
+   * project-wide symbolId convention (`.claude/rules/symbolid-convention.md`).
+   * Injected as the contracts `SymbolIdComposer` interface — never the concrete
+   * (the leaf-domain guard forbids `trajectory/**` importing
+   * `domains/language/**`); `bootstrap/factory.ts` passes the implementation.
+   */
+  constructor(
+    private readonly composer: SymbolIdComposer,
+    private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  ) {}
 
   resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
     if (call.receiver) {
@@ -103,8 +113,8 @@ export class GoCallResolver implements CallResolver {
    * python-resolver step 0 contract.
    */
   private resolveByLocalType(typeName: string, member: string, ctx: CallContext): ResolvedTarget | null {
-    const instanceForm = `${typeName}${INSTANCE_METHOD_SEPARATOR}${member}`;
-    const staticForm = `${typeName}.${member}`;
+    const instanceForm = this.composer.compose(typeName, member, { methodKind: "instance" });
+    const staticForm = this.composer.compose(typeName, member, { methodKind: "static" });
     const instanceHits = ctx.symbolTable.lookup(instanceForm);
     const instance = pickSingleCandidate(instanceHits, this.mode);
     if (instance) return { targetRelPath: instance.relPath, targetSymbolId: instance.symbolId };

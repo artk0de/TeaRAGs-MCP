@@ -25,6 +25,7 @@ import type { CallResolver } from "../core/contracts/types/codegraph.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
+import { DefaultSymbolIdComposer } from "../core/domains/language/index.js";
 import type { CodegraphDeps } from "../core/domains/trajectory/codegraph/index.js";
 import { BashCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/bash/index.js";
 import { GoCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/go/index.js";
@@ -210,12 +211,19 @@ function wireCodegraph(
     : config.paths.appData;
 
   const ambiguousMode = codegraph.ambiguousResolveMode;
+  // Single cross-language symbolId mapper injected into every codegraph
+  // symbolId-building consumer (the provider's joinSymbol + the resolvers).
+  // bootstrap/ is the composition layer that may import the concrete; the
+  // consumers type it as the contracts `SymbolIdComposer` interface, so the
+  // `trajectory/** -> domains/language/**` leaf-domain guard holds. See spec
+  // §1a + `.claude/rules/symbolid-convention.md`.
+  const symbolIdComposer = new DefaultSymbolIdComposer();
   const resolvers = new Map<string, CallResolver>([
     ["typescript", new TSCallResolver(loadTsConfig(process.cwd()), ambiguousMode)],
     ["javascript", new JavascriptCallResolver(ambiguousMode)],
     ["python", new PythonCallResolver(ambiguousMode)],
     ["ruby", new RubyCallResolver(ambiguousMode)],
-    ["go", new GoCallResolver(ambiguousMode)],
+    ["go", new GoCallResolver(symbolIdComposer, ambiguousMode)],
     ["java", new JavaCallResolver(ambiguousMode)],
     ["rust", new RustCallResolver(ambiguousMode)],
     ["bash", new BashCallResolver(ambiguousMode)],
@@ -260,6 +268,7 @@ function wireCodegraph(
   const deps: CodegraphDeps = {
     pool,
     resolvers,
+    composer: symbolIdComposer,
     // Codegraph-layer exclusion (test files + user-supplied patterns).
     // The shape mirrors `CodegraphExclusionOptions`; the provider
     // builds the actual `Ignore` instance at construction time.
