@@ -58,6 +58,8 @@ import type {
   ProviderRunMetrics,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
+import { pageRank } from "../../../../infra/graph/page-rank.js";
+import { tarjanScc } from "../../../../infra/graph/tarjan-scc.js";
 import {
   classifyMethod,
   INSTANCE_METHOD_SEPARATOR as INFRA_INSTANCE_METHOD_SEPARATOR,
@@ -78,8 +80,6 @@ import {
   CodegraphSpillIoError,
 } from "../../errors.js";
 import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
-import { pageRank } from "../infra/page-rank.js";
-import { tarjanScc } from "../infra/tarjan-scc.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 
 /**

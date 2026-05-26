@@ -200,7 +200,7 @@ export class GraphDbClientPool {
    */
   async acquireWrite(collectionName: string): Promise<CollectionGraphHandle> {
     if (this.options.daemonSocketPath) {
-      const { DaemonGraphDbClient } = await import("../codegraph-daemon/client.js");
+      const { DaemonGraphDbClient } = await import("./daemon/client.js");
       const graphDb = new DaemonGraphDbClient(this.options.daemonSocketPath, collectionName);
       await graphDb.init();
       return { graphDb, symbolTable: this.options.symbolTableFactory() };
@@ -244,7 +244,7 @@ export class GraphDbClientPool {
    */
   async acquireReader(collectionName: string): Promise<CollectionGraphHandle> {
     if (this.options.daemonSocketPath) {
-      const { DaemonGraphDbClient } = await import("../codegraph-daemon/client.js");
+      const { DaemonGraphDbClient } = await import("./daemon/client.js");
       const graphDb = new DaemonGraphDbClient(this.options.daemonSocketPath, collectionName);
       await graphDb.init();
       return { graphDb, symbolTable: this.options.symbolTableFactory() };

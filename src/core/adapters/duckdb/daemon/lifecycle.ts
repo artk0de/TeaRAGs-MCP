@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { DaemonLock } from "../qdrant/embedded/daemon-lock.js";
+import { DaemonLock } from "../../qdrant/embedded/daemon-lock.js";
 
 const daemonLock = new DaemonLock();
 
@@ -31,9 +31,7 @@ function fallbackAppDataDir(): string {
  * for test/CI overrides; otherwise nests `codegraph/` under the app-data dir.
  */
 export function getStorageDir(appDataPath?: string): string {
-  return (
-    process.env.TEA_RAGS_CODEGRAPH_DAEMON_DIR ?? join(appDataPath ?? fallbackAppDataDir(), "codegraph")
-  );
+  return process.env.TEA_RAGS_CODEGRAPH_DAEMON_DIR ?? join(appDataPath ?? fallbackAppDataDir(), "codegraph");
 }
 
 export function getDaemonPaths(storageDir: string): CodegraphDaemonPaths {
@@ -85,10 +83,7 @@ export function decrementRefs(paths: CodegraphDaemonPaths): number {
  * lock. The interval is `.unref()`'d so it never keeps the process alive on its
  * own. Mirrors the Qdrant embedded daemon idle watcher.
  */
-export function scheduleIdleWatcher(
-  paths: CodegraphDaemonPaths,
-  onShutdown: () => void,
-): NodeJS.Timeout {
+export function scheduleIdleWatcher(paths: CodegraphDaemonPaths, onShutdown: () => void): NodeJS.Timeout {
   let idleSince: number | null = null;
 
   const interval = setInterval(() => {

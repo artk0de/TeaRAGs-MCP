@@ -1,17 +1,18 @@
 import { connect, type Socket } from "node:net";
+
 import type {
+  CalleeEdge,
+  CallerEdge,
+  CycleEntry,
+  CycleScope,
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
   RelPath,
-  SymbolId,
   SymbolDefinition,
-  CallerEdge,
-  CalleeEdge,
-  CycleEntry,
-  CycleScope,
-} from "../../contracts/types/codegraph.js";
-import { encodeFrame, decodeFrames, type DaemonOp, type DaemonResponse } from "./protocol.js";
+  SymbolId,
+} from "../../../contracts/types/codegraph.js";
+import { decodeFrames, encodeFrame, type DaemonOp, type DaemonResponse } from "./protocol.js";
 
 /**
  * Thrown when an unsupported read op is invoked on the daemon client. The three
@@ -23,9 +24,7 @@ import { encodeFrame, decodeFrames, type DaemonOp, type DaemonResponse } from ".
  */
 export class UnsupportedDaemonReadError extends Error {
   constructor(op: string) {
-    super(
-      `DaemonGraphDbClient is write-only; read op "${op}" must use the in-process RO handle`,
-    );
+    super(`DaemonGraphDbClient is write-only; read op "${op}" must use the in-process RO handle`);
     this.name = "UnsupportedDaemonReadError";
   }
 }
@@ -63,10 +62,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
   private sock?: Socket;
   private buf = "";
   private nextId = 1;
-  private readonly pending = new Map<
-    number,
-    { resolve: (v: unknown) => void; reject: (e: Error) => void }
-  >();
+  private readonly pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private readonly connectTimeoutMs: number;
   private readonly retryDelayMs: number;
 

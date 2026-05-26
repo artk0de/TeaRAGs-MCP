@@ -1,13 +1,17 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CodegraphDaemonServer } from "../../../../src/core/adapters/codegraph-daemon/server.js";
-import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
-import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+
+import { afterEach, describe, expect, it } from "vitest";
+
+import { CodegraphDaemonServer } from "../../../../../src/core/adapters/duckdb/daemon/server.js";
+import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
+import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 let root: string;
-afterEach(() => root && rmSync(root, { recursive: true, force: true }));
+afterEach(() => {
+  if (root) rmSync(root, { recursive: true, force: true });
+});
 
 function makeServer() {
   root = mkdtempSync(join(tmpdir(), "cg-daemon-"));

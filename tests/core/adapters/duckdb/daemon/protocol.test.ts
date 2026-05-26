@@ -1,10 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import {
-  encodeFrame,
   decodeFrames,
+  encodeFrame,
   type DaemonRequest,
   type DaemonResponse,
-} from "../../../../src/core/adapters/codegraph-daemon/protocol.js";
+} from "../../../../../src/core/adapters/duckdb/daemon/protocol.js";
 
 describe("daemon protocol framing", () => {
   it("round-trips a request through encode → decode", () => {

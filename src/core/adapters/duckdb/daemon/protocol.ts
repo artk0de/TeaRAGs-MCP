@@ -1,10 +1,4 @@
-import type {
-  CycleScope,
-  GraphEdges,
-  GraphFileNode,
-  RelPath,
-  SymbolId,
-} from "../../contracts/types/codegraph.js";
+import type { CycleScope, GraphEdges, GraphFileNode, RelPath, SymbolId } from "../../../contracts/types/codegraph.js";
 
 export type DaemonOp =
   | "handshake"
@@ -38,7 +32,7 @@ export type DaemonResponse =
 
 /** One JSON object per line. `\n` is the frame delimiter (JSON.stringify never emits a raw newline). */
 export function encodeFrame(msg: DaemonRequest | DaemonResponse): string {
-  return JSON.stringify(msg) + "\n";
+  return `${JSON.stringify(msg)}\n`;
 }
 
 /** Split a buffer on newlines; return complete frames and the partial trailing `rest`. */

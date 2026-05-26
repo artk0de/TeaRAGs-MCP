@@ -1,14 +1,16 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { createServer, type Server, type Socket } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DaemonGraphDbClient } from "../../../../src/core/adapters/codegraph-daemon/client.js";
+
+import { afterEach, describe, expect, it } from "vitest";
+
+import { DaemonGraphDbClient } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import {
-  encodeFrame,
   decodeFrames,
+  encodeFrame,
   type DaemonRequest,
-} from "../../../../src/core/adapters/codegraph-daemon/protocol.js";
+} from "../../../../../src/core/adapters/duckdb/daemon/protocol.js";
 
 let dir: string;
 let srv: Server | undefined;
@@ -26,10 +28,7 @@ afterEach(async () => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-async function echoServer(
-  socketPath: string,
-  onReq: (r: DaemonRequest) => unknown,
-): Promise<void> {
+async function echoServer(socketPath: string, onReq: (r: DaemonRequest) => unknown): Promise<void> {
   srv = createServer((sock) => {
     let buf = "";
     sock.on("data", (d) => {
@@ -63,10 +62,7 @@ describe("DaemonGraphDbClient", () => {
 
     const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
     await client.init();
-    await client.upsertFile(
-      { relPath: "a.ts", language: "typescript" },
-      { fileEdges: [], methodEdges: [] },
-    );
+    await client.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     await client.close();
 
     expect(seen.map((r) => r.op)).toContain("upsertFile");
@@ -103,18 +99,12 @@ describe("DaemonGraphDbClient", () => {
     const cycles = await client.findCycles("file");
     await client.close();
 
-    expect(callers).toEqual([
-      { sourceSymbolId: "A#run", sourceRelPath: "a.ts", callExpression: "b.help()" },
-    ]);
-    expect(callees).toEqual([
-      { targetSymbolId: "B#help", targetRelPath: "b.ts", callExpression: "b.help()" },
-    ]);
+    expect(callers).toEqual([{ sourceSymbolId: "A#run", sourceRelPath: "a.ts", callExpression: "b.help()" }]);
+    expect(callees).toEqual([{ targetSymbolId: "B#help", targetRelPath: "b.ts", callExpression: "b.help()" }]);
     expect(cycles).toEqual([{ cycleId: 0, scope: "file", members: ["a.ts", "b.ts"] }]);
     // Each read op carries the client-injected collection + its query param.
     expect(seen.map((r) => r.op)).toEqual(["getCallers", "getCallees", "findCycles"]);
-    expect(seen.every((r) => (r.params as { collection: string }).collection === "code_x_v1")).toBe(
-      true,
-    );
+    expect(seen.every((r) => (r.params as { collection: string }).collection === "code_x_v1")).toBe(true);
     expect((seen[0].params as { symbolId: string }).symbolId).toBe("B#help");
     expect((seen[2].params as { scope: string }).scope).toBe("file");
   });
@@ -143,9 +133,7 @@ describe("DaemonGraphDbClient", () => {
       "finalizeReindex",
     ]);
     // Every request carries the client-injected collection.
-    expect(seen.every((r) => (r.params as { collection: string }).collection === "code_x_v9")).toBe(
-      true,
-    );
+    expect(seen.every((r) => (r.params as { collection: string }).collection === "code_x_v9")).toBe(true);
     // finalizeReindex threads both versions through params.
     const fin = seen.find((r) => r.op === "finalizeReindex");
     expect(fin?.params).toMatchObject({ oldVersion: "code_x_v8", newVersion: "code_x_v9" });
@@ -246,10 +234,7 @@ describe("DaemonGraphDbClient", () => {
     });
     await client.init();
     // A real round-trip after the late connect proves the socket is usable.
-    await client.upsertFile(
-      { relPath: "a.ts", language: "typescript" },
-      { fileEdges: [], methodEdges: [] },
-    );
+    await client.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     await client.close();
 
     clearTimeout(startServerLate);

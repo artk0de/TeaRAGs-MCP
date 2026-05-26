@@ -1,19 +1,23 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+
 import {
-  IDLE_SHUTDOWN_MS,
+  decrementRefs,
   getDaemonPaths,
   getStorageDir,
+  IDLE_SHUTDOWN_MS,
   incrementRefs,
-  decrementRefs,
   readRefs,
   scheduleIdleWatcher,
-} from "../../../../src/core/adapters/codegraph-daemon/lifecycle.js";
+} from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 
 let dir: string;
-afterEach(() => dir && rmSync(dir, { recursive: true, force: true }));
+afterEach(() => {
+  if (dir) rmSync(dir, { recursive: true, force: true });
+});
 
 describe("codegraph daemon lifecycle refcount", () => {
   it("paths include socket + pid + refs + lock under the storage dir", () => {

@@ -6,13 +6,7 @@
  * resolution from here; tests and the pool import the protocol codec + client.
  */
 
-export {
-  decodeFrames,
-  encodeFrame,
-  type DaemonOp,
-  type DaemonRequest,
-  type DaemonResponse,
-} from "./protocol.js";
+export { decodeFrames, encodeFrame, type DaemonOp, type DaemonRequest, type DaemonResponse } from "./protocol.js";
 export { DaemonGraphDbClient, UnsupportedDaemonReadError } from "./client.js";
 export { CodegraphDaemonServer, computeAndPersistCyclesAndSignals } from "./server.js";
 export {
@@ -25,8 +19,4 @@ export {
   readRefs,
   scheduleIdleWatcher,
 } from "./lifecycle.js";
-export {
-  createConnectionHandler,
-  runDaemon,
-  type DaemonRuntimeOptions,
-} from "./entry.js";
+export { createConnectionHandler, runDaemon, type DaemonRuntimeOptions } from "./entry.js";

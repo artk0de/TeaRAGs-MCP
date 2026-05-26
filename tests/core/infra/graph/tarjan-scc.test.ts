@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  tarjanScc,
-  type AdjacencyMap,
-} from "../../../../../../src/core/domains/trajectory/codegraph/infra/tarjan-scc.js";
+import { tarjanScc, type AdjacencyMap } from "../../../../src/core/infra/graph/tarjan-scc.js";
 
 describe("tarjanScc", () => {
   it("returns empty when no cycles exist (DAG)", () => {

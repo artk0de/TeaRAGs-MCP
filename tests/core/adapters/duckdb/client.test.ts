@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
-import { pageRank } from "../../../../src/core/domains/trajectory/codegraph/infra/page-rank.js";
-import { tarjanScc } from "../../../../src/core/domains/trajectory/codegraph/infra/tarjan-scc.js";
+import { pageRank } from "../../../../src/core/infra/graph/page-rank.js";
+import { tarjanScc } from "../../../../src/core/infra/graph/tarjan-scc.js";
 import { runMigrations } from "../../../../src/core/infra/migration/database/runner.js";
 
 // Adapter exposes primitives only (listAdjacency / replaceCycles /

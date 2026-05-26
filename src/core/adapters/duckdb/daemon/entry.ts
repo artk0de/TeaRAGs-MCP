@@ -21,20 +21,19 @@
  */
 
 import { unlinkSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
-import type { Server, Socket } from "node:net";
+import { createServer, type Server, type Socket } from "node:net";
 import { pathToFileURL } from "node:url";
 
-import { InMemoryGlobalSymbolTable } from "../../domains/trajectory/codegraph/symbols/symbol-table.js";
-import { GraphDbClientPool } from "../duckdb/pool.js";
+import { GraphDbClientPool } from "../pool.js";
 import {
-  type CodegraphDaemonPaths,
   decrementRefs,
   getDaemonPaths,
   getStorageDir,
   incrementRefs,
   scheduleIdleWatcher,
+  type CodegraphDaemonPaths,
 } from "./lifecycle.js";
+import { NoopGlobalSymbolTable } from "./noop-symbol-table.js";
 import { decodeFrames, encodeFrame, type DaemonRequest } from "./protocol.js";
 import { CodegraphDaemonServer } from "./server.js";
 
@@ -95,14 +94,14 @@ export async function runDaemon(
 ): Promise<{ server: Server; shutdown: () => Promise<void> }> {
   const pool = new GraphDbClientPool({
     rootDir: options.rootDir,
-    symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    // The daemon never resolves call edges (resolution happens in the MCP
+    // client process); it only persists already-resolved edges. So it needs no
+    // real symbol table — a no-op table avoids the adapter->domain import of
+    // InMemoryGlobalSymbolTable, and there is no hydrate initHook to run.
+    symbolTableFactory: () => new NoopGlobalSymbolTable(),
     resources: options.resources,
     // NO daemonSocketPath — this process IS the daemon; its pool holds the
     // single RW DuckDB connection in-process.
-    initHook: async ({ graphDb, symbolTable }) => {
-      const persisted = await graphDb.listAllSymbols();
-      if (persisted.length > 0) symbolTable.hydrate(persisted);
-    },
   });
   const handler = new CodegraphDaemonServer(pool);
   const server = createServer(createConnectionHandler(handler, options.paths));

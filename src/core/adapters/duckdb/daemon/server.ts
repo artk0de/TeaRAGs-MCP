@@ -1,8 +1,8 @@
-import type { GraphDbClientPool } from "../duckdb/pool.js";
+import type { CycleScope, GraphDbClient, SymbolId } from "../../../contracts/types/codegraph.js";
+import { pageRank } from "../../../infra/graph/page-rank.js";
+import { tarjanScc } from "../../../infra/graph/tarjan-scc.js";
+import type { GraphDbClientPool } from "../pool.js";
 import type { DaemonRequest, DaemonResponse } from "./protocol.js";
-import { tarjanScc } from "../../domains/trajectory/codegraph/infra/tarjan-scc.js";
-import { pageRank } from "../../domains/trajectory/codegraph/infra/page-rank.js";
-import type { GraphDbClient, CycleScope, SymbolId } from "../../contracts/types/codegraph.js";
 
 /**
  * In-process request handler for the codegraph daemon. Owns the internal
