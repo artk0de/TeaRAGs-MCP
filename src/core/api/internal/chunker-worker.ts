@@ -28,11 +28,17 @@ import type {
   WorkerResponse,
 } from "../../domains/ingest/pipeline/chunker/infra/worker-protocol.js";
 import { TreeSitterChunker } from "../../domains/ingest/pipeline/chunker/tree-sitter.js";
-import { DefaultSymbolIdComposer } from "../../domains/language/index.js";
+import { DefaultSymbolIdComposer, LanguageFactoryImpl } from "../../domains/language/index.js";
+import { buildLegacyLanguageRegistry } from "./legacy-language-adapter.js";
 
 if (parentPort) {
   const config = workerData as ChunkerConfig;
-  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer());
+  // The worker is a SECOND composition root (spec §5): functions / native
+  // handles can't cross the `postMessage` boundary, so the LanguageFactory is
+  // built HERE rather than received from the main process. The chunker needs no
+  // codegraph resolvers — the registry serves walker/chunker capabilities only.
+  const languageFactory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
+  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), languageFactory);
 
   parentPort.on("message", (msg: WorkerRequest | { type: "shutdown" }) => {
     // Graceful shutdown: close the port so the thread exits cleanly,

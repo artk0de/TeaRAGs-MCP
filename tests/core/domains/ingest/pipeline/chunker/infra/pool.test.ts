@@ -8,8 +8,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { ChunkerPool } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/infra/pool.js";
 import { TreeSitterChunker } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
-import { DefaultSymbolIdComposer } from "../../../../../../../src/core/domains/language/index.js";
+import { DefaultSymbolIdComposer, LanguageFactoryImpl } from "../../../../../../../src/core/domains/language/index.js";
+import { buildLegacyLanguageRegistry } from "../../../../../../../src/core/api/internal/legacy-language-adapter.js";
 import type { ChunkerConfig } from "../../../../../../../src/core/types.js";
+
+const testLanguageFactory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
 
 const CHUNKER_CONFIG: ChunkerConfig = {
   chunkSize: 500,
@@ -69,7 +72,7 @@ describe("ChunkerPool", () => {
 
     it("should produce same chunks as direct TreeSitterChunker", async () => {
       pool = new ChunkerPool(1, CHUNKER_CONFIG);
-      const directChunker = new TreeSitterChunker(CHUNKER_CONFIG, new DefaultSymbolIdComposer());
+      const directChunker = new TreeSitterChunker(CHUNKER_CONFIG, new DefaultSymbolIdComposer(), testLanguageFactory);
 
       const [poolResult, directResult] = await Promise.all([
         pool.processFile("test.ts", TYPESCRIPT_CODE, "typescript"),

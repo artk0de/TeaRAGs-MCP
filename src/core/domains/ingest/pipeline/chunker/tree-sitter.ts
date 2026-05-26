@@ -9,13 +9,18 @@
 
 import Parser from "tree-sitter";
 
-import type { SymbolIdComposer } from "../../../../contracts/types/language.js";
+import type {
+  LanguageChunkerHooks,
+  LanguageFactory,
+  LanguageKernel,
+  SymbolIdComposer,
+} from "../../../../contracts/types/language.js";
 import { isStaticMethodNode } from "../../../../infra/symbolid/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
 import { isDebug } from "../infra/runtime.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
-import { LANGUAGE_DEFINITIONS, type LanguageConfig, type LanguageDefinition } from "./config.js";
+import type { LanguageConfig } from "./config.js";
 import { extractRubyMacroSymbols, type RubyMacroSymbol } from "./extraction/ruby-macros.js";
 import { extractGoSymbol } from "./hooks/go/index.js";
 import {
@@ -218,11 +223,24 @@ export class TreeSitterChunker implements CodeChunker {
    */
   private readonly symbolIds: SymbolIdComposer;
 
+  /**
+   * Per-language capability source, injected via DI from the composition layer
+   * (the chunker worker root in `api/internal/chunker-worker.ts`). The chunker
+   * engine never imports the concrete factory or the legacy `LANGUAGE_DEFINITIONS`
+   * map — `domains/ingest` may not import `domains/language` (eslint leaf-domain
+   * guard) and the consolidation routes all per-language config through the
+   * `contracts/` `LanguageFactory` interface. `create(lang)` is cached per
+   * language by `getLanguageConfig`. See spec §5 + `.claude/rules/domain-boundaries.md`.
+   */
+  private readonly languages: LanguageFactory;
+
   constructor(
     private readonly config: ChunkerConfig,
     symbolIds: SymbolIdComposer,
+    languages: LanguageFactory,
   ) {
     this.symbolIds = symbolIds;
+    this.languages = languages;
     this.fallbackChunker = new CharacterChunker(config);
     this.markdownChunker = new MarkdownChunker({ maxChunkSize: this.config.chunkSize }, this.fallbackChunker);
     // NO parser initialization here - lazy load on demand!
@@ -245,14 +263,14 @@ export class TreeSitterChunker implements CodeChunker {
       return loading;
     }
 
-    // Check if language is defined
-    const definition = LANGUAGE_DEFINITIONS[language];
-    if (!definition) {
+    // Check if language is registered with the factory
+    const provider = this.tryGetProvider(language);
+    if (!provider?.chunkerHooks) {
       return null;
     }
 
     // Start loading
-    const loadPromise = this.initializeParser(language, definition);
+    const loadPromise = this.initializeParser(language, provider.kernel, provider.chunkerHooks);
     this.loadingPromises.set(language, loadPromise);
 
     try {
@@ -267,16 +285,33 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   /**
-   * Initialize a parser for a specific language
+   * Resolve the `LanguageProvider` for a language via the injected factory,
+   * returning `null` for unregistered languages (mirrors the old
+   * `LANGUAGE_DEFINITIONS[lang]` undefined check — `factory.create` throws
+   * `UnsupportedLanguageError`, so gate on `supported()` first).
    */
-  private async initializeParser(language: string, definition: LanguageDefinition): Promise<LanguageConfig | null> {
+  private tryGetProvider(language: string): ReturnType<LanguageFactory["create"]> | null {
+    return this.languages.supported().includes(language) ? this.languages.create(language) : null;
+  }
+
+  /**
+   * Initialize a parser for a specific language from its `LanguageProvider`
+   * capabilities — `kernel` carries parser load + namespace config, `chunkerHooks`
+   * carries the chunk-boundary fields. Field-for-field equivalent to the old
+   * `LANGUAGE_DEFINITIONS` read (the legacy adapter wraps the same source).
+   */
+  private async initializeParser(
+    language: string,
+    kernel: LanguageKernel,
+    hooks: LanguageChunkerHooks,
+  ): Promise<LanguageConfig | null> {
     try {
       const startTime = Date.now();
 
       // Dynamic import of language module
-      const mod = (await definition.loadModule()) as Record<string, unknown>;
+      const mod = (await kernel.loadModule()) as Record<string, unknown>;
       const langModule = (
-        definition.extractLanguage ? definition.extractLanguage(mod) : mod.default || mod
+        kernel.extractLanguage ? kernel.extractLanguage(mod) : mod.default || mod
       ) as Parser.Language;
 
       // Create and configure parser
@@ -289,16 +324,16 @@ export class TreeSitterChunker implements CodeChunker {
 
       return {
         parser,
-        chunkableTypes: definition.chunkableTypes,
-        childChunkTypes: definition.childChunkTypes,
-        alwaysExtractChildren: definition.alwaysExtractChildren,
-        isDocumentation: definition.isDocumentation,
-        hooks: definition.hooks,
-        nameExtractor: definition.nameExtractor,
-        scopeContainerTypes: definition.scopeContainerTypes,
-        scopeSeparator: definition.scopeSeparator,
-        keepShortChildChunkTypes: definition.keepShortChildChunkTypes,
-        disambiguateOverloads: definition.disambiguateOverloads,
+        chunkableTypes: hooks.chunkableTypes,
+        childChunkTypes: hooks.childChunkTypes,
+        alwaysExtractChildren: hooks.alwaysExtractChildren,
+        isDocumentation: hooks.isDocumentation,
+        hooks: hooks.hooks,
+        nameExtractor: hooks.nameExtractor,
+        scopeContainerTypes: kernel.scopeContainerTypes,
+        scopeSeparator: kernel.scopeSeparator,
+        keepShortChildChunkTypes: hooks.keepShortChildChunkTypes,
+        disambiguateOverloads: kernel.disambiguateOverloads,
       };
     } catch (error) {
       console.error(`[TreeSitter] Failed to load parser for ${language}:`, error);
@@ -307,11 +342,15 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   async chunk(code: string, filePath: string, language: string): Promise<CodeChunk[]> {
-    const definition = LANGUAGE_DEFINITIONS[language];
-    if (definition && (definition as LanguageDefinition & { skipTreeSitter?: boolean }).skipTreeSitter) {
-      if (definition.isDocumentation) {
-        return this.enforceMaxChunkSize(await this.markdownChunker.chunk(code, filePath, language));
-      }
+    // Documentation languages (markdown) skip tree-sitter entirely and route to
+    // the remark-based MarkdownChunker. `isDocumentation` is the gate: markdown
+    // is the only documentation language and the only one carrying the legacy
+    // `skipTreeSitter` flag (which is not part of the LanguageChunkerHooks
+    // contract — the two were always co-set), so gating on `isDocumentation`
+    // alone is behaviour-identical to the old `skipTreeSitter && isDocumentation`.
+    const provider = this.tryGetProvider(language);
+    if (provider?.chunkerHooks?.isDocumentation) {
+      return this.enforceMaxChunkSize(await this.markdownChunker.chunk(code, filePath, language));
     }
 
     const langConfig = await this.getLanguageConfig(language);
@@ -860,7 +899,7 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   supportsLanguage(language: string): boolean {
-    return language in LANGUAGE_DEFINITIONS;
+    return this.languages.supported().includes(language);
   }
 
   getStrategyName(): string {
@@ -871,7 +910,7 @@ export class TreeSitterChunker implements CodeChunker {
    * Get list of supported languages
    */
   getSupportedLanguages(): string[] {
-    return Object.keys(LANGUAGE_DEFINITIONS);
+    return this.languages.supported();
   }
 
   /**
@@ -888,7 +927,7 @@ export class TreeSitterChunker implements CodeChunker {
   getLoadedParsers(): { loaded: string[]; available: string[] } {
     return {
       loaded: Array.from(this.parserCache.keys()),
-      available: Object.keys(LANGUAGE_DEFINITIONS),
+      available: this.languages.supported(),
     };
   }
 
