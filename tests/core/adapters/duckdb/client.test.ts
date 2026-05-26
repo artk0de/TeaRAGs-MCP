@@ -648,4 +648,32 @@ describe("DuckDbGraphClient", () => {
     expect(await client.getCallSiteCount("main")).toBe(2);
     expect(await client.getCalledByCount("A.x")).toBe(1);
   });
+
+  // Codegraph daemon read path opens the live-version DuckDB file with
+  // access_mode=READ_ONLY so multiple MCP processes can query
+  // concurrently while one daemon holds the RW lock. A READ_ONLY
+  // connection must read existing rows but reject every write (DuckDB
+  // rejects writes on a RO DB), and must NOT attempt the resource SET
+  // statements (also rejected on RO).
+  it("READ_ONLY client rejects writes but reads a pre-populated DB", async () => {
+    // Arrange: the beforeEach already created + migrated `client` on
+    // `dbPath`. Populate it, then close so the file is unlocked.
+    await client.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+    await client.close();
+
+    // Act: open the same file read-only.
+    const ro = new DuckDbGraphClient({ path: dbPath, accessMode: "READ_ONLY" });
+    await ro.init();
+
+    // Assert: reads work, writes throw.
+    expect(await ro.hasData()).toBe(true);
+    await expect(
+      ro.upsertFile({ relPath: "b.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] }),
+    ).rejects.toThrow();
+    await ro.close();
+
+    // Re-open RW so the afterEach close() does not double-close `client`.
+    client = new DuckDbGraphClient({ path: dbPath });
+    await client.init();
+  });
 });

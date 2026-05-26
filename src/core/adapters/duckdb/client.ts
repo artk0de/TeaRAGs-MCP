@@ -42,6 +42,15 @@ import type {
 export interface DuckDbGraphClientOptions {
   path: string;
   /**
+   * Open mode passed through to DuckDB's `access_mode` config. Default
+   * READ_WRITE. READ_ONLY allows concurrent cross-process readers — the
+   * codegraph read path opens the live-version DuckDB file READ_ONLY so
+   * multiple MCP processes can query while one daemon holds the RW lock.
+   * A READ_ONLY connection rejects writes, so `init()` also skips the
+   * resource `SET` statements (DuckDB rejects those on a RO DB).
+   */
+  accessMode?: "READ_WRITE" | "READ_ONLY";
+  /**
    * Slice 2 resource ceiling for the embedded DuckDB instance. When
    * absent the driver picks its own defaults (≈80% of system RAM,
    * #cores threads, no spill directory) which on large repos like
@@ -89,7 +98,13 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async init(): Promise<void> {
     mkdirSync(dirname(this.options.path), { recursive: true });
-    this.instance = await DuckDBInstance.create(this.options.path);
+    // @duckdb/node-api `DuckDBInstance.create(path, options)` takes a
+    // string→string config map. `access_mode` controls RW vs RO; only
+    // set it when explicitly requested so the driver default
+    // (READ_WRITE) is preserved otherwise.
+    const config: Record<string, string> = {};
+    if (this.options.accessMode) config.access_mode = this.options.accessMode;
+    this.instance = await DuckDBInstance.create(this.options.path, config);
     this.conn = await this.instance.connect();
 
     // Slice 2 — apply resource ceiling BEFORE migrations so the
@@ -109,7 +124,11 @@ export class DuckDbGraphClient implements GraphDbClient {
     // directory. The pool drives stale-file cleanup at construction
     // time (one-shot, before any acquire); per-client init only
     // ensures DuckDB has a writable temp_directory to spill into.
-    const r = this.options.resources;
+    // A READ_ONLY connection rejects `SET` writes, so skip the resource
+    // ceiling entirely on RO. The cap is a protective layer for the
+    // write/ingest path; readers never mutate and inherit the daemon's
+    // already-applied ceiling on the underlying file.
+    const r = this.options.accessMode === "READ_ONLY" ? undefined : this.options.resources;
     if (r) {
       const spillDir = r.tempDirectory;
       if (spillDir) {
