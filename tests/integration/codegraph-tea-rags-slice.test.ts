@@ -28,6 +28,8 @@ import { DuckDbGraphClient } from "../../src/core/adapters/duckdb/client.js";
 import { GraphFacade } from "../../src/core/api/internal/facades/graph-facade.js";
 import { extractFromTypescriptFile } from "../../src/core/domains/ingest/pipeline/chunker/extraction/typescript-walker.js";
 import { DefaultSymbolIdComposer } from "../../src/core/domains/language/kernel/symbol-id.js";
+import { LanguageFactoryImpl } from "../../src/core/domains/language/index.js";
+import { buildLegacyLanguageRegistry } from "../../src/core/api/internal/legacy-language-adapter.js";
 import { createSymbolsTrajectory } from "../../src/core/domains/trajectory/codegraph/symbols/index.js";
 import type { CodegraphEnrichmentProvider } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { TSCallResolver } from "../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
@@ -118,10 +120,14 @@ describe("codegraph slice 1 on real tea-rags sources", () => {
     // pool-mode wiring is exercised by the dedicated isolation test;
     // here we just want one fixed DB for assertion stability.
     const symbolTable = new InMemoryGlobalSymbolTable();
+    const resolvers = new Map([
+      ["typescript", new TSCallResolver({ baseUrl: ".", paths: { "@/*": ["src/*"] } })],
+    ]);
     const trajectory = createSymbolsTrajectory({
       graphDb: client,
       symbolTable,
-      resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: { "@/*": ["src/*"] } })]]),
+      resolvers,
+      languageFactory: new LanguageFactoryImpl(buildLegacyLanguageRegistry(resolvers)),
       composer: new DefaultSymbolIdComposer(),
     });
     provider = trajectory.enrichment as CodegraphEnrichmentProvider;

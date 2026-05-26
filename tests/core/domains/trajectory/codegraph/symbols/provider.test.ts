@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../../../../../../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { JavascriptCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/javascript/javascript-resolver.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
@@ -34,10 +35,12 @@ describe("CodegraphEnrichmentProvider", () => {
       // tests (synthetic constructor, new_expression dispatch, getter
       // helpers) can verify cg_symbols_edges_method rows, not just
       // symbol-table lookups.
-      resolvers: new Map([
-        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
-        ["javascript", new JavascriptCallResolver()],
-      ]),
+      ...buildTestCodegraphDeps(
+        new Map([
+          ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
+          ["javascript", new JavascriptCallResolver()],
+        ]),
+      ),
       composer: new DefaultSymbolIdComposer(),
     });
   });
@@ -509,7 +512,7 @@ describe("CodegraphEnrichmentProvider", () => {
       const testExcluder = new CodegraphEnrichmentProvider({
         graphDb: client,
         symbolTable: new InMemoryGlobalSymbolTable(),
-        resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+        ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
         exclusion: { excludeTests: true, customPatterns: [] },
       });
@@ -559,7 +562,7 @@ describe("CodegraphEnrichmentProvider", () => {
       const customExcluder = new CodegraphEnrichmentProvider({
         graphDb: client,
         symbolTable: new InMemoryGlobalSymbolTable(),
-        resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+        ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
         exclusion: { excludeTests: false, customPatterns: ["generated/**"] },
       });
@@ -709,7 +712,7 @@ describe("CodegraphEnrichmentProvider", () => {
       const excluder = new CodegraphEnrichmentProvider({
         graphDb: client,
         symbolTable,
-        resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+        ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
         exclusion: { excludeTests: true, customPatterns: [] },
       });
@@ -755,7 +758,7 @@ describe("CodegraphEnrichmentProvider", () => {
       const noExcluder = new CodegraphEnrichmentProvider({
         graphDb: client,
         symbolTable,
-        resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+        ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
         exclusion: { excludeTests: false, customPatterns: [] },
       });
@@ -986,7 +989,7 @@ describe("CodegraphEnrichmentProvider", () => {
     const failingProvider = new CodegraphEnrichmentProvider({
       graphDb: fakeGraphDb as never,
       symbolTable: new InMemoryGlobalSymbolTable(),
-      resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+      ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       composer: new DefaultSymbolIdComposer(),
     });
     const sink = failingProvider.asExtractionSink();
@@ -1039,7 +1042,7 @@ describe("CodegraphEnrichmentProvider", () => {
     const failingProvider = new CodegraphEnrichmentProvider({
       graphDb: fakeGraphDb as never,
       symbolTable: new InMemoryGlobalSymbolTable(),
-      resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+      ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       composer: new DefaultSymbolIdComposer(),
     });
     const sink = failingProvider.asExtractionSink();

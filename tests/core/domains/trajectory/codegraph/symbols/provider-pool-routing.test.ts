@@ -28,6 +28,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import {
   CodegraphEnrichmentProvider,
   stripVersionSuffix,
@@ -72,7 +73,7 @@ describe("CodegraphEnrichmentProvider — versioned-write / alias-read routing",
     });
     provider = new CodegraphEnrichmentProvider({
       pool,
-      resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+      ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       composer: new DefaultSymbolIdComposer(),
     });
   });

@@ -48,7 +48,7 @@ import type {
   GraphEdges,
   NamedSymbol,
 } from "../../../../contracts/types/codegraph.js";
-import type { SymbolIdComposer } from "../../../../contracts/types/language.js";
+import type { LanguageFactory, SymbolIdComposer } from "../../../../contracts/types/language.js";
 import type {
   ChunkLookupEntry,
   ChunkSignalOptions,
@@ -380,6 +380,20 @@ export interface CodegraphProviderDeps {
   /** Direct mode — pre-built symbol table. Mutually exclusive with `pool`. */
   symbolTable?: GlobalSymbolTable;
   resolvers: Map<string, CallResolver>;
+  /**
+   * Per-language capability source (walker + resolver), injected via DI from
+   * the composition layer (`api/internal/composition.ts` / `bootstrap/factory.ts`).
+   * The provider reads `factory.create(lang).walker` (`walk`/`nameOf`) for the
+   * symbol-collection pass and `.resolver` (`resolve`/`resolveDispatch`) for
+   * pass-2 edge resolution — replacing its direct reads of the per-extension
+   * `CODEGRAPH_LANGUAGES` walker fields and the `resolvers` map. Typed as the
+   * contracts `LanguageFactory` interface; the concrete factory is never
+   * imported here (leaf-domain guard forbids `trajectory/** -> domains/language/**`).
+   * Parser-load / scopeSeparator / disambiguateOverloads are still sourced from
+   * `CODEGRAPH_LANGUAGES` (kept in place per the consolidation slice plan).
+   * bd tea-rags-mcp-cat4.
+   */
+  languageFactory: LanguageFactory;
   /**
    * Cross-language symbolId mapper used by `joinSymbol` to compose
    * fully-qualified ids per `.claude/rules/symbolid-convention.md`. Injected as
@@ -1201,17 +1215,29 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // is a defensive guard for callers that pass paths directly.
       return { relPath, language: "", imports: [], chunks: [], fileScope: [] };
     }
+    // Walker capability (walk + nameOf) comes from the injected LanguageFactory
+    // — keyed by language NAME (not extension). Parser-load + scopeSeparator +
+    // disambiguateOverloads stay sourced from CODEGRAPH_LANGUAGES (kept in place
+    // for this slice). The factory's walker is the legacy adapter's faithful
+    // wrap of the SAME CODEGRAPH_LANGUAGES walk/nameOf, so output is unchanged.
+    const walker = this.deps.languageFactory.create(langConfig.language).walker;
+    if (!walker) {
+      // Defensive: a code language always has a walker (markdown — the only
+      // walker-less provider — has no CODEGRAPH_LANGUAGES entry, so we never
+      // reach here for it). Return an empty extraction rather than throw.
+      return { relPath, language: langConfig.language, imports: [], chunks: [], fileScope: [] };
+    }
     const code = readFileSync(join(root, relPath), "utf8");
     const parser = new Parser();
     parser.setLanguage(langConfig.loadParser());
     const tree = parser.parse(code);
     const chunks = this.collectSymbols(
       tree,
-      langConfig.nameOf,
+      walker.nameOf,
       langConfig.scopeSeparator,
       langConfig.disambiguateOverloads ?? false,
     );
-    return langConfig.walker({
+    return walker.walk({
       tree,
       code,
       relPath,
@@ -1364,7 +1390,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   private resolveExtraction(extraction: FileExtraction, symbolTable: GlobalSymbolTable): GraphEdges {
-    const resolver = this.deps.resolvers.get(extraction.language);
+    // Resolver capability comes from the injected LanguageFactory (keyed by
+    // language NAME). The factory's resolver wraps the same CallResolver the
+    // provider used to read from `deps.resolvers`, so resolution is unchanged;
+    // `create` throws for unregistered languages, so gate on `supported()` first
+    // (the defensive empty extraction emits `language: ""`, never registered).
+    const resolver = this.deps.languageFactory.supported().includes(extraction.language)
+      ? this.deps.languageFactory.create(extraction.language).resolver
+      : undefined;
     const fileEdges: GraphEdges["fileEdges"] = [];
     const methodEdges: GraphEdges["methodEdges"] = [];
     if (!resolver) return { fileEdges, methodEdges };

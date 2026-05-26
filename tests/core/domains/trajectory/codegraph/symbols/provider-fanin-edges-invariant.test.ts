@@ -40,6 +40,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { RubyCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ruby/ruby-resolver.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
@@ -62,7 +63,7 @@ describe("Codegraph fanIn ↔ getCallers consistency (tea-rags-mcp-4nch)", () =>
     provider = new CodegraphEnrichmentProvider({
       graphDb: client,
       symbolTable: new InMemoryGlobalSymbolTable(),
-      resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+      ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       composer: new DefaultSymbolIdComposer(),
     });
   });
@@ -266,10 +267,12 @@ describe("Codegraph fanIn ↔ getCallers consistency — Ruby fixtures (tea-rags
       // dispatch by file extension — only Ruby paths are present in the
       // root, but the LANGUAGES table maps `.rb` → ruby walker which
       // expects the matching `ruby` resolver entry to be present.
-      resolvers: new Map([
-        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
-        ["ruby", new RubyCallResolver()],
-      ]),
+      ...buildTestCodegraphDeps(
+        new Map([
+          ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
+          ["ruby", new RubyCallResolver()],
+        ]),
+      ),
       composer: new DefaultSymbolIdComposer(),
     });
   });

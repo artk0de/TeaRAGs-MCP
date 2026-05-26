@@ -10,7 +10,7 @@
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { CallResolver } from "../../../contracts/types/codegraph.js";
-import type { SymbolIdComposer } from "../../../contracts/types/language.js";
+import type { LanguageFactory, SymbolIdComposer } from "../../../contracts/types/language.js";
 import type { Trajectory } from "../../../contracts/types/trajectory.js";
 import type { CodegraphExclusionOptions } from "./exclusion.js";
 import { createSymbolsTrajectory } from "./symbols/index.js";
@@ -53,8 +53,15 @@ export interface CodegraphDeps {
  * Returns the array of L2 trajectories that belong to the codegraph
  * family. Slice 1: SymbolsTrajectory only. Slice 5+ appends Temporal,
  * etc.
+ *
+ * `languageFactory` is injected by the composition root (`composition.ts`)
+ * rather than carried on `CodegraphDeps` (which `bootstrap/factory.ts`
+ * produces before the factory exists). The provider reads its walker +
+ * resolver capabilities from this factory. bd tea-rags-mcp-cat4.
  */
-export function createCodegraphTrajectories(deps: CodegraphDeps): Trajectory[] {
+export function createCodegraphTrajectories(
+  deps: CodegraphDeps & { languageFactory: LanguageFactory },
+): Trajectory[] {
   return [createSymbolsTrajectory(deps)];
 }
 

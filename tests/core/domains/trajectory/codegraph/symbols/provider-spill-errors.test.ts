@@ -25,6 +25,7 @@ import type {
   SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -98,7 +99,7 @@ function makeProvider(graphDb: GraphDbClient): CodegraphEnrichmentProvider {
   return new CodegraphEnrichmentProvider({
     graphDb,
     symbolTable: new InMemoryGlobalSymbolTable(),
-    resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+    ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
     composer: new DefaultSymbolIdComposer(),
   });
 }
@@ -299,7 +300,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
           pool: {} as never,
           graphDb: makeStubGraphDb(),
           symbolTable: new InMemoryGlobalSymbolTable(),
-          resolvers: new Map(),
+          ...buildTestCodegraphDeps(new Map()),
           composer: new DefaultSymbolIdComposer(),
         }),
     ).toThrow(/mutually exclusive/);
@@ -309,7 +310,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
     expect(
       () =>
         new CodegraphEnrichmentProvider({
-          resolvers: new Map(),
+          ...buildTestCodegraphDeps(new Map()),
           composer: new DefaultSymbolIdComposer(),
         }),
     ).toThrow(/must provide either deps\.pool/);
@@ -445,7 +446,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
     } as never;
     const provider = new CodegraphEnrichmentProvider({
       pool: fakePool,
-      resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+      ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       composer: new DefaultSymbolIdComposer(),
     });
     // handleDeletedPaths -> getStore() — pool mode + no collectionName -> throw.
@@ -485,7 +486,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
     const provider = new CodegraphEnrichmentProvider({
       graphDb: makeStubGraphDb(),
       symbolTable: new InMemoryGlobalSymbolTable(),
-      resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+      ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       exclusion: { excludeTests: true, customPatterns: [] },
       composer: new DefaultSymbolIdComposer(),
     });
