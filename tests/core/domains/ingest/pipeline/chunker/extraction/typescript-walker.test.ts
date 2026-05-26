@@ -861,3 +861,202 @@ describe("extractFromTypescriptFile", () => {
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// Lookup-table dispatch (bd tea-rags-mcp-n0zj) — collectDispatchTables,
+// CallRef.dispatch tagging, callbackParams, dispatchArgs.
+// ─────────────────────────────────────────────────────────────────────
+describe("extractFromTypescriptFile — dispatch tables (n0zj)", () => {
+  function extract(code: string, chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[]) {
+    return extractFromTypescriptFile({ tree: parse(code), code, relPath: "src/d.ts", language: "typescript", chunks });
+  }
+
+  it("collectDispatchTables records S1 wrapper-object entries (key→field→fn)", () => {
+    const code = ["const T = { a: { w: fnA }, b: { w: fnB } };", ""].join("\n");
+    const e = extract(code, []);
+    expect(e.dispatchTables?.["T"]?.entries).toEqual({ a: { w: "fnA" }, b: { w: "fnB" } });
+  });
+
+  it("collectDispatchTables records S2 direct-function entries (key→fn)", () => {
+    const code = ["const H = { a: fnA, b: fnB };", ""].join("\n");
+    const e = extract(code, []);
+    expect(e.dispatchTables?.["H"]?.entries).toEqual({ a: "fnA", b: "fnB" });
+  });
+
+  it("collectDispatchTables drops inline-arrow / non-identifier values per field", () => {
+    const code = ["const T = { a: { w: () => 1 }, b: { w: fnB } };", ""].join("\n");
+    const e = extract(code, []);
+    // entry a's `w` is an arrow → dropped; entry b's `w` is an identifier → kept.
+    expect(e.dispatchTables?.["T"]?.entries["a"]).toEqual({});
+    expect((e.dispatchTables?.["T"]?.entries["b"] as Record<string, string>)["w"]).toBe("fnB");
+  });
+
+  it("does NOT record a non-const (let) table", () => {
+    const code = ["let T = { a: { w: fnA } };", ""].join("\n");
+    const e = extract(code, []);
+    expect(e.dispatchTables?.["T"]).toBeUndefined();
+  });
+
+  it("tags field-bound dispatch: const f = T[k].w; f(x)", () => {
+    const code = [
+      "const T = { a: { w: fnA }, b: { w: fnB } };", // 1
+      "function go(k: string) {", //                   2
+      "  const f = T[k].w;", //                        3
+      "  f(1);", //                                    4
+      "}", //                                          5
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 5, scope: [] }]);
+    const call = e.chunks[0].calls.find((c) => c.dispatch);
+    expect(call?.dispatch).toEqual({ table: "T", field: "w", key: null });
+  });
+
+  it("tags S2 direct subscript call: H[k](x)", () => {
+    const code = [
+      "const H = { a: fnA, b: fnB };", // 1
+      "function go(k: string) {", //      2
+      "  H[k](1);", //                    3
+      "}", //                             4
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 4, scope: [] }]);
+    const call = e.chunks[0].calls.find((c) => c.dispatch);
+    expect(call?.dispatch).toEqual({ table: "H", field: null, key: null });
+  });
+
+  it("tags static string-literal key: T[\"a\"].w(x) → key 'a'", () => {
+    const code = [
+      "const T = { a: { w: fnA }, b: { w: fnB } };", // 1
+      "function go() {", //                             2
+      '  T["a"].w(1);', //                              3
+      "}", //                                           4
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 4, scope: [] }]);
+    const call = e.chunks[0].calls.find((c) => c.dispatch);
+    expect(call?.dispatch).toEqual({ table: "T", field: "w", key: "a" });
+  });
+
+  it("tags entry-bound dispatch: const e = T[k]; e.w(x)", () => {
+    const code = [
+      "const T = { a: { w: fnA }, b: { w: fnB } };", // 1
+      "function go(k: string) {", //                   2
+      "  const en = T[k];", //                         3
+      "  en.w(1);", //                                 4
+      "}", //                                          5
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 5, scope: [] }]);
+    const call = e.chunks[0].calls.find((c) => c.dispatch);
+    expect(call?.dispatch).toEqual({ table: "T", field: "w", key: null });
+  });
+
+  it("does NOT tag dispatch when the table name is a non-const local", () => {
+    const code = [
+      "let T = { a: { w: fnA } };", // 1 — let, not const
+      "function go(k: string) {", //   2
+      "  const f = T[k].w;", //        3
+      "  f(1);", //                    4
+      "}", //                          5
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 5, scope: [] }]);
+    expect(e.chunks[0].calls.some((c) => c.dispatch)).toBe(false);
+  });
+
+  it("records callbackParams for a free function invoking its param", () => {
+    const code = ["function run(f) {", "  f(1);", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }]);
+    expect(e.callbackParams?.["run"]).toEqual([0]);
+  });
+
+  it("records callbackParams for a method invoking its 2nd param", () => {
+    const code = ["class C {", "  m(a, cb) {", "    cb();", "  }", "}", ""].join("\n");
+    const e = extract(code, [
+      { symbolId: "C", startLine: 1, endLine: 5, scope: [] },
+      { symbolId: "C#m", startLine: 2, endLine: 4, scope: ["C"] },
+    ]);
+    expect(e.callbackParams?.["C#m"]).toEqual([1]);
+  });
+
+  it("does NOT record a param that is never invoked", () => {
+    const code = ["function run(f) {", "  use(f);", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }]);
+    expect(e.callbackParams?.["run"]).toBeUndefined();
+  });
+
+  it("emits dispatchArgs when a dispatch candidate-set is passed as an argument", () => {
+    const code = [
+      "const T = { a: { w: fnA }, b: { w: fnB } };", // 1
+      "function go(k: string) {", //                   2
+      "  collectSymbols(tree, T[k].w, opts);", //      3
+      "}", //                                          4
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 4, scope: [] }]);
+    const call = e.chunks[0].calls.find((c) => c.member === "collectSymbols");
+    expect(call?.dispatchArgs).toEqual([{ argIndex: 1, candidate: { table: "T", field: "w", key: null } }]);
+  });
+
+  it("normalizes quoted string keys in a dispatch table (extension-style keys like '.ts')", () => {
+    // Real LANGUAGES tables key by file extension — `".ts"` is a quoted
+    // string literal, not a bare property_identifier. keyText must strip the
+    // quotes so the key is usable as a static-key dispatch lookup downstream.
+    const code = ['const LANGUAGES = { ".ts": { walker: extractTs }, ".rb": { walker: extractRb } };', ""].join("\n");
+    const e = extract(code, []);
+    expect(e.dispatchTables?.["LANGUAGES"]?.entries).toEqual({
+      ".ts": { walker: "extractTs" },
+      ".rb": { walker: "extractRb" },
+    });
+  });
+
+  it("counts a destructured (non-identifier) param as a position but never as a callback", () => {
+    // `paramName` returns null for a required_parameter whose pattern is an
+    // object/array destructure — it has no single binding name to invoke.
+    // The position still advances (so later params stay aligned), and the
+    // destructured slot is correctly absent from callbackParams.
+    const code = [
+      "function run({ a, b }, cb) {", // param 0 destructured, param 1 = cb
+      "  cb();", //                      only cb is invoked
+      "}",
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }]);
+    // cb sits at positional index 1 even though param 0 yields no name.
+    expect(e.callbackParams?.["run"]).toEqual([1]);
+  });
+
+  it("handles a TYPED destructured param (required_parameter wrapping an object pattern)", () => {
+    // `function f({ x }: Opts, cb)` parses param 0 as a required_parameter
+    // whose `pattern` field is an object_pattern, not an identifier —
+    // paramName must return null for it. The invoked callback at index 1
+    // still resolves; positions stay aligned through the unnameable slot.
+    const code = ["function run({ verbose }: { verbose: boolean }, cb) {", "  cb();", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }]);
+    expect(e.callbackParams?.["run"]).toEqual([1]);
+  });
+
+  it("handles a rest param (paramName has no name for `...args`)", () => {
+    // A rest_pattern param node is neither identifier nor
+    // required/optional_parameter — paramName returns null for it. The
+    // named callback at index 0 is invoked and still recorded; the rest
+    // slot occupies a position but never becomes a callback.
+    const code = [
+      "function run(cb, ...rest) {", // param 0 = cb, param 1 = ...rest
+      "  cb();",
+      "}",
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }]);
+    expect(e.callbackParams?.["run"]).toEqual([0]);
+  });
+
+  it("ignores a numeric / computed table key (no stable string key)", () => {
+    // keyText returns null for a numeric key (`0:`) — the entry is dropped
+    // rather than coerced to a bogus "0" key. The string-keyed entry next
+    // to it survives, so the table is still recorded.
+    const code = ["const T = { 0: fnZero, named: fnNamed };", ""].join("\n");
+    const e = extract(code, []);
+    expect(e.dispatchTables?.["T"]?.entries).toEqual({ named: "fnNamed" });
+  });
+});

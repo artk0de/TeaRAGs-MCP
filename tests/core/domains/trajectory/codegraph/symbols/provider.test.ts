@@ -3089,4 +3089,259 @@ describe("CodegraphEnrichmentProvider", () => {
       }
     });
   });
+
+  // ───────────────────────────────────────────────────────────────────
+  // Lookup-table dispatch (bd tea-rags-mcp-n0zj) — run-global aggregation
+  // of dispatchTables / callbackParams + fan-out edges through the resolver.
+  // ───────────────────────────────────────────────────────────────────
+  describe("dispatch tables (n0zj)", () => {
+    it("fans an in-file dynamic-key dispatch out to every candidate walker", async () => {
+      const sink = provider.asExtractionSink();
+      // The walker functions live in another file (cross-file candidate
+      // resolution) — mirrors LANGUAGES referencing extractFromXFile.
+      await sink.write({
+        relPath: "src/walkers.ts",
+        language: "typescript",
+        imports: [],
+        chunks: [
+          { symbolId: "extractTs", scope: [], calls: [] },
+          { symbolId: "extractRb", scope: [], calls: [] },
+        ],
+        fileScope: [],
+      });
+      await sink.write({
+        relPath: "src/provider.ts",
+        language: "typescript",
+        imports: [],
+        dispatchTables: {
+          LANGUAGES: { entries: { ".ts": { walker: "extractTs" }, ".rb": { walker: "extractRb" } } },
+        },
+        chunks: [
+          {
+            symbolId: "dispatch",
+            scope: [],
+            calls: [
+              {
+                callText: "LANGUAGES[ext].walker(input)",
+                receiver: null,
+                member: "walker",
+                startLine: 5,
+                dispatch: { table: "LANGUAGES", field: "walker", key: null },
+              },
+            ],
+          },
+        ],
+        fileScope: [],
+      });
+      await sink.finish();
+      // Both orphaned walkers now have the dispatcher as a caller.
+      expect(await client.getCalledByCount("extractTs")).toBe(1);
+      expect(await client.getCalledByCount("extractRb")).toBe(1);
+      expect(await client.getCallSiteCount("dispatch")).toBe(2);
+    });
+
+    it("joins a callback-param: collectSymbols fans out to the passed nameOf candidates", async () => {
+      const sink = provider.asExtractionSink();
+      await sink.write({
+        relPath: "src/names.ts",
+        language: "typescript",
+        imports: [],
+        chunks: [
+          { symbolId: "tsNameOf", scope: [], calls: [] },
+          { symbolId: "rbNameOf", scope: [], calls: [] },
+        ],
+        fileScope: [],
+      });
+      await sink.write({
+        relPath: "src/provider.ts",
+        language: "typescript",
+        imports: [],
+        dispatchTables: {
+          LANGUAGES: { entries: { ".ts": { nameOf: "tsNameOf" }, ".rb": { nameOf: "rbNameOf" } } },
+        },
+        // collectSymbols invokes its 2nd param (index 1).
+        callbackParams: { collectSymbols: [1] },
+        chunks: [
+          { symbolId: "collectSymbols", scope: [], calls: [] },
+          {
+            symbolId: "dispatch",
+            scope: [],
+            calls: [
+              {
+                callText: "collectSymbols(tree, LANGUAGES[ext].nameOf)",
+                receiver: null,
+                member: "collectSymbols",
+                startLine: 7,
+                dispatchArgs: [{ argIndex: 1, candidate: { table: "LANGUAGES", field: "nameOf", key: null } }],
+              },
+            ],
+          },
+        ],
+        fileScope: [],
+      });
+      await sink.finish();
+      // The callee (collectSymbols), not the dispatcher, is the source of
+      // the nameOf edges — that is where the parameter is invoked.
+      const tsCallers = await client.getCallers("tsNameOf");
+      expect(tsCallers.map((c) => c.sourceSymbolId).sort()).toEqual(["collectSymbols"]);
+      expect(await client.getCalledByCount("rbNameOf")).toBe(1);
+      // The normal dispatcher → collectSymbols edge still exists.
+      expect(await client.getCalledByCount("collectSymbols")).toBe(1);
+    });
+
+    it("aggregates dispatch tables run-global so a cross-file dispatch resolves", async () => {
+      const sink = provider.asExtractionSink();
+      // Table defined in registry.ts, dispatched from caller.ts (imports it).
+      await sink.write({
+        relPath: "src/handlers.ts",
+        language: "typescript",
+        imports: [],
+        chunks: [{ symbolId: "handleA", scope: [], calls: [] }],
+        fileScope: [],
+      });
+      await sink.write({
+        relPath: "src/registry.ts",
+        language: "typescript",
+        imports: [],
+        dispatchTables: { CMD: { entries: { a: { run: "handleA" } } } },
+        chunks: [],
+        fileScope: [],
+      });
+      await sink.write({
+        relPath: "src/caller.ts",
+        language: "typescript",
+        imports: [{ importText: "./registry", startLine: 1, importedNames: ["CMD"] }],
+        chunks: [
+          {
+            symbolId: "dispatch",
+            scope: [],
+            calls: [
+              {
+                callText: "CMD[k].run(x)",
+                receiver: null,
+                member: "run",
+                startLine: 3,
+                dispatch: { table: "CMD", field: "run", key: null },
+              },
+            ],
+          },
+        ],
+        fileScope: [],
+      });
+      await sink.finish();
+      expect(await client.getCalledByCount("handleA")).toBe(1);
+    });
+
+    it("re-walking the same file replaces its table def (idempotent across reindex)", async () => {
+      const sink = provider.asExtractionSink();
+      // Candidate functions live in their own file.
+      await sink.write({
+        relPath: "src/handlers.ts",
+        language: "typescript",
+        imports: [],
+        chunks: [
+          { symbolId: "handleA", scope: [], calls: [] },
+          { symbolId: "handleB", scope: [], calls: [] },
+        ],
+        fileScope: [],
+      });
+      // registry.ts declares CMD. It is written TWICE for the same relPath —
+      // simulating an incremental reindex re-walking the file. The run-global
+      // aggregation must dedup by relPath (replace, not append) so the second
+      // definition (which adds entry `b`) wins without leaving a stale `a`-only
+      // duplicate that would double-count candidates.
+      const registry = (entries: Record<string, { run: string }>) => ({
+        relPath: "src/registry.ts",
+        language: "typescript",
+        imports: [],
+        dispatchTables: { CMD: { entries } },
+        chunks: [],
+        fileScope: [],
+      });
+      await sink.write(registry({ a: { run: "handleA" } }));
+      await sink.write(registry({ a: { run: "handleA" }, b: { run: "handleB" } }));
+      await sink.write({
+        relPath: "src/caller.ts",
+        language: "typescript",
+        imports: [{ importText: "./registry", startLine: 1, importedNames: ["CMD"] }],
+        chunks: [
+          {
+            symbolId: "dispatch",
+            scope: [],
+            calls: [
+              {
+                callText: "CMD[k].run(x)",
+                receiver: null,
+                member: "run",
+                startLine: 3,
+                dispatch: { table: "CMD", field: "run", key: null },
+              },
+            ],
+          },
+        ],
+        fileScope: [],
+      });
+      await sink.finish();
+      // The replacement (not append) means each candidate has exactly ONE
+      // caller edge — no duplicate from the first, superseded def.
+      expect(await client.getCalledByCount("handleA")).toBe(1);
+      expect(await client.getCalledByCount("handleB")).toBe(1);
+    });
+
+    // End-to-end through the REAL TypeScript walker + provider aggregation +
+    // resolver — not the synthetic FileExtraction sink. A single registry
+    // file declares a const lookup table, a dispatcher that fans a dynamic
+    // key over it, and a higher-order `forEachLang` whose invoked callback
+    // param receives a table candidate-set. Verifies the whole chain wires
+    // up: collectDispatchTables / collectCallbackParams in the walker →
+    // run-global aggregation → resolveDispatch fan-out → graph edges.
+    it("walks a real .ts dispatch table file end-to-end and fans edges to every candidate", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-ts-disp-e2e-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(
+          join(root, "src", "walkers.ts"),
+          ["export function walkTs() {}", "export function walkRb() {}", ""].join("\n"),
+        );
+        writeFileSync(
+          join(root, "src", "registry.ts"),
+          [
+            "import { walkTs, walkRb } from './walkers';",
+            // S1 wrapper-object table keyed by extension (quoted string keys).
+            "const LANGUAGES = { '.ts': { walker: walkTs }, '.rb': { walker: walkRb } };",
+            // Higher-order helper that INVOKES its 2nd param (index 1) — makes
+            // it a callback-param target for the inter-proc join below.
+            "function forEachLang(input, walker) {",
+            "  return walker(input);",
+            "}",
+            "function dispatch(ext) {",
+            // dynamic-key dispatch — fans to BOTH walkers.
+            "  const fn = LANGUAGES[ext].walker;",
+            "  fn(0);",
+            // dispatch candidate-set passed at forEachLang's callback position.
+            "  forEachLang(0, LANGUAGES[ext].walker);",
+            "}",
+            // Typed destructured param — exercises paramName's null path
+            // (object_pattern inside required_parameter has no single name).
+            "function withOpts({ verbose }: { verbose: boolean }, run) {",
+            "  run();",
+            "}",
+            "",
+          ].join("\n"),
+        );
+        await provider.buildFileSignals(root);
+        // Both walker candidates are reached: once from the direct dynamic
+        // dispatch (source = dispatch) and once from the inter-proc join
+        // (source = forEachLang, the callee whose param is invoked).
+        expect(await client.getCalledByCount("walkTs")).toBeGreaterThanOrEqual(1);
+        expect(await client.getCalledByCount("walkRb")).toBeGreaterThanOrEqual(1);
+        const tsCallers = (await client.getCallers("walkTs")).map((c) => c.sourceSymbolId).sort();
+        // The dispatcher chunk and the invoked-callback callee both appear.
+        expect(tsCallers).toContain("dispatch");
+        expect(tsCallers).toContain("forEachLang");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
 });

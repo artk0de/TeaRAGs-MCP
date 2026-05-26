@@ -29,6 +29,10 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
+  type DispatchEdge,
+  type DispatchRef,
+  type DispatchTable,
+  type DispatchTableDef,
   type ResolvedTarget,
 } from "../../../../../../contracts/types/codegraph.js";
 import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
@@ -225,6 +229,121 @@ export class TSCallResolver implements CallResolver {
   }
 
   /**
+   * Fan-out resolution for lookup-table dispatch (bd tea-rags-mcp-n0zj).
+   * Returns every edge a dispatching call implies:
+   *
+   *   - `call.dispatch` → fan out from the CALLER (sourceSymbolId null) to
+   *     each candidate function the table selects. A dynamic key spans all
+   *     entries; a static literal key picks the one matching entry.
+   *   - `call.dispatchArgs` → bounded single-hop inter-procedural join:
+   *     resolve the normal callee `F`, and for each dispatch candidate-set
+   *     passed at one of `F`'s invoked param positions (`ctx.callbackParams`),
+   *     fan out from `F` (sourceSymbolId = F) to each candidate.
+   *
+   * Unresolvable tables / candidate names are dropped (never fabricated).
+   * The provider calls `resolve` separately for the normal callee edge.
+   */
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+    const edges: DispatchEdge[] = [];
+    if (call.dispatch) {
+      for (const target of this.expandCandidate(call.dispatch, ctx)) {
+        edges.push({
+          sourceSymbolId: null,
+          targetRelPath: target.targetRelPath,
+          targetSymbolId: target.targetSymbolId,
+        });
+      }
+    }
+    if (call.dispatchArgs && call.dispatchArgs.length > 0) {
+      const callee = this.resolve(call, ctx);
+      const calleeSymbolId = callee?.targetSymbolId ?? null;
+      const invoked = calleeSymbolId ? ctx.callbackParams?.[calleeSymbolId] : undefined;
+      if (calleeSymbolId && invoked && invoked.length > 0) {
+        for (const arg of call.dispatchArgs) {
+          if (!invoked.includes(arg.argIndex)) continue;
+          for (const target of this.expandCandidate(arg.candidate, ctx)) {
+            edges.push({
+              sourceSymbolId: calleeSymbolId,
+              targetRelPath: target.targetRelPath,
+              targetSymbolId: target.targetSymbolId,
+            });
+          }
+        }
+      }
+    }
+    return edges;
+  }
+
+  /**
+   * Expand a `DispatchRef` to the concrete call targets it can reach:
+   * select the table (import-disambiguated), pull the candidate function
+   * names for the field/key, resolve each name against the symbol table.
+   * Deduped — a dynamic key over entries pointing at the same function
+   * emits one edge, not N.
+   */
+  private expandCandidate(ref: DispatchRef, ctx: CallContext): ResolvedTarget[] {
+    const def = this.selectTableDef(ref.table, ctx);
+    if (!def) return [];
+    const targets: ResolvedTarget[] = [];
+    const seen = new Set<string>();
+    for (const name of candidateNames(def.table, ref)) {
+      const target = this.resolveCandidateName(name, ctx);
+      if (!target) continue;
+      const key = `${target.targetRelPath}::${target.targetSymbolId ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      targets.push(target);
+    }
+    return targets;
+  }
+
+  /**
+   * Pick the `DispatchTableDef` for a table name. A name declared in a
+   * single file resolves directly. When the same name is declared in
+   * several files, the caller's import map disambiguates (prefer the
+   * imported file, else the caller's own in-file table); if still
+   * ambiguous, drop rather than guess (m46z safety).
+   */
+  private selectTableDef(name: string, ctx: CallContext): DispatchTableDef | null {
+    const defs = ctx.dispatchTables?.[name];
+    if (!defs || defs.length === 0) return null;
+    if (defs.length === 1) return defs[0];
+    const importedFiles = this.importedFiles(ctx);
+    const imported = defs.filter((d) => importedFiles.has(d.relPath));
+    if (imported.length === 1) return imported[0];
+    const inFile = defs.filter((d) => d.relPath === ctx.callerFile);
+    if (inFile.length === 1) return inFile[0];
+    return null;
+  }
+
+  /**
+   * Resolve a bare candidate function name (a top-level function the
+   * dispatch table points at) to its symbol. Single top-level definition
+   * wins; on ambiguity the caller's import map narrows; otherwise drop.
+   */
+  private resolveCandidateName(name: string, ctx: CallContext): ResolvedTarget | null {
+    const candidates = ctx.symbolTable.lookupByShortName(name).filter((def) => def.scope.length === 0);
+    const sole = pickSingleCandidate(candidates, this.mode);
+    if (sole) return { targetRelPath: sole.relPath, targetSymbolId: sole.symbolId };
+    if (candidates.length > 1) {
+      const importedFiles = this.importedFiles(ctx);
+      const narrowed = candidates.filter((def) => importedFiles.has(def.relPath));
+      const narrowedHit = pickSingleCandidate(narrowed, this.mode);
+      if (narrowedHit) return { targetRelPath: narrowedHit.relPath, targetSymbolId: narrowedHit.symbolId };
+    }
+    return null;
+  }
+
+  private importedFiles(ctx: CallContext): Set<string> {
+    const files = new Set<string>();
+    for (const imp of ctx.imports) {
+      const file = mapImportToFile(imp.importText, ctx.callerFile, this.tsOptions);
+      if (file) files.add(file);
+    }
+    return files;
+  }
+
+  /**
    * Resolve a typed-receiver call (`param.member()` where `param` was
    * bound to `typeName` by the walker's parameter-type tracking). Tries
    * `typeName#member` (instance form) first, then `typeName.member`
@@ -351,6 +470,29 @@ export class TSCallResolver implements CallResolver {
     }
     return fileOnlyFallback;
   }
+}
+
+/**
+ * Candidate function names a `DispatchRef` selects from a table.
+ * Dynamic key → every entry; static key → the one matching entry.
+ * S2 (`field === null`) reads the entry directly (must be a string fn name);
+ * S1 reads `entry[field]`. Missing keys / wrong-shape entries contribute
+ * nothing — the resolver then drops or fans out the rest.
+ */
+function candidateNames(table: DispatchTable, ref: DispatchRef): string[] {
+  const keys = ref.key !== null ? [ref.key] : Object.keys(table.entries);
+  const names: string[] = [];
+  for (const key of keys) {
+    const entry = table.entries[key];
+    if (entry === undefined) continue;
+    if (ref.field === null) {
+      if (typeof entry === "string") names.push(entry);
+    } else if (typeof entry === "object") {
+      const fn = entry[ref.field];
+      if (typeof fn === "string") names.push(fn);
+    }
+  }
+  return names;
 }
 
 function lastSegment(qualified: string): string {

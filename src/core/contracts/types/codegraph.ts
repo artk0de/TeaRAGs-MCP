@@ -23,6 +23,61 @@ export type RelPath = string;
 export type SymbolId = string;
 
 /**
+ * A const dispatch table defined in one file (bd tea-rags-mcp-n0zj).
+ * `entries` preserves the source key→value mapping so a static
+ * string-literal key (`TABLE["ts"]`) resolves to the ONE matching entry
+ * while a dynamic key (`TABLE[ext]`) fans out to ALL of them. The value
+ * is either a function name (S2 direct-function map `{ k: fn }`) or a
+ * `fieldName → fnName` map (S1 wrapper-object map `{ k: { field: fn } }`).
+ * Only entries / fields whose value is a plain identifier are recorded —
+ * inline arrows, spreads, and computed values carry no symbol to point at
+ * and are dropped (m46z safety rule).
+ */
+export interface DispatchTable {
+  entries: Record<string, string | Record<string, string>>;
+}
+
+/**
+ * A `DispatchTable` paired with the repo-relative path of the file that
+ * declared it. The run-global aggregate keys these by table NAME (a name
+ * may be declared in more than one file), so the resolver disambiguates
+ * by the caller's import map before binding — and drops rather than
+ * guesses when the name is ambiguous across files with no import edge.
+ */
+export interface DispatchTableDef {
+  relPath: RelPath;
+  table: DispatchTable;
+}
+
+/**
+ * A reference to a dispatch candidate set, emitted by the walker and
+ * resolved by the resolver against the run-global tables.
+ *   - `field: null`  ⇒ S2: the entry IS the function (call `TABLE[k](x)`).
+ *   - `field: "fn"`  ⇒ S1: select that field of the entry object.
+ *   - `key: null`    ⇒ dynamic key: fan out to ALL entries.
+ *   - `key: "ts"`    ⇒ static string-literal key: the ONE matching entry.
+ */
+export interface DispatchRef {
+  table: string;
+  field: string | null;
+  key: string | null;
+}
+
+/**
+ * One fan-out edge produced by dispatch / callback-param resolution.
+ * `sourceSymbolId: null` ⇒ the edge originates from the calling chunk
+ * (the provider fills in the caller's symbolId). A non-null
+ * `sourceSymbolId` OVERRIDES the source — used by the bounded
+ * inter-procedural join where the edge originates from the CALLEE that
+ * invokes the passed-in callback, not from the call site.
+ */
+export interface DispatchEdge {
+  sourceSymbolId: SymbolId | null;
+  targetRelPath: RelPath;
+  targetSymbolId: SymbolId | null;
+}
+
+/**
  * Per-file extraction emitted by the TypeScript walker (and, in slice 3,
  * by other-language walkers) for graph construction. The walker calls
  * `ExtractionSink.write(extraction)` once per file after chunking
@@ -113,6 +168,29 @@ export interface FileExtraction {
    * Languages without static return types leave this undefined.
    */
   functionReturnTypes?: Record<string, string>;
+  /**
+   * Optional `tableName → DispatchTable` map for const lookup-table
+   * dispatch (bd tea-rags-mcp-n0zj). Populated by walkers that recognise
+   * module-level `const NAME = { … }` whose values are object literals
+   * (S1) or plain identifiers (S2). The provider merges these run-global
+   * (keyed by name + defining relpath) so the resolver can fan a
+   * `TABLE[key].field(...)` call out to every candidate function. Plain
+   * Record (NOT Map) for NDJSON-spill round-trip. Languages whose walkers
+   * don't emit dispatch tables leave this undefined.
+   */
+  dispatchTables?: Record<string, DispatchTable>;
+  /**
+   * Optional `fnSymbolId → invokedParamIndices` map for the bounded
+   * single-hop inter-procedural join (bd tea-rags-mcp-n0zj). For each
+   * in-file function / method, lists the parameter positions invoked as
+   * `param(...)` inside its body ("callback params"). The resolver joins
+   * this with a call site's `CallRef.dispatchArgs`: when a dispatch
+   * candidate-set is passed at a callback-param position, the CALLEE fans
+   * out to the candidates. Enables `collectSymbols(tree, langConfig.nameOf)`
+   * → `collectSymbols → {tsNameOf, rbNameOf, …}` edges. Plain Record for
+   * NDJSON-spill round-trip; undefined when no params are invoked.
+   */
+  callbackParams?: Record<string, number[]>;
 }
 
 export interface ImportRef {
@@ -195,6 +273,24 @@ export interface CallRef {
    *  name otherwise. */
   member: string;
   startLine: number;
+  /**
+   * Present when this call dispatches through a lookup table
+   * (bd tea-rags-mcp-n0zj). The resolver expands it to fan-out edges over
+   * the run-global tables and SKIPS normal receiver resolution for this
+   * call. See `DispatchRef`: `field: null` ⇒ S2 (the entry is the
+   * function), `key: null` ⇒ dynamic key (fan-out all entries).
+   */
+  dispatch?: DispatchRef;
+  /**
+   * Present when this NORMAL call passes a dispatch candidate-set as an
+   * ARGUMENT (bd tea-rags-mcp-n0zj). `receiver`/`member` still identify
+   * the callee so the resolver can resolve which function is called, then
+   * join `argIndex` against that callee's `callbackParams`: if the callee
+   * invokes the parameter at `argIndex`, the callee fans out to the
+   * candidates. The candidate mirrors `dispatch` — it may itself be
+   * `TABLE[k].field` or a dispatch-bound local.
+   */
+  dispatchArgs?: { argIndex: number; candidate: DispatchRef }[];
 }
 
 /**
@@ -245,6 +341,18 @@ export interface SymbolDefinition {
 export interface CallResolver {
   readonly language: string;
   resolve: (call: CallRef, ctx: CallContext) => ResolvedTarget | null;
+  /**
+   * Optional fan-out resolution for lookup-table dispatch
+   * (bd tea-rags-mcp-n0zj). Given a `CallRef` carrying `dispatch` and/or
+   * `dispatchArgs`, returns every fan-out edge the call implies:
+   *   - `dispatch` → one edge per resolved candidate, `sourceSymbolId:
+   *     null` (the provider fills the caller's symbolId).
+   *   - `dispatchArgs` → the bounded inter-procedural join: edges from the
+   *     resolved CALLEE to each candidate (non-null `sourceSymbolId`).
+   * Resolvers that don't support dispatch tables omit this method; the
+   * provider guards with `?.` so other-language resolvers are unaffected.
+   */
+  resolveDispatch?: (call: CallRef, ctx: CallContext) => DispatchEdge[];
 }
 
 /**
@@ -356,6 +464,24 @@ export interface CallContext {
    * in MRO so the resolver walks the array in REVERSE order.
    */
   classPrependedAncestors?: Record<string, readonly string[]>;
+  /**
+   * Run-global `tableName → DispatchTableDef[]` map propagated from every
+   * file's `FileExtraction.dispatchTables` (bd tea-rags-mcp-n0zj). Keyed
+   * by table NAME; the value is a LIST because the same name may be
+   * declared in more than one file. The resolver disambiguates by the
+   * caller's import map (prefers the imported file, falls back to a sole
+   * global, else drops). Consumed by `CallResolver.resolveDispatch`.
+   */
+  dispatchTables?: Record<string, DispatchTableDef[]>;
+  /**
+   * Run-global `fnSymbolId → invokedParamIndices` map merged across every
+   * file's `FileExtraction.callbackParams` (bd tea-rags-mcp-n0zj). The
+   * resolver reads it during the bounded inter-procedural join: when a
+   * call resolves to a callee `F` listed here and the call passed a
+   * dispatch candidate-set at one of `F`'s invoked param positions, `F`
+   * fans out to the candidates.
+   */
+  callbackParams?: Record<string, number[]>;
 }
 
 export interface ResolvedTarget {
