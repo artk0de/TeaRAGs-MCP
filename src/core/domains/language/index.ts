@@ -11,3 +11,5 @@
 // contracts/types/language.ts, not here.
 export { resolveViaChain } from "./resolver-chain.js";
 export { DefaultSymbolIdComposer } from "./kernel/symbol-id.js";
+export { LanguageFactoryImpl } from "./factory.js";
+export { LanguageError, UnsupportedLanguageError } from "./errors.js";

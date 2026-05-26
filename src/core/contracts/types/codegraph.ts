@@ -78,6 +78,48 @@ export interface DispatchEdge {
 }
 
 /**
+ * A symbol descriptor produced by a language walker's `nameOf(node)`. Names a
+ * single declaration (function, method, class, namespace) the walker found at
+ * the current AST node, plus the flags that drive symbolId composition and
+ * scope descent. Relocated to `contracts/` (from the codegraph provider) so the
+ * per-language `LanguageWalker` interface in `types/language.ts` can reference
+ * it without a domain→domain import.
+ */
+export interface NamedSymbol {
+  name: string;
+  descendsInto: boolean;
+  /**
+   * Distinguishes the universal class/method separator from the
+   * language's namespace separator. `"instance"` uses `#`; `"static"`
+   * uses `.`. Both override the language's `scopeSeparator` (which
+   * applies to namespaces / nested classes / top-level chains).
+   * Per `.claude/rules/symbolid-convention.md`.
+   */
+  methodKind?: "instance" | "static";
+  /**
+   * When `true`, `collectSymbols` synthesizes a `<name>#constructor`
+   * symbol after walking this node's children IF the children did NOT
+   * declare an explicit `constructor` member. Required for languages
+   * where a class without an explicit `constructor() {}` body still has
+   * an implicit constructor that `new Class()` and `super()` resolve to
+   * (TS/JS — see bd `tea-rags-mcp-vw1u`). Without this synthetic, the
+   * resolver walks `classExtends` to a parent, looks up
+   * `Parent#constructor`, finds nothing, and `get_callers` returns [].
+   */
+  syntheticConstructorIfMissing?: boolean;
+  /**
+   * When `true`, `joinSymbol` emits `child.name` verbatim regardless of
+   * the enclosing `composed` scope. Used by `nameOf` results whose name
+   * is already fully resolved (e.g. `Object.defineProperty(this, …)`
+   * inside `app.init = function () {}` — the `this`-resolution rewrites
+   * the receiver to `app`, producing an absolute `app.router` that
+   * should NOT be composed under the surrounding `app.init` scope).
+   * bd tea-rags-mcp-d1f8 this-resolve.
+   */
+  absolute?: boolean;
+}
+
+/**
  * Per-file extraction emitted by the TypeScript walker (and, in slice 3,
  * by other-language walkers) for graph construction. The walker calls
  * `ExtractionSink.write(extraction)` once per file after chunking

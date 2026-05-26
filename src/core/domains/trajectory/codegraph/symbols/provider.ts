@@ -46,6 +46,7 @@ import type {
   GlobalSymbolTable,
   GraphDbClient,
   GraphEdges,
+  NamedSymbol,
 } from "../../../../contracts/types/codegraph.js";
 import type {
   ChunkLookupEntry,
@@ -143,39 +144,11 @@ export function stripVersionSuffix(collectionName: string): string {
   return collectionName.replace(/_v\d+$/, "");
 }
 
-interface NamedSymbol {
-  name: string;
-  descendsInto: boolean;
-  /**
-   * Distinguishes the universal class/method separator from the
-   * language's namespace separator. `"instance"` uses `#`; `"static"`
-   * uses `.`. Both override the language's `scopeSeparator` (which
-   * applies to namespaces / nested classes / top-level chains).
-   * Per `.claude/rules/symbolid-convention.md`.
-   */
-  methodKind?: "instance" | "static";
-  /**
-   * When `true`, `collectSymbols` synthesizes a `<name>#constructor`
-   * symbol after walking this node's children IF the children did NOT
-   * declare an explicit `constructor` member. Required for languages
-   * where a class without an explicit `constructor() {}` body still has
-   * an implicit constructor that `new Class()` and `super()` resolve to
-   * (TS/JS — see bd `tea-rags-mcp-vw1u`). Without this synthetic, the
-   * resolver walks `classExtends` to a parent, looks up
-   * `Parent#constructor`, finds nothing, and `get_callers` returns [].
-   */
-  syntheticConstructorIfMissing?: boolean;
-  /**
-   * When `true`, `joinSymbol` emits `child.name` verbatim regardless of
-   * the enclosing `composed` scope. Used by `nameOf` results whose name
-   * is already fully resolved (e.g. `Object.defineProperty(this, …)`
-   * inside `app.init = function () {}` — the `this`-resolution rewrites
-   * the receiver to `app`, producing an absolute `app.router` that
-   * should NOT be composed under the surrounding `app.init` scope).
-   * bd tea-rags-mcp-d1f8 this-resolve.
-   */
-  absolute?: boolean;
-}
+/**
+ * `NamedSymbol` is defined in `contracts/types/codegraph.js` and imported
+ * above — relocated there so the per-language `LanguageWalker` interface can
+ * reference it without a domain→domain import.
+ */
 
 /**
  * Compose the next fully-qualified id by appending `child.name` to
