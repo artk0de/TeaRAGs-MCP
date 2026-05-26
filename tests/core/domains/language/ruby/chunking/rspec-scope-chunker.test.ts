@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildScopeTree,
   produceScopeChunks,
-} from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/ruby/rspec-scope-chunker.js";
+} from "../../../../../../src/core/domains/language/ruby/chunking/rspec-scope-chunker.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

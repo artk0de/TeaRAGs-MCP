@@ -48,6 +48,30 @@ export interface HookContext {
   skipChildren?: boolean;
 }
 
+/**
+ * A synthetic method symbol declared by a language's class-body DSL macro
+ * (Ruby `attr_accessor` / `delegate` / `define_method`, etc.) — methods that
+ * exist without a `def`. The chunker engine wraps each into a `CodeChunk` with
+ * `chunkType="function"` and `symbolId = parent #|. name` so they look like a
+ * regular method symbol, keeping the chunker's Qdrant payload in lockstep with
+ * the codegraph's cg_symbols rows (`.claude/rules/symbolid-convention.md`).
+ *
+ * Lives in `contracts/` (relocated from the Ruby walker's `RubyMacroSymbol`,
+ * mirroring the `2b94e178` precedent) so the engine reaches it through the
+ * `LanguageChunkerHooks.macroSymbols` capability rather than importing a
+ * `domains/language/<lang>` concrete — which the reverse-guard forbids.
+ */
+export interface MacroSymbol {
+  /** Method name (e.g. `foo`, `foo=`). */
+  name: string;
+  /** `instance` joins to the parent with `#`; `static` (class-level) with `.`. */
+  kind: "instance" | "static";
+  /** 1-based source line where the macro call appears. */
+  startLine: number;
+  /** 1-based end line (inclusive) of the macro call. */
+  endLine: number;
+}
+
 /** Single hook in the chain */
 export interface ChunkingHook {
   name: string;

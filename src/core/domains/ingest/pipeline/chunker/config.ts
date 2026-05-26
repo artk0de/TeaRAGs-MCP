@@ -1,7 +1,7 @@
 import type Parser from "tree-sitter";
 
+import type { MacroSymbol } from "../../../../contracts/types/chunker.js";
 import { javascriptHooks } from "./hooks/javascript/index.js";
-import { rubyHooks } from "./hooks/ruby/index.js";
 import type { ChunkingHook } from "./hooks/types.js";
 import { typescriptHooks } from "./hooks/typescript/index.js";
 
@@ -95,6 +95,13 @@ export interface LanguageConfig {
   scopeSeparator?: string;
   keepShortChildChunkTypes?: string[];
   disambiguateOverloads?: boolean;
+  /**
+   * Synthetic class-body macro symbol extractor (Ruby `attr_accessor` etc.),
+   * threaded from `LanguageChunkerHooks.macroSymbols` via the provider so the
+   * engine never imports the concrete `domains/language/<lang>` module. Absent
+   * for languages with no `def`-less method idiom.
+   */
+  macroSymbols?: (containerNode: Parser.SyntaxNode) => MacroSymbol[];
 }
 
 /**
@@ -328,7 +335,12 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // `class << self` form; named scope name handled by nameExtractor.
     scopeContainerTypes: ["class", "module", "singleton_class"],
     scopeSeparator: "::",
-    hooks: rubyHooks,
+    // NOTE: Ruby is now a NATIVE `domains/language/ruby` provider
+    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `ruby` (NATIVE_LANGUAGES),
+    // so the chunker hooks / walker / resolver come from `RubyLanguage`, not
+    // this entry. This `LANGUAGE_DEFINITIONS.ruby` row is retained only so
+    // `CODE_LANGUAGES` / `LANGUAGE_MAP` still report ruby as a code language;
+    // its `hooks` field is intentionally absent (the native provider owns it).
     // Removed problematic types:
     // - "lambda", "block" → too small (1 line), fragments context
     // - "do_block" → creates too many tiny chunks from iterators

@@ -24,7 +24,7 @@ import { describe, expect, it } from "vitest";
 
 import { extractFromJavascriptFile } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/javascript-walker.js";
 import { extractFromPythonFile } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/python-walker.js";
-import { extractFromRubyFile } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/ruby-walker.js";
+import { extractFromRubyFile } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
 import { extractFromTypescriptFile } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/typescript-walker.js";
 import {
   extractJsAssignmentSymbol,

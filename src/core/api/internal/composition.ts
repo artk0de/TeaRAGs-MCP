@@ -10,7 +10,7 @@ import type { LanguageFactory } from "../../contracts/types/language.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
-import { LanguageFactoryImpl } from "../../domains/language/index.js";
+import { LanguageFactoryImpl, RubyLanguage } from "../../domains/language/index.js";
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
@@ -61,13 +61,20 @@ export interface CompositionOptions {
 }
 
 export function createComposition(options: CompositionOptions = {}): CompositionResult {
-  // Real LanguageFactory via the legacy adapter (composition-root hybrid, spec
-  // §5). When codegraph is enabled its resolvers back each provider's `resolver`
-  // capability; otherwise providers are walker/chunker-only. Built before the
-  // codegraph trajectory so it can be injected into the codegraph provider.
-  const languageFactory = new LanguageFactoryImpl(
-    buildLegacyLanguageRegistry(options.codegraph?.resolvers),
-  );
+  // Real LanguageFactory: the legacy adapter serves the not-yet-migrated
+  // languages (composition-root hybrid, spec §5); migrated languages are wired
+  // natively over the top. When codegraph is enabled its resolvers back each
+  // adapter-built provider's `resolver` capability; native providers carry their
+  // own resolver. Built before the codegraph trajectory so it can be injected
+  // into the codegraph provider.
+  const languageRegistry = buildLegacyLanguageRegistry(options.codegraph?.resolvers);
+  // Ruby vertical (tea-rags-mcp-cen6): native provider replaces the legacy
+  // adapter entry. The adapter skips `ruby` (NATIVE_LANGUAGES), so this sets it.
+  // The native provider carries its own RubyCallResolver — built with the
+  // configured ambiguous-resolve mode (threaded via CodegraphDeps) so it stays
+  // behaviour-identical to the legacy adapter's `resolvers`-map ruby entry.
+  languageRegistry.set("ruby", new RubyLanguage(options.codegraph?.ambiguousResolveMode));
+  const languageFactory = new LanguageFactoryImpl(languageRegistry);
 
   const registry = new TrajectoryRegistry();
   registry.register(new StaticTrajectory());

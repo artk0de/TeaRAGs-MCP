@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractFromRubyFile,
   ZEITWERK_PREFIX,
-} from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/ruby-walker.js";
+} from "../../../../../../src/core/domains/language/ruby/walker/walker.js";
 
 function parse(src: string) {
   const parser = new Parser();

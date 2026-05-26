@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallResolver } from "../../../../src/core/contracts/types/codegraph.js";
-import { buildLegacyLanguageRegistry } from "../../../../src/core/api/internal/legacy-language-adapter.js";
+import {
+  NATIVE_LANGUAGES,
+  buildLegacyLanguageRegistry,
+} from "../../../../src/core/api/internal/legacy-language-adapter.js";
 import { LanguageFactoryImpl } from "../../../../src/core/domains/language/index.js";
 import {
   LANGUAGE_DEFINITIONS,
@@ -15,6 +18,12 @@ import { UnsupportedLanguageError } from "../../../../src/core/domains/language/
  * composition-root hybrid wraps the EXISTING per-language sources into
  * `LanguageProvider`s WITHOUT any behavioural drift — every field the chunker /
  * codegraph engines read today is reproduced identically through the factory.
+ *
+ * Languages migrated to a native `domains/language/<lang>` provider are SKIPPED
+ * by the adapter (`NATIVE_LANGUAGES`, e.g. ruby — tea-rags-mcp-cen6); the
+ * composition roots wire those natively over the top. So the adapter-served set
+ * is `LANGUAGE_DEFINITIONS` minus `NATIVE_LANGUAGES`, and the fidelity loops only
+ * cover adapter-served languages.
  */
 describe("legacyLanguageRegistry adapter fidelity", () => {
   // Reverse-index codegraph configs by language name (the registry key) so a
@@ -24,12 +33,20 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
     if (!codegraphByLang.has(cfg.language)) codegraphByLang.set(cfg.language, cfg);
   }
 
-  it("registers exactly the languages in LANGUAGE_DEFINITIONS", () => {
+  // Languages the legacy adapter actually wraps (native ones are skipped).
+  const adapterServedLangs = Object.keys(LANGUAGE_DEFINITIONS).filter(
+    (lang) => !NATIVE_LANGUAGES.has(lang),
+  );
+  const adapterServedCodegraphLangs = [...codegraphByLang.keys()].filter(
+    (lang) => !NATIVE_LANGUAGES.has(lang),
+  );
+
+  it("registers exactly the adapter-served languages (LANGUAGE_DEFINITIONS minus native)", () => {
     const factory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
-    expect(new Set(factory.supported())).toEqual(new Set(Object.keys(LANGUAGE_DEFINITIONS)));
+    expect(new Set(factory.supported())).toEqual(new Set(adapterServedLangs));
   });
 
-  it.each(Object.keys(LANGUAGE_DEFINITIONS))(
+  it.each(adapterServedLangs)(
     "chunkerHooks for %s match LANGUAGE_DEFINITIONS verbatim",
     (lang) => {
       const factory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
@@ -46,7 +63,7 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
     },
   );
 
-  it.each(Object.keys(LANGUAGE_DEFINITIONS))(
+  it.each(adapterServedLangs)(
     "kernel for %s mirrors LANGUAGE_DEFINITIONS parser-load + namespace config",
     (lang) => {
       const factory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
@@ -80,7 +97,7 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
     expect(classifyMethod(classNode)).toBeNull();
   });
 
-  it.each([...codegraphByLang.keys()])(
+  it.each(adapterServedCodegraphLangs)(
     "walker for %s reuses CODEGRAPH_LANGUAGES walk + nameOf",
     (lang) => {
       const factory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());

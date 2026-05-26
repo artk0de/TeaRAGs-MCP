@@ -15,6 +15,12 @@
  * Per-language verticals later swap each adapter-backed entry for a native
  * `domains/language/<lang>` provider; this adapter is deleted by the cleanup
  * task (tea-rags-mcp-jh40) once every language has moved.
+ *
+ * Languages already migrated to a native `domains/language/<lang>` provider are
+ * listed in `NATIVE_LANGUAGES` and SKIPPED here — the composition roots wire
+ * their native provider into the registry instead. Ruby is the first
+ * (tea-rags-mcp-cen6, the richest-first pilot). Skipping is what lets the old
+ * per-language sources be deleted: this adapter no longer references them.
  */
 
 import type { CallResolver } from "../../contracts/types/codegraph.js";
@@ -80,8 +86,17 @@ function kernelFrom(def: LanguageDefinition): LanguageKernel {
  * `walk` + `nameOf`; the parser-load / scopeSeparator / disambiguateOverloads
  * bits that the provider also reads from its map are carried by the kernel
  * instead (and are numerically equal — verified in the fidelity test).
+ *
+ * Returns `undefined` when the config carries no `walker` (`cfg.walker` is
+ * OPTIONAL — a language migrated to a native `domains/language/<lang>` provider
+ * drops its walker from the legacy map). A missing walker means the language
+ * legitimately has no codegraph-extraction capability, so the provider's
+ * `walker` is `undefined` — NOT a `LanguageWalker` whose `walk` returns
+ * undefined. The `nameOf` companion is meaningless without `walk`, so both are
+ * dropped together.
  */
-function walkerFrom(cfg: CodegraphLanguageConfig): LanguageWalker {
+function walkerFrom(cfg: CodegraphLanguageConfig): LanguageWalker | undefined {
+  if (!cfg.walker) return undefined; // narrows cfg.walker to the non-optional shape below
   return {
     walk: cfg.walker,
     nameOf: cfg.nameOf,
@@ -104,11 +119,20 @@ function resolverFrom(resolver: CallResolver): LanguageSymbolResolver {
 }
 
 /**
- * Assemble the full per-language `LanguageProvider` registry (keyed by language
- * NAME) by wrapping every legacy source. Every language in `LANGUAGE_DEFINITIONS`
- * gets an entry; the `walker`/`resolver` capabilities are attached only when the
- * matching codegraph config / resolver exists (a doc language like markdown has
- * neither — chunkerHooks only, spec §1a).
+ * Languages served by a native `domains/language/<lang>` provider rather than
+ * this legacy adapter. Each is wired into the registry by the composition roots
+ * (`composition.ts` + `chunker-worker.ts`). The adapter skips them so the old
+ * per-language sources can be deleted without leaving a dangling reference here.
+ */
+export const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby"]);
+
+/**
+ * Assemble the per-language `LanguageProvider` registry (keyed by language NAME)
+ * by wrapping every NON-native legacy source. Each language in
+ * `LANGUAGE_DEFINITIONS` except `NATIVE_LANGUAGES` gets an entry; the
+ * `walker`/`resolver` capabilities are attached only when the matching codegraph
+ * config / resolver exists (a doc language like markdown has neither —
+ * chunkerHooks only, spec §1a).
  *
  * @param resolvers The codegraph resolver map (`CallResolver` per language) —
  *   wired by `bootstrap/factory.ts:wireCodegraph`. Optional: when codegraph is
@@ -129,6 +153,7 @@ export function buildLegacyLanguageRegistry(
 
   const registry = new Map<string, LanguageProvider>();
   for (const [lang, def] of Object.entries(LANGUAGE_DEFINITIONS)) {
+    if (NATIVE_LANGUAGES.has(lang)) continue; // native provider wired by composition root
     const cfg = codegraphByLang.get(lang);
     const callResolver = resolvers?.get(lang);
     registry.set(lang, {

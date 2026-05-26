@@ -10,7 +10,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { BodyChunkResult, ChunkingHook } from "../types.js";
+import type { BodyChunkResult, ChunkingHook } from "../../../../contracts/types/chunker.js";
 
 // ── Public interfaces ──────────────────────────────────────────────
 

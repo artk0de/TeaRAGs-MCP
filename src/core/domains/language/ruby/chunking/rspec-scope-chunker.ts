@@ -28,7 +28,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { BodyChunkResult, ChunkingHook } from "../types.js";
+import type { BodyChunkResult, ChunkingHook } from "../../../../contracts/types/chunker.js";
 import { isRspecFile } from "./rspec-filter.js";
 
 // ── Types ────────────────────────────────────────────────────────────

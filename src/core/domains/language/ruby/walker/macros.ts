@@ -33,26 +33,19 @@
 
 import type Parser from "tree-sitter";
 
+import type { MacroSymbol } from "../../../../contracts/types/chunker.js";
+
 /**
  * A synthesised method symbol emitted by a Ruby DSL macro. The chunker
  * wraps these into `CodeChunk` entries with `chunkType="function"`, the
  * appropriate `parentSymbolId`, and `symbolId = parent #|. name` so they
  * look identical to a regular `def`-emitted method symbol.
+ *
+ * Alias of the language-neutral `MacroSymbol` contract (relocated there so the
+ * chunker engine reaches macro emission via the `LanguageChunkerHooks.macroSymbols`
+ * capability, not a `domains/language/` import). Same shape.
  */
-export interface RubyMacroSymbol {
-  /** Method name (e.g. `foo`, `foo=`). */
-  name: string;
-  /**
-   * Method kind. `instance` joins to the parent with `#`; `static` (class /
-   * module-level) joins with `.`. Mirrors `MethodClassification` in
-   * `infra/symbolid/classify.ts`.
-   */
-  kind: "instance" | "static";
-  /** 1-based source line where the macro call appears. */
-  startLine: number;
-  /** 1-based end line (inclusive) of the macro call. */
-  endLine: number;
-}
+export type RubyMacroSymbol = MacroSymbol;
 
 /** Builder type: turn a base symbol name into one or more synthetic methods. */
 type MacroBuilder = (base: string) => { name: string; kind: "instance" | "static" }[];

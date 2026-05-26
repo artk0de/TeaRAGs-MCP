@@ -1,6 +1,6 @@
 import type Parser from "tree-sitter";
 
-import type { ChunkingHook } from "../types.js";
+import type { ChunkingHook } from "../../../../contracts/types/chunker.js";
 
 /**
  * Scan lines backwards from a Ruby method node to collect preceding comment rows.

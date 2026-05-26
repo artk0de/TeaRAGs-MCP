@@ -13,7 +13,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { ChunkingHook } from "./chunker.js";
+import type { ChunkingHook, MacroSymbol } from "./chunker.js";
 import type {
   CallContext,
   CallRef,
@@ -206,6 +206,17 @@ export interface LanguageChunkerHooks {
    * `find_symbol("Pair#getLeft")` resolves. bd tea-rags-mcp-52e8.
    */
   keepShortChildChunkTypes?: string[];
+  /**
+   * Extract synthetic method symbols from a class/module container's body for
+   * languages with `def`-less method declarations (Ruby DSL macros:
+   * `attr_accessor`, `delegate`, `define_method`, …). Returns one `MacroSymbol`
+   * per declared method at the container's scope. The chunker engine emits a
+   * `chunkType="function"` chunk per result so bare-id call resolution can land
+   * on `Class#accessor` and `get_callers`/`get_callees` work on Rails code (bd
+   * tea-rags-mcp-3nf3 / zy3f). Omitted for languages with no such idiom. The
+   * engine reaches this via the provider (no direct `domains/language/` import).
+   */
+  macroSymbols?: (containerNode: Parser.SyntaxNode) => MacroSymbol[];
 }
 
 /**

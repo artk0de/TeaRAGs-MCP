@@ -4,7 +4,7 @@ import {
   constantToFilePath,
   resolveZeitwerkConstant,
   snakeCase,
-} from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ruby/zeitwerk.js";
+} from "../../../../../../src/core/domains/language/ruby/resolver/zeitwerk.js";
 
 describe("snakeCase (Zeitwerk-equivalent underscore)", () => {
   it("simple constant: User → user", () => {

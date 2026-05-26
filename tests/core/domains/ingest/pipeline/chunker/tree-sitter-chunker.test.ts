@@ -1,13 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { extractClassHeader } from "../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/ruby/class-body-chunker.js";
+import { extractClassHeader } from "../../../../../../src/core/domains/language/ruby/chunking/class-body-chunker.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
-import { DefaultSymbolIdComposer, LanguageFactoryImpl } from "../../../../../../src/core/domains/language/index.js";
+import { DefaultSymbolIdComposer, LanguageFactoryImpl, RubyLanguage } from "../../../../../../src/core/domains/language/index.js";
 import { buildLegacyLanguageRegistry } from "../../../../../../src/core/api/internal/legacy-language-adapter.js";
 import { generateChunkId } from "../../../../../../src/core/domains/ingest/pipeline/chunker/utils/chunk-id.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
-const testLanguageFactory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
+// Mirror the composition roots (composition.ts / chunker-worker.ts): the legacy
+// adapter skips native languages (ruby), so the native RubyLanguage provider is
+// wired over the top. Without this, factory.create("ruby") has no hooks.
+const testLanguageRegistry = buildLegacyLanguageRegistry();
+testLanguageRegistry.set("ruby", new RubyLanguage());
+const testLanguageFactory = new LanguageFactoryImpl(testLanguageRegistry);
 
 describe("TreeSitterChunker", () => {
   let chunker: TreeSitterChunker;

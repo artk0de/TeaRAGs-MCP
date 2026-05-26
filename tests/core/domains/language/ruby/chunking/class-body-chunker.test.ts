@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   RubyClassBodyChunker,
   type BodyLine,
-} from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/ruby/class-body-chunker.js";
+} from "../../../../../../src/core/domains/language/ruby/chunking/class-body-chunker.js";
 
 describe("RubyClassBodyChunker", () => {
   const grouper = new RubyClassBodyChunker();

@@ -9,7 +9,7 @@
  */
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
-import type { CallResolver } from "../../../contracts/types/codegraph.js";
+import type { AmbiguousResolveMode, CallResolver } from "../../../contracts/types/codegraph.js";
 import type { LanguageFactory, SymbolIdComposer } from "../../../contracts/types/language.js";
 import type { Trajectory } from "../../../contracts/types/trajectory.js";
 import type { CodegraphExclusionOptions } from "./exclusion.js";
@@ -47,6 +47,16 @@ export interface CodegraphDeps {
    * the dependency graph but main Qdrant ingest still indexes them.
    */
   exclusion: CodegraphExclusionOptions;
+  /**
+   * Ambiguous-call resolution mode threaded from `codegraph.ambiguousResolveMode`
+   * (bootstrap factory). Used by composition roots to construct NATIVE
+   * `domains/language/<lang>` providers whose resolver carries the configured
+   * mode (e.g. `new RubyLanguage(mode)`) — the legacy adapter built the same
+   * mode into its `resolvers` map entries, so threading it keeps the native
+   * vertical behaviour-identical for non-default modes. Optional: defaults to
+   * `DEFAULT_AMBIGUOUS_RESOLVE_MODE` ("strict") when omitted (tests).
+   */
+  ambiguousResolveMode?: AmbiguousResolveMode;
 }
 
 /**

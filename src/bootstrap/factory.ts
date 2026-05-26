@@ -32,7 +32,6 @@ import { GoCallResolver } from "../core/domains/trajectory/codegraph/symbols/res
 import { JavaCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/java/index.js";
 import { JavascriptCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/javascript/index.js";
 import { PythonCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/python/index.js";
-import { RubyCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/ruby/index.js";
 import { RustCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/rust/index.js";
 import { loadTsConfig, TSCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/ts/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -222,7 +221,9 @@ function wireCodegraph(
     ["typescript", new TSCallResolver(loadTsConfig(process.cwd()), ambiguousMode)],
     ["javascript", new JavascriptCallResolver(ambiguousMode)],
     ["python", new PythonCallResolver(ambiguousMode)],
-    ["ruby", new RubyCallResolver(ambiguousMode)],
+    // ruby: served by the NATIVE domains/language/ruby provider (its own
+    // RubyCallResolver, built with `ambiguousMode` threaded via CodegraphDeps).
+    // The legacy adapter skips ruby, so no entry here.
     ["go", new GoCallResolver(symbolIdComposer, ambiguousMode)],
     ["java", new JavaCallResolver(ambiguousMode)],
     ["rust", new RustCallResolver(ambiguousMode)],
@@ -269,6 +270,11 @@ function wireCodegraph(
     pool,
     resolvers,
     composer: symbolIdComposer,
+    // Threaded to composition roots so NATIVE language providers (ruby) build
+    // their resolver with the configured mode — the legacy adapter baked the
+    // same mode into its `resolvers` map, so this keeps the native vertical
+    // behaviour-identical for non-default modes.
+    ambiguousResolveMode: ambiguousMode,
     // Codegraph-layer exclusion (test files + user-supplied patterns).
     // The shape mirrors `CodegraphExclusionOptions`; the provider
     // builds the actual `Ignore` instance at construction time.

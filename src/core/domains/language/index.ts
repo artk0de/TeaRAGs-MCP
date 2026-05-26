@@ -13,3 +13,4 @@ export { resolveViaChain } from "./resolver-chain.js";
 export { DefaultSymbolIdComposer } from "./kernel/symbol-id.js";
 export { LanguageFactoryImpl } from "./factory.js";
 export { LanguageError, UnsupportedLanguageError } from "./errors.js";
+export { RubyLanguage } from "./ruby/index.js";

@@ -2,7 +2,7 @@ import Parser from "tree-sitter";
 import Ruby from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
-import { rspecFilterHook } from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/ruby/rspec-filter.js";
+import { rspecFilterHook } from "../../../../../../src/core/domains/language/ruby/chunking/rspec-filter.js";
 
 // Helper: parse Ruby code and find all `call` nodes at any depth
 function parseAndFindCalls(code: string): { node: Parser.SyntaxNode; code: string }[] {

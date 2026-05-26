@@ -11,7 +11,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { ChunkingHook, HookContext } from "../types.js";
+import type { ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
 
 /** Methods that create describe/context containers */
 const RSPEC_CONTAINER_METHODS = new Set([

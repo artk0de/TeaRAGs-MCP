@@ -28,7 +28,7 @@ import type {
   WorkerResponse,
 } from "../../domains/ingest/pipeline/chunker/infra/worker-protocol.js";
 import { TreeSitterChunker } from "../../domains/ingest/pipeline/chunker/tree-sitter.js";
-import { DefaultSymbolIdComposer, LanguageFactoryImpl } from "../../domains/language/index.js";
+import { DefaultSymbolIdComposer, LanguageFactoryImpl, RubyLanguage } from "../../domains/language/index.js";
 import { buildLegacyLanguageRegistry } from "./legacy-language-adapter.js";
 
 if (parentPort) {
@@ -37,7 +37,14 @@ if (parentPort) {
   // handles can't cross the `postMessage` boundary, so the LanguageFactory is
   // built HERE rather than received from the main process. The chunker needs no
   // codegraph resolvers — the registry serves walker/chunker capabilities only.
-  const languageFactory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
+  const languageRegistry = buildLegacyLanguageRegistry();
+  // Ruby vertical (tea-rags-mcp-cen6): native provider replaces the legacy
+  // adapter entry here too — the worker is the SECOND composition root and the
+  // adapter skips `ruby`, so the native chunker hooks/walker must be set. No
+  // codegraph resolver is needed for chunking; RubyLanguage's resolver is built
+  // but never invoked by the chunker engine.
+  languageRegistry.set("ruby", new RubyLanguage());
+  const languageFactory = new LanguageFactoryImpl(languageRegistry);
   const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), languageFactory);
 
   parentPort.on("message", (msg: WorkerRequest | { type: "shutdown" }) => {

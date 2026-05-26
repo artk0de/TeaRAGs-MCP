@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext } from "../../../../../../../../src/core/contracts/types/codegraph.js";
-import { ZEITWERK_PREFIX } from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/ruby-walker.js";
-import { RubyCallResolver } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ruby/ruby-resolver.js";
-import { InMemoryGlobalSymbolTable } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { ZEITWERK_PREFIX } from "../../../../../../src/core/domains/language/ruby/walker/walker.js";
+import { RubyCallResolver } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
+import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function makeCtx(
   callerFile: string,

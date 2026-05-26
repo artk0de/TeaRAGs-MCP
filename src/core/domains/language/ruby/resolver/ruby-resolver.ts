@@ -29,11 +29,8 @@ import {
   type CallRef,
   type CallResolver,
   type ResolvedTarget,
-} from "../../../../../../contracts/types/codegraph.js";
-import {
-  SUPER_RECEIVER_SENTINEL,
-  ZEITWERK_PREFIX,
-} from "../../../../../ingest/pipeline/chunker/extraction/ruby-walker.js";
+} from "../../../../contracts/types/codegraph.js";
+import { SUPER_RECEIVER_SENTINEL, ZEITWERK_PREFIX } from "../walker/walker.js";
 import { resolveZeitwerkConstant } from "./zeitwerk.js";
 
 export class RubyCallResolver implements CallResolver {

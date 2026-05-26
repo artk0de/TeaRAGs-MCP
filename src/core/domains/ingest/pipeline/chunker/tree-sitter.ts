@@ -9,6 +9,7 @@
 
 import Parser from "tree-sitter";
 
+import type { MacroSymbol } from "../../../../contracts/types/chunker.js";
 import type {
   LanguageChunkerHooks,
   LanguageFactory,
@@ -21,7 +22,6 @@ import { isDebug } from "../infra/runtime.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import type { LanguageConfig } from "./config.js";
-import { extractRubyMacroSymbols, type RubyMacroSymbol } from "./extraction/ruby-macros.js";
 import { extractGoSymbol } from "./hooks/go/index.js";
 import {
   extractJsAssignmentSymbol,
@@ -88,10 +88,24 @@ export class TreeSitterChunker implements CodeChunker {
     filePath: string,
     language: string,
     chunks: CodeChunk[],
+    macroSymbols: ((containerNode: Parser.SyntaxNode) => MacroSymbol[]) | undefined,
   ): void {
-    if (language !== "ruby") return;
+    // No-op unless the language provider supplies a macro-symbol extractor
+    // (Ruby). Reached via the provider capability, not a direct import —
+    // keeps the engine free of any `domains/language/<lang>` dependency.
+    if (!macroSymbols) return;
     const lines = code.split("\n");
-    this.walkRubyMacroScopes(containerNode, parentSymbolId, parentType, code, filePath, language, chunks, lines);
+    this.walkRubyMacroScopes(
+      containerNode,
+      parentSymbolId,
+      parentType,
+      code,
+      filePath,
+      language,
+      chunks,
+      lines,
+      macroSymbols,
+    );
   }
 
   /**
@@ -112,9 +126,10 @@ export class TreeSitterChunker implements CodeChunker {
     language: string,
     chunks: CodeChunk[],
     lines: string[],
+    macroSymbols: (containerNode: Parser.SyntaxNode) => MacroSymbol[],
   ): void {
     // Emit macros declared directly in this container's body.
-    const macros = extractRubyMacroSymbols(containerNode);
+    const macros = macroSymbols(containerNode);
     for (const macro of macros) {
       const content = (lines[macro.startLine - 1] ?? "").trim() || `# ${macro.name}`;
       this.pushMacroSymbolChunk(macro, content, currentParent, parentType, filePath, language, chunks);
@@ -135,12 +150,12 @@ export class TreeSitterChunker implements CodeChunker {
       // Ruby namespace join uses `::` (scopeSeparator) — route through the
       // composer rather than hardcoding the separator (symbolid-convention).
       const nestedParent = this.symbolIds.compose(currentParent ?? "", localName, { scopeSeparator: "::" });
-      this.walkRubyMacroScopes(stmt, nestedParent, stmt.type, code, filePath, language, chunks, lines);
+      this.walkRubyMacroScopes(stmt, nestedParent, stmt.type, code, filePath, language, chunks, lines, macroSymbols);
     }
   }
 
   private pushMacroSymbolChunk(
-    macro: RubyMacroSymbol,
+    macro: MacroSymbol,
     content: string,
     parentSymbolId: string | undefined,
     parentType: string,
@@ -334,6 +349,7 @@ export class TreeSitterChunker implements CodeChunker {
         scopeSeparator: kernel.scopeSeparator,
         keepShortChildChunkTypes: hooks.keepShortChildChunkTypes,
         disambiguateOverloads: kernel.disambiguateOverloads,
+        macroSymbols: hooks.macroSymbols,
       };
     } catch (error) {
       console.error(`[TreeSitter] Failed to load parser for ${language}:`, error);
@@ -495,8 +511,18 @@ export class TreeSitterChunker implements CodeChunker {
       );
 
       // Synthetic method symbols from Ruby DSL macros (attr_accessor /
-      // delegate / cattr_* / mattr_* / define_method). No-op for non-Ruby.
-      this.emitRubyMacroSymbols(node, parentName, parentType, code, filePath, language, chunks);
+      // delegate / cattr_* / mattr_* / define_method). No-op unless the
+      // provider supplies a macro extractor.
+      this.emitRubyMacroSymbols(
+        node,
+        parentName,
+        parentType,
+        code,
+        filePath,
+        language,
+        chunks,
+        langConfig.macroSymbols,
+      );
 
       if (langConfig.alwaysExtractChildren) {
         const hasHookChain = langConfig.hooks && langConfig.hooks.length > 0;
@@ -560,7 +586,7 @@ export class TreeSitterChunker implements CodeChunker {
     // (bd tea-rags-mcp-3nf3 + tea-rags-mcp-zy3f). The caller will emit the
     // single-class chunk via chunkSingleNode after this returns false; we
     // emit the per-accessor function chunks here so they ship alongside it.
-    this.emitRubyMacroSymbols(node, parentName, parentType, code, filePath, language, chunks);
+    this.emitRubyMacroSymbols(node, parentName, parentType, code, filePath, language, chunks, langConfig.macroSymbols);
     return false;
   }
 

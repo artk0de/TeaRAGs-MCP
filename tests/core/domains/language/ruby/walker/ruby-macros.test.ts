@@ -20,7 +20,7 @@ import Parser from "tree-sitter";
 import RbLang from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
-import { extractRubyMacroSymbols } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/ruby-macros.js";
+import { extractRubyMacroSymbols } from "../../../../../../src/core/domains/language/ruby/walker/macros.js";
 
 function parse(src: string): Parser.Tree {
   const parser = new Parser();

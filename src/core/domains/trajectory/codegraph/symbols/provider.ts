@@ -70,7 +70,6 @@ import { extractFromGoFile } from "../../../ingest/pipeline/chunker/extraction/g
 import { extractFromJavaFile } from "../../../ingest/pipeline/chunker/extraction/java-walker.js";
 import { extractFromJavascriptFile } from "../../../ingest/pipeline/chunker/extraction/javascript-walker.js";
 import { extractFromPythonFile } from "../../../ingest/pipeline/chunker/extraction/python-walker.js";
-import { extractFromRubyFile } from "../../../ingest/pipeline/chunker/extraction/ruby-walker.js";
 import { extractFromRustFile } from "../../../ingest/pipeline/chunker/extraction/rust-walker.js";
 import { extractFromTypescriptFile } from "../../../ingest/pipeline/chunker/extraction/typescript-walker.js";
 import { pipelineLog } from "../../../ingest/pipeline/infra/debug-logger.js";
@@ -189,7 +188,16 @@ function joinSymbol(composer: SymbolIdComposer, composed: string, child: NamedSy
 export interface CodegraphLanguageConfig {
   language: string;
   loadParser: () => Parser.Language;
-  walker: (input: {
+  /**
+   * Per-file extraction walker. OPTIONAL: a language migrated to a native
+   * `domains/language/<lang>` provider (Ruby — tea-rags-mcp-cen6) drops its
+   * `walker`/`nameOf` here because the provider supplies them via the injected
+   * `LanguageFactory` (`extractOneFile` reads `factory.create(lang).walker`).
+   * The entry is retained for `loadParser` / `scopeSeparator` /
+   * `disambiguateOverloads`, which still source from this map. Non-migrated
+   * languages keep both (the legacy adapter wraps them).
+   */
+  walker?: (input: {
     tree: Parser.Tree;
     code: string;
     relPath: string;
@@ -268,7 +276,12 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   ".rb": {
     language: "ruby",
     loadParser: () => RbLang as Parser.Language,
-    walker: extractFromRubyFile,
+    // walker DROPPED — ruby migrated to the native domains/language/ruby
+    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
+    // `factory.create("ruby").walker`; this entry is retained only for
+    // `loadParser` / `scopeSeparator` (still sourced from the map). The local
+    // `nameOf` is kept to satisfy the non-optional config field but is no
+    // longer read by the engine for ruby.
     nameOf: rbNameOf,
     scopeSeparator: "::",
   },
