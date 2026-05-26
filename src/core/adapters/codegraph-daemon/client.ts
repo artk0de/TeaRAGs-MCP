@@ -119,6 +119,15 @@ export class DaemonGraphDbClient implements GraphDbClient {
   }
 
   /**
+   * Delete the superseded version's DuckDB file after the Qdrant alias swap.
+   * Concrete daemon method (NOT on the `GraphDbClient` interface) — driven by
+   * the force-reindex path once the alias flips readers onto `newVersion`.
+   */
+  async finalizeReindex(oldVersion: string, newVersion: string): Promise<void> {
+    await this.call("finalizeReindex", { oldVersion, newVersion });
+  }
+
+  /**
    * Concrete daemon method (NOT yet on the `GraphDbClient` interface — added in
    * Task 7). Runs SCC + PageRank daemon-side so the heavy graph build stays in
    * the single daemon process.

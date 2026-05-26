@@ -58,7 +58,11 @@ export class CodegraphDaemonServer {
         return null;
       }
       case "finalizeReindex":
-        // Minimal behavior — full versioned-swap cleanup lands in Task 8.
+        // The Qdrant alias swap (adapters/qdrant/aliases.ts:switchAlias) has
+        // already flipped readers onto newVersion; delete the superseded
+        // oldVersion DuckDB file (+ WAL sidecar) so it does not outlive the
+        // collection it shadowed. `removeCollection` closes any pooled handle
+        // first, then unlinks the file — crash-safe: old stays intact until swap.
         await this.pool.removeCollection(p.oldVersion as string);
         return null;
       default:

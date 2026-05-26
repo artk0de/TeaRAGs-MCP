@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodegraphDaemonServer } from "../../../../src/core/adapters/codegraph-daemon/server.js";
@@ -42,6 +42,41 @@ describe("CodegraphDaemonServer.handle", () => {
     // unknown op → error response, not a throw
     const res = await server.handle({ id: 9, op: "bogus" as never, params: { collection: "c" } });
     expect(res.ok).toBe(false);
+    await pool.closeAll();
+  });
+
+  it("finalizeReindex deletes the old version DB file, new version readable", async () => {
+    const { server, pool } = makeServer();
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: "code_x_v1",
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertFile",
+      params: {
+        collection: "code_x_v2",
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+    const oldPath = pool.pathFor("code_x_v1");
+    expect(existsSync(oldPath)).toBe(true);
+    const res = await server.handle({
+      id: 3,
+      op: "finalizeReindex",
+      params: { collection: "code_x_v2", oldVersion: "code_x_v1", newVersion: "code_x_v2" },
+    });
+    expect(res.ok).toBe(true);
+    expect(existsSync(oldPath)).toBe(false); // old deleted
+    const ro = await pool.acquireRead("code_x_v2");
+    expect(await ro.graphDb.hasData()).toBe(true); // new live
+    await ro.graphDb.close();
     await pool.closeAll();
   });
 });
