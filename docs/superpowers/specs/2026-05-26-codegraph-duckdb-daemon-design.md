@@ -40,9 +40,12 @@ Non-Goals.
    force-reindex (build new, swap, delete old) for the codegraph DB.
 3. Keep `provider.ts` and the MCP query tools essentially unchanged — swap the
    behavior in behind `GraphDbClientPool`.
-4. Reuse the repo's established daemon conventions
-   (`adapters/qdrant/embedded/daemon.ts`, `daemon-lock.ts`: unix socket,
-   refcount, idle-shutdown).
+4. Reuse the repo's established daemon conventions. **Transport** = unix socket
+   + newline-delimited JSON, like the ONNX daemon (`onnx.sock`). **Lifecycle**
+   (lock-guarded single spawn via `daemon-lock.ts`, file-based refcount,
+   idle-shutdown watcher) is adapted from the Qdrant embedded daemon
+   (`adapters/qdrant/embedded/daemon.ts` — note its own transport is HTTP/TCP,
+   so only the lifecycle helpers are mirrored, not the transport).
 
 ## Non-Goals (explicit)
 
