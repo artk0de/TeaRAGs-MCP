@@ -45,6 +45,73 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 
+  it("computeAndPersistCyclesAndSignals traverses populated adjacency (file + method edges)", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_adj_v1";
+    // Two files with a file-import edge AND a method-call edge so the
+    // daemon-side analysis walks non-empty adjacency for both scopes.
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: {
+          fileEdges: [{ targetRelPath: "b.ts", importText: "./b" }],
+          methodEdges: [
+            {
+              sourceSymbolId: "A#run",
+              targetSymbolId: "B#help",
+              targetRelPath: "b.ts",
+              callExpression: "this.b.help()",
+            },
+          ],
+        },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "b.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+    const an = await server.handle({
+      id: 3,
+      op: "computeAndPersistCyclesAndSignals",
+      params: { collection: c },
+    });
+    expect(an.ok).toBe(true);
+    await pool.closeAll();
+  });
+
+  it("removeSymbolsForFile and checkpoint dispatch to the pooled graphDb without throwing", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_ops_v1";
+    // Seed a file, then remove its symbols and checkpoint — both are
+    // write ops that route through pool.acquire(collection).
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+    const removed = await server.handle({
+      id: 2,
+      op: "removeSymbolsForFile",
+      params: { collection: c, relPath: "a.ts" },
+    });
+    const checkpointed = await server.handle({ id: 3, op: "checkpoint", params: { collection: c } });
+    expect(removed.ok).toBe(true);
+    expect(checkpointed.ok).toBe(true);
+    await pool.closeAll();
+  });
+
   it("finalizeReindex deletes the old version DB file, new version readable", async () => {
     const { server, pool } = makeServer();
     await server.handle({

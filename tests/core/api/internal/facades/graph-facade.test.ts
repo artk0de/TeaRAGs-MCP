@@ -7,14 +7,19 @@ import { GraphFacade } from "../../../../../src/core/api/internal/facades/graph-
  * Build a fake pool that returns the same graphDb (+ trivial symbolTable
  * stub) for every collection name. Keeps each test focused on the
  * facade's mapping behaviour without exercising real DuckDB I/O.
+ *
+ * Reads route through `acquireRead` (in-process READ_ONLY attach) — the facade
+ * closes the returned `graphDb` after each query, so the stub graphDb gets a
+ * no-op `close` injected when absent.
  */
-function fakePool(graphDb: unknown): GraphDbClientPool {
+function fakePool(graphDb: Record<string, unknown>): GraphDbClientPool {
+  if (typeof graphDb.close !== "function") graphDb.close = vi.fn().mockResolvedValue(undefined);
   const handle = {
     graphDb,
     symbolTable: {} as unknown as never,
   };
   return {
-    acquire: vi.fn().mockResolvedValue(handle),
+    acquireRead: vi.fn().mockResolvedValue(handle),
     peek: vi.fn().mockReturnValue(handle),
   } as unknown as GraphDbClientPool;
 }
@@ -114,7 +119,7 @@ describe("GraphFacade", () => {
   // "codegraph optional" guarantee — the MCP server keeps responding.
   it("returns empty response when the pool cannot open the collection", async () => {
     const pool = {
-      acquire: vi.fn().mockRejectedValue(new Error("lock held")),
+      acquireRead: vi.fn().mockRejectedValue(new Error("lock held")),
       peek: vi.fn().mockReturnValue(undefined),
     } as unknown as GraphDbClientPool;
     const facade = new GraphFacade({ pool });

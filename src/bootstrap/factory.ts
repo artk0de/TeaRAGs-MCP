@@ -1,10 +1,18 @@
 // src/bootstrap/factory.ts
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+import {
+  type CodegraphDaemonPaths,
+  getDaemonPaths,
+  getStorageDir,
+  incrementRefs,
+} from "../core/adapters/codegraph-daemon/index.js";
+import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
@@ -185,7 +193,85 @@ interface CodegraphContext {
   pool: GraphDbClientPool;
 }
 
-function wireCodegraph(config: AppConfig, zodConfig: ReturnType<typeof getZodConfig>): CodegraphContext | undefined {
+/**
+ * Spawn-on-demand gate for the codegraph daemon. Default OFF — when
+ * `TEA_RAGS_CODEGRAPH_DAEMON` is unset/`0`, the pool runs in direct
+ * (in-process RW) mode exactly as before, so the test suite and existing
+ * installs are unaffected. Set `TEA_RAGS_CODEGRAPH_DAEMON=1` to route writes
+ * through the daemon.
+ */
+const CODEGRAPH_DAEMON_ENV = "TEA_RAGS_CODEGRAPH_DAEMON";
+
+function codegraphDaemonEnabled(): boolean {
+  const v = process.env[CODEGRAPH_DAEMON_ENV];
+  return v === "1" || v === "true";
+}
+
+const codegraphDaemonLock = new DaemonLock();
+
+/** Cheap pid-liveness probe over the daemon's pid file (no Qdrant coupling). */
+function isCodegraphDaemonAlive(paths: CodegraphDaemonPaths): boolean {
+  if (!existsSync(paths.pidFile)) return false;
+  try {
+    const pid = parseInt(readFileSync(paths.pidFile, "utf-8").trim(), 10);
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Lazily spawn the codegraph daemon process when it is not already alive. The
+ * spawn is single-flighted across processes via `DaemonLock` on the lock file —
+ * mirrors the Qdrant embedded-daemon cold-spawn guard. The daemon binary is the
+ * built `entry.js` next to this module; resolved via `import.meta.url` so it
+ * works identically under `src/` (ts-node) and `build/` (shipped JS).
+ *
+ * Best-effort: any spawn failure is swallowed and the caller falls back to the
+ * in-process path on the next `acquireWrite` — codegraph degrades, the MCP
+ * server stays up.
+ */
+function ensureCodegraphDaemon(paths: CodegraphDaemonPaths, rootDir: string, resources: {
+  memoryLimit?: string;
+  threads?: number;
+}): void {
+  if (isCodegraphDaemonAlive(paths)) {
+    incrementRefs(paths);
+    return;
+  }
+  const lock = codegraphDaemonLock.acquire(paths.lockFile);
+  if (!lock) return; // another process is spawning; it will own the daemon
+  try {
+    if (isCodegraphDaemonAlive(paths)) {
+      incrementRefs(paths);
+      return;
+    }
+    const entryUrl = new URL("../core/adapters/codegraph-daemon/entry.js", import.meta.url);
+    const entryPath = fileURLToPath(entryUrl);
+    const child = spawn(process.execPath, [entryPath], {
+      detached: true,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        TEA_RAGS_CODEGRAPH_DAEMON_ROOT: rootDir,
+        TEA_RAGS_CODEGRAPH_DAEMON_DIR: paths.storageDir,
+        ...(resources.memoryLimit ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY: resources.memoryLimit } : {}),
+        ...(resources.threads !== undefined
+          ? { TEA_RAGS_CODEGRAPH_DAEMON_THREADS: String(resources.threads) }
+          : {}),
+      },
+    });
+    child.unref();
+    incrementRefs(paths);
+  } catch {
+    /* best-effort: fall back to in-process write path */
+  } finally {
+    codegraphDaemonLock.release(lock.fd);
+  }
+}
+
+export function wireCodegraph(config: AppConfig, zodConfig: ReturnType<typeof getZodConfig>): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so opt-in via env stays the
   // only path to enable codegraph.
@@ -204,6 +290,15 @@ function wireCodegraph(config: AppConfig, zodConfig: ReturnType<typeof getZodCon
       ? dirname(codegraph.dbPath)
       : codegraph.dbPath
     : config.paths.appData;
+
+  // Daemon mode (opt-in via TEA_RAGS_CODEGRAPH_DAEMON). When enabled, the pool
+  // is told the daemon's unix socket so `acquireWrite` proxies mutations to the
+  // single daemon process (one RW DuckDB lock per machine). Default OFF → the
+  // pool runs in direct in-process RW mode, unchanged from before. The daemon
+  // process itself is spawned lazily on the first write (see lazy wrap below)
+  // so this wire step has zero side effects — the unit test never spawns.
+  const daemonMode = codegraphDaemonEnabled();
+  const daemonPaths = daemonMode ? getDaemonPaths(getStorageDir(rootDir)) : undefined;
 
   const ambiguousMode = codegraph.ambiguousResolveMode;
   const resolvers = new Map<string, CallResolver>([
@@ -233,6 +328,10 @@ function wireCodegraph(config: AppConfig, zodConfig: ReturnType<typeof getZodCon
       threads: codegraph.dbThreads,
       preserveInsertionOrder: false,
     },
+    // Daemon socket — present only in daemon mode. `acquireWrite` routes
+    // mutations through a `DaemonGraphDbClient` over this socket; reads
+    // (`acquireRead`) always stay in-process READ_ONLY and ignore it.
+    daemonSocketPath: daemonPaths?.socketPath,
     // Hydrate the per-collection symbol table from disk on first open.
     // Without this, an incremental reindex of file A cannot resolve
     // calls into an unchanged file B — the walker only touches changed
@@ -252,6 +351,26 @@ function wireCodegraph(config: AppConfig, zodConfig: ReturnType<typeof getZodCon
       }
     },
   });
+
+  // Lazy spawn-on-demand: the daemon process is started the FIRST time a write
+  // is acquired, not at wire time — so `wireCodegraph` stays side-effect-free
+  // (the unit test exercises only the wire step). `ensureCodegraphDaemon` is
+  // single-flighted across processes via DaemonLock and refcounts each MCP
+  // client; `ensured` makes the in-process wrap fire once.
+  if (daemonMode && daemonPaths) {
+    let ensured = false;
+    const originalAcquireWrite = pool.acquireWrite.bind(pool);
+    pool.acquireWrite = async (collectionName: string) => {
+      if (!ensured) {
+        ensured = true;
+        ensureCodegraphDaemon(daemonPaths, rootDir, {
+          memoryLimit: codegraph.dbMemoryLimit,
+          threads: codegraph.dbThreads,
+        });
+      }
+      return originalAcquireWrite(collectionName);
+    };
+  }
 
   const deps: CodegraphDeps = {
     pool,

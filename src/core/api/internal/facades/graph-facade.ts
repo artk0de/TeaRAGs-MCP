@@ -39,45 +39,73 @@ export class GraphFacade {
   constructor(private readonly deps: GraphFacadeDeps) {}
 
   /**
-   * Acquire the per-collection handle for the request's `path`. Returns
-   * `undefined` when the underlying DuckDB cannot be opened — caller
-   * surfaces an empty response rather than propagating the lock /
-   * I/O error to MCP.
+   * Acquire a per-collection READ-ONLY handle for the request's `path` and run
+   * `fn` against it, always closing the handle afterwards. Reads route through
+   * `pool.acquireRead` — an in-process READ_ONLY DuckDB attach that does NOT
+   * contend with the daemon's RW lock (DuckDB permits unlimited concurrent
+   * cross-process readers). `acquireRead` returns a NON-cached client the caller
+   * MUST close, so every read opens-queries-closes in one bounded scope.
+   *
+   * Returns `fallback` when the underlying DuckDB cannot be opened (lock held,
+   * missing file, init failure) — the graph tool degrades to an empty result
+   * rather than propagating the I/O error to the MCP request.
    */
-  private async acquireForPath(path: string): Promise<CollectionGraphHandle | undefined> {
+  private async withReadHandle<T>(
+    path: string,
+    fn: (handle: CollectionGraphHandle) => Promise<T>,
+    fallback: T,
+  ): Promise<T> {
     const collectionName = resolveCollectionName(path);
+    let handle: CollectionGraphHandle | undefined;
     try {
-      return await this.deps.pool.acquire(collectionName);
+      handle = await this.deps.pool.acquireRead(collectionName);
     } catch {
-      return undefined;
+      return fallback;
+    }
+    try {
+      return await fn(handle);
+    } finally {
+      await handle.graphDb.close().catch(() => undefined);
     }
   }
 
   async getCallers(req: GetCallersRequest): Promise<GetCallersResponse> {
-    const handle = await this.acquireForPath(req.path);
-    if (!handle) return { callers: [] };
-    const edges = await handle.graphDb.getCallers(req.symbolId);
-    return { callers: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
+    return this.withReadHandle(
+      req.path,
+      async (handle) => {
+        const edges = await handle.graphDb.getCallers(req.symbolId);
+        return { callers: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
+      },
+      { callers: [] },
+    );
   }
 
   async getCallees(req: GetCalleesRequest): Promise<GetCalleesResponse> {
-    const handle = await this.acquireForPath(req.path);
-    if (!handle) return { callees: [] };
-    const edges = await handle.graphDb.getCallees(req.symbolId);
-    return { callees: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
+    return this.withReadHandle(
+      req.path,
+      async (handle) => {
+        const edges = await handle.graphDb.getCallees(req.symbolId);
+        return { callees: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
+      },
+      { callees: [] },
+    );
   }
 
   async findCycles(req: FindCyclesRequest): Promise<FindCyclesResponse> {
-    const handle = await this.acquireForPath(req.path);
-    if (!handle) return { cycles: [] };
-    const entries = await handle.graphDb.findCycles(req.scope);
-    return {
-      cycles: entries.map((e) => ({
-        cycleId: e.cycleId,
-        scope: e.scope,
-        members: e.members,
-        length: e.members.length,
-      })),
-    };
+    return this.withReadHandle(
+      req.path,
+      async (handle) => {
+        const entries = await handle.graphDb.findCycles(req.scope);
+        return {
+          cycles: entries.map((e) => ({
+            cycleId: e.cycleId,
+            scope: e.scope,
+            members: e.members,
+            length: e.members.length,
+          })),
+        };
+      },
+      { cycles: [] },
+    );
   }
 }
