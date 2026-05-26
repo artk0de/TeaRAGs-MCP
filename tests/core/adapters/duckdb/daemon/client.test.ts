@@ -139,29 +139,94 @@ describe("DaemonGraphDbClient", () => {
     expect(fin?.params).toMatchObject({ oldVersion: "code_x_v8", newVersion: "code_x_v9" });
   });
 
-  it("every still-unsupported read method rejects with UnsupportedDaemonReadError naming the op", async () => {
+  it("the full codegraph read surface proxies through the daemon socket and resolves the server result", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    // Echo server returns a deterministic, op-specific payload so every proxied
+    // read can be asserted end-to-end — none must throw UnsupportedDaemonReadError.
+    const replies: Partial<Record<DaemonRequest["op"], unknown>> = {
+      getFanIn: 3,
+      getFanOut: 7,
+      getCalledByCount: 11,
+      getCallSiteCount: 13,
+      getTransitiveImpact: 42,
+      getPageRank: 0.25,
+      hasData: true,
+      listAllSymbols: [{ symbolId: "A#run", fqName: "A.run", shortName: "run", relPath: "a.ts", scope: [] }],
+      listAdjacency: [["a.ts", ["b.ts", "c.ts"]]],
+    };
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return replies[r.op] ?? null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+
+    expect(await client.getFanIn("a.ts")).toBe(3);
+    expect(await client.getFanOut("a.ts")).toBe(7);
+    expect(await client.getCalledByCount("Foo#bar")).toBe(11);
+    expect(await client.getCallSiteCount("Foo#bar")).toBe(13);
+    expect(await client.getTransitiveImpact("a.ts", 4)).toBe(42);
+    expect(await client.getPageRank("Foo#bar")).toBe(0.25);
+    expect(await client.hasData()).toBe(true);
+    expect(await client.listAllSymbols()).toEqual([
+      { symbolId: "A#run", fqName: "A.run", shortName: "run", relPath: "a.ts", scope: [] },
+    ]);
+    // listAdjacency serialises as entries over the wire; the client rebuilds the Map.
+    expect(await client.listAdjacency("file")).toEqual(new Map([["a.ts", ["b.ts", "c.ts"]]]));
+
+    await client.close();
+
+    // getTransitiveImpact threads maxDepth; getFanIn/getFanOut/removeFile thread relPath.
+    const impact = seen.find((r) => r.op === "getTransitiveImpact");
+    expect(impact?.params).toMatchObject({ relPath: "a.ts", maxDepth: 4 });
+    const fanIn = seen.find((r) => r.op === "getFanIn");
+    expect((fanIn?.params as { relPath: string }).relPath).toBe("a.ts");
+    expect(seen.every((r) => (r.params as { collection: string }).collection === "code_x_v1")).toBe(true);
+  });
+
+  it("the full codegraph write surface proxies the matching op + injected collection over the socket", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_w_v1");
+    await client.init();
+    await client.removeFile("a.ts");
+    await client.upsertSymbols("a.ts", [
+      { symbolId: "A#run", fqName: "A.run", shortName: "run", relPath: "a.ts", scope: [] },
+    ]);
+    await client.replaceCycles("file", [["a.ts", "b.ts"]]);
+    await client.replacePageRanks(new Map([["A#run", 0.5]]));
+    await client.close();
+
+    expect(seen.map((r) => r.op)).toEqual(["removeFile", "upsertSymbols", "replaceCycles", "replacePageRanks"]);
+    expect(seen.every((r) => (r.params as { collection: string }).collection === "code_w_v1")).toBe(true);
+    const upsert = seen.find((r) => r.op === "upsertSymbols");
+    expect((upsert?.params as { relPath: string }).relPath).toBe("a.ts");
+    const cycles = seen.find((r) => r.op === "replaceCycles");
+    expect(cycles?.params).toMatchObject({ scope: "file", sccs: [["a.ts", "b.ts"]] });
+    // replacePageRanks Map serialises as entries over the wire.
+    const ranks = seen.find((r) => r.op === "replacePageRanks");
+    expect((ranks?.params as { ranks: [string, number][] }).ranks).toEqual([["A#run", 0.5]]);
+  });
+
+  it("streamAdjacency STILL throws UnsupportedDaemonReadError (daemon-internal, never proxied)", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "d.sock");
     await echoServer(socketPath, () => null);
     const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
     await client.init();
 
-    // getCallers/getCallees/findCycles now PROXY (covered above). Everything
-    // else is still unsupported on the daemon client and throws on call;
-    // streamAdjacency throws on first iteration.
-    await expect(client.getFanIn("a.ts")).rejects.toThrow(/getFanIn/);
-    await expect(client.getFanOut("a.ts")).rejects.toThrow(/getFanOut/);
-    await expect(client.getCalledByCount("Foo#bar")).rejects.toThrow(/getCalledByCount/);
-    await expect(client.getCallSiteCount("Foo#bar")).rejects.toThrow(/getCallSiteCount/);
-    await expect(client.hasData()).rejects.toThrow(/hasData/);
-    await expect(client.removeFile("a.ts")).rejects.toThrow(/removeFile/);
-    await expect(client.upsertSymbols("a.ts", [])).rejects.toThrow(/upsertSymbols/);
-    await expect(client.listAllSymbols()).rejects.toThrow(/listAllSymbols/);
-    await expect(client.getTransitiveImpact("a.ts")).rejects.toThrow(/getTransitiveImpact/);
-    await expect(client.listAdjacency("file")).rejects.toThrow(/listAdjacency/);
-    await expect(client.replaceCycles("file", [])).rejects.toThrow(/replaceCycles/);
-    await expect(client.replacePageRanks(new Map())).rejects.toThrow(/replacePageRanks/);
-    await expect(client.getPageRank("Foo#bar")).rejects.toThrow(/getPageRank/);
+    // streamAdjacency is the ONLY read that stays daemon-internal: the heavy
+    // analysis runs inside the daemon (computeAndPersistCyclesAndSignals) and
+    // must NOT stream over IPC. It throws on first iteration.
     await expect(async () => {
       for await (const _ of client.streamAdjacency("method")) {
         /* unreachable — first next() throws */

@@ -181,6 +181,105 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 
+  it("dispatches the full proxied surface (reads + writes) against the pooled graphDb without throwing", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_full_v1";
+    // a.ts imports b.ts and A#run calls B#help — gives both a file edge and a
+    // method edge so the fan/impact/pagerank reads have real data to return.
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: {
+          fileEdges: [{ targetRelPath: "b.ts", importText: "./b" }],
+          methodEdges: [
+            {
+              sourceSymbolId: "A#run",
+              targetSymbolId: "B#help",
+              targetRelPath: "b.ts",
+              callExpression: "this.b.help()",
+            },
+          ],
+        },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "b.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+
+    // Persist symbols so listAllSymbols returns rows.
+    const sym = await server.handle({
+      id: 3,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "a.ts",
+        definitions: [{ symbolId: "A#run", fqName: "A.run", shortName: "run", relPath: "a.ts", scope: [] }],
+      },
+    });
+    expect(sym.ok).toBe(true);
+
+    // Run analysis daemon-side, then persist cycles + ranks directly.
+    expect(
+      (await server.handle({ id: 4, op: "computeAndPersistCyclesAndSignals", params: { collection: c } })).ok,
+    ).toBe(true);
+    expect(
+      (await server.handle({ id: 5, op: "replaceCycles", params: { collection: c, scope: "file", sccs: [] } })).ok,
+    ).toBe(true);
+    expect(
+      (await server.handle({ id: 6, op: "replacePageRanks", params: { collection: c, ranks: [["A#run", 0.5]] } })).ok,
+    ).toBe(true);
+
+    // Reads.
+    const fanIn = await server.handle({ id: 7, op: "getFanIn", params: { collection: c, relPath: "b.ts" } });
+    expect(fanIn.ok).toBe(true);
+    expect((fanIn as { result: number }).result).toBe(1); // b imported by a
+
+    const fanOut = await server.handle({ id: 8, op: "getFanOut", params: { collection: c, relPath: "a.ts" } });
+    expect((fanOut as { result: number }).result).toBe(1); // a imports b
+
+    expect(
+      (await server.handle({ id: 9, op: "getCalledByCount", params: { collection: c, symbolId: "B#help" } })).ok,
+    ).toBe(true);
+    expect(
+      (await server.handle({ id: 10, op: "getCallSiteCount", params: { collection: c, symbolId: "A#run" } })).ok,
+    ).toBe(true);
+    expect((await server.handle({ id: 11, op: "hasData", params: { collection: c } })).result).toBe(true);
+
+    const all = await server.handle({ id: 12, op: "listAllSymbols", params: { collection: c } });
+    expect((all as { result: { symbolId: string }[] }).result.map((s) => s.symbolId)).toContain("A#run");
+
+    const impact = await server.handle({
+      id: 13,
+      op: "getTransitiveImpact",
+      params: { collection: c, relPath: "b.ts", maxDepth: 3 },
+    });
+    expect(impact.ok).toBe(true);
+
+    const adj = await server.handle({ id: 14, op: "listAdjacency", params: { collection: c, scope: "file" } });
+    expect(adj.ok).toBe(true);
+    // Serialised as entries — a.ts → [b.ts].
+    expect((adj as { result: [string, string[]][] }).result).toEqual([["a.ts", ["b.ts"]]]);
+
+    const rank = await server.handle({ id: 15, op: "getPageRank", params: { collection: c, symbolId: "A#run" } });
+    expect(rank.ok).toBe(true);
+
+    // removeFile.
+    expect((await server.handle({ id: 16, op: "removeFile", params: { collection: c, relPath: "a.ts" } })).ok).toBe(
+      true,
+    );
+
+    await pool.closeAll();
+  });
+
   it("finalizeReindex deletes the old version DB file, new version readable", async () => {
     const { server, pool } = makeServer();
     await server.handle({

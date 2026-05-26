@@ -1,4 +1,12 @@
-import type { CycleScope, GraphDbClient, SymbolId } from "../../../contracts/types/codegraph.js";
+import type {
+  CycleScope,
+  GraphDbClient,
+  GraphEdges,
+  GraphFileNode,
+  RelPath,
+  SymbolDefinition,
+  SymbolId,
+} from "../../../contracts/types/codegraph.js";
 import { pageRank } from "../../../infra/graph/page-rank.js";
 import { tarjanScc } from "../../../infra/graph/tarjan-scc.js";
 import type { GraphDbClientPool } from "../pool.js";
@@ -37,14 +45,37 @@ export class CodegraphDaemonServer {
       case "handshake":
         await this.pool.acquire(collection); // opens + migrates + hydrates
         return null;
+      // ── writes ──
       case "upsertFile": {
         const { graphDb } = await this.pool.acquire(collection);
-        await graphDb.upsertFile(p.node as never, p.edges as never);
+        await graphDb.upsertFile(p.node as GraphFileNode, p.edges as GraphEdges);
+        return null;
+      }
+      case "removeFile": {
+        const { graphDb } = await this.pool.acquire(collection);
+        await graphDb.removeFile(p.relPath as RelPath);
         return null;
       }
       case "removeSymbolsForFile": {
         const { graphDb } = await this.pool.acquire(collection);
-        await graphDb.removeSymbolsForFile(p.relPath as string);
+        await graphDb.removeSymbolsForFile(p.relPath as RelPath);
+        return null;
+      }
+      case "upsertSymbols": {
+        const { graphDb } = await this.pool.acquire(collection);
+        await graphDb.upsertSymbols(p.relPath as RelPath, p.definitions as SymbolDefinition[]);
+        return null;
+      }
+      case "replaceCycles": {
+        const { graphDb } = await this.pool.acquire(collection);
+        await graphDb.replaceCycles(p.scope as CycleScope, p.sccs as readonly (readonly string[])[]);
+        return null;
+      }
+      case "replacePageRanks": {
+        const { graphDb } = await this.pool.acquire(collection);
+        // Ranks ride the wire as `[symbolId, rank][]` entries (a Map cannot
+        // JSON-serialise) — rebuild the Map before delegating to the adapter.
+        await graphDb.replacePageRanks(new Map(p.ranks as [string, number][]));
         return null;
       }
       case "checkpoint": {
@@ -57,7 +88,16 @@ export class CodegraphDaemonServer {
         await computeAndPersistCyclesAndSignals(graphDb);
         return null;
       }
-      // ── full-proxy reads (the daemon owns the sole DuckDB connection) ──
+      // ── full-proxy reads (the daemon owns the sole DuckDB connection, so
+      //    every read routes through its own RW connection) ──
+      case "getFanIn": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getFanIn(p.relPath as RelPath);
+      }
+      case "getFanOut": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getFanOut(p.relPath as RelPath);
+      }
       case "getCallers": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getCallers(p.symbolId as SymbolId);
@@ -66,9 +106,40 @@ export class CodegraphDaemonServer {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getCallees(p.symbolId as SymbolId);
       }
+      case "getCalledByCount": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getCalledByCount(p.symbolId as SymbolId);
+      }
+      case "getCallSiteCount": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getCallSiteCount(p.symbolId as SymbolId);
+      }
+      case "hasData": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.hasData();
+      }
+      case "listAllSymbols": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.listAllSymbols();
+      }
+      case "getTransitiveImpact": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getTransitiveImpact(p.relPath as RelPath, p.maxDepth as number | undefined);
+      }
       case "findCycles": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.findCycles(p.scope as CycleScope);
+      }
+      case "listAdjacency": {
+        const { graphDb } = await this.pool.acquire(collection);
+        // The adapter returns a `Map<string, string[]>`; serialise as entries
+        // so it survives JSON framing (the client rebuilds the Map).
+        const adj = await graphDb.listAdjacency(p.scope as CycleScope);
+        return [...adj.entries()];
+      }
+      case "getPageRank": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getPageRank(p.symbolId as SymbolId);
       }
       case "finalizeReindex":
         // The Qdrant alias swap (adapters/qdrant/aliases.ts:switchAlias) has

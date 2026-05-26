@@ -345,23 +345,34 @@ export function wireCodegraph(
   });
 
   // Lazy spawn-on-demand: the daemon process is started the FIRST time a write
-  // is acquired, not at wire time — so `wireCodegraph` stays side-effect-free
-  // (the unit test exercises only the wire step and never spawns).
-  // `ensureCodegraphDaemon` is single-flighted across processes via DaemonLock
-  // and refcounts each MCP client; `ensured` makes the in-process wrap fire
-  // once. The subsequent `DaemonGraphDbClient.init()` retries the socket
-  // connect with bounded backoff, absorbing the detached-spawn → connect race.
+  // OR a read is acquired, not at wire time — so `wireCodegraph` stays
+  // side-effect-free (the unit test exercises only the wire step and never
+  // spawns). `ensureCodegraphDaemon` is single-flighted across processes via
+  // DaemonLock and refcounts each MCP client; `ensured` makes the in-process
+  // wrap fire once. The subsequent `DaemonGraphDbClient.init()` retries the
+  // socket connect with bounded backoff, absorbing the detached-spawn → connect
+  // race. BOTH `acquireWrite` and `acquireReader` must ensure the daemon
+  // because in daemon mode the `DaemonGraphDbClient` is the sole accessor for
+  // reads too — a query issued before any write would otherwise fail to
+  // connect, and GraphFacade.withReadHandle would silently return empty.
   let ensured = false;
+  const ensure = (): void => {
+    if (ensured) return;
+    ensured = true;
+    ensureCodegraphDaemon(daemonPaths, rootDir, {
+      memoryLimit: codegraph.dbMemoryLimit,
+      threads: codegraph.dbThreads,
+    });
+  };
   const originalAcquireWrite = pool.acquireWrite.bind(pool);
   pool.acquireWrite = async (collectionName: string) => {
-    if (!ensured) {
-      ensured = true;
-      ensureCodegraphDaemon(daemonPaths, rootDir, {
-        memoryLimit: codegraph.dbMemoryLimit,
-        threads: codegraph.dbThreads,
-      });
-    }
+    ensure();
     return originalAcquireWrite(collectionName);
+  };
+  const originalAcquireReader = pool.acquireReader.bind(pool);
+  pool.acquireReader = async (collectionName: string) => {
+    ensure();
+    return originalAcquireReader(collectionName);
   };
 
   const deps: CodegraphDeps = {

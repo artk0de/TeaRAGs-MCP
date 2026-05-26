@@ -15,12 +15,12 @@ import type {
 import { decodeFrames, encodeFrame, type DaemonOp, type DaemonResponse } from "./protocol.js";
 
 /**
- * Thrown when an unsupported read op is invoked on the daemon client. The three
- * GraphFacade reads (`getCallers` / `getCallees` / `findCycles`) are now PROXIED
- * over the socket — the daemon owns the single RW connection and DuckDB's RW
- * lock is process-exclusive, so a cross-process READ_ONLY attach throws
- * "Conflicting lock is held". All OTHER reads are daemon-internal / unused by
- * the facade and still throw this error if called on the client.
+ * Thrown when a daemon-internal op is invoked on the daemon client. In daemon
+ * mode the `DaemonGraphDbClient` is the SOLE accessor of the DuckDB file, so it
+ * proxies the ENTIRE `GraphDbClient` surface — every write AND every read — over
+ * the socket. The lone exception is `streamAdjacency`: the heavy graph analysis
+ * runs daemon-side via `computeAndPersistCyclesAndSignals`, so the adjacency
+ * stream must NOT cross IPC and still throws this error if called on the client.
  */
 export class UnsupportedDaemonReadError extends Error {
   constructor(op: string) {
@@ -30,12 +30,12 @@ export class UnsupportedDaemonReadError extends Error {
 }
 
 /**
- * `GraphDbClient` that proxies mutations AND the three GraphFacade reads
- * (`getCallers` / `getCallees` / `findCycles`) to the codegraph daemon over a
- * unix socket using newline-JSON framing. Each call gets a monotonic id;
- * responses are matched back by id through the `pending` map. All other read
- * methods throw `UnsupportedDaemonReadError` — they are daemon-internal and not
- * part of the facade surface.
+ * `GraphDbClient` that proxies the entire codegraph surface — every mutation
+ * and every read — to the codegraph daemon over a unix socket using
+ * newline-JSON framing. Each call gets a monotonic id; responses are matched
+ * back by id through the `pending` map. Only `streamAdjacency` is NOT proxied:
+ * it stays daemon-internal (consumed by the daemon-side
+ * `computeAndPersistCyclesAndSignals`) and throws `UnsupportedDaemonReadError`.
  */
 /** Tunable connect-readiness window for the spawn→connect race. */
 export interface DaemonClientOptions {
@@ -166,14 +166,31 @@ export class DaemonGraphDbClient implements GraphDbClient {
     this.pending.clear();
   }
 
-  // ── write subset (proxied over the socket) ──
+  // ── writes (proxied over the socket) ──
 
   async upsertFile(node: GraphFileNode, edges: GraphEdges): Promise<void> {
     await this.call("upsertFile", { node, edges });
   }
 
+  async removeFile(relPath: RelPath): Promise<void> {
+    await this.call("removeFile", { relPath });
+  }
+
   async removeSymbolsForFile(relPath: RelPath): Promise<void> {
     await this.call("removeSymbolsForFile", { relPath });
+  }
+
+  async upsertSymbols(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {
+    await this.call("upsertSymbols", { relPath, definitions });
+  }
+
+  async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {
+    await this.call("replaceCycles", { scope, sccs });
+  }
+
+  async replacePageRanks(ranks: ReadonlyMap<string, number>): Promise<void> {
+    // A Map cannot JSON-serialise — send entries; the server rebuilds the Map.
+    await this.call("replacePageRanks", { ranks: [...ranks.entries()] });
   }
 
   async checkpoint(): Promise<void> {
@@ -198,12 +215,21 @@ export class DaemonGraphDbClient implements GraphDbClient {
     await this.call("computeAndPersistCyclesAndSignals", {});
   }
 
-  // ── proxied reads (the GraphFacade read surface) ──
-  // These three reads route through the daemon's own RW connection: DuckDB's
-  // RW lock is process-exclusive, so a cross-process READ_ONLY attach throws
+  // ── reads (proxied over the socket) ──
+  // Every read routes through the daemon's own RW connection: DuckDB's RW lock
+  // is process-exclusive, so a cross-process READ_ONLY attach throws
   // "Conflicting lock is held" while the daemon holds RW. The daemon being the
-  // sole file opener means zero conflict. The remaining read methods below stay
-  // daemon-internal / unsupported — they are not part of the GraphFacade surface.
+  // sole file opener means zero conflict. `streamAdjacency` is the ONE read
+  // that stays daemon-internal (below) — its heavy adjacency stream must not
+  // cross IPC and is consumed daemon-side by computeAndPersistCyclesAndSignals.
+
+  async getFanIn(relPath: RelPath): Promise<number> {
+    return (await this.call("getFanIn", { relPath })) as number;
+  }
+
+  async getFanOut(relPath: RelPath): Promise<number> {
+    return (await this.call("getFanOut", { relPath })) as number;
+  }
 
   async getCallers(symbolId: SymbolId): Promise<CallerEdge[]> {
     return (await this.call("getCallers", { symbolId })) as CallerEdge[];
@@ -213,51 +239,45 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("getCallees", { symbolId })) as CalleeEdge[];
   }
 
+  async getCalledByCount(symbolId: SymbolId): Promise<number> {
+    return (await this.call("getCalledByCount", { symbolId })) as number;
+  }
+
+  async getCallSiteCount(symbolId: SymbolId): Promise<number> {
+    return (await this.call("getCallSiteCount", { symbolId })) as number;
+  }
+
+  async hasData(): Promise<boolean> {
+    return (await this.call("hasData", {})) as boolean;
+  }
+
+  async listAllSymbols(): Promise<SymbolDefinition[]> {
+    return (await this.call("listAllSymbols", {})) as SymbolDefinition[];
+  }
+
+  async getTransitiveImpact(relPath: RelPath, maxDepth?: number): Promise<number> {
+    return (await this.call("getTransitiveImpact", { relPath, maxDepth })) as number;
+  }
+
   async findCycles(scope: CycleScope): Promise<CycleEntry[]> {
     return (await this.call("findCycles", { scope })) as CycleEntry[];
   }
 
-  // ── read subset (unsupported on the daemon client — use in-process RO handle) ──
-
-  async removeFile(_relPath: RelPath): Promise<void> {
-    throw new UnsupportedDaemonReadError("removeFile");
+  async listAdjacency(scope: CycleScope): Promise<Map<string, string[]>> {
+    // The server serialises the `Map<string, string[]>` as `[key, value][]`
+    // entries (a Map cannot JSON-serialise) — rebuild the Map here.
+    const entries = (await this.call("listAdjacency", { scope })) as [string, string[]][];
+    return new Map(entries);
   }
 
-  async getFanIn(_relPath: RelPath): Promise<number> {
-    throw new UnsupportedDaemonReadError("getFanIn");
+  async getPageRank(symbolId: SymbolId): Promise<number> {
+    return (await this.call("getPageRank", { symbolId })) as number;
   }
 
-  async getFanOut(_relPath: RelPath): Promise<number> {
-    throw new UnsupportedDaemonReadError("getFanOut");
-  }
-
-  async getCalledByCount(_symbolId: SymbolId): Promise<number> {
-    throw new UnsupportedDaemonReadError("getCalledByCount");
-  }
-
-  async getCallSiteCount(_symbolId: SymbolId): Promise<number> {
-    throw new UnsupportedDaemonReadError("getCallSiteCount");
-  }
-
-  async hasData(): Promise<boolean> {
-    throw new UnsupportedDaemonReadError("hasData");
-  }
-
-  async upsertSymbols(_relPath: RelPath, _definitions: SymbolDefinition[]): Promise<void> {
-    throw new UnsupportedDaemonReadError("upsertSymbols");
-  }
-
-  async listAllSymbols(): Promise<SymbolDefinition[]> {
-    throw new UnsupportedDaemonReadError("listAllSymbols");
-  }
-
-  async getTransitiveImpact(_relPath: RelPath, _maxDepth?: number): Promise<number> {
-    throw new UnsupportedDaemonReadError("getTransitiveImpact");
-  }
-
-  async listAdjacency(_scope: CycleScope): Promise<Map<string, string[]>> {
-    throw new UnsupportedDaemonReadError("listAdjacency");
-  }
+  // ── daemon-internal (NOT proxied) ──
+  // `streamAdjacency` stays daemon-internal: the heavy graph analysis runs
+  // inside the daemon (computeAndPersistCyclesAndSignals), so streaming the
+  // adjacency over IPC is never correct. Throws on first iteration.
 
   streamAdjacency(_scope: CycleScope): AsyncIterableIterator<[string, string]> {
     const error = new UnsupportedDaemonReadError("streamAdjacency");
@@ -269,17 +289,5 @@ export class DaemonGraphDbClient implements GraphDbClient {
         throw error;
       },
     };
-  }
-
-  async replaceCycles(_scope: CycleScope, _sccs: readonly (readonly string[])[]): Promise<void> {
-    throw new UnsupportedDaemonReadError("replaceCycles");
-  }
-
-  async replacePageRanks(_ranks: ReadonlyMap<string, number>): Promise<void> {
-    throw new UnsupportedDaemonReadError("replacePageRanks");
-  }
-
-  async getPageRank(_symbolId: SymbolId): Promise<number> {
-    throw new UnsupportedDaemonReadError("getPageRank");
   }
 }
