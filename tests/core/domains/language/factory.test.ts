@@ -8,6 +8,7 @@ import { JavaLanguage } from "../../../../src/core/domains/language/java/index.j
 import { JavaScriptLanguage } from "../../../../src/core/domains/language/javascript/index.js";
 import { PythonLanguage } from "../../../../src/core/domains/language/python/index.js";
 import { RubyLanguage } from "../../../../src/core/domains/language/ruby/index.js";
+import { RustLanguage } from "../../../../src/core/domains/language/rust/index.js";
 import { TypeScriptLanguage } from "../../../../src/core/domains/language/typescript/index.js";
 
 /**
@@ -16,40 +17,40 @@ import { TypeScriptLanguage } from "../../../../src/core/domains/language/typesc
  * registry of pre-built providers.
  *
  *   - NATIVE languages (`ruby`, `typescript`, `javascript`, `python`, `go`,
- *     `java`) → the factory constructs the native provider itself (`new
+ *     `java`, `rust`) → the factory constructs the native provider itself (`new
  *     RubyLanguage(mode)` / `new TypeScriptLanguage(mode)` / `new
  *     JavaScriptLanguage(mode)` / `new PythonLanguage(mode)` / `new
- *     GoLanguage(mode)` / `new JavaLanguage(mode)`), regardless of any injected
- *     thunk.
+ *     GoLanguage(mode)` / `new JavaLanguage(mode)` / `new RustLanguage(mode)`),
+ *     regardless of any injected thunk.
  *   - LEGACY languages → the factory invokes the deferred builder thunk the
  *     composition layer injected, lazily, on first `create` and caches it.
  *
  * The composition layer supplies the legacy thunks via the legacy adapter (see
  * `legacy-language-adapter.test.ts` for adapter fidelity); these tests cover the
  * factory's own contract with minimal stub thunks, independent of the adapter.
- * Legacy-thunk probes use `rust` (still adapter-served) since `typescript` /
- * `javascript` / `python` / `go` / `java` are now native — a thunk for them
- * would be ignored in favour of the native build.
+ * Legacy-thunk probes use `bash` (still adapter-served) since `typescript` /
+ * `javascript` / `python` / `go` / `java` / `rust` are now native — a thunk for
+ * them would be ignored in favour of the native build.
  */
 describe("LanguageFactoryImpl", () => {
   const stubProvider: LanguageProvider = {
     kernel: { loadModule: async () => null, isInstanceMethod: () => false },
   };
 
-  it("supported() reflects legacy builder keys plus the native languages (ruby, typescript, javascript, python, go, java)", () => {
+  it("supported() reflects legacy builder keys plus the native languages (ruby, typescript, javascript, python, go, java, rust)", () => {
     // Empty legacy map still supports the native languages.
     expect(new Set(new LanguageFactoryImpl(new Map()).supported())).toEqual(
-      new Set(["ruby", "typescript", "javascript", "python", "go", "java"]),
+      new Set(["ruby", "typescript", "javascript", "python", "go", "java", "rust"]),
     );
-    const factory = new LanguageFactoryImpl(new Map([["rust", () => stubProvider]]));
+    const factory = new LanguageFactoryImpl(new Map([["bash", () => stubProvider]]));
     expect(new Set(factory.supported())).toEqual(
-      new Set(["rust", "ruby", "typescript", "javascript", "python", "go", "java"]),
+      new Set(["bash", "ruby", "typescript", "javascript", "python", "go", "java", "rust"]),
     );
   });
 
   it("create() invokes the legacy thunk and returns its provider", () => {
-    const factory = new LanguageFactoryImpl({ rust: () => stubProvider });
-    expect(factory.create("rust")).toBe(stubProvider);
+    const factory = new LanguageFactoryImpl({ bash: () => stubProvider });
+    expect(factory.create("bash")).toBe(stubProvider);
   });
 
   it("create() builds the native ruby provider itself (no thunk needed)", () => {
@@ -80,6 +81,11 @@ describe("LanguageFactoryImpl", () => {
   it("create() builds the native java provider itself (no thunk needed)", () => {
     const factory = new LanguageFactoryImpl(new Map());
     expect(factory.create("java")).toBeInstanceOf(JavaLanguage);
+  });
+
+  it("create() builds the native rust provider itself (no thunk needed)", () => {
+    const factory = new LanguageFactoryImpl(new Map());
+    expect(factory.create("rust")).toBeInstanceOf(RustLanguage);
   });
 
   it("the native switch wins over any legacy thunk registered for ruby", () => {
@@ -113,12 +119,17 @@ describe("LanguageFactoryImpl", () => {
     expect(factory.create("java")).toBeInstanceOf(JavaLanguage);
   });
 
+  it("the native switch wins over any legacy thunk registered for rust", () => {
+    const factory = new LanguageFactoryImpl(new Map([["rust", () => stubProvider]]));
+    expect(factory.create("rust")).toBeInstanceOf(RustLanguage);
+  });
+
   it("caches per language — the legacy thunk runs at most once", () => {
     let calls = 0;
     const factory = new LanguageFactoryImpl(
       new Map([
         [
-          "rust",
+          "bash",
           () => {
             calls += 1;
             return stubProvider;
@@ -126,8 +137,8 @@ describe("LanguageFactoryImpl", () => {
         ],
       ]),
     );
-    const a = factory.create("rust");
-    const b = factory.create("rust");
+    const a = factory.create("bash");
+    const b = factory.create("bash");
     expect(a).toBe(b);
     expect(calls).toBe(1);
   });
@@ -155,6 +166,11 @@ describe("LanguageFactoryImpl", () => {
   it("caches the native java provider across calls", () => {
     const factory = new LanguageFactoryImpl(new Map());
     expect(factory.create("java")).toBe(factory.create("java"));
+  });
+
+  it("caches the native rust provider across calls", () => {
+    const factory = new LanguageFactoryImpl(new Map());
+    expect(factory.create("rust")).toBe(factory.create("rust"));
   });
 
   it("accepts both a ReadonlyMap and a Record of legacy builders", () => {

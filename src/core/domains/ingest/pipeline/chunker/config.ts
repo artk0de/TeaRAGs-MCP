@@ -270,6 +270,15 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // inside an `impl` whose type matches a previously-declared struct
     // composes correctly.
     scopeContainerTypes: ["impl_item", "trait_item", "mod_item"],
+    // NOTE: Rust is now a NATIVE `domains/language/rust` provider
+    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `rust`
+    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver come from
+    // `RustLanguage`, not this entry. This `LANGUAGE_DEFINITIONS.rust` row is
+    // retained only so `CODE_LANGUAGES` / `LANGUAGE_MAP` still report rust as a
+    // code language. Rust has no `hooks` chain (generic chunking) — the native
+    // provider's `chunkerHooks` mirrors the chunkableTypes / childChunkTypes /
+    // alwaysExtractChildren / nameExtractor here 1:1, kernel carries
+    // scopeContainerTypes + scopeSeparator.
   },
   java: {
     loadModule: async () => import("tree-sitter-java") as Promise<TreeSitterLanguageModule>,

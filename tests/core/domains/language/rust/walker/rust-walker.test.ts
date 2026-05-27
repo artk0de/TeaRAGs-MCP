@@ -2,7 +2,7 @@ import Parser from "tree-sitter";
 import RustLang from "tree-sitter-rust";
 import { describe, expect, it } from "vitest";
 
-import { extractFromRustFile } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/rust-walker.js";
+import { extractFromRustFile } from "../../../../../../src/core/domains/language/rust/walker/walker.js";
 
 function parse(src: string) {
   const p = new Parser();

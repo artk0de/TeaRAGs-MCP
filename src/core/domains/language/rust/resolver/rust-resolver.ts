@@ -1,5 +1,8 @@
 /**
- * Rust implementation of the `CallResolver` contract.
+ * Rust implementation of the `CallResolver` contract. Relocated from
+ * `domains/trajectory/codegraph/symbols/resolvers/rust/rust-resolver.ts` into
+ * the native Rust language provider per the `domains/language` consolidation
+ * (spec §3; bd tea-rags-mcp-cen6). Behaviour-preserving.
  *
  * Rust paths use `::` separators with prefixes:
  *   - `crate::` — current crate root
@@ -22,7 +25,7 @@ import {
   type CallResolver,
   type ResolvedTarget,
   type SymbolDefinition,
-} from "../../../../../../contracts/types/codegraph.js";
+} from "../../../../contracts/types/codegraph.js";
 
 export class RustCallResolver implements CallResolver {
   readonly language = "rust";

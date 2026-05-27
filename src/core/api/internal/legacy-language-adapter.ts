@@ -136,6 +136,7 @@ export const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "python",
   "go",
   "java",
+  "rust",
 ]);
 
 /**

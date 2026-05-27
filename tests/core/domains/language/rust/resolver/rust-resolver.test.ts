@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext } from "../../../../../../../../src/core/contracts/types/codegraph.js";
-import { RustCallResolver } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/rust/rust-resolver.js";
-import { InMemoryGlobalSymbolTable } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { RustCallResolver } from "../../../../../../src/core/domains/language/rust/resolver/rust-resolver.js";
+import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function ctx(
   callerFile: string,

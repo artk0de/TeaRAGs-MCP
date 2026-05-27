@@ -7,6 +7,7 @@ import { JavaLanguage } from "./java/index.js";
 import { JavaScriptLanguage } from "./javascript/index.js";
 import { PythonLanguage } from "./python/index.js";
 import { RubyLanguage } from "./ruby/index.js";
+import { RustLanguage } from "./rust/index.js";
 import { TypeScriptLanguage } from "./typescript/index.js";
 
 /**
@@ -35,6 +36,7 @@ const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "python",
   "go",
   "java",
+  "rust",
 ]);
 
 /**
@@ -107,6 +109,7 @@ export class LanguageFactoryImpl implements LanguageFactory {
       if (lang === "python") return new PythonLanguage(this.ambiguousResolveMode);
       if (lang === "go") return new GoLanguage(this.ambiguousResolveMode);
       if (lang === "java") return new JavaLanguage(this.ambiguousResolveMode);
+      if (lang === "rust") return new RustLanguage(this.ambiguousResolveMode);
     }
     const builder = this.legacyBuilders.get(lang);
     if (builder) return builder();

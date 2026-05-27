@@ -28,7 +28,6 @@ import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { DefaultSymbolIdComposer } from "../core/domains/language/index.js";
 import type { CodegraphDeps } from "../core/domains/trajectory/codegraph/index.js";
 import { BashCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/bash/index.js";
-import { RustCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/rust/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
 import { CollectionRegistry } from "../core/infra/registry/index.js";
@@ -213,17 +212,17 @@ function wireCodegraph(
   // §1a + `.claude/rules/symbolid-convention.md`.
   const symbolIdComposer = new DefaultSymbolIdComposer();
   const resolvers = new Map<string, CallResolver>([
-    // typescript + javascript + python + ruby + go + java: served by their
-    // NATIVE domains/language/<lang> providers (their own TSCallResolver /
+    // typescript + javascript + python + ruby + go + java + rust: served by
+    // their NATIVE domains/language/<lang> providers (their own TSCallResolver /
     // JavascriptCallResolver / PythonCallResolver / RubyCallResolver /
-    // GoCallResolver / JavaCallResolver, built with `ambiguousMode` threaded
-    // via CodegraphDeps). The legacy adapter skips them (NATIVE_LANGUAGES), so
-    // no entries here. JavaScript's native `jsNameOf` sibling-imports
-    // `tsNameOf` from the typescript vertical; `GoLanguage` self-constructs its
-    // own `DefaultSymbolIdComposer` for `GoCallResolver` (no composer threading
-    // through the factory); `JavaLanguage`'s `JavaCallResolver` ctor takes only
-    // `mode` (no composer, like python).
-    ["rust", new RustCallResolver(ambiguousMode)],
+    // GoCallResolver / JavaCallResolver / RustCallResolver, built with
+    // `ambiguousMode` threaded via CodegraphDeps). The legacy adapter skips them
+    // (NATIVE_LANGUAGES), so no entries here. JavaScript's native `jsNameOf`
+    // sibling-imports `tsNameOf` from the typescript vertical; `GoLanguage`
+    // self-constructs its own `DefaultSymbolIdComposer` for `GoCallResolver` (no
+    // composer threading through the factory); `JavaLanguage`'s `JavaCallResolver`
+    // and `RustLanguage`'s `RustCallResolver` ctors take only `mode` (no composer,
+    // like python).
     ["bash", new BashCallResolver(ambiguousMode)],
   ]);
 

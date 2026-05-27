@@ -61,9 +61,7 @@ import type {
   ProviderRunMetrics,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
-import { classifyMethod } from "../../../../infra/symbolid/index.js";
 import { extractFromBashFile } from "../../../ingest/pipeline/chunker/extraction/bash-walker.js";
-import { extractFromRustFile } from "../../../ingest/pipeline/chunker/extraction/rust-walker.js";
 import { pipelineLog } from "../../../ingest/pipeline/infra/debug-logger.js";
 import {
   CodegraphCheckpointError,
@@ -339,8 +337,10 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   ".rs": {
     language: "rust",
     loadParser: () => RustLang as Parser.Language,
-    walker: extractFromRustFile,
-    nameOf: rustNameOf,
+    // walker + nameOf DROPPED — rust migrated to the native domains/language/rust
+    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
+    // `factory.create("rust").walker`; this entry is retained only for
+    // `loadParser` / `scopeSeparator` (still sourced from the map).
     scopeSeparator: "::",
   },
   ".sh": {
@@ -1569,86 +1569,15 @@ function extensionOf(path: string): string {
  *
  * The TypeScript (`tsNameOf`), JavaScript (`jsNameOf` + its CommonJS helper web),
  * Ruby (`rbNameOf`), Python (`pyNameOf`), Go (`goNameOf` + its
- * `extractGoReceiverType` helper) and Java (`javaNameOf`) functions are GONE
- * from here — those languages migrated to native `domains/language/<lang>`
- * providers (tea-rags-mcp-cen6); the engine reads their `nameOf` from
- * `factory.create(lang).walker.nameOf`. Only the still-legacy-adapter languages
- * (rust / bash) keep a `<lang>NameOf` here. `methodKindFromClassify` stays —
- * `rustNameOf` uses it (and Java's relocated `name-of.ts` reuses the kernel
- * copy at `domains/language/kernel/method-kind.ts`).
+ * `extractGoReceiverType` helper), Java (`javaNameOf`) and Rust (`rustNameOf` +
+ * its `stripRustGenerics` helper) functions are GONE from here — those languages
+ * migrated to native `domains/language/<lang>` providers (tea-rags-mcp-cen6);
+ * the engine reads their `nameOf` from `factory.create(lang).walker.nameOf`.
+ * Only the still-legacy-adapter language (bash) keeps a `<lang>NameOf` here.
+ * `methodKindFromClassify` is GONE too — its last user was `rustNameOf`, now
+ * relocated; the native walkers reuse the kernel copy at
+ * `domains/language/kernel/method-kind.ts`.
  */
-
-function methodKindFromClassify(node: Parser.SyntaxNode): "instance" | "static" | undefined {
-  const c = classifyMethod(node);
-  return c === null ? undefined : c;
-}
-
-function rustNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
-  if (node.type === "function_item") {
-    const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false, methodKind: methodKindFromClassify(node) };
-  }
-  if (node.type === "struct_item" || node.type === "enum_item" || node.type === "trait_item") {
-    const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: true };
-  }
-  if (node.type === "mod_item") {
-    const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: true };
-  }
-  if (node.type === "impl_item") {
-    // bd tea-rags-mcp-2hbd — `impl Trait for Type` MUST attribute methods
-    // to the implementing TYPE, never the trait. tree-sitter-rust names
-    // the implementing type as the `type` field in BOTH shapes:
-    //   `impl Foo { ... }`             → type=Foo
-    //   `impl Trait for Foo { ... }`   → type=Foo, trait=Trait
-    // The trait child is intentionally ignored here as a class scope —
-    // tracking it as a separate symbol is a future-spec concern.
-    const ty = node.childForFieldName("type");
-    if (!ty) return null;
-    // bd tea-rags-mcp-h82m — strip generic params + lifetimes so
-    // `impl<'s> Worker<'s>` → scope name "Worker", not "Worker<'s>".
-    // `generic_type` is the tree-sitter-rust node wrapping a base type
-    // identifier with `<...>`; pull the inner `type` field. For bare
-    // `type_identifier` (no generics) the text is already clean.
-    const name = stripRustGenerics(ty);
-    if (!name) return null;
-    return { name, descendsInto: true };
-  }
-  if (node.type === "macro_definition") {
-    // bd tea-rags-mcp-jyzb — `macro_rules! foo { ... }` declares a macro.
-    // tree-sitter-rust shapes the node as `macro_definition` with a
-    // `name` field carrying the identifier. Emitting a symbol here lets
-    // find_symbol("foo") resolve the macro definition.
-    const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false };
-  }
-  return null;
-}
-
-/**
- * Strip generic parameters and lifetimes from a Rust impl type node:
- *   `Worker<'s>`        → "Worker"
- *   `Container<T>`      → "Container"
- *   `Container<T: Clone>` → "Container"
- *   `Foo`               → "Foo"
- * Returns null for unrecognized shapes.
- */
-function stripRustGenerics(typeNode: Parser.SyntaxNode): string | null {
-  if (typeNode.type === "generic_type") {
-    const base = typeNode.childForFieldName("type");
-    if (base) return base.text;
-    // Fallback for grammar drift: take the first type_identifier child.
-    const ident = typeNode.children.find((c) => c.type === "type_identifier");
-    return ident?.text ?? null;
-  }
-  // `type_identifier`, `scoped_type_identifier`, or any leaf — use raw
-  // text but strip any trailing `<...>` defensively (covers grammars
-  // that flatten generic_type into the parent).
-  const raw = typeNode.text;
-  const lt = raw.indexOf("<");
-  return (lt === -1 ? raw : raw.slice(0, lt)).trim() || null;
-}
 
 function bashNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
   if (node.type === "function_definition") {

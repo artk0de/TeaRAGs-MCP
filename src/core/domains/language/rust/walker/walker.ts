@@ -1,5 +1,9 @@
 /**
- * Rust extraction walker.
+ * Rust extraction walker. Relocated from
+ * `domains/ingest/pipeline/chunker/extraction/rust-walker.ts` into the native
+ * Rust language provider per the `domains/language` consolidation (spec §3; bd
+ * tea-rags-mcp-cen6, following ruby + typescript + javascript + python + go +
+ * java). Behaviour-preserving.
  *
  * Rust imports use `use` declarations:
  *   use foo::bar;
@@ -20,7 +24,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../../contracts/types/codegraph.js";
+import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
 
 export interface RustExtractInput {
   tree: Parser.Tree;
@@ -277,7 +281,7 @@ function collectRustCalls(root: Parser.SyntaxNode): CallRef[] {
     // `scoped_identifier`). We treat the macro name as the call member
     // with no receiver — usually unresolvable (std-lib macros), but
     // user-defined `macro_rules!` symbols emit a definition (see
-    // provider.ts `rustNameOf`) so the resolver can link them.
+    // `rustNameOf`) so the resolver can link them.
     if (node.type === "macro_invocation") {
       const macroField = node.childForFieldName("macro");
       if (!macroField) return;
