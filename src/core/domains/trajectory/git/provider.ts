@@ -17,9 +17,11 @@ import type {
   ChunkSignalOptions,
   ChunkSignalOverlay,
   EnrichmentProvider,
+  FileSignalOptions,
   FileSignalOverlay,
   FileSignalTransform,
   FilterDescriptor,
+  FinalizeResult,
 } from "../../../contracts/types/provider.js";
 import type { RerankPreset } from "../../../contracts/types/reranker.js";
 import { gitFilters } from "./filters.js";
@@ -137,6 +139,24 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     }
     return result;
   }
+
+  /** Per-batch streaming: same computation as buildFileSignals, scoped to the
+   *  batch's paths. Populates blameByRelPath/lastFileResult for the batch so
+   *  the matching buildChunkSignals call (same batch) sees per-range ownership.
+   *  Arrow-property so `this` survives being passed as a coordinator callback. */
+  streamFileBatch = async (
+    root: string,
+    batchPaths: string[],
+    _options?: FileSignalOptions,
+  ): Promise<Map<string, FileSignalOverlay>> => {
+    return this.buildFileSignals(root, { paths: batchPaths });
+  };
+
+  /** git streams file+chunk signals per batch — nothing is deferred. */
+  finalizeSignals = async (): Promise<FinalizeResult> => ({
+    file: new Map(),
+    chunk: new Map(),
+  });
 
   /** Run `git blame HEAD` per file in parallel batches and store results in
    *  the WeakMap for later transform-time lookup. Failures fall back to empty

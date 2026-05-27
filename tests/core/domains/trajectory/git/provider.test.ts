@@ -187,6 +187,23 @@ describe("GitEnrichmentProvider", () => {
     });
   });
 
+  describe("streamFileBatch + finalizeSignals", () => {
+    it("streamFileBatch delegates to per-path buildFileSignals for the batch", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      const data = new Map([["src/b.ts", { commits: [], recentAuthors: [] }]]);
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValue(data as never);
+      const result = await provider.streamFileBatch("/repo", ["src/b.ts"]);
+      expect(buildFileSignalsForPaths).toHaveBeenCalledWith("/repo", ["src/b.ts"], 60000);
+      expect(result.has("src/b.ts")).toBe(true);
+    });
+
+    it("finalizeSignals returns empty file+chunk maps (git streams everything)", async () => {
+      const f = await provider.finalizeSignals("/repo");
+      expect(f.file.size).toBe(0);
+      expect(f.chunk.size).toBe(0);
+    });
+  });
+
   describe("buildChunkSignals", () => {
     it("maps chunk churn result to the expected nested Map structure", async () => {
       const fakeOverlay = new Map([["c1", { commitCount: 5 }]]);
