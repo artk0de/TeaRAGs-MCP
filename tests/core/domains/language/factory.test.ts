@@ -4,6 +4,7 @@ import type { LanguageProvider } from "../../../../src/core/contracts/types/lang
 import { LanguageFactoryImpl } from "../../../../src/core/domains/language/factory.js";
 import { UnsupportedLanguageError } from "../../../../src/core/domains/language/errors.js";
 import { JavaScriptLanguage } from "../../../../src/core/domains/language/javascript/index.js";
+import { PythonLanguage } from "../../../../src/core/domains/language/python/index.js";
 import { RubyLanguage } from "../../../../src/core/domains/language/ruby/index.js";
 import { TypeScriptLanguage } from "../../../../src/core/domains/language/typescript/index.js";
 
@@ -12,37 +13,37 @@ import { TypeScriptLanguage } from "../../../../src/core/domains/language/typesc
  * ENCAPSULATES construction rather than reading from a consumer-assembled
  * registry of pre-built providers.
  *
- *   - NATIVE languages (`ruby`, `typescript`, `javascript`) → the factory
- *     constructs the native provider itself (`new RubyLanguage(mode)` /
- *     `new TypeScriptLanguage(mode)` / `new JavaScriptLanguage(mode)`),
- *     regardless of any injected thunk.
+ *   - NATIVE languages (`ruby`, `typescript`, `javascript`, `python`) → the
+ *     factory constructs the native provider itself (`new RubyLanguage(mode)` /
+ *     `new TypeScriptLanguage(mode)` / `new JavaScriptLanguage(mode)` /
+ *     `new PythonLanguage(mode)`), regardless of any injected thunk.
  *   - LEGACY languages → the factory invokes the deferred builder thunk the
  *     composition layer injected, lazily, on first `create` and caches it.
  *
  * The composition layer supplies the legacy thunks via the legacy adapter (see
  * `legacy-language-adapter.test.ts` for adapter fidelity); these tests cover the
  * factory's own contract with minimal stub thunks, independent of the adapter.
- * Legacy-thunk probes use `python` (still adapter-served) since `typescript` /
- * `javascript` are now native — a thunk for them would be ignored in favour of
- * the native build.
+ * Legacy-thunk probes use `go` (still adapter-served) since `typescript` /
+ * `javascript` / `python` are now native — a thunk for them would be ignored in
+ * favour of the native build.
  */
 describe("LanguageFactoryImpl", () => {
   const stubProvider: LanguageProvider = {
     kernel: { loadModule: async () => null, isInstanceMethod: () => false },
   };
 
-  it("supported() reflects legacy builder keys plus the native languages (ruby, typescript, javascript)", () => {
+  it("supported() reflects legacy builder keys plus the native languages (ruby, typescript, javascript, python)", () => {
     // Empty legacy map still supports the native languages.
     expect(new Set(new LanguageFactoryImpl(new Map()).supported())).toEqual(
-      new Set(["ruby", "typescript", "javascript"]),
+      new Set(["ruby", "typescript", "javascript", "python"]),
     );
-    const factory = new LanguageFactoryImpl(new Map([["python", () => stubProvider]]));
-    expect(new Set(factory.supported())).toEqual(new Set(["python", "ruby", "typescript", "javascript"]));
+    const factory = new LanguageFactoryImpl(new Map([["go", () => stubProvider]]));
+    expect(new Set(factory.supported())).toEqual(new Set(["go", "ruby", "typescript", "javascript", "python"]));
   });
 
   it("create() invokes the legacy thunk and returns its provider", () => {
-    const factory = new LanguageFactoryImpl({ python: () => stubProvider });
-    expect(factory.create("python")).toBe(stubProvider);
+    const factory = new LanguageFactoryImpl({ go: () => stubProvider });
+    expect(factory.create("go")).toBe(stubProvider);
   });
 
   it("create() builds the native ruby provider itself (no thunk needed)", () => {
@@ -58,6 +59,11 @@ describe("LanguageFactoryImpl", () => {
   it("create() builds the native javascript provider itself (no thunk needed)", () => {
     const factory = new LanguageFactoryImpl(new Map());
     expect(factory.create("javascript")).toBeInstanceOf(JavaScriptLanguage);
+  });
+
+  it("create() builds the native python provider itself (no thunk needed)", () => {
+    const factory = new LanguageFactoryImpl(new Map());
+    expect(factory.create("python")).toBeInstanceOf(PythonLanguage);
   });
 
   it("the native switch wins over any legacy thunk registered for ruby", () => {
@@ -76,12 +82,17 @@ describe("LanguageFactoryImpl", () => {
     expect(factory.create("javascript")).toBeInstanceOf(JavaScriptLanguage);
   });
 
+  it("the native switch wins over any legacy thunk registered for python", () => {
+    const factory = new LanguageFactoryImpl(new Map([["python", () => stubProvider]]));
+    expect(factory.create("python")).toBeInstanceOf(PythonLanguage);
+  });
+
   it("caches per language — the legacy thunk runs at most once", () => {
     let calls = 0;
     const factory = new LanguageFactoryImpl(
       new Map([
         [
-          "python",
+          "go",
           () => {
             calls += 1;
             return stubProvider;
@@ -89,8 +100,8 @@ describe("LanguageFactoryImpl", () => {
         ],
       ]),
     );
-    const a = factory.create("python");
-    const b = factory.create("python");
+    const a = factory.create("go");
+    const b = factory.create("go");
     expect(a).toBe(b);
     expect(calls).toBe(1);
   });
@@ -122,6 +133,6 @@ describe("LanguageFactoryImpl", () => {
 
   it("the thrown error names the requested language", () => {
     const factory = new LanguageFactoryImpl(new Map());
-    expect(() => factory.create("python")).toThrow(/python/);
+    expect(() => factory.create("cobol")).toThrow(/cobol/);
   });
 });

@@ -24,10 +24,10 @@ import type {
   CallContext,
   FileExtraction,
   GlobalSymbolTable,
-} from "../../../../../../../../src/core/contracts/types/codegraph.js";
-import { extractFromPythonFile } from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/python-walker.js";
-import { PythonCallResolver } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/python/python-resolver.js";
-import { InMemoryGlobalSymbolTable } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+} from "../../../../../../src/core/contracts/types/codegraph.js";
+import { PythonCallResolver } from "../../../../../../src/core/domains/language/python/resolver/python-resolver.js";
+import { extractFromPythonFile } from "../../../../../../src/core/domains/language/python/walker/walker.js";
+import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function parsePy(src: string): Parser.Tree {
   const parser = new Parser();

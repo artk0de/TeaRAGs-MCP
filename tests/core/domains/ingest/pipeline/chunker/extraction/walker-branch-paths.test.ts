@@ -15,7 +15,7 @@ import RbLang from "tree-sitter-ruby";
 import { typescript as TsLang } from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
-import { extractFromPythonFile } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/python-walker.js";
+import { extractFromPythonFile } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
 import { extractRubyMacroSymbols } from "../../../../../../../src/core/domains/language/ruby/walker/macros.js";
 import { extractFromRubyFile } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
 import { extractFromTypescriptFile } from "../../../../../../../src/core/domains/language/typescript/walker/walker.js";

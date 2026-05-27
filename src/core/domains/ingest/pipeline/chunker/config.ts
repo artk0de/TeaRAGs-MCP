@@ -194,6 +194,14 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // default `scopeSeparator` in composeParentSymbol is `.` so we
     // omit the explicit setting.
     scopeContainerTypes: ["class_definition"],
+    // NOTE: Python is now a NATIVE `domains/language/python` provider
+    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `python`
+    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver come from
+    // `PythonLanguage`, not this entry. This `LANGUAGE_DEFINITIONS.python` row
+    // is retained only so `CODE_LANGUAGES` / `LANGUAGE_MAP` still report python
+    // as a code language. Python has no `hooks` chain (generic chunking) — the
+    // native provider's `chunkerHooks` mirrors the chunkableTypes /
+    // childChunkTypes / alwaysExtractChildren / scopeContainerTypes here 1:1.
   },
   go: {
     loadModule: async () => import("tree-sitter-go") as Promise<TreeSitterLanguageModule>,

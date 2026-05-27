@@ -30,7 +30,6 @@ import type { CodegraphDeps } from "../core/domains/trajectory/codegraph/index.j
 import { BashCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/bash/index.js";
 import { GoCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/go/index.js";
 import { JavaCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/java/index.js";
-import { PythonCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/python/index.js";
 import { RustCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/rust/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
@@ -216,15 +215,12 @@ function wireCodegraph(
   // §1a + `.claude/rules/symbolid-convention.md`.
   const symbolIdComposer = new DefaultSymbolIdComposer();
   const resolvers = new Map<string, CallResolver>([
-    // typescript + javascript: served by their NATIVE domains/language/<lang>
-    // providers (their own TSCallResolver / JavascriptCallResolver, built with
-    // `ambiguousMode` threaded via CodegraphDeps). The legacy adapter skips both
+    // typescript + javascript + python + ruby: served by their NATIVE
+    // domains/language/<lang> providers (their own TSCallResolver /
+    // JavascriptCallResolver / PythonCallResolver / RubyCallResolver, built with
+    // `ambiguousMode` threaded via CodegraphDeps). The legacy adapter skips them
     // (NATIVE_LANGUAGES), so no entries here. JavaScript's native `jsNameOf`
     // sibling-imports `tsNameOf` from the typescript vertical.
-    ["python", new PythonCallResolver(ambiguousMode)],
-    // ruby: served by the NATIVE domains/language/ruby provider (its own
-    // RubyCallResolver, built with `ambiguousMode` threaded via CodegraphDeps).
-    // The legacy adapter skips ruby, so no entry here.
     ["go", new GoCallResolver(symbolIdComposer, ambiguousMode)],
     ["java", new JavaCallResolver(ambiguousMode)],
     ["rust", new RustCallResolver(ambiguousMode)],

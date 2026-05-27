@@ -1,5 +1,8 @@
 /**
- * Python implementation of the `CallResolver` contract.
+ * Python implementation of the `CallResolver` contract. Relocated from
+ * `domains/trajectory/codegraph/symbols/resolvers/python/python-resolver.ts`
+ * into the native Python language provider per the `domains/language`
+ * consolidation (spec §3; bd tea-rags-mcp-cen6). Behaviour-preserving.
  *
  * Resolution strategy mirrors TSCallResolver:
  *   0. Local binding: if `ctx.localBindings[receiver]` carries a known
@@ -32,7 +35,7 @@ import {
   type CallRef,
   type CallResolver,
   type ResolvedTarget,
-} from "../../../../../../contracts/types/codegraph.js";
+} from "../../../../contracts/types/codegraph.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";
 
 export class PythonCallResolver implements CallResolver {

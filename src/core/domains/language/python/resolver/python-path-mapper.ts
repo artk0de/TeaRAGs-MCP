@@ -1,5 +1,8 @@
 /**
- * Python import-path mapper.
+ * Python import-path mapper. Relocated from
+ * `domains/trajectory/codegraph/symbols/resolvers/python/python-path-mapper.ts`
+ * into the native Python language provider per the `domains/language`
+ * consolidation (spec §3; bd tea-rags-mcp-cen6). Behaviour-preserving.
  *
  * Translates Python module-path strings (the `import X` / `from X
  * import Y` left side) into project-relative file paths. Two flavours:

@@ -65,7 +65,6 @@ import { classifyMethod } from "../../../../infra/symbolid/index.js";
 import { extractFromBashFile } from "../../../ingest/pipeline/chunker/extraction/bash-walker.js";
 import { extractFromGoFile } from "../../../ingest/pipeline/chunker/extraction/go-walker.js";
 import { extractFromJavaFile } from "../../../ingest/pipeline/chunker/extraction/java-walker.js";
-import { extractFromPythonFile } from "../../../ingest/pipeline/chunker/extraction/python-walker.js";
 import { extractFromRustFile } from "../../../ingest/pipeline/chunker/extraction/rust-walker.js";
 import { pipelineLog } from "../../../ingest/pipeline/infra/debug-logger.js";
 import {
@@ -271,8 +270,10 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   ".py": {
     language: "python",
     loadParser: () => PyLang as Parser.Language,
-    walker: extractFromPythonFile,
-    nameOf: pyNameOf,
+    // walker + nameOf DROPPED — python migrated to the native domains/language/python
+    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
+    // `factory.create("python").walker`; this entry is retained only for
+    // `loadParser` / `scopeSeparator` (still sourced from the map).
     scopeSeparator: ".",
   },
   ".rb": {
@@ -1563,29 +1564,18 @@ function extensionOf(path: string): string {
  * derived from the SAME detection logic for any given AST node. See
  * `.claude/rules/symbolid-convention.md`.
  *
- * The TypeScript (`tsNameOf`), JavaScript (`jsNameOf` + its CommonJS helper web)
- * and Ruby (`rbNameOf`) functions are GONE from here — those languages migrated
- * to native `domains/language/<lang>` providers (tea-rags-mcp-cen6); the engine
- * reads their `nameOf` from `factory.create(lang).walker.nameOf`. Only the
- * still-legacy-adapter languages (python / go / java / rust / bash) keep a
- * `<lang>NameOf` here. `methodKindFromClassify` stays — `pyNameOf` uses it.
+ * The TypeScript (`tsNameOf`), JavaScript (`jsNameOf` + its CommonJS helper web),
+ * Ruby (`rbNameOf`) and Python (`pyNameOf`) functions are GONE from here — those
+ * languages migrated to native `domains/language/<lang>` providers
+ * (tea-rags-mcp-cen6); the engine reads their `nameOf` from
+ * `factory.create(lang).walker.nameOf`. Only the still-legacy-adapter languages
+ * (go / java / rust / bash) keep a `<lang>NameOf` here. `methodKindFromClassify`
+ * stays — `javaNameOf` / `rustNameOf` use it.
  */
 
 function methodKindFromClassify(node: Parser.SyntaxNode): "instance" | "static" | undefined {
   const c = classifyMethod(node);
   return c === null ? undefined : c;
-}
-
-function pyNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
-  if (node.type === "function_definition") {
-    const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false, methodKind: methodKindFromClassify(node) };
-  }
-  if (node.type === "class_definition") {
-    const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: true };
-  }
-  return null;
 }
 
 function goNameOf(node: Parser.SyntaxNode): NamedSymbol | null {

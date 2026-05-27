@@ -1,5 +1,10 @@
 /**
- * Python extraction walker.
+ * Python extraction walker. Relocated from
+ * `domains/ingest/pipeline/chunker/extraction/python-walker.ts` into the native
+ * Python language provider per the `domains/language` consolidation (spec §3; bd
+ * tea-rags-mcp-cen6, following the ruby + typescript + javascript verticals).
+ * Behaviour-preserving: the node-shape detection and `FileExtraction` emission
+ * are identical to the former chunker-local walker.
  *
  * Mirrors the typescript-walker shape — emit a `FileExtraction` whose
  * `imports[]` carries every module reference and `chunks[].calls`
@@ -23,7 +28,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../../contracts/types/codegraph.js";
+import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
 
 export interface PythonExtractInput {
   tree: Parser.Tree;

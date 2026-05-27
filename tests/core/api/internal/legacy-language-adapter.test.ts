@@ -20,12 +20,12 @@ import { UnsupportedLanguageError } from "../../../../src/core/domains/language/
  * codegraph engines read today is reproduced identically through the factory.
  *
  * Languages migrated to a native `domains/language/<lang>` provider are SKIPPED
- * by the adapter (`NATIVE_LANGUAGES`: ruby + typescript + javascript —
+ * by the adapter (`NATIVE_LANGUAGES`: ruby + typescript + javascript + python —
  * tea-rags-mcp-cen6); the factory builds those natively. So the adapter-served
  * set is `LANGUAGE_DEFINITIONS` minus `NATIVE_LANGUAGES`, and the fidelity loops
  * only cover adapter-served languages. The single-language probes below use
- * `python` (a still-adapter-served language with a codegraph config + resolver
- * slot) rather than `javascript`, which is now native.
+ * `go` (a still-adapter-served language with a codegraph config + resolver slot)
+ * rather than `python`, which is now native.
  */
 describe("legacyLanguageRegistry adapter fidelity", () => {
   // Reverse-index codegraph configs by language name (the registry key) so a
@@ -85,29 +85,22 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
 
   it("isInstanceMethod is classifyMethod(node) === 'instance' (false for non-method nodes)", () => {
     const factory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
-    // python is adapter-served — its instance methods are bare `function_definition`
-    // nodes (no @classmethod/@staticmethod decorator parent).
-    const { isInstanceMethod } = factory.create("python").kernel;
-    // Instance method (python `function_definition`, no decorator parent).
-    const instanceNode = { type: "function_definition", children: [], text: "", parent: null } as never;
+    // go is adapter-served — its instance methods are receiver-bound
+    // `method_declaration_go` nodes (classifyMethod's Go branch).
+    const { isInstanceMethod } = factory.create("go").kernel;
+    // Instance method (go `method_declaration_go` — receiver-bound, always instance).
+    const instanceNode = { type: "method_declaration_go", children: [], text: "", parent: null } as never;
     expect(isInstanceMethod(instanceNode)).toBe(true);
     expect(classifyMethod(instanceNode)).toBe("instance");
-    // Static method — `function_definition` under a `decorated_definition` with
-    // a `@staticmethod` decorator child.
-    const staticNode = {
-      type: "function_definition",
-      children: [],
-      text: "def foo(): ...",
-      parent: {
-        type: "decorated_definition",
-        children: [{ type: "decorator", text: "@staticmethod" }],
-      },
-    } as never;
-    expect(isInstanceMethod(staticNode)).toBe(false);
+    // Top-level `function_declaration` — NOT a method, classifyMethod returns null
+    // → not "instance" → false.
+    const funcNode = { type: "function_declaration", children: [], text: "func foo() {}" } as never;
+    expect(isInstanceMethod(funcNode)).toBe(false);
+    expect(classifyMethod(funcNode)).toBeNull();
     // Non-method node must be false (NOT !isStaticMethodNode → would be true).
-    const classNode = { type: "class_definition", children: [], text: "" } as never;
-    expect(isInstanceMethod(classNode)).toBe(false);
-    expect(classifyMethod(classNode)).toBeNull();
+    const typeNode = { type: "type_declaration", children: [], text: "" } as never;
+    expect(isInstanceMethod(typeNode)).toBe(false);
+    expect(classifyMethod(typeNode)).toBeNull();
   });
 
   it.each(adapterServedCodegraphLangs)(
@@ -142,16 +135,16 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
   it("wraps a CallResolver into a LanguageSymbolResolver with resolveDispatch default", () => {
     const calls: string[] = [];
     const fakeResolver: CallResolver = {
-      language: "python",
+      language: "go",
       resolve: () => {
         calls.push("resolve");
         return null;
       },
       // No resolveDispatch — the wrapper must default to [].
     };
-    const registry = buildLegacyLanguageRegistry(new Map([["python", fakeResolver]]));
+    const registry = buildLegacyLanguageRegistry(new Map([["go", fakeResolver]]));
     const factory = new LanguageFactoryImpl(registry);
-    const { resolver } = factory.create("python");
+    const { resolver } = factory.create("go");
     expect(resolver).toBeDefined();
     const call = { callText: "x()", receiver: null, member: "x", startLine: 1 } as never;
     const ctx = {} as never;
@@ -161,14 +154,14 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
   });
 
   it("delegates resolveDispatch when the CallResolver supports it", () => {
-    const edge = { sourceSymbolId: null, targetSymbolId: "Foo#bar", targetFile: "foo.js" };
+    const edge = { sourceSymbolId: null, targetSymbolId: "Foo#bar", targetFile: "foo.go" };
     const fakeResolver: CallResolver = {
-      language: "python",
+      language: "go",
       resolve: () => null,
       resolveDispatch: () => [edge as never],
     };
-    const registry = buildLegacyLanguageRegistry(new Map([["python", fakeResolver]]));
-    const { resolver } = new LanguageFactoryImpl(registry).create("python");
+    const registry = buildLegacyLanguageRegistry(new Map([["go", fakeResolver]]));
+    const { resolver } = new LanguageFactoryImpl(registry).create("go");
     expect(resolver?.resolveDispatch({} as never, {} as never)).toEqual([edge]);
   });
 
@@ -179,6 +172,6 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
 
   it("builds resolver only when codegraph resolvers are supplied", () => {
     const noResolvers = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
-    expect(noResolvers.create("python").resolver).toBeUndefined();
+    expect(noResolvers.create("go").resolver).toBeUndefined();
   });
 });
