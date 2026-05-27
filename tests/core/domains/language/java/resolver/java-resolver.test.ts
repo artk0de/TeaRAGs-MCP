@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext } from "../../../../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   JavaCallResolver,
   mapJavaImportToFile,
-} from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/java/java-resolver.js";
-import { InMemoryGlobalSymbolTable } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+} from "../../../../../../src/core/domains/language/java/resolver/java-resolver.js";
+import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function ctx(
   callerFile: string,

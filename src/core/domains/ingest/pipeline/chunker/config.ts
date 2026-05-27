@@ -326,6 +326,15 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // overload has a distinct symbolId addressable by find_symbol /
     // get_callers / get_callees.
     disambiguateOverloads: true,
+    // NOTE: Java is now a NATIVE `domains/language/java` provider
+    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `java`
+    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver come from
+    // `JavaLanguage`, not this entry. This `LANGUAGE_DEFINITIONS.java` row is
+    // retained only so `CODE_LANGUAGES` / `LANGUAGE_MAP` still report java as a
+    // code language. Java has no `hooks` chain (generic chunking) — the native
+    // provider's `chunkerHooks` mirrors the chunkableTypes / childChunkTypes /
+    // alwaysExtractChildren / keepShortChildChunkTypes here 1:1, and its kernel
+    // carries scopeContainerTypes + disambiguateOverloads.
   },
   bash: {
     loadModule: async () => import("tree-sitter-bash") as Promise<TreeSitterLanguageModule>,

@@ -44,6 +44,7 @@ export const NATIVE_CHUNKER_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "javascript",
   "python",
   "go",
+  "java",
 ]);
 
 /**

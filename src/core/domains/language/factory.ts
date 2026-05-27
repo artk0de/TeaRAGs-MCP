@@ -3,6 +3,7 @@ import { DEFAULT_AMBIGUOUS_RESOLVE_MODE } from "../../contracts/types/codegraph.
 import type { LanguageFactory, LanguageProvider } from "../../contracts/types/language.js";
 import { UnsupportedLanguageError } from "./errors.js";
 import { GoLanguage } from "./go/index.js";
+import { JavaLanguage } from "./java/index.js";
 import { JavaScriptLanguage } from "./javascript/index.js";
 import { PythonLanguage } from "./python/index.js";
 import { RubyLanguage } from "./ruby/index.js";
@@ -27,7 +28,14 @@ export type LegacyProviderBuilder = () => LanguageProvider;
  * `NATIVE_LANGUAGES` in the legacy adapter (which skips these) and
  * `NATIVE_CHUNKER_LANGUAGES` in the ingest-local registry. bd tea-rags-mcp-cen6.
  */
-const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby", "typescript", "javascript", "python", "go"]);
+const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
+  "ruby",
+  "typescript",
+  "javascript",
+  "python",
+  "go",
+  "java",
+]);
 
 /**
  * Real `LanguageFactory`. `create(lang)` ENCAPSULATES construction — it builds
@@ -98,6 +106,7 @@ export class LanguageFactoryImpl implements LanguageFactory {
       if (lang === "javascript") return new JavaScriptLanguage(this.ambiguousResolveMode);
       if (lang === "python") return new PythonLanguage(this.ambiguousResolveMode);
       if (lang === "go") return new GoLanguage(this.ambiguousResolveMode);
+      if (lang === "java") return new JavaLanguage(this.ambiguousResolveMode);
     }
     const builder = this.legacyBuilders.get(lang);
     if (builder) return builder();

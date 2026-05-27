@@ -63,7 +63,6 @@ import type {
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { classifyMethod } from "../../../../infra/symbolid/index.js";
 import { extractFromBashFile } from "../../../ingest/pipeline/chunker/extraction/bash-walker.js";
-import { extractFromJavaFile } from "../../../ingest/pipeline/chunker/extraction/java-walker.js";
 import { extractFromRustFile } from "../../../ingest/pipeline/chunker/extraction/rust-walker.js";
 import { pipelineLog } from "../../../ingest/pipeline/infra/debug-logger.js";
 import {
@@ -323,8 +322,11 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   ".java": {
     language: "java",
     loadParser: () => JavaLang as Parser.Language,
-    walker: extractFromJavaFile,
-    nameOf: javaNameOf,
+    // walker + nameOf DROPPED — java migrated to the native domains/language/java
+    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
+    // `factory.create("java").walker`; this entry is retained only for
+    // `loadParser` / `scopeSeparator` / `disambiguateOverloads` (still sourced
+    // from the map).
     scopeSeparator: ".",
     // bd tea-rags-mcp-a466 — Java methods can be overloaded; each
     // overload needs its own symbolId so `get_callers`/`get_callees`
@@ -1566,34 +1568,19 @@ function extensionOf(path: string): string {
  * `.claude/rules/symbolid-convention.md`.
  *
  * The TypeScript (`tsNameOf`), JavaScript (`jsNameOf` + its CommonJS helper web),
- * Ruby (`rbNameOf`), Python (`pyNameOf`) and Go (`goNameOf` + its
- * `extractGoReceiverType` helper) functions are GONE from here — those
- * languages migrated to native `domains/language/<lang>` providers
- * (tea-rags-mcp-cen6); the engine reads their `nameOf` from
+ * Ruby (`rbNameOf`), Python (`pyNameOf`), Go (`goNameOf` + its
+ * `extractGoReceiverType` helper) and Java (`javaNameOf`) functions are GONE
+ * from here — those languages migrated to native `domains/language/<lang>`
+ * providers (tea-rags-mcp-cen6); the engine reads their `nameOf` from
  * `factory.create(lang).walker.nameOf`. Only the still-legacy-adapter languages
- * (java / rust / bash) keep a `<lang>NameOf` here. `methodKindFromClassify`
- * stays — `javaNameOf` / `rustNameOf` use it.
+ * (rust / bash) keep a `<lang>NameOf` here. `methodKindFromClassify` stays —
+ * `rustNameOf` uses it (and Java's relocated `name-of.ts` reuses the kernel
+ * copy at `domains/language/kernel/method-kind.ts`).
  */
 
 function methodKindFromClassify(node: Parser.SyntaxNode): "instance" | "static" | undefined {
   const c = classifyMethod(node);
   return c === null ? undefined : c;
-}
-
-function javaNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
-  if (node.type === "class_declaration" || node.type === "interface_declaration" || node.type === "enum_declaration") {
-    const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: true };
-  }
-  if (node.type === "method_declaration") {
-    const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false, methodKind: methodKindFromClassify(node) };
-  }
-  if (node.type === "constructor_declaration") {
-    const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false, methodKind: "instance" };
-  }
-  return null;
 }
 
 function rustNameOf(node: Parser.SyntaxNode): NamedSymbol | null {

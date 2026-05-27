@@ -1,5 +1,8 @@
 /**
- * Java implementation of the `CallResolver` contract.
+ * Java implementation of the `CallResolver` contract. Relocated from
+ * `domains/trajectory/codegraph/symbols/resolvers/java/java-resolver.ts` into
+ * the native Java language provider per the `domains/language` consolidation
+ * (spec §3; bd tea-rags-mcp-cen6). Behaviour-preserving.
  *
  * Java imports name fully-qualified types: `com.foo.Bar` →
  * `com/foo/Bar.java`. Wildcard imports (`com.foo.*`) point at a
@@ -16,7 +19,7 @@ import {
   type CallRef,
   type CallResolver,
   type ResolvedTarget,
-} from "../../../../../../contracts/types/codegraph.js";
+} from "../../../../contracts/types/codegraph.js";
 
 /**
  * Well-known `java.lang` public top-level classes/interfaces. The JLS

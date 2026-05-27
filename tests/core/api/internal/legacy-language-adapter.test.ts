@@ -21,11 +21,11 @@ import { UnsupportedLanguageError } from "../../../../src/core/domains/language/
  *
  * Languages migrated to a native `domains/language/<lang>` provider are SKIPPED
  * by the adapter (`NATIVE_LANGUAGES`: ruby + typescript + javascript + python +
- * go — tea-rags-mcp-cen6); the factory builds those natively. So the
+ * go + java — tea-rags-mcp-cen6); the factory builds those natively. So the
  * adapter-served set is `LANGUAGE_DEFINITIONS` minus `NATIVE_LANGUAGES`, and the
  * fidelity loops only cover adapter-served languages. The single-language probes
- * below use `java` (a still-adapter-served language with a codegraph config +
- * resolver slot) rather than `go`, which is now native.
+ * below use `rust` (a still-adapter-served language with a codegraph config +
+ * resolver slot) rather than `java`, which is now native.
  */
 describe("legacyLanguageRegistry adapter fidelity", () => {
   // Reverse-index codegraph configs by language name (the registry key) so a
@@ -85,28 +85,38 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
 
   it("isInstanceMethod is classifyMethod(node) === 'instance' (false for non-method nodes)", () => {
     const factory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
-    // java is adapter-served — its instance methods are `method_declaration`
-    // nodes WITHOUT a `static` modifier (classifyMethod's Java branch).
-    const { isInstanceMethod } = factory.create("java").kernel;
-    // Instance method (java `method_declaration` — no `static` modifier → instance).
-    const instanceNode = { type: "method_declaration", children: [], text: "", parent: null } as never;
+    // rust is adapter-served — its instance methods are `function_item` nodes
+    // WITH a `self` parameter (classifyMethod's Rust branch); associated
+    // functions (no `self`) are static.
+    const { isInstanceMethod } = factory.create("rust").kernel;
+    // Instance method (rust `function_item` with a `self_parameter` in the
+    // `parameters` field → instance).
+    const instanceNode = {
+      type: "function_item",
+      childForFieldName: (f: string) =>
+        f === "parameters" ? { children: [{ type: "self_parameter" }] } : null,
+      children: [],
+      text: "fn foo(&self) {}",
+      parent: null,
+    } as never;
     expect(isInstanceMethod(instanceNode)).toBe(true);
     expect(classifyMethod(instanceNode)).toBe("instance");
-    // Static method (java `method_declaration` WITH a `static` modifier in the
-    // `modifiers` child) — classifyMethod returns "static" → not "instance".
+    // Associated function (rust `function_item` with no `self` parameter) —
+    // classifyMethod returns "static" → not "instance".
     const staticNode = {
-      type: "method_declaration",
-      children: [{ type: "modifiers", children: [{ type: "static", text: "static" }] }],
-      text: "static void foo() {}",
+      type: "function_item",
+      childForFieldName: (f: string) => (f === "parameters" ? { children: [] } : null),
+      children: [],
+      text: "fn foo() {}",
       parent: null,
     } as never;
     expect(isInstanceMethod(staticNode)).toBe(false);
     expect(classifyMethod(staticNode)).toBe("static");
-    // Non-method node must be false — `class_declaration` is not a method,
+    // Non-method node must be false — `struct_item` is not a method,
     // classifyMethod returns null → not "instance" → false.
-    const classNode = { type: "class_declaration", children: [], text: "" } as never;
-    expect(isInstanceMethod(classNode)).toBe(false);
-    expect(classifyMethod(classNode)).toBeNull();
+    const structNode = { type: "struct_item", children: [], text: "" } as never;
+    expect(isInstanceMethod(structNode)).toBe(false);
+    expect(classifyMethod(structNode)).toBeNull();
   });
 
   it.each(adapterServedCodegraphLangs)(
@@ -141,16 +151,16 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
   it("wraps a CallResolver into a LanguageSymbolResolver with resolveDispatch default", () => {
     const calls: string[] = [];
     const fakeResolver: CallResolver = {
-      language: "java",
+      language: "rust",
       resolve: () => {
         calls.push("resolve");
         return null;
       },
       // No resolveDispatch — the wrapper must default to [].
     };
-    const registry = buildLegacyLanguageRegistry(new Map([["java", fakeResolver]]));
+    const registry = buildLegacyLanguageRegistry(new Map([["rust", fakeResolver]]));
     const factory = new LanguageFactoryImpl(registry);
-    const { resolver } = factory.create("java");
+    const { resolver } = factory.create("rust");
     expect(resolver).toBeDefined();
     const call = { callText: "x()", receiver: null, member: "x", startLine: 1 } as never;
     const ctx = {} as never;
@@ -160,14 +170,14 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
   });
 
   it("delegates resolveDispatch when the CallResolver supports it", () => {
-    const edge = { sourceSymbolId: null, targetSymbolId: "Foo#bar", targetFile: "Foo.java" };
+    const edge = { sourceSymbolId: null, targetSymbolId: "Foo::bar", targetFile: "foo.rs" };
     const fakeResolver: CallResolver = {
-      language: "java",
+      language: "rust",
       resolve: () => null,
       resolveDispatch: () => [edge as never],
     };
-    const registry = buildLegacyLanguageRegistry(new Map([["java", fakeResolver]]));
-    const { resolver } = new LanguageFactoryImpl(registry).create("java");
+    const registry = buildLegacyLanguageRegistry(new Map([["rust", fakeResolver]]));
+    const { resolver } = new LanguageFactoryImpl(registry).create("rust");
     expect(resolver?.resolveDispatch({} as never, {} as never)).toEqual([edge]);
   });
 
@@ -178,6 +188,6 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
 
   it("builds resolver only when codegraph resolvers are supplied", () => {
     const noResolvers = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
-    expect(noResolvers.create("java").resolver).toBeUndefined();
+    expect(noResolvers.create("rust").resolver).toBeUndefined();
   });
 });

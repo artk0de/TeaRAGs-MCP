@@ -1,5 +1,9 @@
 /**
- * Java extraction walker.
+ * Java extraction walker. Relocated from
+ * `domains/ingest/pipeline/chunker/extraction/java-walker.ts` into the native
+ * Java language provider per the `domains/language` consolidation (spec §3; bd
+ * tea-rags-mcp-cen6, following ruby + typescript + javascript + python + go).
+ * Behaviour-preserving.
  *
  * Java imports come as `import_declaration` nodes with a
  * scoped_identifier child whose dotted text gives the fully-qualified
@@ -28,7 +32,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../../contracts/types/codegraph.js";
+import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
 
 export interface JavaExtractInput {
   tree: Parser.Tree;
