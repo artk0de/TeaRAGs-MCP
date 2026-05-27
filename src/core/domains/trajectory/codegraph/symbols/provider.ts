@@ -350,6 +350,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   readonly presets: RerankPreset[];
 
   /**
+   * codegraph CHUNK signals (fanIn/fanOut/pageRank) read the DuckDB graph,
+   * which is only populated once the run sink's finish() resolves
+   * (streamingResolveAndUpsert + recomputePageRank). Per-batch reads would
+   * see an empty graph, so the coordinator skips per-batch chunk dispatch and
+   * runs ONE buildChunkSignals pass after this provider's finalizeSignals.
+   */
+  readonly defersChunkEnrichment = true;
+
+  /**
    * Per-collection (relPath -> startLine -> symbolId), populated by the
    * walker pass in `buildFileSignals` so `buildChunkSignals` can resolve
    * symbolId for each `ChunkLookupEntry` by line number.
@@ -366,6 +375,20 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * symbolId is not part of the public contract.
    */
   private readonly chunkSymbolByLine = new Map<string, Map<string, Map<number, string>>>();
+  /**
+   * Active streaming extraction sink per collection key. Created lazily by the
+   * first `streamFileBatch`, finished + consumed + deleted by `finalizeSignals`.
+   * Held as run state so file batches accumulate into one graph build that the
+   * single finalize pass resolves — mirrors what the legacy whole-repo
+   * `buildFileSignals` sink did, but spread across streamed batches.
+   */
+  private readonly runSinks = new Map<string, ExtractionSink>();
+  /**
+   * Repo-relative paths extracted via `streamFileBatch` per collection key.
+   * `finalizeSignals` reads back file overlays for exactly these paths when the
+   * caller doesn't pass an explicit `options.paths` subset.
+   */
+  private readonly runExtractedPaths = new Map<string, Set<string>>();
   /**
    * Per-run counters surfaced via `getRunMetrics()`. Read-and-cleared by
    * `CompletionRunner` at end of each enrichment cycle. Tracked here
@@ -1031,52 +1054,125 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
     await sink.finish();
 
-    // Collection-wide p95 of fanIn, finalising `isHub` at index time. Read
-    // from the full graph in DuckDB (NOT the in-memory overlay subset):
-    // on incremental reindex `overlayPaths` holds only the changed files,
-    // so computing the percentile from that subset would misclassify hubs.
-    // The first pass above has just brought the whole graph up to date, so
-    // the DB query naturally spans the entire collection's file universe.
-    const fanInP95 = await graphDb.getFanInP95();
-
-    // Second pass: emit the metric overlays per file. We emit a row for
-    // every relPath the caller listed (or every file we walked), so the
-    // enrichment coordinator sees a consistent overlay map shape.
+    // Second pass: emit metric overlays per file (delegated to
+    // readFileOverlays, shared with finalizeSignals). We emit a row for every
+    // relPath the caller listed (or every file we walked), so the enrichment
+    // coordinator sees a consistent overlay map shape.
     const overlayPaths = options?.paths && options.paths.length > 0 ? options.paths : targetRelPaths;
     const result = new Map<string, FileSignalOverlay>();
+    await this.readFileOverlays(graphDb, overlayPaths, result);
+    return result;
+  }
+
+  /**
+   * Read file-level codegraph overlays for `overlayPaths` from the finished
+   * graph into `out`. Shared by `buildFileSignals` (whole-repo / backfill) and
+   * `finalizeSignals` (streamed run). `fanInP95` is read ONCE from the FULL
+   * graph in DuckDB (not the overlay subset) so `isHub` is not misclassified on
+   * an incremental subset. Bare inner keys (tea-rags-mcp-k6xu) — written under
+   * providerKey `codegraph.symbols.file`, so the addressable path is
+   * `codegraph.symbols.file.fanIn`.
+   */
+  private async readFileOverlays(
+    graphDb: GraphDbClient,
+    overlayPaths: string[],
+    out: Map<string, FileSignalOverlay>,
+  ): Promise<void> {
+    const fanInP95 = await graphDb.getFanInP95();
     for (const relPath of overlayPaths) {
       const fanIn = await graphDb.getFanIn(relPath);
       const fanOut = await graphDb.getFanOut(relPath);
       const denom = fanIn + fanOut;
-      // Slice 2 / B1 — transitive blast radius via reverse BFS over
-      // file edges. Depth defaults to 5 (in DuckDB client). Cheap on
-      // small files (early-empty); on hub files the DuckDB recursive
-      // CTE handles up to ~thousands of ancestors comfortably.
       const transitiveImpact = await graphDb.getTransitiveImpact(relPath);
-      // Bare inner keys (tea-rags-mcp-k6xu). EnrichmentApplier writes this
-      // overlay under providerKey `codegraph.symbols.file`, which Qdrant
-      // resolves as a path. Bare keys mean the on-disk shape is
-      // `codegraph.symbols.file.fanIn` (single prefix), natively addressable
-      // by Qdrant filters — mirroring git's `git.file.commitCount`. A dotted
-      // inner key would produce a literal leaf `"codegraph.file.fanIn"` that
-      // Qdrant cannot reach via a filter path.
-      result.set(relPath, {
+      out.set(relPath, {
         fanIn,
         fanOut,
         instability: denom === 0 ? 0 : fanOut / denom,
-        // Support signal for instability.confidence — derived inline so
-        // bytes hit Qdrant in the same payload as fanIn/fanOut.
         connectionCount: denom,
-        // isHub = fanIn above the collection-wide p95. Computed here at
-        // index time (p95 queried once above against the full graph), so
-        // the persisted payload boolean is truthful. IsHubSignal reads
-        // this boolean verbatim — there is no rerank-time finalisation.
         isHub: fanIn > fanInP95,
         isLeaf: fanOut === 0 && fanIn > 0,
         transitiveImpact,
       });
     }
-    return result;
+  }
+
+  /**
+   * Per-batch streaming extraction: extract the batch's supported files into
+   * the lazily-created per-collection run sink, return ∅ (file overlays are
+   * deferred to `finalizeSignals` — they need the finished whole graph). Arrow
+   * property so `this` survives being passed as a coordinator callback.
+   */
+  streamFileBatch = async (
+    root: string,
+    batchPaths: string[],
+    options?: FileSignalOptions,
+  ): Promise<Map<string, FileSignalOverlay>> => {
+    const key = this.collectionKey(options?.collectionName);
+    let sink = this.runSinks.get(key);
+    if (!sink) {
+      sink = this.asExtractionSink(options?.collectionName);
+      this.runSinks.set(key, sink);
+    }
+    let extracted = this.runExtractedPaths.get(key);
+    if (!extracted) {
+      extracted = new Set();
+      this.runExtractedPaths.set(key, extracted);
+    }
+    const targets = batchPaths.filter(
+      (p) => SUPPORTED_EXTS.has(extensionOf(p)) && !this.codegraphExclusionFilter.ignores(p),
+    );
+    for (const relPath of targets) {
+      try {
+        await sink.write(this.extractOneFile(root, relPath));
+        extracted.add(relPath);
+      } catch (err) {
+        if (process.env.DEBUG === "true") {
+          process.stderr.write(`[codegraph] skip ${relPath}: ${(err as Error).message}\n`);
+        }
+      }
+    }
+    return new Map(); // signals deferred to finalizeSignals
+  };
+
+  /**
+   * Finish the streamed run sink (resolve edges + recompute graph metrics),
+   * read back FILE overlays for the extracted paths, then release per-run
+   * state. Returns FILE overlays only — codegraph CHUNK signals come from the
+   * coordinator's post-finalize `buildChunkSignals` pass (`defersChunkEnrichment`).
+   * Releasing `chunkSymbolByLine` here fixes its monotonic growth on the
+   * long-lived daemon.
+   */
+  finalizeSignals = async (_root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> => {
+    const key = this.collectionKey(options?.collectionName);
+    const sink = this.runSinks.get(key);
+    const file = new Map<string, FileSignalOverlay>();
+    try {
+      if (sink) await sink.finish();
+      const { graphDb } = await this.getStore(options?.collectionName);
+      const paths =
+        options?.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
+      await this.readFileOverlays(graphDb, paths, file);
+    } finally {
+      this.runSinks.delete(key);
+      this.runExtractedPaths.delete(key);
+      this.clearRunState(key);
+    }
+    return file;
+  };
+
+  /**
+   * Release per-run state for a collection after finalize: drop the
+   * per-collection `chunkSymbolByLine` map (the leak) and reset the run-global
+   * ancestor / extends / return-type / dispatch maps (mirrors `getRunMetrics`).
+   */
+  private clearRunState(key: string): void {
+    this.chunkSymbolByLine.delete(key);
+    this.runAncestors = {};
+    this.runPrependedAncestors = {};
+    this.runExtends = {};
+    this.runReturnTypes = {};
+    this.runDispatchTables = {};
+    this.runCallbackParams = {};
   }
 
   /**

@@ -56,6 +56,63 @@ describe("CodegraphEnrichmentProvider", () => {
     expect(provider.signals.map((s) => s.key)).toContain("codegraph.chunk.fanOut");
   });
 
+  describe("streamFileBatch + finalizeSignals (deferred file enrichment)", () => {
+    const makeRoot = (): string => {
+      const root = mkdtempSync(join(tmpdir(), "cg-stream-"));
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(join(root, "src", "a.ts"), "export function a(): number { return 1; }\n");
+      writeFileSync(
+        join(root, "src", "b.ts"),
+        'import { a } from "./a.js";\nexport function b(): number { return a(); }\n',
+      );
+      return root;
+    };
+
+    it("declares defersChunkEnrichment (chunk signals need the finalized graph)", () => {
+      expect(provider.defersChunkEnrichment).toBe(true);
+    });
+
+    it("streamFileBatch extracts the batch and returns an empty map (signals deferred)", async () => {
+      const root = makeRoot();
+      try {
+        const r = await provider.streamFileBatch(root, ["src/a.ts"]);
+        expect(r).toBeInstanceOf(Map);
+        expect(r.size).toBe(0);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("finalizeSignals returns file overlays for the streamed batches", async () => {
+      const root = makeRoot();
+      try {
+        await provider.streamFileBatch(root, ["src/a.ts"]);
+        await provider.streamFileBatch(root, ["src/b.ts"]);
+        const file = await provider.finalizeSignals(root);
+        expect(file).toBeInstanceOf(Map);
+        expect(file.size).toBeGreaterThan(0);
+        // Each overlay carries the file-level codegraph signal shape.
+        const overlay = file.get("src/b.ts") ?? [...file.values()][0];
+        expect(overlay).toHaveProperty("fanIn");
+        expect(overlay).toHaveProperty("fanOut");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("clears chunkSymbolByLine for the collection after finalize (leak fix)", async () => {
+      const root = makeRoot();
+      try {
+        await provider.streamFileBatch(root, ["src/a.ts"]);
+        await provider.finalizeSignals(root);
+        const map = (provider as unknown as { chunkSymbolByLine: Map<string, unknown> }).chunkSymbolByLine;
+        expect(map.has("__direct__")).toBe(false);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
   // Slice 2 / A2 — per-provider EnrichmentMetrics. The provider tracks
   // how many files it walked, how many graph edges it produced, and what
   // fraction of call sites the resolver actually pinned to a target.
