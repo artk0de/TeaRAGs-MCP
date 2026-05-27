@@ -3,8 +3,8 @@ import * as nodeFs from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { AppConfig } from "../../src/bootstrap/config/index.js";
-import { createAppContext, createConfiguredServer, loadPrompts } from "../../src/bootstrap/factory.js";
+import type { AppConfig, getZodConfig } from "../../src/bootstrap/config/index.js";
+import { createAppContext, createConfiguredServer, loadPrompts, wireCodegraph } from "../../src/bootstrap/factory.js";
 import { CollectionRegistry } from "../../src/core/infra/registry/index.js";
 import { loadPromptsConfig } from "../../src/mcp/prompts/index.js";
 
@@ -208,5 +208,32 @@ describe("loadPrompts", () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
 
     exitSpy.mockRestore();
+  });
+});
+
+describe("wireCodegraph", () => {
+  // Minimal codegraph-enabled zodConfig slice. wireCodegraph reads only
+  // `zodConfig.codegraph`; the rest of the config object is irrelevant to
+  // pool construction so we cast the narrow shape.
+  function zodConfigWithCodegraph(): ReturnType<typeof getZodConfig> {
+    return {
+      codegraph: {
+        enabled: true,
+        dbMemoryLimit: "2GB",
+        dbThreads: 2,
+        excludeTests: true,
+        customExcludePatterns: [],
+        ambiguousResolveMode: "strict",
+      },
+    } as unknown as ReturnType<typeof getZodConfig>;
+  }
+
+  it("always passes a daemonSocketPath into the pool (daemon is the default write path)", () => {
+    // The daemon is base functionality — no opt-in env flag. Wiring always
+    // points the pool at the daemon socket regardless of environment.
+    const ctx = wireCodegraph(makeConfig(), zodConfigWithCodegraph());
+    expect(ctx).toBeDefined();
+    const socketPath = (ctx!.pool as unknown as { options: { daemonSocketPath?: string } }).options.daemonSocketPath;
+    expect(socketPath).toMatch(/codegraph-daemon\.sock$/);
   });
 });

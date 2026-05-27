@@ -667,6 +667,17 @@ export interface GraphDbClient {
    * cases are treated as "rank-irrelevant".
    */
   getPageRank: (symbolId: SymbolId) => Promise<number>;
+
+  /**
+   * Run Tarjan SCC over both scopes + PageRank over the method graph and
+   * persist the results, all in one round-trip. Optional because only the
+   * daemon-routed client (`DaemonGraphDbClient`) implements it — the
+   * in-process `DuckDbGraphClient` leaves it undefined so the provider's
+   * direct-mode path runs the analysis inline (one streamAdjacency pass per
+   * scope). When present, the provider delegates the whole 30 GB graph build
+   * to the single daemon process instead of every MCP client.
+   */
+  computeAndPersistCyclesAndSignals?: () => Promise<void>;
 }
 
 export type CycleScope = "file" | "method";

@@ -1,15 +1,18 @@
 // src/bootstrap/factory.ts
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+import { getDaemonPaths, getStorageDir, type CodegraphDaemonPaths } from "../core/adapters/duckdb/daemon/index.js";
 import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
 import { OllamaEmbeddings } from "../core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
+import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 import {
   createApp,
@@ -177,14 +180,83 @@ interface CodegraphContext {
   pool: GraphDbClientPool;
 }
 
-function wireCodegraph(
+const codegraphDaemonLock = new DaemonLock();
+
+/** Cheap pid-liveness probe over the daemon's pid file (no Qdrant coupling). */
+function isCodegraphDaemonAlive(paths: CodegraphDaemonPaths): boolean {
+  if (!existsSync(paths.pidFile)) return false;
+  try {
+    const pid = parseInt(readFileSync(paths.pidFile, "utf-8").trim(), 10);
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Lazily spawn the codegraph daemon process when it is not already alive. The
+ * spawn is single-flighted across processes via `DaemonLock` on the lock file —
+ * mirrors the Qdrant embedded-daemon cold-spawn guard. The daemon binary is the
+ * built `entry.js` next to this module; resolved via `import.meta.url` so it
+ * works identically under `src/` (ts-node) and `build/` (shipped JS).
+ *
+ * The daemon is the default (only) write path — there is no in-process RW
+ * fallback. A spawn failure here is swallowed, but the subsequent
+ * `DaemonGraphDbClient.init()` then surfaces the connect failure loudly after
+ * its bounded retry window expires, rather than silently degrading.
+ *
+ * Refcounting is intentionally NOT done here. The daemon's per-connection
+ * refcount is owned SOLELY by `entry.ts` (connect = +1, socket close = -1), so
+ * `refs` equals the number of live `(collection, process)` sockets. The pool
+ * caches one socket per collection and closes them in `closeAll`, so when a
+ * client process exits or shuts down its pool the sockets close, `refs` decays
+ * to 0, and the idle watcher releases the RW lock. A per-process bump here
+ * would double-count (the connections already counted) and pin `refs` above 0
+ * forever — the exact bug that kept the daemon holding the lock.
+ */
+function ensureCodegraphDaemon(
+  paths: CodegraphDaemonPaths,
+  rootDir: string,
+  resources: {
+    memoryLimit?: string;
+    threads?: number;
+  },
+): void {
+  if (isCodegraphDaemonAlive(paths)) return;
+  const lock = codegraphDaemonLock.acquire(paths.lockFile);
+  if (!lock) return; // another process is spawning; it will own the daemon
+  try {
+    if (isCodegraphDaemonAlive(paths)) return;
+    const entryUrl = new URL("../core/adapters/duckdb/daemon/entry.js", import.meta.url);
+    const entryPath = fileURLToPath(entryUrl);
+    const child = spawn(process.execPath, [entryPath], {
+      detached: true,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        TEA_RAGS_CODEGRAPH_DAEMON_ROOT: rootDir,
+        TEA_RAGS_CODEGRAPH_DAEMON_DIR: paths.storageDir,
+        ...(resources.memoryLimit ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY: resources.memoryLimit } : {}),
+        ...(resources.threads !== undefined ? { TEA_RAGS_CODEGRAPH_DAEMON_THREADS: String(resources.threads) } : {}),
+      },
+    });
+    child.unref();
+  } catch {
+    /* best-effort: fall back to in-process write path */
+  } finally {
+    codegraphDaemonLock.release(lock.fd);
+  }
+}
+
+export function wireCodegraph(
   config: AppConfig,
   zodConfig: ReturnType<typeof getZodConfig>,
   collectionRegistry: CollectionRegistry,
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
-  // entirely. Treat that as "disabled" so opt-in via env stays the
-  // only path to enable codegraph.
+  // entirely. Treat that as "disabled" so the `codegraph.enabled` config
+  // flag stays the single switch for the feature.
   const { codegraph } = zodConfig;
   if (!codegraph?.enabled) return undefined;
 
@@ -200,6 +272,15 @@ function wireCodegraph(
       ? dirname(codegraph.dbPath)
       : codegraph.dbPath
     : config.paths.appData;
+
+  // The daemon is the default (and only) write path — base functionality for
+  // cross-process single-writer lock safety, not opt-in. The pool is always
+  // told the daemon's unix socket so `acquireWrite` proxies mutations to the
+  // single daemon process (one RW DuckDB lock per machine). The daemon process
+  // itself is spawned lazily on the first write (see lazy wrap below) so this
+  // wire step stays side-effect-free — merely wiring (no write) never spawns,
+  // which is what keeps the unit suite from launching a real daemon.
+  const daemonPaths = getDaemonPaths(getStorageDir(rootDir));
 
   const ambiguousMode = codegraph.ambiguousResolveMode;
   // Single cross-language symbolId mapper injected into every codegraph
@@ -233,6 +314,10 @@ function wireCodegraph(
       threads: codegraph.dbThreads,
       preserveInsertionOrder: false,
     },
+    // Daemon socket — always set. `acquireWrite` routes mutations through a
+    // `DaemonGraphDbClient` over this socket; reads (`acquireRead`) always stay
+    // in-process READ_ONLY and ignore it.
+    daemonSocketPath: daemonPaths.socketPath,
     // Hydrate the per-collection symbol table from disk on first open.
     // Without this, an incremental reindex of file A cannot resolve
     // calls into an unchanged file B — the walker only touches changed
@@ -252,6 +337,37 @@ function wireCodegraph(
       }
     },
   });
+
+  // Lazy spawn-on-demand: the daemon process is started the FIRST time a write
+  // OR a read is acquired, not at wire time — so `wireCodegraph` stays
+  // side-effect-free (the unit test exercises only the wire step and never
+  // spawns). `ensureCodegraphDaemon` is single-flighted across processes via
+  // DaemonLock and refcounts each MCP client; `ensured` makes the in-process
+  // wrap fire once. The subsequent `DaemonGraphDbClient.init()` retries the
+  // socket connect with bounded backoff, absorbing the detached-spawn → connect
+  // race. BOTH `acquireWrite` and `acquireReader` must ensure the daemon
+  // because in daemon mode the `DaemonGraphDbClient` is the sole accessor for
+  // reads too — a query issued before any write would otherwise fail to
+  // connect, and GraphFacade.withReadHandle would silently return empty.
+  let ensured = false;
+  const ensure = (): void => {
+    if (ensured) return;
+    ensured = true;
+    ensureCodegraphDaemon(daemonPaths, rootDir, {
+      memoryLimit: codegraph.dbMemoryLimit,
+      threads: codegraph.dbThreads,
+    });
+  };
+  const originalAcquireWrite = pool.acquireWrite.bind(pool);
+  pool.acquireWrite = async (collectionName: string) => {
+    ensure();
+    return originalAcquireWrite(collectionName);
+  };
+  const originalAcquireReader = pool.acquireReader.bind(pool);
+  pool.acquireReader = async (collectionName: string) => {
+    ensure();
+    return originalAcquireReader(collectionName);
+  };
 
   const deps: CodegraphDeps = {
     pool,

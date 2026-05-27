@@ -6,13 +6,14 @@ import { fileURLToPath } from "node:url";
 import ignore from "ignore";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
-import { BUILTIN_IGNORE_PATTERNS } from "../../../../../../src/core/domains/ingest/pipeline/ignore-defaults.js";
-import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
-import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
+import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
+import type { GraphDbClient } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { BUILTIN_IGNORE_PATTERNS } from "../../../../../../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { JavascriptCallResolver } from "../../../../../../src/core/domains/language/javascript/resolver/index.js";
+import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { runMigrations } from "../../../../../../src/core/infra/migration/database/runner.js";
 
@@ -3354,5 +3355,42 @@ describe("CodegraphEnrichmentProvider", () => {
         rmSync(root, { recursive: true, force: true });
       }
     });
+  });
+});
+
+// Task 7 — write routing through the daemon + version-suffix removal.
+// These exercise the provider's private store-resolution + metric-recompute
+// paths directly (cast via `as unknown as { ... }`) in DIRECT mode so no pool
+// or DuckDB file is needed.
+describe("CodegraphEnrichmentProvider — daemon write routing (Task 7)", () => {
+  it("recompute step delegates to graphDb.computeAndPersistCyclesAndSignals when present", async () => {
+    const calls: string[] = [];
+    const fakeGraphDb = {
+      computeAndPersistCyclesAndSignals: async () => {
+        calls.push("rpc");
+      },
+    } as unknown as GraphDbClient;
+    const provider = new CodegraphEnrichmentProvider({
+      graphDb: fakeGraphDb,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      resolvers: new Map(),
+    });
+    await (
+      provider as unknown as { recomputeGraphMetricsStreaming: (c?: string) => Promise<void> }
+    ).recomputeGraphMetricsStreaming("code_x_v1");
+    expect(calls).toEqual(["rpc"]);
+  });
+
+  it("getStore acquires the FULL versioned collection name (no strip)", async () => {
+    const acquired: string[] = [];
+    const fakePool = {
+      acquireWrite: async (c: string) => {
+        acquired.push(c);
+        return { graphDb: {} as GraphDbClient, symbolTable: new InMemoryGlobalSymbolTable() };
+      },
+    };
+    const provider = new CodegraphEnrichmentProvider({ pool: fakePool as never, resolvers: new Map() });
+    await (provider as unknown as { getStore: (c?: string) => Promise<unknown> }).getStore("code_x_v6");
+    expect(acquired).toEqual(["code_x_v6"]); // NOT "code_x"
   });
 });

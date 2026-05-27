@@ -1,23 +1,24 @@
 /**
- * Pool routing regression — `stripVersionSuffix` plus pool acquire.
+ * Pool routing regression — version-aware acquire (daemon redesign).
  *
  * The ingest pipeline writes Qdrant chunks to a versioned target
  * (`<alias>_v<N>`) during the first index pass because the alias doesn't
- * exist yet. `enrichment.prefetch` forwards that same `_v<N>` name to
- * the provider as `FileSignalOptions.collectionName`. The codegraph
- * DuckDB file is alias-keyed by contract (see `IndexingOps.run`'s
- * `removeCollection(alias)` comment) — so the provider MUST strip the
- * version suffix before calling `pool.acquire`, otherwise indexing
- * writes to `<alias>_v<N>.duckdb` while GraphFacade reads from
- * `<alias>.duckdb` and gets zero results.
+ * exist yet. `enrichment.prefetch` forwards that same `_v<N>` name to the
+ * provider as `FileSignalOptions.collectionName`. Under the daemon redesign
+ * the codegraph DuckDB file is keyed on the FULL versioned name: `getStore`
+ * acquires it verbatim via `acquireWrite` (no version strip), and the RO
+ * reader opens the same versioned file via `acquireRead`. Readers follow the
+ * live version through the Qdrant alias swap, not an in-provider strip — so
+ * write and read collapse onto the same `<alias>_v<N>.duckdb`.
  *
- * These tests pin two invariants:
+ * `stripVersionSuffix` is retained as an exported helper (other call sites /
+ * tests reference it) but `getStore` no longer applies it. These tests pin:
  *
  *   1. `stripVersionSuffix` strips `_v<digits>$` only — arbitrary test
  *      collection names like "project-alpha" survive unchanged.
- *   2. `buildFileSignals` with a versioned `collectionName` lands rows
- *      in the alias-keyed DuckDB file, so a follow-up
- *      `pool.acquire(alias)` (the read path) sees the data.
+ *   2. `buildFileSignals` with a versioned `collectionName` lands rows in the
+ *      versioned DuckDB file, so a follow-up `pool.acquire(<versioned>)`
+ *      (the read path's key) sees the data.
  */
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -26,14 +27,14 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
-import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
+import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import {
   CodegraphEnrichmentProvider,
   stripVersionSuffix,
 } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
-import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 describe("stripVersionSuffix", () => {
@@ -83,31 +84,25 @@ describe("CodegraphEnrichmentProvider — versioned-write / alias-read routing",
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("writes from a `_vN` collectionName land in the alias-keyed DuckDB so the GraphFacade reader sees them", async () => {
+  it("writes from a `_vN` collectionName land in the SAME versioned DuckDB the reader opens", async () => {
     // Synthetic project — one TS file under the temp root.
     const root = mkdtempSync(join(tmpdir(), "cg-pool-proj-"));
     writeFileSync(join(root, "foo.ts"), "export class Foo { bar() {} }\n");
 
-    // Simulate the indexing pipeline: it threads the versioned name
-    // (`<alias>_v<N>`) into FileSignalOptions.collectionName. Before
-    // this fix the call routed to `code_demo_v3.duckdb`; after, it
-    // routes to `code_demo.duckdb` (alias).
+    // Indexing threads the versioned name (`<alias>_v<N>`) into
+    // FileSignalOptions.collectionName. Per the daemon redesign (no
+    // version strip — getStore acquires the FULL name via acquireWrite),
+    // the write lands in `code_demo_v3.duckdb`. The RO read path
+    // (`acquireRead`) opens the SAME versioned file — both keyed on the
+    // unstripped name. Readers follow the live version via the Qdrant
+    // alias swap, NOT via an in-provider strip.
     await provider.buildFileSignals(root, { collectionName: "code_demo_v3" });
 
-    // The GraphFacade reader path resolves `code_demo` from the path
-    // and opens that exact DuckDB file. Symbols must be there.
-    const aliasHandle = await pool.acquire("code_demo");
-    const symbols = await aliasHandle.graphDb.listAllSymbols();
+    // The reader opens the same versioned DuckDB file the write targeted.
+    const versionedHandle = await pool.acquire("code_demo_v3");
+    const symbols = await versionedHandle.graphDb.listAllSymbols();
     const fooSyms = symbols.filter((s) => s.shortName === "Foo" || s.shortName === "bar");
     expect(fooSyms.length).toBeGreaterThan(0);
-
-    // The alias-keyed DuckDB file MUST exist on disk after the
-    // versioned-name write. The strip happens inside the provider,
-    // not the pool — so the pool itself still routes literal names.
-    // What matters is that the codegraph ROUTING from the provider
-    // collapses both versioned-write and alias-read onto the same
-    // alias-keyed file. We've already confirmed via the
-    // pool.acquire("code_demo") read above.
 
     rmSync(root, { recursive: true, force: true });
   });

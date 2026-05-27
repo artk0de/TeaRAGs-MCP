@@ -10,16 +10,20 @@ import type { CollectionRegistry } from "../../../../../src/core/infra/registry/
  * stub) for every collection name. Keeps each test focused on the
  * facade's mapping behaviour without exercising real DuckDB I/O.
  *
- * Pool acquire is a vi.fn so tests can assert the resolved collection
- * name flowing into the pool (path > project > collection routing).
+ * Reads route through `acquireReader` (mode-aware: daemon client in prod,
+ * in-process READ_ONLY attach in direct/test mode); the facade resolves the
+ * address triad (collection > project > path) via the registry and closes the
+ * returned `graphDb` after each query, so the stub graphDb gets a no-op
+ * `close` injected when absent.
  */
-function fakePool(graphDb: unknown): GraphDbClientPool {
+function fakePool(graphDb: Record<string, unknown>): GraphDbClientPool {
+  if (typeof graphDb.close !== "function") graphDb.close = vi.fn().mockResolvedValue(undefined);
   const handle = {
     graphDb,
     symbolTable: {} as unknown as never,
   };
   return {
-    acquire: vi.fn().mockResolvedValue(handle),
+    acquireReader: vi.fn().mockResolvedValue(handle),
     peek: vi.fn().mockReturnValue(handle),
   } as unknown as GraphDbClientPool;
 }
@@ -133,7 +137,7 @@ describe("GraphFacade", () => {
   // "codegraph optional" guarantee — the MCP server keeps responding.
   it("returns empty response when the pool cannot open the collection", async () => {
     const pool = {
-      acquire: vi.fn().mockRejectedValue(new Error("lock held")),
+      acquireReader: vi.fn().mockRejectedValue(new Error("lock held")),
       peek: vi.fn().mockReturnValue(undefined),
     } as unknown as GraphDbClientPool;
     const facade = new GraphFacade({ pool, collectionRegistry: fakeRegistry({}) });
@@ -164,7 +168,7 @@ describe("GraphFacade", () => {
 
       // Pool must be queried with the registry-resolved collection name,
       // NOT with a hash of any path.
-      expect(pool.acquire).toHaveBeenCalledWith("code_abc123");
+      expect(pool.acquireReader).toHaveBeenCalledWith("code_abc123");
     });
 
     it("uses explicit collection name when provided (highest priority)", async () => {
@@ -178,7 +182,7 @@ describe("GraphFacade", () => {
 
       await facade.getCallees({ collection: "code_explicit", symbolId: "Y" });
 
-      expect(pool.acquire).toHaveBeenCalledWith("code_explicit");
+      expect(pool.acquireReader).toHaveBeenCalledWith("code_explicit");
     });
 
     it("priority: collection wins over project when both are supplied", async () => {
@@ -200,7 +204,7 @@ describe("GraphFacade", () => {
         scope: "file",
       });
 
-      expect(pool.acquire).toHaveBeenCalledWith("code_explicit");
+      expect(pool.acquireReader).toHaveBeenCalledWith("code_explicit");
     });
 
     it("falls back to path when neither collection nor project is supplied (backward compat)", async () => {
@@ -217,8 +221,8 @@ describe("GraphFacade", () => {
       // Path mode delegates to resolveCollectionName(path) — a deterministic
       // md5-prefix hash. We just assert the pool was called with SOMETHING
       // and not with the literal path string.
-      expect(pool.acquire).toHaveBeenCalledTimes(1);
-      const calledWith = (pool.acquire as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(pool.acquireReader).toHaveBeenCalledTimes(1);
+      const calledWith = (pool.acquireReader as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(calledWith).toMatch(/^code_[0-9a-f]{8}$/);
     });
 

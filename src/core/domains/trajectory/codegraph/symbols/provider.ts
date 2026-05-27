@@ -60,6 +60,8 @@ import type {
   ProviderRunMetrics,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
+import { pageRank } from "../../../../infra/graph/page-rank.js";
+import { tarjanScc } from "../../../../infra/graph/tarjan-scc.js";
 import { pipelineLog } from "../../../ingest/pipeline/infra/debug-logger.js";
 import {
   CodegraphCheckpointError,
@@ -68,8 +70,6 @@ import {
   CodegraphSpillIoError,
 } from "../../errors.js";
 import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
-import { pageRank } from "../infra/page-rank.js";
-import { tarjanScc } from "../infra/tarjan-scc.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 
 /**
@@ -473,7 +473,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           "CodegraphEnrichmentProvider: pool mode requires options.collectionName — caller did not thread it through",
         );
       }
-      return this.deps.pool.acquire(stripVersionSuffix(collectionName));
+      // Acquire the FULL versioned collection name (no strip): the write
+      // path routes through `acquireWrite`, which hands back a daemon-backed
+      // handle when a socket is configured, else the in-process RW handle.
+      // The per-version DuckDB file matches what the RO reader opens via
+      // `acquireRead`, both keyed on the same unstripped name.
+      return this.deps.pool.acquireWrite(collectionName);
     }
     // Direct mode — both fields validated in the constructor.
     return {
@@ -543,7 +548,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // (DuckDbGraphClient.init when `tempDirectory` is set).
     const runId = randomUUID();
     const spillPath = this.deps.pool
-      ? this.deps.pool.spillPathFor(stripVersionSuffix(collectionName ?? "__direct__"), runId)
+      ? this.deps.pool.spillPathFor(collectionName ?? "__direct__", runId)
       : // Direct mode (tests) has no pool — keep spill colocated with
         // the test's working directory under a hidden subdir to avoid
         // polluting the project root.
@@ -861,6 +866,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private async recomputeGraphMetricsStreaming(collectionName?: string): Promise<void> {
     const { graphDb } = await this.getStore(collectionName);
+    // Daemon-routed write path: the daemon owns the RW connection and runs
+    // the (potentially 30 GB) SCC + PageRank build itself, so the MCP client
+    // process never allocates the adjacency. When the handle exposes the
+    // method (DaemonGraphDbClient) delegate and return; the in-process
+    // DuckDbGraphClient leaves it undefined, falling through to the inline
+    // path below (direct/test mode).
+    if (graphDb.computeAndPersistCyclesAndSignals) {
+      await graphDb.computeAndPersistCyclesAndSignals();
+      return;
+    }
     try {
       const fileAdj = await collectAdjacency(graphDb, "file");
       const fileSccs = tarjanScc(fileAdj);
@@ -1147,7 +1162,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // disambiguateOverloads stay sourced from CODEGRAPH_LANGUAGES (kept in place
     // for this slice). The factory's walker is the legacy adapter's faithful
     // wrap of the SAME CODEGRAPH_LANGUAGES walk/nameOf, so output is unchanged.
-    const walker = this.deps.languageFactory.create(langConfig.language).walker;
+    const { walker } = this.deps.languageFactory.create(langConfig.language);
     if (!walker) {
       // Defensive: a code language always has a walker (markdown — the only
       // walker-less provider — has no CODEGRAPH_LANGUAGES entry, so we never
