@@ -11,6 +11,7 @@
 import type Parser from "tree-sitter";
 
 import type { BodyChunkResult, ChunkingHook } from "../../../../contracts/types/chunker.js";
+import { RUBY_DSL, type DslCategory } from "../dsl/index.js";
 
 // ── Public interfaces ──────────────────────────────────────────────
 
@@ -30,125 +31,60 @@ export interface BodyGroup {
 // ── Declaration keyword maps ───────────────────────────────────────
 
 /**
- * Maps first identifier on a line to a group type.
+ * Chunk group name per DSL category — the chunker's LOCAL policy (how it names
+ * groups), not an intrinsic catalogue fact. `alias` → "aliases" and
+ * `dynamic-method` → "dynamic_methods" are NEW groupings (previously these lines
+ * fell through to continuation).
  */
-const DECLARATION_KEYWORDS: Record<string, string> = {
-  // associations
-  has_many: "associations",
-  has_one: "associations",
-  belongs_to: "associations",
-  has_and_belongs_to_many: "associations",
-
-  // validations
-  validates: "validations",
-  validates_with: "validations",
-  validate: "validations",
-  validates_each: "validations",
-  validates_associated: "validations",
-  validates_acceptance_of: "validations",
-  validates_confirmation_of: "validations",
-  validates_exclusion_of: "validations",
-  validates_format_of: "validations",
-  validates_inclusion_of: "validations",
-  validates_length_of: "validations",
-  validates_numericality_of: "validations",
-  validates_presence_of: "validations",
-  validates_uniqueness_of: "validations",
-
-  // scopes
+const CATEGORY_TO_GROUP: Record<DslCategory, string> = {
+  accessor: "attributes",
+  delegation: "delegates",
+  alias: "aliases",
+  "dynamic-method": "dynamic_methods",
+  association: "associations",
+  validation: "validations",
   scope: "scopes",
-
-  // callbacks
-  before_validation: "callbacks",
-  after_validation: "callbacks",
-  before_save: "callbacks",
-  after_save: "callbacks",
-  around_save: "callbacks",
-  before_create: "callbacks",
-  after_create: "callbacks",
-  around_create: "callbacks",
-  before_update: "callbacks",
-  after_update: "callbacks",
-  around_update: "callbacks",
-  before_destroy: "callbacks",
-  after_destroy: "callbacks",
-  around_destroy: "callbacks",
-  after_commit: "callbacks",
-  after_rollback: "callbacks",
-  after_initialize: "callbacks",
-  after_find: "callbacks",
-  after_touch: "callbacks",
-  before_action: "callbacks",
-  after_action: "callbacks",
-  around_action: "callbacks",
-  before_filter: "callbacks",
-  after_filter: "callbacks",
-  around_filter: "callbacks",
-  skip_before_action: "callbacks",
-  skip_after_action: "callbacks",
-  skip_around_action: "callbacks",
-
-  // includes/extends
+  callback: "callbacks",
   include: "includes",
-  extend: "includes",
-  prepend: "includes",
-
-  // attributes
-  attr_accessor: "attributes",
-  attr_reader: "attributes",
-  attr_writer: "attributes",
-  attribute: "attributes",
-  has_one_attached: "attributes",
-  has_many_attached: "attributes",
-  class_attribute: "attributes",
-  mattr_accessor: "attributes",
-  mattr_reader: "attributes",
-  mattr_writer: "attributes",
-  cattr_accessor: "attributes",
-  cattr_reader: "attributes",
-  cattr_writer: "attributes",
-
-  // nested attributes
-  accepts_nested_attributes_for: "nested_attrs",
-
-  // delegates
-  delegate: "delegates",
-  delegate_missing_to: "delegates",
-
-  // enums
   enum: "enums",
+  "state-machine": "state_machine",
+  "concern-hook": "concern_hooks",
+  "nested-attrs": "nested_attrs",
+  other: "other",
+};
 
-  // state machine
-  aasm: "state_machine",
-
-  // concern hooks (transparent — wrapper lines removed by block-depth logic)
-  included: "concern_hooks",
-  extended: "concern_hooks",
-  class_methods: "concern_hooks",
-
-  // serialization
-  serialize: "other",
-  store_accessor: "other",
-
-  // RSpec setup
+/**
+ * RSpec / FactoryBot testing-DSL keywords. NOT in the Rails catalogue
+ * (ruby/dsl/catalogue.ts) — they belong to the separate testing DSL handled by
+ * rspec-scope-chunker. Kept hardcoded here as a distinct set; their grouping is
+ * likely dead (spec/factory files route through rspec-scope-chunker with
+ * skipChildren=true). Removal is a separate follow-up (spec Non-Goals).
+ */
+const RSPEC_FACTORY_KEYWORDS: Record<string, string> = {
   let: "setup",
   subject: "setup",
-
-  // RSpec hooks
   before: "hooks",
   after: "hooks",
   around: "hooks",
-
-  // RSpec shared examples
   shared_examples: "shared",
   shared_context: "shared",
   include_examples: "shared",
   it_behaves_like: "shared",
   include_context: "shared",
-
-  // FactoryBot
   factory: "factory",
   trait: "factory",
+};
+
+/**
+ * First identifier on a line → chunk group type. The Rails subset is DERIVED
+ * from the shared RUBY_DSL catalogue via CATEGORY_TO_GROUP; the testing-DSL
+ * subset is the hardcoded RSPEC_FACTORY_KEYWORDS set above.
+ */
+const DECLARATION_KEYWORDS: Record<string, string> = {
+  ...Object.fromEntries(
+    Object.entries(RUBY_DSL).map(([keyword, entry]) => [keyword, CATEGORY_TO_GROUP[entry.category]]),
+  ),
+  ...RSPEC_FACTORY_KEYWORDS,
 };
 
 /**

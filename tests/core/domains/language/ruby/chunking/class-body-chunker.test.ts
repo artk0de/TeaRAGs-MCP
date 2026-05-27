@@ -356,6 +356,17 @@ describe("RubyClassBodyChunker", () => {
       expect(grouper.classifyLine("  cattr_reader :pool")).toBe("attributes");
       expect(grouper.classifyLine("  cattr_writer :backend")).toBe("attributes");
     });
+
+    it("groups alias and alias_method lines into 'aliases'", () => {
+      const chunker = new RubyClassBodyChunker();
+      expect(chunker.classifyLine("alias new_name old_name")).toBe("aliases");
+      expect(chunker.classifyLine("alias_method :new_name, :old_name")).toBe("aliases");
+    });
+
+    it("groups define_method lines into 'dynamic_methods'", () => {
+      const chunker = new RubyClassBodyChunker();
+      expect(chunker.classifyLine("define_method(:foo) { 1 }")).toBe("dynamic_methods");
+    });
   });
 
   describe("block-aware body grouping", () => {
