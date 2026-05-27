@@ -86,10 +86,10 @@ export interface MacroSymbol {
  * CommonJS/prototype assignment shapes (`obj.method = fn`, `Foo.prototype.bar`,
  * `exports.foo`, `const Bar = fn`), the `methods.forEach` HTTP-verb dispatch
  * fan-out, and the nested `Object.defineProperty(this, …)` getter installs —
- * where the receiver/this resolution has already produced the full id. A future
- * language with node-level pre-composed symbols reuses `chunkSymbols`, NOT
- * `macroSymbols`. The engine reaches this via the provider's
- * `LanguageChunkerHooks.chunkSymbols` capability (no direct
+ * where the receiver/this resolution has already produced the full id. Internal
+ * to the JavaScript provider (`jsChunkSymbols`), wrapped by `JsChunkClassifier`
+ * into `ChunkDecision.emit` chunks the engine emits verbatim — reached via the
+ * provider's `LanguageChunkerHooks.classifier` capability (no direct
  * `domains/language/<lang>` import — the reverse-guard forbids it). See
  * `.claude/rules/symbolid-convention.md`.
  */
@@ -106,10 +106,9 @@ export type ChunkType = "function" | "class" | "interface" | "block" | "test" | 
 /**
  * One chunk a language classifier asks the engine to emit verbatim for a node.
  *
- * Forward declaration — not yet consumed. Once the engine reroute lands (plan
- * `2026-05-27-tree-sitter-engine-consolidation`, Task 5), the engine WILL flag
- * each emitted chunk `claimed` so it is exempt from the min-length floor AND
- * adjacent-merge — these carry an explicit symbolId that merging would destroy.
+ * The engine flags each emitted chunk `claimed` so it is exempt from the
+ * min-length floor AND adjacent-merge — these carry an explicit symbolId that
+ * merging would destroy.
  */
 export interface EmittedChunk {
   /** Display name — same string as `symbolId` for these shapes. */
@@ -126,7 +125,7 @@ export interface EmittedChunk {
  *     buildSymbolId + getChunkType) and the min-length floor. The common case.
  *   - `skip` — drop this node entirely.
  *   - `emit` — emit these explicit chunks at the node's source range (Go = 1,
- *     JS = N); once wired (Task 5) they will be flagged `claimed`.
+ *     JS = N); the engine flags them `claimed`.
  */
 export type ChunkDecision =
   | { kind: "passthrough" }
@@ -134,11 +133,11 @@ export type ChunkDecision =
   | { kind: "emit"; chunks: EmittedChunk[] };
 
 /**
- * Per-language node→chunk classification. Once the engine reroute lands (Task 5)
- * the engine WILL consult it for each chunkable AST node before its generic
- * shaping. Optional capability on `LanguageChunkerHooks` — absent ⇒ the engine
- * uses the generic path for every node. Only languages whose default shaping is
- * wrong for some node types ship one (Go, JavaScript).
+ * Per-language node→chunk classification. The engine consults it for each
+ * chunkable AST node before its generic shaping. Optional capability on
+ * `LanguageChunkerHooks` — absent ⇒ the engine uses the generic path for every
+ * node. Only languages whose default shaping is wrong for some node types ship
+ * one (Go, JavaScript).
  */
 export interface LanguageChunkClassifier {
   classifyNode: (node: Parser.SyntaxNode) => ChunkDecision;

@@ -9,7 +9,7 @@
 
 import Parser from "tree-sitter";
 
-import type { ChunkSymbol, MacroSymbol } from "../../../../contracts/types/chunker.js";
+import type { ChunkDecision, MacroSymbol } from "../../../../contracts/types/chunker.js";
 import type {
   LanguageChunkerHooks,
   LanguageFactory,
@@ -22,7 +22,6 @@ import { isDebug } from "../infra/runtime.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import type { LanguageConfig } from "./config.js";
-import { extractGoSymbol } from "./hooks/go/index.js";
 import { MarkdownChunker } from "./markdown-chunker.js";
 import { createHookContext, type ChunkingHook, type HookContext } from "./hooks/types.js";
 
@@ -345,7 +344,6 @@ export class TreeSitterChunker implements CodeChunker {
         keepShortChildChunkTypes: hooks.keepShortChildChunkTypes,
         disambiguateOverloads: kernel.disambiguateOverloads,
         macroSymbols: hooks.macroSymbols,
-        chunkSymbols: hooks.chunkSymbols,
         classifier: hooks.classifier,
       };
     } catch (error) {
@@ -378,17 +376,14 @@ export class TreeSitterChunker implements CodeChunker {
 
       for (const [index, node] of nodes.entries()) {
         const content = code.substring(node.startIndex, node.endIndex);
-        // Go type_declaration aliases (`type H map[string]any`,
-        // `type Numbers []int`, `type Ch chan int`,
-        // `type HandlerFunc func(*Context)`) routinely fall under 50
-        // chars but are top-level NAMED symbols that `find_symbol`
-        // must resolve — gin OSS validation showed these invisible.
-        // The chunker's generic 50-char filter is a noise gate for
-        // statements (call_expression, expression_statement) without
-        // a stable symbolId; named type aliases have one and should
-        // pass through. bd tea-rags-mcp-iiq6.
-        const isGoNamedType = language === "go" && node.type === "type_declaration";
-        if (content.length < 50 && !isGoNamedType) continue;
+        const decision = langConfig.classifier?.classifyNode(node) ?? ({ kind: "passthrough" } as const);
+        // Explicit drop.
+        if (decision.kind === "skip") continue;
+        // Min-length noise gate for statements without a stable symbolId. A
+        // classifier `emit` decision bypasses it — these are top-level NAMED
+        // symbols `find_symbol` must resolve (e.g. Go type aliases; replaces the
+        // former `isGoNamedType` carve-out). bd tea-rags-mcp-iiq6.
+        if (content.length < 50 && decision.kind !== "emit") continue;
 
         const hasChildTypes = langConfig.childChunkTypes && langConfig.childChunkTypes.length > 0;
         const isTooLarge = content.length > this.config.maxChunkSize;
@@ -399,7 +394,7 @@ export class TreeSitterChunker implements CodeChunker {
           if (handled) continue;
         }
 
-        this.chunkSingleNode(node, index, code, filePath, language, chunks, langConfig.chunkSymbols);
+        this.chunkSingleNode(node, index, code, filePath, language, chunks, decision);
       }
 
       if (chunks.length === 0 && code.length > 100) {
@@ -597,68 +592,21 @@ export class TreeSitterChunker implements CodeChunker {
     filePath: string,
     language: string,
     chunks: CodeChunk[],
-    chunkSymbols?: (node: Parser.SyntaxNode) => ChunkSymbol[],
+    decision: ChunkDecision,
   ): void {
     const content = code.substring(node.startIndex, node.endIndex);
 
-    // Node-level synthetic CHUNK symbols, supplied by the language provider's
-    // `chunkSymbols` capability (JavaScript). The provider has ALREADY composed
-    // each symbolId — the engine emits one `chunkType="function"` chunk per
-    // returned `ChunkSymbol` at the node's own source range, in array order at
-    // consecutive indices (`index + i`). For JavaScript this collapses the three
-    // former branches (forEach HTTP-verb dispatch fan-out, the assignment /
-    // CommonJS shape, and its nested `Object.defineProperty(this, …)` getter
-    // siblings) into one provider call — the provider owns the precedence
-    // (dispatch-set wins; else assignment + nested-defineProperty siblings, in
-    // order). Reached via DI, not a direct `domains/language/<lang>` import.
-    // bd tea-rags-mcp-kfzx / z95o / d1f8. See `.claude/rules/symbolid-convention.md`.
-    if (chunkSymbols) {
-      const syms = chunkSymbols(node);
-      if (syms.length > 0) {
-        for (let i = 0; i < syms.length; i++) {
-          const sym = syms[i];
-          chunks.push({
-            content: content.trim(),
-            startLine: node.startPosition.row + 1,
-            endLine: this.computeEndLine(node),
-            metadata: {
-              filePath,
-              language,
-              chunkIndex: index + i,
-              chunkType: "function",
-              name: sym.name,
-              symbolId: sym.symbolId,
-              methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
-            },
-          });
-        }
-        return;
-      }
-    }
+    if (decision.kind === "skip") return;
 
-    // Go: method_declaration → `Receiver#Method` (instance form);
-    // type_declaration → reach into type_spec for the type identifier.
-    // The default `extractName` returns undefined for `type_declaration`
-    // because its `name` field lives on the `type_spec` child, and bare
-    // `method_declaration` lacks the receiver prefix in the symbolId.
-    // Mirrors codegraph `goNameOf` so Qdrant payload and cg_symbols
-    // agree on the same physical AST node. bd tea-rags-mcp-n7x5 + j2b7.
-    if (language === "go") {
-      const goSymbol = extractGoSymbol(node);
-      if (goSymbol) {
-        // Refine chunkType for type_declaration by inspecting the
-        // type_spec's body kind — tree-sitter-go node-type "type_declaration"
-        // alone reads as "block" through getChunkType, but the user-facing
-        // chunk should distinguish structs/interfaces from func/map/slice
-        // aliases so downstream filters (chunkType="class") keep working.
-        // bd tea-rags-mcp-iiq6.
-        let chunkType: ReturnType<typeof this.getChunkType> = this.getChunkType(node.type);
-        if (node.type === "type_declaration") {
-          const spec = node.children.find((c) => c.type === "type_spec" || c.type === "type_alias");
-          const body = spec?.childForFieldName("type");
-          if (body?.type === "struct_type") chunkType = "class";
-          else if (body?.type === "interface_type") chunkType = "interface";
-        }
+    // Classifier `emit`: the language provider has ALREADY composed each
+    // symbolId — the engine emits one chunk per `EmittedChunk` at the node's
+    // own source range, in array order at consecutive indices (`index + i`),
+    // flagged `claimed` so the merge pass leaves them intact. Collapses the
+    // former JS `chunkSymbols` fan-out (chunkType "function") and the Go
+    // method/type branches (refined chunkType) into one capability call.
+    // bd tea-rags-mcp-kfzx / z95o / d1f8 / n7x5 / j2b7.
+    if (decision.kind === "emit") {
+      decision.chunks.forEach((c, i) => {
         chunks.push({
           content: content.trim(),
           startLine: node.startPosition.row + 1,
@@ -666,17 +614,19 @@ export class TreeSitterChunker implements CodeChunker {
           metadata: {
             filePath,
             language,
-            chunkIndex: index,
-            chunkType,
-            name: goSymbol.name,
-            symbolId: goSymbol.symbolId,
+            chunkIndex: index + i,
+            chunkType: c.chunkType,
+            name: c.name,
+            symbolId: c.symbolId,
+            claimed: true,
             methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
           },
         });
-        return;
-      }
+      });
+      return;
     }
 
+    // passthrough — generic shaping (the floor was already applied in the chunk() loop).
     const nodeName = this.extractName(node, code);
     chunks.push({
       content: content.trim(),
@@ -707,19 +657,11 @@ export class TreeSitterChunker implements CodeChunker {
 
     const isMergeable = (chunk: CodeChunk): boolean => {
       const lines = chunk.endLine - chunk.startLine;
-      // Go-specific carve-out (bd tea-rags-mcp-iiq6 follow-up): named Go
-      // `type_declaration` aliases — `type HandlerFunc func(*Context)`,
-      // `type HandlersChain []HandlerFunc`, etc. — emit `chunkType="block"`
-      // and would otherwise be collapsed by adjacent-merging into one
-      // umbrella block named "HandlerFunc..." with no symbolId. That
-      // umbrella loses every alias's symbolId, so `find_symbol("HandlerFunc")`
-      // returns nothing on real Go projects (gin OSS validation).
-      // The chunker explicitly assigns a symbolId for these via the Go
-      // type_declaration branch (extractGoSymbol), so the marker is reliable.
-      // TS small-type-alias merging is unaffected: TS chunks also get a
-      // symbolId but the existing test asserts they merge — gate is on
-      // `language === "go"`, not on having a symbolId in general.
-      if (chunk.metadata.language === "go" && chunk.metadata.symbolId) {
+      // Chunks emitted by a language classifier carry an explicit symbolId that
+      // merging would destroy (e.g. Go named type aliases) — never merge them.
+      // Passthrough chunks merge per the rule below (TS small type aliases DO
+      // merge even though they have a symbolId).
+      if (chunk.metadata.claimed) {
         return false;
       }
       return (

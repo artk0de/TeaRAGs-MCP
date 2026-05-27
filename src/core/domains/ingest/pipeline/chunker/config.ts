@@ -1,6 +1,6 @@
 import type Parser from "tree-sitter";
 
-import type { ChunkSymbol, LanguageChunkClassifier, MacroSymbol } from "../../../../contracts/types/chunker.js";
+import type { LanguageChunkClassifier, MacroSymbol } from "../../../../contracts/types/chunker.js";
 import type { ChunkingHook } from "./hooks/types.js";
 
 // Type for tree-sitter language modules
@@ -101,21 +101,11 @@ export interface LanguageConfig {
    */
   macroSymbols?: (containerNode: Parser.SyntaxNode) => MacroSymbol[];
   /**
-   * Node-level synthetic CHUNK symbol extractor (JavaScript CommonJS / pre-class
-   * assignment shapes, `methods.forEach` dispatch, nested defineProperty getters),
-   * threaded from `LanguageChunkerHooks.chunkSymbols` via the provider so the
-   * engine never imports the concrete `domains/language/<lang>` module. The
-   * symbolIds are already composed by the provider — the engine emits each
-   * verbatim. Absent for languages with no such idiom.
-   */
-  chunkSymbols?: (node: Parser.SyntaxNode) => ChunkSymbol[];
-  /**
    * Language-agnostic node→chunk classifier capability, threaded from
-   * `LanguageChunkerHooks.classifier` via the provider. The engine reroute
-   * (next task) reads `langConfig.classifier` to decide chunk type / shape per
-   * node without importing the concrete `domains/language/<lang>` module.
-   * Coexists with `chunkSymbols` until that reroute lands. Absent until a
-   * provider supplies one.
+   * `LanguageChunkerHooks.classifier` via the provider. The engine reads
+   * `langConfig.classifier` to decide chunk type / shape per node without
+   * importing the concrete `domains/language/<lang>` module. Absent for
+   * languages whose default generic shaping is correct for every node.
    */
   classifier?: LanguageChunkClassifier;
 }

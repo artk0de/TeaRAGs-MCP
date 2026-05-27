@@ -47,7 +47,7 @@ import type {
 } from "../../../contracts/types/language.js";
 
 import { javascriptKernel } from "./kernel.js";
-import { JsChunkClassifier, javascriptHooks, jsChunkSymbols } from "./chunking/index.js";
+import { JsChunkClassifier, javascriptHooks } from "./chunking/index.js";
 import { jsNameOf } from "./walker/name-of.js";
 import { extractFromJavascriptFile, type JsExtractInput } from "./walker/walker.js";
 import { JavascriptCallResolver } from "./resolver/index.js";
@@ -65,7 +65,7 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
   // `expression_statement` / `lexical_declaration` / `variable_declaration` are
   // kept ONLY when they carry a function value — `jsAssignmentFilterHook` drops
   // the others so we don't chunk `const x = 1` / bare statements with no
-  // symbolId. The symbolId is then composed by `chunkSymbols` (jsChunkSymbols).
+  // symbolId. The symbolId is then composed by the classifier (jsChunkSymbols).
   chunkableTypes: [
     "function_declaration",
     "method_definition",
@@ -76,15 +76,12 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
     "variable_declaration",
   ],
   hooks: javascriptHooks,
-  // Node-level synthetic CHUNK symbols (CommonJS `obj.method = fn` / `exports.foo`
-  // / `module.exports`, `Foo.prototype.bar`, `const Bar = fn`, the
-  // `methods.forEach` HTTP-verb dispatch fan-out, and nested
-  // `Object.defineProperty(this, …)` getter installs). symbolIds are ALREADY
-  // composed — the engine emits each verbatim at `index + i`.
-  chunkSymbols: (node) => jsChunkSymbols(node),
   // Node→chunk classifier capability — the LanguageChunkClassifier wrapper over
-  // jsChunkSymbols. Set alongside `chunkSymbols` (both coexist); dormant until
-  // the engine reroute reads `classifier` instead.
+  // jsChunkSymbols (CommonJS `obj.method = fn` / `exports.foo` / `module.exports`,
+  // `Foo.prototype.bar`, `const Bar = fn`, the `methods.forEach` HTTP-verb
+  // dispatch fan-out, and nested `Object.defineProperty(this, …)` getter installs).
+  // symbolIds are ALREADY composed — the engine emits each verbatim at `index + i`,
+  // flagged `claimed`.
   classifier: new JsChunkClassifier(),
 };
 

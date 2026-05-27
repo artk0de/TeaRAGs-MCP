@@ -8,12 +8,12 @@
  *      so we don't emit chunks for `const x = 1` / `import.meta.url` /
  *      bare statements that have no symbolId.
  *
- * The symbol resolver (`symbol-resolver.ts`) is a pure helper composed into the
- * engine-facing `jsChunkSymbols` capability (`chunk-symbols.ts`) — not part of
- * the hook chain — because it runs AFTER the filter passes a node and BEFORE the
- * chunk is pushed (i.e. inside the engine's `chunkSingleNode`, reached via the
- * provider's `LanguageChunkerHooks.chunkSymbols` capability, not at hook-process
- * time).
+ * The symbol resolver (`symbol-resolver.ts`) is a pure helper composed into
+ * `jsChunkSymbols` (`chunk-symbols.ts`), which `JsChunkClassifier` wraps into
+ * `ChunkDecision.emit` — not part of the hook chain — because it runs AFTER the
+ * filter passes a node and BEFORE the chunk is pushed (i.e. inside the engine's
+ * `chunkSingleNode`, reached via the provider's `LanguageChunkerHooks.classifier`
+ * capability, not at hook-process time).
  *
  * bd tea-rags-mcp-kfzx
  */

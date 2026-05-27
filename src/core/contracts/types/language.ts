@@ -13,7 +13,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { ChunkingHook, ChunkSymbol, LanguageChunkClassifier, MacroSymbol } from "./chunker.js";
+import type { ChunkingHook, LanguageChunkClassifier, MacroSymbol } from "./chunker.js";
 import type {
   CallContext,
   CallRef,
@@ -216,37 +216,23 @@ export interface LanguageChunkerHooks {
    * tea-rags-mcp-3nf3 / zy3f). Omitted for languages with no such idiom. The
    * engine reaches this via the provider (no direct `domains/language/` import).
    *
-   * Contrast with `chunkSymbols` (below): `macroSymbols` yields container-level
-   * synthetic METHOD symbols whose final symbolId the engine STILL composes
-   * against the class scope with the `#`/`.` separator (`pushMacroSymbolChunk`).
+   * Contrast with `classifier`: `macroSymbols` yields container-level synthetic
+   * METHOD symbols whose final symbolId the engine STILL composes against the
+   * class scope with the `#`/`.` separator (`pushMacroSymbolChunk`).
    */
   macroSymbols?: (containerNode: Parser.SyntaxNode) => MacroSymbol[];
   /**
-   * Extract synthetic CHUNK symbols for a single node whose symbolIds are
-   * ALREADY composed by the provider — the node-level analog of `macroSymbols`.
-   * Used by JavaScript for the CommonJS / pre-class assignment shapes that have
-   * no `function_declaration` / `class_declaration` node the default name
-   * extractor recognises: `module.exports`/`exports.foo`/`obj.method = fn`,
-   * `Foo.prototype.bar`, `const Bar = fn`, the `methods.forEach` HTTP-verb
-   * dispatch fan-out, and nested `Object.defineProperty(this, …)` getter
-   * installs (with `this` rebound to the outer receiver). The engine emits one
-   * `chunkType="function"` chunk per returned `ChunkSymbol` at the node's own
-   * source range, in array order at consecutive indices (`index + i`).
-   *
-   * Distinct from `macroSymbols`: here the symbolId is FINAL (the provider has
-   * already done the receiver/`this` resolution), so the engine emits it
-   * verbatim with NO scope join. A future language with node-level pre-composed
-   * symbols reuses THIS capability, not `macroSymbols`. Omitted for languages
-   * with no such idiom. Reached via the provider (no direct `domains/language/`
-   * import — the reverse-guard forbids it).
-   */
-  chunkSymbols?: (node: Parser.SyntaxNode) => ChunkSymbol[];
-  /**
    * Per-language node→chunk classifier. When present, the engine consults it for
-   * each chunkable node before its generic shaping. Will replace the `chunkSymbols`
-   * capability (folded into `ChunkDecision.emit`) once the engine is rerouted.
-   * Absent for languages whose default shaping is always right (TypeScript,
-   * Python, Java, Rust, Bash, Ruby, Markdown).
+   * each chunkable node before its generic shaping. A `ChunkDecision.emit` carries
+   * one or more `EmittedChunk`s whose symbolIds are ALREADY composed by the
+   * provider — the engine emits each verbatim (no scope join) at the node's own
+   * source range, in array order at consecutive indices (`index + i`), flagged
+   * `claimed`. Used by Go (method/type shaping) and JavaScript (CommonJS /
+   * pre-class assignment shapes, `methods.forEach` dispatch, nested
+   * defineProperty getters — the former `chunkSymbols` fan-out). Absent for
+   * languages whose default shaping is always right (TypeScript, Python, Java,
+   * Rust, Bash, Ruby, Markdown). Reached via the provider (no direct
+   * `domains/language/` import — the reverse-guard forbids it).
    */
   classifier?: LanguageChunkClassifier;
 }

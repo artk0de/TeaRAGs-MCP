@@ -257,12 +257,10 @@ export interface CodeChunk {
     navigation?: { prevSymbolId?: string; nextSymbolId?: string };
 
     /**
-     * Transient. Forward declaration — not yet set/read. Once the engine reroute
-     * lands (plan `2026-05-27-tree-sitter-engine-consolidation`, Task 5) the
-     * engine WILL set this for chunks produced by a classifier `emit` decision,
-     * and `mergeSmallChunks` WILL read it to exempt them from adjacent merging.
-     * NOT part of the persisted Qdrant payload (the payload builder selects
-     * explicit fields).
+     * Transient. Set by the engine for chunks produced by a classifier `emit`
+     * decision, and read by `mergeSmallChunks` to exempt them from adjacent
+     * merging. NOT part of the persisted Qdrant payload (the payload builder
+     * selects explicit fields).
      */
     claimed?: boolean;
   };
