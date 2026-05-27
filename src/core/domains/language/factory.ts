@@ -2,6 +2,7 @@ import type { AmbiguousResolveMode } from "../../contracts/types/codegraph.js";
 import { DEFAULT_AMBIGUOUS_RESOLVE_MODE } from "../../contracts/types/codegraph.js";
 import type { LanguageFactory, LanguageProvider } from "../../contracts/types/language.js";
 import { UnsupportedLanguageError } from "./errors.js";
+import { JavaScriptLanguage } from "./javascript/index.js";
 import { RubyLanguage } from "./ruby/index.js";
 import { TypeScriptLanguage } from "./typescript/index.js";
 
@@ -24,7 +25,7 @@ export type LegacyProviderBuilder = () => LanguageProvider;
  * `NATIVE_LANGUAGES` in the legacy adapter (which skips these) and
  * `NATIVE_CHUNKER_LANGUAGES` in the ingest-local registry. bd tea-rags-mcp-cen6.
  */
-const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby", "typescript"]);
+const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby", "typescript", "javascript"]);
 
 /**
  * Real `LanguageFactory`. `create(lang)` ENCAPSULATES construction — it builds
@@ -92,6 +93,7 @@ export class LanguageFactoryImpl implements LanguageFactory {
       // Native switch — extend with one branch per migrated vertical.
       if (lang === "ruby") return new RubyLanguage(this.ambiguousResolveMode);
       if (lang === "typescript") return new TypeScriptLanguage(this.ambiguousResolveMode);
+      if (lang === "javascript") return new JavaScriptLanguage(this.ambiguousResolveMode);
     }
     const builder = this.legacyBuilders.get(lang);
     if (builder) return builder();

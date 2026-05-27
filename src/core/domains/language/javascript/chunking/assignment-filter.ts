@@ -1,26 +1,28 @@
 /**
- * JavaScript assignment / declaration filter hook.
+ * JavaScript assignment / declaration filter hook. Relocated from
+ * `domains/ingest/pipeline/chunker/hooks/javascript/assignment-filter.ts` into
+ * the native JavaScript language provider per the `domains/language`
+ * consolidation (spec §3; bd tea-rags-mcp-cen6). Behaviour-preserving.
  *
  * Keeps `expression_statement` and `lexical_declaration` /
  * `variable_declaration` nodes ONLY when they carry a function value —
- * mirrors the codegraph `jsNameOf` shapes documented in
- * `src/core/domains/trajectory/codegraph/symbols/provider.ts` so the
+ * mirrors the codegraph `jsNameOf` shapes (in `../walker/name-of.ts`) so the
  * chunker's Qdrant payload symbolId set agrees with cg_symbols on the
  * same physical AST node.
  *
- * MUST stay in sync with `provider.ts:jsNameOf` /
+ * MUST stay in sync with `../walker/name-of.ts:jsNameOf` /
  * `isFunctionValuedExpression`. See `.claude/rules/symbolid-convention.md`.
  *
  * bd tea-rags-mcp-kfzx
  */
 import type Parser from "tree-sitter";
 
-import type { ChunkingHook } from "../types.js";
+import type { ChunkingHook } from "../../../../contracts/types/chunker.js";
 
 /**
  * Walk an `assignment_expression` chain (`a = b = c = fn`) and return the
  * innermost non-assignment value. Mirrors
- * `provider.ts:walkAssignmentChainToTerminalRhs`.
+ * `name-of.ts:walkAssignmentChainToTerminalRhs`.
  */
 function walkAssignmentChainToTerminalRhs(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
   let cur: Parser.SyntaxNode | null = node;
@@ -34,7 +36,7 @@ function walkAssignmentChainToTerminalRhs(node: Parser.SyntaxNode): Parser.Synta
 
 /**
  * Accept the shapes a callable value can take. Mirrors
- * `provider.ts:isFunctionValuedExpression`.
+ * `name-of.ts:isFunctionValuedExpression`.
  */
 function isFunctionValuedExpression(node: Parser.SyntaxNode): boolean {
   return node.type === "function_expression" || node.type === "arrow_function" || node.type === "generator_function";
@@ -82,7 +84,7 @@ function callExpressionIsForEachDispatch(call: Parser.SyntaxNode): boolean {
 /**
  * Recognise getter-install helpers at the filter stage so their
  * expression_statement survives the chunkable-types filter and reaches
- * the symbol resolver. Mirrors provider.ts:jsGetterHelperEmission
+ * the symbol resolver. Mirrors name-of.ts:jsGetterHelperEmission
  * (just the shape detection — the symbol resolver does the actual
  * naming). bd tea-rags-mcp-d1f8.
  */

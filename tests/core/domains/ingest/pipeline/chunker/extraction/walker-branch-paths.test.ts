@@ -23,7 +23,7 @@ import {
   extractJsAssignmentSymbol,
   extractJsForEachDispatchSymbols,
   extractJsNestedDefinePropertyThisSymbols,
-} from "../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/javascript/symbol-resolver.js";
+} from "../../../../../../../src/core/domains/language/javascript/chunking/symbol-resolver.js";
 
 function parseTs(src: string): Parser.Tree {
   const parser = new Parser();

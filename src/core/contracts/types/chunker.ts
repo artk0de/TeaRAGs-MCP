@@ -72,6 +72,34 @@ export interface MacroSymbol {
   endLine: number;
 }
 
+/**
+ * A synthetic CHUNK symbol the chunker emits for a single node, with its
+ * symbolId ALREADY composed by the language provider (no further scope join by
+ * the engine). The engine wraps each into a `CodeChunk` with
+ * `chunkType="function"` at the node's own source range, emitting them in array
+ * order at consecutive chunk indices (`index + i`).
+ *
+ * Distinct from `MacroSymbol`: a `MacroSymbol` is a container-level synthetic
+ * METHOD whose final id the engine still composes against the enclosing class
+ * scope (with the `#`/`.` separator) via `pushMacroSymbolChunk`. A
+ * `ChunkSymbol`'s `symbolId` is pre-composed by the provider — node-level
+ * CommonJS/prototype assignment shapes (`obj.method = fn`, `Foo.prototype.bar`,
+ * `exports.foo`, `const Bar = fn`), the `methods.forEach` HTTP-verb dispatch
+ * fan-out, and the nested `Object.defineProperty(this, …)` getter installs —
+ * where the receiver/this resolution has already produced the full id. A future
+ * language with node-level pre-composed symbols reuses `chunkSymbols`, NOT
+ * `macroSymbols`. The engine reaches this via the provider's
+ * `LanguageChunkerHooks.chunkSymbols` capability (no direct
+ * `domains/language/<lang>` import — the reverse-guard forbids it). See
+ * `.claude/rules/symbolid-convention.md`.
+ */
+export interface ChunkSymbol {
+  /** Fully-composed symbolId emitted verbatim to chunk metadata. */
+  symbolId: string;
+  /** Display name — same string as `symbolId` for these shapes. */
+  name: string;
+}
+
 /** Single hook in the chain */
 export interface ChunkingHook {
   name: string;

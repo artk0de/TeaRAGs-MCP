@@ -1,7 +1,6 @@
 import type Parser from "tree-sitter";
 
-import type { MacroSymbol } from "../../../../contracts/types/chunker.js";
-import { javascriptHooks } from "./hooks/javascript/index.js";
+import type { ChunkSymbol, MacroSymbol } from "../../../../contracts/types/chunker.js";
 import type { ChunkingHook } from "./hooks/types.js";
 
 // Type for tree-sitter language modules
@@ -101,6 +100,15 @@ export interface LanguageConfig {
    * for languages with no `def`-less method idiom.
    */
   macroSymbols?: (containerNode: Parser.SyntaxNode) => MacroSymbol[];
+  /**
+   * Node-level synthetic CHUNK symbol extractor (JavaScript CommonJS / pre-class
+   * assignment shapes, `methods.forEach` dispatch, nested defineProperty getters),
+   * threaded from `LanguageChunkerHooks.chunkSymbols` via the provider so the
+   * engine never imports the concrete `domains/language/<lang>` module. The
+   * symbolIds are already composed by the provider — the engine emits each
+   * verbatim. Absent for languages with no such idiom.
+   */
+  chunkSymbols?: (node: Parser.SyntaxNode) => ChunkSymbol[];
 }
 
 /**
@@ -148,9 +156,9 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // are kept ONLY when they carry a function value — the
     // `jsAssignmentFilterHook` drops the others so we don't chunk
     // `const x = 1` or bare statements that have no symbolId. The chunker
-    // resolves the proper symbolId via `extractJsAssignmentSymbol` in
-    // `tree-sitter.ts:chunkSingleNode`. Mirrors codegraph `jsNameOf` —
-    // see `.claude/rules/symbolid-convention.md` (bd tea-rags-mcp-kfzx).
+    // resolves the proper symbolId via `chunkSymbols` (the native provider's
+    // capability) in `tree-sitter.ts:chunkSingleNode`. Mirrors codegraph
+    // `jsNameOf` — see `.claude/rules/symbolid-convention.md` (bd tea-rags-mcp-kfzx).
     chunkableTypes: [
       "function_declaration",
       "method_definition",
@@ -160,7 +168,13 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
       "lexical_declaration",
       "variable_declaration",
     ],
-    hooks: javascriptHooks,
+    // NOTE: JavaScript is now a NATIVE `domains/language/javascript` provider
+    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `javascript`
+    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver / chunkSymbols
+    // come from `JavaScriptLanguage`, not this entry. This
+    // `LANGUAGE_DEFINITIONS.javascript` row is retained only so `CODE_LANGUAGES`
+    // / `LANGUAGE_MAP` still report javascript as a code language; its `hooks`
+    // field is intentionally absent (the native provider owns it).
   },
   python: {
     loadModule: async () => import("tree-sitter-python") as Promise<TreeSitterLanguageModule>,

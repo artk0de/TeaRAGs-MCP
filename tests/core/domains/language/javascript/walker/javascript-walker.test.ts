@@ -2,7 +2,7 @@ import Parser from "tree-sitter";
 import JsLang from "tree-sitter-javascript";
 import { describe, expect, it } from "vitest";
 
-import { extractFromJavascriptFile } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/javascript-walker.js";
+import { extractFromJavascriptFile } from "../../../../../../src/core/domains/language/javascript/walker/walker.js";
 
 function parse(src: string) {
   const parser = new Parser();

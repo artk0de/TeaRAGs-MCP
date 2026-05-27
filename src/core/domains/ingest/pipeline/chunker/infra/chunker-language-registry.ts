@@ -38,7 +38,7 @@ import { LANGUAGE_DEFINITIONS, type LanguageDefinition } from "../config.js";
  * composition-root adapter (kept local so the worker need not import
  * api/internal).
  */
-export const NATIVE_CHUNKER_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby", "typescript"]);
+export const NATIVE_CHUNKER_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby", "typescript", "javascript"]);
 
 /**
  * Build the chunker-side capability from a legacy `LanguageDefinition` — the

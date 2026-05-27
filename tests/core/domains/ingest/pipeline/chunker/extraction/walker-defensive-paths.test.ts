@@ -22,7 +22,7 @@ import RbLang from "tree-sitter-ruby";
 import { typescript as TsLang } from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
-import { extractFromJavascriptFile } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/javascript-walker.js";
+import { extractFromJavascriptFile } from "../../../../../../../src/core/domains/language/javascript/walker/walker.js";
 import { extractFromPythonFile } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/python-walker.js";
 import { extractFromRubyFile } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
 import { extractFromTypescriptFile } from "../../../../../../../src/core/domains/language/typescript/walker/walker.js";
@@ -30,7 +30,7 @@ import {
   extractJsAssignmentSymbol,
   extractJsForEachDispatchSymbols,
   extractJsNestedDefinePropertyThisSymbols,
-} from "../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/javascript/symbol-resolver.js";
+} from "../../../../../../../src/core/domains/language/javascript/chunking/symbol-resolver.js";
 
 function parseJs(src: string): Parser.Tree {
   const parser = new Parser();

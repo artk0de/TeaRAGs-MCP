@@ -13,7 +13,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { ChunkingHook, MacroSymbol } from "./chunker.js";
+import type { ChunkingHook, ChunkSymbol, MacroSymbol } from "./chunker.js";
 import type {
   CallContext,
   CallRef,
@@ -215,8 +215,32 @@ export interface LanguageChunkerHooks {
    * on `Class#accessor` and `get_callers`/`get_callees` work on Rails code (bd
    * tea-rags-mcp-3nf3 / zy3f). Omitted for languages with no such idiom. The
    * engine reaches this via the provider (no direct `domains/language/` import).
+   *
+   * Contrast with `chunkSymbols` (below): `macroSymbols` yields container-level
+   * synthetic METHOD symbols whose final symbolId the engine STILL composes
+   * against the class scope with the `#`/`.` separator (`pushMacroSymbolChunk`).
    */
   macroSymbols?: (containerNode: Parser.SyntaxNode) => MacroSymbol[];
+  /**
+   * Extract synthetic CHUNK symbols for a single node whose symbolIds are
+   * ALREADY composed by the provider — the node-level analog of `macroSymbols`.
+   * Used by JavaScript for the CommonJS / pre-class assignment shapes that have
+   * no `function_declaration` / `class_declaration` node the default name
+   * extractor recognises: `module.exports`/`exports.foo`/`obj.method = fn`,
+   * `Foo.prototype.bar`, `const Bar = fn`, the `methods.forEach` HTTP-verb
+   * dispatch fan-out, and nested `Object.defineProperty(this, …)` getter
+   * installs (with `this` rebound to the outer receiver). The engine emits one
+   * `chunkType="function"` chunk per returned `ChunkSymbol` at the node's own
+   * source range, in array order at consecutive indices (`index + i`).
+   *
+   * Distinct from `macroSymbols`: here the symbolId is FINAL (the provider has
+   * already done the receiver/`this` resolution), so the engine emits it
+   * verbatim with NO scope join. A future language with node-level pre-composed
+   * symbols reuses THIS capability, not `macroSymbols`. Omitted for languages
+   * with no such idiom. Reached via the provider (no direct `domains/language/`
+   * import — the reverse-guard forbids it).
+   */
+  chunkSymbols?: (node: Parser.SyntaxNode) => ChunkSymbol[];
 }
 
 /**

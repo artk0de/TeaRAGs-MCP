@@ -1,5 +1,8 @@
 /**
- * JavaScript implementation of the `CallResolver` contract.
+ * JavaScript implementation of the `CallResolver` contract. Relocated from
+ * `domains/trajectory/codegraph/symbols/resolvers/javascript/javascript-resolver.ts`
+ * into the native JavaScript language provider per the `domains/language`
+ * consolidation (spec §3; bd tea-rags-mcp-cen6). Behaviour-preserving.
  *
  * Plain JS (no tsconfig paths, no .ts extension games). Imports are
  * either:
@@ -25,7 +28,7 @@ import {
   type CallRef,
   type CallResolver,
   type ResolvedTarget,
-} from "../../../../../../contracts/types/codegraph.js";
+} from "../../../../contracts/types/codegraph.js";
 
 const JS_EXTS = [".js", ".jsx", ".mjs", ".cjs"];
 

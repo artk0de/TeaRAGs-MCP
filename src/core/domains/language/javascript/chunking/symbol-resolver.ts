@@ -1,24 +1,31 @@
 /**
  * JavaScript symbol resolver for assignment_expression / lexical_declaration
- * shapes that carry a function value.
+ * shapes that carry a function value. Relocated from
+ * `domains/ingest/pipeline/chunker/hooks/javascript/symbol-resolver.ts` into the
+ * native JavaScript language provider per the `domains/language` consolidation
+ * (spec §3; bd tea-rags-mcp-cen6). Behaviour-preserving.
  *
  * Returns the symbolId the chunk should emit for the node — matching the
- * codegraph `jsNameOf` output for the same physical AST node so the
- * Qdrant payload symbolId and cg_symbols.symbol_id agree.
+ * codegraph `jsNameOf` output (in `../walker/name-of.ts`) for the same physical
+ * AST node so the Qdrant payload symbolId and cg_symbols.symbol_id agree.
  *
- * MUST stay in sync with `provider.ts:jsNameOf` /
- * `provider.ts:lhsToNamedSymbol`. See `.claude/rules/symbolid-convention.md`.
+ * MUST stay in sync with `../walker/name-of.ts:jsNameOf` / `lhsToNamedSymbol`.
+ * See `.claude/rules/symbolid-convention.md`.
  *
  * For alias chains (`a = b = fn`) the chunker emits the OUTERMOST LHS as
  * the primary symbolId — chunks are 1:1 with AST nodes, so only one
  * symbolId per chunk is meaningful. Codegraph emits both via array
  * return; the chunker takes the first.
  *
+ * The three exported entry points (`extractJsForEachDispatchSymbols`,
+ * `extractJsAssignmentSymbol`, `extractJsNestedDefinePropertyThisSymbols`) are
+ * composed into the engine-facing `chunkSymbols` capability by `chunk-symbols.ts`.
+ *
  * bd tea-rags-mcp-kfzx
  */
 import type Parser from "tree-sitter";
 
-import { INSTANCE_METHOD_SEPARATOR } from "../../../../../../infra/symbolid/index.js";
+import { INSTANCE_METHOD_SEPARATOR } from "../../../../infra/symbolid/index.js";
 
 function walkAssignmentChainToTerminalRhs(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
   let cur: Parser.SyntaxNode | null = node;
@@ -42,7 +49,7 @@ function isFunctionValuedExpression(node: Parser.SyntaxNode): boolean {
  */
 function lhsToSymbolId(left: Parser.SyntaxNode, terminalRhs: Parser.SyntaxNode): string | null {
   // Bare identifier reassignment is handled by the original declarator —
-  // skip to avoid duplicates (provider.ts:lhsToNamedSymbol also returns
+  // skip to avoid duplicates (name-of.ts:lhsToNamedSymbol also returns
   // null here).
   if (left.type === "identifier") return null;
   if (left.type !== "member_expression") return null;
@@ -103,8 +110,8 @@ export interface JsAssignmentSymbol {
  * Returns empty array when the node is not such an assignment or no
  * nested getter installs were found. bd tea-rags-mcp-d1f8 this-resolve.
  *
- * MUST stay in sync with provider.ts:resolveEnclosingThisReceiver +
- * provider.ts:jsGetterHelperEmission `absolute: true` emission.
+ * MUST stay in sync with name-of.ts:resolveEnclosingThisReceiver +
+ * name-of.ts:jsGetterHelperEmission `absolute: true` emission.
  */
 export function extractJsNestedDefinePropertyThisSymbols(node: Parser.SyntaxNode): JsAssignmentSymbol[] {
   if (node.type !== "expression_statement") return [];
@@ -203,7 +210,7 @@ function nestedGetterInstallThisName(call: Parser.SyntaxNode): string | null {
 /**
  * The npm `methods` package's HTTP-verb list. Pinned to the historic
  * 9 verbs express has always used. MUST stay in sync with
- * `provider.ts:HTTP_VERBS` (bd tea-rags-mcp-z95o).
+ * `name-of.ts:HTTP_VERBS` (bd tea-rags-mcp-z95o).
  */
 const HTTP_VERBS = ["get", "post", "put", "delete", "head", "options", "patch", "connect", "trace"] as const;
 
@@ -216,7 +223,7 @@ const HTTP_VERBS = ["get", "post", "put", "delete", "head", "options", "patch", 
  * HTTP-verb comparison in the body — the strongest signal, catches
  * express directly). Otherwise null.
  *
- * MUST stay in sync with `provider.ts:jsForEachDispatchEmission`.
+ * MUST stay in sync with `name-of.ts:jsForEachDispatchEmission`.
  */
 export function extractJsForEachDispatchSymbols(node: Parser.SyntaxNode): JsAssignmentSymbol[] | null {
   if (node.type !== "expression_statement") return null;
@@ -289,7 +296,7 @@ export function extractJsForEachDispatchSymbols(node: Parser.SyntaxNode): JsAssi
 /**
  * Return true if the file (rooted at `root`) carries any signal that the
  * forEach receiver `recvName` iterates HTTP verbs. Mirrors
- * `provider.ts:hasHttpVerbDispatchSignal`.
+ * `name-of.ts:hasHttpVerbDispatchSignal`.
  *
  *   1. Body contains string-literal HTTP-verb comparisons like
  *      `<paramName> === 'get'` — STRONGEST signal.
@@ -384,7 +391,7 @@ function anyImportPathContainsUtil(root: Parser.SyntaxNode): boolean {
 /**
  * Walk `root` to find a `variable_declarator` of shape
  *   <recvName> = require('<source>')
- * and return the source string. Mirrors provider.ts:findRequireSource.
+ * and return the source string. Mirrors name-of.ts:findRequireSource.
  */
 function findRequireSource(root: Parser.SyntaxNode, recvName: string): string | null {
   let found: string | null = null;
@@ -476,13 +483,13 @@ export function extractJsAssignmentSymbol(node: Parser.SyntaxNode): JsAssignment
 }
 
 /**
- * Recognise getter-install helpers (mirrors provider's
- * `jsGetterHelperEmission`) and return the installed symbolId.
+ * Recognise getter-install helpers (mirrors name-of.ts:jsGetterHelperEmission)
+ * and return the installed symbolId.
  *
  *   Object.defineProperty(<obj>, '<name>', { get: fn, set: fn })  → `<obj>.<name>`
  *   defineGetter(<obj>, '<name>', fn)                              → `<obj>.<name>`
  *
- * MUST stay in sync with provider.ts:jsGetterHelperEmission. See
+ * MUST stay in sync with name-of.ts:jsGetterHelperEmission. See
  * `.claude/rules/symbolid-convention.md` and bd tea-rags-mcp-d1f8.
  */
 function getterHelperSymbolId(call: Parser.SyntaxNode): string | null {
@@ -536,7 +543,7 @@ function getterHelperSymbolId(call: Parser.SyntaxNode): string | null {
 /**
  * Render the receiver of a `defineProperty` / `defineGetter` call as the
  * text used in the emitted symbolId, with `this` resolution. Mirrors
- * `provider.ts:resolveReceiverText`. bd tea-rags-mcp-d1f8 this-resolve.
+ * `name-of.ts:resolveReceiverText`. bd tea-rags-mcp-d1f8 this-resolve.
  */
 function resolveReceiverText(receiver: Parser.SyntaxNode): string | null {
   if (receiver.type !== "this") return receiverDisplayText(receiver);
@@ -548,7 +555,7 @@ function resolveReceiverText(receiver: Parser.SyntaxNode): string | null {
  * function-valued expression that is the RHS of an outer
  * `<receiver>.<member> = function … { … }` assignment. Return the
  * receiver text (e.g. `"app"`, `"exports.proto"`) when found, else null.
- * Mirrors `provider.ts:resolveEnclosingThisReceiver`.
+ * Mirrors `name-of.ts:resolveEnclosingThisReceiver`.
  */
 function resolveEnclosingThisReceiver(node: Parser.SyntaxNode): string | null {
   let cur: Parser.SyntaxNode | null = node.parent;

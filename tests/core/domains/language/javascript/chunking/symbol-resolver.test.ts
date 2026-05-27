@@ -2,7 +2,7 @@
  * JavaScript chunker hook symbol resolver tests.
  *
  * Targets the three exported helpers in
- * `src/core/domains/ingest/pipeline/chunker/hooks/javascript/symbol-resolver.ts`:
+ * `src/core/domains/language/javascript/chunking/symbol-resolver.ts`:
  *
  *   - extractJsAssignmentSymbol — single-symbol resolution for the
  *     classic assignment + lexical declaration shapes (`exports.foo =`,
@@ -29,7 +29,7 @@ import {
   extractJsAssignmentSymbol,
   extractJsForEachDispatchSymbols,
   extractJsNestedDefinePropertyThisSymbols,
-} from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/javascript/symbol-resolver.js";
+} from "../../../../../../src/core/domains/language/javascript/chunking/symbol-resolver.js";
 
 function parse(src: string): Parser.Tree {
   const parser = new Parser();

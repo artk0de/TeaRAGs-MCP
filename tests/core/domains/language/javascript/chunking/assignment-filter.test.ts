@@ -2,7 +2,7 @@
  * JavaScript assignment-filter hook tests — directly exercise the
  * `filterNode` predicate that narrows which expression_statement /
  * lexical_declaration / variable_declaration nodes the chunker treats
- * as chunkable. See `src/core/domains/ingest/pipeline/chunker/hooks/javascript/assignment-filter.ts`.
+ * as chunkable. See `src/core/domains/language/javascript/chunking/assignment-filter.ts`.
  *
  * Invariant: only nodes that CARRY a function value survive the
  * filter. This avoids chunks for `const x = 1` / `foo()` / bare
@@ -17,7 +17,7 @@ import Parser from "tree-sitter";
 import JsLang from "tree-sitter-javascript";
 import { describe, expect, it } from "vitest";
 
-import { jsAssignmentFilterHook } from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/javascript/assignment-filter.js";
+import { jsAssignmentFilterHook } from "../../../../../../src/core/domains/language/javascript/chunking/assignment-filter.js";
 
 function parse(src: string): Parser.Tree {
   const p = new Parser();

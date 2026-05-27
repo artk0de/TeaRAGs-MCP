@@ -9,7 +9,7 @@
 
 import Parser from "tree-sitter";
 
-import type { MacroSymbol } from "../../../../contracts/types/chunker.js";
+import type { ChunkSymbol, MacroSymbol } from "../../../../contracts/types/chunker.js";
 import type {
   LanguageChunkerHooks,
   LanguageFactory,
@@ -23,11 +23,6 @@ import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import type { LanguageConfig } from "./config.js";
 import { extractGoSymbol } from "./hooks/go/index.js";
-import {
-  extractJsAssignmentSymbol,
-  extractJsForEachDispatchSymbols,
-  extractJsNestedDefinePropertyThisSymbols,
-} from "./hooks/javascript/index.js";
 import { MarkdownChunker } from "./hooks/markdown/index.js";
 import { createHookContext, type ChunkingHook, type HookContext } from "./hooks/types.js";
 
@@ -350,6 +345,7 @@ export class TreeSitterChunker implements CodeChunker {
         keepShortChildChunkTypes: hooks.keepShortChildChunkTypes,
         disambiguateOverloads: kernel.disambiguateOverloads,
         macroSymbols: hooks.macroSymbols,
+        chunkSymbols: hooks.chunkSymbols,
       };
     } catch (error) {
       console.error(`[TreeSitter] Failed to load parser for ${language}:`, error);
@@ -402,7 +398,7 @@ export class TreeSitterChunker implements CodeChunker {
           if (handled) continue;
         }
 
-        this.chunkSingleNode(node, index, code, filePath, language, chunks);
+        this.chunkSingleNode(node, index, code, filePath, language, chunks, langConfig.chunkSymbols);
       }
 
       if (chunks.length === 0 && code.length > 100) {
@@ -600,26 +596,26 @@ export class TreeSitterChunker implements CodeChunker {
     filePath: string,
     language: string,
     chunks: CodeChunk[],
+    chunkSymbols?: (node: Parser.SyntaxNode) => ChunkSymbol[],
   ): void {
     const content = code.substring(node.startIndex, node.endIndex);
 
-    // JavaScript: assignment_expression / lexical_declaration shapes that
-    // carry a function value need symbolId composition matching codegraph
-    // `jsNameOf` — `obj.method`, `Foo#bar` (prototype), `foo`
-    // (exports.foo), `Bar` (const Bar = fn). Without this the Qdrant
-    // payload symbolId diverges from cg_symbols.symbol_id on the same
-    // AST node. bd tea-rags-mcp-kfzx. See
-    // `.claude/rules/symbolid-convention.md`.
-    if (language === "javascript") {
-      // bd tea-rags-mcp-z95o — HTTP-verb dispatch via
-      // `methods.forEach(method => app[method] = fn)`. Emits ONE chunk
-      // per known HTTP verb (9 verbs) so find_symbol(app.get) resolves
-      // alongside cg_symbols rows from `provider.jsForEachDispatchEmission`.
-      // All chunks share the same source range — the dispatch lambda body.
-      const dispatchSymbols = extractJsForEachDispatchSymbols(node);
-      if (dispatchSymbols && dispatchSymbols.length > 0) {
-        for (let i = 0; i < dispatchSymbols.length; i++) {
-          const sym = dispatchSymbols[i];
+    // Node-level synthetic CHUNK symbols, supplied by the language provider's
+    // `chunkSymbols` capability (JavaScript). The provider has ALREADY composed
+    // each symbolId — the engine emits one `chunkType="function"` chunk per
+    // returned `ChunkSymbol` at the node's own source range, in array order at
+    // consecutive indices (`index + i`). For JavaScript this collapses the three
+    // former branches (forEach HTTP-verb dispatch fan-out, the assignment /
+    // CommonJS shape, and its nested `Object.defineProperty(this, …)` getter
+    // siblings) into one provider call — the provider owns the precedence
+    // (dispatch-set wins; else assignment + nested-defineProperty siblings, in
+    // order). Reached via DI, not a direct `domains/language/<lang>` import.
+    // bd tea-rags-mcp-kfzx / z95o / d1f8. See `.claude/rules/symbolid-convention.md`.
+    if (chunkSymbols) {
+      const syms = chunkSymbols(node);
+      if (syms.length > 0) {
+        for (let i = 0; i < syms.length; i++) {
+          const sym = syms[i];
           chunks.push({
             content: content.trim(),
             startLine: node.startPosition.row + 1,
@@ -628,49 +624,6 @@ export class TreeSitterChunker implements CodeChunker {
               filePath,
               language,
               chunkIndex: index + i,
-              chunkType: "function",
-              name: sym.name,
-              symbolId: sym.symbolId,
-              methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
-            },
-          });
-        }
-        return;
-      }
-      const jsSymbol = extractJsAssignmentSymbol(node);
-      if (jsSymbol) {
-        chunks.push({
-          content: content.trim(),
-          startLine: node.startPosition.row + 1,
-          endLine: this.computeEndLine(node),
-          metadata: {
-            filePath,
-            language,
-            chunkIndex: index,
-            chunkType: "function",
-            name: jsSymbol.name,
-            symbolId: jsSymbol.symbolId,
-            methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
-          },
-        });
-        // bd tea-rags-mcp-d1f8 this-resolve — when the assigned function
-        // body contains `Object.defineProperty(this, '<n>', { get: fn })`
-        // or `defineGetter(this, '<n>', fn)`, also emit a sibling chunk
-        // labelled `<outer-receiver>.<n>`. `this` rebinds to the outer
-        // receiver inside the assigned function, so the getter installs
-        // on `app` (not `app.init`). Mirrors codegraph
-        // `jsGetterHelperEmission` with `absolute: true`.
-        const nested = extractJsNestedDefinePropertyThisSymbols(node);
-        for (let i = 0; i < nested.length; i++) {
-          const sym = nested[i];
-          chunks.push({
-            content: content.trim(),
-            startLine: node.startPosition.row + 1,
-            endLine: this.computeEndLine(node),
-            metadata: {
-              filePath,
-              language,
-              chunkIndex: index + 1 + i,
               chunkType: "function",
               name: sym.name,
               symbolId: sym.symbolId,

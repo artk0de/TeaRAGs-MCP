@@ -96,7 +96,12 @@ function kernelFrom(def: LanguageDefinition): LanguageKernel {
  * dropped together.
  */
 function walkerFrom(cfg: CodegraphLanguageConfig): LanguageWalker | undefined {
-  if (!cfg.walker) return undefined; // narrows cfg.walker to the non-optional shape below
+  // `walker` AND `nameOf` are both OPTIONAL on the config (a native-migrated
+  // language drops both together — a `nameOf` without `walk` is meaningless, and
+  // vice versa). The adapter only wraps a NON-native language here, which always
+  // carries both, so requiring both is the correct gate: a missing either means
+  // no codegraph-extraction capability for this entry.
+  if (!cfg.walker || !cfg.nameOf) return undefined;
   return {
     walk: cfg.walker,
     nameOf: cfg.nameOf,
@@ -124,7 +129,7 @@ function resolverFrom(resolver: CallResolver): LanguageSymbolResolver {
  * (`composition.ts` + `chunker-worker.ts`). The adapter skips them so the old
  * per-language sources can be deleted without leaving a dangling reference here.
  */
-export const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby", "typescript"]);
+export const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby", "typescript", "javascript"]);
 
 /**
  * Assemble the per-language **builder** map (keyed by language NAME) by wrapping

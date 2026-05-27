@@ -1,14 +1,19 @@
 /**
- * JavaScript extraction walker.
+ * JavaScript extraction walker. Relocated from
+ * `domains/ingest/pipeline/chunker/extraction/javascript-walker.ts` into the
+ * native JavaScript language provider per the `domains/language` consolidation
+ * (spec §3; bd tea-rags-mcp-cen6, following the ruby + typescript verticals).
+ * Behaviour-preserving: the node-shape detection and `FileExtraction` emission
+ * are identical to the former chunker-local walker.
  *
  * tree-sitter-javascript shares its core node types with
  * tree-sitter-typescript for the constructs codegraph cares about
  * (import_statement, call_expression, function_declaration,
- * method_definition, class_declaration). The walker is therefore a
- * thin re-export of `extractFromTypescriptFile` — kept as its own
- * file so the LANGUAGES dispatch table reads cleanly and so future
- * JS-specific quirks (CommonJS require, dynamic imports) have a
- * dedicated home to land without polluting the TS walker.
+ * method_definition, class_declaration), but it carries JS-specific shapes the
+ * TS walker does not: CommonJS `require`, dynamic `import()`,
+ * `Object.defineProperty` accessor symbols, and class_heritage without an
+ * `extends_clause` wrapper. Those live here so future JS quirks have a dedicated
+ * home.
  *
  * CommonJS support: `require('./foo')` parses as a `call_expression`
  * with function = identifier "require" and a string argument. We
@@ -20,7 +25,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../../contracts/types/codegraph.js";
+import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
 
 export interface JsExtractInput {
   tree: Parser.Tree;
