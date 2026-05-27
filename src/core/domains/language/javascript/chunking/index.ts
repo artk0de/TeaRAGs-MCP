@@ -24,6 +24,7 @@ export const javascriptHooks: ChunkingHook[] = [jsAssignmentFilterHook];
 
 export { jsAssignmentFilterHook } from "./assignment-filter.js";
 export { jsChunkSymbols } from "./chunk-symbols.js";
+export { JsChunkClassifier } from "./classifier.js";
 export {
   extractJsAssignmentSymbol,
   extractJsForEachDispatchSymbols,

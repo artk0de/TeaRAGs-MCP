@@ -47,7 +47,7 @@ import type {
 } from "../../../contracts/types/language.js";
 
 import { javascriptKernel } from "./kernel.js";
-import { javascriptHooks, jsChunkSymbols } from "./chunking/index.js";
+import { JsChunkClassifier, javascriptHooks, jsChunkSymbols } from "./chunking/index.js";
 import { jsNameOf } from "./walker/name-of.js";
 import { extractFromJavascriptFile, type JsExtractInput } from "./walker/walker.js";
 import { JavascriptCallResolver } from "./resolver/index.js";
@@ -82,6 +82,10 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
   // `Object.defineProperty(this, …)` getter installs). symbolIds are ALREADY
   // composed — the engine emits each verbatim at `index + i`.
   chunkSymbols: (node) => jsChunkSymbols(node),
+  // Node→chunk classifier capability — the LanguageChunkClassifier wrapper over
+  // jsChunkSymbols. Set alongside `chunkSymbols` (both coexist); dormant until
+  // the engine reroute reads `classifier` instead.
+  classifier: new JsChunkClassifier(),
 };
 
 /**
@@ -110,7 +114,7 @@ export class JavaScriptLanguage implements LanguageProvider {
 }
 
 export { javascriptKernel } from "./kernel.js";
-export { javascriptHooks, jsChunkSymbols } from "./chunking/index.js";
+export { JsChunkClassifier, javascriptHooks, jsChunkSymbols } from "./chunking/index.js";
 export { extractFromJavascriptFile, jsNameOf } from "./walker/index.js";
 export { JavascriptCallResolver, mapJavascriptImportToFile } from "./resolver/index.js";
 export type { FileExtraction, JsExtractInput };
