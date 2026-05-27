@@ -26,6 +26,12 @@ export interface ChunkSignalOverlay {
   [key: string]: unknown;
 }
 
+/** Result of finalizeSignals — deferred whole-repo signals for both levels. */
+export interface FinalizeResult {
+  file: Map<string, FileSignalOverlay>;
+  chunk: Map<string, Map<string, ChunkSignalOverlay>>;
+}
+
 // --- Scoring weights ---
 
 export interface ScoringWeights {
@@ -162,6 +168,24 @@ export interface EnrichmentProvider {
     chunkMap: Map<string, ChunkLookupEntry[]>,
     options?: ChunkSignalOptions,
   ) => Promise<Map<string, Map<string, ChunkSignalOverlay>>>;
+  /**
+   * Per-batch streaming file enrichment. Returns signals to apply immediately
+   * for the given batch of repo-relative paths. Providers whose file signals
+   * need the complete data set (codegraph graph metrics) return an empty map
+   * and defer to finalizeSignals. Optional: when absent the coordinator falls
+   * back to buildFileSignals({ paths: batchPaths }).
+   */
+  streamFileBatch?: (
+    root: string,
+    batchPaths: string[],
+    options?: FileSignalOptions,
+  ) => Promise<Map<string, FileSignalOverlay>>;
+  /**
+   * Deferred whole-repo finalize, run once after the embedding stream. Returns
+   * signals that require the complete data set (e.g. graph SCC/PageRank).
+   * Optional: providers that stream everything (git) omit it or return empty.
+   */
+  finalizeSignals?: (root: string, options?: FileSignalOptions) => Promise<FinalizeResult>;
   /**
    * Optional per-run counters surfaced via
    * `EnrichmentMetrics.byProvider[provider.key]`. Returned shape is
