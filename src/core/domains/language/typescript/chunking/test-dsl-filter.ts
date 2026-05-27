@@ -13,7 +13,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { ChunkingHook, HookContext } from "../types.js";
+import type { ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
 
 /** Methods that create describe/context containers. */
 const CONTAINER_METHODS = new Set(["describe", "context", "suite"]);

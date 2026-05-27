@@ -19,7 +19,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { BodyChunkResult, ChunkingHook, HookContext } from "../types.js";
+import type { BodyChunkResult, ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
 import { findClassBody } from "./utils.js";
 
 // ── Classification ────────────────────────────────────────────────

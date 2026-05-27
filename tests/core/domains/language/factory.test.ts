@@ -4,41 +4,50 @@ import type { LanguageProvider } from "../../../../src/core/contracts/types/lang
 import { LanguageFactoryImpl } from "../../../../src/core/domains/language/factory.js";
 import { UnsupportedLanguageError } from "../../../../src/core/domains/language/errors.js";
 import { RubyLanguage } from "../../../../src/core/domains/language/ruby/index.js";
+import { TypeScriptLanguage } from "../../../../src/core/domains/language/typescript/index.js";
 
 /**
  * The factory is REAL (consolidation, bd tea-rags-mcp-cat4): `create(lang)`
  * ENCAPSULATES construction rather than reading from a consumer-assembled
  * registry of pre-built providers.
  *
- *   - NATIVE languages (`ruby`) → the factory constructs the native provider
- *     itself (`new RubyLanguage(mode)`), regardless of any injected thunk.
+ *   - NATIVE languages (`ruby`, `typescript`) → the factory constructs the
+ *     native provider itself (`new RubyLanguage(mode)` /
+ *     `new TypeScriptLanguage(mode)`), regardless of any injected thunk.
  *   - LEGACY languages → the factory invokes the deferred builder thunk the
  *     composition layer injected, lazily, on first `create` and caches it.
  *
  * The composition layer supplies the legacy thunks via the legacy adapter (see
  * `legacy-language-adapter.test.ts` for adapter fidelity); these tests cover the
  * factory's own contract with minimal stub thunks, independent of the adapter.
+ * Legacy-thunk probes use `python` (still adapter-served) since `typescript` is
+ * now native — a thunk for it would be ignored in favour of the native build.
  */
 describe("LanguageFactoryImpl", () => {
   const stubProvider: LanguageProvider = {
     kernel: { loadModule: async () => null, isInstanceMethod: () => false },
   };
 
-  it("supported() reflects legacy builder keys plus the native languages (ruby)", () => {
-    // Empty legacy map still supports ruby (always native).
-    expect(new LanguageFactoryImpl(new Map()).supported()).toEqual(["ruby"]);
-    const factory = new LanguageFactoryImpl(new Map([["typescript", () => stubProvider]]));
-    expect(new Set(factory.supported())).toEqual(new Set(["typescript", "ruby"]));
+  it("supported() reflects legacy builder keys plus the native languages (ruby, typescript)", () => {
+    // Empty legacy map still supports the native languages.
+    expect(new Set(new LanguageFactoryImpl(new Map()).supported())).toEqual(new Set(["ruby", "typescript"]));
+    const factory = new LanguageFactoryImpl(new Map([["python", () => stubProvider]]));
+    expect(new Set(factory.supported())).toEqual(new Set(["python", "ruby", "typescript"]));
   });
 
   it("create() invokes the legacy thunk and returns its provider", () => {
-    const factory = new LanguageFactoryImpl({ typescript: () => stubProvider });
-    expect(factory.create("typescript")).toBe(stubProvider);
+    const factory = new LanguageFactoryImpl({ python: () => stubProvider });
+    expect(factory.create("python")).toBe(stubProvider);
   });
 
   it("create() builds the native ruby provider itself (no thunk needed)", () => {
     const factory = new LanguageFactoryImpl(new Map());
     expect(factory.create("ruby")).toBeInstanceOf(RubyLanguage);
+  });
+
+  it("create() builds the native typescript provider itself (no thunk needed)", () => {
+    const factory = new LanguageFactoryImpl(new Map());
+    expect(factory.create("typescript")).toBeInstanceOf(TypeScriptLanguage);
   });
 
   it("the native switch wins over any legacy thunk registered for ruby", () => {
@@ -47,12 +56,17 @@ describe("LanguageFactoryImpl", () => {
     expect(factory.create("ruby")).toBeInstanceOf(RubyLanguage);
   });
 
+  it("the native switch wins over any legacy thunk registered for typescript", () => {
+    const factory = new LanguageFactoryImpl(new Map([["typescript", () => stubProvider]]));
+    expect(factory.create("typescript")).toBeInstanceOf(TypeScriptLanguage);
+  });
+
   it("caches per language — the legacy thunk runs at most once", () => {
     let calls = 0;
     const factory = new LanguageFactoryImpl(
       new Map([
         [
-          "typescript",
+          "python",
           () => {
             calls += 1;
             return stubProvider;
@@ -60,8 +74,8 @@ describe("LanguageFactoryImpl", () => {
         ],
       ]),
     );
-    const a = factory.create("typescript");
-    const b = factory.create("typescript");
+    const a = factory.create("python");
+    const b = factory.create("python");
     expect(a).toBe(b);
     expect(calls).toBe(1);
   });
@@ -69,6 +83,11 @@ describe("LanguageFactoryImpl", () => {
   it("caches the native ruby provider across calls", () => {
     const factory = new LanguageFactoryImpl(new Map());
     expect(factory.create("ruby")).toBe(factory.create("ruby"));
+  });
+
+  it("caches the native typescript provider across calls", () => {
+    const factory = new LanguageFactoryImpl(new Map());
+    expect(factory.create("typescript")).toBe(factory.create("typescript"));
   });
 
   it("accepts both a ReadonlyMap and a Record of legacy builders", () => {

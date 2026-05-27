@@ -2,7 +2,7 @@ import Parser from "tree-sitter";
 import TsLang from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
-import { extractFromTypescriptFile } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/typescript-walker.js";
+import { extractFromTypescriptFile } from "../../../../../../src/core/domains/language/typescript/walker/walker.js";
 
 function parse(code: string): Parser.Tree {
   const parser = new Parser();

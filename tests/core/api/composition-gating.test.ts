@@ -21,7 +21,7 @@ import { createStubPool } from "../__helpers__/codegraph-pool.js";
 import { DuckDbGraphClient } from "../../../src/core/adapters/duckdb/client.js";
 import { createComposition } from "../../../src/core/api/index.js";
 import type { CallResolver } from "../../../src/core/contracts/types/codegraph.js";
-import { TSCallResolver } from "../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
+import { TSCallResolver } from "../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const NEW_CODEGRAPH_COMPOSITES = ["blastRadius", "architecturalHub", "entryPoint"];

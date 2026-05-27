@@ -240,7 +240,7 @@ describe("findClassBody", () => {
 `;
       const chunks = await chunker.chunk(
         code,
-        "tests/core/domains/ingest/pipeline/chunker/hooks/typescript/utils.test.ts",
+        "tests/core/domains/language/typescript/chunking/utils.test.ts",
         "typescript",
       );
       const testChunks = chunks.filter((c) => c.metadata.chunkType === "test");

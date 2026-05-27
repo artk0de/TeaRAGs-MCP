@@ -6,7 +6,7 @@ import {
   isDslContainerCall,
   produceScopeChunks,
   testScopeChunkerHook,
-} from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/typescript/test-scope-chunker.js";
+} from "../../../../../../src/core/domains/language/typescript/chunking/test-scope-chunker.js";
 
 let tsLang: unknown;
 

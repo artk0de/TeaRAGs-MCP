@@ -12,7 +12,7 @@ import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/lang
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { JavascriptCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/javascript/javascript-resolver.js";
-import { TSCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
+import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { runMigrations } from "../../../../../../src/core/infra/migration/database/runner.js";
 

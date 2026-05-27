@@ -20,10 +20,12 @@ import { UnsupportedLanguageError } from "../../../../src/core/domains/language/
  * codegraph engines read today is reproduced identically through the factory.
  *
  * Languages migrated to a native `domains/language/<lang>` provider are SKIPPED
- * by the adapter (`NATIVE_LANGUAGES`, e.g. ruby — tea-rags-mcp-cen6); the
- * composition roots wire those natively over the top. So the adapter-served set
- * is `LANGUAGE_DEFINITIONS` minus `NATIVE_LANGUAGES`, and the fidelity loops only
- * cover adapter-served languages.
+ * by the adapter (`NATIVE_LANGUAGES`, e.g. ruby + typescript — tea-rags-mcp-cen6);
+ * the factory builds those natively. So the adapter-served set is
+ * `LANGUAGE_DEFINITIONS` minus `NATIVE_LANGUAGES`, and the fidelity loops only
+ * cover adapter-served languages. The single-language probes below use
+ * `javascript` (a still-adapter-served language with a codegraph config +
+ * resolver slot) rather than `typescript`, which is now native.
  */
 describe("legacyLanguageRegistry adapter fidelity", () => {
   // Reverse-index codegraph configs by language name (the registry key) so a
@@ -83,8 +85,9 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
 
   it("isInstanceMethod is classifyMethod(node) === 'instance' (false for non-method nodes)", () => {
     const factory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
-    const { isInstanceMethod } = factory.create("typescript").kernel;
-    // Instance method (TS method_definition, no `static`).
+    // javascript is adapter-served and shares the TS `method_definition` shape.
+    const { isInstanceMethod } = factory.create("javascript").kernel;
+    // Instance method (JS/TS method_definition, no `static`).
     const instanceNode = { type: "method_definition", children: [], text: "" } as never;
     expect(isInstanceMethod(instanceNode)).toBe(true);
     expect(classifyMethod(instanceNode)).toBe("instance");
@@ -133,16 +136,16 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
   it("wraps a CallResolver into a LanguageSymbolResolver with resolveDispatch default", () => {
     const calls: string[] = [];
     const fakeResolver: CallResolver = {
-      language: "typescript",
+      language: "javascript",
       resolve: () => {
         calls.push("resolve");
         return null;
       },
       // No resolveDispatch — the wrapper must default to [].
     };
-    const registry = buildLegacyLanguageRegistry(new Map([["typescript", fakeResolver]]));
+    const registry = buildLegacyLanguageRegistry(new Map([["javascript", fakeResolver]]));
     const factory = new LanguageFactoryImpl(registry);
-    const { resolver } = factory.create("typescript");
+    const { resolver } = factory.create("javascript");
     expect(resolver).toBeDefined();
     const call = { callText: "x()", receiver: null, member: "x", startLine: 1 } as never;
     const ctx = {} as never;
@@ -152,14 +155,14 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
   });
 
   it("delegates resolveDispatch when the CallResolver supports it", () => {
-    const edge = { sourceSymbolId: null, targetSymbolId: "Foo#bar", targetFile: "foo.ts" };
+    const edge = { sourceSymbolId: null, targetSymbolId: "Foo#bar", targetFile: "foo.js" };
     const fakeResolver: CallResolver = {
-      language: "typescript",
+      language: "javascript",
       resolve: () => null,
       resolveDispatch: () => [edge as never],
     };
-    const registry = buildLegacyLanguageRegistry(new Map([["typescript", fakeResolver]]));
-    const { resolver } = new LanguageFactoryImpl(registry).create("typescript");
+    const registry = buildLegacyLanguageRegistry(new Map([["javascript", fakeResolver]]));
+    const { resolver } = new LanguageFactoryImpl(registry).create("javascript");
     expect(resolver?.resolveDispatch({} as never, {} as never)).toEqual([edge]);
   });
 
@@ -170,6 +173,6 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
 
   it("builds resolver only when codegraph resolvers are supplied", () => {
     const noResolvers = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
-    expect(noResolvers.create("typescript").resolver).toBeUndefined();
+    expect(noResolvers.create("javascript").resolver).toBeUndefined();
   });
 });

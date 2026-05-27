@@ -9,9 +9,12 @@ import { LanguageFactoryImpl } from "../../../../../../src/core/domains/language
  * (`buildLegacyLanguageRegistry`) so the walker capability the provider reads is
  * the SAME `CODEGRAPH_LANGUAGES` walk/nameOf for not-yet-migrated languages, and
  * the resolver capability wraps the exact resolvers the test supplied. Migrated
- * languages (ruby — tea-rags-mcp-cen6) are built NATIVELY by the factory itself
- * (the adapter skips them via NATIVE_LANGUAGES), exactly as the production
- * composition roots do (composition.ts / the chunker worker).
+ * languages (ruby, typescript — tea-rags-mcp-cen6) are built NATIVELY by the
+ * factory itself (the adapter skips them via NATIVE_LANGUAGES), exactly as the
+ * production composition roots do (composition.ts / the chunker worker). For
+ * those languages the `resolvers`-map entry a test supplies is NOT what the
+ * engine reads — the native provider carries its own resolver — but tests may
+ * still construct one (its presence is harmless).
  */
 export function languageFactoryFor(resolvers: Map<string, CallResolver>): LanguageFactory {
   return new LanguageFactoryImpl(buildLegacyLanguageRegistry(resolvers));

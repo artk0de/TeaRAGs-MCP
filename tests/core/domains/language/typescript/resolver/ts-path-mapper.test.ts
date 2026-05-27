@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mapImportToFile } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-path-mapper.js";
+import { mapImportToFile } from "../../../../../../src/core/domains/language/typescript/resolver/ts-path-mapper.js";
 
 describe("mapImportToFile", () => {
   it("resolves relative paths against caller file", () => {

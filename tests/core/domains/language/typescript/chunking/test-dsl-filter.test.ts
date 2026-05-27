@@ -5,7 +5,7 @@ import {
   getCallName,
   isTestFile,
   testDslFilterHook,
-} from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/typescript/test-dsl-filter.js";
+} from "../../../../../../src/core/domains/language/typescript/chunking/test-dsl-filter.js";
 
 let tsLang: unknown;
 

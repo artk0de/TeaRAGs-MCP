@@ -71,7 +71,6 @@ import { extractFromJavaFile } from "../../../ingest/pipeline/chunker/extraction
 import { extractFromJavascriptFile } from "../../../ingest/pipeline/chunker/extraction/javascript-walker.js";
 import { extractFromPythonFile } from "../../../ingest/pipeline/chunker/extraction/python-walker.js";
 import { extractFromRustFile } from "../../../ingest/pipeline/chunker/extraction/rust-walker.js";
-import { extractFromTypescriptFile } from "../../../ingest/pipeline/chunker/extraction/typescript-walker.js";
 import { pipelineLog } from "../../../ingest/pipeline/infra/debug-logger.js";
 import {
   CodegraphCheckpointError,
@@ -255,14 +254,24 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   ".ts": {
     language: "typescript",
     loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript,
-    walker: extractFromTypescriptFile,
+    // walker DROPPED — typescript migrated to the native domains/language/typescript
+    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
+    // `factory.create("typescript").walker`; this entry is retained only for
+    // `loadParser` (the `.typescript` grammar) / `scopeSeparator`, still sourced
+    // from the map so the per-extension grammar choice for `.ts` vs `.tsx` stays
+    // here. The local `nameOf: tsNameOf` is kept to satisfy the non-optional
+    // config field AND because `jsNameOf` (used by the still-legacy `.js`/`.jsx`/
+    // `.mjs`/`.cjs` entries) delegates to it — so `tsNameOf` is NOT dead; it is
+    // simply no longer the source the engine reads for typescript files.
     nameOf: tsNameOf,
     scopeSeparator: ".",
   },
   ".tsx": {
     language: "typescript",
     loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).tsx,
-    walker: extractFromTypescriptFile,
+    // walker DROPPED — see the `.ts` entry. `loadParser` here selects the `.tsx`
+    // grammar (the one difference between the two extensions); the native
+    // provider's single walker handles both grammars' node types.
     nameOf: tsNameOf,
     scopeSeparator: ".",
   },

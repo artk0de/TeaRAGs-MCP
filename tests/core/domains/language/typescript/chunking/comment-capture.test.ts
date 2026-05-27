@@ -1,8 +1,8 @@
 import Parser from "tree-sitter";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { createHookContext } from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/types.js";
-import { typescriptCommentCaptureHook } from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/typescript/comment-capture.js";
+import { createHookContext } from "../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/types.js";
+import { typescriptCommentCaptureHook } from "../../../../../../src/core/domains/language/typescript/chunking/comment-capture.js";
 
 // --- helpers ---
 

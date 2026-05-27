@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef } from "../../../../../../../../src/core/contracts/types/codegraph.js";
-import { TSCallResolver } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
-import { InMemoryGlobalSymbolTable } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import type { CallContext, CallRef } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 describe("TSCallResolver", () => {
   // Real-world bug from tea-rags-worktree self-test 2026-05-21: every

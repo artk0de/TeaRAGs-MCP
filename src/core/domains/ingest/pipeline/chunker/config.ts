@@ -3,7 +3,6 @@ import type Parser from "tree-sitter";
 import type { MacroSymbol } from "../../../../contracts/types/chunker.js";
 import { javascriptHooks } from "./hooks/javascript/index.js";
 import type { ChunkingHook } from "./hooks/types.js";
-import { typescriptHooks } from "./hooks/typescript/index.js";
 
 // Type for tree-sitter language modules
 interface TreeSitterLanguageModule {
@@ -134,7 +133,13 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     ],
     childChunkTypes: ["method_definition", "call_expression"],
     alwaysExtractChildren: true,
-    hooks: typescriptHooks,
+    // NOTE: TypeScript is now a NATIVE `domains/language/typescript` provider
+    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `typescript`
+    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver come from
+    // `TypeScriptLanguage`, not this entry. This `LANGUAGE_DEFINITIONS.typescript`
+    // row is retained only so `CODE_LANGUAGES` / `LANGUAGE_MAP` still report
+    // typescript as a code language; its `hooks` field is intentionally absent
+    // (the native provider owns it).
   },
   javascript: {
     loadModule: async () => import("tree-sitter-javascript") as Promise<TreeSitterLanguageModule>,

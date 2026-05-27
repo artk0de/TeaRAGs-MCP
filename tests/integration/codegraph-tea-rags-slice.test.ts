@@ -26,13 +26,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../src/core/adapters/duckdb/client.js";
 import { GraphFacade } from "../../src/core/api/internal/facades/graph-facade.js";
-import { extractFromTypescriptFile } from "../../src/core/domains/ingest/pipeline/chunker/extraction/typescript-walker.js";
+import { extractFromTypescriptFile } from "../../src/core/domains/language/typescript/walker/walker.js";
 import { DefaultSymbolIdComposer } from "../../src/core/domains/language/kernel/symbol-id.js";
 import { LanguageFactoryImpl } from "../../src/core/domains/language/index.js";
 import { buildLegacyLanguageRegistry } from "../../src/core/api/internal/legacy-language-adapter.js";
 import { createSymbolsTrajectory } from "../../src/core/domains/trajectory/codegraph/symbols/index.js";
 import type { CodegraphEnrichmentProvider } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
-import { TSCallResolver } from "../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
+import { TSCallResolver } from "../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { runMigrations } from "../../src/core/infra/migration/database/runner.js";
 

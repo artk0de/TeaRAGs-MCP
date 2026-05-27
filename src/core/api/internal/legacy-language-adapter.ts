@@ -124,7 +124,7 @@ function resolverFrom(resolver: CallResolver): LanguageSymbolResolver {
  * (`composition.ts` + `chunker-worker.ts`). The adapter skips them so the old
  * per-language sources can be deleted without leaving a dangling reference here.
  */
-export const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby"]);
+export const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby", "typescript"]);
 
 /**
  * Assemble the per-language **builder** map (keyed by language NAME) by wrapping

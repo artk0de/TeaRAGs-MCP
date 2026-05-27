@@ -34,7 +34,7 @@ import {
   type DispatchTable,
   type DispatchTableDef,
   type ResolvedTarget,
-} from "../../../../../../contracts/types/codegraph.js";
+} from "../../../../contracts/types/codegraph.js";
 import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
 
 export class TSCallResolver implements CallResolver {

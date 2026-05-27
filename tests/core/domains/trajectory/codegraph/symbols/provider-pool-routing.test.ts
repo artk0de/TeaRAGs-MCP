@@ -33,7 +33,7 @@ import {
   CodegraphEnrichmentProvider,
   stripVersionSuffix,
 } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
-import { TSCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
+import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 describe("stripVersionSuffix", () => {

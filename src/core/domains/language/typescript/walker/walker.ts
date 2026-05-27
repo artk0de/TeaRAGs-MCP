@@ -25,7 +25,7 @@ import type {
   DispatchTable,
   FileExtraction,
   ImportRef,
-} from "../../../../../contracts/types/codegraph.js";
+} from "../../../../contracts/types/codegraph.js";
 
 export interface ExtractInput {
   tree: Parser.Tree;

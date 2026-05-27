@@ -1,7 +1,7 @@
 import Parser from "tree-sitter";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { findClassBody } from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/typescript/utils.js";
+import { findClassBody } from "../../../../../../src/core/domains/language/typescript/chunking/utils.js";
 
 let tsLang: unknown;
 

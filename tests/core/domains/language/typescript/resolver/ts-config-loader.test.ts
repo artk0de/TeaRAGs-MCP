@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { loadTsConfig } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-config-loader.js";
+import { loadTsConfig } from "../../../../../../src/core/domains/language/typescript/resolver/ts-config-loader.js";
 
 describe("loadTsConfig", () => {
   let tmp: string;

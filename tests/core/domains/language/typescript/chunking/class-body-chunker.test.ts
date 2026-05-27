@@ -1,8 +1,8 @@
 import Parser from "tree-sitter";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { createHookContext } from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/types.js";
-import { typescriptBodyChunkingHook } from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/typescript/class-body-chunker.js";
+import { createHookContext } from "../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/types.js";
+import { typescriptBodyChunkingHook } from "../../../../../../src/core/domains/language/typescript/chunking/class-body-chunker.js";
 
 // --- helpers ---
 

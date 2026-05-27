@@ -33,7 +33,6 @@ import { JavaCallResolver } from "../core/domains/trajectory/codegraph/symbols/r
 import { JavascriptCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/javascript/index.js";
 import { PythonCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/python/index.js";
 import { RustCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/rust/index.js";
-import { loadTsConfig, TSCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/ts/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
 import { CollectionRegistry } from "../core/infra/registry/index.js";
@@ -218,7 +217,11 @@ function wireCodegraph(
   // §1a + `.claude/rules/symbolid-convention.md`.
   const symbolIdComposer = new DefaultSymbolIdComposer();
   const resolvers = new Map<string, CallResolver>([
-    ["typescript", new TSCallResolver(loadTsConfig(process.cwd()), ambiguousMode)],
+    // typescript: served by the NATIVE domains/language/typescript provider (its
+    // own TSCallResolver, built with `loadTsConfig(process.cwd())` + `ambiguousMode`
+    // threaded via CodegraphDeps). The legacy adapter skips typescript, so no
+    // entry here. NOTE: javascript stays here — its resolver does NOT depend on
+    // the relocated TSCallResolver, and `jsNameOf` keeps a local `tsNameOf`.
     ["javascript", new JavascriptCallResolver(ambiguousMode)],
     ["python", new PythonCallResolver(ambiguousMode)],
     // ruby: served by the NATIVE domains/language/ruby provider (its own

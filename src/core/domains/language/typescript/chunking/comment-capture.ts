@@ -7,7 +7,7 @@
  */
 import type Parser from "tree-sitter";
 
-import type { ChunkingHook } from "../types.js";
+import type { ChunkingHook } from "../../../../contracts/types/chunker.js";
 import { findClassBody } from "./utils.js";
 
 /**

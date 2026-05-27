@@ -3,6 +3,7 @@ import { DEFAULT_AMBIGUOUS_RESOLVE_MODE } from "../../contracts/types/codegraph.
 import type { LanguageFactory, LanguageProvider } from "../../contracts/types/language.js";
 import { UnsupportedLanguageError } from "./errors.js";
 import { RubyLanguage } from "./ruby/index.js";
+import { TypeScriptLanguage } from "./typescript/index.js";
 
 /**
  * A deferred per-language provider builder. The composition layer
@@ -23,7 +24,7 @@ export type LegacyProviderBuilder = () => LanguageProvider;
  * `NATIVE_LANGUAGES` in the legacy adapter (which skips these) and
  * `NATIVE_CHUNKER_LANGUAGES` in the ingest-local registry. bd tea-rags-mcp-cen6.
  */
-const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby"]);
+const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby", "typescript"]);
 
 /**
  * Real `LanguageFactory`. `create(lang)` ENCAPSULATES construction — it builds
@@ -47,15 +48,23 @@ const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>(["ruby"]);
  */
 export class LanguageFactoryImpl implements LanguageFactory {
   private readonly legacyBuilders: ReadonlyMap<string, LegacyProviderBuilder>;
-  private readonly rubyMode: AmbiguousResolveMode;
+  /**
+   * Shared native ambiguous-resolve mode. Threaded into EVERY native provider's
+   * resolver (`RubyLanguage`, `TypeScriptLanguage`, …) so they stay
+   * behaviour-identical to the legacy resolver-map entries the adapter built
+   * with the same mode. Not ruby-specific — generalised when the typescript
+   * vertical landed (bd tea-rags-mcp-cen6).
+   */
+  private readonly ambiguousResolveMode: AmbiguousResolveMode;
   private readonly cache = new Map<string, LanguageProvider>();
 
   /**
    * @param legacyBuilders Deferred provider builders for the non-native
    *   languages, keyed by language NAME. Accepts a `Map` or a plain `Record`.
    * @param options.ambiguousResolveMode Threaded into native resolvers
-   *   (`RubyLanguage`) so they stay behaviour-identical to the legacy
-   *   resolver-map entry. Defaults to the codegraph default (`strict`).
+   *   (`RubyLanguage`, `TypeScriptLanguage`, …) so they stay behaviour-identical
+   *   to the legacy resolver-map entry. Defaults to the codegraph default
+   *   (`strict`).
    */
   constructor(
     legacyBuilders:
@@ -65,7 +74,7 @@ export class LanguageFactoryImpl implements LanguageFactory {
   ) {
     this.legacyBuilders =
       legacyBuilders instanceof Map ? legacyBuilders : new Map(Object.entries(legacyBuilders));
-    this.rubyMode = options.ambiguousResolveMode ?? DEFAULT_AMBIGUOUS_RESOLVE_MODE;
+    this.ambiguousResolveMode = options.ambiguousResolveMode ?? DEFAULT_AMBIGUOUS_RESOLVE_MODE;
   }
 
   create(lang: string): LanguageProvider {
@@ -81,7 +90,8 @@ export class LanguageFactoryImpl implements LanguageFactory {
   private build(lang: string): LanguageProvider {
     if (NATIVE_LANGUAGES.has(lang)) {
       // Native switch — extend with one branch per migrated vertical.
-      if (lang === "ruby") return new RubyLanguage(this.rubyMode);
+      if (lang === "ruby") return new RubyLanguage(this.ambiguousResolveMode);
+      if (lang === "typescript") return new TypeScriptLanguage(this.ambiguousResolveMode);
     }
     const builder = this.legacyBuilders.get(lang);
     if (builder) return builder();
