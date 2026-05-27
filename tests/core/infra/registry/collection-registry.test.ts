@@ -297,7 +297,11 @@ describe("CollectionRegistry", () => {
       // Polling waiter — fs.watch event delivery under concurrent vitest
       // load can exceed any fixed sleep. Loop until the cache reflects the
       // expected value or hit a generous overall timeout.
-      const waitForPath = async (registry: CollectionRegistry, expected: string, timeoutMs = 2000): Promise<void> => {
+      // 8s budget per wait (was 2s): macOS FSEvents delivery under heavy
+      // concurrent vitest load can lag several seconds — the 2s window flaked.
+      // Events are delayed, not dropped (dir-level watch), so a larger budget
+      // is reliable; normal delivery is <100ms so the happy path stays fast.
+      const waitForPath = async (registry: CollectionRegistry, expected: string, timeoutMs = 8000): Promise<void> => {
         const deadline = Date.now() + timeoutMs;
 
         while (true) {
@@ -378,6 +382,8 @@ describe("CollectionRegistry", () => {
       } finally {
         stop();
       }
-    });
+      // it() timeout > 3 × waitForPath budget so a slow-but-eventual fs.watch
+      // delivery doesn't trip the default 5s test timeout before the poll wins.
+    }, 30000);
   });
 });
