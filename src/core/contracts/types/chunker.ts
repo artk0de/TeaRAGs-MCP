@@ -100,6 +100,50 @@ export interface ChunkSymbol {
   name: string;
 }
 
+/** The chunkType vocabulary the chunker emits (mirrors the engine's getChunkType return). */
+export type ChunkType = "function" | "class" | "interface" | "block" | "test" | "test_setup";
+
+/**
+ * One chunk a language classifier asks the engine to emit verbatim for a node.
+ *
+ * Forward declaration — not yet consumed. Once the engine reroute lands (plan
+ * `2026-05-27-tree-sitter-engine-consolidation`, Task 5), the engine WILL flag
+ * each emitted chunk `claimed` so it is exempt from the min-length floor AND
+ * adjacent-merge — these carry an explicit symbolId that merging would destroy.
+ */
+export interface EmittedChunk {
+  /** Display name — same string as `symbolId` for these shapes. */
+  name: string;
+  /** Fully-composed symbolId, emitted verbatim (no further scope join). */
+  symbolId: string;
+  /** The chunk's type label. */
+  chunkType: ChunkType;
+}
+
+/**
+ * Per-node classification result.
+ *   - `passthrough` — the engine applies its generic shaping (extractName +
+ *     buildSymbolId + getChunkType) and the min-length floor. The common case.
+ *   - `skip` — drop this node entirely.
+ *   - `emit` — emit these explicit chunks at the node's source range (Go = 1,
+ *     JS = N); once wired (Task 5) they will be flagged `claimed`.
+ */
+export type ChunkDecision =
+  | { kind: "passthrough" }
+  | { kind: "skip" }
+  | { kind: "emit"; chunks: EmittedChunk[] };
+
+/**
+ * Per-language node→chunk classification. Once the engine reroute lands (Task 5)
+ * the engine WILL consult it for each chunkable AST node before its generic
+ * shaping. Optional capability on `LanguageChunkerHooks` — absent ⇒ the engine
+ * uses the generic path for every node. Only languages whose default shaping is
+ * wrong for some node types ship one (Go, JavaScript).
+ */
+export interface LanguageChunkClassifier {
+  classifyNode: (node: Parser.SyntaxNode) => ChunkDecision;
+}
+
 /** Single hook in the chain */
 export interface ChunkingHook {
   name: string;

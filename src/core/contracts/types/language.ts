@@ -13,7 +13,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { ChunkingHook, ChunkSymbol, MacroSymbol } from "./chunker.js";
+import type { ChunkingHook, ChunkSymbol, LanguageChunkClassifier, MacroSymbol } from "./chunker.js";
 import type {
   CallContext,
   CallRef,
@@ -241,6 +241,14 @@ export interface LanguageChunkerHooks {
    * import — the reverse-guard forbids it).
    */
   chunkSymbols?: (node: Parser.SyntaxNode) => ChunkSymbol[];
+  /**
+   * Per-language node→chunk classifier. When present, the engine consults it for
+   * each chunkable node before its generic shaping. Will replace the `chunkSymbols`
+   * capability (folded into `ChunkDecision.emit`) once the engine is rerouted.
+   * Absent for languages whose default shaping is always right (TypeScript,
+   * Python, Java, Rust, Bash, Ruby, Markdown).
+   */
+  classifier?: LanguageChunkClassifier;
 }
 
 /**
