@@ -69,7 +69,6 @@
     "diff": "^8.0.4",
     "express": "^5.2.1",
     "ignore": "^7.0.5",
-    "isomorphic-git": "^1.37.4",
     "openai": "^6.33.0",
     "picomatch": "^4.0.4",
     "remark": "^15.0.1",

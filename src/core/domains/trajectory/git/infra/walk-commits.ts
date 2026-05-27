@@ -6,12 +6,9 @@
  * chunks with offset tracking — mutating the per-chunk accumulators in place.
  */
 
-import * as fs from "node:fs";
-
 import { structuredPatch } from "diff";
-import git from "isomorphic-git";
 
-import { getCommitsByPathspec, readBlobAsString } from "../../../../adapters/git/client.js";
+import { createCatFileBatch, getCommitsByPathspec, readCommitParent } from "../../../../adapters/git/client.js";
 import type { CommitInfo, FileChurnData } from "../../../../adapters/git/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
@@ -53,13 +50,17 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
     repoRoot,
     relativeChunkMap,
     accumulators,
-    isoGitCache,
     concurrency,
     maxAgeMonths,
     chunkTimeoutMs,
     maxFileLines,
     externalSemaphore,
   } = opts;
+  // `opts.isoGitCache` is intentionally NOT used: all git object reads go
+  // through the adapter's CLI `git cat-file` / `git rev-parse`, which stream a
+  // single object from the pack rather than loading the whole packfile into a
+  // JS ArrayBuffer (the isomorphic-git OOM). The field remains on the options
+  // for caller compatibility until the cache threading is dropped.
 
   const effectiveMonths = maxAgeMonths > 0 ? maxAgeMonths : 120;
   const sinceDate = new Date(Date.now() - effectiveMonths * 30 * 86400 * 1000);
@@ -138,6 +139,13 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
         };
       })();
 
+  // One persistent `git cat-file --batch` process for the whole walk. The
+  // chunk-churn does tens of thousands of blob reads; the earlier per-call
+  // `git cat-file blob` spawned a git process EACH time (fork + reopen the
+  // pack .idx) and dominated wall time. Reused across all collectHunks reads,
+  // closed in the finally below. See `.claude/rules/git-cat-file-batch.md`.
+  const blobReader = createCatFileBatch(repoRoot);
+
   const collectHunks = async (entry: { commit: CommitInfo; changedFiles: string[] }): Promise<void> => {
     const release = await acquire();
     try {
@@ -149,15 +157,11 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
       const isBugFix = isBugFixCommitOrBranch(commit.body, commit.sha, bugFixShas);
       const commitTaskIds = extractTaskIds(commit.body);
 
-      // Resolve parent OID via isomorphic-git readCommit (single object read, not a walk)
-      let parentOid: string;
-      try {
-        const commitObj = await git.readCommit({ fs, dir: repoRoot, oid: commit.sha, cache: isoGitCache });
-        if (commitObj.commit.parent.length === 0) return; // root commit
-        parentOid = commitObj.commit.parent[0];
-      } catch {
-        return;
-      }
+      // First-parent oid via the git adapter (CLI). Root commit → null → skip
+      // (no parent to diff against). The adapter owns the git mechanics; no
+      // isomorphic-git here (it loaded the whole packfile into memory).
+      const parentOid = await readCommitParent(repoRoot, commit.sha);
+      if (parentOid === null) return;
 
       await Promise.all(
         relevantFiles.map(async (filePath) => {
@@ -171,8 +175,8 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
           }
 
           const [oldContent, newContent] = await Promise.all([
-            readBlobAsString(repoRoot, parentOid, filePath, isoGitCache),
-            readBlobAsString(repoRoot, commit.sha, filePath, isoGitCache),
+            blobReader.read(parentOid, filePath),
+            blobReader.read(commit.sha, filePath),
           ]);
           blobReads += 2;
 
@@ -206,7 +210,13 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
     }
   };
 
-  await Promise.all(commitEntries.map(collectHunks));
+  try {
+    await Promise.all(commitEntries.map(collectHunks));
+  } finally {
+    // Tear the cat-file process down once all blob reads are done (Phase 2 maps
+    // hunks → chunks in-memory, no further git reads).
+    await blobReader.close();
+  }
 
   // ─── Phase 2: Sequential per file, parallel across files — offset-aware mapping ───
   const processFileHunks = async (filePath: string, hunkDataList: CommitHunkData[]): Promise<void> => {

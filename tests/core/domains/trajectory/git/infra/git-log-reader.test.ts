@@ -26,23 +26,20 @@ vi.mock("../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js
   importOriginal(),
 );
 
-// ─── getHead — isomorphic-git fallback to CLI ────────────────────────────────
+// ─── getHead — resolves HEAD via CLI ─────────────────────────────────────────
 
-describe("getHead fallback", () => {
+describe("getHead (CLI)", () => {
   let reader: GitLogReader;
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("should fall back to CLI when isomorphic-git resolveRef fails", async () => {
+  it("should resolve HEAD via CLI git rev-parse for a real repo", async () => {
     reader = new GitLogReader();
-    const git = await import("isomorphic-git");
 
-    // Mock resolveRef to throw
-    vi.spyOn(git.default, "resolveRef").mockRejectedValue(new Error("mock resolveRef failure"));
-
-    // getHead should fall back to CLI and succeed for a real repo
+    // getHead shells out to `git rev-parse HEAD` (CLI only — isomorphic-git was
+    // removed; its pack reader loaded the whole packfile into memory).
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
     const execAsync = promisify(execFile);
