@@ -13,10 +13,9 @@
  * RUNTIME via a dynamic `import(path)` where `path` is an injected string
  * (`ChunkerConfig.languageModulePath`, threaded through `workerData` by the
  * composition root). A runtime variable path is invisible to the import guard —
- * NO static import, NO exemption. The legacy (not-yet-migrated) languages are
- * built from the ingest-LOCAL `buildChunkerLanguageRegistry()` thunks, which the
- * factory invokes lazily; the native ruby provider is built by the factory
- * itself. See `.claude/rules/domain-boundaries.md` + spec §5.
+ * NO static import, NO exemption. ALL languages are native `domains/language/<lang>`
+ * providers built by the factory itself. See `.claude/rules/domain-boundaries.md`
+ * + spec §5.
  *
  * Each worker thread creates its own `TreeSitterChunker` with independent
  * Parser instances (tree-sitter native bindings are per-thread).
@@ -30,12 +29,10 @@ import { parentPort, workerData } from "node:worker_threads";
 
 import type {
   LanguageFactory,
-  LanguageProvider,
   SymbolIdComposer,
 } from "../../../../../contracts/types/language.js";
 import type { ChunkerConfig } from "../../../../../types.js";
 import { TreeSitterChunker } from "../tree-sitter.js";
-import { buildChunkerLanguageRegistry } from "./chunker-language-registry.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
 
 /**
@@ -45,16 +42,16 @@ import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
  * layer guarantees these exports exist (`domains/language/index.ts`).
  */
 interface LanguageModule {
-  LanguageFactoryImpl: new (
-    legacyBuilders: ReadonlyMap<string, () => LanguageProvider>,
-  ) => LanguageFactory;
+  LanguageFactoryImpl: new () => LanguageFactory;
   DefaultSymbolIdComposer: new () => SymbolIdComposer;
 }
 
 /**
  * Build the chunker engine in-thread. Loads the concrete language module from
- * the injected path, assembles the factory from the ingest-local legacy thunks
- * (the factory builds the native ruby provider itself), and wires the engine.
+ * the injected path, constructs the factory (which builds every native language
+ * provider itself), and wires the engine. The `ambiguousResolveMode` is
+ * irrelevant here — the worker only chunks, never invokes a codegraph resolver —
+ * so the factory is constructed with no options.
  */
 async function buildChunker(config: ChunkerConfig): Promise<TreeSitterChunker> {
   if (!config.languageModulePath) {
@@ -63,7 +60,7 @@ async function buildChunker(config: ChunkerConfig): Promise<TreeSitterChunker> {
     throw new Error("ChunkerConfig.languageModulePath is required in the worker thread");
   }
   const lang = (await import(config.languageModulePath)) as LanguageModule;
-  const languageFactory = new lang.LanguageFactoryImpl(buildChunkerLanguageRegistry());
+  const languageFactory = new lang.LanguageFactoryImpl();
   return new TreeSitterChunker(config, new lang.DefaultSymbolIdComposer(), languageFactory);
 }
 

@@ -39,7 +39,6 @@ import TsLang from "tree-sitter-typescript";
 
 import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
-  CallResolver,
   DispatchTableDef,
   ExtractionSink,
   FileExtraction,
@@ -155,66 +154,23 @@ function joinSymbol(composer: SymbolIdComposer, composed: string, child: NamedSy
 
 /**
  * Per-language extraction dispatch table. Codegraph walks any file
- * whose extension appears here. The walker emits a FileExtraction; the
- * symbol collector pulls top-level symbols out of the parsed tree.
+ * whose extension appears here. The actual walk + `nameOf` come from the
+ * injected `LanguageFactory` (`factory.create(lang).walker`); this map carries
+ * only the parser-load + namespace config the engine still needs per extension.
  *
- * Adding a language: add a tree-sitter parser to deps, create a walker
- * in ingest/pipeline/chunker/extraction/, drop a row here.
+ * Adding a language: add a tree-sitter parser to deps, create a native
+ * `domains/language/<lang>` provider with its walker, drop a row here for the
+ * parser/separator config.
  *
- * Exported (as `CodegraphLanguageConfig`) so the composition-layer
- * `legacyLanguageRegistry` (api/internal/) can wrap the per-extension
- * walker/nameOf into a `LanguageProvider.walker` without relocating this
- * map. The `domains/language` consolidation later moves each language's
- * walker into its native provider (spec §3). bd tea-rags-mcp-cat4.
+ * All languages migrated to native `domains/language/<lang>` providers
+ * (tea-rags-mcp-cen6); the dead `walker`/`nameOf` fields this config once
+ * carried for the legacy adapter were removed by tea-rags-mcp-jh40. The map is
+ * retained for `loadParser` / `scopeSeparator` / `disambiguateOverloads` and the
+ * `SUPPORTED_EXTS` set.
  */
 export interface CodegraphLanguageConfig {
   language: string;
   loadParser: () => Parser.Language;
-  /**
-   * Per-file extraction walker. OPTIONAL: a language migrated to a native
-   * `domains/language/<lang>` provider (Ruby — tea-rags-mcp-cen6) drops its
-   * `walker`/`nameOf` here because the provider supplies them via the injected
-   * `LanguageFactory` (`extractOneFile` reads `factory.create(lang).walker`).
-   * The entry is retained for `loadParser` / `scopeSeparator` /
-   * `disambiguateOverloads`, which still source from this map. Non-migrated
-   * languages keep both (the legacy adapter wraps them).
-   */
-  walker?: (input: {
-    tree: Parser.Tree;
-    code: string;
-    relPath: string;
-    language: string;
-    chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
-  }) => FileExtraction;
-  /**
-   * Maps a tree-sitter node to a `NamedSymbol` descriptor. Returns
-   * null for nodes that are not top-level symbols. `descendsInto: true`
-   * means the walker recurses into the node's children with extended
-   * scope (e.g. class bodies whose methods become nested symbols).
-   * `instanceMethod: true` flags methods that are invoked on an
-   * instance (NOT class methods, NOT static methods, NOT abstract).
-   * When true and the immediate parent is a class scope, the symbol id
-   * uses the `#` separator per the project-wide convention; otherwise
-   * the language's `scopeSeparator` is used. See
-   * `.claude/rules/symbolid-convention.md` for the full table.
-   */
-  /**
-   * Most languages emit zero or one symbol per AST node. Ruby DSL macros
-   * (`attr_accessor :a, :b`) emit MULTIPLE symbols from a single `call`
-   * node — returning an array tells `collectSymbols` to emit each
-   * synthetic symbol at the same scope (no descent, no scope mutation).
-   * Array members MUST have `descendsInto: false`; the array form is for
-   * leaf methods only.
-   *
-   * OPTIONAL: a language migrated to a native `domains/language/<lang>` provider
-   * (ruby / typescript / javascript — tea-rags-mcp-cen6) drops its `nameOf` here
-   * because the engine reads it from `factory.create(lang).walker.nameOf`. The
-   * entry is retained only for `loadParser` / `scopeSeparator` /
-   * `disambiguateOverloads`, which still source from this map. Dropped together
-   * with `walker` (a `nameOf` without `walk` is meaningless). Non-migrated
-   * languages keep both (the legacy adapter wraps them).
-   */
-  nameOf?: (node: Parser.SyntaxNode) => NamedSymbol | NamedSymbol[] | null;
   /**
    * Joiner used to build the fully-qualified symbol id from the scope
    * stack + the local node name. TypeScript / Python use ".", Ruby
@@ -242,51 +198,34 @@ export interface CodegraphLanguageConfig {
 }
 
 export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
+  // All languages are native domains/language/<lang> providers; the engine reads
+  // each walker (`walk`/`nameOf`) from `factory.create(lang).walker`. These
+  // entries are retained only for `loadParser` (per-extension grammar choice) /
+  // `scopeSeparator` / `disambiguateOverloads`. The per-extension grammar choice
+  // for `.ts` vs `.tsx` lives here; the native provider's single walker handles
+  // both grammars' node types.
   ".ts": {
     language: "typescript",
     loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript,
-    // walker + nameOf DROPPED — typescript migrated to the native
-    // domains/language/typescript provider (tea-rags-mcp-cen6). The engine reads
-    // `walk`/`nameOf` from `factory.create("typescript").walker`; this entry is
-    // retained only for `loadParser` (the `.typescript` grammar) / `scopeSeparator`,
-    // still sourced from the map so the per-extension grammar choice for `.ts` vs
-    // `.tsx` stays here. `tsNameOf` now lives in the typescript vertical's
-    // `walker/name-of.ts`; the JavaScript vertical sibling-imports it.
     scopeSeparator: ".",
   },
   ".tsx": {
     language: "typescript",
     loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).tsx,
-    // walker + nameOf DROPPED — see the `.ts` entry. `loadParser` here selects the
-    // `.tsx` grammar (the one difference between the two extensions); the native
-    // provider's single walker handles both grammars' node types.
     scopeSeparator: ".",
   },
   ".py": {
     language: "python",
     loadParser: () => PyLang as Parser.Language,
-    // walker + nameOf DROPPED — python migrated to the native domains/language/python
-    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
-    // `factory.create("python").walker`; this entry is retained only for
-    // `loadParser` / `scopeSeparator` (still sourced from the map).
     scopeSeparator: ".",
   },
   ".rb": {
     language: "ruby",
     loadParser: () => RbLang as Parser.Language,
-    // walker + nameOf DROPPED — ruby migrated to the native domains/language/ruby
-    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
-    // `factory.create("ruby").walker`; this entry is retained only for
-    // `loadParser` / `scopeSeparator` (still sourced from the map).
     scopeSeparator: "::",
   },
-  // JavaScript variants — migrated to the native domains/language/javascript
-  // provider (tea-rags-mcp-cen6). walker + nameOf DROPPED here; the engine reads
-  // `walk`/`nameOf` from `factory.create("javascript").walker`. These entries are
-  // retained only for `loadParser` (the single `tree-sitter-javascript` grammar
-  // serves all four extensions) / `scopeSeparator`. The native `jsNameOf`
-  // sibling-imports `tsNameOf` from the typescript vertical and adds the CommonJS
-  // / pre-class shapes (bd tea-rags-mcp-mwty / z95o / d1f8).
+  // JavaScript variants — the single `tree-sitter-javascript` grammar serves all
+  // four extensions.
   ".js": {
     language: "javascript",
     loadParser: () => JsLang as Parser.Language,
@@ -310,20 +249,11 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   ".go": {
     language: "go",
     loadParser: () => GoLang as Parser.Language,
-    // walker + nameOf DROPPED — go migrated to the native domains/language/go
-    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
-    // `factory.create("go").walker`; this entry is retained only for
-    // `loadParser` / `scopeSeparator` (still sourced from the map).
     scopeSeparator: ".",
   },
   ".java": {
     language: "java",
     loadParser: () => JavaLang as Parser.Language,
-    // walker + nameOf DROPPED — java migrated to the native domains/language/java
-    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
-    // `factory.create("java").walker`; this entry is retained only for
-    // `loadParser` / `scopeSeparator` / `disambiguateOverloads` (still sourced
-    // from the map).
     scopeSeparator: ".",
     // bd tea-rags-mcp-a466 — Java methods can be overloaded; each
     // overload needs its own symbolId so `get_callers`/`get_callees`
@@ -336,26 +266,18 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   ".rs": {
     language: "rust",
     loadParser: () => RustLang as Parser.Language,
-    // walker + nameOf DROPPED — rust migrated to the native domains/language/rust
-    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
-    // `factory.create("rust").walker`; this entry is retained only for
-    // `loadParser` / `scopeSeparator` (still sourced from the map).
     scopeSeparator: "::",
   },
+  // Bash — two extensions, one grammar (`.sh` and `.bash` share the single
+  // BashLang).
   ".sh": {
     language: "bash",
     loadParser: () => BashLang as Parser.Language,
-    // walker + nameOf DROPPED — bash migrated to the native domains/language/bash
-    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
-    // `factory.create("bash").walker`; this entry is retained only for
-    // `loadParser` / `scopeSeparator` (still sourced from the map). Two
-    // extensions, one grammar — `.sh` and `.bash` share the single BashLang.
     scopeSeparator: ".",
   },
   ".bash": {
     language: "bash",
     loadParser: () => BashLang as Parser.Language,
-    // walker + nameOf DROPPED — see the `.sh` entry above.
     scopeSeparator: ".",
   },
 };
@@ -387,18 +309,15 @@ export interface CodegraphProviderDeps {
   graphDb?: GraphDbClient;
   /** Direct mode — pre-built symbol table. Mutually exclusive with `pool`. */
   symbolTable?: GlobalSymbolTable;
-  resolvers: Map<string, CallResolver>;
   /**
    * Per-language capability source (walker + resolver), injected via DI from
    * the composition layer (`api/internal/composition.ts` / `bootstrap/factory.ts`).
    * The provider reads `factory.create(lang).walker` (`walk`/`nameOf`) for the
    * symbol-collection pass and `.resolver` (`resolve`/`resolveDispatch`) for
-   * pass-2 edge resolution — replacing its direct reads of the per-extension
-   * `CODEGRAPH_LANGUAGES` walker fields and the `resolvers` map. Typed as the
-   * contracts `LanguageFactory` interface; the concrete factory is never
-   * imported here (leaf-domain guard forbids `trajectory/** -> domains/language/**`).
-   * Parser-load / scopeSeparator / disambiguateOverloads are still sourced from
-   * `CODEGRAPH_LANGUAGES` (kept in place per the consolidation slice plan).
+   * pass-2 edge resolution. Typed as the contracts `LanguageFactory` interface;
+   * the concrete factory is never imported here (leaf-domain guard forbids
+   * `trajectory/** -> domains/language/**`). Parser-load / scopeSeparator /
+   * disambiguateOverloads are still sourced from `CODEGRAPH_LANGUAGES`.
    * bd tea-rags-mcp-cat4.
    */
   languageFactory: LanguageFactory;
@@ -1399,8 +1318,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 
   private resolveExtraction(extraction: FileExtraction, symbolTable: GlobalSymbolTable): GraphEdges {
     // Resolver capability comes from the injected LanguageFactory (keyed by
-    // language NAME). The factory's resolver wraps the same CallResolver the
-    // provider used to read from `deps.resolvers`, so resolution is unchanged;
+    // language NAME) — each native provider carries its own `CallResolver`.
     // `create` throws for unregistered languages, so gate on `supported()` first
     // (the defensive empty extraction emits `language: ""`, never registered).
     const resolver = this.deps.languageFactory.supported().includes(extraction.language)

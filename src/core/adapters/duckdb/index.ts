@@ -2,7 +2,6 @@ export { DuckDbGraphClient, type DuckDbGraphClientOptions } from "./client.js";
 export { DuckDbOpenFailedError } from "./errors.js";
 export {
   GraphDbClientPool,
-  type CodegraphPoolDeps,
   type CollectionGraphHandle,
   type CollectionInitHook,
   type GraphDbClientPoolOptions,

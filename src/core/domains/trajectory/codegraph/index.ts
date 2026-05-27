@@ -9,7 +9,7 @@
  */
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
-import type { AmbiguousResolveMode, CallResolver } from "../../../contracts/types/codegraph.js";
+import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
 import type { LanguageFactory, SymbolIdComposer } from "../../../contracts/types/language.js";
 import type { Trajectory } from "../../../contracts/types/trajectory.js";
 import type { CodegraphExclusionOptions } from "./exclusion.js";
@@ -24,13 +24,12 @@ import { createSymbolsTrajectory } from "./symbols/index.js";
  * localising DuckDB's single-writer file lock to within one project's
  * scope.
  *
- * Resolvers (TS, Python, Go, …) are process-scoped — they hold language
- * parsers and tsconfig state, neither of which depends on the indexed
- * collection.
+ * Call resolvers (TS, Python, Go, …) are process-scoped and carried by each
+ * native `domains/language/<lang>` provider, reached via the injected
+ * `LanguageFactory` — not threaded as a separate map here.
  */
 export interface CodegraphDeps {
   pool: GraphDbClientPool;
-  resolvers: Map<string, CallResolver>;
   /**
    * Cross-language symbolId mapper injected into the provider's `joinSymbol`
    * (replacing the local `#`/`.`/scopeSeparator convention logic). Typed as
@@ -51,9 +50,7 @@ export interface CodegraphDeps {
    * Ambiguous-call resolution mode threaded from `codegraph.ambiguousResolveMode`
    * (bootstrap factory). Used by composition roots to construct NATIVE
    * `domains/language/<lang>` providers whose resolver carries the configured
-   * mode (e.g. `new RubyLanguage(mode)`) — the legacy adapter built the same
-   * mode into its `resolvers` map entries, so threading it keeps the native
-   * vertical behaviour-identical for non-default modes. Optional: defaults to
+   * mode (e.g. `new RubyLanguage(mode)`). Optional: defaults to
    * `DEFAULT_AMBIGUOUS_RESOLVE_MODE` ("strict") when omitted (tests).
    */
   ambiguousResolveMode?: AmbiguousResolveMode;

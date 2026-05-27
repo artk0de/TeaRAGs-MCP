@@ -142,8 +142,8 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     childChunkTypes: ["method_definition", "call_expression"],
     alwaysExtractChildren: true,
     // NOTE: TypeScript is now a NATIVE `domains/language/typescript` provider
-    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `typescript`
-    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver come from
+    // (tea-rags-mcp-cen6) — the factory builds `typescript`
+    // so the chunker hooks / walker / resolver come from
     // `TypeScriptLanguage`, not this entry. This `LANGUAGE_DEFINITIONS.typescript`
     // row is retained only so `CODE_LANGUAGES` / `LANGUAGE_MAP` still report
     // typescript as a code language; its `hooks` field is intentionally absent
@@ -169,8 +169,8 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
       "variable_declaration",
     ],
     // NOTE: JavaScript is now a NATIVE `domains/language/javascript` provider
-    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `javascript`
-    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver / chunkSymbols
+    // (tea-rags-mcp-cen6) — the factory builds `javascript`
+    // so the chunker hooks / walker / resolver / chunkSymbols
     // come from `JavaScriptLanguage`, not this entry. This
     // `LANGUAGE_DEFINITIONS.javascript` row is retained only so `CODE_LANGUAGES`
     // / `LANGUAGE_MAP` still report javascript as a code language; its `hooks`
@@ -195,8 +195,8 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // omit the explicit setting.
     scopeContainerTypes: ["class_definition"],
     // NOTE: Python is now a NATIVE `domains/language/python` provider
-    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `python`
-    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver come from
+    // (tea-rags-mcp-cen6) — the factory builds `python`
+    // so the chunker hooks / walker / resolver come from
     // `PythonLanguage`, not this entry. This `LANGUAGE_DEFINITIONS.python` row
     // is retained only so `CODE_LANGUAGES` / `LANGUAGE_MAP` still report python
     // as a code language. Python has no `hooks` chain (generic chunking) — the
@@ -208,8 +208,8 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_declaration", "method_declaration", "type_declaration", "interface_declaration"],
     // NOTE: Go is now a NATIVE `domains/language/go` provider
-    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `go`
-    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver come from
+    // (tea-rags-mcp-cen6) — the factory builds `go`
+    // so the chunker hooks / walker / resolver come from
     // `GoLanguage`, not this entry. This `LANGUAGE_DEFINITIONS.go` row is
     // retained only so `CODE_LANGUAGES` / `LANGUAGE_MAP` still report go as a
     // code language. Go has no `hooks` chain (generic chunking) — the native
@@ -271,8 +271,8 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // composes correctly.
     scopeContainerTypes: ["impl_item", "trait_item", "mod_item"],
     // NOTE: Rust is now a NATIVE `domains/language/rust` provider
-    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `rust`
-    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver come from
+    // (tea-rags-mcp-cen6) — the factory builds `rust`
+    // so the chunker hooks / walker / resolver come from
     // `RustLanguage`, not this entry. This `LANGUAGE_DEFINITIONS.rust` row is
     // retained only so `CODE_LANGUAGES` / `LANGUAGE_MAP` still report rust as a
     // code language. Rust has no `hooks` chain (generic chunking) — the native
@@ -336,8 +336,8 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // get_callers / get_callees.
     disambiguateOverloads: true,
     // NOTE: Java is now a NATIVE `domains/language/java` provider
-    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `java`
-    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver come from
+    // (tea-rags-mcp-cen6) — the factory builds `java`
+    // so the chunker hooks / walker / resolver come from
     // `JavaLanguage`, not this entry. This `LANGUAGE_DEFINITIONS.java` row is
     // retained only so `CODE_LANGUAGES` / `LANGUAGE_MAP` still report java as a
     // code language. Java has no `hooks` chain (generic chunking) — the native
@@ -350,8 +350,8 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_definition", "command"],
     // NOTE: Bash is now a NATIVE `domains/language/bash` provider
-    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `bash`
-    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver come from
+    // (tea-rags-mcp-cen6) — the factory builds `bash`
+    // so the chunker hooks / walker / resolver come from
     // `BashLanguage`, not this entry. This `LANGUAGE_DEFINITIONS.bash` row is
     // retained only so `CODE_LANGUAGES` / `LANGUAGE_MAP` still report bash as a
     // code language. Bash has no `hooks` chain (generic chunking) — the native
@@ -396,7 +396,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     scopeContainerTypes: ["class", "module", "singleton_class"],
     scopeSeparator: "::",
     // NOTE: Ruby is now a NATIVE `domains/language/ruby` provider
-    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `ruby` (NATIVE_LANGUAGES),
+    // (tea-rags-mcp-cen6) — the factory builds `ruby`,
     // so the chunker hooks / walker / resolver come from `RubyLanguage`, not
     // this entry. This `LANGUAGE_DEFINITIONS.ruby` row is retained only so
     // `CODE_LANGUAGES` / `LANGUAGE_MAP` still report ruby as a code language;
@@ -408,9 +408,8 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // - "singleton_class" → we pass through it to find methods inside
   },
   markdown: {
-    // NOTE: Markdown is now a NATIVE `domains/language/markdown` provider
-    // (tea-rags-mcp-cen6, the FINAL vertical) — the legacy adapter + chunker
-    // registry SKIP `markdown` (NATIVE_LANGUAGES / NATIVE_CHUNKER_LANGUAGES), so
+    // NOTE: Markdown is a NATIVE `domains/language/markdown` provider
+    // (tea-rags-mcp-cen6, the FINAL vertical) — the factory builds it itself, so
     // the chunker hooks come from `MarkdownLanguage`, not this entry. This
     // `LANGUAGE_DEFINITIONS.markdown` row is retained only so `LANGUAGE_MAP`
     // still resolves `.md` / `.markdown` to language "markdown".

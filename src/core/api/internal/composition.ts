@@ -21,7 +21,6 @@ import type { SquashOptions } from "../../domains/trajectory/git/infra/metrics.j
 import type { GitProviderConfig } from "../../domains/trajectory/git/provider.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";
-import { buildLegacyLanguageRegistry } from "./legacy-language-adapter.js";
 
 export interface CompositionResult {
   registry: TrajectoryRegistry;
@@ -31,13 +30,12 @@ export interface CompositionResult {
   allStatsAccumulators: StatsAccumulatorDescriptor[];
   resolvedPresets: RerankPreset[];
   /**
-   * Real `LanguageFactory` backed by the composition-root hybrid adapter
-   * (`buildLegacyLanguageRegistry`) — wraps the legacy per-language maps into
-   * `LanguageProvider`s without relocating code (spec §5, bd tea-rags-mcp-cat4).
-   * Injected into the codegraph provider (walker + resolver capabilities). The
-   * chunker worker is a SECOND composition root that builds its own factory
-   * (functions can't cross the worker boundary). This instance carries the
-   * codegraph resolvers.
+   * Real `LanguageFactory` — all languages are native `domains/language/<lang>`
+   * providers built by the factory itself (the legacy per-language adapter was
+   * removed by tea-rags-mcp-jh40 once every vertical migrated). Injected into the
+   * codegraph provider (walker + resolver capabilities). The chunker worker is a
+   * SECOND composition root that builds its own factory (functions can't cross
+   * the worker boundary).
    */
   languageFactory: LanguageFactory;
 }
@@ -61,19 +59,14 @@ export interface CompositionOptions {
 }
 
 export function createComposition(options: CompositionOptions = {}): CompositionResult {
-  // Real LanguageFactory: it ENCAPSULATES construction. The legacy adapter
-  // supplies deferred per-language builder thunks for the not-yet-migrated
-  // languages (composition-root hybrid, spec §5); the factory builds migrated
-  // languages (ruby — NATIVE_LANGUAGES) natively itself. When codegraph is
-  // enabled its resolvers back each legacy provider's `resolver` capability;
-  // native providers carry their own resolver, built with the configured
-  // ambiguous-resolve mode (threaded via CodegraphDeps) so they stay
-  // behaviour-identical to the legacy resolver-map entry. Built before the
+  // Real LanguageFactory: it ENCAPSULATES construction. All languages are
+  // native `domains/language/<lang>` providers built by the factory itself; each
+  // native provider carries its own resolver, built with the configured
+  // ambiguous-resolve mode (threaded via CodegraphDeps). Built before the
   // codegraph trajectory so it can be injected into the codegraph provider.
-  const languageFactory = new LanguageFactoryImpl(
-    buildLegacyLanguageRegistry(options.codegraph?.resolvers),
-    { ambiguousResolveMode: options.codegraph?.ambiguousResolveMode },
-  );
+  const languageFactory = new LanguageFactoryImpl({
+    ambiguousResolveMode: options.codegraph?.ambiguousResolveMode,
+  });
 
   const registry = new TrajectoryRegistry();
   registry.register(new StaticTrajectory());

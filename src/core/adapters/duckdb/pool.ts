@@ -28,7 +28,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
+import type { GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
 import { DuckDbGraphClient } from "./client.js";
 import { DuckDbCloseFailedError, DuckDbOpenFailedError } from "./errors.js";
 
@@ -280,14 +280,4 @@ export class GraphDbClientPool {
     this.clients.clear();
     await Promise.all(all.map(async (e) => e.graphDb.close().catch(() => undefined)));
   }
-}
-
-/**
- * Per-collection bundle handed to the codegraph trajectory. The
- * trajectory owns the resolvers map (process-scoped, not per-collection)
- * and the pool (which yields per-collection graphDb + symbolTable).
- */
-export interface CodegraphPoolDeps {
-  pool: GraphDbClientPool;
-  resolvers: Map<string, CallResolver>;
 }

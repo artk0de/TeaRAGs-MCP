@@ -21,7 +21,6 @@ import {
 } from "../core/api/index.js";
 import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
-import type { CallResolver } from "../core/contracts/types/codegraph.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
@@ -204,23 +203,19 @@ function wireCodegraph(
 
   const ambiguousMode = codegraph.ambiguousResolveMode;
   // Single cross-language symbolId mapper injected into every codegraph
-  // symbolId-building consumer (the provider's joinSymbol + the resolvers).
-  // bootstrap/ is the composition layer that may import the concrete; the
-  // consumers type it as the contracts `SymbolIdComposer` interface, so the
-  // `trajectory/** -> domains/language/**` leaf-domain guard holds. See spec
-  // §1a + `.claude/rules/symbolid-convention.md`.
+  // symbolId-building consumer (the provider's joinSymbol + the native
+  // resolvers). bootstrap/ is the composition layer that may import the
+  // concrete; the consumers type it as the contracts `SymbolIdComposer`
+  // interface, so the `trajectory/** -> domains/language/**` leaf-domain guard
+  // holds. See spec §1a + `.claude/rules/symbolid-convention.md`.
   const symbolIdComposer = new DefaultSymbolIdComposer();
-  // EMPTY: every source language with a codegraph resolver — typescript +
-  // javascript + python + ruby + go + java + rust + bash (the last) — is now
-  // served by its NATIVE domains/language/<lang> provider (its own
-  // TSCallResolver / JavascriptCallResolver / PythonCallResolver /
-  // RubyCallResolver / GoCallResolver / JavaCallResolver / RustCallResolver /
-  // BashCallResolver, built with `ambiguousMode` threaded via CodegraphDeps).
-  // The legacy adapter skips them all (NATIVE_LANGUAGES), so there are no
-  // entries here. The only remaining adapter-served language is markdown, which
-  // is doc-only (no resolver). This `resolvers` map is now empty — the wiring
-  // machinery is retained pending the legacy-removal cleanup (tea-rags-mcp-jh40).
-  const resolvers = new Map<string, CallResolver>([]);
+  // Every source language with a codegraph resolver — typescript + javascript +
+  // python + ruby + go + java + rust + bash — is served by its NATIVE
+  // domains/language/<lang> provider (its own TSCallResolver / … built with
+  // `ambiguousMode` threaded via CodegraphDeps). The provider reaches each
+  // resolver via `factory.create(lang).resolver`; there is no separate resolver
+  // map to thread (the legacy adapter that consumed one was removed by
+  // tea-rags-mcp-jh40).
 
   const pool = new GraphDbClientPool({
     rootDir,
@@ -260,12 +255,9 @@ function wireCodegraph(
 
   const deps: CodegraphDeps = {
     pool,
-    resolvers,
     composer: symbolIdComposer,
-    // Threaded to composition roots so NATIVE language providers (ruby) build
-    // their resolver with the configured mode — the legacy adapter baked the
-    // same mode into its `resolvers` map, so this keeps the native vertical
-    // behaviour-identical for non-default modes.
+    // Threaded to composition roots so NATIVE language providers (ruby, …) build
+    // their resolver with the configured mode.
     ambiguousResolveMode: ambiguousMode,
     // Codegraph-layer exclusion (test files + user-supplied patterns).
     // The shape mirrors `CodegraphExclusionOptions`; the provider

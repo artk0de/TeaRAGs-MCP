@@ -2,10 +2,10 @@
  * `MarkdownLanguage` — the native per-language facade for Markdown, the NINTH and
  * FINAL vertical migrated off the composition-root legacy adapter into
  * `domains/language/` (spec §2, §4; bd tea-rags-mcp-cen6, following ruby +
- * typescript + javascript + python + go + java + rust + bash). After markdown,
- * EVERY language is native: `buildLegacyLanguageRegistry` and
- * `buildChunkerLanguageRegistry` return EMPTY maps and the legacy adapter is
- * fully vestigial (removed by tea-rags-mcp-jh40).
+ * typescript + javascript + python + go + java + rust + bash). With markdown,
+ * EVERY language is native; the composition-root legacy adapter + chunker
+ * registry that once wrapped per-language config into thunks were removed by
+ * tea-rags-mcp-jh40, and the factory builds every provider itself.
  *
  * Markdown is DOC-ONLY (spec §1a, §1: "a doc language has only `chunkerHooks`,
  * no walker/resolver"). It exposes ONLY two of the four capability slots:

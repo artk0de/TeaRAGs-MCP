@@ -7,8 +7,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createStubPool } from "../__helpers__/codegraph-pool.js";
 import { DuckDbGraphClient } from "../../../src/core/adapters/duckdb/client.js";
 import { createComposition } from "../../../src/core/api/index.js";
-import type { CallResolver } from "../../../src/core/contracts/types/codegraph.js";
-import { TSCallResolver } from "../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 describe("createComposition", () => {
@@ -93,13 +91,9 @@ describe("createComposition", () => {
     });
 
     it("registers SymbolsTrajectory and surfaces its payload signals + presets", () => {
-      const resolvers = new Map<string, CallResolver>([
-        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
-      ]);
       const { registry, allPayloadSignalDescriptors, resolvedPresets } = createComposition({
         codegraph: {
           pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()),
-          resolvers,
         },
       });
       expect(registry.has("codegraph.symbols")).toBe(true);
@@ -122,11 +116,8 @@ describe("createComposition", () => {
     // resolved set; codegraph disabled → blastRadius absent (its
     // signals would be unpopulated).
     it("composite blastRadius is in resolved presets only when codegraph is wired", () => {
-      const resolvers = new Map<string, CallResolver>([
-        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
-      ]);
       const withCodegraph = createComposition({
-        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()), resolvers },
+        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) },
       });
       const withoutCodegraph = createComposition();
 
@@ -147,11 +138,8 @@ describe("createComposition", () => {
     // codegraph, the override is skipped and the trajectory preset
     // wins unchanged.
     it("composite overrides supersede trajectory presets for hotspots / techDebt / dangerous / ownership / securityAudit / codeReview", () => {
-      const resolvers = new Map<string, CallResolver>([
-        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
-      ]);
       const withCodegraph = createComposition({
-        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()), resolvers },
+        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) },
       });
       const withoutCodegraph = createComposition();
       const overriddenNames = ["hotspots", "techDebt", "dangerous", "ownership", "securityAudit", "codeReview"];
@@ -168,11 +156,8 @@ describe("createComposition", () => {
     });
 
     it("architecturalHub is a new composite — present only when codegraph is wired", () => {
-      const resolvers = new Map<string, CallResolver>([
-        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
-      ]);
       const withCodegraph = createComposition({
-        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()), resolvers },
+        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) },
       });
       const withoutCodegraph = createComposition();
 

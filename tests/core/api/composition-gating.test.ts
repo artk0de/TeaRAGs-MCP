@@ -20,20 +20,18 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createStubPool } from "../__helpers__/codegraph-pool.js";
 import { DuckDbGraphClient } from "../../../src/core/adapters/duckdb/client.js";
 import { createComposition } from "../../../src/core/api/index.js";
-import type { CallResolver } from "../../../src/core/contracts/types/codegraph.js";
-import { TSCallResolver } from "../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const NEW_CODEGRAPH_COMPOSITES = ["blastRadius", "architecturalHub", "entryPoint"];
 const OVERRIDE_COMPOSITES = ["hotspots", "techDebt", "dangerous", "ownership", "securityAudit", "codeReview"];
 
 function makeCodegraphDeps(graphDb: DuckDbGraphClient) {
-  const resolvers = new Map<string, CallResolver>([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]);
   // Wrap the single graphDb in a stub pool that returns the same
   // handle for every collection. This test never exercises the
   // codegraph DB — it only checks preset gating — so the single-DB
-  // stub is sufficient.
-  return { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()), resolvers };
+  // stub is sufficient. Resolvers are carried by the native language
+  // providers built by the factory, not threaded as a separate map.
+  return { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) };
 }
 
 describe("Composition + Reranker — end-to-end provider gating", () => {

@@ -2,10 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
 import { DefaultSymbolIdComposer, LanguageFactoryImpl } from "../../../../../../src/core/domains/language/index.js";
-import { buildLegacyLanguageRegistry } from "../../../../../../src/core/api/internal/legacy-language-adapter.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
-const testLanguageFactory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
+const testLanguageFactory = new LanguageFactoryImpl();
 
 /**
  * Regression test for the symbolId stability fix in chunkOversizedNode
