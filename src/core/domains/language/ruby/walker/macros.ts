@@ -35,6 +35,8 @@ import type Parser from "tree-sitter";
 
 import type { MacroSymbol } from "../../../../contracts/types/chunker.js";
 
+import { RUBY_DSL } from "../dsl/index.js";
+
 /**
  * A synthesised method symbol emitted by a Ruby DSL macro. The chunker
  * wraps these into `CodeChunk` entries with `chunkType="function"`, the
@@ -46,40 +48,6 @@ import type { MacroSymbol } from "../../../../contracts/types/chunker.js";
  * capability, not a `domains/language/` import). Same shape.
  */
 export type RubyMacroSymbol = MacroSymbol;
-
-/** Builder type: turn a base symbol name into one or more synthetic methods. */
-type MacroBuilder = (base: string) => { name: string; kind: "instance" | "static" }[];
-
-/**
- * Macro name → builder mapping. Only macros whose effect is "declare these
- * named methods on the enclosing class" appear here. AR associations
- * (`has_many`, `belongs_to`) intentionally live ONLY in the codegraph
- * provider for now — the chunker emits one chunk per macro NAME (not per
- * accessor), and AR association expansion would inflate accessor count
- * without changing chunk content semantics. The codegraph layer needs them
- * for symbol resolution, the chunker does not.
- */
-const RUBY_DSL_MACROS: Record<string, MacroBuilder> = {
-  attr_accessor: (b) => [
-    { name: b, kind: "instance" },
-    { name: `${b}=`, kind: "instance" },
-  ],
-  attr_reader: (b) => [{ name: b, kind: "instance" }],
-  attr_writer: (b) => [{ name: `${b}=`, kind: "instance" }],
-  // ActiveSupport class-level accessors — declare class methods.
-  cattr_accessor: (b) => [
-    { name: b, kind: "static" },
-    { name: `${b}=`, kind: "static" },
-  ],
-  cattr_reader: (b) => [{ name: b, kind: "static" }],
-  cattr_writer: (b) => [{ name: `${b}=`, kind: "static" }],
-  mattr_accessor: (b) => [
-    { name: b, kind: "static" },
-    { name: `${b}=`, kind: "static" },
-  ],
-  mattr_reader: (b) => [{ name: b, kind: "static" }],
-  mattr_writer: (b) => [{ name: `${b}=`, kind: "static" }],
-};
 
 /**
  * Walk the immediate body of a class / module node and collect every
@@ -171,15 +139,15 @@ function pushMacroSymbols(node: Parser.SyntaxNode, out: RubyMacroSymbol[]): void
     return;
   }
 
-  const builder = RUBY_DSL_MACROS[macroName];
-  if (!builder) return;
+  const entry = RUBY_DSL[macroName];
+  if (!entry?.declares) return;
   const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
   if (!args) return;
   for (const arg of args.namedChildren) {
     if (arg.type !== "simple_symbol") continue;
     const base = stripSymbolColon(arg.text);
     if (base.length === 0) continue;
-    for (const m of builder(base)) {
+    for (const m of entry.declares(base)) {
       out.push({ name: m.name, kind: m.kind, startLine, endLine });
     }
   }
