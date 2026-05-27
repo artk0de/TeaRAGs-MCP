@@ -3,9 +3,9 @@ import { remark } from "remark";
 import remarkFrontmatter from "remark-frontmatter";
 import remarkGfm from "remark-gfm";
 
-import type { CodeChunk } from "../../../../../../types.js";
-import type { CodeChunker } from "../../base.js";
-import { CharacterChunker } from "../../character.js";
+import type { CodeChunk } from "../../../../types.js";
+import type { CodeChunker } from "./base.js";
+import { CharacterChunker } from "./character.js";
 
 interface HeadingInfo {
   depth: number;

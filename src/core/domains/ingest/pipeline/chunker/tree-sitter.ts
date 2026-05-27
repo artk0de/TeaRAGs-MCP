@@ -23,7 +23,7 @@ import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import type { LanguageConfig } from "./config.js";
 import { extractGoSymbol } from "./hooks/go/index.js";
-import { MarkdownChunker } from "./hooks/markdown/index.js";
+import { MarkdownChunker } from "./markdown-chunker.js";
 import { createHookContext, type ChunkingHook, type HookContext } from "./hooks/types.js";
 
 export class TreeSitterChunker implements CodeChunker {

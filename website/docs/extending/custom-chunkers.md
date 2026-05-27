@@ -201,7 +201,7 @@ Every chunk must carry:
 |---------|--------|
 | Language definitions (registry) | `src/core/domains/ingest/pipeline/chunker/config.ts` |
 | Tree-sitter chunker (default) | `src/core/domains/ingest/pipeline/chunker/tree-sitter.ts` |
-| Markdown chunker (remark-based) | `src/core/domains/ingest/pipeline/chunker/hooks/markdown/chunker.ts` |
+| Markdown chunker (remark-based) | `src/core/domains/ingest/pipeline/chunker/markdown-chunker.ts` |
 | Character chunker (fallback) | `src/core/domains/ingest/pipeline/chunker/character.ts` |
 | Hook interface | `src/core/domains/ingest/pipeline/chunker/hooks/types.ts` |
 | TypeScript hooks | `src/core/domains/ingest/pipeline/chunker/hooks/typescript/` |

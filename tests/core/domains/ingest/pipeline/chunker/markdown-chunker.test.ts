@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MarkdownChunker } from "../../../../../../../../src/core/domains/ingest/pipeline/chunker/hooks/markdown/chunker.js";
+import { MarkdownChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/markdown-chunker.js";
 
 const defaultConfig = { maxChunkSize: 5000 };
 

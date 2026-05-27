@@ -408,6 +408,12 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // - "singleton_class" → we pass through it to find methods inside
   },
   markdown: {
+    // NOTE: Markdown is now a NATIVE `domains/language/markdown` provider
+    // (tea-rags-mcp-cen6, the FINAL vertical) — the legacy adapter + chunker
+    // registry SKIP `markdown` (NATIVE_LANGUAGES / NATIVE_CHUNKER_LANGUAGES), so
+    // the chunker hooks come from `MarkdownLanguage`, not this entry. This
+    // `LANGUAGE_DEFINITIONS.markdown` row is retained only so `LANGUAGE_MAP`
+    // still resolves `.md` / `.markdown` to language "markdown".
     // Markdown uses remark parser (unified/mdast) instead of tree-sitter
     // due to compatibility issues with tree-sitter-markdown grammar (requires tree-sitter 0.26+)
     // Remark is a robust CommonMark/GFM parser used by VS Code, Gatsby, etc.

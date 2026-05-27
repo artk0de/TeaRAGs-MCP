@@ -47,6 +47,7 @@ export const NATIVE_CHUNKER_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "java",
   "rust",
   "bash",
+  "markdown",
 ]);
 
 /**

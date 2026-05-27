@@ -138,6 +138,7 @@ export const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "java",
   "rust",
   "bash",
+  "markdown",
 ]);
 
 /**

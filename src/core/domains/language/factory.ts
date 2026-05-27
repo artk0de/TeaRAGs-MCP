@@ -6,6 +6,7 @@ import { UnsupportedLanguageError } from "./errors.js";
 import { GoLanguage } from "./go/index.js";
 import { JavaLanguage } from "./java/index.js";
 import { JavaScriptLanguage } from "./javascript/index.js";
+import { MarkdownLanguage } from "./markdown/index.js";
 import { PythonLanguage } from "./python/index.js";
 import { RubyLanguage } from "./ruby/index.js";
 import { RustLanguage } from "./rust/index.js";
@@ -39,6 +40,7 @@ const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "java",
   "rust",
   "bash",
+  "markdown",
 ]);
 
 /**
@@ -113,6 +115,8 @@ export class LanguageFactoryImpl implements LanguageFactory {
       if (lang === "java") return new JavaLanguage(this.ambiguousResolveMode);
       if (lang === "rust") return new RustLanguage(this.ambiguousResolveMode);
       if (lang === "bash") return new BashLanguage(this.ambiguousResolveMode);
+      // Markdown is DOC-ONLY — no resolver, so no `mode` is threaded.
+      if (lang === "markdown") return new MarkdownLanguage();
     }
     const builder = this.legacyBuilders.get(lang);
     if (builder) return builder();

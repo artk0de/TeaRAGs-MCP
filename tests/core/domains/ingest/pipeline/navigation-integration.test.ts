@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { MarkdownChunker } from "../../../../../src/core/domains/ingest/pipeline/chunker/hooks/markdown/chunker.js";
+import { MarkdownChunker } from "../../../../../src/core/domains/ingest/pipeline/chunker/markdown-chunker.js";
 import { assignNavigationAndDocSymbolId } from "../../../../../src/core/domains/ingest/pipeline/file-processor.js";
 import { StaticPayloadBuilder } from "../../../../../src/core/domains/trajectory/static/provider.js";
 
