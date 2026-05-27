@@ -17,7 +17,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
+import { DuckDBInstance, type DuckDBConnection, type DuckDBValue } from "@duckdb/node-api";
 
 import type {
   CalleeEdge,
@@ -38,6 +38,16 @@ import type {
 // lives in domains/trajectory/codegraph/infra/ and the adapter only
 // exposes the primitives (listAdjacency, replaceCycles, replacePageRanks)
 // the domain orchestrator drives.
+
+/**
+ * Fallback memory_limit applied to every write (READ_WRITE) connection when
+ * no `resources.memoryLimit` is wired. DuckDB's own default is ~80% of system
+ * RAM (e.g. 14.3 GiB on an 18 GB host); leaving a write connection at that
+ * default can OOM the machine natively during codegraph ingest. Mirrors the
+ * `CODEGRAPH_DB_MEMORY_LIMIT` config default ("2GB") so behaviour is the same
+ * whether the cap arrives via config wiring or this safety net.
+ */
+const DEFAULT_DB_MEMORY_LIMIT = "2GB";
 
 export interface DuckDbGraphClientOptions {
   path: string;
@@ -128,26 +138,48 @@ export class DuckDbGraphClient implements GraphDbClient {
     // ceiling entirely on RO. The cap is a protective layer for the
     // write/ingest path; readers never mutate and inherit the daemon's
     // already-applied ceiling on the underlying file.
-    const r = this.options.accessMode === "READ_ONLY" ? undefined : this.options.resources;
-    if (r) {
-      const spillDir = r.tempDirectory;
-      if (spillDir) {
-        try {
-          mkdirSync(spillDir, { recursive: true });
-        } catch {
-          // Directory may already exist (concurrent first-callers from
-          // the pool). The SET below is the load-bearing step.
+    const isReadOnly = this.options.accessMode === "READ_ONLY";
+    const r = isReadOnly ? undefined : this.options.resources;
+    if (!isReadOnly) {
+      // A write (READ_WRITE) connection must NEVER be left uncapped: an
+      // unconfigured connection inherits DuckDB's ~80%-of-system-RAM default
+      // (14.3 GiB on an 18 GB host) and can OOM the machine natively during
+      // codegraph ingest. Always apply the configured limit, or the built-in
+      // conservative default when none is wired. RO connections reject SET
+      // writes and inherit the file's already-applied ceiling, so skip there.
+      const memoryLimit = r?.memoryLimit ?? DEFAULT_DB_MEMORY_LIMIT;
+      // `execSilent` swallows a rejected SET (older drivers, bad value). Read
+      // the effective limit before/after: if it is unchanged the cap did NOT
+      // take and the connection is silently running at DuckDB's ~80%-of-RAM
+      // default — surface that loudly instead of risking a native OOM. That
+      // silent failure is exactly what hid the codegraph OOM in the field.
+      const beforeLimit = await this.readMemoryLimit();
+      await this.execSilent(`SET memory_limit = '${memoryLimit.replace(/'/g, "''")}'`);
+      const afterLimit = await this.readMemoryLimit();
+      if (beforeLimit !== undefined && afterLimit === beforeLimit) {
+        console.error(
+          `[DuckDbGraphClient] memory_limit cap '${memoryLimit}' did NOT take effect ` +
+            `(still '${afterLimit}') — connection running at DuckDB's default ` +
+            `(~80% of system RAM); native OOM risk. db=${this.options.path}`,
+        );
+      }
+      if (r) {
+        const spillDir = r.tempDirectory;
+        if (spillDir) {
+          try {
+            mkdirSync(spillDir, { recursive: true });
+          } catch {
+            // Directory may already exist (concurrent first-callers from
+            // the pool). The SET below is the load-bearing step.
+          }
+          await this.execSilent(`SET temp_directory = '${spillDir.replace(/'/g, "''")}'`);
         }
-        await this.execSilent(`SET temp_directory = '${spillDir.replace(/'/g, "''")}'`);
-      }
-      if (r.memoryLimit) {
-        await this.execSilent(`SET memory_limit = '${r.memoryLimit.replace(/'/g, "''")}'`);
-      }
-      if (r.threads !== undefined && r.threads > 0) {
-        await this.execSilent(`SET threads = ${Math.floor(r.threads)}`);
-      }
-      if (r.preserveInsertionOrder === false) {
-        await this.execSilent(`SET preserve_insertion_order = false`);
+        if (r.threads !== undefined && r.threads > 0) {
+          await this.execSilent(`SET threads = ${Math.floor(r.threads)}`);
+        }
+        if (r.preserveInsertionOrder === false) {
+          await this.execSilent(`SET preserve_insertion_order = false`);
+        }
       }
     }
   }
@@ -163,6 +195,20 @@ export class DuckDbGraphClient implements GraphDbClient {
     } catch {
       // Older driver versions reject unrecognised setting names; allow
       // the ingest path to continue without the cap.
+    }
+  }
+
+  /**
+   * Read the effective DuckDB `memory_limit` (e.g. "1.8 GiB"). Returns
+   * `undefined` if the setting can't be read — used by `init()` to verify the
+   * resource-ceiling SET actually took effect (see the OOM guard there).
+   */
+  private async readMemoryLimit(): Promise<string | undefined> {
+    try {
+      const rows = await this.queryAll<{ m: string }>("SELECT current_setting('memory_limit') AS m");
+      return rows[0]?.m;
+    } catch {
+      return undefined;
     }
   }
 
@@ -195,19 +241,38 @@ export class DuckDbGraphClient implements GraphDbClient {
     await this.requireConn().run(sql);
   }
 
-  /** Generic prepared exec with positional params. */
+  /**
+   * Generic prepared exec with positional params.
+   *
+   * `destroySync()` in `finally` is load-bearing, not hygiene: @duckdb/node-api
+   * prepared statements hold NATIVE resources that V8's GC does not account for
+   * (the native size is invisible to heap heuristics, so finalizers fire too
+   * late or never under churn). pass-2 issues millions of per-edge INSERTs
+   * through `run`; undisposed statements ballooned the indexer to 32 GB on a
+   * large repo. Always dispose the statement we created.
+   */
   async run(sql: string, params: unknown[] = []): Promise<void> {
     const prep = await this.requireConn().prepare(sql);
-    bindParams(prep, asBindable(params));
-    await prep.run();
+    try {
+      bindParams(prep, asBindable(params));
+      await prep.run();
+    } finally {
+      prep.destroySync();
+    }
   }
 
-  /** Generic query returning all rows as plain JSON objects. */
+  /** Generic query returning all rows as plain JSON objects. Disposes the
+   * prepared statement after materialising rows (same native-leak guard as
+   * `run` — see its doc comment). */
   async queryAll<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
     const prep = await this.requireConn().prepare(sql);
-    bindParams(prep, asBindable(params));
-    const reader = await prep.runAndReadAll();
-    return reader.getRowObjectsJson() as T[];
+    try {
+      bindParams(prep, asBindable(params));
+      const reader = await prep.runAndReadAll();
+      return reader.getRowObjectsJson() as T[];
+    } finally {
+      prep.destroySync();
+    }
   }
 
   async upsertFile(node: GraphFileNode, edges: GraphEdges): Promise<void> {
@@ -393,39 +458,49 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   /**
-   * Stream the adjacency for the requested scope as
-   * `[source, target]` pairs. Domain consumer pulls one pair at a
-   * time without materialising a JS-side array of all rows first.
+   * Stream the adjacency for the requested scope as `[source, target]`
+   * pairs, fetched from DuckDB one result chunk (~2048 rows) at a time.
    *
-   * The DuckDB driver (`runAndReadAll`) only exposes a "read all rows"
-   * shape today — there is no cursor primitive in @duckdb/node-api
-   * 1.5.x. We still benefit by: (a) yielding incrementally so the
-   * caller can build a compact id-keyed adjacency without a parallel
-   * row-array sitting in memory, and (b) leaving the door open for a
-   * true cursor when the driver adds one. Compared to `listAdjacency`,
-   * this avoids the intermediate `Map<string, string[]>` that the
-   * adapter previously built (caller decides whether/how to bucket).
-   *
-   * For very large method-edge counts (25k+ in ugnest) the saved
-   * footprint is the Map's overhead — the wins compound with the L1
-   * memory_limit cap and L3 checkpointing in the same indexing pass.
+   * TRUE streaming via `connection.stream` + `DuckDBResult.fetchChunk`: only
+   * one chunk's rows are resident in JS at any moment. The prior
+   * implementation routed through `queryAll` →
+   * `runAndReadAll().getRowObjectsJson()`, which materialised the ENTIRE
+   * `cg_symbols_edges_method` table into one JS array up front — on a large
+   * repo that whole-table copy (alongside the caller's adjacency `Map` and
+   * Tarjan/PageRank working sets) was a multi-GB peak and a contributor to the
+   * codegraph OOM. Chunked fetch keeps the read half bounded.
    */
   async *streamAdjacency(scope: CycleScope): AsyncIterableIterator<[string, string]> {
-    if (scope === "file") {
-      const rows = await this.queryAll<{ source_rel_path: string; target_rel_path: string }>(
-        "SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_file",
-      );
-      for (const row of rows) {
-        yield [row.source_rel_path, row.target_rel_path];
-      }
-      return;
+    const sql =
+      scope === "file"
+        ? "SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_file"
+        : "SELECT source_symbol_id, target_symbol_id FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL";
+    for await (const row of this.streamRows(sql)) {
+      const source = row[0];
+      const target = row[1];
+      // Defensive: WHERE already excludes null targets for method scope, but
+      // keep the guard so a null can never become the string "null".
+      if (source === null || source === undefined || target === null || target === undefined) continue;
+      yield [String(source), String(target)];
     }
-    const rows = await this.queryAll<{ source_symbol_id: string; target_symbol_id: string | null }>(
-      "SELECT source_symbol_id, target_symbol_id FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL",
-    );
-    for (const row of rows) {
-      if (row.target_symbol_id === null) continue;
-      yield [row.source_symbol_id, row.target_symbol_id];
+  }
+
+  /**
+   * Yield result rows one DuckDB chunk at a time (no whole-result
+   * materialisation). `connection.stream` returns a result whose
+   * `fetchChunk()` pulls the next ~2048-row vector, returning null when
+   * drained. Each chunk's column arrays are read via `getRows()` and
+   * released before the next fetch.
+   */
+  private async *streamRows(sql: string): AsyncIterableIterator<DuckDBValue[]> {
+    const result = await this.requireConn().stream(sql);
+    let chunk = await result.fetchChunk();
+    while (chunk && chunk.rowCount > 0) {
+      const rows = chunk.getRows();
+      for (const row of rows) {
+        yield row;
+      }
+      chunk = await result.fetchChunk();
     }
   }
 
