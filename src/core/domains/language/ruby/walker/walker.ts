@@ -36,6 +36,7 @@
 import type Parser from "tree-sitter";
 
 import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
+import { RUBY_DSL } from "../dsl/index.js";
 
 export interface RubyExtractInput {
   tree: Parser.Tree;
@@ -530,7 +531,7 @@ function collectRubyCalls(root: Parser.SyntaxNode): CallRef[] {
     // redirect. Receiver is null because both methods live on the same
     // class; the resolver's bare-call same-class fallback uses
     // callerScope (= the enclosing class) to pin the target.
-    if (node.type === "alias") {
+    if (node.type === "alias" && RUBY_DSL.alias?.redirectTarget === "alias-keyword-old") {
       const idents = node.children.filter((c) => c.type === "identifier");
       const oldName = idents[1]?.text;
       if (oldName) {
@@ -650,7 +651,7 @@ function collectRubyCalls(root: Parser.SyntaxNode): CallRef[] {
       // `alias_method :new, :old` synthetic call edge (bd tea-rags-mcp-y2z5).
       // Only the class-body form fires — `obj.alias_method` is a normal
       // method call and must not synthesise a redirect.
-      if (method.text === "alias_method" && receiverText === null) {
+      if (receiverText === null && RUBY_DSL[method.text]?.redirectTarget === "second-symbol") {
         const oldName = extractSecondLiteralSymbol(node);
         if (oldName !== null) {
           out.push({ callText: node.text, receiver: null, member: oldName, startLine });
