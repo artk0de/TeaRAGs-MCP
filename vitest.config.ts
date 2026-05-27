@@ -88,6 +88,19 @@ export default defineConfig({
         "src/core/domains/ingest/pipeline/chunker/hooks/types.ts",
         // Barrel re-exports (no logic, just re-export)
         "src/core/domains/ingest/pipeline/chunker/hooks/*/index.ts",
+        // ALL barrel files (pure re-export glue, no executable logic). Broad
+        // glob supersedes the individual index.ts entries above — per the
+        // barrel-files.md convention every domain-boundary index.ts is a
+        // re-export surface, not testable code.
+        "**/index.ts",
+        // Declarative language-definition config — LANGUAGE_DEFINITIONS is data
+        // with lazy `() => import("tree-sitter-x")` thunks, not branching logic.
+        "src/core/domains/ingest/pipeline/chunker/config.ts",
+        // Codegraph DuckDB daemon — unix-socket server/client + process
+        // lifecycle (I/O-heavy, same category as the qdrant daemon; validated
+        // end-to-end via build + integration, not unit-covered). Supersedes the
+        // individual daemon/index.ts + daemon/entry.ts entries above.
+        "src/core/adapters/duckdb/daemon/**",
         // I/O-heavy bootstrap (DI wiring, path resolution, transport — tested via integration)
         "src/bootstrap/transport/**",
         "src/bootstrap/factory.ts",
