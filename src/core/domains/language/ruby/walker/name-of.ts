@@ -11,17 +11,21 @@
  * `infra/symbolid`) so the chunker and codegraph agree on the separator for
  * the same physical AST node (`.claude/rules/symbolid-convention.md`).
  *
- * The DSL-macro coverage here (`RUBY_DSL_MACROS`) is the CODEGRAPH surface
- * (includes AR associations `has_many`/`belongs_to`/`scope`/`delegate`) and is
- * deliberately distinct from the chunker-side `macros.ts` `RUBY_DSL_MACROS`
- * (which omits AR associations — see that file's header). Keep both in lockstep
- * for the macros they DO share so chunker symbolIds match cg_symbols rows.
+ * DSL-macro coverage is split: the SHARED method-declaring macros
+ * (`attr_*`/`cattr_*`/`mattr_*`/`delegate`) come from the single `ruby/dsl`
+ * catalogue via `RUBY_DSL[name].declares` — the same source the chunker-side
+ * `macros.ts` reads — so chunker symbolIds match cg_symbols rows by
+ * construction. Only AR associations (`has_many`/`belongs_to`/`scope`/…), which
+ * the catalogue deliberately keeps GROUP-ONLY (no `declares`), are synthesised
+ * locally in `AR_ASSOCIATION_MACROS`. See `rubyMacroEmission` for the lookup
+ * order and `.claude/rules/symbolid-convention.md` for the lockstep contract.
  */
 
 import type Parser from "tree-sitter";
 
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
 import { classifyMethod } from "../../../../infra/symbolid/index.js";
+import { RUBY_DSL } from "../dsl/index.js";
 
 function methodKindFromClassify(node: Parser.SyntaxNode): "instance" | "static" | undefined {
   const c = classifyMethod(node);
@@ -148,30 +152,21 @@ function rubyDefineMethodEmission(node: Parser.SyntaxNode): NamedSymbol | null {
 }
 
 /**
- * Names of methods Ruby DSL macros emit at the enclosing class scope.
- * Each entry maps a macro name to a builder that takes a base name
- * (the symbol-argument text, with leading `:` stripped) and returns
- * the list of synthetic method names + their methodKind.
+ * AR-association macros the CODEGRAPH synthesises but the shared ruby/dsl
+ * catalogue deliberately keeps GROUP-ONLY (no `declares`) — associations would
+ * inflate the chunker's accessor count without changing chunk semantics
+ * (catalogue Non-Goal). The codegraph needs them for symbol resolution, so they
+ * live here. The SHARED method-declaring macros (attr_, cattr_, mattr_ accessor
+ * families and delegate) come from the catalogue via `RUBY_DSL[name].declares`
+ * — see rubyMacroEmission.
  *
- * Coverage:
- *   - attr_accessor / attr_reader / attr_writer — Ruby builtin
- *   - has_many / has_one / has_and_belongs_to_many / belongs_to — AR associations
- *   - scope — ActiveRecord class-level query helper (rare static case)
- *   - delegate — Forwardable / ActiveSupport delegation (instance forwarders)
- *
- * Out of scope (intentional):
+ * Out of scope (intentional, both layers):
  *   - method_missing — pure runtime dispatch, unrepresentable
  *   - dynamically constructed names: `define_method("foo_#{x}")` etc.
  *   - included do blocks (ActiveSupport::Concern) — needs mixin merge
  *     pass (bd: see Concern follow-up)
  */
-const RUBY_DSL_MACROS: Record<string, (base: string) => { name: string; kind: "instance" | "static" }[]> = {
-  attr_accessor: (b) => [
-    { name: b, kind: "instance" },
-    { name: `${b}=`, kind: "instance" },
-  ],
-  attr_reader: (b) => [{ name: b, kind: "instance" }],
-  attr_writer: (b) => [{ name: `${b}=`, kind: "instance" }],
+const AR_ASSOCIATION_MACROS: Record<string, (base: string) => { name: string; kind: "instance" | "static" }[]> = {
   has_many: (b) => [
     { name: b, kind: "instance" },
     { name: `${b}=`, kind: "instance" },
@@ -193,13 +188,9 @@ const RUBY_DSL_MACROS: Record<string, (base: string) => { name: string; kind: "i
   ],
   // AR `scope :active, -> { ... }` — adds a class method named after the
   // first symbol argument. Only the first arg matters; the lambda is
-  // body, not an accessor target.
+  // body, not an accessor target. Kept local (catalogue keeps `scope`
+  // group-only) so the first-arg-only special-case below still applies.
   scope: (b) => [{ name: b, kind: "static" }],
-  // `delegate :a, :b, to: :other` — emits forwarder methods on the
-  // includer. We don't trace through `to:` (would need second-arg
-  // type lookup); a forwarder being indexed in cg_symbols is enough
-  // so a caller writing `obj.a` finds SOMETHING on `obj`'s class.
-  delegate: (b) => [{ name: b, kind: "instance" }],
 };
 
 function rubyMacroEmission(node: Parser.SyntaxNode): NamedSymbol[] | null {
@@ -213,7 +204,11 @@ function rubyMacroEmission(node: Parser.SyntaxNode): NamedSymbol[] | null {
   const methodNode = methodField ?? node.children.find((c) => c.type === "identifier");
   if (!methodNode) return null;
   const macroName = methodNode.text;
-  const builder = RUBY_DSL_MACROS[macroName];
+  // AR associations are synthesised locally; the SHARED method-declaring
+  // macros (attr_*/cattr_*/mattr_*/delegate) come from the single ruby/dsl
+  // catalogue — the same source the chunker reads — so both layers stay in
+  // lockstep by construction.
+  const builder = AR_ASSOCIATION_MACROS[macroName] ?? RUBY_DSL[macroName]?.declares;
   if (!builder) return null;
   // Argument list — `argument_list` field or the `arguments` field on
   // newer grammars.
