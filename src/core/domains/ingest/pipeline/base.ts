@@ -229,7 +229,7 @@ export abstract class BaseIndexingPipeline {
     ignoreFilter: Ignore,
     changedPaths?: string[],
   ): void {
-    this.enrichment.prefetch(absolutePath, collectionName, ignoreFilter, changedPaths);
+    this.enrichment.beginRun(absolutePath, collectionName, ignoreFilter, changedPaths);
     chunkPipeline.setOnBatchUpserted((items) => {
       this.enrichment.onChunksStored(collectionName, absolutePath, items);
     });

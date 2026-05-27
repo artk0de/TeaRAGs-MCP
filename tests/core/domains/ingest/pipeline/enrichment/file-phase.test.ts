@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/domains/ingest/constants.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
+import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
 import { FilePhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/file-phase.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 
@@ -14,18 +15,19 @@ async function seedMarkerPoint(qdrant: MockQdrantManager, coll: string): Promise
   await qdrant.addPoints(coll, [{ id: INDEXING_METADATA_ID, vector: new Array(384).fill(0), payload: {} }]);
 }
 
-function buildCtx(buildFileSignals = vi.fn().mockResolvedValue(new Map())) {
+function buildCtx(overrides: Record<string, unknown> = {}) {
   return {
     key: "git",
     provider: {
       key: "git",
-      buildFileSignals,
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
       buildChunkSignals: vi.fn(),
       resolveRoot: (p: string) => p,
       fileSignalTransform: undefined,
+      ...overrides,
     } as any,
     effectiveRoot: "/repo",
-    ignoreFilter: null,
+    ignoreFilter: null as any,
   };
 }
 
@@ -41,50 +43,141 @@ const items = [
 ];
 
 describe("FilePhase", () => {
-  it("buffers batches that arrive before prefetch resolves, then drains them", async () => {
+  it("onBatch streams file signals per batch without a whole-repo prefetch", async () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
 
-    let resolvePrefetch!: (v: Map<string, any>) => void;
-    const buildFileSignals = vi.fn(
-      async () =>
-        new Promise<Map<string, any>>((res) => {
-          resolvePrefetch = res;
-        }),
-    );
-    const ctx = buildCtx(buildFileSignals);
+    const streamFileBatch = vi.fn().mockResolvedValue(new Map([["src/a.ts", { commitCount: 3 }]]));
+    const applySpy = vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
+    const ctx = buildCtx({ streamFileBatch });
 
     const phase = new FilePhase(applier, marker);
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
-    phase.startPrefetch();
-    phase.onBatch("coll", "/repo", items); // arrives before prefetch
-    expect(applier.matchedFiles).toBe(0);
 
-    resolvePrefetch(new Map([["src/a.ts", { authorPct: 100 }]]));
-    await phase.awaitPrefetch();
+    await phase.onBatch("coll", "/repo", items);
     await phase.drain();
-    expect(applier.matchedFiles).toBeGreaterThanOrEqual(1);
+
+    expect(streamFileBatch).toHaveBeenCalledWith("/repo", ["src/a.ts"], expect.anything());
+    expect(applySpy).toHaveBeenCalled();
   });
 
-  // tea-rags-mcp-tf1o — FilePhase threads ctx.ignoreFilter to provider's
-  // buildFileSignals so providers walking the tree themselves (codegraph)
-  // see the same file set the main Qdrant ingest indexed.
-  it("passes ctx.ignoreFilter through to provider.buildFileSignals", async () => {
+  it("onBatch returns a Promise that resolves after the batch's file applies", async () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
 
+    let resolved = false;
+    const streamFileBatch = vi.fn().mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+      resolved = true;
+      return new Map([["src/a.ts", { x: 1 }]]);
+    });
+    vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
+    const ctx = buildCtx({ streamFileBatch });
+
+    const phase = new FilePhase(applier, marker);
+    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+
+    const p = phase.onBatch("coll", "/repo", items);
+    expect(p).toBeInstanceOf(Promise);
+    await p;
+    expect(resolved).toBe(true);
+  });
+
+  it("falls back to buildFileSignals({ paths }) when streamFileBatch is absent", async () => {
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+
+    const buildFileSignals = vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+    const applySpy = vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
+    const ctx = buildCtx({ buildFileSignals });
+
+    const phase = new FilePhase(applier, marker);
+    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+
+    await phase.onBatch("coll", "/repo", items);
+    await phase.drain();
+
+    expect(buildFileSignals).toHaveBeenCalledWith("/repo", expect.objectContaining({ paths: ["src/a.ts"] }));
+    expect(applySpy).toHaveBeenCalled();
+  });
+
+  it("onBatch SKIPS a defersChunkEnrichment provider (no apply, no miss-tracking)", async () => {
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+
+    const streamFileBatch = vi.fn().mockResolvedValue(new Map());
     const buildFileSignals = vi.fn().mockResolvedValue(new Map());
+    const applySpy = vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
+    const ctx = {
+      key: "codegraph.symbols",
+      provider: {
+        key: "codegraph.symbols",
+        defersChunkEnrichment: true,
+        streamFileBatch,
+        buildFileSignals,
+        buildChunkSignals: vi.fn(),
+        resolveRoot: (p: string) => p,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null as any,
+    };
+
+    const phase = new FilePhase(applier, marker);
+    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+    await phase.onBatch("coll", "/repo", items);
+    await phase.drain();
+
+    expect(streamFileBatch).not.toHaveBeenCalled();
+    expect(buildFileSignals).not.toHaveBeenCalled();
+    expect(applySpy).not.toHaveBeenCalled();
+    expect(applier.missedFiles).toBe(0);
+  });
+
+  it("applyFinalize applies file overlays keyed by the chunkMap", async () => {
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    const ctx = {
+      key: "codegraph.symbols",
+      provider: { key: "codegraph.symbols", defersChunkEnrichment: true } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null as any,
+    };
+
+    const phase = new FilePhase(applier, marker);
+    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+
+    const fileOverlays = new Map([["src/a.ts", { fanIn: 4 }]]);
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
+    await phase.applyFinalize("coll", ctx, fileOverlays, chunkMap);
+
+    const ops = qdrant.batchSetPayloadCalls.flatMap((c) => c.operations);
+    const fileOp = ops.find((op: any) => op.key === "codegraph.symbols.file");
+    expect(fileOp).toBeDefined();
+    expect(fileOp.payload.fanIn).toBe(4);
+    expect(applier.matchedFiles).toBe(1);
+  });
+
+  it("passes ctx.ignoreFilter through to streamFileBatch", async () => {
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+
+    const streamFileBatch = vi.fn().mockResolvedValue(new Map());
+    vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
     const sharedFilter = ignore().add(["legacy/"]);
     const ctx = {
       key: "codegraph.symbols",
       provider: {
         key: "codegraph.symbols",
-        buildFileSignals,
+        streamFileBatch,
+        buildFileSignals: vi.fn(),
         buildChunkSignals: vi.fn(),
         resolveRoot: (p: string) => p,
-        fileSignalTransform: undefined,
       } as any,
       effectiveRoot: "/repo",
       ignoreFilter: sharedFilter,
@@ -92,50 +185,35 @@ describe("FilePhase", () => {
 
     const phase = new FilePhase(applier, marker);
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
-    phase.startPrefetch();
-    await phase.awaitPrefetch();
+    await phase.onBatch("coll", "/repo", items);
+    await phase.drain();
 
-    expect(buildFileSignals).toHaveBeenCalledTimes(1);
-    const [root, options] = buildFileSignals.mock.calls[0];
+    expect(streamFileBatch).toHaveBeenCalledTimes(1);
+    const [root, , options] = streamFileBatch.mock.calls[0];
     expect(root).toBe("/repo");
     expect(options.ignoreFilter).toBe(sharedFilter);
     expect(options.collectionName).toBe("coll");
   });
 
-  // When ctx.ignoreFilter is null (no filter loaded for the run), the
-  // provider receives `ignoreFilter: undefined` — not a thrown error and
-  // not the `null` sentinel. Providers can use the `?? undefined` idiom
-  // freely.
-  it("passes undefined ignoreFilter when ctx.ignoreFilter is null", async () => {
-    const qdrant = new MockQdrantManager();
-    const applier = new EnrichmentApplier(qdrant as any);
-    const marker = new EnrichmentMarkerStore(qdrant as any);
-
-    const buildFileSignals = vi.fn().mockResolvedValue(new Map());
-    const ctx = buildCtx(buildFileSignals);
-
-    const phase = new FilePhase(applier, marker);
-    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
-    phase.startPrefetch();
-    await phase.awaitPrefetch();
-
-    expect(buildFileSignals).toHaveBeenCalledTimes(1);
-    const [, options] = buildFileSignals.mock.calls[0];
-    expect(options.ignoreFilter).toBeUndefined();
-  });
-
-  it("writes markPrefetchFailed when prefetch rejects", async () => {
+  it("marks provider failed + writes markPrefetchFailed when streamFileBatch rejects", async () => {
     const qdrant = new MockQdrantManager();
     await seedMarkerPoint(qdrant, "coll");
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
     await marker.markStart("coll", ["git"], "run-1", "ts");
 
-    const ctx = buildCtx(vi.fn().mockRejectedValue(new Error("boom")));
+    const chunkPhase = new ChunkPhase(applier);
+    const streamFileBatch = vi.fn().mockRejectedValue(new Error("boom"));
+    const ctx = buildCtx({ streamFileBatch });
+
     const phase = new FilePhase(applier, marker);
+    phase.bindChunkPhase(chunkPhase);
+    chunkPhase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
-    phase.startPrefetch();
-    await phase.awaitPrefetch();
+
+    await phase.onBatch("coll", "/repo", items);
+    await phase.drain();
+
     expect(phase.hasPrefetchFailed("git")).toBe(true);
     const m = (await marker.read("coll"))!.git as any;
     expect(m.file.status).toBe("failed");

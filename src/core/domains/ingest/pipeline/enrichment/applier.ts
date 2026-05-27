@@ -142,6 +142,62 @@ export class EnrichmentApplier {
   }
 
   /**
+   * Apply file-level overlays keyed by an accumulated chunkMap
+   * (relPath → ChunkLookupEntry[]) rather than a ChunkItem[] batch. Used by the
+   * codegraph finalize file-apply path: the deferred chunkMap that ChunkPhase
+   * assembled gives us relPath → chunkId mapping, but no ChunkItem objects.
+   *
+   * Mirrors EnrichmentBackfiller.runFor's file-apply loop: per file, resolve the
+   * overlay, compute maxEndLine across its entries, transform, stamp enrichedAt,
+   * and write one `${providerKey}.file` op per chunkId.
+   *
+   * @returns number of files applied (overlay present + at least one entry).
+   */
+  async applyFinalizeFile(
+    collectionName: string,
+    providerKey: string,
+    fileOverlays: Map<string, FileSignalOverlay>,
+    chunkMap: ReadonlyMap<string, readonly { chunkId: string; startLine: number; endLine: number }[]>,
+    transform?: FileSignalTransform,
+    enrichedAt?: string,
+  ): Promise<number> {
+    const fileKey = `${providerKey}.file`;
+    const ops: {
+      payload: Record<string, unknown>;
+      points: (string | number)[];
+      key: string;
+    }[] = [];
+    let appliedFiles = 0;
+
+    for (const [relPath, entries] of chunkMap) {
+      const overlay = fileOverlays.get(relPath);
+      if (!overlay) continue;
+      const maxEndLine = entries.reduce((max, e) => Math.max(max, e.endLine), 0);
+      const final = transform ? transform(overlay, maxEndLine) : overlay;
+      const payload = enrichedAt
+        ? { ...(final as Record<string, unknown>), enrichedAt }
+        : (final as Record<string, unknown>);
+      for (const entry of entries) {
+        ops.push({ payload, points: [entry.chunkId], key: fileKey });
+      }
+      appliedFiles++;
+      this.matchedFiles++;
+    }
+
+    for (let i = 0; i < ops.length; i += BATCH_SIZE) {
+      try {
+        await this.qdrant.batchSetPayload(collectionName, ops.slice(i, i + BATCH_SIZE));
+      } catch (error) {
+        if (isDebug()) {
+          console.error("[EnrichmentApplier] applyFinalizeFile batch failed:", error);
+        }
+      }
+    }
+
+    return appliedFiles;
+  }
+
+  /**
    * Apply chunk-level signal overlays.
    * Payload written as { [providerKey]: { chunk: overlay } }.
    */

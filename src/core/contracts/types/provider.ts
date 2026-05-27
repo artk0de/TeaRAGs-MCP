@@ -91,7 +91,7 @@ export interface ChunkSignalOptions {
   skipCache?: boolean;
   /**
    * Active Qdrant collection name the chunks belong to. Threaded from
-   * EnrichmentCoordinator.prefetch so collection-scoped providers
+   * EnrichmentCoordinator.beginRun so collection-scoped providers
    * (codegraph) can route writes to their per-collection backing store
    * (per-collection DuckDB file). Optional: providers that don't care
    * about collection scope (git) ignore it.

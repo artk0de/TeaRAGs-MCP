@@ -1,15 +1,17 @@
 /**
- * FilePhase — provider.buildFileSignals prefetch and per-batch
- * applyFileSignals dispatch. Buffers batches that arrive before prefetch
- * resolves; drains them via prefetch.then(). On prefetch error writes
- * markerStore.markPrefetchFailed and signals chunkPhase.markFailed; on
- * prefetch ready signals chunkPhase.markReady so chunk-side buffered
- * batches drain.
+ * FilePhase — per-batch streaming file enrichment.
+ *
+ * onBatch computes the batch's file signals via streamFileBatch (fallback
+ * buildFileSignals({ paths })) and applies them immediately — no whole-repo
+ * prefetch gate. Fully-deferred providers (codegraph) are SKIPPED in onBatch;
+ * their file overlays come from finalizeSignals applied via applyFinalize.
+ * On a stream/finalize failure FilePhase marks the provider failed and signals
+ * chunkPhase.markFailed so ChunkPhase skips it.
  */
 
-import type { Ignore } from "ignore";
+import { relative } from "node:path";
 
-import type { FileSignalOverlay } from "../../../../contracts/types/provider.js";
+import type { FileSignalOptions, FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
@@ -17,17 +19,8 @@ import type { ChunkPhase } from "./chunk-phase.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
 import type { ProviderContext } from "./types.js";
 
-interface PendingBatch {
-  collectionName: string;
-  absolutePath: string;
-  items: ChunkItem[];
-}
-
 interface FilePhaseState {
-  prefetchPromise: Promise<Map<string, FileSignalOverlay>> | null;
-  fileMetadata: Map<string, FileSignalOverlay> | null;
   prefetchFailed: boolean;
-  pendingBatches: PendingBatch[];
   fileWork: Promise<void>[];
   prefetchStartTime: number;
   prefetchEndTime: number;
@@ -40,10 +33,7 @@ interface FilePhaseState {
 
 function createState(): FilePhaseState {
   return {
-    prefetchPromise: null,
-    fileMetadata: null,
     prefetchFailed: false,
-    pendingBatches: [],
     fileWork: [],
     prefetchStartTime: 0,
     prefetchEndTime: 0,
@@ -100,9 +90,9 @@ export class FilePhase {
   ) {}
 
   /**
-   * Bind the ChunkPhase whose readiness lifecycle (markPrefetchPending,
-   * markReady, markFailed) FilePhase drives from the prefetch outcome.
-   * Optional — ChunkPhase remains drivable directly for unit-level tests.
+   * Bind the ChunkPhase that FilePhase signals on a stream/finalize failure
+   * (chunkPhase.markFailed) so ChunkPhase skips the failed provider. Optional —
+   * ChunkPhase remains drivable directly for unit-level tests.
    */
   bindChunkPhase(chunkPhase: ChunkPhase): void {
     this.chunkPhase = chunkPhase;
@@ -117,128 +107,91 @@ export class FilePhase {
     for (const key of contexts.keys()) this.states.set(key, createState());
   }
 
-  startPrefetch(changedPaths?: string[]): void {
+  /**
+   * Stream this batch's file signals and apply immediately. Returns the batch's
+   * file-work promise so the coordinator can sequence file→chunk per batch.
+   * Fully-deferred providers (codegraph) are skipped entirely — their file
+   * overlays come from applyFinalize, and their miss-tracking is irrelevant.
+   */
+  async onBatch(coll: string, absolutePath: string, items: ChunkItem[]): Promise<void> {
+    const collected: Promise<void>[] = [];
     for (const ctx of this.contexts.values()) {
       const state = this.states.get(ctx.key);
       if (!state) continue;
-      const root = ctx.effectiveRoot;
-      if (!root) continue;
-      state.prefetchStartTime = Date.now();
+      // pipelineFlushTime tracks when chunks first land — best-effort overlap
+      // metric. Recorded even for failed providers (mirrors original).
+      state.pipelineFlushTime = Date.now();
+      if (state.prefetchStartTime === 0) state.prefetchStartTime = state.pipelineFlushTime;
+      if (state.prefetchFailed) continue;
+      // Fully-deferred providers (codegraph): no per-batch file apply, no
+      // miss-tracking. File overlays come from finalizeSignals → applyFinalize.
+      if (ctx.provider.defersChunkEnrichment) continue;
 
-      // Hold streaming chunk enrichment until file-side prefetch resolves.
-      // markReady (success path) or markFailed (catch path) flips this back.
-      this.chunkPhase?.markPrefetchPending(ctx.key);
+      const root = ctx.effectiveRoot ?? absolutePath;
+      const relPaths = this.uniqueRelPaths(items, root);
+      const streamFn =
+        ctx.provider.streamFileBatch ??
+        (async (r: string, p: string[], o?: FileSignalOptions) => ctx.provider.buildFileSignals(r, { ...o, paths: p }));
 
-      pipelineLog.enrichmentPhase("PREFETCH_START", {
-        provider: ctx.key,
-        path: root,
-      });
-      state.prefetchPromise = ctx.provider
-        .buildFileSignals(root, {
-          paths: changedPaths && changedPaths.length > 0 ? changedPaths : undefined,
-          // Coordinator threads the active Qdrant collection name in
-          // through `init(coll, ...)`. Providers that don't care
-          // (git) ignore it; codegraph routes per-collection DuckDB
-          // writes on it.
-          collectionName: this.coll || undefined,
-          // FileScanner ignore filter (BUILTIN_IGNORE_PATTERNS +
-          // user .gitignore / .contextignore). Providers that walk
-          // the file tree themselves (codegraph) honour it so their
-          // file set matches what Qdrant indexed. Providers that
-          // don't walk (git) ignore it. Null is normal when the
-          // pipeline didn't load a filter for this run.
-          ignoreFilter: ctx.ignoreFilter ?? undefined,
-        })
-        .then((result) => {
-          state.prefetchEndTime = Date.now();
-          state.prefetchDurationMs = state.prefetchEndTime - state.prefetchStartTime;
-          const filtered = this.filterByIgnore(result, ctx.ignoreFilter);
-          state.fileMetadata = filtered;
-          state.fileMetadataCount = filtered.size;
-          pipelineLog.enrichmentPhase("PREFETCH_COMPLETE", {
+      const work = streamFn(root, relPaths, {
+        collectionName: this.coll || undefined,
+        ignoreFilter: ctx.ignoreFilter ?? undefined,
+      })
+        .then(async (overlays) => {
+          await this.applier.applyFileSignals(
+            coll,
+            ctx.key,
+            overlays,
+            root,
+            items,
+            ctx.provider.fileSignalTransform,
+            this.runStartedAt,
+          );
+          state.streamingApplies++;
+          pipelineLog.enrichmentPhase("STREAMING_APPLY", {
             provider: ctx.key,
-            filesInLog: result.size,
-            durationMs: state.prefetchDurationMs,
+            chunks: items.length,
           });
-          pipelineLog.addStageTime("enrichment_prefetch", state.prefetchDurationMs);
-          this.flushPending(ctx, state);
-          this.chunkPhase?.markReady(ctx.key);
-          return result;
         })
         .catch(async (error: unknown) => {
-          state.prefetchFailed = true;
-          state.prefetchEndTime = Date.now();
-          state.prefetchDurationMs = state.prefetchEndTime - state.prefetchStartTime;
-          const msg = extractErrorMessage(error);
-          console.error(`[Enrichment:${ctx.key}] Prefetch failed:`, msg);
-          pipelineLog.enrichmentPhase("PREFETCH_FAILED", {
-            provider: ctx.key,
-            error: msg,
-            durationMs: state.prefetchDurationMs,
-          });
-          state.pendingBatches = [];
-          this.chunkPhase?.markFailed(ctx.key);
-          if (this.coll) {
-            // Await the marker write so awaitPrefetch() callers observe the
-            // failed marker on storage. Internal write swallows its own errors.
-            // Propagate the concrete error message so get_index_status
-            // surfaces "Codegraph spill write failed at …" instead of
-            // a generic in_progress placeholder.
-            await this.markerStore.markPrefetchFailed(
-              this.coll,
-              ctx.key,
-              this.runId,
-              this.runStartedAt,
-              state.prefetchDurationMs,
-              msg,
-            );
-          }
-          return new Map();
+          await this.recordPrefetchFailure(ctx, state, error);
         });
+
+      state.fileWork.push(work);
+      collected.push(work);
     }
+    await Promise.all(collected);
   }
 
-  onBatch(coll: string, absolutePath: string, items: ChunkItem[]): void {
-    for (const ctx of this.contexts.values()) {
-      const state = this.states.get(ctx.key);
-      if (!state) continue;
-      // pipelineFlushTime tracks when chunks first land relative to prefetch —
-      // mirrors original coordinator behavior of recording even on failed providers.
-      state.pipelineFlushTime = Date.now();
-      if (state.prefetchFailed) continue;
-
-      if (state.fileMetadata) {
-        const pathBase = ctx.effectiveRoot ?? absolutePath;
-        const work = this.applier.applyFileSignals(
-          coll,
-          ctx.key,
-          state.fileMetadata,
-          pathBase,
-          items,
-          ctx.provider.fileSignalTransform,
-          this.runStartedAt,
-        );
-        state.fileWork.push(work);
-        state.streamingApplies++;
-        pipelineLog.enrichmentPhase("STREAMING_APPLY", {
-          provider: ctx.key,
-          chunks: items.length,
-        });
-      } else {
-        state.pendingBatches.push({
-          collectionName: coll,
-          absolutePath,
-          items,
-        });
-      }
-    }
+  /**
+   * Apply a fully-deferred provider's finalize file overlays, keyed by the
+   * accumulated chunkMap (relPath → ChunkLookupEntry[]) from ChunkPhase.
+   */
+  async applyFinalize(
+    coll: string,
+    ctx: ProviderContext,
+    fileOverlays: Map<string, FileSignalOverlay>,
+    chunkMap: ReadonlyMap<string, readonly { chunkId: string; startLine: number; endLine: number }[]>,
+  ): Promise<void> {
+    const state = this.states.get(ctx.key);
+    if (!state) return;
+    const start = Date.now();
+    await this.applier.applyFinalizeFile(
+      coll,
+      ctx.key,
+      fileOverlays,
+      chunkMap,
+      ctx.provider.fileSignalTransform,
+      this.runStartedAt,
+    );
+    state.streamingApplies++;
+    state.prefetchEndTime = Date.now();
+    state.prefetchDurationMs += state.prefetchEndTime - start;
   }
 
+  /** No-op: there is no whole-repo prefetch to await anymore. */
   async awaitPrefetch(): Promise<void> {
-    const promises = [...this.states.values()]
-      .map(async (s) => s.prefetchPromise)
-      .filter((p): p is Promise<Map<string, FileSignalOverlay>> => p !== null);
-    if (promises.length > 0) await Promise.allSettled(promises);
+    return Promise.resolve();
   }
 
   async drain(): Promise<void> {
@@ -285,55 +238,38 @@ export class FilePhase {
     };
   }
 
-  private flushPending(ctx: ProviderContext, state: FilePhaseState): void {
-    if (state.pendingBatches.length === 0) return;
-    const batches = state.pendingBatches;
-    state.pendingBatches = [];
-    pipelineLog.enrichmentPhase("FLUSH_APPLY", {
+  /** Mark a provider's file stream/finalize as failed + persist the marker. */
+  private async recordPrefetchFailure(ctx: ProviderContext, state: FilePhaseState, error: unknown): Promise<void> {
+    state.prefetchFailed = true;
+    state.prefetchEndTime = Date.now();
+    const msg = extractErrorMessage(error);
+    console.error(`[Enrichment:${ctx.key}] Stream/finalize failed:`, msg);
+    pipelineLog.enrichmentPhase("PREFETCH_FAILED", {
       provider: ctx.key,
-      batches: batches.length,
-      chunks: batches.reduce((sum, b) => sum + b.items.length, 0),
+      error: msg,
+      durationMs: state.prefetchDurationMs,
     });
-    for (const batch of batches) {
-      if (!state.fileMetadata) continue;
-      const pathBase = ctx.effectiveRoot ?? batch.absolutePath;
-      const work = this.applier.applyFileSignals(
-        batch.collectionName,
+    this.chunkPhase?.markFailed(ctx.key);
+    if (this.coll) {
+      // Await the marker write so callers observe the failed marker on storage.
+      // Propagate the concrete error message so get_index_status surfaces the
+      // cause instead of a generic in_progress placeholder.
+      await this.markerStore.markPrefetchFailed(
+        this.coll,
         ctx.key,
-        state.fileMetadata,
-        pathBase,
-        batch.items,
-        ctx.provider.fileSignalTransform,
+        this.runId,
         this.runStartedAt,
+        state.prefetchDurationMs,
+        msg,
       );
-      state.fileWork.push(work);
-      state.flushApplies++;
     }
   }
 
-  private filterByIgnore(
-    input: Map<string, FileSignalOverlay>,
-    ignoreFilter: Ignore | null,
-  ): Map<string, FileSignalOverlay> {
-    if (!ignoreFilter) return input;
-    const out = new Map<string, FileSignalOverlay>();
-    let filtered = 0;
-    for (const [path, value] of input) {
-      // Original coordinator's filterByIgnore was invoked without `root`, so
-      // map keys (repo-relative paths from the provider) were passed straight
-      // to ignoreFilter.ignores(). Preserve that behavior here.
-      if (ignoreFilter.ignores(path)) {
-        filtered++;
-      } else {
-        out.set(path, value);
-      }
+  private uniqueRelPaths(items: ChunkItem[], root: string): string[] {
+    const seen = new Set<string>();
+    for (const item of items) {
+      seen.add(relative(root, item.chunk.metadata.filePath));
     }
-    if (filtered > 0) {
-      pipelineLog.enrichmentPhase("PREFETCH_FILTERED", {
-        filtered,
-        remainingFiles: out.size,
-      });
-    }
-    return out;
+    return [...seen];
   }
 }

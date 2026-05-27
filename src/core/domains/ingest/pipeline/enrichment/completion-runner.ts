@@ -1,12 +1,14 @@
 /**
- * CompletionRunner — final 7-step sequence:
- *  1. drain prefetch
- *  2. drain fileWork
- *  3. backfill per ctx
- *  4. markFileFinal per ctx
+ * CompletionRunner — final sequence:
+ *  1. drain fileWork (streaming file applies)
+ *  2. finalize-file pass: provider.finalizeSignals → applyFinalize (codegraph)
+ *  3. backfill per ctx (skips defer-providers)
+ *  4. markFileFinal per ctx (degraded on residual file-unenriched)
  *  5. aggregate metrics
- *  6. drain chunkWork
- *  7. markChunkFinal per ctx
+ *  6. drain chunkWork (git streaming)
+ *  7. deferred-chunk pass: chunkPhase.runDeferredChunk (codegraph)
+ *  8. markChunkFinal per ctx
+ *  9. re-fire stats callback if backfill wrote overlays
  */
 
 import type { EnrichmentMetrics } from "../../../../types.js";
@@ -47,27 +49,44 @@ export class CompletionRunner {
     const { filePhase, chunkPhase, backfiller, applier, markerStore } = this.deps;
     const readUnenriched: UnenrichedReader = unenrichedReader ?? (async () => 0);
 
-    // 1. drain prefetch
+    // 1. drain prefetch (no-op) + drain streaming fileWork
     await filePhase.awaitPrefetch();
-
-    // 2. drain fileWork
     await filePhase.drain();
 
-    // 3. backfill per ctx
+    // 2. finalize-file pass — deferred whole-repo FILE overlays (codegraph graph
+    //    metrics) read back after the run sink finishes, applied by the
+    //    accumulated chunkMap. git's finalizeSignals returns an empty map.
+    for (const ctx of contexts.values()) {
+      if (!ctx.provider.finalizeSignals || filePhase.hasPrefetchFailed(ctx.key)) continue;
+      const root = ctx.effectiveRoot ?? "";
+      const fileOverlays = await ctx.provider.finalizeSignals(root, { collectionName: coll || undefined });
+      if (fileOverlays.size > 0) {
+        await filePhase.applyFinalize(coll, ctx, fileOverlays, chunkPhase.getDeferredChunkMap(ctx.key));
+      }
+    }
+    await filePhase.drain();
+
+    // 3. backfill per ctx — skips defer-providers (they have no miss-tracking;
+    //    their file overlays came from applyFinalize).
     let backfillOccurred = false;
     if (applier.getMissedFileChunks().size > 0) {
       backfillOccurred = true;
       for (const ctx of contexts.values()) {
-        if (filePhase.hasPrefetchFailed(ctx.key)) continue;
+        if (filePhase.hasPrefetchFailed(ctx.key) || ctx.provider.defersChunkEnrichment) continue;
         await backfiller.runFor(coll, ctx, runStartedAt);
       }
     }
 
-    // 4. markFileFinal per ctx
+    // 4. markFileFinal per ctx — reconcile to degraded on residual file-unenriched.
     for (const ctx of contexts.values()) {
       const fileUnenriched = await readUnenriched(coll, ctx.key, "file");
+      const fileStatus = filePhase.hasPrefetchFailed(ctx.key)
+        ? "failed"
+        : fileUnenriched > 0
+          ? "degraded"
+          : "completed";
       await markerStore.markFileFinal(coll, ctx.key, {
-        status: filePhase.hasPrefetchFailed(ctx.key) ? "failed" : "completed",
+        status: fileStatus,
         durationMs: filePhase.getPrefetchDurationMs(ctx.key),
         unenrichedChunks: fileUnenriched,
         matchedFiles: applier.matchedFiles,
@@ -113,12 +132,23 @@ export class CompletionRunner {
     }
     if (byProvider) metrics.byProvider = byProvider;
 
-    // 6. drain chunkWork
+    // 6. drain chunkWork (git streaming)
     await chunkPhase.drain();
+
+    // 7. deferred-chunk pass — codegraph buildChunkSignals against the finished
+    //    graph with the full accumulated chunkMap, applied via applyChunkSignals.
+    for (const ctx of contexts.values()) {
+      if (!ctx.provider.defersChunkEnrichment || filePhase.hasPrefetchFailed(ctx.key)) continue;
+      const cm = chunkPhase.getDeferredChunkMap(ctx.key);
+      if (cm.size > 0) {
+        await chunkPhase.runDeferredChunk(coll, ctx, ctx.effectiveRoot ?? "", cm);
+      }
+    }
+
     const finalChunkMetrics = chunkPhase.getMetrics();
     metrics.chunkChurnDurationMs = finalChunkMetrics.totalChunkEnrichmentDurationMs;
 
-    // 7. markChunkFinal per ctx
+    // 8. markChunkFinal per ctx
     for (const ctx of contexts.values()) {
       const chunkUnenriched = await readUnenriched(coll, ctx.key, "chunk");
       let chunkStatus: ChunkFinalInput["status"];
@@ -136,7 +166,7 @@ export class CompletionRunner {
       });
     }
 
-    // 8. Re-fire stats callback if backfill wrote post-streaming overlays.
+    // 9. Re-fire stats callback if backfill wrote post-streaming overlays.
     // First fire (streaming end inside ChunkPhase) preserves the 896f343c
     // contract; this is a strictly-later second fire so listeners (StatsCache)
     // reflect post-backfill state. Listeners must be idempotent.

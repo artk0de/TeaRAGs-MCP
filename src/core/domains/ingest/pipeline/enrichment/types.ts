@@ -10,7 +10,7 @@ export type {
 
 /**
  * Per-run, immutable context for a single enrichment provider. Computed once
- * by EnrichmentCoordinator.prefetch() and shared read-only with all phases
+ * by EnrichmentCoordinator.beginRun() and shared read-only with all phases
  * (FilePhase, ChunkPhase, Backfiller, EnrichmentRecovery).
  */
 export interface ProviderContext {
@@ -47,7 +47,7 @@ export interface EnrichmentLevelMarker {
 }
 
 export interface FileEnrichmentMarker extends EnrichmentLevelMarker {
-  status: "pending" | "in_progress" | "completed" | "failed";
+  status: "pending" | "in_progress" | "completed" | "degraded" | "failed";
 }
 
 export interface ChunkEnrichmentMarker extends EnrichmentLevelMarker {
@@ -86,7 +86,7 @@ export type EnrichmentHealthMap = Record<string, EnrichmentProviderHealth>;
 
 /** Input for EnrichmentMarkerStore.markFileFinal. */
 export interface FileFinalInput {
-  status: "completed" | "failed";
+  status: "completed" | "degraded" | "failed";
   durationMs: number;
   unenrichedChunks: number;
   matchedFiles: number;

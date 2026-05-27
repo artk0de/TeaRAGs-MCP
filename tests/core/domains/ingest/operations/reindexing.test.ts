@@ -590,7 +590,7 @@ console.log('This file has secrets');`,
       await ingest.indexCodebase(codebaseDir);
 
       // Spy on enrichment coordinator prefetch — must NOT be called for deletion-only
-      const prefetchSpy = vi.spyOn(EnrichmentCoordinator.prototype, "prefetch");
+      const prefetchSpy = vi.spyOn(EnrichmentCoordinator.prototype, "beginRun");
 
       await fs.unlink(join(codebaseDir, "file1.ts"));
 
@@ -642,7 +642,7 @@ console.log('This file has secrets');`,
       await createTestFile(codebaseDir, "existing.ts", "export const v1 = 1;\nconsole.log('Existing');");
       await ingest.indexCodebase(codebaseDir);
 
-      const prefetchSpy = vi.spyOn(EnrichmentCoordinator.prototype, "prefetch");
+      const prefetchSpy = vi.spyOn(EnrichmentCoordinator.prototype, "beginRun");
 
       // Add a new file — enrichment should only prefetch for this file
       await createTestFile(
@@ -671,7 +671,7 @@ console.log('This file has secrets');`,
       );
       await ingest.indexCodebase(codebaseDir);
 
-      const prefetchSpy = vi.spyOn(EnrichmentCoordinator.prototype, "prefetch");
+      const prefetchSpy = vi.spyOn(EnrichmentCoordinator.prototype, "beginRun");
 
       // Modify existing (different content = different hash) + add new
       await createTestFile(
