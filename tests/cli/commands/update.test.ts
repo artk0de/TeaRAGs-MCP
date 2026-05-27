@@ -6,6 +6,17 @@ import { runUpdateCommand, updateCommand } from "../../../src/cli/commands/updat
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { available, unavailable, upToDate } from "../../../src/cli/update-check/types.js";
 
+// Contract-level: stub the real network-touching service so the default-deps
+// handler path resolves instantly. Without this the handler test drives a live
+// npm-registry fetch (~1s) that flakes under full-suite parallel load. The
+// runUpdateCommand tests below inject their own service via depsOverride and are
+// unaffected by this module mock.
+vi.mock("../../../src/cli/update-check/check-service.js", () => ({
+  UpdateCheckService: class {
+    checkForUpdate = vi.fn().mockResolvedValue({ kind: "unavailable", reason: "network" });
+  },
+}));
+
 const stdoutMock = vi.fn();
 const stderrMock = vi.fn();
 const exitMock = vi.fn();
@@ -154,20 +165,17 @@ describe("updateCommand", () => {
     expect(typeof updateCommand.handler).toBe("function");
   });
 
-  it("handler awaits runUpdateCommand (drives the command-module entrypoint)", async () => {
-    // Spy on the registry client so the default-deps path doesn't actually
-    // hit npm. The default cache lives under the user's home dir and will
-    // short-circuit to "unavailable" or a fetch error — both are fine, the
-    // assertion is only that handler() resolves without throwing and calls
-    // process.exit (which we mock).
+  it("handler delegates to runUpdateCommand via default deps (contract)", async () => {
+    // UpdateCheckService is mocked at module scope to resolve instantly to
+    // "unavailable", so this exercises the real handler→runUpdateCommand
+    // indirection (the command-module entrypoint) deterministically and without
+    // a live npm-registry fetch. The "unavailable" branch routes to exit(1).
     const exitSpy = vi
       .spyOn(process, "exit")
       .mockImplementation((() => undefined) as unknown as (code?: number) => never);
     try {
       await (updateCommand.handler as (a: unknown) => Promise<void>)({});
-      // exitSpy may or may not have been called depending on cache state;
-      // the only thing we need is that handler ran to completion.
-      expect(true).toBe(true);
+      expect(exitSpy).toHaveBeenCalledWith(1);
     } finally {
       exitSpy.mockRestore();
     }
