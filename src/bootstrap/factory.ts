@@ -253,6 +253,14 @@ export function wireCodegraph(
   config: AppConfig,
   zodConfig: ReturnType<typeof getZodConfig>,
   collectionRegistry: CollectionRegistry,
+  /**
+   * Expand a Qdrant alias to its active versioned collection for the codegraph
+   * read path (GraphFacade) — the DuckDB files are versioned but the project
+   * addresses the stable alias. Wired to `qdrant.aliases.resolveActive` by
+   * `createAppContext`. Optional: the wireCodegraph unit test omits it (reads
+   * then address by literal collection, no alias indirection needed).
+   */
+  resolveActiveCollection?: (collectionName: string) => Promise<string>,
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -383,7 +391,7 @@ export function wireCodegraph(
       customPatterns: codegraph.customExcludePatterns ?? [],
     },
   };
-  const graphFacade = new GraphFacade({ pool, collectionRegistry });
+  const graphFacade = new GraphFacade({ pool, collectionRegistry, resolveActiveCollection });
   return { deps, graphFacade, pool };
 }
 
@@ -397,7 +405,9 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   // is deferred until later — registry construction alone is side-effect
   // free, so creating it early costs nothing.
   const collectionRegistry = new CollectionRegistry(config.paths.appData);
-  const codegraphContext = wireCodegraph(config, zodConfig, collectionRegistry);
+  const codegraphContext = wireCodegraph(config, zodConfig, collectionRegistry, async (name) =>
+    infra.qdrant.aliases.resolveActive(name),
+  );
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 
   const statsCache = new StatsCache(config.paths.snapshots);

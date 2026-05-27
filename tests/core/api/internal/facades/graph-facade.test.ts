@@ -73,6 +73,38 @@ describe("GraphFacade", () => {
     expect(response.callers).toHaveLength(3);
   });
 
+  it("resolves an alias to its active versioned collection before acquiring the read handle", async () => {
+    // Codegraph DuckDB files are versioned (code_x_v4.duckdb); the Qdrant alias
+    // "code_x" must resolve to the active versioned collection so the read path
+    // opens the file the write path populated. Without this, get_callers reads
+    // the empty unversioned file and returns [] despite real method edges.
+    const graphDb = { getCallers: vi.fn().mockResolvedValue([]), getCallees: vi.fn() };
+    const pool = fakePool(graphDb);
+    const facade = new GraphFacade({
+      pool,
+      collectionRegistry: fakeRegistry({}),
+      resolveActiveCollection: async (name: string) => (name === "code_x" ? "code_x_v4" : name),
+    });
+    await facade.getCallers({ collection: "code_x", symbolId: "B.x" });
+    expect(pool.acquireReader).toHaveBeenCalledWith("code_x_v4");
+  });
+
+  it("falls back to the addressed collection when alias resolution fails", async () => {
+    // Resolution failure (Qdrant unreachable, alias-list error) must not abort
+    // the read — it degrades to the addressed name rather than throwing.
+    const graphDb = { getCallers: vi.fn().mockResolvedValue([]), getCallees: vi.fn() };
+    const pool = fakePool(graphDb);
+    const facade = new GraphFacade({
+      pool,
+      collectionRegistry: fakeRegistry({}),
+      resolveActiveCollection: async () => {
+        throw new Error("alias list failed");
+      },
+    });
+    await facade.getCallers({ collection: "code_x", symbolId: "B.x" });
+    expect(pool.acquireReader).toHaveBeenCalledWith("code_x");
+  });
+
   it("getCallees delegates with the default limit of 50", async () => {
     const callees = Array.from({ length: 75 }, (_, i) => ({
       targetSymbolId: `T${i}`,

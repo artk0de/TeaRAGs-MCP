@@ -169,4 +169,21 @@ describe("QdrantAliasManager", () => {
       await expect(aliases.listAliases()).rejects.toThrow(/listAliases/);
     });
   });
+
+  describe("resolveActive", () => {
+    it("resolves an alias to its target collection", async () => {
+      client.getAliases.mockResolvedValue({
+        aliases: [{ alias_name: "code_x", collection_name: "code_x_v4" }],
+      });
+      expect(await aliases.resolveActive("code_x")).toBe("code_x_v4");
+    });
+
+    it("returns the name verbatim when it is not an alias (already a concrete collection)", async () => {
+      client.getAliases.mockResolvedValue({
+        aliases: [{ alias_name: "code_x", collection_name: "code_x_v4" }],
+      });
+      expect(await aliases.resolveActive("code_x_v4")).toBe("code_x_v4");
+      expect(await aliases.resolveActive("unknown")).toBe("unknown");
+    });
+  });
 });
