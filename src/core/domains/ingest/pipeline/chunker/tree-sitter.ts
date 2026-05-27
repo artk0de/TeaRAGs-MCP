@@ -346,6 +346,7 @@ export class TreeSitterChunker implements CodeChunker {
         disambiguateOverloads: kernel.disambiguateOverloads,
         macroSymbols: hooks.macroSymbols,
         chunkSymbols: hooks.chunkSymbols,
+        classifier: hooks.classifier,
       };
     } catch (error) {
       console.error(`[TreeSitter] Failed to load parser for ${language}:`, error);
