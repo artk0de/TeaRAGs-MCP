@@ -26,12 +26,6 @@ export interface ChunkSignalOverlay {
   [key: string]: unknown;
 }
 
-/** Result of finalizeSignals — deferred whole-repo signals for both levels. */
-export interface FinalizeResult {
-  file: Map<string, FileSignalOverlay>;
-  chunk: Map<string, Map<string, ChunkSignalOverlay>>;
-}
-
 // --- Scoring weights ---
 
 export interface ScoringWeights {
@@ -181,11 +175,24 @@ export interface EnrichmentProvider {
     options?: FileSignalOptions,
   ) => Promise<Map<string, FileSignalOverlay>>;
   /**
-   * Deferred whole-repo finalize, run once after the embedding stream. Returns
-   * signals that require the complete data set (e.g. graph SCC/PageRank).
-   * Optional: providers that stream everything (git) omit it or return empty.
+   * Deferred whole-repo FILE finalize, run once after the embedding stream.
+   * Returns FILE-level overlays that require the complete data set (e.g. graph
+   * fanIn p95 / transitive impact). Optional: providers that stream everything
+   * (git) omit it or return an empty map. CHUNK-level deferred signals are NOT
+   * returned here — providers that defer chunk signals set
+   * `defersChunkEnrichment` and the coordinator runs a separate post-finalize
+   * `buildChunkSignals` pass (see codegraph-chunk-defer-design spec).
    */
-  finalizeSignals?: (root: string, options?: FileSignalOptions) => Promise<FinalizeResult>;
+  finalizeSignals?: (root: string, options?: FileSignalOptions) => Promise<Map<string, FileSignalOverlay>>;
+  /**
+   * When true, this provider's CHUNK signals cannot be computed per-batch —
+   * they depend on the whole finalized data set (codegraph: the graph is only
+   * queryable after the run sink's finish()). The coordinator skips per-batch
+   * chunk dispatch for such providers and runs ONE buildChunkSignals pass after
+   * the file-level finalize. Absent / false ⇒ chunk signals stream per batch
+   * (git).
+   */
+  readonly defersChunkEnrichment?: boolean;
   /**
    * Optional per-run counters surfaced via
    * `EnrichmentMetrics.byProvider[provider.key]`. Returned shape is

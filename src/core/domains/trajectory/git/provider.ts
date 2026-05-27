@@ -21,7 +21,6 @@ import type {
   FileSignalOverlay,
   FileSignalTransform,
   FilterDescriptor,
-  FinalizeResult,
 } from "../../../contracts/types/provider.js";
 import type { RerankPreset } from "../../../contracts/types/reranker.js";
 import { gitFilters } from "./filters.js";
@@ -152,11 +151,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     return this.buildFileSignals(root, { paths: batchPaths });
   };
 
-  /** git streams file+chunk signals per batch — nothing is deferred. */
-  finalizeSignals = async (): Promise<FinalizeResult> => ({
-    file: new Map(),
-    chunk: new Map(),
-  });
+  /** git streams file+chunk signals per batch — nothing is deferred, so the
+   *  file finalize is an empty no-op (and defersChunkEnrichment stays unset). */
+  finalizeSignals = async (): Promise<Map<string, FileSignalOverlay>> => new Map();
 
   /** Run `git blame HEAD` per file in parallel batches and store results in
    *  the WeakMap for later transform-time lookup. Failures fall back to empty

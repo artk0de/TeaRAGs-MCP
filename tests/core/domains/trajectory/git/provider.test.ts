@@ -197,10 +197,10 @@ describe("GitEnrichmentProvider", () => {
       expect(result.has("src/b.ts")).toBe(true);
     });
 
-    it("finalizeSignals returns empty file+chunk maps (git streams everything)", async () => {
+    it("finalizeSignals returns an empty file map (git streams everything)", async () => {
       const f = await provider.finalizeSignals("/repo");
-      expect(f.file.size).toBe(0);
-      expect(f.chunk.size).toBe(0);
+      expect(f).toBeInstanceOf(Map);
+      expect(f.size).toBe(0);
     });
   });
 
