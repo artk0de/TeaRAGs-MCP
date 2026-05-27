@@ -128,7 +128,16 @@ const BLAME_HEADER_RE = /^([0-9a-f]{40}) \d+ (\d+)(?: \d+)?$/;
  */
 export function parseBlameOutput(stdout: string): BlameLine[] {
   const result: BlameLine[] = [];
-  const meta = new Map<string, { author: string; authorEmail: string; timestamp: number }>();
+  // Force standalone owned copies of the strings we keep (sha/author/email). V8
+  // keeps `String.slice()` / regex-capture results as SlicedStrings that pin the
+  // ENTIRE parent — here the multi-hundred-KB `git blame --porcelain` stdout —
+  // alive for as long as any returned BlameLine references them. A live heap
+  // snapshot confirmed BlameLine.author/sha/authorEmail slices retaining whole
+  // per-file porcelain blocks (held across all files via blameByRelPath). A
+  // Buffer round-trip (cheap: once per unique sha, not per line) materialises an
+  // owned copy so the stdout is GC'd right after parsing.
+  const own = (s: string): string => Buffer.from(s, "utf8").toString("utf8");
+  const meta = new Map<string, { sha: string; author: string; authorEmail: string; timestamp: number }>();
 
   let pendingSha = "";
   let pendingLine = 0;
@@ -157,18 +166,23 @@ export function parseBlameOutput(stdout: string): BlameLine[] {
     } else if (line.startsWith("author-time ")) {
       pendingTime = parseInt(line.slice(12), 10) || 0;
     } else if (line.startsWith("\t")) {
-      if (pendingAuthor && !meta.has(pendingSha)) {
-        meta.set(pendingSha, {
-          author: pendingAuthor,
-          authorEmail: pendingEmail,
+      // Look up by the slice (string Map keys compare by value, so the lookup
+      // slice is not retained). Create the entry once per sha with OWNED copies;
+      // later lines of the same sha reuse them. result references only `cached`.
+      let cached = meta.get(pendingSha);
+      if (!cached && pendingAuthor) {
+        cached = {
+          sha: own(pendingSha),
+          author: own(pendingAuthor),
+          authorEmail: own(pendingEmail),
           timestamp: pendingTime,
-        });
+        };
+        meta.set(cached.sha, cached);
       }
-      const cached = meta.get(pendingSha);
       if (cached) {
         result.push({
           lineNumber: pendingLine,
-          sha: pendingSha,
+          sha: cached.sha,
           author: cached.author,
           authorEmail: cached.authorEmail,
           timestamp: cached.timestamp,

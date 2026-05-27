@@ -67,7 +67,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   private readonly blameByChurnData = new WeakMap<FileChurnData, BlameLine[]>();
   /** Blame results keyed by relative path — passed into buildChunkChurnMap so
    *  chunk overlays receive per-range line ownership. Same blame pass as file-level. */
-  private readonly blameByRelPath: Map<string, BlameLine[]> = new Map();
+  private blameByRelPath: Map<string, BlameLine[]> = new Map();
 
   constructor(config?: Partial<GitProviderConfig>, squashOpts?: SquashOptions) {
     this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config };
@@ -186,6 +186,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       options?.skipCache,
       this.blameByRelPath,
     );
+
+    // Chunk enrichment is the last reader of blameByRelPath. Swap in a fresh
+    // map so every file's BlameLine[] (and the porcelain those slices used to
+    // pin) is not retained for the provider/daemon lifetime — the next run's
+    // file passes repopulate it. Replacing (not clearing) leaves any reference
+    // already handed to buildChunkChurnMap intact. (blameByChurnData is a
+    // WeakMap and self-evicts.)
+    this.blameByRelPath = new Map();
 
     const result = new Map<string, Map<string, ChunkSignalOverlay>>();
     for (const [filePath, overlayMap] of rawResult) {

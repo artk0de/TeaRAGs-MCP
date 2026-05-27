@@ -16,6 +16,9 @@ export default defineConfig({
     reporters: isCI ? ["default", "hanging-process"] : ["default"],
     // Setup file mocks tree-sitter native modules to prevent crashes
     setupFiles: ["./tests/vitest.setup.ts"],
+    // Tripwire: fail the run if any test moved the real worktree's git HEAD
+    // (real-git fixtures committing against a broken cwd). See the file header.
+    globalSetup: ["./tests/worktree-head-guard.ts"],
     exclude: [
       "**/node_modules/**",
       "**/build/**",

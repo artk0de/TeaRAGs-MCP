@@ -96,29 +96,7 @@ describe("getCommitsByPathspecBatched (via getCommitsByPathspec)", () => {
   });
 });
 
-// ─── readBlobAsString — error returns empty string ───────────────────────────
-
-describe("readBlobAsString", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("should return empty string when readBlob throws", async () => {
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "readBlob").mockRejectedValue(new Error("not found"));
-
-    const result = await gitClient.readBlobAsString("/repo", "abc123", "nonexistent.ts", {});
-    expect(result).toBe("");
-  });
-
-  it("should decode blob content as UTF-8", async () => {
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "readBlob").mockResolvedValue({
-      oid: "x".repeat(40),
-      blob: new TextEncoder().encode("hello world"),
-    } as any);
-
-    const result = await gitClient.readBlobAsString("/repo", "abc123", "file.ts", {});
-    expect(result).toBe("hello world");
-  });
-});
+// readBlobAsString (and readCommitParent) are covered by real-git fixtures in
+// client-catfile.test.ts — they shell out to `git cat-file` / `git rev-parse`,
+// so a mock-based test here would only assert the mock. Content correctness and
+// the missing-path "" fallback live there against a real temp repo.

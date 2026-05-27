@@ -1,17 +1,15 @@
 /**
- * Low-level git operations — CLI primary, isomorphic-git for individual object reads.
- * No enrichment concepts, no caching logic.
+ * Low-level git operations — CLI only. No enrichment concepts, no caching.
  *
- * Heavy operations (log walking, tree diffing) use CLI exclusively to avoid OOM
- * on large repos. isomorphic-git is used only for individual object reads
- * (readBlob, readCommit, resolveRef) where pack cache growth is bounded.
+ * Everything (log walking, object reads, ref resolution) goes through the git
+ * CLI. isomorphic-git was removed: its pack reader loaded the ENTIRE packfile
+ * into a JS ArrayBuffer (heap profiler caught 3×1.4 GB on a large repo → 16 GB
+ * OOM). `git cat-file` / `git rev-parse` stream individual objects from disk,
+ * so resident memory never includes the whole pack.
  */
 
-import { execFile, execFileSync } from "node:child_process";
-import * as fs from "node:fs";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { promisify } from "node:util";
-
-import git from "isomorphic-git";
 
 import { isDebug } from "../../infra/runtime.js";
 import { parseBlameOutput, parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
@@ -61,13 +59,28 @@ export function buildCliArgs(sinceDate?: Date): string[] {
   return args;
 }
 
-/** Resolve HEAD SHA — isomorphic-git first, CLI fallback. */
+/** Resolve HEAD SHA via CLI `git rev-parse HEAD`. */
 export async function getHead(repoRoot: string): Promise<string> {
+  const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repoRoot });
+  return stdout.trim();
+}
+
+/**
+ * First-parent oid of a commit, via CLI. Returns null for a root commit (no
+ * parent). Replaces the domain's former direct `isomorphic-git readCommit`
+ * call — keeping all git mechanics in the adapter and off isomorphic-git
+ * (which loads the whole packfile into memory). `rev-parse --verify --quiet`
+ * exits non-zero with no output when `<sha>^` does not resolve (root commit).
+ */
+export async function readCommitParent(repoRoot: string, sha: string): Promise<string | null> {
   try {
-    return await git.resolveRef({ fs, dir: repoRoot, ref: "HEAD" });
+    const { stdout } = await execFileAsync("git", ["rev-parse", "--verify", "--quiet", `${sha}^`], {
+      cwd: repoRoot,
+    });
+    const parent = stdout.trim();
+    return parent.length > 0 ? parent : null;
   } catch {
-    const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repoRoot });
-    return stdout.trim();
+    return null;
   }
 }
 
@@ -98,29 +111,148 @@ export async function buildViaCli(
   return parseNumstatOutput(stdout);
 }
 
-// ── isomorphic-git object reads ──────────────────────────────────
-// Only used for individual object reads (readBlob, readCommit, resolveRef).
-// Heavy operations (log walking, tree diffing) use CLI to avoid OOM.
+// ── Object reads (CLI cat-file — never loads the packfile into memory) ──
+// isomorphic-git's readBlob loaded the ENTIRE packfile into a JS ArrayBuffer
+// per cache object (heap profiler caught 3×1.4 GB `system / JSArrayBufferData`
+// on a large repo, growing to 16 GB → OOM). `git cat-file` seeks a single
+// object in the pack via its .idx and streams just that object from disk, so
+// resident memory is one blob, not the whole pack.
 
-/** Read a blob at a specific commit as a UTF-8 string. Returns "" if missing. */
-export async function readBlobAsString(
-  repoRoot: string,
-  commitOid: string,
-  filepath: string,
-  cache: Record<string, unknown>,
-): Promise<string> {
+/**
+ * Read a blob at a specific commit as a UTF-8 string. Returns "" when the path
+ * is missing at that commit (cat-file exits non-zero). `maxBuffer` is raised
+ * above the 1 MB default so normal source blobs are not truncated; pathological
+ * giant files are filtered out upstream by the chunk-churn line cap.
+ */
+export async function readBlobAsString(repoRoot: string, commitOid: string, filepath: string): Promise<string> {
   try {
-    const { blob } = await git.readBlob({
-      fs,
-      dir: repoRoot,
-      oid: commitOid,
-      filepath,
-      cache,
+    const { stdout } = await execFileAsync("git", ["cat-file", "blob", `${commitOid}:${filepath}`], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      maxBuffer: 256 * 1024 * 1024,
     });
-    return new TextDecoder().decode(blob);
+    return stdout;
   } catch {
     return "";
   }
+}
+
+/**
+ * Persistent reader over a single `git cat-file --batch` process. Each `read`
+ * streams ONE object through the long-lived process instead of spawning a
+ * `git cat-file blob` per call. The chunk-churn walk issues tens of thousands
+ * of blob reads; per-call spawn (fork + re-open the pack `.idx` every time)
+ * dominated wall time. One persistent process keeps the pack open and still
+ * holds only one object at a time — bounded memory, unlike isomorphic-git which
+ * loaded the whole pack into an ArrayBuffer. See
+ * `.claude/rules/git-cat-file-batch.md`.
+ */
+export interface CatFileBatchReader {
+  /** Read `<commitOid>:<filepath>` as a UTF-8 string; "" when absent. */
+  read: (commitOid: string, filepath: string) => Promise<string>;
+  /** End the underlying git process and reject any later reads. */
+  close: () => Promise<void>;
+}
+
+/**
+ * Protocol (FIFO — one response per request, in order):
+ *   stdin:  `<commitOid>:<filepath>\n`
+ *   stdout: `<oid> <type> <size>\n<size bytes>\n`   (object exists)
+ *           `<rev> missing\n`                        (object absent → "")
+ * Content is framed by byte length (blobs contain newlines / arbitrary bytes)
+ * and decoded as UTF-8 to match `readBlobAsString`.
+ */
+export function createCatFileBatch(repoRoot: string): CatFileBatchReader {
+  interface Pending {
+    resolve: (value: string) => void;
+    reject: (err: Error) => void;
+  }
+  const queue: Pending[] = [];
+  let buf: Buffer = Buffer.alloc(0);
+  // null → awaiting a header line; number → that many content bytes still owed.
+  let expectContent: number | null = null;
+  let closed = false;
+  let fatal: Error | null = null;
+  let child: ReturnType<typeof spawn> | null = null;
+
+  const failAll = (err: Error): void => {
+    fatal ??= err;
+    while (queue.length > 0) queue.shift()?.reject(err);
+  };
+
+  const onData = (chunk: Buffer): void => {
+    buf = buf.length === 0 ? chunk : Buffer.concat([buf, chunk]);
+    for (;;) {
+      if (expectContent === null) {
+        const nl = buf.indexOf(0x0a); // '\n'
+        if (nl === -1) return; // header line not complete yet
+        const header = buf.toString("utf8", 0, nl);
+        buf = buf.subarray(nl + 1);
+        const tail = header.slice(header.lastIndexOf(" ") + 1);
+        if (tail === "missing") {
+          queue.shift()?.resolve("");
+          continue;
+        }
+        const size = Number.parseInt(tail, 10);
+        if (!Number.isFinite(size) || size < 0) {
+          failAll(new Error(`cat-file --batch: unparseable header "${header}"`));
+          return;
+        }
+        expectContent = size;
+      }
+      // Need `size` content bytes plus the trailing newline git appends.
+      if (buf.length < expectContent + 1) return;
+      const content = buf.subarray(0, expectContent).toString("utf8");
+      buf = buf.subarray(expectContent + 1);
+      expectContent = null;
+      queue.shift()?.resolve(content);
+    }
+  };
+
+  // Spawn lazily on the first read — a walk that reads no blobs (every file
+  // skipped, empty chunk map, pathspec returned nothing) never forks git.
+  const ensureChild = (): NonNullable<typeof child> => {
+    if (child) return child;
+    const c = spawn("git", ["cat-file", "--batch"], { cwd: repoRoot, stdio: ["pipe", "pipe", "ignore"] });
+    c.stdout?.on("data", onData);
+    c.on("error", (err) => {
+      failAll(err instanceof Error ? err : new Error(String(err)));
+    });
+    c.on("close", () => {
+      if (!closed) failAll(new Error("git cat-file --batch exited unexpectedly"));
+    });
+    child = c;
+    return c;
+  };
+
+  return {
+    read: async (commitOid: string, filepath: string): Promise<string> => {
+      if (closed) throw new Error("CatFileBatchReader is closed");
+      if (fatal) throw fatal;
+      const c = ensureChild();
+      return new Promise<string>((resolve, reject) => {
+        queue.push({ resolve, reject });
+        c.stdin?.write(`${commitOid}:${filepath}\n`);
+      });
+    },
+    close: async (): Promise<void> => {
+      if (closed) return;
+      closed = true;
+      const c = child;
+      if (!c) return; // never spawned — nothing to tear down
+      await new Promise<void>((resolve) => {
+        const done = (): void => {
+          clearTimeout(timer);
+          resolve();
+        };
+        const timer = setTimeout(() => {
+          c.kill();
+        }, 2000);
+        c.once("close", done);
+        c.stdin?.end();
+      });
+    },
+  };
 }
 
 // ── Pathspec CLI operations ──────────────────────────────────────

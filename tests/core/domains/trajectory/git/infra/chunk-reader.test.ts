@@ -1,8 +1,9 @@
 /**
  * Tests for chunk-reader functions (buildChunkChurnMapUncached, processCommitEntry).
  *
- * Extracted from git-log-reader.test.ts — these tests mock gitClient and isomorphic-git
- * to exercise chunk-level churn map construction edge cases.
+ * Extracted from git-log-reader.test.ts — these tests mock the git adapter
+ * (getCommitsByPathspec, readCommitParent, createCatFileBatch) to exercise
+ * chunk-level churn map construction edge cases.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,72 +14,74 @@ import * as chunkReader from "../../../../../../src/core/domains/trajectory/git/
 // Enable cross-module spy interception for adapter functions
 vi.mock("../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
 
-// ─── processCommitEntry — readCommit error, empty blobs, large file skip ────
+// walk-commits reads blobs via `createCatFileBatch(repoRoot).read(oid, path)`.
+// Mock the batch reader and drive returned blob content through the `read` fn —
+// `read(parentOid, …)` then `read(commit.sha, …)` per file, so mockResolvedValueOnce
+// sequencing matches old→new content order. Returns the `read` mock for chaining.
+function mockBlobReads(): ReturnType<typeof vi.fn> {
+  const read = vi.fn();
+  vi.spyOn(gitClient, "createCatFileBatch").mockReturnValue({
+    read,
+    close: vi.fn().mockResolvedValue(undefined),
+  } as unknown as ReturnType<typeof gitClient.createCatFileBatch>);
+  return read;
+}
+
+// ─── processCommitEntry — parent unresolvable, empty blobs, large file skip ────
 
 describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("should skip large files when GIT_CHUNK_MAX_FILE_LINES is set low", async () => {
-    const originalEnv = process.env.GIT_CHUNK_MAX_FILE_LINES;
-    process.env.GIT_CHUNK_MAX_FILE_LINES = "10"; // Very low limit
-
-    try {
-      // Mock pathspec to return a commit touching our file
-      vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
-        {
-          commit: {
-            sha: "a".repeat(40),
-            author: "Alice",
-            authorEmail: "alice@ex.com",
-            timestamp: Math.floor(Date.now() / 1000),
-            body: "feat: add big file",
-          },
-          changedFiles: ["big-file.ts"],
-        },
-      ]);
-
-      // Mock readCommit to return a valid commit with parent
-      const git = await import("isomorphic-git");
-      vi.spyOn(git.default, "readCommit").mockResolvedValue({
-        oid: "a".repeat(40),
+  it("should skip files whose chunks exceed maxFileLines (no blob read)", async () => {
+    // Mock pathspec to return a commit touching our file
+    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+      {
         commit: {
-          tree: "t".repeat(40),
-          parent: ["p".repeat(40)],
-          author: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-          committer: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-          message: "feat: add big file",
+          sha: "a".repeat(40),
+          author: "Alice",
+          authorEmail: "alice@ex.com",
+          timestamp: Math.floor(Date.now() / 1000),
+          body: "feat: add big file",
         },
-        payload: "",
-      } as any);
+        changedFiles: ["big-file.ts"],
+      },
+    ]);
 
-      const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
-      chunkMap.set("big-file.ts", [
-        { chunkId: "c1", startLine: 1, endLine: 50 }, // endLine 50 > max 10
-        { chunkId: "c2", startLine: 51, endLine: 100 },
-      ]);
+    // Parent resolves so the walk proceeds to the maxFileLines check — that skip
+    // is the behavior under test. The blob reader is never consulted because the
+    // file is filtered out before any read (so no createCatFileBatch mock needed).
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
-      const result = await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
+    chunkMap.set("big-file.ts", [
+      { chunkId: "c1", startLine: 1, endLine: 50 },
+      { chunkId: "c2", startLine: 51, endLine: 100 }, // maxLine 100 > maxFileLines 10
+    ]);
 
-      // File should be skipped due to maxFileLines=10, chunks endLine=50 and 100 both exceed it
-      const overlay = result.get("big-file.ts");
-      if (overlay) {
-        // If overlay exists, chunk commit counts should be 0 (skipped)
-        for (const [, o] of overlay) {
-          expect(o.commitCount).toBe(0);
-        }
-      }
-    } finally {
-      if (originalEnv === undefined) {
-        delete process.env.GIT_CHUNK_MAX_FILE_LINES;
-      } else {
-        process.env.GIT_CHUNK_MAX_FILE_LINES = originalEnv;
+    // maxFileLines is the 9th positional arg (squashOpts, chunkTimeoutMs precede it).
+    const result = await chunkReader.buildChunkChurnMapUncached(
+      "/fake/repo",
+      chunkMap,
+      {},
+      10,
+      6,
+      undefined,
+      undefined,
+      120000,
+      10,
+    );
+
+    const overlay = result.get("big-file.ts");
+    if (overlay) {
+      for (const [, o] of overlay) {
+        expect(o.commitCount).toBe(0);
       }
     }
   });
 
-  it("should skip commit when readCommit throws (e.g., missing object)", async () => {
+  it("should skip commit when parent cannot be resolved (e.g., missing object)", async () => {
     vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
@@ -92,8 +95,9 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       },
     ]);
 
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "readCommit").mockRejectedValue(new Error("object not found"));
+    // The adapter returns null when the parent can't be resolved (missing
+    // object, not-a-repo, etc.); the commit is skipped, no churn recorded.
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue(null);
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
@@ -111,7 +115,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
     }
   });
 
-  it("should skip commit when readCommit returns root commit (no parents)", async () => {
+  it("should skip commit when it has no parent (root commit)", async () => {
     vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
@@ -125,18 +129,8 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       },
     ]);
 
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "readCommit").mockResolvedValue({
-      oid: "a".repeat(40),
-      commit: {
-        tree: "t".repeat(40),
-        parent: [], // root commit — no parent
-        author: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        committer: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        message: "initial commit",
-      },
-      payload: "",
-    } as any);
+    // Root commit → adapter returns null parent → the walk skips it.
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue(null);
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
@@ -167,21 +161,10 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       },
     ]);
 
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "readCommit").mockResolvedValue({
-      oid: "a".repeat(40),
-      commit: {
-        tree: "t".repeat(40),
-        parent: ["p".repeat(40)],
-        author: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        committer: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        message: "fix: something",
-      },
-      payload: "",
-    } as any);
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
-    // Both readBlob calls return empty (file doesn't exist in either)
-    vi.spyOn(git.default, "readBlob").mockRejectedValue(new Error("not found"));
+    // Both blobs empty (path missing at both commits) → adapter returns "" → skip.
+    mockBlobReads().mockResolvedValue("");
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
@@ -212,25 +195,11 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       },
     ]);
 
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "readCommit").mockResolvedValue({
-      oid: "a".repeat(40),
-      commit: {
-        tree: "t".repeat(40),
-        parent: ["p".repeat(40)],
-        author: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        committer: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        message: "feat: stuff",
-      },
-      payload: "",
-    } as any);
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
-    // readBlob returns identical content for both parent and commit
-    // so structuredPatch will produce 0 hunks (no changes → skip)
-    vi.spyOn(git.default, "readBlob").mockResolvedValue({
-      oid: "x".repeat(40),
-      blob: new TextEncoder().encode("identical content\nline 2\nline 3"),
-    } as any);
+    // Identical content for both parent and commit blobs → structuredPatch
+    // produces 0 hunks (no changes → skip).
+    mockBlobReads().mockResolvedValue("identical content\nline 2\nline 3");
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
@@ -311,26 +280,13 @@ describe("processCommitEntry — bug fix accumulation", () => {
       },
     ]);
 
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "readCommit").mockResolvedValue({
-      oid: commitSha,
-      commit: {
-        tree: "t".repeat(40),
-        parent: ["p".repeat(40)],
-        author: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        committer: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        message: "fix: resolve critical auth bug",
-      },
-      payload: "",
-    } as any);
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
-    // Return different content so structuredPatch produces hunks
-    vi.spyOn(git.default, "readBlob")
-      .mockResolvedValueOnce({ oid: "x".repeat(40), blob: new TextEncoder().encode("old line 1\nold line 2") } as any)
-      .mockResolvedValueOnce({
-        oid: "y".repeat(40),
-        blob: new TextEncoder().encode("new line 1\nnew line 2\nnew line 3"),
-      } as any);
+    // Different old/new content so structuredPatch produces hunks. Blobs are
+    // read via the git adapter (cat-file), so mock at the adapter boundary.
+    mockBlobReads()
+      .mockResolvedValueOnce("old line 1\nold line 2")
+      .mockResolvedValueOnce("new line 1\nnew line 2\nnew line 3");
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("auth.ts", [
@@ -385,24 +341,8 @@ describe("buildChunkChurnMapUncached — single-chunk files", () => {
       },
     ]);
 
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "readCommit").mockResolvedValue({
-      oid: commitSha,
-      commit: {
-        tree: "t".repeat(40),
-        parent: ["p".repeat(40)],
-        author: { name: "Alice", email: "alice@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        committer: { name: "Alice", email: "alice@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        message: "feat: tiny header file",
-      },
-      payload: "",
-    } as any);
-    vi.spyOn(git.default, "readBlob")
-      .mockResolvedValueOnce({ oid: "x".repeat(40), blob: new TextEncoder().encode("") } as any)
-      .mockResolvedValueOnce({
-        oid: "y".repeat(40),
-        blob: new TextEncoder().encode("import x from 'y';\nexport const z = 1;\n"),
-      } as any);
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
+    mockBlobReads().mockResolvedValueOnce("").mockResolvedValueOnce("import x from 'y';\nexport const z = 1;\n");
 
     // SINGLE chunk — file is small enough to be a single block
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
@@ -466,26 +406,10 @@ describe("buildChunkChurnMapUncached — fallback fileCommitCount", () => {
       },
     ]);
 
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "readCommit").mockResolvedValue({
-      oid: commitSha,
-      commit: {
-        tree: "t".repeat(40),
-        parent: ["p".repeat(40)],
-        author: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        committer: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        message: "fix: something",
-      },
-      payload: "",
-    } as any);
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
-    // readBlob returns content so structuredPatch can work
-    vi.spyOn(git.default, "readBlob")
-      .mockResolvedValueOnce({ oid: "x".repeat(40), blob: new TextEncoder().encode("old content\nline2") } as any)
-      .mockResolvedValueOnce({
-        oid: "y".repeat(40),
-        blob: new TextEncoder().encode("new content\nline2\nline3"),
-      } as any);
+    // Old/new content so structuredPatch produces hunks.
+    mockBlobReads().mockResolvedValueOnce("old content\nline2").mockResolvedValueOnce("new content\nline2\nline3");
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
@@ -563,22 +487,9 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
       },
     ]);
 
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "readCommit").mockResolvedValue({
-      oid: commitSha,
-      commit: {
-        tree: "t".repeat(40),
-        parent: ["p".repeat(40)],
-        author: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        committer: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        message: "fix: something",
-      },
-      payload: "",
-    } as any);
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
-    vi.spyOn(git.default, "readBlob")
-      .mockResolvedValueOnce({ oid: "x".repeat(40), blob: new TextEncoder().encode("old\n") } as any)
-      .mockResolvedValueOnce({ oid: "y".repeat(40), blob: new TextEncoder().encode("new\nextra\n") } as any);
+    mockBlobReads().mockResolvedValueOnce("old\n").mockResolvedValueOnce("new\nextra\n");
 
     const mockRelease = vi.fn();
     const externalSem = { acquire: vi.fn().mockResolvedValue(mockRelease) };
@@ -642,22 +553,9 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
       },
     ]);
 
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "readCommit").mockResolvedValue({
-      oid: commitSha,
-      commit: {
-        tree: "t".repeat(40),
-        parent: ["p".repeat(40)],
-        author: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        committer: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-        message: "fix: something",
-      },
-      payload: "",
-    } as any);
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
-    vi.spyOn(git.default, "readBlob")
-      .mockResolvedValueOnce({ oid: "x".repeat(40), blob: new TextEncoder().encode("old\n") } as any)
-      .mockResolvedValueOnce({ oid: "y".repeat(40), blob: new TextEncoder().encode("new\nextra\n") } as any);
+    mockBlobReads().mockResolvedValueOnce("old\n").mockResolvedValueOnce("new\nextra\n");
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("src/a.ts", [
@@ -707,49 +605,15 @@ describe("buildChunkChurnMapUncached — concurrency control", () => {
       },
     ]);
 
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "readCommit")
-      .mockResolvedValueOnce({
-        oid: sha1,
-        commit: {
-          tree: "t".repeat(40),
-          parent: ["p".repeat(40)],
-          author: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-          committer: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
-          message: "feat: first change",
-        },
-        payload: "",
-      } as any)
-      .mockResolvedValueOnce({
-        oid: sha2,
-        commit: {
-          tree: "t".repeat(40),
-          parent: ["q".repeat(40)],
-          author: { name: "Bob", email: "b@ex.com", timestamp: 12345, timezoneOffset: 0 },
-          committer: { name: "Bob", email: "b@ex.com", timestamp: 12345, timezoneOffset: 0 },
-          message: "fix: second change",
-        },
-        payload: "",
-      } as any);
+    // One parent per commit (concurrency=1 → commit1 fully drains before commit2).
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValueOnce("p".repeat(40)).mockResolvedValueOnce("q".repeat(40));
 
-    // Alternate old/new content for two commits
-    vi.spyOn(git.default, "readBlob")
-      .mockResolvedValueOnce({
-        oid: "x1".padEnd(40, "0"),
-        blob: new TextEncoder().encode("v1 line 1\nv1 line 2"),
-      } as any)
-      .mockResolvedValueOnce({
-        oid: "x2".padEnd(40, "0"),
-        blob: new TextEncoder().encode("v2 line 1\nv2 line 2\nv2 line 3"),
-      } as any)
-      .mockResolvedValueOnce({
-        oid: "x3".padEnd(40, "0"),
-        blob: new TextEncoder().encode("v2 line 1\nv2 line 2\nv2 line 3"),
-      } as any)
-      .mockResolvedValueOnce({
-        oid: "x4".padEnd(40, "0"),
-        blob: new TextEncoder().encode("v3 line 1\nv3 line 2"),
-      } as any);
+    // Alternate old/new content per commit (2 blob reads each, in order).
+    mockBlobReads()
+      .mockResolvedValueOnce("v1 line 1\nv1 line 2")
+      .mockResolvedValueOnce("v2 line 1\nv2 line 2\nv2 line 3")
+      .mockResolvedValueOnce("v2 line 1\nv2 line 2\nv2 line 3")
+      .mockResolvedValueOnce("v3 line 1\nv3 line 2");
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [

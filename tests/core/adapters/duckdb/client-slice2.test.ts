@@ -15,13 +15,22 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DuckDBPreparedStatement } from "@duckdb/node-api";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import { runMigrations } from "../../../../src/core/infra/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../src/core/infra/migration/database/migrations");
+
+/** Parse DuckDB's human-readable memory_limit ("1.8 GiB", "256.0 MiB") to bytes. */
+function parseDuckDbBytes(s: string): number {
+  const m = /^([\d.]+)\s*(B|KiB|MiB|GiB|TiB)$/.exec(s.trim());
+  if (!m) throw new Error(`unparseable memory_limit: ${s}`);
+  const mult: Record<string, number> = { B: 1, KiB: 1024, MiB: 1024 ** 2, GiB: 1024 ** 3, TiB: 1024 ** 4 };
+  return parseFloat(m[1]) * mult[m[2]];
+}
 
 describe("DuckDbGraphClient — slice 2 streaming primitives", () => {
   let tmp: string;
@@ -58,6 +67,86 @@ describe("DuckDbGraphClient — slice 2 streaming primitives", () => {
     // Resource-ceiling settings are advisory — the load-bearing
     // assertion is that init() completes and subsequent CRUD works.
     expect(await client.hasData()).toBe(false);
+  });
+
+  it("init caps memory_limit on a write connection even when no resources are configured", async () => {
+    // Regression (OOM): an unconfigured write connection used to SKIP
+    // `SET memory_limit`, so DuckDB inherited its ~80%-of-system-RAM
+    // default (measured 14.3 GiB on an 18 GB host) and could OOM the
+    // machine natively during codegraph ingest. A write (READ_WRITE)
+    // connection must NEVER be left uncapped — init() applies a built-in
+    // conservative default when no memoryLimit is configured.
+    client = new DuckDbGraphClient({ path: dbPath }); // no resources at all
+    await client.init();
+    const [{ m }] = await client.queryAll<{ m: string }>("SELECT current_setting('memory_limit') AS m");
+    // Capped well below any machine's ~80%-of-RAM default (>=5 GB hosts).
+    expect(parseDuckDbBytes(m)).toBeLessThanOrEqual(2 * 1024 ** 3);
+  });
+
+  it("warns loudly when the memory_limit cap silently fails to apply", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    // An invalid memory_limit makes DuckDB reject the SET; execSilent swallows
+    // the parse error, leaving the connection at its uncapped ~80%-of-RAM
+    // default. init() must DETECT the cap did not take (current_setting
+    // unchanged before/after) and warn — that silent failure is exactly what
+    // hid the codegraph native OOM.
+    client = new DuckDbGraphClient({ path: dbPath, resources: { memoryLimit: "not-a-valid-size" } });
+    await client.init();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("memory_limit"));
+    errSpy.mockRestore();
+  });
+
+  // Native-memory leak guard. Every `run`/`queryAll` prepares a DuckDB
+  // statement; @duckdb/node-api statements hold NATIVE resources that V8's GC
+  // does not account for, so failing to `destroySync()` them leaks native
+  // memory. pass-2 issues millions of per-edge INSERTs via `run` — undisposed
+  // statements ballooned the indexer to 32 GB on taxdome. Both primitives MUST
+  // dispose the statement they create.
+  it("run() disposes its prepared statement (native-leak guard)", async () => {
+    client = new DuckDbGraphClient({ path: dbPath });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    const destroySpy = vi.spyOn(DuckDBPreparedStatement.prototype, "destroySync");
+    await client.run("INSERT OR IGNORE INTO cg_symbols_files (rel_path, language) VALUES (?, ?)", [
+      "a.ts",
+      "typescript",
+    ]);
+    expect(destroySpy).toHaveBeenCalledTimes(1);
+    destroySpy.mockRestore();
+  });
+
+  it("queryAll() disposes its prepared statement (native-leak guard)", async () => {
+    client = new DuckDbGraphClient({ path: dbPath });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    const destroySpy = vi.spyOn(DuckDBPreparedStatement.prototype, "destroySync");
+    await client.queryAll("SELECT 1 AS x");
+    expect(destroySpy).toHaveBeenCalledTimes(1);
+    destroySpy.mockRestore();
+  });
+
+  // streamAdjacency must be a TRUE chunked stream (connection.stream +
+  // fetchChunk), not a fake one that materialises the whole edge table via
+  // runAndReadAll().getRowObjectsJson(). This guards the chunk-boundary loop:
+  // seed > DuckDB's 2048-row vector so the result spans multiple fetched
+  // chunks, and assert every row is yielded exactly once (no dropped tail,
+  // no infinite loop).
+  it("streamAdjacency streams a multi-chunk method graph (>2048 rows) without dropping rows", async () => {
+    client = new DuckDbGraphClient({ path: dbPath });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    const N = 5000; // spans ~3 DuckDB chunks (2048 rows each)
+    await client.exec(
+      "INSERT INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression) " +
+        `SELECT 'S' || i, 'a.ts', 'T' || i, 'b.ts', 'c()' FROM range(${N}) AS t(i)`,
+    );
+    const seen = new Set<string>();
+    for await (const [source, target] of client.streamAdjacency("method")) {
+      seen.add(`${source}->${target}`);
+    }
+    expect(seen.size).toBe(N);
+    expect(seen.has("S0->T0")).toBe(true);
+    expect(seen.has(`S${N - 1}->T${N - 1}`)).toBe(true);
   });
 
   it("init only mkdirs spillDir — does NOT wipe existing files in it", async () => {

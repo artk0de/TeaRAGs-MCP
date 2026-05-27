@@ -17,14 +17,6 @@ vi.mock("node:child_process", () => ({
   execFileSync: vi.fn(),
 }));
 
-// Mock isomorphic-git
-vi.mock("isomorphic-git", () => ({
-  default: {
-    resolveRef: vi.fn(),
-    readBlob: vi.fn(),
-  },
-}));
-
 // Mock parsers — we control their return values to test the batched merge logic
 vi.mock("../../../../src/core/adapters/git/parsers.js", () => ({
   parseNumstatOutput: vi.fn(),
