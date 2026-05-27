@@ -53,6 +53,7 @@ import type {
   LanguageWalker,
 } from "../../../contracts/types/language.js";
 import { DefaultSymbolIdComposer } from "../kernel/symbol-id.js";
+import { GoChunkClassifier } from "./chunking/index.js";
 import { goKernel } from "./kernel.js";
 import { GoCallResolver } from "./resolver/index.js";
 import { goNameOf } from "./walker/name-of.js";
@@ -69,6 +70,7 @@ import { extractFromGoFile, type GoExtractInput } from "./walker/walker.js";
  */
 const goChunkerHooks: LanguageChunkerHooks = {
   chunkableTypes: ["function_declaration", "method_declaration", "type_declaration", "interface_declaration"],
+  classifier: new GoChunkClassifier(),
 };
 
 /**
@@ -100,4 +102,6 @@ export class GoLanguage implements LanguageProvider {
 export { goKernel } from "./kernel.js";
 export { extractFromGoFile, goNameOf } from "./walker/index.js";
 export { GoCallResolver } from "./resolver/index.js";
+export { GoChunkClassifier } from "./chunking/index.js";
+export { goSymbolOf } from "./naming.js";
 export type { FileExtraction, GoExtractInput };
