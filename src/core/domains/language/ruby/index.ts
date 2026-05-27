@@ -15,7 +15,7 @@
  * per-instance cost is the Parser the chunker/codegraph engines build.
  *
  * symbolId macro coverage convergence: the chunker emits synthetic method
- * symbols for class-body macros via `chunker/tree-sitter.ts:emitRubyMacroSymbols`
+ * symbols for class-body macros via `chunker/tree-sitter.ts:emitMacroSymbols`
  * (calling the relocated `extractRubyMacroSymbols` through the factory's walker
  * capability), while the codegraph emits them via `walker.nameOf` (`rbNameOf`).
  * Both MUST stay in lockstep per `.claude/rules/symbolid-convention.md`.
