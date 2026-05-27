@@ -4236,6 +4236,18 @@ end
       expect(symbolIds).not.toContain("A.wo_d");
     });
 
+    // Bug tea-rags-mcp-zz7d: macros declared inside `class << self`
+    // (singleton_class) synthesise CLASS-level methods → STATIC symbols
+    // (`Foo.method`, `.` separator) per .claude/rules/symbolid-convention.md —
+    // matching the regular `def` path (already static via classifyMethod).
+    it("emits STATIC class-level symbols for macros inside class << self (singleton_class)", async () => {
+      const code = ["class Foo", "  class << self", "    attr_accessor :registry", "  end", "end"].join("\n");
+      const chunks = await chunker.chunk(code, "foo.rb", "ruby");
+      const ids = chunks.map((c) => c.metadata.symbolId);
+      expect(ids).toContain("Foo.registry"); // static → "." separator (NOT Foo#registry)
+      expect(ids).toContain("Foo.registry=");
+    });
+
     it("emits forwarder methods for delegate :foo, :bar, to: :other", async () => {
       const code = `
 class A

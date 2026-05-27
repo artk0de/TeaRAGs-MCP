@@ -63,7 +63,13 @@ export type RubyMacroSymbol = MacroSymbol;
  * is tracked in the Concern follow-up bead.
  */
 export function extractRubyMacroSymbols(containerNode: Parser.SyntaxNode): RubyMacroSymbol[] {
-  if (containerNode.type !== "class" && containerNode.type !== "module") return [];
+  if (
+    containerNode.type !== "class" &&
+    containerNode.type !== "module" &&
+    containerNode.type !== "singleton_class"
+  ) {
+    return [];
+  }
   const body = containerNode.childForFieldName("body");
   // tree-sitter-ruby sometimes attaches body statements directly under the
   // class node when the grammar version doesn't expose a `body` field —
@@ -77,6 +83,11 @@ export function extractRubyMacroSymbols(containerNode: Parser.SyntaxNode): RubyM
     // emit identical synthetic instance-method symbols on the enclosing
     // class.
     pushAliasKeywordSymbol(stmt, out);
+  }
+  // Macros inside `class << self` declare CLASS-level methods → static
+  // (`Foo.method`, `.` separator) per .claude/rules/symbolid-convention.md.
+  if (containerNode.type === "singleton_class") {
+    return out.map((s) => ({ ...s, kind: "static" as const }));
   }
   return out;
 }

@@ -113,7 +113,7 @@ function pythonHasClassOrStaticDecorator(node: Parser.SyntaxNode): boolean {
  * ancestor (those reset the singleton-class scope) so a nested regular
  * method declaration inside an inner class doesn't get mis-classified.
  */
-function rubyInsideSingletonClass(node: Parser.SyntaxNode): boolean {
+export function rubyInsideSingletonClass(node: Parser.SyntaxNode): boolean {
   let p: Parser.SyntaxNode | null = node.parent;
   while (p) {
     if (p.type === "singleton_class") return true;

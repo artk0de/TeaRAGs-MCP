@@ -24,12 +24,25 @@
 import type Parser from "tree-sitter";
 
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
-import { classifyMethod } from "../../../../infra/symbolid/index.js";
+import { classifyMethod, rubyInsideSingletonClass } from "../../../../infra/symbolid/index.js";
 import { RUBY_DSL } from "../dsl/index.js";
 
 function methodKindFromClassify(node: Parser.SyntaxNode): "instance" | "static" | undefined {
   const c = classifyMethod(node);
   return c === null ? undefined : c;
+}
+
+/**
+ * Force every emitted symbol's `methodKind` to `static`. Used when a
+ * macro/define/alias node sits inside a `class << self` (singleton_class):
+ * those declare CLASS-level methods (`Foo.method`, `.` separator) per
+ * .claude/rules/symbolid-convention.md, mirroring the chunker-side
+ * `extractRubyMacroSymbols` singleton override.
+ */
+function toStaticKind(result: NamedSymbol | NamedSymbol[]): NamedSymbol | NamedSymbol[] {
+  return Array.isArray(result)
+    ? result.map((s) => ({ ...s, methodKind: "static" as const }))
+    : { ...result, methodKind: "static" as const };
 }
 
 export function rbNameOf(node: Parser.SyntaxNode): NamedSymbol | NamedSymbol[] | null {
@@ -74,19 +87,18 @@ export function rbNameOf(node: Parser.SyntaxNode): NamedSymbol | NamedSymbol[] |
   // `call` (or `method_call`) node with no receiver and a recognised
   // method name. Argument shape: a sequence of `simple_symbol` nodes.
   if (node.type === "call" || node.type === "method_call") {
-    const defineMethodEmit = rubyDefineMethodEmission(node);
-    if (defineMethodEmit) return defineMethodEmit;
-    const aliasMethodEmit = rubyAliasMethodEmission(node);
-    if (aliasMethodEmit) return aliasMethodEmit;
-    const macro = rubyMacroEmission(node);
-    if (macro) return macro;
+    // Precedence: define_method → alias_method → DSL macro. Inside a
+    // `class << self`, every such emission becomes static (`Foo.method`).
+    const emit = rubyDefineMethodEmission(node) ?? rubyAliasMethodEmission(node) ?? rubyMacroEmission(node);
+    if (emit) return rubyInsideSingletonClass(node) ? toStaticKind(emit) : emit;
   }
   // `alias new_name old_name` — Ruby keyword form is a distinct AST node
   // type (`alias`), not a `call`. Emit the new method name as an
-  // instance method on the enclosing class so chunker and codegraph agree.
+  // instance method on the enclosing class so chunker and codegraph agree —
+  // static inside a `class << self`.
   if (node.type === "alias") {
     const aliasEmit = rubyAliasKeywordEmission(node);
-    if (aliasEmit) return aliasEmit;
+    if (aliasEmit) return rubyInsideSingletonClass(node) ? toStaticKind(aliasEmit) : aliasEmit;
   }
   return null;
 }

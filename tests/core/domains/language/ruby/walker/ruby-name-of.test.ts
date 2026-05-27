@@ -64,3 +64,18 @@ describe("rbNameOf — class/module-level accessor macros (catalogue-derived)", 
     ]);
   });
 });
+
+describe("rbNameOf — macros inside class << self (singleton_class)", () => {
+  // Bug tea-rags-mcp-zz7d: a macro inside `class << self` declares a
+  // CLASS-level method → STATIC (`Foo.method`) per
+  // .claude/rules/symbolid-convention.md — NOT instance, even though the
+  // macro itself is a plain attr_accessor that is instance-level at class body.
+  it("rbNameOf emits attr_accessor inside class << self as static", () => {
+    const tree = parse("class Foo\n  class << self\n    attr_accessor :registry\n  end\nend\n");
+    const node = findMacroCall(tree, "attr_accessor");
+    expect(rbNameOf(node)).toEqual([
+      { name: "registry", descendsInto: false, methodKind: "static" },
+      { name: "registry=", descendsInto: false, methodKind: "static" },
+    ]);
+  });
+});
