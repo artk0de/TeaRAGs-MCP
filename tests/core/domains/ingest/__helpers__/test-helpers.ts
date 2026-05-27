@@ -273,10 +273,35 @@ export class MockQdrantManager implements Partial<QdrantManager> {
 
   async batchSetPayload(
     collectionName: string,
-    operations: { payload: Record<string, any>; points: (string | number)[] }[],
+    operations: { payload: Record<string, any>; points: (string | number)[]; key?: string }[],
     _options?: any,
   ): Promise<void> {
     this.batchSetPayloadCalls.push({ collectionName, operations });
+    // Model real Qdrant set_payload: when `key` is present the payload is
+    // merged into the nested object AT that dotted path, leaving sibling
+    // sub-trees untouched (so `git.file` and `git.chunk` writes never clobber
+    // each other). Without `key`, merge at the payload root.
+    const resolved = this.resolve(collectionName);
+    const points = this.points.get(resolved);
+    if (!points) return;
+    for (const op of operations) {
+      for (const id of op.points) {
+        const point = points.find((p) => p.id === id);
+        if (!point) continue;
+        point.payload ??= {};
+        if (op.key) {
+          let node: Record<string, any> = point.payload;
+          const segments = op.key.split(".");
+          for (const seg of segments) {
+            node[seg] = { ...(node[seg] as Record<string, any> | undefined) };
+            node = node[seg];
+          }
+          Object.assign(node, op.payload);
+        } else {
+          point.payload = { ...point.payload, ...op.payload };
+        }
+      }
+    }
   }
 
   async pauseOptimizer(_collectionName: string): Promise<void> {}
