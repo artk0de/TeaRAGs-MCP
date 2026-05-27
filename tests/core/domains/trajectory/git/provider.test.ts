@@ -128,6 +128,36 @@ describe("GitEnrichmentProvider", () => {
       expect(blameByPathArg.get("src/c.ts")).toEqual([blameLineC]);
     });
 
+    it("releases blameByRelPath after chunk enrichment (bounded retention)", async () => {
+      // blameByRelPath must persist ACROSS file passes (test above) so chunk
+      // enrichment sees every file's blame. But once buildChunkSignals (the last
+      // reader) has run, holding every file's BlameLine[] for the daemon's
+      // lifetime is a leak — it must be released. Repopulated by the next run's
+      // file passes.
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      vi.mocked(blameFile).mockResolvedValue([
+        { lineNumber: 1, sha: "shaA", author: "Alice", authorEmail: "a@x", timestamp: 0 },
+      ]);
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(
+        new Map([["src/a.ts", { commits: [], recentAuthors: [] }]]) as never,
+      );
+      await provider.buildFileSignals("/repo", { paths: ["src/a.ts"] });
+
+      const read = (): Map<string, unknown> =>
+        (provider as unknown as { blameByRelPath: Map<string, unknown> }).blameByRelPath;
+      expect(read().size).toBeGreaterThan(0); // populated by the file pass
+
+      vi.mocked(buildChunkChurnMap).mockResolvedValue(new Map());
+      await provider.buildChunkSignals(
+        "/repo",
+        new Map([["src/a.ts", [{ chunkId: "ca", startLine: 1, endLine: 5 }]]]) as never,
+      );
+
+      // Re-read: buildChunkSignals swaps in a fresh empty map (the consumed one
+      // is released for GC), so the live field holds nothing afterwards.
+      expect(read().size).toBe(0);
+    });
+
     it("stores raw data for later chunk enrichment correlation", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
       const fakeData = new Map([["src/a.ts", { commits: [{ hash: "abc" }], recentAuthors: ["dev"] }]]);
