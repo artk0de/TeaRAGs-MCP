@@ -28,7 +28,6 @@ import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { DefaultSymbolIdComposer } from "../core/domains/language/index.js";
 import type { CodegraphDeps } from "../core/domains/trajectory/codegraph/index.js";
 import { BashCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/bash/index.js";
-import { GoCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/go/index.js";
 import { JavaCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/java/index.js";
 import { RustCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/rust/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -215,13 +214,15 @@ function wireCodegraph(
   // §1a + `.claude/rules/symbolid-convention.md`.
   const symbolIdComposer = new DefaultSymbolIdComposer();
   const resolvers = new Map<string, CallResolver>([
-    // typescript + javascript + python + ruby: served by their NATIVE
+    // typescript + javascript + python + ruby + go: served by their NATIVE
     // domains/language/<lang> providers (their own TSCallResolver /
-    // JavascriptCallResolver / PythonCallResolver / RubyCallResolver, built with
-    // `ambiguousMode` threaded via CodegraphDeps). The legacy adapter skips them
-    // (NATIVE_LANGUAGES), so no entries here. JavaScript's native `jsNameOf`
-    // sibling-imports `tsNameOf` from the typescript vertical.
-    ["go", new GoCallResolver(symbolIdComposer, ambiguousMode)],
+    // JavascriptCallResolver / PythonCallResolver / RubyCallResolver /
+    // GoCallResolver, built with `ambiguousMode` threaded via CodegraphDeps).
+    // The legacy adapter skips them (NATIVE_LANGUAGES), so no entries here.
+    // JavaScript's native `jsNameOf` sibling-imports `tsNameOf` from the
+    // typescript vertical; `GoLanguage` self-constructs its own
+    // `DefaultSymbolIdComposer` for `GoCallResolver` (no composer threading
+    // through the factory).
     ["java", new JavaCallResolver(ambiguousMode)],
     ["rust", new RustCallResolver(ambiguousMode)],
     ["bash", new BashCallResolver(ambiguousMode)],

@@ -1,5 +1,8 @@
 /**
- * Go implementation of the `CallResolver` contract.
+ * Go implementation of the `CallResolver` contract. Relocated from
+ * `domains/trajectory/codegraph/symbols/resolvers/go/go-resolver.ts` into the
+ * native Go language provider per the `domains/language` consolidation (spec
+ * §3; bd tea-rags-mcp-cen6). Behaviour-preserving.
  *
  * Resolution strategy (mirrors PythonCallResolver step 0):
  *
@@ -34,8 +37,8 @@ import {
   type CallRef,
   type CallResolver,
   type ResolvedTarget,
-} from "../../../../../../contracts/types/codegraph.js";
-import type { SymbolIdComposer } from "../../../../../../contracts/types/language.js";
+} from "../../../../contracts/types/codegraph.js";
+import type { SymbolIdComposer } from "../../../../contracts/types/language.js";
 
 export class GoCallResolver implements CallResolver {
   readonly language = "go";
@@ -43,9 +46,9 @@ export class GoCallResolver implements CallResolver {
   /**
    * `composer` builds the `Type#member` / `Type.member` candidate ids per the
    * project-wide symbolId convention (`.claude/rules/symbolid-convention.md`).
-   * Injected as the contracts `SymbolIdComposer` interface — never the concrete
-   * (the leaf-domain guard forbids `trajectory/**` importing
-   * `domains/language/**`); `bootstrap/factory.ts` passes the implementation.
+   * Injected as the contracts `SymbolIdComposer` interface. `GoLanguage`
+   * self-constructs the concrete `DefaultSymbolIdComposer` (a stateless pure
+   * mapper in the same `domains/language` domain) and passes it here.
    */
   constructor(
     private readonly composer: SymbolIdComposer,

@@ -2,7 +2,7 @@ import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 import { describe, expect, it } from "vitest";
 
-import { extractFromGoFile } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/go-walker.js";
+import { extractFromGoFile } from "../../../../../../src/core/domains/language/go/walker/walker.js";
 
 function parse(src: string) {
   const p = new Parser();

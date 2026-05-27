@@ -1,5 +1,9 @@
 /**
- * Go extraction walker.
+ * Go extraction walker. Relocated from
+ * `domains/ingest/pipeline/chunker/extraction/go-walker.ts` into the native Go
+ * language provider per the `domains/language` consolidation (spec §3; bd
+ * tea-rags-mcp-cen6, following ruby + typescript + javascript + python).
+ * Behaviour-preserving.
  *
  * Go imports come in two shapes:
  *   import "foo/bar"
@@ -18,7 +22,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../../contracts/types/codegraph.js";
+import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
 
 export interface GoExtractInput {
   tree: Parser.Tree;

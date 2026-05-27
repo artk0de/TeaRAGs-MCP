@@ -207,6 +207,13 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     loadModule: async () => import("tree-sitter-go") as Promise<TreeSitterLanguageModule>,
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_declaration", "method_declaration", "type_declaration", "interface_declaration"],
+    // NOTE: Go is now a NATIVE `domains/language/go` provider
+    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `go`
+    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver come from
+    // `GoLanguage`, not this entry. This `LANGUAGE_DEFINITIONS.go` row is
+    // retained only so `CODE_LANGUAGES` / `LANGUAGE_MAP` still report go as a
+    // code language. Go has no `hooks` chain (generic chunking) — the native
+    // provider's `chunkerHooks` mirrors the chunkableTypes here 1:1.
   },
   rust: {
     loadModule: async () => import("tree-sitter-rust") as Promise<TreeSitterLanguageModule>,

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext } from "../../../../../../../../src/core/contracts/types/codegraph.js";
-import { DefaultSymbolIdComposer } from "../../../../../../../../src/core/domains/language/kernel/symbol-id.js";
-import { GoCallResolver } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/go/go-resolver.js";
-import { InMemoryGlobalSymbolTable } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { GoCallResolver } from "../../../../../../src/core/domains/language/go/resolver/go-resolver.js";
+import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function ctx(
   callerFile: string,

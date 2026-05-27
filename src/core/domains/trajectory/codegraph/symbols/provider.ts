@@ -63,7 +63,6 @@ import type {
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { classifyMethod } from "../../../../infra/symbolid/index.js";
 import { extractFromBashFile } from "../../../ingest/pipeline/chunker/extraction/bash-walker.js";
-import { extractFromGoFile } from "../../../ingest/pipeline/chunker/extraction/go-walker.js";
 import { extractFromJavaFile } from "../../../ingest/pipeline/chunker/extraction/java-walker.js";
 import { extractFromRustFile } from "../../../ingest/pipeline/chunker/extraction/rust-walker.js";
 import { pipelineLog } from "../../../ingest/pipeline/infra/debug-logger.js";
@@ -315,8 +314,10 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   ".go": {
     language: "go",
     loadParser: () => GoLang as Parser.Language,
-    walker: extractFromGoFile,
-    nameOf: goNameOf,
+    // walker + nameOf DROPPED — go migrated to the native domains/language/go
+    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
+    // `factory.create("go").walker`; this entry is retained only for
+    // `loadParser` / `scopeSeparator` (still sourced from the map).
     scopeSeparator: ".",
   },
   ".java": {
@@ -1565,68 +1566,18 @@ function extensionOf(path: string): string {
  * `.claude/rules/symbolid-convention.md`.
  *
  * The TypeScript (`tsNameOf`), JavaScript (`jsNameOf` + its CommonJS helper web),
- * Ruby (`rbNameOf`) and Python (`pyNameOf`) functions are GONE from here — those
+ * Ruby (`rbNameOf`), Python (`pyNameOf`) and Go (`goNameOf` + its
+ * `extractGoReceiverType` helper) functions are GONE from here — those
  * languages migrated to native `domains/language/<lang>` providers
  * (tea-rags-mcp-cen6); the engine reads their `nameOf` from
  * `factory.create(lang).walker.nameOf`. Only the still-legacy-adapter languages
- * (go / java / rust / bash) keep a `<lang>NameOf` here. `methodKindFromClassify`
+ * (java / rust / bash) keep a `<lang>NameOf` here. `methodKindFromClassify`
  * stays — `javaNameOf` / `rustNameOf` use it.
  */
 
 function methodKindFromClassify(node: Parser.SyntaxNode): "instance" | "static" | undefined {
   const c = classifyMethod(node);
   return c === null ? undefined : c;
-}
-
-function goNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
-  if (node.type === "method_declaration") {
-    // Go receiver-bound methods are instance methods. The receiver type
-    // must be embedded in the emitted name as `Receiver#Method` —
-    // otherwise methods with the same shortName from different receivers
-    // (e.g. `(*Context).Query` and `(*Bind).Query`) collapse in the
-    // global symbol table and fabricate false-positive cycles plus
-    // mis-routed call edges. See .claude/rules/symbolid-convention.md.
-    const id = node.childForFieldName("name");
-    if (!id) return null;
-    const receiverType = extractGoReceiverType(node);
-    const composed = receiverType ? `${receiverType}#${id.text}` : id.text;
-    return { name: composed, descendsInto: false, methodKind: "instance" };
-  }
-  if (node.type === "function_declaration") {
-    const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false };
-  }
-  if (node.type === "type_declaration") {
-    // type Foo struct { ... } → emit Foo as a top-level symbol.
-    const spec = node.children.find((c) => c.type === "type_spec");
-    const id = spec?.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false };
-  }
-  return null;
-}
-
-/**
- * Extract the receiver type name from a Go `method_declaration` node,
- * stripping pointer (`*Receiver` → `Receiver`) and dropping any generic
- * type-parameter list. Returns null if the receiver cannot be parsed
- * (defensive — tree-sitter-go is error-tolerant).
- */
-function extractGoReceiverType(method: Parser.SyntaxNode): string | null {
-  const receiver = method.childForFieldName("receiver");
-  if (!receiver) return null;
-  const param = receiver.children.find((c) => c.type === "parameter_declaration");
-  if (!param) return null;
-  const typeNode = param.childForFieldName("type");
-  if (!typeNode) return null;
-  // `*Receiver` pointer types wrap the identifier.
-  const ident =
-    typeNode.type === "pointer_type" ? typeNode.children.find((c) => c.type === "type_identifier") : typeNode;
-  if (!ident) return null;
-  if (ident.type === "generic_type") {
-    const base = ident.childForFieldName("type");
-    return base?.text ?? null;
-  }
-  return ident.text;
 }
 
 function javaNameOf(node: Parser.SyntaxNode): NamedSymbol | null {

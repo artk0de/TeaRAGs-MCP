@@ -20,12 +20,12 @@ import { UnsupportedLanguageError } from "../../../../src/core/domains/language/
  * codegraph engines read today is reproduced identically through the factory.
  *
  * Languages migrated to a native `domains/language/<lang>` provider are SKIPPED
- * by the adapter (`NATIVE_LANGUAGES`: ruby + typescript + javascript + python —
- * tea-rags-mcp-cen6); the factory builds those natively. So the adapter-served
- * set is `LANGUAGE_DEFINITIONS` minus `NATIVE_LANGUAGES`, and the fidelity loops
- * only cover adapter-served languages. The single-language probes below use
- * `go` (a still-adapter-served language with a codegraph config + resolver slot)
- * rather than `python`, which is now native.
+ * by the adapter (`NATIVE_LANGUAGES`: ruby + typescript + javascript + python +
+ * go — tea-rags-mcp-cen6); the factory builds those natively. So the
+ * adapter-served set is `LANGUAGE_DEFINITIONS` minus `NATIVE_LANGUAGES`, and the
+ * fidelity loops only cover adapter-served languages. The single-language probes
+ * below use `java` (a still-adapter-served language with a codegraph config +
+ * resolver slot) rather than `go`, which is now native.
  */
 describe("legacyLanguageRegistry adapter fidelity", () => {
   // Reverse-index codegraph configs by language name (the registry key) so a
@@ -85,22 +85,28 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
 
   it("isInstanceMethod is classifyMethod(node) === 'instance' (false for non-method nodes)", () => {
     const factory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
-    // go is adapter-served — its instance methods are receiver-bound
-    // `method_declaration_go` nodes (classifyMethod's Go branch).
-    const { isInstanceMethod } = factory.create("go").kernel;
-    // Instance method (go `method_declaration_go` — receiver-bound, always instance).
-    const instanceNode = { type: "method_declaration_go", children: [], text: "", parent: null } as never;
+    // java is adapter-served — its instance methods are `method_declaration`
+    // nodes WITHOUT a `static` modifier (classifyMethod's Java branch).
+    const { isInstanceMethod } = factory.create("java").kernel;
+    // Instance method (java `method_declaration` — no `static` modifier → instance).
+    const instanceNode = { type: "method_declaration", children: [], text: "", parent: null } as never;
     expect(isInstanceMethod(instanceNode)).toBe(true);
     expect(classifyMethod(instanceNode)).toBe("instance");
-    // Top-level `function_declaration` — NOT a method, classifyMethod returns null
-    // → not "instance" → false.
-    const funcNode = { type: "function_declaration", children: [], text: "func foo() {}" } as never;
-    expect(isInstanceMethod(funcNode)).toBe(false);
-    expect(classifyMethod(funcNode)).toBeNull();
-    // Non-method node must be false (NOT !isStaticMethodNode → would be true).
-    const typeNode = { type: "type_declaration", children: [], text: "" } as never;
-    expect(isInstanceMethod(typeNode)).toBe(false);
-    expect(classifyMethod(typeNode)).toBeNull();
+    // Static method (java `method_declaration` WITH a `static` modifier in the
+    // `modifiers` child) — classifyMethod returns "static" → not "instance".
+    const staticNode = {
+      type: "method_declaration",
+      children: [{ type: "modifiers", children: [{ type: "static", text: "static" }] }],
+      text: "static void foo() {}",
+      parent: null,
+    } as never;
+    expect(isInstanceMethod(staticNode)).toBe(false);
+    expect(classifyMethod(staticNode)).toBe("static");
+    // Non-method node must be false — `class_declaration` is not a method,
+    // classifyMethod returns null → not "instance" → false.
+    const classNode = { type: "class_declaration", children: [], text: "" } as never;
+    expect(isInstanceMethod(classNode)).toBe(false);
+    expect(classifyMethod(classNode)).toBeNull();
   });
 
   it.each(adapterServedCodegraphLangs)(
@@ -135,16 +141,16 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
   it("wraps a CallResolver into a LanguageSymbolResolver with resolveDispatch default", () => {
     const calls: string[] = [];
     const fakeResolver: CallResolver = {
-      language: "go",
+      language: "java",
       resolve: () => {
         calls.push("resolve");
         return null;
       },
       // No resolveDispatch — the wrapper must default to [].
     };
-    const registry = buildLegacyLanguageRegistry(new Map([["go", fakeResolver]]));
+    const registry = buildLegacyLanguageRegistry(new Map([["java", fakeResolver]]));
     const factory = new LanguageFactoryImpl(registry);
-    const { resolver } = factory.create("go");
+    const { resolver } = factory.create("java");
     expect(resolver).toBeDefined();
     const call = { callText: "x()", receiver: null, member: "x", startLine: 1 } as never;
     const ctx = {} as never;
@@ -154,14 +160,14 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
   });
 
   it("delegates resolveDispatch when the CallResolver supports it", () => {
-    const edge = { sourceSymbolId: null, targetSymbolId: "Foo#bar", targetFile: "foo.go" };
+    const edge = { sourceSymbolId: null, targetSymbolId: "Foo#bar", targetFile: "Foo.java" };
     const fakeResolver: CallResolver = {
-      language: "go",
+      language: "java",
       resolve: () => null,
       resolveDispatch: () => [edge as never],
     };
-    const registry = buildLegacyLanguageRegistry(new Map([["go", fakeResolver]]));
-    const { resolver } = new LanguageFactoryImpl(registry).create("go");
+    const registry = buildLegacyLanguageRegistry(new Map([["java", fakeResolver]]));
+    const { resolver } = new LanguageFactoryImpl(registry).create("java");
     expect(resolver?.resolveDispatch({} as never, {} as never)).toEqual([edge]);
   });
 
@@ -172,6 +178,6 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
 
   it("builds resolver only when codegraph resolvers are supplied", () => {
     const noResolvers = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
-    expect(noResolvers.create("go").resolver).toBeUndefined();
+    expect(noResolvers.create("java").resolver).toBeUndefined();
   });
 });
