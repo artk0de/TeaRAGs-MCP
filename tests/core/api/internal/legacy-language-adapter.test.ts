@@ -21,11 +21,15 @@ import { UnsupportedLanguageError } from "../../../../src/core/domains/language/
  *
  * Languages migrated to a native `domains/language/<lang>` provider are SKIPPED
  * by the adapter (`NATIVE_LANGUAGES`: ruby + typescript + javascript + python +
- * go + java + rust — tea-rags-mcp-cen6); the factory builds those natively. So
- * the adapter-served set is `LANGUAGE_DEFINITIONS` minus `NATIVE_LANGUAGES`, and
- * the fidelity loops only cover adapter-served languages. The single-language
- * probes below use `bash` (a still-adapter-served language with a codegraph
- * config + resolver slot) rather than `rust`, which is now native.
+ * go + java + rust + bash — tea-rags-mcp-cen6); the factory builds those
+ * natively. So the adapter-served set is `LANGUAGE_DEFINITIONS` minus
+ * `NATIVE_LANGUAGES`, and the fidelity loops only cover adapter-served
+ * languages. After the bash vertical landed, the ONLY remaining adapter-served
+ * language is `markdown` — a doc-only language (chunkerHooks only, no codegraph
+ * config, no resolver slot). So `adapterServedCodegraphLangs` is now EMPTY and
+ * the single-language probes below use `markdown` (with an injected fake
+ * resolver where a resolver slot is exercised) rather than `bash`, which is now
+ * native.
  */
 describe("legacyLanguageRegistry adapter fidelity", () => {
   // Reverse-index codegraph configs by language name (the registry key) so a
@@ -85,16 +89,15 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
 
   it("isInstanceMethod is classifyMethod(node) === 'instance' (false for non-method nodes)", () => {
     const factory = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
-    // bash is adapter-served. The adapter's `isInstanceMethod` is the same
-    // `classifyMethod(node) === "instance"` derivation for EVERY language — the
-    // bash kernel just inherits it. `classifyMethod` keys off node TYPE, so the
-    // wrapper reproduces classifyMethod exactly regardless of which language's
-    // kernel exposes it.
-    const { isInstanceMethod } = factory.create("bash").kernel;
+    // markdown is the only adapter-served language. The adapter's
+    // `isInstanceMethod` is the same `classifyMethod(node) === "instance"`
+    // derivation for EVERY language — the markdown kernel just inherits it.
+    // `classifyMethod` keys off node TYPE, so the wrapper reproduces
+    // classifyMethod exactly regardless of which language's kernel exposes it.
+    const { isInstanceMethod } = factory.create("markdown").kernel;
     // A `function_definition` with no class/static decorator classifies as
-    // "instance" (the shared Python/Bash `function_definition` branch). bash
-    // functions are top-level, so the codegraph engine never asks
-    // `isInstanceMethod` of one in a class context — but the wrapper's
+    // "instance" (the shared Python/Bash `function_definition` branch). The
+    // markdown kernel never actually sees code AST nodes — but the wrapper's
     // derivation is still the pure classifyMethod mirror.
     const fnNode = {
       type: "function_definition",
@@ -141,18 +144,22 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
   });
 
   it("wraps a CallResolver into a LanguageSymbolResolver with resolveDispatch default", () => {
+    // The adapter's resolver-wrapping machinery is language-agnostic — it wraps
+    // whatever CallResolver is supplied for whatever adapter-served language key.
+    // markdown is the only adapter-served language now, so we inject the fake
+    // resolver under its key to exercise the wrapping path.
     const calls: string[] = [];
     const fakeResolver: CallResolver = {
-      language: "bash",
+      language: "markdown",
       resolve: () => {
         calls.push("resolve");
         return null;
       },
       // No resolveDispatch — the wrapper must default to [].
     };
-    const registry = buildLegacyLanguageRegistry(new Map([["bash", fakeResolver]]));
+    const registry = buildLegacyLanguageRegistry(new Map([["markdown", fakeResolver]]));
     const factory = new LanguageFactoryImpl(registry);
-    const { resolver } = factory.create("bash");
+    const { resolver } = factory.create("markdown");
     expect(resolver).toBeDefined();
     const call = { callText: "x()", receiver: null, member: "x", startLine: 1 } as never;
     const ctx = {} as never;
@@ -162,14 +169,14 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
   });
 
   it("delegates resolveDispatch when the CallResolver supports it", () => {
-    const edge = { sourceSymbolId: null, targetSymbolId: "foo", targetFile: "lib.sh" };
+    const edge = { sourceSymbolId: null, targetSymbolId: "foo", targetFile: "lib.md" };
     const fakeResolver: CallResolver = {
-      language: "bash",
+      language: "markdown",
       resolve: () => null,
       resolveDispatch: () => [edge as never],
     };
-    const registry = buildLegacyLanguageRegistry(new Map([["bash", fakeResolver]]));
-    const { resolver } = new LanguageFactoryImpl(registry).create("bash");
+    const registry = buildLegacyLanguageRegistry(new Map([["markdown", fakeResolver]]));
+    const { resolver } = new LanguageFactoryImpl(registry).create("markdown");
     expect(resolver?.resolveDispatch({} as never, {} as never)).toEqual([edge]);
   });
 
@@ -180,6 +187,6 @@ describe("legacyLanguageRegistry adapter fidelity", () => {
 
   it("builds resolver only when codegraph resolvers are supplied", () => {
     const noResolvers = new LanguageFactoryImpl(buildLegacyLanguageRegistry());
-    expect(noResolvers.create("bash").resolver).toBeUndefined();
+    expect(noResolvers.create("markdown").resolver).toBeUndefined();
   });
 });

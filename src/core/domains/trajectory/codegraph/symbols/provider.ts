@@ -61,7 +61,6 @@ import type {
   ProviderRunMetrics,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
-import { extractFromBashFile } from "../../../ingest/pipeline/chunker/extraction/bash-walker.js";
 import { pipelineLog } from "../../../ingest/pipeline/infra/debug-logger.js";
 import {
   CodegraphCheckpointError,
@@ -346,15 +345,17 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   ".sh": {
     language: "bash",
     loadParser: () => BashLang as Parser.Language,
-    walker: extractFromBashFile,
-    nameOf: bashNameOf,
+    // walker + nameOf DROPPED — bash migrated to the native domains/language/bash
+    // provider (tea-rags-mcp-cen6). The engine reads `walk`/`nameOf` from
+    // `factory.create("bash").walker`; this entry is retained only for
+    // `loadParser` / `scopeSeparator` (still sourced from the map). Two
+    // extensions, one grammar — `.sh` and `.bash` share the single BashLang.
     scopeSeparator: ".",
   },
   ".bash": {
     language: "bash",
     loadParser: () => BashLang as Parser.Language,
-    walker: extractFromBashFile,
-    nameOf: bashNameOf,
+    // walker + nameOf DROPPED — see the `.sh` entry above.
     scopeSeparator: ".",
   },
 };
@@ -1560,32 +1561,20 @@ function extensionOf(path: string): string {
 }
 
 /**
- * Per-language `nameOf` functions. Each returns a `NamedSymbol`
- * descriptor or null. The instance/static classification routes
- * through `classifyMethod` in `core/infra/symbolid` — keeping the
- * chunker's payload-side symbolId AND the codegraph DB symbolId
- * derived from the SAME detection logic for any given AST node. See
- * `.claude/rules/symbolid-convention.md`.
- *
- * The TypeScript (`tsNameOf`), JavaScript (`jsNameOf` + its CommonJS helper web),
+ * Per-language `nameOf` functions: NONE remain here. ALL source languages —
+ * TypeScript (`tsNameOf`), JavaScript (`jsNameOf` + its CommonJS helper web),
  * Ruby (`rbNameOf`), Python (`pyNameOf`), Go (`goNameOf` + its
- * `extractGoReceiverType` helper), Java (`javaNameOf`) and Rust (`rustNameOf` +
- * its `stripRustGenerics` helper) functions are GONE from here — those languages
- * migrated to native `domains/language/<lang>` providers (tea-rags-mcp-cen6);
- * the engine reads their `nameOf` from `factory.create(lang).walker.nameOf`.
- * Only the still-legacy-adapter language (bash) keeps a `<lang>NameOf` here.
- * `methodKindFromClassify` is GONE too — its last user was `rustNameOf`, now
- * relocated; the native walkers reuse the kernel copy at
- * `domains/language/kernel/method-kind.ts`.
+ * `extractGoReceiverType` helper), Java (`javaNameOf`), Rust (`rustNameOf` + its
+ * `stripRustGenerics` helper) and Bash (`bashNameOf`, the LAST one) — migrated
+ * to native `domains/language/<lang>` providers (tea-rags-mcp-cen6); the engine
+ * reads each one's `nameOf` from `factory.create(lang).walker.nameOf`. Markdown
+ * stays doc-only via the legacy adapter (chunker-only, no walker / nameOf — it
+ * has no `CODEGRAPH_LANGUAGES` entry). `methodKindFromClassify` is GONE too — the
+ * native walkers reuse the kernel copy at
+ * `domains/language/kernel/method-kind.ts`. The `classifyMethod` import is
+ * likewise gone: bash's `nameOf` (its last in-file user) never needed it (bash
+ * has no method concept), and the rust step already removed the helper.
  */
-
-function bashNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
-  if (node.type === "function_definition") {
-    const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false };
-  }
-  return null;
-}
 
 /**
  * Slice 2 helper — drain `graphDb.streamAdjacency(scope)` into the

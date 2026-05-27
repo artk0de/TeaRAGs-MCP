@@ -1,5 +1,8 @@
 /**
- * Bash implementation of the `CallResolver` contract.
+ * Bash implementation of the `CallResolver` contract. Relocated from
+ * `domains/trajectory/codegraph/symbols/resolvers/bash/bash-resolver.ts` into
+ * the native Bash language provider per the `domains/language` consolidation
+ * (spec §3; bd tea-rags-mcp-cen6). Behaviour-preserving.
  *
  * Bash `source ./other.sh` and `. ./other.sh` produce ImportRefs with
  * the literal path. Internal function calls (no receiver) resolve via
@@ -16,7 +19,7 @@ import {
   type CallRef,
   type CallResolver,
   type ResolvedTarget,
-} from "../../../../../../contracts/types/codegraph.js";
+} from "../../../../contracts/types/codegraph.js";
 
 export class BashCallResolver implements CallResolver {
   readonly language = "bash";

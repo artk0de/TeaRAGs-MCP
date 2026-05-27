@@ -137,6 +137,7 @@ export const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "go",
   "java",
   "rust",
+  "bash",
 ]);
 
 /**

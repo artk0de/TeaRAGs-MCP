@@ -27,7 +27,6 @@ import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { DefaultSymbolIdComposer } from "../core/domains/language/index.js";
 import type { CodegraphDeps } from "../core/domains/trajectory/codegraph/index.js";
-import { BashCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/bash/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
 import { CollectionRegistry } from "../core/infra/registry/index.js";
@@ -211,20 +210,17 @@ function wireCodegraph(
   // `trajectory/** -> domains/language/**` leaf-domain guard holds. See spec
   // §1a + `.claude/rules/symbolid-convention.md`.
   const symbolIdComposer = new DefaultSymbolIdComposer();
-  const resolvers = new Map<string, CallResolver>([
-    // typescript + javascript + python + ruby + go + java + rust: served by
-    // their NATIVE domains/language/<lang> providers (their own TSCallResolver /
-    // JavascriptCallResolver / PythonCallResolver / RubyCallResolver /
-    // GoCallResolver / JavaCallResolver / RustCallResolver, built with
-    // `ambiguousMode` threaded via CodegraphDeps). The legacy adapter skips them
-    // (NATIVE_LANGUAGES), so no entries here. JavaScript's native `jsNameOf`
-    // sibling-imports `tsNameOf` from the typescript vertical; `GoLanguage`
-    // self-constructs its own `DefaultSymbolIdComposer` for `GoCallResolver` (no
-    // composer threading through the factory); `JavaLanguage`'s `JavaCallResolver`
-    // and `RustLanguage`'s `RustCallResolver` ctors take only `mode` (no composer,
-    // like python).
-    ["bash", new BashCallResolver(ambiguousMode)],
-  ]);
+  // EMPTY: every source language with a codegraph resolver — typescript +
+  // javascript + python + ruby + go + java + rust + bash (the last) — is now
+  // served by its NATIVE domains/language/<lang> provider (its own
+  // TSCallResolver / JavascriptCallResolver / PythonCallResolver /
+  // RubyCallResolver / GoCallResolver / JavaCallResolver / RustCallResolver /
+  // BashCallResolver, built with `ambiguousMode` threaded via CodegraphDeps).
+  // The legacy adapter skips them all (NATIVE_LANGUAGES), so there are no
+  // entries here. The only remaining adapter-served language is markdown, which
+  // is doc-only (no resolver). This `resolvers` map is now empty — the wiring
+  // machinery is retained pending the legacy-removal cleanup (tea-rags-mcp-jh40).
+  const resolvers = new Map<string, CallResolver>([]);
 
   const pool = new GraphDbClientPool({
     rootDir,

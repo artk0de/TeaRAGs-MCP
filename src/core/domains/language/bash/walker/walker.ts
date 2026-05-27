@@ -1,5 +1,9 @@
 /**
- * Bash extraction walker.
+ * Bash extraction walker. Relocated from
+ * `domains/ingest/pipeline/chunker/extraction/bash-walker.ts` into the native
+ * Bash language provider per the `domains/language` consolidation (spec §3; bd
+ * tea-rags-mcp-cen6, the eighth and LAST source-language vertical after ruby +
+ * typescript + javascript + python + go + java + rust). Behaviour-preserving.
  *
  * Bash has two "import" equivalents:
  *   source ./other.sh
@@ -18,7 +22,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../../contracts/types/codegraph.js";
+import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
 
 export interface BashExtractInput {
   tree: Parser.Tree;

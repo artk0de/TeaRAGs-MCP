@@ -349,6 +349,14 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     loadModule: async () => import("tree-sitter-bash") as Promise<TreeSitterLanguageModule>,
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_definition", "command"],
+    // NOTE: Bash is now a NATIVE `domains/language/bash` provider
+    // (tea-rags-mcp-cen6) — the legacy adapter SKIPS `bash`
+    // (NATIVE_LANGUAGES), so the chunker hooks / walker / resolver come from
+    // `BashLanguage`, not this entry. This `LANGUAGE_DEFINITIONS.bash` row is
+    // retained only so `CODE_LANGUAGES` / `LANGUAGE_MAP` still report bash as a
+    // code language. Bash has no `hooks` chain (generic chunking) — the native
+    // provider's `chunkerHooks` mirrors `chunkableTypes` here 1:1, kernel
+    // carries scopeSeparator. Two extensions (.sh / .bash), one grammar.
   },
   ruby: {
     loadModule: async () => import("tree-sitter-ruby") as Promise<TreeSitterLanguageModule>,

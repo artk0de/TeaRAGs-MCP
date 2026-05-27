@@ -1,6 +1,7 @@
 import type { AmbiguousResolveMode } from "../../contracts/types/codegraph.js";
 import { DEFAULT_AMBIGUOUS_RESOLVE_MODE } from "../../contracts/types/codegraph.js";
 import type { LanguageFactory, LanguageProvider } from "../../contracts/types/language.js";
+import { BashLanguage } from "./bash/index.js";
 import { UnsupportedLanguageError } from "./errors.js";
 import { GoLanguage } from "./go/index.js";
 import { JavaLanguage } from "./java/index.js";
@@ -37,6 +38,7 @@ const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "go",
   "java",
   "rust",
+  "bash",
 ]);
 
 /**
@@ -110,6 +112,7 @@ export class LanguageFactoryImpl implements LanguageFactory {
       if (lang === "go") return new GoLanguage(this.ambiguousResolveMode);
       if (lang === "java") return new JavaLanguage(this.ambiguousResolveMode);
       if (lang === "rust") return new RustLanguage(this.ambiguousResolveMode);
+      if (lang === "bash") return new BashLanguage(this.ambiguousResolveMode);
     }
     const builder = this.legacyBuilders.get(lang);
     if (builder) return builder();

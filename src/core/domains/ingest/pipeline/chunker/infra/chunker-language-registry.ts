@@ -46,6 +46,7 @@ export const NATIVE_CHUNKER_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "go",
   "java",
   "rust",
+  "bash",
 ]);
 
 /**

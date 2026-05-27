@@ -2,7 +2,7 @@ import Parser from "tree-sitter";
 import BashLang from "tree-sitter-bash";
 import { describe, expect, it } from "vitest";
 
-import { extractFromBashFile } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/extraction/bash-walker.js";
+import { extractFromBashFile } from "../../../../../../src/core/domains/language/bash/walker/walker.js";
 
 function parse(src: string) {
   const p = new Parser();
