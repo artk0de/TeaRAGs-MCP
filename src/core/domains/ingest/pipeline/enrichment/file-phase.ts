@@ -123,12 +123,32 @@ export class FilePhase {
       state.pipelineFlushTime = Date.now();
       if (state.prefetchStartTime === 0) state.prefetchStartTime = state.pipelineFlushTime;
       if (state.prefetchFailed) continue;
-      // Fully-deferred providers (codegraph): no per-batch file apply, no
-      // miss-tracking. File overlays come from finalizeSignals → applyFinalize.
-      if (ctx.provider.defersChunkEnrichment) continue;
 
       const root = ctx.effectiveRoot ?? absolutePath;
       const relPaths = this.uniqueRelPaths(items, root);
+
+      // Fully-deferred providers (codegraph): still DRIVE streamFileBatch so the
+      // run sink extracts the batch into the graph during embedding overlap, but
+      // do NOT apply the (empty) result and do NOT miss-track — file overlays
+      // are read back once the graph is finalized via finalizeSignals →
+      // applyFinalize. Skipping the call entirely would leave the graph empty
+      // (degraded file signals + zero chunk signals).
+      if (ctx.provider.defersChunkEnrichment) {
+        if (!ctx.provider.streamFileBatch) continue;
+        const extractWork = ctx.provider
+          .streamFileBatch(root, relPaths, {
+            collectionName: this.coll || undefined,
+            ignoreFilter: ctx.ignoreFilter ?? undefined,
+          })
+          .then(() => undefined)
+          .catch(async (error: unknown) => {
+            await this.recordPrefetchFailure(ctx, state, error);
+          });
+        state.fileWork.push(extractWork);
+        collected.push(extractWork);
+        continue;
+      }
+
       const streamFn =
         ctx.provider.streamFileBatch ??
         (async (r: string, p: string[], o?: FileSignalOptions) => ctx.provider.buildFileSignals(r, { ...o, paths: p }));

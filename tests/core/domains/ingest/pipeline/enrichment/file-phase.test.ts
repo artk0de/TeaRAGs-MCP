@@ -104,11 +104,13 @@ describe("FilePhase", () => {
     expect(applySpy).toHaveBeenCalled();
   });
 
-  it("onBatch SKIPS a defersChunkEnrichment provider (no apply, no miss-tracking)", async () => {
+  it("onBatch drives a defersChunkEnrichment provider's streamFileBatch (extraction) but does NOT apply or miss-track", async () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
 
+    // codegraph returns ∅ (overlays deferred) but the call MUST happen so the
+    // run sink extracts the batch into the graph — finalize reads it back.
     const streamFileBatch = vi.fn().mockResolvedValue(new Map());
     const buildFileSignals = vi.fn().mockResolvedValue(new Map());
     const applySpy = vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
@@ -131,8 +133,10 @@ describe("FilePhase", () => {
     await phase.onBatch("coll", "/repo", items);
     await phase.drain();
 
-    expect(streamFileBatch).not.toHaveBeenCalled();
-    expect(buildFileSignals).not.toHaveBeenCalled();
+    // Extraction is driven (sink fills the graph), but the ∅ result is NOT
+    // applied and produces NO missed-file tracking (file overlays come from
+    // finalizeSignals → applyFinalize, not from this per-batch call).
+    expect(streamFileBatch).toHaveBeenCalledWith("/repo", ["src/a.ts"], expect.anything());
     expect(applySpy).not.toHaveBeenCalled();
     expect(applier.missedFiles).toBe(0);
   });
@@ -152,13 +156,23 @@ describe("FilePhase", () => {
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
 
     const fileOverlays = new Map([["src/a.ts", { fanIn: 4 }]]);
-    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
+    // chunkMap includes a file with NO overlay (e.g. markdown the provider
+    // doesn't graph) — it must still receive a bare enrichedAt stamp so it is
+    // not counted "unenriched" at the file level forever.
+    const chunkMap = new Map([
+      ["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]],
+      ["docs/readme.md", [{ chunkId: "m1", startLine: 1, endLine: 3 }]],
+    ]);
     await phase.applyFinalize("coll", ctx, fileOverlays, chunkMap);
 
     const ops = qdrant.batchSetPayloadCalls.flatMap((c) => c.operations);
-    const fileOp = ops.find((op: any) => op.key === "codegraph.symbols.file");
-    expect(fileOp).toBeDefined();
-    expect(fileOp.payload.fanIn).toBe(4);
+    const matchedOp = ops.find((op: any) => op.key === "codegraph.symbols.file" && op.points[0] === "c1");
+    expect(matchedOp.payload.fanIn).toBe(4);
+    expect(matchedOp.payload.enrichedAt).toBe("ts");
+    const stampOp = ops.find((op: any) => op.key === "codegraph.symbols.file" && op.points[0] === "m1");
+    expect(stampOp).toBeDefined();
+    expect(stampOp.payload.enrichedAt).toBe("ts");
+    expect(stampOp.payload.fanIn).toBeUndefined();
     expect(applier.matchedFiles).toBe(1);
   });
 

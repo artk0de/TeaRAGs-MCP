@@ -100,13 +100,24 @@ describe("CodegraphEnrichmentProvider", () => {
       }
     });
 
-    it("clears chunkSymbolByLine for the collection after finalize (leak fix)", async () => {
+    it("keeps chunkSymbolByLine after finalize (deferred chunk needs it) and resets it at the next run start (leak bound)", async () => {
       const root = makeRoot();
       try {
         await provider.streamFileBatch(root, ["src/a.ts"]);
         await provider.finalizeSignals(root);
-        const map = (provider as unknown as { chunkSymbolByLine: Map<string, unknown> }).chunkSymbolByLine;
-        expect(map.has("__direct__")).toBe(false);
+        const map = (provider as unknown as { chunkSymbolByLine: Map<string, Map<string, unknown>> }).chunkSymbolByLine;
+        // Survives finalize: the post-finalize buildChunkSignals pass resolves
+        // symbolIds from this map, so clearing it at finalize would zero every
+        // chunk's fanIn/fanOut/pageRank.
+        expect(map.has("__direct__")).toBe(true);
+        const firstRunLineMap = map.get("__direct__");
+
+        // A new run's first streamFileBatch resets the prior run's map (leak is
+        // bounded to one run, not monotonic across runs).
+        await provider.streamFileBatch(root, ["src/b.ts"]);
+        const secondRunLineMap = map.get("__direct__");
+        expect(map.has("__direct__")).toBe(true);
+        expect(secondRunLineMap).not.toBe(firstRunLineMap);
       } finally {
         rmSync(root, { recursive: true, force: true });
       }

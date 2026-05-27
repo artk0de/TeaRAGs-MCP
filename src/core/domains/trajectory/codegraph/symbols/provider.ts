@@ -1110,6 +1110,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const key = this.collectionKey(options?.collectionName);
     let sink = this.runSinks.get(key);
     if (!sink) {
+      // First batch of a fresh run for this collection: reset the prior run's
+      // per-collection line map so it can't grow monotonically across runs on
+      // the long-lived daemon (the leak fix). Done at run START — NOT at
+      // finalize — because the deferred chunk pass (runDeferredChunk →
+      // buildChunkSignals → resolveChunkSymbolId) consumes chunkSymbolByLine
+      // AFTER finalizeSignals; clearing it at finalize zeroes every chunk's
+      // fanIn/fanOut/pageRank.
+      this.chunkSymbolByLine.delete(key);
       sink = this.asExtractionSink(options?.collectionName);
       this.runSinks.set(key, sink);
     }
@@ -1139,8 +1147,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * read back FILE overlays for the extracted paths, then release per-run
    * state. Returns FILE overlays only — codegraph CHUNK signals come from the
    * coordinator's post-finalize `buildChunkSignals` pass (`defersChunkEnrichment`).
-   * Releasing `chunkSymbolByLine` here fixes its monotonic growth on the
-   * long-lived daemon.
+   * Does NOT clear `chunkSymbolByLine`: the deferred chunk pass still needs it
+   * to resolve symbolIds; it is reset at the next run's first streamFileBatch.
    */
   finalizeSignals = async (_root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> => {
     const key = this.collectionKey(options?.collectionName);
@@ -1161,12 +1169,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   };
 
   /**
-   * Release per-run state for a collection after finalize: drop the
-   * per-collection `chunkSymbolByLine` map (the leak) and reset the run-global
+   * Release per-run extraction state after finalize: reset the run-global
    * ancestor / extends / return-type / dispatch maps (mirrors `getRunMetrics`).
+   * `chunkSymbolByLine` is intentionally NOT cleared here — the deferred chunk
+   * pass reads it after finalize; it is reset at the next run's first
+   * streamFileBatch (`key` retained for signature symmetry / future per-key use).
    */
-  private clearRunState(key: string): void {
-    this.chunkSymbolByLine.delete(key);
+  private clearRunState(_key: string): void {
     this.runAncestors = {};
     this.runPrependedAncestors = {};
     this.runExtends = {};

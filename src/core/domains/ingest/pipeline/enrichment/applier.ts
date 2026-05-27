@@ -171,7 +171,18 @@ export class EnrichmentApplier {
 
     for (const [relPath, entries] of chunkMap) {
       const overlay = fileOverlays.get(relPath);
-      if (!overlay) continue;
+      if (!overlay) {
+        // File the deferred provider didn't produce a file overlay for (e.g. a
+        // language it doesn't graph: markdown / json). Stamp a bare enrichedAt
+        // so these chunks aren't counted "unenriched" forever — mirrors the
+        // miss-stamp semantics of applyFileSignals / applyChunkSignals.
+        if (enrichedAt) {
+          for (const entry of entries) {
+            ops.push({ payload: { enrichedAt }, points: [entry.chunkId], key: fileKey });
+          }
+        }
+        continue;
+      }
       const maxEndLine = entries.reduce((max, e) => Math.max(max, e.endLine), 0);
       const final = transform ? transform(overlay, maxEndLine) : overlay;
       const payload = enrichedAt
