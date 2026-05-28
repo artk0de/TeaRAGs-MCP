@@ -114,7 +114,7 @@ export interface IndexStatus {
       /** Optimizer state (`"ok"` or `"unknown"`). */
       optimizerStatus?: string;
     };
-    embedding: { available: boolean; provider: string; url?: string };
+    embedding: { available: boolean; provider: string; url?: string; fallbackUrl?: string };
   };
 }
 

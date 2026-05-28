@@ -85,6 +85,8 @@ export class ProjectRegistryOps {
       embeddingModel: enriched.embeddingModel,
       embeddingDimensions: enriched.embeddingDimensions,
       qdrantUrl: enriched.qdrantUrl,
+      ...(enriched.embeddingBaseUrl !== undefined ? { embeddingBaseUrl: enriched.embeddingBaseUrl } : {}),
+      ...(enriched.embeddingFallbackUrl !== undefined ? { embeddingFallbackUrl: enriched.embeddingFallbackUrl } : {}),
       indexedAt: enriched.indexedAt,
       teaRagsVersion: enriched.teaRagsVersion,
       chunksCount: enriched.chunksCount,
@@ -101,14 +103,25 @@ export class ProjectRegistryOps {
     embeddingModel: string;
     embeddingDimensions: number;
     qdrantUrl: string;
+    embeddingBaseUrl?: string;
+    embeddingFallbackUrl?: string;
     indexedAt: string;
     teaRagsVersion: string;
   }> {
+    // Capture embedding endpoints live from the wired provider — symmetric
+    // with `qdrantUrl: qdrant.url` (read live, not from existing entry). When
+    // the deps lack an embeddings provider (legacy bootstrap call), fall
+    // back to the existing entry's persisted value so re-register on a
+    // pre-fix entry does not erase the URL it already had on disk.
+    const liveEmbeddingBaseUrl = this.deps.embeddings?.getBaseUrl?.();
+    const liveEmbeddingFallbackUrl = this.deps.embeddings?.getFallbackBaseUrl?.();
     const fallback = {
       chunksCount: existing?.chunksCount ?? 0,
       embeddingModel: existing?.embeddingModel ?? "",
       embeddingDimensions: existing?.embeddingDimensions ?? 0,
       qdrantUrl: existing?.qdrantUrl ?? "",
+      embeddingBaseUrl: liveEmbeddingBaseUrl ?? existing?.embeddingBaseUrl,
+      embeddingFallbackUrl: liveEmbeddingFallbackUrl ?? existing?.embeddingFallbackUrl,
       indexedAt: existing?.indexedAt ?? "",
       teaRagsVersion: existing?.teaRagsVersion ?? "",
     };
@@ -177,6 +190,8 @@ export class ProjectRegistryOps {
       embeddingModel,
       embeddingDimensions,
       qdrantUrl: qdrant.url,
+      embeddingBaseUrl: fallback.embeddingBaseUrl,
+      embeddingFallbackUrl: fallback.embeddingFallbackUrl,
       indexedAt: resolvedIndexedAt,
       teaRagsVersion,
     };

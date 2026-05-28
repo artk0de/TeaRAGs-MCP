@@ -20,6 +20,13 @@ export interface EmbeddingProvider {
   getProviderName: () => string;
   /** Base URL for remote providers. Undefined for local (e.g. ONNX). */
   getBaseUrl?: () => string;
+  /**
+   * Configured fallback base URL (Ollama with EMBEDDING_FALLBACK_URL).
+   * Returns undefined when none configured or N/A. Surfaced via
+   * IndexStatus.infraHealth.embedding.fallbackUrl so the prime CLI digest
+   * can show both endpoints — symmetric with QDRANT_URL tracking.
+   */
+  getFallbackBaseUrl?: () => string | undefined;
   /** Resolve model capabilities (context length, dimensions) from provider API. */
   resolveModelInfo?: () => Promise<{ model: string; contextLength: number; dimensions: number } | undefined>;
 }

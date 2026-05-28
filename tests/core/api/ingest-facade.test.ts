@@ -234,6 +234,76 @@ describe("IngestFacade", () => {
     expect(status.infraHealth?.qdrant.optimizerStatus).toBeUndefined();
   });
 
+  it("surfaces embedding url + fallbackUrl through infraHealth when the provider exposes both getters", async () => {
+    // Symmetric with infraHealth.qdrant.url: the prime CLI digest, and any
+    // downstream tooling reading IndexStatus.infraHealth.embedding, must see
+    // BOTH endpoints when the EmbeddingProvider (Ollama with EMBEDDING_FALLBACK_URL
+    // configured) exposes them. Built inline to avoid touching makeFacade.
+    const qdrant = {
+      collectionExists: vi.fn().mockResolvedValue(false),
+      checkHealth: vi.fn().mockResolvedValue(true),
+      getCollectionInfo: vi.fn(),
+      aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+      url: "http://localhost:6333",
+    };
+    const facade = new IngestFacade({
+      qdrant: qdrant as any,
+      embeddings: {
+        embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        getProviderName: vi.fn().mockReturnValue("ollama"),
+        getBaseUrl: vi.fn().mockReturnValue("http://gpu-server:11434"),
+        getFallbackBaseUrl: vi.fn().mockReturnValue("http://127.0.0.1:11434"),
+      } as any,
+      config: {} as any,
+      trajectoryConfig: { enableGitMetadata: false } as any,
+    });
+
+    const status = await facade.getIndexStatus("/tmp/test-project");
+
+    expect(status.infraHealth?.embedding).toEqual({
+      available: true,
+      provider: "ollama",
+      url: "http://gpu-server:11434",
+      fallbackUrl: "http://127.0.0.1:11434",
+    });
+  });
+
+  it("omits embedding.fallbackUrl when getFallbackBaseUrl returns undefined", async () => {
+    // Backward compatibility: providers that don't expose a fallback (ONNX,
+    // Voyage, Ollama without EMBEDDING_FALLBACK_URL) must not emit the field
+    // at all — the prime CLI gates the `· fallback: <url>` segment on its
+    // presence.
+    const qdrant = {
+      collectionExists: vi.fn().mockResolvedValue(false),
+      checkHealth: vi.fn().mockResolvedValue(true),
+      getCollectionInfo: vi.fn(),
+      aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+      url: "http://localhost:6333",
+    };
+    const facade = new IngestFacade({
+      qdrant: qdrant as any,
+      embeddings: {
+        embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        getProviderName: vi.fn().mockReturnValue("ollama"),
+        getBaseUrl: vi.fn().mockReturnValue("http://127.0.0.1:11434"),
+        getFallbackBaseUrl: vi.fn().mockReturnValue(undefined),
+      } as any,
+      config: {} as any,
+      trajectoryConfig: { enableGitMetadata: false } as any,
+    });
+
+    const status = await facade.getIndexStatus("/tmp/test-project");
+
+    expect(status.infraHealth?.embedding).toEqual({
+      available: true,
+      provider: "ollama",
+      url: "http://127.0.0.1:11434",
+    });
+    expect(status.infraHealth?.embedding).not.toHaveProperty("fallbackUrl");
+  });
+
   it("delegates clearIndex", async () => {
     const { facade } = makeFacade();
     await expect(facade.clearIndex("/tmp/test-project")).resolves.toBeUndefined();

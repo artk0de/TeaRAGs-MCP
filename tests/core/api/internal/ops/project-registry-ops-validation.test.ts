@@ -221,4 +221,67 @@ describe("Project registry — additional coverage for merged branches", () => {
       expect(viaPath.collectionName).toBe(first.collectionName);
     });
   });
+
+  describe("ProjectRegistryOps.register — embedding endpoint tracking", () => {
+    it("persists embeddingBaseUrl + embeddingFallbackUrl from EmbeddingProvider deps at registration time", async () => {
+      // Symmetric with qdrantUrl tracking: when the user registers a project,
+      // the registry must remember which embedding endpoint AND which fallback
+      // the project was indexed against. The prime CLI digest reads these
+      // back so the operator sees the actual remote URLs, not the current
+      // shell's env defaults (the 2026-05-28 prime asymmetry that motivated
+      // this fix).
+      const embeddings = {
+        embed: async () => ({ embedding: [0], dimensions: 1 }),
+        embedBatch: async () => [],
+        getDimensions: () => 384,
+        getModel: () => "jina-test",
+        checkHealth: async () => true,
+        getProviderName: () => "ollama",
+        getBaseUrl: () => "http://gpu-server:11434",
+        getFallbackBaseUrl: () => "http://127.0.0.1:11434",
+      };
+      const ops = new ProjectRegistryOps({ registry, embeddings: embeddings as never });
+
+      const { collectionName } = await ops.register({ path: dir, name: "primary-tracked" });
+      const entry = registry.get(collectionName);
+
+      expect(entry?.embeddingBaseUrl).toBe("http://gpu-server:11434");
+      expect(entry?.embeddingFallbackUrl).toBe("http://127.0.0.1:11434");
+    });
+
+    it("omits embeddingFallbackUrl when EmbeddingProvider exposes no fallback (ONNX / Ollama without EMBEDDING_FALLBACK_URL)", async () => {
+      const embeddings = {
+        embed: async () => ({ embedding: [0], dimensions: 1 }),
+        embedBatch: async () => [],
+        getDimensions: () => 384,
+        getModel: () => "jina-test",
+        checkHealth: async () => true,
+        getProviderName: () => "ollama",
+        getBaseUrl: () => "http://127.0.0.1:11434",
+        getFallbackBaseUrl: () => undefined,
+      };
+      const ops = new ProjectRegistryOps({ registry, embeddings: embeddings as never });
+
+      const { collectionName } = await ops.register({ path: dir, name: "no-fallback" });
+      const entry = registry.get(collectionName);
+
+      expect(entry?.embeddingBaseUrl).toBe("http://127.0.0.1:11434");
+      expect(entry?.embeddingFallbackUrl).toBeUndefined();
+    });
+
+    it("does not touch embedding URL fields when ops.deps.embeddings is absent (backward compat for legacy callers)", async () => {
+      // Pre-fix bootstrap: ProjectRegistryOps was constructed without
+      // embeddings dep. record() must still succeed; the registry entry
+      // simply carries no embedding URL fields — same as pre-existing
+      // legacy entries on disk.
+      const ops = new ProjectRegistryOps({ registry });
+
+      const { collectionName } = await ops.register({ path: dir, name: "legacy" });
+      const entry = registry.get(collectionName);
+
+      expect(entry).not.toBeNull();
+      expect(entry?.embeddingBaseUrl).toBeUndefined();
+      expect(entry?.embeddingFallbackUrl).toBeUndefined();
+    });
+  });
 });

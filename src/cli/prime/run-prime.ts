@@ -74,6 +74,21 @@ export async function runPrime(input: { path?: string; project?: string }): Prom
   // no qdrantUrl or no entry exists at all.
   const registryQdrantUrl = registryEntry?.qdrantUrl;
   const qdrantUrl = registryQdrantUrl && registryQdrantUrl.length > 0 ? registryQdrantUrl : discoverQdrantUrl(config);
+  // Registry-first for embedding endpoints too: when the project was indexed
+  // against a remote Ollama (and optionally a fallback), reuse those URLs
+  // instead of letting the current shell's env silently downgrade prime to
+  // localhost:11434. Symmetric with qdrantUrl above. Untouched for legacy
+  // entries that pre-date embedding URL tracking (env value preserved).
+  if (registryEntry?.embeddingBaseUrl || registryEntry?.embeddingFallbackUrl) {
+    const configWithEmbedding = config as typeof config & {
+      embedding?: { baseUrl?: string; fallbackBaseUrl?: string };
+    };
+    configWithEmbedding.embedding = {
+      ...configWithEmbedding.embedding,
+      ...(registryEntry.embeddingBaseUrl ? { baseUrl: registryEntry.embeddingBaseUrl } : {}),
+      ...(registryEntry.embeddingFallbackUrl ? { fallbackBaseUrl: registryEntry.embeddingFallbackUrl } : {}),
+    };
+  }
   const reachable = await pingQdrant(qdrantUrl);
   if (!reachable) {
     process.stdout.write(formatPrime({ kind: "qdrant-cold", path }));

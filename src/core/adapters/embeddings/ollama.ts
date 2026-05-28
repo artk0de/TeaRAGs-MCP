@@ -558,4 +558,13 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   getBaseUrl(): string {
     return this.usingFallback && this.fallbackBaseUrl ? this.fallbackBaseUrl : this.baseUrl;
   }
+
+  /**
+   * Configured fallback endpoint, regardless of whether failover is currently
+   * active. Surfaced through infraHealth.embedding.fallbackUrl so the prime
+   * CLI digest can show both URLs (primary + backup).
+   */
+  getFallbackBaseUrl(): string | undefined {
+    return this.fallbackBaseUrl;
+  }
 }
