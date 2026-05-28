@@ -1005,7 +1005,7 @@ codegraph implements it as a `clearRunState()` wrapper, git no-ops.
 release routes through the same affinity (`routingKey = collectionName`) to the
 pinned worker. See spec section 5 for failure-mode reasoning.
 
-### Task 3 (outline): `WorkerEnrichmentDescriptor` + `onRelease` on `EnrichmentProvider`
+### Task 3 — DONE (commits `8d37a12d`, `6f914fce`, `0afa57a7`): `WorkerEnrichmentDescriptor` + `onRelease` on `EnrichmentProvider`
 
 Add to `EnrichmentProvider` (`contracts/types/provider.ts`):
 
@@ -1145,10 +1145,31 @@ stays reviewable on its own.
 
 ## Execution handoff
 
-Phase 1 (Tasks 1-2) — **DONE** (commits `786d021a`, `3ea227cb`). Phase 2 (Tasks
-3-5) design gap is **RESOLVED** in the 2026-05-28 brainstorm; spec sections 3,
-4, 5 carry the final shape. Ready to execute Phase 2 via
-`dinopowers:writing-plans` to produce per-task TDD plans, then
-`dinopowers:executing-plans` per task. Task 6 (LanguageFactory rename) is a
-follow-up — schedule after Phase 2 lands so the rename diff is small and
-isolated.
+Phase 1 (Tasks 1-2) — **DONE** (commits `786d021a`, `3ea227cb`). Phase 2 design
+gap **RESOLVED** in the 2026-05-28 brainstorm. Phase 2 Task 3 — **DONE** in
+three atomic commits (`8d37a12d` contract, `6f914fce` git factory + git
+provider, `0afa57a7` codegraph factory + workerDescriptor + onRelease, deep-silo
+with `Why:` line). All inline behavior preserved — contract extensions are
+optional, providers built without descriptor still execute identically.
+
+Task 4 (worker entry + `WorkerPoolEnrichmentExecutor` + config + DI) is the next
+chunk. Worth splitting into four sub-tasks given runtime risk (worker_threads +
+DuckDB daemon socket):
+
+- **4a** — `EnrichmentExecutor.releaseCollection(collection)` method on contract
+  - `InlineEnrichmentExecutor.releaseCollection` impl (calls
+    `provider.onRelease?.()` directly, no pool involved). Smallest, can land
+    independently.
+- **4b** — `enrichment/infra/worker.ts` + `enrichment/infra/worker-protocol.ts`
+  (typed `call` / `release` request variants, provider cache
+  `Map<collectionName, providerInstance>`, dynamic-import the
+  `providerFactoryExport`).
+- **4c** — `enrichment/executor/worker-pool.ts` (`WorkerPoolEnrichmentExecutor`)
+  - `vitest.config.ts` coverage exclude entry for the worker file.
+- **4d** — Config schema (`enrichmentExecutor` + `enrichmentPoolSize`) + parse
+  - DI selection in `factory.ts` + `EnrichmentCoordinator.awaitCompletion`
+    extension to emit `releaseCollection`. Default still `inline`; flip to
+    `worker` in Task 5 after live validation.
+
+Task 5 (live validation on taxdome) and Task 6 (LanguageFactoryImpl →
+LanguageFactory rename, follow-up) remain as previously outlined.
