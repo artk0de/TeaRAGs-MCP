@@ -84,6 +84,26 @@ export interface EnrichmentExecutor {
     options?: FileSignalOptions,
   ) => Promise<Map<string, FileSignalOverlay>>;
 
+  /**
+   * Release per-collection in-memory state held on cached worker provider
+   * instances. Emitted by `EnrichmentCoordinator.awaitCompletion(collection)`
+   * after all markers reach healthy.
+   *
+   * Worker-pool executor: dispatches `{ type: "release", collectionName }`
+   * to the pinned worker for each provider that declared a workerDescriptor.
+   * The worker calls `provider.onRelease?.()` on the cached instance and
+   * evicts it from `Map<collectionName, providerInstance>`. The pool drops
+   * the routingKey → workerIndex affinity binding.
+   *
+   * Inline executor: NO-OP. The inline path shares one long-lived provider
+   * instance across all collections (no per-collection cache). Calling
+   * `provider.onRelease?.()` here would wipe state for every concurrent
+   * in-flight run on the same provider. The worker-pool executor is the
+   * sole place bounded-memory semantics are enforced; inline relies on
+   * process lifetime for cleanup.
+   */
+  releaseCollection: (providers: EnrichmentProvider[], collection: string) => Promise<void>;
+
   /** Release executor resources (worker pool shutdown); no-op for inline. */
   shutdown: () => Promise<void>;
 }

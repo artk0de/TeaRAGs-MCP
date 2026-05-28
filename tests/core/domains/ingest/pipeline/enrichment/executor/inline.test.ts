@@ -74,4 +74,22 @@ describe("InlineEnrichmentExecutor", () => {
   it("shutdown is a no-op resolved Promise", async () => {
     await expect(exec.shutdown()).resolves.toBeUndefined();
   });
+
+  it("releaseCollection is a no-op on inline — does NOT call provider.onRelease", async () => {
+    // Inline runs all collections through a SHARED provider instance (one
+    // codegraph provider, many concurrent index_codebase calls). Calling
+    // onRelease here would wipe state for every other in-flight run on the
+    // same provider. The worker-pool executor handles per-collection
+    // bounded memory via its own per-(collection,worker) cache; inline
+    // intentionally leaves the long-lived provider state alone.
+    const onRelease = vi.fn(async () => undefined);
+    const provider = fakeProvider({ onRelease });
+    await expect(exec.releaseCollection([provider], "code_xxx")).resolves.toBeUndefined();
+    expect(onRelease).not.toHaveBeenCalled();
+  });
+
+  it("releaseCollection tolerates providers without an onRelease declaration", async () => {
+    const provider = fakeProvider();
+    await expect(exec.releaseCollection([provider], "code_xxx")).resolves.toBeUndefined();
+  });
 });

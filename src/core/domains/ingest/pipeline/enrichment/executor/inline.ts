@@ -61,6 +61,16 @@ export class InlineEnrichmentExecutor implements EnrichmentExecutor {
     return provider.finalizeSignals(root, options);
   }
 
+  async releaseCollection(_providers: EnrichmentProvider[], _collection: string): Promise<void> {
+    // No-op: inline shares ONE long-lived provider instance across all
+    // collections. Calling provider.onRelease?.() here would wipe state for
+    // every concurrent in-flight run on the same provider — codegraph's
+    // per-collection chunkSymbolByLine entries would all disappear. Bounded
+    // memory is the worker-pool executor's concern (it caches providers
+    // per (collection, worker) pair and evicts on this signal). Inline
+    // relies on natural process-lifetime cleanup.
+  }
+
   async shutdown(): Promise<void> {
     // No-op: nothing to release on the main thread.
   }
