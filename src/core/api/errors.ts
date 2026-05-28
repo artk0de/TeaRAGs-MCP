@@ -16,6 +16,7 @@ export type InputErrorCode =
   | "INPUT_PROJECT_NAME_NOT_UNIQUE"
   | "INPUT_PROJECT_NAME_INVALID"
   | "INPUT_PROJECT_PATH_MISSING"
+  | "INPUT_PROJECT_ALIAS_STALE"
   | "INPUT_PATH_NOT_EXISTS";
 
 /**
@@ -149,6 +150,27 @@ export class ProjectPathMissingError extends InputValidationError {
       code: "INPUT_PROJECT_PATH_MISSING",
       message: `Project '${name}' has no path stored — re-register it before using as an alias`,
       hint,
+    });
+  }
+}
+
+/**
+ * Thrown when a project alias resolves to a non-empty path that no longer
+ * exists on disk — typical case: the user registered an alias for a git
+ * worktree, then later removed that worktree without unregistering. Without
+ * this guard, callers operate silently on a phantom path (empty index,
+ * orphan Qdrant collection, 0/0 indexing run) and read stale snapshots from
+ * the surviving collection — see the bug report from 2026-05-28.
+ *
+ * Distinct from `ProjectPathMissingError` (path === "", recovered stub) on
+ * purpose: stub entries never had a path; stale entries did and lost it.
+ */
+export class StaleProjectAliasError extends InputValidationError {
+  constructor(name: string, stalePath: string) {
+    super({
+      code: "INPUT_PROJECT_ALIAS_STALE",
+      message: `Project alias '${name}' points at '${stalePath}', which no longer exists on disk`,
+      hint: `Unregister the stale alias (\`tea-rags unregister ${name}\`) or re-register it with a live path (\`tea-rags register --name ${name} --path <new-path>\`).`,
     });
   }
 }

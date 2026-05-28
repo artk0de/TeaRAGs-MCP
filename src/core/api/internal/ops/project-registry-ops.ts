@@ -38,9 +38,26 @@ export class ProjectRegistryOps {
     const realPath = await validatePath(input.path);
     const collectionName = resolveCollectionName(realPath);
 
-    // Uniqueness check BEFORE any record() — prevents orphan-stub on conflict.
+    // Alias-rename semantics: when the name is already held by a STALE
+    // entry (its path no longer exists on disk), keep the existing
+    // collection and just RE-POINT it at the new path. The physical Qdrant
+    // collection, snapshot file, codegraph DB and chunksCount all stay
+    // intact — only the registry's `path` field is updated. This preserves
+    // every indexed datum across worktree churn (the original 2026-05-28
+    // bug forced a full reindex per worktree). Subsequent path-based
+    // callers (`resolveCollection({path: newPath})`) consult
+    // `findByPath` and pick up the same collectionName, so the rename
+    // stays transparent to the rest of the system.
+    //
+    // Live-live collisions (both paths still on disk) keep the original
+    // ProjectNameNotUniqueError contract so users do not accidentally
+    // relabel a working project's collection by re-registering its name.
     const conflicting = this.deps.registry.findByName(input.name);
     if (conflicting && conflicting.collectionName !== collectionName) {
+      if (conflicting.path && !existsSync(resolve(conflicting.path))) {
+        this.deps.registry.updatePath(conflicting.collectionName, realPath);
+        return { collectionName: conflicting.collectionName, alreadyIndexed: conflicting.chunksCount > 0 };
+      }
       throw new ProjectNameNotUniqueError(input.name, conflicting.collectionName);
     }
 

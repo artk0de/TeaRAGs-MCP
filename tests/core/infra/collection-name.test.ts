@@ -65,9 +65,12 @@ describe("collection-name utilities", () => {
     });
 
     it("priority 2: project resolves via registry", () => {
+      // Use a real, on-disk path — resolveCollection now guards against
+      // stale aliases whose stored path no longer exists. The tmp `dir`
+      // already serves as the live anchor in this suite's beforeEach.
       registry.record({
         collectionName: "code_abc",
-        path: "/repo",
+        path: dir,
         embeddingModel: "m",
         embeddingDimensions: 1,
         qdrantUrl: "u",
@@ -78,7 +81,7 @@ describe("collection-name utilities", () => {
       registry.setName("code_abc", "alpha");
       const out = resolveCollection(registry, { project: "alpha" });
       expect(out.collectionName).toBe("code_abc");
-      expect(out.path).toBe("/repo");
+      expect(out.path).toBe(dir);
     });
 
     it("priority 2 failure: unknown project throws ProjectNotRegisteredError", () => {

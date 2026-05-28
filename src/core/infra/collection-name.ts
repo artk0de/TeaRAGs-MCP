@@ -6,10 +6,10 @@
  */
 
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs } from "node:fs";
 import { resolve } from "node:path";
 
-import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../api/errors.js";
+import { CollectionNotProvidedError, ProjectNotRegisteredError, StaleProjectAliasError } from "../api/errors.js";
 import type { CollectionRegistry } from "./registry/collection-registry.js";
 
 /**
@@ -68,11 +68,33 @@ export function resolveCollection(
         .filter((n): n is string => n !== null);
       throw new ProjectNotRegisteredError(input.project, available);
     }
+    // Stale-alias guard: registry retains entries from removed worktrees /
+    // moved repos. Without this check, callers operate on a phantom path
+    // (resolving the alias silently to a deleted directory) and either
+    // index 0/0 files or read stale stats from the surviving Qdrant
+    // collection. Empty path means recoverFromQdrant stub — handled by
+    // ProjectPathMissingError downstream, NOT a stale alias.
+    if (entry.path && !existsSync(resolve(entry.path))) {
+      throw new StaleProjectAliasError(input.project, entry.path);
+    }
     return { collectionName: entry.collectionName, path: entry.path };
   }
   if (input.path) {
+    // Registry-aware path lookup: when a project alias was moved (its
+    // worktree relocated; `register_project` re-pointed the existing entry
+    // at the new path), the original `collectionName` stays with the
+    // entry. Path-based callers must honor that mapping — otherwise they
+    // would derive a fresh `code_<newhash>` and operate on a brand-new
+    // empty collection while the actual indexed data still lives under
+    // the old `collectionName`. Fallback to the deterministic hash only
+    // when the path is not yet registered.
+    //
+    // The optional-chain guards against test stubs that predate
+    // findByPath — those stubs imply no rename ever happened, so the
+    // hash fallback is correct for their fixture.
+    const entry = registry?.findByPath?.(input.path);
     return {
-      collectionName: resolveCollectionName(input.path),
+      collectionName: entry?.collectionName ?? resolveCollectionName(input.path),
       path: input.path,
     };
   }

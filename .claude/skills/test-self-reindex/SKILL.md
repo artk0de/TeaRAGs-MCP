@@ -70,17 +70,26 @@ current working directory via `pwd`. Worktree path must be an **absolute** path.
 
 ### Step 2 — Register the worktree as `tea-rags-worktree`
 
+ALWAYS use the static name `tea-rags-worktree` and ALWAYS call
+`register_project` first, even when an entry already exists. `register_project`
+implements **alias-rename semantics**: when the existing entry under this name
+points at a stale (deleted) path, it RE-POINTS the existing entry at the new
+worktree path. The physical Qdrant collection, snapshot file and codegraph DB
+all stay intact — only the registry's `path` field is updated. No data is
+dropped; no full reindex is forced.
+
 ```
 mcp__tea-rags__register_project
   name: "tea-rags-worktree"
   path: <absolute worktree path>
 ```
 
-The MCP tool returns whether the underlying collection already has chunks. If
-this is a brand-new alias for a brand-new collection, it returns
-`alreadyIndexed: false` and step 3 will run a full index. If the alias already
-exists (re-invocation), step 3 still runs `forceReindex: true` to exercise the
-re-index path explicitly.
+The MCP tool returns `alreadyIndexed: true` when the rename preserved a
+previously-indexed collection (worktree switch), and `alreadyIndexed: false`
+when a brand-new collection is being created (first-ever worktree register).
+Step 3's `forceReindex: true` runs in both cases — for a switch it exercises the
+re-index path against the preserved collection; for a fresh register it performs
+the first full index.
 
 ### Step 3 — Force reindex via the alias
 

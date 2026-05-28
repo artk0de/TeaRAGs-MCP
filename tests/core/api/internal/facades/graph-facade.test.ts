@@ -30,13 +30,20 @@ function fakePool(graphDb: Record<string, unknown>): GraphDbClientPool {
 
 /**
  * Minimal CollectionRegistry stub — only the methods resolveCollection()
- * touches (findByName + list). Returns the entry passed via the map.
+ * touches (findByName + findByPath + list). Returns the entry passed via
+ * the map.
  */
 function fakeRegistry(entries: Record<string, { collectionName: string; path: string }>): CollectionRegistry {
   return {
     findByName: vi.fn((name: string) => {
       const entry = entries[name];
       return entry ? { ...entry, name } : null;
+    }),
+    findByPath: vi.fn((path: string) => {
+      for (const [name, entry] of Object.entries(entries)) {
+        if (entry.path === path) return { ...entry, name };
+      }
+      return null;
     }),
     list: vi.fn(() => Object.entries(entries).map(([name, e]) => ({ ...e, name }))),
   } as unknown as CollectionRegistry;
@@ -191,8 +198,11 @@ describe("GraphFacade", () => {
         findCycles: vi.fn(),
       };
       const pool = fakePool(graphDb);
+      // resolveCollection guards against stale alias paths — use the
+      // current working directory as a known-live anchor so the registry
+      // entry's path passes the existence check.
       const registry = fakeRegistry({
-        "tea-rags-worktree": { collectionName: "code_abc123", path: "/projects/worktree" },
+        "tea-rags-worktree": { collectionName: "code_abc123", path: process.cwd() },
       });
       const facade = new GraphFacade({ pool, collectionRegistry: registry });
 
