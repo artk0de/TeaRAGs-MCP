@@ -21,6 +21,7 @@ import type {
   FileSignalOverlay,
   FileSignalTransform,
   FilterDescriptor,
+  WorkerEnrichmentDescriptor,
 } from "../../../contracts/types/provider.js";
 import type { RerankPreset } from "../../../contracts/types/reranker.js";
 import { gitFilters } from "./filters.js";
@@ -70,9 +71,22 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  chunk overlays receive per-range line ownership. Same blame pass as file-level. */
   private blameByRelPath: Map<string, BlameLine[]> = new Map();
 
-  constructor(config?: Partial<GitProviderConfig>, squashOpts?: SquashOptions) {
+  /**
+   * Worker-pool descriptor — present iff the composition root wired this
+   * provider for off-main-thread dispatch via WorkerPoolEnrichmentExecutor.
+   * Inline-only callers (tests, the default inline executor) leave it
+   * undefined and the executor falls back to in-thread provider calls.
+   */
+  readonly workerDescriptor?: WorkerEnrichmentDescriptor;
+
+  constructor(
+    config?: Partial<GitProviderConfig>,
+    squashOpts?: SquashOptions,
+    workerDescriptor?: WorkerEnrichmentDescriptor,
+  ) {
     this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config };
     this.squashOpts = squashOpts;
+    this.workerDescriptor = workerDescriptor;
     this.fileSignalTransform = (data, maxEndLine) => {
       const churnData = data as unknown as FileChurnData;
       const blameLines = this.blameByChurnData.get(churnData);
