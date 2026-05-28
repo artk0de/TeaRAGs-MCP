@@ -359,16 +359,28 @@ So `N` is sized for git's stateless fan-out; codegraph just occupies one slot.
 
 ### Config
 
-A new knob in the existing `ingest.tune` namespace, alongside `chunkerPoolSize`:
+TWO new knobs in the existing `ingest.tune` namespace, alongside
+`chunkerPoolSize` — an explicit MODE flag and a SEPARATE size knob (the mode is
+NOT overloaded onto the size):
 
-- `ingest.tune.enrichmentPoolSize` — number of enrichment worker threads.
-- env: `INGEST_TUNE_ENRICHMENT_POOL_SIZE` / `ENRICHMENT_POOL_SIZE`
-  (`bootstrap/config/parse.ts`), schema default in
-  `bootstrap/config/schemas.ts`.
-- **Default:** `max(1, floor(availableParallelism() / 2))` (leaves cores for the
-  embedding HTTP loop + chunker pool), clamped to a sane floor of 1. A flat
-  fallback of 4 (mirroring `chunkerPoolSize`) is acceptable if cores can't be
-  read.
+- `ingest.tune.enrichmentExecutor: "inline" | "worker"` — selects the
+  `EnrichmentExecutor` implementation (name matches the type so the flag is
+  self-describing). `"inline"` → `InlineEnrichmentExecutor` (main thread,
+  today's behavior); `"worker"` → `WorkerPoolEnrichmentExecutor`. env:
+  `INGEST_TUNE_ENRICHMENT_EXECUTOR` / `ENRICHMENT_EXECUTOR`. **Default:**
+  `"inline"` until the worker path is live-validated, then flipped to
+  `"worker"`.
+- `ingest.tune.enrichmentPoolSize` — number of enrichment worker threads,
+  consulted ONLY when `enrichmentExecutor === "worker"`. env:
+  `INGEST_TUNE_ENRICHMENT_POOL_SIZE` / `ENRICHMENT_POOL_SIZE`. **Default:**
+  `max(1, floor(availableParallelism() / 2))` (leaves cores for the embedding
+  HTTP loop + chunker pool), floored at 1; flat fallback 4 (mirroring
+  `chunkerPoolSize`) if cores can't be read.
+
+Why a string flag, not `enrichmentPoolSize === 0`: overloading the size knob as
+the on/off switch is opaque (a reader can't tell `0` means "inline"). A typed
+`"inline" | "worker"` enum reads unambiguously and keeps the two concerns —
+WHICH executor vs HOW MANY threads — independent.
 
 Pool size is a **static start value** in this design. Runtime-adaptive sizing
 (grow/shrink by embedding-loop pressure, queue depth, latency) is deferred to

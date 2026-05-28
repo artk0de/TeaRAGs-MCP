@@ -63,10 +63,15 @@ The spec named some structures that do not exist as written. Corrected facts
    Git/codegraph providers are built inside `new GitTrajectory(...)` /
    `createCodegraphTrajectories(...)` in `composition.ts:71-78`.
 2. **No "daemon/server vs direct mode" flag** exists for the
-   ingest/enrichment/chunker path. The executor toggle will therefore be driven
-   by the new `enrichmentPoolSize` config knob: `enrichmentPoolSize === 0` ⇒
-   `InlineEnrichmentExecutor`; `> 0` ⇒ `WorkerPoolEnrichmentExecutor`. Default
-   `0` for Phase 1 (inline, no behavior change); Phase 2 flips the default.
+   ingest/enrichment/chunker path. The executor is therefore selected by a
+   dedicated, self-describing **string** flag —
+   `ingest.tune.enrichmentExecutor: "inline" | "worker"` (name matches the
+   `EnrichmentExecutor` type so the knob reads unambiguously). `"inline"` ⇒
+   `InlineEnrichmentExecutor`; `"worker"` ⇒ `WorkerPoolEnrichmentExecutor`.
+   `enrichmentPoolSize` is a SEPARATE knob that only sizes the pool when
+   `enrichmentExecutor === "worker"` (not overloaded as the on/off switch).
+   Default `"inline"` through Phase 1 (no behavior change); Phase 2 flips the
+   default to `"worker"` after live validation.
 3. **`ChunkLookupEntry`** is imported from `src/core/types.ts:280`, re-exported
    by `contracts/types/provider.ts:223`.
 4. **The module-path injection DI pattern** (`providerModulePath`-style)
@@ -1024,17 +1029,26 @@ provider (deep-silo, extreme churn) — isolate, `Why:` line, owner review.**
   (affinity) or none (stateless); serializes the request; for providers without
   a descriptor, delegates to an internal `InlineEnrichmentExecutor` (graceful
   fallback).
-- Config: add `enrichmentPoolSize` to `ingestTuneSchema` (`schemas.ts`,
-  `intWithDefault(0)` for Phase 2 entry — 0 keeps inline) + `parse.ts`
-  (`env("INGEST_TUNE_ENRICHMENT_POOL_SIZE", "ENRICHMENT_POOL_SIZE")`). Default
-  to `max(1, floor(availableParallelism()/2))` once Phase 2 is validated (flip
-  from 0).
-- DI: in `factory.ts`, build the executor
-  (`enrichmentPoolSize === 0 ? Inline : WorkerPool`) and thread it into
-  `IngestFacade` → `EnrichmentCoordinator` (the coordinator already accepts an
-  optional executor from Task 2). Compute provider-factory module paths at the
-  composition root and put them in each descriptor (keeps `ingest` free of
-  static `trajectory` imports).
+- Config: TWO separate knobs in `ingestTuneSchema` (`schemas.ts`) + `parse.ts`:
+  - `enrichmentExecutor: z.enum(["inline", "worker"]).default("inline")` — the
+    explicit mode flag (NOT pool-size overloading). `parse.ts`:
+    `env("INGEST_TUNE_ENRICHMENT_EXECUTOR", "ENRICHMENT_EXECUTOR")`. Add an
+    `enumWithDefault`-style helper if none exists (mirror `intWithDefault`).
+  - `enrichmentPoolSize: intWithDefault(<default>)` — pool thread count,
+    consulted ONLY when `enrichmentExecutor === "worker"`. `parse.ts`:
+    `env("INGEST_TUNE_ENRICHMENT_POOL_SIZE", "ENRICHMENT_POOL_SIZE")`. Default
+    `max(1, floor(availableParallelism()/2))` (compute in factory if the schema
+    default can't call `availableParallelism`, else flat fallback 4).
+  - Default `enrichmentExecutor: "inline"` through Phase 1; flip to `"worker"`
+    after Phase 2 live validation.
+- DI: in `factory.ts`, select the executor by the explicit string flag —
+  `zodConfig.ingest.tune.enrichmentExecutor === "worker"`
+  `? new WorkerPoolEnrichmentExecutor(zodConfig.ingest.tune.enrichmentPoolSize, ...)`
+  `: new InlineEnrichmentExecutor()` — and thread it into `IngestFacade` →
+  `EnrichmentCoordinator` (the coordinator already accepts an optional executor
+  from Task 2). Compute provider-factory module paths at the composition root
+  and put them in each descriptor (keeps `ingest` free of static `trajectory`
+  imports).
 - Coverage: add `src/core/domains/ingest/pipeline/enrichment/infra/worker.ts` to
   `vitest.config.ts` `coverage.exclude` (follow the `daemon/entry.ts`
   precedent + comment).
