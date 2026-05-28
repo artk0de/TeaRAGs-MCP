@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkLookupEntry, EnrichmentMetrics } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
@@ -24,6 +25,7 @@ import { EnrichmentApplier } from "./applier.js";
 import { EnrichmentBackfiller } from "./backfiller.js";
 import { ChunkPhase } from "./chunk-phase.js";
 import { CompletionRunner } from "./completion-runner.js";
+import { InlineEnrichmentExecutor } from "./executor/index.js";
 import { FilePhase } from "./file-phase.js";
 import { EnrichmentMarkerStore } from "./marker-store.js";
 import type { EnrichmentRecovery } from "./recovery.js";
@@ -70,6 +72,13 @@ export class EnrichmentCoordinator {
   private readonly markerStore: EnrichmentMarkerStore;
   private currentRun: RunState | null = null;
   private readonly providers: EnrichmentProvider[];
+  /**
+   * Dispatch seam between the enrichment phases and provider execution.
+   * Default: `InlineEnrichmentExecutor` (today's main-thread behavior). A
+   * worker-pool executor can be injected (Phase 2 of the worker-pool spec)
+   * without any other coordinator/phase changes.
+   */
+  private readonly executor: EnrichmentExecutor;
 
   /**
    * Optional callback fired after enrichment milestones. Invoked at most twice
@@ -106,9 +115,11 @@ export class EnrichmentCoordinator {
     private readonly qdrant: QdrantManager,
     providers: EnrichmentProvider | EnrichmentProvider[],
     private readonly recovery?: EnrichmentRecovery,
+    executor?: EnrichmentExecutor,
   ) {
     this.markerStore = new EnrichmentMarkerStore(qdrant);
     this.providers = Array.isArray(providers) ? providers : [providers];
+    this.executor = executor ?? new InlineEnrichmentExecutor();
   }
 
   /**
@@ -283,16 +294,17 @@ export class EnrichmentCoordinator {
 
   private createRunState(): RunState {
     const applier = new EnrichmentApplier(this.qdrant);
-    const chunkPhase = new ChunkPhase(applier);
-    const filePhase = new FilePhase(applier, this.markerStore);
+    const chunkPhase = new ChunkPhase(applier, this.executor);
+    const filePhase = new FilePhase(applier, this.markerStore, this.executor);
     filePhase.bindChunkPhase(chunkPhase);
-    const backfiller = new EnrichmentBackfiller(applier, this.qdrant);
+    const backfiller = new EnrichmentBackfiller(applier, this.qdrant, this.executor);
     const completion = new CompletionRunner({
       filePhase,
       chunkPhase,
       backfiller,
       applier,
       markerStore: this.markerStore,
+      executor: this.executor,
     });
 
     let resolveDone!: (m: EnrichmentMetrics) => void;

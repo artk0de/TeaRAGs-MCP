@@ -5,6 +5,7 @@ import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/domains/ingest/constants.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
+import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { FilePhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/file-phase.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 
@@ -52,7 +53,7 @@ describe("FilePhase", () => {
     const applySpy = vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
     const ctx = buildCtx({ streamFileBatch });
 
-    const phase = new FilePhase(applier, marker);
+    const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
 
     await phase.onBatch("coll", "/repo", items);
@@ -76,7 +77,7 @@ describe("FilePhase", () => {
     vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
     const ctx = buildCtx({ streamFileBatch });
 
-    const phase = new FilePhase(applier, marker);
+    const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
 
     const p = phase.onBatch("coll", "/repo", items);
@@ -94,7 +95,7 @@ describe("FilePhase", () => {
     const applySpy = vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
     const ctx = buildCtx({ buildFileSignals });
 
-    const phase = new FilePhase(applier, marker);
+    const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
 
     await phase.onBatch("coll", "/repo", items);
@@ -128,7 +129,7 @@ describe("FilePhase", () => {
       ignoreFilter: null as any,
     };
 
-    const phase = new FilePhase(applier, marker);
+    const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
     await phase.onBatch("coll", "/repo", items);
     await phase.drain();
@@ -152,7 +153,7 @@ describe("FilePhase", () => {
       ignoreFilter: null as any,
     };
 
-    const phase = new FilePhase(applier, marker);
+    const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
 
     const fileOverlays = new Map([["src/a.ts", { fanIn: 4 }]]);
@@ -197,7 +198,7 @@ describe("FilePhase", () => {
       ignoreFilter: sharedFilter,
     };
 
-    const phase = new FilePhase(applier, marker);
+    const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
     await phase.onBatch("coll", "/repo", items);
     await phase.drain();
@@ -216,11 +217,11 @@ describe("FilePhase", () => {
     const marker = new EnrichmentMarkerStore(qdrant as any);
     await marker.markStart("coll", ["git"], "run-1", "ts");
 
-    const chunkPhase = new ChunkPhase(applier);
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
     const streamFileBatch = vi.fn().mockRejectedValue(new Error("boom"));
     const ctx = buildCtx({ streamFileBatch });
 
-    const phase = new FilePhase(applier, marker);
+    const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.bindChunkPhase(chunkPhase);
     chunkPhase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");

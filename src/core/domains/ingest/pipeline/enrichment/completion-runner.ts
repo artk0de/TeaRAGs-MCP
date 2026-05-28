@@ -11,6 +11,7 @@
  *  9. re-fire stats callback if backfill wrote overlays
  */
 
+import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentMetrics } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { EnrichmentApplier } from "./applier.js";
@@ -26,6 +27,7 @@ export interface CompletionRunnerDeps {
   backfiller: EnrichmentBackfiller;
   applier: EnrichmentApplier;
   markerStore: EnrichmentMarkerStore;
+  executor: EnrichmentExecutor;
 }
 
 /**
@@ -46,7 +48,7 @@ export class CompletionRunner {
     unenrichedReader?: UnenrichedReader,
     runStartedAt = "",
   ): Promise<EnrichmentMetrics> {
-    const { filePhase, chunkPhase, backfiller, applier, markerStore } = this.deps;
+    const { filePhase, chunkPhase, backfiller, applier, markerStore, executor } = this.deps;
     const readUnenriched: UnenrichedReader = unenrichedReader ?? (async () => 0);
 
     // 1. drain prefetch (no-op) + drain streaming fileWork
@@ -57,9 +59,13 @@ export class CompletionRunner {
     //    metrics) read back after the run sink finishes, applied by the
     //    accumulated chunkMap. git's finalizeSignals returns an empty map.
     for (const ctx of contexts.values()) {
-      if (!ctx.provider.finalizeSignals || filePhase.hasPrefetchFailed(ctx.key)) continue;
+      // Method-existence is no longer guarded here: runFinalize returns an
+      // empty map when the provider has no finalizeSignals (executor smooths
+      // over the optional method), and the size-zero branch below skips the
+      // apply step — equivalent to the old `if (!finalizeSignals) continue`.
+      if (filePhase.hasPrefetchFailed(ctx.key)) continue;
       const root = ctx.effectiveRoot ?? "";
-      const fileOverlays = await ctx.provider.finalizeSignals(root, { collectionName: coll || undefined });
+      const fileOverlays = await executor.runFinalize(ctx.provider, root, { collectionName: coll || undefined });
       if (fileOverlays.size > 0) {
         await filePhase.applyFinalize(coll, ctx, fileOverlays, chunkPhase.getDeferredChunkMap(ctx.key));
       }

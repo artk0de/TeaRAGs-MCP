@@ -1,6 +1,7 @@
 export type * from "./errors.js";
 export type * from "./types/app.js";
 export type * from "./types/config.js";
+export type * from "./types/enrichment-executor.js";
 export type * from "./types/provider.js";
 export type * from "./types/reranker.js";
 export type * from "./types/stats-accumulator.js";

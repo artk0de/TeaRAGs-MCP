@@ -11,7 +11,8 @@
 
 import { relative } from "node:path";
 
-import type { FileSignalOptions, FileSignalOverlay } from "../../../../contracts/types/provider.js";
+import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
+import type { FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
@@ -87,6 +88,7 @@ export class FilePhase {
   constructor(
     private readonly applier: EnrichmentApplier,
     private readonly markerStore: EnrichmentMarkerStore,
+    private readonly executor: EnrichmentExecutor,
   ) {}
 
   /**
@@ -134,9 +136,15 @@ export class FilePhase {
       // applyFinalize. Skipping the call entirely would leave the graph empty
       // (degraded file signals + zero chunk signals).
       if (ctx.provider.defersChunkEnrichment) {
+        // Keep the streamFileBatch existence guard: defer providers without
+        // streamFileBatch must skip (the run sink has nothing to accumulate).
+        // The executor would otherwise transparently fall back to
+        // buildFileSignals({ paths }), which is wrong for defer providers —
+        // they want the extraction side-effects of streamFileBatch, not a
+        // pure whole-set read.
         if (!ctx.provider.streamFileBatch) continue;
-        const extractWork = ctx.provider
-          .streamFileBatch(root, relPaths, {
+        const extractWork = this.executor
+          .runFileBatch(ctx.provider, root, relPaths, {
             collectionName: this.coll || undefined,
             ignoreFilter: ctx.ignoreFilter ?? undefined,
           })
@@ -149,14 +157,11 @@ export class FilePhase {
         continue;
       }
 
-      const streamFn =
-        ctx.provider.streamFileBatch ??
-        (async (r: string, p: string[], o?: FileSignalOptions) => ctx.provider.buildFileSignals(r, { ...o, paths: p }));
-
-      const work = streamFn(root, relPaths, {
-        collectionName: this.coll || undefined,
-        ignoreFilter: ctx.ignoreFilter ?? undefined,
-      })
+      const work = this.executor
+        .runFileBatch(ctx.provider, root, relPaths, {
+          collectionName: this.coll || undefined,
+          ignoreFilter: ctx.ignoreFilter ?? undefined,
+        })
         .then(async (overlays) => {
           await this.applier.applyFileSignals(
             coll,

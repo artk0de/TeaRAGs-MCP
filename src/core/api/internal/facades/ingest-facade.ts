@@ -23,6 +23,7 @@ import { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.j
 import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
+import { InlineEnrichmentExecutor } from "../../../domains/ingest/pipeline/enrichment/executor/index.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strategy.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
@@ -172,8 +173,15 @@ export class IngestFacade {
         }
       : undefined;
 
-    const recovery = providers.length > 0 ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant)) : undefined;
-    const enrichment = new EnrichmentCoordinator(qdrant, providers, recovery);
+    // Single shared executor — Coordinator and Recovery dispatch through the
+    // same seam. Phase-2 of the worker-pool spec swaps this for a
+    // ThreadPool-backed impl without touching the phases or recovery.
+    const enrichmentExecutor = new InlineEnrichmentExecutor();
+    const recovery =
+      providers.length > 0
+        ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant), { executor: enrichmentExecutor })
+        : undefined;
+    const enrichment = new EnrichmentCoordinator(qdrant, providers, recovery, enrichmentExecutor);
     const registryDeps: PipelineRegistryDeps = {
       registry: deps.collectionRegistry,
       teaRagsVersion: deps.teaRagsVersion,

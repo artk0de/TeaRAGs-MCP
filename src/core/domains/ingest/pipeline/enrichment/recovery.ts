@@ -6,10 +6,12 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
+import { InlineEnrichmentExecutor } from "./executor/index.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
 import type { EnrichmentProvider, ProviderContext } from "./types.js";
 
@@ -30,10 +32,17 @@ const SCROLL_LIMIT = 10_000;
 
 export interface RecoveryOptions {
   scrollPageSize?: number;
+  /**
+   * Dispatch seam to the providers; defaults to InlineEnrichmentExecutor.
+   * Lets a Phase-2 caller swap in a ThreadPool-backed executor without
+   * changing recovery's logic.
+   */
+  executor?: EnrichmentExecutor;
 }
 
 export class EnrichmentRecovery {
   private readonly scrollPageSize: number | undefined;
+  private readonly executor: EnrichmentExecutor;
 
   constructor(
     private readonly qdrant: QdrantManager,
@@ -41,6 +50,7 @@ export class EnrichmentRecovery {
     options?: RecoveryOptions,
   ) {
     this.scrollPageSize = options?.scrollPageSize;
+    this.executor = options?.executor ?? new InlineEnrichmentExecutor();
   }
 
   /**
@@ -62,7 +72,10 @@ export class EnrichmentRecovery {
       const root = provider.resolveRoot(absolutePath);
       const uniquePaths = [...new Set(unenriched.map((p) => p.relativePath))];
 
-      const signals = await provider.buildFileSignals(root, { paths: uniquePaths, collectionName });
+      // Whole-set recovery — must NOT route through streamFileBatch; the
+      // streaming extraction side-effects belong to the live file phase, not
+      // to post-hoc recovery.
+      const signals = await this.executor.runFileSignals(provider, root, uniquePaths, { collectionName });
 
       // Build ChunkItem-like objects for applyFileSignals
       const items = unenriched.map((point) => ({
@@ -141,7 +154,8 @@ export class EnrichmentRecovery {
         for (const entry of entries) allChunkIds.add(entry.chunkId);
       }
 
-      const chunkSignals = await provider.buildChunkSignals(
+      const chunkSignals = await this.executor.runChunkBatch(
+        provider,
         root,
         chunkMap as unknown as Map<string, ChunkLookupEntry[]>,
         { collectionName },

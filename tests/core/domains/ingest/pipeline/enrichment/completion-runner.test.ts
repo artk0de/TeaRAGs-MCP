@@ -6,6 +6,7 @@ import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pip
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
 import { CompletionRunner } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/completion-runner.js";
+import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { FilePhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/file-phase.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 
@@ -23,15 +24,16 @@ describe("CompletionRunner", () => {
 
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
-    const filePhase = new FilePhase(applier, marker);
-    const chunkPhase = new ChunkPhase(applier);
-    const backfiller = new EnrichmentBackfiller(applier, qdrant as any);
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
     const runner = new CompletionRunner({
       filePhase,
       chunkPhase,
       backfiller,
       applier,
       markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
     });
 
     const ctx = {
@@ -65,15 +67,16 @@ describe("CompletionRunner", () => {
 
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
-    const filePhase = new FilePhase(applier, marker);
-    const chunkPhase = new ChunkPhase(applier);
-    const backfiller = new EnrichmentBackfiller(applier, qdrant as any);
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
     const runner = new CompletionRunner({
       filePhase,
       chunkPhase,
       backfiller,
       applier,
       markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
     });
 
     const ctx = {
@@ -112,15 +115,16 @@ describe("CompletionRunner", () => {
 
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
-    const filePhase = new FilePhase(applier, marker);
-    const chunkPhase = new ChunkPhase(applier);
-    const backfiller = new EnrichmentBackfiller(applier, qdrant as any);
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
     const runner = new CompletionRunner({
       filePhase,
       chunkPhase,
       backfiller,
       applier,
       markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
     });
 
     const ctx = {
@@ -166,15 +170,16 @@ describe("CompletionRunner", () => {
 
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
-    const filePhase = new FilePhase(applier, marker);
-    const chunkPhase = new ChunkPhase(applier);
-    const backfiller = new EnrichmentBackfiller(applier, qdrant as any);
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
     const runner = new CompletionRunner({
       filePhase,
       chunkPhase,
       backfiller,
       applier,
       markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
     });
 
     const ctx = {
@@ -213,10 +218,17 @@ describe("CompletionRunner", () => {
 
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
-    const filePhase = new FilePhase(applier, marker);
-    const chunkPhase = new ChunkPhase(applier);
-    const backfiller = new EnrichmentBackfiller(applier, qdrant as any);
-    const runner = new CompletionRunner({ filePhase, chunkPhase, backfiller, applier, markerStore: marker });
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
+    const runner = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
+    });
 
     const finalizeSignals = vi.fn().mockResolvedValue(new Map([["a.ts", { fanIn: 2 }]]));
     const buildChunkSignals = vi.fn().mockResolvedValue(new Map([["a.ts", new Map([["c1", { fanIn: 1 }]])]]));
@@ -262,10 +274,17 @@ describe("CompletionRunner", () => {
 
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
-    const filePhase = new FilePhase(applier, marker);
-    const chunkPhase = new ChunkPhase(applier);
-    const backfiller = new EnrichmentBackfiller(applier, qdrant as any);
-    const runner = new CompletionRunner({ filePhase, chunkPhase, backfiller, applier, markerStore: marker });
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
+    const runner = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
+    });
 
     const buildChunkSignals = vi.fn().mockResolvedValue(new Map([["a.ts", new Map([["c1", { fanIn: 3 }]])]]));
     const ctx = {
@@ -309,10 +328,17 @@ describe("CompletionRunner", () => {
 
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
-    const filePhase = new FilePhase(applier, marker);
-    const chunkPhase = new ChunkPhase(applier);
-    const backfiller = new EnrichmentBackfiller(applier, qdrant as any);
-    const runner = new CompletionRunner({ filePhase, chunkPhase, backfiller, applier, markerStore: marker });
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
+    const runner = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
+    });
 
     const ctx = {
       key: "git",

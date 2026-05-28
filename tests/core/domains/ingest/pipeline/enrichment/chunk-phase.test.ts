@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
+import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 
 function buildCtx(overrides: Record<string, unknown> = {}) {
   return {
@@ -29,7 +30,7 @@ describe("ChunkPhase", () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx();
-    const phase = new ChunkPhase(applier);
+    const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "2026-05-07T10:00:00Z");
     phase.onBatch("coll", "/repo", items);
     await phase.drain();
@@ -40,7 +41,7 @@ describe("ChunkPhase", () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx({ defersChunkEnrichment: true });
-    const phase = new ChunkPhase(applier);
+    const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
 
     phase.onBatch("coll", "/repo", items);
@@ -60,7 +61,7 @@ describe("ChunkPhase", () => {
     const buildChunkSignals = vi.fn().mockResolvedValue(new Map([["src/a.ts", new Map([["c1", { fanIn: 2 }]])]]));
     const applySpy = vi.spyOn(applier, "applyChunkSignals").mockResolvedValue(1);
     const ctx = buildCtx({ defersChunkEnrichment: true, buildChunkSignals });
-    const phase = new ChunkPhase(applier);
+    const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
 
     phase.onBatch("coll", "/repo", items); // accumulate
@@ -81,7 +82,7 @@ describe("ChunkPhase", () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx({ defersChunkEnrichment: true });
-    const phase = new ChunkPhase(applier);
+    const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
 
     phase.enrichRemaining("coll", "/repo", new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]));
@@ -94,7 +95,7 @@ describe("ChunkPhase", () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx();
-    const phase = new ChunkPhase(applier);
+    const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "2026-05-07T10:00:00Z");
     phase.onBatch("coll", "/repo", items);
     await phase.drain();
@@ -108,7 +109,7 @@ describe("ChunkPhase", () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx();
-    const phase = new ChunkPhase(applier);
+    const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
     phase.markFailed("git");
     phase.enrichRemaining("coll", "/repo", new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]));
@@ -120,7 +121,7 @@ describe("ChunkPhase", () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
     const ctx = buildCtx();
-    const phase = new ChunkPhase(applier);
+    const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
     const cb = vi.fn().mockResolvedValue(undefined);
     phase.setOnComplete(cb);
@@ -146,7 +147,7 @@ describe("ChunkPhase", () => {
       return new Map();
     });
     const ctx = buildCtx({ buildChunkSignals });
-    const phase = new ChunkPhase(applier);
+    const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
 
     let callbackFiredWhileStreamPending = false;

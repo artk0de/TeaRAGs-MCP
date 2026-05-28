@@ -13,6 +13,7 @@
  *   drives a single runDeferredChunk pass after the graph is finalized.
  */
 
+import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
 import { Semaphore } from "../../../../infra/semaphore.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
@@ -66,7 +67,10 @@ export class ChunkPhase {
   private runStartedAt = "";
   private onComplete?: (coll: string) => Promise<void>;
 
-  constructor(private readonly applier: EnrichmentApplier) {}
+  constructor(
+    private readonly applier: EnrichmentApplier,
+    private readonly executor: EnrichmentExecutor,
+  ) {}
 
   init(contexts: ReadonlyMap<string, ProviderContext>, _coll: string, runStartedAt: string): void {
     this.contexts = new Map(contexts);
@@ -231,7 +235,7 @@ export class ChunkPhase {
 
     const start = Date.now();
     try {
-      const overlays = await ctx.provider.buildChunkSignals(root, chunkMap, {
+      const overlays = await this.executor.runChunkBatch(ctx.provider, root, chunkMap, {
         collectionName: coll,
         skipCache: true,
       });
@@ -305,8 +309,8 @@ export class ChunkPhase {
       ? { concurrencySemaphore: this.semaphore, skipCache: true, collectionName: coll }
       : { skipCache: true, collectionName: coll };
 
-    const work = ctx.provider
-      .buildChunkSignals(root, chunkMap, opts)
+    const work = this.executor
+      .runChunkBatch(ctx.provider, root, chunkMap, opts)
       .then(async (overlays: Map<string, Map<string, ChunkSignalOverlay>>) => {
         const applied = await this.applier.applyChunkSignals(coll, ctx.key, overlays, this.runStartedAt, allChunkIds);
         state.chunkEnrichmentDurationMs += Date.now() - start;
