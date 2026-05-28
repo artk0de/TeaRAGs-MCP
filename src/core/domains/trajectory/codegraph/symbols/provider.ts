@@ -58,6 +58,7 @@ import type {
   FileSignalOverlay,
   FilterDescriptor,
   ProviderRunMetrics,
+  WorkerEnrichmentDescriptor,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { pageRank } from "../../../../infra/graph/page-rank.js";
@@ -451,9 +452,21 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private readonly codegraphExclusionFilter: Ignore;
 
-  constructor(private readonly deps: CodegraphProviderDeps) {
+  /**
+   * Worker-pool descriptor — surfaced when the composition root wires this
+   * provider for off-main-thread dispatch via `WorkerPoolEnrichmentExecutor`.
+   * Inline-only callers (tests, the default inline executor) leave it
+   * undefined; executor falls back to in-thread provider calls.
+   */
+  readonly workerDescriptor?: WorkerEnrichmentDescriptor;
+
+  constructor(
+    private readonly deps: CodegraphProviderDeps,
+    workerDescriptor?: WorkerEnrichmentDescriptor,
+  ) {
     this.derivedSignals = deps.derivedSignals ?? [];
     this.presets = deps.presets ?? [];
+    this.workerDescriptor = workerDescriptor;
     this.codegraphExclusionFilter = buildCodegraphExclusionFilter(
       deps.exclusion ?? { excludeTests: false, customPatterns: [] },
     );
@@ -1183,6 +1196,38 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runDispatchTables = {};
     this.runCallbackParams = {};
   }
+
+  /**
+   * Worker-pool collection release hook. Phase 2 of the unified-enrichment-
+   * worker-pool plan: `EnrichmentCoordinator.awaitCompletion(collection)`
+   * fires `executor.releaseCollection(collection)` after all markers reach
+   * healthy. The worker pool forwards the release envelope to the pinned
+   * worker thread, which calls this hook on the cached provider and then
+   * evicts the cache entry.
+   *
+   * Scope: this provider instance owns state for a single (collection,
+   * worker) pair on the worker pool's affinity binding (see
+   * `WorkerPool.dispatch(req, routingKey)`). Releasing all per-run maps
+   * + the per-collection `chunkSymbolByLine` entry is correct because the
+   * worker will not be asked to serve that collection again on this
+   * cached instance — the next index pass rebuilds a fresh provider.
+   *
+   * Failure mode: a throw here is swallowed by the worker (bounded memory
+   * wins over perfect cleanup). The daemon DuckDB connection is
+   * multi-client by design so a stale handle is harmless; on next index
+   * pass the rebuilt provider opens a fresh socket connection.
+   */
+  onRelease = async (): Promise<void> => {
+    this.chunkSymbolByLine.clear();
+    this.runSinks.clear();
+    this.runExtractedPaths.clear();
+    this.runAncestors = {};
+    this.runPrependedAncestors = {};
+    this.runExtends = {};
+    this.runReturnTypes = {};
+    this.runDispatchTables = {};
+    this.runCallbackParams = {};
+  };
 
   /**
    * Recursively enumerate supported-language files under `root`. Two

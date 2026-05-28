@@ -66,9 +66,7 @@ export interface CodegraphDeps {
  * produces before the factory exists). The provider reads its walker +
  * resolver capabilities from this factory. bd tea-rags-mcp-cat4.
  */
-export function createCodegraphTrajectories(
-  deps: CodegraphDeps & { languageFactory: LanguageFactory },
-): Trajectory[] {
+export function createCodegraphTrajectories(deps: CodegraphDeps & { languageFactory: LanguageFactory }): Trajectory[] {
   return [createSymbolsTrajectory(deps)];
 }
 
@@ -76,3 +74,4 @@ export { createSymbolsTrajectory } from "./symbols/index.js";
 export { CODEGRAPH_LANGUAGES, type CodegraphLanguageConfig } from "./symbols/index.js";
 export { buildCodegraphExclusionFilter, CODEGRAPH_TEST_PATTERNS } from "./exclusion.js";
 export type { CodegraphExclusionOptions } from "./exclusion.js";
+export type { CodegraphWorkerConfig } from "./factory.js";
