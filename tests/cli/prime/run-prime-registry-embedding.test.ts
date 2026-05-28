@@ -52,6 +52,8 @@ describe("runPrime — registry-first embedding endpoint override", () => {
   beforeEach(() => {
     dataDir = mkdtempSync(join(tmpdir(), "run-prime-emb-"));
     process.env.TEA_RAGS_DATA_DIR = dataDir;
+    delete process.env.EMBEDDING_BASE_URL;
+    delete process.env.EMBEDDING_FALLBACK_URL;
     writeMock.mockClear();
     pingMock.mockReset();
     createAppContextMock.mockReset();
@@ -62,6 +64,8 @@ describe("runPrime — registry-first embedding endpoint override", () => {
   afterEach(() => {
     process.stdout.write = stdoutOriginal;
     delete process.env.TEA_RAGS_DATA_DIR;
+    delete process.env.EMBEDDING_BASE_URL;
+    delete process.env.EMBEDDING_FALLBACK_URL;
     rmSync(dataDir, { recursive: true, force: true });
   });
 
@@ -84,12 +88,16 @@ describe("runPrime — registry-first embedding endpoint override", () => {
     });
   }
 
-  it("overrides config.embedding.{baseUrl,fallbackBaseUrl} from registry entry when running runPrime by project alias", async () => {
-    // Registry-first symmetry: prime must read embedding endpoints from the
-    // registry entry that the project was indexed against, not re-derive
-    // from the current shell's env. Without this, an EMBEDDING_BASE_URL set
-    // at index time is lost when prime runs in a fresh shell, and the
-    // digest falsely reports localhost:11434 (the 2026-05-28 symptom).
+  it("sets EMBEDDING_BASE_URL + EMBEDDING_FALLBACK_URL env BEFORE parseAppConfig fires (so cached zodConfig sees them)", async () => {
+    // Registry-first symmetry: prime sets env from the registered URLs
+    // BEFORE parseAppConfig runs, so parseAppConfigZod picks them up and
+    // caches into _lastZodConfig. createAppContext reads embedding URLs
+    // from getZodConfig() (NOT from the AppConfig returned by parseAppConfig),
+    // so the env channel is the only mutation site that actually
+    // propagates downstream to EmbeddingProviderFactory. Without this,
+    // EMBEDDING_BASE_URL set at index time is lost when prime runs in a
+    // fresh shell, and the digest falsely reports localhost:11434 (the
+    // 2026-05-28 symptom).
     const realPath = mkdtempSync(join(tmpdir(), "rp-proj-"));
     try {
       const registry = new CollectionRegistry(dataDir);
@@ -107,28 +115,38 @@ describe("runPrime — registry-first embedding endpoint override", () => {
       });
       registry.setName("code_tracked", "tracked");
 
-      parseAppConfigMock.mockReturnValue({ embedding: {} });
+      // Capture process.env state AT parseAppConfig invocation time — this
+      // is the ordering invariant we care about.
+      let envAtParseTime: { base: string | undefined; fallback: string | undefined } | undefined;
+      parseAppConfigMock.mockImplementation(() => {
+        envAtParseTime = {
+          base: process.env.EMBEDDING_BASE_URL,
+          fallback: process.env.EMBEDDING_FALLBACK_URL,
+        };
+        return { embedding: {} };
+      });
       wireApp();
 
       await runPrime({ project: "tracked" });
 
-      expect(createAppContextMock).toHaveBeenCalledTimes(1);
-      const passedConfig = createAppContextMock.mock.calls[0][0] as {
-        embedding: { baseUrl?: string; fallbackBaseUrl?: string };
-      };
-      expect(passedConfig.embedding.baseUrl).toBe("http://gpu-server:11434");
-      expect(passedConfig.embedding.fallbackBaseUrl).toBe("http://127.0.0.1:11434");
+      expect(envAtParseTime).toBeDefined();
+      expect(envAtParseTime?.base).toBe("http://gpu-server:11434");
+      expect(envAtParseTime?.fallback).toBe("http://127.0.0.1:11434");
     } finally {
       rmSync(realPath, { recursive: true, force: true });
     }
   });
 
-  it("leaves config.embedding untouched when the registry entry has no embeddingBaseUrl (legacy entry)", async () => {
+  it("leaves EMBEDDING_BASE_URL untouched when the registry entry has no embeddingBaseUrl (legacy entry)", async () => {
     // Pre-fix entries had no embedding URL fields. runPrime must NOT
-    // overwrite the env-derived config in that case — it falls back to
-    // whatever parseAppConfig produced (current shell env).
+    // overwrite process.env in that case — it falls back to whatever the
+    // current shell already exposed (or undefined, letting factory default
+    // apply).
     const realPath = mkdtempSync(join(tmpdir(), "rp-leg-"));
     try {
+      // Simulate the operator's shell having ITS OWN EMBEDDING_BASE_URL.
+      process.env.EMBEDDING_BASE_URL = "http://from-env:11434";
+
       const registry = new CollectionRegistry(dataDir);
       registry.record({
         collectionName: "code_legacy",
@@ -142,20 +160,21 @@ describe("runPrime — registry-first embedding endpoint override", () => {
       });
       registry.setName("code_legacy", "legacy");
 
-      // Env-derived config the shell happens to provide.
-      parseAppConfigMock.mockReturnValue({
-        embedding: { baseUrl: "http://from-env:11434" },
+      let envAtParseTime: { base: string | undefined; fallback: string | undefined } | undefined;
+      parseAppConfigMock.mockImplementation(() => {
+        envAtParseTime = {
+          base: process.env.EMBEDDING_BASE_URL,
+          fallback: process.env.EMBEDDING_FALLBACK_URL,
+        };
+        return { embedding: { baseUrl: "http://from-env:11434" } };
       });
       wireApp();
 
       await runPrime({ project: "legacy" });
 
-      const passedConfig = createAppContextMock.mock.calls[0][0] as {
-        embedding: { baseUrl?: string; fallbackBaseUrl?: string };
-      };
-      // Unchanged — env value preserved.
-      expect(passedConfig.embedding.baseUrl).toBe("http://from-env:11434");
-      expect(passedConfig.embedding.fallbackBaseUrl).toBeUndefined();
+      // Env preserved — registry entry contributed nothing to override.
+      expect(envAtParseTime?.base).toBe("http://from-env:11434");
+      expect(envAtParseTime?.fallback).toBeUndefined();
     } finally {
       rmSync(realPath, { recursive: true, force: true });
     }

@@ -191,7 +191,10 @@ export abstract class BaseIndexingPipeline {
       // shell's env defaults. Omit fields the provider does not expose
       // (ONNX returns undefined for both; Ollama without
       // EMBEDDING_FALLBACK_URL returns undefined for the fallback).
-      const embeddingBaseUrl = this.embeddings.getBaseUrl?.();
+      // Persist CONFIGURED primary URL (getPrimaryBaseUrl), not the
+      // currently-active URL (getBaseUrl) — registry should remember what
+      // was wired up, not which endpoint we happened to be on at write time.
+      const embeddingBaseUrl = this.embeddings.getPrimaryBaseUrl?.() ?? this.embeddings.getBaseUrl?.();
       const embeddingFallbackUrl = this.embeddings.getFallbackBaseUrl?.();
       this.registry.record({
         collectionName,

@@ -18,8 +18,20 @@ export interface EmbeddingProvider {
   checkHealth: () => Promise<boolean>;
   /** Provider identifier (e.g. "ollama", "onnx", "openai"). */
   getProviderName: () => string;
-  /** Base URL for remote providers. Undefined for local (e.g. ONNX). */
+  /**
+   * Currently-active base URL for remote providers. Reflects the runtime
+   * failover state (Ollama: when usingFallback, returns the fallback URL).
+   * Undefined for local providers (e.g. ONNX).
+   */
   getBaseUrl?: () => string;
+  /**
+   * Configured PRIMARY base URL — what the operator wired up at startup.
+   * Ignores runtime failover state. Used by display/persistence contexts
+   * (prime CLI infraHealth, registry write, doctor) that want what was
+   * CONFIGURED, not "which URL we happen to be using right now". Falls
+   * back to `getBaseUrl()` when an implementation doesn't expose it.
+   */
+  getPrimaryBaseUrl?: () => string;
   /**
    * Configured fallback base URL (Ollama with EMBEDDING_FALLBACK_URL).
    * Returns undefined when none configured or N/A. Surfaced via

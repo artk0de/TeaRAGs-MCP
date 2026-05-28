@@ -113,7 +113,10 @@ export class ProjectRegistryOps {
     // the deps lack an embeddings provider (legacy bootstrap call), fall
     // back to the existing entry's persisted value so re-register on a
     // pre-fix entry does not erase the URL it already had on disk.
-    const liveEmbeddingBaseUrl = this.deps.embeddings?.getBaseUrl?.();
+    // For registry persistence use CONFIGURED primary (getPrimaryBaseUrl);
+    // never the post-failover active URL. Fall back to getBaseUrl when an
+    // implementation doesn't expose the primary accessor (older provider).
+    const liveEmbeddingBaseUrl = this.deps.embeddings?.getPrimaryBaseUrl?.() ?? this.deps.embeddings?.getBaseUrl?.();
     const liveEmbeddingFallbackUrl = this.deps.embeddings?.getFallbackBaseUrl?.();
     const fallback = {
       chunksCount: existing?.chunksCount ?? 0,
