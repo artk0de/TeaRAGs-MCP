@@ -967,68 +967,110 @@ semantic change. Trade-off: one extra indirection per provider call, negligible.
 
 ---
 
-## Phase 2 (DESIGN-OUTLINE ONLY — needs a spec amendment before detailed planning)
+## Phase 2 (design gap RESOLVED — ready for detailed planning)
 
-> **Do NOT execute Phase 2 from this outline.** It is blocked on the design gap
-> below. Resolve the gap (amend
-> `2026-05-27-unified-enrichment-worker-pool-design.md`), then write a Phase 2
-> detailed plan with complete code.
+> **Design gap resolution** — closed in the spec amendment of
+> `2026-05-27-unified-enrichment-worker-pool-design.md` (sections 3, 4, 5)
+> following the 2026-05-28 brainstorm session. Decisions captured below.
 
-### Design gap: provider-in-worker reconstruction
+### Design gap RESOLVED: provider-in-worker reconstruction
 
-The spec assumed the worker rebuilds a provider from `providerModulePath` +
-`providerFactoryExport`. Reality (verified): providers are constructed with
-**non-serializable deps**:
+**Resolution summary.** The supposed "non-serializable deps" gap collapses into
+the existing module-path DI precedent the chunker already uses. Each provider
+declares a `WorkerEnrichmentDescriptor.serializableConfig` payload typed to its
+own needs; the named `providerFactoryExport` is the sole place that interprets
+it and reconstructs non-serializable deps in-thread. Ingest treats both the
+descriptor and the payload as opaque data.
 
-- **git** (`GitEnrichmentProvider`, built inside `GitTrajectory`): config is
-  serializable (repo paths, flags). A factory
-  `createGitEnrichmentProvider(config: GitProviderConfig)` callable in-thread is
-  straightforward to add.
-- **codegraph** (built by
-  `createCodegraphTrajectories({ ...CodegraphDeps, languageFactory })`): deps
-  include a **`languageFactory` instance** (non-serializable — must be rebuilt
-  in-thread from a module-path, exactly like the chunker rebuilds
-  `LanguageFactoryImpl`) AND a **DuckDB pool / daemon handle** (non-serializable
-  — the worker must open its OWN `DaemonGraphDbClient` from the serializable
-  daemon **socket path**). The run-state (`symbolTable`, `chunkSymbolByLine`,
-  run sink) intentionally lives on the worker instance — that is the affinity
-  payload.
+- **git** →
+  `serializableConfig: GitWorkerConfig { repoRoot, excludedPaths, … }`. Factory
+  `createGitEnrichmentProvider(config)` instantiates `GitClient` in-thread
+  (per-worker `cat-file --batch` already isolates).
+- **codegraph** →
+  `serializableConfig: CodegraphWorkerConfig { languageModulePath, daemonSocketPath, collectionName, excludedPaths, … }`.
+  Factory `createCodegraphEnrichmentProvider(config)` does
+  `await import(languageModulePath)` then `new LanguageFactory()` (chunker
+  precedent), opens `new DaemonGraphDbClient(daemonSocketPath)` (existing
+  multi-client daemon — `[[project_codegraph_daemon]]`), constructs the provider
+  with both. The non-serializable instances NEVER cross `postMessage`; they are
+  built fresh in the worker on first call for the collection.
 
-**Open decision (resolve in the amendment):** the exact shape of a
-`SerializableProviderSpec` that the worker turns into a live provider:
-`{ providerModulePath, providerFactoryExport, serializableConfig, subModulePaths: { languageModulePath? }, daemonSocketPath? }`.
-Each provider declares how to rebuild itself from this spec. This is the crux of
-Phase 2 and must be designed before code.
+**Provider lifecycle.** Per-collection cache on the worker
+(`Map<collectionName, providerInstance>`) is released via an explicit
+coordinator-driven signal — not LRU, not idle timeout. The
+`EnrichmentProvider.onRelease?(): Promise<void>` hook is the declarative seam;
+codegraph implements it as a `clearRunState()` wrapper, git no-ops.
+`EnrichmentCoordinator.awaitCompletion(collection)` issues
+`executor.releaseCollection(collection)` after all markers reach healthy; the
+release routes through the same affinity (`routingKey = collectionName`) to the
+pinned worker. See spec section 5 for failure-mode reasoning.
 
-### Task 3 (outline): `WorkerEnrichmentDescriptor` on `EnrichmentProvider`
+### Task 3 (outline): `WorkerEnrichmentDescriptor` + `onRelease` on `EnrichmentProvider`
 
-Add `readonly workerDescriptor?: WorkerEnrichmentDescriptor` to
-`EnrichmentProvider` (`contracts/types/provider.ts`), shape
-`{ providerModulePath, providerFactoryExport, dispatch: "stateless" | "collection-affinity", serializableConfig, subModulePaths?, daemonSocketPath? }`
-(final shape per the amendment). Declare it on the git provider (`stateless`)
-and codegraph provider (`collection-affinity`). Pure declaration — no dispatch
-logic on the provider. Tests: a provider exposing a descriptor round-trips
-through `structuredClone` (proves serializability). **Touches the codegraph
-provider (deep-silo, extreme churn) — isolate, `Why:` line, owner review.**
+Add to `EnrichmentProvider` (`contracts/types/provider.ts`):
+
+- `readonly workerDescriptor?: WorkerEnrichmentDescriptor` with shape
+  `{ providerModulePath, providerFactoryExport, dispatch: "stateless" | "collection-affinity", serializableConfig: unknown }`
+  (final shape per spec section 3 amendment).
+- `readonly onRelease?: () => Promise<void>` — release-time hook (spec section
+  5). Default omitted for stateless providers (git no-op); codegraph implements
+  as a `clearRunState()` wrapper.
+
+Declare typed config per provider in its own module: `GitWorkerConfig` and
+`createGitEnrichmentProvider(config)` in `traj-git/`; `CodegraphWorkerConfig`
+and `createCodegraphEnrichmentProvider(config)` in `traj-codegraph/`. Each
+factory does in-thread dynamic import + non-serializable dep reconstruction
+(language module, daemon socket) — NEVER reads them off the descriptor as
+instances.
+
+Tests:
+
+- A provider exposing a descriptor round-trips through `structuredClone` (proves
+  serializability of the whole payload).
+- Codegraph `onRelease()` releases run state (assert `symbolTable` cleared after
+  call).
+- Git provider has no `onRelease` declared — verify worker treats absent hook as
+  no-op.
+
+**Touches the codegraph provider (deep-silo, extreme churn) — isolate, `Why:`
+line, owner review. Refer to enrichment risk signals captured at brainstorm
+time: `codegraph/symbols/provider.ts` is in all three lenses (hotspots,
+ownership, techDebt) — descriptor + onRelease must be the ONLY surface area
+added; no refactor.**
 
 ### Task 4 (outline): worker entry + `WorkerPoolEnrichmentExecutor` + config + DI
 
-- New `src/core/domains/ingest/pipeline/enrichment/infra/worker.ts`: receives
-  `{ spec, method, root, paths?|chunkMap?, options }`; lazily builds + caches
-  the provider per `(providerModulePath, collectionName)` by
-  `(await import(spec.providerModulePath))[spec.providerFactoryExport](rebuildArgs)`
-  where `rebuildArgs` reconstructs non-serializable deps in-thread
-  (languageFactory from `subModulePaths.languageModulePath`;
-  `DaemonGraphDbClient` from `daemonSocketPath`); calls the method; returns the
-  overlay `Map`. Typed request/response protocol in a sibling
+- New `src/core/domains/ingest/pipeline/enrichment/infra/worker.ts`: handles
+  **two request variants** per spec section 4:
+  - **Call**
+    `{ type: "call", providerModulePath, providerFactoryExport, serializableConfig, method, root, paths?|chunkMap?, options }`
+    — lazily builds + caches the provider per
+    `(providerModulePath, collectionName)` by
+    `(await import(spec.providerModulePath))[spec.providerFactoryExport](spec.serializableConfig)`.
+    The factory is the rebuild seam — it does dynamic import of the language
+    module path and opens a `DaemonGraphDbClient` from the daemon socket path
+    inside the worker. Calls the named method; returns the overlay `Map`.
+  - **Release** `{ type: "release", providerModulePath, collectionName }` (spec
+    section 5) — looks up cached provider, calls `provider.onRelease?.()`
+    (swallow errors → log + continue), deletes the entry, signals the pool to
+    drop the affinity binding.
+
+  Typed request/response protocol in a sibling
   `enrichment/infra/worker-protocol.ts` (like the chunker's). Worker errors →
   typed `IngestError` subclass.
+
 - New `enrichment/executor/worker-pool.ts` (`WorkerPoolEnrichmentExecutor`):
   wraps a `WorkerPool<EnrichmentReq, EnrichmentRes>`; reads
   `provider.workerDescriptor.dispatch` → `routingKey = collectionName`
   (affinity) or none (stateless); serializes the request; for providers without
   a descriptor, delegates to an internal `InlineEnrichmentExecutor` (graceful
-  fallback).
+  fallback). Exposes a `releaseCollection(collection)` method (added to
+  `EnrichmentExecutor` contract) that emits the release variant for every
+  provider with a descriptor; Inline executor's `releaseCollection` calls
+  `provider.onRelease?.()` directly (no pool involved).
+- **EnrichmentCoordinator.awaitCompletion(collection) extension** — after all
+  markers reach healthy, call `executor.releaseCollection(collection)` as the
+  final step. This is the single trigger; no other release path exists.
 - Config: TWO separate knobs in `ingestTuneSchema` (`schemas.ts`) + `parse.ts`:
   - `enrichmentExecutor: z.enum(["inline", "worker"]).default("inline")` — the
     explicit mode flag (NOT pool-size overloading). `parse.ts`:
@@ -1070,12 +1112,43 @@ multi-minute "ямы"), bounded main-heap RSS (sample `process.memoryUsage().rss
 codegraph `resolveSuccessRate` unchanged from the affinity guarantee (compare to
 the post-`a32b553a` baseline ~0.34). Tune `enrichmentPoolSize`.
 
+**Release validation** — after a second `index_codebase` of the same project
+completes, sample worker-thread heap and assert `symbolTable` for the prior
+collection is no longer resident. If `clearRunState()` leaked an entry, the heap
+would grow by N collections × N symbols on each repeat.
+
+### Task 6 (follow-up, separate commit): rename `LanguageFactoryImpl` → `LanguageFactory`
+
+Naming hygiene called out during the Phase 2 brainstorm. `Impl` suffix is an
+anti-idiom in TS/JS — it was a leftover from the per-language consolidation
+(epic `tea-rags-mcp-l7vk`, see `[[feedback_factory_worker_di_lessons]]`). The
+`LanguageFactory` interface in `contracts/types/language.ts` is the canonical
+type; the `LanguageFactoryImpl` class in `domains/language/factory.ts` is its
+sole implementation. Two viable paths:
+
+1. **Drop the separate interface** (preferred): the class becomes
+   `LanguageFactory` directly; the interface is unnecessary indirection (single
+   impl, no test-double pattern requires it — fakes use the class).
+2. **Keep interface, rename class to `DefaultLanguageFactory`**: less invasive
+   on call sites but moves the ugly-suffix problem from `Impl` to `Default`,
+   which is not really a win.
+
+Choose (1) at execution time; verify no callers depend on `LanguageFactory` as a
+runtime structural type. Update `ChunkerConfig.languageModulePath` consumers
+(chunker worker) and the new Phase 2 codegraph worker factory (Task 4) to import
+the renamed class. Run the language-migration test rule from
+`.claude/rules/domains-language.md` — preserve every `it`/`describe`; this is a
+rename, not a logic change. **Commit separately from Task 4** so the rename diff
+stays reviewable on its own.
+
 ---
 
 ## Execution handoff
 
-Phase 1 (Tasks 1-2) is ready to execute. Phase 2 (Tasks 3-5) needs the
-design-gap amendment first. Recommended: execute Phase 1 via
-subagent-driven-development (fresh subagent per task, review between), then run
-a focused `brainstorming` pass on the provider-in-worker reconstruction gap
-before writing the Phase 2 detailed plan.
+Phase 1 (Tasks 1-2) — **DONE** (commits `786d021a`, `3ea227cb`). Phase 2 (Tasks
+3-5) design gap is **RESOLVED** in the 2026-05-28 brainstorm; spec sections 3,
+4, 5 carry the final shape. Ready to execute Phase 2 via
+`dinopowers:writing-plans` to produce per-task TDD plans, then
+`dinopowers:executing-plans` per task. Task 6 (LanguageFactory rename) is a
+follow-up — schedule after Phase 2 lands so the rename diff is small and
+isolated.

@@ -177,16 +177,40 @@ executor need **zero** changes.
 interface WorkerEnrichmentDescriptor {
   /** Absolute compiled-JS path; worker dynamic-imports it (DI rule). */
   providerModulePath: string;
-  /** Named factory export the worker calls to build the provider in-thread. */
+  /**
+   * Named factory export the worker calls to build the provider in-thread:
+   *   (config: SerializableConfig) => Promise<EnrichmentProvider>
+   * The factory itself is the rebuild seam — it does dynamic-imports of
+   * non-serializable deps (language module path) and opens connections
+   * (DuckDB daemon socket) inside the worker thread. The provider type
+   * stays opaque to ingest; only the factory module knows its real shape.
+   */
   providerFactoryExport: string;
   /** stateless → any free worker (git); collection-affinity → pinned (codegraph). */
   dispatch: "stateless" | "collection-affinity";
+  /**
+   * Per-provider structured-clone-safe payload. Each provider declares its
+   * own typed config inside its own module; ingest treats it as opaque
+   * data. For git: GitWorkerConfig (repoRoot, excludedPaths, …); for
+   * codegraph: CodegraphWorkerConfig (languageModulePath, daemonSocketPath,
+   * collectionName, …). The factory referenced by `providerFactoryExport`
+   * is the single place that interprets this payload.
+   */
+  serializableConfig: unknown;
 }
 
 interface EnrichmentProvider {
   // ...existing: name, buildFileSignals, buildChunkSignals,
   //    streamFileBatch?, finalizeSignals?, defersChunkEnrichment?...
   readonly workerDescriptor?: WorkerEnrichmentDescriptor;
+  /**
+   * Optional lifecycle hook — invoked when the worker evicts this
+   * provider's per-collection cache entry (see "Provider lifecycle"
+   * below). Default no-op for stateless providers (git); codegraph
+   * implements it as a wrapper around `clearRunState()` to release
+   * symbolTable / chunkSymbolByLine.
+   */
+  readonly onRelease?: () => Promise<void>;
 }
 ```
 
@@ -215,19 +239,66 @@ WorkerPool) and it never distinguishes the two. In short: provider = declaration
 
 `pipeline/enrichment/infra/worker.ts` (compiled sibling `worker.js`):
 
-- Receives request
-  `{ providerModulePath, providerFactoryExport, method, root, paths?, chunkMap?, options }`.
-- Lazily builds + **caches the provider in-thread**, keyed by
+- Receives request — one of two variants:
+  - **Call**:
+    `{ type: "call", providerModulePath, providerFactoryExport, serializableConfig, method, root, paths?, chunkMap?, options }`.
+  - **Release**: `{ type: "release", providerModulePath, collectionName }` —
+    emitted by the coordinator at the end of a collection's enrichment run (see
+    "Provider lifecycle" below).
+- For `call`: lazily builds + **caches the provider in-thread**, keyed by
   `(providerModulePath, collectionName)` — via
-  `(await import(providerModulePath))[providerFactoryExport](config)`. The
-  cached instance is what makes affinity stateful: codegraph's run sink lives on
-  it.
+  `(await import(providerModulePath))[providerFactoryExport](serializableConfig)`.
+  The cached instance is what makes affinity stateful: codegraph's run sink
+  lives on it. The factory module reads `serializableConfig` and reconstructs
+  non-serializable deps in-thread (`new LanguageFactory()` from
+  `languageModulePath`; `new DaemonGraphDbClient(daemonSocketPath)` for the
+  graph store) — opaque to ingest.
 - Calls the named method; returns the overlay `Map` (plain, structured-clone
   safe — providers already return `Map<string, overlay>`).
+- For `release`: looks up the cached provider; calls `provider.onRelease?.()`
+  (codegraph runs `clearRunState`, git no-ops); deletes the entry from the
+  cache. The `WorkerPool` peer call also drops the affinity binding.
 - The in-thread provider owns its side resources: git spawns its own persistent
   `cat-file --batch`; codegraph connects to the DuckDB **daemon socket**
   (multi-client by design) for graph writes and holds its in-memory symbolTable
   on the cached instance.
+
+### 5. Provider lifecycle: explicit release (Q5)
+
+Codegraph accumulates per-collection state across `streamFileBatch` → deferred
+`buildChunkSignals` → `finalizeSignals`. The cached provider on the affinity-
+pinned worker is what makes this coherent. After `finalize` completes,
+`symbolTable` / `chunkSymbolByLine` are **no longer needed for that collection**
+but still occupy worker heap. In MCP daemon mode (process lives across many
+`index_codebase` requests), letting the per-collection Map grow unbounded is a
+leak.
+
+**Trigger.** `EnrichmentCoordinator.awaitCompletion(collection)` already runs
+after all phases are done and all markers are healthy. We extend its last step
+to call `executor.releaseCollection(collection)`. The executor forwards a
+`{ type: "release", providerModulePath, collectionName }` envelope to the
+WorkerPool with `routingKey = collectionName` — same affinity as the calls, so
+it lands on the same pinned worker. After the worker processes release, the pool
+removes the affinity binding.
+
+**Why explicit (not LRU / timeout):**
+
+- **Deterministic memory bound.** Memory is exactly "active collections" — never
+  more, never less.
+- **Lifecycle matches coordinator.** The component that knows "phase done" is
+  the same component that signals release.
+- **Reuses existing API.** `CodegraphEnrichmentProvider#clearRunState` already
+  exists (added during slice 2); `onRelease` is its declarative wrapper.
+- **No heuristics.** Idle timeout would have to guess "is finalize still
+  running?" and either delay too long or release too early. LRU bounded by
+  `maxCollections` could evict mid-run when more concurrent indexes than the
+  bound exist.
+
+Failure handling: if `onRelease` throws, the worker logs and still deletes the
+cache entry — bounded memory is more important than perfect resource cleanup.
+The next `index_codebase` for the same collection rebuilds the provider from
+scratch; the daemon DuckDB connection is multi-client so a stale handle is
+harmless.
 
 ### Domain boundaries preserved by module-path DI
 
@@ -258,7 +329,10 @@ CompletionRunner
   → executor.runFinalize(codegraphProvider, root)        [SAME pinned worker]
         worker: sink.finish() + readFileOverlays
   → executor.runChunkBatch(codegraphProvider, deferredChunkMap) [SAME pinned worker]
-  → main thread applies overlays to Qdrant; affinity released
+  → main thread applies overlays to Qdrant
+  → executor.releaseCollection(collection)               [SAME pinned worker]
+        worker: provider.onRelease() → clearRunState; Map.delete(collection)
+        WorkerPool: affinity.delete(collection)
 ```
 
 Main thread keeps: orchestration + `set_payload` HTTP (async, not CPU). All
