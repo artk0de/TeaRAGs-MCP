@@ -24,6 +24,7 @@ import {
 } from "../core/api/index.js";
 import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
+import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
@@ -441,6 +442,19 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     .getAllEnrichmentProviders()
     .filter((p) => p.key !== "git" || config.trajectoryIngest.enableGitMetadata);
 
+  // Phase 2 of unified-enrichment-worker-pool plan. Production runs through
+  // the worker-pool executor unconditionally so heavy trajectory work (git
+  // blame, codegraph extraction) doesn't starve the embedding event loop.
+  // `InlineEnrichmentExecutor` is the internal test seam — integration tests
+  // construct IngestFacade directly with their own executor in deps when they
+  // need to skip the worker spawn. Worker entry path resolves relative to the
+  // compiled bootstrap module so both the npm-linked global install and the
+  // local dev path work.
+  const enrichmentExecutor = new WorkerPoolEnrichmentExecutor(
+    zodConfig.ingest.tune.enrichmentPoolSize,
+    join(dirname(fileURLToPath(import.meta.url)), "../core/domains/ingest/pipeline/enrichment/infra/worker.js"),
+  );
+
   const ingest = new IngestFacade({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -459,6 +473,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     teaRagsVersion: pkg.version,
     enrichmentProviders,
     codegraphPool: codegraphContext?.pool,
+    enrichmentExecutor,
   });
   const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [

@@ -13,6 +13,7 @@ import { join } from "node:path";
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { EnrichmentExecutor } from "../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
@@ -77,6 +78,16 @@ export interface IngestFacadeDeps {
    * when codegraph is disabled.
    */
   codegraphPool?: GraphDbClientPool;
+  /**
+   * Enrichment dispatch seam (Phase 2 of unified-enrichment-worker-pool plan).
+   * When omitted, the facade constructs a default `InlineEnrichmentExecutor`
+   * — current behavior preserved for callers that haven't migrated yet
+   * (tests, legacy bootstrap paths). When `ingest.tune.enrichmentExecutor`
+   * is `"worker"`, bootstrap supplies a `WorkerPoolEnrichmentExecutor`
+   * instead and the same coordinator + phases dispatch through it
+   * transparently.
+   */
+  enrichmentExecutor?: EnrichmentExecutor;
 }
 
 export class IngestFacade {
@@ -174,9 +185,10 @@ export class IngestFacade {
       : undefined;
 
     // Single shared executor — Coordinator and Recovery dispatch through the
-    // same seam. Phase-2 of the worker-pool spec swaps this for a
-    // ThreadPool-backed impl without touching the phases or recovery.
-    const enrichmentExecutor = new InlineEnrichmentExecutor();
+    // same seam. Phase-2 of the worker-pool spec wires WorkerPoolEnrichment-
+    // Executor via deps when `ingest.tune.enrichmentExecutor === "worker"`;
+    // omitting it preserves the inline default (today's behavior, tests).
+    const enrichmentExecutor = deps.enrichmentExecutor ?? new InlineEnrichmentExecutor();
     const recovery =
       providers.length > 0
         ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant), { executor: enrichmentExecutor })

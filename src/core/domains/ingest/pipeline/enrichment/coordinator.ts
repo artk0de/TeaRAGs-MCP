@@ -284,6 +284,15 @@ export class EnrichmentCoordinator {
         async (coll, providerKey, level) => this.countSettledUnenriched(coll, providerKey, level),
         run.startedAt,
       );
+      // Phase 2 of unified-enrichment-worker-pool plan: signal the executor
+      // to release any per-collection state it cached. For Inline executor
+      // this is a no-op (shared provider, can't safely call onRelease across
+      // concurrent runs). For WorkerPoolEnrichmentExecutor this fans out a
+      // `release` envelope per worker-descriptor provider and drops the
+      // ThreadPool affinity binding. Failures are swallowed inside the
+      // executor — release MUST NOT regress an otherwise-successful run.
+      const providers = Array.from(run.contexts.values()).map((ctx) => ctx.provider);
+      await this.executor.releaseCollection(providers, collectionName);
       run.resolveDone(metrics);
       return metrics;
     } catch (error) {
