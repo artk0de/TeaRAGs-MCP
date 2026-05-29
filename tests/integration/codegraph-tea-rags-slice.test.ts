@@ -26,9 +26,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../src/core/adapters/duckdb/client.js";
 import { GraphFacade } from "../../src/core/api/internal/facades/graph-facade.js";
-import { extractFromTypescriptFile } from "../../src/core/domains/language/typescript/walker/walker.js";
+import { LanguageFactory } from "../../src/core/domains/language/index.js";
 import { DefaultSymbolIdComposer } from "../../src/core/domains/language/kernel/symbol-id.js";
-import { LanguageFactoryImpl } from "../../src/core/domains/language/index.js";
+import { extractFromTypescriptFile } from "../../src/core/domains/language/typescript/walker/walker.js";
 import { createSymbolsTrajectory } from "../../src/core/domains/trajectory/codegraph/symbols/index.js";
 import type { CodegraphEnrichmentProvider } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -121,7 +121,7 @@ describe("codegraph slice 1 on real tea-rags sources", () => {
     const trajectory = createSymbolsTrajectory({
       graphDb: client,
       symbolTable,
-      languageFactory: new LanguageFactoryImpl(),
+      languageFactory: new LanguageFactory(),
       composer: new DefaultSymbolIdComposer(),
     });
     provider = trajectory.enrichment as CodegraphEnrichmentProvider;

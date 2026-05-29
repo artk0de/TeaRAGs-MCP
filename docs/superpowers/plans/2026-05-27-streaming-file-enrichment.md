@@ -26,6 +26,16 @@ DuckDB (codegraph graph store), `git cat-file --batch` /
 **Spec:**
 `docs/superpowers/specs/2026-05-27-streaming-file-enrichment-design.md`
 
+> **AMENDMENT (2026-05-27):** codegraph chunk-signal deferral redesigned — see
+> `docs/superpowers/specs/2026-05-27-codegraph-chunk-defer-design.md`.
+> `finalizeSignals` is now **file-only**
+> (`Promise<Map<string,FileSignalOverlay>>`, no `FinalizeResult`); codegraph
+> defers CHUNK signals to an isolated post-finalize
+> `ChunkPhase.runDeferredChunk` pass driven by a `defersChunkEnrichment`
+> provider flag, reusing `buildChunkSignals` with the full chunkMap ChunkPhase
+> accumulates. Tasks 1, 2, 3, 5, 7 are updated accordingly; where older task
+> text conflicts, the amendment spec wins.
+
 ---
 
 ## Conventions for every Task
@@ -49,24 +59,27 @@ DuckDB (codegraph graph store), `git cat-file --batch` /
 Defined in Task 1; repeated here so out-of-order readers have them:
 
 ```ts
-// src/core/contracts/types/provider.ts
-export interface FinalizeResult {
-  file: Map<string, FileSignalOverlay>;
-  chunk: Map<string, Map<string, ChunkSignalOverlay>>;
-}
-// added to EnrichmentProvider (both OPTIONAL — fallback to buildFileSignals):
+// src/core/contracts/types/provider.ts (AMENDED — file-only finalize)
+// added to EnrichmentProvider (all OPTIONAL — fallback to buildFileSignals):
 streamFileBatch?: (
   root: string,
   batchPaths: string[],
   options?: FileSignalOptions,
 ) => Promise<Map<string, FileSignalOverlay>>;
-finalizeSignals?: (root: string, options?: FileSignalOptions) => Promise<FinalizeResult>;
+// finalize returns FILE overlays only; codegraph CHUNK signals are produced by
+// the post-finalize ChunkPhase.runDeferredChunk pass (see amendment spec).
+finalizeSignals?: (root: string, options?: FileSignalOptions) => Promise<Map<string, FileSignalOverlay>>;
+// true ⇒ chunk signals need the finalized whole-graph; coordinator skips
+// per-batch chunk dispatch and runs one buildChunkSignals pass post-finalize.
+readonly defersChunkEnrichment?: boolean;
 ```
 
 **Why optional + fallback:** keeps existing minimal provider-mock test fixtures
 green (bounded blast radius). FilePhase calls
 `provider.streamFileBatch ?? (r,p,o)=>provider.buildFileSignals(r,{...o,paths:p})`;
-finalize is skipped when `finalizeSignals` is absent.
+finalize is skipped when `finalizeSignals` is absent. `FinalizeResult` was
+dropped (the chunk half was dead — codegraph chunk comes from the deferred pass,
+not finalize).
 
 ---
 

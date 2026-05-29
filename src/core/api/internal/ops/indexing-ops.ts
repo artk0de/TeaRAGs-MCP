@@ -150,12 +150,23 @@ export class IndexingOps {
     const exists = await this.qdrant.collectionExists(collectionName);
 
     const embeddingHealthy = await this.embeddings.checkHealth();
+    // Track BOTH primary and fallback embedding endpoints. Symmetric with
+    // qdrant.url tracking: the prime CLI digest reads these to show the
+    // operator which endpoint the project was last indexed against AND its
+    // configured backup. Prefer getPrimaryBaseUrl (ignores runtime
+    // failover state) over getBaseUrl (currently-active URL) — for display
+    // / persistence we want CONFIGURED primary. Omit fallbackUrl when the
+    // provider does not expose a fallback (ONNX, Voyage, Ollama without
+    // EMBEDDING_FALLBACK_URL).
+    const primaryUrl = this.embeddings.getPrimaryBaseUrl?.() ?? this.embeddings.getBaseUrl?.();
+    const fallbackUrl = this.embeddings.getFallbackBaseUrl?.();
     const infraHealth: IndexStatus["infraHealth"] = {
       qdrant: { available: true, url: this.qdrant.url },
       embedding: {
         available: embeddingHealthy,
         provider: this.embeddings.getProviderName(),
-        ...(this.embeddings.getBaseUrl ? { url: this.embeddings.getBaseUrl() } : {}),
+        ...(primaryUrl !== undefined ? { url: primaryUrl } : {}),
+        ...(fallbackUrl !== undefined ? { fallbackUrl } : {}),
       },
     };
 

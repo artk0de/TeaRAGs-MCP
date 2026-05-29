@@ -555,7 +555,32 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     return "ollama";
   }
 
+  /**
+   * Currently-active endpoint. When primary is healthy → primary; when
+   * failover has flipped to the configured fallback → fallback. Used by
+   * callers that want to know "which URL is the next request going to hit"
+   * (Ollama fallback observability log, runtime diagnostics).
+   */
   getBaseUrl(): string {
     return this.usingFallback && this.fallbackBaseUrl ? this.fallbackBaseUrl : this.baseUrl;
+  }
+
+  /**
+   * Configured primary endpoint — what the operator wired up. Ignores the
+   * runtime failover state. Used by display/persistence contexts that
+   * want what was CONFIGURED (prime CLI infraHealth, registry write,
+   * doctor "URL the project was indexed against").
+   */
+  getPrimaryBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  /**
+   * Configured fallback endpoint, regardless of whether failover is currently
+   * active. Surfaced through infraHealth.embedding.fallbackUrl so the prime
+   * CLI digest can show both URLs (primary + backup).
+   */
+  getFallbackBaseUrl(): string | undefined {
+    return this.fallbackBaseUrl;
   }
 }

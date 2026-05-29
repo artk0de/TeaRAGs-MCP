@@ -12,7 +12,7 @@
  *   walker        ← ./walker/              (extractFromGoFile + goNameOf)
  *   resolver      ← ./resolver/            (GoCallResolver — package-path mapping)
  *
- * Created per-context by `LanguageFactory` (each owns its own tree-sitter
+ * Created per-context by `LanguageFactoryDescriptor` (each owns its own tree-sitter
  * `Parser`, spec §5). The capability logic here is stateless, so the only
  * per-instance cost is the Parser the chunker/codegraph engines build.
  *
@@ -26,7 +26,7 @@
  * `SymbolIdComposer` to build the `Type#member` / `Type.member` candidate ids
  * for typed-receiver resolution. `GoLanguage` self-constructs the stateless
  * `DefaultSymbolIdComposer` (a pure mapper in the same `domains/language`
- * domain) and passes it to the resolver — keeping the `LanguageFactory`
+ * domain) and passes it to the resolver — keeping the `LanguageFactoryDescriptor`
  * signature unchanged (no composer threading through the factory).
  *
  * symbolId coverage convergence: the chunker emits the `Receiver#Method` /

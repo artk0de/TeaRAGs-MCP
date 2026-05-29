@@ -12,7 +12,7 @@ import Parser from "tree-sitter";
 import type { ChunkDecision, MacroSymbol } from "../../../../contracts/types/chunker.js";
 import type {
   LanguageChunkerHooks,
-  LanguageFactory,
+  LanguageFactoryDescriptor,
   LanguageKernel,
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
@@ -22,8 +22,8 @@ import { isDebug } from "../infra/runtime.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import type { LanguageConfig } from "./config.js";
-import { MarkdownChunker } from "./markdown-chunker.js";
 import { createHookContext, type ChunkingHook, type HookContext } from "./hooks/types.js";
+import { MarkdownChunker } from "./markdown-chunker.js";
 
 export class TreeSitterChunker implements CodeChunker {
   /** Cache of initialized parsers (lazy-loaded) */
@@ -266,15 +266,15 @@ export class TreeSitterChunker implements CodeChunker {
    * engine never imports the concrete factory or the legacy `LANGUAGE_DEFINITIONS`
    * map — `domains/ingest` may not import `domains/language` (eslint leaf-domain
    * guard) and the consolidation routes all per-language config through the
-   * `contracts/` `LanguageFactory` interface. `create(lang)` is cached per
+   * `contracts/` `LanguageFactoryDescriptor` interface. `create(lang)` is cached per
    * language by `getLanguageConfig`. See spec §5 + `.claude/rules/domain-boundaries.md`.
    */
-  private readonly languages: LanguageFactory;
+  private readonly languages: LanguageFactoryDescriptor;
 
   constructor(
     private readonly config: ChunkerConfig,
     symbolIds: SymbolIdComposer,
-    languages: LanguageFactory,
+    languages: LanguageFactoryDescriptor,
   ) {
     this.symbolIds = symbolIds;
     this.languages = languages;
@@ -327,7 +327,7 @@ export class TreeSitterChunker implements CodeChunker {
    * `LANGUAGE_DEFINITIONS[lang]` undefined check — `factory.create` throws
    * `UnsupportedLanguageError`, so gate on `supported()` first).
    */
-  private tryGetProvider(language: string): ReturnType<LanguageFactory["create"]> | null {
+  private tryGetProvider(language: string): ReturnType<LanguageFactoryDescriptor["create"]> | null {
     return this.languages.supported().includes(language) ? this.languages.create(language) : null;
   }
 
@@ -347,9 +347,7 @@ export class TreeSitterChunker implements CodeChunker {
 
       // Dynamic import of language module
       const mod = (await kernel.loadModule()) as Record<string, unknown>;
-      const langModule = (
-        kernel.extractLanguage ? kernel.extractLanguage(mod) : mod.default || mod
-      ) as Parser.Language;
+      const langModule = (kernel.extractLanguage ? kernel.extractLanguage(mod) : mod.default || mod) as Parser.Language;
 
       // Create and configure parser
       const parser = new Parser();

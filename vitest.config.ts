@@ -63,6 +63,13 @@ export default defineConfig({
         // runtime; same I/O-heavy category as the qdrant daemon above — validated by
         // build + full suite, exercised end-to-end via integration, not unit-covered).
         "src/core/adapters/duckdb/daemon/entry.ts",
+        // Enrichment worker thread entry (Phase 2 unified-enrichment-worker-pool):
+        // worker_threads runtime that dynamic-imports trajectory provider factories
+        // in-thread. Covered by `tests/core/domains/ingest/pipeline/enrichment/infra/
+        // worker.test.ts` via real worker spawn against fixture provider modules —
+        // the spawned worker process is not visible to the in-process coverage
+        // collector (same category as chunker/infra/worker.ts and daemon/entry.ts).
+        "src/core/domains/ingest/pipeline/enrichment/infra/worker.ts",
         // Abstract-only error base classes (no logic, just class declaration)
         "src/core/adapters/errors.ts",
         "src/core/adapters/embeddings/errors.ts",
@@ -88,6 +95,19 @@ export default defineConfig({
         "src/core/domains/ingest/pipeline/chunker/hooks/types.ts",
         // Barrel re-exports (no logic, just re-export)
         "src/core/domains/ingest/pipeline/chunker/hooks/*/index.ts",
+        // ALL barrel files (pure re-export glue, no executable logic). Broad
+        // glob supersedes the individual index.ts entries above — per the
+        // barrel-files.md convention every domain-boundary index.ts is a
+        // re-export surface, not testable code.
+        "**/index.ts",
+        // Declarative language-definition config — LANGUAGE_DEFINITIONS is data
+        // with lazy `() => import("tree-sitter-x")` thunks, not branching logic.
+        "src/core/domains/ingest/pipeline/chunker/config.ts",
+        // Codegraph DuckDB daemon — unix-socket server/client + process
+        // lifecycle (I/O-heavy, same category as the qdrant daemon; validated
+        // end-to-end via build + integration, not unit-covered). Supersedes the
+        // individual daemon/index.ts + daemon/entry.ts entries above.
+        "src/core/adapters/duckdb/daemon/**",
         // I/O-heavy bootstrap (DI wiring, path resolution, transport — tested via integration)
         "src/bootstrap/transport/**",
         "src/bootstrap/factory.ts",

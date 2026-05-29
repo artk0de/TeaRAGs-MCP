@@ -1,18 +1,20 @@
 /**
  * ChunkerPool - Worker thread pool for parallel AST parsing
  *
- * Manages a pool of worker_threads, each running its own TreeSitterChunker
- * with independent Parser instances. This enables true parallel AST parsing,
- * unblocking the main thread event loop.
+ * Thin wrapper around the generic `ThreadPool<Req, Res>` (sibling at
+ * `pipeline/infra/thread-pool.ts`). All distribution mechanics — worker
+ * lifecycle, free-worker selection, round-robin, overflow queue, graceful
+ * shutdown — live in `ThreadPool`. `ChunkerPool` only knows the chunker's
+ * compiled worker path, its workerData shape (`ChunkerConfig` +
+ * injected `languageModulePath`), and the `processFile` -> `FileChunkResult`
+ * contract.
  */
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Worker } from "node:worker_threads";
 
 import type { ChunkerConfig, CodeChunk } from "../../../../../types.js";
-import { PipelineNotStartedError } from "../../../errors.js";
-import { isDebug } from "../../infra/runtime.js";
+import { ThreadPool } from "../../infra/thread-pool.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
 
 /**
@@ -21,7 +23,7 @@ import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
  * worker_threads require compiled JS. The worker ENTRY is the second
  * composition root (spec §5) and now lives next to this pool — it is the pool's
  * ingest-local sibling `worker.js`. The worker stays free of any static
- * `domains/language` import: it loads the concrete `LanguageFactoryImpl` /
+ * `domains/language` import: it loads the concrete `LanguageFactory` /
  * `DefaultSymbolIdComposer` at runtime via a dynamic `import(path)` where the
  * path (`LANGUAGE_MODULE_PATH`) is injected through `workerData` below.
  *
@@ -49,79 +51,24 @@ export interface FileChunkResult {
   chunks: CodeChunk[];
 }
 
-interface PendingRequest {
-  resolve: (result: FileChunkResult) => void;
-  reject: (error: Error) => void;
-}
-
-interface PoolWorker {
-  worker: Worker;
-  busy: boolean;
-  pending: PendingRequest | null;
-}
-
 export class ChunkerPool {
-  private workers: PoolWorker[] = [];
-  private queue: { request: WorkerRequest; pending: PendingRequest }[] = [];
-  private isShutdown = false;
+  private readonly pool: ThreadPool<WorkerRequest, WorkerResponse>;
 
-  constructor(
-    private readonly poolSize: number,
-    private readonly config: ChunkerConfig,
-  ) {
-    this.initWorkers();
-  }
-
-  private initWorkers(): void {
-    for (let i = 0; i < this.poolSize; i++) {
-      const worker = new Worker(WORKER_PATH, {
-        // Inject the language-module path so the worker (a second composition
-        // root) can dynamically import the concrete factory + composer in-thread.
-        workerData: { ...this.config, languageModulePath: LANGUAGE_MODULE_PATH },
-      });
-
-      const poolWorker: PoolWorker = {
-        worker,
-        busy: false,
-        pending: null,
-      };
-
-      worker.on("message", (response: WorkerResponse) => {
-        const { pending } = poolWorker;
-        poolWorker.busy = false;
-        poolWorker.pending = null;
-
-        if (pending) {
-          if (response.error) {
-            pending.reject(new Error(`Worker error: ${response.error}`));
-          } else {
-            pending.resolve({
-              filePath: response.filePath,
-              chunks: response.chunks,
-            });
-          }
-        }
-
-        // Process next queued item
-        this.processQueue();
-      });
-
-      worker.on("error", (error) => {
-        const { pending } = poolWorker;
-        poolWorker.busy = false;
-        poolWorker.pending = null;
-
-        if (pending) {
-          pending.reject(error);
-        }
-      });
-
-      this.workers.push(poolWorker);
-    }
-
-    if (isDebug()) {
-      console.error(`[ChunkerPool] Initialized ${this.poolSize} worker threads`);
-    }
+  constructor(poolSize: number, config: ChunkerConfig) {
+    // Inject the language-module path so the worker (a second composition
+    // root) can dynamically import the concrete factory + composer in-thread.
+    this.pool = new ThreadPool<WorkerRequest, WorkerResponse>(
+      poolSize,
+      WORKER_PATH,
+      {
+        ...config,
+        languageModulePath: LANGUAGE_MODULE_PATH,
+      },
+      // Preserve "ChunkerPool"-flavored error messages in user-facing rejections
+      // and `PipelineNotStartedError` — the consumer's identity, not the
+      // internal pool's, belongs in error text.
+      "ChunkerPool",
+    );
   }
 
   /**
@@ -129,83 +76,20 @@ export class ChunkerPool {
    * Returns the same chunks that TreeSitterChunker.chunk() would produce.
    */
   async processFile(filePath: string, code: string, language: string): Promise<FileChunkResult> {
-    if (this.isShutdown) {
-      throw new PipelineNotStartedError("ChunkerPool");
-    }
-
-    const request: WorkerRequest = { filePath, code, language };
-
-    return new Promise<FileChunkResult>((resolve, reject) => {
-      const pending: PendingRequest = { resolve, reject };
-
-      // Find a free worker
-      const freeWorker = this.workers.find((w) => !w.busy);
-      if (freeWorker) {
-        this.dispatch(freeWorker, request, pending);
-      } else {
-        // All workers busy — queue the request
-        this.queue.push({ request, pending });
-      }
-    });
+    const response = await this.pool.dispatch({ filePath, code, language });
+    // ThreadPool already rejects on `response.error`; here we only narrow the
+    // wire shape (`WorkerResponse`) to the public contract (`FileChunkResult`).
+    return { filePath: response.filePath, chunks: response.chunks };
   }
 
   /**
    * Shut down all workers gracefully.
    *
-   * Sends a shutdown message so each worker can close its port and let
-   * tree-sitter NAPI destructors run in the correct thread. Falls back
-   * to terminate() if a worker doesn't exit within the timeout.
+   * Delegates to ThreadPool, which sends a shutdown message so each worker can
+   * close its port and let tree-sitter NAPI destructors run in the correct
+   * thread, falling back to terminate() if a worker doesn't exit within 2s.
    */
   async shutdown(): Promise<void> {
-    this.isShutdown = true;
-
-    // Reject any queued requests
-    for (const { pending } of this.queue) {
-      pending.reject(new Error("ChunkerPool shutting down"));
-    }
-    this.queue = [];
-
-    // Graceful shutdown: unref workers so they don't keep the process alive,
-    // then post shutdown message and wait for exit with a timeout fallback.
-    await Promise.all(
-      this.workers.map(
-        async (pw) =>
-          new Promise<void>((resolve) => {
-            const timer = setTimeout(() => {
-              void pw.worker.terminate().then(() => {
-                resolve();
-              });
-            }, 2000);
-            pw.worker.once("exit", () => {
-              clearTimeout(timer);
-              resolve();
-            });
-            pw.worker.unref();
-            pw.worker.postMessage({ type: "shutdown" });
-          }),
-      ),
-    );
-    this.workers = [];
-
-    if (isDebug()) {
-      console.error("[ChunkerPool] Shut down all workers");
-    }
-  }
-
-  private dispatch(poolWorker: PoolWorker, request: WorkerRequest, pending: PendingRequest): void {
-    poolWorker.busy = true;
-    poolWorker.pending = pending;
-    poolWorker.worker.postMessage(request);
-  }
-
-  private processQueue(): void {
-    if (this.queue.length === 0) return;
-
-    const freeWorker = this.workers.find((w) => !w.busy);
-    if (!freeWorker) return;
-
-    const next = this.queue.shift();
-    if (!next) return;
-    this.dispatch(freeWorker, next.request, next.pending);
+    return this.pool.shutdown();
   }
 }

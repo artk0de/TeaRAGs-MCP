@@ -91,7 +91,7 @@ export interface ChunkSignalOptions {
   skipCache?: boolean;
   /**
    * Active Qdrant collection name the chunks belong to. Threaded from
-   * EnrichmentCoordinator.prefetch so collection-scoped providers
+   * EnrichmentCoordinator.beginRun so collection-scoped providers
    * (codegraph) can route writes to their per-collection backing store
    * (per-collection DuckDB file). Optional: providers that don't care
    * about collection scope (git) ignore it.
@@ -131,6 +131,51 @@ export interface DeletedPathOptions {
   collectionName?: string;
 }
 
+// --- Worker enrichment descriptor ---
+
+/**
+ * Per-provider declaration of how its enrichment runs on the worker pool.
+ *
+ * Lives on `EnrichmentProvider.workerDescriptor` (optional). The provider
+ * DECLARES; the executor (`WorkerPoolEnrichmentExecutor`) DISPATCHES. Keeping
+ * the descriptor data-only (no executor reference) preserves the inline ↔
+ * worker swap: the provider has no idea which thread its methods run on.
+ *
+ * Worker DI rule (.claude/rules/domains-language.md): nothing on this object
+ * may be a class instance — it crosses the `postMessage` structured-clone
+ * boundary. Non-serializable deps (e.g. codegraph's `languageFactory` /
+ * DuckDB pool handle) are rebuilt in-thread by the named factory export,
+ * which is the SOLE place that interprets `serializableConfig`.
+ */
+export interface WorkerEnrichmentDescriptor {
+  /** Absolute compiled-JS path; worker dynamic-imports it (DI rule). */
+  providerModulePath: string;
+  /**
+   * Named factory export the worker calls to build the provider in-thread:
+   *   `(config: <ProviderConfig>) => Promise<EnrichmentProvider>`
+   * The factory itself is the rebuild seam — it does dynamic-imports of
+   * non-serializable deps (language module path) and opens connections
+   * (DuckDB daemon socket) inside the worker thread. The provider type
+   * stays opaque to ingest; only the factory module knows its real shape.
+   */
+  providerFactoryExport: string;
+  /**
+   * `stateless` — any free worker (git: per-call config, no cross-call state).
+   * `collection-affinity` — pinned worker per `routingKey = collectionName`
+   * (codegraph: streamFileBatch → finalizeSignals → deferred buildChunkSignals
+   * share `symbolTable`/`chunkSymbolByLine` on the cached provider instance).
+   */
+  dispatch: "stateless" | "collection-affinity";
+  /**
+   * Per-provider structured-clone-safe payload. Each provider declares its
+   * own typed config inside its own module; ingest treats it as opaque
+   * data. For git: `GitWorkerConfig`; for codegraph: `CodegraphWorkerConfig`.
+   * The factory referenced by `providerFactoryExport` is the single place
+   * that interprets this payload.
+   */
+  serializableConfig: unknown;
+}
+
 // --- Enrichment provider ---
 
 export interface EnrichmentProvider {
@@ -163,6 +208,37 @@ export interface EnrichmentProvider {
     options?: ChunkSignalOptions,
   ) => Promise<Map<string, Map<string, ChunkSignalOverlay>>>;
   /**
+   * Per-batch streaming file enrichment. Returns signals to apply immediately
+   * for the given batch of repo-relative paths. Providers whose file signals
+   * need the complete data set (codegraph graph metrics) return an empty map
+   * and defer to finalizeSignals. Optional: when absent the coordinator falls
+   * back to buildFileSignals({ paths: batchPaths }).
+   */
+  streamFileBatch?: (
+    root: string,
+    batchPaths: string[],
+    options?: FileSignalOptions,
+  ) => Promise<Map<string, FileSignalOverlay>>;
+  /**
+   * Deferred whole-repo FILE finalize, run once after the embedding stream.
+   * Returns FILE-level overlays that require the complete data set (e.g. graph
+   * fanIn p95 / transitive impact). Optional: providers that stream everything
+   * (git) omit it or return an empty map. CHUNK-level deferred signals are NOT
+   * returned here — providers that defer chunk signals set
+   * `defersChunkEnrichment` and the coordinator runs a separate post-finalize
+   * `buildChunkSignals` pass (see codegraph-chunk-defer-design spec).
+   */
+  finalizeSignals?: (root: string, options?: FileSignalOptions) => Promise<Map<string, FileSignalOverlay>>;
+  /**
+   * When true, this provider's CHUNK signals cannot be computed per-batch —
+   * they depend on the whole finalized data set (codegraph: the graph is only
+   * queryable after the run sink's finish()). The coordinator skips per-batch
+   * chunk dispatch for such providers and runs ONE buildChunkSignals pass after
+   * the file-level finalize. Absent / false ⇒ chunk signals stream per batch
+   * (git).
+   */
+  readonly defersChunkEnrichment?: boolean;
+  /**
    * Optional per-run counters surfaced via
    * `EnrichmentMetrics.byProvider[provider.key]`. Returned shape is
    * provider-defined; coordinator stores it verbatim. Called once per
@@ -186,6 +262,28 @@ export interface EnrichmentProvider {
    * path it never enriched must be a no-op, not an error.
    */
   handleDeletedPaths?: (paths: string[], options?: DeletedPathOptions) => Promise<void>;
+  /**
+   * Worker-pool descriptor for the unified enrichment executor. Absent ⇒
+   * `WorkerPoolEnrichmentExecutor` runs this provider on the main thread
+   * (graceful inline fallback for providers not yet migrated). Present ⇒
+   * executor dispatches calls through the pool per `dispatch` mode.
+   *
+   * Data-only by design: provider DECLARES, executor DISPATCHES. Provider
+   * never references `EnrichmentExecutor` or `WorkerPool`, so the inline ↔
+   * worker swap stays transparent. See `.claude/rules/domains-language.md`
+   * (worker DI via module-path injection).
+   */
+  readonly workerDescriptor?: WorkerEnrichmentDescriptor;
+  /**
+   * Optional release hook the worker calls when the executor signals
+   * `releaseCollection(name)` after `EnrichmentCoordinator.awaitCompletion`
+   * resolves. The provider drops per-collection in-memory state held on the
+   * cached instance (codegraph: `symbolTable` / `chunkSymbolByLine` via
+   * `clearRunState`; git: no-op — no cross-call state). Failures are
+   * swallowed by the worker (bounded memory wins over perfect cleanup): the
+   * next index pass rebuilds the provider from scratch.
+   */
+  readonly onRelease?: () => Promise<void>;
 }
 
 // Re-export for convenience

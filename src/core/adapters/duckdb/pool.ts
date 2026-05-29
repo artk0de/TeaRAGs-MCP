@@ -95,6 +95,16 @@ interface PoolEntry {
 interface DaemonClientEntry {
   client: DaemonGraphDbClient;
   wrapped: GraphDbClient;
+  /**
+   * ONE in-memory symbol table per collection, shared across every
+   * acquireWrite/acquireReader for that collection (same lifecycle as the
+   * cached daemon client). Codegraph ingest does getStore-per-file-write and
+   * resolves method calls at finish against this table — a fresh table per
+   * acquire (the prior bug) lost every cross-file symbol, collapsing
+   * method-edge resolution. Mirrors the cached `entry.symbolTable` of the
+   * in-process `acquire` path.
+   */
+  symbolTable: GlobalSymbolTable;
 }
 
 export interface CollectionGraphHandle {
@@ -238,7 +248,7 @@ export class GraphDbClientPool {
    */
   private async acquireDaemonHandle(collectionName: string): Promise<CollectionGraphHandle> {
     const entry = await this.acquireDaemonClient(collectionName);
-    return { graphDb: entry.wrapped, symbolTable: this.options.symbolTableFactory() };
+    return { graphDb: entry.wrapped, symbolTable: entry.symbolTable };
   }
 
   /**
@@ -261,7 +271,23 @@ export class GraphDbClientPool {
       const { DaemonGraphDbClient } = await import("./daemon/client.js");
       const client = new DaemonGraphDbClient(socketPath, collectionName);
       await client.init();
-      const entry: DaemonClientEntry = { client, wrapped: wrapNoopClose(client) };
+      const wrapped = wrapNoopClose(client);
+      // One shared symbol table per collection (see DaemonClientEntry doc).
+      // Hydrate it from the daemon's DuckDB via the init hook — mirrors
+      // openCollection so cross-file / incremental-reindex resolution sees
+      // symbols from files NOT re-walked this run. Non-fatal on failure:
+      // the table just starts empty and the next ingest pass repopulates.
+      const symbolTable = this.options.symbolTableFactory();
+      if (this.options.initHook) {
+        try {
+          await this.options.initHook({ collectionName, graphDb: wrapped, symbolTable });
+        } catch (err) {
+          process.stderr.write(
+            `[tea-rags] codegraph daemon init-hook failed for ${collectionName}: ${(err as Error).message}\n`,
+          );
+        }
+      }
+      const entry: DaemonClientEntry = { client, wrapped, symbolTable };
       this.daemonClients.set(collectionName, entry);
       return entry;
     })().finally(() => {

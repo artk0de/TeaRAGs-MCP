@@ -30,13 +30,20 @@ function fakePool(graphDb: Record<string, unknown>): GraphDbClientPool {
 
 /**
  * Minimal CollectionRegistry stub — only the methods resolveCollection()
- * touches (findByName + list). Returns the entry passed via the map.
+ * touches (findByName + findByPath + list). Returns the entry passed via
+ * the map.
  */
 function fakeRegistry(entries: Record<string, { collectionName: string; path: string }>): CollectionRegistry {
   return {
     findByName: vi.fn((name: string) => {
       const entry = entries[name];
       return entry ? { ...entry, name } : null;
+    }),
+    findByPath: vi.fn((path: string) => {
+      for (const [name, entry] of Object.entries(entries)) {
+        if (entry.path === path) return { ...entry, name };
+      }
+      return null;
     }),
     list: vi.fn(() => Object.entries(entries).map(([name, e]) => ({ ...e, name }))),
   } as unknown as CollectionRegistry;
@@ -71,6 +78,38 @@ describe("GraphFacade", () => {
     const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
     const response = await facade.getCallers({ path: "/proj", symbolId: "B.x", limit: 3 });
     expect(response.callers).toHaveLength(3);
+  });
+
+  it("resolves an alias to its active versioned collection before acquiring the read handle", async () => {
+    // Codegraph DuckDB files are versioned (code_x_v4.duckdb); the Qdrant alias
+    // "code_x" must resolve to the active versioned collection so the read path
+    // opens the file the write path populated. Without this, get_callers reads
+    // the empty unversioned file and returns [] despite real method edges.
+    const graphDb = { getCallers: vi.fn().mockResolvedValue([]), getCallees: vi.fn() };
+    const pool = fakePool(graphDb);
+    const facade = new GraphFacade({
+      pool,
+      collectionRegistry: fakeRegistry({}),
+      resolveActiveCollection: async (name: string) => (name === "code_x" ? "code_x_v4" : name),
+    });
+    await facade.getCallers({ collection: "code_x", symbolId: "B.x" });
+    expect(pool.acquireReader).toHaveBeenCalledWith("code_x_v4");
+  });
+
+  it("falls back to the addressed collection when alias resolution fails", async () => {
+    // Resolution failure (Qdrant unreachable, alias-list error) must not abort
+    // the read — it degrades to the addressed name rather than throwing.
+    const graphDb = { getCallers: vi.fn().mockResolvedValue([]), getCallees: vi.fn() };
+    const pool = fakePool(graphDb);
+    const facade = new GraphFacade({
+      pool,
+      collectionRegistry: fakeRegistry({}),
+      resolveActiveCollection: async () => {
+        throw new Error("alias list failed");
+      },
+    });
+    await facade.getCallers({ collection: "code_x", symbolId: "B.x" });
+    expect(pool.acquireReader).toHaveBeenCalledWith("code_x");
   });
 
   it("getCallees delegates with the default limit of 50", async () => {
@@ -159,8 +198,11 @@ describe("GraphFacade", () => {
         findCycles: vi.fn(),
       };
       const pool = fakePool(graphDb);
+      // resolveCollection guards against stale alias paths — use the
+      // current working directory as a known-live anchor so the registry
+      // entry's path passes the existence check.
       const registry = fakeRegistry({
-        "tea-rags-worktree": { collectionName: "code_abc123", path: "/projects/worktree" },
+        "tea-rags-worktree": { collectionName: "code_abc123", path: process.cwd() },
       });
       const facade = new GraphFacade({ pool, collectionRegistry: registry });
 

@@ -98,4 +98,17 @@ export class QdrantAliasManager {
       );
     }
   }
+
+  /**
+   * Resolve a name to the ACTIVE underlying collection: if `name` is an alias,
+   * return its target collection; otherwise return `name` unchanged (it is
+   * already a concrete collection). Lets consumers that address by literal
+   * resource (e.g. the codegraph DuckDB pool, which opens a file named after
+   * the collection) reach the data the alias points at, since they cannot rely
+   * on Qdrant's server-side alias transparency.
+   */
+  async resolveActive(name: string): Promise<string> {
+    const aliases = await this.listAliases();
+    return aliases.find((a) => a.aliasName === name)?.collectionName ?? name;
+  }
 }

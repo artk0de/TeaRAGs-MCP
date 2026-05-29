@@ -13,7 +13,7 @@
  *   walker        ← ./walker/              (extractFromPythonFile + pyNameOf)
  *   resolver      ← ./resolver/            (PythonCallResolver — module-path mapping)
  *
- * Created per-context by `LanguageFactory` (each owns its own tree-sitter
+ * Created per-context by `LanguageFactoryDescriptor` (each owns its own tree-sitter
  * `Parser`, spec §5). The capability logic here is stateless, so the only
  * per-instance cost is the Parser the chunker/codegraph engines build.
  *

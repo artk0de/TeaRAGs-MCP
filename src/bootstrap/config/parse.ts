@@ -101,6 +101,7 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     chunkerPoolSize: env("INGEST_TUNE_CHUNKER_POOL_SIZE", "CHUNKER_POOL_SIZE"),
     fileConcurrency: env("INGEST_TUNE_FILE_CONCURRENCY", "FILE_PROCESSING_CONCURRENCY"),
     ioConcurrency: env("INGEST_TUNE_IO_CONCURRENCY", "MAX_IO_CONCURRENCY"),
+    enrichmentPoolSize: env("INGEST_TUNE_ENRICHMENT_POOL_SIZE", "ENRICHMENT_POOL_SIZE"),
   };
 
   const ingest = {

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
-import { DefaultSymbolIdComposer, LanguageFactoryImpl } from "../../../../../../src/core/domains/language/index.js";
+import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
-const testLanguageFactory = new LanguageFactoryImpl();
+const testLanguageFactoryDescriptor = new LanguageFactory();
 
 /**
  * Regression test for the symbolId stability fix in chunkOversizedNode
@@ -26,7 +26,7 @@ describe("TreeSitterChunker oversized method symbolId inheritance", () => {
       chunkOverlap: 50,
       maxChunkSize: 1500,
     };
-    const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactory);
+    const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
     const chunks = await chunker.chunk(code, "src/big.ts", "typescript");
 
     const splits = chunks.filter((c) => c.metadata.parentSymbolId === fnName);

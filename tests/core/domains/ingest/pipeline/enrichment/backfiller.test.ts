@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
+import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 import type { ChunkItem } from "../../../../../../src/core/domains/ingest/pipeline/types.js";
 
 const makeChunkItem = (chunkId: string, filePath: string, startLine: number, endLine: number): ChunkItem => ({
@@ -31,7 +32,7 @@ describe("EnrichmentBackfiller", () => {
     expect(applier.missedFiles).toBe(1);
     expect(applier.matchedFiles).toBe(0);
 
-    const backfiller = new EnrichmentBackfiller(applier, qdrant as any);
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
 
     const buildFileSignals = vi.fn().mockResolvedValue(new Map([["src/a.ts", { authorPct: 100 }]]));
     const buildChunkSignals = vi.fn().mockResolvedValue(new Map([["src/a.ts", new Map([["c1", { commits: 3 }]])]]));
@@ -64,7 +65,7 @@ describe("EnrichmentBackfiller", () => {
   it("is a no-op when no files are missed", async () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
-    const backfiller = new EnrichmentBackfiller(applier, qdrant as any);
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
     const buildFileSignals = vi.fn();
     const ctx = {
       key: "git",

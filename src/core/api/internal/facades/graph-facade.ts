@@ -39,6 +39,18 @@ import type {
 export interface GraphFacadeDeps {
   pool: GraphDbClientPool;
   collectionRegistry: CollectionRegistry;
+  /**
+   * Resolve an addressed collection name to the ACTIVE underlying collection.
+   * The codegraph DuckDB files are versioned (`code_x_v4.duckdb`) while the
+   * project/registry addresses the stable Qdrant alias (`code_x`); Qdrant
+   * resolves the alias transparently server-side, but the codegraph pool opens
+   * a DuckDB file by literal name, so the alias must be expanded to the active
+   * versioned collection the write path populated — otherwise reads open the
+   * empty unversioned file and return nothing. Wired to
+   * `qdrant.aliases.resolveActive` in the composition root. Optional: when
+   * absent (unit tests), the name is used verbatim.
+   */
+  resolveActiveCollection?: (collectionName: string) => Promise<string>;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -72,9 +84,16 @@ export class GraphFacade {
     fallback: T,
   ): Promise<T> {
     const { collectionName } = resolveCollection(this.deps.collectionRegistry, addr);
+    // Expand a Qdrant alias to the active versioned collection so the codegraph
+    // pool opens the DuckDB file the write path actually populated (see
+    // resolveActiveCollection doc). Resolution failure falls back to the
+    // addressed name rather than aborting the read.
+    const activeCollection = this.deps.resolveActiveCollection
+      ? await this.deps.resolveActiveCollection(collectionName).catch(() => collectionName)
+      : collectionName;
     let handle: CollectionGraphHandle | undefined;
     try {
-      handle = await this.deps.pool.acquireReader(collectionName);
+      handle = await this.deps.pool.acquireReader(activeCollection);
     } catch {
       return fallback;
     }

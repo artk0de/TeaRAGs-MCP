@@ -13,6 +13,7 @@ import { join } from "node:path";
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { EnrichmentExecutor } from "../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
@@ -23,6 +24,7 @@ import { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.j
 import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
+import { InlineEnrichmentExecutor } from "../../../domains/ingest/pipeline/enrichment/executor/index.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strategy.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
@@ -76,6 +78,16 @@ export interface IngestFacadeDeps {
    * when codegraph is disabled.
    */
   codegraphPool?: GraphDbClientPool;
+  /**
+   * Enrichment dispatch seam (Phase 2 of unified-enrichment-worker-pool plan).
+   * When omitted, the facade constructs a default `InlineEnrichmentExecutor`
+   * — current behavior preserved for callers that haven't migrated yet
+   * (tests, legacy bootstrap paths). When `ingest.tune.enrichmentExecutor`
+   * is `"worker"`, bootstrap supplies a `WorkerPoolEnrichmentExecutor`
+   * instead and the same coordinator + phases dispatch through it
+   * transparently.
+   */
+  enrichmentExecutor?: EnrichmentExecutor;
 }
 
 export class IngestFacade {
@@ -172,8 +184,16 @@ export class IngestFacade {
         }
       : undefined;
 
-    const recovery = providers.length > 0 ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant)) : undefined;
-    const enrichment = new EnrichmentCoordinator(qdrant, providers, recovery);
+    // Single shared executor — Coordinator and Recovery dispatch through the
+    // same seam. Phase-2 of the worker-pool spec wires WorkerPoolEnrichment-
+    // Executor via deps when `ingest.tune.enrichmentExecutor === "worker"`;
+    // omitting it preserves the inline default (today's behavior, tests).
+    const enrichmentExecutor = deps.enrichmentExecutor ?? new InlineEnrichmentExecutor();
+    const recovery =
+      providers.length > 0
+        ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant), { executor: enrichmentExecutor })
+        : undefined;
+    const enrichment = new EnrichmentCoordinator(qdrant, providers, recovery, enrichmentExecutor);
     const registryDeps: PipelineRegistryDeps = {
       registry: deps.collectionRegistry,
       teaRagsVersion: deps.teaRagsVersion,

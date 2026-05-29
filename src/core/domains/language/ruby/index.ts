@@ -10,7 +10,7 @@
  *   walker        ← ./walker/              (extractFromRubyFile + rbNameOf)
  *   resolver      ← ./resolver/            (RubyCallResolver — require/zeitwerk chain)
  *
- * Created per-context by `LanguageFactory` (each owns its own tree-sitter
+ * Created per-context by `LanguageFactoryDescriptor` (each owns its own tree-sitter
  * `Parser`, spec §5). The capability logic here is stateless, so the only
  * per-instance cost is the Parser the chunker/codegraph engines build.
  *
@@ -21,30 +21,30 @@
  * Both MUST stay in lockstep per `.claude/rules/symbolid-convention.md`.
  */
 
-import type {
-  AmbiguousResolveMode,
-  CallContext,
-  CallRef,
-  CallResolver,
-  DispatchEdge,
-  FileExtraction,
-  ResolvedTarget,
+import type Parser from "tree-sitter";
+
+import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type CallRef,
+  type CallResolver,
+  type DispatchEdge,
+  type FileExtraction,
+  type ResolvedTarget,
 } from "../../../contracts/types/codegraph.js";
-import { DEFAULT_AMBIGUOUS_RESOLVE_MODE } from "../../../contracts/types/codegraph.js";
 import type {
   LanguageChunkerHooks,
   LanguageProvider,
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-import type Parser from "tree-sitter";
-
-import { rubyKernel } from "./kernel.js";
 import { rubyHooks } from "./chunking/index.js";
+import { rubyKernel } from "./kernel.js";
+import { RubyCallResolver } from "./resolver/ruby-resolver.js";
 import { extractRubyMacroSymbols, type RubyMacroSymbol } from "./walker/macros.js";
 import { rbNameOf } from "./walker/name-of.js";
 import { extractFromRubyFile, type RubyExtractInput } from "./walker/walker.js";
-import { RubyCallResolver } from "./resolver/ruby-resolver.js";
 
 /**
  * Chunk-boundary config for Ruby — mirrors the chunker slice of the legacy

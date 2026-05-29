@@ -185,12 +185,25 @@ export abstract class BaseIndexingPipeline {
     if (!this.registry) return;
     try {
       const chunksCount = await this.qdrant.countPoints(collectionName);
+      // Capture embedding endpoints live — symmetric with qdrantUrl. The
+      // prime CLI digest reads these back so the operator sees the actual
+      // remote endpoints the project was indexed against, not the current
+      // shell's env defaults. Omit fields the provider does not expose
+      // (ONNX returns undefined for both; Ollama without
+      // EMBEDDING_FALLBACK_URL returns undefined for the fallback).
+      // Persist CONFIGURED primary URL (getPrimaryBaseUrl), not the
+      // currently-active URL (getBaseUrl) — registry should remember what
+      // was wired up, not which endpoint we happened to be on at write time.
+      const embeddingBaseUrl = this.embeddings.getPrimaryBaseUrl?.() ?? this.embeddings.getBaseUrl?.();
+      const embeddingFallbackUrl = this.embeddings.getFallbackBaseUrl?.();
       this.registry.record({
         collectionName,
         path: absolutePath,
         embeddingModel: this.embeddings.getModel(),
         embeddingDimensions: this.embeddings.getDimensions(),
         qdrantUrl: this.qdrant.url,
+        ...(embeddingBaseUrl !== undefined ? { embeddingBaseUrl } : {}),
+        ...(embeddingFallbackUrl !== undefined ? { embeddingFallbackUrl } : {}),
         indexedAt: new Date().toISOString(),
         teaRagsVersion: this.teaRagsVersion,
         chunksCount,
@@ -229,7 +242,7 @@ export abstract class BaseIndexingPipeline {
     ignoreFilter: Ignore,
     changedPaths?: string[],
   ): void {
-    this.enrichment.prefetch(absolutePath, collectionName, ignoreFilter, changedPaths);
+    this.enrichment.beginRun(absolutePath, collectionName, ignoreFilter, changedPaths);
     chunkPipeline.setOnBatchUpserted((items) => {
       this.enrichment.onChunksStored(collectionName, absolutePath, items);
     });

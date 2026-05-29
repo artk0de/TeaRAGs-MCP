@@ -24,6 +24,7 @@ import {
 } from "../core/api/index.js";
 import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
+import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
@@ -253,6 +254,14 @@ export function wireCodegraph(
   config: AppConfig,
   zodConfig: ReturnType<typeof getZodConfig>,
   collectionRegistry: CollectionRegistry,
+  /**
+   * Expand a Qdrant alias to its active versioned collection for the codegraph
+   * read path (GraphFacade) — the DuckDB files are versioned but the project
+   * addresses the stable alias. Wired to `qdrant.aliases.resolveActive` by
+   * `createAppContext`. Optional: the wireCodegraph unit test omits it (reads
+   * then address by literal collection, no alias indirection needed).
+   */
+  resolveActiveCollection?: (collectionName: string) => Promise<string>,
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -383,7 +392,7 @@ export function wireCodegraph(
       customPatterns: codegraph.customExcludePatterns ?? [],
     },
   };
-  const graphFacade = new GraphFacade({ pool, collectionRegistry });
+  const graphFacade = new GraphFacade({ pool, collectionRegistry, resolveActiveCollection });
   return { deps, graphFacade, pool };
 }
 
@@ -397,7 +406,9 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   // is deferred until later — registry construction alone is side-effect
   // free, so creating it early costs nothing.
   const collectionRegistry = new CollectionRegistry(config.paths.appData);
-  const codegraphContext = wireCodegraph(config, zodConfig, collectionRegistry);
+  const codegraphContext = wireCodegraph(config, zodConfig, collectionRegistry, async (name) =>
+    infra.qdrant.aliases.resolveActive(name),
+  );
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 
   const statsCache = new StatsCache(config.paths.snapshots);
@@ -431,6 +442,19 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     .getAllEnrichmentProviders()
     .filter((p) => p.key !== "git" || config.trajectoryIngest.enableGitMetadata);
 
+  // Phase 2 of unified-enrichment-worker-pool plan. Production runs through
+  // the worker-pool executor unconditionally so heavy trajectory work (git
+  // blame, codegraph extraction) doesn't starve the embedding event loop.
+  // `InlineEnrichmentExecutor` is the internal test seam — integration tests
+  // construct IngestFacade directly with their own executor in deps when they
+  // need to skip the worker spawn. Worker entry path resolves relative to the
+  // compiled bootstrap module so both the npm-linked global install and the
+  // local dev path work.
+  const enrichmentExecutor = new WorkerPoolEnrichmentExecutor(
+    zodConfig.ingest.tune.enrichmentPoolSize,
+    join(dirname(fileURLToPath(import.meta.url)), "../core/domains/ingest/pipeline/enrichment/infra/worker.js"),
+  );
+
   const ingest = new IngestFacade({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -449,6 +473,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     teaRagsVersion: pkg.version,
     enrichmentProviders,
     codegraphPool: codegraphContext?.pool,
+    enrichmentExecutor,
   });
   const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [

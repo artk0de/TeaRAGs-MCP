@@ -14,7 +14,7 @@
  *   walker        ← ./walker/              (extractFromRustFile + rustNameOf)
  *   resolver      ← ./resolver/            (RustCallResolver — `use`-path mapping)
  *
- * Created per-context by `LanguageFactory` (each owns its own tree-sitter
+ * Created per-context by `LanguageFactoryDescriptor` (each owns its own tree-sitter
  * `Parser`, spec §5). The capability logic here is stateless, so the only
  * per-instance cost is the Parser the chunker/codegraph engines build.
  *
@@ -29,7 +29,7 @@
  * Like python + java (and unlike go), `RustCallResolver`'s ctor takes ONLY
  * `mode` — it needs no `SymbolIdComposer` (it builds the `Type#member` /
  * `Type.member` candidate ids inline). So `RustLanguage` constructs it with `new
- * RustCallResolver(mode)`, keeping the `LanguageFactory` signature unchanged.
+ * RustCallResolver(mode)`, keeping the `LanguageFactoryDescriptor` signature unchanged.
  *
  * symbolId coverage convergence: the chunker emits the `Type#method` /
  * `Type.method` / `mod::Type` shapes via the generic chunker (engine
@@ -80,7 +80,15 @@ import { extractFromRustFile, type RustExtractInput } from "./walker/walker.js";
  * tea-rags-mcp-h82m / 2hbd).
  */
 const rustChunkerHooks: LanguageChunkerHooks = {
-  chunkableTypes: ["function_item", "impl_item", "trait_item", "struct_item", "enum_item", "mod_item", "macro_definition"],
+  chunkableTypes: [
+    "function_item",
+    "impl_item",
+    "trait_item",
+    "struct_item",
+    "enum_item",
+    "mod_item",
+    "macro_definition",
+  ],
   childChunkTypes: ["function_item", "macro_definition"],
   alwaysExtractChildren: true,
   nameExtractor: (node: Parser.SyntaxNode, code: string): string | undefined => {

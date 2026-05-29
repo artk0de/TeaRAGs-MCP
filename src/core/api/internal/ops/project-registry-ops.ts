@@ -38,9 +38,26 @@ export class ProjectRegistryOps {
     const realPath = await validatePath(input.path);
     const collectionName = resolveCollectionName(realPath);
 
-    // Uniqueness check BEFORE any record() — prevents orphan-stub on conflict.
+    // Alias-rename semantics: when the name is already held by a STALE
+    // entry (its path no longer exists on disk), keep the existing
+    // collection and just RE-POINT it at the new path. The physical Qdrant
+    // collection, snapshot file, codegraph DB and chunksCount all stay
+    // intact — only the registry's `path` field is updated. This preserves
+    // every indexed datum across worktree churn (the original 2026-05-28
+    // bug forced a full reindex per worktree). Subsequent path-based
+    // callers (`resolveCollection({path: newPath})`) consult
+    // `findByPath` and pick up the same collectionName, so the rename
+    // stays transparent to the rest of the system.
+    //
+    // Live-live collisions (both paths still on disk) keep the original
+    // ProjectNameNotUniqueError contract so users do not accidentally
+    // relabel a working project's collection by re-registering its name.
     const conflicting = this.deps.registry.findByName(input.name);
     if (conflicting && conflicting.collectionName !== collectionName) {
+      if (conflicting.path && !existsSync(resolve(conflicting.path))) {
+        this.deps.registry.updatePath(conflicting.collectionName, realPath);
+        return { collectionName: conflicting.collectionName, alreadyIndexed: conflicting.chunksCount > 0 };
+      }
       throw new ProjectNameNotUniqueError(input.name, conflicting.collectionName);
     }
 
@@ -68,6 +85,8 @@ export class ProjectRegistryOps {
       embeddingModel: enriched.embeddingModel,
       embeddingDimensions: enriched.embeddingDimensions,
       qdrantUrl: enriched.qdrantUrl,
+      ...(enriched.embeddingBaseUrl !== undefined ? { embeddingBaseUrl: enriched.embeddingBaseUrl } : {}),
+      ...(enriched.embeddingFallbackUrl !== undefined ? { embeddingFallbackUrl: enriched.embeddingFallbackUrl } : {}),
       indexedAt: enriched.indexedAt,
       teaRagsVersion: enriched.teaRagsVersion,
       chunksCount: enriched.chunksCount,
@@ -84,14 +103,28 @@ export class ProjectRegistryOps {
     embeddingModel: string;
     embeddingDimensions: number;
     qdrantUrl: string;
+    embeddingBaseUrl?: string;
+    embeddingFallbackUrl?: string;
     indexedAt: string;
     teaRagsVersion: string;
   }> {
+    // Capture embedding endpoints live from the wired provider — symmetric
+    // with `qdrantUrl: qdrant.url` (read live, not from existing entry). When
+    // the deps lack an embeddings provider (legacy bootstrap call), fall
+    // back to the existing entry's persisted value so re-register on a
+    // pre-fix entry does not erase the URL it already had on disk.
+    // For registry persistence use CONFIGURED primary (getPrimaryBaseUrl);
+    // never the post-failover active URL. Fall back to getBaseUrl when an
+    // implementation doesn't expose the primary accessor (older provider).
+    const liveEmbeddingBaseUrl = this.deps.embeddings?.getPrimaryBaseUrl?.() ?? this.deps.embeddings?.getBaseUrl?.();
+    const liveEmbeddingFallbackUrl = this.deps.embeddings?.getFallbackBaseUrl?.();
     const fallback = {
       chunksCount: existing?.chunksCount ?? 0,
       embeddingModel: existing?.embeddingModel ?? "",
       embeddingDimensions: existing?.embeddingDimensions ?? 0,
       qdrantUrl: existing?.qdrantUrl ?? "",
+      embeddingBaseUrl: liveEmbeddingBaseUrl ?? existing?.embeddingBaseUrl,
+      embeddingFallbackUrl: liveEmbeddingFallbackUrl ?? existing?.embeddingFallbackUrl,
       indexedAt: existing?.indexedAt ?? "",
       teaRagsVersion: existing?.teaRagsVersion ?? "",
     };
@@ -160,6 +193,8 @@ export class ProjectRegistryOps {
       embeddingModel,
       embeddingDimensions,
       qdrantUrl: qdrant.url,
+      embeddingBaseUrl: fallback.embeddingBaseUrl,
+      embeddingFallbackUrl: fallback.embeddingFallbackUrl,
       indexedAt: resolvedIndexedAt,
       teaRagsVersion,
     };

@@ -1136,6 +1136,29 @@ describe("OllamaEmbeddings", () => {
     });
   });
 
+  describe("getPrimaryBaseUrl", () => {
+    const PRIMARY = "http://primary:11434";
+    const FALLBACK = "http://fallback:11434";
+    const flush = async () => new Promise<void>((r) => setTimeout(r, 0));
+
+    it("should return configured primary URL when no fallback is configured", () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true);
+      expect(provider.getPrimaryBaseUrl()).toBe(PRIMARY);
+    });
+
+    it("should return configured primary URL even when usingFallback is true", async () => {
+      // Force constructor health check to fail so the provider flips usingFallback=true.
+      mockFetch.mockRejectedValueOnce(new Error("connection refused"));
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      await flush();
+
+      // Sanity: live endpoint moved to fallback...
+      expect(provider.getBaseUrl()).toBe(FALLBACK);
+      // ...but the CONFIGURED primary is what getPrimaryBaseUrl reports.
+      expect(provider.getPrimaryBaseUrl()).toBe(PRIMARY);
+    });
+  });
+
   describe("fallback observability", () => {
     const PRIMARY = "http://192.168.1.71:11434";
     const FALLBACK = "http://localhost:11434";

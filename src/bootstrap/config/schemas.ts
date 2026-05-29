@@ -53,6 +53,17 @@ export const ingestTuneSchema = z.object({
   chunkerPoolSize: intWithDefault(4),
   fileConcurrency: intWithDefault(50),
   ioConcurrency: intWithDefault(50),
+  /**
+   * Worker-pool thread count for the enrichment executor. Production runs
+   * through `WorkerPoolEnrichmentExecutor` unconditionally — there is no
+   * inline/worker toggle. `InlineEnrichmentExecutor` is the **internal test
+   * seam** used by integration tests + recovery scenarios that construct
+   * `IngestFacade` directly with their own executor in deps.
+   *
+   * Default 4 mirrors `chunkerPoolSize` sizing — operators can override via
+   * `INGEST_TUNE_ENRICHMENT_POOL_SIZE` or `ENRICHMENT_POOL_SIZE`.
+   */
+  enrichmentPoolSize: intWithDefault(4),
 });
 
 const commaSeparatedList = z

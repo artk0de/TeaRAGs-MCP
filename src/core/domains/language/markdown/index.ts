@@ -31,7 +31,7 @@
  * (kernel + chunkerHooks); behaviour is identical because the orchestrator still
  * gates on `chunkerHooks.isDocumentation` and invokes its own `markdownChunker`.
  *
- * Created per-context by `LanguageFactory` (each owns its own state, spec §5).
+ * Created per-context by `LanguageFactoryDescriptor` (each owns its own state, spec §5).
  * The capability config here is stateless module-level data — construction is
  * trivially cheap (no Parser: markdown has no grammar).
  */
@@ -42,7 +42,6 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-
 import { markdownKernel } from "./kernel.js";
 
 /**

@@ -56,7 +56,7 @@ vi.mock("tree-sitter-typescript", () => ({
 // Fast enrichment: awaitCompletion resolves immediately (simulates small repo)
 vi.mock("../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js", () => ({
   EnrichmentCoordinator: class MockEnrichmentCoordinator {
-    prefetch = vi.fn();
+    beginRun = vi.fn();
     onChunksStored = vi.fn();
     startChunkEnrichment = vi.fn();
     awaitCompletion = vi.fn().mockResolvedValue({});
@@ -114,7 +114,7 @@ describe("Enrichment status detection", () => {
       await import("../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js");
     const slowEnrichment = new EnrichmentCoordinator(qdrant as any, {} as any);
     slowEnrichment.awaitCompletion = vi.fn().mockReturnValue(new Promise(() => {})); // never resolves
-    slowEnrichment.prefetch = vi.fn();
+    slowEnrichment.beginRun = vi.fn();
     slowEnrichment.onChunksStored = vi.fn();
     slowEnrichment.startChunkEnrichment = vi.fn();
 
@@ -170,7 +170,7 @@ describe("Enrichment status detection", () => {
       await import("../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js");
     const deferredEnrichment = new EnrichmentCoordinator(qdrant as any, {} as any);
     deferredEnrichment.awaitCompletion = vi.fn().mockReturnValue(enrichmentPromise);
-    deferredEnrichment.prefetch = vi.fn();
+    deferredEnrichment.beginRun = vi.fn();
     deferredEnrichment.onChunksStored = vi.fn();
     deferredEnrichment.startChunkEnrichment = vi.fn();
 

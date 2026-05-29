@@ -6,14 +6,14 @@
  * that knows which trajectories exist.
  */
 
-import type { LanguageFactory } from "../../contracts/types/language.js";
+import type { LanguageFactoryDescriptor } from "../../contracts/types/language.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
-import { LanguageFactoryImpl } from "../../domains/language/index.js";
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
+import { LanguageFactory } from "../../domains/language/index.js";
 import { createCodegraphTrajectories, type CodegraphDeps } from "../../domains/trajectory/codegraph/index.js";
 import { buildCompositePresets } from "../../domains/trajectory/composite/presets/index.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
@@ -30,14 +30,14 @@ export interface CompositionResult {
   allStatsAccumulators: StatsAccumulatorDescriptor[];
   resolvedPresets: RerankPreset[];
   /**
-   * Real `LanguageFactory` — all languages are native `domains/language/<lang>`
+   * Real `LanguageFactoryDescriptor` — all languages are native `domains/language/<lang>`
    * providers built by the factory itself (the legacy per-language adapter was
    * removed by tea-rags-mcp-jh40 once every vertical migrated). Injected into the
    * codegraph provider (walker + resolver capabilities). The chunker worker is a
    * SECOND composition root that builds its own factory (functions can't cross
    * the worker boundary).
    */
-  languageFactory: LanguageFactory;
+  languageFactory: LanguageFactoryDescriptor;
 }
 
 export interface CompositionOptions {
@@ -59,12 +59,12 @@ export interface CompositionOptions {
 }
 
 export function createComposition(options: CompositionOptions = {}): CompositionResult {
-  // Real LanguageFactory: it ENCAPSULATES construction. All languages are
+  // Real LanguageFactoryDescriptor: it ENCAPSULATES construction. All languages are
   // native `domains/language/<lang>` providers built by the factory itself; each
   // native provider carries its own resolver, built with the configured
   // ambiguous-resolve mode (threaded via CodegraphDeps). Built before the
   // codegraph trajectory so it can be injected into the codegraph provider.
-  const languageFactory = new LanguageFactoryImpl({
+  const languageFactory = new LanguageFactory({
     ambiguousResolveMode: options.codegraph?.ambiguousResolveMode,
   });
 

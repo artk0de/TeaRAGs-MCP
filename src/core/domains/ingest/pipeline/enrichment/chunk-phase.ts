@@ -1,12 +1,19 @@
 /**
- * ChunkPhase — streaming and post-flush chunk-signal enrichment.
+ * ChunkPhase — streaming, deferred, and post-flush chunk-signal enrichment.
  *
  * Owns Semaphore(10) shared across both entry points so total git-blame
  * parallelism stays bounded. Streaming records files in
  * streamingEnrichedFiles; enrichRemaining consults that set to skip files
  * already enriched.
+ *
+ * Two provider classes:
+ * - Streaming (git): onBatch dispatches buildChunkSignals immediately.
+ * - Fully-deferred (codegraph, `defersChunkEnrichment === true`): onBatch only
+ *   accumulates the batch's chunkMap into deferredChunkMap; CompletionRunner
+ *   drives a single runDeferredChunk pass after the graph is finalized.
  */
 
+import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
 import { Semaphore } from "../../../../infra/semaphore.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
@@ -17,27 +24,19 @@ import type { ProviderContext } from "./types.js";
 
 const CHUNK_ENRICHMENT_CONCURRENCY = 10;
 
-interface PendingBatch {
-  coll: string;
-  absolutePath: string;
-  items: ChunkItem[];
-}
-
 interface ChunkPhaseState {
   readonly streamingEnrichedFiles: Set<string>;
   readonly chunkWork: Promise<void>[];
-  /** Batches received before provider was marked ready. Drained on markReady. */
-  readonly pendingBatches: PendingBatch[];
   /**
-   * True once the provider is cleared to run streaming chunk enrichment.
-   * Set via markReady() after coordinator's prefetch resolves successfully.
-   * When false, onBatch queues into pendingBatches; markFailed() drops them.
+   * Accumulated full chunkMap for a fully-deferred provider
+   * (`defersChunkEnrichment === true`). onBatch appends each batch here instead
+   * of dispatching; runDeferredChunk consumes it once the graph is finalized.
    */
-  ready: boolean;
+  readonly deferredChunkMap: Map<string, ChunkLookupEntry[]>;
   /**
-   * True once the provider's file-side prefetch errored. Stops streaming and
-   * post-flush dispatch — matches the original `if (state.prefetchFailed)
-   * continue;` short-circuit.
+   * True once the provider's file-side stream/finalize errored. Stops streaming
+   * and post-flush dispatch — matches the original `if (state.prefetchFailed)
+   * continue;` short-circuit. Set by FilePhase via markFailed.
    */
   prefetchFailed: boolean;
   chunkEnrichmentDurationMs: number;
@@ -49,11 +48,7 @@ function createState(): ChunkPhaseState {
   return {
     streamingEnrichedFiles: new Set(),
     chunkWork: [],
-    pendingBatches: [],
-    // Default to ready so unit-level callers can drive ChunkPhase without
-    // mocking a full prefetch lifecycle. Coordinator flips to false via
-    // markPrefetchPending() before kicking off provider.buildFileSignals.
-    ready: true,
+    deferredChunkMap: new Map(),
     prefetchFailed: false,
     chunkEnrichmentDurationMs: 0,
     chunkEnrichmentFailed: false,
@@ -72,7 +67,10 @@ export class ChunkPhase {
   private runStartedAt = "";
   private onComplete?: (coll: string) => Promise<void>;
 
-  constructor(private readonly applier: EnrichmentApplier) {}
+  constructor(
+    private readonly applier: EnrichmentApplier,
+    private readonly executor: EnrichmentExecutor,
+  ) {}
 
   init(contexts: ReadonlyMap<string, ProviderContext>, _coll: string, runStartedAt: string): void {
     this.contexts = new Map(contexts);
@@ -102,43 +100,14 @@ export class ChunkPhase {
   }
 
   /**
-   * Mark a provider's prefetch as in-flight — onBatch will queue instead of
-   * dispatch until markReady() resolves the lifecycle.
-   */
-  markPrefetchPending(providerKey: string): void {
-    const state = this.states.get(providerKey);
-    if (state) state.ready = false;
-  }
-
-  /**
-   * Mark a provider as ready to dispatch streaming work. Drains any batches
-   * received before this point (when prefetch was still in flight).
-   */
-  markReady(providerKey: string): void {
-    const state = this.states.get(providerKey);
-    if (!state || state.ready) return;
-    state.ready = true;
-    const ctx = this.contexts.get(providerKey);
-    if (!ctx) return;
-    const drained = state.pendingBatches.splice(0);
-    for (const batch of drained) {
-      const root = ctx.effectiveRoot ?? batch.absolutePath;
-      const map = this.extractBatchChunkMap(batch.items, root);
-      void this.runChunkSignals(ctx, state, batch.coll, root, map, /* useSemaphore */ true);
-    }
-  }
-
-  /**
-   * Mark a provider as permanently failed. Drops queued batches without
-   * dispatching them — matches old prefetchFailed semantics that suppressed
-   * streaming chunk enrichment when the file-side prefetch errored.
+   * Mark a provider as permanently failed. Suppresses streaming + post-flush +
+   * deferred dispatch — matches old prefetchFailed semantics that stopped
+   * chunk enrichment when the file-side stream/finalize errored.
    */
   markFailed(providerKey: string): void {
     const state = this.states.get(providerKey);
     if (!state) return;
-    state.ready = false;
     state.prefetchFailed = true;
-    state.pendingBatches.length = 0;
   }
 
   /** Streaming entry — fire-and-forget per provider. */
@@ -146,12 +115,23 @@ export class ChunkPhase {
     for (const ctx of this.contexts.values()) {
       const state = this.states.get(ctx.key);
       if (!state) continue;
-      if (!state.ready) {
-        state.pendingBatches.push({ coll, absolutePath, items });
-        continue;
-      }
+      // Suppress dispatch when the file-side stream/finalize already failed —
+      // FilePhase calls markFailed before this (sequenced after fileDone).
+      if (state.prefetchFailed) continue;
       const root = ctx.effectiveRoot ?? absolutePath;
       const map = this.extractBatchChunkMap(items, root);
+      if (ctx.provider.defersChunkEnrichment) {
+        // Fully-deferred provider (codegraph): accumulate the batch's chunkMap;
+        // chunk signals are produced by a single runDeferredChunk pass after the
+        // graph is finalized. Do NOT dispatch buildChunkSignals here, and do NOT
+        // mark these files as streaming-enriched.
+        for (const [rel, entries] of map) {
+          const existing = state.deferredChunkMap.get(rel) ?? [];
+          existing.push(...entries);
+          state.deferredChunkMap.set(rel, existing);
+        }
+        continue;
+      }
       void this.runChunkSignals(ctx, state, coll, root, map, /* useSemaphore */ true);
     }
   }
@@ -163,11 +143,12 @@ export class ChunkPhase {
     for (const ctx of this.contexts.values()) {
       const state = this.states.get(ctx.key);
       if (!state) continue;
-      // Skip providers whose file-side prefetch failed — matches the original
-      // coordinator's `if (state.prefetchFailed) continue;` short-circuit.
-      // Pending prefetch is OK: post-flush catch-up doesn't depend on file
-      // metadata, and the original code dispatched even before prefetch resolved.
+      // Skip providers whose file-side stream/finalize failed — matches the
+      // original `if (state.prefetchFailed) continue;` short-circuit.
       if (state.prefetchFailed) continue;
+      // Fully-deferred providers (codegraph) have their chunk signals produced by
+      // the deferred pass; the catch-up path doesn't apply to them.
+      if (ctx.provider.defersChunkEnrichment) continue;
       state.chunkEnrichmentInvoked = true;
 
       const root = ctx.effectiveRoot ?? absolutePath;
@@ -223,6 +204,62 @@ export class ChunkPhase {
     }
   }
 
+  /** Accumulated deferred chunkMap for a provider (empty map if none / streaming). */
+  getDeferredChunkMap(providerKey: string): Map<string, ChunkLookupEntry[]> {
+    return this.states.get(providerKey)?.deferredChunkMap ?? new Map<string, ChunkLookupEntry[]>();
+  }
+
+  /**
+   * Single deferred chunk-signal pass for a fully-deferred provider (codegraph).
+   * Runs buildChunkSignals against the now-finalized graph with the full
+   * accumulated chunkMap, then applies the overlays. Driven by CompletionRunner
+   * after the finalize file pass and the streaming chunk drain.
+   */
+  async runDeferredChunk(
+    coll: string,
+    ctx: ProviderContext,
+    root: string,
+    chunkMap: Map<string, ChunkLookupEntry[]>,
+  ): Promise<void> {
+    const state = this.states.get(ctx.key);
+    if (!state) return;
+    if (chunkMap.size === 0) {
+      state.deferredChunkMap.clear();
+      return;
+    }
+
+    const allChunkIds = new Set<string>();
+    for (const entries of chunkMap.values()) {
+      for (const e of entries) allChunkIds.add(e.chunkId);
+    }
+
+    const start = Date.now();
+    try {
+      const overlays = await this.executor.runChunkBatch(ctx.provider, root, chunkMap, {
+        collectionName: coll,
+        skipCache: true,
+      });
+      const applied = await this.applier.applyChunkSignals(coll, ctx.key, overlays, this.runStartedAt, allChunkIds);
+      state.chunkEnrichmentDurationMs += Date.now() - start;
+      pipelineLog.enrichmentPhase("STREAMING_CHUNK_ENRICHMENT_COMPLETE", {
+        provider: ctx.key,
+        phase: "DEFERRED",
+        files: chunkMap.size,
+        overlaysApplied: applied,
+      });
+    } catch (error) {
+      state.chunkEnrichmentDurationMs += Date.now() - start;
+      state.chunkEnrichmentFailed = true;
+      pipelineLog.enrichmentPhase("STREAMING_CHUNK_ENRICHMENT_FAILED", {
+        provider: ctx.key,
+        phase: "DEFERRED",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      state.deferredChunkMap.clear();
+    }
+  }
+
   async drain(): Promise<void> {
     const all = [...this.states.values()].flatMap((s) => s.chunkWork);
     if (all.length === 0) return;
@@ -272,8 +309,8 @@ export class ChunkPhase {
       ? { concurrencySemaphore: this.semaphore, skipCache: true, collectionName: coll }
       : { skipCache: true, collectionName: coll };
 
-    const work = ctx.provider
-      .buildChunkSignals(root, chunkMap, opts)
+    const work = this.executor
+      .runChunkBatch(ctx.provider, root, chunkMap, opts)
       .then(async (overlays: Map<string, Map<string, ChunkSignalOverlay>>) => {
         const applied = await this.applier.applyChunkSignals(coll, ctx.key, overlays, this.runStartedAt, allChunkIds);
         state.chunkEnrichmentDurationMs += Date.now() - start;

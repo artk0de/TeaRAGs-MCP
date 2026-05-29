@@ -556,6 +556,41 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     rmSync(root, { recursive: true, force: true });
   });
 
+  it("acquireWrite returns a STABLE per-collection symbolTable across calls (writes accumulate)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pool-cache-symtab-"));
+    const socketPath = join(root, "cg.sock");
+    await startEchoDaemon(socketPath);
+
+    const pool = new GraphDbClientPool({
+      rootDir: root,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      daemonSocketPath: socketPath,
+    });
+
+    const h1 = await pool.acquireWrite("code_symtab_v1");
+    const h2 = await pool.acquireWrite("code_symtab_v1");
+
+    // The in-memory symbol table must be the SAME instance across acquires for
+    // one collection — codegraph streams per-batch writes through repeated
+    // acquireWrite calls and resolves method calls at finish against this table.
+    // A fresh table per call would lose every cross-file symbol -> method-edge
+    // resolution collapses (the bug this locks).
+    expect(h2.symbolTable).toBe(h1.symbolTable);
+
+    // Symbols upserted via one handle are visible via the other (one shared set).
+    h1.symbolTable.upsertFile("src/a.ts", [
+      { symbolId: "Foo#bar", fqName: "Foo#bar", shortName: "bar", relPath: "src/a.ts", scope: ["Foo"] },
+    ]);
+    expect(h2.symbolTable.lookupByShortName("bar")).toHaveLength(1);
+
+    // A distinct collection still gets its own table.
+    const other = await pool.acquireWrite("code_symtab_other_v1");
+    expect(other.symbolTable).not.toBe(h1.symbolTable);
+
+    await pool.closeAll();
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it("acquireReader reuses the same cached client as acquireWrite for one collection", async () => {
     const root = mkdtempSync(join(tmpdir(), "pool-cache-read-"));
     const socketPath = join(root, "cg.sock");

@@ -17,9 +17,11 @@ import type {
   ChunkSignalOptions,
   ChunkSignalOverlay,
   EnrichmentProvider,
+  FileSignalOptions,
   FileSignalOverlay,
   FileSignalTransform,
   FilterDescriptor,
+  WorkerEnrichmentDescriptor,
 } from "../../../contracts/types/provider.js";
 import type { RerankPreset } from "../../../contracts/types/reranker.js";
 import { gitFilters } from "./filters.js";
@@ -69,9 +71,22 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  chunk overlays receive per-range line ownership. Same blame pass as file-level. */
   private blameByRelPath: Map<string, BlameLine[]> = new Map();
 
-  constructor(config?: Partial<GitProviderConfig>, squashOpts?: SquashOptions) {
+  /**
+   * Worker-pool descriptor — present iff the composition root wired this
+   * provider for off-main-thread dispatch via WorkerPoolEnrichmentExecutor.
+   * Inline-only callers (tests, the default inline executor) leave it
+   * undefined and the executor falls back to in-thread provider calls.
+   */
+  readonly workerDescriptor?: WorkerEnrichmentDescriptor;
+
+  constructor(
+    config?: Partial<GitProviderConfig>,
+    squashOpts?: SquashOptions,
+    workerDescriptor?: WorkerEnrichmentDescriptor,
+  ) {
     this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config };
     this.squashOpts = squashOpts;
+    this.workerDescriptor = workerDescriptor;
     this.fileSignalTransform = (data, maxEndLine) => {
       const churnData = data as unknown as FileChurnData;
       const blameLines = this.blameByChurnData.get(churnData);
@@ -137,6 +152,22 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     }
     return result;
   }
+
+  /** Per-batch streaming: same computation as buildFileSignals, scoped to the
+   *  batch's paths. Populates blameByRelPath/lastFileResult for the batch so
+   *  the matching buildChunkSignals call (same batch) sees per-range ownership.
+   *  Arrow-property so `this` survives being passed as a coordinator callback. */
+  streamFileBatch = async (
+    root: string,
+    batchPaths: string[],
+    _options?: FileSignalOptions,
+  ): Promise<Map<string, FileSignalOverlay>> => {
+    return this.buildFileSignals(root, { paths: batchPaths });
+  };
+
+  /** git streams file+chunk signals per batch — nothing is deferred, so the
+   *  file finalize is an empty no-op (and defersChunkEnrichment stays unset). */
+  finalizeSignals = async (): Promise<Map<string, FileSignalOverlay>> => new Map();
 
   /** Run `git blame HEAD` per file in parallel batches and store results in
    *  the WeakMap for later transform-time lookup. Failures fall back to empty

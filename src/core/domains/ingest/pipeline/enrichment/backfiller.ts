@@ -14,6 +14,7 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
@@ -27,6 +28,7 @@ export class EnrichmentBackfiller {
   constructor(
     private readonly applier: EnrichmentApplier,
     private readonly qdrant: QdrantManager,
+    private readonly executor: EnrichmentExecutor,
   ) {}
 
   async runFor(coll: string, ctx: ProviderContext, runStartedAt: string): Promise<void> {
@@ -44,11 +46,12 @@ export class EnrichmentBackfiller {
     const start = Date.now();
     let backfillData: Map<string, FileSignalOverlay>;
     try {
-      backfillData = await ctx.provider.buildFileSignals(root, {
-        paths: missedPaths,
-        // Forward the active collection so codegraph (and any other
-        // collection-scoped provider) backfills the right per-collection
-        // store, not a stale default one.
+      // Whole-set semantics: backfill must NOT route through streamFileBatch
+      // (whose extraction side-effects belong to the streaming file phase).
+      // Forward the active collection so codegraph (and any other
+      // collection-scoped provider) backfills the right per-collection
+      // store, not a stale default one.
+      backfillData = await this.executor.runFileSignals(ctx.provider, root, missedPaths, {
         collectionName: coll,
       });
     } catch (error) {
@@ -139,7 +142,7 @@ export class EnrichmentBackfiller {
 
     let overlays: Map<string, Map<string, ChunkSignalOverlay>>;
     try {
-      overlays = await ctx.provider.buildChunkSignals(root, map, { collectionName: coll });
+      overlays = await this.executor.runChunkBatch(ctx.provider, root, map, { collectionName: coll });
     } catch (error) {
       pipelineLog.enrichmentPhase("CHUNK_BACKFILL_FAILED", {
         provider: ctx.key,

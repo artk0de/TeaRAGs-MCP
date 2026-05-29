@@ -68,6 +68,24 @@ export async function runPrime(input: { path?: string; project?: string }): Prom
     return;
   }
 
+  // Registry-first for embedding endpoints: when the project was indexed
+  // against a remote Ollama (and optionally a fallback), reuse those URLs
+  // instead of letting the current shell's env silently downgrade prime to
+  // localhost:11434. Symmetric with qdrantUrl below. Untouched for legacy
+  // entries that pre-date embedding URL tracking (env value preserved).
+  //
+  // Mechanism: set process.env BEFORE parseAppConfig so parseAppConfigZod
+  // picks up the override and caches it into _lastZodConfig. createAppContext
+  // reads embedding URLs from getZodConfig() (NOT from the AppConfig returned
+  // by parseAppConfig), so the env channel is the only mutation site that
+  // actually propagates downstream. runPrime is a CLI single-shot; env
+  // mutation persists for the process lifetime, which is fine here.
+  if (registryEntry?.embeddingBaseUrl) {
+    process.env.EMBEDDING_BASE_URL = registryEntry.embeddingBaseUrl;
+  }
+  if (registryEntry?.embeddingFallbackUrl) {
+    process.env.EMBEDDING_FALLBACK_URL = registryEntry.embeddingFallbackUrl;
+  }
   const config = parseAppConfig();
   // Registry-first: prefer the registered qdrantUrl (the Qdrant the project was
   // indexed against). Fall back to heuristic only when the registry entry has

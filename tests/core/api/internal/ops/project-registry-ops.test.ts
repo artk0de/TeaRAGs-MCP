@@ -154,6 +154,120 @@ describe("ProjectRegistryOps", () => {
         rmSync(recDir, { recursive: true, force: true });
       }
     });
+
+    // Marker-payload branches in recoverFromQdrant (lines 262, 265, 267) were
+    // previously uncovered — the original recovery test only supplied
+    // embeddingModel. These cases exercise each conditional assignment so a
+    // future regression that drops one branch fails loudly.
+    it("recovers teaRagsVersion from marker payload", async () => {
+      const recDir = mkdtempSync(join(tmpdir(), "rec-ver-"));
+      try {
+        const registry = new CollectionRegistry(recDir);
+        const qdrant = {
+          url: "http://localhost:6333",
+          listCollections: async () => ["code_ver"],
+          getCollectionInfo: async () => ({
+            name: "code_ver",
+            vectorSize: 384,
+            pointsCount: 0,
+            distance: "Cosine" as const,
+            hybridEnabled: false,
+            status: "green" as const,
+            optimizerStatus: "ok",
+          }),
+          scrollFiltered: async () => [
+            {
+              id: "x",
+              payload: {
+                embeddingModel: "jina-v2",
+                teaRagsVersion: "1.42.0",
+              },
+            },
+          ],
+          countPoints: async () => 5,
+        };
+        const recOps = new ProjectRegistryOps({ registry, qdrant: qdrant as never });
+        await recOps.recoverFromQdrant();
+        const entry = registry.get("code_ver");
+        expect(entry?.teaRagsVersion).toBe("1.42.0");
+        expect(entry?.embeddingModel).toBe("jina-v2");
+        expect(entry?.chunksCount).toBe(5);
+      } finally {
+        rmSync(recDir, { recursive: true, force: true });
+      }
+    });
+
+    it("recovers indexedAt from marker payload (preferred over completedAt)", async () => {
+      const recDir = mkdtempSync(join(tmpdir(), "rec-ia-"));
+      try {
+        const registry = new CollectionRegistry(recDir);
+        const qdrant = {
+          url: "http://localhost:6333",
+          listCollections: async () => ["code_ia"],
+          getCollectionInfo: async () => ({
+            name: "code_ia",
+            vectorSize: 384,
+            pointsCount: 0,
+            distance: "Cosine" as const,
+            hybridEnabled: false,
+            status: "green" as const,
+            optimizerStatus: "ok",
+          }),
+          scrollFiltered: async () => [
+            {
+              id: "x",
+              payload: {
+                indexedAt: "2026-05-20T10:00:00.000Z",
+                // completedAt also present — indexedAt MUST win.
+                completedAt: "2026-04-01T00:00:00.000Z",
+              },
+            },
+          ],
+          countPoints: async () => 3,
+        };
+        const recOps = new ProjectRegistryOps({ registry, qdrant: qdrant as never });
+        await recOps.recoverFromQdrant();
+        const entry = registry.get("code_ia");
+        expect(entry?.indexedAt).toBe("2026-05-20T10:00:00.000Z");
+      } finally {
+        rmSync(recDir, { recursive: true, force: true });
+      }
+    });
+
+    it("falls back to completedAt when indexedAt is absent", async () => {
+      const recDir = mkdtempSync(join(tmpdir(), "rec-ca-"));
+      try {
+        const registry = new CollectionRegistry(recDir);
+        const qdrant = {
+          url: "http://localhost:6333",
+          listCollections: async () => ["code_ca"],
+          getCollectionInfo: async () => ({
+            name: "code_ca",
+            vectorSize: 384,
+            pointsCount: 0,
+            distance: "Cosine" as const,
+            hybridEnabled: false,
+            status: "green" as const,
+            optimizerStatus: "ok",
+          }),
+          scrollFiltered: async () => [
+            {
+              id: "x",
+              payload: {
+                completedAt: "2026-04-15T12:00:00.000Z",
+              },
+            },
+          ],
+          countPoints: async () => 2,
+        };
+        const recOps = new ProjectRegistryOps({ registry, qdrant: qdrant as never });
+        await recOps.recoverFromQdrant();
+        const entry = registry.get("code_ca");
+        expect(entry?.indexedAt).toBe("2026-04-15T12:00:00.000Z");
+      } finally {
+        rmSync(recDir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe("tryEnrichFromQdrant honesty (audit #14)", () => {

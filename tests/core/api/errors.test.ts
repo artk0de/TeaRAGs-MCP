@@ -117,3 +117,55 @@ describe("ProjectPathMissingError (audit #6/#7, PR3 prereq)", () => {
     expect(err.hint).toBe(hint);
   });
 });
+
+describe("StaleProjectAliasError (2026-05-28 worktree-deletion bug)", () => {
+  // The alias-bug fix introduces this typed error so callers / MCP middleware
+  // can distinguish a stale-path alias from a missing-path (recovered) stub.
+  // Cover the constructor surface explicitly — message/hint format is a
+  // public contract: users read the hint string verbatim to recover.
+  it("is an InputValidationError (middleware maps to 400)", async () => {
+    const { StaleProjectAliasError, InputValidationError } = await import("../../../src/core/api/errors.js");
+    const err = new StaleProjectAliasError("ghosted", "/deleted/path");
+    expect(err).toBeInstanceOf(InputValidationError);
+    expect(err).toBeInstanceOf(TeaRagsError);
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it("has code INPUT_PROJECT_ALIAS_STALE", async () => {
+    const { StaleProjectAliasError } = await import("../../../src/core/api/errors.js");
+    const err = new StaleProjectAliasError("ghosted", "/deleted/path");
+    expect(err.code).toBe("INPUT_PROJECT_ALIAS_STALE");
+  });
+
+  it("has httpStatus 400", async () => {
+    const { StaleProjectAliasError } = await import("../../../src/core/api/errors.js");
+    const err = new StaleProjectAliasError("ghosted", "/deleted/path");
+    expect(err.httpStatus).toBe(400);
+  });
+
+  it("embeds the alias name AND the stale path in message", async () => {
+    const { StaleProjectAliasError } = await import("../../../src/core/api/errors.js");
+    const err = new StaleProjectAliasError("worktree-x", "/Users/me/old-worktree");
+    expect(err.message).toContain("worktree-x");
+    expect(err.message).toContain("/Users/me/old-worktree");
+    expect(err.message).toContain("no longer exists");
+  });
+
+  it("hint mentions both unregister and re-register recovery paths with the alias name", async () => {
+    const { StaleProjectAliasError } = await import("../../../src/core/api/errors.js");
+    const err = new StaleProjectAliasError("worktree-x", "/Users/me/old");
+    expect(err.hint).toContain("tea-rags unregister worktree-x");
+    expect(err.hint).toContain("tea-rags register");
+    expect(err.hint).toContain("--name worktree-x");
+  });
+
+  it("toUserMessage() includes code, message AND hint", async () => {
+    const { StaleProjectAliasError } = await import("../../../src/core/api/errors.js");
+    const err = new StaleProjectAliasError("ghosted", "/missing");
+    const out = err.toUserMessage();
+    expect(out).toContain("[INPUT_PROJECT_ALIAS_STALE]");
+    expect(out).toContain("ghosted");
+    expect(out).toContain("/missing");
+    expect(out).toContain("Hint:");
+  });
+});

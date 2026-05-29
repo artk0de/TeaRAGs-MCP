@@ -32,36 +32,47 @@ describe("EnrichmentCoordinator", () => {
     expect(coordinator.providerKeys).toEqual(["git"]);
   });
 
-  it("logs when provider resolveRoot differs from absolutePath", async () => {
+  it("resolves the effective root at beginRun and streams against it per batch", async () => {
     const divergentProvider: EnrichmentProvider = {
       ...mockProvider,
       resolveRoot: vi.fn(() => "/git-root"),
     };
     const coord = new EnrichmentCoordinator(mockQdrant, divergentProvider);
-    coord.prefetch("/sub/path", "test-col");
+    coord.beginRun("/sub/path", "test-col");
+    // resolveRoot runs synchronously at beginRun (context build) → REPO_ROOT_DIFFERS.
     expect(divergentProvider.resolveRoot).toHaveBeenCalledWith("/sub/path");
-    // Provider uses /git-root, absolutePath is /sub/path → REPO_ROOT_DIFFERS logged
-    await new Promise((r) => setTimeout(r, 10));
+    // Streamed batch enriches via the buildFileSignals fallback against /git-root.
+    coord.onChunksStored("test-col", "/sub/path", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/git-root/a.ts" }, startLine: 1, endLine: 5 } } as any,
+    ]);
+    await coord.awaitCompletion("test-col");
     expect(divergentProvider.buildFileSignals).toHaveBeenCalledWith(
       "/git-root",
-      expect.objectContaining({ collectionName: "test-col" }),
+      expect.objectContaining({ collectionName: "test-col", paths: ["a.ts"] }),
     );
   });
 
-  it("calls provider.resolveRoot and buildFileSignals on prefetch", () => {
-    coordinator.prefetch("/repo", "test-col");
+  it("calls provider.resolveRoot at beginRun and streams buildFileSignals fallback per batch", async () => {
+    coordinator.beginRun("/repo", "test-col");
     expect(mockProvider.resolveRoot).toHaveBeenCalledWith("/repo");
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 5 } } as any,
+    ]);
+    await coordinator.awaitCompletion("test-col");
     expect(mockProvider.buildFileSignals).toHaveBeenCalledWith(
       "/repo",
       expect.objectContaining({ collectionName: "test-col" }),
     );
   });
 
-  it("delegates .git check to provider (coordinator is generic)", () => {
-    // Provider returns empty map for non-git paths
+  it("delegates root resolution to provider (coordinator is generic)", async () => {
     (mockProvider.buildFileSignals as any).mockResolvedValue(new Map());
-    coordinator.prefetch("/some-path", "test-col");
+    coordinator.beginRun("/some-path", "test-col");
     expect(mockProvider.resolveRoot).toHaveBeenCalled();
+    coordinator.onChunksStored("test-col", "/some-path", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/some-path/a.ts" }, startLine: 1, endLine: 5 } } as any,
+    ]);
+    await coordinator.awaitCompletion("test-col");
     expect(mockProvider.buildFileSignals).toHaveBeenCalled();
   });
 
@@ -74,7 +85,7 @@ describe("EnrichmentCoordinator", () => {
       }),
     );
 
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
 
     // Queue a batch while prefetch is pending
     coordinator.onChunksStored("test-col", "/repo", [
@@ -98,7 +109,7 @@ describe("EnrichmentCoordinator", () => {
     // Fast prefetch
     (mockProvider.buildFileSignals as any).mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
 
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
 
     coordinator.onChunksStored("test-col", "/repo", [
@@ -110,7 +121,7 @@ describe("EnrichmentCoordinator", () => {
   });
 
   it("startChunkEnrichment calls provider.buildChunkSignals", () => {
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
     coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
     expect(mockProvider.buildChunkSignals).toHaveBeenCalledWith(
@@ -121,7 +132,7 @@ describe("EnrichmentCoordinator", () => {
   });
 
   it("awaitCompletion returns metrics", async () => {
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
 
     const metrics = await coordinator.awaitCompletion("test-col");
@@ -205,7 +216,7 @@ describe("EnrichmentCoordinator", () => {
       getRunMetrics: vi.fn(() => ({ extractedFiles: 7, fileEdgeCount: 13, resolveSuccessRate: 0.92 })),
     };
     const coord = new EnrichmentCoordinator(mockQdrant, provider);
-    coord.prefetch("/repo", "test-col");
+    coord.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
     const metrics = await coord.awaitCompletion("test-col");
     expect(metrics.byProvider).toBeDefined();
@@ -221,7 +232,7 @@ describe("EnrichmentCoordinator", () => {
     // Default mock provider has no getRunMetrics hook — coordinator
     // must not synthesize an empty byProvider object (would clutter
     // get_index_status responses).
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
     const metrics = await coordinator.awaitCompletion("test-col");
     expect(metrics.byProvider).toBeUndefined();
@@ -249,9 +260,13 @@ describe("EnrichmentCoordinator", () => {
 
     const multi = new EnrichmentCoordinator(mockQdrant, [providerA, providerB]);
 
-    multi.prefetch("/repo", "test-col");
-    await new Promise((r) => setTimeout(r, 10));
+    multi.beginRun("/repo", "test-col");
+    multi.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 5 } } as any,
+    ]);
+    await multi.awaitCompletion("test-col");
 
+    // Both providers stream the batch in parallel via the buildFileSignals fallback.
     expect(providerA.buildFileSignals).toHaveBeenCalledWith(
       "/repo",
       expect.objectContaining({ collectionName: "test-col" }),
@@ -266,7 +281,7 @@ describe("EnrichmentCoordinator", () => {
   it("is a no-op when no providers are registered", async () => {
     const empty = new EnrichmentCoordinator(mockQdrant, []);
 
-    empty.prefetch("/repo", "test-col");
+    empty.beginRun("/repo", "test-col");
     empty.onChunksStored("test-col", "/repo", [
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
     ]);
@@ -305,7 +320,7 @@ describe("EnrichmentCoordinator — prefetch with ignoreFilter", () => {
     mockProvider.buildFileSignals.mockResolvedValue(fileMetaMap);
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col", ignoreFilter);
+    coordinator.beginRun("/repo", "test-col", ignoreFilter);
 
     await new Promise((r) => setTimeout(r, 20));
 
@@ -322,7 +337,7 @@ describe("EnrichmentCoordinator — prefetch with ignoreFilter", () => {
     mockProvider.buildFileSignals.mockRejectedValue(new Error("git fail"));
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
 
     // Queue a batch BEFORE prefetch resolves
     coordinator.onChunksStored("test-col", "/repo", [
@@ -344,7 +359,7 @@ describe("EnrichmentCoordinator — prefetch with ignoreFilter", () => {
   it("skips onChunksStored processing when prefetchFailed", async () => {
     mockProvider.buildFileSignals.mockRejectedValue(new Error("fail"));
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo");
+    coordinator.beginRun("/repo");
     await new Promise((r) => setTimeout(r, 10));
 
     // After failure, onChunksStored should be a no-op
@@ -375,7 +390,7 @@ describe("EnrichmentCoordinator — startChunkEnrichment", () => {
 
   it("calls buildChunkSignals and applies overlays", async () => {
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
 
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
@@ -394,7 +409,7 @@ describe("EnrichmentCoordinator — startChunkEnrichment", () => {
     mockProvider.buildChunkSignals.mockResolvedValue(new Map());
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col", ignoreFilter);
+    coordinator.beginRun("/repo", "test-col", ignoreFilter);
     await new Promise((r) => setTimeout(r, 10));
 
     const chunkMap = new Map([
@@ -411,11 +426,16 @@ describe("EnrichmentCoordinator — startChunkEnrichment", () => {
     expect(calledMap.has("/repo/README.md")).toBe(false);
   });
 
-  it("skips chunk enrichment when prefetchFailed", async () => {
+  it("skips chunk enrichment when the streamed file enrichment failed", async () => {
     mockProvider.buildFileSignals.mockRejectedValue(new Error("fail"));
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
-    await new Promise((r) => setTimeout(r, 10));
+    coordinator.beginRun("/repo", "test-col");
+    // Stream a batch to surface the file failure (sets prefetchFailed via markFailed).
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 } } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+    mockProvider.buildChunkSignals.mockClear();
 
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
     coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
@@ -453,7 +473,7 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     // Store chunks for both files — src/missing.ts will be "missed"
@@ -504,7 +524,7 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     coordinator.onChunksStored("test-col", "/repo", [
@@ -557,7 +577,7 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     coordinator.onChunksStored("test-col", "/repo", [
@@ -587,7 +607,7 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     coordinator.onChunksStored("test-col", "/repo", [
@@ -621,7 +641,7 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     coordinator.onChunksStored("test-col", "/repo", missedChunks);
@@ -667,7 +687,7 @@ describe("EnrichmentCoordinator — onChunkEnrichmentComplete callback", () => {
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
     coordinator.onChunkEnrichmentComplete = callback;
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
 
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
@@ -711,7 +731,7 @@ describe("EnrichmentCoordinator — onChunkEnrichmentComplete callback", () => {
       callOrder.push("callback");
       await callback();
     };
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
 
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
@@ -745,7 +765,7 @@ describe("EnrichmentCoordinator — onChunkEnrichmentComplete callback", () => {
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
     coordinator.onChunkEnrichmentComplete = callback;
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
 
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
@@ -772,7 +792,7 @@ describe("EnrichmentCoordinator — onChunkEnrichmentComplete callback", () => {
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, [goodProvider, badProvider]);
     coordinator.onChunkEnrichmentComplete = callback;
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
 
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
@@ -794,7 +814,7 @@ describe("EnrichmentCoordinator — onChunkEnrichmentComplete callback", () => {
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
     coordinator.onChunkEnrichmentComplete = vi.fn().mockRejectedValue(new Error("callback crash"));
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
 
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
@@ -824,7 +844,7 @@ describe("EnrichmentCoordinator — fire-and-forget marker error paths", () => {
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
     // Should not throw even when initial marker write fails
     expect(() => {
-      coordinator.prefetch("/repo", "test-col");
+      coordinator.beginRun("/repo", "test-col");
     }).not.toThrow();
     await new Promise((r) => setTimeout(r, 20));
     // setPayload was attempted (and failed silently)
@@ -845,7 +865,7 @@ describe("EnrichmentCoordinator — fire-and-forget marker error paths", () => {
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 30));
     // Both initial and failure marker writes attempted — both fail silently
     expect(mockQdrant.setPayload).toHaveBeenCalled();
@@ -865,7 +885,7 @@ describe("EnrichmentCoordinator — fire-and-forget marker error paths", () => {
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
 
     coordinator.startChunkEnrichment(
@@ -895,7 +915,7 @@ describe("EnrichmentCoordinator — marker counters reflect current run", () => 
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
     // Pass changedPaths — counters still reflect this run's files, never stale full-index state.
-    coordinator.prefetch("/repo", "test-col", undefined, ["src/a.ts"]);
+    coordinator.beginRun("/repo", "test-col", undefined, ["src/a.ts"]);
     await new Promise((r) => setTimeout(r, 20));
 
     await coordinator.awaitCompletion("test-col");
@@ -926,7 +946,7 @@ describe("EnrichmentCoordinator — marker counters reflect current run", () => 
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
     // No changedPaths → scopedPrefetch=false → should include coverage stats
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     await coordinator.awaitCompletion("test-col");
@@ -973,7 +993,7 @@ describe("EnrichmentCoordinator — countSettledUnenriched re-poll", () => {
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery as any);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     await coordinator.awaitCompletion("test-col");
@@ -984,8 +1004,9 @@ describe("EnrichmentCoordinator — countSettledUnenriched re-poll", () => {
     expect(recovery.countUnenriched).toHaveBeenCalledTimes(3);
 
     // Marker must persist the settled (lower) value, not the stale first read.
+    // file-unenriched > 0 now reconciles the file status to "degraded".
     const { calls } = mockQdrant.setPayload.mock;
-    const fileMarker = calls.find((call: any[]) => call[1]?.enrichment?.git?.file?.status === "completed")?.[1]
+    const fileMarker = calls.find((call: any[]) => call[1]?.enrichment?.git?.file?.status === "degraded")?.[1]
       .enrichment.git.file;
     expect(fileMarker?.unenrichedChunks).toBe(3); // settled value, not stale 5
   });
@@ -1009,7 +1030,7 @@ describe("EnrichmentCoordinator — countSettledUnenriched re-poll", () => {
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery as any);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     await coordinator.awaitCompletion("test-col");
@@ -1046,7 +1067,7 @@ describe("EnrichmentCoordinator — file marker writes before chunk completion",
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery as any);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     coordinator.onChunksStored("test-col", "/repo", [
@@ -1099,7 +1120,7 @@ describe("EnrichmentCoordinator — file marker writes before chunk completion",
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery as any);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     coordinator.onChunksStored("test-col", "/repo", [
@@ -1161,7 +1182,7 @@ describe("EnrichmentCoordinator — file marker writes before chunk completion",
     const recovery = { countUnenriched: vi.fn().mockResolvedValue(0) };
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery as any);
 
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     coordinator.onChunksStored("test-col", "/repo", [
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
     ]);
@@ -1222,7 +1243,7 @@ describe("EnrichmentCoordinator — backfill with fileSignalTransform", () => {
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     coordinator.onChunksStored("test-col", "/repo", [
@@ -1266,11 +1287,13 @@ describe("EnrichmentCoordinator — awaitCompletion metrics", () => {
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, [providerA, providerB]);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     const metrics = await coordinator.awaitCompletion("test-col");
-    expect(metrics.gitLogFileCount).toBe(2); // 1 from each provider
+    // gitLogFileCount tracked a whole-repo prefetch file-metadata count that no
+    // longer exists under per-batch streaming — now a best-effort 0+.
+    expect(metrics.gitLogFileCount).toBeGreaterThanOrEqual(0);
     expect(metrics.totalDurationMs).toBeGreaterThanOrEqual(0);
     expect(metrics.prefetchDurationMs).toBeGreaterThanOrEqual(0);
   });
@@ -1288,7 +1311,7 @@ describe("EnrichmentCoordinator — awaitCompletion metrics", () => {
       buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
 
     // Trigger pipelineFlushTime by storing chunks
     coordinator.onChunksStored("test-col", "/repo", [
@@ -1326,7 +1349,7 @@ describe("EnrichmentCoordinator — per-level enrichment marker", () => {
 
   it("writes initial marker with file: in_progress and chunk: pending on prefetch start", async () => {
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
 
     // First setPayload call is the initial marker
     await new Promise((r) => setTimeout(r, 10));
@@ -1345,7 +1368,7 @@ describe("EnrichmentCoordinator — per-level enrichment marker", () => {
 
   it("writes file: completed with timing on successful awaitCompletion", async () => {
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     await coordinator.awaitCompletion("test-col");
@@ -1362,20 +1385,22 @@ describe("EnrichmentCoordinator — per-level enrichment marker", () => {
     expect(marker.git.file.unenrichedChunks).toBe(0);
   });
 
-  it("writes file: failed and chunk: failed when prefetch fails", async () => {
+  it("writes file: failed and chunk: failed when streamed file enrichment fails", async () => {
     mockProvider.buildFileSignals.mockRejectedValue(new Error("git fail"));
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
+    // Failure now surfaces when a batch is streamed (no whole-repo prefetch).
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 5 } } as any,
+    ]);
 
     await new Promise((r) => setTimeout(r, 20));
 
-    // Find the failure marker write (after initial marker)
+    // A failure marker write must exist (markPrefetchFailed → file+chunk failed).
     const { calls } = mockQdrant.setPayload.mock;
-    // Should have at least 2 calls: initial marker + failure marker
-    expect(calls.length).toBeGreaterThanOrEqual(2);
-
-    const failureCall = calls[1];
-    const marker = failureCall[1].enrichment;
+    const failureCall = calls.find((call: any[]) => call[1]?.enrichment?.git?.file?.status === "failed");
+    expect(failureCall).toBeDefined();
+    const marker = failureCall![1].enrichment;
 
     expect(marker.git.file.status).toBe("failed");
     expect(marker.git.file.completedAt).toBeDefined();
@@ -1385,7 +1410,7 @@ describe("EnrichmentCoordinator — per-level enrichment marker", () => {
 
   it("passes enrichedAt to applier.applyFileSignals calls", async () => {
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     coordinator.onChunksStored("test-col", "/repo", [
@@ -1410,7 +1435,7 @@ describe("EnrichmentCoordinator — per-level enrichment marker", () => {
     const chunkOverlays = new Map([["src/a.ts", new Map([["c1", { commitCount: 5 }]])]]);
     mockProvider.buildChunkSignals.mockResolvedValue(chunkOverlays);
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
@@ -1434,7 +1459,7 @@ describe("EnrichmentCoordinator — per-level enrichment marker", () => {
   it("writes chunk: failed marker when chunk enrichment fails", async () => {
     mockProvider.buildChunkSignals.mockRejectedValue(new Error("chunk fail"));
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
@@ -1606,7 +1631,7 @@ describe("EnrichmentCoordinator — streaming chunk enrichment", () => {
 
   it("calls buildChunkSignals per batch after prefetch completes, with skipCache + semaphore", async () => {
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     coordinator.onChunksStored("test-col", "/repo", [
@@ -1642,7 +1667,7 @@ describe("EnrichmentCoordinator — streaming chunk enrichment", () => {
     );
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
 
     coordinator.onChunksStored("test-col", "/repo", [
       {
@@ -1662,7 +1687,7 @@ describe("EnrichmentCoordinator — streaming chunk enrichment", () => {
 
   it("startChunkEnrichment skips files already enriched by streaming", async () => {
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     coordinator.onChunksStored("test-col", "/repo", [
@@ -1684,7 +1709,7 @@ describe("EnrichmentCoordinator — streaming chunk enrichment", () => {
 
   it("startChunkEnrichment processes files NOT covered by streaming", async () => {
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     coordinator.onChunksStored("test-col", "/repo", [
@@ -1720,7 +1745,7 @@ describe("EnrichmentCoordinator — streaming chunk enrichment", () => {
     );
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     coordinator.onChunksStored("test-col", "/repo", [
@@ -1838,14 +1863,15 @@ describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => 
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, provider as any, recovery as any);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     await coordinator.awaitCompletion("test-col");
 
     // Final file marker written in awaitCompletion — must reflect actual count.
+    // file-unenriched > 0 reconciles file status to "degraded".
     const fileWrites = mockQdrant.setPayload.mock.calls.filter(
-      (call: any[]) => call[1]?.enrichment?.git?.file?.status === "completed",
+      (call: any[]) => call[1]?.enrichment?.git?.file?.status === "degraded",
     );
     const lastFileWrite = fileWrites[fileWrites.length - 1];
     expect(lastFileWrite[1].enrichment.git.file.unenrichedChunks).toBe(3);
@@ -1862,7 +1888,7 @@ describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => 
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, provider as any);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     await coordinator.awaitCompletion("test-col");
@@ -1910,7 +1936,10 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
-      // Empty file metadata on every prefetch — every applied chunk will be "missed".
+      // Empty streamed file metadata — every applied chunk will be "missed".
+      // streamFileBatch is the per-batch path; buildFileSignals is reserved for
+      // backfill, so any buildFileSignals call with `paths` IS a backfill call.
+      streamFileBatch: vi.fn().mockResolvedValue(new Map()),
       buildFileSignals: vi.fn().mockResolvedValue(new Map()),
       buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
@@ -1921,7 +1950,7 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
 
     // Run 1 — chunk for "missed-1.ts" is applied; with empty fileMetadata it
     // becomes a missed path. Backfill runs against that single path.
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
     coordinator.onChunksStored("test-col", "/repo", [
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/missed-1.ts" }, endLine: 5 } } as any,
@@ -1933,7 +1962,7 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
     // _missedFileChunks still holds "missed-1.ts" zombie, so run 2's backfill
     // will see paths=["missed-1.ts","missed-2.ts"]. With per-run RunState the
     // backfill must see paths=["missed-2.ts"] only.
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
     coordinator.onChunksStored("test-col", "/repo", [
       { chunkId: "c2", chunk: { metadata: { filePath: "/repo/missed-2.ts" }, endLine: 5 } } as any,
@@ -1956,7 +1985,7 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
 
   it("re-binds onChunkEnrichmentComplete to current run when set after prefetch", async () => {
     const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
 
     // Set the callback AFTER prefetch — this hits the `if (cb && this.currentRun)`
@@ -1982,7 +2011,7 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
     // To exercise the catch block in awaitCompletion we stub the current run's
     // CompletionRunner directly — same boundary the catch protects.
     const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
-    coordinator.prefetch("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 20));
     coordinator.onChunksStored("test-col", "/repo", [
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/x.ts" }, endLine: 5 } } as any,
@@ -2013,132 +2042,108 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
     expect(coordinator.onChunkEnrichmentComplete).toBe(cb);
   });
 
-  it("serializes concurrent prefetch calls FIFO behind the previous run's donePromise", async () => {
-    const buildFileSignalsRoots: string[] = [];
-    let resolveFirstBuild!: (value: Map<string, unknown>) => void;
-    const firstBuildPromise = new Promise<Map<string, unknown>>((r) => {
-      resolveFirstBuild = r;
-    });
-
-    const slowProvider: EnrichmentProvider = {
+  it("beginRun swaps currentRun to a fresh RunState — run 2 streams independently", async () => {
+    // The whole-repo prefetch gate (and its FIFO buildFileSignals serialization)
+    // is gone — file enrichment streams per batch. Each beginRun installs a fresh
+    // RunState; run 2's streamed batch enriches against run 2's root regardless of
+    // run 1, with no cross-run buildFileSignals serialization.
+    const streamRoots: string[] = [];
+    const streamProvider: EnrichmentProvider = {
       key: "git",
       signals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
-      buildFileSignals: vi.fn().mockImplementation(async (root: string) => {
-        buildFileSignalsRoots.push(root);
-        // First call resolves only when the test signals; later calls resolve immediately.
-        return buildFileSignalsRoots.length === 1 ? firstBuildPromise : Promise.resolve(new Map());
+      streamFileBatch: vi.fn().mockImplementation(async (root: string) => {
+        streamRoots.push(root);
+        return new Map();
       }),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
       buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
 
-    const coordinator = new EnrichmentCoordinator(mockQdrant, slowProvider);
+    const coordinator = new EnrichmentCoordinator(mockQdrant, streamProvider);
 
-    // Run 1 — prefetch is held open by the unresolved firstBuildPromise.
-    coordinator.prefetch("/repo-1", "test-col");
-    const completion1 = coordinator.awaitCompletion("test-col");
-
-    // Run 2 — call prefetch while Run 1 is still pending.
-    // FIFO contract: Run 2 must NOT call provider.buildFileSignals until Run 1 resolves.
-    coordinator.prefetch("/repo-2", "test-col");
-
-    // Pump several microtask cycles; Run 2's prefetch must still be queued.
-    for (let i = 0; i < 5; i++) await Promise.resolve();
-    expect(buildFileSignalsRoots).toEqual(["/repo-1"]);
-
-    // Release Run 1.
-    resolveFirstBuild(new Map());
-    await completion1;
-    await new Promise((r) => setTimeout(r, 20));
-
-    // Now Run 2 must have started.
-    expect(buildFileSignalsRoots).toEqual(["/repo-1", "/repo-2"]);
-  });
-
-  it("queues onChunksStored arriving between prefetch and serialized buildFileSignals start", async () => {
-    // While Run 2's prefetch is still queued behind Run 1, callers may invoke
-    // onChunksStored. The chunks must enqueue into Run 2's filePhase pendingBatches
-    // (init runs synchronously) and drain once the deferred buildFileSignals resolves.
-    const buildFileSignalsCalls: { root: string; opts?: unknown }[] = [];
-    let resolveFirstBuild!: () => void;
-    const firstBuildPromise = new Promise<Map<string, unknown>>((r) => {
-      resolveFirstBuild = () => {
-        r(new Map());
-      };
-    });
-
-    const queuingProvider: EnrichmentProvider = {
-      key: "git",
-      signals: [],
-      filters: [],
-      presets: [],
-      resolveRoot: vi.fn((p: string) => p),
-      buildFileSignals: vi.fn().mockImplementation(async (root: string, opts?: unknown) => {
-        buildFileSignalsCalls.push({ root, opts });
-        return buildFileSignalsCalls.length === 1 ? firstBuildPromise : Promise.resolve(new Map());
-      }),
-      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
-    };
-
-    const coordinator = new EnrichmentCoordinator(mockQdrant, queuingProvider);
-
-    // Run 1 — open.
-    coordinator.prefetch("/repo-1", "test-col");
-    const completion1 = coordinator.awaitCompletion("test-col");
-
-    // Run 2 — prefetch deferred.
-    coordinator.prefetch("/repo-2", "test-col");
-
-    // Caller invokes onChunksStored on Run 2's collection BEFORE Run 1 finishes.
-    // Init was synchronous in prefetch(); chunks must enqueue, not be silently dropped.
-    coordinator.onChunksStored("test-col", "/repo-2", [
-      { chunkId: "queued-c1", chunk: { metadata: { filePath: "/repo-2/queued.ts" }, endLine: 5 } } as any,
-    ]);
-
-    // Resolve Run 1 → Run 2's prefetch unblocks → buffered batch drains.
-    resolveFirstBuild();
-    await completion1;
-    await new Promise((r) => setTimeout(r, 30));
+    coordinator.beginRun("/repo-1", "test-col");
     await coordinator.awaitCompletion("test-col");
 
-    // Run 2's buildFileSignals must have been called exactly once with /repo-2 (no opts.paths
-    // means it's the prefetch call, not a backfill).
-    const run2Prefetch = buildFileSignalsCalls.find(
-      (c) => c.root === "/repo-2" && (c.opts as { paths?: string[] } | undefined)?.paths === undefined,
-    );
-    expect(run2Prefetch).toBeDefined();
+    coordinator.beginRun("/repo-2", "test-col");
+    coordinator.onChunksStored("test-col", "/repo-2", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo-2/a.ts" }, startLine: 1, endLine: 5 } } as any,
+    ]);
+    await coordinator.awaitCompletion("test-col");
+
+    // Run 2's streamed batch enriched against /repo-2.
+    expect(streamRoots).toContain("/repo-2");
+  });
+
+  it("onChunksStored arriving on the current run enriches its batch", async () => {
+    // beginRun's init is synchronous, so a batch stored immediately after it is
+    // streamed against the current run's root (no deferral gate to queue behind).
+    const streamCalls: { root: string; paths: string[] }[] = [];
+    const streamProvider: EnrichmentProvider = {
+      key: "git",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      streamFileBatch: vi.fn().mockImplementation(async (root: string, paths: string[]) => {
+        streamCalls.push({ root, paths });
+        return new Map();
+      }),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, streamProvider);
+    coordinator.beginRun("/repo-2", "test-col");
+    coordinator.onChunksStored("test-col", "/repo-2", [
+      { chunkId: "queued-c1", chunk: { metadata: { filePath: "/repo-2/queued.ts" }, startLine: 1, endLine: 5 } } as any,
+    ]);
+    await coordinator.awaitCompletion("test-col");
+
+    const run2Stream = streamCalls.find((c) => c.root === "/repo-2" && c.paths.includes("queued.ts"));
+    expect(run2Stream).toBeDefined();
   });
 
   it("does not block run 2 when run 1's donePromise rejects", async () => {
-    const buildFileSignalsRoots: string[] = [];
+    const streamRoots: string[] = [];
     const flakyProvider: EnrichmentProvider = {
       key: "git",
       signals: [],
       filters: [],
       presets: [],
       resolveRoot: vi.fn((p: string) => p),
-      buildFileSignals: vi.fn().mockImplementation(async (root: string) => {
-        buildFileSignalsRoots.push(root);
-        return Promise.resolve(new Map());
+      streamFileBatch: vi.fn().mockImplementation(async (root: string) => {
+        streamRoots.push(root);
+        return new Map();
       }),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
       buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, flakyProvider);
 
     // Run 1 — force completion to throw, which rejects donePromise.
-    coordinator.prefetch("/repo-1", "test-col");
-    const runState1 = (coordinator as { currentRun: { completion: { run: unknown } } | null }).currentRun;
+    coordinator.beginRun("/repo-1", "test-col");
+    const runState1 = (
+      coordinator as { currentRun: { completion: { run: unknown }; donePromise: Promise<unknown> } | null }
+    ).currentRun;
     expect(runState1).not.toBeNull();
+    // The orphaned RunState's donePromise rejects too — attach a handler so the
+    // rejection isn't reported as unhandled.
+    const orphanDone = runState1!.donePromise.catch(() => undefined);
     vi.spyOn(runState1!.completion, "run" as never).mockRejectedValue(new Error("run 1 failed") as never);
     await expect(coordinator.awaitCompletion("test-col")).rejects.toThrow("run 1 failed");
+    await orphanDone;
 
-    // Run 2 — must still start (the .catch(() => undefined) gate swallows run 1's rejection).
-    coordinator.prefetch("/repo-2", "test-col");
-    await new Promise((r) => setTimeout(r, 30));
+    // Run 2 — must still stream (run 1's orphaned RunState rejection is isolated).
+    coordinator.beginRun("/repo-2", "test-col");
+    coordinator.onChunksStored("test-col", "/repo-2", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo-2/a.ts" }, startLine: 1, endLine: 5 } } as any,
+    ]);
+    await coordinator.awaitCompletion("test-col");
 
-    expect(buildFileSignalsRoots).toContain("/repo-2");
+    expect(streamRoots).toContain("/repo-2");
   });
 });

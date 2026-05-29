@@ -1,12 +1,13 @@
 /**
  * EnrichmentCoordinator — generic timing orchestrator for enrichment providers.
  *
- * Coordinates three phases per provider:
- * 1. Prefetch: provider.buildFileSignals (fire-and-forget at T=0) — owned by FilePhase
- * 2. Per-batch: apply file signals as chunks arrive — owned by FilePhase
- * 3. Streaming + post-flush chunk overlays — owned by ChunkPhase
+ * Coordinates per provider:
+ * 1. Per-batch streaming: apply file signals as chunks arrive — owned by FilePhase
+ * 2. Streaming + post-flush + deferred chunk overlays — owned by ChunkPhase
+ * 3. Finalize: deferred whole-repo file overlays + deferred chunk pass — driven
+ *    by CompletionRunner.
  *
- * Per-run state is bounded inside a `RunState` container. Each `prefetch()`
+ * Per-run state is bounded inside a `RunState` container. Each `beginRun()`
  * builds a fresh RunState; old promise closures from previous runs mutate
  * their own (now-orphaned) RunState and have zero effect on the current run.
  */
@@ -16,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkLookupEntry, EnrichmentMetrics } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
@@ -23,6 +25,7 @@ import { EnrichmentApplier } from "./applier.js";
 import { EnrichmentBackfiller } from "./backfiller.js";
 import { ChunkPhase } from "./chunk-phase.js";
 import { CompletionRunner } from "./completion-runner.js";
+import { InlineEnrichmentExecutor } from "./executor/index.js";
 import { FilePhase } from "./file-phase.js";
 import { EnrichmentMarkerStore } from "./marker-store.js";
 import type { EnrichmentRecovery } from "./recovery.js";
@@ -69,6 +72,13 @@ export class EnrichmentCoordinator {
   private readonly markerStore: EnrichmentMarkerStore;
   private currentRun: RunState | null = null;
   private readonly providers: EnrichmentProvider[];
+  /**
+   * Dispatch seam between the enrichment phases and provider execution.
+   * Default: `InlineEnrichmentExecutor` (today's main-thread behavior). A
+   * worker-pool executor can be injected (Phase 2 of the worker-pool spec)
+   * without any other coordinator/phase changes.
+   */
+  private readonly executor: EnrichmentExecutor;
 
   /**
    * Optional callback fired after enrichment milestones. Invoked at most twice
@@ -105,9 +115,11 @@ export class EnrichmentCoordinator {
     private readonly qdrant: QdrantManager,
     providers: EnrichmentProvider | EnrichmentProvider[],
     private readonly recovery?: EnrichmentRecovery,
+    executor?: EnrichmentExecutor,
   ) {
     this.markerStore = new EnrichmentMarkerStore(qdrant);
     this.providers = Array.isArray(providers) ? providers : [providers];
+    this.executor = executor ?? new InlineEnrichmentExecutor();
   }
 
   /**
@@ -165,20 +177,18 @@ export class EnrichmentCoordinator {
   }
 
   /**
-   * Start file-level metadata prefetch at T=0. Non-blocking.
-   * Call before pipeline.start() to maximize overlap.
-   * All providers prefetch in parallel.
+   * Begin a new enrichment run. Non-blocking. Call before pipeline.start().
    *
-   * Concurrent prefetch calls are serialized FIFO: a new prefetch defers its
-   * provider.buildFileSignals call behind the previous run's donePromise.
-   * Init (createRunState, filePhase/chunkPhase init, markerStore.markStart)
-   * stays synchronous so onChunksStored / startChunkEnrichment calls that
-   * arrive between this prefetch and the queued buildFileSignals enqueue into
-   * the correct (current) RunState.
+   * There is no whole-repo prefetch anymore — file enrichment streams per batch
+   * via onChunksStored. beginRun only builds a fresh RunState, inits the phases,
+   * and writes the initial markStart marker. Per-run RunState isolation
+   * guarantees old promise closures from a previous run mutate their orphaned
+   * RunState, never the current one (FIFO isolation preserved).
+   *
+   * `changedPaths` is accepted for caller compatibility but no longer drives a
+   * scoped prefetch — streaming naturally scopes to the batches actually stored.
    */
-  prefetch(absolutePath: string, collectionName?: string, ignoreFilter?: Ignore, changedPaths?: string[]): void {
-    const previousDone = this.currentRun?.donePromise;
-
+  beginRun(absolutePath: string, collectionName?: string, ignoreFilter?: Ignore, _changedPaths?: string[]): void {
     // Build a fresh RunState. Per-run instances guarantee old promise closures
     // mutate their orphaned RunState, never the current one.
     const runState = this.createRunState();
@@ -220,26 +230,12 @@ export class EnrichmentCoordinator {
     // and clobber freshly-written "completed" markers with its stale
     // snapshot (read before final writes). The fix tracks the promise
     // on the run and CompletionRunner awaits it before writing
-    // finalizers. buildFileSignals stays unblocked (called immediately
-    // by startPrefetch below) so prefetch latency isn't affected.
+    // finalizers.
     runState.markStartPromise = collectionName
       ? this.markerStore
           .markStart(collectionName, [...runState.contexts.keys()], runState.runId, runState.startedAt)
           .catch(() => undefined)
       : Promise.resolve();
-
-    // Defer ONLY the provider buildFileSignals call behind the previous run's
-    // donePromise. Failure of run N must not block run N+1 — `.catch(() => undefined)`
-    // converts rejection into resolution at this gate.
-    if (previousDone) {
-      void previousDone
-        .catch(() => undefined)
-        .then(() => {
-          runState.filePhase.startPrefetch(changedPaths);
-        });
-    } else {
-      runState.filePhase.startPrefetch(changedPaths);
-    }
   }
 
   /**
@@ -250,8 +246,14 @@ export class EnrichmentCoordinator {
    */
   onChunksStored(collectionName: string, absolutePath: string, items: ChunkItem[]): void {
     if (!this.currentRun) return;
-    this.currentRun.filePhase.onBatch(collectionName, absolutePath, items);
-    this.currentRun.chunkPhase.onBatch(collectionName, absolutePath, items);
+    const run = this.currentRun;
+    // Sequence file→chunk per batch: git buildChunkSignals reads the batch's
+    // blame/lastFileResult that streamFileBatch populates. Per-batch ordering
+    // replaces the removed whole-repo gate; cheap (one batch's files).
+    const fileDone = run.filePhase.onBatch(collectionName, absolutePath, items);
+    void Promise.resolve(fileDone).then(() => {
+      run.chunkPhase.onBatch(collectionName, absolutePath, items);
+    });
   }
 
   /**
@@ -282,6 +284,15 @@ export class EnrichmentCoordinator {
         async (coll, providerKey, level) => this.countSettledUnenriched(coll, providerKey, level),
         run.startedAt,
       );
+      // Phase 2 of unified-enrichment-worker-pool plan: signal the executor
+      // to release any per-collection state it cached. For Inline executor
+      // this is a no-op (shared provider, can't safely call onRelease across
+      // concurrent runs). For WorkerPoolEnrichmentExecutor this fans out a
+      // `release` envelope per worker-descriptor provider and drops the
+      // ThreadPool affinity binding. Failures are swallowed inside the
+      // executor — release MUST NOT regress an otherwise-successful run.
+      const providers = Array.from(run.contexts.values()).map((ctx) => ctx.provider);
+      await this.executor.releaseCollection(providers, collectionName);
       run.resolveDone(metrics);
       return metrics;
     } catch (error) {
@@ -292,16 +303,17 @@ export class EnrichmentCoordinator {
 
   private createRunState(): RunState {
     const applier = new EnrichmentApplier(this.qdrant);
-    const chunkPhase = new ChunkPhase(applier);
-    const filePhase = new FilePhase(applier, this.markerStore);
+    const chunkPhase = new ChunkPhase(applier, this.executor);
+    const filePhase = new FilePhase(applier, this.markerStore, this.executor);
     filePhase.bindChunkPhase(chunkPhase);
-    const backfiller = new EnrichmentBackfiller(applier, this.qdrant);
+    const backfiller = new EnrichmentBackfiller(applier, this.qdrant, this.executor);
     const completion = new CompletionRunner({
       filePhase,
       chunkPhase,
       backfiller,
       applier,
       markerStore: this.markerStore,
+      executor: this.executor,
     });
 
     let resolveDone!: (m: EnrichmentMetrics) => void;

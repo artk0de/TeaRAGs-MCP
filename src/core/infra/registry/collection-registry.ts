@@ -68,6 +68,44 @@ export class CollectionRegistry {
     return null;
   }
 
+  /**
+   * Find a registry entry whose stored `path` exactly matches the input.
+   * Used to honor alias-rename semantics: after `register_project` moves an
+   * alias to a new path, the same physical Qdrant collection (and its
+   * snapshot / codegraph DB, all keyed by `collectionName`) keeps serving
+   * the project under the new path. Path-derived hash callers consult this
+   * first so the move stays transparent.
+   *
+   * Path comparison is exact string equality — callers are expected to pass
+   * an already-resolved absolute path (matching what `record()` stored).
+   */
+  findByPath(path: string): CollectionEntry | null {
+    if (!path) return null;
+    const map = this.ensureLoaded();
+    for (const entry of map.values()) {
+      if (entry.path === path) return entry;
+    }
+    return null;
+  }
+
+  /**
+   * Atomically update the `path` field of an existing entry, preserving
+   * every other field (collectionName, name, chunksCount, indexedAt, ...).
+   * This is the persistence side of alias-rename: the project's identity
+   * (collectionName, snapshot file, codegraph DB) stays untouched; only the
+   * filesystem location it points at changes. No-op when the entry is
+   * missing — callers should consult `get()` first if they want to fail
+   * loud on a missing collection.
+   */
+  updatePath(collectionName: string, path: string): void {
+    const map = this.ensureLoaded();
+    const entry = map.get(collectionName);
+    if (!entry) return;
+    if (entry.path === path) return;
+    map.set(collectionName, { ...entry, path });
+    this.flush();
+  }
+
   list(): CollectionEntry[] {
     return [...this.ensureLoaded().values()];
   }
