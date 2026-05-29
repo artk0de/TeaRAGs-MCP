@@ -4,3 +4,4 @@
  * type without crossing into the executor subdomain.
  */
 export { InlineEnrichmentExecutor } from "./inline.js";
+export { WorkerPoolEnrichmentExecutor } from "./worker-pool.js";

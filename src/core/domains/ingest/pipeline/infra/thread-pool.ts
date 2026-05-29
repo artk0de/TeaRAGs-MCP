@@ -134,6 +134,18 @@ export class ThreadPool<Req, Res> {
     });
   }
 
+  /**
+   * Drop a routingKey's affinity pinning. The next dispatch with this key
+   * picks a fresh thread (least-loaded by current pin count). Used by the
+   * enrichment executor's releaseCollection path so a finished collection
+   * frees its thread for the next workload.
+   *
+   * Idempotent: dropping an unknown key is a benign no-op.
+   */
+  releaseAffinity(routingKey: string): void {
+    this.affinity.delete(routingKey);
+  }
+
   /** Pin a routingKey to a thread on first sight; reuse thereafter. */
   private resolveAffinity(routingKey: string): number {
     const existing = this.affinity.get(routingKey);
