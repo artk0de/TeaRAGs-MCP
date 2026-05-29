@@ -63,6 +63,13 @@ export default defineConfig({
         // runtime; same I/O-heavy category as the qdrant daemon above — validated by
         // build + full suite, exercised end-to-end via integration, not unit-covered).
         "src/core/adapters/duckdb/daemon/entry.ts",
+        // Enrichment worker thread entry (Phase 2 unified-enrichment-worker-pool):
+        // worker_threads runtime that dynamic-imports trajectory provider factories
+        // in-thread. Covered by `tests/core/domains/ingest/pipeline/enrichment/infra/
+        // worker.test.ts` via real worker spawn against fixture provider modules —
+        // the spawned worker process is not visible to the in-process coverage
+        // collector (same category as chunker/infra/worker.ts and daemon/entry.ts).
+        "src/core/domains/ingest/pipeline/enrichment/infra/worker.ts",
         // Abstract-only error base classes (no logic, just class declaration)
         "src/core/adapters/errors.ts",
         "src/core/adapters/embeddings/errors.ts",
