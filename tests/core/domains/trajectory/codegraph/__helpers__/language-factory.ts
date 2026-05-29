@@ -1,16 +1,16 @@
 import type { CallResolver } from "../../../../../../src/core/contracts/types/codegraph.js";
-import type { LanguageFactory } from "../../../../../../src/core/contracts/types/language.js";
-import { LanguageFactoryImpl } from "../../../../../../src/core/domains/language/index.js";
+import type { LanguageFactoryDescriptor } from "../../../../../../src/core/contracts/types/language.js";
+import { LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 
 /**
- * Build a `LanguageFactory` for codegraph provider tests. All languages are
+ * Build a `LanguageFactoryDescriptor` for codegraph provider tests. All languages are
  * native `domains/language/<lang>` providers built by the factory itself — the
  * provider reads each walker (`walk`/`nameOf`) and resolver from
  * `factory.create(lang)`. The legacy adapter / resolver-map wiring was removed
  * by tea-rags-mcp-jh40.
  */
-export function languageFactory(): LanguageFactory {
-  return new LanguageFactoryImpl();
+export function languageFactory(): LanguageFactoryDescriptor {
+  return new LanguageFactory();
 }
 
 /**
@@ -24,7 +24,7 @@ export function languageFactory(): LanguageFactory {
  * map keep compiling without churn — the value has no effect on resolution.
  */
 export function buildTestCodegraphDeps(_resolvers?: Map<string, CallResolver>): {
-  languageFactory: LanguageFactory;
+  languageFactory: LanguageFactoryDescriptor;
 } {
   return { languageFactory: languageFactory() };
 }

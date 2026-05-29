@@ -18,7 +18,7 @@
  *   resolver      ← ./resolver/            (BashCallResolver — `source` path
  *                                           mapping + global short-name lookup)
  *
- * Created per-context by `LanguageFactory` (each owns its own tree-sitter
+ * Created per-context by `LanguageFactoryDescriptor` (each owns its own tree-sitter
  * `Parser`, spec §5). The capability logic here is stateless, so the only
  * per-instance cost is the Parser the chunker/codegraph engines build.
  *
@@ -27,7 +27,7 @@
  * JavaScript's 4-extension single-grammar case, NOT TypeScript's two-grammar
  * split. The codegraph `.sh` / `.bash` entries each retain `loadParser` +
  * `scopeSeparator "."` (same `BashLang` grammar); the walker / nameOf / resolver
- * come from THIS provider via the injected `LanguageFactory`.
+ * come from THIS provider via the injected `LanguageFactoryDescriptor`.
  *
  * Bash has NO class concept — only top-level `function_definition`s — so there
  * are NO `scopeContainerTypes`, NO `disambiguateOverloads`, and `bashNameOf`
@@ -38,7 +38,7 @@
  * Like python + java + rust (and unlike go), `BashCallResolver`'s ctor takes
  * ONLY `mode` — it needs no `SymbolIdComposer` (bash has no `Type#member` /
  * `Type.member` candidate ids to build). So `BashLanguage` constructs it with
- * `new BashCallResolver(mode)`, keeping the `LanguageFactory` signature
+ * `new BashCallResolver(mode)`, keeping the `LanguageFactoryDescriptor` signature
  * unchanged.
  */
 

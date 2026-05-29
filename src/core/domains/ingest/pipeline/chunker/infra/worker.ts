@@ -7,7 +7,7 @@
  * native handles are not structured-cloneable across `postMessage`), so the
  * chunker engine is wired HERE, symmetric to the main composition root. The
  * engine needs three things the leaf `domains/language` domain owns — the
- * concrete `LanguageFactoryImpl`, the `DefaultSymbolIdComposer`, and the native
+ * concrete `LanguageFactory`, the `DefaultSymbolIdComposer`, and the native
  * `RubyLanguage` provider (built by the factory). `domains/ingest` MUST NOT
  * import `domains/language` (eslint leaf-domain guard), so they are loaded at
  * RUNTIME via a dynamic `import(path)` where `path` is an injected string
@@ -27,10 +27,7 @@
 
 import { parentPort, workerData } from "node:worker_threads";
 
-import type {
-  LanguageFactory,
-  SymbolIdComposer,
-} from "../../../../../contracts/types/language.js";
+import type { LanguageFactoryDescriptor, SymbolIdComposer } from "../../../../../contracts/types/language.js";
 import type { ChunkerConfig } from "../../../../../types.js";
 import { TreeSitterChunker } from "../tree-sitter.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
@@ -42,7 +39,7 @@ import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
  * layer guarantees these exports exist (`domains/language/index.ts`).
  */
 interface LanguageModule {
-  LanguageFactoryImpl: new () => LanguageFactory;
+  LanguageFactory: new () => LanguageFactoryDescriptor;
   DefaultSymbolIdComposer: new () => SymbolIdComposer;
 }
 
@@ -60,7 +57,7 @@ async function buildChunker(config: ChunkerConfig): Promise<TreeSitterChunker> {
     throw new Error("ChunkerConfig.languageModulePath is required in the worker thread");
   }
   const lang = (await import(config.languageModulePath)) as LanguageModule;
-  const languageFactory = new lang.LanguageFactoryImpl();
+  const languageFactory = new lang.LanguageFactory();
   return new TreeSitterChunker(config, new lang.DefaultSymbolIdComposer(), languageFactory);
 }
 

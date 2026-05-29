@@ -10,7 +10,7 @@
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
-import type { LanguageFactory, SymbolIdComposer } from "../../../contracts/types/language.js";
+import type { LanguageFactoryDescriptor, SymbolIdComposer } from "../../../contracts/types/language.js";
 import type { Trajectory } from "../../../contracts/types/trajectory.js";
 import type { CodegraphExclusionOptions } from "./exclusion.js";
 import { createSymbolsTrajectory } from "./symbols/index.js";
@@ -26,7 +26,7 @@ import { createSymbolsTrajectory } from "./symbols/index.js";
  *
  * Call resolvers (TS, Python, Go, …) are process-scoped and carried by each
  * native `domains/language/<lang>` provider, reached via the injected
- * `LanguageFactory` — not threaded as a separate map here.
+ * `LanguageFactoryDescriptor` — not threaded as a separate map here.
  */
 export interface CodegraphDeps {
   pool: GraphDbClientPool;
@@ -66,7 +66,9 @@ export interface CodegraphDeps {
  * produces before the factory exists). The provider reads its walker +
  * resolver capabilities from this factory. bd tea-rags-mcp-cat4.
  */
-export function createCodegraphTrajectories(deps: CodegraphDeps & { languageFactory: LanguageFactory }): Trajectory[] {
+export function createCodegraphTrajectories(
+  deps: CodegraphDeps & { languageFactory: LanguageFactoryDescriptor },
+): Trajectory[] {
   return [createSymbolsTrajectory(deps)];
 }
 

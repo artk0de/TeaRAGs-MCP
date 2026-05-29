@@ -7,14 +7,14 @@
  * worker thread receives this object via `workerData` / `postMessage`,
  * then in-thread:
  *   - `await import(config.languageModulePath)` — rebuild the
- *     `LanguageFactory` (mirrors the chunker precedent at
+ *     `LanguageFactoryDescriptor` (mirrors the chunker precedent at
  *     `ChunkerConfig.languageModulePath`).
  *   - `new DaemonGraphDbClient(config.daemonSocketPath)` — connect to the
  *     existing multi-client daemon socket (memory project
  *     `project_codegraph_daemon` — daemon already serialises DuckDB access
  *     across processes).
  *
- * Non-serializable deps (`LanguageFactory`, DuckDB pool / client) are NEVER
+ * Non-serializable deps (`LanguageFactoryDescriptor`, DuckDB pool / client) are NEVER
  * carried on the descriptor — only string paths the worker resolves
  * in-thread. This preserves the `.claude/rules/domains-language.md`
  * invariant: the `ingest`-owned worker entry stays domain-internal, with
@@ -37,7 +37,7 @@ export interface CodegraphWorkerConfig {
   /**
    * Absolute compiled-JS path to the language-factory module the worker
    * dynamic-imports in-thread. Mirrors `ChunkerConfig.languageModulePath`
-   * exactly — the worker calls `(await import(path)).LanguageFactory` (or
+   * exactly — the worker calls `(await import(path)).LanguageFactoryDescriptor` (or
    * the equivalent named export Task 4 chooses) to get the per-language
    * walker + resolver capabilities.
    */

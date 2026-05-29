@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { extractClassHeader } from "../../../../../../src/core/domains/language/ruby/chunking/class-body-chunker.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
-import { DefaultSymbolIdComposer, LanguageFactoryImpl } from "../../../../../../src/core/domains/language/index.js";
 import { generateChunkId } from "../../../../../../src/core/domains/ingest/pipeline/chunker/utils/chunk-id.js";
+import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
+import { extractClassHeader } from "../../../../../../src/core/domains/language/ruby/chunking/class-body-chunker.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
 // Mirror the composition roots (composition.ts / the chunker worker): the factory
 // builds every native language provider itself — so factory.create("ruby")
 // returns a real provider with chunker hooks. Runs in the MAIN process (not the
 // worker), so it may construct a factory that serves ruby directly.
-const testLanguageFactory = new LanguageFactoryImpl();
+const testLanguageFactoryDescriptor = new LanguageFactory();
 
 describe("TreeSitterChunker", () => {
   let chunker: TreeSitterChunker;
@@ -22,7 +22,7 @@ describe("TreeSitterChunker", () => {
       chunkOverlap: 50,
       maxChunkSize: 1000,
     };
-    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactory);
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
   });
 
   describe("chunk - TypeScript", () => {
@@ -1896,21 +1896,21 @@ function test() {
 
   describe("lazy loading", () => {
     it("should have no parsers loaded initially", () => {
-      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
       const stats = freshChunker.getLoadedParsers();
       expect(stats.loaded).toHaveLength(0);
       expect(stats.available.length).toBeGreaterThan(0);
     });
 
     it("should load parser on first use", async () => {
-      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
       await freshChunker.chunk("function test() { return 1; }", "test.ts", "typescript");
       const stats = freshChunker.getLoadedParsers();
       expect(stats.loaded).toContain("typescript");
     });
 
     it("should preload multiple languages", async () => {
-      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
       await freshChunker.preloadLanguages(["python", "ruby"]);
       const stats = freshChunker.getLoadedParsers();
       expect(stats.loaded).toContain("python");
@@ -2082,7 +2082,11 @@ function calculateProduct(numbers: number[]): number {
         chunkOverlap: 20,
         maxChunkSize: 300,
       };
-      const smallChunker = new TreeSitterChunker(smallConfig, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const smallChunker = new TreeSitterChunker(
+        smallConfig,
+        new DefaultSymbolIdComposer(),
+        testLanguageFactoryDescriptor,
+      );
 
       const code = `
 class UserService
@@ -2286,7 +2290,11 @@ const y = 2;
         chunkOverlap: 20,
         maxChunkSize: 300,
       };
-      const smallChunker = new TreeSitterChunker(smallConfig, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const smallChunker = new TreeSitterChunker(
+        smallConfig,
+        new DefaultSymbolIdComposer(),
+        testLanguageFactoryDescriptor,
+      );
 
       const code = `
 class DataProcessor {
@@ -2932,7 +2940,11 @@ class DataProcessor {
         chunkOverlap: 10,
         maxChunkSize: 100,
       };
-      const smallChunker = new TreeSitterChunker(smallConfig, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const smallChunker = new TreeSitterChunker(
+        smallConfig,
+        new DefaultSymbolIdComposer(),
+        testLanguageFactoryDescriptor,
+      );
 
       // Generate a section with content that exceeds 100 * 2 = 200 chars
       const longContent = Array(30)
@@ -2979,7 +2991,11 @@ class DataProcessor {
         chunkOverlap: 10,
         maxChunkSize: 100,
       };
-      const smallChunker = new TreeSitterChunker(smallConfig, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const smallChunker = new TreeSitterChunker(
+        smallConfig,
+        new DefaultSymbolIdComposer(),
+        testLanguageFactoryDescriptor,
+      );
 
       // Create a Ruby class with one very large method (> 200 chars)
       const longBody = Array(25)
@@ -3132,7 +3148,11 @@ class DataProcessor {
         chunkOverlap: 5,
         maxChunkSize: 50,
       };
-      const tinyChunker = new TreeSitterChunker(tinyConfig, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const tinyChunker = new TreeSitterChunker(
+        tinyConfig,
+        new DefaultSymbolIdComposer(),
+        testLanguageFactoryDescriptor,
+      );
 
       // A Ruby class that is large (> 50 * 2 = 100 chars) but has NO methods inside
       // Only has declarations, which are not in childChunkTypes
@@ -3183,7 +3203,11 @@ class DataProcessor {
         chunkOverlap: 10,
         maxChunkSize: 100,
       };
-      const tinyChunker = new TreeSitterChunker(tinyConfig, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const tinyChunker = new TreeSitterChunker(
+        tinyConfig,
+        new DefaultSymbolIdComposer(),
+        testLanguageFactoryDescriptor,
+      );
 
       const longBody = Array(15)
         .fill("    console.log('Processing step with detailed logging and validation');")
@@ -3255,7 +3279,7 @@ function cleanup_environment() {
 
   describe("parser cache behavior", () => {
     it("should use cached parser on second call with same language", async () => {
-      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
 
       // First call: loads the parser
       const code1 = `
@@ -3283,7 +3307,7 @@ function second() {
     });
 
     it("should deduplicate concurrent parser loading for same language", async () => {
-      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
 
       const code1 = `
 function funcA() {
@@ -3432,7 +3456,11 @@ function funcB() {
         chunkOverlap: 5,
         maxChunkSize: 80,
       };
-      const tinyChunker = new TreeSitterChunker(tinyConfig, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const tinyChunker = new TreeSitterChunker(
+        tinyConfig,
+        new DefaultSymbolIdComposer(),
+        testLanguageFactoryDescriptor,
+      );
 
       // class << self at the top-level of a class, with methods inside
       // This tests the body extraction where header may or may not match
@@ -3474,7 +3502,7 @@ function funcB() {
 
   describe("parser initialization error recovery", () => {
     it("should return null and log error when parser module fails to load", async () => {
-      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
 
       const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -3497,7 +3525,7 @@ function funcB() {
 
   describe("parser parse error recovery", () => {
     it("should catch parse errors and fall back to character chunker", async () => {
-      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
 
       // First, load the TypeScript parser normally
       const code1 = `
@@ -3590,7 +3618,7 @@ enum Direction {
 
     it("should extract name via identifier child when childForFieldName returns null", async () => {
       // Use a mock node to directly exercise the extractName fallback path
-      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
       const extractName = (freshChunker as any).extractName.bind(freshChunker);
 
       // Create a mock node that has no "name" field but has an identifier child
@@ -3611,7 +3639,7 @@ enum Direction {
     });
 
     it("should return undefined when no name field and no identifier children", async () => {
-      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactory);
+      const freshChunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
       const extractName = (freshChunker as any).extractName.bind(freshChunker);
 
       // Mock node with no name field and no identifier children

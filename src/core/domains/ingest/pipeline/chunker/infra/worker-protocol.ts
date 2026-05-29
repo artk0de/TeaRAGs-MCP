@@ -8,7 +8,7 @@
  *
  * The worker ENTRY lives next to this protocol in `domains/ingest`. It stays
  * free of any static `domains/language` import (eslint leaf-domain guard): the
- * concrete `LanguageFactoryImpl` / `DefaultSymbolIdComposer` and the native
+ * concrete `LanguageFactory` / `DefaultSymbolIdComposer` and the native
  * language providers are loaded at runtime via a dynamic `import(path)` where
  * the path arrives as an injected string through `workerData`
  * (`ChunkerConfig.languageModulePath`). A runtime variable path is invisible to

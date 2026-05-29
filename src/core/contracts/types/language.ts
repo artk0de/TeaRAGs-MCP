@@ -1,7 +1,7 @@
 /**
  * Per-language code-consolidation contracts — the interfaces the
  * `domains/language/` leaf domain implements and the `ingest` chunker /
- * `codegraph` provider consume via an injected `LanguageFactory`.
+ * `codegraph` provider consume via an injected `LanguageFactoryDescriptor`.
  *
  * Lives in `contracts/` per `.claude/rules/domain-boundaries.md`: interfaces
  * belong to the foundation layer, no runtime, no Zod. Concrete implementations
@@ -14,14 +14,7 @@
 import type Parser from "tree-sitter";
 
 import type { ChunkingHook, LanguageChunkClassifier, MacroSymbol } from "./chunker.js";
-import type {
-  CallContext,
-  CallRef,
-  DispatchEdge,
-  FileExtraction,
-  NamedSymbol,
-  ResolvedTarget,
-} from "./codegraph.js";
+import type { CallContext, CallRef, DispatchEdge, FileExtraction, NamedSymbol, ResolvedTarget } from "./codegraph.js";
 
 /** A loaded tree-sitter language module. Some packages expose the grammar
  *  under a nested key (`{ typescript, tsx }`); `LanguageKernel.extractLanguage`
@@ -120,7 +113,7 @@ export interface SymbolIdComposer {
 
 // ─────────────────────────────────────────────────────────────────────────
 // Per-language CAPABILITY interfaces (spec §1, §4). A `LanguageProvider` is a
-// thin facade composing four OPTIONAL capabilities; `LanguageFactory.create`
+// thin facade composing four OPTIONAL capabilities; `LanguageFactoryDescriptor.create`
 // spawns one per language (with its own tree-sitter Parser). The fields below
 // are split between `kernel` and `chunkerHooks` from today's duplicated
 // `LanguageDefinition` (chunker/config.ts) + `LanguageConfig` (provider.ts).
@@ -284,7 +277,7 @@ export interface LanguageSymbolResolver {
  * Thin per-language facade composing the OPTIONAL capabilities. A code language
  * has all four; a doc language (markdown) has only `chunkerHooks` (no
  * walker/resolver — its chunks use `doc:<hash>` ids with no codegraph symbols,
- * spec §1a). Created per-context by `LanguageFactory.create` so each owns its
+ * spec §1a). Created per-context by `LanguageFactoryDescriptor.create` so each owns its
  * own stateful tree-sitter `Parser`.
  */
 export interface LanguageProvider {
@@ -301,7 +294,7 @@ export interface LanguageProvider {
  * Injected into `ingest`/`codegraph` as the `contracts/` interface; the chunker
  * worker is a second composition root that imports the concrete factory.
  */
-export interface LanguageFactory {
+export interface LanguageFactoryDescriptor {
   /** Spawn a fresh `LanguageProvider` (with its own Parser) for `lang`. */
   create: (lang: string) => LanguageProvider;
   /** The languages this factory can `create`. */

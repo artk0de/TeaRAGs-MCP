@@ -1,6 +1,5 @@
-import type { AmbiguousResolveMode } from "../../contracts/types/codegraph.js";
-import { DEFAULT_AMBIGUOUS_RESOLVE_MODE } from "../../contracts/types/codegraph.js";
-import type { LanguageFactory, LanguageProvider } from "../../contracts/types/language.js";
+import { DEFAULT_AMBIGUOUS_RESOLVE_MODE, type AmbiguousResolveMode } from "../../contracts/types/codegraph.js";
+import type { LanguageFactoryDescriptor, LanguageProvider } from "../../contracts/types/language.js";
 import { BashLanguage } from "./bash/index.js";
 import { UnsupportedLanguageError } from "./errors.js";
 import { GoLanguage } from "./go/index.js";
@@ -34,7 +33,7 @@ const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
 ]);
 
 /**
- * Real `LanguageFactory`. `create(lang)` ENCAPSULATES construction — it builds
+ * Real `LanguageFactoryDescriptor`. `create(lang)` ENCAPSULATES construction — it builds
  * the native `domains/language/<lang>` provider itself (`new RubyLanguage(mode)`,
  * …), applying the configured ambiguous-resolve `mode`, rather than reading one
  * from a consumer-assembled registry. Unknown languages throw
@@ -44,7 +43,7 @@ const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
  * it loads the grammar / builds a Parser — so callers MUST cache; the factory
  * caches internally too, so repeat `create(lang)` is a map lookup).
  */
-export class LanguageFactoryImpl implements LanguageFactory {
+export class LanguageFactory implements LanguageFactoryDescriptor {
   /**
    * Shared native ambiguous-resolve mode. Threaded into EVERY native provider's
    * resolver (`RubyLanguage`, `TypeScriptLanguage`, …). Generalised when the

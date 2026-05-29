@@ -47,7 +47,7 @@ import type {
   GraphEdges,
   NamedSymbol,
 } from "../../../../contracts/types/codegraph.js";
-import type { LanguageFactory, SymbolIdComposer } from "../../../../contracts/types/language.js";
+import type { LanguageFactoryDescriptor, SymbolIdComposer } from "../../../../contracts/types/language.js";
 import type {
   ChunkLookupEntry,
   ChunkSignalOptions,
@@ -156,7 +156,7 @@ function joinSymbol(composer: SymbolIdComposer, composed: string, child: NamedSy
 /**
  * Per-language extraction dispatch table. Codegraph walks any file
  * whose extension appears here. The actual walk + `nameOf` come from the
- * injected `LanguageFactory` (`factory.create(lang).walker`); this map carries
+ * injected `LanguageFactoryDescriptor` (`factory.create(lang).walker`); this map carries
  * only the parser-load + namespace config the engine still needs per extension.
  *
  * Adding a language: add a tree-sitter parser to deps, create a native
@@ -315,13 +315,13 @@ export interface CodegraphProviderDeps {
    * the composition layer (`api/internal/composition.ts` / `bootstrap/factory.ts`).
    * The provider reads `factory.create(lang).walker` (`walk`/`nameOf`) for the
    * symbol-collection pass and `.resolver` (`resolve`/`resolveDispatch`) for
-   * pass-2 edge resolution. Typed as the contracts `LanguageFactory` interface;
+   * pass-2 edge resolution. Typed as the contracts `LanguageFactoryDescriptor` interface;
    * the concrete factory is never imported here (leaf-domain guard forbids
    * `trajectory/** -> domains/language/**`). Parser-load / scopeSeparator /
    * disambiguateOverloads are still sourced from `CODEGRAPH_LANGUAGES`.
    * bd tea-rags-mcp-cat4.
    */
-  languageFactory: LanguageFactory;
+  languageFactory: LanguageFactoryDescriptor;
   /**
    * Cross-language symbolId mapper used by `joinSymbol` to compose
    * fully-qualified ids per `.claude/rules/symbolid-convention.md`. Injected as
@@ -1307,7 +1307,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // is a defensive guard for callers that pass paths directly.
       return { relPath, language: "", imports: [], chunks: [], fileScope: [] };
     }
-    // Walker capability (walk + nameOf) comes from the injected LanguageFactory
+    // Walker capability (walk + nameOf) comes from the injected LanguageFactoryDescriptor
     // — keyed by language NAME (not extension). Parser-load + scopeSeparator +
     // disambiguateOverloads stay sourced from CODEGRAPH_LANGUAGES (kept in place
     // for this slice). The factory's walker is the legacy adapter's faithful
@@ -1482,7 +1482,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   private resolveExtraction(extraction: FileExtraction, symbolTable: GlobalSymbolTable): GraphEdges {
-    // Resolver capability comes from the injected LanguageFactory (keyed by
+    // Resolver capability comes from the injected LanguageFactoryDescriptor (keyed by
     // language NAME) — each native provider carries its own `CallResolver`.
     // `create` throws for unregistered languages, so gate on `supported()` first
     // (the defensive empty extraction emits `language: ""`, never registered).

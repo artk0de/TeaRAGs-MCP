@@ -20,7 +20,7 @@ export abstract class LanguageError extends TeaRagsError {
 }
 
 /**
- * `LanguageFactory.create(lang)` was called for a language with no registered
+ * `LanguageFactoryDescriptor.create(lang)` was called for a language with no registered
  * provider. During the consolidation the factory is a skeleton — no language
  * verticals are wired yet, so every `create` throws this. Once a per-language
  * vertical is registered, `create` returns the provider instead.

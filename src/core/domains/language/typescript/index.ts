@@ -10,7 +10,7 @@
  *   walker        ← ./walker/              (extractFromTypescriptFile + tsNameOf)
  *   resolver      ← ./resolver/            (TSCallResolver — tsconfig path mapping)
  *
- * Created per-context by `LanguageFactory` (each owns its own tree-sitter
+ * Created per-context by `LanguageFactoryDescriptor` (each owns its own tree-sitter
  * `Parser`, spec §5). The capability logic here is stateless, so the only
  * per-instance cost is the Parser the chunker/codegraph engines build, plus a
  * one-time `loadTsConfig(process.cwd())` for the resolver's path mapping.
@@ -24,28 +24,27 @@
  * holding two grammars: the per-extension grammar choice stays on the legacy map.
  */
 
-import type {
-  AmbiguousResolveMode,
-  CallContext,
-  CallRef,
-  CallResolver,
-  DispatchEdge,
-  FileExtraction,
-  ResolvedTarget,
+import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type CallRef,
+  type CallResolver,
+  type DispatchEdge,
+  type FileExtraction,
+  type ResolvedTarget,
 } from "../../../contracts/types/codegraph.js";
-import { DEFAULT_AMBIGUOUS_RESOLVE_MODE } from "../../../contracts/types/codegraph.js";
 import type {
   LanguageChunkerHooks,
   LanguageProvider,
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-
-import { typescriptKernel } from "./kernel.js";
 import { typescriptHooks } from "./chunking/index.js";
+import { typescriptKernel } from "./kernel.js";
+import { loadTsConfig, TSCallResolver } from "./resolver/index.js";
 import { tsNameOf } from "./walker/name-of.js";
 import { extractFromTypescriptFile, type ExtractInput } from "./walker/walker.js";
-import { loadTsConfig, TSCallResolver } from "./resolver/index.js";
 
 /**
  * Chunk-boundary config for TypeScript — mirrors the chunker slice of the legacy

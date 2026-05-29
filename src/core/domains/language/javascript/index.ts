@@ -12,7 +12,7 @@
  *   walker        ← ./walker/              (extractFromJavascriptFile + jsNameOf)
  *   resolver      ← ./resolver/            (JavascriptCallResolver — relative-import chain)
  *
- * Created per-context by `LanguageFactory` (each owns its own tree-sitter
+ * Created per-context by `LanguageFactoryDescriptor` (each owns its own tree-sitter
  * `Parser`, spec §5). The capability logic here is stateless, so the only
  * per-instance cost is the Parser the chunker/codegraph engines build.
  *
@@ -29,28 +29,27 @@
  * `.claude/rules/symbolid-convention.md` (bd tea-rags-mcp-kfzx / z95o / d1f8).
  */
 
-import type {
-  AmbiguousResolveMode,
-  CallContext,
-  CallRef,
-  CallResolver,
-  DispatchEdge,
-  FileExtraction,
-  ResolvedTarget,
+import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type CallRef,
+  type CallResolver,
+  type DispatchEdge,
+  type FileExtraction,
+  type ResolvedTarget,
 } from "../../../contracts/types/codegraph.js";
-import { DEFAULT_AMBIGUOUS_RESOLVE_MODE } from "../../../contracts/types/codegraph.js";
 import type {
   LanguageChunkerHooks,
   LanguageProvider,
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-
+import { javascriptHooks, JsChunkClassifier } from "./chunking/index.js";
 import { javascriptKernel } from "./kernel.js";
-import { JsChunkClassifier, javascriptHooks } from "./chunking/index.js";
+import { JavascriptCallResolver } from "./resolver/index.js";
 import { jsNameOf } from "./walker/name-of.js";
 import { extractFromJavascriptFile, type JsExtractInput } from "./walker/walker.js";
-import { JavascriptCallResolver } from "./resolver/index.js";
 
 /**
  * Chunk-boundary config for JavaScript — mirrors the chunker slice of the legacy

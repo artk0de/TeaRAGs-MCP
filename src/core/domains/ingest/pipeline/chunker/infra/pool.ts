@@ -23,7 +23,7 @@ import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
  * worker_threads require compiled JS. The worker ENTRY is the second
  * composition root (spec §5) and now lives next to this pool — it is the pool's
  * ingest-local sibling `worker.js`. The worker stays free of any static
- * `domains/language` import: it loads the concrete `LanguageFactoryImpl` /
+ * `domains/language` import: it loads the concrete `LanguageFactory` /
  * `DefaultSymbolIdComposer` at runtime via a dynamic `import(path)` where the
  * path (`LANGUAGE_MODULE_PATH`) is injected through `workerData` below.
  *
