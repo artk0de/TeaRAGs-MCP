@@ -28,6 +28,9 @@ explicitly rather than omitting the block.
   worker-thread DI via injected module-path, and the language-migration test
   rule (preserve examples, validate counts). Scoped to `domains/language`,
   chunker, codegraph, `api/internal`.
+- `.claude/rules/naming.md` — domain-specific naming principle: qualify generic
+  suffixes (`Outcome`/`Strategy`/`Metadata`/`Result`…) with domain context so
+  names are unambiguous at the point of use. Scoped project-wide (`**/*`).
 
 ## Terminology (MANDATORY)
 
@@ -260,9 +263,10 @@ mcp__tea-rags__force_reindex project=tea-rags    # explicit user confirmation re
 
 Or via CLI: `tea-rags reindex --force /Users/artk0re/Dev/Tools/tea-rags-mcp`.
 
-Only do this on the tea-rags self-test index. For real user projects (`production-rails-app`,
-etc.) wait for the regular incremental migration path — force reindex on a large
-project is hours and is rarely the right tool for testing unreleased changes.
+Only do this on the tea-rags self-test index. For real user projects
+(`production-rails-app`, etc.) wait for the regular incremental migration path —
+force reindex on a large project is hours and is rarely the right tool for
+testing unreleased changes.
 
 ### Test sequence when new functionality affects payload
 
