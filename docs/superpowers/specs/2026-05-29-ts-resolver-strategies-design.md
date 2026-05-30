@@ -1,4 +1,4 @@
-# TS Resolver — In-Code Resolution Strategies
+# TS Resolver — Symbol Resolution Strategies
 
 **Date:** 2026-05-29 **Status:** Approved (design) **Scope:** Pilot —
 `domains/language/typescript/resolver` only. Other languages follow once the
@@ -41,21 +41,32 @@ its own strategy implementations; `ts/super` and `ruby/super` differ in
 substance (tsconfig paths vs Zeitwerk vs MRO), so sharing their bodies would
 reintroduce `if (language === ...)` branching inside a "shared" strategy.
 
+**This evolves the existing `ResolverComponent`** (`contracts/types/language.ts`),
+not a parallel type. `ResolverComponent` already modelled "one resolution
+approach inside a language resolver's chain" but with a two-state
+`ResolvedTarget | null` return (hit / defer) — it could not express the
+load-bearing **drop** (bug 4rgg). The evolution: rename `ResolverComponent` →
+`SymbolResolutionStrategy`, add `name`, replace the return with the three-state
+`SymbolResolutionOutcome`. The shared chain driver `resolveViaChain`
+(`domains/language/resolver-chain.ts`) is upgraded to interpret the three states
+(`resolved` → return, `drop` → stop + null, `continue` → next). One shared chain
+contract for every language; TS is the first to adopt it.
+
 ```ts
 // contracts/types/language.ts (or a dedicated resolution.ts)
 
-type InCodeResolutionOutcome =
-  | { kind: "resolved"; target: InCodeResolutionTarget }
+type SymbolResolutionOutcome =
+  | { kind: "resolved"; target: SymbolResolutionTarget }
   | { kind: "drop" } // guard: stop the chain, emit NO edge
   | { kind: "continue" }; // not my case, try the next strategy
 
-interface InCodeResolutionStrategy {
+interface SymbolResolutionStrategy {
   readonly name: string; // debug id, e.g. "namedImport", "super"
-  attempt(call: CallRef, ctx: CallContext): InCodeResolutionOutcome;
+  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome;
 }
 ```
 
-- `InCodeResolutionTarget` is the rename of the existing `ResolvedTarget`
+- `SymbolResolutionTarget` is the rename of the existing `ResolvedTarget`
   (`{ targetRelPath, targetSymbolId }`). The rename touches all 6 resolvers +
   walker types + codegraph consumers; it is part of this work for TS and the
   type itself is shared, so the rename lands repo-wide in one step even though
@@ -63,25 +74,26 @@ interface InCodeResolutionStrategy {
 - Helper constructors `resolved(target)`, `DROP`, `CONTINUE` keep strategy
   bodies readable.
 
-**Naming.** Family is `InCodeResolution*` (no `Symbol`) per
-`.claude/rules/naming.md` — `InCode` is the disambiguator (resolves symbols
-present in the indexed codebase, not external libs / stdlib / type stubs).
+**Naming.** Family is `SymbolResolution*` per `.claude/rules/naming.md` —
+`Symbol` qualifies the generic `Resolution` suffix: these passes map a call site
+to a target **symbol** definition (the standard compiler term for the operation),
+not any other kind of resolution (path, module, version).
 
 ## Per-language structure (TS pilot)
 
 ```
 language/typescript/resolver/
-  ts-resolver.ts                 # orchestrator: InCodeResolutionStrategy[] + loop
+  ts-resolver.ts                 # orchestrator: SymbolResolutionStrategy[] + loop
   strategies/
-    ts-super.ts                  # TSSuperInCodeResolutionStrategy
-    ts-this-member.ts            # TSThisMemberInCodeResolutionStrategy
-    ts-field-type.ts             # TSFieldTypeInCodeResolutionStrategy
-    ts-local-binding.ts          # TSLocalBindingInCodeResolutionStrategy
-    ts-named-import.ts           # TSNamedImportInCodeResolutionStrategy
-    ts-import-basename.ts        # TSImportBasenameInCodeResolutionStrategy
-    ts-receiver-symbol.ts        # TSReceiverSymbolInCodeResolutionStrategy
-    ts-global-short-name.ts      # TSGlobalShortNameInCodeResolutionStrategy
-    ts-import-narrowed-fallback.ts # TSImportNarrowedFallbackInCodeResolutionStrategy
+    ts-super.ts                  # TSSuperSymbolResolutionStrategy
+    ts-this-member.ts            # TSThisMemberSymbolResolutionStrategy
+    ts-field-type.ts             # TSFieldTypeSymbolResolutionStrategy
+    ts-local-binding.ts          # TSLocalBindingSymbolResolutionStrategy
+    ts-named-import.ts           # TSNamedImportSymbolResolutionStrategy
+    ts-import-basename.ts        # TSImportBasenameSymbolResolutionStrategy
+    ts-receiver-symbol.ts        # TSReceiverSymbolSymbolResolutionStrategy
+    ts-global-short-name.ts      # TSGlobalShortNameSymbolResolutionStrategy
+    ts-import-narrowed-fallback.ts # TSImportNarrowedFallbackSymbolResolutionStrategy
     index.ts                     # barrel
   ts-path-mapper.ts              # unchanged shared helper
   index.ts
@@ -91,23 +103,23 @@ language/typescript/resolver/
 
 ```ts
 class TSCallResolver {
-  private readonly strategies: InCodeResolutionStrategy[];
+  private readonly strategies: SymbolResolutionStrategy[];
 
   constructor(cfg: ResolverConfig) {
     this.strategies = [
-      new TSSuperInCodeResolutionStrategy(cfg),
-      new TSThisMemberInCodeResolutionStrategy(cfg),
-      new TSFieldTypeInCodeResolutionStrategy(cfg),
-      new TSLocalBindingInCodeResolutionStrategy(cfg),
-      new TSNamedImportInCodeResolutionStrategy(cfg),
-      new TSImportBasenameInCodeResolutionStrategy(cfg),
-      new TSReceiverSymbolInCodeResolutionStrategy(cfg),
-      new TSGlobalShortNameInCodeResolutionStrategy(cfg),
-      new TSImportNarrowedFallbackInCodeResolutionStrategy(cfg),
+      new TSSuperSymbolResolutionStrategy(cfg),
+      new TSThisMemberSymbolResolutionStrategy(cfg),
+      new TSFieldTypeSymbolResolutionStrategy(cfg),
+      new TSLocalBindingSymbolResolutionStrategy(cfg),
+      new TSNamedImportSymbolResolutionStrategy(cfg),
+      new TSImportBasenameSymbolResolutionStrategy(cfg),
+      new TSReceiverSymbolSymbolResolutionStrategy(cfg),
+      new TSGlobalShortNameSymbolResolutionStrategy(cfg),
+      new TSImportNarrowedFallbackSymbolResolutionStrategy(cfg),
     ];
   }
 
-  resolve(call: CallRef, ctx: CallContext): InCodeResolutionTarget | null {
+  resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     for (const s of this.strategies) {
       const outcome = s.attempt(call, ctx);
       if (outcome.kind === "resolved") return outcome.target;
@@ -161,7 +173,7 @@ refactor-migration-test-order):
 - **Single-author silo.** The resolver files are 100% one author. Per
   `.claude/rules/silo-pairing.md` commits touching them carry a `Why:` line.
 - **`ResolvedTarget` rename blast radius.** The type is shared; renaming to
-  `InCodeResolutionTarget` touches all 6 language resolvers, walker types, and
+  `SymbolResolutionTarget` touches all 6 language resolvers, walker types, and
   codegraph consumers in one step. tsc is the guard.
 
 ## Out of scope (YAGNI)

@@ -14,7 +14,7 @@
 import type Parser from "tree-sitter";
 
 import type { ChunkingHook, LanguageChunkClassifier, MacroSymbol } from "./chunker.js";
-import type { CallContext, CallRef, DispatchEdge, FileExtraction, NamedSymbol, ResolvedTarget } from "./codegraph.js";
+import type { CallContext, CallRef, DispatchEdge, FileExtraction, NamedSymbol, SymbolResolutionTarget } from "./codegraph.js";
 
 /** A loaded tree-sitter language module. Some packages expose the grammar
  *  under a nested key (`{ typescript, tsx }`); `LanguageKernel.extractLanguage`
@@ -26,25 +26,49 @@ interface TreeSitterLanguageModule {
 }
 
 /**
- * One resolution **approach** inside a language resolver's chain (e.g.
- * `super`, `this`-intra-class, `bare-import`). Each component answers a single
- * question — "can I resolve this call my way?" — and returns a target or
- * `null` to defer to the next component. The language resolver runs an ordered
- * `ResolverComponent[]` first-hit-wins; the order encodes precedence (it
- * mirrors the original `<lang>-resolver.ts` if-ladder).
+ * The three-state result of a single resolution pass. Replaces the old
+ * two-state `SymbolResolutionTarget | null` return so a pass can express the
+ * load-bearing **drop** — "this is my case, but it resolves to NO edge, and the
+ * chain must stop here" — distinctly from **continue** — "not my case, try the
+ * next pass". Conflating the two as `null` hid bugs where a guard pass (e.g.
+ * `super` without `classExtends`) silently fell through to a later pass and
+ * emitted a wrong edge (bd tea-rags-mcp-4rgg).
  *
- * `deps` (tsconfig options, ambiguous-resolve mode, path mapper) are injected
- * through each concrete component's constructor — NOT part of this interface.
- * See spec §1b.
+ *   - `resolved` — pass owns the call and produced a target (edge to emit).
+ *   - `drop`     — pass owns the call but emits NO edge; STOP the chain.
+ *   - `continue` — not this pass's case; try the next pass.
+ *
+ * Runtime constructors `resolved()`, `DROP`, `CONTINUE` live in
+ * `contracts/resolution.ts` (this types file stays runtime-free).
  */
-export interface ResolverComponent {
-  resolve: (call: CallRef, ctx: CallContext) => ResolvedTarget | null;
+export type SymbolResolutionOutcome =
+  | { kind: "resolved"; target: SymbolResolutionTarget }
+  | { kind: "drop" }
+  | { kind: "continue" };
+
+/**
+ * One resolution **approach** inside a language resolver's chain (e.g.
+ * `super`, `this`-intra-class, `bare-import`). Each strategy answers a single
+ * question — "can I resolve this call my way?" — and returns a
+ * `SymbolResolutionOutcome`. The language resolver runs an ordered
+ * `SymbolResolutionStrategy[]` first-decisive-wins via `resolveViaChain`; the
+ * order encodes precedence (it mirrors the original `<lang>-resolver.ts`
+ * if-ladder).
+ *
+ * `name` is a stable debug id (`"super"`, `"namedImport"`, …) for tracing which
+ * pass decided a call. `deps` (tsconfig options, ambiguous-resolve mode, path
+ * mapper) are injected through each concrete strategy's constructor — NOT part
+ * of this interface. See spec §1b.
+ */
+export interface SymbolResolutionStrategy {
+  readonly name: string;
+  attempt: (call: CallRef, ctx: CallContext) => SymbolResolutionOutcome;
 }
 
 /**
  * Language-neutral lookup-table dispatch fan-out (bd tea-rags-mcp-n0zj). A
  * single dispatching call-site expands to N `(caller, callee)` edges, so the
- * return shape is fan-out — distinct from `ResolverComponent`'s single-target
+ * return shape is fan-out — distinct from `SymbolResolutionStrategy`'s single-target
  * `resolve`. One implementation is shared by every language resolver rather
  * than duplicated per language.
  */
@@ -76,7 +100,7 @@ export interface WalkContext {
  * A shared **form**, not a shared return type — each pass yields its own facet
  * shape. The walker facade orchestrates: it runs every pass and drops each
  * result into the matching `FileExtraction` slot (a **union** of facets, NOT a
- * first-hit chain like `ResolverComponent`). An extension point is a new facet
+ * first-hit chain like `SymbolResolutionStrategy`). An extension point is a new facet
  * = one new `ExtractionPass` + one `FileExtraction` slot. See spec §1b.
  */
 export interface ExtractionPass<T> {
@@ -258,13 +282,13 @@ export interface LanguageWalker {
 /**
  * The per-language call-resolution facade. Mirrors `CallResolver`
  * (`contracts/codegraph.ts`) but is the LANGUAGE-domain surface: it composes an
- * ordered `ResolverComponent[]` chain internally (first-hit-wins via
+ * ordered `SymbolResolutionStrategy[]` chain internally (first-decisive-wins via
  * `resolveViaChain`) and a shared `DispatchResolverComponent` for lookup-table
  * fan-out — both implementation details the interface does not expose.
  */
 export interface LanguageSymbolResolver {
   /** Resolve a single call site to its target, or `null` to drop the edge. */
-  resolve: (call: CallRef, ctx: CallContext) => ResolvedTarget | null;
+  resolve: (call: CallRef, ctx: CallContext) => SymbolResolutionTarget | null;
   /**
    * Fan-out resolution for lookup-table dispatch (bd tea-rags-mcp-n0zj): one
    * dispatching call site expands to N `(caller, callee)` edges. Returns `[]`

@@ -37,7 +37,7 @@ import {
   type CallResolver,
   type DispatchEdge,
   type FileExtraction,
-  type ResolvedTarget,
+  type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
   LanguageChunkerHooks,
@@ -102,7 +102,7 @@ export class JavaScriptLanguage implements LanguageProvider {
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const callResolver: CallResolver = new JavascriptCallResolver(mode);
     this.resolver = {
-      resolve: (call: CallRef, ctx: CallContext): ResolvedTarget | null => callResolver.resolve(call, ctx),
+      resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchEdge[] =>
         callResolver.resolveDispatch?.(call, ctx) ?? [],
     };

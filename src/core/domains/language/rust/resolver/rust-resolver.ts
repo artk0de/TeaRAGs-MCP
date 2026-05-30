@@ -4,6 +4,14 @@
  * the native Rust language provider per the `domains/language` consolidation
  * (spec §3; bd tea-rags-mcp-cen6). Behaviour-preserving.
  *
+ * `resolve` runs an ordered chain of single-purpose `SymbolResolutionStrategy`
+ * passes (see `./strategies/`) via the shared `resolveViaChain` engine. The
+ * array order encodes precedence, and the three-state outcome
+ * (resolved / drop / continue) makes the load-bearing guard drops explicit —
+ * e.g. a `self.<field>` receiver whose field type is unknown DROPS rather than
+ * falling through to the import-match / global short-name paths that would
+ * route to an unrelated type's member (bd tea-rags-mcp-q1pl).
+ *
  * Rust paths use `::` separators with prefixes:
  *   - `crate::` — current crate root
  *   - `super::` — parent module
@@ -14,179 +22,53 @@
  * over the symbol table — for `use crate::foo::bar`, look up `bar`
  * and accept any file whose path ends in `foo/bar.rs` (or
  * `foo/bar/mod.rs`). External crates are out of scope.
+ *
+ * The pass order (each `name` in parens):
+ *   1. selfMethod (self.X same-file — intra-impl call)
+ *   2. selfField (self.field.X via declared field type — terminal guard)
+ *   3. localBinding (obj.X via walker-bound type — terminal guard on miss)
+ *   4. importMatch (receiver ∈ use import → suffix basename match)
+ *   5. bareSelfMethod (bare X() inside impl → enclosing-type probe)
+ *   6. globalShortName (global short-name fallback)
  */
 
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
-  pickSingleCandidate,
   type AmbiguousResolveMode,
   type CallContext,
   type CallRef,
   type CallResolver,
-  type ResolvedTarget,
-  type SymbolDefinition,
+  type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
+import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import { resolveViaChain } from "../../resolver-chain.js";
+import {
+  RustBareSelfMethodSymbolResolutionStrategy,
+  RustGlobalShortNameSymbolResolutionStrategy,
+  RustImportMatchSymbolResolutionStrategy,
+  RustLocalBindingSymbolResolutionStrategy,
+  RustSelfFieldSymbolResolutionStrategy,
+  RustSelfMethodSymbolResolutionStrategy,
+  type ResolverConfig,
+} from "./strategies/index.js";
 
 export class RustCallResolver implements CallResolver {
   readonly language = "rust";
+  private readonly strategies: SymbolResolutionStrategy[];
 
-  constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
-
-  resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
-    // bd tea-rags-mcp-c5by — `self.method()` intra-impl call. Resolve to
-    // `<enclosingType>#method` (instance) or `<enclosingType>.method`
-    // (associated function) constrained to the caller's own file before
-    // falling through to import / global short-name resolution. Mirrors
-    // the Java resolver's `this.X()` branch — without this, `self.clone()`
-    // grabs the FIRST `clone` from the symbol table (e.g. `Error#clone`)
-    // and produces cross-receiver garbage edges.
-    if (call.receiver === "self" && ctx.callerScope.length > 0) {
-      const sameFileHit = this.lookupEnclosingMember(call.member, ctx);
-      if (sameFileHit) return sameFileHit;
-    }
-    // bd tea-rags-mcp-q1pl — `self.<field>.<method>()` where the struct
-    // declares `field: Type`. The walker records the field type in
-    // `classFieldTypes` keyed by the struct name (= the impl type name in
-    // `callerScope`). Look up the field's type, then resolve
-    // `<Type>#<member>` / `<Type>.<member>`. Mirrors the Java/Python
-    // resolver's `this.field` / `self.field` branch. Only one access level
-    // is supported (`self.foo.bar()`); chained `self.foo.bar.baz()` needs
-    // recursive type inference and is out of scope.
-    if (call.receiver && call.receiver.startsWith("self.") && ctx.callerScope.length > 0) {
-      const fieldSegment = call.receiver.slice("self.".length);
-      if (!fieldSegment.includes(".")) {
-        const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-        const typeName = ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
-        if (typeName) {
-          const instanceHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}#${call.member}`), this.mode);
-          if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
-          const staticHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}.${call.member}`), this.mode);
-          if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
-          // Receiver type known but member not on it — DROP, same as the
-          // localBindings branch below. Falling through to the global
-          // short-name lookup would route to an unrelated type's member.
-          return null;
-        }
-        // Field type NOT recorded. A `self.<field>` receiver is an
-        // instance-field access, never a module/import name — DROP rather
-        // than fall through to the import-match / global short-name paths.
-        return null;
-      }
-    }
-    if (call.receiver) {
-      // bd tea-rags-mcp-c5by — when localBindings type-binds the receiver
-      // to a known class, resolve against THAT type's members first AND
-      // drop the global short-name fallback when the type lacks the
-      // member. Prevents `obj.clone()` (obj: Worker) silently routing to
-      // `Error#clone`. Mirrors Java 9t8z / Go e6xx "drop unsafe short-name
-      // fallback when receiver type known but member missing".
-      const boundType = ctx.localBindings?.[call.receiver];
-      if (boundType) {
-        const instanceFq = `${boundType}#${call.member}`;
-        const instanceHit = pickSameFileThenSingle(ctx.symbolTable.lookup(instanceFq), ctx.callerFile, this.mode);
-        if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
-        const staticFq = `${boundType}.${call.member}`;
-        const staticHit = pickSameFileThenSingle(ctx.symbolTable.lookup(staticFq), ctx.callerFile, this.mode);
-        if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
-        // Receiver type known but member not on it — DROP the edge.
-        // Falling through to short-name lookup would resolve to a method
-        // on an unrelated type, which is the c5by garbage.
-        return null;
-      }
-      const match = ctx.imports.find((imp) => rustImportMatchesReceiver(imp.importText, call.receiver as string));
-      if (match) {
-        const suffix = rustImportSuffix(match.importText);
-        if (suffix) {
-          const candidates = ctx.symbolTable
-            .lookupByShortName(call.member)
-            .filter((def) => def.relPath.endsWith(`${suffix}.rs`) || def.relPath.endsWith(`${suffix}/mod.rs`));
-          const target = pickSingleCandidate(candidates, this.mode);
-          if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
-        }
-      }
-    }
-    // bd tea-rags-mcp-c5by — bare `helper()` inside an impl block is
-    // shorthand for `self.helper()` (instance) or an associated function
-    // of the enclosing type. Probe the enclosing-type lookup FIRST so a
-    // global collision (e.g. `helper` on both Worker and Other) doesn't
-    // misroute. Mirrors java-resolver's bare-call branch.
-    if (call.receiver === null && ctx.callerScope.length > 0) {
-      const sameFileHit = this.lookupEnclosingMember(call.member, ctx);
-      if (sameFileHit) return sameFileHit;
-    }
-    const fallback = ctx.symbolTable.lookupByShortName(call.member);
-    const target = pickSingleCandidate(fallback, this.mode);
-    if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
-    return null;
+  constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
+    const cfg: ResolverConfig = { mode };
+    this.strategies = [
+      new RustSelfMethodSymbolResolutionStrategy(cfg),
+      new RustSelfFieldSymbolResolutionStrategy(cfg),
+      new RustLocalBindingSymbolResolutionStrategy(cfg),
+      new RustImportMatchSymbolResolutionStrategy(cfg),
+      new RustBareSelfMethodSymbolResolutionStrategy(cfg),
+      new RustGlobalShortNameSymbolResolutionStrategy(cfg),
+    ];
   }
 
-  /**
-   * bd tea-rags-mcp-c5by — look up `<enclosingType>#<member>` (instance)
-   * then `<enclosingType>.<member>` (associated function) constrained
-   * to the caller's own file. Mirrors `JavaCallResolver.lookupEnclosingMember`
-   * — Rust shares the convention (instance methods use `#`, associated
-   * functions use `.`) so the same lookup works.
-   */
-  private lookupEnclosingMember(member: string, ctx: CallContext): ResolvedTarget | null {
-    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    const instanceFq = `${enclosing}#${member}`;
-    const instanceHit = ctx.symbolTable.lookup(instanceFq).find((def) => def.relPath === ctx.callerFile);
-    if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
-    const staticFq = `${enclosing}.${member}`;
-    const staticHit = ctx.symbolTable.lookup(staticFq).find((def) => def.relPath === ctx.callerFile);
-    if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
-    return null;
+  resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
+    return resolveViaChain(this.strategies, call, ctx);
   }
-}
-
-/**
- * bd tea-rags-mcp-p8wz — resolve a bound-type member (`<Type>#<member>` /
- * `<Type>.<member>`) preferring the candidate in the caller's own file when the
- * type name collides across files. ripgrep declares `Parser` in BOTH
- * `crates/core/flags/parse.rs` and `crates/globset/src/glob.rs`, so a typed
- * binding `let parser = Parser::new(); parser.parse()` inside parse.rs would
- * otherwise hit two `Parser#parse` rows and drop on ambiguity. A locally
- * declared type's method is local — Rust name resolution, not a guess. Only a
- * unique same-file candidate shortcuts; everything else defers to the ambiguity
- * policy (which still drops genuinely cross-file collisions).
- */
-function pickSameFileThenSingle(
-  candidates: SymbolDefinition[],
-  callerFile: string,
-  mode: AmbiguousResolveMode,
-): SymbolDefinition | null {
-  const sameFile = candidates.filter((def) => def.relPath === callerFile);
-  if (sameFile.length === 1) return sameFile[0];
-  return pickSingleCandidate(candidates, mode);
-}
-
-function rustImportMatchesReceiver(importText: string, receiver: string): boolean {
-  // Strip `crate::`, `super::`, `self::` prefixes.
-  const cleaned = importText.replace(/^(crate|super|self)::/, "");
-  const segments = cleaned.split("::");
-  const last = segments[segments.length - 1]?.trim() ?? "";
-  // Group import `{a, b, c}` — receiver matches if it appears in the
-  // braced list.
-  if (last.startsWith("{") && last.endsWith("}")) {
-    const inner = last
-      .slice(1, -1)
-      .split(",")
-      .map((s) => s.trim());
-    return inner.includes(receiver);
-  }
-  return last === receiver;
-}
-
-function rustImportSuffix(importText: string): string | null {
-  // Reduce import to its module path component (suffix), dropping
-  // crate-prefix and any terminal `{...}` group.
-  const cleaned = importText.replace(/^(crate|super|self)::/, "");
-  const segments = cleaned.split("::");
-  // Drop the trailing item if it's brace-wrapped (the suffix is the
-  // path up to that segment).
-  const last = segments[segments.length - 1]?.trim() ?? "";
-  if (last.startsWith("{")) {
-    return segments.slice(0, -1).join("/");
-  }
-  return segments.join("/");
 }
