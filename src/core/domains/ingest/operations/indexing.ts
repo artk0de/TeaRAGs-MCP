@@ -12,7 +12,7 @@
 
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../../types.js";
 import { IndexingFailedError } from "../errors.js";
-import { cleanupOrphanedVersions } from "../infra/alias-cleanup.js";
+import { cleanupOrphanedVersions, sweepCodegraphOrphans } from "../infra/alias-cleanup.js";
 import { HeartbeatGuard } from "../infra/heartbeat-guard.js";
 import { OptimizerLifecycle } from "../infra/optimizer-lifecycle.js";
 import { BaseIndexingPipeline, type ProcessingContext } from "../pipeline/base.js";
@@ -216,6 +216,14 @@ export class IndexPipeline extends BaseIndexingPipeline {
     // codegraph DuckDB file for each deleted orphan (best-effort, non-fatal).
     await cleanupOrphanedVersions(this.qdrant, collectionName, this.codegraphRemover);
 
+    // Ancient-orphan sweep: reclaim `<base>_v<N>.duckdb` files whose Qdrant
+    // collection is already gone (invisible to cleanupOrphanedVersions, which
+    // only iterates live Qdrant collections). Skips the active alias target and
+    // any DB still backed by a live Qdrant collection. Best-effort, non-fatal.
+    if (this.codegraphLister && this.codegraphRemover) {
+      await sweepCodegraphOrphans(this.qdrant, collectionName, this.codegraphLister, this.codegraphRemover);
+    }
+
     // Clean up stale target from a previously failed attempt (e.g. crashed mid-index)
     const targetAlreadyExists = await this.qdrant.collectionExists(versionedName);
     /* v8 ignore next 6 -- defensive cleanup: hard to simulate in unit tests (requires mid-index crash) */
@@ -269,11 +277,33 @@ export class IndexPipeline extends BaseIndexingPipeline {
       // Brief ~100ms downtime (one-time migration cost)
       await this.qdrant.deleteCollection(collectionName);
       await this.qdrant.aliases.createAlias(collectionName, setup.targetCollection);
+      // Drop the migrated-away collection's codegraph DB (best-effort).
+      await this.removeCodegraphDb(collectionName);
     } else if (setup.previousCollection) {
       // Atomic switch — zero downtime
       await this.qdrant.aliases.switchAlias(collectionName, setup.previousCollection, setup.targetCollection);
       await this.qdrant.deleteCollection(setup.previousCollection);
+      // Drop the superseded version's per-version codegraph DB (best-effort) —
+      // otherwise it leaks alongside every reindex (the deleted Qdrant
+      // collection's DuckDB file is never reclaimed by orphan cleanup, which
+      // only sees the NEXT reindex's orphans).
+      await this.removeCodegraphDb(setup.previousCollection);
     }
+  }
+
+  /**
+   * Remove a deleted collection's per-version codegraph DuckDB file. Best-effort
+   * and non-fatal — a missing file is a no-op and any remover failure is
+   * swallowed (logged in debug) so codegraph cleanup never aborts finalization.
+   * No-op when codegraph is disabled (no remover wired).
+   */
+  private async removeCodegraphDb(collectionName: string): Promise<void> {
+    if (!this.codegraphRemover) return;
+    await this.codegraphRemover(collectionName).catch((err) => {
+      if (isDebug()) {
+        console.error(`[Index] codegraph DB cleanup failed for ${collectionName} (non-fatal):`, err);
+      }
+    });
   }
 
   // ── File processing ────────────────────────────────────

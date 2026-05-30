@@ -582,6 +582,60 @@ function third() {
 
       vi.restoreAllMocks();
     });
+
+    it("removes the previous version's codegraph DB on alias-swap forceReindex", async () => {
+      const codegraphPool = {
+        removeCollection: vi.fn().mockResolvedValue(true),
+        listCollectionDbNames: vi.fn().mockReturnValue([]),
+      };
+      const cgIngest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config,
+        trajectoryConfig: defaultTrajectoryConfig(),
+        codegraphPool: codegraphPool as any,
+      });
+
+      await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
+      // First index: creates _v1 + alias
+      await cgIngest.indexCodebase(codebaseDir);
+
+      codegraphPool.removeCollection.mockClear();
+
+      // Force reindex: switches alias _v1 → _v2, deletes _v1 — and its codegraph DB.
+      await cgIngest.indexCodebase(codebaseDir, { forceReindex: true });
+
+      expect(codegraphPool.removeCollection).toHaveBeenCalledWith(expect.stringMatching(/_v1$/));
+    });
+
+    it("removes the unversioned collection's codegraph DB on migration forceReindex", async () => {
+      const codegraphPool = {
+        removeCollection: vi.fn().mockResolvedValue(true),
+        listCollectionDbNames: vi.fn().mockReturnValue([]),
+      };
+      const cgIngest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config,
+        trajectoryConfig: defaultTrajectoryConfig(),
+        codegraphPool: codegraphPool as any,
+      });
+
+      await createTestFile(codebaseDir, "test.ts", "export const y = 2;");
+
+      // Simulate legacy: create a real (unversioned) collection so forceReindex migrates.
+      const { resolveCollectionName, validatePath } = await import("../../../../../src/core/infra/collection-name.js");
+      const absPath = await validatePath(codebaseDir);
+      const collName = resolveCollectionName(absPath);
+      await qdrant.createCollection(collName, 384, "Cosine");
+
+      codegraphPool.removeCollection.mockClear();
+
+      await cgIngest.indexCodebase(codebaseDir, { forceReindex: true });
+
+      // Migration deletes the real unversioned collection — its codegraph DB too.
+      expect(codegraphPool.removeCollection).toHaveBeenCalledWith(collName);
+    });
   });
 
   describe("Error propagation", () => {

@@ -24,7 +24,7 @@
  * need to reset state.
  */
 
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -122,6 +122,15 @@ function sanitiseCollectionName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_.-]/g, "_");
 }
 
+/**
+ * Escape regex metacharacters in a (sanitised) collection name before
+ * embedding it in the versioned-DB-file pattern. Sanitised names may still
+ * contain `.` and `-`, which are regex-meaningful.
+ */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export class GraphDbClientPool {
   private readonly clients = new Map<string, PoolEntry>();
   /**
@@ -179,6 +188,36 @@ export class GraphDbClientPool {
   /** Resolve the disk path for a given collection name. Exposed for tests. */
   pathFor(collectionName: string): string {
     return join(this.codegraphDir, `${sanitiseCollectionName(collectionName)}.duckdb`);
+  }
+
+  /**
+   * Enumerate the versioned codegraph DB collection names on disk for a base
+   * collection — every `<base>_v<N>.duckdb` file in the codegraph dir, returned
+   * as the collection name (suffix stripped). Used by the orphan sweep to find
+   * ancient per-version DuckDB files whose Qdrant collection no longer exists
+   * (the sweep deletes those that are neither the active alias target nor backed
+   * by a live Qdrant collection).
+   *
+   * Scoped strictly to `^<base>_v\d+$` so it never touches another project's
+   * DBs, the unversioned base file, or WAL/spill sidecars. Returns an empty
+   * array when the codegraph dir is missing (nothing indexed yet).
+   */
+  listCollectionDbNames(baseCollectionName: string): string[] {
+    const base = sanitiseCollectionName(baseCollectionName);
+    const pattern = new RegExp(`^(${escapeRegExp(base)}_v\\d+)\\.duckdb$`);
+    let entries: string[];
+    try {
+      entries = readdirSync(this.codegraphDir);
+    } catch {
+      // Codegraph dir missing (never constructed / removed) — nothing to sweep.
+      return [];
+    }
+    const names: string[] = [];
+    for (const entry of entries) {
+      const match = entry.match(pattern);
+      if (match) names.push(match[1]);
+    }
+    return names;
   }
 
   /**

@@ -212,10 +212,16 @@ export class IngestFacade {
           await codegraphPool.removeCollection(orphan);
         }
       : undefined;
+    // Enumerates on-disk versioned codegraph DBs for the base collection so the
+    // ancient-orphan sweep can reclaim files whose Qdrant collection is gone.
+    const codegraphLister: PipelineRegistryDeps["codegraphLister"] = codegraphPool
+      ? (base) => codegraphPool.listCollectionDbNames(base)
+      : undefined;
     const registryDeps: PipelineRegistryDeps = {
       registry: deps.collectionRegistry,
       teaRagsVersion: deps.teaRagsVersion,
       codegraphRemover,
+      codegraphLister,
     };
     const indexing = new IndexPipeline(
       qdrant,

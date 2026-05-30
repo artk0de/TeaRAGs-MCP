@@ -15,7 +15,7 @@ import { TeaRagsError } from "../../../infra/errors.js";
 import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
-import type { CodegraphDbRemover } from "../infra/alias-cleanup.js";
+import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
 import { ChunkerPool } from "./chunker/infra/pool.js";
 import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
 import { ChunkPipeline } from "./index.js";
@@ -65,6 +65,13 @@ export interface PipelineRegistryDeps {
    * when codegraph is disabled. Without it the per-version DuckDB files leak.
    */
   codegraphRemover?: CodegraphDbRemover;
+  /**
+   * Enumerates the on-disk versioned codegraph DBs for a base collection. Wired
+   * from the codegraph pool by the facade; omitted when codegraph is disabled.
+   * Drives the ancient-orphan sweep (`sweepCodegraphOrphans`) that reclaims
+   * `<base>_v<N>.duckdb` files whose Qdrant collection is already gone.
+   */
+  codegraphLister?: CodegraphDbLister;
 }
 
 export abstract class BaseIndexingPipeline {
@@ -72,6 +79,7 @@ export abstract class BaseIndexingPipeline {
   protected readonly registry: CollectionRegistry | undefined;
   protected readonly teaRagsVersion: string;
   protected readonly codegraphRemover: CodegraphDbRemover | undefined;
+  protected readonly codegraphLister: CodegraphDbLister | undefined;
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
@@ -87,6 +95,7 @@ export abstract class BaseIndexingPipeline {
     this.registry = registryDeps?.registry;
     this.teaRagsVersion = registryDeps?.teaRagsVersion ?? "0.0.0";
     this.codegraphRemover = registryDeps?.codegraphRemover;
+    this.codegraphLister = registryDeps?.codegraphLister;
   }
 
   /**
