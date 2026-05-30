@@ -20,8 +20,8 @@ import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
 import type { FileScanner } from "../pipeline/scanner.js";
-import { ShardedSnapshotManager } from "../sync/snapshot/sharded-snapshot.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
+import { computeNewVersion } from "./version-resolver.js";
 
 /**
  * Result of collection setup phase.
@@ -185,19 +185,32 @@ export class IndexPipeline extends BaseIndexingPipeline {
       };
     }
 
-    // Load aliasVersion from snapshot
-    const snapshotManager = new ShardedSnapshotManager(this.snapshotDir, collectionName);
-    const loaded = await snapshotManager.load().catch(() => null);
-    const currentAliasVersion = loaded?.aliasVersion ?? 0;
+    // Derive version from Qdrant truth (NOT from the snapshot, which can lag or
+    // be lost and hand back a colliding version). The snapshot is still
+    // loaded/written elsewhere for sync purposes — it is just no longer the
+    // version source. See version-resolver.ts.
+    const isAlias = exists ? await this.qdrant.aliases.isAlias(collectionName) : false;
+    const aliasTargetCollection = isAlias
+      ? (await this.qdrant.aliases.listAliases()).find((a) => a.aliasName === collectionName)?.collectionName
+      : undefined;
+    const allCollections = await this.qdrant.listCollections();
 
     // Detect migration: real collection exists but is not an alias
-    const isAlias = exists ? await this.qdrant.aliases.isAlias(collectionName) : false;
-    const isMigration = currentAliasVersion === 0 && exists && !isAlias;
+    const isMigration = exists && !isAlias;
 
-    // Compute new version
-    const newVersion = isMigration ? 2 : currentAliasVersion + 1;
+    // Compute new version from the live alias target + any leftover versioned
+    // collections (orphans), so a new version never re-collides with state Qdrant
+    // already holds.
+    const newVersion = computeNewVersion({
+      collectionName,
+      aliasTargetCollection,
+      allCollections,
+      isMigration,
+    });
     const versionedName = `${collectionName}_v${newVersion}`;
-    const previousCollection = currentAliasVersion > 0 ? `${collectionName}_v${currentAliasVersion}` : undefined;
+    // The collection to switch the alias away from is exactly what the alias
+    // currently points to (undefined on first index / migration).
+    const previousCollection = aliasTargetCollection;
 
     // Orphan cleanup before creating new version
     await cleanupOrphanedVersions(this.qdrant, collectionName);
@@ -238,7 +251,8 @@ export class IndexPipeline extends BaseIndexingPipeline {
       targetCollection: versionedName,
       previousCollection,
       aliasVersion: newVersion,
-      isFirstIndex: currentAliasVersion === 0 && !isMigration,
+      // First index: nothing exists yet (no alias, no real collection).
+      isFirstIndex: !exists && !isMigration,
       isMigration,
     };
   }
