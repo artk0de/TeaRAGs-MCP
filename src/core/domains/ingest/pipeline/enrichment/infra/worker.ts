@@ -94,6 +94,27 @@ async function getProvider(
   return pending;
 }
 
+/**
+ * Strip the non-serializable `concurrencySemaphore` from chunk options.
+ *
+ * `ChunkSignalOptions.concurrencySemaphore` is a `Semaphore` CLASS INSTANCE on
+ * the main thread (a coordinator-shared git-blame limiter). It cannot survive
+ * `postMessage`: structured clone copies its enumerable fields but DROPS the
+ * prototype `acquire()` method, so it arrives here as a method-less plain
+ * object. Passing it through would make the git chunk path call `.acquire()` on
+ * a non-function and throw "acquire is not a function" (tea-rags-mcp-2qja).
+ *
+ * Each worker thread is an independent process of execution, so a cross-batch
+ * shared limiter is meaningless here anyway — the provider rebuilds its own
+ * in-thread limiter (bounded by its serializable `chunkConcurrency`) when no
+ * semaphore is supplied. Removing the field selects exactly that fallback.
+ */
+function stripWorkerChunkOptions(options: unknown): ChunkSignalOptions | undefined {
+  if (options === undefined) return undefined;
+  const { concurrencySemaphore: _drop, ...rest } = options as ChunkSignalOptions;
+  return rest;
+}
+
 /** Dispatch the named EnrichmentExecutor method on the resolved provider. */
 async function invokeMethod(
   provider: EnrichmentProvider,
@@ -115,9 +136,8 @@ async function invokeMethod(
       return { fileOverlay: overlay };
     }
     case "runChunkBatch": {
-      const chunkOptions = options as ChunkSignalOptions | undefined;
       const map = chunkMap ?? new Map<string, ChunkLookupEntry[]>();
-      const overlay = await provider.buildChunkSignals(root, map, chunkOptions);
+      const overlay = await provider.buildChunkSignals(root, map, stripWorkerChunkOptions(options));
       return { chunkOverlay: overlay };
     }
     case "runFinalize": {

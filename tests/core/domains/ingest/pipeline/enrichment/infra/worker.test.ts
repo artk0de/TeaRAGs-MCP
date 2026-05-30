@@ -192,6 +192,76 @@ describe("enrichment worker entry", () => {
     await shutdownWorker(worker);
   });
 
+  it("strips a non-serializable concurrencySemaphore before invoking buildChunkSignals", async () => {
+    // Regression for tea-rags-mcp-2qja: a Semaphore class instance carried on
+    // ChunkSignalOptions.concurrencySemaphore loses its prototype methods when
+    // it crosses postMessage (structured clone drops functions). It arrives in
+    // the worker as a method-less plain object, so the git chunk path's
+    // `externalSemaphore ? () => externalSemaphore.acquire() : ...` branch
+    // calls `.acquire()` on it and throws "acquire is not a function".
+    //
+    // The worker MUST strip the corrupted semaphore from chunk options before
+    // dispatching, so the provider's in-thread internal limiter is used instead.
+    // This fixture provider mirrors the real git/walk-commits.ts behavior: if a
+    // concurrencySemaphore is present it acquires from it (would throw on the
+    // corrupted object); otherwise it falls back to a fresh in-thread limiter.
+    const semProviderPath = join(tmp, "semaphore-provider.mjs");
+    writeFileSync(
+      semProviderPath,
+      `
+export async function createSemaphoreProvider(config) {
+  return {
+    key: "fake",
+    signals: [], derivedSignals: [], filters: [], presets: [],
+    resolveRoot: (p) => p,
+    buildFileSignals: async () => new Map(),
+    buildChunkSignals: async (root, chunkMap, options) => {
+      const sem = options?.concurrencySemaphore;
+      // Mirror walk-commits.ts: pick external semaphore when present, else
+      // a fresh in-thread limiter. Invoking .acquire() on a corrupted (cloned)
+      // semaphore throws "acquire is not a function".
+      const acquire = sem
+        ? async () => sem.acquire()
+        : async () => () => {};
+      const release = await acquire();
+      release();
+      const out = new Map();
+      for (const [file, entries] of chunkMap) {
+        const inner = new Map();
+        for (const e of entries) inner.set(e.chunkId, { acquired: true, line: e.startLine });
+        out.set(file, inner);
+      }
+      return out;
+    },
+  };
+}
+`,
+    );
+    const worker = new Worker(WORKER_PATH);
+    const chunkMap = new Map([["a.ts", [{ chunkId: "c1", startLine: 7, endLine: 9 }]]]);
+    // A structured-clone-corrupted semaphore: a plain object WITHOUT an
+    // `acquire` method, exactly what a Semaphore instance degrades to over
+    // postMessage. (active/max/queue are the Semaphore's own enumerable fields.)
+    const corruptedSemaphore = { active: 0, max: 10, queue: [] } as unknown as {
+      acquire: () => Promise<() => void>;
+    };
+    const response = await postAndCollect(worker, {
+      type: "call",
+      providerModulePath: semProviderPath,
+      providerFactoryExport: "createSemaphoreProvider",
+      serializableConfig: {},
+      collectionName: "code_xxx",
+      method: "runChunkBatch",
+      root: "/repo",
+      chunkMap,
+      options: { concurrencySemaphore: corruptedSemaphore, skipCache: true, collectionName: "code_xxx" },
+    });
+    expect(response.error).toBeUndefined();
+    const inner = response.chunkOverlay!.get("a.ts")!;
+    expect(inner.get("c1")).toMatchObject({ acquired: true, line: 7 });
+    await shutdownWorker(worker);
+  });
+
   it("dispatches runFinalize and returns the deferred file overlay", async () => {
     const worker = new Worker(WORKER_PATH);
     const response = await postAndCollect(worker, {
