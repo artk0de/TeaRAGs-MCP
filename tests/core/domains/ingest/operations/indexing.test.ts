@@ -642,6 +642,53 @@ function third() {
 
       await expect(failingIngest.reindexChanges(codebaseDir)).rejects.toThrow(OllamaUnavailableError);
     });
+
+    it("should NOT abort when the health probe times out once then succeeds", async () => {
+      // A health probe starved by a busy event-loop tick fails the first time,
+      // then succeeds on retry once the pause has yielded the loop. Indexing
+      // must survive — no fatal OllamaUnavailableError.
+      const flakyEmbeddings = new MockEmbeddingProvider();
+      let attempts = 0;
+      const embedSpy = vi.spyOn(flakyEmbeddings, "embed").mockImplementation(async (_text: string) => {
+        attempts++;
+        if (attempts === 1) {
+          throw new OllamaUnavailableError("http://192.168.1.71:11434");
+        }
+        return { embedding: new Array(384).fill(0.1), dimensions: 384 };
+      });
+
+      const flakyIngest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings: flakyEmbeddings,
+        config,
+        trajectoryConfig: defaultTrajectoryConfig(),
+        healthCheckRetryAttempts: 3,
+        healthCheckRetryDelayMs: 1,
+      });
+
+      await expect(flakyIngest.indexCodebase(codebaseDir, { forceReindex: true })).resolves.toBeDefined();
+      expect(embedSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("should abort with the typed error after the health probe fails all attempts", async () => {
+      const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");
+      const downEmbeddings = new MockEmbeddingProvider();
+      const embedSpy = vi.spyOn(downEmbeddings, "embed").mockRejectedValue(ollamaError);
+
+      const downIngest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings: downEmbeddings,
+        config,
+        trajectoryConfig: defaultTrajectoryConfig(),
+        healthCheckRetryAttempts: 3,
+        healthCheckRetryDelayMs: 1,
+      });
+
+      await expect(downIngest.indexCodebase(codebaseDir, { forceReindex: true })).rejects.toThrow(
+        OllamaUnavailableError,
+      );
+      expect(embedSpy).toHaveBeenCalledTimes(3);
+    });
   });
 
   describe("resumeOptimizer failure is non-fatal", () => {

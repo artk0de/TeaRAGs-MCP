@@ -6,6 +6,7 @@
  * factory) when codegraph is enabled.
  */
 
+import type { WorkerEnrichmentDescriptor } from "../../../../contracts/types/provider.js";
 import type { Trajectory } from "../../../../contracts/types/trajectory.js";
 import { codegraphFilters } from "./filters.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
@@ -13,17 +14,28 @@ import { CodegraphEnrichmentProvider, type CodegraphProviderDeps } from "./provi
 import { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "./rerank/derived-signals/index.js";
 import { CODEGRAPH_SYMBOLS_PRESETS } from "./rerank/presets/index.js";
 
-export type SymbolsTrajectoryDeps = CodegraphProviderDeps;
+/**
+ * Symbols trajectory deps = provider deps plus the optional worker-pool
+ * descriptor. The descriptor is NOT a provider dep (it's the 2nd ctor arg,
+ * data-only), so it rides alongside rather than inside `CodegraphProviderDeps`.
+ */
+export type SymbolsTrajectoryDeps = CodegraphProviderDeps & {
+  workerDescriptor?: WorkerEnrichmentDescriptor;
+};
 
 export function createSymbolsTrajectory(deps: SymbolsTrajectoryDeps): Trajectory {
   // Spread preserves both routing modes — pool (production via bootstrap)
   // and direct graphDb/symbolTable (tests). `CodegraphEnrichmentProvider`
   // enforces the "exactly one mode" invariant in its constructor.
-  const provider = new CodegraphEnrichmentProvider({
-    ...deps,
-    derivedSignals: CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
-    presets: CODEGRAPH_SYMBOLS_PRESETS,
-  });
+  const { workerDescriptor, ...providerDeps } = deps;
+  const provider = new CodegraphEnrichmentProvider(
+    {
+      ...providerDeps,
+      derivedSignals: CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
+      presets: CODEGRAPH_SYMBOLS_PRESETS,
+    },
+    workerDescriptor,
+  );
   return {
     key: "codegraph.symbols",
     name: "CodegraphSymbols",

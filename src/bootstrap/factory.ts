@@ -24,13 +24,15 @@ import {
 } from "../core/api/index.js";
 import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
+import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { DefaultSymbolIdComposer } from "../core/domains/language/index.js";
-import type { CodegraphDeps } from "../core/domains/trajectory/codegraph/index.js";
+import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import type { GitWorkerConfig } from "../core/domains/trajectory/git/factory.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
 import { CollectionRegistry } from "../core/infra/registry/index.js";
 import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
@@ -51,6 +53,25 @@ const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-
 };
 
 export { pkg };
+
+/**
+ * Absolute compiled-JS paths the enrichment worker dynamic-imports in-thread.
+ * Resolved relative to the compiled bootstrap module (`build/bootstrap/`) so
+ * both the npm-linked global install and the local dev path work — the SAME
+ * idiom as the enrichment `worker.js` path below. These are
+ * `WorkerEnrichmentDescriptor.providerModulePath` values: the worker loads the
+ * module by this path, then calls the named factory export to rebuild the
+ * provider off-thread (`.claude/rules/domains-language.md` §2 — inject a path,
+ * never an instance).
+ */
+const GIT_PROVIDER_MODULE_PATH = join(__dirname, "../core/domains/trajectory/git/factory.js");
+const CODEGRAPH_PROVIDER_MODULE_PATH = join(__dirname, "../core/domains/trajectory/codegraph/factory.js");
+/**
+ * Compiled `domains/language` barrel the codegraph worker-factory imports
+ * in-thread to rebuild the `LanguageFactory` (walker + resolver capabilities).
+ * Mirrors the chunker pool's `LANGUAGE_MODULE_PATH`.
+ */
+const LANGUAGE_MODULE_PATH = join(__dirname, "../core/domains/language/index.js");
 
 export interface AppContext {
   app: App;
@@ -167,8 +188,18 @@ function wireComposition(
   const squashOpts = trajectoryConfig.squashAwareSessions
     ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
     : undefined;
+  // Git worker-pool descriptor (tea-rags-mcp-dz7f). `stateless` dispatch —
+  // git carries its full config per call, no cross-call symbolTable to cache.
+  // The serializableConfig is structured-clone-safe (plain config + squashOpts);
+  // the worker rebuilds GitEnrichmentProvider via `createGitEnrichmentProvider`.
+  const gitWorkerDescriptor: WorkerEnrichmentDescriptor = {
+    providerModulePath: GIT_PROVIDER_MODULE_PATH,
+    providerFactoryExport: "createGitEnrichmentProvider",
+    dispatch: "stateless",
+    serializableConfig: { ...zodConfig.trajectoryGit, squashOpts } satisfies GitWorkerConfig,
+  };
   const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition({
-    git: { config: zodConfig.trajectoryGit, squashOpts },
+    git: { config: zodConfig.trajectoryGit, squashOpts, workerDescriptor: gitWorkerDescriptor },
     codegraph,
   });
   const schemaBuilder = new SchemaBuilder(reranker);
@@ -378,6 +409,33 @@ export function wireCodegraph(
     return originalAcquireReader(collectionName);
   };
 
+  // Codegraph worker-pool descriptor (tea-rags-mcp-dz7f). `collection-affinity`
+  // dispatch — streamFileBatch → finalizeSignals → deferred buildChunkSignals
+  // share the per-collection symbolTable on the worker's cached provider, so
+  // all calls for one collection must pin to the same thread. The
+  // serializableConfig carries ONLY plain data (paths + flags); the worker
+  // rebuilds the GraphDbClientPool + LanguageFactory in-thread via
+  // `createCodegraphEnrichmentProvider`. `collectionName` is bound per-call by
+  // the executor's affinity routing — left undefined here (provider built
+  // before any collection is pinned). The daemon socket is always set: the
+  // worker connects to the SAME multi-client daemon that owns the RW lock.
+  const codegraphWorkerConfig: CodegraphWorkerConfig = {
+    languageModulePath: LANGUAGE_MODULE_PATH,
+    daemonSocketPath: daemonPaths.socketPath,
+    rootDir,
+    excludeTests: codegraph.excludeTests,
+    customExcludePatterns: codegraph.customExcludePatterns ?? [],
+    dbMemoryLimit: codegraph.dbMemoryLimit,
+    dbThreads: codegraph.dbThreads,
+    ambiguousResolveMode: ambiguousMode,
+  };
+  const workerDescriptor: WorkerEnrichmentDescriptor = {
+    providerModulePath: CODEGRAPH_PROVIDER_MODULE_PATH,
+    providerFactoryExport: "createCodegraphEnrichmentProvider",
+    dispatch: "collection-affinity",
+    serializableConfig: codegraphWorkerConfig,
+  };
+
   const deps: CodegraphDeps = {
     pool,
     composer: symbolIdComposer,
@@ -391,6 +449,7 @@ export function wireCodegraph(
       excludeTests: codegraph.excludeTests,
       customPatterns: codegraph.customExcludePatterns ?? [],
     },
+    workerDescriptor,
   };
   const graphFacade = new GraphFacade({ pool, collectionRegistry, resolveActiveCollection });
   return { deps, graphFacade, pool };
@@ -474,6 +533,8 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     enrichmentProviders,
     codegraphPool: codegraphContext?.pool,
     enrichmentExecutor,
+    healthCheckRetryAttempts: zodConfig.embedding.tune.healthCheckRetryAttempts,
+    healthCheckRetryDelayMs: zodConfig.embedding.tune.healthCheckRetryDelayMs,
   });
   const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [

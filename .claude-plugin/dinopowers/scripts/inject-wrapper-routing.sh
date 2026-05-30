@@ -40,12 +40,10 @@ enrichment, then chains to superpowers internally.
 
 UPDATED_PROMPT="${PROMPT}${SUFFIX}"
 
-jq -n --arg prompt "$UPDATED_PROMPT" '{
+jq -n --argjson input "$INPUT" --arg prompt "$UPDATED_PROMPT" '{
   hookSpecificOutput: {
     hookEventName: "PreToolUse",
     permissionDecision: "allow",
-    updatedInput: {
-      prompt: $prompt
-    }
+    updatedInput: ($input.tool_input + { prompt: $prompt })
   }
 }'

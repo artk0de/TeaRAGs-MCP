@@ -71,6 +71,57 @@ describe("createComposition", () => {
     });
   });
 
+  // Regression guard (tea-rags-mcp-dz7f): the production composition wires a
+  // WorkerEnrichmentDescriptor onto BOTH enrichment providers so the
+  // WorkerPoolEnrichmentExecutor dispatches off-thread instead of silently
+  // falling back to inline (which blocks the embedding event loop with git
+  // blame). A regression that drops the descriptor would make every dispatch
+  // method hit the `!provider.workerDescriptor` inline branch unnoticed.
+  describe("worker-pool descriptor wiring (regression guard)", () => {
+    let tmp: string;
+    let graphDb: DuckDbGraphClient;
+    beforeAll(async () => {
+      tmp = mkdtempSync(join(tmpdir(), "comp-wd-"));
+      graphDb = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
+      await graphDb.init();
+    });
+    afterAll(async () => {
+      await graphDb.close();
+      rmSync(tmp, { recursive: true, force: true });
+    });
+
+    it("surfaces a defined workerDescriptor on the git provider when supplied", () => {
+      const gitDescriptor = {
+        providerModulePath: "/abs/git/factory.js",
+        providerFactoryExport: "createGitEnrichmentProvider",
+        dispatch: "stateless" as const,
+        serializableConfig: {},
+      };
+      const { registry } = createComposition({ git: { workerDescriptor: gitDescriptor } });
+      const git = registry.getAllEnrichmentProviders().find((p) => p.key === "git");
+      expect(git?.workerDescriptor).toBeDefined();
+      expect(git?.workerDescriptor?.dispatch).toBe("stateless");
+    });
+
+    it("surfaces a defined workerDescriptor on the codegraph provider when supplied", () => {
+      const codegraphDescriptor = {
+        providerModulePath: "/abs/codegraph/factory.js",
+        providerFactoryExport: "createCodegraphEnrichmentProvider",
+        dispatch: "collection-affinity" as const,
+        serializableConfig: {},
+      };
+      const { registry } = createComposition({
+        codegraph: {
+          pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()),
+          workerDescriptor: codegraphDescriptor,
+        },
+      });
+      const codegraph = registry.getAllEnrichmentProviders().find((p) => p.key === "codegraph.symbols");
+      expect(codegraph?.workerDescriptor).toBeDefined();
+      expect(codegraph?.workerDescriptor?.dispatch).toBe("collection-affinity");
+    });
+  });
+
   describe("when codegraph deps are supplied", () => {
     // Drives the `options.codegraph` branch in createComposition,
     // which in turn drives the codegraph L1 factory and the

@@ -70,3 +70,4 @@ website/.docusaurus/
 
 # Beads / Dolt files (added by bd init)
 .beads-credential-key
+.tea-rags-codegraph-spill/

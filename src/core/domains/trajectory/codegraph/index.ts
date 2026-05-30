@@ -11,6 +11,7 @@
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
 import type { LanguageFactoryDescriptor, SymbolIdComposer } from "../../../contracts/types/language.js";
+import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
 import type { Trajectory } from "../../../contracts/types/trajectory.js";
 import type { CodegraphExclusionOptions } from "./exclusion.js";
 import { createSymbolsTrajectory } from "./symbols/index.js";
@@ -54,6 +55,15 @@ export interface CodegraphDeps {
    * `DEFAULT_AMBIGUOUS_RESOLVE_MODE` ("strict") when omitted (tests).
    */
   ambiguousResolveMode?: AmbiguousResolveMode;
+  /**
+   * Worker-pool descriptor built by the bootstrap composition root (which
+   * alone knows the absolute compiled-JS worker module path + daemon socket).
+   * When present, the CodegraphEnrichmentProvider surfaces it so
+   * `WorkerPoolEnrichmentExecutor` dispatches extraction off-thread with
+   * collection-affinity routing. Omitted in tests ⇒ inline-only (graceful
+   * fallback). bd tea-rags-mcp-dz7f.
+   */
+  workerDescriptor?: WorkerEnrichmentDescriptor;
 }
 
 /**
@@ -76,4 +86,5 @@ export { createSymbolsTrajectory } from "./symbols/index.js";
 export { CODEGRAPH_LANGUAGES, type CodegraphLanguageConfig } from "./symbols/index.js";
 export { buildCodegraphExclusionFilter, CODEGRAPH_TEST_PATTERNS } from "./exclusion.js";
 export type { CodegraphExclusionOptions } from "./exclusion.js";
+export { createCodegraphEnrichmentProvider } from "./factory.js";
 export type { CodegraphWorkerConfig } from "./factory.js";

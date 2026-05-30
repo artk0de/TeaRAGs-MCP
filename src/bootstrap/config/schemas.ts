@@ -31,6 +31,16 @@ export const embeddingTuneSchema = z.object({
   maxRequestsPerMinute: optionalPositiveInt,
   retryAttempts: intWithDefault(3),
   retryDelayMs: intWithDefault(1000),
+  /**
+   * Attempts for the pre-indexing embedding health probe. The probe can be
+   * starved of an event-loop tick by a busy synchronous burst and time out
+   * even though the server answers; each retry's pause yields the loop so a
+   * starved probe succeeds. A genuinely-down provider fails all attempts and
+   * aborts with the typed `OllamaUnavailableError`. Default 3.
+   */
+  healthCheckRetryAttempts: intWithDefault(3),
+  /** Pause between health-probe attempts (ms). The pause yields the event loop. Default 250. */
+  healthCheckRetryDelayMs: intWithDefault(250),
 });
 
 export const embeddingSchema = z.object({

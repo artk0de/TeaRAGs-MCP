@@ -88,6 +88,13 @@ export interface IngestFacadeDeps {
    * transparently.
    */
   enrichmentExecutor?: EnrichmentExecutor;
+  /**
+   * Attempts for the pre-indexing embedding health probe (resilient against
+   * event-loop starvation). Forwarded to IndexingOps. Defaults applied there.
+   */
+  healthCheckRetryAttempts?: number;
+  /** Pause between health-probe attempts (ms). Forwarded to IndexingOps. */
+  healthCheckRetryDelayMs?: number;
 }
 
 export class IngestFacade {
@@ -114,6 +121,8 @@ export class IngestFacade {
       gitTimePeriods,
       modelGuard: deps.modelGuard,
       codegraphPool: deps.codegraphPool,
+      healthCheckRetryAttempts: deps.healthCheckRetryAttempts,
+      healthCheckRetryDelayMs: deps.healthCheckRetryDelayMs,
     });
 
     // Stats refresh when chunk enrichment finishes. Awaited so the
