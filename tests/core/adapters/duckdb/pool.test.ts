@@ -10,7 +10,7 @@
  * collection share a single init pass (no duplicate migrations).
  */
 
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -219,6 +219,49 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     await pool.removeCollection("alpha");
     const secondEvict = await pool.removeCollection("alpha");
     expect(secondEvict).toBe(false);
+  });
+
+  it("listCollectionDbNames returns versioned collection names for the base, ignoring other projects and non-versioned files", () => {
+    const pool = new GraphDbClientPool({
+      rootDir: tmp,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    });
+    const codegraphDir = join(tmp, "codegraph");
+    // Versioned DBs for the base under test.
+    writeFileSync(pool.pathFor("code_abc_v1"), "");
+    writeFileSync(pool.pathFor("code_abc_v3"), "");
+    // A different project's versioned DB — must NOT be returned.
+    writeFileSync(pool.pathFor("code_other_v2"), "");
+    // The unversioned base file (legacy / non-versioned) — must NOT be returned.
+    writeFileSync(pool.pathFor("code_abc"), "");
+    // A WAL sidecar — not a .duckdb file, must NOT be returned.
+    writeFileSync(join(codegraphDir, "code_abc_v1.duckdb.wal"), "");
+
+    const names = pool.listCollectionDbNames("code_abc");
+
+    expect(names.sort()).toEqual(["code_abc_v1", "code_abc_v3"]);
+  });
+
+  it("listCollectionDbNames returns an empty array when the codegraph dir has no matching files", () => {
+    const pool = new GraphDbClientPool({
+      rootDir: tmp,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    });
+    // Only a foreign project's file exists.
+    writeFileSync(pool.pathFor("code_other_v1"), "");
+
+    expect(pool.listCollectionDbNames("code_abc")).toEqual([]);
+  });
+
+  it("listCollectionDbNames is a no-op (empty array) when the codegraph dir is missing", () => {
+    const pool = new GraphDbClientPool({
+      rootDir: tmp,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    });
+    // Remove the codegraph dir the pool created at construction.
+    rmSync(join(tmp, "codegraph"), { recursive: true, force: true });
+
+    expect(pool.listCollectionDbNames("code_abc")).toEqual([]);
   });
 
   it("release() evicts a cached client and returns true, false the second time", async () => {
