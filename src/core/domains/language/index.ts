@@ -6,7 +6,7 @@
 // api/internal/ may). See
 // docs/superpowers/specs/2026-05-25-domains-language-consolidation-design.md §2.
 //
-// Component interfaces (ResolverComponent, DispatchResolverComponent,
+// Component interfaces (SymbolResolutionStrategy, DispatchResolverComponent,
 // ExtractionPass, WalkContext, SymbolIdComposer) live in
 // contracts/types/language.ts, not here.
 export { resolveViaChain } from "./resolver-chain.js";

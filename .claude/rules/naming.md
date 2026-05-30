@@ -23,14 +23,14 @@ are self-describing. Optimize for the reader who lands on the symbol cold.
 
 ## Before / After
 
-| Generic (rejected)      | Domain-qualified (correct)       | Context preserved                       |
-| ----------------------- | -------------------------------- | --------------------------------------- |
-| `ResolutionOutcome`     | `InCodeResolutionOutcome`        | resolving symbols in indexed code       |
-| `Strategy`              | `InCodeResolutionStrategy`       | a resolution pass, not any strategy     |
-| `ResolvedTarget`        | `InCodeResolutionTarget`         | the resolved target inside indexed code |
-| `Metadata` / `FieldDoc` | `GitFileSignals` / `Signal`      | git trajectory signal, not meta         |
-| `buildMetadata`         | `buildFileSignals`               | builds signals, scope = file            |
-| `Stats` (user-facing)   | `SignalMetrics` / `IndexMetrics` | DTO layer, not the compute `Stats`      |
+| Generic (rejected)      | Domain-qualified (correct)       | Context preserved                     |
+| ----------------------- | -------------------------------- | ------------------------------------- |
+| `ResolutionOutcome`     | `SymbolResolutionOutcome`        | a call-site→symbol resolution result  |
+| `Strategy`              | `SymbolResolutionStrategy`       | a resolution pass, not any strategy   |
+| `ResolvedTarget`        | `SymbolResolutionTarget`         | the resolved target symbol definition |
+| `Metadata` / `FieldDoc` | `GitFileSignals` / `Signal`      | git trajectory signal, not meta       |
+| `buildMetadata`         | `buildFileSignals`               | builds signals, scope = file          |
+| `Stats` (user-facing)   | `SignalMetrics` / `IndexMetrics` | DTO layer, not the compute `Stats`    |
 
 ## Boundaries (don't over-qualify)
 

@@ -27,7 +27,7 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
-  type ResolvedTarget,
+  type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 
 const JS_EXTS = [".js", ".jsx", ".mjs", ".cjs"];
@@ -37,7 +37,7 @@ export class JavascriptCallResolver implements CallResolver {
 
   constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
 
-  resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
+  resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     // `super(...)` / `super.X()` — walk to the PARENT class via
     // `classExtends`, then resolve `<Parent>#<member>`. Without
     // classExtends data we cannot know the parent and MUST return
@@ -105,14 +105,14 @@ export class JavascriptCallResolver implements CallResolver {
    *
    * `visited` defends against accidental cycles in `classExtends` data.
    */
-  private resolveSuper(member: string, ctx: CallContext): ResolvedTarget | null {
+  private resolveSuper(member: string, ctx: CallContext): SymbolResolutionTarget | null {
     if (ctx.callerScope.length === 0) return null;
     if (!ctx.classExtends) return null;
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
     let current: string | undefined = ctx.classExtends[enclosing];
     if (!current) return null;
     const visited = new Set<string>([enclosing]);
-    let fileOnlyFallback: ResolvedTarget | null = null;
+    let fileOnlyFallback: SymbolResolutionTarget | null = null;
     while (current && !visited.has(current)) {
       visited.add(current);
       // Prefer the instance form (`#`) — `super(arg)` / `super.foo()`

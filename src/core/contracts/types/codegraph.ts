@@ -382,7 +382,7 @@ export interface SymbolDefinition {
  */
 export interface CallResolver {
   readonly language: string;
-  resolve: (call: CallRef, ctx: CallContext) => ResolvedTarget | null;
+  resolve: (call: CallRef, ctx: CallContext) => SymbolResolutionTarget | null;
   /**
    * Optional fan-out resolution for lookup-table dispatch
    * (bd tea-rags-mcp-n0zj). Given a `CallRef` carrying `dispatch` and/or
@@ -526,7 +526,7 @@ export interface CallContext {
   callbackParams?: Record<string, number[]>;
 }
 
-export interface ResolvedTarget {
+export interface SymbolResolutionTarget {
   targetRelPath: RelPath;
   /** `null` when the resolver can determine the file but not the specific
    *  method (dynamic dispatch). */

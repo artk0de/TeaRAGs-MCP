@@ -4,58 +4,43 @@
  * the native Bash language provider per the `domains/language` consolidation
  * (spec §3; bd tea-rags-mcp-cen6). Behaviour-preserving.
  *
- * Bash `source ./other.sh` and `. ./other.sh` produce ImportRefs with
- * the literal path. Internal function calls (no receiver) resolve via
- * global short-name lookup over the symbol table.
+ * `resolve` runs an ordered chain of single-purpose `SymbolResolutionStrategy`
+ * passes (see `./strategies/`) via the shared `resolveViaChain` engine. Bash
+ * has a single pass — `globalShortName` — because Bash functions are global
+ * within the sourced file set: `source ./other.sh` and `. ./other.sh` produce
+ * ImportRefs with the literal path, and internal function calls (no receiver)
+ * resolve via global short-name lookup over the symbol table, narrowed by the
+ * caller's source list on ambiguity.
  */
-
-import { posix } from "node:path";
 
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
-  pickSingleCandidate,
   type AmbiguousResolveMode,
   type CallContext,
   type CallRef,
   type CallResolver,
-  type ResolvedTarget,
+  type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
+import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import { resolveViaChain } from "../../resolver-chain.js";
+import {
+  BashGlobalShortNameSymbolResolutionStrategy,
+  mapBashSourceToFile,
+  type ResolverConfig,
+} from "./strategies/index.js";
+
+export { mapBashSourceToFile };
 
 export class BashCallResolver implements CallResolver {
   readonly language = "bash";
+  private readonly strategies: SymbolResolutionStrategy[];
 
-  constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
-
-  resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
-    // Bash functions are global within the sourced file set, so a
-    // bare call resolves via short-name lookup across all known
-    // files. Strict mode keeps the existing N=1 guarantee; legacy
-    // `first` mode takes any candidate.
-    const fallback = ctx.symbolTable.lookupByShortName(call.member);
-    const unique = pickSingleCandidate(fallback, this.mode);
-    if (unique) {
-      return { targetRelPath: unique.relPath, targetSymbolId: unique.symbolId };
-    }
-    // Multi-source case (only reachable in strict mode): filter to
-    // files that are sourced by this caller (via the imports list).
-    // After the filter we still demand a unique pick — sourcing two
-    // files that both declare `cleanup()` is still ambiguous.
-    if (fallback.length > 1) {
-      const sourcedFiles = ctx.imports.map((imp) => mapBashSourceToFile(imp.importText, ctx.callerFile));
-      const candidates = fallback.filter((def) => sourcedFiles.includes(def.relPath));
-      const sourced = pickSingleCandidate(candidates, this.mode);
-      if (sourced) {
-        return { targetRelPath: sourced.relPath, targetSymbolId: sourced.symbolId };
-      }
-    }
-    return null;
+  constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
+    const cfg: ResolverConfig = { mode };
+    this.strategies = [new BashGlobalShortNameSymbolResolutionStrategy(cfg)];
   }
-}
 
-export function mapBashSourceToFile(importText: string, callerFile: string): string {
-  // Bash source paths are either absolute or relative to the caller.
-  // Codegraph treats absolute paths as project-relative (caller never
-  // passes shell-evaluated absolute paths like $HOME/.bashrc).
-  const callerDir = posix.dirname(callerFile);
-  return posix.normalize(posix.join(callerDir, importText));
+  resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
+    return resolveViaChain(this.strategies, call, ctx);
+  }
 }

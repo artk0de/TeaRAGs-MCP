@@ -16,9 +16,9 @@ import type {
   GraphFileNode,
   ImportRef,
   RelPath,
-  ResolvedTarget,
   SymbolDefinition,
   SymbolId,
+  SymbolResolutionTarget,
 } from "../../../../src/core/contracts/types/codegraph.js";
 
 describe("codegraph contracts", () => {
@@ -83,8 +83,8 @@ describe("codegraph contracts", () => {
     expect(callee.targetSymbolId).toBe("B.x");
   });
 
-  it("ResolvedTarget allows null targetSymbolId for file-only resolution", () => {
-    const partial: ResolvedTarget = { targetRelPath: "src/dyn.ts", targetSymbolId: null };
+  it("SymbolResolutionTarget allows null targetSymbolId for file-only resolution", () => {
+    const partial: SymbolResolutionTarget = { targetRelPath: "src/dyn.ts", targetSymbolId: null };
     expect(partial.targetSymbolId).toBeNull();
   });
 
