@@ -56,14 +56,74 @@ describe("FilePhase", () => {
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
 
-    await phase.onBatch("coll", "/repo", items);
+    phase.onBatch("coll", "/repo", items);
     await phase.drain();
 
     expect(streamFileBatch).toHaveBeenCalledWith("/repo", ["src/a.ts"], expect.anything());
     expect(applySpy).toHaveBeenCalled();
   });
 
-  it("onBatch returns a Promise that resolves after the batch's file applies", async () => {
+  // wy5i — onBatch returns per-provider file completion so the coordinator can
+  // gate each provider's chunk work on ONLY that provider's file work. A slow
+  // provider's promise must not be entangled with a fast provider's promise.
+  it("onBatch returns a Map keyed by provider whose promises resolve independently", async () => {
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
+
+    let releaseSlow: () => void = () => {};
+    const slowStream = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        releaseSlow = () => {
+          resolve(new Map());
+        };
+      }),
+    );
+    const fastStream = vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+
+    const fastCtx = {
+      key: "fast",
+      provider: { key: "fast", streamFileBatch: fastStream, resolveRoot: (p: string) => p } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null as any,
+    };
+    const slowCtx = {
+      key: "slow",
+      provider: { key: "slow", streamFileBatch: slowStream, resolveRoot: (p: string) => p } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null as any,
+    };
+
+    const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    phase.init(
+      new Map([
+        [fastCtx.key, fastCtx],
+        [slowCtx.key, slowCtx],
+      ]),
+      "coll",
+      "run-1",
+      "ts",
+    );
+
+    const perProvider = phase.onBatch("coll", "/repo", items);
+    expect(perProvider).toBeInstanceOf(Map);
+    expect(perProvider.has("fast")).toBe(true);
+    expect(perProvider.has("slow")).toBe(true);
+
+    // fast resolves while slow is still blocked.
+    let fastDone = false;
+    void perProvider.get("fast")?.then(() => {
+      fastDone = true;
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(fastDone).toBe(true);
+
+    releaseSlow();
+    await phase.drain();
+  });
+
+  it("onBatch returns a per-provider promise that resolves after the batch's file applies", async () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
@@ -80,7 +140,8 @@ describe("FilePhase", () => {
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
 
-    const p = phase.onBatch("coll", "/repo", items);
+    const perProvider = phase.onBatch("coll", "/repo", items);
+    const p = perProvider.get(ctx.key);
     expect(p).toBeInstanceOf(Promise);
     await p;
     expect(resolved).toBe(true);
@@ -98,7 +159,7 @@ describe("FilePhase", () => {
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
 
-    await phase.onBatch("coll", "/repo", items);
+    phase.onBatch("coll", "/repo", items);
     await phase.drain();
 
     expect(buildFileSignals).toHaveBeenCalledWith("/repo", expect.objectContaining({ paths: ["src/a.ts"] }));
@@ -131,7 +192,7 @@ describe("FilePhase", () => {
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
-    await phase.onBatch("coll", "/repo", items);
+    phase.onBatch("coll", "/repo", items);
     await phase.drain();
 
     // Extraction is driven (sink fills the graph), but the ∅ result is NOT
@@ -200,7 +261,7 @@ describe("FilePhase", () => {
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
-    await phase.onBatch("coll", "/repo", items);
+    phase.onBatch("coll", "/repo", items);
     await phase.drain();
 
     expect(streamFileBatch).toHaveBeenCalledTimes(1);
@@ -226,7 +287,7 @@ describe("FilePhase", () => {
     chunkPhase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
     phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
 
-    await phase.onBatch("coll", "/repo", items);
+    phase.onBatch("coll", "/repo", items);
     await phase.drain();
 
     expect(phase.hasPrefetchFailed("git")).toBe(true);

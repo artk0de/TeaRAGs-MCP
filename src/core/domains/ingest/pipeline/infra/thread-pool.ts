@@ -202,26 +202,39 @@ export class ThreadPool<Req, Res> {
 
   private processQueue(): void {
     if (this.queue.length === 0) return;
-    // First, try to honor an affinity-pinned item whose thread is now free.
-    for (let i = 0; i < this.queue.length; i++) {
+    // Drain ALL currently-runnable queued items per call, not one. A single
+    // worker-completion event must refill every free worker — dispatching one
+    // item then returning made queued work trickle (one item per completion
+    // event), serializing throughput that affinity + free workers could absorb
+    // immediately (wy5i). Walk the queue, dispatch every item whose target is
+    // free, and stop only when no further item can run on a currently-free
+    // worker.
+    for (let i = 0; i < this.queue.length; ) {
       const item = this.queue[i];
       if (item.affinityIndex !== null) {
         const pt = this.threads[item.affinityIndex];
         if (pt && !pt.busy) {
           this.queue.splice(i, 1);
           this.dispatchTo(pt, item.request, item.pending);
-          return;
+          continue; // do not advance i — splice shifted the next item into place
         }
-        continue; // pinned thread still busy — leave queued
+        i++; // pinned thread still busy — leave queued, try the next item
+        continue;
       }
       // Stateless item: any free thread.
       const free = this.threads.find((w) => !w.busy);
-      if (free) {
-        this.queue.splice(i, 1);
-        this.dispatchTo(free, item.request, item.pending);
-        return;
+      if (!free) {
+        // No free thread for this stateless item right now. Later items may
+        // still be affinity-pinned to a (different) free thread, so keep
+        // scanning rather than bailing — preserves the original loop's ability
+        // to honor a runnable affinity item sitting behind a blocked stateless
+        // one.
+        i++;
+        continue;
       }
-      return; // no free thread
+      this.queue.splice(i, 1);
+      this.dispatchTo(free, item.request, item.pending);
+      // do not advance i — splice shifted the next item into place
     }
   }
 }

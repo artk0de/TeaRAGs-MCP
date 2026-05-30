@@ -110,30 +110,47 @@ export class ChunkPhase {
     state.prefetchFailed = true;
   }
 
-  /** Streaming entry — fire-and-forget per provider. */
+  /**
+   * Streaming entry — fire-and-forget across ALL providers. Retained for
+   * unit-level callers that drive every provider at once; the coordinator now
+   * drives providers individually via onBatchProvider so each provider's chunk
+   * work gates only on its own file work.
+   */
   onBatch(coll: string, absolutePath: string, items: ChunkItem[]): void {
     for (const ctx of this.contexts.values()) {
-      const state = this.states.get(ctx.key);
-      if (!state) continue;
-      // Suppress dispatch when the file-side stream/finalize already failed —
-      // FilePhase calls markFailed before this (sequenced after fileDone).
-      if (state.prefetchFailed) continue;
-      const root = ctx.effectiveRoot ?? absolutePath;
-      const map = this.extractBatchChunkMap(items, root);
-      if (ctx.provider.defersChunkEnrichment) {
-        // Fully-deferred provider (codegraph): accumulate the batch's chunkMap;
-        // chunk signals are produced by a single runDeferredChunk pass after the
-        // graph is finalized. Do NOT dispatch buildChunkSignals here, and do NOT
-        // mark these files as streaming-enriched.
-        for (const [rel, entries] of map) {
-          const existing = state.deferredChunkMap.get(rel) ?? [];
-          existing.push(...entries);
-          state.deferredChunkMap.set(rel, existing);
-        }
-        continue;
-      }
-      void this.runChunkSignals(ctx, state, coll, root, map, /* useSemaphore */ true);
+      this.onBatchProvider(ctx.key, coll, absolutePath, items);
     }
+  }
+
+  /**
+   * Streaming entry for a SINGLE provider — fire-and-forget. The coordinator
+   * calls this once per provider, each gated on that provider's own file-work
+   * promise, so git chunk never waits on codegraph file extraction (wy5i).
+   * Unknown / unregistered keys are a benign no-op.
+   */
+  onBatchProvider(providerKey: string, coll: string, absolutePath: string, items: ChunkItem[]): void {
+    const ctx = this.contexts.get(providerKey);
+    if (!ctx) return;
+    const state = this.states.get(providerKey);
+    if (!state) return;
+    // Suppress dispatch when the file-side stream/finalize already failed —
+    // FilePhase calls markFailed before this (sequenced after fileDone).
+    if (state.prefetchFailed) return;
+    const root = ctx.effectiveRoot ?? absolutePath;
+    const map = this.extractBatchChunkMap(items, root);
+    if (ctx.provider.defersChunkEnrichment) {
+      // Fully-deferred provider (codegraph): accumulate the batch's chunkMap;
+      // chunk signals are produced by a single runDeferredChunk pass after the
+      // graph is finalized. Do NOT dispatch buildChunkSignals here, and do NOT
+      // mark these files as streaming-enriched.
+      for (const [rel, entries] of map) {
+        const existing = state.deferredChunkMap.get(rel) ?? [];
+        existing.push(...entries);
+        state.deferredChunkMap.set(rel, existing);
+      }
+      return;
+    }
+    void this.runChunkSignals(ctx, state, coll, root, map, /* useSemaphore */ true);
   }
 
   /** Post-flush catch-up entry — applied to files NOT covered by streaming. */

@@ -278,6 +278,61 @@ describe("EnrichmentCoordinator", () => {
     expect(multi.providerKeys).toEqual(["alpha", "beta"]);
   });
 
+  // wy5i — per-provider parallelism: git's chunk enrichment for a batch must
+  // NOT wait on codegraph's file-extraction for the same batch. Previously
+  // onChunksStored gated ALL chunk work on Promise.all of ALL providers' file
+  // work, so a slow (cold-build) codegraph file pass starved git chunk.
+  it("dispatches git chunk enrichment without awaiting a slow codegraph file pass", async () => {
+    let releaseCodegraphFile: () => void = () => {};
+    const codegraphFileBlocked = new Promise<Map<string, Record<string, unknown>>>((resolve) => {
+      releaseCodegraphFile = () => {
+        resolve(new Map());
+      };
+    });
+
+    const gitChunkFired = vi.fn();
+    const gitProvider: EnrichmentProvider = {
+      key: "git",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
+      buildChunkSignals: vi.fn().mockImplementation(async () => {
+        gitChunkFired();
+        return new Map();
+      }),
+    };
+    // codegraph: fully-deferred provider whose per-batch file extraction blocks
+    // indefinitely (simulates cold DuckDB serialized writes).
+    const codegraphProvider: EnrichmentProvider = {
+      key: "codegraph.symbols",
+      signals: [],
+      filters: [],
+      presets: [],
+      defersChunkEnrichment: true,
+      resolveRoot: vi.fn((p: string) => p),
+      streamFileBatch: vi.fn().mockReturnValue(codegraphFileBlocked),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    } as any;
+
+    const coord = new EnrichmentCoordinator(mockQdrant, [gitProvider, codegraphProvider]);
+    coord.beginRun("/repo", "test-col");
+    coord.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 5 } } as any,
+    ]);
+
+    // Let git's file pass + git chunk dispatch settle. codegraph file is STILL
+    // blocked. git chunk MUST have fired regardless.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(gitChunkFired).toHaveBeenCalled();
+
+    // Cleanup: release codegraph so awaitCompletion can finish.
+    releaseCodegraphFile();
+    await coord.awaitCompletion("test-col");
+  });
+
   it("is a no-op when no providers are registered", async () => {
     const empty = new EnrichmentCoordinator(mockQdrant, []);
 

@@ -13,6 +13,8 @@ import { parentPort, threadId } from "node:worker_threads";
 parentPort.on("message", (msg) => {
   if (msg && msg.type === "shutdown") { parentPort.close(); return; }
   if (msg.value === "BOOM") { parentPort.postMessage({ error: "boom" }); return; }
+  // "HANG" never replies — pins its worker busy forever (test cleans up via shutdown).
+  if (msg.value === "HANG") { return; }
   // small delay so concurrent dispatches actually overlap across workers
   setTimeout(() => parentPort.postMessage({ threadId, value: msg.value }), 5);
 });
@@ -56,6 +58,26 @@ describe("ThreadPool", () => {
     );
     const threadIds = new Set(sameKey.map((r) => r.threadId));
     expect(threadIds.size).toBe(1);
+    await pool.shutdown();
+  });
+
+  // wy5i — processQueue drains ALL currently-runnable queued items per call
+  // (loop), not one-then-return. Regression guard: a burst of queued stateless
+  // work behind a permanently-busy (HANG) worker must fully drain across every
+  // remaining free worker with no starvation, and all items must resolve. The
+  // drain-all loop is what lets a queued git-chunk burst use every idle worker
+  // instead of trickling one item per completion event.
+  it("fully drains a queued stateless burst across all free workers (no trickle, no starvation)", async () => {
+    const pool = new ThreadPool<EchoReq, EchoRes>(3, workerPath, {});
+    const hung = pool.dispatch({ value: "HANG" }, "stuck"); // pins one thread forever
+    void hung.catch(() => undefined);
+
+    // Burst of 8 stateless items: 2 free workers, drain-all queue → all resolve,
+    // fanning across exactly the 2 non-hung workers.
+    const burst = Array.from({ length: 8 }, (_, i) => ({ value: `s${i}` }));
+    const results = await Promise.all(burst.map(async (r) => pool.dispatch(r)));
+    expect(results.map((r) => r.value).sort()).toEqual(["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7"]);
+    expect(new Set(results.map((r) => r.threadId)).size).toBe(2);
     await pool.shutdown();
   });
 

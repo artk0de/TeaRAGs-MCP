@@ -110,13 +110,24 @@ export class FilePhase {
   }
 
   /**
-   * Stream this batch's file signals and apply immediately. Returns the batch's
-   * file-work promise so the coordinator can sequence file→chunk per batch.
-   * Fully-deferred providers (codegraph) are skipped entirely — their file
-   * overlays come from applyFinalize, and their miss-tracking is irrelevant.
+   * Stream this batch's file signals and apply immediately. Returns a map
+   * keyed by provider whose values are that provider's file-work promise for
+   * this batch — so the coordinator can gate EACH provider's chunk enrichment
+   * on ONLY that same provider's file work, never on another provider's.
+   *
+   * Previously this awaited Promise.all across all providers, which coupled
+   * git's per-batch chunk dispatch to codegraph's per-batch file extraction:
+   * a cold codegraph build (serialized DuckDB writes) starved git chunk. The
+   * per-provider map decouples them — git.file→git.chunk and
+   * codegraph.file→codegraph.chunk proceed concurrently.
+   *
+   * Fully-deferred providers (codegraph) still DRIVE streamFileBatch here (the
+   * run sink extracts into the graph during embedding overlap) but do NOT
+   * apply the (empty) result and do NOT miss-track — file overlays are read
+   * back once the graph is finalized via finalizeSignals → applyFinalize.
    */
-  async onBatch(coll: string, absolutePath: string, items: ChunkItem[]): Promise<void> {
-    const collected: Promise<void>[] = [];
+  onBatch(coll: string, absolutePath: string, items: ChunkItem[]): Map<string, Promise<void>> {
+    const perProvider = new Map<string, Promise<void>>();
     for (const ctx of this.contexts.values()) {
       const state = this.states.get(ctx.key);
       if (!state) continue;
@@ -153,7 +164,7 @@ export class FilePhase {
             await this.recordPrefetchFailure(ctx, state, error);
           });
         state.fileWork.push(extractWork);
-        collected.push(extractWork);
+        perProvider.set(ctx.key, extractWork);
         continue;
       }
 
@@ -183,9 +194,9 @@ export class FilePhase {
         });
 
       state.fileWork.push(work);
-      collected.push(work);
+      perProvider.set(ctx.key, work);
     }
-    await Promise.all(collected);
+    return perProvider;
   }
 
   /**
