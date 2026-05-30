@@ -576,7 +576,9 @@ function third() {
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
       expect(cleanupSpy).toHaveBeenCalledTimes(1);
-      expect(cleanupSpy).toHaveBeenCalledWith(qdrant, expect.stringContaining("code_"));
+      // Third arg is the codegraph DB remover — undefined here since this
+      // facade is wired without a codegraph pool.
+      expect(cleanupSpy).toHaveBeenCalledWith(qdrant, expect.stringContaining("code_"), undefined);
 
       vi.restoreAllMocks();
     });

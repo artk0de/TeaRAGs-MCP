@@ -15,6 +15,7 @@ import { TeaRagsError } from "../../../infra/errors.js";
 import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
+import type { CodegraphDbRemover } from "../infra/alias-cleanup.js";
 import { ChunkerPool } from "./chunker/infra/pool.js";
 import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
 import { ChunkPipeline } from "./index.js";
@@ -58,12 +59,19 @@ const HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
 export interface PipelineRegistryDeps {
   registry?: CollectionRegistry;
   teaRagsVersion?: string;
+  /**
+   * Deletes the per-version codegraph DuckDB file for an orphan collection
+   * during alias cleanup. Wired from the codegraph pool by the facade; omitted
+   * when codegraph is disabled. Without it the per-version DuckDB files leak.
+   */
+  codegraphRemover?: CodegraphDbRemover;
 }
 
 export abstract class BaseIndexingPipeline {
   protected readonly tuning: PipelineTuning;
   protected readonly registry: CollectionRegistry | undefined;
   protected readonly teaRagsVersion: string;
+  protected readonly codegraphRemover: CodegraphDbRemover | undefined;
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
@@ -78,6 +86,7 @@ export abstract class BaseIndexingPipeline {
     this.tuning = tuning ?? DEFAULT_TUNING;
     this.registry = registryDeps?.registry;
     this.teaRagsVersion = registryDeps?.teaRagsVersion ?? "0.0.0";
+    this.codegraphRemover = registryDeps?.codegraphRemover;
   }
 
   /**
