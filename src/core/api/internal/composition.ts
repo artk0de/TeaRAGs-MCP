@@ -7,6 +7,7 @@
  */
 
 import type { LanguageFactoryDescriptor } from "../../contracts/types/language.js";
+import type { WorkerEnrichmentDescriptor } from "../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
@@ -48,7 +49,18 @@ export interface CompositionOptions {
    * IngestFacade consumes the registry list directly (no inline
    * construction). When omitted, GitTrajectory wires with default config.
    */
-  git?: { config?: Partial<GitProviderConfig>; squashOpts?: SquashOptions };
+  git?: {
+    config?: Partial<GitProviderConfig>;
+    squashOpts?: SquashOptions;
+    /**
+     * Worker-pool descriptor built by the bootstrap composition root (which
+     * alone knows the absolute compiled-JS worker module path). When present,
+     * the GitEnrichmentProvider surfaces it so `WorkerPoolEnrichmentExecutor`
+     * dispatches git blame off-thread instead of inline. Omitted in tests ⇒
+     * inline-only (graceful fallback). bd tea-rags-mcp-dz7f.
+     */
+    workerDescriptor?: WorkerEnrichmentDescriptor;
+  };
   /**
    * When provided, registers the codegraph L1 family (Slice 1: Symbols).
    * Bootstrap supplies these deps when `CODEGRAPH_ENABLED` is true; tests
@@ -70,7 +82,7 @@ export function createComposition(options: CompositionOptions = {}): Composition
 
   const registry = new TrajectoryRegistry();
   registry.register(new StaticTrajectory());
-  registry.register(new GitTrajectory(options.git?.config, options.git?.squashOpts));
+  registry.register(new GitTrajectory(options.git?.config, options.git?.squashOpts, options.git?.workerDescriptor));
   if (options.codegraph) {
     for (const trajectory of createCodegraphTrajectories({ ...options.codegraph, languageFactory })) {
       registry.register(trajectory);

@@ -9,6 +9,7 @@
  * - Enrichment provider (file + chunk signal builders)
  */
 
+import type { WorkerEnrichmentDescriptor } from "../../contracts/types/provider.js";
 import type { Trajectory } from "../../contracts/types/trajectory.js";
 import { gitFilters } from "./git/filters.js";
 import type { SquashOptions } from "./git/infra/metrics.js";
@@ -29,7 +30,11 @@ export class GitTrajectory implements Trajectory {
   readonly statsAccumulators = [...gitStatsAccumulators];
   readonly enrichment: GitEnrichmentProvider;
 
-  constructor(config?: Partial<GitProviderConfig>, squashOpts?: SquashOptions) {
-    this.enrichment = new GitEnrichmentProvider(config, squashOpts);
+  constructor(
+    config?: Partial<GitProviderConfig>,
+    squashOpts?: SquashOptions,
+    workerDescriptor?: WorkerEnrichmentDescriptor,
+  ) {
+    this.enrichment = new GitEnrichmentProvider(config, squashOpts, workerDescriptor);
   }
 }
