@@ -203,9 +203,19 @@ export class IngestFacade {
         ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant), { executor: enrichmentExecutor })
         : undefined;
     const enrichment = new EnrichmentCoordinator(qdrant, providers, recovery, enrichmentExecutor);
+    // Codegraph DuckDB cleanup for orphan collections during alias cleanup.
+    // Wired from the pool's removeCollection (closes any cached handle, then
+    // unlinks `<collection>.duckdb` + `.wal`); undefined when codegraph is off.
+    const { codegraphPool } = deps;
+    const codegraphRemover: PipelineRegistryDeps["codegraphRemover"] = codegraphPool
+      ? async (orphan) => {
+          await codegraphPool.removeCollection(orphan);
+        }
+      : undefined;
     const registryDeps: PipelineRegistryDeps = {
       registry: deps.collectionRegistry,
       teaRagsVersion: deps.teaRagsVersion,
+      codegraphRemover,
     };
     const indexing = new IndexPipeline(
       qdrant,

@@ -212,8 +212,9 @@ export class IndexPipeline extends BaseIndexingPipeline {
     // currently points to (undefined on first index / migration).
     const previousCollection = aliasTargetCollection;
 
-    // Orphan cleanup before creating new version
-    await cleanupOrphanedVersions(this.qdrant, collectionName);
+    // Orphan cleanup before creating new version — also drops the per-version
+    // codegraph DuckDB file for each deleted orphan (best-effort, non-fatal).
+    await cleanupOrphanedVersions(this.qdrant, collectionName, this.codegraphRemover);
 
     // Clean up stale target from a previously failed attempt (e.g. crashed mid-index)
     const targetAlreadyExists = await this.qdrant.collectionExists(versionedName);
