@@ -79,6 +79,11 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     maxRequestsPerMinute: env("EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE", "EMBEDDING_MAX_REQUESTS_PER_MINUTE"),
     retryAttempts: env("EMBEDDING_TUNE_RETRY_ATTEMPTS", "EMBEDDING_RETRY_ATTEMPTS"),
     retryDelayMs: env("EMBEDDING_TUNE_RETRY_DELAY_MS", "EMBEDDING_RETRY_DELAY"),
+    healthCheckRetryAttempts: env(
+      "EMBEDDING_TUNE_HEALTH_CHECK_RETRY_ATTEMPTS",
+      "EMBEDDING_HEALTH_CHECK_RETRY_ATTEMPTS",
+    ),
+    healthCheckRetryDelayMs: env("EMBEDDING_TUNE_HEALTH_CHECK_RETRY_DELAY_MS", "EMBEDDING_HEALTH_CHECK_RETRY_DELAY_MS"),
   };
 
   const embedding = {

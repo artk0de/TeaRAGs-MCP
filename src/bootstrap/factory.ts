@@ -533,6 +533,8 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     enrichmentProviders,
     codegraphPool: codegraphContext?.pool,
     enrichmentExecutor,
+    healthCheckRetryAttempts: zodConfig.embedding.tune.healthCheckRetryAttempts,
+    healthCheckRetryDelayMs: zodConfig.embedding.tune.healthCheckRetryDelayMs,
   });
   const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [

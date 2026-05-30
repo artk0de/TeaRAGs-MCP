@@ -143,6 +143,21 @@ describe("parseAppConfigZod", () => {
       expect(embedding.tune.maxRequestsPerMinute).toBeUndefined();
       expect(embedding.tune.retryAttempts).toBe(3);
       expect(embedding.tune.retryDelayMs).toBe(1000);
+      expect(embedding.tune.healthCheckRetryAttempts).toBe(3);
+      expect(embedding.tune.healthCheckRetryDelayMs).toBe(250);
+    });
+
+    it("reads health-check retry overrides from env", async () => {
+      process.env.EMBEDDING_TUNE_HEALTH_CHECK_RETRY_ATTEMPTS = "5";
+      process.env.EMBEDDING_TUNE_HEALTH_CHECK_RETRY_DELAY_MS = "100";
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.tune.healthCheckRetryAttempts).toBe(5);
+      expect(embedding.tune.healthCheckRetryDelayMs).toBe(100);
+
+      delete process.env.EMBEDDING_TUNE_HEALTH_CHECK_RETRY_ATTEMPTS;
+      delete process.env.EMBEDDING_TUNE_HEALTH_CHECK_RETRY_DELAY_MS;
     });
   });
 

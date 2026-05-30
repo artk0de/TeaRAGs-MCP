@@ -5,6 +5,10 @@ export interface EmbeddingTuneConfig {
   maxRequestsPerMinute?: number;
   retryAttempts: number;
   retryDelayMs: number;
+  /** Attempts for the pre-indexing embedding health probe (resilient against event-loop starvation). */
+  healthCheckRetryAttempts: number;
+  /** Pause between health-probe attempts (ms) — yields the event loop. */
+  healthCheckRetryDelayMs: number;
 }
 
 export interface EmbeddingConfig {

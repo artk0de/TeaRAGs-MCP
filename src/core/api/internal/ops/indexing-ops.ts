@@ -40,6 +40,10 @@ type ModelInfo = { model: string; contextLength: number; dimensions: number };
 const CHARS_PER_TOKEN = 2;
 /** Safety factor: use 80% of model context to leave room for breadcrumbs/overlap. */
 const CONTEXT_SAFETY_FACTOR = 0.8;
+/** Default attempts for the pre-indexing embedding health probe (overridden via config). */
+const DEFAULT_HEALTH_CHECK_RETRY_ATTEMPTS = 3;
+/** Default pause between health-probe attempts (ms) — yields the event loop. */
+const DEFAULT_HEALTH_CHECK_RETRY_DELAY_MS = 250;
 
 export interface IndexingOpsDeps {
   qdrant: QdrantManager;
@@ -61,6 +65,16 @@ export interface IndexingOpsDeps {
    * collection so codegraph state does not outlive its parent index.
    */
   codegraphPool?: GraphDbClientPool;
+  /**
+   * Attempts for the pre-indexing embedding health probe. The probe can be
+   * starved of an event-loop tick by a busy synchronous burst and time out
+   * even though the provider is reachable; each retry's pause yields the loop
+   * so a starved probe succeeds. A genuinely-down provider fails all attempts
+   * and aborts with the typed `OllamaUnavailableError`. Defaults to 3.
+   */
+  healthCheckRetryAttempts?: number;
+  /** Pause between health-probe attempts (ms). The pause yields the event loop. Defaults to 250. */
+  healthCheckRetryDelayMs?: number;
 }
 
 export class IndexingOps {
@@ -78,6 +92,8 @@ export class IndexingOps {
   private readonly gitTimePeriods?: { fileMonths: number; chunkMonths: number };
   private readonly modelGuard?: EmbeddingModelGuard;
   private readonly codegraphPool?: GraphDbClientPool;
+  private readonly healthCheckRetryAttempts: number;
+  private readonly healthCheckRetryDelayMs: number;
   private readonly status: StatusModule;
 
   constructor(deps: IndexingOpsDeps) {
@@ -95,6 +111,8 @@ export class IndexingOps {
     this.gitTimePeriods = deps.gitTimePeriods;
     this.modelGuard = deps.modelGuard;
     this.codegraphPool = deps.codegraphPool;
+    this.healthCheckRetryAttempts = deps.healthCheckRetryAttempts ?? DEFAULT_HEALTH_CHECK_RETRY_ATTEMPTS;
+    this.healthCheckRetryDelayMs = deps.healthCheckRetryDelayMs ?? DEFAULT_HEALTH_CHECK_RETRY_DELAY_MS;
     this.status = new StatusModule(deps.qdrant, deps.snapshotDir);
   }
 
@@ -326,8 +344,29 @@ export class IndexingOps {
   // Private helpers
   // ---------------------------------------------------------------------------
 
+  /**
+   * Pre-indexing embedding health probe. Retries on failure with a short pause
+   * between attempts: the probe can be starved of an event-loop tick by a busy
+   * synchronous burst and fail even though the provider is reachable, and the
+   * pause yields the loop so the retry succeeds. A genuinely-down provider
+   * fails every attempt and the last typed error (e.g. `OllamaUnavailableError`)
+   * propagates to abort indexing exactly as before.
+   */
   private async checkEmbeddingHealth(): Promise<void> {
-    await this.embeddings.embed("health");
+    const attempts = Math.max(1, this.healthCheckRetryAttempts);
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        await this.embeddings.embed("health");
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < attempts) {
+          await new Promise((resolve) => setTimeout(resolve, this.healthCheckRetryDelayMs));
+        }
+      }
+    }
+    throw lastError;
   }
 
   private async resolveModelInfo(): Promise<ModelInfo | undefined> {
