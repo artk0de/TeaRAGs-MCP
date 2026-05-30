@@ -247,13 +247,19 @@ export class EnrichmentCoordinator {
   onChunksStored(collectionName: string, absolutePath: string, items: ChunkItem[]): void {
     if (!this.currentRun) return;
     const run = this.currentRun;
-    // Sequence file→chunk per batch: git buildChunkSignals reads the batch's
-    // blame/lastFileResult that streamFileBatch populates. Per-batch ordering
-    // replaces the removed whole-repo gate; cheap (one batch's files).
-    const fileDone = run.filePhase.onBatch(collectionName, absolutePath, items);
-    void Promise.resolve(fileDone).then(() => {
-      run.chunkPhase.onBatch(collectionName, absolutePath, items);
-    });
+    // Sequence file→chunk PER PROVIDER: a provider's buildChunkSignals reads the
+    // batch's file result its own streamFileBatch populated (git blame needs
+    // this), so each chunk dispatch must wait for the SAME provider's file work.
+    // It must NOT wait on other providers — gating git chunk on codegraph's
+    // (cold, serialized-DuckDB) file extraction starved git chunk (wy5i). The
+    // per-provider map keeps git.file→git.chunk and codegraph.file→codegraph.chunk
+    // fully concurrent across providers.
+    const fileWorkByProvider = run.filePhase.onBatch(collectionName, absolutePath, items);
+    for (const [providerKey, fileDone] of fileWorkByProvider) {
+      void fileDone.then(() => {
+        run.chunkPhase.onBatchProvider(providerKey, collectionName, absolutePath, items);
+      });
+    }
   }
 
   /**
