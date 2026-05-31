@@ -15,6 +15,15 @@ parentPort.on("message", (msg) => {
   if (msg.value === "BOOM") { parentPort.postMessage({ error: "boom" }); return; }
   // "HANG" never replies — pins its worker busy forever (test cleans up via shutdown).
   if (msg.value === "HANG") { return; }
+  // "SLOW:<ms>:<tag>" — reply after the given delay, echoing the tag. Lets the
+  // test stagger completion timing so concurrent dispatches overlap and the
+  // pinned-thread steal/strand interleaving is exercised deterministically.
+  if (typeof msg.value === "string" && msg.value.startsWith("SLOW:")) {
+    const parts = msg.value.split(":");
+    const ms = Number(parts[1]);
+    setTimeout(() => parentPort.postMessage({ threadId, value: msg.value }), ms);
+    return;
+  }
   // small delay so concurrent dispatches actually overlap across workers
   setTimeout(() => parentPort.postMessage({ threadId, value: msg.value }), 5);
 });
@@ -80,6 +89,79 @@ describe("ThreadPool", () => {
     expect(new Set(results.map((r) => r.threadId)).size).toBe(2);
     await pool.shutdown();
   });
+
+  // icfj — HARD DEADLOCK regression guard. An affinity-pinned item must never be
+  // stranded in the queue once its pinned thread is idle with no pending
+  // completion event. Repro of the root race (suspect 3): the affinity item is
+  // enqueued (its pinned thread was busy at dispatch time), but the completion
+  // that frees the pinned thread runs processQueue BEFORE the item lands in the
+  // queue. Since the only thing that re-runs processQueue is a worker completion
+  // EVENT, and every worker is now idle with nothing in flight, the queued
+  // affinity item is never reconsidered: all threads idle, queue non-empty, 0%
+  // CPU forever (matches the live sample: main + all workers in kevent).
+  //
+  // The dispatch path that enqueues never nudges processQueue, so a runnable
+  // item that arrives "between" completion events is stranded.
+  //
+  // Deterministic construction: we drive the affinity dispatch from INSIDE the
+  // resolution of the pinned thread's own completion — i.e. exactly the moment
+  // after pt.busy=false and after that handler's processQueue() already ran on a
+  // queue that did NOT yet contain the affinity item. The pinned thread is now
+  // idle, no other work is in flight, and the affinity item is enqueued with no
+  // event left to fire. Before the fix this HANGS (4s timeout); after it (the
+  // enqueue path nudges processQueue) it resolves immediately.
+  // icfj — HARD DEADLOCK regression guard (suspect 1: stateless steals an
+  // affinity-pinned thread). Stateless selection used `find(w => !w.busy)`,
+  // which never excluded affinity-pinned threads. A stateless item could occupy
+  // the very thread a collection is pinned to; an affinity item for that
+  // collection then queues behind it and can ONLY run on that one thread. If the
+  // stolen stateless work is long-lived (a cold codegraph build pins its thread
+  // for minutes — modelled here by HANG), the affinity item is stranded: queue
+  // non-empty, the pinned thread busy with foreign work, no progress — exactly
+  // the live force_reindex hang on commons-lang (all workers idle/blocked,
+  // 0% CPU). The fix: stateless work prefers an UNPINNED free thread, so it can
+  // never steal the thread an affinity item depends on while another thread is
+  // free.
+  it("never lets stateless work steal an affinity-pinned thread (affinity item must dispatch)", async () => {
+    const pool = new ThreadPool<EchoReq, EchoRes>(2, workerPath, {});
+
+    // Pin "X" to a thread and let it complete so affinity is established and the
+    // pinned thread returns idle. resolveAffinity prefers an unpinned thread.
+    const warm = await pool.dispatch({ value: "warm" }, "X");
+    const pinnedThreadId = warm.threadId;
+
+    // Dispatch long-lived stateless work. Pre-fix, find(!busy) picks the first
+    // idle thread — which is the pinned one — STEALING it. Post-fix, stateless
+    // work avoids the pinned thread and lands on the unpinned one.
+    const hog = pool.dispatch({ value: "HANG" });
+    void hog.catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 20)); // let the steal/placement settle
+
+    // Now an affinity-"X" item. Pre-fix the pinned thread is busy with the HANG
+    // steal, so this queues with affinityIndex = pinned and never runs (HANG
+    // never frees the thread) → 4s timeout. Post-fix the pinned thread is free,
+    // so it dispatches immediately and resolves on the same thread.
+    const affinity = pool.dispatch({ value: "q-affinity" }, "X");
+    await expect(affinity).resolves.toMatchObject({ value: "q-affinity" });
+    expect((await affinity).threadId).toBe(pinnedThreadId);
+
+    await pool.shutdown();
+  }, 4000);
+
+  // icfj — corollary: when EVERY thread is pinned (more collections than
+  // threads), stateless work has no unpinned thread to prefer, so it falls back
+  // to any free thread without deadlocking. Guards that findFreeStatelessThread's
+  // fallback preserves throughput rather than refusing to place stateless work.
+  it("falls back to a pinned-but-free thread for stateless work when no unpinned thread exists", async () => {
+    const pool = new ThreadPool<EchoReq, EchoRes>(2, workerPath, {});
+    // Pin both threads to distinct collections.
+    await Promise.all([pool.dispatch({ value: "a" }, "collA"), pool.dispatch({ value: "b" }, "collB")]);
+    // Now both threads are pinned. A stateless burst must still run (fallback to
+    // any free thread), not hang for lack of an unpinned thread.
+    const results = await Promise.all(["s0", "s1", "s2", "s3"].map(async (v) => pool.dispatch({ value: v })));
+    expect(results.map((r) => r.value).sort()).toEqual(["s0", "s1", "s2", "s3"]);
+    await pool.shutdown();
+  }, 4000);
 
   it("rejects when the worker reports an error", async () => {
     const pool = new ThreadPool<EchoReq, EchoRes>(1, workerPath, {});

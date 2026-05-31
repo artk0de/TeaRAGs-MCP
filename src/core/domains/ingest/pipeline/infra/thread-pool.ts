@@ -128,7 +128,12 @@ export class ThreadPool<Req, Res> {
         return;
       }
 
-      const free = this.threads.find((w) => !w.busy);
+      // Stateless work prefers an UNPINNED free thread (icfj): stealing an
+      // affinity-pinned thread would strand the affinity items that can ONLY run
+      // on it — a cold codegraph build holds its pinned thread for minutes, so a
+      // stolen pinned thread never frees in time and the queued affinity work
+      // hangs (all threads idle/blocked, 0% CPU; the live force_reindex hang).
+      const free = this.findFreeStatelessThread();
       if (free) this.dispatchTo(free, request, pending);
       else this.queue.push({ request, pending, affinityIndex: null });
     });
@@ -194,6 +199,21 @@ export class ThreadPool<Req, Res> {
     if (isDebug()) console.error(`[ThreadPool] Shut down ${this.workerPath}`);
   }
 
+  /**
+   * Pick a free thread for STATELESS work, preferring one that is NOT pinned by
+   * any affinity binding. Stealing an affinity-pinned thread for stateless work
+   * strands the affinity items queued behind it (they can only run on that one
+   * thread), so a stateless item only lands on a pinned thread when every
+   * unpinned thread is busy. Falls back to any free thread to preserve
+   * throughput when all free threads happen to be pinned.
+   */
+  private findFreeStatelessThread(): PoolThread<Res> | undefined {
+    const pinnedIndices = new Set(this.affinity.values());
+    const unpinnedFree = this.threads.find((w) => !w.busy && !pinnedIndices.has(w.index));
+    if (unpinnedFree) return unpinnedFree;
+    return this.threads.find((w) => !w.busy);
+  }
+
   private dispatchTo(pt: PoolThread<Res>, request: Req, pending: Pending<Res>): void {
     pt.busy = true;
     pt.pending = pending;
@@ -221,8 +241,9 @@ export class ThreadPool<Req, Res> {
         i++; // pinned thread still busy — leave queued, try the next item
         continue;
       }
-      // Stateless item: any free thread.
-      const free = this.threads.find((w) => !w.busy);
+      // Stateless item: any free thread, preferring an unpinned one so it does
+      // not steal a thread an affinity item is waiting on.
+      const free = this.findFreeStatelessThread();
       if (!free) {
         // No free thread for this stateless item right now. Later items may
         // still be affinity-pinned to a (different) free thread, so keep
