@@ -17,7 +17,11 @@ import { randomUUID } from "node:crypto";
 import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
-import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
+import type {
+  EnrichmentExecutor,
+  IndexRunDaemonGuard,
+  IndexRunDaemonRelease,
+} from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkLookupEntry, EnrichmentMetrics } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
@@ -46,6 +50,10 @@ const EMPTY_METRICS: EnrichmentMetrics = {
   estimatedSavedMs: 0,
 };
 
+/** No-op keep-alive guard: used when codegraph is disabled or in tests. */
+const NOOP_RELEASE: IndexRunDaemonRelease = async () => {};
+const NOOP_DAEMON_GUARD: IndexRunDaemonGuard = { begin: async () => NOOP_RELEASE };
+
 interface RunState {
   runId: string;
   startTime: number;
@@ -66,6 +74,14 @@ interface RunState {
    * subsequently-written "completed" markers.
    */
   markStartPromise: Promise<void>;
+  /**
+   * Fire-and-forget keep-alive acquired in `beginRun`. Holds the codegraph
+   * daemon alive across chunk-write + enrichment (the daemon idle-dies after
+   * 30s, but chunk-write can exceed that). `awaitCompletion` awaits this and
+   * calls the release in its finally so the daemon resumes idle shutdown.
+   * Resolves to a no-op release when codegraph is off or the keep-alive failed.
+   */
+  daemonReleasePromise: Promise<IndexRunDaemonRelease>;
 }
 
 export class EnrichmentCoordinator {
@@ -79,6 +95,13 @@ export class EnrichmentCoordinator {
    * without any other coordinator/phase changes.
    */
   private readonly executor: EnrichmentExecutor;
+
+  /**
+   * Keep-alive guard for the stateful codegraph daemon. `begin` at run start,
+   * release in `awaitCompletion` finally — spans chunk-write + enrichment so
+   * the daemon never idle-dies mid-run. No-op when codegraph is disabled.
+   */
+  private readonly daemonGuard: IndexRunDaemonGuard;
 
   /**
    * Optional callback fired after enrichment milestones. Invoked at most twice
@@ -116,10 +139,12 @@ export class EnrichmentCoordinator {
     providers: EnrichmentProvider | EnrichmentProvider[],
     private readonly recovery?: EnrichmentRecovery,
     executor?: EnrichmentExecutor,
+    daemonGuard?: IndexRunDaemonGuard,
   ) {
     this.markerStore = new EnrichmentMarkerStore(qdrant);
     this.providers = Array.isArray(providers) ? providers : [providers];
     this.executor = executor ?? new InlineEnrichmentExecutor();
+    this.daemonGuard = daemonGuard ?? NOOP_DAEMON_GUARD;
   }
 
   /**
@@ -236,6 +261,16 @@ export class EnrichmentCoordinator {
           .markStart(collectionName, [...runState.contexts.keys()], runState.runId, runState.startedAt)
           .catch(() => undefined)
       : Promise.resolve();
+
+    // Hold the codegraph daemon alive for the whole run. Fire-and-forget here
+    // (non-blocking begin); `awaitCompletion` awaits the release and calls it
+    // in its finally. Gated on having providers + a collection — a provider-
+    // less or anonymous run has nothing to keep alive. begin never rejects
+    // (guard contract), but .catch keeps a stray rejection from going unhandled.
+    runState.daemonReleasePromise =
+      collectionName && this.providers.length > 0
+        ? this.daemonGuard.begin(collectionName).catch(() => NOOP_RELEASE)
+        : Promise.resolve(NOOP_RELEASE);
   }
 
   /**
@@ -304,6 +339,13 @@ export class EnrichmentCoordinator {
     } catch (error) {
       run.rejectDone(error);
       throw error;
+    } finally {
+      // Release the daemon keep-alive on EVERY path (success, error, crash).
+      // Skipping this would pin the daemon's refcount > 0 forever and defeat
+      // its idle shutdown. The release is idempotent and swallows its own
+      // errors so it never masks the run's real outcome.
+      const release = await run.daemonReleasePromise.catch(() => NOOP_RELEASE);
+      await release().catch(() => undefined);
     }
   }
 
@@ -343,6 +385,7 @@ export class EnrichmentCoordinator {
       resolveDone,
       rejectDone,
       markStartPromise: Promise.resolve(),
+      daemonReleasePromise: Promise.resolve(NOOP_RELEASE),
     };
   }
 

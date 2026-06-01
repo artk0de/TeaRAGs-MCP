@@ -107,3 +107,35 @@ export interface EnrichmentExecutor {
   /** Release executor resources (worker pool shutdown); no-op for inline. */
   shutdown: () => Promise<void>;
 }
+
+/** Release handle returned by `IndexRunDaemonGuard.begin`. Idempotent; never throws. */
+export type IndexRunDaemonRelease = () => Promise<void>;
+
+/**
+ * Keeps a stateful enrichment backend (codegraph DuckDB daemon) alive for the
+ * full duration of one enrichment run — chunk-write AND background enrichment.
+ *
+ * Why this exists: the codegraph daemon self-terminates after 30s idle, but a
+ * force-reindex's chunk-write phase can exceed that window with no daemon
+ * socket held, so the daemon idle-dies before worker enrichment connects. The
+ * enrichment worker can only CONNECT to the daemon (it rebuilds the provider
+ * from a serializable descriptor with no spawn capability), so nothing on the
+ * enrichment path revives a dead daemon. `begin` ensures the daemon is alive
+ * and holds ONE real keep-alive socket (refs ≥ 1 suppresses idle shutdown);
+ * the returned release closes it so the daemon resumes its normal idle
+ * lifecycle.
+ *
+ * Owned by `EnrichmentCoordinator`: `begin` at `beginRun`, release in
+ * `awaitCompletion`'s finally — that span is exactly chunk-write + enrichment.
+ *
+ * No-op implementation is used when codegraph is disabled or in tests.
+ */
+export interface IndexRunDaemonGuard {
+  /**
+   * Ensure the daemon is alive and hold a keep-alive connection for the run.
+   * MUST resolve (never reject) — a failed keep-alive returns a no-op release
+   * and logs, so it never blocks indexing. The returned release MUST be called
+   * when the run ends (success, error, or crash) or the daemon never idle-dies.
+   */
+  begin: (collectionName: string) => Promise<IndexRunDaemonRelease>;
+}

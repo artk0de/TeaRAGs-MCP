@@ -24,6 +24,7 @@ import {
 } from "../core/api/index.js";
 import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
+import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
@@ -210,6 +211,8 @@ interface CodegraphContext {
   deps: CodegraphDeps;
   graphFacade: GraphFacade;
   pool: GraphDbClientPool;
+  /** Keep-alive guard handed to the EnrichmentCoordinator (daemon stays up across the run). */
+  indexRunDaemonGuard: IndexRunDaemonGuard;
 }
 
 const codegraphDaemonLock = new DaemonLock();
@@ -452,7 +455,39 @@ export function wireCodegraph(
     workerDescriptor,
   };
   const graphFacade = new GraphFacade({ pool, collectionRegistry, resolveActiveCollection });
-  return { deps, graphFacade, pool };
+
+  // Keep-alive guard for the index run. The daemon idle-shuts-down after 30s,
+  // but a force-reindex's chunk-write phase can exceed that with no daemon
+  // socket held — so the daemon dies before worker enrichment connects, and the
+  // worker (connect-only, no spawn) cannot revive it. `begin` ensures the daemon
+  // is alive and holds ONE real socket (refs ≥ 1 suppresses idle shutdown) for
+  // the whole run; the release closes it so normal idle lifecycle resumes.
+  // begin never rejects — a failed keep-alive returns a no-op release and logs,
+  // so it never blocks indexing.
+  const indexRunDaemonGuard: IndexRunDaemonGuard = {
+    begin: async (collectionName: string) => {
+      try {
+        ensure(); // spawn the daemon if not already alive (single-flighted)
+        const { DaemonGraphDbClient } = await import("../core/adapters/duckdb/daemon/client.js");
+        const client = new DaemonGraphDbClient(daemonPaths.socketPath, collectionName);
+        await client.init(); // bounded 5s connect retry absorbs the spawn race
+        return async () => {
+          try {
+            await client.close();
+          } catch {
+            /* close-of-already-closed is a no-op; never mask the run outcome */
+          }
+        };
+      } catch (err) {
+        process.stderr.write(
+          `[tea-rags] codegraph daemon keep-alive failed for ${collectionName}: ${(err as Error).message}\n`,
+        );
+        return async () => {};
+      }
+    },
+  };
+
+  return { deps, graphFacade, pool, indexRunDaemonGuard };
 }
 
 export async function createAppContext(config: AppConfig): Promise<AppContext> {
@@ -532,6 +567,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     teaRagsVersion: pkg.version,
     enrichmentProviders,
     codegraphPool: codegraphContext?.pool,
+    indexRunDaemonGuard: codegraphContext?.indexRunDaemonGuard,
     enrichmentExecutor,
     healthCheckRetryAttempts: zodConfig.embedding.tune.healthCheckRetryAttempts,
     healthCheckRetryDelayMs: zodConfig.embedding.tune.healthCheckRetryDelayMs,

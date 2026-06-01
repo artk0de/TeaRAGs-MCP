@@ -32,6 +32,34 @@ describe("EnrichmentCoordinator", () => {
     expect(coordinator.providerKeys).toEqual(["git"]);
   });
 
+  describe("codegraph daemon keep-alive", () => {
+    it("begins the daemon guard at beginRun and releases it after awaitCompletion", async () => {
+      const release = vi.fn().mockResolvedValue(undefined);
+      const guard = { begin: vi.fn().mockResolvedValue(release) };
+      const coord = new EnrichmentCoordinator(mockQdrant, mockProvider, undefined, undefined, guard);
+      coord.beginRun("/repo", "coll-x");
+      expect(guard.begin).toHaveBeenCalledWith("coll-x");
+      // Held across the run — not released until awaitCompletion finishes.
+      expect(release).not.toHaveBeenCalled();
+      await coord.awaitCompletion("coll-x");
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not begin the keep-alive for an anonymous run (no collectionName)", async () => {
+      const guard = { begin: vi.fn() };
+      const coord = new EnrichmentCoordinator(mockQdrant, mockProvider, undefined, undefined, guard);
+      coord.beginRun("/repo"); // no collectionName
+      expect(guard.begin).not.toHaveBeenCalled();
+      await coord.awaitCompletion(""); // no run/contexts → safe no-op
+    });
+
+    it("works with no guard injected (default no-op) — awaitCompletion still resolves", async () => {
+      const coord = new EnrichmentCoordinator(mockQdrant, mockProvider);
+      coord.beginRun("/repo", "coll-z");
+      await expect(coord.awaitCompletion("coll-z")).resolves.toBeDefined();
+    });
+  });
+
   it("resolves the effective root at beginRun and streams against it per batch", async () => {
     const divergentProvider: EnrichmentProvider = {
       ...mockProvider,
@@ -2200,5 +2228,58 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
     await coordinator.awaitCompletion("test-col");
 
     expect(streamRoots).toContain("/repo-2");
+  });
+});
+
+describe("EnrichmentCoordinator — daemon guard error paths", () => {
+  let mockQdrant: any;
+  let mockProvider: EnrichmentProvider;
+
+  beforeEach(() => {
+    mockQdrant = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    mockProvider = {
+      key: "git",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+  });
+
+  it("swallows a daemonGuard.begin() rejection and still completes awaitCompletion", async () => {
+    // Covers the `.catch(() => NOOP_RELEASE)` branch on line 272 of coordinator.ts.
+    // When the daemon guard's begin() rejects (e.g. DuckDB not available), the
+    // coordinator falls back to a NOOP release and the indexing run proceeds normally.
+    const failingGuard = {
+      begin: vi.fn().mockRejectedValue(new Error("daemon unavailable")),
+    };
+    const coord = new EnrichmentCoordinator(mockQdrant, mockProvider, undefined, undefined, failingGuard);
+    coord.beginRun("/repo", "coll-err");
+
+    // begin() was called (fire-and-forget), rejection is caught — no throw here.
+    await expect(coord.awaitCompletion("coll-err")).resolves.toBeDefined();
+    expect(failingGuard.begin).toHaveBeenCalledWith("coll-err");
+  });
+
+  it("swallows a release() rejection in awaitCompletion finally and still resolves metrics", async () => {
+    // Covers the `.catch(() => undefined)` branch on line 348 of coordinator.ts.
+    // When the acquired release function itself rejects on call, the finally block
+    // must not surface the error — the metrics result from the run is still returned.
+    const failingRelease = vi.fn().mockRejectedValue(new Error("close failed"));
+    const guardWithFailingRelease = {
+      begin: vi.fn().mockResolvedValue(failingRelease),
+    };
+    const coord = new EnrichmentCoordinator(mockQdrant, mockProvider, undefined, undefined, guardWithFailingRelease);
+    coord.beginRun("/repo", "coll-release-err");
+
+    const metrics = await coord.awaitCompletion("coll-release-err");
+    expect(metrics).toHaveProperty("totalDurationMs");
+    expect(failingRelease).toHaveBeenCalledTimes(1);
   });
 });
