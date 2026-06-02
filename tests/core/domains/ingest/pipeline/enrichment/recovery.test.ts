@@ -368,7 +368,22 @@ describe("EnrichmentRecovery.recoverAll race guard", () => {
     // INDEXING_METADATA_ID via storeIndexingMarker before enrichment starts.
     await qdrant.addPoints("coll", [{ id: INDEXING_METADATA_ID, vector: new Array(384).fill(0), payload: {} }]);
     const marker = new EnrichmentMarkerStore(qdrant as any);
-    await marker.markStart("coll", ["git"], "BASELINE", "2026-05-07T10:00:00Z");
+    // Baseline run finished with a terminal per-provider marker carrying its
+    // runId — `getRunId` reads this back as the snapshot the guard compares.
+    await marker.markFileFinal("coll", "git", {
+      runId: "BASELINE",
+      status: "completed",
+      durationMs: 1,
+      unenrichedChunks: 0,
+      matchedFiles: 1,
+      missedFiles: 0,
+    });
+    await marker.markChunkFinal("coll", "git", {
+      runId: "BASELINE",
+      status: "completed",
+      durationMs: 1,
+      unenrichedChunks: 0,
+    });
 
     const applier = {
       applyFileSignals: vi.fn().mockResolvedValue(undefined),
@@ -376,16 +391,32 @@ describe("EnrichmentRecovery.recoverAll race guard", () => {
     };
     const recovery = new EnrichmentRecovery(qdrant as any, applier as any);
 
-    // Stub recoverFileLevel and recoverChunkLevel to flip the runId during the call.
+    // Stub recoverFileLevel and recoverChunkLevel to flip the runId during the
+    // call. The concurrent run writes FRESH terminal markers (runId NEW_RUN), so
+    // the post-recovery re-check sees a different runId than the BASELINE snapshot.
     vi.spyOn(recovery, "recoverFileLevel").mockImplementation(async () => {
-      // simulate concurrent run rewriting the marker
-      await marker.markStart("coll", ["git"], "NEW_RUN", "2026-05-07T11:00:00Z");
-      return { recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 };
+      await marker.markFileFinal("coll", "git", {
+        runId: "NEW_RUN",
+        status: "completed",
+        durationMs: 1,
+        unenrichedChunks: 0,
+        matchedFiles: 1,
+        missedFiles: 0,
+      });
+      await marker.markChunkFinal("coll", "git", {
+        runId: "NEW_RUN",
+        status: "completed",
+        durationMs: 1,
+        unenrichedChunks: 0,
+      });
+      // Return a result that, if written, would DEGRADE the marker — a visible
+      // clobber the guard must prevent.
+      return { recoveredFiles: 1, recoveredChunks: 1, remainingUnenriched: 5 };
     });
     vi.spyOn(recovery, "recoverChunkLevel").mockResolvedValue({
-      recoveredFiles: 0,
-      recoveredChunks: 0,
-      remainingUnenriched: 0,
+      recoveredFiles: 1,
+      recoveredChunks: 1,
+      remainingUnenriched: 5,
     });
 
     const provider = {
@@ -399,10 +430,14 @@ describe("EnrichmentRecovery.recoverAll race guard", () => {
     await recovery.recoverAll("coll", "/repo", ctx, marker);
 
     const m = (await marker.read("coll"))!.git as any;
-    // file/chunk status MUST stay at the values from the new run (in_progress / pending),
-    // not be overwritten by the stale recovery's "completed".
-    expect(m.file.status).toBe("in_progress");
-    expect(m.chunk.status).toBe("pending");
-    expect(m.runId).toBe("NEW_RUN");
+    // The runId changed (BASELINE → NEW_RUN) between snapshot and re-check, so the
+    // stale recovery MUST skip its markRecoveryResult write. The marker therefore
+    // still reflects the concurrent run's terminal state (completed / NEW_RUN),
+    // NOT the stale recovery's degraded/failed counts.
+    expect(m.file.status).toBe("completed");
+    expect(m.chunk.status).toBe("completed");
+    expect(m.file.runId).toBe("NEW_RUN");
+    expect(m.chunk.runId).toBe("NEW_RUN");
+    expect(m.file.unenrichedChunks).toBe(0);
   });
 });

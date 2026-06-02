@@ -47,6 +47,7 @@ export class CompletionRunner {
     startTime: number,
     unenrichedReader?: UnenrichedReader,
     runStartedAt = "",
+    runId = "",
   ): Promise<EnrichmentMetrics> {
     const { filePhase, chunkPhase, backfiller, applier, markerStore, executor } = this.deps;
     const readUnenriched: UnenrichedReader = unenrichedReader ?? (async () => 0);
@@ -92,6 +93,7 @@ export class CompletionRunner {
           ? "degraded"
           : "completed";
       await markerStore.markFileFinal(coll, ctx.key, {
+        runId,
         status: fileStatus,
         durationMs: filePhase.getPrefetchDurationMs(ctx.key),
         unenrichedChunks: fileUnenriched,
@@ -166,6 +168,7 @@ export class CompletionRunner {
         chunkStatus = "completed";
       }
       await markerStore.markChunkFinal(coll, ctx.key, {
+        runId,
         status: chunkStatus,
         durationMs: finalChunkMetrics.totalChunkEnrichmentDurationMs,
         unenrichedChunks: chunkUnenriched,

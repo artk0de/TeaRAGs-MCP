@@ -51,7 +51,7 @@ describe("CompletionRunner", () => {
     const contexts = new Map([[ctx.key, ctx]]);
     filePhase.init(contexts, "coll", "run-1", "ts");
     chunkPhase.init(contexts, "coll", "ts");
-    await marker.markStart("coll", ["git"], "run-1", "ts");
+    await marker.markRunStart("coll", ["git"], "run-1", "ts");
 
     const m = await runner.run("coll", contexts, Date.now() - 1000);
     expect(m.totalDurationMs).toBeGreaterThanOrEqual(0);
@@ -94,7 +94,7 @@ describe("CompletionRunner", () => {
     const contexts = new Map([[ctx.key, ctx]]);
     filePhase.init(contexts, "coll", "run-2", "ts");
     chunkPhase.init(contexts, "coll", "ts");
-    await marker.markStart("coll", ["git"], "run-2", "ts");
+    await marker.markRunStart("coll", ["git"], "run-2", "ts");
 
     const reader = vi.fn(async (_coll: string, _key: string, level: "file" | "chunk") => (level === "file" ? 3 : 17));
 
@@ -144,12 +144,12 @@ describe("CompletionRunner", () => {
 
     filePhase.init(contexts, "coll", "run-3", "ts");
     chunkPhase.init(contexts, "coll", "ts");
-    await marker.markStart("coll", ["git"], "run-3", "ts");
+    await marker.markRunStart("coll", ["git"], "run-3", "ts");
 
     // Stream a batch for a path that streamFileBatch/buildFileSignals returns no
     // overlay for — populates _missedFileChunks so step 3 (backfill) runs and
     // sets backfillOccurred=true.
-    await filePhase.onBatch("coll", "/repo", [
+    filePhase.onBatch("coll", "/repo", [
       { chunkId: "c-missed", chunk: { metadata: { filePath: "/repo/missed.ts" }, startLine: 1, endLine: 5 } } as any,
     ]);
     await filePhase.drain();
@@ -198,7 +198,7 @@ describe("CompletionRunner", () => {
 
     filePhase.init(contexts, "coll", "run-4", "ts");
     chunkPhase.init(contexts, "coll", "ts");
-    await marker.markStart("coll", ["git"], "run-4", "ts");
+    await marker.markRunStart("coll", ["git"], "run-4", "ts");
 
     // No onBatch call — _missedFileChunks stays empty, backfill skipped.
     const cb = vi.fn().mockResolvedValue(undefined);
@@ -250,7 +250,7 @@ describe("CompletionRunner", () => {
 
     filePhase.init(contexts, "coll", "run-fin", "ts");
     chunkPhase.init(contexts, "coll", "ts");
-    await marker.markStart("coll", ["codegraph.symbols"], "run-fin", "ts");
+    await marker.markRunStart("coll", ["codegraph.symbols"], "run-fin", "ts");
 
     // Accumulate a deferred chunkMap (deferred provider — onBatch only accumulates).
     chunkPhase.onBatch("coll", "/repo", [
@@ -305,7 +305,7 @@ describe("CompletionRunner", () => {
 
     filePhase.init(contexts, "coll", "run-def", "ts");
     chunkPhase.init(contexts, "coll", "ts");
-    await marker.markStart("coll", ["codegraph.symbols"], "run-def", "ts");
+    await marker.markRunStart("coll", ["codegraph.symbols"], "run-def", "ts");
 
     chunkPhase.onBatch("coll", "/repo", [
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/a.ts" }, startLine: 1, endLine: 10 } } as any,
@@ -318,7 +318,9 @@ describe("CompletionRunner", () => {
       expect.any(Map),
       expect.objectContaining({ skipCache: true, collectionName: "coll" }),
     );
-    const final = (await marker.read("coll"))!["codegraph.symbols"] as any;
+    // Dotted provider key is stored NESTED (enrichment.codegraph.symbols.chunk),
+    // not as a literal "codegraph.symbols" property.
+    const final = ((await marker.read("coll"))!.codegraph as any).symbols;
     expect(final.chunk.status).toBe("completed");
   });
 
@@ -356,7 +358,7 @@ describe("CompletionRunner", () => {
 
     filePhase.init(contexts, "coll", "run-deg", "ts");
     chunkPhase.init(contexts, "coll", "ts");
-    await marker.markStart("coll", ["git"], "run-deg", "ts");
+    await marker.markRunStart("coll", ["git"], "run-deg", "ts");
 
     const reader = vi.fn(async (_c: string, _k: string, level: "file" | "chunk") => (level === "file" ? 2 : 0));
     await runner.run("coll", contexts, Date.now(), reader);

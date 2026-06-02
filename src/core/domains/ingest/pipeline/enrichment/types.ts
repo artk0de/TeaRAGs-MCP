@@ -22,9 +22,39 @@ export interface ProviderContext {
 
 // --- Enrichment marker types (per-provider, per-level) ---
 
-export type EnrichmentLevelStatus = "pending" | "in_progress" | "completed" | "degraded" | "failed";
+/**
+ * Run-pointer — the ONLY pre-completion marker write. Lives at
+ * `payload.enrichment._run`. Written once at run start (`markRunStart`) and
+ * refreshed by a throttled heartbeat. `get_index_status` compares each per-kind
+ * marker's `runId` against this to detect stale/in-flight runs (a marker whose
+ * runId != the active `_run.runId` is rendered in_progress, never healthy).
+ */
+export interface RunMarker {
+  runId: string;
+  startedAt: string;
+  /** Throttled heartbeat; advanced on real apply progress. */
+  lastProgressAt: string;
+  /**
+   * Provider keys active in this run. Markers are stored NESTED
+   * (`enrichment.codegraph.symbols.file`, matching the applier's codegraph
+   * convention), so the marker tree is not self-describing — a dotted key like
+   * `codegraph.symbols` is indistinguishable from nesting. This list tells the
+   * health mapper which nested paths to navigate to find per-provider markers.
+   */
+  providers: string[];
+}
+
+/**
+ * PERSISTED per-level status is terminal-only. `in_progress` / `pending` /
+ * `stalled` are NEVER written — they are DERIVED at read time by the health
+ * mapper from the `_run` pointer (absent or stale-runId marker). See
+ * `EnrichmentLevelHealth` for the API-facing (derived) status union.
+ */
+export type EnrichmentLevelStatus = "completed" | "degraded" | "failed";
 
 export interface EnrichmentLevelMarker {
+  /** The run that produced this terminal marker (staleness key). */
+  runId?: string;
   status: EnrichmentLevelStatus;
   startedAt?: string;
   completedAt?: string;
@@ -32,27 +62,18 @@ export interface EnrichmentLevelMarker {
   matchedFiles?: number;
   missedFiles?: number;
   unenrichedChunks: number;
-  /** ISO timestamp of last progress heartbeat */
-  lastProgressAt?: string;
-  /** Enriched chunk count at last heartbeat */
-  lastProgressChunks?: number;
   /**
    * Propagated error message when `status === "failed"`. Surfaced to
    * `get_index_status` via the health mapper so MCP consumers see the
    * concrete failure (e.g. "Codegraph spill write failed at .spill/…")
-   * instead of a generic "in_progress" stuck marker. Optional because
-   * the markStart / markFileFinal paths don't carry one.
+   * instead of a generic failure placeholder.
    */
   errorMessage?: string;
 }
 
-export interface FileEnrichmentMarker extends EnrichmentLevelMarker {
-  status: "pending" | "in_progress" | "completed" | "degraded" | "failed";
-}
+export type FileEnrichmentMarker = EnrichmentLevelMarker;
 
-export interface ChunkEnrichmentMarker extends EnrichmentLevelMarker {
-  status: "pending" | "in_progress" | "completed" | "degraded" | "failed";
-}
+export type ChunkEnrichmentMarker = EnrichmentLevelMarker;
 
 export interface ProviderEnrichmentMarker {
   runId: string;
@@ -60,8 +81,13 @@ export interface ProviderEnrichmentMarker {
   chunk: ChunkEnrichmentMarker;
 }
 
-/** Shape stored in Qdrant metadata point (ID=1) payload.enrichment */
-export type EnrichmentMarkerMap = Record<string, ProviderEnrichmentMarker>;
+/**
+ * Shape stored in Qdrant metadata point (ID=1) payload.enrichment.
+ * Per-provider entries are keyed by provider key; `_run` holds the run-pointer.
+ */
+export type EnrichmentMarkerMap = {
+  _run?: RunMarker;
+} & Record<string, ProviderEnrichmentMarker | RunMarker | undefined>;
 
 /** API-facing health per level */
 export interface EnrichmentLevelHealth {
@@ -86,6 +112,7 @@ export type EnrichmentHealthMap = Record<string, EnrichmentProviderHealth>;
 
 /** Input for EnrichmentMarkerStore.markFileFinal. */
 export interface FileFinalInput {
+  runId: string;
   status: "completed" | "degraded" | "failed";
   durationMs: number;
   unenrichedChunks: number;
@@ -95,6 +122,7 @@ export interface FileFinalInput {
 
 /** Input for EnrichmentMarkerStore.markChunkFinal. */
 export interface ChunkFinalInput {
+  runId: string;
   status: "completed" | "degraded" | "failed";
   durationMs: number;
   unenrichedChunks: number;
@@ -102,6 +130,7 @@ export interface ChunkFinalInput {
 
 /** Input for EnrichmentMarkerStore.markRecoveryResult. */
 export interface RecoveryResultInput {
+  runId: string;
   fileStatus: "completed" | "failed";
   fileUnenriched: number;
   chunkStatus: "completed" | "degraded" | "failed";

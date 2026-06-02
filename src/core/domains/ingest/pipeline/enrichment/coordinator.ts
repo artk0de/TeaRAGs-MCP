@@ -68,12 +68,13 @@ interface RunState {
   resolveDone: (m: EnrichmentMetrics) => void;
   rejectDone: (e: unknown) => void;
   /**
-   * Fire-and-forget initial-marker write set in `prefetch()`. The
-   * CompletionRunner awaits it before step 4/7 finalize writes so the
-   * read-modify-write snapshot inside markStart can never clobber
-   * subsequently-written "completed" markers.
+   * Fire-and-forget `_run`-pointer write set in `beginRun()`. `awaitCompletion`
+   * awaits it before the terminal writes so the run-pointer is present when the
+   * health mapper compares per-kind marker runIds against `_run.runId`.
    */
-  markStartPromise: Promise<void>;
+  markRunStartPromise: Promise<void>;
+  /** Epoch ms of the last heartbeat write — throttles `_run.lastProgressAt` updates. */
+  lastHeartbeatAt: number;
   /**
    * Fire-and-forget keep-alive acquired in `beginRun`. Holds the codegraph
    * daemon alive across chunk-write + enrichment (the daemon idle-dies after
@@ -85,6 +86,8 @@ interface RunState {
 }
 
 export class EnrichmentCoordinator {
+  /** Min interval between `_run.lastProgressAt` heartbeat writes. */
+  private static readonly HEARTBEAT_THROTTLE_MS = 30_000;
   private readonly markerStore: EnrichmentMarkerStore;
   private currentRun: RunState | null = null;
   private readonly providers: EnrichmentProvider[];
@@ -248,17 +251,14 @@ export class EnrichmentCoordinator {
     runState.filePhase.init(runState.contexts, collectionName ?? "", runState.runId, runState.startedAt);
     runState.chunkPhase.init(runState.contexts, collectionName ?? "", runState.startedAt);
 
-    // markStart writes the initial { file: in_progress, chunk: pending }
-    // marker via read-modify-write on the qdrant metadata point. It MUST
-    // persist BEFORE the CompletionRunner finalization writes (step 4 /
-    // step 7) land — otherwise the fire-and-forget markStart can race
-    // and clobber freshly-written "completed" markers with its stale
-    // snapshot (read before final writes). The fix tracks the promise
-    // on the run and CompletionRunner awaits it before writing
-    // finalizers.
-    runState.markStartPromise = collectionName
+    // markRunStart writes ONLY the `_run` pointer ({runId, startedAt,
+    // lastProgressAt, providers}) — the single pre-completion write. No
+    // per-level in_progress/pending is persisted (terminal-only model). The
+    // promise is tracked on the run so awaitCompletion gates on it before the
+    // terminal writes, keeping `_run` present before they land.
+    runState.markRunStartPromise = collectionName
       ? this.markerStore
-          .markStart(collectionName, [...runState.contexts.keys()], runState.runId, runState.startedAt)
+          .markRunStart(collectionName, [...runState.contexts.keys()], runState.runId, runState.startedAt)
           .catch(() => undefined)
       : Promise.resolve();
 
@@ -295,6 +295,26 @@ export class EnrichmentCoordinator {
         run.chunkPhase.onBatchProvider(providerKey, collectionName, absolutePath, items);
       });
     }
+    // Advance the run-pointer heartbeat on real apply progress (throttled). A
+    // hung run stops producing batches → lastProgressAt freezes → the health
+    // mapper derives stalled/crashed instead of a stuck in_progress.
+    this.maybeHeartbeat(collectionName, run);
+  }
+
+  /**
+   * Throttled `_run.lastProgressAt` heartbeat. Fires at most once per
+   * HEARTBEAT_THROTTLE_MS and only for the CURRENTLY-active run (RunState
+   * isolation: a stale closure's run is no longer `this.currentRun`, so it
+   * never rewrites the live `_run` with an old runId). Fire-and-forget.
+   */
+  private maybeHeartbeat(collectionName: string, run: RunState): void {
+    if (!collectionName || this.currentRun !== run) return;
+    const now = Date.now();
+    if (now - run.lastHeartbeatAt < EnrichmentCoordinator.HEARTBEAT_THROTTLE_MS) return;
+    run.lastHeartbeatAt = now;
+    void this.markerStore
+      .heartbeat(collectionName, [...run.contexts.keys()], run.runId, run.startedAt, new Date().toISOString())
+      .catch(() => undefined);
   }
 
   /**
@@ -312,11 +332,10 @@ export class EnrichmentCoordinator {
   async awaitCompletion(collectionName: string): Promise<EnrichmentMetrics> {
     const run = this.currentRun;
     if (!run || run.contexts.size === 0) return EMPTY_METRICS;
-    // Block until the run's initial markStart has persisted. Without
-    // this gate the fire-and-forget markStart can race past the final
-    // marker writes and clobber them with its stale snapshot — leaving
-    // get_index_status reporting "in_progress" for completed runs.
-    await run.markStartPromise;
+    // Block until the run's `_run` pointer has persisted, so the terminal
+    // writes (which carry this run's runId) land against a present run-pointer
+    // and the health mapper's runId comparison is meaningful.
+    await run.markRunStartPromise;
     try {
       const metrics = await run.completion.run(
         collectionName,
@@ -324,6 +343,7 @@ export class EnrichmentCoordinator {
         run.startTime,
         async (coll, providerKey, level) => this.countSettledUnenriched(coll, providerKey, level),
         run.startedAt,
+        run.runId,
       );
       // Phase 2 of unified-enrichment-worker-pool plan: signal the executor
       // to release any per-collection state it cached. For Inline executor
@@ -384,7 +404,8 @@ export class EnrichmentCoordinator {
       donePromise,
       resolveDone,
       rejectDone,
-      markStartPromise: Promise.resolve(),
+      markRunStartPromise: Promise.resolve(),
+      lastHeartbeatAt: 0,
       daemonReleasePromise: Promise.resolve(NOOP_RELEASE),
     };
   }
