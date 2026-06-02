@@ -276,7 +276,7 @@ describe("FilePhase", () => {
     await seedMarkerPoint(qdrant, "coll");
     const applier = new EnrichmentApplier(qdrant as any);
     const marker = new EnrichmentMarkerStore(qdrant as any);
-    await marker.markStart("coll", ["git"], "run-1", "ts");
+    await marker.markRunStart("coll", ["git"], "run-1", "ts");
 
     const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
     const streamFileBatch = vi.fn().mockRejectedValue(new Error("boom"));

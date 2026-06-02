@@ -222,6 +222,7 @@ export class EnrichmentRecovery {
       }
 
       await markerStore.markRecoveryResult(coll, ctx.key, {
+        runId: baselineRunId ?? "",
         fileStatus: fileResult.remainingUnenriched === 0 ? "completed" : "failed",
         fileUnenriched: fileResult.remainingUnenriched,
         chunkStatus: chunkResult.remainingUnenriched === 0 ? "completed" : "degraded",

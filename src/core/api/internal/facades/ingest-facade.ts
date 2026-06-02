@@ -13,7 +13,7 @@ import { join } from "node:path";
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { EnrichmentExecutor } from "../../../contracts/types/enrichment-executor.js";
+import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
@@ -88,6 +88,13 @@ export interface IngestFacadeDeps {
    * transparently.
    */
   enrichmentExecutor?: EnrichmentExecutor;
+  /**
+   * Keep-alive guard for the codegraph daemon. Passed to the
+   * EnrichmentCoordinator, which holds the daemon alive across chunk-write +
+   * enrichment so it cannot idle-die mid-run. Omitted when codegraph is
+   * disabled — the coordinator falls back to a no-op guard.
+   */
+  indexRunDaemonGuard?: IndexRunDaemonGuard;
   /**
    * Attempts for the pre-indexing embedding health probe (resilient against
    * event-loop starvation). Forwarded to IndexingOps. Defaults applied there.
@@ -202,7 +209,13 @@ export class IngestFacade {
       providers.length > 0
         ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant), { executor: enrichmentExecutor })
         : undefined;
-    const enrichment = new EnrichmentCoordinator(qdrant, providers, recovery, enrichmentExecutor);
+    const enrichment = new EnrichmentCoordinator(
+      qdrant,
+      providers,
+      recovery,
+      enrichmentExecutor,
+      deps.indexRunDaemonGuard,
+    );
     // Codegraph DuckDB cleanup for orphan collections during alias cleanup.
     // Wired from the pool's removeCollection (closes any cached handle, then
     // unlinks `<collection>.duckdb` + `.wal`); undefined when codegraph is off.

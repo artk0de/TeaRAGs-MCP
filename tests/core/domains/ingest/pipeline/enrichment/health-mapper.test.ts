@@ -3,347 +3,161 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mapMarkerToHealth } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import type {
   EnrichmentMarkerMap,
-  ProviderEnrichmentMarker,
+  RunMarker,
 } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 
-function makeMarker(overrides: Partial<ProviderEnrichmentMarker> = {}): ProviderEnrichmentMarker {
-  return {
-    runId: "test-run",
-    file: { status: "completed", unenrichedChunks: 0 },
-    chunk: { status: "completed", unenrichedChunks: 0 },
-    ...overrides,
-  };
+const RUN = "run-1";
+
+function run(over: Partial<RunMarker> = {}): RunMarker {
+  const now = new Date().toISOString();
+  return { runId: RUN, startedAt: now, lastProgressAt: now, providers: ["git"], ...over };
 }
 
-describe("mapMarkerToHealth", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
+describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("renders healthy when marker.runId matches _run.runId and status completed", () => {
+    const map = {
+      _run: run(),
+      git: {
+        file: { runId: RUN, status: "completed", unenrichedChunks: 0 },
+        chunk: { runId: RUN, status: "completed", unenrichedChunks: 0 },
+      },
+    } as unknown as EnrichmentMarkerMap;
+    const r = mapMarkerToHealth(map)!;
+    expect(r.git.file.status).toBe("healthy");
+    expect(r.git.chunk.status).toBe("healthy");
+    expect(r.git.file.unenrichedChunks).toBeUndefined();
   });
 
-  it("returns undefined for empty marker map", () => {
+  it("NO false healthy on hang: file terminal present, chunk marker ABSENT → chunk in_progress", () => {
+    const map = {
+      _run: run(),
+      git: { file: { runId: RUN, status: "completed", unenrichedChunks: 0 } },
+    } as unknown as EnrichmentMarkerMap;
+    const r = mapMarkerToHealth(map)!;
+    expect(r.git.file.status).toBe("healthy");
+    expect(r.git.chunk.status).toBe("in_progress"); // <-- was the pending→healthy bug
+  });
+
+  it("stale runId: marker from a previous run while a new run is active → in_progress", () => {
+    const map = {
+      _run: run({ runId: "run-2" }),
+      git: {
+        file: { runId: "run-1", status: "completed", unenrichedChunks: 0 },
+        chunk: { runId: "run-1", status: "completed", unenrichedChunks: 0 },
+      },
+    } as unknown as EnrichmentMarkerMap;
+    const r = mapMarkerToHealth(map)!;
+    expect(r.git.file.status).toBe("in_progress");
+    expect(r.git.chunk.status).toBe("in_progress");
+  });
+
+  it("navigates a dotted provider key nested (codegraph.symbols → enrichment.codegraph.symbols)", () => {
+    const map = {
+      _run: run({ providers: ["codegraph.symbols"] }),
+      codegraph: {
+        symbols: {
+          file: { runId: RUN, status: "completed", unenrichedChunks: 0 },
+          chunk: { runId: RUN, status: "degraded", unenrichedChunks: 12 },
+        },
+      },
+    } as unknown as EnrichmentMarkerMap;
+    const r = mapMarkerToHealth(map)!;
+    expect(r["codegraph.symbols"].file.status).toBe("healthy");
+    expect(r["codegraph.symbols"].chunk).toMatchObject({ status: "degraded", unenrichedChunks: 12 });
+  });
+
+  it("stalled: no progress in >2min → in_progress with stalled message", () => {
+    const stale = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    const map = {
+      _run: run({ lastProgressAt: stale }),
+      git: { file: { runId: RUN, status: "completed", unenrichedChunks: 0 } },
+    } as unknown as EnrichmentMarkerMap;
+    const r = mapMarkerToHealth(map)!;
+    expect(r.git.chunk.status).toBe("in_progress");
+    expect(r.git.chunk.message).toMatch(/stalled/i);
+  });
+
+  it("crashed: no progress in >1h → failed", () => {
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const map = {
+      _run: run({ startedAt: old, lastProgressAt: old }),
+      git: { file: { runId: RUN, status: "completed", unenrichedChunks: 0 } },
+    } as unknown as EnrichmentMarkerMap;
+    const r = mapMarkerToHealth(map)!;
+    expect(r.git.chunk.status).toBe("failed");
+    expect(r.git.chunk.message).toMatch(/crashed|recovered/i);
+  });
+
+  it("renders degraded / failed terminal statuses (matching runId), with errorMessage", () => {
+    const map = {
+      _run: run({ providers: ["codegraph.symbols"] }),
+      codegraph: {
+        symbols: {
+          file: { runId: RUN, status: "failed", unenrichedChunks: 0, errorMessage: "spill failed" },
+          chunk: { runId: RUN, status: "failed", unenrichedChunks: 0, errorMessage: "spill failed" },
+        },
+      },
+    } as unknown as EnrichmentMarkerMap;
+    const r = mapMarkerToHealth(map)!;
+    expect(r["codegraph.symbols"].file.status).toBe("failed");
+    expect(r["codegraph.symbols"].file.message).toContain("spill failed");
+  });
+
+  it("surfaces matchedFiles / missedFiles / durationMs on a healthy terminal", () => {
+    const map = {
+      _run: run(),
+      git: {
+        file: { runId: RUN, status: "completed", unenrichedChunks: 0, matchedFiles: 42, missedFiles: 3, durationMs: 0 },
+        chunk: { runId: RUN, status: "completed", unenrichedChunks: 0 },
+      },
+    } as unknown as EnrichmentMarkerMap;
+    const r = mapMarkerToHealth(map)!;
+    expect(r.git.file.matchedFiles).toBe(42);
+    expect(r.git.file.missedFiles).toBe(3);
+    expect(r.git.file.durationMs).toBe(0);
+  });
+
+  it("returns undefined for empty map", () => {
     expect(mapMarkerToHealth({})).toBeUndefined();
   });
 
-  it("returns undefined when markers have no file/chunk", () => {
-    const map = { git: {} } as unknown as EnrichmentMarkerMap;
-    expect(mapMarkerToHealth(map)).toBeUndefined();
-  });
-
-  it("maps completed file + completed chunk to both healthy", () => {
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: { status: "completed", unenrichedChunks: 0 },
-        chunk: { status: "completed", unenrichedChunks: 0 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result).toMatchObject({
-      git: {
-        file: { status: "healthy" },
-        chunk: { status: "healthy" },
-      },
-    });
-    // No unenrichedChunks when healthy
-    expect(result!.git.file.unenrichedChunks).toBeUndefined();
-    expect(result!.git.chunk.unenrichedChunks).toBeUndefined();
-  });
-
-  it("maps failed file to failed status with message", () => {
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: { status: "failed", unenrichedChunks: 5 },
-        chunk: { status: "completed", unenrichedChunks: 0 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.file).toMatchObject({
-      status: "failed",
-      unenrichedChunks: 5,
-      message: "File-level enrichment failed. All file-level signals missing. Will recover on next reindex.",
-    });
-  });
-
-  it("maps degraded chunk to degraded status with unenrichedChunks and message", () => {
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: { status: "completed", unenrichedChunks: 0 },
-        chunk: { status: "degraded", unenrichedChunks: 12 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.chunk).toMatchObject({
-      status: "degraded",
-      unenrichedChunks: 12,
-      message: "12 chunks missing chunk-level signals. Will recover on next reindex.",
-    });
-  });
-
-  it("maps in_progress with fresh lastProgressAt to in_progress without stale warning", () => {
-    const now = new Date().toISOString();
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: { status: "in_progress", unenrichedChunks: 3, lastProgressAt: now },
-        chunk: { status: "pending", unenrichedChunks: 0 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.file).toMatchObject({
-      status: "in_progress",
-      message: "Enrichment in progress...",
-    });
-  });
-
-  it("maps in_progress with stale lastProgressAt to in_progress with stale warning", () => {
-    const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: { status: "completed", unenrichedChunks: 0 },
-        chunk: { status: "in_progress", unenrichedChunks: 7, lastProgressAt: threeMinutesAgo },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.chunk).toMatchObject({
-      status: "in_progress",
-      message: "Enrichment appears stalled — no progress in 2 minutes. May need reindex.",
-    });
-  });
-
-  it("maps in_progress without lastProgressAt to in_progress (not stale)", () => {
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: { status: "in_progress", unenrichedChunks: 2 },
-        chunk: { status: "pending", unenrichedChunks: 0 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.file).toMatchObject({
-      status: "in_progress",
-      message: "Enrichment in progress...",
-    });
-  });
-
-  it("maps pending to healthy (not started is not a problem)", () => {
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: { status: "pending", unenrichedChunks: 0 },
-        chunk: { status: "pending", unenrichedChunks: 0 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result).toMatchObject({
-      git: {
-        file: { status: "healthy" },
-        chunk: { status: "healthy" },
-      },
-    });
-    // No unenrichedChunks when healthy
-    expect(result!.git.file.unenrichedChunks).toBeUndefined();
-    expect(result!.git.chunk.unenrichedChunks).toBeUndefined();
-  });
-
-  it("handles multiple providers", () => {
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: { status: "completed", unenrichedChunks: 0 },
-        chunk: { status: "completed", unenrichedChunks: 0 },
-      }),
-      metrics: makeMarker({
-        file: { status: "failed", unenrichedChunks: 3 },
-        chunk: { status: "degraded", unenrichedChunks: 8 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.file.status).toBe("healthy");
-    expect(result!.metrics.file.status).toBe("failed");
-    expect(result!.metrics.chunk.status).toBe("degraded");
-  });
-
-  it("includes timing metadata fields (startedAt, completedAt, durationMs) in in_progress health output", () => {
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: {
-          status: "in_progress",
-          unenrichedChunks: 0,
-          startedAt: "2026-01-01T00:00:00Z",
-          completedAt: "2026-01-01T00:01:00Z",
-          durationMs: 60000,
+  describe("back-compat (no _run pointer — legacy literal-property shape)", () => {
+    it("legacy completed → healthy, legacy pending → in_progress (never healthy)", () => {
+      const map = {
+        git: {
+          file: { status: "completed", unenrichedChunks: 0 },
+          chunk: { status: "pending", unenrichedChunks: 0 },
         },
-        chunk: { status: "pending", unenrichedChunks: 0 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.file.startedAt).toBe("2026-01-01T00:00:00Z");
-    expect(result!.git.file.completedAt).toBe("2026-01-01T00:01:00Z");
-    expect(result!.git.file.durationMs).toBe(60000);
-  });
-
-  it("includes matchedFiles and missedFiles in completed health output", () => {
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: {
-          status: "completed",
-          unenrichedChunks: 0,
-          matchedFiles: 42,
-          missedFiles: 3,
-        },
-        chunk: { status: "completed", unenrichedChunks: 0 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.file.matchedFiles).toBe(42);
-    expect(result!.git.file.missedFiles).toBe(3);
-  });
-
-  it("maps failed chunk to failed status with chunk-specific message", () => {
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: { status: "completed", unenrichedChunks: 0 },
-        chunk: { status: "failed", unenrichedChunks: 0 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.chunk).toMatchObject({
-      status: "failed",
-      message: "Chunk enrichment failed. Will recover on next reindex.",
+      } as unknown as EnrichmentMarkerMap;
+      const r = mapMarkerToHealth(map)!;
+      expect(r.git.file.status).toBe("healthy");
+      expect(r.git.chunk.status).toBe("in_progress");
     });
-  });
 
-  it("includes durationMs=0 in output when explicitly set to zero", () => {
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: { status: "completed", unenrichedChunks: 0, durationMs: 0 },
-        chunk: { status: "completed", unenrichedChunks: 0 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.file.durationMs).toBe(0);
-  });
-
-  it("recovers in_progress with startedAt older than 1 hour and no completedAt to failed", () => {
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: { status: "in_progress", unenrichedChunks: 4, startedAt: twoHoursAgo },
-        chunk: { status: "pending", unenrichedChunks: 0 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.file.status).toBe("failed");
-    expect(result!.git.file.message).toMatch(/crashed|recovered/i);
-    expect(result!.git.file.startedAt).toBe(twoHoursAgo);
-  });
-
-  it("keeps in_progress when startedAt is within 1 hour (still running)", () => {
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const now = new Date().toISOString();
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: {
-          status: "in_progress",
-          unenrichedChunks: 2,
-          startedAt: tenMinutesAgo,
-          lastProgressAt: now,
+    it("legacy in_progress older than 1h with no completedAt → failed", () => {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      const map = {
+        git: {
+          file: { status: "in_progress", unenrichedChunks: 4, startedAt: twoHoursAgo },
+          chunk: { status: "pending", unenrichedChunks: 0 },
         },
-        chunk: { status: "pending", unenrichedChunks: 0 },
-      }),
-    };
+      } as unknown as EnrichmentMarkerMap;
+      const r = mapMarkerToHealth(map)!;
+      expect(r.git.file.status).toBe("failed");
+      expect(r.git.file.message).toMatch(/crashed|recovered/i);
+    });
 
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.file.status).toBe("in_progress");
-    expect(result!.git.file.message).toBe("Enrichment in progress...");
-  });
-
-  it("recovers to failed when startedAt >1h AND lastProgressAt >2min (crashed-long-ago wins)", () => {
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: {
-          status: "in_progress",
-          unenrichedChunks: 4,
-          startedAt: twoHoursAgo,
-          lastProgressAt: fiveMinutesAgo,
+    it("legacy degraded chunk → degraded with message", () => {
+      const map = {
+        git: {
+          file: { status: "completed", unenrichedChunks: 0 },
+          chunk: { status: "degraded", unenrichedChunks: 8 },
         },
-        chunk: { status: "pending", unenrichedChunks: 0 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.file.status).toBe("failed");
-    expect(result!.git.file.message).toMatch(/crashed|recovered/i);
-  });
-
-  it("surfaces errorMessage in the failed-status message (slice 2 — concrete codegraph spill / resolve / checkpoint failure)", () => {
-    const map: EnrichmentMarkerMap = {
-      "codegraph.symbols": makeMarker({
-        file: {
-          status: "failed",
-          unenrichedChunks: 0,
-          errorMessage: "Codegraph spill write failed at /tmp/cg/.spill/run.ndjson",
-        },
-        chunk: {
-          status: "failed",
-          unenrichedChunks: 0,
-          errorMessage: "Codegraph spill write failed at /tmp/cg/.spill/run.ndjson",
-        },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    expect(result!["codegraph.symbols"].file.status).toBe("failed");
-    expect(result!["codegraph.symbols"].file.message).toContain(
-      "Codegraph spill write failed at /tmp/cg/.spill/run.ndjson",
-    );
-    expect(result!["codegraph.symbols"].chunk.status).toBe("failed");
-    expect(result!["codegraph.symbols"].chunk.message).toContain(
-      "Codegraph spill write failed at /tmp/cg/.spill/run.ndjson",
-    );
-  });
-
-  it("falls back to default failure message when errorMessage is not set (back-compat)", () => {
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: { status: "failed", unenrichedChunks: 0 },
-        chunk: { status: "failed", unenrichedChunks: 0 },
-      }),
-    };
-    const result = mapMarkerToHealth(map);
-    expect(result!.git.file.message).toContain("File-level enrichment failed");
-    // No errorMessage to append — should not contain parenthesised
-    // suffix that the slice-2 path produces.
-    expect(result!.git.file.message).not.toContain("(");
-  });
-
-  it("does not recover when startedAt >1h but completedAt is set (completed run)", () => {
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const map: EnrichmentMarkerMap = {
-      git: makeMarker({
-        file: {
-          status: "in_progress",
-          unenrichedChunks: 0,
-          startedAt: twoHoursAgo,
-          completedAt: oneHourAgo,
-        },
-        chunk: { status: "pending", unenrichedChunks: 0 },
-      }),
-    };
-
-    const result = mapMarkerToHealth(map);
-    // completedAt defined => crashed-long-ago detection should not trigger
-    expect(result!.git.file.status).toBe("in_progress");
+      } as unknown as EnrichmentMarkerMap;
+      const r = mapMarkerToHealth(map)!;
+      expect(r.git.chunk).toMatchObject({ status: "degraded", unenrichedChunks: 8 });
+    });
   });
 });
