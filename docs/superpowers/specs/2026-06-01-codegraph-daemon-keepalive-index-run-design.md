@@ -92,23 +92,33 @@ the daemon is genuinely unavailable, codegraph enrichment degrades exactly as
 the typed-error path already handles (marker `failed`), but indexing is never
 blocked by the keep-alive itself.
 
-### Wiring (run boundary)
+### Wiring (run boundary) — EnrichmentCoordinator, NOT IngestFacade/IndexingOps
 
-Inject the guard into the ingest path (via `IngestFacade` deps, per the DI
-wiring chain). At the start of an index run, before chunk-write:
+**Correction from implementation grounding:** `IndexingOps.run` /
+`indexCodebase` returns after **chunk-write**, while enrichment continues
+**fire-and-forget in the background** (`awaitCompletion` is not awaited by the
+facade — the live status showed `in_progress` on return). A `try/finally` around
+`run()` would release the keep-alive too early, letting the daemon idle-die
+during background enrichment.
 
-```ts
-const release = await this.daemonGuard.begin(collectionName);
-try {
-  // … existing index run: chunk-write → startEnrichment → awaitCompletion …
-} finally {
-  await release();
-}
-```
+The correct owner is **`EnrichmentCoordinator`**: its `beginRun()` →
+`awaitCompletion()` span covers exactly chunk-write + enrichment (`beginRun` is
+called before `pipeline.start()`, `awaitCompletion` resolves after enrichment
+finalizers). Inject the guard into the coordinator (DI via
+`IngestFacade.buildIngestPipeline`, sourced from composition/bootstrap):
 
-The `finally` is the load-bearing invariant: release on success, throw, or any
-early exit. `release()` itself swallows errors (close-of-already-closed is a
-no-op) so it never masks the run's real outcome.
+- `beginRun(absolutePath, collectionName, …)`: kick off
+  `guard.begin(collectionName)` fire-and-forget, storing the release promise on
+  the per-run `RunState` (mirrors the existing `markRunStartPromise` pattern;
+  RunState isolation keeps it bound to this run).
+- `awaitCompletion(collectionName)`: in a `finally` (after `completion.run` +
+  `releaseCollection`),
+  `const release = await runState.daemonReleasePromise; await release();`.
+
+`release()` swallows errors (close-of-already-closed is a no-op) so it never
+masks the run outcome. RunState isolation guarantees a stale run's release only
+touches its own held socket. When no guard is injected (tests, codegraph off),
+the coordinator uses the no-op guard.
 
 ### Lifetime
 
