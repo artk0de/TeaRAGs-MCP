@@ -10,35 +10,64 @@ paths:
 ## Layer Dependency Rules
 
 ```
-                  api/                            <- Composition root
-               /   |   \                           Imports from: everything (assembles DI)
-             /     |     \
-      domains/explore  domains/trajectory  domains/ingest  <- Domain modules
-             \     |     /                          Import from: contracts/, adapters/, infra/
-              \    |    /                           NOT from each other
-          contracts/   adapters/   infra/         <- Foundation (lowest level)
+   cli (entry) ── bootstrap (composition root) ── mcp (tool surface)
+                       │
+                       ▼
+                  core/api  (core composition root)
+                  /   |   \
+                 /    |    \
+            domains/{explore, trajectory, ingest, language}   <- Domain modules
+                 \    |    /
+                  \   |   /
+              contracts   adapters   infra         <- Foundation (lowest level)
 ```
 
 **Dependency rules:**
 
-| Layer                      | Imports from                                        | Exports to             |
-| -------------------------- | --------------------------------------------------- | ---------------------- |
-| `core/api/`                | domain modules, `contracts/`, `adapters/`, `infra/` | external consumers     |
-| `core/domains/explore/`    | `contracts/`, `infra/`                              | `api/`                 |
-| `core/domains/trajectory/` | `contracts/`, `adapters/`, `infra/`                 | `api/`                 |
-| `core/domains/ingest/`     | `contracts/`, `adapters/`, `infra/`                 | `api/`                 |
-| `core/contracts/`          | `infra/`                                            | domain modules, `api/` |
-| `core/adapters/`           | `infra/`                                            | domain modules, `api/` |
-| `core/infra/`              | nothing                                             | all layers             |
+| Layer                      | Imports from                                                  | Exports to                   |
+| -------------------------- | ------------------------------------------------------------- | ---------------------------- |
+| `cli/`                     | `bootstrap/`, `core/api/public/`                              | (process entry)              |
+| `mcp/`                     | `core/api/public/`                                            | tool surface                 |
+| `bootstrap/`               | `mcp/`, `core/api/`, `core/{contracts, adapters, infra}/`     | composition root             |
+| `src/index.ts`             | `bootstrap/`                                                  | process bootstrap            |
+| `core/api/`                | domain modules, `contracts/`, `adapters/`, `infra/`           | `cli/`, `mcp/`, `bootstrap/` |
+| `core/domains/explore/`    | `contracts/`, `adapters/`, `infra/`                           | `api/`                       |
+| `core/domains/trajectory/` | `contracts/`, `adapters/`, `infra/`                           | `api/`                       |
+| `core/domains/ingest/`     | `contracts/`, `adapters/`, `infra/`                           | `api/`                       |
+| `core/domains/language/`   | `contracts/`, `infra/` _(leaf)_                               | injected via factory         |
+| `core/contracts/`          | _(nothing — pure interfaces/types, zero `core/` deps)_        | domain modules, `api/`       |
+| `core/adapters/`           | `infra/`                                                      | domain modules, `api/`       |
+| `core/infra/`              | _(nothing)_                                                   | all `core/` layers           |
 
-**api/ is the composition root:** it assembles dependencies from all layers,
-creates instances, and wires them together via DI.
+**Consumer surface rule (MANDATORY).** `cli`/`mcp` reach `core` ONLY through
+`core/api/public/`. They do NOT import `api/internal`, `contracts`, `adapters`,
+or `infra` directly. `api/public/index.ts` is the single curated re-export
+facade: consumer-facing runtime symbols and types (error classes, registry
+utilities, `EnrichmentHealthMap`, `IngestCodeConfig`) live in their internal
+layer of origin and are re-exported through this barrel.
+
+**Composition roots.**
+
+- **`api/`** is the **core composition root** — assembles dependencies from
+  every layer below and wires them via DI.
+- **`bootstrap/`** is the **application composition root** above `api/`: parses
+  config, builds the AppContext, and hands the wired `App` plus the MCP server
+  registration to `cli` / `mcp`.
+
+**Strict import-direction model.** Forbidden edges apply equally to runtime
+imports AND `import type` declarations — no `allowTypeImports` escape hatch.
+Relocating a type to a layer-correct home is always preferred over a typed-only
+cross-layer reach. See spec
+`docs/superpowers/specs/2026-05-27-dependency-direction-guard-design.md`.
 
 **Prohibited dependencies (hard errors):**
 
 - Domain modules -x-> each other (`explore` -x-> `trajectory`, etc.)
 - Foundation -x-> any layer above (`contracts`/`adapters`/`infra` -x-> domain
-  modules or `api/`)
+  modules, `api/`, or outer layers)
+- Outer layers -x-> `core` below `api/public` (`cli`/`mcp` -x-> `domains` /
+  `contracts` / `adapters` / `infra` / `api/internal`)
+- `contracts/` -x-> any `core/` layer (contracts are pure)
 
 ## Layer Responsibilities
 
