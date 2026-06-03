@@ -9,8 +9,15 @@
 
 import type { Ignore } from "ignore";
 
-import type { QdrantFilterCondition } from "../../adapters/qdrant/types.js";
 import type { ChunkLookupEntry, ProviderRunMetrics } from "../../types.js";
+
+/**
+ * Structural shape mirroring a Qdrant filter condition without importing from
+ * adapters/ — contracts is pure (no `core/` deps) per domain-boundaries.md.
+ * The strict typed version lives in `core/adapters/qdrant/types.ts`; callers
+ * that need it cast at the adapter boundary.
+ */
+type QdrantFilterConditionShape = Record<string, unknown>;
 import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
 import type { PayloadSignalDescriptor } from "./trajectory.js";
 
@@ -41,8 +48,8 @@ export type FilterLevel = "file" | "chunk";
 
 /** Result of converting a user param to Qdrant filter conditions. */
 export interface FilterConditionResult {
-  must?: QdrantFilterCondition[];
-  must_not?: QdrantFilterCondition[];
+  must?: QdrantFilterConditionShape[];
+  must_not?: QdrantFilterConditionShape[];
 }
 
 // --- Filter descriptor ---

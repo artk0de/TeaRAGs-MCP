@@ -25,7 +25,7 @@ import type {
   SignalConfidence,
 } from "../../contracts/types/trajectory.js";
 import { detectScope } from "../../infra/scope-detection.js";
-import { p95 } from "../../infra/signal-utils.js";
+import { p95 } from "../../contracts/signal-utils.js";
 import type { StatsRecomputeService } from "../ingest/infra/stats-recompute.js";
 import { resolveLabel } from "./label-resolver.js";
 
