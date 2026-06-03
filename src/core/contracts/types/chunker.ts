@@ -12,6 +12,19 @@
 
 import type Parser from "tree-sitter";
 
+/**
+ * Maps a chunk to its point ID for Phase 2 git enrichment. Relocated from
+ * `core/types.ts` so contracts files (provider.ts, enrichment-executor.ts)
+ * reach it without crossing the contracts→core/types soft edge.
+ */
+export interface ChunkLookupEntry {
+  chunkId: string;
+  startLine: number;
+  endLine: number;
+  /** Non-contiguous line ranges for precise overlap detection (e.g. Ruby body groups). */
+  lineRanges?: { start: number; end: number }[];
+}
+
 export interface BodyChunkResult {
   content: string;
   startLine: number;

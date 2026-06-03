@@ -1,12 +1,19 @@
 /**
- * Type definitions for code vectorization module
+ * Type definitions for code vectorization module.
+ *
+ * Types referenced from `contracts/` (ChunkLookupEntry, ProviderRunMetrics,
+ * IngestCodeConfig, EnrichmentHealthMap) now live in contracts; re-exported
+ * here for back-compat with consumers that still reference the old root path.
+ * New code should import from `contracts/` directly (or via `api/public`).
  */
 
 import type { EnrichmentHealthMap } from "./contracts/types/enrichment.js";
+import type { ProviderRunMetrics } from "./contracts/types/provider.js";
 
-// IngestCodeConfig now lives in contracts/types/ingest-config.ts; re-exported
-// here for back-compat with importers that still reference the old path.
+// Back-compat re-exports of types relocated into contracts/.
 export type { IngestCodeConfig } from "./contracts/types/ingest-config.js";
+export type { ChunkLookupEntry } from "./contracts/types/chunker.js";
+export type { ProviderRunMetrics } from "./contracts/types/provider.js";
 
 /** Config for IngestFacade trajectory enrichment setup */
 export interface TrajectoryIngestConfig {
@@ -108,17 +115,6 @@ export interface ChangeStats {
 }
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed" | "stale_indexing" | "unavailable";
-
-/**
- * Per-provider counters reported by an enrichment provider for a single run.
- *
- * Shape is provider-defined — coordinator stores them verbatim under
- * `EnrichmentMetrics.byProvider[providerKey]` without interpreting the keys.
- * Codegraph reports `extractedFiles`, `fileEdgeCount`, `methodEdgeCount`,
- * `resolveSuccessRate`; future providers add their own. Top-level
- * `EnrichmentMetrics` fields stay coordinator-owned and provider-agnostic.
- */
-export type ProviderRunMetrics = Record<string, unknown>;
 
 /** Metrics from streaming enrichment (parallel with embedding) */
 export interface EnrichmentMetrics {
@@ -254,11 +250,3 @@ export interface FileChanges {
   newlyUnignored: string[];
 }
 
-/** Maps a chunk to its point ID for Phase 2 git enrichment */
-export interface ChunkLookupEntry {
-  chunkId: string;
-  startLine: number;
-  endLine: number;
-  /** Non-contiguous line ranges for precise overlap detection (e.g., Ruby body groups) */
-  lineRanges?: { start: number; end: number }[];
-}

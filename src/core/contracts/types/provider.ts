@@ -9,7 +9,15 @@
 
 import type { Ignore } from "ignore";
 
-import type { ChunkLookupEntry, ProviderRunMetrics } from "../../types.js";
+import type { ChunkLookupEntry } from "./chunker.js";
+
+/**
+ * Per-provider counters reported by an enrichment provider for a single run.
+ * Shape is provider-defined — coordinator stores them verbatim under
+ * `EnrichmentMetrics.byProvider[providerKey]` without interpreting the keys.
+ * Relocated from `core/types.ts` so contracts is self-contained.
+ */
+export type ProviderRunMetrics = Record<string, unknown>;
 
 /**
  * Structural shape mirroring a Qdrant filter condition without importing from
@@ -294,4 +302,4 @@ export interface EnrichmentProvider {
 }
 
 // Re-export for convenience
-export type { ChunkLookupEntry, ProviderRunMetrics } from "../../types.js";
+export type { ChunkLookupEntry } from "./chunker.js";
