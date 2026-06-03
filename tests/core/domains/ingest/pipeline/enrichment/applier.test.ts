@@ -334,4 +334,48 @@ describe("EnrichmentApplier", () => {
       expect(ops[0].payload).toMatchObject({ commitCount: 3, enrichedAt: ts });
     });
   });
+
+  describe("matchedFiles uniqueness across passes", () => {
+    it("counts each file only once even when applied in two separate passes", async () => {
+      const fileMetadata = new Map([
+        ["src/a.ts", { commitCount: 3 }],
+        ["src/b.ts", { commitCount: 5 }],
+      ]);
+
+      // Pass 1 — streaming apply: touches src/a.ts and src/b.ts
+      await applier.applyFileSignals("test-collection", "git", fileMetadata, "/repo", [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+        { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/b.ts" }, endLine: 20 } } as any,
+      ]);
+
+      // Pass 2 — finalize/deferred apply: same files again (new chunks, same relPaths)
+      await applier.applyFileSignals("test-collection", "git", fileMetadata, "/repo", [
+        { chunkId: "c3", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 30 } } as any,
+        { chunkId: "c4", chunk: { metadata: { filePath: "/repo/src/b.ts" }, endLine: 40 } } as any,
+      ]);
+
+      // Each unique file path should be counted exactly once, not twice
+      expect(applier.matchedFiles).toBe(2);
+    });
+
+    it("counts unique files across applyFileSignals and applyFinalizeFile passes", async () => {
+      const fileOverlays = new Map([["src/a.ts", { commitCount: 3 }]]);
+
+      // Pass 1 — streaming apply via applyFileSignals
+      await applier.applyFileSignals("test-collection", "git", fileOverlays, "/repo", [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+      ]);
+
+      // Pass 2 — finalize apply via applyFinalizeFile (same relPath)
+      await applier.applyFinalizeFile(
+        "test-collection",
+        "git",
+        fileOverlays,
+        new Map([["src/a.ts", [{ chunkId: "c2", startLine: 20, endLine: 30 }]]]),
+      );
+
+      // src/a.ts appeared in both passes — should count only once
+      expect(applier.matchedFiles).toBe(1);
+    });
+  });
 });

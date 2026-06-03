@@ -68,7 +68,7 @@ export class EnrichmentBackfiller {
       points: (string | number)[];
       key: string;
     }[] = [];
-    let backfilledFiles = 0;
+    const backfilledPaths: string[] = [];
 
     for (const [relPath, chunks] of missed) {
       const data = backfillData.get(relPath);
@@ -81,7 +81,7 @@ export class EnrichmentBackfiller {
       for (const chunk of chunks) {
         ops.push({ payload: fileData, points: [chunk.chunkId], key: fileKey });
       }
-      backfilledFiles++;
+      backfilledPaths.push(relPath);
     }
 
     if (ops.length > 0) {
@@ -96,14 +96,14 @@ export class EnrichmentBackfiller {
       }
     }
 
-    this.applier.markBackfilled(backfilledFiles);
+    this.applier.markBackfilled(backfilledPaths);
 
     pipelineLog.enrichmentPhase("BACKFILL_COMPLETE", {
       provider: ctx.key,
       missedFiles: missedPaths.length,
-      backfilledFiles,
+      backfilledFiles: backfilledPaths.length,
       backfilledChunks: ops.length,
-      stillMissed: missedPaths.length - backfilledFiles,
+      stillMissed: missedPaths.length - backfilledPaths.length,
       durationMs: Date.now() - start,
     });
 

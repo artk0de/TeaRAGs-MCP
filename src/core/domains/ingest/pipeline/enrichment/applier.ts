@@ -26,12 +26,17 @@ const BATCH_SIZE = 100;
 const MISSED_PATH_SAMPLE_LIMIT = 10;
 
 export class EnrichmentApplier {
-  matchedFiles = 0;
+  private readonly matchedPaths = new Set<string>();
   private readonly missedTracker = new MissedFileTracker({
     sampleLimit: MISSED_PATH_SAMPLE_LIMIT,
   });
 
   constructor(private readonly qdrant: QdrantManager) {}
+
+  /** Count of unique files that received enrichment across all apply passes. */
+  get matchedFiles(): number {
+    return this.matchedPaths.size;
+  }
 
   /** Count of files whose chunks landed without matching file metadata. */
   get missedFiles(): number {
@@ -108,7 +113,7 @@ export class EnrichmentApplier {
         }
         continue;
       }
-      this.matchedFiles++;
+      this.matchedPaths.add(relativePath);
 
       const maxEndLine = fileItems.reduce((max, item) => Math.max(max, item.chunk.endLine), 0);
       const finalData = transform ? transform(data, maxEndLine) : data;
@@ -192,7 +197,7 @@ export class EnrichmentApplier {
         ops.push({ payload, points: [entry.chunkId], key: fileKey });
       }
       appliedFiles++;
-      this.matchedFiles++;
+      this.matchedPaths.add(relPath);
     }
 
     for (let i = 0; i < ops.length; i += BATCH_SIZE) {
@@ -303,8 +308,10 @@ export class EnrichmentApplier {
   }
 
   /** Adjust matched/missed counters after a successful backfill. */
-  markBackfilled(count: number): void {
-    this.matchedFiles += count;
-    this.missedTracker.decrementMissed(count);
+  markBackfilled(paths: readonly string[]): void {
+    for (const p of paths) {
+      this.matchedPaths.add(p);
+    }
+    this.missedTracker.decrementMissed(paths.length);
   }
 }
