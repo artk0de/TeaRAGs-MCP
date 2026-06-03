@@ -2,7 +2,7 @@
  * Simple template rendering engine for prompts
  */
 
-import { MissingArgumentError } from "../../core/api/errors.js";
+import { MissingArgumentError } from "../../core/api/public/index.js";
 import type { PromptArgument, RenderedPrompt } from "./types.js";
 
 /**

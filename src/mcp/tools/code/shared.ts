@@ -2,8 +2,8 @@
  * Shared helpers for code-tool family modules.
  */
 
-import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../../../core/api/errors.js";
-import type { App } from "../../../core/api/index.js";
+import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../../../core/api/public/index.js";
+import type { App } from "../../../core/api/public/index.js";
 
 /**
  * Resolve {path?, project?} → absolute path for indexing-pipeline tools whose

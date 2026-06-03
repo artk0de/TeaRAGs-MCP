@@ -13,8 +13,8 @@
 
 import { z } from "zod";
 
-import type { SchemaBuilder } from "../../core/api/index.js";
-import { PROJECT_NAME_RE } from "../../core/infra/registry/index.js";
+import type { SchemaBuilder } from "../../core/api/public/index.js";
+import { PROJECT_NAME_RE } from "../../core/api/public/index.js";
 
 /** Coerce string→number for MCP params (agents sometimes send "5" instead of 5) */
 const coerceNumber = () => z.preprocess((v) => (typeof v === "string" ? Number(v) : v), z.number());

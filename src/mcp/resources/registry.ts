@@ -4,10 +4,10 @@
 
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { InvalidParameterError } from "../../core/api/errors.js";
-import type { App } from "../../core/api/index.js";
+import { InvalidParameterError } from "../../core/api/public/index.js";
+import type { App } from "../../core/api/public/index.js";
 import type { PresetDescriptors } from "../../core/api/public/dto/explore.js";
-import type { PayloadSignalDescriptor } from "../../core/contracts/types/trajectory.js";
+import type { PayloadSignalDescriptor } from "../../core/api/public/index.js";
 
 export function buildOverview(): string {
   return `# tea-rags Schema Overview

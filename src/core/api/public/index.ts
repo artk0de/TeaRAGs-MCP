@@ -94,3 +94,13 @@ export type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.j
 // `ProjectRegistryOps` from `api/public`, which re-exports the implementation
 // from `api/internal/ops/project-registry-ops.js`.
 export { ProjectRegistryOps } from "../internal/ops/project-registry-ops.js";
+
+// ── SchemaBuilder (used by mcp tool registration) ─────────────────────
+// Concrete class lives in api/internal/infra; re-exporting through public
+// keeps mcp from reaching into api/internal directly.
+export { SchemaBuilder } from "../internal/infra/schema-builder.js";
+
+// ── Index / enrichment runtime metrics (consumed by mcp formatters) ───
+// Defined in core/types.ts (root) for now — relocation into contracts/types
+// is tracked separately.
+export type { EnrichmentMetrics, IndexingStatus } from "../../types.js";

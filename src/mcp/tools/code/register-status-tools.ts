@@ -4,7 +4,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App, IndexStatus } from "../../../core/api/index.js";
+import type { App, IndexStatus } from "../../../core/api/public/index.js";
 import { appendDriftWarning, formatMcpText } from "../../format.js";
 import type { RegisterToolFn } from "../../middleware/error-handler.js";
 import * as schemas from "../schemas.js";

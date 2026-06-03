@@ -10,7 +10,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App, SchemaBuilder } from "../../core/api/index.js";
+import type { App, SchemaBuilder } from "../../core/api/public/index.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import { registerIndexTools } from "./code/register-index-tools.js";
 import { registerMaintenanceTools } from "./code/register-maintenance-tools.js";
