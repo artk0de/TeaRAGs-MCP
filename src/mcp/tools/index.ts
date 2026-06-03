@@ -4,7 +4,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App, SchemaBuilder } from "../../core/api/index.js";
+import type { App, SchemaBuilder } from "../../core/api/public/index.js";
 import { createRegisterTool, type HealthProbes } from "../middleware/error-handler.js";
 import { registerCodeTools } from "./code.js";
 import { registerCodegraphTools } from "./codegraph.js";

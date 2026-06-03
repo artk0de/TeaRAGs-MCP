@@ -156,13 +156,197 @@ export default tseslint.config(
     },
   },
 
-  // ── Leaf-domain guard: domains/language must not import other domains ──
-  // domains/language is a leaf domain (spec
-  // docs/superpowers/specs/2026-05-25-domains-language-consolidation-design.md §2):
-  // it may import only contracts/, infra/, and tree-sitter. Forbidding the
-  // reverse (other domains importing it) lives in the next block. Follow-up
-  // tea-rags-mcp-* tracks extending this guard to the full domain-boundaries.md
-  // matrix (explore/ingest/trajectory mutual isolation).
+  // ── Dependency direction guard — full layer matrix ──
+  // Spec: docs/superpowers/specs/2026-05-27-dependency-direction-guard-design.md
+  // Allowed targets per layer (everything else is an error, incl. `import type`):
+  //   cli       → bootstrap, core/api/public
+  //   mcp       → core/api/public
+  //   bootstrap → mcp, core/api/*, core/{contracts,adapters,infra}
+  //   index.ts  → bootstrap
+  //   api       → core/{domains,contracts,adapters,infra}
+  //   domains/* → core/{contracts,adapters,infra}  (never each other)
+  //   contracts → (nothing)   adapters → infra   infra → (nothing)
+  {
+    files: ["src/cli/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "**/core/domains/**",
+                "**/core/contracts/**",
+                "**/core/adapters/**",
+                "**/core/infra/**",
+                "**/core/api/internal/**",
+                "**/core/api/errors",
+                "**/core/api/errors.js",
+                "**/core/api/index",
+                "**/core/api/index.js",
+                "**/mcp/**",
+              ],
+              message:
+                "cli may import only bootstrap/ and core/api/public. See .claude/rules/domain-boundaries.md.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/mcp/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "**/core/domains/**",
+                "**/core/contracts/**",
+                "**/core/adapters/**",
+                "**/core/infra/**",
+                "**/core/api/internal/**",
+                "**/core/api/errors",
+                "**/core/api/errors.js",
+                "**/core/api/index",
+                "**/core/api/index.js",
+                "**/bootstrap/**",
+                "**/cli/**",
+              ],
+              message: "mcp may import only core/api/public. See .claude/rules/domain-boundaries.md.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/bootstrap/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/cli/**"],
+              message: "bootstrap is the composition root; it must not import the cli command layer.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/index.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/core/**", "**/mcp/**", "**/cli/**"],
+              message: "src/index.ts may import only bootstrap/.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/core/api/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/mcp/**", "**/cli/**", "**/bootstrap/**"],
+              message: "api/ is the core composition root; it must not import outer layers.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/core/domains/explore/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "**/domains/trajectory/**",
+                "**/domains/ingest/**",
+                "**/domains/language/**",
+                "**/core/api/**",
+                "**/bootstrap/**",
+                "**/mcp/**",
+                "**/cli/**",
+              ],
+              message:
+                "explore may import only core/{contracts,adapters,infra}; domains are mutually isolated.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/core/domains/trajectory/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "**/domains/explore/**",
+                "**/domains/ingest/**",
+                "**/domains/language/**",
+                "**/language/index.js",
+                "**/core/api/**",
+                "**/bootstrap/**",
+                "**/mcp/**",
+                "**/cli/**",
+              ],
+              message:
+                "trajectory may import only core/{contracts,adapters,infra}; reach language via injected LanguageFactory.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/core/domains/ingest/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "**/domains/explore/**",
+                "**/domains/trajectory/**",
+                "**/domains/language/**",
+                "**/language/index.js",
+                "**/core/api/**",
+                "**/bootstrap/**",
+                "**/mcp/**",
+                "**/cli/**",
+              ],
+              message:
+                "ingest may import only core/{contracts,adapters,infra}; reach language via injected LanguageFactory.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   {
     files: ["src/core/domains/language/**/*.ts"],
     rules: {
@@ -171,33 +355,86 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ["**/ingest/**", "**/trajectory/**", "**/explore/**"],
+              group: [
+                "**/ingest/**",
+                "**/trajectory/**",
+                "**/explore/**",
+                "**/core/api/**",
+                "**/bootstrap/**",
+              ],
               message:
-                "domains/language is a leaf domain — import only contracts/, infra/, tree-sitter. See spec §2 + domain-boundaries.md.",
+                "domains/language is a leaf domain — import only contracts/, infra/, tree-sitter.",
             },
           ],
         },
       ],
     },
   },
-
-  // ── Reverse guard: ingest/codegraph must not import domains/language ──
-  // Consumers reach language capabilities via the injected LanguageFactory
-  // (contracts/ interface), never a direct import. Both composition roots that
-  // import the concrete factory live in api/ (main api/composition.ts + the
-  // worker entry in api/internal/, spec §5) — NOT under this guard, so no
-  // worker exception is needed here.
   {
-    files: ["src/core/domains/ingest/**/*.ts", "src/core/domains/trajectory/**/*.ts"],
+    files: ["src/core/contracts/**/*.ts"],
     rules: {
       "@typescript-eslint/no-restricted-imports": [
         "error",
         {
           patterns: [
             {
-              group: ["**/domains/language/**", "**/language/index.js"],
-              message:
-                "Reach language capabilities via the injected LanguageFactory (contracts/ interface), not a direct import. Only api/ composition + the chunker worker root may. See spec §2.",
+              group: [
+                "**/core/infra/**",
+                "**/core/adapters/**",
+                "**/core/domains/**",
+                "**/core/api/**",
+                "**/bootstrap/**",
+                "**/mcp/**",
+                "**/cli/**",
+              ],
+              message: "contracts is pure — no imports from any core/ layer.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/core/adapters/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "**/core/contracts/**",
+                "**/core/domains/**",
+                "**/core/api/**",
+                "**/bootstrap/**",
+                "**/mcp/**",
+                "**/cli/**",
+              ],
+              message: "adapters may import only core/infra.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/core/infra/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "**/core/contracts/**",
+                "**/core/adapters/**",
+                "**/core/domains/**",
+                "**/core/api/**",
+                "**/bootstrap/**",
+                "**/mcp/**",
+                "**/cli/**",
+              ],
+              message: "infra is the lowest layer — no imports from any core/ layer.",
             },
           ],
         },

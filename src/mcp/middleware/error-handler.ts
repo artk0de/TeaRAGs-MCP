@@ -12,7 +12,7 @@ import type { AnySchema, ZodRawShapeCompat } from "@modelcontextprotocol/sdk/ser
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 
-import { TeaRagsError, UnknownError } from "../../core/infra/errors.js";
+import { TeaRagsError, UnknownError } from "../../core/api/public/index.js";
 import type { McpToolResult } from "../format.js";
 
 type McpExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;

@@ -1,6 +1,6 @@
 import type { DerivedSignalDescriptor } from "../../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../../contracts/types/trajectory.js";
-import { confidenceDampening } from "../../../../../../infra/signal-utils.js";
+import { confidenceDampening } from "../../../../../../contracts/signal-utils.js";
 import { codegraphFileNum } from "./helpers.js";
 
 /**

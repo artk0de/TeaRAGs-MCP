@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { CollectionRegistry } from "../core/infra/registry/collection-registry.js";
+import { CollectionRegistry } from "../core/api/public/index.js";
 
 /**
  * Subcommands of `projects` where `--name` refers to an EXISTING alias

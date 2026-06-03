@@ -9,7 +9,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import type { App } from "../../core/api/index.js";
+import type { App } from "../../core/api/public/index.js";
 import { formatMcpResponse } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 

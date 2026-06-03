@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import type { CommandModule } from "yargs";
 
-import { InputValidationError } from "../../core/api/errors.js";
+import { InputValidationError } from "../../core/api/public/index.js";
 import { resolveTuneQdrantUrl } from "../qdrant-url-resolver.js";
 import { applyProjectDefaults } from "../registry-resolver.js";
 

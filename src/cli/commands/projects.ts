@@ -4,11 +4,11 @@ import { join } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
-import { QdrantManager } from "../../core/adapters/qdrant/client.js";
-import { ProjectRegistryOps } from "../../core/api/internal/ops/project-registry-ops.js";
-import { CollectionRegistry } from "../../core/infra/registry/collection-registry.js";
-import { PROJECT_NAME_RE } from "../../core/infra/registry/index.js";
-import type { CollectionEntry } from "../../core/infra/registry/types.js";
+import { QdrantManager } from "../../core/api/public/index.js";
+import { ProjectRegistryOps } from "../../core/api/public/index.js";
+import { CollectionRegistry } from "../../core/api/public/index.js";
+import { PROJECT_NAME_RE } from "../../core/api/public/index.js";
+import type { CollectionEntry } from "../../core/api/public/index.js";
 
 interface RegisterArgs {
   path: string;
@@ -219,7 +219,7 @@ async function safeCount(client: Pick<QdrantManager, "countPoints">, collectionN
  */
 async function defaultQdrant(): Promise<QdrantManager> {
   const { parseAppConfig } = await import("../../bootstrap/config/index.js");
-  const { resolveQdrantUrl } = await import("../../core/adapters/qdrant/embedded/daemon.js");
+  const { resolveQdrantUrl } = await import("../../core/api/public/index.js");
   const config = parseAppConfig();
   const resolution = await resolveQdrantUrl(config.qdrantUrl, config.paths.appData);
   return new QdrantManager(resolution.url, config.qdrantApiKey);

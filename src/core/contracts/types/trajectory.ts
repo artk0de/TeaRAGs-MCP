@@ -14,11 +14,11 @@ import type { StatsAccumulatorDescriptor } from "./stats-accumulator.js";
  * (`explore` does not import `trajectory`).
  */
 export interface TrajectoryFilterBuilder {
-  buildMergedFilter(
+  buildMergedFilter: (
     typedParams: Record<string, unknown>,
     rawFilter?: Record<string, unknown>,
     level?: FilterLevel,
-  ): Record<string, unknown> | undefined;
+  ) => Record<string, unknown> | undefined;
 }
 
 /** What statistics to compute for this signal at collection level. */

@@ -16,8 +16,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import type { App } from "../../core/api/index.js";
-import { PROJECT_NAME_RE } from "../../core/infra/registry/index.js";
+import type { App } from "../../core/api/public/index.js";
+import { PROJECT_NAME_RE } from "../../core/api/public/index.js";
 import { formatMcpText } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 

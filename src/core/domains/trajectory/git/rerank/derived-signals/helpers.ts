@@ -7,10 +7,10 @@
  */
 
 import type { SignalLevel } from "../../../../../contracts/types/reranker.js";
-import { blend, computeAlpha, normalize } from "../../../../../infra/signal-utils.js";
+import { blend, computeAlpha, normalize } from "../../../../../contracts/signal-utils.js";
 
 // Re-export generic functions used directly by signal classes
-export { blend, computeAlpha, confidenceDampening, normalize } from "../../../../../infra/signal-utils.js";
+export { blend, computeAlpha, confidenceDampening, normalize } from "../../../../../contracts/signal-utils.js";
 
 // ---------------------------------------------------------------------------
 // Payload accessors (support nested and flat formats)

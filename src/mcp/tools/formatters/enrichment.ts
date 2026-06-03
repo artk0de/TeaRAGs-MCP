@@ -1,6 +1,6 @@
 // src/mcp/tools/formatters/enrichment.ts
-import type { EnrichmentHealthMap } from "../../../core/domains/ingest/pipeline/enrichment/types.js";
-import type { EnrichmentMetrics, IndexStatus } from "../../../core/types.js";
+import type { EnrichmentHealthMap } from "../../../core/api/public/index.js";
+import type { EnrichmentMetrics, IndexStatus } from "../../../core/api/public/index.js";
 
 type GetIndexStatusFn = (path: string) => Promise<IndexStatus>;
 

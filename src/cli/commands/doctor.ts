@@ -3,10 +3,10 @@ import { join } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
-import type { EmbeddingProvider } from "../../core/adapters/embeddings/base.js";
-import { QdrantManager } from "../../core/adapters/qdrant/client.js";
-import { ProjectRegistryOps } from "../../core/api/internal/ops/project-registry-ops.js";
-import { CollectionRegistry } from "../../core/infra/registry/collection-registry.js";
+import type { EmbeddingProvider } from "../../core/api/public/index.js";
+import { QdrantManager } from "../../core/api/public/index.js";
+import { ProjectRegistryOps } from "../../core/api/public/index.js";
+import { CollectionRegistry } from "../../core/api/public/index.js";
 
 interface DoctorArgs {
   json?: boolean;
@@ -141,7 +141,7 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
  */
 async function defaultDeps(): Promise<DoctorDeps> {
   const { parseAppConfig, getZodConfig } = await import("../../bootstrap/config/index.js");
-  const { resolveQdrantUrl } = await import("../../core/adapters/qdrant/embedded/daemon.js");
+  const { resolveQdrantUrl } = await import("../../core/api/public/index.js");
   const { EmbeddingProviderFactory } = await import("../../core/adapters/embeddings/factory.js");
 
   const config = parseAppConfig();

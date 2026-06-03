@@ -63,7 +63,7 @@ import type {
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { pageRank } from "../../../../infra/graph/page-rank.js";
 import { tarjanScc } from "../../../../infra/graph/tarjan-scc.js";
-import { pipelineLog } from "../../../ingest/pipeline/infra/debug-logger.js";
+import { isDebug } from "../../../../infra/runtime.js";
 import {
   CodegraphCheckpointError,
   CodegraphMetricsError,
@@ -808,14 +808,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // record the skip so operators can surface them via marker
           // log. Graph remains consistent because no partial state
           // landed for this row.
-          pipelineLog.enrichmentPhase("CODEGRAPH_PASS2_SKIPPED_LARGE_FILE", {
-            processed: processed + 1,
-            relPath: extraction.relPath,
-            language: extraction.language,
-            fileEdges: edges.fileEdges.length,
-            methodEdges: edges.methodEdges.length,
-            cap: MAX_EDGES_PER_FILE,
-          });
+          if (isDebug()) {
+            console.error("[GitEnrich] PHASE: CODEGRAPH_PASS2_SKIPPED_LARGE_FILE", {
+              processed: processed + 1,
+              relPath: extraction.relPath,
+              language: extraction.language,
+              fileEdges: edges.fileEdges.length,
+              methodEdges: edges.methodEdges.length,
+              cap: MAX_EDGES_PER_FILE,
+            });
+          }
           processed += 1;
           continue;
         }
@@ -837,12 +839,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         processed += 1;
         // Per-N debug log so a slow run shows where it stalled.
         if (processed % PROGRESS_EVERY === 0) {
-          pipelineLog.enrichmentPhase("CODEGRAPH_PASS2_PROGRESS", {
-            processed,
-            lastRelPath,
-            fileEdges: this.runStats.fileEdgeCount,
-            methodEdges: this.runStats.methodEdgeCount,
-          });
+          if (isDebug()) {
+            console.error("[GitEnrich] PHASE: CODEGRAPH_PASS2_PROGRESS", {
+              processed,
+              lastRelPath,
+              fileEdges: this.runStats.fileEdgeCount,
+              methodEdges: this.runStats.methodEdgeCount,
+            });
+          }
         }
         if (processed % CHECKPOINT_EVERY === 0) {
           try {

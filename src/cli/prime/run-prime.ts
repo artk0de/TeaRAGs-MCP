@@ -4,9 +4,9 @@ import { join } from "node:path";
 
 import { parseAppConfig } from "../../bootstrap/config/index.js";
 import { createAppContext } from "../../bootstrap/factory.js";
-import { resolveCollectionName } from "../../core/infra/collection-name.js";
-import { CollectionRegistry } from "../../core/infra/registry/collection-registry.js";
-import type { CollectionEntry } from "../../core/infra/registry/types.js";
+import { resolveCollectionName } from "../../core/api/public/index.js";
+import { CollectionRegistry } from "../../core/api/public/index.js";
+import type { CollectionEntry } from "../../core/api/public/index.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
 import { UpdateCheckService } from "../update-check/check-service.js";
 import { NpmRegistryClient } from "../update-check/registry-client.js";

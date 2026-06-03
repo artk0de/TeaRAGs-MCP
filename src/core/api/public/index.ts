@@ -83,8 +83,12 @@ export type {
 } from "../../contracts/types/enrichment.js";
 export type { IngestCodeConfig } from "../../contracts/types/ingest-config.js";
 
-// ── Adapter-owned types consumed by cli (interface stays in adapters) ─
+// ── Adapter-owned types/runtime consumed by cli ────────────────────
+// Interfaces/classes stay in adapters; we re-export so cli reaches them via
+// the public facade rather than importing core/adapters directly.
 export type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
+export { QdrantManager } from "../../adapters/qdrant/client.js";
+export { resolveQdrantUrl } from "../../adapters/qdrant/embedded/daemon.js";
 
 // ── Payload signal descriptor (used by mcp schema-emitting code) ──────
 export type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
@@ -94,3 +98,13 @@ export type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.j
 // `ProjectRegistryOps` from `api/public`, which re-exports the implementation
 // from `api/internal/ops/project-registry-ops.js`.
 export { ProjectRegistryOps } from "../internal/ops/project-registry-ops.js";
+
+// ── SchemaBuilder (used by mcp tool registration) ─────────────────────
+// Concrete class lives in api/internal/infra; re-exporting through public
+// keeps mcp from reaching into api/internal directly.
+export { SchemaBuilder } from "../internal/infra/schema-builder.js";
+
+// ── Index / enrichment runtime metrics (consumed by mcp formatters) ───
+// Defined in core/types.ts (root) for now — relocation into contracts/types
+// is tracked separately.
+export type { EnrichmentMetrics, IndexingStatus } from "../../types.js";
