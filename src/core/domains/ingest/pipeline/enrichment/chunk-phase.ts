@@ -292,12 +292,13 @@ export class ChunkPhase {
     const all = [...this.states.values()].flatMap((s) => s.chunkWork);
     if (all.length === 0) return;
     if (onApplyProgress) {
-      const notify = async (): Promise<void> => {
-        onApplyProgress();
-      };
       await Promise.allSettled(
         all.map(async (p) => {
-          await p.then(notify, notify);
+          try {
+            await p;
+          } finally {
+            onApplyProgress();
+          }
         }),
       );
     } else {

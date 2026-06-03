@@ -161,6 +161,17 @@ export class CompletionRunner {
 
     // 7. deferred-chunk pass — codegraph buildChunkSignals against the finished
     //    graph with the full accumulated chunkMap, applied via applyChunkSignals.
+    //
+    // Known limitation: runDeferredChunk is a SINGLE long await (one
+    // runChunkBatch call for the full graph + one applyChunkSignals call across
+    // all batches). On very large repos with many chunks the PageRank/resolve
+    // phase can exceed 2min on its own, during which lastProgressAt freezes and
+    // the health mapper may briefly report the codegraph.chunk phase as stalled.
+    // onProgress fires only AFTER the pass completes (tail-heartbeat seam).
+    // A per-batch mid-pass heartbeat would require exposing a progress callback
+    // through runChunkBatch → buildChunkSignals into the provider internals —
+    // no cheap seam exists today. Follow-up tracked: add per-batch progress
+    // callback to applyChunkSignals and thread it through runDeferredChunk.
     for (const ctx of contexts.values()) {
       if (!ctx.provider.defersChunkEnrichment || filePhase.hasPrefetchFailed(ctx.key)) continue;
       const cm = chunkPhase.getDeferredChunkMap(ctx.key);
