@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 
 import { z } from "zod";
 
-import { ConfigValueInvalidError } from "../../bootstrap/errors.js";
+import { ConfigValueInvalidError } from "../../core/infra/errors.js";
 import type { PromptDefinition, PromptsConfig } from "./types.js";
 
 // Zod schema for validation

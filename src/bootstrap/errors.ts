@@ -1,62 +1,18 @@
 /**
- * Configuration errors — thrown during bootstrap when config values are invalid or missing.
+ * Bootstrap config error re-exports.
+ *
+ * The hierarchy itself (`ConfigError`, `ConfigValueInvalidError`,
+ * `ConfigValueMissingError`, `ConfigNotInitializedError`) now lives in
+ * `core/infra/errors.ts` so every layer can reach it without an upward import
+ * (`adapters`/`domains`/`api`/`mcp` → `bootstrap` is forbidden by the
+ * dependency-direction matrix). External consumers should import from
+ * `core/infra/errors.js` (or via the `api/public` re-export for cli/mcp).
  */
 
-import { TeaRagsError } from "../core/infra/errors.js";
-
-/**
- * Bootstrap config error codes.
- */
-export type ConfigErrorCode = "CONFIG_VALUE_INVALID" | "CONFIG_VALUE_MISSING" | "CONFIG_NOT_INITIALIZED";
-
-/**
- * Abstract base for all configuration errors.
- * Default httpStatus: 400 (client misconfiguration).
- */
-export abstract class ConfigError extends TeaRagsError {
-  constructor(opts: { code: ConfigErrorCode; message: string; hint: string; httpStatus?: number; cause?: Error }) {
-    super({ ...opts, httpStatus: opts.httpStatus ?? 400 });
-  }
-}
-
-/**
- * Thrown when a configuration field has an invalid value.
- */
-export class ConfigValueInvalidError extends ConfigError {
-  constructor(field: string, value: string, expected: string) {
-    super({
-      code: "CONFIG_VALUE_INVALID",
-      message: `Invalid value "${value}" for configuration field "${field}"`,
-      hint: `Expected one of: ${expected}`,
-      httpStatus: 400,
-    });
-  }
-}
-
-/**
- * Thrown when a required configuration field is not set.
- */
-export class ConfigValueMissingError extends ConfigError {
-  constructor(field: string, envVar: string) {
-    super({
-      code: "CONFIG_VALUE_MISSING",
-      message: `Required configuration field "${field}" is not set`,
-      hint: `Set the ${envVar} environment variable`,
-      httpStatus: 400,
-    });
-  }
-}
-
-/**
- * Thrown when a config subsystem is accessed before initialization.
- */
-export class ConfigNotInitializedError extends ConfigError {
-  constructor(subsystem: string, initMethod: string) {
-    super({
-      code: "CONFIG_NOT_INITIALIZED",
-      message: `Configuration subsystem "${subsystem}" is not initialized`,
-      hint: `Call ${initMethod}() before accessing this configuration`,
-      httpStatus: 500,
-    });
-  }
-}
+export {
+  ConfigError,
+  ConfigValueInvalidError,
+  ConfigValueMissingError,
+  ConfigNotInitializedError,
+} from "../core/infra/errors.js";
+export type { ConfigErrorCode } from "../core/infra/errors.js";

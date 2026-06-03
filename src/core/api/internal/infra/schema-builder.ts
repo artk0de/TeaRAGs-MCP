@@ -11,7 +11,7 @@
 
 import { z } from "zod";
 
-import { ConfigValueInvalidError } from "../../../../bootstrap/errors.js";
+import { ConfigValueInvalidError } from "../../../infra/errors.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { PROJECT_NAME_RE } from "../../../infra/registry/constants.js";
 
