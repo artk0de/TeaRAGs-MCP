@@ -244,6 +244,20 @@ export class ChunkPhase {
    * Runs buildChunkSignals against the now-finalized graph with the full
    * accumulated chunkMap, then applies the overlays. Driven by CompletionRunner
    * after the finalize file pass and the streaming chunk drain.
+   *
+   * WHY deferred (cannot overlap embedding): codegraph chunk signals
+   * (fanIn/fanOut/pageRank) resolve CROSS-FILE call edges, which requires the
+   * COMPLETE symbol graph — a call to a symbol defined in a not-yet-extracted
+   * file cannot be resolved mid-stream. Edge extraction DOES overlap embedding
+   * (provider.streamFileBatch writes nodes/edges per batch); only the resolve +
+   * PageRank pass is deferred to finalize. This is the intended two-phase
+   * design, not a serialization bug.
+   *
+   * Ordering note: this pass runs AFTER the streaming chunk drain (git churn).
+   * With git chunk enrichment pinned per-collection (collection-affinity) the
+   * drain is fast, so the serialization cost is small. FUTURE optimization
+   * (tracked separately): an incremental codegraph chunk resolve that streams
+   * resolved edges as the graph grows would let part of this overlap embedding.
    */
   async runDeferredChunk(
     coll: string,
