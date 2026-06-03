@@ -29,7 +29,7 @@
  *    that `streamFileBatch` runs — they want the pure whole-set semantics.
  */
 
-import type { ChunkLookupEntry } from "../../types.js";
+import type { ChunkLookupEntry } from "./chunker.js";
 import type {
   ChunkSignalOptions,
   ChunkSignalOverlay,
