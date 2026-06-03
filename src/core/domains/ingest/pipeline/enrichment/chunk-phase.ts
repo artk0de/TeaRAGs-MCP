@@ -277,10 +277,32 @@ export class ChunkPhase {
     }
   }
 
-  async drain(): Promise<void> {
+  /**
+   * Await all in-flight streaming chunk-work promises.
+   *
+   * `onApplyProgress` — called once per settled chunkWork promise (i.e. per
+   * completed streaming apply cycle). This fires DURING the drain — not after
+   * it resolves — giving the coordinator a per-apply heartbeat seam during the
+   * git chunk churn window (which can span hundreds of promises over 500-1000s
+   * on large repos). The caller owns throttling (e.g. `maybeHeartbeat` with its
+   * 30s gate); the callback is invoked unconditionally on each settle so the
+   * throttle logic lives in one place (DRY).
+   */
+  async drain(onApplyProgress?: () => void): Promise<void> {
     const all = [...this.states.values()].flatMap((s) => s.chunkWork);
     if (all.length === 0) return;
-    await Promise.allSettled(all);
+    if (onApplyProgress) {
+      const notify = async (): Promise<void> => {
+        onApplyProgress();
+      };
+      await Promise.allSettled(
+        all.map(async (p) => {
+          await p.then(notify, notify);
+        }),
+      );
+    } else {
+      await Promise.allSettled(all);
+    }
     for (const state of this.states.values()) state.chunkWork.length = 0;
   }
 

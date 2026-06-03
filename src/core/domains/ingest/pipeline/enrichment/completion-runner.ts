@@ -151,11 +151,13 @@ export class CompletionRunner {
     if (byProvider) metrics.byProvider = byProvider;
 
     // 6. drain chunkWork (git streaming)
-    await chunkPhase.drain();
-    // Tail-heartbeat seam: git chunk churn drain completed. Advance
-    // lastProgressAt so the health mapper does not report "stalled" during
-    // a long git-chunk run that produced no onChunksStored calls.
-    onProgress?.();
+    // Pass onProgress into drain so heartbeats fire PER completed apply cycle
+    // DURING the drain — not only once after all chunkWork settles. The git
+    // chunk churn drain can span 500-1000s (hundreds of promises); without
+    // per-apply progress the coordinator's lastProgressAt freezes across the
+    // entire window and the health mapper reports "stalled". The coordinator's
+    // 30s throttle inside maybeHeartbeat gates the actual Qdrant write (DRY).
+    await chunkPhase.drain(onProgress);
 
     // 7. deferred-chunk pass — codegraph buildChunkSignals against the finished
     //    graph with the full accumulated chunkMap, applied via applyChunkSignals.

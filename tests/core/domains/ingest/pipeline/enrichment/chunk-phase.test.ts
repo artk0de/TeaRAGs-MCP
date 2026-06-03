@@ -131,6 +131,76 @@ describe("ChunkPhase", () => {
     expect(cb).toHaveBeenCalledWith("coll");
   });
 
+  it("drain calls onApplyProgress for each settled apply cycle BEFORE drain resolves (mid-drain heartbeat)", async () => {
+    // RED test: proves heartbeat fires DURING the drain — not after it completes.
+    // Simulates multiple sequential streaming apply cycles. onApplyProgress must
+    // be called once per settled chunkWork promise (not zero times until drain
+    // finishes). Today: drain = single Promise.allSettled, onApplyProgress never
+    // called. After fix: drain accepts the callback and calls it per settled item.
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+
+    // Three independent batches, each resolves at different times
+    const resolvers: (() => void)[] = [];
+    const buildChunkSignals = vi.fn().mockImplementation(async () => {
+      return new Promise<Map<string, Map<string, unknown>>>((resolve) => {
+        resolvers.push(() => {
+          resolve(new Map());
+        });
+      });
+    });
+    const ctx = buildCtx({ buildChunkSignals });
+    const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    phase.init(new Map([[ctx.key, ctx]]), "coll", "2026-05-07T10:00:00Z");
+
+    const batchA = [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 } },
+    ] as any[];
+    const batchB = [
+      { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/b.ts" }, startLine: 1, endLine: 10 } },
+    ] as any[];
+    const batchC = [
+      { chunkId: "c3", chunk: { metadata: { filePath: "/repo/src/c.ts" }, startLine: 1, endLine: 10 } },
+    ] as any[];
+
+    // Queue 3 batches (3 chunkWork promises, each blocked on resolvers)
+    phase.onBatchProvider("git", "coll", "/repo", batchA);
+    phase.onBatchProvider("git", "coll", "/repo", batchB);
+    phase.onBatchProvider("git", "coll", "/repo", batchC);
+
+    const progressCallTimes: number[] = [];
+    let drainResolved = false;
+
+    // Start drain with progress callback
+    const drainPromise = phase.drain(() => {
+      progressCallTimes.push(Date.now());
+    });
+    void drainPromise.then(() => {
+      drainResolved = true;
+    });
+
+    // Resolve batches one by one, checking progress fires per resolve
+    await new Promise<void>((r) => setImmediate(r));
+    expect(drainResolved).toBe(false); // drain hasn't finished yet
+
+    // Resolve first batch
+    resolvers[0]?.();
+    await new Promise<void>((r) => setImmediate(r));
+    await new Promise<void>((r) => setImmediate(r));
+
+    // Progress must have been called at least once BEFORE drain completes
+    expect(drainResolved).toBe(false);
+    expect(progressCallTimes.length).toBeGreaterThanOrEqual(1);
+
+    // Resolve remaining
+    resolvers[1]?.();
+    resolvers[2]?.();
+    await drainPromise;
+    expect(drainResolved).toBe(true);
+    // All three applies settled → at least 3 progress calls total
+    expect(progressCallTimes.length).toBeGreaterThanOrEqual(3);
+  });
+
   it("onChunkEnrichmentComplete callback waits for streaming work to settle", async () => {
     // Regression: when remaining.size === 0 (full reindex — streaming covered
     // every file), providerPromises = [Promise.resolve(true)] settles
