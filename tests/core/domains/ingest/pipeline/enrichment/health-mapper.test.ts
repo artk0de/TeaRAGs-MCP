@@ -68,6 +68,26 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
     expect(r["codegraph.symbols"].chunk).toMatchObject({ status: "degraded", unenrichedChunks: 12 });
   });
 
+  it("recent heartbeat (<2min) + non-terminal level marker (absent/stale runId) → in_progress with healthy message, NOT stalled", () => {
+    // Contract: a run whose _run.lastProgressAt was updated < 2 min ago
+    // (throttled heartbeat from onChunksStored) must NOT read as "stalled".
+    // This documents the fix for the false-stalled bug on long-running enrichments.
+    const recent = new Date(Date.now() - 30 * 1000).toISOString(); // 30s ago
+    const map = {
+      _run: run({ lastProgressAt: recent }),
+      // chunk marker absent (non-terminal) → derived from _run timestamps
+      git: { file: { runId: "other-run", status: "completed", unenrichedChunks: 0 } },
+    } as unknown as EnrichmentMarkerMap;
+    const r = mapMarkerToHealth(map)!;
+    expect(r.git.chunk.status).toBe("in_progress");
+    expect(r.git.chunk.message).toBe("Enrichment in progress...");
+    expect(r.git.chunk.message).not.toMatch(/stalled/i);
+    // Inverse (git.file has stale runId → also derives in_progress, not healthy)
+    expect(r.git.file.status).toBe("in_progress");
+    expect(r.git.file.message).toBe("Enrichment in progress...");
+    expect(r.git.file.message).not.toMatch(/stalled/i);
+  });
+
   it("stalled: no progress in >2min → in_progress with stalled message", () => {
     const stale = new Date(Date.now() - 3 * 60 * 1000).toISOString();
     const map = {
