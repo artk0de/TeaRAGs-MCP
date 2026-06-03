@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
@@ -199,6 +199,89 @@ describe("ChunkPhase", () => {
     expect(drainResolved).toBe(true);
     // All three applies settled → at least 3 progress calls total
     expect(progressCallTimes.length).toBeGreaterThanOrEqual(3);
+  });
+
+  describe("chunkEnrichmentDurationMs reset between sequential runs", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("reports only the current run duration — not accumulated across daemon lifetime", async () => {
+      // Guard: state.chunkEnrichmentDurationMs MUST be reset at run start so
+      // a long-lived coordinator reused across many reindex runs reports per-run
+      // duration, not an ever-growing lifetime sum (observed symptom: 165360838ms
+      // ≈45.9h reported as chunkChurnDurationMs on a session with many reindexes).
+      //
+      // This test drives TWO sequential enrichment runs on the SAME ChunkPhase
+      // instance, calling init() between them (exactly what coordinator.beginRun()
+      // does). createState() initializes chunkEnrichmentDurationMs to 0 and
+      // init() clears+recreates all states — so the reset happens at init() time.
+      //
+      // Run 1: chunk work "takes" 100ms (fake time) → getMetrics() = 100ms.
+      // Run 2: init() resets, chunk work "takes" 50ms → getMetrics() = 50ms.
+      // Regression: if createState() stops initializing to 0 or init() stops
+      // clearing states, run 2 reports 150ms (run 1 + run 2 accumulated).
+
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+
+      // Executor whose runChunkBatch completes only after we advance fake time.
+      // Each call resolves after the caller advances the clock by the configured
+      // amount — giving deterministic elapsed values.
+      const resolvers: (() => void)[] = [];
+      const buildChunkSignals = vi.fn().mockImplementation(
+        async () =>
+          new Promise<Map<string, Map<string, unknown>>>((resolve) => {
+            resolvers.push(() => {
+              resolve(new Map());
+            });
+          }),
+      );
+      const ctx = buildCtx({ buildChunkSignals });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+
+      // ── RUN 1 ──────────────────────────────────────────────────────────────
+      // init() creates fresh per-provider state (chunkEnrichmentDurationMs = 0).
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1");
+
+      // Dispatch a streaming batch. Date.now() captured inside runChunkSignals
+      // as `start`. The promise is fire-and-forget; it is in chunkWork[].
+      phase.onBatch("coll", "/repo", items);
+
+      // Advance clock by 100ms, then settle the batch so the closure computes
+      // Date.now() - start = 100. state.chunkEnrichmentDurationMs += 100.
+      vi.advanceTimersByTime(100);
+      resolvers[0]?.();
+      await phase.drain();
+
+      const run1Metrics = phase.getMetrics();
+      // After run 1, duration should be ~100ms.
+      expect(run1Metrics.totalChunkEnrichmentDurationMs).toBe(100);
+
+      // ── RUN 2 ──────────────────────────────────────────────────────────────
+      // Simulate coordinator.beginRun(): re-init the same ChunkPhase instance.
+      // This must reset chunkEnrichmentDurationMs to 0 so run 2 starts clean.
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "run-2");
+
+      phase.onBatch("coll", "/repo", items);
+
+      // Advance clock by 50ms for run 2's batch.
+      vi.advanceTimersByTime(50);
+      resolvers[1]?.();
+      await phase.drain();
+
+      const run2Metrics = phase.getMetrics();
+
+      // KEY ASSERTION: run 2 duration must be ~50ms (run 2 only).
+      // createState() initializes chunkEnrichmentDurationMs to 0, and init()
+      // calls this.states.clear() + createState() per provider key — so the
+      // reset happens at init() time. If createState() ever stops initializing
+      // to 0, or init() stops clearing states, this test catches the regression.
+      expect(run2Metrics.totalChunkEnrichmentDurationMs).toBe(50);
+    });
   });
 
   it("onChunkEnrichmentComplete callback waits for streaming work to settle", async () => {
