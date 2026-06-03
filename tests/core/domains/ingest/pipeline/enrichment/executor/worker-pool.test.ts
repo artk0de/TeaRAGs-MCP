@@ -40,6 +40,34 @@ const WORKER_PATH = resolve(
   "../../../../../../../build/core/domains/ingest/pipeline/enrichment/infra/worker.js",
 );
 
+const THREAD_SPY_PROVIDER_SRC = `import { threadId } from "node:worker_threads";
+export async function createTaggedProvider(_config) {
+  return {
+    key: "thread-spy",
+    signals: [], derivedSignals: [], filters: [], presets: [],
+    resolveRoot: (p) => p,
+    buildFileSignals: async (_root, opts) => {
+      const out = new Map();
+      for (const p of (opts?.paths ?? [])) out.set(p, { threadId });
+      return out;
+    },
+    streamFileBatch: async (_root, paths) => {
+      const out = new Map();
+      for (const p of paths) out.set(p, { threadId });
+      return out;
+    },
+    buildChunkSignals: async (_root, chunkMap) => {
+      const out = new Map();
+      for (const [file, entries] of chunkMap) {
+        const inner = new Map();
+        for (const e of entries) inner.set(e.chunkId, { threadId });
+        out.set(file, inner);
+      }
+      return out;
+    },
+  };
+}`;
+
 const FIXTURE_PROVIDER_SRC = `
 export async function createTaggedProvider(config) {
   const tag = config.tag ?? "untagged";
@@ -113,11 +141,14 @@ function workerProvider(modulePath: string, dispatch: "stateless" | "collection-
 describe("WorkerPoolEnrichmentExecutor", () => {
   let tmp: string;
   let fixturePath: string;
+  let threadSpyPath: string;
 
   beforeAll(() => {
     tmp = mkdtempSync(join(tmpdir(), "wpex-"));
     fixturePath = join(tmp, "fixture-provider.mjs");
     writeFileSync(fixturePath, FIXTURE_PROVIDER_SRC);
+    threadSpyPath = join(tmp, "thread-spy-provider.mjs");
+    writeFileSync(threadSpyPath, THREAD_SPY_PROVIDER_SRC);
   });
   afterAll(() => {
     rmSync(tmp, { recursive: true, force: true });
@@ -212,39 +243,9 @@ describe("WorkerPoolEnrichmentExecutor", () => {
   // workers (no routingKey → no pinning → round-robin), so the threadIds differ
   // and this test is GENUINELY RED under "stateless".
   it("collection-affinity: concurrent runFileBatch + runChunkBatch for same collection land on same worker (same threadId)", async () => {
-    // Fixture provider that embeds the worker's threadId in every response.
-    // Allows the test to verify WHICH worker handled each call.
-    const threadSpyPath = join(tmp, "thread-spy-provider.mjs");
-    writeFileSync(
-      threadSpyPath,
-      `import { threadId } from "node:worker_threads";
-export async function createTaggedProvider(_config) {
-  return {
-    key: "thread-spy",
-    signals: [], derivedSignals: [], filters: [], presets: [],
-    resolveRoot: (p) => p,
-    buildFileSignals: async (_root, opts) => {
-      const out = new Map();
-      for (const p of (opts?.paths ?? [])) out.set(p, { threadId });
-      return out;
-    },
-    streamFileBatch: async (_root, paths) => {
-      const out = new Map();
-      for (const p of paths) out.set(p, { threadId });
-      return out;
-    },
-    buildChunkSignals: async (_root, chunkMap) => {
-      const out = new Map();
-      for (const [file, entries] of chunkMap) {
-        const inner = new Map();
-        for (const e of entries) inner.set(e.chunkId, { threadId });
-        out.set(file, inner);
-      }
-      return out;
-    },
-  };
-}`,
-    );
+    // threadSpyPath is written in beforeAll from THREAD_SPY_PROVIDER_SRC.
+    // Embeds the worker's threadId in every response so the test can verify
+    // WHICH worker handled each call.
 
     const exec = new WorkerPoolEnrichmentExecutor(2, WORKER_PATH);
     const descriptor: WorkerEnrichmentDescriptor = {

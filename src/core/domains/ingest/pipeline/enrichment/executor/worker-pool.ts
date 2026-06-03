@@ -8,8 +8,10 @@
  * Threading model:
  *
  *   - Each request maps to ONE worker via the descriptor's `dispatch` field:
- *     * "stateless" (git) → no routingKey → any free thread (round-robin).
- *     * "collection-affinity" (codegraph) → routingKey = collectionName →
+ *     * "stateless" → no routingKey → any free thread (round-robin). For
+ *       truly stateless providers only; never use for providers that share
+ *       in-process state across file/chunk/finalize batches.
+ *     * "collection-affinity" (git, codegraph) → routingKey = collectionName →
  *       all calls for the same collection pin to the same thread. The
  *       worker's per-thread provider cache then maintains the in-memory
  *       symbolTable / chunkSymbolByLine across streamFileBatch →

@@ -28,13 +28,13 @@ describe("createGitEnrichmentProvider", () => {
     expect(provider.onRelease).toBeUndefined();
   });
 
-  it("attaches workerDescriptor when composition root supplies one (dispatch must be collection-affinity)", () => {
-    // git is STATEFUL: buildChunkSignals reuses blameByRelPath/lastFileResult/
-    // enrichmentCache populated by buildFileSignals on the same instance.
-    // The bootstrap composition root MUST supply dispatch: "collection-affinity"
-    // so all of a collection's file/chunk/finalize batches pin to one worker.
-    // This test is RED under "stateless" — if bootstrap regresses, the
-    // descriptor roundtrip below will catch it.
+  it("attaches the supplied workerDescriptor verbatim (caller owns dispatch value)", () => {
+    // createGitEnrichmentProvider passes the descriptor through unchanged.
+    // The caller (bootstrap composition root) is responsible for supplying the
+    // correct dispatch value. In production this MUST be "collection-affinity"
+    // because git is stateful (blameByRelPath/lastFileResult/enrichmentCache are
+    // shared across buildFileSignals → buildChunkSignals on the same instance).
+    // This test proves round-trip fidelity, not bootstrap correctness.
     const config: GitWorkerConfig = { chunkConcurrency: 2 };
     const descriptor: WorkerEnrichmentDescriptor = {
       providerModulePath: "/abs/path/git/factory.js",

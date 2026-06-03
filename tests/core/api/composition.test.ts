@@ -94,13 +94,13 @@ describe("createComposition", () => {
       const gitDescriptor = {
         providerModulePath: "/abs/git/factory.js",
         providerFactoryExport: "createGitEnrichmentProvider",
-        dispatch: "stateless" as const,
+        dispatch: "collection-affinity" as const,
         serializableConfig: {},
       };
       const { registry } = createComposition({ git: { workerDescriptor: gitDescriptor } });
       const git = registry.getAllEnrichmentProviders().find((p) => p.key === "git");
       expect(git?.workerDescriptor).toBeDefined();
-      expect(git?.workerDescriptor?.dispatch).toBe("stateless");
+      expect(git?.workerDescriptor?.dispatch).toBe("collection-affinity");
     });
 
     it("surfaces a defined workerDescriptor on the codegraph provider when supplied", () => {

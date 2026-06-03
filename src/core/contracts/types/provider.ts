@@ -10,6 +10,8 @@
 import type { Ignore } from "ignore";
 
 import type { ChunkLookupEntry } from "./chunker.js";
+import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
+import type { PayloadSignalDescriptor } from "./trajectory.js";
 
 /**
  * Per-provider counters reported by an enrichment provider for a single run.
@@ -26,8 +28,6 @@ export type ProviderRunMetrics = Record<string, unknown>;
  * that need it cast at the adapter boundary.
  */
 type QdrantFilterConditionShape = Record<string, unknown>;
-import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
-import type { PayloadSignalDescriptor } from "./trajectory.js";
 
 // --- Signal overlay base types ---
 
@@ -175,10 +175,14 @@ export interface WorkerEnrichmentDescriptor {
    */
   providerFactoryExport: string;
   /**
-   * `stateless` — any free worker (git: per-call config, no cross-call state).
-   * `collection-affinity` — pinned worker per `routingKey = collectionName`
-   * (codegraph: streamFileBatch → finalizeSignals → deferred buildChunkSignals
-   * share `symbolTable`/`chunkSymbolByLine` on the cached provider instance).
+   * `stateless` — any free worker; no routingKey; round-robin. Use only for
+   * providers that carry no cross-call state (no shared caches, symbol tables,
+   * or result buffers across file/chunk/finalize batches).
+   * `collection-affinity` — pinned worker per `routingKey = collectionName`.
+   * All file/chunk/finalize batches for the same collection land on the same
+   * thread so providers can share in-process state across the ingest cycle.
+   * Used by git (blameByRelPath/enrichmentCache) and codegraph
+   * (symbolTable/chunkSymbolByLine).
    */
   dispatch: "stateless" | "collection-affinity";
   /**
