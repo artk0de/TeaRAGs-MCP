@@ -1407,38 +1407,8 @@ describe("EnrichmentCoordinator — awaitCompletion metrics", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     const metrics = await coordinator.awaitCompletion("test-col");
-    // gitLogFileCount tracked a whole-repo prefetch file-metadata count that no
-    // longer exists under per-batch streaming — now a best-effort 0+.
-    expect(metrics.gitLogFileCount).toBeGreaterThanOrEqual(0);
     expect(metrics.totalDurationMs).toBeGreaterThanOrEqual(0);
     expect(metrics.prefetchDurationMs).toBeGreaterThanOrEqual(0);
-  });
-
-  it("computes overlap timing when pipelineFlushTime is set", async () => {
-    const mockQdrant: any = {
-      batchSetPayload: vi.fn().mockResolvedValue(undefined),
-      setPayload: vi.fn().mockResolvedValue(undefined),
-      getPoint: vi.fn().mockResolvedValue(null),
-    };
-    const mockProvider: any = {
-      key: "git",
-      resolveRoot: vi.fn((p: string) => p),
-      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
-      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
-    };
-    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.beginRun("/repo", "test-col");
-
-    // Trigger pipelineFlushTime by storing chunks
-    coordinator.onChunksStored("test-col", "/repo", [
-      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 5 } } as any,
-    ]);
-    await new Promise((r) => setTimeout(r, 20));
-
-    const metrics = await coordinator.awaitCompletion("test-col");
-    expect(metrics.overlapMs).toBeGreaterThanOrEqual(0);
-    expect(metrics.overlapRatio).toBeGreaterThanOrEqual(0);
-    expect(metrics.overlapRatio).toBeLessThanOrEqual(1);
   });
 });
 

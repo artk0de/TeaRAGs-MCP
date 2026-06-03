@@ -117,8 +117,6 @@ export class CompletionRunner {
     const chunkMetrics = chunkPhase.getMetrics();
     const metrics: EnrichmentMetrics = {
       prefetchDurationMs: fileMetrics.maxPrefetchDurationMs,
-      overlapMs: 0,
-      overlapRatio: 0,
       streamingApplies: fileMetrics.totalStreamingApplies,
       flushApplies: fileMetrics.totalFlushApplies,
       chunkChurnDurationMs: chunkMetrics.totalChunkEnrichmentDurationMs,
@@ -126,17 +124,7 @@ export class CompletionRunner {
       matchedFiles: applier.matchedFiles,
       missedFiles: applier.missedFiles,
       missedPathSamples: [...applier.missedPathSamples],
-      gitLogFileCount: fileMetrics.totalFileMetadataCount,
-      estimatedSavedMs: 0,
     };
-    const first = fileMetrics.firstProvider;
-    if (first && first.prefetchEndTime > 0 && first.pipelineFlushTime > 0) {
-      const overlapEnd = Math.min(first.prefetchEndTime, first.pipelineFlushTime);
-      metrics.overlapMs = Math.max(0, overlapEnd - first.prefetchStartTime);
-      metrics.overlapRatio =
-        metrics.prefetchDurationMs > 0 ? Math.min(1, metrics.overlapMs / metrics.prefetchDurationMs) : 0;
-    }
-    metrics.estimatedSavedMs = Math.max(0, metrics.overlapMs);
 
     // 5b. provider-specific counters (codegraph extractedFiles, etc.).
     // Top-level fields above remain coordinator-owned and git-historical

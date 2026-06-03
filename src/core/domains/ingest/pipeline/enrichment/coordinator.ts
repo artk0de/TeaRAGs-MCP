@@ -37,8 +37,6 @@ import type { EnrichmentProvider, ProviderContext } from "./types.js";
 
 const EMPTY_METRICS: EnrichmentMetrics = {
   prefetchDurationMs: 0,
-  overlapMs: 0,
-  overlapRatio: 0,
   streamingApplies: 0,
   flushApplies: 0,
   chunkChurnDurationMs: 0,
@@ -46,8 +44,6 @@ const EMPTY_METRICS: EnrichmentMetrics = {
   matchedFiles: 0,
   missedFiles: 0,
   missedPathSamples: [],
-  gitLogFileCount: 0,
-  estimatedSavedMs: 0,
 };
 
 /** No-op keep-alive guard: used when codegraph is disabled or in tests. */
