@@ -1,4 +1,4 @@
-import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
+import { resolveQdrantUrl } from "../core/api/public/index.js";
 
 export interface TuneQdrantResolution {
   /** URL to pass to the benchmark child. `undefined` only when the caller

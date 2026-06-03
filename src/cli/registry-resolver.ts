@@ -1,8 +1,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { ProjectNotRegisteredError, ProjectPathMissingError } from "../core/api/errors.js";
-import { CollectionRegistry } from "../core/infra/registry/collection-registry.js";
+import { ProjectNotRegisteredError, ProjectPathMissingError } from "../core/api/public/index.js";
+import { CollectionRegistry } from "../core/api/public/index.js";
 
 export interface ProjectAwareArgs {
   project?: string;
