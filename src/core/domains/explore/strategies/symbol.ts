@@ -46,8 +46,7 @@
  */
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
+import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import { applyEssentialSignalsToOverlay } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { resolveSymbols } from "../symbol-resolve.js";
@@ -74,7 +73,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     reranker: Reranker,
     payloadSignals: PayloadSignalDescriptor[],
     essentialKeys: string[],
-    private readonly registry: TrajectoryRegistry,
+    private readonly registry: TrajectoryFilterBuilder,
     private readonly input: SymbolSearchInput,
   ) {
     super(qdrant, reranker, payloadSignals, essentialKeys);
