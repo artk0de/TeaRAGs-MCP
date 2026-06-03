@@ -89,26 +89,13 @@ export type EnrichmentMarkerMap = {
   _run?: RunMarker;
 } & Record<string, ProviderEnrichmentMarker | RunMarker | undefined>;
 
-/** API-facing health per level */
-export interface EnrichmentLevelHealth {
-  status: "healthy" | "in_progress" | "degraded" | "failed";
-  unenrichedChunks?: number;
-  message?: string;
-  startedAt?: string;
-  completedAt?: string;
-  durationMs?: number;
-  matchedFiles?: number;
-  missedFiles?: number;
-}
-
-/** API-facing health per provider */
-export interface EnrichmentProviderHealth {
-  file: EnrichmentLevelHealth;
-  chunk: EnrichmentLevelHealth;
-}
-
-/** API-facing enrichment health map */
-export type EnrichmentHealthMap = Record<string, EnrichmentProviderHealth>;
+// API-facing enrichment health types live in core/contracts/types/enrichment.ts.
+// Re-exported here so internal ingest code keeps the same import paths.
+export type {
+  EnrichmentLevelHealth,
+  EnrichmentProviderHealth,
+  EnrichmentHealthMap,
+} from "../../../../contracts/types/enrichment.js";
 
 /** Input for EnrichmentMarkerStore.markFileFinal. */
 export interface FileFinalInput {

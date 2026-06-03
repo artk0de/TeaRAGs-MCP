@@ -9,6 +9,8 @@ export type * from "./types/trajectory.js";
 export type * from "./types/codegraph.js";
 export type * from "./types/chunker.js";
 export type * from "./types/language.js";
+export type * from "./types/enrichment.js";
+export type * from "./types/ingest-config.js";
 export * from "../infra/signal-utils.js";
 // Re-export Qdrant filter primitives from canonical source
 export type {

@@ -2,33 +2,11 @@
  * Type definitions for code vectorization module
  */
 
-import type { EnrichmentHealthMap } from "./domains/ingest/pipeline/enrichment/types.js";
+import type { EnrichmentHealthMap } from "./contracts/types/enrichment.js";
 
-/** Config for indexing pipelines (BaseIndexingPipeline, IndexPipeline, ReindexPipeline) */
-export interface IngestCodeConfig {
-  // Chunking
-  chunkSize: number;
-  chunkOverlap: number;
-
-  // File discovery
-  supportedExtensions: string[];
-  ignorePatterns: string[];
-  customIgnorePatterns?: string[];
-
-  // Indexing
-  maxChunksPerFile?: number;
-  maxTotalChunks?: number;
-
-  // Search (used at collection creation time)
-  enableHybridSearch: boolean;
-  quantizationScalar: boolean;
-
-  // Git metadata (optional, adds author/commit info to chunks)
-  enableGitMetadata?: boolean;
-
-  /** True when user explicitly set INGEST_CHUNK_SIZE env var */
-  userSetChunkSize?: boolean;
-}
+// IngestCodeConfig now lives in contracts/types/ingest-config.ts; re-exported
+// here for back-compat with importers that still reference the old path.
+export type { IngestCodeConfig } from "./contracts/types/ingest-config.js";
 
 /** Config for IngestFacade trajectory enrichment setup */
 export interface TrajectoryIngestConfig {
