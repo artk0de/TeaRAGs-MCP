@@ -2,9 +2,24 @@
  * Trajectory type system — payload signal descriptors, stats, and extraction context.
  */
 
-import type { EnrichmentProvider, FilterDescriptor } from "./provider.js";
+import type { EnrichmentProvider, FilterDescriptor, FilterLevel } from "./provider.js";
 import type { DerivedSignalDescriptor, RerankPreset, SignalLevel } from "./reranker.js";
 import type { StatsAccumulatorDescriptor } from "./stats-accumulator.js";
+
+/**
+ * Narrow capability contract for explore-side filter construction. The full
+ * `TrajectoryRegistry` class in `domains/trajectory/` structurally implements
+ * this interface; explore strategies receive it as a DI parameter typed against
+ * the contract, never the concrete registry — that keeps the domain boundary
+ * (`explore` does not import `trajectory`).
+ */
+export interface TrajectoryFilterBuilder {
+  buildMergedFilter(
+    typedParams: Record<string, unknown>,
+    rawFilter?: Record<string, unknown>,
+    level?: FilterLevel,
+  ): Record<string, unknown> | undefined;
+}
 
 /** What statistics to compute for this signal at collection level. */
 export interface SignalStatsRequest {

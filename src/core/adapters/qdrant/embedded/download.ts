@@ -4,7 +4,7 @@ import { get } from "node:https";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { ConfigValueInvalidError } from "../../../../bootstrap/errors.js";
+import { ConfigValueInvalidError } from "../../../infra/errors.js";
 import { compareSemver, isSemver, QDRANT_VERSION } from "../../../infra/qdrant-version.js";
 import { QdrantDowngradeNotSupportedError, QdrantOperationError } from "../errors.js";
 

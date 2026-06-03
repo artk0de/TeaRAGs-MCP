@@ -10,7 +10,7 @@
  * The ingest layer uses getAllEnrichmentProviders() to obtain providers.
  */
 
-import { ConfigValueInvalidError } from "../../../bootstrap/errors.js";
+import { ConfigValueInvalidError } from "../../infra/errors.js";
 import { mergeQdrantFilters } from "../../adapters/qdrant/filters/utils.js";
 import type { QdrantFilter, QdrantFilterCondition } from "../../adapters/qdrant/types.js";
 import type { EnrichmentProvider, FilterDescriptor, FilterLevel } from "../../contracts/types/provider.js";
