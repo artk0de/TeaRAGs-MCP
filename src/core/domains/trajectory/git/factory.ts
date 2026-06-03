@@ -6,8 +6,10 @@
  * `GitWorkerConfig` payload coming through `WorkerEnrichmentDescriptor.
  * serializableConfig`. The worker `dynamic-import`s this module by
  * absolute path (see `.claude/rules/domains-language.md`) and calls the
- * factory once per (collectionName) — for git this is effectively per
- * call since dispatch is `"stateless"` (no cross-call state to cache).
+ * factory once per (collectionName) — git is STATEFUL: `buildChunkSignals`
+ * reuses `blameByRelPath`/`lastFileResult`/`enrichmentCache` populated by
+ * `buildFileSignals` on the same instance, so dispatch is `"collection-affinity"`
+ * to pin all of a collection's file/chunk/finalize batches to one worker.
  *
  * Inline path: composition root calls the same factory directly without
  * a descriptor — provider runs on the main thread, no behavior change.

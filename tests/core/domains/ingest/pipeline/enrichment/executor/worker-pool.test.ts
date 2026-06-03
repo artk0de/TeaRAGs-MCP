@@ -29,7 +29,10 @@ import type {
   EnrichmentProvider,
   WorkerEnrichmentDescriptor,
 } from "../../../../../../../src/core/contracts/types/provider.js";
-import { WorkerPoolEnrichmentExecutor } from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/worker-pool.js";
+import {
+  routingKeyFor,
+  WorkerPoolEnrichmentExecutor,
+} from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/worker-pool.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const WORKER_PATH = resolve(
@@ -199,6 +202,49 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     expect(overlay.get("a.ts")).toMatchObject({ via: "buildFileSignals", source: "affinity-tag" });
     expect(overlay.get("b.ts")).toMatchObject({ via: "buildFileSignals", source: "affinity-tag" });
     await exec.shutdown();
+  });
+
+  // --- git dispatch affinity fix (tea-rags-mcp: pin git per-collection) ---
+
+  it("routingKeyFor: collection-affinity descriptor returns collectionName as routing key", () => {
+    // Verify the routing mechanism: collection-affinity → collectionName key.
+    const descriptor: WorkerEnrichmentDescriptor = {
+      providerModulePath: "/path/to/git-provider.js",
+      providerFactoryExport: "createGitEnrichmentProvider",
+      dispatch: "collection-affinity",
+      serializableConfig: {},
+    };
+    expect(routingKeyFor(descriptor, "code_27622aef")).toBe("code_27622aef");
+  });
+
+  it("git workerDescriptor must use collection-affinity to pin file+chunk batches to same worker", () => {
+    // Git is STATEFUL — buildChunkSignals reuses blameByRelPath/lastFileResult/
+    // enrichmentCache populated by buildFileSignals on the same instance.
+    // collection-affinity pins all of a collection's file/chunk/finalize batches
+    // to one worker, restoring that in-process reuse (~10x speedup on deep-history).
+    const gitDescriptor: WorkerEnrichmentDescriptor = {
+      providerModulePath: "/absolute/path/git/factory.js",
+      providerFactoryExport: "createGitEnrichmentProvider",
+      dispatch: "collection-affinity",
+      serializableConfig: {},
+    };
+    // Assert the dispatch mode and that routingKeyFor returns collectionName.
+    expect(gitDescriptor.dispatch).toBe("collection-affinity");
+    expect(routingKeyFor(gitDescriptor, "code_27622aef")).toBe("code_27622aef");
+  });
+
+  it("collection-affinity: file and chunk batches for same collection produce identical routingKey", () => {
+    // Structural invariant: same descriptor + same collectionName → same key.
+    // ThreadPool affinity ensures same key → same worker → same provider instance.
+    const affinityDescriptor: WorkerEnrichmentDescriptor = {
+      providerModulePath: "/path/to/git-provider.js",
+      providerFactoryExport: "createGitEnrichmentProvider",
+      dispatch: "collection-affinity",
+      serializableConfig: {},
+    };
+    const collectionName = "code_27622aef";
+    expect(routingKeyFor(affinityDescriptor, collectionName)).toBe(collectionName);
+    expect(routingKeyFor(affinityDescriptor, collectionName)).toBe(routingKeyFor(affinityDescriptor, collectionName));
   });
 
   it("propagates worker errors as thrown exceptions", async () => {

@@ -50,7 +50,7 @@ import type {
 import { InlineEnrichmentExecutor } from "./inline.js";
 
 /** Compute the routingKey for a provider based on its dispatch mode. */
-function routingKeyFor(descriptor: WorkerEnrichmentDescriptor, collectionName?: string): string | undefined {
+export function routingKeyFor(descriptor: WorkerEnrichmentDescriptor, collectionName?: string): string | undefined {
   if (descriptor.dispatch === "collection-affinity") return collectionName;
   return undefined;
 }

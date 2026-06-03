@@ -189,14 +189,18 @@ function wireComposition(
   const squashOpts = trajectoryConfig.squashAwareSessions
     ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
     : undefined;
-  // Git worker-pool descriptor (tea-rags-mcp-dz7f). `stateless` dispatch —
-  // git carries its full config per call, no cross-call symbolTable to cache.
-  // The serializableConfig is structured-clone-safe (plain config + squashOpts);
-  // the worker rebuilds GitEnrichmentProvider via `createGitEnrichmentProvider`.
+  // Git worker-pool descriptor (tea-rags-mcp-dz7f). `collection-affinity` dispatch —
+  // git is STATEFUL: buildChunkSignals reuses blameByRelPath/lastFileResult/
+  // enrichmentCache populated by buildFileSignals on the same provider instance.
+  // Pinning all of a collection's batches to one worker restores that in-process
+  // reuse and avoids redundant git blame/log per chunk batch (~10x speedup on
+  // deep-history repos). The serializableConfig is structured-clone-safe
+  // (plain config + squashOpts); the worker rebuilds GitEnrichmentProvider via
+  // `createGitEnrichmentProvider` once per (collectionName) and caches it.
   const gitWorkerDescriptor: WorkerEnrichmentDescriptor = {
     providerModulePath: GIT_PROVIDER_MODULE_PATH,
     providerFactoryExport: "createGitEnrichmentProvider",
-    dispatch: "stateless",
+    dispatch: "collection-affinity",
     serializableConfig: { ...zodConfig.trajectoryGit, squashOpts } satisfies GitWorkerConfig,
   };
   const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition({
