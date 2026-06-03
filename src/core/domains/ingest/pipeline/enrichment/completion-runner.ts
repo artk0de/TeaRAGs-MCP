@@ -38,6 +38,15 @@ export interface CompletionRunnerDeps {
  */
 export type UnenrichedReader = (coll: string, providerKey: string, level: "file" | "chunk") => Promise<number>;
 
+/**
+ * Throttle-free progress notification callback fired at key tail seams
+ * (after chunk drain, after each deferred-chunk pass). The COORDINATOR owns
+ * the 30s throttle inside `maybeHeartbeat` — CompletionRunner just calls the
+ * hook unconditionally and lets the throttle gate the actual Qdrant write.
+ * This keeps the throttle logic in one place (DRY).
+ */
+export type TailProgressCallback = () => void;
+
 export class CompletionRunner {
   constructor(private readonly deps: CompletionRunnerDeps) {}
 
@@ -48,6 +57,7 @@ export class CompletionRunner {
     unenrichedReader?: UnenrichedReader,
     runStartedAt = "",
     runId = "",
+    onProgress?: TailProgressCallback,
   ): Promise<EnrichmentMetrics> {
     const { filePhase, chunkPhase, backfiller, applier, markerStore, executor } = this.deps;
     const readUnenriched: UnenrichedReader = unenrichedReader ?? (async () => 0);
@@ -142,6 +152,10 @@ export class CompletionRunner {
 
     // 6. drain chunkWork (git streaming)
     await chunkPhase.drain();
+    // Tail-heartbeat seam: git chunk churn drain completed. Advance
+    // lastProgressAt so the health mapper does not report "stalled" during
+    // a long git-chunk run that produced no onChunksStored calls.
+    onProgress?.();
 
     // 7. deferred-chunk pass — codegraph buildChunkSignals against the finished
     //    graph with the full accumulated chunkMap, applied via applyChunkSignals.
@@ -150,6 +164,10 @@ export class CompletionRunner {
       const cm = chunkPhase.getDeferredChunkMap(ctx.key);
       if (cm.size > 0) {
         await chunkPhase.runDeferredChunk(coll, ctx, ctx.effectiveRoot ?? "", cm);
+        // Tail-heartbeat seam: deferred codegraph chunk pass completed for this
+        // provider. Advance lastProgressAt so a long PageRank/resolve phase
+        // spanning multiple providers doesn't freeze the progress timestamp.
+        onProgress?.();
       }
     }
 

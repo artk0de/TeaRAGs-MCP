@@ -344,6 +344,14 @@ export class EnrichmentCoordinator {
         async (coll, providerKey, level) => this.countSettledUnenriched(coll, providerKey, level),
         run.startedAt,
         run.runId,
+        // Tail-heartbeat: advance lastProgressAt during the post-embedding
+        // enrichment tail (git chunk drain + deferred codegraph chunk pass) so
+        // the health mapper never reports "stalled" while the tail is active.
+        // The 30s throttle lives in maybeHeartbeat — CompletionRunner calls this
+        // unconditionally, keeping the throttle logic in one place (DRY).
+        () => {
+          this.maybeHeartbeat(collectionName, run);
+        },
       );
       // Phase 2 of unified-enrichment-worker-pool plan: signal the executor
       // to release any per-collection state it cached. For Inline executor
