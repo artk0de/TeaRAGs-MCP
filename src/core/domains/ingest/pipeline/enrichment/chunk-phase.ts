@@ -39,7 +39,19 @@ interface ChunkPhaseState {
    * continue;` short-circuit. Set by FilePhase via markFailed.
    */
   prefetchFailed: boolean;
-  chunkEnrichmentDurationMs: number;
+  /**
+   * Wall-clock start of the first apply in this run (ms since epoch). 0 = no
+   * applies have started yet. Set once on the first apply-start; never
+   * overwritten so concurrent batches don't shift the origin.
+   */
+  chunkFirstStartAt: number;
+  /**
+   * Wall-clock end of the most recently completed apply (ms since epoch). 0 =
+   * no applies have completed yet. Updated on every apply-completion
+   * (success or error) so the wall-clock span always reflects the last settled
+   * batch.
+   */
+  chunkLastEndAt: number;
   chunkEnrichmentFailed: boolean;
   chunkEnrichmentInvoked: boolean;
 }
@@ -50,7 +62,8 @@ function createState(): ChunkPhaseState {
     chunkWork: [],
     deferredChunkMap: new Map(),
     prefetchFailed: false,
-    chunkEnrichmentDurationMs: 0,
+    chunkFirstStartAt: 0,
+    chunkLastEndAt: 0,
     chunkEnrichmentFailed: false,
     chunkEnrichmentInvoked: false,
   };
@@ -250,14 +263,14 @@ export class ChunkPhase {
       for (const e of entries) allChunkIds.add(e.chunkId);
     }
 
-    const start = Date.now();
+    if (state.chunkFirstStartAt === 0) state.chunkFirstStartAt = Date.now();
     try {
       const overlays = await this.executor.runChunkBatch(ctx.provider, root, chunkMap, {
         collectionName: coll,
         skipCache: true,
       });
       const applied = await this.applier.applyChunkSignals(coll, ctx.key, overlays, this.runStartedAt, allChunkIds);
-      state.chunkEnrichmentDurationMs += Date.now() - start;
+      state.chunkLastEndAt = Date.now();
       pipelineLog.enrichmentPhase("STREAMING_CHUNK_ENRICHMENT_COMPLETE", {
         provider: ctx.key,
         phase: "DEFERRED",
@@ -265,7 +278,7 @@ export class ChunkPhase {
         overlaysApplied: applied,
       });
     } catch (error) {
-      state.chunkEnrichmentDurationMs += Date.now() - start;
+      state.chunkLastEndAt = Date.now();
       state.chunkEnrichmentFailed = true;
       pipelineLog.enrichmentPhase("STREAMING_CHUNK_ENRICHMENT_FAILED", {
         provider: ctx.key,
@@ -312,8 +325,15 @@ export class ChunkPhase {
   }
 
   getMetrics(): ChunkPhaseMetrics {
-    let total = 0;
-    for (const s of this.states.values()) total += s.chunkEnrichmentDurationMs;
+    let firstStartAt = 0;
+    let lastEndAt = 0;
+    for (const s of this.states.values()) {
+      if (s.chunkFirstStartAt > 0 && (firstStartAt === 0 || s.chunkFirstStartAt < firstStartAt)) {
+        firstStartAt = s.chunkFirstStartAt;
+      }
+      if (s.chunkLastEndAt > lastEndAt) lastEndAt = s.chunkLastEndAt;
+    }
+    const total = firstStartAt > 0 && lastEndAt > 0 ? lastEndAt - firstStartAt : 0;
     return { totalChunkEnrichmentDurationMs: total };
   }
 
@@ -341,7 +361,11 @@ export class ChunkPhase {
       for (const e of entries) allChunkIds.add(e.chunkId);
     }
 
-    const start = Date.now();
+    // Record wall-clock start: set once on the FIRST apply of this run so
+    // concurrent batches don't overwrite the origin timestamp.
+    const dispatchAt = Date.now();
+    if (state.chunkFirstStartAt === 0) state.chunkFirstStartAt = dispatchAt;
+
     // Carry the active collection on every chunk-signal call so codegraph
     // routes per-collection DuckDB lookups correctly. `coll` is the
     // ChunkPhase's bound collection name from `init`.
@@ -353,7 +377,7 @@ export class ChunkPhase {
       .runChunkBatch(ctx.provider, root, chunkMap, opts)
       .then(async (overlays: Map<string, Map<string, ChunkSignalOverlay>>) => {
         const applied = await this.applier.applyChunkSignals(coll, ctx.key, overlays, this.runStartedAt, allChunkIds);
-        state.chunkEnrichmentDurationMs += Date.now() - start;
+        state.chunkLastEndAt = Date.now();
         pipelineLog.enrichmentPhase(
           useSemaphore ? "STREAMING_CHUNK_ENRICHMENT_COMPLETE" : "CHUNK_ENRICHMENT_COMPLETE",
           { provider: ctx.key, files: chunkMap.size, overlaysApplied: applied },
@@ -361,7 +385,7 @@ export class ChunkPhase {
         return true;
       })
       .catch((error: unknown) => {
-        state.chunkEnrichmentDurationMs += Date.now() - start;
+        state.chunkLastEndAt = Date.now();
         if (!useSemaphore) state.chunkEnrichmentFailed = true;
         pipelineLog.enrichmentPhase(useSemaphore ? "STREAMING_CHUNK_ENRICHMENT_FAILED" : "CHUNK_ENRICHMENT_FAILED", {
           provider: ctx.key,

@@ -201,6 +201,69 @@ describe("ChunkPhase", () => {
     expect(progressCallTimes.length).toBeGreaterThanOrEqual(3);
   });
 
+  describe("chunkChurnDurationMs wall-clock vs summed per-batch elapsed", () => {
+    it("reports wall-clock span of chunk enrichment — not the sum of overlapping per-batch elapseds", async () => {
+      // RED before fix: each per-batch elapsed = (semaphore-wait + actual-work).
+      // With 3 batches all dispatched at t=0, each captures start=0. When they all
+      // complete 100ms later, old code accumulates 3 × 100 = 300ms. Wall-clock = 100ms.
+      //
+      // We use real timers + controlled resolution: dispatch 3 batches, let them
+      // all "run" concurrently (semaphore limit=10), then resolve all together.
+      // getMetrics() must return ≤ 150ms (wall-clock), NOT ≥ 250ms (summed).
+
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+
+      const resolvers: (() => void)[] = [];
+      const buildChunkSignals = vi.fn().mockImplementation(
+        async () =>
+          new Promise<Map<string, Map<string, unknown>>>((resolve) => {
+            resolvers.push(() => {
+              resolve(new Map());
+            });
+          }),
+      );
+      const ctx = buildCtx({ buildChunkSignals });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "run-wc");
+
+      const batchA = [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 } },
+      ] as any[];
+      const batchB = [
+        { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/b.ts" }, startLine: 1, endLine: 10 } },
+      ] as any[];
+      const batchC = [
+        { chunkId: "c3", chunk: { metadata: { filePath: "/repo/src/c.ts" }, startLine: 1, endLine: 10 } },
+      ] as any[];
+
+      // Dispatch all 3 batches. With semaphore(10) all 3 run concurrently.
+      // Each captures start = Date.now() at dispatch time (approximately equal).
+      phase.onBatchProvider("git", "coll", "/repo", batchA);
+      phase.onBatchProvider("git", "coll", "/repo", batchB);
+      phase.onBatchProvider("git", "coll", "/repo", batchC);
+
+      // Yield to let the async work queue up and invoke buildChunkSignals 3 times.
+      await new Promise<void>((r) => setImmediate(r));
+      await new Promise<void>((r) => setImmediate(r));
+
+      // Now all 3 resolvers are registered. Introduce a real 100ms wait so
+      // start timestamps are "old" (they were captured ~100ms ago), then resolve.
+      await new Promise<void>((r) => setTimeout(r, 100));
+      for (const resolve of resolvers) resolve();
+
+      await phase.drain();
+
+      const metrics = phase.getMetrics();
+      // Wall-clock: all 3 batches start at ~t=0, all end at ~t=100 → ~100ms.
+      // Old summed: 3 × ~100 = ~300ms.
+      // Assert wall-clock (≤ 200ms) — NOT the 300ms sum.
+      // Lower bound: at least ~90ms (the 100ms sleep, less some scheduling slack).
+      expect(metrics.totalChunkEnrichmentDurationMs).toBeGreaterThanOrEqual(50);
+      expect(metrics.totalChunkEnrichmentDurationMs).toBeLessThan(250);
+    });
+  });
+
   describe("chunkEnrichmentDurationMs reset between sequential runs", () => {
     beforeEach(() => {
       vi.useFakeTimers();
