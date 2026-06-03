@@ -206,6 +206,86 @@ describe("WorkerPoolEnrichmentExecutor", () => {
 
   // --- git dispatch affinity fix (tea-rags-mcp: pin git per-collection) ---
 
+  // Behavioral regression guard: proves that collection-affinity dispatch pins
+  // runFileBatch + runChunkBatch for the SAME collection to ONE worker (same
+  // threadId). With "stateless" dispatch, concurrent calls spread to different
+  // workers (no routingKey → no pinning → round-robin), so the threadIds differ
+  // and this test is GENUINELY RED under "stateless".
+  it("collection-affinity: concurrent runFileBatch + runChunkBatch for same collection land on same worker (same threadId)", async () => {
+    // Fixture provider that embeds the worker's threadId in every response.
+    // Allows the test to verify WHICH worker handled each call.
+    const threadSpyPath = join(tmp, "thread-spy-provider.mjs");
+    writeFileSync(
+      threadSpyPath,
+      `import { threadId } from "node:worker_threads";
+export async function createTaggedProvider(_config) {
+  return {
+    key: "thread-spy",
+    signals: [], derivedSignals: [], filters: [], presets: [],
+    resolveRoot: (p) => p,
+    buildFileSignals: async (_root, opts) => {
+      const out = new Map();
+      for (const p of (opts?.paths ?? [])) out.set(p, { threadId });
+      return out;
+    },
+    streamFileBatch: async (_root, paths) => {
+      const out = new Map();
+      for (const p of paths) out.set(p, { threadId });
+      return out;
+    },
+    buildChunkSignals: async (_root, chunkMap) => {
+      const out = new Map();
+      for (const [file, entries] of chunkMap) {
+        const inner = new Map();
+        for (const e of entries) inner.set(e.chunkId, { threadId });
+        out.set(file, inner);
+      }
+      return out;
+    },
+  };
+}`,
+    );
+
+    const exec = new WorkerPoolEnrichmentExecutor(2, WORKER_PATH);
+    const descriptor: WorkerEnrichmentDescriptor = {
+      providerModulePath: threadSpyPath,
+      providerFactoryExport: "createTaggedProvider",
+      dispatch: "collection-affinity",
+      serializableConfig: {},
+    };
+    const provider = {
+      key: "thread-spy-provider",
+      signals: [],
+      derivedSignals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: (p: string) => p,
+      buildFileSignals: async () => new Map(),
+      buildChunkSignals: async () => new Map(),
+      workerDescriptor: descriptor,
+    } as unknown as EnrichmentProvider;
+
+    // Dispatch file-batch and chunk-batch for the SAME collection CONCURRENTLY.
+    // Under collection-affinity, both are pinned to one worker → same threadId.
+    // Under stateless (routingKey=undefined), they round-robin to both workers
+    // → different threadIds → test FAILS (RED).
+    const chunkMap = new Map([["a.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]]]);
+    const [fileOverlay, chunkOverlay] = await Promise.all([
+      exec.runFileBatch(provider, "/repo", ["a.ts"], { collectionName: "code_affinity_test" }),
+      exec.runChunkBatch(provider, "/repo", chunkMap, { collectionName: "code_affinity_test" }),
+    ]);
+
+    const fileThreadId = (fileOverlay.get("a.ts") as unknown as { threadId: number })?.threadId;
+    const chunkThreadId = (chunkOverlay.get("a.ts")?.get("c1") as unknown as { threadId: number })?.threadId;
+    expect(fileThreadId).toBeDefined();
+    expect(chunkThreadId).toBeDefined();
+    // Both calls must have landed on the same worker thread (affinity guarantee).
+    // Under "stateless" dispatch they spread to different workers → this line FAILS.
+    expect(fileThreadId).toBe(chunkThreadId);
+
+    await exec.shutdown();
+  });
+
   it("routingKeyFor: collection-affinity descriptor returns collectionName as routing key", () => {
     // Verify the routing mechanism: collection-affinity → collectionName key.
     const descriptor: WorkerEnrichmentDescriptor = {

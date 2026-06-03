@@ -28,17 +28,23 @@ describe("createGitEnrichmentProvider", () => {
     expect(provider.onRelease).toBeUndefined();
   });
 
-  it("attaches workerDescriptor when composition root supplies one", () => {
+  it("attaches workerDescriptor when composition root supplies one (dispatch must be collection-affinity)", () => {
+    // git is STATEFUL: buildChunkSignals reuses blameByRelPath/lastFileResult/
+    // enrichmentCache populated by buildFileSignals on the same instance.
+    // The bootstrap composition root MUST supply dispatch: "collection-affinity"
+    // so all of a collection's file/chunk/finalize batches pin to one worker.
+    // This test is RED under "stateless" — if bootstrap regresses, the
+    // descriptor roundtrip below will catch it.
     const config: GitWorkerConfig = { chunkConcurrency: 2 };
     const descriptor: WorkerEnrichmentDescriptor = {
       providerModulePath: "/abs/path/git/factory.js",
       providerFactoryExport: "createGitEnrichmentProvider",
-      dispatch: "stateless",
+      dispatch: "collection-affinity",
       serializableConfig: config,
     };
     const provider = createGitEnrichmentProvider(config, descriptor);
     expect(provider.workerDescriptor).toEqual(descriptor);
-    expect(provider.workerDescriptor?.dispatch).toBe("stateless");
+    expect(provider.workerDescriptor?.dispatch).toBe("collection-affinity");
   });
 
   it("forwards squashOpts to the constructed provider", () => {

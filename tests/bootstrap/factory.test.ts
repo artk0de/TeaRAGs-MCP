@@ -5,8 +5,37 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AppConfig, getZodConfig } from "../../src/bootstrap/config/index.js";
 import { createAppContext, createConfiguredServer, loadPrompts, wireCodegraph } from "../../src/bootstrap/factory.js";
+import type { WorkerEnrichmentDescriptor } from "../../src/core/contracts/types/provider.js";
+import type { GitTrajectory as GitTrajectoryType } from "../../src/core/domains/trajectory/git.js";
 import { CollectionRegistry } from "../../src/core/infra/registry/index.js";
 import { loadPromptsConfig } from "../../src/mcp/prompts/index.js";
+
+// vi.hoisted: shared state for the GitTrajectory constructor spy (used in Test 1
+// below). Must be declared before any vi.mock calls because vi.mock is hoisted
+// to the top of the file by Vitest — the closure reference to `captured` must
+// be in scope at that point.
+const captured = vi.hoisted(() => ({ gitWorkerDescriptor: undefined as WorkerEnrichmentDescriptor | undefined }));
+
+// Partial mock of the git trajectory module so the spy can record the
+// workerDescriptor argument passed by wireComposition (bootstrap/factory.ts).
+// The real class still runs — only the constructor argument is recorded.
+vi.mock("../../src/core/domains/trajectory/git.js", async (importOriginal) => {
+  const mod = await (importOriginal as () => Promise<{ GitTrajectory: typeof GitTrajectoryType }>)();
+  const OrigGitTrajectory = mod.GitTrajectory;
+  return {
+    ...mod,
+    GitTrajectory: class extends OrigGitTrajectory {
+      constructor(
+        config?: Parameters<typeof OrigGitTrajectory>[0],
+        squashOpts?: Parameters<typeof OrigGitTrajectory>[1],
+        workerDescriptor?: WorkerEnrichmentDescriptor,
+      ) {
+        super(config, squashOpts, workerDescriptor);
+        captured.gitWorkerDescriptor = workerDescriptor;
+      }
+    },
+  };
+});
 
 // Mock heavy dependencies — use function() (not =>) so `new` works
 vi.mock("../../src/core/adapters/qdrant/client.js", () => ({
@@ -165,6 +194,26 @@ describe("createAppContext", () => {
     } finally {
       startWatching.mockRestore();
     }
+  });
+
+  it("wires git workerDescriptor with dispatch:collection-affinity (production regression guard)", async () => {
+    // This test is GENUINELY RED when bootstrap/factory.ts reverts the git
+    // dispatch to "stateless". It reads the ACTUAL gitWorkerDescriptor built
+    // by wireComposition() — the value captured by the GitTrajectory constructor
+    // spy (declared at module scope above, partial-mocked to record args).
+    //
+    // Why collection-affinity matters: git is STATEFUL. buildChunkSignals reuses
+    // blameByRelPath/lastFileResult/enrichmentCache populated by buildFileSignals
+    // on the same provider instance. "stateless" dispatch round-robins to any
+    // free thread — different workers have separate provider caches, so chunk
+    // batches rebuild blame from scratch (~10x slower on deep-history repos).
+    // collection-affinity pins all of a collection's file/chunk/finalize batches
+    // to ONE worker, preserving in-process cache reuse.
+    captured.gitWorkerDescriptor = undefined;
+    await createAppContext(makeConfig());
+    expect(captured.gitWorkerDescriptor).toBeDefined();
+    expect(captured.gitWorkerDescriptor!.dispatch).toBe("collection-affinity");
+    expect(captured.gitWorkerDescriptor!.providerFactoryExport).toBe("createGitEnrichmentProvider");
   });
 });
 
