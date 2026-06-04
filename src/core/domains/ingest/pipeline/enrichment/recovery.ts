@@ -241,6 +241,12 @@ export class EnrichmentRecovery {
       must_not: [
         { key: "_type", match: { value: "indexing_metadata" } },
         { key: "_type", match: { value: "schema_metadata" } },
+        // Points without a relativePath cannot be re-enriched (scrollUnenriched
+        // skips them). Exclude them from the count too, so countUnenriched and
+        // the recovery scroll see the same set — otherwise a no-relativePath
+        // point with empty enrichedAt keeps the count > 0 and degraded sticks
+        // forever with nothing the recovery pass can act on.
+        { is_empty: { key: "relativePath" } },
       ],
     };
   }

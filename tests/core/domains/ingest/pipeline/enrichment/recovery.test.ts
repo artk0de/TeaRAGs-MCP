@@ -319,6 +319,23 @@ describe("EnrichmentRecovery", () => {
       expect(count).toBe(0);
     });
 
+    it("excludes points without a relativePath so count agrees with the recovery scroll", async () => {
+      // scrollUnenriched skips points lacking relativePath (cannot re-enrich
+      // them), but countUnenriched used to include them — a point with empty
+      // enrichedAt and no relativePath made the count > 0 forever, so degraded
+      // could never clear. Both must filter the same set.
+      mockQdrant.countPoints.mockResolvedValue(0);
+
+      await recovery.countUnenriched("test-collection", "git", "file");
+
+      expect(mockQdrant.countPoints).toHaveBeenCalledWith(
+        "test-collection",
+        expect.objectContaining({
+          must_not: expect.arrayContaining([{ is_empty: { key: "relativePath" } }]),
+        }),
+      );
+    });
+
     it("excludes indexing/schema metadata points from unenriched count", async () => {
       mockQdrant.countPoints.mockResolvedValue(0);
 
