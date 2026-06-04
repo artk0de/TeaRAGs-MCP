@@ -654,6 +654,84 @@ describe("IngestFacade", () => {
     });
   });
 
+  describe("pre-reindex recovery ordering (8tp8)", () => {
+    it("awaits recovery BEFORE reindexChanges so the degraded marker is cleared", async () => {
+      // Regression: dispatchRecovery used to be fire-and-forget, launched right
+      // before reindexChanges. Recovery re-enriches stale (unenriched) points,
+      // but it lost the race against the reindex's markFileFinal/markChunkFinal,
+      // which re-derives status from countUnenriched while recovery was still
+      // running → degraded stuck forever. Sequencing recovery FIRST guarantees
+      // the payload re-enrichment lands before the reindex finalizes its count.
+      let recoveryResolved = false;
+      let reindexSawRecoveryDone: boolean | undefined;
+
+      mockReindexChanges.mockImplementationOnce(async () => {
+        reindexSawRecoveryDone = recoveryResolved;
+        return { added: 0, removed: 0 };
+      });
+
+      // collectionExists=true → incremental (reindex) path.
+      const facade = new IngestFacade({
+        qdrant: {
+          collectionExists: vi.fn().mockResolvedValue(true),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          url: "http://localhost:6333",
+        } as any,
+        embeddings: {
+          embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: vi.fn().mockReturnValue("mock"),
+        } as any,
+        config: {} as any,
+        trajectoryConfig: { enableGitMetadata: false } as any,
+      });
+
+      // Recovery takes real time and flips the flag only when it completes.
+      const coordinator = mockCoordinatorInstances.at(-1);
+      coordinator.runRecovery = vi.fn().mockImplementation(async () => {
+        await new Promise((r) => setTimeout(r, 20));
+        recoveryResolved = true;
+      });
+
+      await facade.indexCodebase("/tmp/test-project");
+
+      expect(coordinator.runRecovery).toHaveBeenCalledTimes(1);
+      // The fix: reindex must observe recovery as already finished.
+      expect(reindexSawRecoveryDone).toBe(true);
+    });
+
+    it("a failing recovery is logged but does not block the reindex", async () => {
+      // Errors must no longer be silently swallowed by an empty .catch(()=>{}),
+      // nor may they break indexing — recovery is best-effort.
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockReindexChanges.mockResolvedValueOnce({ added: 1, removed: 0 });
+
+      const facade = new IngestFacade({
+        qdrant: {
+          collectionExists: vi.fn().mockResolvedValue(true),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          url: "http://localhost:6333",
+        } as any,
+        embeddings: {
+          embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: vi.fn().mockReturnValue("mock"),
+        } as any,
+        config: {} as any,
+        trajectoryConfig: { enableGitMetadata: false } as any,
+      });
+
+      const coordinator = mockCoordinatorInstances.at(-1);
+      coordinator.runRecovery = vi.fn().mockRejectedValue(new Error("recovery scroll failed"));
+
+      // Reindex still completes despite the recovery failure.
+      await expect(facade.indexCodebase("/tmp/test-project")).resolves.toBeDefined();
+      expect(mockReindexChanges).toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+  });
+
   describe("Error propagation", () => {
     it("propagates OllamaUnavailableError from indexCodebase", async () => {
       const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");

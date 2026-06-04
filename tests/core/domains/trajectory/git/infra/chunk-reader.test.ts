@@ -570,6 +570,104 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
   });
 });
 
+// ─── injected blobReader — caller-owned lifecycle (kc93) ────────────────────
+
+describe("buildChunkChurnMapUncached — injected blobReader", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("uses an injected blobReader and does NOT spawn/close its own (caller owns lifecycle)", async () => {
+    const commitSha = "a".repeat(40);
+    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+      {
+        commit: {
+          sha: commitSha,
+          author: "Alice",
+          authorEmail: "alice@ex.com",
+          timestamp: Math.floor(Date.now() / 1000),
+          body: "fix: something",
+        },
+        changedFiles: ["src/a.ts"],
+      },
+    ]);
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
+
+    // Spy createCatFileBatch to assert the walk does NOT spawn its own reader
+    // when one is injected.
+    const spawnSpy = vi.spyOn(gitClient, "createCatFileBatch");
+
+    // Injected reader — old→new content per file so a hunk is produced.
+    const read = vi.fn().mockResolvedValueOnce("old\n").mockResolvedValueOnce("new\nextra\n");
+    const close = vi.fn().mockResolvedValue(undefined);
+    const injectedReader = { read, close } as unknown as ReturnType<typeof gitClient.createCatFileBatch>;
+
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
+    chunkMap.set("src/a.ts", [
+      { chunkId: "c1", startLine: 1, endLine: 5 },
+      { chunkId: "c2", startLine: 6, endLine: 10 },
+    ]);
+
+    // blobReader is the LAST positional arg (after blameByPath).
+    await chunkReader.buildChunkChurnMapUncached(
+      "/fake/repo",
+      chunkMap,
+      {},
+      10,
+      6,
+      undefined,
+      undefined,
+      120000,
+      10000,
+      undefined,
+      undefined,
+      injectedReader,
+    );
+
+    // The injected reader served the blob reads…
+    expect(read).toHaveBeenCalled();
+    // …the walk did NOT spawn its own process…
+    expect(spawnSpy).not.toHaveBeenCalled();
+    // …and the walk did NOT close the caller-owned reader.
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("spawns and closes its OWN reader when none is injected (regression guard)", async () => {
+    const commitSha = "a".repeat(40);
+    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+      {
+        commit: {
+          sha: commitSha,
+          author: "Alice",
+          authorEmail: "alice@ex.com",
+          timestamp: Math.floor(Date.now() / 1000),
+          body: "fix: something",
+        },
+        changedFiles: ["src/a.ts"],
+      },
+    ]);
+    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
+
+    const read = vi.fn().mockResolvedValueOnce("old\n").mockResolvedValueOnce("new\nextra\n");
+    const close = vi.fn().mockResolvedValue(undefined);
+    const spawnSpy = vi
+      .spyOn(gitClient, "createCatFileBatch")
+      .mockReturnValue({ read, close } as unknown as ReturnType<typeof gitClient.createCatFileBatch>);
+
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
+    chunkMap.set("src/a.ts", [
+      { chunkId: "c1", startLine: 1, endLine: 5 },
+      { chunkId: "c2", startLine: 6, endLine: 10 },
+    ]);
+
+    // No blobReader passed → walk owns the lifecycle: spawn once, close in finally.
+    await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
 // ─── concurrency semaphore — queue and release ──────────────────────────────
 
 describe("buildChunkChurnMapUncached — concurrency control", () => {

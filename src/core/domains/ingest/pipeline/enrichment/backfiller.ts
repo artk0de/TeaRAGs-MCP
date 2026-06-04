@@ -18,8 +18,8 @@ import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-
 import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
-import { isDebug } from "../infra/runtime.js";
 import type { EnrichmentApplier } from "./applier.js";
+import { batchSetPayloadWithRetry } from "./batch-write.js";
 import type { ProviderContext } from "./types.js";
 
 const BATCH_SIZE = 100;
@@ -68,7 +68,7 @@ export class EnrichmentBackfiller {
       points: (string | number)[];
       key: string;
     }[] = [];
-    let backfilledFiles = 0;
+    const backfilledPaths: string[] = [];
 
     for (const [relPath, chunks] of missed) {
       const data = backfillData.get(relPath);
@@ -81,29 +81,23 @@ export class EnrichmentBackfiller {
       for (const chunk of chunks) {
         ops.push({ payload: fileData, points: [chunk.chunkId], key: fileKey });
       }
-      backfilledFiles++;
+      backfilledPaths.push(relPath);
     }
 
     if (ops.length > 0) {
       for (let i = 0; i < ops.length; i += BATCH_SIZE) {
-        try {
-          await this.qdrant.batchSetPayload(coll, ops.slice(i, i + BATCH_SIZE));
-        } catch (error) {
-          if (isDebug()) {
-            console.error(`[Enrichment:${ctx.key}] backfill batch failed:`, error);
-          }
-        }
+        await batchSetPayloadWithRetry(this.qdrant, coll, ops.slice(i, i + BATCH_SIZE));
       }
     }
 
-    this.applier.markBackfilled(backfilledFiles);
+    this.applier.markBackfilled(backfilledPaths);
 
     pipelineLog.enrichmentPhase("BACKFILL_COMPLETE", {
       provider: ctx.key,
       missedFiles: missedPaths.length,
-      backfilledFiles,
+      backfilledFiles: backfilledPaths.length,
       backfilledChunks: ops.length,
-      stillMissed: missedPaths.length - backfilledFiles,
+      stillMissed: missedPaths.length - backfilledPaths.length,
       durationMs: Date.now() - start,
     });
 
@@ -175,13 +169,7 @@ export class EnrichmentBackfiller {
 
     if (ops.length > 0) {
       for (let i = 0; i < ops.length; i += BATCH_SIZE) {
-        try {
-          await this.qdrant.batchSetPayload(coll, ops.slice(i, i + BATCH_SIZE));
-        } catch (error) {
-          if (isDebug()) {
-            console.error(`[Enrichment:${ctx.key}] chunk backfill batch failed:`, error);
-          }
-        }
+        await batchSetPayloadWithRetry(this.qdrant, coll, ops.slice(i, i + BATCH_SIZE));
       }
     }
 

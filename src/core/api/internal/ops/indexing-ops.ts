@@ -316,7 +316,16 @@ export class IndexingOps {
     const effectiveChunkSize = this.resolveEffectiveChunkSize(modelInfo);
     const overrides = { chunkSize: effectiveChunkSize, modelInfo };
 
-    this.dispatchRecovery(collectionName, absolutePath);
+    // Await recovery BEFORE the reindex (not fire-and-forget). Recovery
+    // re-enriches stale/unenriched points left by prior runs; running it first
+    // guarantees its payload writes land before the reindex's CompletionRunner
+    // re-derives file/chunk status from countUnenriched. Fire-and-forget lost
+    // that race (recovery is slower than a fast incremental run) AND recoverAll's
+    // runId guard always tripped — the reindex's concurrent markStart bumped the
+    // runId, so markRecoveryResult was structurally always skipped — leaving
+    // degraded stuck across reindexes (tea-rags-mcp-8tp8). Sequencing recovery
+    // first also makes the guard pass (no concurrent run during recovery).
+    await this.dispatchRecovery(collectionName, absolutePath);
 
     const changeStats = await this.reindex.reindexChanges(path, progressCallback, overrides);
 
@@ -408,14 +417,21 @@ export class IndexingOps {
     }
   }
 
-  private dispatchRecovery(collectionName: string, absolutePath: string): void {
-    // Fire-and-forget. runRecovery is cheap when there's no work:
-    // recoverFileLevel/recoverChunkLevel short-circuit on empty scroll, and
-    // the updateEnrichmentMarker writeback is guarded by runId snapshot inside
-    // runRecovery. No disk-based completion flag — the only source of truth is
-    // the collection itself, so an incremental reindex with 0 changes still
-    // triggers recovery for stale/unenriched state left by prior runs.
-    void this.enrichment.runRecovery(collectionName, absolutePath).catch(() => {});
+  private async dispatchRecovery(collectionName: string, absolutePath: string): Promise<void> {
+    // Awaited, best-effort. runRecovery is cheap when there's no work:
+    // recoverFileLevel/recoverChunkLevel short-circuit on empty scroll, so the
+    // healthy path pays only a couple of lightweight count/scroll calls. When
+    // there IS stale unenriched state, awaiting pays the one-time recovery cost
+    // up front so the following reindex finalizes on clean counts. No disk-based
+    // completion flag — the collection itself is the only source of truth, so an
+    // incremental reindex with 0 changes still triggers recovery for state left
+    // by prior runs. Recovery failure is logged but never blocks the reindex —
+    // it is best-effort, and the reindex's own enrichment still runs.
+    try {
+      await this.enrichment.runRecovery(collectionName, absolutePath);
+    } catch (error) {
+      console.error("[IndexingOps] pre-reindex enrichment recovery failed (continuing with reindex):", error);
+    }
   }
 }
 

@@ -12,6 +12,7 @@ import { join } from "node:path";
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
+import { createCatFileBatch } from "../../../adapters/git/client.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
@@ -215,6 +216,11 @@ export class IngestFacade {
       recovery,
       enrichmentExecutor,
       deps.indexRunDaemonGuard,
+      // kc93: one git `cat-file --batch` reader per run, shared across every
+      // chunk batch so the pack is opened once instead of once-per-batch. The
+      // git walk is the only consumer; non-git providers ignore the injected
+      // reader. Lazy: no process spawns until the first git blob read.
+      createCatFileBatch,
     );
     // Codegraph DuckDB cleanup for orphan collections during alias cleanup.
     // Wired from the pool's removeCollection (closes any cached handle, then

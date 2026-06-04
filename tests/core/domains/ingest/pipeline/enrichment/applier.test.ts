@@ -10,7 +10,8 @@ describe("EnrichmentApplier", () => {
     mockQdrant = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
     };
-    applier = new EnrichmentApplier(mockQdrant);
+    // baseDelayMs: 0 keeps retry-exercising tests instant (no real backoff sleep).
+    applier = new EnrichmentApplier(mockQdrant, { baseDelayMs: 0 });
   });
 
   describe("applyFileSignals", () => {
@@ -106,20 +107,67 @@ describe("EnrichmentApplier", () => {
       expect(applier.getMissedFileChunks().get("src/missing.ts")).toEqual([{ chunkId: "chunk-1", endLine: 50 }]);
     });
 
-    it("catches batchSetPayload error in applyFileSignals without throwing", async () => {
+    it("recovers a transient batchSetPayload failure via retry without throwing", async () => {
       mockQdrant.batchSetPayload.mockRejectedValueOnce(new Error("qdrant unavailable"));
 
-      // Should not throw even when Qdrant fails
+      // Should not throw, and the retry lands the write (2 calls total).
       await expect(
         applier.applyFileSignals("test-collection", "git", new Map([["src/index.ts", { commitCount: 5 }]]), "/repo", [
           {
             chunkId: "chunk-1",
-            chunk: { metadata: { filePath: "/repo/src/index.ts" }, endLine: 100 },
+            chunk: { metadata: { filePath: "/repo/src/index.ts" }, startLine: 1, endLine: 100 },
           } as any,
         ]),
       ).resolves.toBeUndefined();
 
-      expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(1);
+      expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries a transient file-apply failure so the write lands without residual", async () => {
+      // A single transient Qdrant blip on the streaming file-apply batch must
+      // NOT leave the file unenriched: the retry lands the write, and the file
+      // is NOT queued for backfill (it already succeeded).
+      const retryApplier = new EnrichmentApplier(mockQdrant, { baseDelayMs: 0 });
+      mockQdrant.batchSetPayload.mockRejectedValueOnce(new Error("ETIMEDOUT")).mockResolvedValue(undefined);
+
+      await retryApplier.applyFileSignals(
+        "test-collection",
+        "git",
+        new Map([["src/a.ts", { commitCount: 5 }]]),
+        "/repo",
+        [{ chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 100 } } as any],
+        undefined,
+        "ts",
+      );
+
+      expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(2);
+      expect(retryApplier.matchedFiles).toBe(1);
+      expect(retryApplier.missedFiles).toBe(0);
+      expect(retryApplier.getMissedFileChunks().size).toBe(0);
+    });
+
+    it("queues a matched file for backfill when its file-apply write keeps failing", async () => {
+      // Reproduces the degraded-status root cause: a persistent write failure on
+      // a MATCHED file (git history exists) used to be swallowed silently, so the
+      // chunk kept git.chunk signals but lost git.file.enrichedAt forever. Now the
+      // residual lands in the missed-file tracker so backfill re-applies it.
+      const retryApplier = new EnrichmentApplier(mockQdrant, { maxAttempts: 3, baseDelayMs: 0 });
+      mockQdrant.batchSetPayload.mockRejectedValue(new Error("qdrant down"));
+
+      await retryApplier.applyFileSignals(
+        "test-collection",
+        "git",
+        new Map([["src/a.ts", { commitCount: 5 }]]),
+        "/repo",
+        [{ chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 100 } } as any],
+        undefined,
+        "ts",
+      );
+
+      expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(3); // exhausted budget
+      expect(retryApplier.getMissedFileChunks().get("src/a.ts")).toEqual([
+        { chunkId: "c1", startLine: 1, endLine: 100 },
+      ]);
     });
 
     it("groups chunks by file and batches Qdrant writes", async () => {
@@ -201,9 +249,10 @@ describe("EnrichmentApplier", () => {
       expect(applied).toBe(150);
     });
 
-    it("handles error in mid-batch batchSetPayload without losing remaining chunks", async () => {
-      // First call (overflow batch) fails, second call (remainder) succeeds
-      mockQdrant.batchSetPayload.mockRejectedValueOnce(new Error("qdrant batch fail")).mockResolvedValueOnce(undefined);
+    it("retries a transient mid-batch failure so no chunks are lost", async () => {
+      // First overflow batch's first attempt fails, its retry lands; the
+      // remainder batch then succeeds. All 110 chunks end up applied.
+      mockQdrant.batchSetPayload.mockRejectedValueOnce(new Error("qdrant batch fail")).mockResolvedValue(undefined);
 
       const overlays = new Map<string, Record<string, unknown>>();
       for (let i = 0; i < 110; i++) {
@@ -213,9 +262,22 @@ describe("EnrichmentApplier", () => {
 
       const applied = await applier.applyChunkSignals("test-collection", "git", chunkMetadata as any);
 
-      // First batch of 100 failed (not counted), remainder of 10 succeeded
-      expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(2);
-      expect(applied).toBe(10);
+      // batch1: fail + retry-success (2 calls), batch2: success (1 call) = 3 total
+      expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(3);
+      expect(applied).toBe(110);
+    });
+
+    it("does not count a chunk batch whose write exhausts the retry budget", async () => {
+      // Persistent failure (every attempt throws) — the batch is not counted,
+      // but the call does not throw and other batches proceed independently.
+      mockQdrant.batchSetPayload.mockRejectedValue(new Error("qdrant down"));
+
+      const chunkMetadata = new Map([["src/a.ts", new Map([["chunk-1", { churn: 0.2 }]])]]);
+
+      const applied = await applier.applyChunkSignals("test-collection", "git", chunkMetadata);
+
+      expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(3); // exhausted budget
+      expect(applied).toBe(0);
     });
 
     it("uses nested key path so chunk signals don't overwrite file signals", async () => {
@@ -234,16 +296,16 @@ describe("EnrichmentApplier", () => {
       expect(ops[0].payload).not.toHaveProperty("git");
     });
 
-    it("handles error in final chunk batch gracefully", async () => {
-      // Only one batch (< 100 items), and it fails
-      mockQdrant.batchSetPayload.mockRejectedValueOnce(new Error("final batch fail"));
+    it("retries a transient final-batch failure so the single batch lands", async () => {
+      // Only one batch (< 100 items); its first attempt fails, the retry lands.
+      mockQdrant.batchSetPayload.mockRejectedValueOnce(new Error("final batch fail")).mockResolvedValue(undefined);
 
       const chunkMetadata = new Map([["src/a.ts", new Map([["chunk-1", { churn: 0.2 }]])]]);
 
       const applied = await applier.applyChunkSignals("test-collection", "git", chunkMetadata);
 
-      expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(1);
-      expect(applied).toBe(0); // Failed, so not counted
+      expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(2);
+      expect(applied).toBe(1);
     });
   });
 
@@ -332,6 +394,50 @@ describe("EnrichmentApplier", () => {
 
       const ops = mockQdrant.batchSetPayload.mock.calls[0][1];
       expect(ops[0].payload).toMatchObject({ commitCount: 3, enrichedAt: ts });
+    });
+  });
+
+  describe("matchedFiles uniqueness across passes", () => {
+    it("counts each file only once even when applied in two separate passes", async () => {
+      const fileMetadata = new Map([
+        ["src/a.ts", { commitCount: 3 }],
+        ["src/b.ts", { commitCount: 5 }],
+      ]);
+
+      // Pass 1 — streaming apply: touches src/a.ts and src/b.ts
+      await applier.applyFileSignals("test-collection", "git", fileMetadata, "/repo", [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+        { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/b.ts" }, endLine: 20 } } as any,
+      ]);
+
+      // Pass 2 — finalize/deferred apply: same files again (new chunks, same relPaths)
+      await applier.applyFileSignals("test-collection", "git", fileMetadata, "/repo", [
+        { chunkId: "c3", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 30 } } as any,
+        { chunkId: "c4", chunk: { metadata: { filePath: "/repo/src/b.ts" }, endLine: 40 } } as any,
+      ]);
+
+      // Each unique file path should be counted exactly once, not twice
+      expect(applier.matchedFiles).toBe(2);
+    });
+
+    it("counts unique files across applyFileSignals and applyFinalizeFile passes", async () => {
+      const fileOverlays = new Map([["src/a.ts", { commitCount: 3 }]]);
+
+      // Pass 1 — streaming apply via applyFileSignals
+      await applier.applyFileSignals("test-collection", "git", fileOverlays, "/repo", [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+      ]);
+
+      // Pass 2 — finalize apply via applyFinalizeFile (same relPath)
+      await applier.applyFinalizeFile(
+        "test-collection",
+        "git",
+        fileOverlays,
+        new Map([["src/a.ts", [{ chunkId: "c2", startLine: 20, endLine: 30 }]]]),
+      );
+
+      // src/a.ts appeared in both passes — should count only once
+      expect(applier.matchedFiles).toBe(1);
     });
   });
 });

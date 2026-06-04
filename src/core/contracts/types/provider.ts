@@ -10,6 +10,8 @@
 import type { Ignore } from "ignore";
 
 import type { ChunkLookupEntry } from "./chunker.js";
+import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
+import type { PayloadSignalDescriptor } from "./trajectory.js";
 
 /**
  * Per-provider counters reported by an enrichment provider for a single run.
@@ -26,8 +28,6 @@ export type ProviderRunMetrics = Record<string, unknown>;
  * that need it cast at the adapter boundary.
  */
 type QdrantFilterConditionShape = Record<string, unknown>;
-import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
-import type { PayloadSignalDescriptor } from "./trajectory.js";
 
 // --- Signal overlay base types ---
 
@@ -112,6 +112,21 @@ export interface ChunkSignalOptions {
    * about collection scope (git) ignore it.
    */
   collectionName?: string;
+  /**
+   * Run-scoped git object reader shared across every per-batch chunk-signal
+   * call of one indexing run. Structural shape of `CatFileBatchReader`
+   * (`core/adapters/git/client.ts`) — declared by value here, not imported,
+   * because contracts is pure (no `core/` deps per domain-boundaries.md).
+   *
+   * When present, the git walk reuses this ONE `git cat-file --batch` process
+   * (pack opened once) instead of spawning a fresh one per batch, and does NOT
+   * close it — the CALLER owns the lifecycle (ChunkPhase opens it lazily for
+   * the run and closes it at drain). Absent ⇒ the walk spawns and closes its
+   * own per-call reader (recovery / one-off paths). Providers that don't read
+   * git objects (codegraph) ignore it. See `.claude/rules/git-cat-file-batch.md`
+   * and tea-rags-mcp-kc93.
+   */
+  blobReader?: { read: (commitOid: string, filepath: string) => Promise<string>; close: () => Promise<void> };
 }
 
 /**
@@ -175,10 +190,15 @@ export interface WorkerEnrichmentDescriptor {
    */
   providerFactoryExport: string;
   /**
-   * `stateless` — any free worker (git: per-call config, no cross-call state).
-   * `collection-affinity` — pinned worker per `routingKey = collectionName`
-   * (codegraph: streamFileBatch → finalizeSignals → deferred buildChunkSignals
-   * share `symbolTable`/`chunkSymbolByLine` on the cached provider instance).
+   * `stateless` — any free worker; no routingKey; round-robin. Use only for
+   * providers that carry no cross-call state (no shared caches, symbol tables,
+   * or result buffers across file/chunk/finalize batches).
+   * `collection-affinity` — pinned worker per `routingKey = collectionName`.
+   * All file/chunk/finalize batches for the same collection land on the same
+   * thread so providers can share in-process state across the ingest cycle.
+   * Used by codegraph (symbolTable/chunkSymbolByLine). Git does NOT use this —
+   * git runs inline (no workerDescriptor) so its blameByRelPath/enrichmentCache
+   * are reused automatically on the main-thread instance.
    */
   dispatch: "stateless" | "collection-affinity";
   /**

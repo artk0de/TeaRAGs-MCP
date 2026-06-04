@@ -107,8 +107,6 @@ export class CompletionRunner {
     const chunkMetrics = chunkPhase.getMetrics();
     const metrics: EnrichmentMetrics = {
       prefetchDurationMs: fileMetrics.maxPrefetchDurationMs,
-      overlapMs: 0,
-      overlapRatio: 0,
       streamingApplies: fileMetrics.totalStreamingApplies,
       flushApplies: fileMetrics.totalFlushApplies,
       chunkChurnDurationMs: chunkMetrics.totalChunkEnrichmentDurationMs,
@@ -116,17 +114,7 @@ export class CompletionRunner {
       matchedFiles: applier.matchedFiles,
       missedFiles: applier.missedFiles,
       missedPathSamples: [...applier.missedPathSamples],
-      gitLogFileCount: fileMetrics.totalFileMetadataCount,
-      estimatedSavedMs: 0,
     };
-    const first = fileMetrics.firstProvider;
-    if (first && first.prefetchEndTime > 0 && first.pipelineFlushTime > 0) {
-      const overlapEnd = Math.min(first.prefetchEndTime, first.pipelineFlushTime);
-      metrics.overlapMs = Math.max(0, overlapEnd - first.prefetchStartTime);
-      metrics.overlapRatio =
-        metrics.prefetchDurationMs > 0 ? Math.min(1, metrics.overlapMs / metrics.prefetchDurationMs) : 0;
-    }
-    metrics.estimatedSavedMs = Math.max(0, metrics.overlapMs);
 
     // 5b. provider-specific counters (codegraph extractedFiles, etc.).
     // Top-level fields above remain coordinator-owned and git-historical
@@ -141,10 +129,19 @@ export class CompletionRunner {
     if (byProvider) metrics.byProvider = byProvider;
 
     // 6. drain chunkWork (git streaming)
+    // Heartbeats now fire at the applier apply-site (EnrichmentApplier.onApply →
+    // coordinator.maybeHeartbeat), covering every apply path uniformly. The plain
+    // drain() here no longer needs to thread onProgress per-settle.
     await chunkPhase.drain();
 
     // 7. deferred-chunk pass — codegraph buildChunkSignals against the finished
     //    graph with the full accumulated chunkMap, applied via applyChunkSignals.
+    //
+    // applyChunkSignals fires onApply → maybeHeartbeat when batches land, so
+    // lastProgressAt advances during the deferred pass without a separate seam
+    // here. The previously-tracked limitation (tea-rags-mcp-xlhu) about the
+    // codegraph.chunk phase potentially reporting "stalled" during a long
+    // PageRank/resolve pass is resolved: the applier-site hook covers it.
     for (const ctx of contexts.values()) {
       if (!ctx.provider.defersChunkEnrichment || filePhase.hasPrefetchFailed(ctx.key)) continue;
       const cm = chunkPhase.getDeferredChunkMap(ctx.key);

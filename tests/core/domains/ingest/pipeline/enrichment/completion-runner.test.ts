@@ -367,4 +367,48 @@ describe("CompletionRunner", () => {
     expect(final.file.status).toBe("degraded");
     expect(final.file.unenrichedChunks).toBe(2);
   });
+
+  it("does not include vestigial bulk-prefetch overlap fields in returned metrics", async () => {
+    const qdrant = new MockQdrantManager();
+    await seedMarkerPoint(qdrant, "coll");
+
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
+    const runner = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
+    });
+
+    const ctx = {
+      key: "git",
+      provider: {
+        key: "git",
+        buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+        buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+        resolveRoot: (p: string) => p,
+        fileSignalTransform: undefined,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null,
+    };
+    const contexts = new Map([[ctx.key, ctx]]);
+    filePhase.init(contexts, "coll", "run-overlap", "ts");
+    chunkPhase.init(contexts, "coll", "ts");
+    await marker.markRunStart("coll", ["git"], "run-overlap", "ts");
+
+    const metrics = await runner.run("coll", contexts, Date.now() - 100);
+
+    // Dead fields from the old bulk-prefetch model must not be present
+    expect(metrics).not.toHaveProperty("overlapMs");
+    expect(metrics).not.toHaveProperty("overlapRatio");
+    expect(metrics).not.toHaveProperty("estimatedSavedMs");
+    expect(metrics).not.toHaveProperty("gitLogFileCount");
+  });
 });

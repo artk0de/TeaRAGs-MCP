@@ -13,8 +13,9 @@
  *   drives a single runDeferredChunk pass after the graph is finalized.
  */
 
+import type { CatFileBatchReader } from "../../../../adapters/git/client.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
-import type { ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
+import type { ChunkSignalOptions, ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
 import { Semaphore } from "../../../../infra/semaphore.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
@@ -39,7 +40,19 @@ interface ChunkPhaseState {
    * continue;` short-circuit. Set by FilePhase via markFailed.
    */
   prefetchFailed: boolean;
-  chunkEnrichmentDurationMs: number;
+  /**
+   * Wall-clock start of the first apply in this run (ms since epoch). 0 = no
+   * applies have started yet. Set once on the first apply-start; never
+   * overwritten so concurrent batches don't shift the origin.
+   */
+  chunkFirstStartAt: number;
+  /**
+   * Wall-clock end of the most recently completed apply (ms since epoch). 0 =
+   * no applies have completed yet. Updated on every apply-completion
+   * (success or error) so the wall-clock span always reflects the last settled
+   * batch.
+   */
+  chunkLastEndAt: number;
   chunkEnrichmentFailed: boolean;
   chunkEnrichmentInvoked: boolean;
 }
@@ -50,7 +63,8 @@ function createState(): ChunkPhaseState {
     chunkWork: [],
     deferredChunkMap: new Map(),
     prefetchFailed: false,
-    chunkEnrichmentDurationMs: 0,
+    chunkFirstStartAt: 0,
+    chunkLastEndAt: 0,
     chunkEnrichmentFailed: false,
     chunkEnrichmentInvoked: false,
   };
@@ -60,16 +74,32 @@ export interface ChunkPhaseMetrics {
   totalChunkEnrichmentDurationMs: number;
 }
 
+/**
+ * Factory for a run-scoped git object reader. Injected (DI) so ChunkPhase never
+ * imports the git adapter at runtime — the composition root wires
+ * `createCatFileBatch`. Absent ⇒ each git walk spawns its own per-call reader
+ * (legacy behavior). See tea-rags-mcp-kc93.
+ */
+export type BlobReaderFactory = (repoRoot: string) => CatFileBatchReader;
+
 export class ChunkPhase {
   private readonly states = new Map<string, ChunkPhaseState>();
   private readonly semaphore = new Semaphore(CHUNK_ENRICHMENT_CONCURRENCY);
   private contexts: Map<string, ProviderContext> = new Map();
   private runStartedAt = "";
   private onComplete?: (coll: string) => Promise<void>;
+  /**
+   * One git `cat-file --batch` reader for the whole run, shared across every
+   * per-batch chunk walk so the pack is opened once instead of once-per-batch.
+   * Lazily created on the first streaming/post-flush git batch, closed at
+   * `drain()`. Undefined when no factory is injected (legacy per-call reader).
+   */
+  private runBlobReader?: CatFileBatchReader;
 
   constructor(
     private readonly applier: EnrichmentApplier,
     private readonly executor: EnrichmentExecutor,
+    private readonly blobReaderFactory?: BlobReaderFactory,
   ) {}
 
   init(contexts: ReadonlyMap<string, ProviderContext>, _coll: string, runStartedAt: string): void {
@@ -77,6 +107,10 @@ export class ChunkPhase {
     this.runStartedAt = runStartedAt;
     this.states.clear();
     for (const key of contexts.keys()) this.states.set(key, createState());
+    // A fresh run never inherits a prior run's reader. createRunState builds a
+    // new ChunkPhase per run in production, so this only matters for the
+    // init()-reuse path (tests / future pooling); drain() owns the close.
+    this.runBlobReader = undefined;
   }
 
   setOnComplete(cb: (coll: string) => Promise<void>): void {
@@ -231,6 +265,20 @@ export class ChunkPhase {
    * Runs buildChunkSignals against the now-finalized graph with the full
    * accumulated chunkMap, then applies the overlays. Driven by CompletionRunner
    * after the finalize file pass and the streaming chunk drain.
+   *
+   * WHY deferred (cannot overlap embedding): codegraph chunk signals
+   * (fanIn/fanOut/pageRank) resolve CROSS-FILE call edges, which requires the
+   * COMPLETE symbol graph — a call to a symbol defined in a not-yet-extracted
+   * file cannot be resolved mid-stream. Edge extraction DOES overlap embedding
+   * (provider.streamFileBatch writes nodes/edges per batch); only the resolve +
+   * PageRank pass is deferred to finalize. This is the intended two-phase
+   * design, not a serialization bug.
+   *
+   * Ordering note: this pass runs AFTER the streaming chunk drain (git churn).
+   * With git chunk enrichment pinned per-collection (collection-affinity) the
+   * drain is fast, so the serialization cost is small. FUTURE optimization
+   * (tracked separately): an incremental codegraph chunk resolve that streams
+   * resolved edges as the graph grows would let part of this overlap embedding.
    */
   async runDeferredChunk(
     coll: string,
@@ -250,14 +298,14 @@ export class ChunkPhase {
       for (const e of entries) allChunkIds.add(e.chunkId);
     }
 
-    const start = Date.now();
+    if (state.chunkFirstStartAt === 0) state.chunkFirstStartAt = Date.now();
     try {
       const overlays = await this.executor.runChunkBatch(ctx.provider, root, chunkMap, {
         collectionName: coll,
         skipCache: true,
       });
       const applied = await this.applier.applyChunkSignals(coll, ctx.key, overlays, this.runStartedAt, allChunkIds);
-      state.chunkEnrichmentDurationMs += Date.now() - start;
+      state.chunkLastEndAt = Date.now();
       pipelineLog.enrichmentPhase("STREAMING_CHUNK_ENRICHMENT_COMPLETE", {
         provider: ctx.key,
         phase: "DEFERRED",
@@ -265,7 +313,7 @@ export class ChunkPhase {
         overlaysApplied: applied,
       });
     } catch (error) {
-      state.chunkEnrichmentDurationMs += Date.now() - start;
+      state.chunkLastEndAt = Date.now();
       state.chunkEnrichmentFailed = true;
       pipelineLog.enrichmentPhase("STREAMING_CHUNK_ENRICHMENT_FAILED", {
         provider: ctx.key,
@@ -277,11 +325,30 @@ export class ChunkPhase {
     }
   }
 
+  /**
+   * Await all in-flight streaming chunk-work promises.
+   *
+   * Heartbeats are now fired at the applier apply-site (EnrichmentApplier.onApply)
+   * — no per-settle callback needed here.
+   */
   async drain(): Promise<void> {
-    const all = [...this.states.values()].flatMap((s) => s.chunkWork);
-    if (all.length === 0) return;
-    await Promise.allSettled(all);
-    for (const state of this.states.values()) state.chunkWork.length = 0;
+    try {
+      const all = [...this.states.values()].flatMap((s) => s.chunkWork);
+      if (all.length === 0) return;
+      await Promise.allSettled(all);
+      for (const state of this.states.values()) state.chunkWork.length = 0;
+    } finally {
+      // kc93: tear down the run-scoped git reader once all chunk work for this
+      // run has settled — leaving it open would pin an idle `git cat-file`
+      // process for the daemon's lifetime (see git-cat-file-batch.md). Null
+      // first so a re-drain or a late batch lazily opens a fresh one. Close
+      // errors are swallowed: the process is ending regardless.
+      const reader = this.runBlobReader;
+      if (reader) {
+        this.runBlobReader = undefined;
+        await reader.close().catch(() => undefined);
+      }
+    }
   }
 
   hasChunkEnrichmentFailed(providerKey: string): boolean {
@@ -289,8 +356,15 @@ export class ChunkPhase {
   }
 
   getMetrics(): ChunkPhaseMetrics {
-    let total = 0;
-    for (const s of this.states.values()) total += s.chunkEnrichmentDurationMs;
+    let firstStartAt = 0;
+    let lastEndAt = 0;
+    for (const s of this.states.values()) {
+      if (s.chunkFirstStartAt > 0 && (firstStartAt === 0 || s.chunkFirstStartAt < firstStartAt)) {
+        firstStartAt = s.chunkFirstStartAt;
+      }
+      if (s.chunkLastEndAt > lastEndAt) lastEndAt = s.chunkLastEndAt;
+    }
+    const total = firstStartAt > 0 && lastEndAt > 0 ? lastEndAt - firstStartAt : 0;
     return { totalChunkEnrichmentDurationMs: total };
   }
 
@@ -318,19 +392,33 @@ export class ChunkPhase {
       for (const e of entries) allChunkIds.add(e.chunkId);
     }
 
-    const start = Date.now();
+    // Record wall-clock start: set once on the FIRST apply of this run so
+    // concurrent batches don't overwrite the origin timestamp.
+    const dispatchAt = Date.now();
+    if (state.chunkFirstStartAt === 0) state.chunkFirstStartAt = dispatchAt;
+
+    // kc93: lazily open ONE run-scoped git reader and share it across every
+    // batch (streaming + post-flush) so the pack is opened once per run, not
+    // once per batch. Created synchronously here (before any await) so
+    // concurrent fire-and-forget batches never race to spawn two. Closed in
+    // drain(). No factory ⇒ the git walk falls back to its own per-call reader.
+    if (this.blobReaderFactory && !this.runBlobReader) {
+      this.runBlobReader = this.blobReaderFactory(root);
+    }
+
     // Carry the active collection on every chunk-signal call so codegraph
     // routes per-collection DuckDB lookups correctly. `coll` is the
     // ChunkPhase's bound collection name from `init`.
-    const opts = useSemaphore
+    const opts: ChunkSignalOptions = useSemaphore
       ? { concurrencySemaphore: this.semaphore, skipCache: true, collectionName: coll }
       : { skipCache: true, collectionName: coll };
+    if (this.runBlobReader) opts.blobReader = this.runBlobReader;
 
     const work = this.executor
       .runChunkBatch(ctx.provider, root, chunkMap, opts)
       .then(async (overlays: Map<string, Map<string, ChunkSignalOverlay>>) => {
         const applied = await this.applier.applyChunkSignals(coll, ctx.key, overlays, this.runStartedAt, allChunkIds);
-        state.chunkEnrichmentDurationMs += Date.now() - start;
+        state.chunkLastEndAt = Date.now();
         pipelineLog.enrichmentPhase(
           useSemaphore ? "STREAMING_CHUNK_ENRICHMENT_COMPLETE" : "CHUNK_ENRICHMENT_COMPLETE",
           { provider: ctx.key, files: chunkMap.size, overlaysApplied: applied },
@@ -338,7 +426,7 @@ export class ChunkPhase {
         return true;
       })
       .catch((error: unknown) => {
-        state.chunkEnrichmentDurationMs += Date.now() - start;
+        state.chunkLastEndAt = Date.now();
         if (!useSemaphore) state.chunkEnrichmentFailed = true;
         pipelineLog.enrichmentPhase(useSemaphore ? "STREAMING_CHUNK_ENRICHMENT_FAILED" : "CHUNK_ENRICHMENT_FAILED", {
           provider: ctx.key,

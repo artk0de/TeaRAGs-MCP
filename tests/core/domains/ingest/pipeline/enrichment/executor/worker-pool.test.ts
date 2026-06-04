@@ -29,13 +29,44 @@ import type {
   EnrichmentProvider,
   WorkerEnrichmentDescriptor,
 } from "../../../../../../../src/core/contracts/types/provider.js";
-import { WorkerPoolEnrichmentExecutor } from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/worker-pool.js";
+import {
+  routingKeyFor,
+  WorkerPoolEnrichmentExecutor,
+} from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/worker-pool.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const WORKER_PATH = resolve(
   __dirname,
   "../../../../../../../build/core/domains/ingest/pipeline/enrichment/infra/worker.js",
 );
+
+const THREAD_SPY_PROVIDER_SRC = `import { threadId } from "node:worker_threads";
+export async function createTaggedProvider(_config) {
+  return {
+    key: "thread-spy",
+    signals: [], derivedSignals: [], filters: [], presets: [],
+    resolveRoot: (p) => p,
+    buildFileSignals: async (_root, opts) => {
+      const out = new Map();
+      for (const p of (opts?.paths ?? [])) out.set(p, { threadId });
+      return out;
+    },
+    streamFileBatch: async (_root, paths) => {
+      const out = new Map();
+      for (const p of paths) out.set(p, { threadId });
+      return out;
+    },
+    buildChunkSignals: async (_root, chunkMap) => {
+      const out = new Map();
+      for (const [file, entries] of chunkMap) {
+        const inner = new Map();
+        for (const e of entries) inner.set(e.chunkId, { threadId });
+        out.set(file, inner);
+      }
+      return out;
+    },
+  };
+}`;
 
 const FIXTURE_PROVIDER_SRC = `
 export async function createTaggedProvider(config) {
@@ -110,11 +141,14 @@ function workerProvider(modulePath: string, dispatch: "stateless" | "collection-
 describe("WorkerPoolEnrichmentExecutor", () => {
   let tmp: string;
   let fixturePath: string;
+  let threadSpyPath: string;
 
   beforeAll(() => {
     tmp = mkdtempSync(join(tmpdir(), "wpex-"));
     fixturePath = join(tmp, "fixture-provider.mjs");
     writeFileSync(fixturePath, FIXTURE_PROVIDER_SRC);
+    threadSpyPath = join(tmp, "thread-spy-provider.mjs");
+    writeFileSync(threadSpyPath, THREAD_SPY_PROVIDER_SRC);
   });
   afterAll(() => {
     rmSync(tmp, { recursive: true, force: true });
@@ -199,6 +233,99 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     expect(overlay.get("a.ts")).toMatchObject({ via: "buildFileSignals", source: "affinity-tag" });
     expect(overlay.get("b.ts")).toMatchObject({ via: "buildFileSignals", source: "affinity-tag" });
     await exec.shutdown();
+  });
+
+  // --- collection-affinity behavioral guard (valid for codegraph; git is now inline) ---
+
+  // Behavioral regression guard: proves that collection-affinity dispatch pins
+  // runFileBatch + runChunkBatch for the SAME collection to ONE worker (same
+  // threadId). Codegraph uses this to pin its DuckDB write path. Git no longer
+  // uses the worker pool at all (no workerDescriptor → inline fallback).
+  it("collection-affinity: concurrent runFileBatch + runChunkBatch for same collection land on same worker (same threadId)", async () => {
+    // threadSpyPath is written in beforeAll from THREAD_SPY_PROVIDER_SRC.
+    // Embeds the worker's threadId in every response so the test can verify
+    // WHICH worker handled each call.
+
+    const exec = new WorkerPoolEnrichmentExecutor(2, WORKER_PATH);
+    const descriptor: WorkerEnrichmentDescriptor = {
+      providerModulePath: threadSpyPath,
+      providerFactoryExport: "createTaggedProvider",
+      dispatch: "collection-affinity",
+      serializableConfig: {},
+    };
+    const provider = {
+      key: "thread-spy-provider",
+      signals: [],
+      derivedSignals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: (p: string) => p,
+      buildFileSignals: async () => new Map(),
+      buildChunkSignals: async () => new Map(),
+      workerDescriptor: descriptor,
+    } as unknown as EnrichmentProvider;
+
+    // Dispatch file-batch and chunk-batch for the SAME collection CONCURRENTLY.
+    // Under collection-affinity, both are pinned to one worker → same threadId.
+    // Under stateless (routingKey=undefined), they round-robin to both workers
+    // → different threadIds → test FAILS (RED).
+    const chunkMap = new Map([["a.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]]]);
+    const [fileOverlay, chunkOverlay] = await Promise.all([
+      exec.runFileBatch(provider, "/repo", ["a.ts"], { collectionName: "code_affinity_test" }),
+      exec.runChunkBatch(provider, "/repo", chunkMap, { collectionName: "code_affinity_test" }),
+    ]);
+
+    const fileThreadId = (fileOverlay.get("a.ts") as unknown as { threadId: number })?.threadId;
+    const chunkThreadId = (chunkOverlay.get("a.ts")?.get("c1") as unknown as { threadId: number })?.threadId;
+    expect(fileThreadId).toBeDefined();
+    expect(chunkThreadId).toBeDefined();
+    // Both calls must have landed on the same worker thread (affinity guarantee).
+    // Under "stateless" dispatch they spread to different workers → this line FAILS.
+    expect(fileThreadId).toBe(chunkThreadId);
+
+    await exec.shutdown();
+  });
+
+  it("routingKeyFor: collection-affinity descriptor returns collectionName as routing key", () => {
+    // Verify the routing mechanism: collection-affinity → collectionName key.
+    const descriptor: WorkerEnrichmentDescriptor = {
+      providerModulePath: "/path/to/git-provider.js",
+      providerFactoryExport: "createGitEnrichmentProvider",
+      dispatch: "collection-affinity",
+      serializableConfig: {},
+    };
+    expect(routingKeyFor(descriptor, "code_27622aef")).toBe("code_27622aef");
+  });
+
+  it("provider without workerDescriptor is dispatched inline: pool.dispatch NOT called, provider method IS called", async () => {
+    // Git runs inline (no workerDescriptor). This test verifies the inline fallback
+    // path: the executor calls provider.buildFileSignals directly in-process and
+    // never calls pool.dispatch. Proves the WorkerPoolEnrichmentExecutor correctly
+    // routes to InlineEnrichmentExecutor when no descriptor is present.
+    const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
+    const inlineProvider = fakeInlineProvider();
+    // Spy on pool.dispatch to verify it is NOT called.
+    const poolDispatchSpy = vi.spyOn((exec as unknown as { pool: { dispatch: unknown } }).pool, "dispatch");
+    const overlay = await exec.runFileBatch(inlineProvider, "/repo", ["x.ts"], {});
+    expect(poolDispatchSpy).not.toHaveBeenCalled();
+    expect(inlineProvider.buildFileSignals).toHaveBeenCalled();
+    expect(overlay.get("inline.ts")).toMatchObject({ via: "inline-build" });
+    poolDispatchSpy.mockRestore();
+    await exec.shutdown();
+  });
+
+  it("collection-affinity: file and chunk batches for same collection produce identical routingKey", () => {
+    // Structural invariant: same descriptor + same collectionName → same key.
+    // ThreadPool affinity ensures same key → same worker → same provider instance.
+    const affinityDescriptor: WorkerEnrichmentDescriptor = {
+      providerModulePath: "/path/to/git-provider.js",
+      providerFactoryExport: "createGitEnrichmentProvider",
+      dispatch: "collection-affinity",
+      serializableConfig: {},
+    };
+    const collectionName = "code_27622aef";
+    expect(routingKeyFor(affinityDescriptor, collectionName)).toBe(collectionName);
+    expect(routingKeyFor(affinityDescriptor, collectionName)).toBe(routingKeyFor(affinityDescriptor, collectionName));
   });
 
   it("propagates worker errors as thrown exceptions", async () => {

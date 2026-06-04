@@ -9,7 +9,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { blameFile, resolveRepoRoot } from "../../../adapters/git/client.js";
+import { blameFile, resolveRepoRoot, type CatFileBatchReader } from "../../../adapters/git/client.js";
 import type { BlameLine, CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
 import type {
@@ -216,6 +216,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       options?.concurrencySemaphore,
       options?.skipCache,
       this.blameByRelPath,
+      // kc93: run-scoped reader shared across batches when ChunkPhase injects
+      // one. The duck-typed contract shape is structurally CatFileBatchReader.
+      options?.blobReader as CatFileBatchReader | undefined,
     );
 
     // Chunk enrichment is the last reader of blameByRelPath. Swap in a fresh

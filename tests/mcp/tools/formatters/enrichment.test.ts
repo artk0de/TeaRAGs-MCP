@@ -100,8 +100,6 @@ describe("formatEnrichmentStatus", () => {
   describe("enrichment metrics breakdown", () => {
     const metrics: EnrichmentMetrics = {
       prefetchDurationMs: 3100,
-      overlapMs: 2000,
-      overlapRatio: 0.65,
       streamingApplies: 5,
       flushApplies: 2,
       chunkChurnDurationMs: 2100,
@@ -109,8 +107,6 @@ describe("formatEnrichmentStatus", () => {
       matchedFiles: 1234,
       missedFiles: 56,
       missedPathSamples: [],
-      gitLogFileCount: 1500,
-      estimatedSavedMs: 1500,
     };
 
     it("should show file and chunk signal breakdown when metrics provided", async () => {

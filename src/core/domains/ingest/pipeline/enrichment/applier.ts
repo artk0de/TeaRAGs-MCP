@@ -17,8 +17,8 @@ import type {
   FileSignalTransform,
 } from "../../../../contracts/types/provider.js";
 import { pipelineLog } from "../infra/debug-logger.js";
-import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
+import { batchSetPayloadWithRetry, type BatchWriteRetryOptions } from "./batch-write.js";
 import { MissedFileTracker } from "./missed-file-tracker.js";
 import type { MissedFileChunk } from "./types.js";
 
@@ -26,12 +26,30 @@ const BATCH_SIZE = 100;
 const MISSED_PATH_SAMPLE_LIMIT = 10;
 
 export class EnrichmentApplier {
-  matchedFiles = 0;
+  private readonly matchedPaths = new Set<string>();
   private readonly missedTracker = new MissedFileTracker({
     sampleLimit: MISSED_PATH_SAMPLE_LIMIT,
   });
 
-  constructor(private readonly qdrant: QdrantManager) {}
+  /**
+   * Optional callback invoked once per apply batch across ALL apply methods
+   * (applyFileSignals, applyChunkSignals, applyFinalizeFile).
+   * Wired by the coordinator to `maybeHeartbeat` — fires at the single
+   * chokepoint all enrichment writes flow through, covering streaming, post-
+   * flush enrichRemaining, deferred codegraph, and backfill paths uniformly.
+   * The coordinator owns the 30s throttle; this callback is unconditional (DRY).
+   */
+  onApply?: () => void;
+
+  constructor(
+    private readonly qdrant: QdrantManager,
+    private readonly retryOptions?: BatchWriteRetryOptions,
+  ) {}
+
+  /** Count of unique files that received enrichment across all apply passes. */
+  get matchedFiles(): number {
+    return this.matchedPaths.size;
+  }
 
   /** Count of files whose chunks landed without matching file metadata. */
   get missedFiles(): number {
@@ -75,6 +93,11 @@ export class EnrichmentApplier {
       points: (string | number)[];
       key?: string;
     }[] = [];
+    // Parallel to `operations`: for a MATCHED-file op, the (relativePath, chunk)
+    // it carries; `null` for missed-file stamp ops (already in missedTracker).
+    // Used to route a failed-batch's matched files into the backfill loop so a
+    // dropped file-apply write doesn't strand chunks without git.file.enrichedAt.
+    const opResidual: ({ relativePath: string; chunk: MissedFileChunk } | null)[] = [];
 
     for (const [filePath, fileItems] of byFile) {
       const relativePath = relative(pathBase, filePath);
@@ -96,6 +119,7 @@ export class EnrichmentApplier {
               points: [item.chunkId],
               key: `${providerKey}.file`,
             });
+            opResidual.push(null);
             // Chunk-level stamp: same semantics. Without this, recovery keeps
             // counting these chunks forever and forces chunk.status=degraded
             // even though there is nothing retriable.
@@ -104,11 +128,12 @@ export class EnrichmentApplier {
               points: [item.chunkId],
               key: `${providerKey}.chunk`,
             });
+            opResidual.push(null);
           }
         }
         continue;
       }
-      this.matchedFiles++;
+      this.matchedPaths.add(relativePath);
 
       const maxEndLine = fileItems.reduce((max, item) => Math.max(max, item.chunk.endLine), 0);
       const finalData = transform ? transform(data, maxEndLine) : data;
@@ -122,6 +147,10 @@ export class EnrichmentApplier {
           points: [item.chunkId],
           key: `${providerKey}.file`,
         });
+        opResidual.push({
+          relativePath,
+          chunk: { chunkId: item.chunkId, startLine: item.chunk.startLine, endLine: item.chunk.endLine },
+        });
       }
     }
 
@@ -129,15 +158,11 @@ export class EnrichmentApplier {
 
     for (let i = 0; i < operations.length; i += BATCH_SIZE) {
       const batch = operations.slice(i, i + BATCH_SIZE);
-      try {
-        await this.qdrant.batchSetPayload(collectionName, batch);
-      } catch (error) {
-        if (isDebug()) {
-          console.error("[EnrichmentApplier] batchSetPayload failed:", error);
-        }
-      }
+      const ok = await batchSetPayloadWithRetry(this.qdrant, collectionName, batch, this.retryOptions);
+      if (!ok) this.trackResidualBatch(opResidual.slice(i, i + BATCH_SIZE));
     }
 
+    this.onApply?.();
     pipelineLog.addStageTime("enrichApply", Date.now() - applyStart);
   }
 
@@ -192,19 +217,14 @@ export class EnrichmentApplier {
         ops.push({ payload, points: [entry.chunkId], key: fileKey });
       }
       appliedFiles++;
-      this.matchedFiles++;
+      this.matchedPaths.add(relPath);
     }
 
     for (let i = 0; i < ops.length; i += BATCH_SIZE) {
-      try {
-        await this.qdrant.batchSetPayload(collectionName, ops.slice(i, i + BATCH_SIZE));
-      } catch (error) {
-        if (isDebug()) {
-          console.error("[EnrichmentApplier] applyFinalizeFile batch failed:", error);
-        }
-      }
+      await batchSetPayloadWithRetry(this.qdrant, collectionName, ops.slice(i, i + BATCH_SIZE), this.retryOptions);
     }
 
+    if (ops.length > 0) this.onApply?.();
     return appliedFiles;
   }
 
@@ -243,13 +263,8 @@ export class EnrichmentApplier {
         });
 
         if (batch.length >= BATCH_SIZE) {
-          try {
-            await this.qdrant.batchSetPayload(collectionName, batch);
+          if (await batchSetPayloadWithRetry(this.qdrant, collectionName, batch, this.retryOptions)) {
             applied += batch.length;
-          } catch (error) {
-            if (isDebug()) {
-              console.error("[EnrichmentApplier] chunk batch failed:", error);
-            }
           }
           batch = [];
         }
@@ -257,13 +272,8 @@ export class EnrichmentApplier {
     }
 
     if (batch.length > 0) {
-      try {
-        await this.qdrant.batchSetPayload(collectionName, batch);
+      if (await batchSetPayloadWithRetry(this.qdrant, collectionName, batch, this.retryOptions)) {
         applied += batch.length;
-      } catch (error) {
-        if (isDebug()) {
-          console.error("[EnrichmentApplier] final chunk batch failed:", error);
-        }
       }
     }
 
@@ -282,18 +292,14 @@ export class EnrichmentApplier {
             points: [id] as (string | number)[],
             key: `${providerKey}.chunk`,
           }));
-          try {
-            await this.qdrant.batchSetPayload(collectionName, stampBatch);
+          if (await batchSetPayloadWithRetry(this.qdrant, collectionName, stampBatch, this.retryOptions)) {
             applied += stampBatch.length;
-          } catch (error) {
-            if (isDebug()) {
-              console.error("[EnrichmentApplier] enrichedAt stamp batch failed:", error);
-            }
           }
         }
       }
     }
 
+    if (applied > 0) this.onApply?.();
     return applied;
   }
 
@@ -303,8 +309,28 @@ export class EnrichmentApplier {
   }
 
   /** Adjust matched/missed counters after a successful backfill. */
-  markBackfilled(count: number): void {
-    this.matchedFiles += count;
-    this.missedTracker.decrementMissed(count);
+  markBackfilled(paths: readonly string[]): void {
+    for (const p of paths) {
+      this.matchedPaths.add(p);
+    }
+    this.missedTracker.decrementMissed(paths.length);
+  }
+
+  /**
+   * Route the matched files of a write batch that exhausted its retry budget
+   * into the missed-file tracker, so the backfill pass re-fetches and re-applies
+   * their signals. Without this, a dropped file-apply batch would leave those
+   * chunks with git.chunk signals but no git.file.enrichedAt — a permanent
+   * degraded that no in-run pass corrects.
+   */
+  private trackResidualBatch(metas: ({ relativePath: string; chunk: MissedFileChunk } | null)[]): void {
+    const byPath = new Map<string, MissedFileChunk[]>();
+    for (const m of metas) {
+      if (!m) continue;
+      const arr = byPath.get(m.relativePath) ?? [];
+      arr.push(m.chunk);
+      byPath.set(m.relativePath, arr);
+    }
+    for (const [rp, chunks] of byPath) this.missedTracker.track(rp, chunks);
   }
 }

@@ -27,7 +27,7 @@ import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier } from "./applier.js";
 import { EnrichmentBackfiller } from "./backfiller.js";
-import { ChunkPhase } from "./chunk-phase.js";
+import { ChunkPhase, type BlobReaderFactory } from "./chunk-phase.js";
 import { CompletionRunner } from "./completion-runner.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
 import { FilePhase } from "./file-phase.js";
@@ -37,8 +37,6 @@ import type { EnrichmentProvider, ProviderContext } from "./types.js";
 
 const EMPTY_METRICS: EnrichmentMetrics = {
   prefetchDurationMs: 0,
-  overlapMs: 0,
-  overlapRatio: 0,
   streamingApplies: 0,
   flushApplies: 0,
   chunkChurnDurationMs: 0,
@@ -46,8 +44,6 @@ const EMPTY_METRICS: EnrichmentMetrics = {
   matchedFiles: 0,
   missedFiles: 0,
   missedPathSamples: [],
-  gitLogFileCount: 0,
-  estimatedSavedMs: 0,
 };
 
 /** No-op keep-alive guard: used when codegraph is disabled or in tests. */
@@ -143,6 +139,7 @@ export class EnrichmentCoordinator {
     private readonly recovery?: EnrichmentRecovery,
     executor?: EnrichmentExecutor,
     daemonGuard?: IndexRunDaemonGuard,
+    private readonly blobReaderFactory?: BlobReaderFactory,
   ) {
     this.markerStore = new EnrichmentMarkerStore(qdrant);
     this.providers = Array.isArray(providers) ? providers : [providers];
@@ -221,6 +218,16 @@ export class EnrichmentCoordinator {
     // mutate their orphaned RunState, never the current one.
     const runState = this.createRunState();
     this.currentRun = runState;
+
+    // Wire the applier-site heartbeat: every apply batch (file, chunk, finalize,
+    // backfill) calls onApply → maybeHeartbeat. This covers ALL apply paths —
+    // streaming, post-flush enrichRemaining, deferred codegraph, recovery — from
+    // the single chokepoint. The coordinator owns the 30s throttle (DRY).
+    if (collectionName) {
+      runState.applier.onApply = () => {
+        this.maybeHeartbeat(collectionName, runState);
+      };
+    }
 
     if (this._onChunkEnrichmentComplete) {
       runState.chunkPhase.setOnComplete(this._onChunkEnrichmentComplete);
@@ -371,7 +378,7 @@ export class EnrichmentCoordinator {
 
   private createRunState(): RunState {
     const applier = new EnrichmentApplier(this.qdrant);
-    const chunkPhase = new ChunkPhase(applier, this.executor);
+    const chunkPhase = new ChunkPhase(applier, this.executor, this.blobReaderFactory);
     const filePhase = new FilePhase(applier, this.markerStore, this.executor);
     filePhase.bindChunkPhase(chunkPhase);
     const backfiller = new EnrichmentBackfiller(applier, this.qdrant, this.executor);

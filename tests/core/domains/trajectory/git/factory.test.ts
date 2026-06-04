@@ -28,17 +28,22 @@ describe("createGitEnrichmentProvider", () => {
     expect(provider.onRelease).toBeUndefined();
   });
 
-  it("attaches workerDescriptor when composition root supplies one", () => {
+  it("attaches the supplied workerDescriptor verbatim (caller owns dispatch value)", () => {
+    // createGitEnrichmentProvider passes the descriptor through unchanged.
+    // The factory supports an optional descriptor for callers that want off-thread
+    // dispatch (e.g. future use). In production, bootstrap omits it so git runs
+    // inline via InlineEnrichmentExecutor. This test proves round-trip fidelity
+    // for the optional path, not bootstrap correctness.
     const config: GitWorkerConfig = { chunkConcurrency: 2 };
     const descriptor: WorkerEnrichmentDescriptor = {
       providerModulePath: "/abs/path/git/factory.js",
       providerFactoryExport: "createGitEnrichmentProvider",
-      dispatch: "stateless",
+      dispatch: "collection-affinity",
       serializableConfig: config,
     };
     const provider = createGitEnrichmentProvider(config, descriptor);
     expect(provider.workerDescriptor).toEqual(descriptor);
-    expect(provider.workerDescriptor?.dispatch).toBe("stateless");
+    expect(provider.workerDescriptor?.dispatch).toBe("collection-affinity");
   });
 
   it("forwards squashOpts to the constructed provider", () => {

@@ -71,12 +71,11 @@ describe("createComposition", () => {
     });
   });
 
-  // Regression guard (tea-rags-mcp-dz7f): the production composition wires a
-  // WorkerEnrichmentDescriptor onto BOTH enrichment providers so the
-  // WorkerPoolEnrichmentExecutor dispatches off-thread instead of silently
-  // falling back to inline (which blocks the embedding event loop with git
-  // blame). A regression that drops the descriptor would make every dispatch
-  // method hit the `!provider.workerDescriptor` inline branch unnoticed.
+  // Regression guard: git runs INLINE (no workerDescriptor in production) and
+  // codegraph uses collection-affinity (DuckDB RW lock is process-exclusive).
+  // The git factory still ACCEPTS an optional descriptor (used in tests and
+  // potential future use), but the production path omits it so the
+  // WorkerPoolEnrichmentExecutor falls through to InlineEnrichmentExecutor.
   describe("worker-pool descriptor wiring (regression guard)", () => {
     let tmp: string;
     let graphDb: DuckDbGraphClient;
@@ -90,17 +89,28 @@ describe("createComposition", () => {
       rmSync(tmp, { recursive: true, force: true });
     });
 
+    it("git provider has NO workerDescriptor by default (production path — inline executor)", () => {
+      // Production path: createComposition({ git: { config, squashOpts } }) omits
+      // workerDescriptor. WorkerPoolEnrichmentExecutor sees !provider.workerDescriptor
+      // and falls through to InlineEnrichmentExecutor (in-process, zero postMessage
+      // overhead, automatic blame-cache reuse). This is the correct path per
+      // live taxdome evidence: collection-affinity made git enrichment ~4x SLOWER.
+      const { registry } = createComposition();
+      const git = registry.getAllEnrichmentProviders().find((p) => p.key === "git");
+      expect(git?.workerDescriptor).toBeUndefined();
+    });
+
     it("surfaces a defined workerDescriptor on the git provider when supplied", () => {
       const gitDescriptor = {
         providerModulePath: "/abs/git/factory.js",
         providerFactoryExport: "createGitEnrichmentProvider",
-        dispatch: "stateless" as const,
+        dispatch: "collection-affinity" as const,
         serializableConfig: {},
       };
       const { registry } = createComposition({ git: { workerDescriptor: gitDescriptor } });
       const git = registry.getAllEnrichmentProviders().find((p) => p.key === "git");
       expect(git?.workerDescriptor).toBeDefined();
-      expect(git?.workerDescriptor?.dispatch).toBe("stateless");
+      expect(git?.workerDescriptor?.dispatch).toBe("collection-affinity");
     });
 
     it("surfaces a defined workerDescriptor on the codegraph provider when supplied", () => {

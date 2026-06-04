@@ -120,10 +120,6 @@ export type IndexingStatus = "not_indexed" | "indexing" | "indexed" | "stale_ind
 export interface EnrichmentMetrics {
   /** Time spent reading git log */
   prefetchDurationMs: number;
-  /** How much git log overlapped with embedding (ms) */
-  overlapMs: number;
-  /** Overlap as fraction of git log time (0.0-1.0) */
-  overlapRatio: number;
   /** Batches applied via callback while embedding was still running */
   streamingApplies: number;
   /** Batches applied from pending queue after git log resolved */
@@ -138,15 +134,10 @@ export interface EnrichmentMetrics {
   missedFiles: number;
   /** First 10 unmatched paths for diagnosing issues */
   missedPathSamples: string[];
-  /** Total files present in git log output (contextualizes matchedFiles) */
-  gitLogFileCount: number;
-  /** Estimated ms saved by streaming overlap vs sequential execution */
-  estimatedSavedMs: number;
   /**
    * Provider-specific counters keyed by `provider.key`. Coordinator
    * collects via the optional `provider.getRunMetrics()` hook. Absent
-   * when no provider exposes it. Top-level fields above remain
-   * coordinator-owned (git-historical keys preserved for back-compat).
+   * when no provider exposes it.
    */
   byProvider?: Record<string, ProviderRunMetrics>;
 }
@@ -249,4 +240,3 @@ export interface FileChanges {
   /** Files in `added` that existed before the previous snapshot (added due to ignore pattern changes) */
   newlyUnignored: string[];
 }
-

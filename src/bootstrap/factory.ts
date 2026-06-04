@@ -33,7 +33,6 @@ import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { DefaultSymbolIdComposer } from "../core/domains/language/index.js";
 import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import type { GitWorkerConfig } from "../core/domains/trajectory/git/factory.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
 import { CollectionRegistry } from "../core/infra/registry/index.js";
 import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
@@ -56,16 +55,18 @@ const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-
 export { pkg };
 
 /**
- * Absolute compiled-JS paths the enrichment worker dynamic-imports in-thread.
- * Resolved relative to the compiled bootstrap module (`build/bootstrap/`) so
- * both the npm-linked global install and the local dev path work — the SAME
- * idiom as the enrichment `worker.js` path below. These are
- * `WorkerEnrichmentDescriptor.providerModulePath` values: the worker loads the
- * module by this path, then calls the named factory export to rebuild the
- * provider off-thread (`.claude/rules/domains-language.md` §2 — inject a path,
- * never an instance).
+ * Absolute compiled-JS path the codegraph enrichment worker dynamic-imports
+ * in-thread. Resolved relative to the compiled bootstrap module
+ * (`build/bootstrap/`) so both the npm-linked global install and the local dev
+ * path work — the SAME idiom as the enrichment `worker.js` path below.
+ * This is the `WorkerEnrichmentDescriptor.providerModulePath` value: the worker
+ * loads the module by this path, then calls the named factory export to rebuild
+ * the provider off-thread (`.claude/rules/domains-language.md` §2 — inject a
+ * path, never an instance).
+ *
+ * Git runs INLINE (no descriptor, no module path needed here) — it uses the
+ * InlineEnrichmentExecutor in-process on the composition-root instance.
  */
-const GIT_PROVIDER_MODULE_PATH = join(__dirname, "../core/domains/trajectory/git/factory.js");
 const CODEGRAPH_PROVIDER_MODULE_PATH = join(__dirname, "../core/domains/trajectory/codegraph/factory.js");
 /**
  * Compiled `domains/language` barrel the codegraph worker-factory imports
@@ -189,18 +190,20 @@ function wireComposition(
   const squashOpts = trajectoryConfig.squashAwareSessions
     ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
     : undefined;
-  // Git worker-pool descriptor (tea-rags-mcp-dz7f). `stateless` dispatch —
-  // git carries its full config per call, no cross-call symbolTable to cache.
-  // The serializableConfig is structured-clone-safe (plain config + squashOpts);
-  // the worker rebuilds GitEnrichmentProvider via `createGitEnrichmentProvider`.
-  const gitWorkerDescriptor: WorkerEnrichmentDescriptor = {
-    providerModulePath: GIT_PROVIDER_MODULE_PATH,
-    providerFactoryExport: "createGitEnrichmentProvider",
-    dispatch: "stateless",
-    serializableConfig: { ...zodConfig.trajectoryGit, squashOpts } satisfies GitWorkerConfig,
-  };
+  // Git runs INLINE (no workerDescriptor) — WorkerPoolEnrichmentExecutor detects
+  // the missing descriptor and falls through to InlineEnrichmentExecutor, which
+  // calls provider.buildFileSignals/buildChunkSignals directly in-process on the
+  // single composition-root instance. Blame cache reuse is automatic (same
+  // instance), postMessage serialization overhead is zero.
+  //
+  // Live evidence (taxdome reindex): collection-affinity pinned git to 1 worker,
+  // removing 4-way parallelism and making chunk enrichment ~4x SLOWER. Per-batch
+  // cost is dominated by walkCommits (git log + cat-file + structuredPatch), not
+  // blame — blame reuse gave no per-apply speedup while worker-pool dispatch
+  // overhead (postMessage chunkMap/results per batch) was measurable. Inline
+  // is origin/main behavior and is the correct path.
   const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition({
-    git: { config: zodConfig.trajectoryGit, squashOpts, workerDescriptor: gitWorkerDescriptor },
+    git: { config: zodConfig.trajectoryGit, squashOpts },
     codegraph,
   });
   const schemaBuilder = new SchemaBuilder(reranker);

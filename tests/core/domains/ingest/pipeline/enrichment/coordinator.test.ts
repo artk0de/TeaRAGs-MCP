@@ -1407,38 +1407,8 @@ describe("EnrichmentCoordinator — awaitCompletion metrics", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     const metrics = await coordinator.awaitCompletion("test-col");
-    // gitLogFileCount tracked a whole-repo prefetch file-metadata count that no
-    // longer exists under per-batch streaming — now a best-effort 0+.
-    expect(metrics.gitLogFileCount).toBeGreaterThanOrEqual(0);
     expect(metrics.totalDurationMs).toBeGreaterThanOrEqual(0);
     expect(metrics.prefetchDurationMs).toBeGreaterThanOrEqual(0);
-  });
-
-  it("computes overlap timing when pipelineFlushTime is set", async () => {
-    const mockQdrant: any = {
-      batchSetPayload: vi.fn().mockResolvedValue(undefined),
-      setPayload: vi.fn().mockResolvedValue(undefined),
-      getPoint: vi.fn().mockResolvedValue(null),
-    };
-    const mockProvider: any = {
-      key: "git",
-      resolveRoot: vi.fn((p: string) => p),
-      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
-      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
-    };
-    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    coordinator.beginRun("/repo", "test-col");
-
-    // Trigger pipelineFlushTime by storing chunks
-    coordinator.onChunksStored("test-col", "/repo", [
-      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 5 } } as any,
-    ]);
-    await new Promise((r) => setTimeout(r, 20));
-
-    const metrics = await coordinator.awaitCompletion("test-col");
-    expect(metrics.overlapMs).toBeGreaterThanOrEqual(0);
-    expect(metrics.overlapRatio).toBeGreaterThanOrEqual(0);
-    expect(metrics.overlapRatio).toBeLessThanOrEqual(1);
   });
 });
 
@@ -2624,5 +2594,203 @@ describe("EnrichmentCoordinator — countSettledUnenriched with recovery", () =>
     // At least two countUnenriched calls: first snapshot (non-zero) + re-poll.
     // CompletionRunner calls this for both file and chunk levels, so >= 3 total.
     expect(countUnenriched.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tail-heartbeat regression test (RED → GREEN with fix)
+// ---------------------------------------------------------------------------
+// The live false-stall on the 117k taxdome reindex happened because
+// `onChunksStored` (which fires the heartbeat) stops being called once ALL
+// chunks are stored. The post-embedding enrichment TAIL — git chunk churn
+// drain + deferred codegraph chunk pass — can run for 500-1000 s AFTER the
+// last `onChunksStored`. During that tail `lastProgressAt` freezes, and the
+// health mapper reports "stalled" even though work is actively progressing.
+//
+// Fix contract: `CompletionRunner.run()` must call a progress callback after
+// key tail seams (chunk drain + deferred-chunk pass) so `lastProgressAt`
+// advances while the tail runs. The callback is the same throttled
+// `maybeHeartbeat` from the coordinator — no duplicate throttle logic.
+describe("EnrichmentCoordinator — tail-heartbeat (post-embedding enrichment)", () => {
+  let mockQdrant: any;
+  beforeEach(() => {
+    mockQdrant = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+  });
+
+  it("heartbeat fires during the chunk-enrichment tail even when onChunksStored is NOT called", async () => {
+    // Spy on Date.now() to control the heartbeat throttle window without
+    // fully fake timers (which break promise microtask scheduling in vitest 4.x).
+    let fakeNow = Date.now();
+    const dateSpy = vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+
+    try {
+      // Provider whose buildChunkSignals blocks until manually unblocked —
+      // simulates git chunk churn running for >30s after the last onChunksStored.
+      let unblockChunk!: () => void;
+      const chunkBlocked = new Promise<Map<string, never>>((resolve) => {
+        unblockChunk = () => {
+          resolve(new Map());
+        };
+      });
+      let chunkCalled = false;
+
+      const provider: any = {
+        key: "git",
+        signals: [],
+        filters: [],
+        presets: [],
+        resolveRoot: (p: string) => p,
+        buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
+        buildChunkSignals: vi.fn().mockImplementation(async () => {
+          chunkCalled = true;
+          return chunkBlocked;
+        }),
+      };
+
+      const coord = new EnrichmentCoordinator(mockQdrant, provider);
+      coord.beginRun("/repo", "coll-tail");
+
+      // Single batch — fires the last onChunksStored. At t=0, maybeHeartbeat
+      // is called and sets lastHeartbeatAt = fakeNow.
+      coord.onChunksStored("coll-tail", "/repo", [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 5 } } as any,
+      ]);
+
+      // Advance fake Date.now by 35s — the 30s throttle window has elapsed.
+      // Any subsequent maybeHeartbeat call is now allowed to fire.
+      fakeNow += 35_000;
+
+      // Count heartbeat writes (wait:false = advisory, fire-and-forget) BEFORE
+      // the completion tail runs.
+      const heartbeatCallCount = () =>
+        (mockQdrant.batchSetPayload.mock.calls as any[][]).filter(
+          (c) => Array.isArray(c[1]) && c[1].some((op: any) => op.key === "enrichment._run") && c[2]?.wait === false,
+        ).length;
+
+      const heartbeatsBeforeTail = heartbeatCallCount();
+
+      // Launch awaitCompletion — enters CompletionRunner tail.
+      // buildChunkSignals is blocked → chunkPhase.drain() hangs.
+      const completionPromise = coord.awaitCompletion("coll-tail");
+
+      // Let file-phase drain and CompletionRunner reach the chunk-drain seam.
+      await new Promise((r) => setTimeout(r, 20));
+
+      // Unblock the chunk work — drain completes, CompletionRunner proceeds
+      // through markFileFinal / markChunkFinal etc.
+      // At this point 35s has elapsed since the last heartbeat and
+      // onChunksStored is never called again — a tail progress callback MUST
+      // fire the heartbeat here.
+      unblockChunk();
+      await completionPromise;
+
+      const heartbeatsAfterTail = heartbeatCallCount();
+
+      // RED before fix: heartbeatsAfterTail === heartbeatsBeforeTail
+      //   (CompletionRunner has no progress callback → tail is silent).
+      // GREEN after fix: heartbeatsAfterTail > heartbeatsBeforeTail
+      //   (≥1 heartbeat write from the tail seam inside CompletionRunner).
+      expect(heartbeatsAfterTail).toBeGreaterThan(heartbeatsBeforeTail);
+      expect(chunkCalled).toBe(true);
+    } finally {
+      dateSpy.mockRestore();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Applier-site heartbeat regression test (RED → GREEN)
+// ---------------------------------------------------------------------------
+// The live false-stall observed on taxdome proved that the drain()-site wiring
+// does NOT cover the post-flush path. enrichRemaining calls runChunkSignals
+// with useSemaphore=false — those applies go through applier.applyChunkSignals
+// DIRECTLY (not through drain()'s onApplyProgress wrapper). So >30s of post-
+// flush applies can elapse with lastProgressAt frozen, causing the health
+// mapper to report "stalled" for the active git.chunk phase.
+//
+// Fix: fire the heartbeat at the APPLIER apply-site (the single chokepoint for
+// ALL applies). applyChunkSignals (and the other apply methods) call onApply
+// once per batch; the coordinator wires onApply → maybeHeartbeat.
+//
+// RED: call applier.applyChunkSignals directly (bypassing drain()), advance
+// fake time >30s between applies, assert batchSetPayload is called with
+// enrichment._run + wait:false (i.e. heartbeat fired).
+// GREEN after the applier-site hook is wired.
+describe("EnrichmentCoordinator — applier-site heartbeat (post-flush coverage)", () => {
+  let mockQdrant: any;
+
+  beforeEach(() => {
+    mockQdrant = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+  });
+
+  it("heartbeat fires when enrichRemaining (post-flush) applies chunks WITHOUT going through drain()", async () => {
+    // Spy on Date.now() to control the throttle window without breaking promises.
+    let fakeNow = Date.now();
+    const dateSpy = vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+
+    try {
+      // Provider whose buildChunkSignals resolves immediately — enrichRemaining
+      // dispatches this via runChunkSignals(useSemaphore=false), which calls
+      // applier.applyChunkSignals directly. No drain() wrapper involved.
+      const provider: any = {
+        key: "git",
+        signals: [],
+        filters: [],
+        presets: [],
+        resolveRoot: (p: string) => p,
+        buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+        buildChunkSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", new Map([["c1", { commitCount: 3 }]])]])),
+      };
+
+      const coord = new EnrichmentCoordinator(mockQdrant, provider);
+      coord.beginRun("/repo", "coll-postflush");
+
+      // Fire onChunksStored to set lastHeartbeatAt = fakeNow (first batch always
+      // fires the heartbeat because lastHeartbeatAt starts at 0).
+      coord.onChunksStored("coll-postflush", "/repo", [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 5 } } as any,
+      ]);
+
+      // Advance fake time by 35s — the throttle window has elapsed.
+      fakeNow += 35_000;
+
+      // Helper: count batchSetPayload calls that carry enrichment._run with wait:false.
+      // These are the heartbeat writes (advisory, fire-and-forget).
+      const heartbeatCount = () =>
+        (mockQdrant.batchSetPayload.mock.calls as any[][]).filter(
+          (c) => Array.isArray(c[1]) && c[1].some((op: any) => op.key === "enrichment._run") && c[2]?.wait === false,
+        ).length;
+
+      const heartbeatsBeforePostFlush = heartbeatCount();
+
+      // Simulate the POST-FLUSH path: enrichRemaining bypasses drain()'s wrapper.
+      // This is the exact path that was false-stalling on taxdome.
+      const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]]]);
+      coord.startChunkEnrichment("coll-postflush", "/repo", chunkMap);
+
+      // Yield to let the async apply complete.
+      await new Promise<void>((r) => setImmediate(r));
+      await new Promise<void>((r) => setImmediate(r));
+
+      const heartbeatsAfterPostFlush = heartbeatCount();
+
+      // RED before fix: enrichRemaining/applyChunkSignals has no heartbeat seam →
+      //   heartbeatsAfterPostFlush === heartbeatsBeforePostFlush (no new heartbeat).
+      // GREEN after fix: applier.onApply fires → maybeHeartbeat → heartbeat write →
+      //   heartbeatsAfterPostFlush > heartbeatsBeforePostFlush.
+      expect(heartbeatsAfterPostFlush).toBeGreaterThan(heartbeatsBeforePostFlush);
+
+      await coord.awaitCompletion("coll-postflush");
+    } finally {
+      dateSpy.mockRestore();
+    }
   });
 });
