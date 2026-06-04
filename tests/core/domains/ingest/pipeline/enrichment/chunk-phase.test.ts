@@ -355,6 +355,70 @@ describe("ChunkPhase", () => {
     });
   });
 
+  describe("shared run-scoped blobReader (kc93)", () => {
+    it("creates ONE reader across many streaming batches, threads it via opts, closes once at drain", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+
+      const close = vi.fn().mockResolvedValue(undefined);
+      const sharedReader = { read: vi.fn(), close };
+      const blobReaderFactory = vi.fn().mockReturnValue(sharedReader);
+
+      const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
+      const ctx = buildCtx({ buildChunkSignals });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor(), blobReaderFactory);
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "2026-05-07T10:00:00Z");
+
+      const batchA = [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 } },
+      ] as any[];
+      const batchB = [
+        { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/b.ts" }, startLine: 1, endLine: 10 } },
+      ] as any[];
+      const batchC = [
+        { chunkId: "c3", chunk: { metadata: { filePath: "/repo/src/c.ts" }, startLine: 1, endLine: 10 } },
+      ] as any[];
+
+      phase.onBatchProvider("git", "coll", "/repo", batchA);
+      phase.onBatchProvider("git", "coll", "/repo", batchB);
+      phase.onBatchProvider("git", "coll", "/repo", batchC);
+
+      // The reader is lazily created ONCE for the run, before drain.
+      expect(blobReaderFactory).toHaveBeenCalledTimes(1);
+      expect(blobReaderFactory).toHaveBeenCalledWith("/repo");
+
+      // Every per-batch buildChunkSignals call receives the SAME shared reader.
+      expect(buildChunkSignals).toHaveBeenCalledTimes(3);
+      for (const call of buildChunkSignals.mock.calls) {
+        expect(call[2]).toEqual(expect.objectContaining({ blobReader: sharedReader }));
+      }
+
+      // Reader is still open until drain completes the run's chunk work.
+      expect(close).not.toHaveBeenCalled();
+
+      await phase.drain();
+
+      // Closed exactly once at end of drain — no idle git process left behind.
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not create a reader when no factory is injected (fallback to per-call reader)", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
+      const ctx = buildCtx({ buildChunkSignals });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+
+      phase.onBatch("coll", "/repo", items);
+      await phase.drain();
+
+      // No factory → opts carries no blobReader; provider falls back to its own.
+      expect(buildChunkSignals).toHaveBeenCalledTimes(1);
+      expect(buildChunkSignals.mock.calls[0][2]).not.toHaveProperty("blobReader");
+    });
+  });
+
   it("onChunkEnrichmentComplete callback waits for streaming work to settle", async () => {
     // Regression: when remaining.size === 0 (full reindex — streaming covered
     // every file), providerPromises = [Promise.resolve(true)] settles

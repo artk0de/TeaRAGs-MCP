@@ -4,6 +4,7 @@
  * (readCommit for parent OID, readBlob for file content).
  */
 
+import type { CatFileBatchReader } from "../../../../adapters/git/client.js";
 import type { BlameLine, FileChurnData } from "../../../../adapters/git/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
@@ -42,6 +43,7 @@ export async function buildChunkChurnMap(
   externalSemaphore?: ChunkConcurrencySemaphore,
   skipCache = false,
   blameByPath?: Map<string, BlameLine[]>,
+  blobReader?: CatFileBatchReader,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   if (!skipCache) {
     const cached = await enrichmentCache.getChunkChurn(repoRoot);
@@ -60,6 +62,7 @@ export async function buildChunkChurnMap(
     maxFileLines,
     externalSemaphore,
     blameByPath,
+    blobReader,
   );
 
   if (!skipCache) {
@@ -81,6 +84,7 @@ export async function buildChunkChurnMapUncached(
   maxFileLines = MAX_FILE_LINES_DEFAULT,
   externalSemaphore?: ChunkConcurrencySemaphore,
   blameByPath?: Map<string, BlameLine[]>,
+  blobReader?: CatFileBatchReader,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   // Phase 1: initialize per-chunk accumulator state
   const { relativeChunkMap, accumulators } = buildAccumulators(repoRoot, chunkMap);
@@ -105,6 +109,7 @@ export async function buildChunkChurnMapUncached(
     externalSemaphore,
     squashOpts,
     fileChurnDataMap,
+    blobReader,
   });
 
   // Phase 3: assemble per-file overlay maps

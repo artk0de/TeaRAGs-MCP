@@ -112,6 +112,21 @@ export interface ChunkSignalOptions {
    * about collection scope (git) ignore it.
    */
   collectionName?: string;
+  /**
+   * Run-scoped git object reader shared across every per-batch chunk-signal
+   * call of one indexing run. Structural shape of `CatFileBatchReader`
+   * (`core/adapters/git/client.ts`) — declared by value here, not imported,
+   * because contracts is pure (no `core/` deps per domain-boundaries.md).
+   *
+   * When present, the git walk reuses this ONE `git cat-file --batch` process
+   * (pack opened once) instead of spawning a fresh one per batch, and does NOT
+   * close it — the CALLER owns the lifecycle (ChunkPhase opens it lazily for
+   * the run and closes it at drain). Absent ⇒ the walk spawns and closes its
+   * own per-call reader (recovery / one-off paths). Providers that don't read
+   * git objects (codegraph) ignore it. See `.claude/rules/git-cat-file-batch.md`
+   * and tea-rags-mcp-kc93.
+   */
+  blobReader?: { read: (commitOid: string, filepath: string) => Promise<string>; close: () => Promise<void> };
 }
 
 /**

@@ -8,7 +8,12 @@
 
 import { structuredPatch } from "diff";
 
-import { createCatFileBatch, getCommitsByPathspec, readCommitParent } from "../../../../adapters/git/client.js";
+import {
+  createCatFileBatch,
+  getCommitsByPathspec,
+  readCommitParent,
+  type CatFileBatchReader,
+} from "../../../../adapters/git/client.js";
 import type { CommitInfo, FileChurnData } from "../../../../adapters/git/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
@@ -43,6 +48,13 @@ export interface WalkCommitsOptions {
    */
   squashOpts?: SquashOptions;
   fileChurnDataMap?: Map<string, FileChurnData>;
+  /**
+   * Run-scoped, caller-owned `git cat-file --batch` reader. When provided, the
+   * walk reuses it (pack already open) and does NOT close it — the caller owns
+   * the lifecycle. Absent ⇒ the walk spawns its own and closes it in `finally`.
+   * Amortizes the per-batch pack-open across all batches of a run (kc93).
+   */
+  blobReader?: CatFileBatchReader;
 }
 
 export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommitsResult> {
@@ -144,7 +156,14 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
   // `git cat-file blob` spawned a git process EACH time (fork + reopen the
   // pack .idx) and dominated wall time. Reused across all collectHunks reads,
   // closed in the finally below. See `.claude/rules/git-cat-file-batch.md`.
-  const blobReader = createCatFileBatch(repoRoot);
+  //
+  // kc93: a run-scoped reader may be INJECTED by the caller (ChunkPhase) so the
+  // SAME process is shared across every per-batch walk of a run — the pack is
+  // opened once for the whole run, not once per batch. When injected, the
+  // caller owns the lifecycle and we must NOT close it here; only a reader we
+  // spawned ourselves is closed in the `finally`.
+  const ownsReader = opts.blobReader === undefined;
+  const blobReader = opts.blobReader ?? createCatFileBatch(repoRoot);
 
   const collectHunks = async (entry: { commit: CommitInfo; changedFiles: string[] }): Promise<void> => {
     const release = await acquire();
@@ -214,8 +233,9 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
     await Promise.all(commitEntries.map(collectHunks));
   } finally {
     // Tear the cat-file process down once all blob reads are done (Phase 2 maps
-    // hunks → chunks in-memory, no further git reads).
-    await blobReader.close();
+    // hunks → chunks in-memory, no further git reads) — but ONLY if we spawned
+    // it. A caller-injected (run-scoped) reader is closed by the caller.
+    if (ownsReader) await blobReader.close();
   }
 
   // ─── Phase 2: Sequential per file, parallel across files — offset-aware mapping ───

@@ -27,7 +27,7 @@ import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier } from "./applier.js";
 import { EnrichmentBackfiller } from "./backfiller.js";
-import { ChunkPhase } from "./chunk-phase.js";
+import { ChunkPhase, type BlobReaderFactory } from "./chunk-phase.js";
 import { CompletionRunner } from "./completion-runner.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
 import { FilePhase } from "./file-phase.js";
@@ -139,6 +139,7 @@ export class EnrichmentCoordinator {
     private readonly recovery?: EnrichmentRecovery,
     executor?: EnrichmentExecutor,
     daemonGuard?: IndexRunDaemonGuard,
+    private readonly blobReaderFactory?: BlobReaderFactory,
   ) {
     this.markerStore = new EnrichmentMarkerStore(qdrant);
     this.providers = Array.isArray(providers) ? providers : [providers];
@@ -377,7 +378,7 @@ export class EnrichmentCoordinator {
 
   private createRunState(): RunState {
     const applier = new EnrichmentApplier(this.qdrant);
-    const chunkPhase = new ChunkPhase(applier, this.executor);
+    const chunkPhase = new ChunkPhase(applier, this.executor, this.blobReaderFactory);
     const filePhase = new FilePhase(applier, this.markerStore, this.executor);
     filePhase.bindChunkPhase(chunkPhase);
     const backfiller = new EnrichmentBackfiller(applier, this.qdrant, this.executor);

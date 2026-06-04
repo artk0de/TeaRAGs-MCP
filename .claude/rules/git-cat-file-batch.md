@@ -3,6 +3,7 @@ paths:
   - "src/core/adapters/git/**"
   - "src/core/domains/trajectory/git/infra/walk-commits.ts"
   - "src/core/domains/trajectory/git/infra/chunk-reader.ts"
+  - "src/core/domains/ingest/pipeline/enrichment/chunk-phase.ts"
 ---
 
 # Git object reads MUST use `git cat-file --batch` (never per-call, never iso-git)
@@ -12,7 +13,23 @@ paths:
 Bulk git blob/object reads (the chunk-churn walk reads two blobs per changed
 file per commit — tens of thousands per index) go through the **persistent**
 `createCatFileBatch(repoRoot)` reader in `src/core/adapters/git/client.ts`. One
-long-lived `git cat-file --batch` process per walk; close it when the walk ends.
+long-lived `git cat-file --batch` process per walk by default; close it when the
+walk ends.
+
+**Run-scoped sharing (kc93).** During a streaming index run the git chunk walk
+runs once **per embedding batch** (`buildChunkSignals` is called per batch).
+Spawning a fresh reader per batch re-opens the pack each batch — on a large repo
+(taxdome) that per-batch pack-open dominated (~minutes of wall time). So
+`ChunkPhase` opens **one run-scoped reader** (via an injected
+`BlobReaderFactory` = `createCatFileBatch`, wired in `IngestFacade`), threads it
+through `ChunkSignalOptions.blobReader` → `buildChunkChurnMap` → `walkCommits`,
+and closes it **once at `drain()`** (end of the run's chunk work). When a reader
+is injected, `walkCommits` reuses it and does NOT close it — the **caller** owns
+the lifecycle. Absent an injected reader (recovery / one-off paths, tests),
+`walkCommits` spawns and closes its own per-call reader (the default above). The
+pack is opened **once per run** instead of once per batch, with the same
+cat-file memory-safety. The run-scoped reader still respects "no idle process":
+it is closed at `drain()`, never cached across runs.
 
 **Never** do either of these for bulk reads:
 
@@ -57,8 +74,11 @@ try {
   no blobs (all files skipped, empty chunk map) never forks git.
 - **FIFO protocol:** requests are serialized; responses are framed by byte
   length (blobs contain newlines / arbitrary bytes), decoded as UTF-8.
-- **Lifecycle:** one reader per walk (`walkCommits`), closed in a `finally`. Do
-  not cache a reader across runs — the daemon must not hold an idle git process.
+- **Lifecycle:** one reader per walk (`walkCommits`), closed in a `finally` —
+  UNLESS a run-scoped reader is injected via `WalkCommitsOptions.blobReader`, in
+  which case `walkCommits` reuses it and the injector (`ChunkPhase`) closes it
+  at run end (`drain()`). Either way, do not cache a reader across runs — the
+  daemon must not hold an idle git process.
 
 The stateless `readBlobAsString(repoRoot, oid, path)` (single
 `git cat-file blob`) remains for **one-off** reads only. Do not call it in a

@@ -183,6 +183,7 @@ describe("GitEnrichmentProvider", () => {
         undefined, // externalSemaphore (not passed when no options)
         undefined, // skipCache (not passed when no options)
         expect.any(Map), // blameByPath populated by populateBlameMap
+        undefined, // blobReader (kc93 — not passed when no options.blobReader)
       );
     });
   });

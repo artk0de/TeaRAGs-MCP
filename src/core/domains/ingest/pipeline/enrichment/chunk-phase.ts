@@ -13,8 +13,9 @@
  *   drives a single runDeferredChunk pass after the graph is finalized.
  */
 
+import type { CatFileBatchReader } from "../../../../adapters/git/client.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
-import type { ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
+import type { ChunkSignalOptions, ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
 import { Semaphore } from "../../../../infra/semaphore.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
@@ -73,16 +74,32 @@ export interface ChunkPhaseMetrics {
   totalChunkEnrichmentDurationMs: number;
 }
 
+/**
+ * Factory for a run-scoped git object reader. Injected (DI) so ChunkPhase never
+ * imports the git adapter at runtime — the composition root wires
+ * `createCatFileBatch`. Absent ⇒ each git walk spawns its own per-call reader
+ * (legacy behavior). See tea-rags-mcp-kc93.
+ */
+export type BlobReaderFactory = (repoRoot: string) => CatFileBatchReader;
+
 export class ChunkPhase {
   private readonly states = new Map<string, ChunkPhaseState>();
   private readonly semaphore = new Semaphore(CHUNK_ENRICHMENT_CONCURRENCY);
   private contexts: Map<string, ProviderContext> = new Map();
   private runStartedAt = "";
   private onComplete?: (coll: string) => Promise<void>;
+  /**
+   * One git `cat-file --batch` reader for the whole run, shared across every
+   * per-batch chunk walk so the pack is opened once instead of once-per-batch.
+   * Lazily created on the first streaming/post-flush git batch, closed at
+   * `drain()`. Undefined when no factory is injected (legacy per-call reader).
+   */
+  private runBlobReader?: CatFileBatchReader;
 
   constructor(
     private readonly applier: EnrichmentApplier,
     private readonly executor: EnrichmentExecutor,
+    private readonly blobReaderFactory?: BlobReaderFactory,
   ) {}
 
   init(contexts: ReadonlyMap<string, ProviderContext>, _coll: string, runStartedAt: string): void {
@@ -90,6 +107,10 @@ export class ChunkPhase {
     this.runStartedAt = runStartedAt;
     this.states.clear();
     for (const key of contexts.keys()) this.states.set(key, createState());
+    // A fresh run never inherits a prior run's reader. createRunState builds a
+    // new ChunkPhase per run in production, so this only matters for the
+    // init()-reuse path (tests / future pooling); drain() owns the close.
+    this.runBlobReader = undefined;
   }
 
   setOnComplete(cb: (coll: string) => Promise<void>): void {
@@ -311,10 +332,23 @@ export class ChunkPhase {
    * — no per-settle callback needed here.
    */
   async drain(): Promise<void> {
-    const all = [...this.states.values()].flatMap((s) => s.chunkWork);
-    if (all.length === 0) return;
-    await Promise.allSettled(all);
-    for (const state of this.states.values()) state.chunkWork.length = 0;
+    try {
+      const all = [...this.states.values()].flatMap((s) => s.chunkWork);
+      if (all.length === 0) return;
+      await Promise.allSettled(all);
+      for (const state of this.states.values()) state.chunkWork.length = 0;
+    } finally {
+      // kc93: tear down the run-scoped git reader once all chunk work for this
+      // run has settled — leaving it open would pin an idle `git cat-file`
+      // process for the daemon's lifetime (see git-cat-file-batch.md). Null
+      // first so a re-drain or a late batch lazily opens a fresh one. Close
+      // errors are swallowed: the process is ending regardless.
+      const reader = this.runBlobReader;
+      if (reader) {
+        this.runBlobReader = undefined;
+        await reader.close().catch(() => undefined);
+      }
+    }
   }
 
   hasChunkEnrichmentFailed(providerKey: string): boolean {
@@ -363,12 +397,22 @@ export class ChunkPhase {
     const dispatchAt = Date.now();
     if (state.chunkFirstStartAt === 0) state.chunkFirstStartAt = dispatchAt;
 
+    // kc93: lazily open ONE run-scoped git reader and share it across every
+    // batch (streaming + post-flush) so the pack is opened once per run, not
+    // once per batch. Created synchronously here (before any await) so
+    // concurrent fire-and-forget batches never race to spawn two. Closed in
+    // drain(). No factory ⇒ the git walk falls back to its own per-call reader.
+    if (this.blobReaderFactory && !this.runBlobReader) {
+      this.runBlobReader = this.blobReaderFactory(root);
+    }
+
     // Carry the active collection on every chunk-signal call so codegraph
     // routes per-collection DuckDB lookups correctly. `coll` is the
     // ChunkPhase's bound collection name from `init`.
-    const opts = useSemaphore
+    const opts: ChunkSignalOptions = useSemaphore
       ? { concurrencySemaphore: this.semaphore, skipCache: true, collectionName: coll }
       : { skipCache: true, collectionName: coll };
+    if (this.runBlobReader) opts.blobReader = this.runBlobReader;
 
     const work = this.executor
       .runChunkBatch(ctx.provider, root, chunkMap, opts)
