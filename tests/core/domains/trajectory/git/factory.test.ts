@@ -30,11 +30,10 @@ describe("createGitEnrichmentProvider", () => {
 
   it("attaches the supplied workerDescriptor verbatim (caller owns dispatch value)", () => {
     // createGitEnrichmentProvider passes the descriptor through unchanged.
-    // The caller (bootstrap composition root) is responsible for supplying the
-    // correct dispatch value. In production this MUST be "collection-affinity"
-    // because git is stateful (blameByRelPath/lastFileResult/enrichmentCache are
-    // shared across buildFileSignals → buildChunkSignals on the same instance).
-    // This test proves round-trip fidelity, not bootstrap correctness.
+    // The factory supports an optional descriptor for callers that want off-thread
+    // dispatch (e.g. future use). In production, bootstrap omits it so git runs
+    // inline via InlineEnrichmentExecutor. This test proves round-trip fidelity
+    // for the optional path, not bootstrap correctness.
     const config: GitWorkerConfig = { chunkConcurrency: 2 };
     const descriptor: WorkerEnrichmentDescriptor = {
       providerModulePath: "/abs/path/git/factory.js",

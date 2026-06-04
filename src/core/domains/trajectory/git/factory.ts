@@ -1,18 +1,18 @@
 /**
- * GitEnrichmentProvider factory — the rebuild seam for the worker thread.
+ * GitEnrichmentProvider factory.
  *
- * Phase 2 of unified-enrichment-worker-pool: the named factory export
- * `createGitEnrichmentProvider` is the SOLE place that interprets a
- * `GitWorkerConfig` payload coming through `WorkerEnrichmentDescriptor.
- * serializableConfig`. The worker `dynamic-import`s this module by
- * absolute path (see `.claude/rules/domains-language.md`) and calls the
- * factory once per (collectionName) — git is STATEFUL: `buildChunkSignals`
- * reuses `blameByRelPath`/`lastFileResult`/`enrichmentCache` populated by
- * `buildFileSignals` on the same instance, so dispatch is `"collection-affinity"`
- * to pin all of a collection's file/chunk/finalize batches to one worker.
+ * Production path: called by the composition root WITHOUT a descriptor.
+ * `WorkerPoolEnrichmentExecutor` detects the missing descriptor and falls
+ * through to `InlineEnrichmentExecutor`, which calls
+ * `provider.buildFileSignals`/`buildChunkSignals` directly in-process on
+ * the single composition-root instance. Blame cache reuse
+ * (`blameByRelPath`/`lastFileResult`/`enrichmentCache`) is automatic
+ * (same instance), postMessage serialization overhead is zero.
  *
- * Inline path: composition root calls the same factory directly without
- * a descriptor — provider runs on the main thread, no behavior change.
+ * Optional descriptor path: if a caller DOES supply a descriptor it is
+ * attached verbatim. The factory export name `createGitEnrichmentProvider`
+ * is preserved so any future off-thread use can reference it via
+ * `WorkerEnrichmentDescriptor.providerFactoryExport`.
  */
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
 import type { SquashOptions } from "./infra/metrics.js";

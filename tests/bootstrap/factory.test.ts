@@ -196,24 +196,23 @@ describe("createAppContext", () => {
     }
   });
 
-  it("wires git workerDescriptor with dispatch:collection-affinity (production regression guard)", async () => {
-    // This test is GENUINELY RED when bootstrap/factory.ts reverts the git
-    // dispatch to "stateless". It reads the ACTUAL gitWorkerDescriptor built
-    // by wireComposition() — the value captured by the GitTrajectory constructor
-    // spy (declared at module scope above, partial-mocked to record args).
+  it("git runs inline (no workerDescriptor) so it uses the InlineEnrichmentExecutor in-process (production regression guard)", async () => {
+    // This test is GENUINELY RED when bootstrap/factory.ts builds a gitWorkerDescriptor
+    // and passes it to GitTrajectory. It reads the ACTUAL value captured by the
+    // GitTrajectory constructor spy (declared at module scope above).
     //
-    // Why collection-affinity matters: git is STATEFUL. buildChunkSignals reuses
-    // blameByRelPath/lastFileResult/enrichmentCache populated by buildFileSignals
-    // on the same provider instance. "stateless" dispatch round-robins to any
-    // free thread — different workers have separate provider caches, so chunk
-    // batches rebuild blame from scratch (~10x slower on deep-history repos).
-    // collection-affinity pins all of a collection's file/chunk/finalize batches
-    // to ONE worker, preserving in-process cache reuse.
+    // Why inline matters (live taxdome evidence): collection-affinity pins git to
+    // ONE worker, removing the 4-way parallelism. Per-batch cost is dominated by
+    // walkCommits (git log + cat-file + structuredPatch), NOT blame — so blame
+    // reuse gave no per-apply speedup. Worker-pool cross-thread dispatch
+    // (postMessage serialization of chunkMap/results per batch) IS the overhead.
+    // Inline (no workerDescriptor) → InlineEnrichmentExecutor calls
+    // provider.buildFileSignals/buildChunkSignals directly in-process on the
+    // single composition-root instance, so blame cache reuse is automatic and
+    // there is zero postMessage overhead. This is origin/main behavior.
     captured.gitWorkerDescriptor = undefined;
     await createAppContext(makeConfig());
-    expect(captured.gitWorkerDescriptor).toBeDefined();
-    expect(captured.gitWorkerDescriptor!.dispatch).toBe("collection-affinity");
-    expect(captured.gitWorkerDescriptor!.providerFactoryExport).toBe("createGitEnrichmentProvider");
+    expect(captured.gitWorkerDescriptor).toBeUndefined();
   });
 });
 

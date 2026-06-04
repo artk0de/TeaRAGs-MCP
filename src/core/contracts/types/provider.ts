@@ -181,8 +181,9 @@ export interface WorkerEnrichmentDescriptor {
    * `collection-affinity` — pinned worker per `routingKey = collectionName`.
    * All file/chunk/finalize batches for the same collection land on the same
    * thread so providers can share in-process state across the ingest cycle.
-   * Used by git (blameByRelPath/enrichmentCache) and codegraph
-   * (symbolTable/chunkSymbolByLine).
+   * Used by codegraph (symbolTable/chunkSymbolByLine). Git does NOT use this —
+   * git runs inline (no workerDescriptor) so its blameByRelPath/enrichmentCache
+   * are reused automatically on the main-thread instance.
    */
   dispatch: "stateless" | "collection-affinity";
   /**

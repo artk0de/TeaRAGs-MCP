@@ -235,13 +235,12 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     await exec.shutdown();
   });
 
-  // --- git dispatch affinity fix (tea-rags-mcp: pin git per-collection) ---
+  // --- collection-affinity behavioral guard (valid for codegraph; git is now inline) ---
 
   // Behavioral regression guard: proves that collection-affinity dispatch pins
   // runFileBatch + runChunkBatch for the SAME collection to ONE worker (same
-  // threadId). With "stateless" dispatch, concurrent calls spread to different
-  // workers (no routingKey → no pinning → round-robin), so the threadIds differ
-  // and this test is GENUINELY RED under "stateless".
+  // threadId). Codegraph uses this to pin its DuckDB write path. Git no longer
+  // uses the worker pool at all (no workerDescriptor → inline fallback).
   it("collection-affinity: concurrent runFileBatch + runChunkBatch for same collection land on same worker (same threadId)", async () => {
     // threadSpyPath is written in beforeAll from THREAD_SPY_PROVIDER_SRC.
     // Embeds the worker's threadId in every response so the test can verify
@@ -298,20 +297,21 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     expect(routingKeyFor(descriptor, "code_27622aef")).toBe("code_27622aef");
   });
 
-  it("git workerDescriptor must use collection-affinity to pin file+chunk batches to same worker", () => {
-    // Git is STATEFUL — buildChunkSignals reuses blameByRelPath/lastFileResult/
-    // enrichmentCache populated by buildFileSignals on the same instance.
-    // collection-affinity pins all of a collection's file/chunk/finalize batches
-    // to one worker, restoring that in-process reuse (~10x speedup on deep-history).
-    const gitDescriptor: WorkerEnrichmentDescriptor = {
-      providerModulePath: "/absolute/path/git/factory.js",
-      providerFactoryExport: "createGitEnrichmentProvider",
-      dispatch: "collection-affinity",
-      serializableConfig: {},
-    };
-    // Assert the dispatch mode and that routingKeyFor returns collectionName.
-    expect(gitDescriptor.dispatch).toBe("collection-affinity");
-    expect(routingKeyFor(gitDescriptor, "code_27622aef")).toBe("code_27622aef");
+  it("provider without workerDescriptor is dispatched inline: pool.dispatch NOT called, provider method IS called", async () => {
+    // Git runs inline (no workerDescriptor). This test verifies the inline fallback
+    // path: the executor calls provider.buildFileSignals directly in-process and
+    // never calls pool.dispatch. Proves the WorkerPoolEnrichmentExecutor correctly
+    // routes to InlineEnrichmentExecutor when no descriptor is present.
+    const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
+    const inlineProvider = fakeInlineProvider();
+    // Spy on pool.dispatch to verify it is NOT called.
+    const poolDispatchSpy = vi.spyOn((exec as unknown as { pool: { dispatch: unknown } }).pool, "dispatch");
+    const overlay = await exec.runFileBatch(inlineProvider, "/repo", ["x.ts"], {});
+    expect(poolDispatchSpy).not.toHaveBeenCalled();
+    expect(inlineProvider.buildFileSignals).toHaveBeenCalled();
+    expect(overlay.get("inline.ts")).toMatchObject({ via: "inline-build" });
+    poolDispatchSpy.mockRestore();
+    await exec.shutdown();
   });
 
   it("collection-affinity: file and chunk batches for same collection produce identical routingKey", () => {
