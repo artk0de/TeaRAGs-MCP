@@ -218,6 +218,16 @@ export class EnrichmentCoordinator {
     const runState = this.createRunState();
     this.currentRun = runState;
 
+    // Wire the applier-site heartbeat: every apply batch (file, chunk, finalize,
+    // backfill) calls onApply → maybeHeartbeat. This covers ALL apply paths —
+    // streaming, post-flush enrichRemaining, deferred codegraph, recovery — from
+    // the single chokepoint. The coordinator owns the 30s throttle (DRY).
+    if (collectionName) {
+      runState.applier.onApply = () => {
+        this.maybeHeartbeat(collectionName, runState);
+      };
+    }
+
     if (this._onChunkEnrichmentComplete) {
       runState.chunkPhase.setOnComplete(this._onChunkEnrichmentComplete);
     }
@@ -340,14 +350,6 @@ export class EnrichmentCoordinator {
         async (coll, providerKey, level) => this.countSettledUnenriched(coll, providerKey, level),
         run.startedAt,
         run.runId,
-        // Tail-heartbeat: advance lastProgressAt during the post-embedding
-        // enrichment tail (git chunk drain + deferred codegraph chunk pass) so
-        // the health mapper never reports "stalled" while the tail is active.
-        // The 30s throttle lives in maybeHeartbeat — CompletionRunner calls this
-        // unconditionally, keeping the throttle logic in one place (DRY).
-        () => {
-          this.maybeHeartbeat(collectionName, run);
-        },
       );
       // Phase 2 of unified-enrichment-worker-pool plan: signal the executor
       // to release any per-collection state it cached. For Inline executor

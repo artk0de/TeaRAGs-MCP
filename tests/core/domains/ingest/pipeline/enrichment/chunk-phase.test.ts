@@ -131,27 +131,40 @@ describe("ChunkPhase", () => {
     expect(cb).toHaveBeenCalledWith("coll");
   });
 
-  it("drain calls onApplyProgress for each settled apply cycle BEFORE drain resolves (mid-drain heartbeat)", async () => {
-    // RED test: proves heartbeat fires DURING the drain — not after it completes.
-    // Simulates multiple sequential streaming apply cycles. onApplyProgress must
-    // be called once per settled chunkWork promise (not zero times until drain
-    // finishes). Today: drain = single Promise.allSettled, onApplyProgress never
-    // called. After fix: drain accepts the callback and calls it per settled item.
+  it("applier.onApply fires for each settled apply cycle BEFORE drain resolves (applier-site heartbeat)", async () => {
+    // Adapted from the old drain(onApplyProgress) test: heartbeats now fire at
+    // the applier apply-site (EnrichmentApplier.onApply) — not at drain().
+    // The contract: onApply is called once per completed runChunkSignals batch,
+    // DURING the drain (not only after drain resolves), covering all apply paths.
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
 
-    // Three independent batches, each resolves at different times
+    // Three independent batches, each resolves at different times.
+    // buildChunkSignals returns a non-empty overlay so applyChunkSignals writes
+    // at least one chunk and triggers onApply.
     const resolvers: (() => void)[] = [];
-    const buildChunkSignals = vi.fn().mockImplementation(async () => {
-      return new Promise<Map<string, Map<string, unknown>>>((resolve) => {
+    const buildChunkSignals = vi.fn().mockImplementation(async (_root: string, chunkMap: Map<string, unknown[]>) => {
+      const overlays = new Map<string, Map<string, unknown>>();
+      for (const [rel, entries] of chunkMap) {
+        const inner = new Map<string, unknown>();
+        for (const e of entries as { chunkId: string }[]) inner.set(e.chunkId, { commitCount: 1 });
+        overlays.set(rel, inner);
+      }
+      return new Promise<typeof overlays>((resolve) => {
         resolvers.push(() => {
-          resolve(new Map());
+          resolve(overlays);
         });
       });
     });
     const ctx = buildCtx({ buildChunkSignals });
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
     phase.init(new Map([[ctx.key, ctx]]), "coll", "2026-05-07T10:00:00Z");
+
+    const progressCallTimes: number[] = [];
+    // Wire applier.onApply — simulates what the coordinator does.
+    applier.onApply = () => {
+      progressCallTimes.push(Date.now());
+    };
 
     const batchA = [
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 } },
@@ -168,13 +181,8 @@ describe("ChunkPhase", () => {
     phase.onBatchProvider("git", "coll", "/repo", batchB);
     phase.onBatchProvider("git", "coll", "/repo", batchC);
 
-    const progressCallTimes: number[] = [];
     let drainResolved = false;
-
-    // Start drain with progress callback
-    const drainPromise = phase.drain(() => {
-      progressCallTimes.push(Date.now());
-    });
+    const drainPromise = phase.drain();
     void drainPromise.then(() => {
       drainResolved = true;
     });
@@ -188,7 +196,7 @@ describe("ChunkPhase", () => {
     await new Promise<void>((r) => setImmediate(r));
     await new Promise<void>((r) => setImmediate(r));
 
-    // Progress must have been called at least once BEFORE drain completes
+    // onApply (via applyChunkSignals) must have fired BEFORE drain completes
     expect(drainResolved).toBe(false);
     expect(progressCallTimes.length).toBeGreaterThanOrEqual(1);
 
@@ -197,7 +205,7 @@ describe("ChunkPhase", () => {
     resolvers[2]?.();
     await drainPromise;
     expect(drainResolved).toBe(true);
-    // All three applies settled → at least 3 progress calls total
+    // All three applies settled → at least 3 onApply calls total
     expect(progressCallTimes.length).toBeGreaterThanOrEqual(3);
   });
 

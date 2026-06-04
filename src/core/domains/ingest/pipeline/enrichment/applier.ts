@@ -31,6 +31,16 @@ export class EnrichmentApplier {
     sampleLimit: MISSED_PATH_SAMPLE_LIMIT,
   });
 
+  /**
+   * Optional callback invoked once per apply batch across ALL apply methods
+   * (applyFileSignals, applyChunkSignals, applyFinalizeFile).
+   * Wired by the coordinator to `maybeHeartbeat` — fires at the single
+   * chokepoint all enrichment writes flow through, covering streaming, post-
+   * flush enrichRemaining, deferred codegraph, and backfill paths uniformly.
+   * The coordinator owns the 30s throttle; this callback is unconditional (DRY).
+   */
+  onApply?: () => void;
+
   constructor(private readonly qdrant: QdrantManager) {}
 
   /** Count of unique files that received enrichment across all apply passes. */
@@ -143,6 +153,7 @@ export class EnrichmentApplier {
       }
     }
 
+    this.onApply?.();
     pipelineLog.addStageTime("enrichApply", Date.now() - applyStart);
   }
 
@@ -210,6 +221,7 @@ export class EnrichmentApplier {
       }
     }
 
+    if (ops.length > 0) this.onApply?.();
     return appliedFiles;
   }
 
@@ -299,6 +311,7 @@ export class EnrichmentApplier {
       }
     }
 
+    if (applied > 0) this.onApply?.();
     return applied;
   }
 

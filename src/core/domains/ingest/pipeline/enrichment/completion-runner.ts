@@ -38,15 +38,6 @@ export interface CompletionRunnerDeps {
  */
 export type UnenrichedReader = (coll: string, providerKey: string, level: "file" | "chunk") => Promise<number>;
 
-/**
- * Throttle-free progress notification callback fired at key tail seams
- * (after chunk drain, after each deferred-chunk pass). The COORDINATOR owns
- * the 30s throttle inside `maybeHeartbeat` — CompletionRunner just calls the
- * hook unconditionally and lets the throttle gate the actual Qdrant write.
- * This keeps the throttle logic in one place (DRY).
- */
-export type TailProgressCallback = () => void;
-
 export class CompletionRunner {
   constructor(private readonly deps: CompletionRunnerDeps) {}
 
@@ -57,7 +48,6 @@ export class CompletionRunner {
     unenrichedReader?: UnenrichedReader,
     runStartedAt = "",
     runId = "",
-    onProgress?: TailProgressCallback,
   ): Promise<EnrichmentMetrics> {
     const { filePhase, chunkPhase, backfiller, applier, markerStore, executor } = this.deps;
     const readUnenriched: UnenrichedReader = unenrichedReader ?? (async () => 0);
@@ -139,36 +129,24 @@ export class CompletionRunner {
     if (byProvider) metrics.byProvider = byProvider;
 
     // 6. drain chunkWork (git streaming)
-    // Pass onProgress into drain so heartbeats fire PER completed apply cycle
-    // DURING the drain — not only once after all chunkWork settles. The git
-    // chunk churn drain can span 500-1000s (hundreds of promises); without
-    // per-apply progress the coordinator's lastProgressAt freezes across the
-    // entire window and the health mapper reports "stalled". The coordinator's
-    // 30s throttle inside maybeHeartbeat gates the actual Qdrant write (DRY).
-    await chunkPhase.drain(onProgress);
+    // Heartbeats now fire at the applier apply-site (EnrichmentApplier.onApply →
+    // coordinator.maybeHeartbeat), covering every apply path uniformly. The plain
+    // drain() here no longer needs to thread onProgress per-settle.
+    await chunkPhase.drain();
 
     // 7. deferred-chunk pass — codegraph buildChunkSignals against the finished
     //    graph with the full accumulated chunkMap, applied via applyChunkSignals.
     //
-    // Known limitation: runDeferredChunk is a SINGLE long await (one
-    // runChunkBatch call for the full graph + one applyChunkSignals call across
-    // all batches). On very large repos with many chunks the PageRank/resolve
-    // phase can exceed 2min on its own, during which lastProgressAt freezes and
-    // the health mapper may briefly report the codegraph.chunk phase as stalled.
-    // onProgress fires only AFTER the pass completes (tail-heartbeat seam).
-    // A per-batch mid-pass heartbeat would require exposing a progress callback
-    // through runChunkBatch → buildChunkSignals into the provider internals —
-    // no cheap seam exists today. Follow-up tracked: add per-batch progress
-    // callback to applyChunkSignals and thread it through runDeferredChunk.
+    // applyChunkSignals fires onApply → maybeHeartbeat when batches land, so
+    // lastProgressAt advances during the deferred pass without a separate seam
+    // here. The previously-tracked limitation (tea-rags-mcp-xlhu) about the
+    // codegraph.chunk phase potentially reporting "stalled" during a long
+    // PageRank/resolve pass is resolved: the applier-site hook covers it.
     for (const ctx of contexts.values()) {
       if (!ctx.provider.defersChunkEnrichment || filePhase.hasPrefetchFailed(ctx.key)) continue;
       const cm = chunkPhase.getDeferredChunkMap(ctx.key);
       if (cm.size > 0) {
         await chunkPhase.runDeferredChunk(coll, ctx, ctx.effectiveRoot ?? "", cm);
-        // Tail-heartbeat seam: deferred codegraph chunk pass completed for this
-        // provider. Advance lastProgressAt so a long PageRank/resolve phase
-        // spanning multiple providers doesn't freeze the progress timestamp.
-        onProgress?.();
       }
     }
 
