@@ -62,6 +62,19 @@ export class EnrichmentApplier {
   }
 
   /**
+   * Files INTENTIONALLY left unenriched by per-file enrichment policy (a
+   * provider's `shouldEnrich` returned "none" — e.g. generated db/schema.rb,
+   * vendored code). Tracked SEPARATELY from `missedFiles` so health reporting
+   * never confuses an intentional skip with an enrichment failure. Deduped.
+   */
+  private readonly ignoredPaths = new Set<string>();
+
+  /** Count of unique files intentionally skipped by enrichment policy. */
+  get ignoredFiles(): number {
+    return this.ignoredPaths.size;
+  }
+
+  /**
    * Apply file-level signals to a batch of chunks.
    * Payload written as { [providerKey]: { file: data } }.
    *
@@ -76,6 +89,14 @@ export class EnrichmentApplier {
     items: ChunkItem[],
     transform?: FileSignalTransform,
     enrichedAt?: string,
+    /**
+     * Predicate (injected by the caller, which knows the provider's policy):
+     * true ⇒ this file was intentionally skipped by `shouldEnrich === "none"`.
+     * Such a file has no overlay BY DESIGN — count it as ignored (not missed)
+     * and write NO stamp, so it carries no git payload at all. Keeps the
+     * applier provider-agnostic (it never imports the policy itself).
+     */
+    isIgnored?: (relativePath: string) => boolean,
   ): Promise<void> {
     const applyStart = Date.now();
 
@@ -103,6 +124,13 @@ export class EnrichmentApplier {
       const relativePath = relative(pathBase, filePath);
       const data = fileMetadata.get(relativePath);
       if (!data) {
+        // Intentional policy skip — record as ignored, NOT missed, and write no
+        // stamp (the file stays free of any git payload). Recovery's
+        // scrollUnenriched also filters these, so they never go degraded.
+        if (isIgnored?.(relativePath)) {
+          this.ignoredPaths.add(relativePath);
+          continue;
+        }
         this.missedTracker.track(
           relativePath,
           fileItems.map((item) => ({

@@ -211,6 +211,17 @@ export interface WorkerEnrichmentDescriptor {
   serializableConfig: unknown;
 }
 
+// --- Enrichment scope ---
+
+/**
+ * How much enrichment a provider wants for one file.
+ *   "full"      — file-level AND chunk-level enrichment (default).
+ *   "file-only" — file-level only; skip the expensive chunk-churn walk.
+ *   "none"      — skip both. The file stays indexed/searchable; only this
+ *                 provider's signals are omitted for it.
+ */
+export type EnrichmentScope = "full" | "file-only" | "none";
+
 // --- Enrichment provider ---
 
 export interface EnrichmentProvider {
@@ -297,6 +308,18 @@ export interface EnrichmentProvider {
    * path it never enriched must be a no-op, not an error.
    */
   handleDeletedPaths?: (paths: string[], options?: DeletedPathOptions) => Promise<void>;
+  /**
+   * Per-file enrichment policy. The coordinator classifies each file once
+   * (FileClassification) and asks the provider how much enrichment it wants.
+   * Absent ⇒ "full" (backward-compatible: existing providers enrich
+   * everything as before). `classification` is duck-typed structurally
+   * (contracts is pure — no infra import); the canonical type is
+   * FileClassification in contracts/types/file-classification.ts.
+   */
+  shouldEnrich?: (file: {
+    relPath: string;
+    classification: { isSource: boolean; isGenerated: boolean; isDocumentation: boolean; isTest: boolean };
+  }) => EnrichmentScope;
   /**
    * Worker-pool descriptor for the unified enrichment executor. Absent ⇒
    * `WorkerPoolEnrichmentExecutor` runs this provider on the main thread

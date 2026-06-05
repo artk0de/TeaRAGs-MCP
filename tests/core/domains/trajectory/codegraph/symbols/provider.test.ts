@@ -643,6 +643,41 @@ describe("CodegraphEnrichmentProvider", () => {
     }
   });
 
+  describe("shouldEnrich", () => {
+    const base = { isSource: true, isGenerated: false, isDocumentation: false, isTest: false };
+
+    function buildProvider(excludeTests: boolean): CodegraphEnrichmentProvider {
+      return new CodegraphEnrichmentProvider({
+        graphDb: client,
+        symbolTable: new InMemoryGlobalSymbolTable(),
+        ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
+        composer: new DefaultSymbolIdComposer(),
+        exclusion: { excludeTests, customPatterns: [] },
+      });
+    }
+
+    it("skips generated and test files when excludeTests is on", () => {
+      const strict = buildProvider(true);
+      expect(
+        strict.shouldEnrich({ relPath: "db/schema.rb", classification: { ...base, isSource: false, isGenerated: true } }),
+      ).toBe("none");
+      expect(strict.shouldEnrich({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } })).toBe(
+        "none",
+      );
+      expect(strict.shouldEnrich({ relPath: "app/models/user.rb", classification: base })).toBe("full");
+    });
+
+    it("keeps test files when excludeTests is off, but generated stays none", () => {
+      const loose = buildProvider(false);
+      expect(loose.shouldEnrich({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } })).toBe(
+        "full",
+      );
+      expect(
+        loose.shouldEnrich({ relPath: "db/schema.rb", classification: { ...base, isSource: false, isGenerated: true } }),
+      ).toBe("none");
+    });
+  });
+
   // Real-world bug from the tea-rags self-test on 2026-05-21:
   // `coordinator.ts` declares a getter + setter pair for the same
   // property (`onChunkEnrichmentComplete`). Both AST nodes carry

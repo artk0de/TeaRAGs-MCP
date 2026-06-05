@@ -1951,8 +1951,8 @@ describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => 
     const fileWrites = ops.filter((op: any) => op.key === "enrichment.git.file" && op.payload?.status === "degraded");
     const lastFileWrite = fileWrites[fileWrites.length - 1];
     expect(lastFileWrite.payload.unenrichedChunks).toBe(3);
-    expect(recovery.countUnenriched).toHaveBeenCalledWith("test-col", "git", "file");
-    expect(recovery.countUnenriched).toHaveBeenCalledWith("test-col", "git", "chunk");
+    expect(recovery.countUnenriched).toHaveBeenCalledWith("test-col", expect.objectContaining({ key: "git" }), "file");
+    expect(recovery.countUnenriched).toHaveBeenCalledWith("test-col", expect.objectContaining({ key: "git" }), "chunk");
   });
 
   it("awaitCompletion falls back to 0 unenrichedChunks when recovery is not provided", async () => {

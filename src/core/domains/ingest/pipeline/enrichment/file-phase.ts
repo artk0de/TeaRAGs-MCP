@@ -18,6 +18,7 @@ import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
 import type { ChunkPhase } from "./chunk-phase.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
+import { enrichmentScope } from "./policy.js";
 import type { ProviderContext } from "./types.js";
 
 interface FilePhaseState {
@@ -139,6 +140,11 @@ export class FilePhase {
 
       const root = ctx.effectiveRoot ?? absolutePath;
       const relPaths = this.uniqueRelPaths(items, root);
+      // Per-file enrichment policy: drop files this provider declines entirely
+      // ("none"). "file-only" still enriches file-level here — only chunk-phase
+      // skips those. Providers without shouldEnrich get "full" (no-op filter).
+      const enrichPaths = relPaths.filter((rel) => enrichmentScope(ctx.provider, rel) !== "none");
+      if (enrichPaths.length === 0) continue;
 
       // Fully-deferred providers (codegraph): still DRIVE streamFileBatch so the
       // run sink extracts the batch into the graph during embedding overlap, but
@@ -155,7 +161,7 @@ export class FilePhase {
         // pure whole-set read.
         if (!ctx.provider.streamFileBatch) continue;
         const extractWork = this.executor
-          .runFileBatch(ctx.provider, root, relPaths, {
+          .runFileBatch(ctx.provider, root, enrichPaths, {
             collectionName: this.coll || undefined,
             ignoreFilter: ctx.ignoreFilter ?? undefined,
           })
@@ -169,7 +175,7 @@ export class FilePhase {
       }
 
       const work = this.executor
-        .runFileBatch(ctx.provider, root, relPaths, {
+        .runFileBatch(ctx.provider, root, enrichPaths, {
           collectionName: this.coll || undefined,
           ignoreFilter: ctx.ignoreFilter ?? undefined,
         })
@@ -182,6 +188,9 @@ export class FilePhase {
             items,
             ctx.provider.fileSignalTransform,
             this.runStartedAt,
+            // A file the provider declined entirely ("none") is intentionally
+            // unenriched — counted as ignored, not missed.
+            (rel) => enrichmentScope(ctx.provider, rel) === "none",
           );
           state.streamingApplies++;
           pipelineLog.enrichmentPhase("STREAMING_APPLY", {

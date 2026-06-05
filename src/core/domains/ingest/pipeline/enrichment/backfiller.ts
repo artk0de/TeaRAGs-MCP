@@ -20,6 +20,7 @@ import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { EnrichmentApplier } from "./applier.js";
 import { batchSetPayloadWithRetry } from "./batch-write.js";
+import { filterChunkEnrichMap, filterFileEnrichPaths } from "./policy.js";
 import type { ProviderContext } from "./types.js";
 
 const BATCH_SIZE = 100;
@@ -37,7 +38,13 @@ export class EnrichmentBackfiller {
     if (!ctx.effectiveRoot) return;
 
     const root = ctx.effectiveRoot;
-    const missedPaths = Array.from(missed.keys());
+    // Per-file enrichment policy: a generated file (scope "none") is a "missed
+    // file" by construction — its chunks landed without file metadata BECAUSE
+    // the streaming phase intentionally skipped it. Re-enriching it here would
+    // resurrect the very git signals the policy suppresses. Drop scope-"none"
+    // paths before backfill so the skip holds across this path too.
+    const missedPaths = filterFileEnrichPaths(ctx.provider, Array.from(missed.keys()));
+    if (missedPaths.length === 0) return;
     pipelineLog.enrichmentPhase("BACKFILL_START", {
       provider: ctx.key,
       missedFiles: missedPaths.length,
@@ -125,18 +132,22 @@ export class EnrichmentBackfiller {
         })),
       );
     }
-    if (map.size === 0) return;
+    // Per-file policy: only "full"-scope files get the chunk-churn walk. Drops
+    // "file-only" (docs) so chunk backfill never resurrects the chunk signals
+    // the streaming chunk phase deliberately skipped.
+    const scoped = filterChunkEnrichMap(ctx.provider, map);
+    if (scoped.size === 0) return;
 
     const start = Date.now();
     pipelineLog.enrichmentPhase("CHUNK_BACKFILL_START", {
       provider: ctx.key,
-      files: map.size,
-      chunks: [...map.values()].reduce((sum, arr) => sum + arr.length, 0),
+      files: scoped.size,
+      chunks: [...scoped.values()].reduce((sum, arr) => sum + arr.length, 0),
     });
 
     let overlays: Map<string, Map<string, ChunkSignalOverlay>>;
     try {
-      overlays = await this.executor.runChunkBatch(ctx.provider, root, map, { collectionName: coll });
+      overlays = await this.executor.runChunkBatch(ctx.provider, root, scoped, { collectionName: coll });
     } catch (error) {
       pipelineLog.enrichmentPhase("CHUNK_BACKFILL_FAILED", {
         provider: ctx.key,
@@ -175,7 +186,7 @@ export class EnrichmentBackfiller {
 
     pipelineLog.enrichmentPhase("CHUNK_BACKFILL_COMPLETE", {
       provider: ctx.key,
-      files: map.size,
+      files: scoped.size,
       chunks: ops.length,
       durationMs: Date.now() - start,
     });

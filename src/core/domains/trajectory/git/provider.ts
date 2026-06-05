@@ -12,11 +12,13 @@ import { join } from "node:path";
 import { blameFile, resolveRepoRoot, type CatFileBatchReader } from "../../../adapters/git/client.js";
 import type { BlameLine, CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
+import type { FileClassification } from "../../../contracts/types/file-classification.js";
 import type {
   ChunkLookupEntry,
   ChunkSignalOptions,
   ChunkSignalOverlay,
   EnrichmentProvider,
+  EnrichmentScope,
   FileSignalOptions,
   FileSignalOverlay,
   FileSignalTransform,
@@ -102,6 +104,18 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
 
   resolveRoot(absolutePath: string): string {
     return resolveRepoRoot(absolutePath);
+  }
+
+  /**
+   * Git policy: generated files carry harmful signals (regeneration churn,
+   * generator as "owner") and are huge blame targets → skip entirely.
+   * Documentation keeps cheap file-level ownership but drops the per-chunk
+   * churn walk over prose. Everything else (incl. tests) enriches fully.
+   */
+  shouldEnrich(file: { relPath: string; classification: FileClassification }): EnrichmentScope {
+    if (file.classification.isGenerated) return "none";
+    if (file.classification.isDocumentation) return "file-only";
+    return "full";
   }
 
   readonly fileSignalTransform: FileSignalTransform;

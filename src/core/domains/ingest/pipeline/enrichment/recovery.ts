@@ -13,6 +13,7 @@ import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
+import { enrichmentScope } from "./policy.js";
 import type { EnrichmentProvider, ProviderContext } from "./types.js";
 
 export interface RecoveryResult {
@@ -62,7 +63,9 @@ export class EnrichmentRecovery {
     provider: EnrichmentProvider,
     enrichedAt: string,
   ): Promise<RecoveryResult> {
-    const unenriched = await this.scrollUnenriched(collectionName, provider.key, "file");
+    // scrollUnenriched already drops policy-skipped points (generated files are
+    // unenriched by design), so recovery only sees genuinely-missed files.
+    const unenriched = await this.scrollUnenriched(collectionName, provider, "file");
 
     if (unenriched.length === 0) {
       return { recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 };
@@ -100,7 +103,7 @@ export class EnrichmentRecovery {
         enrichedAt,
       );
 
-      const remaining = await this.countUnenriched(collectionName, provider.key, "file");
+      const remaining = await this.countUnenriched(collectionName, provider, "file");
 
       return {
         recoveredFiles: uniquePaths.length,
@@ -128,7 +131,10 @@ export class EnrichmentRecovery {
     provider: EnrichmentProvider,
     enrichedAt: string,
   ): Promise<RecoveryResult> {
-    const unenriched = await this.scrollUnenriched(collectionName, provider.key, "chunk");
+    // scrollUnenriched already keeps only "full"-scope points (generated +
+    // documentation chunks are unenriched by design), so recovery never
+    // resurrects skipped chunk signals.
+    const unenriched = await this.scrollUnenriched(collectionName, provider, "chunk");
 
     if (unenriched.length === 0) {
       return { recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 };
@@ -168,7 +174,7 @@ export class EnrichmentRecovery {
         allChunkIds,
       );
 
-      const remaining = await this.countUnenriched(collectionName, provider.key, "chunk");
+      const remaining = await this.countUnenriched(collectionName, provider, "chunk");
 
       return {
         recoveredFiles: chunkMap.size,
@@ -191,9 +197,19 @@ export class EnrichmentRecovery {
    * Count chunks missing enrichedAt for the given provider key and level.
    * Uses Qdrant count API — lightweight, no payload transfer.
    */
-  async countUnenriched(collectionName: string, providerKey: string, level: "file" | "chunk"): Promise<number> {
-    const filter = this.buildUnenrichedFilter(providerKey, level);
-    return this.qdrant.countPoints(collectionName, filter);
+  async countUnenriched(collectionName: string, provider: EnrichmentProvider, level: "file" | "chunk"): Promise<number> {
+    // Fast path: a provider with no per-file policy can't intentionally skip
+    // anything, so the server-side count is exact — no payload transfer.
+    if (!provider.shouldEnrich) {
+      const filter = this.buildUnenrichedFilter(provider.key, level);
+      return this.qdrant.countPoints(collectionName, filter);
+    }
+    // Policy path: server-side count can't express path-glob skips, so count
+    // via the policy-filtered scroll. This keeps countUnenriched and the
+    // recovery scroll on the SAME set (the invariant buildUnenrichedFilter's
+    // relativePath exclusion already maintains) — a generated/doc file the
+    // policy skips must not keep the marker degraded forever.
+    return (await this.scrollUnenriched(collectionName, provider, level)).length;
   }
 
   /**
@@ -257,16 +273,22 @@ export class EnrichmentRecovery {
    */
   private async scrollUnenriched(
     collectionName: string,
-    providerKey: string,
+    provider: EnrichmentProvider,
     level: "file" | "chunk",
   ): Promise<UnenrichedPoint[]> {
-    const filter = this.buildUnenrichedFilter(providerKey, level);
+    const filter = this.buildUnenrichedFilter(provider.key, level);
     const points = await this.qdrant.scrollFiltered(collectionName, filter, SCROLL_LIMIT, this.scrollPageSize);
 
     const result: UnenrichedPoint[] = [];
     for (const point of points) {
       const relativePath = typeof point.payload?.relativePath === "string" ? point.payload.relativePath : null;
       if (!relativePath) continue;
+      // Per-file enrichment policy: a file the provider declined is unenriched
+      // BY DESIGN — exclude it so neither the recovery pass nor the unenriched
+      // count treats an intentional skip as a degraded miss. file level drops
+      // scope "none"; chunk level keeps only "full" (drops "none" + "file-only").
+      const scope = enrichmentScope(provider, relativePath);
+      if (level === "file" ? scope === "none" : scope !== "full") continue;
       result.push({
         id: point.id,
         relativePath,

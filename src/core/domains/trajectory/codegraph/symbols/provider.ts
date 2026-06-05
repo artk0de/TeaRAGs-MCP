@@ -54,12 +54,14 @@ import type {
   ChunkSignalOverlay,
   DeletedPathOptions,
   EnrichmentProvider,
+  EnrichmentScope,
   FileSignalOptions,
   FileSignalOverlay,
   FilterDescriptor,
   ProviderRunMetrics,
   WorkerEnrichmentDescriptor,
 } from "../../../../contracts/types/provider.js";
+import type { FileClassification } from "../../../../contracts/types/file-classification.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { pageRank } from "../../../../infra/graph/page-rank.js";
 import { tarjanScc } from "../../../../infra/graph/tarjan-scc.js";
@@ -486,6 +488,19 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 
   resolveRoot(absolutePath: string): string {
     return absolutePath;
+  }
+
+  /**
+   * Codegraph policy: generated files have no human-authored call graph; tests
+   * skew fanOut/isHub/PageRank (high fanOut, fanIn=0) and are excluded when
+   * `excludeTests` is on (the same flag that gates `discoverSupportedFiles`).
+   * Docs are irrelevant to the graph and enrich fully (no chunk graph is
+   * emitted for them anyway). Reads the shared FileClassification fact.
+   */
+  shouldEnrich(file: { relPath: string; classification: FileClassification }): EnrichmentScope {
+    if (file.classification.isGenerated) return "none";
+    if ((this.deps.exclusion?.excludeTests ?? false) && file.classification.isTest) return "none";
+    return "full";
   }
 
   /**
