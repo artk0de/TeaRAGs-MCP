@@ -82,8 +82,14 @@ export const trajectoryGitSchema = z.object({
 });
 
 export const codegraphSchema = z.object({
-  /** Master switch for the codegraph trajectory family (Slice 1: TS symbols). */
-  enabled: booleanFromEnvWithDefault(true),
+  /**
+   * Master switch for the codegraph trajectory family. Beta — disabled by
+   * default; opt in with `CODEGRAPH_ENABLED=true`. When off, no graph
+   * extraction runs, no codegraph signals are written to payloads, and the
+   * graph-query MCP tools (`get_callers`/`get_callees`/`find_cycles`) are
+   * not registered.
+   */
+  enabled: booleanFromEnvWithDefault(false),
   /**
    * Override for the DuckDB graph DB root directory. Per-collection
    * files go in `<rootDir>/codegraph/<collection>.duckdb`. When unset,

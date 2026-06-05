@@ -98,6 +98,14 @@ describe("parseAppConfigZod", () => {
       "DELETE_CONCURRENCY",
       "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS",
       "DELETE_FLUSH_TIMEOUT_MS",
+      // codegraph
+      "CODEGRAPH_ENABLED",
+      "CODEGRAPH_DB_PATH",
+      "CODEGRAPH_DB_MEMORY_LIMIT",
+      "CODEGRAPH_DB_THREADS",
+      "CODEGRAPH_EXCLUDE_TESTS",
+      "CODEGRAPH_CUSTOM_EXCLUDE",
+      "CODEGRAPH_AMBIGUOUS_RESOLVE_MODE",
     ];
     for (const key of keysToDelete) {
       delete process.env[key];
@@ -120,6 +128,27 @@ describe("parseAppConfigZod", () => {
       expect(core.httpPort).toBe(3000);
       expect(core.requestTimeoutMs).toBe(300000);
       expect(core.promptsConfigFile).toMatch(/prompts\.json$/);
+    });
+  });
+
+  describe("codegraph defaults", () => {
+    it("is disabled by default (beta — opt-in via CODEGRAPH_ENABLED)", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { codegraph } = parseAppConfigZod();
+
+      expect(codegraph.enabled).toBe(false);
+      expect(codegraph.excludeTests).toBe(true);
+      expect(codegraph.dbMemoryLimit).toBe("2GB");
+      expect(codegraph.dbThreads).toBe(2);
+      expect(codegraph.ambiguousResolveMode).toBe("strict");
+    });
+
+    it("CODEGRAPH_ENABLED=true opts in", async () => {
+      process.env.CODEGRAPH_ENABLED = "true";
+      const { parseAppConfigZod } = await freshImport();
+      const { codegraph } = parseAppConfigZod();
+
+      expect(codegraph.enabled).toBe(true);
     });
   });
 

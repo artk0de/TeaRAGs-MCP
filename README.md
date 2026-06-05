@@ -150,6 +150,29 @@ stability, ownership, risk, or pure relevance.
 - 🚀 **Built for monorepos** — AST-aware chunking across 10+ languages,
   incremental reindexing, parallel pipelines, millions of LOC tested
 
+## 🕸️ Codegraph Enrichments (beta)
+
+> ⚠️ **Beta.** Structural graph signals are still being calibrated across
+> languages and may change between releases.
+
+Beyond git history, tea-rags can enrich chunks with **structural graph
+signals** — call graph and import graph (fan-in, fan-out, instability, PageRank,
+transitive impact) — and expose graph-query MCP tools (`get_callers`,
+`get_callees`, `find_cycles`). This powers blast-radius and architectural-hub
+ranking.
+
+Codegraph is **disabled by default** (beta). Opt in with the `CODEGRAPH_ENABLED`
+environment variable, then re-index:
+
+```bash
+CODEGRAPH_ENABLED=true   # enable graph signals + tools
+CODEGRAPH_ENABLED=false  # default — graph extraction off
+```
+
+See the
+[Codegraph Enrichments docs](https://artk0de.github.io/TeaRAGs-MCP/usage/advanced/codegraph-enrichments)
+for signals, presets, supported languages, and configuration.
+
 ## Who It's For
 
 - **Developers in large monorepos** — where "find similar code" returns a dozen
