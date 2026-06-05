@@ -19,6 +19,7 @@ import type {
   CallRef,
   DispatchEdge,
   FileExtraction,
+  GraphEdges,
   NamedSymbol,
   SymbolResolutionTarget,
 } from "./codegraph.js";
@@ -302,6 +303,16 @@ export interface LanguageSymbolResolver {
    * when the call does not dispatch through a table.
    */
   resolveDispatch: (call: CallRef, ctx: CallContext) => DispatchEdge[];
+  /**
+   * Optional per-file edge resolution (tea-rags-mcp Ruby Zeitwerk +
+   * inheritance). When present, the codegraph provider delegates ALL file→file
+   * edge construction for this language to it — covering channels the generic
+   * import loop can't see (Ruby `zeitwerk:` constant refs, inheritance/mixins).
+   * Languages whose file graph is purely explicit imports omit it and the
+   * provider falls back to the generic synthesised-call loop. Mirrors
+   * `CallResolver.resolveFileEdges`.
+   */
+  resolveFileEdges?: (extraction: FileExtraction, ctx: CallContext) => GraphEdges["fileEdges"];
 }
 
 /**

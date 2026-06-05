@@ -395,6 +395,22 @@ export interface CallResolver {
    * provider guards with `?.` so other-language resolvers are unaffected.
    */
   resolveDispatch?: (call: CallRef, ctx: CallContext) => DispatchEdge[];
+  /**
+   * Optional per-file edge resolution (tea-rags-mcp Ruby Zeitwerk +
+   * inheritance). Returns file→file edges for `extraction`, owning the
+   * language's full set of file-coupling channels: explicit imports, any
+   * convention-based references (Ruby `zeitwerk:` constant refs), AND
+   * inheritance/mixin coupling (`classAncestors` / `classPrependedAncestors`)
+   * — all folded into one `fileEdges[]` so they share fanIn/fanOut.
+   *
+   * When a resolver omits this method the provider falls back to the generic
+   * synthesised-call import loop (`defaultImportFileEdges`). That fallback is
+   * correct for languages whose file graph comes purely from explicit imports
+   * (TypeScript/Python/Go/Java/Rust/JS); it CANNOT see the `zeitwerk:` channel
+   * (the prefix is the walker↔resolver contract, opaque to the provider) nor
+   * inheritance edges, which is exactly why Ruby implements this method.
+   */
+  resolveFileEdges?: (extraction: FileExtraction, ctx: CallContext) => GraphEdges["fileEdges"];
 }
 
 /**
