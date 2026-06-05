@@ -4,9 +4,7 @@ import { join } from "node:path";
 
 import { parseAppConfig } from "../../bootstrap/config/index.js";
 import { createAppContext } from "../../bootstrap/factory.js";
-import { resolveCollectionName } from "../../core/api/public/index.js";
-import { CollectionRegistry } from "../../core/api/public/index.js";
-import type { CollectionEntry } from "../../core/api/public/index.js";
+import { CollectionRegistry, resolveCollectionName, type CollectionEntry } from "../../core/api/public/index.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
 import { UpdateCheckService } from "../update-check/check-service.js";
 import { NpmRegistryClient } from "../update-check/registry-client.js";
@@ -128,6 +126,11 @@ export async function runPrime(input: { path?: string; project?: string }): Prom
     };
     process.stdout.write(formatPrime(data));
   } finally {
+    // Best-effort teardown (synchronous, fire-and-forget by design — see
+    // factory.ts). The guaranteed reap is process.exit(0) in the prime command
+    // handler: it terminates the process so the OS releases the DuckDB file
+    // lock and undici keep-alive sockets that previously kept prime alive and
+    // hung the SessionStart hook until timeout.
     ctx.cleanup?.();
   }
 }

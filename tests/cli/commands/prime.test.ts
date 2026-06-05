@@ -42,6 +42,7 @@ describe("primeCommand", () => {
   });
 
   it("forwards path and project to runPrime when the handler runs", async () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
     const { runPrime } = await import("../../../src/cli/prime/run-prime.js");
     const runPrimeMock = vi.mocked(runPrime);
     runPrimeMock.mockClear();
@@ -50,5 +51,33 @@ describe("primeCommand", () => {
 
     expect(runPrimeMock).toHaveBeenCalledOnce();
     expect(runPrimeMock).toHaveBeenCalledWith({ path: "/projects/demo", project: undefined });
+    exitSpy.mockRestore();
+  });
+
+  it("calls process.exit(0) after runPrime so the SessionStart hook process terminates (no leak)", async () => {
+    // Regression: without an explicit exit, a lingering libuv handle (DuckDB /
+    // undici keep-alive) kept the prime process alive and the hook hung until
+    // its timeout. run-prime's contract is "Always exits 0".
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    const { runPrime } = await import("../../../src/cli/prime/run-prime.js");
+    vi.mocked(runPrime).mockResolvedValueOnce(undefined);
+
+    await (primeCommand.handler as PrimeHandler)({ path: "/projects/demo" });
+
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    exitSpy.mockRestore();
+  });
+
+  it("still exits 0 when runPrime throws — the hook must never hang on a crash", async () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    const { runPrime } = await import("../../../src/cli/prime/run-prime.js");
+    vi.mocked(runPrime).mockRejectedValueOnce(new Error("boom"));
+
+    // process.exit is stubbed, so the rejection still surfaces in test; in prod
+    // the real exit(0) terminates first. We assert exit(0) ran via finally.
+    await expect((primeCommand.handler as PrimeHandler)({ path: "/x" })).rejects.toThrow("boom");
+
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    exitSpy.mockRestore();
   });
 });

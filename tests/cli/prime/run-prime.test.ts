@@ -85,6 +85,39 @@ describe("runPrime — happy path", () => {
     expect(writeMock.mock.calls[0][0]).toContain("# tea-rags prime — /some/project");
     expect(cleanupMock).toHaveBeenCalled();
   });
+
+  it("calls ctx.cleanup in the finally block for best-effort teardown", async () => {
+    // The guaranteed process reap lives in the prime command handler
+    // (process.exit(0)); cleanup here is best-effort, fire-and-forget by design.
+    vi.mocked(existsSync).mockReturnValue(true);
+    pingMock.mockResolvedValue(true);
+    const cleanupMock = vi.fn();
+
+    createAppContextMock.mockResolvedValue({
+      app: {
+        getIndexStatus: vi.fn().mockResolvedValue({
+          isIndexed: true,
+          status: "indexed",
+          collectionName: "c",
+          chunksCount: 100,
+        }),
+        getIndexMetrics: vi.fn().mockResolvedValue({
+          collection: "c",
+          totalChunks: 100,
+          totalFiles: 10,
+          distributions: { language: { typescript: 100 } },
+          signals: {},
+        }),
+        checkSchemaDrift: vi.fn().mockResolvedValue(null),
+      },
+      cleanup: cleanupMock,
+      updateService: stubUpdateService(),
+    });
+
+    await runPrime({ path: "/some/project" });
+
+    expect(cleanupMock).toHaveBeenCalledOnce();
+  });
 });
 
 describe("runPrime — failure paths", () => {
