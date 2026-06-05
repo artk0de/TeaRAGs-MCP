@@ -80,7 +80,9 @@ export class TracePathOps {
     const annotated = await this.deps.reranker.rerank(rerankInput, preset, "semantic_search", { reorder: false });
     const dangerById = new Map<string, { score: number; overlay?: RankingOverlay }>();
     for (const r of annotated) {
-      dangerById.set((r.payload?.symbolId as string) ?? "", { score: r.score, overlay: r.rankingOverlay });
+      const sid = r.payload?.symbolId as string | undefined;
+      if (!sid) continue;
+      dangerById.set(sid, { score: r.score, overlay: r.rankingOverlay });
     }
 
     // 5. Assemble TracedPath per enumerated path; sort the list by aggregateDanger desc.

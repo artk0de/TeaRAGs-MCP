@@ -65,4 +65,41 @@ describe("TracePathOps.tracePath", () => {
     await ops.tracePath({ collection: "c", from: "A", to: "C" });
     expect(reranker.rerank).toHaveBeenCalledWith(expect.anything(), "bugHunt", "semantic_search", expect.objectContaining({ reorder: false }));
   });
+
+  it("sorts the path list by aggregateDanger, most dangerous path first", async () => {
+    // Diamond: A->B->D and A->C->D. C is the riskiest node (0.9); B is mild (0.2).
+    const graphDb = {
+      getCalleeEdges: vi.fn(async (ids: string[]) => {
+        const g: Record<string, string[]> = { A: ["B", "C"], B: ["D"], C: ["D"], D: [] };
+        return new Map(ids.filter((i) => g[i]).map((i) => [i, g[i]]));
+      }),
+      close: vi.fn(async () => undefined),
+    };
+    const pool = { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) };
+    const danger: Record<string, number> = { A: 0.1, B: 0.2, C: 0.9, D: 0.1 };
+    const qdrant = {
+      scrollBySymbolIds: vi.fn(async (_c: string, ids: string[]) =>
+        ids.map((id) => ({ id, payload: { symbolId: id, relativePath: `${id}.ts`, startLine: 1, endLine: 9 } })),
+      ),
+    };
+    const reranker = {
+      rerank: vi.fn(async (results: { payload?: { symbolId?: string } }[]) =>
+        results.map((r) => ({ ...r, score: danger[r.payload?.symbolId ?? ""] ?? 0, rankingOverlay: { preset: "bugHunt" } })),
+      ),
+    };
+    const ops = new TracePathOps({
+      pool: pool as never,
+      qdrant: qdrant as never,
+      reranker: reranker as never,
+      collectionRegistry: {} as never,
+      resolveActiveCollection: async (n: string) => n,
+    });
+
+    const res = await ops.tracePath({ collection: "c", from: "A", to: "D" });
+    expect(res.paths).toHaveLength(2);
+    // The path through C (aggregateDanger 0.9) must come before the path through B (0.2).
+    expect(res.paths[0].steps.map((s) => s.symbolId)).toEqual(["A", "C", "D"]);
+    expect(res.paths[0].aggregateDanger).toBeCloseTo(0.9);
+    expect(res.paths[1].steps.map((s) => s.symbolId)).toEqual(["A", "B", "D"]);
+  });
 });

@@ -94,7 +94,12 @@ export interface TracePathRequest {
   from: SymbolId;
   /** End symbol of the path (callee end). */
   to: SymbolId;
-  /** Rerank preset that defines "danger" for the overlay. Default: bugHunt. */
+  /**
+   * Rerank preset that defines "danger" for the overlay. Default: bugHunt.
+   * Use a per-step danger preset (bugHunt / dangerous / hotspots / blastRadius);
+   * presets that group results (e.g. refactoring) are not meaningful here —
+   * danger is scored per path step, not per group.
+   */
   rerank?: string;
   /** Max hops on a path (edge count). Default 8. */
   maxDepth?: number;
