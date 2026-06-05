@@ -56,6 +56,11 @@ export type {
   GetCalleesResponse,
   GetCallersRequest,
   GetCallersResponse,
+  // trace_path
+  TracePathRequest,
+  PathStep,
+  TracedPath,
+  PathTraceResult,
 } from "./graph.js";
 
 export { stripInternalFields } from "./sanitize.js";
