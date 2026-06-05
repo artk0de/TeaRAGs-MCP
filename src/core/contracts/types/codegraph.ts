@@ -568,11 +568,12 @@ export interface GraphDbClient {
   getCallers: (symbolId: SymbolId) => Promise<CallerEdge[]>;
   getCallees: (symbolId: SymbolId) => Promise<CalleeEdge[]>;
   /**
-   * Batch adjacency: for each input source symbolId, the list of callee
-   * target symbolIds (file-only edges with a null target are excluded).
-   * Used by trace_path to expand the call frontier level-by-level without
-   * materialising the whole method graph. Sources with no callees are
-   * simply absent from the returned map.
+   * Batch adjacency: for each input source symbolId, the list of resolved
+   * callee target symbolIds. Method edges whose callee could not be resolved
+   * to a known symbol (null `target_symbol_id`) are excluded. Used by
+   * trace_path to expand the call frontier level-by-level without
+   * materialising the whole method graph. Sources with no resolved callees
+   * are simply absent from the returned map.
    */
   getCalleeEdges: (symbolIds: SymbolId[]) => Promise<Map<SymbolId, SymbolId[]>>;
   getCalledByCount: (symbolId: SymbolId) => Promise<number>;
