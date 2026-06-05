@@ -243,6 +243,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("getCallees", { symbolId })) as CalleeEdge[];
   }
 
+  async getCalleeEdges(_symbolIds: SymbolId[]): Promise<Map<SymbolId, SymbolId[]>> {
+    throw new Error("getCalleeEdges: implemented in Task 4 (daemon proxy)");
+  }
+
   async getCalledByCount(symbolId: SymbolId): Promise<number> {
     return (await this.call("getCalledByCount", { symbolId })) as number;
   }
