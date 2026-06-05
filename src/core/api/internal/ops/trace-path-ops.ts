@@ -72,7 +72,12 @@ export class TracePathOps {
 
     // 3. Hydrate every step symbol from Qdrant (one scroll for the whole union).
     const unique = [...new Set(paths.flat())];
-    const chunks = await this.deps.qdrant.scrollBySymbolIds(active, unique);
+    // Hydrate every unique step symbol — pass the exact count as the limit so a
+    // wide trace (many paths * depth) can never be silently truncated by the
+    // scroll's default cap.
+    const chunks = await this.deps.qdrant.scrollBySymbolIds(active, unique, unique.length);
+    // Index hydrated chunks by symbolId. A symbol spanning multiple chunks keeps
+    // the last one — a path step is a symbol-level overview, not chunk-precise.
     const byId = new Map(chunks.map((c) => [c.payload.symbolId as string, c]));
 
     // 4. Annotate-only rerank over the hydrated chunks -> danger score + overlay.
