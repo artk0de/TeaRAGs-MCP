@@ -301,15 +301,10 @@ describe("CodegraphDaemonServer.handle", () => {
         },
       },
     });
-    await server.handle({
-      id: 2,
-      op: "upsertFile",
-      params: { collection: c, node: { relPath: "b.ts", language: "typescript" }, edges: { fileEdges: [], methodEdges: [] } },
-    });
-    const res = await server.handle({ id: 3, op: "getCalleeEdges", params: { collection: c, symbolIds: ["A#run"] } });
+    const res = await server.handle({ id: 2, op: "getCalleeEdges", params: { collection: c, symbolIds: ["A#run"] } });
     expect(res.ok).toBe(true);
     // Map serialises as [key, value][] entries over the wire; targets sorted by SQL.
-    expect(res.ok && (res as { result: unknown }).result).toEqual([["A#run", ["B#help", "C#aid"]]]);
+    expect((res as { result: [string, string[]][] }).result).toEqual([["A#run", ["B#help", "C#aid"]]]);
     await pool.closeAll();
   });
 
