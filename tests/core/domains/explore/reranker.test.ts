@@ -2584,3 +2584,39 @@ describe("collectScopeSiblings — multi-trajectory sibling lookup", () => {
     expect(out.fanOut).toBe(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Annotate-only mode (reorder: false)
+// ---------------------------------------------------------------------------
+
+describe("rerank annotate-only mode (reorder: false)", () => {
+  const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
+
+  // Two equal-score results ordered low-danger-first so the default sort WOULD
+  // reorder them (B has high bugFixRate). commitCount=20 keeps bugFix above the
+  // confidence-dampening threshold so the ordering is deterministic.
+  const makeDangerResults = (): RerankableResult[] => [
+    {
+      score: 0.1,
+      payload: { relativePath: "a.ts", startLine: 1, endLine: 50, git: { file: { commitCount: 20, bugFixRate: 0 } } },
+    },
+    {
+      score: 0.1,
+      payload: { relativePath: "b.ts", startLine: 1, endLine: 50, git: { file: { commitCount: 20, bugFixRate: 90 } } },
+    },
+  ];
+
+  it("attaches overlays but preserves input order", async () => {
+    const annotated = await reranker.rerank(makeDangerResults(), "bugHunt", "semantic_search", { reorder: false });
+    // Order identical to input (a.ts then b.ts), despite b.ts being more dangerous.
+    expect(annotated.map((r) => r.payload?.relativePath)).toEqual(["a.ts", "b.ts"]);
+    expect(annotated[0].rankingOverlay).toBeDefined();
+    expect(annotated[1].rankingOverlay).toBeDefined();
+  });
+
+  it("still reorders by default (reorder omitted)", async () => {
+    const sorted = await reranker.rerank(makeDangerResults(), "bugHunt", "semantic_search");
+    // danger-desc: high bugFixRate (b.ts) sorts above low (a.ts).
+    expect(sorted.map((r) => r.payload?.relativePath)).toEqual(["b.ts", "a.ts"]);
+  });
+});

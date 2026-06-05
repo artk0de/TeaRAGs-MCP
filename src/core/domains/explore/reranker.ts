@@ -37,6 +37,13 @@ export type { RerankableResult, RerankMode } from "../../contracts/types/reranke
 export interface RerankOptions {
   signalLevel?: SignalLevel;
   query?: string;
+  /**
+   * When false, overlays are still computed and attached but the final
+   * score-descending sort is skipped — the returned array preserves input
+   * order. Default true (sort as before). Used by trace_path to annotate a
+   * path with danger overlays without disturbing execution order.
+   */
+  reorder?: boolean;
 }
 
 /**
@@ -144,8 +151,8 @@ export class Reranker {
     await this.ensureNeededPercentiles();
     const bounds = this.computeAdaptiveBounds(results);
     const scored = this.scoreResults(results, bounds, resolved, options?.query);
-    const sorted = scored.sort((a, b) => b.score - a.score);
-    return resolved.groupBy ? groupByTop(sorted, resolved.groupBy) : sorted;
+    const ordered = options?.reorder === false ? scored : scored.sort((a, b) => b.score - a.score);
+    return resolved.groupBy ? groupByTop(ordered, resolved.groupBy) : ordered;
   }
 
   /**
