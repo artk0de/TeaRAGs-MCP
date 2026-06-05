@@ -1,6 +1,6 @@
 /**
  * Codegraph MCP tools — slice 1: get_callers, get_callees.
- * Slice 2 adds: find_cycles.
+ * Slice 2 adds: find_cycles. Slice 6 adds: trace_path.
  *
  * All tools read directly from the codegraph DuckDB via the App's
  * GraphFacade (wired in createApp()).
@@ -86,7 +86,13 @@ const TracePathInputShape = {
     .string()
     .optional()
     .describe("Rerank preset defining 'danger' for the step overlay (default bugHunt)"),
-  maxDepth: z.number().int().positive().max(20).optional().describe("Max hops on a path (default 8)"),
+  maxDepth: z
+    .number()
+    .int()
+    .positive()
+    .max(20)
+    .optional()
+    .describe("Max hops on a path (default 8). Capped at 20 — deep traces on dense graphs can be expensive; prefer the default."),
   maxPaths: z.number().int().positive().max(50).optional().describe("Max paths returned, danger-sorted (default 10)"),
 };
 
