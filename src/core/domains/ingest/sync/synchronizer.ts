@@ -1,3 +1,7 @@
+// Copyright (c) 2025 Martin Halder <halderm@arkadia-labs.io>
+// Copyright (c) 2026 Arthur Korochansky
+// SPDX-License-Identifier: MIT
+
 /**
  * FileSynchronizer - Optimized incremental updates using Merkle trees + mtime caching
  * PERFORMANCE: ~40x faster for incremental updates (40s → <1s)

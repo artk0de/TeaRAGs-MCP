@@ -1,25 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * Provider Verification Script
+ * Provider verification smoke check.
  *
- * This script verifies that all embedding providers can be instantiated
- * correctly and that the factory pattern works as expected.
+ * Exercises EmbeddingProviderFactory against the compiled build to confirm the
+ * factory rejects unknown providers, enforces API-key requirements, and applies
+ * the expected default model/dimensions for each supported provider. Run via
+ * `npm run test:providers` after `npm run build`.
  */
 import { EmbeddingProviderFactory } from "../build/core/adapters/embeddings/factory.js";
 
-console.log("=".repeat(60));
-console.log("QDRANT MCP SERVER - PROVIDER VERIFICATION");
-console.log("=".repeat(60));
-console.log();
-
-const results = {
-  passed: 0,
-  failed: 0,
-  tests: [],
-};
-
-const defaultTune = {
+const BASE_TUNE = {
   concurrency: 1,
   batchSize: 1024,
   batchTimeoutMs: 2000,
@@ -27,184 +18,79 @@ const defaultTune = {
   retryDelayMs: 1000,
 };
 
-function makeConfig(overrides) {
-  return {
-    provider: "ollama",
-    device: "auto",
-    ollamaLegacyApi: false,
-    ollamaNumGpu: 999,
-    tune: defaultTune,
-    ...overrides,
-  };
+/** Build a provider config with sensible defaults, overlaid by `overrides`. */
+const config = (overrides) => ({
+  provider: "ollama",
+  device: "auto",
+  ollamaLegacyApi: false,
+  ollamaNumGpu: 999,
+  tune: BASE_TUNE,
+  ...overrides,
+});
+
+/** Assert that creating a provider with `cfg` throws an error matching `pattern`. */
+const expectRejected = (cfg, pattern) => {
+  let created;
+  try {
+    created = EmbeddingProviderFactory.create(cfg);
+  } catch (err) {
+    if (!pattern.test(err.message)) {
+      throw new Error(`rejected, but message did not match ${pattern}: ${err.message}`);
+    }
+    return;
+  }
+  throw new Error(`expected rejection but factory returned a provider: ${created?.getModel?.()}`);
+};
+
+/** Assert that `cfg` produces a provider with the given model and dimensions. */
+const expectProvider = (cfg, { model, dimensions }) => {
+  const provider = EmbeddingProviderFactory.create(cfg);
+  if (!provider) throw new Error("factory returned a falsy provider");
+  const actualModel = provider.getModel();
+  if (actualModel !== model) throw new Error(`model: expected '${model}', got '${actualModel}'`);
+  const actualDims = provider.getDimensions();
+  if (actualDims !== dimensions) throw new Error(`dimensions: expected ${dimensions}, got ${actualDims}`);
+};
+
+const MISSING_KEY = /is not set|API key is required/;
+
+const checks = [
+  ["factory rejects unknown provider", () => expectRejected(config({ provider: "unknown-provider" }), /Invalid value|Unknown embedding provider/)],
+  ["openai requires an API key", () => expectRejected(config({ provider: "openai" }), MISSING_KEY)],
+  ["cohere requires an API key", () => expectRejected(config({ provider: "cohere" }), MISSING_KEY)],
+  ["voyage requires an API key", () => expectRejected(config({ provider: "voyage" }), MISSING_KEY)],
+  ["ollama needs no API key, applies code-embedding defaults", () =>
+    expectProvider(config({ provider: "ollama" }), { model: "unclemusclez/jina-embeddings-v2-base-code:latest", dimensions: 768 })],
+  ["openai applies its default model/dimensions", () =>
+    expectProvider(config({ provider: "openai", openaiApiKey: "test-key-123" }), { model: "text-embedding-3-small", dimensions: 1536 })],
+  ["cohere applies its default model/dimensions", () =>
+    expectProvider(config({ provider: "cohere", cohereApiKey: "test-key-123" }), { model: "embed-english-v3.0", dimensions: 1024 })],
+  ["voyage applies its default model/dimensions", () =>
+    expectProvider(config({ provider: "voyage", voyageApiKey: "test-key-123" }), { model: "voyage-2", dimensions: 1024 })],
+  ["a custom model overrides the default and its dimensions", () =>
+    expectProvider(config({ provider: "openai", openaiApiKey: "test-key-123", model: "text-embedding-3-large" }), { model: "text-embedding-3-large", dimensions: 3072 })],
+  ["an explicit dimensions value overrides the model default", () =>
+    expectProvider(config({ provider: "openai", openaiApiKey: "test-key-123", dimensions: 512 }), { model: "text-embedding-3-small", dimensions: 512 })],
+];
+
+const failures = [];
+for (const [name, run] of checks) {
+  try {
+    run();
+    console.log(`  ok   ${name}`);
+  } catch (err) {
+    failures.push({ name, message: err.message });
+    console.log(`  FAIL ${name}\n         ${err.message}`);
+  }
 }
 
-function test(name, fn) {
-  try {
-    fn();
-    console.log(`✅ PASS: ${name}`);
-    results.passed++;
-    results.tests.push({ name, status: "PASS" });
-  } catch (error) {
-    console.log(`❌ FAIL: ${name}`);
-    console.log(`   Error: ${error.message}`);
-    results.failed++;
-    results.tests.push({ name, status: "FAIL", error: error.message });
-  }
-}
+const total = checks.length;
+const passed = total - failures.length;
+console.log(`\n${passed}/${total} provider checks passed`);
 
-console.log("Testing Provider Factory...\n");
-
-// Test 1: Factory should reject unknown providers
-test("Factory rejects unknown provider", () => {
-  try {
-    EmbeddingProviderFactory.create(makeConfig({ provider: "unknown-provider" }));
-    throw new Error("Should have thrown error for unknown provider");
-  } catch (error) {
-    if (!error.message.includes("Invalid value") && !error.message.includes("Unknown embedding provider")) {
-      throw error;
-    }
-  }
-});
-
-// Test 2: OpenAI provider requires API key
-test("OpenAI provider requires API key", () => {
-  try {
-    EmbeddingProviderFactory.create(makeConfig({ provider: "openai" }));
-    throw new Error("Should have thrown error for missing API key");
-  } catch (error) {
-    if (!error.message.includes("is not set") && !error.message.includes("API key is required")) {
-      throw error;
-    }
-  }
-});
-
-// Test 3: Cohere provider requires API key
-test("Cohere provider requires API key", () => {
-  try {
-    EmbeddingProviderFactory.create(makeConfig({ provider: "cohere" }));
-    throw new Error("Should have thrown error for missing API key");
-  } catch (error) {
-    if (!error.message.includes("is not set") && !error.message.includes("API key is required")) {
-      throw error;
-    }
-  }
-});
-
-// Test 4: Voyage AI provider requires API key
-test("Voyage AI provider requires API key", () => {
-  try {
-    EmbeddingProviderFactory.create(makeConfig({ provider: "voyage" }));
-    throw new Error("Should have thrown error for missing API key");
-  } catch (error) {
-    if (!error.message.includes("is not set") && !error.message.includes("API key is required")) {
-      throw error;
-    }
-  }
-});
-
-// Test 5: Ollama provider does NOT require API key
-test("Ollama provider does not require API key", () => {
-  const provider = EmbeddingProviderFactory.create(makeConfig({ provider: "ollama" }));
-  if (!provider) {
-    throw new Error("Failed to create Ollama provider");
-  }
-  if (provider.getModel() !== "unclemusclez/jina-embeddings-v2-base-code:latest") {
-    throw new Error(
-      `Expected default model 'unclemusclez/jina-embeddings-v2-base-code:latest', got '${provider.getModel()}'`,
-    );
-  }
-  if (provider.getDimensions() !== 768) {
-    throw new Error(`Expected default dimensions 768, got ${provider.getDimensions()}`);
-  }
-});
-
-// Test 6: OpenAI provider with valid config
-test("OpenAI provider instantiates with API key", () => {
-  const provider = EmbeddingProviderFactory.create(makeConfig({ provider: "openai", openaiApiKey: "test-key-123" }));
-  if (!provider) {
-    throw new Error("Failed to create OpenAI provider");
-  }
-  if (provider.getModel() !== "text-embedding-3-small") {
-    throw new Error(`Expected default model 'text-embedding-3-small', got '${provider.getModel()}'`);
-  }
-  if (provider.getDimensions() !== 1536) {
-    throw new Error(`Expected default dimensions 1536, got ${provider.getDimensions()}`);
-  }
-});
-
-// Test 7: Cohere provider with valid config
-test("Cohere provider instantiates with API key", () => {
-  const provider = EmbeddingProviderFactory.create(makeConfig({ provider: "cohere", cohereApiKey: "test-key-123" }));
-  if (!provider) {
-    throw new Error("Failed to create Cohere provider");
-  }
-  if (provider.getModel() !== "embed-english-v3.0") {
-    throw new Error(`Expected default model 'embed-english-v3.0', got '${provider.getModel()}'`);
-  }
-  if (provider.getDimensions() !== 1024) {
-    throw new Error(`Expected default dimensions 1024, got ${provider.getDimensions()}`);
-  }
-});
-
-// Test 8: Voyage AI provider with valid config
-test("Voyage AI provider instantiates with API key", () => {
-  const provider = EmbeddingProviderFactory.create(makeConfig({ provider: "voyage", voyageApiKey: "test-key-123" }));
-  if (!provider) {
-    throw new Error("Failed to create Voyage AI provider");
-  }
-  if (provider.getModel() !== "voyage-2") {
-    throw new Error(`Expected default model 'voyage-2', got '${provider.getModel()}'`);
-  }
-  if (provider.getDimensions() !== 1024) {
-    throw new Error(`Expected default dimensions 1024, got ${provider.getDimensions()}`);
-  }
-});
-
-// Test 9: Custom model configuration
-test("Custom model configuration works", () => {
-  const provider = EmbeddingProviderFactory.create(
-    makeConfig({ provider: "openai", openaiApiKey: "test-key-123", model: "text-embedding-3-large" }),
-  );
-  if (provider.getModel() !== "text-embedding-3-large") {
-    throw new Error(`Expected model 'text-embedding-3-large', got '${provider.getModel()}'`);
-  }
-  if (provider.getDimensions() !== 3072) {
-    throw new Error(`Expected dimensions 3072 for large model, got ${provider.getDimensions()}`);
-  }
-});
-
-// Test 10: Custom dimensions override
-test("Custom dimensions override works", () => {
-  const provider = EmbeddingProviderFactory.create(
-    makeConfig({ provider: "openai", openaiApiKey: "test-key-123", dimensions: 512 }),
-  );
-  if (provider.getDimensions() !== 512) {
-    throw new Error(`Expected custom dimensions 512, got ${provider.getDimensions()}`);
-  }
-});
-
-console.log();
-console.log("=".repeat(60));
-console.log("RESULTS");
-console.log("=".repeat(60));
-console.log(`Total Tests: ${results.passed + results.failed}`);
-console.log(`Passed: ${results.passed} ✅`);
-console.log(`Failed: ${results.failed} ${results.failed > 0 ? "❌" : ""}`);
-console.log(`Success Rate: ${Math.round((results.passed / (results.passed + results.failed)) * 100)}%`);
-console.log("=".repeat(60));
-
-if (results.failed > 0) {
-  console.log();
-  console.log("Failed Tests:");
-  results.tests
-    .filter((t) => t.status === "FAIL")
-    .forEach((t) => {
-      console.log(`  - ${t.name}: ${t.error}`);
-    });
+if (failures.length > 0) {
+  console.log("\nFailures:");
+  for (const f of failures) console.log(`  - ${f.name}: ${f.message}`);
   process.exit(1);
-} else {
-  console.log();
-  console.log("✅ All provider instantiation tests passed!");
-  console.log("Multi-provider architecture is working correctly.");
-  process.exit(0);
 }
+process.exit(0);
