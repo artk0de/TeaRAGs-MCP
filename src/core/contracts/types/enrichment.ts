@@ -18,6 +18,8 @@ export interface EnrichmentLevelHealth {
   durationMs?: number;
   matchedFiles?: number;
   missedFiles?: number;
+  /** Files intentionally skipped by per-file enrichment policy (not a failure). */
+  ignoredFiles?: number;
 }
 
 /** API-facing health per enrichment provider. */

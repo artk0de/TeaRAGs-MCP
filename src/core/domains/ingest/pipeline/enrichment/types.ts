@@ -61,6 +61,8 @@ export interface EnrichmentLevelMarker {
   durationMs?: number;
   matchedFiles?: number;
   missedFiles?: number;
+  /** Files intentionally skipped by per-file enrichment policy (not a failure). */
+  ignoredFiles?: number;
   unenrichedChunks: number;
   /**
    * Propagated error message when `status === "failed"`. Surfaced to
@@ -105,6 +107,8 @@ export interface FileFinalInput {
   unenrichedChunks: number;
   matchedFiles: number;
   missedFiles: number;
+  /** Files intentionally skipped by per-file enrichment policy (not a failure). */
+  ignoredFiles?: number;
 }
 
 /** Input for EnrichmentMarkerStore.markChunkFinal. */

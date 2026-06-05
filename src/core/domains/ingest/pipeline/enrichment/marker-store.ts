@@ -71,6 +71,7 @@ export class EnrichmentMarkerStore {
           unenrichedChunks: input.unenrichedChunks,
           matchedFiles: input.matchedFiles,
           missedFiles: input.missedFiles,
+          ignoredFiles: input.ignoredFiles,
         },
       },
     ]);

@@ -161,6 +161,7 @@ function pickMeta(level: LevelRecord): Record<string, unknown> {
   if (level.durationMs !== undefined) base.durationMs = level.durationMs;
   if (level.matchedFiles !== undefined) base.matchedFiles = level.matchedFiles;
   if (level.missedFiles !== undefined) base.missedFiles = level.missedFiles;
+  if (level.ignoredFiles !== undefined) base.ignoredFiles = level.ignoredFiles;
   return base;
 }
 

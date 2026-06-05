@@ -107,6 +107,38 @@ describe("EnrichmentApplier", () => {
       expect(applier.getMissedFileChunks().get("src/missing.ts")).toEqual([{ chunkId: "chunk-1", endLine: 50 }]);
     });
 
+    it("counts policy-skipped files as ignored, not missed, and writes no stamp", async () => {
+      await applier.applyFileSignals(
+        "test-collection",
+        "git",
+        new Map(), // no overlay — schema.rb was skipped by policy
+        "/repo",
+        [
+          {
+            chunkId: "g1",
+            chunk: { metadata: { filePath: "/repo/db/schema.rb" }, startLine: 1, endLine: 16 },
+          } as any,
+          {
+            chunkId: "m1",
+            chunk: { metadata: { filePath: "/repo/src/missing.ts" }, startLine: 1, endLine: 50 },
+          } as any,
+        ],
+        undefined,
+        "2026-06-05T00:00:00Z", // enrichedAt set — missed files would normally be stamped
+        (rel) => rel === "db/schema.rb", // policy: schema.rb is ignored
+      );
+
+      // schema.rb → ignored (not missed, no chunk refs tracked for backfill).
+      expect(applier.ignoredFiles).toBe(1);
+      expect(applier.missedFiles).toBe(1); // only the genuine miss
+      expect(applier.getMissedFileChunks().has("db/schema.rb")).toBe(false);
+      expect(applier.getMissedFileChunks().has("src/missing.ts")).toBe(true);
+      // No stamp written for the ignored file → it carries no git payload.
+      const allOps = (mockQdrant.batchSetPayload as any).mock.calls.flatMap((c: any[]) => c[1] ?? []);
+      const stampedPoints = allOps.flatMap((op: any) => op.points ?? []);
+      expect(stampedPoints).not.toContain("g1");
+    });
+
     it("recovers a transient batchSetPayload failure via retry without throwing", async () => {
       mockQdrant.batchSetPayload.mockRejectedValueOnce(new Error("qdrant unavailable"));
 

@@ -103,6 +103,7 @@ export class CompletionRunner {
         unenrichedChunks: fileUnenriched,
         matchedFiles: applier.matchedFiles,
         missedFiles: applier.missedFiles,
+        ignoredFiles: applier.ignoredFiles,
       });
     }
 

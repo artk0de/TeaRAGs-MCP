@@ -188,6 +188,9 @@ export class FilePhase {
             items,
             ctx.provider.fileSignalTransform,
             this.runStartedAt,
+            // A file the provider declined entirely ("none") is intentionally
+            // unenriched — counted as ignored, not missed.
+            (rel) => enrichmentScope(ctx.provider, rel) === "none",
           );
           state.streamingApplies++;
           pipelineLog.enrichmentPhase("STREAMING_APPLY", {
