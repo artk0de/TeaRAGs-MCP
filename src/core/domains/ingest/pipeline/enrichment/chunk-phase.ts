@@ -21,6 +21,7 @@ import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
+import { enrichmentScope } from "./policy.js";
 import type { ProviderContext } from "./types.js";
 
 const CHUNK_ENRICHMENT_CONCURRENCY = 10;
@@ -377,6 +378,10 @@ export class ChunkPhase {
     chunkMap: Map<string, ChunkLookupEntry[]>,
     useSemaphore: boolean,
   ): Promise<boolean> {
+    // Per-file policy: only "full"-scope files get the chunk-churn walk. Applied
+    // here (the single chokepoint for streaming + post-flush) and BEFORE the
+    // streaming-enriched marking below, so dropped files are never marked.
+    chunkMap = this.filterByEnrichmentPolicy(chunkMap, ctx.provider, root);
     if (chunkMap.size === 0) return Promise.resolve(true);
 
     if (useSemaphore) {
@@ -465,6 +470,24 @@ export class ChunkPhase {
     for (const [filePath, entries] of map) {
       const rel = filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath;
       if (!ignoreFilter.ignores(rel)) out.set(filePath, entries);
+    }
+    return out;
+  }
+
+  /**
+   * Drop files whose provider scope is not "full" — both "none" and
+   * "file-only" skip the expensive chunk-churn walk. Mirrors filterByIgnore
+   * but keys off per-file enrichment policy instead of the ignore filter.
+   */
+  private filterByEnrichmentPolicy(
+    map: Map<string, ChunkLookupEntry[]>,
+    provider: ProviderContext["provider"],
+    root: string,
+  ): Map<string, ChunkLookupEntry[]> {
+    const out = new Map<string, ChunkLookupEntry[]>();
+    for (const [filePath, entries] of map) {
+      const rel = filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath;
+      if (enrichmentScope(provider, rel) === "full") out.set(filePath, entries);
     }
     return out;
   }

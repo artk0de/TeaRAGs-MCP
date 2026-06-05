@@ -451,4 +451,31 @@ describe("ChunkPhase", () => {
 
     expect(callbackFiredWhileStreamPending).toBe(false);
   });
+
+  it("skips chunk-churn for scope=none and scope=file-only files", async () => {
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+    const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
+    const ctx = buildCtx({
+      buildChunkSignals,
+      shouldEnrich: (f: { classification: { isGenerated: boolean; isDocumentation: boolean } }) =>
+        f.classification.isGenerated ? "none" : f.classification.isDocumentation ? "file-only" : "full",
+    });
+
+    const threeFiles = [
+      { chunkId: "g1", chunk: { metadata: { filePath: "/repo/db/schema.rb" }, startLine: 1, endLine: 10 } } as any,
+      { chunkId: "d1", chunk: { metadata: { filePath: "/repo/README.md" }, startLine: 1, endLine: 10 } } as any,
+      { chunkId: "s1", chunk: { metadata: { filePath: "/repo/app/models/user.rb" }, startLine: 1, endLine: 10 } } as any,
+    ];
+
+    const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+    phase.onBatch("coll", "/repo", threeFiles);
+    await phase.drain();
+
+    const enrichedRel = new Set(buildChunkSignals.mock.calls.flatMap((c) => [...(c[1] as Map<string, unknown>).keys()]));
+    expect(enrichedRel.has("app/models/user.rb")).toBe(true);
+    expect(enrichedRel.has("db/schema.rb")).toBe(false);
+    expect(enrichedRel.has("README.md")).toBe(false);
+  });
 });
