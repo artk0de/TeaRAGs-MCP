@@ -1,3 +1,7 @@
+// Copyright (c) 2025 Martin Halder <halderm@arkadia-labs.io>
+// Copyright (c) 2026 Arthur Korochansky
+// SPDX-License-Identifier: MIT
+
 /**
  * MerkleTree - Efficient change detection using Merkle trees
  * Enables incremental updates by comparing file hashes

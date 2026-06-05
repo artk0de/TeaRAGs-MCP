@@ -1,3 +1,7 @@
+// Copyright (c) 2025 Martin Halder <halderm@arkadia-labs.io>
+// Copyright (c) 2026 Arthur Korochansky
+// SPDX-License-Identifier: MIT
+
 /**
  * FileScanner - Discovers code files in a directory while respecting ignore patterns
  */
