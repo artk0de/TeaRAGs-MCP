@@ -110,6 +110,12 @@ export class CodegraphDaemonServer {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getCallees(p.symbolId as SymbolId);
       }
+      case "getCalleeEdges": {
+        const { graphDb } = await this.pool.acquire(collection);
+        // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
+        const adj = await graphDb.getCalleeEdges(p.symbolIds as SymbolId[]);
+        return [...adj.entries()];
+      }
       case "getCalledByCount": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getCalledByCount(p.symbolId as SymbolId);

@@ -280,6 +280,39 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 
+  it("dispatches getCalleeEdges and serialises the Map as entries", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_callee_edges_v1";
+    // a.ts: A#run calls B#help (b.ts) AND C#aid (c.ts) — A has two callee edges.
+    // The Task-3 SQL ORDERs BY source_symbol_id, target_symbol_id, so for source
+    // "A#run" the targets come back sorted: B#help < C#aid.
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: {
+          fileEdges: [],
+          methodEdges: [
+            { sourceSymbolId: "A#run", targetSymbolId: "B#help", targetRelPath: "b.ts", callExpression: "this.b.help()" },
+            { sourceSymbolId: "A#run", targetSymbolId: "C#aid", targetRelPath: "c.ts", callExpression: "this.c.aid()" },
+          ],
+        },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertFile",
+      params: { collection: c, node: { relPath: "b.ts", language: "typescript" }, edges: { fileEdges: [], methodEdges: [] } },
+    });
+    const res = await server.handle({ id: 3, op: "getCalleeEdges", params: { collection: c, symbolIds: ["A#run"] } });
+    expect(res.ok).toBe(true);
+    // Map serialises as [key, value][] entries over the wire; targets sorted by SQL.
+    expect(res.ok && (res as { result: unknown }).result).toEqual([["A#run", ["B#help", "C#aid"]]]);
+    await pool.closeAll();
+  });
+
   it("finalizeReindex deletes the old version DB file, new version readable", async () => {
     const { server, pool } = makeServer();
     await server.handle({
