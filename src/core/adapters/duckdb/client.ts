@@ -18,6 +18,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { DuckDBInstance, type DuckDBConnection, type DuckDBValue } from "@duckdb/node-api";
+import picomatch from "picomatch";
 
 import type {
   CalleeEdge,
@@ -429,7 +430,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     return Number(rows[0]?.n ?? 0);
   }
 
-  async findCycles(scope: CycleScope): Promise<CycleEntry[]> {
+  async findCycles(scope: CycleScope, pathPattern?: string): Promise<CycleEntry[]> {
     const rows = await this.queryAll<{ cycle_id: number | bigint; member: string; position: number | bigint }>(
       "SELECT cycle_id, member, position FROM cg_symbols_cycles WHERE scope = ? ORDER BY cycle_id, position",
       [scope],
@@ -441,7 +442,58 @@ export class DuckDbGraphClient implements GraphDbClient {
       if (arr) arr.push(row.member);
       else grouped.set(cycleId, [row.member]);
     }
-    return [...grouped.entries()].map(([cycleId, members]) => ({ cycleId, scope, members }));
+    const entries = [...grouped.entries()].map(([cycleId, members]) => ({ cycleId, scope, members }));
+    if (!pathPattern) return entries;
+    return this.filterCyclesByPath(entries, scope, pathPattern);
+  }
+
+  /**
+   * Keep a cycle iff AT LEAST ONE of its members resolves to a file path
+   * matching `pathPattern`. The "at least one" semantics is deliberate:
+   * cycles that cross a scope boundary (one member inside, one outside)
+   * are usually the most interesting and must NOT be silently dropped by
+   * a stricter "all members match" rule.
+   *
+   * File scope: a member IS the rel_path → match directly. Method scope:
+   * a member is a symbol id; its file path is resolved from the method
+   * edge table (source/target rel_path), since `cg_symbols` is only
+   * populated by `upsertSymbols`, not by every `upsertFile`.
+   */
+  private async filterCyclesByPath(
+    entries: CycleEntry[],
+    scope: CycleScope,
+    pathPattern: string,
+  ): Promise<CycleEntry[]> {
+    const isMatch = picomatch(pathPattern);
+    if (scope === "file") {
+      return entries.filter((e) => e.members.some((member) => isMatch(member)));
+    }
+    const symbolToPaths = await this.resolveMethodSymbolPaths(entries.flatMap((e) => e.members));
+    return entries.filter((e) => e.members.some((member) => (symbolToPaths.get(member) ?? []).some((p) => isMatch(p))));
+  }
+
+  /**
+   * Map each given method symbol id to the file path(s) it appears in,
+   * read from the method-edge table. Bounded by the cycle membership set
+   * via an `IN (…)` filter so the scan never widens to the whole graph.
+   */
+  private async resolveMethodSymbolPaths(symbolIds: readonly string[]): Promise<Map<string, string[]>> {
+    const map = new Map<string, string[]>();
+    const unique = [...new Set(symbolIds)];
+    if (unique.length === 0) return map;
+    const placeholders = unique.map(() => "?").join(", ");
+    const rows = await this.queryAll<{ sym: string; path: string }>(
+      `SELECT source_symbol_id AS sym, source_rel_path AS path FROM cg_symbols_edges_method WHERE source_symbol_id IN (${placeholders})
+       UNION
+       SELECT target_symbol_id AS sym, target_rel_path AS path FROM cg_symbols_edges_method WHERE target_symbol_id IN (${placeholders})`,
+      [...unique, ...unique],
+    );
+    for (const row of rows) {
+      const paths = map.get(row.sym);
+      if (paths) paths.push(row.path);
+      else map.set(row.sym, [row.path]);
+    }
+    return map;
   }
 
   /**

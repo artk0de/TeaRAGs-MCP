@@ -56,4 +56,25 @@ describe("registerCodegraphTools — provider gating", () => {
     expect(app.hasProvider).toHaveBeenCalledTimes(1);
     expect(app.hasProvider).toHaveBeenCalledWith("codegraph.symbols");
   });
+
+  it("find_cycles handler forwards the pathPattern scope filter into app.findCycles", async () => {
+    const register = vi.fn();
+    const app = makeApp(true);
+    (app.findCycles as ReturnType<typeof vi.fn>).mockResolvedValue({ cycles: [] });
+
+    registerCodegraphTools(makeServer(), { app, register });
+
+    // register(server, name, config, handler) — pull the find_cycles handler.
+    const call = register.mock.calls.find((c) => c[1] === "find_cycles");
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<unknown>;
+    await handler({ path: "/proj", scope: "file", pathPattern: "**/domains/ingest/**" });
+
+    expect(app.findCycles).toHaveBeenCalledWith({
+      project: undefined,
+      collection: undefined,
+      path: "/proj",
+      scope: "file",
+      pathPattern: "**/domains/ingest/**",
+    });
+  });
 });

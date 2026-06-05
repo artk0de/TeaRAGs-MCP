@@ -263,8 +263,8 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("getTransitiveImpact", { relPath, maxDepth })) as number;
   }
 
-  async findCycles(scope: CycleScope): Promise<CycleEntry[]> {
-    return (await this.call("findCycles", { scope })) as CycleEntry[];
+  async findCycles(scope: CycleScope, pathPattern?: string): Promise<CycleEntry[]> {
+    return (await this.call("findCycles", { scope, pathPattern })) as CycleEntry[];
   }
 
   async listAdjacency(scope: CycleScope): Promise<Map<string, string[]>> {

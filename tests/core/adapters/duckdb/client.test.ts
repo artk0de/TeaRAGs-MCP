@@ -425,6 +425,98 @@ describe("DuckDbGraphClient", () => {
     });
   });
 
+  describe("findCycles pathPattern filter", () => {
+    // Build three independent file-import cycles in distinct scopes:
+    //   inside    — both members under domains/ingest/
+    //   outside   — both members under domains/explore/
+    //   crossing  — one member in ingest/, one in explore/
+    async function seedThreeFileCycles(c: DuckDbGraphClient): Promise<void> {
+      const pair = async (a: string, b: string): Promise<void> => {
+        await c.upsertFile(
+          { relPath: a, language: "typescript" },
+          { fileEdges: [{ targetRelPath: b, importText: "./x" }], methodEdges: [] },
+        );
+        await c.upsertFile(
+          { relPath: b, language: "typescript" },
+          { fileEdges: [{ targetRelPath: a, importText: "./x" }], methodEdges: [] },
+        );
+      };
+      await pair("src/core/domains/ingest/a.ts", "src/core/domains/ingest/b.ts"); // inside
+      await pair("src/core/domains/explore/x.ts", "src/core/domains/explore/y.ts"); // outside
+      await pair("src/core/domains/ingest/p.ts", "src/core/domains/explore/q.ts"); // crossing
+      await recomputeCyclesViaPrimitives(c, "file");
+    }
+
+    it("file scope: includes a cycle iff at least one member matches the pattern", async () => {
+      await seedThreeFileCycles(client);
+      // Sanity: without a pattern all three cycles are returned.
+      expect(await client.findCycles("file")).toHaveLength(3);
+
+      const scoped = await client.findCycles("file", "**/domains/ingest/**");
+      // inside (both match) + crossing (one member matches) — outside excluded.
+      expect(scoped).toHaveLength(2);
+      const allMembers = scoped.flatMap((cycle) => cycle.members);
+      expect(allMembers).toContain("src/core/domains/ingest/a.ts");
+      expect(allMembers).toContain("src/core/domains/ingest/p.ts");
+      // The fully-outside cycle's members must NOT appear.
+      expect(allMembers).not.toContain("src/core/domains/explore/x.ts");
+    });
+
+    it("file scope: undefined pathPattern returns every cycle (backward compat)", async () => {
+      await seedThreeFileCycles(client);
+      expect(await client.findCycles("file", undefined)).toHaveLength(3);
+    });
+
+    it("file scope: a pattern matching nothing returns no cycles", async () => {
+      await seedThreeFileCycles(client);
+      expect(await client.findCycles("file", "**/domains/payments/**")).toEqual([]);
+    });
+
+    it("method scope: filters by the file path of cycle member symbols", async () => {
+      // Two method cycles. The path of each symbol is resolved from the
+      // method-edge table (source/target rel_path), since cg_symbols is
+      // only populated by upsertSymbols, not upsertFile.
+      const methodCycle = async (symA: string, pathA: string, symB: string, pathB: string): Promise<void> => {
+        await client.upsertFile(
+          { relPath: pathA, language: "typescript" },
+          {
+            fileEdges: [],
+            methodEdges: [
+              { sourceSymbolId: symA, targetSymbolId: symB, targetRelPath: pathB, callExpression: `${symB}()` },
+            ],
+          },
+        );
+        await client.upsertFile(
+          { relPath: pathB, language: "typescript" },
+          {
+            fileEdges: [],
+            methodEdges: [
+              { sourceSymbolId: symB, targetSymbolId: symA, targetRelPath: pathA, callExpression: `${symA}()` },
+            ],
+          },
+        );
+      };
+      await methodCycle(
+        "Ingest.run",
+        "src/core/domains/ingest/run.ts",
+        "Ingest.help",
+        "src/core/domains/ingest/help.ts",
+      );
+      await methodCycle(
+        "Explore.run",
+        "src/core/domains/explore/run.ts",
+        "Explore.help",
+        "src/core/domains/explore/help.ts",
+      );
+      await recomputeCyclesViaPrimitives(client, "method");
+      expect(await client.findCycles("method")).toHaveLength(2);
+
+      const scoped = await client.findCycles("method", "**/domains/ingest/**");
+      expect(scoped).toHaveLength(1);
+      expect(scoped[0].members.slice().sort()).toEqual(["Ingest.help", "Ingest.run"]);
+    });
+  });
+
   // Slice 2 / B3 — PageRank persisted per symbol via Tarjan-shared adjacency.
   describe("recomputePageRank + getPageRank (B3)", () => {
     it("getPageRank returns 0 when the metrics table is empty (no recompute yet)", async () => {

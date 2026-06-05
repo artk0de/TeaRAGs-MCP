@@ -109,6 +109,24 @@ describe("DaemonGraphDbClient", () => {
     expect((seen[2].params as { scope: string }).scope).toBe("file");
   });
 
+  it("findCycles forwards a pathPattern scope filter over the socket", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "findCycles" ? [] : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    await client.findCycles("method", "**/domains/ingest/**");
+    await client.close();
+
+    const req = seen.find((r) => r.op === "findCycles");
+    expect(req?.params).toMatchObject({ scope: "method", pathPattern: "**/domains/ingest/**" });
+  });
+
   it("the full write subset proxies the matching op + injected collection over the socket", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "d.sock");
