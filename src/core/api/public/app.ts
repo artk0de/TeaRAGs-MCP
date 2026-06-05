@@ -263,15 +263,13 @@ export function createApp(deps: AppDeps): App {
     listProjects: async () => ops.projectRegistry.list(),
     unregisterProject: async (input) => ops.projectRegistry.unregister(input),
 
-    // -- Codegraph — delegate to GraphFacade. When graphFacade is undefined
+    // -- Codegraph — getCallers/getCallees/findCycles delegate to GraphFacade;
+    // tracePath delegates to TracePathOps. When the backing dep is undefined
     // (CODEGRAPH_DISABLED or DuckDB unavailable) surface an empty result
-    // rather than crashing the tool — the schema-drift monitor instructs
-    // the user to reindex.
+    // rather than crashing the tool.
     getCallers: async (req) => (deps.graphFacade ? deps.graphFacade.getCallers(req) : { callers: [] }),
     getCallees: async (req) => (deps.graphFacade ? deps.graphFacade.getCallees(req) : { callees: [] }),
     findCycles: async (req) => (deps.graphFacade ? deps.graphFacade.findCycles(req) : { cycles: [] }),
-    // tracePath delegates straight to TracePathOps (NOT via GraphFacade); same
-    // graceful empty-result fallback when codegraph is disabled.
     tracePath: async (req) => (deps.tracePathOps ? deps.tracePathOps.tracePath(req) : { paths: [], truncated: false }),
 
     // -- Provider availability — backs MCP tool-registrar gating. Source

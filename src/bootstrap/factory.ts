@@ -504,9 +504,9 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   // is deferred until later — registry construction alone is side-effect
   // free, so creating it early costs nothing.
   const collectionRegistry = new CollectionRegistry(config.paths.appData);
-  const codegraphContext = wireCodegraph(config, zodConfig, collectionRegistry, async (name) =>
-    infra.qdrant.aliases.resolveActive(name),
-  );
+  const resolveActiveCollection = async (name: string): Promise<string> =>
+    infra.qdrant.aliases.resolveActive(name);
+  const codegraphContext = wireCodegraph(config, zodConfig, collectionRegistry, resolveActiveCollection);
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 
   // TracePathOps bridges the codegraph adjacency (DuckDB pool) and the explore
@@ -522,7 +522,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
         qdrant: infra.qdrant,
         reranker: composition.reranker,
         collectionRegistry,
-        resolveActiveCollection: async (name) => infra.qdrant.aliases.resolveActive(name),
+        resolveActiveCollection,
       })
     : undefined;
 
