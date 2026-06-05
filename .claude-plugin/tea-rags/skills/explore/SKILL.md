@@ -32,6 +32,33 @@ If $ARGUMENTS contains risk-assessment signals ("risk surface", "risk zones",
 `risk-assessment/SKILL.md`. This check runs BEFORE the intent table — risk
 intent overrides EXPLAIN/TRACE/PRE-GEN/EXEMPLAR keywords.
 
+## Codegraph intent (edge truth) → checked BEFORE the content-matching table
+
+Graph-shape questions are answered from real call/import edges (codegraph
+DuckDB), which content matching cannot derive. When $ARGUMENTS matches a row
+below, route to that sub-pattern — these checks run AFTER risk-assessment but
+**BEFORE** the EXPLAIN/TRACE/PRE-GEN/EXEMPLAR table (edge truth beats content
+matching for graph shape). Evaluate top-to-bottom; first match wins.
+
+| Priority | Intent contains                                                                 | Sub-pattern                                                                |
+| -------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 1        | "циклы", "cycle", "circular dependency", "dependency loop"                      | [references/cycle-pattern.md](./references/cycle-pattern.md)               |
+| 2        | "кто использует/вызывает X", "callers of X", "callees of X", "trace flow"       | [references/usage-pattern.md](./references/usage-pattern.md)               |
+| 3        | "где начинается", "entry point", "main flow", "входная точка", "where X starts" | [references/entry-point-pattern.md](./references/entry-point-pattern.md)   |
+| 4        | "архитектура", "structure", "backbone", "что центральное", "how X is organized" | [references/architecture-pattern.md](./references/architecture-pattern.md) |
+
+**Match on intent phrasing, not symbol substrings.** Classify by the request's
+verb frame, NOT by characters inside a symbol name. "what does X call?" / "who
+calls X?" is always USAGE (row 2) even when X is named `findCycles` /
+`CycleDetector` — the word "cycle" inside the target symbol does NOT make it a
+CYCLE (row 1) request. Row 1 fires only on graph-shape phrasing about the loop
+itself ("circular dependency", "dependency loop", "cycles in <scope>").
+
+**Codegraph availability:** these sub-patterns need a codegraph index. If
+`get_callers` / `get_callees` / `find_cycles` return empty for every input (no
+codegraph), fall back to the content-matching table below — TRACE covers usage,
+EXPLAIN covers architecture. Each sub-pattern states its own fallback.
+
 ## Pattern-search keyword groups (used by EXEMPLAR routing)
 
 | Strategy        | Keywords (any match)                                                                                                        |
@@ -55,6 +82,12 @@ generic Collect.
   [references/pre-gen-pattern.md](./references/pre-gen-pattern.md).
 - Strategy: see
   [references/exemplar-pattern.md](./references/exemplar-pattern.md).
+- Codegraph: see [references/cycle-pattern.md](./references/cycle-pattern.md).
+- Codegraph: see [references/usage-pattern.md](./references/usage-pattern.md).
+- Codegraph: see
+  [references/entry-point-pattern.md](./references/entry-point-pattern.md).
+- Codegraph: see
+  [references/architecture-pattern.md](./references/architecture-pattern.md).
 
 ---
 
@@ -72,14 +105,16 @@ optionally run a secondary query in the original language for non-English docs.
 Apply the Intent Classification table above. Then:
 
 1. If risk intent matches → delegate to `risk-assessment/SKILL.md`.
-2. If EXEMPLAR row matches → delegate per
+2. If a Codegraph intent row matches → follow that sub-pattern (cycle / usage /
+   entry-point / architecture). These run BEFORE EXEMPLAR/EXPLAIN/TRACE/PRE-GEN.
+3. If EXEMPLAR row matches → delegate per
    [references/exemplar-pattern.md](./references/exemplar-pattern.md)
    (refactoring-scan for broad antipattern, pattern-search otherwise).
-3. If PRE-GEN row matches → follow
+4. If PRE-GEN row matches → follow
    [references/pre-gen-pattern.md](./references/pre-gen-pattern.md).
-4. If EXPLAIN row matches → continue to Explore Flow below, then format per
+5. If EXPLAIN row matches → continue to Explore Flow below, then format per
    [references/explain-pattern.md](./references/explain-pattern.md).
-5. If TRACE row matches → continue to Explore Flow below, then format per
+6. If TRACE row matches → continue to Explore Flow below, then format per
    [references/trace-pattern.md](./references/trace-pattern.md).
 
 ### Scope extraction
