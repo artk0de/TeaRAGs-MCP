@@ -134,7 +134,7 @@ describe("EnrichmentApplier", () => {
       expect(applier.getMissedFileChunks().has("db/schema.rb")).toBe(false);
       expect(applier.getMissedFileChunks().has("src/missing.ts")).toBe(true);
       // No stamp written for the ignored file → it carries no git payload.
-      const allOps = (mockQdrant.batchSetPayload as any).mock.calls.flatMap((c: any[]) => c[1] ?? []);
+      const allOps = mockQdrant.batchSetPayload.mock.calls.flatMap((c: any[]) => c[1] ?? []);
       const stampedPoints = allOps.flatMap((op: any) => op.points ?? []);
       expect(stampedPoints).not.toContain("g1");
     });
