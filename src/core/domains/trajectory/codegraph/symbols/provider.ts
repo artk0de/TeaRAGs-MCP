@@ -39,6 +39,7 @@ import TsLang from "tree-sitter-typescript";
 
 import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
+  CallContext,
   DispatchTableDef,
   ExtractionSink,
   FileExtraction,
@@ -47,7 +48,11 @@ import type {
   GraphEdges,
   NamedSymbol,
 } from "../../../../contracts/types/codegraph.js";
-import type { LanguageFactoryDescriptor, SymbolIdComposer } from "../../../../contracts/types/language.js";
+import type {
+  LanguageFactoryDescriptor,
+  LanguageSymbolResolver,
+  SymbolIdComposer,
+} from "../../../../contracts/types/language.js";
 import type {
   ChunkLookupEntry,
   ChunkSignalOptions,
@@ -1508,9 +1513,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const resolver = this.deps.languageFactory.supported().includes(extraction.language)
       ? this.deps.languageFactory.create(extraction.language).resolver
       : undefined;
-    const fileEdges: GraphEdges["fileEdges"] = [];
     const methodEdges: GraphEdges["methodEdges"] = [];
-    if (!resolver) return { fileEdges, methodEdges };
+    if (!resolver) return { fileEdges: [], methodEdges };
 
     // Resolver receives the run-global `classAncestors` so it can walk
     // a bound type's inheritance chain regardless of which file
@@ -1525,28 +1529,24 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const extendsForResolver = Object.keys(this.runExtends).length > 0 ? this.runExtends : extraction.classExtends;
     const returnTypesForResolver =
       Object.keys(this.runReturnTypes).length > 0 ? this.runReturnTypes : extraction.functionReturnTypes;
-    // File-level edges from imports. We synthesise a "call-shaped" lookup
-    // so the same resolver contract handles both call resolution and
-    // import-to-file resolution.
-    for (const imp of extraction.imports) {
-      const last = lastSegment(imp.importText);
-      const target = resolver.resolve(
-        { callText: imp.importText, receiver: last, member: last, startLine: imp.startLine },
-        {
-          callerFile: extraction.relPath,
-          callerScope: extraction.fileScope,
-          imports: extraction.imports,
-          symbolTable,
-          classFieldTypes: extraction.classFieldTypes,
-          classAncestors: ancestorsForResolver,
-          classPrependedAncestors: prependedAncestorsForResolver,
-          classExtends: extendsForResolver,
-        },
-      );
-      if (target) {
-        fileEdges.push({ targetRelPath: target.targetRelPath, importText: imp.importText });
-      }
-    }
+    // File-level edges. A resolver that implements `resolveFileEdges` owns its
+    // language's full set of file-coupling channels (Ruby: require + Zeitwerk
+    // constants + inheritance/mixins). Resolvers that don't fall back to the
+    // generic synthesised-call import loop — correct for languages whose file
+    // graph comes purely from explicit imports (TS/Python/Go/Java/Rust/JS).
+    const fileEdgeCtx: CallContext = {
+      callerFile: extraction.relPath,
+      callerScope: extraction.fileScope,
+      imports: extraction.imports,
+      symbolTable,
+      classFieldTypes: extraction.classFieldTypes,
+      classAncestors: ancestorsForResolver,
+      classPrependedAncestors: prependedAncestorsForResolver,
+      classExtends: extendsForResolver,
+    };
+    const fileEdges: GraphEdges["fileEdges"] = resolver.resolveFileEdges
+      ? resolver.resolveFileEdges(extraction, fileEdgeCtx)
+      : defaultImportFileEdges(extraction, resolver, fileEdgeCtx);
 
     // Method-level edges from calls. Track resolve success ratio so the
     // run metrics surface how many call sites the resolver couldn't pin
@@ -1628,6 +1628,33 @@ interface RunStats {
 
 function createEmptyRunStats(): RunStats {
   return { extractedFiles: 0, fileEdgeCount: 0, methodEdgeCount: 0, callsAttempted: 0, callsResolved: 0 };
+}
+
+/**
+ * Generic import→file-edge resolution: synthesise a "call-shaped" lookup per
+ * import so the same resolver contract handles import-to-file resolution. Used
+ * for every language whose `CallResolver` does NOT implement `resolveFileEdges`
+ * (TS/Python/Go/Java/Rust/JS) — their file graph comes purely from explicit
+ * imports. Ruby overrides this via `resolveFileEdges` to add the Zeitwerk
+ * constant channel and inheritance edges.
+ */
+function defaultImportFileEdges(
+  extraction: FileExtraction,
+  resolver: LanguageSymbolResolver,
+  ctx: CallContext,
+): GraphEdges["fileEdges"] {
+  const fileEdges: GraphEdges["fileEdges"] = [];
+  for (const imp of extraction.imports) {
+    const last = lastSegment(imp.importText);
+    const target = resolver.resolve(
+      { callText: imp.importText, receiver: last, member: last, startLine: imp.startLine },
+      ctx,
+    );
+    if (target) {
+      fileEdges.push({ targetRelPath: target.targetRelPath, importText: imp.importText });
+    }
+  }
+  return fileEdges;
 }
 
 function lastSegment(name: string): string {

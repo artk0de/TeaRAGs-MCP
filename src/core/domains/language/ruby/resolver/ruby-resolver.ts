@@ -34,10 +34,13 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
+  type FileExtraction,
+  type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { resolveViaChain } from "../../resolver-chain.js";
+import { ZEITWERK_PREFIX } from "../walker/walker.js";
 import {
   RubyArRelationGuardSymbolResolutionStrategy,
   RubyBareCallSymbolResolutionStrategy,
@@ -46,6 +49,7 @@ import {
   RubyLocalTypeSymbolResolutionStrategy,
   RubyReceiverSetDropSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
+  resolveConstant,
   type ResolverConfig,
 } from "./strategies/index.js";
 
@@ -69,4 +73,67 @@ export class RubyCallResolver implements CallResolver {
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     return resolveViaChain(this.strategies, call, ctx);
   }
+
+  /**
+   * Build Ruby file→file edges from three channels, all folded into one
+   * `fileEdges[]` so they share fanIn/fanOut (tea-rags-mcp; spec
+   * 2026-06-05-ruby-file-edges-zeitwerk-inheritance-design):
+   *
+   *   1. Explicit `require` / `require_relative` — synthesised through the
+   *      strategy chain with the require basename as receiver (parity with the
+   *      provider's legacy `defaultImportFileEdges` loop).
+   *   2. Zeitwerk constant refs — the `imports[]` entries the walker prefixes
+   *      with `zeitwerk:`. The prefix is stripped HERE (the provider must not
+   *      know the channel) so the bare constant flows into the `constant`
+   *      strategy's `resolveConstant`, which the prefixed string would fail.
+   *   3. Inheritance / mixins — for every class this file declares, each
+   *      `classAncestors` (superclass + include + extend) and
+   *      `classPrependedAncestors` (prepend) constant is resolved to its
+   *      declaring file via the same `resolveConstant`.
+   *
+   * Self-edges (constant/ancestor declared in the same file) are skipped, and
+   * targets are de-duplicated per file so fanOut counts distinct dependencies.
+   */
+  resolveFileEdges(extraction: FileExtraction, ctx: CallContext): GraphEdges["fileEdges"] {
+    const fileEdges: GraphEdges["fileEdges"] = [];
+    const seenTargets = new Set<string>();
+    const add = (targetRelPath: string | null, importText: string): void => {
+      if (!targetRelPath || targetRelPath === extraction.relPath) return; // self-loop guard
+      if (seenTargets.has(targetRelPath)) return; // dedup by target file
+      seenTargets.add(targetRelPath);
+      fileEdges.push({ targetRelPath, importText });
+    };
+
+    // Channels 1 + 2 — explicit require + Zeitwerk constant refs (imports[]).
+    for (const imp of extraction.imports) {
+      const isZeitwerk = imp.importText.startsWith(ZEITWERK_PREFIX);
+      const receiver = isZeitwerk ? imp.importText.slice(ZEITWERK_PREFIX.length) : requireBasename(imp.importText);
+      const target = this.resolve(
+        { callText: imp.importText, receiver, member: receiver, startLine: imp.startLine },
+        ctx,
+      );
+      if (target) add(target.targetRelPath, imp.importText);
+    }
+
+    // Channel 3 — inheritance / mixins (superclass, include, extend, prepend).
+    for (const ancestorMap of [extraction.classAncestors, extraction.classPrependedAncestors]) {
+      if (!ancestorMap) continue;
+      for (const ancestors of Object.values(ancestorMap)) {
+        for (const ancestorConst of ancestors) add(resolveConstant(ancestorConst, ctx), ancestorConst);
+      }
+    }
+
+    return fileEdges;
+  }
+}
+
+/**
+ * Basename of a require importText — segment after the final "/", else the
+ * whole string. Mirrors the provider's `lastSegment` for require paths
+ * (`"./foo"` → `"foo"`, `"foo"` → `"foo"`): require texts carry no `#`/`.`
+ * separators, so a slash-only split reproduces the legacy synthesis exactly.
+ */
+function requireBasename(importText: string): string {
+  const slash = importText.lastIndexOf("/");
+  return slash === -1 ? importText : importText.slice(slash + 1);
 }

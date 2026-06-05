@@ -106,6 +106,7 @@ export class RubyLanguage implements LanguageProvider {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchEdge[] =>
         callResolver.resolveDispatch?.(call, ctx) ?? [],
+      resolveFileEdges: (extraction, ctx) => callResolver.resolveFileEdges?.(extraction, ctx) ?? [],
     };
   }
 }
