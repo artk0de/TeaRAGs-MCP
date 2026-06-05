@@ -3,8 +3,9 @@
  * docs/superpowers/specs/2026-05-21-codegraph-provider-gating-design.md.
  *
  * When `app.hasProvider("codegraph.symbols") === false`, the registrar must
- * be a complete no-op — neither `get_callers`, `get_callees`, nor `find_cycles`
- * appears in the MCP tool list. When true, all three tools register.
+ * be a complete no-op — neither `get_callers`, `get_callees`, `find_cycles`,
+ * nor `trace_path` appears in the MCP tool list. When true, all four tools
+ * register.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -19,6 +20,7 @@ function makeApp(hasCodegraph: boolean): App {
     getCallers: vi.fn(),
     getCallees: vi.fn(),
     findCycles: vi.fn(),
+    tracePath: vi.fn(),
   } as unknown as App;
 }
 
@@ -27,15 +29,35 @@ function makeServer(): McpServer {
 }
 
 describe("registerCodegraphTools — provider gating", () => {
-  it("registers all 3 codegraph tools when hasProvider('codegraph.symbols') is true", () => {
+  it("registers all 4 codegraph tools when hasProvider('codegraph.symbols') is true", () => {
     const register = vi.fn();
     const app = makeApp(true);
 
     registerCodegraphTools(makeServer(), { app, register });
 
-    expect(register).toHaveBeenCalledTimes(3);
+    expect(register).toHaveBeenCalledTimes(4);
     const names = register.mock.calls.map((c) => c[1] as string).sort();
-    expect(names).toEqual(["find_cycles", "get_callees", "get_callers"]);
+    expect(names).toEqual(["find_cycles", "get_callees", "get_callers", "trace_path"]);
+  });
+
+  it("registers trace_path when codegraph.symbols is present", () => {
+    const register = vi.fn();
+    const app = makeApp(true);
+
+    registerCodegraphTools(makeServer(), { app, register });
+
+    const names = register.mock.calls.map((c) => c[1] as string);
+    expect(names).toContain("trace_path");
+  });
+
+  it("does NOT register trace_path when codegraph.symbols is absent", () => {
+    const register = vi.fn();
+    const app = makeApp(false);
+
+    registerCodegraphTools(makeServer(), { app, register });
+
+    const names = register.mock.calls.map((c) => c[1] as string);
+    expect(names).not.toContain("trace_path");
   });
 
   it("is a complete no-op when hasProvider('codegraph.symbols') is false", () => {

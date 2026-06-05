@@ -78,6 +78,18 @@ const FindCyclesInputShape = {
     .describe("'file' = circular imports between files; 'method' = circular calls between symbols"),
 };
 
+const TracePathInputShape = {
+  ...collectionPathFields(),
+  from: z.string().describe("Start symbol id (caller end, e.g. main)"),
+  to: z.string().describe("End symbol id (callee end, e.g. Foo.bar)"),
+  rerank: z
+    .string()
+    .optional()
+    .describe("Rerank preset defining 'danger' for the step overlay (default bugHunt)"),
+  maxDepth: z.number().int().positive().max(20).optional().describe("Max hops on a path (default 8)"),
+  maxPaths: z.number().int().positive().max(50).optional().describe("Max paths returned, danger-sorted (default 10)"),
+};
+
 export function registerCodegraphTools(server: McpServer, deps: { app: App; register: RegisterToolFn }): void {
   const { app, register: registerToolSafe } = deps;
 
@@ -131,6 +143,24 @@ export function registerCodegraphTools(server: McpServer, deps: { app: App; regi
     },
     async ({ project, collection, path, scope }) => {
       const response = await app.findCycles({ project, collection, path, scope });
+      return formatMcpText(JSON.stringify(response, null, 2));
+    },
+  );
+
+  registerToolSafe(
+    server,
+    "trace_path",
+    {
+      title: "Trace Path",
+      description:
+        "Trace all simple call paths from one symbol to another, in execution order, " +
+        "each step annotated with a git/churn danger overlay. Paths are sorted most-dangerous " +
+        "first so you jump straight to the riskiest step. Backed by the codegraph DuckDB.",
+      inputSchema: TracePathInputShape,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ project, collection, path, from, to, rerank, maxDepth, maxPaths }) => {
+      const response = await app.tracePath({ project, collection, path, from, to, rerank, maxDepth, maxPaths });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );
