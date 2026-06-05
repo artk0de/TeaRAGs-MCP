@@ -42,6 +42,9 @@ export interface RerankOptions {
    * score-descending sort is skipped — the returned array preserves input
    * order. Default true (sort as before). Used by trace_path to annotate a
    * path with danger overlays without disturbing execution order.
+   * Note: a preset with `groupBy` still runs its group-dedup pass under
+   * reorder:false, so the per-group representative is the first input-order
+   * entry, not the highest-scored.
    */
   reorder?: boolean;
 }
