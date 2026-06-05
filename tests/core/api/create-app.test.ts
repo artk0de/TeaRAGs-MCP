@@ -411,4 +411,23 @@ describe("createApp", () => {
       expect(result).toBe("Schema drift detected");
     });
   });
+
+  // =========================================================================
+  // tracePath delegation
+  // =========================================================================
+
+  describe("App.tracePath", () => {
+    it("delegates to tracePathOps when wired", async () => {
+      const tracePathOps = { tracePath: vi.fn(async () => ({ paths: [], truncated: false })) };
+      const app = createApp({ ...deps, tracePathOps } as never);
+      await app.tracePath({ collection: "c", from: "A", to: "B" });
+      expect(tracePathOps.tracePath).toHaveBeenCalledWith({ collection: "c", from: "A", to: "B" });
+    });
+
+    it("returns empty result when codegraph (tracePathOps) is absent", async () => {
+      const app = createApp({ ...deps, tracePathOps: undefined } as never);
+      const res = await app.tracePath({ collection: "c", from: "A", to: "B" });
+      expect(res).toEqual({ paths: [], truncated: false });
+    });
+  });
 });

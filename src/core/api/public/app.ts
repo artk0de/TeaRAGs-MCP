@@ -27,6 +27,7 @@ import type { IngestFacade } from "../internal/facades/ingest-facade.js";
 import { CollectionOps } from "../internal/ops/collection-ops.js";
 import { DocumentOps } from "../internal/ops/document-ops.js";
 import type { ProjectRegistryOps } from "../internal/ops/project-registry-ops.js";
+import type { TracePathOps } from "../internal/ops/trace-path-ops.js";
 import type {
   AddDocumentsRequest,
   ChangeStats,
@@ -48,11 +49,13 @@ import type {
   IndexOptions,
   IndexStats,
   IndexStatus,
+  PathTraceResult,
   PresetDescriptors,
   PresetDetail,
   ProgressCallback,
   RankChunksRequest,
   SemanticSearchRequest,
+  TracePathRequest,
 } from "./dto/index.js";
 
 // ---------------------------------------------------------------------------
@@ -106,6 +109,7 @@ export interface App {
   getCallers: (request: GetCallersRequest) => Promise<GetCallersResponse>;
   getCallees: (request: GetCalleesRequest) => Promise<GetCalleesResponse>;
   findCycles: (request: FindCyclesRequest) => Promise<FindCyclesResponse>;
+  tracePath: (request: TracePathRequest) => Promise<PathTraceResult>;
 
   // -- Provider availability — sync query used by MCP tool registrars to
   // skip registration when a required trajectory provider is not loaded.
@@ -129,6 +133,8 @@ export interface AppDeps {
   modelGuard?: EmbeddingModelGuard;
   /** Optional — present when CODEGRAPH_DISABLED is unset and DuckDB is wired. */
   graphFacade?: GraphFacade;
+  /** Optional — present when codegraph is wired (built in bootstrap alongside graphFacade). */
+  tracePathOps?: TracePathOps;
   /**
    * Per-collection DuckDB pool — present when codegraph is wired.
    * CollectionOps uses it to delete the per-collection DuckDB file when
@@ -264,6 +270,9 @@ export function createApp(deps: AppDeps): App {
     getCallers: async (req) => (deps.graphFacade ? deps.graphFacade.getCallers(req) : { callers: [] }),
     getCallees: async (req) => (deps.graphFacade ? deps.graphFacade.getCallees(req) : { callees: [] }),
     findCycles: async (req) => (deps.graphFacade ? deps.graphFacade.findCycles(req) : { cycles: [] }),
+    // tracePath delegates straight to TracePathOps (NOT via GraphFacade); same
+    // graceful empty-result fallback when codegraph is disabled.
+    tracePath: async (req) => (deps.tracePathOps ? deps.tracePathOps.tracePath(req) : { paths: [], truncated: false }),
 
     // -- Provider availability — backs MCP tool-registrar gating. Source
     // of truth is `registeredProviderKeys` populated by composition from

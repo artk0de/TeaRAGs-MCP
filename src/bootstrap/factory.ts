@@ -24,6 +24,7 @@ import {
 } from "../core/api/index.js";
 import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
+import { TracePathOps } from "../core/api/internal/ops/trace-path-ops.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
@@ -508,6 +509,23 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   );
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 
+  // TracePathOps bridges the codegraph adjacency (DuckDB pool) and the explore
+  // reranker. It is built here — not inside wireCodegraph — because `reranker`
+  // only exists after wireComposition runs (which itself consumes the codegraph
+  // deps). Guarded on codegraphContext so it mirrors graphFacade's optionality:
+  // present only when codegraph is wired, omitted (→ App.tracePath empty-result
+  // fallback) when disabled. GraphFacade stays untouched; App.tracePath delegates
+  // straight to this ops, like createCollection→CollectionOps.
+  const tracePathOps = codegraphContext
+    ? new TracePathOps({
+        pool: codegraphContext.pool,
+        qdrant: infra.qdrant,
+        reranker: composition.reranker,
+        collectionRegistry,
+        resolveActiveCollection: async (name) => infra.qdrant.aliases.resolveActive(name),
+      })
+    : undefined;
+
   const statsCache = new StatsCache(config.paths.snapshots);
   const deleteConfig = {
     batchSize: zodConfig.qdrantTune.deleteBatchSize,
@@ -609,6 +627,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
     modelGuard: infra.modelGuard,
     graphFacade: codegraphContext?.graphFacade,
+    tracePathOps,
     codegraphPool: codegraphContext?.pool,
     registeredProviderKeys: new Set(composition.registry.getRegisteredKeys()),
   });
