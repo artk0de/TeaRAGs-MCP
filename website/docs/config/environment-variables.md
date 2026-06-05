@@ -64,6 +64,26 @@ variables are optional unless specified otherwise.
 | `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` | Group commits into sessions (squash noise reduction) | `false`  |
 | `TRAJECTORY_GIT_SESSION_GAP_MINUTES`   | Gap between commits to split sessions                | `30`     |
 
+## Trajectory: Codegraph
+
+:::caution Beta feature
+
+Codegraph enrichment (call graph + import graph signals) is **beta** and
+**disabled by default**; set `CODEGRAPH_ENABLED=true` to opt in. See
+[Codegraph Enrichments](/usage/advanced/codegraph-enrichments).
+
+:::
+
+| Variable                            | Description                                                                  | Default    |
+| ----------------------------------- | ---------------------------------------------------------------------------- | ---------- |
+| `CODEGRAPH_ENABLED`                 | Enable codegraph family (graph signals + `get_callers`/`get_callees`/`find_cycles` tools) | `false`    |
+| `CODEGRAPH_DB_PATH`                 | Override graph-DB root dir (per-project `.duckdb` files live under it)        | data dir   |
+| `CODEGRAPH_DB_MEMORY_LIMIT`         | Per-project DuckDB RAM ceiling before spilling to temp dir                    | `2GB`      |
+| `CODEGRAPH_DB_THREADS`              | DuckDB worker threads per project                                            | `2`        |
+| `CODEGRAPH_EXCLUDE_TESTS`           | Exclude test files from the graph (still indexed by Qdrant)                   | `true`     |
+| `CODEGRAPH_CUSTOM_EXCLUDE`          | Comma-separated `.gitignore`-shaped patterns to exclude from the graph        | _(empty)_  |
+| `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE`  | Short-name call resolution: `strict` (drop ambiguous) or `first` (pick first) | `strict`   |
+
 ## Debug
 
 | Variable | Description                              | Default |
