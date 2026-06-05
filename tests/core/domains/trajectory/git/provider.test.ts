@@ -235,4 +235,33 @@ describe("GitEnrichmentProvider", () => {
       expect(root).toBe("/some/path");
     });
   });
+
+  describe("shouldEnrich", () => {
+    const base = { isSource: true, isGenerated: false, isDocumentation: false, isTest: false };
+
+    it("skips everything for generated files", () => {
+      expect(
+        provider.shouldEnrich!({
+          relPath: "db/schema.rb",
+          classification: { ...base, isSource: false, isGenerated: true },
+        }),
+      ).toBe("none");
+    });
+
+    it("keeps file-level but skips chunk-churn for documentation", () => {
+      expect(
+        provider.shouldEnrich!({
+          relPath: "README.md",
+          classification: { ...base, isSource: false, isDocumentation: true },
+        }),
+      ).toBe("file-only");
+    });
+
+    it("fully enriches ordinary source, including tests", () => {
+      expect(provider.shouldEnrich!({ relPath: "app/models/user.rb", classification: base })).toBe("full");
+      expect(
+        provider.shouldEnrich!({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } }),
+      ).toBe("full");
+    });
+  });
 });
