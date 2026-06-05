@@ -294,4 +294,32 @@ describe("FilePhase", () => {
     const m = (await marker.read("coll"))!.git as any;
     expect(m.file.status).toBe("failed");
   });
+
+  it("omits scope=none files from file enrichment dispatch", async () => {
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
+
+    const streamFileBatch = vi.fn().mockResolvedValue(new Map());
+    const ctx = buildCtx({
+      streamFileBatch,
+      shouldEnrich: (f: { classification: { isGenerated: boolean } }) =>
+        f.classification.isGenerated ? "none" : "full",
+    });
+
+    const twoFiles = [
+      { chunkId: "g1", chunk: { metadata: { filePath: "/repo/db/schema.rb" }, startLine: 1, endLine: 10 } } as any,
+      { chunkId: "s1", chunk: { metadata: { filePath: "/repo/app/models/user.rb" }, startLine: 1, endLine: 10 } } as any,
+    ];
+
+    const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+
+    phase.onBatch("coll", "/repo", twoFiles);
+    await phase.drain();
+
+    // The generated schema.rb is dropped; only the ordinary source is dispatched.
+    expect(streamFileBatch).toHaveBeenCalledWith("/repo", ["app/models/user.rb"], expect.anything());
+  });
 });
