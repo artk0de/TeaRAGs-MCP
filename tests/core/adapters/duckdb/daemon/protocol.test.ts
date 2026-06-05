@@ -53,6 +53,16 @@ describe("daemon protocol framing", () => {
     expect(JSON.parse(frames[0])).toEqual(req);
   });
 
+  it("round-trips a findCycles request carrying a pathPattern scope filter", () => {
+    const req: DaemonRequest = {
+      id: 13,
+      op: "findCycles",
+      params: { collection: "code_x_v1", scope: "method", pathPattern: "**/domains/ingest/**" },
+    };
+    const { frames } = decodeFrames(encodeFrame(req));
+    expect(JSON.parse(frames[0])).toEqual(req);
+  });
+
   it("response carries ok | error discriminant", () => {
     const ok: DaemonResponse = { id: 1, ok: true, result: null };
     const err: DaemonResponse = { id: 2, ok: false, error: { name: "CodegraphResolveError", message: "boom" } };

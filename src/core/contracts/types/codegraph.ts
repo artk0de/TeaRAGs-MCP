@@ -609,8 +609,12 @@ export interface GraphDbClient {
    * strongly-connected component of length >= 2 (single-node "cycles"
    * are excluded — they're either harmless or surfaced by other
    * signals). Sub-millisecond read for the MCP `find_cycles` tool.
+   *
+   * When `pathPattern` (a picomatch glob) is given, a cycle is kept iff
+   * AT LEAST ONE member resolves to a matching file path. Cross-boundary
+   * cycles (one member inside the scope, one outside) are retained.
    */
-  findCycles: (scope: CycleScope) => Promise<CycleEntry[]>;
+  findCycles: (scope: CycleScope, pathPattern?: string) => Promise<CycleEntry[]>;
 
   /**
    * Read the adjacency (source -> target[]) for `scope` from the

@@ -91,6 +91,51 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 
+  it("findCycles op forwards pathPattern so the daemon scopes the result by file path", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_cyc_v1";
+    // Two independent file-import cycles in distinct scopes: one under
+    // domains/ingest/, one under domains/explore/.
+    const importCycle = async (a: string, b: string): Promise<void> => {
+      await server.handle({
+        id: 1,
+        op: "upsertFile",
+        params: {
+          collection: c,
+          node: { relPath: a, language: "typescript" },
+          edges: { fileEdges: [{ targetRelPath: b, importText: "./x" }], methodEdges: [] },
+        },
+      });
+      await server.handle({
+        id: 2,
+        op: "upsertFile",
+        params: {
+          collection: c,
+          node: { relPath: b, language: "typescript" },
+          edges: { fileEdges: [{ targetRelPath: a, importText: "./x" }], methodEdges: [] },
+        },
+      });
+    };
+    await importCycle("src/core/domains/ingest/a.ts", "src/core/domains/ingest/b.ts");
+    await importCycle("src/core/domains/explore/x.ts", "src/core/domains/explore/y.ts");
+    await server.handle({ id: 3, op: "computeAndPersistCyclesAndSignals", params: { collection: c } });
+
+    const all = await server.handle({ id: 4, op: "findCycles", params: { collection: c, scope: "file" } });
+    expect(all.ok).toBe(true);
+    expect((all as { result: unknown[] }).result).toHaveLength(2);
+
+    const scoped = await server.handle({
+      id: 5,
+      op: "findCycles",
+      params: { collection: c, scope: "file", pathPattern: "**/domains/ingest/**" },
+    });
+    expect(scoped.ok).toBe(true);
+    const cycles = (scoped as { result: { members: string[] }[] }).result;
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0].members.slice().sort()).toEqual(["src/core/domains/ingest/a.ts", "src/core/domains/ingest/b.ts"]);
+    await pool.closeAll();
+  });
+
   it("removeSymbolsForFile and checkpoint dispatch to the pooled graphDb without throwing", async () => {
     const { server, pool } = makeServer();
     const c = "code_ops_v1";

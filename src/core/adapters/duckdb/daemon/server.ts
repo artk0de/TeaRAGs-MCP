@@ -132,7 +132,7 @@ export class CodegraphDaemonServer {
       }
       case "findCycles": {
         const { graphDb } = await this.pool.acquire(collection);
-        return graphDb.findCycles(p.scope as CycleScope);
+        return graphDb.findCycles(p.scope as CycleScope, p.pathPattern as string | undefined);
       }
       case "listAdjacency": {
         const { graphDb } = await this.pool.acquire(collection);

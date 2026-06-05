@@ -130,7 +130,7 @@ export class GraphFacade {
     return this.withReadHandle(
       req,
       async (handle) => {
-        const entries = await handle.graphDb.findCycles(req.scope);
+        const entries = await handle.graphDb.findCycles(req.scope, req.pathPattern);
         return {
           cycles: entries.map((e) => ({
             cycleId: e.cycleId,

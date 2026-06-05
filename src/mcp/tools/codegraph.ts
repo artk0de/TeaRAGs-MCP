@@ -16,8 +16,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import type { App } from "../../core/api/public/index.js";
-import { PROJECT_NAME_RE } from "../../core/api/public/index.js";
+import { PROJECT_NAME_RE, type App } from "../../core/api/public/index.js";
 import { formatMcpText } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 
@@ -76,6 +75,14 @@ const FindCyclesInputShape = {
     .enum(["file", "method"])
     .default("file")
     .describe("'file' = circular imports between files; 'method' = circular calls between symbols"),
+  pathPattern: z
+    .string()
+    .optional()
+    .describe(
+      "Picomatch glob scoping the result to a subdomain/module (e.g. '**/domains/ingest/**', " +
+        "'{src/core/api,src/mcp}/**'). A cycle is kept if AT LEAST ONE member resolves to a matching " +
+        "file path, so cross-boundary cycles are retained. Omit for no filter.",
+    ),
 };
 
 export function registerCodegraphTools(server: McpServer, deps: { app: App; register: RegisterToolFn }): void {
@@ -129,8 +136,8 @@ export function registerCodegraphTools(server: McpServer, deps: { app: App; regi
       inputSchema: FindCyclesInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ project, collection, path, scope }) => {
-      const response = await app.findCycles({ project, collection, path, scope });
+    async ({ project, collection, path, scope, pathPattern }) => {
+      const response = await app.findCycles({ project, collection, path, scope, pathPattern });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );

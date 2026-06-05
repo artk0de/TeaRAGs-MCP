@@ -64,6 +64,12 @@ export interface FindCyclesRequest {
   path?: string;
   /** 'file' = circular imports between files; 'method' = circular calls between symbols. */
   scope: CycleScope;
+  /**
+   * Picomatch glob scoping the result to a subdomain/module. A cycle is
+   * kept iff AT LEAST ONE member resolves to a matching file path, so
+   * cross-boundary cycles are retained. Omit for no filter.
+   */
+  pathPattern?: string;
 }
 
 export interface CycleResult {

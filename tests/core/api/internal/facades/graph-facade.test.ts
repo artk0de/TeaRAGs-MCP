@@ -146,7 +146,7 @@ describe("GraphFacade", () => {
     };
     const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
     const response = await facade.findCycles({ path: "/proj", scope: "file" });
-    expect(graphDb.findCycles).toHaveBeenCalledWith("file");
+    expect(graphDb.findCycles).toHaveBeenCalledWith("file", undefined);
     expect(response.cycles).toHaveLength(2);
     expect(response.cycles[0]).toEqual({
       cycleId: 0,
@@ -165,8 +165,22 @@ describe("GraphFacade", () => {
     };
     const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
     const response = await facade.findCycles({ path: "/proj", scope: "method" });
-    expect(graphDb.findCycles).toHaveBeenCalledWith("method");
+    expect(graphDb.findCycles).toHaveBeenCalledWith("method", undefined);
     expect(response.cycles).toEqual([]);
+  });
+
+  it("findCycles forwards pathPattern through to graphDb.findCycles", async () => {
+    const graphDb = {
+      getCallers: vi.fn(),
+      getCallees: vi.fn(),
+      findCycles: vi
+        .fn()
+        .mockResolvedValue([{ cycleId: 0, scope: "file", members: ["src/core/a.ts", "src/core/b.ts"] }]),
+    };
+    const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
+    const response = await facade.findCycles({ path: "/proj", scope: "file", pathPattern: "src/core/**" });
+    expect(graphDb.findCycles).toHaveBeenCalledWith("file", "src/core/**");
+    expect(response.cycles).toHaveLength(1);
   });
 
   // New behaviour for slice-2 pool wiring: when the per-collection
