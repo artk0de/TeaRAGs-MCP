@@ -21,60 +21,25 @@
 
 import ignore, { type Ignore } from "ignore";
 
+import { GENERATED_PATTERNS, TEST_PATTERNS } from "../../../infra/file-classification/index.js";
+
 /**
  * Generated / machine-authored files that look like source but never participate
  * in the runtime call or import graph. Excluded unconditionally — there is no
  * env-var opt-out because including them is never the right behaviour for a
  * code-graph (no human edits, no real callers, no real callees).
+ *
+ * Sourced from the single source of truth in `infra/file-classification`
+ * (consolidated 2026-06-05, tea-rags-mcp-sjxz). Re-exported under the codegraph
+ * name for backward compatibility with existing importers.
  */
-export const CODEGRAPH_GENERATED_PATTERNS: readonly string[] = [
-  // Rails generated AR schema — re-authored by `rails db:migrate`, declarative
-  // table defs with no method calls into the rest of the application.
-  "**/db/schema.rb",
-  // Vendored third-party code (bd tea-rags-mcp-pl7k). `vendor/` is the
-  // conventional location for bundled gems (`vendor/bundle/`) and asset
-  // libraries (`vendor/assets/javascripts/*.js`). These never participate
-  // in the project author's call graph — including them pollutes the
-  // global short-name lookup with cross-language ghost callees (e.g.
-  // huginn's `agents.map(&:id)` mis-resolving to `d3.js#map`).
-  "**/vendor/**",
-];
+export const CODEGRAPH_GENERATED_PATTERNS: readonly string[] = GENERATED_PATTERNS;
 
-export const CODEGRAPH_TEST_PATTERNS: readonly string[] = [
-  // Generic test directories — match anywhere in tree.
-  "**/tests/**",
-  "**/test/**",
-  "**/__tests__/**",
-  "**/spec/**",
-  // JS / TS — Vitest / Jest / Mocha conventions
-  "**/*.test.js",
-  "**/*.test.jsx",
-  "**/*.test.ts",
-  "**/*.test.tsx",
-  "**/*.test.mjs",
-  "**/*.test.cjs",
-  "**/*.spec.js",
-  "**/*.spec.jsx",
-  "**/*.spec.ts",
-  "**/*.spec.tsx",
-  "**/*.spec.mjs",
-  "**/*.spec.cjs",
-  // Python — pytest / unittest conventions
-  "**/test_*.py",
-  "**/*_test.py",
-  "**/conftest.py",
-  // Ruby — Minitest / RSpec conventions
-  "**/*_test.rb",
-  "**/*_spec.rb",
-  // Java — JUnit conventions
-  "**/*Test.java",
-  "**/*Tests.java",
-  "**/*IT.java",
-  // Go — built-in testing framework
-  "**/*_test.go",
-  // Rust — built-in #[cfg(test)] convention for separate files
-  "**/*_test.rs",
-];
+/**
+ * Conventional test-file shapes — sourced from `infra/file-classification`
+ * (single source of truth). Re-exported under the codegraph name.
+ */
+export const CODEGRAPH_TEST_PATTERNS: readonly string[] = TEST_PATTERNS;
 
 export interface CodegraphExclusionOptions {
   /**
