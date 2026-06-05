@@ -286,7 +286,7 @@ describe("EnrichmentRecovery", () => {
     it("uses countPoints API instead of scrolling all points", async () => {
       mockQdrant.countPoints.mockResolvedValue(42);
 
-      const count = await recovery.countUnenriched("test-collection", "git", "file");
+      const count = await recovery.countUnenriched("test-collection", { key: "git" } as never, "file");
 
       expect(count).toBe(42);
       expect(mockQdrant.countPoints).toHaveBeenCalledWith(
@@ -300,7 +300,7 @@ describe("EnrichmentRecovery", () => {
     it("builds correct filter for chunk level", async () => {
       mockQdrant.countPoints.mockResolvedValue(7);
 
-      const count = await recovery.countUnenriched("test-collection", "git", "chunk");
+      const count = await recovery.countUnenriched("test-collection", { key: "git" } as never, "chunk");
 
       expect(count).toBe(7);
       expect(mockQdrant.countPoints).toHaveBeenCalledWith(
@@ -314,7 +314,7 @@ describe("EnrichmentRecovery", () => {
     it("returns zero when countPoints returns zero", async () => {
       mockQdrant.countPoints.mockResolvedValue(0);
 
-      const count = await recovery.countUnenriched("test-collection", "git", "file");
+      const count = await recovery.countUnenriched("test-collection", { key: "git" } as never, "file");
 
       expect(count).toBe(0);
     });
@@ -326,7 +326,7 @@ describe("EnrichmentRecovery", () => {
       // could never clear. Both must filter the same set.
       mockQdrant.countPoints.mockResolvedValue(0);
 
-      await recovery.countUnenriched("test-collection", "git", "file");
+      await recovery.countUnenriched("test-collection", { key: "git" } as never, "file");
 
       expect(mockQdrant.countPoints).toHaveBeenCalledWith(
         "test-collection",
@@ -339,7 +339,7 @@ describe("EnrichmentRecovery", () => {
     it("excludes indexing/schema metadata points from unenriched count", async () => {
       mockQdrant.countPoints.mockResolvedValue(0);
 
-      await recovery.countUnenriched("test-collection", "git", "chunk");
+      await recovery.countUnenriched("test-collection", { key: "git" } as never, "chunk");
 
       expect(mockQdrant.countPoints).toHaveBeenCalledWith(
         "test-collection",

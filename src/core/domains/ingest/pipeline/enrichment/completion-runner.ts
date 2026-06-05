@@ -19,7 +19,7 @@ import type { EnrichmentBackfiller } from "./backfiller.js";
 import type { ChunkPhase } from "./chunk-phase.js";
 import type { FilePhase } from "./file-phase.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
-import type { ChunkFinalInput, ProviderContext } from "./types.js";
+import type { ChunkFinalInput, EnrichmentProvider, ProviderContext } from "./types.js";
 
 export interface CompletionRunnerDeps {
   filePhase: FilePhase;
@@ -36,7 +36,11 @@ export interface CompletionRunnerDeps {
  * EnrichmentRecovery) — passed as a callback so CompletionRunner stays
  * decoupled from Recovery. Resolves to 0 when recovery is unavailable.
  */
-export type UnenrichedReader = (coll: string, providerKey: string, level: "file" | "chunk") => Promise<number>;
+export type UnenrichedReader = (
+  coll: string,
+  provider: EnrichmentProvider,
+  level: "file" | "chunk",
+) => Promise<number>;
 
 export class CompletionRunner {
   constructor(private readonly deps: CompletionRunnerDeps) {}
@@ -86,7 +90,7 @@ export class CompletionRunner {
 
     // 4. markFileFinal per ctx — reconcile to degraded on residual file-unenriched.
     for (const ctx of contexts.values()) {
-      const fileUnenriched = await readUnenriched(coll, ctx.key, "file");
+      const fileUnenriched = await readUnenriched(coll, ctx.provider, "file");
       const fileStatus = filePhase.hasPrefetchFailed(ctx.key)
         ? "failed"
         : fileUnenriched > 0
@@ -155,7 +159,7 @@ export class CompletionRunner {
 
     // 8. markChunkFinal per ctx
     for (const ctx of contexts.values()) {
-      const chunkUnenriched = await readUnenriched(coll, ctx.key, "chunk");
+      const chunkUnenriched = await readUnenriched(coll, ctx.provider, "chunk");
       let chunkStatus: ChunkFinalInput["status"];
       if (filePhase.hasPrefetchFailed(ctx.key) || chunkPhase.hasChunkEnrichmentFailed(ctx.key)) {
         chunkStatus = "failed";

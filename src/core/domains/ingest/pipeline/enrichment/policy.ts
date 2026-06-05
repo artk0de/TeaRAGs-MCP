@@ -28,3 +28,29 @@ export function enrichmentScope(provider: EnrichmentProvider, relPath: string, c
   const classification = classify(relPath, { isDocumentation: isDocumentationPath(relPath), contentHead });
   return provider.shouldEnrich({ relPath, classification });
 }
+
+/**
+ * Drop repo-relative paths the provider declines entirely (`"none"`). Used by
+ * every FILE-level dispatch site (file-phase, backfiller, recovery) so a
+ * generated file is never file-enriched, no matter which path reaches it.
+ * Providers without `shouldEnrich` get the list unchanged.
+ */
+export function filterFileEnrichPaths(provider: EnrichmentProvider, paths: readonly string[]): string[] {
+  if (!provider.shouldEnrich) return [...paths];
+  return paths.filter((p) => enrichmentScope(provider, p) !== "none");
+}
+
+/**
+ * Keep only `"full"`-scope entries of a CHUNK map (keyed by repo-relative
+ * path) — both `"none"` and `"file-only"` skip the expensive chunk-churn walk.
+ * Used by every CHUNK-level dispatch site (chunk-phase, backfiller, recovery).
+ * Providers without `shouldEnrich` get the map unchanged.
+ */
+export function filterChunkEnrichMap<T>(provider: EnrichmentProvider, map: Map<string, T>): Map<string, T> {
+  if (!provider.shouldEnrich) return map;
+  const out = new Map<string, T>();
+  for (const [rel, value] of map) {
+    if (enrichmentScope(provider, rel) === "full") out.set(rel, value);
+  }
+  return out;
+}

@@ -348,7 +348,7 @@ export class EnrichmentCoordinator {
         collectionName,
         run.contexts,
         run.startTime,
-        async (coll, providerKey, level) => this.countSettledUnenriched(coll, providerKey, level),
+        async (coll, provider, level) => this.countSettledUnenriched(coll, provider, level),
         run.startedAt,
         run.runId,
       );
@@ -428,13 +428,13 @@ export class EnrichmentCoordinator {
    */
   private async countSettledUnenriched(
     collectionName: string,
-    providerKey: string,
+    provider: EnrichmentProvider,
     level: "file" | "chunk",
   ): Promise<number> {
     if (!this.recovery) return 0;
-    const first = await this.recovery.countUnenriched(collectionName, providerKey, level).catch(() => 0);
+    const first = await this.recovery.countUnenriched(collectionName, provider, level).catch(() => 0);
     if (first === 0) return 0;
     await new Promise((resolve) => setTimeout(resolve, 500));
-    return await this.recovery.countUnenriched(collectionName, providerKey, level).catch(() => first);
+    return await this.recovery.countUnenriched(collectionName, provider, level).catch(() => first);
   }
 }

@@ -105,8 +105,8 @@ describe("CompletionRunner", () => {
     // chunk count > 0 → degraded
     expect(final.chunk.status).toBe("degraded");
     expect(final.chunk.unenrichedChunks).toBe(17);
-    expect(reader).toHaveBeenCalledWith("coll", "git", "file");
-    expect(reader).toHaveBeenCalledWith("coll", "git", "chunk");
+    expect(reader).toHaveBeenCalledWith("coll", expect.objectContaining({ key: "git" }), "file");
+    expect(reader).toHaveBeenCalledWith("coll", expect.objectContaining({ key: "git" }), "chunk");
   });
 
   it("re-fires chunkPhase.onComplete after backfill produces overlays", async () => {
