@@ -316,10 +316,10 @@ export interface EnrichmentProvider {
    * (contracts is pure — no infra import); the canonical type is
    * FileClassification in contracts/types/file-classification.ts.
    */
-  shouldEnrich?(file: {
+  shouldEnrich?: (file: {
     relPath: string;
     classification: { isSource: boolean; isGenerated: boolean; isDocumentation: boolean; isTest: boolean };
-  }): EnrichmentScope;
+  }) => EnrichmentScope;
   /**
    * Worker-pool descriptor for the unified enrichment executor. Absent ⇒
    * `WorkerPoolEnrichmentExecutor` runs this provider on the main thread

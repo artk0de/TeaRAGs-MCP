@@ -375,13 +375,13 @@ export class ChunkPhase {
     state: ChunkPhaseState,
     coll: string,
     root: string,
-    chunkMap: Map<string, ChunkLookupEntry[]>,
+    inputChunkMap: Map<string, ChunkLookupEntry[]>,
     useSemaphore: boolean,
   ): Promise<boolean> {
     // Per-file policy: only "full"-scope files get the chunk-churn walk. Applied
     // here (the single chokepoint for streaming + post-flush) and BEFORE the
     // streaming-enriched marking below, so dropped files are never marked.
-    chunkMap = this.filterByEnrichmentPolicy(chunkMap, ctx.provider, root);
+    const chunkMap = this.filterByEnrichmentPolicy(inputChunkMap, ctx.provider, root);
     if (chunkMap.size === 0) return Promise.resolve(true);
 
     if (useSemaphore) {
