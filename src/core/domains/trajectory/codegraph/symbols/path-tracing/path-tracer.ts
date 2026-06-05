@@ -1,6 +1,5 @@
-// src/core/domains/trajectory/codegraph/symbols/path-tracing/path-tracer.ts
 import type { SymbolId } from "../../../../../contracts/types/codegraph.js";
-import type { EnumerateOptions, EnumerateResult } from "./types.js";
+import type { PathEnumerateOptions, PathEnumerateResult } from "./types.js";
 
 /**
  * Enumerate every simple call path `from`->`to` over a pre-built adjacency
@@ -9,11 +8,11 @@ import type { EnumerateOptions, EnumerateResult } from "./types.js";
  * no node repeats within a path, so a cyclic graph cannot loop forever.
  */
 export function enumeratePaths(
-  adjacency: ReadonlyMap<SymbolId, SymbolId[]>,
+  adjacency: ReadonlyMap<SymbolId, readonly SymbolId[]>,
   from: SymbolId,
   to: SymbolId,
-  opts: EnumerateOptions,
-): EnumerateResult {
+  opts: PathEnumerateOptions,
+): PathEnumerateResult {
   const paths: SymbolId[][] = [];
   let truncated = false;
 
