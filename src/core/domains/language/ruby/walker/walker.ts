@@ -419,6 +419,60 @@ function readScopeResolution(node: Parser.SyntaxNode): string {
 }
 
 /**
+ * Strip trailing no-arg call wrappers (`{...}.freeze`, `[...].freeze.dup`) to
+ * reach the underlying collection literal. Returns the receiver chain's root,
+ * which the caller checks for `array` / `hash`. Non-call inputs pass through.
+ */
+function unwrapTrailingCalls(node: Parser.SyntaxNode | null): Parser.SyntaxNode | null {
+  let n = node;
+  while (n?.type === "call") {
+    const receiver = n.childForFieldName("receiver");
+    if (!receiver) break;
+    n = receiver;
+  }
+  return n;
+}
+
+/**
+ * Emit a reference CallRef for every constant / scope_resolution used inside a
+ * constant-assigned collection literal (registry pattern, bd tea-rags-mcp-ki9v).
+ * Mirrors `collectRubyConstantRefs`'s outermost-only discipline for nested
+ * `scope_resolution`. Descent stops at lambda / proc / block / nested def
+ * bodies: a constant referenced there is dispatched at runtime, not a static
+ * registry reference, and is out of scope (bd tea-rags-mcp-jw9n). Receiver and
+ * member both carry the fully-qualified constant so the `constant` resolver
+ * pins it to the declaring file (file-only edge when no method matches).
+ */
+function collectRegistryConstantValueRefs(literal: Parser.SyntaxNode, out: CallRef[]): void {
+  const walkValue = (n: Parser.SyntaxNode): void => {
+    if (
+      n.type === "lambda" ||
+      n.type === "block" ||
+      n.type === "do_block" ||
+      n.type === "method" ||
+      n.type === "singleton_method"
+    ) {
+      return;
+    }
+    if (n.type === "scope_resolution") {
+      if (n.parent?.type === "scope_resolution") return; // outermost only
+      const qualified = readScopeResolution(n);
+      if (qualified) {
+        out.push({ callText: qualified, receiver: qualified, member: qualified, startLine: n.startPosition.row + 1 });
+      }
+      return;
+    }
+    if (n.type === "constant") {
+      if (n.parent?.type === "scope_resolution") return; // covered by the outer chain
+      out.push({ callText: n.text, receiver: n.text, member: n.text, startLine: n.startPosition.row + 1 });
+      return;
+    }
+    for (const child of n.children) walkValue(child);
+  };
+  walkValue(literal);
+}
+
+/**
  * Whether a constant/scope_resolution node sits in a context where it
  * DECLARES something (class header, module header, assignment target,
  * superclass position) rather than REFERENCES something. Declarations
@@ -541,6 +595,28 @@ function collectRubyCalls(root: Parser.SyntaxNode): CallRef[] {
           member: oldName,
           startLine: node.startPosition.row + 1,
         });
+      }
+    }
+
+    // Registry constant-reference edges (bd tea-rags-mcp-ki9v). A constant
+    // assignment whose RHS is a collection literal — `CONST = { k => Klass }`
+    // or `CONST = [Klass, ...]`, optionally `.freeze`d — hard-references each
+    // value class. Those references are `constant`/`scope_resolution` nodes,
+    // not `call` nodes, so without this branch the registry chunk gets
+    // chunk fanOut=0 despite coupling to every value class. Emit a synthetic
+    // reference CallRef per literal constant; receiver === member === the
+    // fully-qualified constant so the `constant` resolver pins it to the
+    // declaring file as a file-only edge (the method-edge fan-out counts it).
+    // Constants nested in a lambda / proc / block body (STI-style
+    // `-> { Klass }` registries) are deliberately skipped — those resolve at
+    // call time, a separate type-aware concern (bd tea-rags-mcp-jw9n).
+    if (node.type === "assignment") {
+      const left = node.childForFieldName("left");
+      if (left && (left.type === "constant" || left.type === "scope_resolution")) {
+        const literal = unwrapTrailingCalls(node.childForFieldName("right"));
+        if (literal && (literal.type === "array" || literal.type === "hash")) {
+          collectRegistryConstantValueRefs(literal, out);
+        }
       }
     }
 

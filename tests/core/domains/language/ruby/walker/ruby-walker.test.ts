@@ -1535,3 +1535,72 @@ describe("extractFromRubyFile — Symbol#to_proc block-pass (bd meh1)", () => {
     expect(r.chunks[0].calls.find((cr) => cr.callText.startsWith("&:"))).toBeUndefined();
   });
 });
+
+describe("extractFromRubyFile — registry constant-hash value edges (bd tea-rags-mcp-ki9v)", () => {
+  it("emits a reference CallRef for each constant used as a hash value in a constant assignment", () => {
+    const src =
+      "class Registry\n" +
+      "  TABLE = {\n" +
+      "    'job' => Workflow::Job::Clone,\n" +
+      "    'task' => Workflow::Task::Clone,\n" +
+      "  }.freeze\n" +
+      "end\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "registry.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Registry", scope: [], startLine: 1, endLine: 6 }],
+    });
+    const { calls } = r.chunks[0];
+    expect(calls.find((cr) => cr.receiver === "Workflow::Job::Clone")).toBeDefined();
+    expect(calls.find((cr) => cr.receiver === "Workflow::Task::Clone")).toBeDefined();
+  });
+
+  it("emits a reference CallRef for a constant used as an array element in a constant assignment", () => {
+    const src = "class Registry\n  HANDLERS = [Foo::Bar, Baz::Qux].freeze\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "registry.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Registry", scope: [], startLine: 1, endLine: 3 }],
+    });
+    const { calls } = r.chunks[0];
+    expect(calls.find((cr) => cr.receiver === "Foo::Bar")).toBeDefined();
+    expect(calls.find((cr) => cr.receiver === "Baz::Qux")).toBeDefined();
+  });
+
+  it("does NOT emit for a constant nested inside a lambda value (STI registry, out of scope — jw9n)", () => {
+    const src =
+      "class Registry\n" +
+      "  TABLE = {\n" +
+      "    'job' => -> { Workflow::Job::Clone },\n" +
+      "  }.freeze\n" +
+      "end\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "registry.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Registry", scope: [], startLine: 1, endLine: 5 }],
+    });
+    expect(r.chunks[0].calls.find((cr) => cr.receiver === "Workflow::Job::Clone")).toBeUndefined();
+  });
+
+  it("does NOT emit registry value edges for a non-constant (local var) assignment target", () => {
+    const src = "class Registry\n  table = { 'job' => Workflow::Job::Clone }\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "registry.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Registry", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].calls.find((cr) => cr.receiver === "Workflow::Job::Clone")).toBeUndefined();
+  });
+});
