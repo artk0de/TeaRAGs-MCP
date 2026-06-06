@@ -10,7 +10,7 @@ import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/t
 export class DangerousCompositePreset implements CompositeRerankPreset {
   readonly name = "dangerous";
   readonly description = "High-risk code: bug-prone, volatile, single-owner, heavily depended on";
-  readonly tools = ["semantic_search", "hybrid_search", "find_similar", "rank_chunks"];
+  readonly tools = ["semantic_search", "hybrid_search", "find_similar", "rank_chunks", "trace_path"];
   readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     bugFix: 0.3,

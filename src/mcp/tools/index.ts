@@ -35,7 +35,7 @@ export function registerAllTools(server: McpServer, deps: ToolDependencies): voi
   registerDocumentTools(server, { app: deps.app, register });
   registerSearchTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder, register });
   registerCodeTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder, register });
-  registerCodegraphTools(server, { app: deps.app, register });
+  registerCodegraphTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder, register });
   registerProjectTools(server, { app: deps.app, register });
   registerRegisterProjectTool(server, { app: deps.app, register });
   registerUnregisterProjectTool(server, { app: deps.app, register });

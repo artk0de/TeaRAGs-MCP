@@ -16,7 +16,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
 export class RecentPreset implements RerankPreset {
   readonly name = "recent";
   readonly description = "Boost actively developed, recently modified code";
-  readonly tools = ["search_code", "semantic_search", "hybrid_search", "find_similar"];
+  readonly tools = ["search_code", "semantic_search", "hybrid_search", "find_similar", "trace_path"];
   readonly weights: ScoringWeights = {
     similarity: 0.5,
     recency: 0.2,

@@ -1312,6 +1312,21 @@ describe("Reranker with resolvedPresets", () => {
     expect(reranker.getPresetNames("search_code")).toContain("fastFind");
   });
 
+  it("getPresetNames('trace_path') returns only presets tagged with the trace_path tool", () => {
+    const tracePathPreset: RerankPreset = {
+      name: "bugHunt",
+      description: "Bug-prone danger preset",
+      tools: ["semantic_search", "trace_path"],
+      weights: { similarity: 0.3, bugFix: 0.7 },
+      overlayMask: { raw: { file: ["bugFixRate"] } },
+    };
+    const reranker = new Reranker(allDescriptors, [tracePathPreset, customPreset, searchCodePreset]);
+    // Tagged preset surfaces under trace_path; untagged presets (myPreset, fastFind) do not.
+    expect(reranker.getPresetNames("trace_path")).toContain("bugHunt");
+    expect(reranker.getPresetNames("trace_path")).not.toContain("myPreset");
+    expect(reranker.getPresetNames("trace_path")).not.toContain("fastFind");
+  });
+
   it("getDescriptorInfo returns all descriptor info", () => {
     const reranker = new Reranker(allDescriptors, testPresets);
     const info = reranker.getDescriptorInfo();

@@ -23,7 +23,7 @@ import type { Reranker } from "../../../domains/explore/reranker.js";
 import { enumeratePaths } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import { resolveCollection } from "../../../infra/collection-name.js";
 import type { CollectionRegistry } from "../../../infra/registry/index.js";
-import type { PathStep, PathTraceResult, TracePathRequest, TracedPath } from "../../public/dto/graph.js";
+import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "../../public/dto/graph.js";
 
 const DEFAULT_MAX_DEPTH = 8;
 const DEFAULT_MAX_PATHS = 10;
@@ -82,7 +82,7 @@ export class TracePathOps {
 
     // 4. Annotate-only rerank over the hydrated chunks -> danger score + overlay.
     const rerankInput = chunks.map((c) => ({ id: c.id, score: 0, payload: c.payload }));
-    const annotated = await this.deps.reranker.rerank(rerankInput, preset, "semantic_search", { reorder: false });
+    const annotated = await this.deps.reranker.rerank(rerankInput, preset, "trace_path", { reorder: false });
     const dangerById = new Map<string, { score: number; overlay?: RankingOverlay }>();
     for (const r of annotated) {
       const sid = r.payload?.symbolId as string | undefined;

@@ -16,7 +16,7 @@ export class HotspotsCompositePreset implements CompositeRerankPreset {
   readonly name = "hotspots";
   readonly description =
     "Surface frequently-changing code areas with structural awareness (chunk churn + dependency fanIn)";
-  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
+  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];
   readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.18,

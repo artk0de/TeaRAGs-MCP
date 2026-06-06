@@ -15,13 +15,23 @@ function makeOps(overrides: Partial<Record<string, unknown>> = {}) {
     scrollBySymbolIds: vi.fn(async (_c: string, ids: string[]) =>
       ids.map((id) => ({
         id,
-        payload: { symbolId: id, relativePath: `${id}.ts`, startLine: 1, endLine: 9, git: { file: { bugFixRate: id === "B" ? 90 : 0 } } },
+        payload: {
+          symbolId: id,
+          relativePath: `${id}.ts`,
+          startLine: 1,
+          endLine: 9,
+          git: { file: { bugFixRate: id === "B" ? 90 : 0 } },
+        },
       })),
     ),
   };
   const reranker = {
     rerank: vi.fn(async (results: { payload?: { symbolId?: string } }[]) =>
-      results.map((r) => ({ ...r, score: r.payload?.symbolId === "B" ? 0.9 : 0.1, rankingOverlay: { preset: "bugHunt" } })),
+      results.map((r) => ({
+        ...r,
+        score: r.payload?.symbolId === "B" ? 0.9 : 0.1,
+        rankingOverlay: { preset: "bugHunt" },
+      })),
     ),
   };
   const collectionRegistry = {};
@@ -60,10 +70,19 @@ describe("TracePathOps.tracePath", () => {
   });
 
   it("passes reorder:false to the reranker (annotate-only)", async () => {
-    const reranker = { rerank: vi.fn(async (r: unknown[]) => r.map((x) => ({ ...(x as object), score: 0, rankingOverlay: { preset: "bugHunt" } }))) };
+    const reranker = {
+      rerank: vi.fn(async (r: unknown[]) =>
+        r.map((x) => ({ ...(x as object), score: 0, rankingOverlay: { preset: "bugHunt" } })),
+      ),
+    };
     const ops = makeOps({ reranker: reranker as never });
     await ops.tracePath({ collection: "c", from: "A", to: "C" });
-    expect(reranker.rerank).toHaveBeenCalledWith(expect.anything(), "bugHunt", "semantic_search", expect.objectContaining({ reorder: false }));
+    expect(reranker.rerank).toHaveBeenCalledWith(
+      expect.anything(),
+      "bugHunt",
+      "trace_path",
+      expect.objectContaining({ reorder: false }),
+    );
   });
 
   it("sorts the path list by aggregateDanger, most dangerous path first", async () => {
@@ -84,7 +103,11 @@ describe("TracePathOps.tracePath", () => {
     };
     const reranker = {
       rerank: vi.fn(async (results: { payload?: { symbolId?: string } }[]) =>
-        results.map((r) => ({ ...r, score: danger[r.payload?.symbolId ?? ""] ?? 0, rankingOverlay: { preset: "bugHunt" } })),
+        results.map((r) => ({
+          ...r,
+          score: danger[r.payload?.symbolId ?? ""] ?? 0,
+          rankingOverlay: { preset: "bugHunt" },
+        })),
       ),
     };
     const ops = new TracePathOps({

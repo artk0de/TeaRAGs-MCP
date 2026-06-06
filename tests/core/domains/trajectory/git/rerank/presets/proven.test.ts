@@ -9,14 +9,17 @@ describe("ProvenPreset", () => {
     expect(preset.name).toBe("proven");
   });
 
-  it("is available in semantic_search, hybrid_search, search_code, and find_similar", () => {
+  it("is available in semantic_search, hybrid_search, search_code, find_similar, and trace_path", () => {
     expect(preset.tools).toContain("semantic_search");
     expect(preset.tools).toContain("hybrid_search");
     expect(preset.tools).toContain("search_code");
     // find_similar is required so extract-project-patterns can pass rerank="proven"
     // through find_similar (chunk-based template lookup).
     expect(preset.tools).toContain("find_similar");
-    expect(preset.tools).toHaveLength(4);
+    // trace_path is required so the curated rerank enum can offer "proven"
+    // as a low-churn lens for danger-ranking path steps.
+    expect(preset.tools).toContain("trace_path");
+    expect(preset.tools).toHaveLength(5);
   });
 
   it("uses all 6 expected weight keys", () => {
