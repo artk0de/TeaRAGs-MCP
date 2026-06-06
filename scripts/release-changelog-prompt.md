@@ -57,7 +57,8 @@ Write a file `release-notes.json` matching this schema exactly:
 2. **Group by domain**, not by commit type. Domains come from the commit scope:
    `explore`, `ingest`, `trajectory`, `api`, `chunker`, `codegraph`, `adapters`,
    `infra`, `config`, `language`, `git`, `mcp`, `signals`. Derive the domain
-   from the `type(scope):` prefix; if a scope is ambiguous, read the `body`.
+   from the `type(scope):` prefix; if a scope is ambiguous, read the `body`. For
+   a multi-scope commit (`type(a,b):`), use the first scope as the domain.
 3. **Mark fixes.** A `fix` commit's item gets `"kind": "fix"` — the renderer
    prefixes it with `fix:`. A `feat` commit's item has NO `kind` field.
 4. **Declarative descriptions.** Describe the resulting capability/behavior, not
