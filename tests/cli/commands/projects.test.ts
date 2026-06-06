@@ -82,7 +82,7 @@ describe("CLI 'projects' command group", () => {
       }
     });
 
-    it("prints tab-separated name/collection/path when entries exist", async () => {
+    it("prints an aligned table with a header and the entry name", async () => {
       await runRegister({ path: repo, name: "alpha" });
       const calls: string[] = [];
       const stdout = vi.spyOn(process.stdout, "write").mockImplementation((c) => {
@@ -92,10 +92,31 @@ describe("CLI 'projects' command group", () => {
       try {
         runList({});
         const out = calls.join("");
-        expect(out).toMatch(/^alpha\t/m);
-        expect(out).toContain(realpathSync(repo));
+        expect(out).toMatch(/NAME/);
+        expect(out).toMatch(/CHUNKS/);
+        expect(out).toMatch(/QDRANT/);
+        expect(out).toContain("alpha");
       } finally {
         stdout.mockRestore();
+      }
+    });
+
+    it("emits no ANSI escape codes when NO_COLOR is set", async () => {
+      await runRegister({ path: repo, name: "alpha" });
+      const savedNoColor = process.env.NO_COLOR;
+      process.env.NO_COLOR = "1";
+      const calls: string[] = [];
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation((c) => {
+        calls.push(String(c));
+        return true;
+      });
+      try {
+        runList({});
+        expect(calls.join("")).not.toContain("\x1b");
+      } finally {
+        stdout.mockRestore();
+        if (savedNoColor === undefined) delete process.env.NO_COLOR;
+        else process.env.NO_COLOR = savedNoColor;
       }
     });
 

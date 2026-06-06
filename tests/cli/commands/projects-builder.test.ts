@@ -87,7 +87,8 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     stdoutSpy.mockClear();
     await makeCli().parseAsync(["projects", "list"]);
     const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
-    expect(out).toMatch(/^alpha\t/m);
+    expect(out).toMatch(/NAME/);
+    expect(out).toContain("alpha");
   });
 
   it("info subcommand closure invokes runInfo", async () => {
