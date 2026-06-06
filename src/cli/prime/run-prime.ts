@@ -48,15 +48,23 @@ function lookupRegistryEntry(input: { path?: string; project?: string }): Collec
  *   2. Heuristic: discoverQdrantUrl + the provided --path.
  */
 export async function runPrime(input: { path?: string; project?: string }): Promise<void> {
-  const registryEntry = lookupRegistryEntry(input);
-  const path = registryEntry?.path ?? input.path;
+  // Path resolution priority: explicit --path, then --project alias (via
+  // registry), then the current working directory. The cwd fallback covers
+  // hooks whose $CLAUDE_PROJECT_DIR expanded empty (`prime ""`): prime then
+  // resolves the cwd's registered project instead of erroring "no path
+  // provided". An explicit but unregistered --project keeps its own error —
+  // cwd would mask the caller's stated intent.
+  const hasExplicitPath = typeof input.path === "string" && input.path.length > 0;
+  const requestedPath = hasExplicitPath ? input.path : input.project ? undefined : process.cwd();
+
+  const registryEntry = lookupRegistryEntry({ path: requestedPath, project: input.project });
+  const path = registryEntry?.path ?? requestedPath;
 
   if (!path) {
+    // Only reachable when --project was given but is absent from the registry;
+    // a missing path with no project resolved to cwd above.
     process.stdout.write(
-      formatPrime({
-        kind: "path-not-found",
-        path: input.project ? `(project '${input.project}' not registered)` : "(no path provided)",
-      }),
+      formatPrime({ kind: "path-not-found", path: `(project '${input.project}' not registered)` }),
     );
     return;
   }
