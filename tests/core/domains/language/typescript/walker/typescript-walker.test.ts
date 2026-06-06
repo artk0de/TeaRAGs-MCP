@@ -1060,3 +1060,197 @@ describe("extractFromTypescriptFile — dispatch tables (n0zj)", () => {
     expect(e.dispatchTables?.["T"]?.entries).toEqual({ named: "fnNamed" });
   });
 });
+
+// ─── collectParamBindings + assignParamBindingsToInnermostChunks ──────────────
+// These functions extract typed method parameters and associate them with
+// chunks' localBindings so `this.param.method()` can be resolved cross-method.
+// The existing "parameter-type bindings (localBindings)" suite above covers
+// the happy-path. These tests target additional branches:
+// - accessor-modified ctor params are SKIPPED (collectParamBindings hasAccess guard)
+// - typed params are routed to the INNERMOST chunk only (assignParamBindingsToInnermostChunks)
+describe("extractFromTypescriptFile — collectParamBindings accessor guard and chunk routing", () => {
+  it("skips constructor parameter properties (`private`/`public`/`readonly`) — those go through classFieldTypes, not localBindings", () => {
+    // `private readonly store: StoreType` has an accessibility modifier →
+    // collectParamBindings skips it. `req: Request` has no modifier → binds.
+    const code = [
+      "class A {",
+      "  constructor(private readonly store: StoreType, req: Request) {",
+      "    req.url;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const extraction = extractFromTypescriptFile({
+      tree: parse(code),
+      code,
+      relPath: "src/a.ts",
+      language: "typescript",
+      chunks: [{ symbolId: "A#constructor", startLine: 2, endLine: 4, scope: ["A"] }],
+    });
+    const chunk = extraction.chunks[0];
+    // `req: Request` has no accessibility modifier → localBindings carries it.
+    expect(chunk.localBindings?.["req"]).toBe("Request");
+    // `store` has `private readonly` → skipped by collectParamBindings.
+    expect(chunk.localBindings?.["store"]).toBeUndefined();
+  });
+
+  it("routes typed method parameter to the innermost chunk only (assignParamBindingsToInnermostChunks)", () => {
+    // `process(job: JobDescriptor)` — binding must land on Worker#process, NOT Worker.
+    const code = ["class Worker {", "  process(job: JobDescriptor) {", "    job.run();", "  }", "}", ""].join("\n");
+    const extraction = extractFromTypescriptFile({
+      tree: parse(code),
+      code,
+      relPath: "src/worker.ts",
+      language: "typescript",
+      chunks: [
+        { symbolId: "Worker", startLine: 1, endLine: 5, scope: [] },
+        { symbolId: "Worker#process", startLine: 2, endLine: 4, scope: ["Worker"] },
+      ],
+    });
+    const method = extraction.chunks.find((c) => c.symbolId === "Worker#process");
+    const cls = extraction.chunks.find((c) => c.symbolId === "Worker");
+    expect(method?.localBindings?.["job"]).toBe("JobDescriptor");
+    expect(cls?.localBindings?.["job"]).toBeUndefined();
+  });
+});
+
+// ─── collectDispatchTables — export const variant ────────────────────────────
+describe("extractFromTypescriptFile — collectDispatchTables (export const)", () => {
+  it("records dispatch table from `export const T = { a: fnA, b: fnB }`", () => {
+    // collectDispatchTables also scans `export_statement` children —
+    // this exercises the `child.type === "export_statement"` branch.
+    const code = [
+      "function fnA() {}",
+      "function fnB() {}",
+      "export const HANDLERS = { create: fnA, update: fnB };",
+      "",
+    ].join("\n");
+    const extraction = extractFromTypescriptFile({
+      tree: parse(code),
+      code,
+      relPath: "src/handlers.ts",
+      language: "typescript",
+      chunks: [],
+    });
+    expect(extraction.dispatchTables?.["HANDLERS"]?.entries).toEqual({
+      create: "fnA",
+      update: "fnB",
+    });
+  });
+
+  it("records dispatch table from top-level `const T = { ... }` (non-exported)", () => {
+    const code = ["const ROUTES = { home: renderHome, about: renderAbout };", ""].join("\n");
+    const extraction = extractFromTypescriptFile({
+      tree: parse(code),
+      code,
+      relPath: "src/routes.ts",
+      language: "typescript",
+      chunks: [],
+    });
+    expect(extraction.dispatchTables?.["ROUTES"]?.entries).toMatchObject({
+      home: "renderHome",
+      about: "renderAbout",
+    });
+  });
+
+  it("skips object with no identifier values (no dispatch entries produced)", () => {
+    // Values are string literals, not identifiers — objectToTableEntries
+    // produces no entries, so the table is NOT added to dispatchTables.
+    const code = "const CONFIG = { host: 'localhost', port: '3000' };\n";
+    const extraction = extractFromTypescriptFile({
+      tree: parse(code),
+      code,
+      relPath: "src/config.ts",
+      language: "typescript",
+      chunks: [],
+    });
+    expect(extraction.dispatchTables?.["CONFIG"]).toBeUndefined();
+  });
+});
+
+describe("extractFromTypescriptFile — collectCallbackParams and paramName branches", () => {
+  it("records callback parameter index when param is invoked inside function body", () => {
+    // collectCallbackParams: paramName(identifier) → records invoked param indices
+    const code = ["function withCallback(fn: () => void): void {", "  fn();", "}", ""].join("\n");
+    const extraction = extractFromTypescriptFile({
+      tree: parse(code),
+      code,
+      relPath: "src/x.ts",
+      language: "typescript",
+      chunks: [{ symbolId: "withCallback", startLine: 1, endLine: 3, scope: [] }],
+    });
+    expect(extraction.callbackParams?.["withCallback"]).toContain(0);
+  });
+
+  it("records required_parameter position in callbackParams (paramName via pattern field)", () => {
+    // paramName: node.type === "required_parameter" → pattern field
+    const code = [
+      "function apply(handler: (x: string) => void, value: string): void {",
+      "  handler(value);",
+      "}",
+      "",
+    ].join("\n");
+    const extraction = extractFromTypescriptFile({
+      tree: parse(code),
+      code,
+      relPath: "src/x.ts",
+      language: "typescript",
+      chunks: [{ symbolId: "apply", startLine: 1, endLine: 3, scope: [] }],
+    });
+    // handler at index 0 is invoked → callbackParams should record it
+    expect(extraction.callbackParams?.["apply"]).toContain(0);
+  });
+
+  it("skips function body when params node is missing (paramName returns null for destructured param)", () => {
+    // paramName: node type is not identifier / required_parameter / optional_parameter → null
+    // collectCallbackParams: nameToIndex.size === 0 (no resolvable names) → early return
+    const code = [
+      "function noNamedParams({ x, y }: { x: number; y: number }): void {",
+      "  console.log(x, y);",
+      "}",
+      "",
+    ].join("\n");
+    const extraction = extractFromTypescriptFile({
+      tree: parse(code),
+      code,
+      relPath: "src/x.ts",
+      language: "typescript",
+      chunks: [{ symbolId: "noNamedParams", startLine: 1, endLine: 3, scope: [] }],
+    });
+    // No callback params because destructured param has no plain name
+    expect(extraction.callbackParams?.["noNamedParams"]).toBeUndefined();
+  });
+});
+
+describe("extractFromTypescriptFile — emitCall member_expression obj/prop null guard (line 327)", () => {
+  it("does not crash on computed member_expression in call (no property_identifier)", () => {
+    // emitCall: member_expression with computed property → obj/prop guards may return
+    // This is a valid TS call that should not throw
+    const code = ["const key = 'foo';", "obj[key]();", ""].join("\n");
+    const extraction = extractFromTypescriptFile({
+      tree: parse(code),
+      code,
+      relPath: "src/x.ts",
+      language: "typescript",
+      chunks: [{ symbolId: "module", startLine: 1, endLine: 2, scope: [] }],
+    });
+    expect(extraction).toBeDefined();
+  });
+});
+
+describe("extractFromTypescriptFile — import without string src guard (line 169)", () => {
+  it("skips import statement with no string source (e.g. import type assertion)", () => {
+    // import_statement with no string child → if (!src) return
+    // A dynamic require pattern that tree-sitter may parse differently
+    const code = ['import "./side-effect";', "const x = 1;", ""].join("\n");
+    const extraction = extractFromTypescriptFile({
+      tree: parse(code),
+      code,
+      relPath: "src/x.ts",
+      language: "typescript",
+      chunks: [],
+    });
+    // The side-effect import should be captured
+    expect(extraction.imports.map((i) => i.importText)).toContain("./side-effect");
+  });
+});

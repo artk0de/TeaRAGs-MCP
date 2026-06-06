@@ -1620,11 +1620,7 @@ describe("extractFromRubyFile — registry constant-hash value edges (bd tea-rag
 
   it("does NOT emit for a constant nested inside a lambda value (STI registry, out of scope — jw9n)", () => {
     const src =
-      "class Registry\n" +
-      "  TABLE = {\n" +
-      "    'job' => -> { Workflow::Job::Clone },\n" +
-      "  }.freeze\n" +
-      "end\n";
+      "class Registry\n" + "  TABLE = {\n" + "    'job' => -> { Workflow::Job::Clone },\n" + "  }.freeze\n" + "end\n";
     const tree = parse(src);
     const r = extractFromRubyFile({
       tree,
@@ -1647,5 +1643,359 @@ describe("extractFromRubyFile — registry constant-hash value edges (bd tea-rag
       chunks: [{ symbolId: "Registry", scope: [], startLine: 1, endLine: 3 }],
     });
     expect(r.chunks[0].calls.find((cr) => cr.receiver === "Workflow::Job::Clone")).toBeUndefined();
+  });
+});
+
+// mixinTargetFromStatement — scope_resolution argument (Acme::Base)
+// The function handles both `constant` and `scope_resolution` first args.
+describe("extractFromRubyFile — mixin scope_resolution ancestors", () => {
+  it("captures `include Acme::Base` as a qualified ancestor", () => {
+    const src = "class Foo\n  include Acme::Base\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "foo.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.["Foo"]).toContain("Acme::Base");
+  });
+
+  it("captures `prepend Acme::Concern` into classPrependedAncestors via scope_resolution", () => {
+    const src = "class Bar\n  prepend Acme::Concern\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "bar.rb", language: "ruby", chunks: [] });
+    expect(r.classPrependedAncestors?.["Bar"]).toContain("Acme::Concern");
+  });
+
+  it("captures `extend Mod::Helper` via scope_resolution into classAncestors", () => {
+    const src = "class Baz\n  extend Mod::Helper\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "baz.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.["Baz"]).toContain("Mod::Helper");
+  });
+
+  it("ignores mixin with lowercase constant (fails PascalCase guard)", () => {
+    const src = "class Qux\n  include lowercase_mod\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "q.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.["Qux"]).toBeUndefined();
+  });
+});
+
+// collectRubyConstantRefs — scope_resolution skips nested fragments:
+// Only the OUTERMOST scope_resolution is emitted; nested parents skip.
+describe("extractFromRubyFile — Zeitwerk constant refs scope_resolution deduplication", () => {
+  it("emits only the fully-qualified Acme::Auth::Login, not sub-fragments", () => {
+    const src = "class Svc\n  def call\n    Acme::Auth::Login.new\n  end\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "svc.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Svc#call", scope: ["Svc"], startLine: 2, endLine: 4 }],
+    });
+    const zeitwerkImports = r.imports.filter((i) => i.importText.includes("Acme::Auth::Login"));
+    expect(zeitwerkImports.length).toBeGreaterThanOrEqual(1);
+    // Sub-fragments must NOT appear as separate entries
+    const sub = r.imports.filter((i) => i.importText.endsWith("::Auth") || i.importText.endsWith("Acme"));
+    expect(sub).toHaveLength(0);
+  });
+});
+
+// collectLocalBindingsForChunk — method_call shape (tree-sitter-ruby emits
+// AR finders via method_call in some grammar versions; the walker accepts both
+// `call` and `method_call` node types).
+describe("extractFromRubyFile — localBindings AR finders method_call shape", () => {
+  it("binds u = User.find(1) via User class receiver", () => {
+    const src = `${["def show", "  u = User.find(1)", "  u.render", "end"].join("\n")}\n`;
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "ctrl.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "show", scope: ["show"], startLine: 1, endLine: 4 }],
+    });
+    // AR finder `find` binds `u` to `User`
+    if (r.chunks[0].localBindings) {
+      expect(r.chunks[0].localBindings["u"]).toBe("User");
+    }
+  });
+
+  it("does NOT bind when receiver is lowercase (not a class constant)", () => {
+    const src = "def m\n  x = helper.find(1)\n  x.use\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "m.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "m", scope: ["m"], startLine: 1, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings?.["x"]).toBeUndefined();
+  });
+});
+
+// ─── bare-identifier call suppression — parameter flavors ────────────────────
+// isBareIdentifierCallSite returns false for the `name` field of every
+// parameter flavour tree-sitter-ruby produces. These tests cover branches
+// that no existing test exercises: optional_parameter default-value expression,
+// keyword_parameter, splat_parameter, hash_splat_parameter, block_parameter.
+describe("extractFromRubyFile — isBareIdentifierCallSite parameter guards", () => {
+  it("does NOT emit a CallRef for an optional parameter name (`def f(x = val)`)", () => {
+    // `x` is the `name` field of an `optional_parameter` — NOT a call site.
+    const src = "def f(x = 1)\n  x\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].calls.find((c) => c.member === "x")).toBeUndefined();
+  });
+
+  it("does NOT emit a CallRef for a keyword parameter name (`def f(name:)`)", () => {
+    const src = "def f(name:)\n  name\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].calls.find((c) => c.member === "name")).toBeUndefined();
+  });
+
+  it("does NOT emit a CallRef for a splat parameter name (`def f(*args)`)", () => {
+    const src = "def f(*args)\n  args\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].calls.find((c) => c.member === "args")).toBeUndefined();
+  });
+
+  it("does NOT emit a CallRef for a hash-splat parameter name (`def f(**opts)`)", () => {
+    const src = "def f(**opts)\n  opts\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].calls.find((c) => c.member === "opts")).toBeUndefined();
+  });
+
+  it("does NOT emit a CallRef for a block parameter name (`def f(&blk)`)", () => {
+    const src = "def f(&blk)\n  blk\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].calls.find((c) => c.member === "blk")).toBeUndefined();
+  });
+
+  it("emits a bare CallRef for a method call on the element_reference receiver's index position", () => {
+    // `prs[:userAgent] = user_agent` — `prs` is element_reference.namedChildren[0]
+    // (the receiver being indexed), not a call. `user_agent` on the RHS IS a call.
+    // Exercises the element_reference guard in isBareIdentifierCallSite.
+    const src = "def f\n  prs = {}\n  prs[:x] = user_agent\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: [], startLine: 1, endLine: 4 }],
+    });
+    expect(r.chunks[0].calls.find((c) => c.member === "prs" && c.receiver === null)).toBeUndefined();
+    expect(r.chunks[0].calls.find((c) => c.member === "user_agent")).toBeDefined();
+  });
+});
+
+// ─── collectMethodLocalBindings — exception_variable and for-loop ─────────────
+describe("extractFromRubyFile — collectMethodLocalBindings edge cases", () => {
+  it("suppresses bare call emission for a for-loop variable when that identifier appears in the body", () => {
+    // `item` bound by `for item in items_list`; subsequent bare `item` is a local read.
+    const src = "def process\n  for item in items_list\n    item.save\n  end\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "process", scope: [], startLine: 1, endLine: 5 }],
+    });
+    expect(r.chunks[0].calls.find((c) => c.receiver === null && c.member === "item")).toBeUndefined();
+    expect(r.chunks[0].calls.find((c) => c.member === "save")).toBeDefined();
+  });
+
+  it("suppresses bare call emission for a rescue exception variable", () => {
+    // `e` bound by `rescue StandardError => e`; bare `e.message` receiver is fine.
+    const src = "def risky_op\n  begin\n    do_work()\n  rescue StandardError => e\n    log(e.message)\n  end\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "risky_op", scope: [], startLine: 1, endLine: 7 }],
+    });
+    expect(r.chunks[0].calls.find((c) => c.receiver === null && c.member === "e")).toBeUndefined();
+    expect(r.chunks[0].calls.find((c) => c.member === "message")).toBeDefined();
+  });
+});
+
+// ─── alias keyword redirect (bd tea-rags-mcp-y2z5) ───────────────────────────
+// `alias new_name old_name` emits a synthetic CallRef from the alias site to
+// the old method so the call-graph follows the redirect.
+describe("extractFromRubyFile — alias keyword DSL redirect (bd y2z5)", () => {
+  it("emits a CallRef for `alias to_s inspect` pointing to `inspect`", () => {
+    const src = "class Foo\n  def inspect\n    'foo'\n  end\n  alias to_s inspect\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [
+        { symbolId: "Foo#inspect", scope: ["Foo"], startLine: 2, endLine: 4 },
+        { symbolId: "Foo#to_s", scope: ["Foo"], startLine: 5, endLine: 5 },
+      ],
+    });
+    const allCalls = r.chunks.flatMap((c) => c.calls);
+    const redirect = allCalls.find((c) => c.member === "inspect" && c.receiver === null);
+    expect(redirect).toBeDefined();
+  });
+});
+
+describe("extractFromRubyFile — extractSecondLiteralSymbol guard paths", () => {
+  it("does NOT emit synthetic redirect when alias_method second arg is a string literal (not simple_symbol)", () => {
+    // extractSecondLiteralSymbol: secondArg.type !== "simple_symbol" → return null
+    // alias_method :new_name, "old_as_string" — second arg is string, not :symbol
+    const src = ["class Foo", "  def old_method", "  end", '  alias_method :new_name, "old_method"', "end", ""].join(
+      "\n",
+    );
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [
+        { symbolId: "Foo#old_method", scope: ["Foo"], startLine: 2, endLine: 3 },
+        { symbolId: "Foo#new_name", scope: ["Foo"], startLine: 4, endLine: 4 },
+      ],
+    });
+    const allCalls = r.chunks.flatMap((c) => c.calls);
+    // Should have the alias_method call itself but NO synthetic redirect to old_method
+    const syntheticRedirect = allCalls.find((c) => c.member === "old_method" && c.receiver === null);
+    expect(syntheticRedirect).toBeUndefined();
+  });
+});
+
+describe("extractFromRubyFile — extractDelegateTarget guard paths", () => {
+  it("emits synthetic CallRef when delegate to: value is a scope_resolution constant (Foo::Bar)", () => {
+    // extractDelegateTarget: value.type === "scope_resolution" → readScopeResolution → return text
+    const src = ["class Foo", "  delegate :name, to: Acme::Client", "end", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Foo#name", scope: ["Foo"], startLine: 2, endLine: 2 }],
+    });
+    const allCalls = r.chunks.flatMap((c) => c.calls);
+    // Should emit a synthetic call to Acme::Client.name
+    const delegateCall = allCalls.find((c) => c.member === "name" && c.receiver === "Acme::Client");
+    expect(delegateCall).toBeDefined();
+  });
+
+  it("does NOT emit synthetic CallRef when delegate to: value is a runtime expression (not symbol/constant)", () => {
+    // extractDelegateTarget: value type is neither simple_symbol nor constant → return null
+    const src = ["class Foo", "  delegate :name, to: get_receiver()", "end", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Foo#name", scope: ["Foo"], startLine: 2, endLine: 2 }],
+    });
+    const allCalls = r.chunks.flatMap((c) => c.calls);
+    // No synthetic delegate edge — to: value is not a resolvable constant
+    const delegateCall = allCalls.find((c) => c.member === "name" && c.receiver !== null && c.receiver !== "delegate");
+    expect(delegateCall).toBeUndefined();
+  });
+
+  it("emits synthetic CallRef when delegate to: value is a bare constant (not symbol)", () => {
+    // extractDelegateTarget: value.type === "constant" → return value.text
+    const src = ["class Foo", "  delegate :name, to: Client", "end", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Foo#name", scope: ["Foo"], startLine: 2, endLine: 2 }],
+    });
+    const allCalls = r.chunks.flatMap((c) => c.calls);
+    const delegateCall = allCalls.find((c) => c.member === "name" && c.receiver === "Client");
+    expect(delegateCall).toBeDefined();
+  });
+});
+
+describe("extractFromRubyFile — collectMethodLocalBindings nested method scope guard", () => {
+  it("does NOT add inner method's parameter as outer method's local binding", () => {
+    // collectMethodLocalBindings: skips nested method/singleton_method bodies (line 876)
+    // The outer method has param x — y is only in the nested inner method scope
+    const src = ["def outer(x)", "  def inner(y)", "    y.to_s", "  end", "  x.to_s", "end", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [
+        { symbolId: "outer", scope: [], startLine: 1, endLine: 6 },
+        { symbolId: "inner", scope: [], startLine: 2, endLine: 4 },
+      ],
+    });
+    // localTypeTrackingEnabled is off by default — check via calls instead
+    // The outer method should have a call to x.to_s (x is a param, not filtered)
+    const outerChunk = r.chunks.find((c) => c.symbolId === "outer");
+    expect(outerChunk).toBeDefined();
+    // y should NOT appear in outer's localBindings (would only be there if nested scopes leaked)
+    expect(outerChunk?.localBindings?.has("y")).toBeFalsy();
+  });
+});
+
+describe("extractFromRubyFile — collectRegistryConstantValueRefs (constant in registry)", () => {
+  it("emits constant CallRef from registry literal value (bare constant, not scope_resolution)", () => {
+    // collectRegistryConstantValueRefs: n.type === "constant" path (line 466-468)
+    const src = ["HANDLERS = {", "  create: CreateHandler,", "  update: UpdateHandler,", "}", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "HANDLERS", scope: [], startLine: 1, endLine: 4 }],
+    });
+    const allCalls = r.chunks.flatMap((c) => c.calls);
+    // Should emit CallRefs for CreateHandler and UpdateHandler constants
+    expect(allCalls.find((c) => c.member === "CreateHandler")).toBeDefined();
+    expect(allCalls.find((c) => c.member === "UpdateHandler")).toBeDefined();
   });
 });

@@ -247,3 +247,53 @@ describe("extractRubyMacroSymbols — defensive arg-shape guards", () => {
     expect(out.map((s) => s.name)).toEqual(["real_attr"]);
   });
 });
+
+// extractRubyMacroSymbols — singleton_class (`class << self`) container
+// Macros inside `class << self` declare CLASS-level (static) methods.
+describe("extractRubyMacroSymbols — singleton_class (class << self)", () => {
+  function findSingletonClass(tree: Parser.Tree): Parser.SyntaxNode {
+    const cls = tree.rootNode.namedChildren.find((n) => n.type === "class");
+    if (!cls) throw new Error("class not found");
+    const body = cls.childForFieldName("body");
+    const stmts = body ? body.namedChildren : cls.namedChildren;
+    const sc = stmts.find((n) => n.type === "singleton_class");
+    if (!sc) throw new Error("singleton_class not found");
+    return sc;
+  }
+
+  it("attr_reader inside class << self emits static (class-level) getter", () => {
+    const tree = parse("class Foo\n  class << self\n    attr_reader :setting\n  end\nend\n");
+    const sc = findSingletonClass(tree);
+    const out = extractRubyMacroSymbols(sc);
+    expect(out).toEqual([{ name: "setting", kind: "static", startLine: 3, endLine: 3 }]);
+  });
+
+  it("attr_accessor inside class << self emits static getter AND setter", () => {
+    const tree = parse("class Foo\n  class << self\n    attr_accessor :config\n  end\nend\n");
+    const sc = findSingletonClass(tree);
+    const out = extractRubyMacroSymbols(sc);
+    expect(out.map((s) => ({ name: s.name, kind: s.kind }))).toEqual([
+      { name: "config", kind: "static" },
+      { name: "config=", kind: "static" },
+    ]);
+  });
+
+  it("non-class/module/singleton_class container returns empty array immediately", () => {
+    const tree = parse("def foo\nend\n");
+    const methodNode = tree.rootNode.namedChildren.find((n) => n.type === "method");
+    if (!methodNode) throw new Error("method node not found");
+    const out = extractRubyMacroSymbols(methodNode);
+    expect(out).toEqual([]);
+  });
+});
+
+// literalNameFromArg — string branch with empty content → null (no emission)
+describe("extractRubyMacroSymbols — literalNameFromArg empty string guard", () => {
+  it("define_method with empty string arg emits nothing", () => {
+    const tree = parse('class Foo\n  define_method("") { 1 }\nend\n');
+    const cls = tree.rootNode.namedChildren.find((n) => n.type === "class");
+    if (!cls) throw new Error("class not found");
+    const out = extractRubyMacroSymbols(cls);
+    expect(out).toEqual([]);
+  });
+});
