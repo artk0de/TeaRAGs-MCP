@@ -2,10 +2,7 @@
 
 ### ci
 
-- Automated declarative changelog: a post-release workflow groups feat/fix
-  commits by domain into release notes (fix: marked, refactor/chore folded into
-  a Full Commits spoiler) with the release date, mirrored to the website and
-  CHANGELOG ([b54076c](https://github.com/artk0de/TeaRAGs-MCP/commit/b54076c))
+* post-release workflow generates declarative changelogs grouped by domain, with fix: markers, release date headers, and dual-format rendering ([b54076c](https://github.com/artk0de/TeaRAGs-MCP/commit/b54076c))
 
 ## [1.30.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.29.0...v1.30.0) (2026-06-06)
 
