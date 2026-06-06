@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { ZEITWERK_PREFIX } from "../../../../../../src/core/domains/language/ruby/walker/walker.js";
 import { RubyCallResolver } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
+import { ZEITWERK_PREFIX } from "../../../../../../src/core/domains/language/ruby/walker/walker.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function makeCtx(
@@ -2079,6 +2079,122 @@ describe("RubyCallResolver — Symbol#to_proc bare-call resolution (bd meh1)", (
     };
     const target = resolver.resolve({ callText: "&:active?", receiver: null, member: "active?", startLine: 3 }, ctx);
     expect(target?.targetSymbolId).toBe("User#active?");
+    expect(target?.targetRelPath).toBe("app/models/user.rb");
+  });
+});
+
+// bd tea-rags-mcp-3pnz — ActiveSupport::Concern `included do` / `class_methods do`
+// mixin propagation. A Concern module `Trackable` is mixed into `User` via
+// `include Trackable`; the walker already records `classAncestors.User =
+// ["Trackable"]`. This characterization suite pins the EXACT resolver boundary:
+// instance-method and `.`-form class-method propagation already work end-to-end
+// through the existing ancestor walk, so the remaining gap is purely at the
+// symbol-EXTRACTION layer — methods declared in `class_methods do ... end` must
+// be indexed in class-method (`.`) form, not instance (`#`) form. Once they are,
+// these tests show the resolver routes `User.<method>` to the Concern with NO
+// resolver change. See the design-decision note in the bd issue.
+describe("RubyCallResolver — ActiveSupport::Concern mixin propagation (bd tea-rags-mcp-3pnz)", () => {
+  // Build a symbol table for a Concern `Trackable` (declaring `track_change`
+  // as an instance method and `find_tracked` as a class method whose indexed
+  // FORM is parameterised) mixed into `User`. `classMethodForm` toggles how the
+  // `class_methods do` method is indexed: `"#"` = today's reality (the shared
+  // chunker emits a plain `def` as instance-form), `"."` = the promoted form
+  // the symbol-extraction fix must produce.
+  function tableWithConcern(classMethodForm: "#" | "."): InMemoryGlobalSymbolTable {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/concerns/trackable.rb", [
+      {
+        symbolId: "Trackable",
+        fqName: "Trackable",
+        shortName: "Trackable",
+        relPath: "app/concerns/trackable.rb",
+        scope: [],
+      },
+      {
+        // `def track_change` in the Concern body (or in `included do`) — an
+        // instance method on every includer.
+        symbolId: "Trackable#track_change",
+        fqName: "Trackable#track_change",
+        shortName: "track_change",
+        relPath: "app/concerns/trackable.rb",
+        scope: ["Trackable"],
+      },
+      {
+        // `def find_tracked` declared inside `class_methods do ... end` — a
+        // CLASS method on every includer (`User.find_tracked`).
+        symbolId: `Trackable${classMethodForm}find_tracked`,
+        fqName: `Trackable${classMethodForm}find_tracked`,
+        shortName: "find_tracked",
+        relPath: "app/concerns/trackable.rb",
+        scope: ["Trackable"],
+      },
+    ]);
+    table.upsertFile("app/models/user.rb", [
+      { symbolId: "User", fqName: "User", shortName: "User", relPath: "app/models/user.rb", scope: [] },
+    ]);
+    return table;
+  }
+
+  it("WORKS TODAY: instance `track_change` propagates to includer via classAncestors", () => {
+    // Bare call from inside `User` to a method only the Concern defines. The
+    // bare-call / ancestor walk resolves it to `Trackable#track_change`.
+    const resolver = new RubyCallResolver();
+    const ctx: CallContext = {
+      callerFile: "app/models/user.rb",
+      callerScope: ["User"],
+      imports: [],
+      symbolTable: tableWithConcern("#"),
+      classAncestors: { User: ["Trackable"] },
+    };
+    const target = resolver.resolve(
+      { callText: "track_change", receiver: null, member: "track_change", startLine: 5 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("Trackable#track_change");
+    expect(target?.targetRelPath).toBe("app/concerns/trackable.rb");
+  });
+
+  it("WORKS TODAY: `User.find_tracked` propagates when class method is indexed in `.` form", () => {
+    // GIVEN the symbol-extraction fix promotes `class_methods do` methods to
+    // class-method (`.`) form, the EXISTING walkAncestorsForConstantCall routes
+    // `User.find_tracked` to `Trackable.find_tracked` with no resolver change.
+    const resolver = new RubyCallResolver();
+    const ctx: CallContext = {
+      callerFile: "app/controllers/users_controller.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: tableWithConcern("."),
+      classAncestors: { User: ["Trackable"] },
+    };
+    const target = resolver.resolve(
+      { callText: "User.find_tracked", receiver: "User", member: "find_tracked", startLine: 9 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("Trackable.find_tracked");
+    expect(target?.targetRelPath).toBe("app/concerns/trackable.rb");
+  });
+
+  it("BOUNDARY: `User.find_tracked` is file-only when the class method is indexed in `#` form", () => {
+    // Today's reality: the shared cross-language chunker emits a plain `def`
+    // inside `class_methods do` as instance-form (`Trackable#find_tracked`).
+    // `Klass.method` dispatch only accepts `.`-form ancestors, so the call
+    // degrades to a file-only edge on `User` (method-level attribution lost).
+    // Closing this requires class-method PROMOTION at symbol extraction — the
+    // design decision recorded on the bd issue. This test documents the current
+    // contract so the future fix has a regression anchor to flip.
+    const resolver = new RubyCallResolver();
+    const ctx: CallContext = {
+      callerFile: "app/controllers/users_controller.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: tableWithConcern("#"),
+      classAncestors: { User: ["Trackable"] },
+    };
+    const target = resolver.resolve(
+      { callText: "User.find_tracked", receiver: "User", member: "find_tracked", startLine: 9 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBeNull();
     expect(target?.targetRelPath).toBe("app/models/user.rb");
   });
 });
