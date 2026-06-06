@@ -42,18 +42,19 @@ subsequent script calls.
 
 ## Steps
 
-| Step | File                        | What it does                         |
-| ---- | --------------------------- | ------------------------------------ |
-| 0    | `steps/step-0-progress.md`  | Check/init progress file             |
-| 1    | `steps/step-1-detect.md`    | Detect environment, save to progress |
-| 2    | `steps/step-2-node.md`      | Install Node.js 24+                  |
-| 3    | `steps/step-3-tea-rags.md`  | Install tea-rags package             |
-| 4    | `steps/step-4-embedding.md` | Choose & install embedding provider  |
-| 5    | `steps/step-5-qdrant.md`    | Choose & setup Qdrant                |
-| 6    | `steps/step-6-tune.md`      | Tune performance parameters          |
-| 7    | `steps/step-7-git.md`       | Configure git analytics              |
-| 8    | `steps/step-8-configure.md` | Configure MCP server                 |
-| 9    | `steps/step-9-verify.md`    | Verify setup                         |
+| Step | File                        | What it does                          |
+| ---- | --------------------------- | ------------------------------------- |
+| 0    | `steps/step-0-progress.md`  | Check/init progress file              |
+| 1    | `steps/step-1-detect.md`    | Detect environment, save to progress  |
+| 2    | `steps/step-2-node.md`      | Install Node.js 24+                   |
+| 3    | `steps/step-3-tea-rags.md`  | Install tea-rags package              |
+| 4    | `steps/step-4-embedding.md` | Choose & install embedding provider   |
+| 5    | `steps/step-5-qdrant.md`    | Choose & setup Qdrant                 |
+| 6    | `steps/step-6-tune.md`      | Tune performance parameters           |
+| 7    | `steps/step-7-git.md`       | Configure git analytics               |
+| 8    | `steps/step-8-configure.md` | Configure MCP server                  |
+| 9    | `steps/step-9-register.md`  | Register project alias (before index) |
+| 10   | `steps/step-10-verify.md`   | Verify setup                          |
 
 **Reference**: `reference.md` — recommendation tables, version manager options,
 env vars, tune defaults.
@@ -84,4 +85,5 @@ At any point if a script fails (exit code 1):
 - Skip AskUserQuestion for user choices (embedding, qdrant)
 - Proceed past a checkpoint without verification
 - Modify MCP config for other servers
-- Run indexing — that is `/tea-rags:index` after restart
+- Run indexing — that is `/tea-rags:index` after restart. (Step 9 registers the
+  alias only — it records the path mapping, it does NOT index.)

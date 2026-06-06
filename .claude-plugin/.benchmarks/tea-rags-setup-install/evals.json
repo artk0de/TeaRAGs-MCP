@@ -1,0 +1,143 @@
+{
+  "skill_name": "tea-rags-setup:install",
+  "description": "Eval cases for the tea-rags-setup install wizard, focused on the new Step 9 (Register Project Alias) added before first indexing. Tests instruction quality: does the skill text guide the agent to register before indexing, derive the alias correctly, respect the don't-index-during-setup boundary, export QDRANT_URL, and keep step order 8->9->10.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "register-before-index",
+      "prompt": "[tea-rags-setup install wizard] You have just completed Step 8 (MCP server configured and connected). Before telling the user to restart, what is the next thing you do?",
+      "expected": "Run Step 9: register the project alias via `tea-rags projects register --path <abs> --name <alias>`. Registration happens BEFORE verify (Step 10) and before the first indexing.",
+      "not_expected": "Running index_codebase / indexing the project. Jumping straight to verify/restart without registering.",
+      "audit_finding": "A1",
+      "category": "finding"
+    },
+    {
+      "id": 2,
+      "name": "registration-is-not-indexing",
+      "prompt": "[tea-rags-setup install wizard] Step 9 registers the project. Does that mean you should run index_codebase as part of setup? Explain what Step 9 does.",
+      "expected": "No. Step 9 records the alias->path mapping only (and qdrantUrl). Indexing stays /tea-rags:index AFTER restart. Registration is not indexing.",
+      "not_expected": "Treating registration as indexing. Running index_codebase during setup. Skipping registration because of the 'don't index during setup' rule.",
+      "audit_finding": "A1",
+      "category": "finding"
+    },
+    {
+      "id": 3,
+      "name": "alias-derivation",
+      "prompt": "[tea-rags-setup install wizard, Step 9] The project path is /Users/me/Dev/Tools/My_Cool-App. What alias do you register, and how is it derived?",
+      "expected": "Alias `my_cool-app` (final path segment, lowercased, chars outside [a-z0-9_-] -> -, must match ^[a-z0-9][a-z0-9_-]{0,63}$). Automatic, no prompt.",
+      "not_expected": "Prompting the user for the alias. Using the full path. Producing an alias that violates the regex (spaces, uppercase, leading digit).",
+      "audit_finding": "A2",
+      "category": "finding"
+    },
+    {
+      "id": 4,
+      "name": "qdrant-url-export-external",
+      "prompt": "[tea-rags-setup install wizard, Step 9] The user chose an external Qdrant at http://192.168.1.5:6333 in Step 5. You are about to register. How do you make sure the registry entry captures THAT Qdrant URL rather than a default?",
+      "expected": "Export QDRANT_URL=http://192.168.1.5:6333 before running `tea-rags projects register`, because the CLI reads the Qdrant URL from its own environment.",
+      "not_expected": "Running register without exporting QDRANT_URL. Assuming the MCP config env reaches the CLI automatically.",
+      "audit_finding": "A3",
+      "category": "finding"
+    },
+    {
+      "id": 5,
+      "name": "step-ordering-8-9-10",
+      "prompt": "[tea-rags-setup install wizard] List the final three steps of the wizard in order and what each does.",
+      "expected": "Step 8 = configure MCP server; Step 9 = register project alias (before first index); Step 10 = verify (claude mcp get tea-rags). Register comes between configure and verify.",
+      "not_expected": "Verify before register. Omitting the registration step. Register after verify/restart.",
+      "audit_finding": "A4",
+      "category": "finding"
+    },
+    {
+      "id": 6,
+      "name": "control-defer-indexing",
+      "prompt": "[tea-rags-setup install wizard] Midway through setup the user says 'go ahead and index my codebase now'. What do you do?",
+      "expected": "Do not index during setup. Indexing is /tea-rags:index AFTER restart. Explain that and continue the wizard.",
+      "not_expected": "Running index_codebase mid-setup.",
+      "audit_finding": "control",
+      "category": "control"
+    },
+    {
+      "id": 7,
+      "name": "control-mcp-config-step8",
+      "prompt": "[tea-rags-setup install wizard, Step 8] How is the tea-rags MCP server actually added to the Claude config?",
+      "expected": "Dispatch the mcp-server-integrator agent which builds and runs `claude mcp add tea-rags -s <scope> ...`, then verify with `claude mcp get`. Fall back to manual command if the agent fails.",
+      "not_expected": "Hand-editing arbitrary config files directly without the integrator/claude mcp add flow.",
+      "audit_finding": "control",
+      "category": "control"
+    },
+    {
+      "id": 8,
+      "name": "edge-embedded-qdrant-omit-url",
+      "prompt": "[tea-rags-setup install wizard, Step 9] The user chose the EMBEDDED Qdrant (no QDRANT_URL in progress). How do you run the registration command?",
+      "expected": "Run `tea-rags projects register --path <abs> --name <alias>` WITHOUT exporting QDRANT_URL (omit it entirely); the CLI records the embedded daemon URL via discovery.",
+      "not_expected": "Exporting a localhost/guessed QDRANT_URL. Failing/blocking because no QDRANT_URL exists.",
+      "audit_finding": "A5",
+      "category": "edge"
+    },
+    {
+      "id": 9,
+      "name": "edge-cli-not-on-path",
+      "prompt": "[tea-rags-setup install wizard, Step 9] You try to register but `tea-rags` is not yet on PATH (fresh install, shell not re-sourced). What do you do?",
+      "expected": "Report it and continue — do not block setup completion. Tell the user to run the same `tea-rags projects register` after restarting the terminal.",
+      "not_expected": "Aborting the whole setup. Treating it as a fatal error.",
+      "audit_finding": "control",
+      "category": "edge"
+    },
+    {
+      "id": 10,
+      "name": "subagent-task-agent-finalize",
+      "prompt": "[subagent: task-agent] Task: finish the tea-rags-setup install for the project at /Users/me/Dev/acme-api. The MCP server is already configured and shows connected. Complete the remaining setup steps.",
+      "expected": "Register the alias `acme-api` (Step 9) via `tea-rags projects register --path /Users/me/Dev/acme-api --name acme-api` BEFORE the final verify, then verify. Do NOT index.",
+      "not_expected": "Skipping registration. Running index_codebase. Verify-then-stop without registering.",
+      "audit_finding": "A1",
+      "category": "subagent"
+    },
+    {
+      "id": 11,
+      "name": "subagent-plan-executor-register-step",
+      "prompt": "[subagent: plan-executor] Plan step: 'Finalize tea-rags setup for the project at ./backend — register and verify.' Execute it.",
+      "expected": "Resolve ./backend to absolute path, derive alias `backend`, run `tea-rags projects register --path <abs> --name backend` (export QDRANT_URL if external/known), then verify with `claude mcp get tea-rags`. Registration is alias-only, not indexing.",
+      "not_expected": "Running index_codebase as the 'register' action. Prompting for the alias. Verify before register.",
+      "audit_finding": "A4",
+      "category": "subagent"
+    }
+  ],
+  "results": {
+    "iteration": 1,
+    "method": "Phase 2 lightweight tool-selection eval (with-rule vs without-rule subagents, plan-only).",
+    "with_rule_pass": "11/11 (100%)",
+    "without_rule_pass": "9/11 (82%)",
+    "delta_pp": 18,
+    "per_case": {
+      "1": { "with_rule": "PASS", "without_rule": "PASS" },
+      "2": { "with_rule": "PASS", "without_rule": "PASS" },
+      "3": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "note": "baseline gave my-cool-app (replaced _), skill preserves _ -> my_cool-app"
+      },
+      "4": { "with_rule": "PASS", "without_rule": "PASS" },
+      "5": { "with_rule": "PASS", "without_rule": "PASS" },
+      "6": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "note": "baseline ran index_codebase during setup on explicit request; skill defers to post-restart"
+      },
+      "7": { "with_rule": "PASS", "without_rule": "PASS" },
+      "8": { "with_rule": "PASS", "without_rule": "PASS" },
+      "9": {
+        "with_rule": "PASS",
+        "without_rule": "PASS",
+        "note": "baseline borderline: used register_project MCP tool (unreachable pre-restart) but did not block"
+      },
+      "10": { "with_rule": "PASS", "without_rule": "PASS" },
+      "11": { "with_rule": "PASS", "without_rule": "PASS" }
+    },
+    "fixes_applied": "none — all audit findings A1-A5 pass with-rule; no confirmed problems",
+    "discriminators": [
+      "alias _-preservation (case 3)",
+      "don't-index boundary under explicit 'index now' (case 6)",
+      "CLI tea-rags projects register vs unreachable register_project MCP tool during setup"
+    ]
+  }
+}

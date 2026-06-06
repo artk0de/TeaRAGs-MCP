@@ -1,4 +1,4 @@
-# Step 9: Verify
+# Step 10: Verify
 
 Run: `claude mcp get tea-rags`
 

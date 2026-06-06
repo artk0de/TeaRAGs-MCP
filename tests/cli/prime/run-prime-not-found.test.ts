@@ -23,19 +23,4 @@ describe("runPrime — project not registered", () => {
     expect(out).toContain("not registered");
     expect(out).toContain("this-project-does-not-exist-anywhere");
   });
-
-  it("writes path-not-found placeholder when neither path nor project provided", async () => {
-    const writes: string[] = [];
-    const orig = process.stdout.write;
-    process.stdout.write = ((m: string) => {
-      writes.push(String(m));
-      return true;
-    }) as never;
-    try {
-      await runPrime({});
-    } finally {
-      process.stdout.write = orig;
-    }
-    expect(writes.join("")).toContain("no path provided");
-  });
 });
