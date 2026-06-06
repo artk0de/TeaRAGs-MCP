@@ -16,6 +16,10 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    # Skips semantic-release's own `chore(release):` version commit AND the
+    # declarative-changelog bot's `chore(release): … declarative changelog`
+    # follow-up (release-changelog.yml). The latter intentionally lands here so
+    # deploy-docs (if: always) redeploys the website with the declarative notes.
     if: "!startsWith(github.event.head_commit.message, 'chore(release)')"
     concurrency:
       group: release-main

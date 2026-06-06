@@ -71,3 +71,8 @@ website/.docusaurus/
 # Beads / Dolt files (added by bd init)
 .beads-credential-key
 .tea-rags-codegraph-spill/
+
+# declarative-changelog work artifacts
+release-notes.json
+release-notes.md
+commits.json

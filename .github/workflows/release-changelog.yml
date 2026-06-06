@@ -1,0 +1,90 @@
+name: Declarative Changelog
+
+# Post-processes a published release: a Claude agent on a cloud runner groups
+# commits by conventional scope (+ subject) into a declarative changelog, then
+# rewrites the GitHub release notes (declarative + full commits spoiler) and the
+# changelog files (declarative only + inline hash links). No tea-rags / semantic
+# search — the project's conventional-commit scopes carry the grouping signal.
+# Runs AFTER semantic-release has published — never competes with it.
+
+on:
+  release:
+    types: [published]
+  # Manual trigger for testing on an existing tag without waiting for a release.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to (re)generate notes for, e.g. v1.29.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-changelog
+  cancel-in-progress: false
+
+jobs:
+  declarative-changelog:
+    name: Declarative Changelog
+    # Resolves from the release event OR the manual workflow_dispatch input.
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+
+      - name: Compute commit range
+        id: range
+        run: |
+          CURR="${{ env.TAG }}"
+          PREV=$(git describe --tags --abbrev=0 "${CURR}^" 2>/dev/null || echo "")
+          if [ -n "$PREV" ]; then RANGE="${PREV}..${CURR}"; else RANGE="$CURR"; fi
+          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
+
+      - name: Build commits.json
+        run: |
+          git log --no-merges --format='%H%x1f%s%x1f%b%x1e' ${{ steps.range.outputs.range }} \
+            | node scripts/git-log-to-json.js > commits.json
+
+      - name: Generate declarative notes (agent)
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Read scripts/release-changelog-prompt.md and follow it exactly.
+            Version is ${{ env.TAG }} without the leading v.
+            Write release-notes.json to the working directory.
+          claude_args: "--allowedTools Read,Write,Bash(git log:*)"
+
+      - name: Build artifacts
+        run: node scripts/build-changelog-artifacts.js
+
+      - name: Mirror to website
+        run: bash scripts/prepare-changelog.sh
+
+      - name: Update GitHub release notes
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: gh release edit "${{ env.TAG }}" --notes-file release-notes.md
+
+      - name: Commit declarative changelog
+        run: |
+          git config user.name "tea-rags-bot"
+          git config user.email "bot@tea-rags"
+          git add CHANGELOG.md website/docs/changelog.md
+          # `chore(release):` prefix → release.yml skips its release job (guard)
+          # while deploy-docs (if: always) redeploys the website. See release.yml.
+          git commit -m "chore(release): ${{ env.TAG }} declarative changelog" || exit 0
+          git push origin main
