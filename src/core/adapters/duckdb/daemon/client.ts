@@ -243,6 +243,13 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("getCallees", { symbolId })) as CalleeEdge[];
   }
 
+  async getCalleeEdges(symbolIds: SymbolId[]): Promise<Map<SymbolId, SymbolId[]>> {
+    // The server serialises the `Map<SymbolId, SymbolId[]>` as `[key, value][]`
+    // entries (a Map cannot JSON-serialise) — rebuild the Map here.
+    const entries = (await this.call("getCalleeEdges", { symbolIds })) as [SymbolId, SymbolId[]][];
+    return new Map(entries);
+  }
+
   async getCalledByCount(symbolId: SymbolId): Promise<number> {
     return (await this.call("getCalledByCount", { symbolId })) as number;
   }

@@ -78,6 +78,40 @@ When rank_chunks returns overlay labels:
 propagating bugs from upstream, not the origin. Check callers before fixing
 here. See `references/signal-interpretation.md` (bug attractor vs coupling).
 
+## Trace the chain between suspects
+
+Signal triage gives a **flat** list — WHAT is historically buggy. `trace_path`
+turns it into a **causal chain** — WHICH step on the route from an entry point
+to a suspect is riskiest.
+
+**Use when** a suspect surfaced but the symptom enters elsewhere (a handler,
+controller, job) — you need the danger-ranked call path between them, not just
+the endpoints.
+
+```text
+trace_path(from=<entry point>, to=<suspect>, rerank="bugHunt")
+```
+
+Per-step `dangerOverlay` carries the same git signals as triage (bugFixRate,
+relativeChurn) for every hop on the path. Read the response top-down:
+
+- `dangerRanking[0]` → **inspect-first step** — the riskiest hop on the route.
+- each step's `dangerOverlay` → triage that hop exactly like the flat list
+  (`critical` → prime, `concerning` + churn → secondary, `healthy` → SKIP).
+- `aggregateDanger` → ranks competing paths when `maxPaths > 1`; the
+  highest-danger route is the one to walk first.
+- **Empty result = no static call path** from `from` to `to`. Negative signal:
+  the suspect is not reachable from that entry — wrong entry, dynamic dispatch,
+  or wrong suspect. Re-pick before reading code.
+
+**Fresh-regression bisect:** `rerank="recent"` instead of `bugHunt` ranks the
+path by recency, surfacing the step that changed most recently — the likely
+regression on a route that worked before.
+
+Curated danger presets for `trace_path`: `bugHunt` (default), `dangerous`,
+`hotspots`, `recent`, `ownership`, `blastRadius`, `securityAudit`, `techDebt`,
+`codeReview`. Bound the search with `maxDepth` / `maxPaths`.
+
 ## After root cause found
 
 Pattern found → `find_similar` from chunk ID for copy-paste bugs in other files.

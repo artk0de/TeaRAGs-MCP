@@ -10,6 +10,7 @@
  */
 
 import type { CycleScope, RelPath, SymbolId } from "../../../contracts/types/codegraph.js";
+import type { RankingOverlay } from "../../../contracts/types/reranker.js";
 
 export interface GetCallersRequest {
   /** Project alias from the collection registry — RECOMMENDED. */
@@ -84,4 +85,56 @@ export interface CycleResult {
 
 export interface FindCyclesResponse {
   cycles: CycleResult[];
+}
+
+// ── Slice 6 — trace_path ──
+
+export interface TracePathRequest {
+  /** Project alias from the collection registry — RECOMMENDED. */
+  project?: string;
+  /** Explicit Qdrant collection name — highest priority. */
+  collection?: string;
+  /** Filesystem path to the indexed codebase — backward-compat fallback. */
+  path?: string;
+  /** Start symbol of the path (caller end). */
+  from: SymbolId;
+  /** End symbol of the path (callee end). */
+  to: SymbolId;
+  /**
+   * Rerank preset that defines "danger" for the overlay. Default: bugHunt.
+   * Use a per-step danger preset (bugHunt / dangerous / hotspots / blastRadius);
+   * presets that group results (e.g. refactoring) are not meaningful here —
+   * danger is scored per path step, not per group.
+   */
+  rerank?: string;
+  /** Max hops on a path (edge count). Default 8. */
+  maxDepth?: number;
+  /** Max paths returned, sorted by aggregateDanger desc. Default 10. */
+  maxPaths?: number;
+}
+
+export interface PathStep {
+  /** Class#method (instance) / Class.method (static) / functionName. */
+  symbolId: SymbolId;
+  relativePath: RelPath;
+  startLine: number;
+  endLine: number;
+  /** bugFixRate / churn / ownership labels from the chosen rerank preset. */
+  dangerOverlay?: RankingOverlay;
+}
+
+export interface TracedPath {
+  /** ORDERED — execution order, never reordered. */
+  steps: PathStep[];
+  /** Indices into `steps`, sorted by per-step danger desc (where to look first). */
+  dangerRanking: number[];
+  /** Path-level score = max per-step danger; used to sort the path list. */
+  aggregateDanger: number;
+}
+
+export interface PathTraceResult {
+  /** Sorted by aggregateDanger, most dangerous first. */
+  paths: TracedPath[];
+  /** True if maxPaths/maxDepth capped enumeration. */
+  truncated: boolean;
 }

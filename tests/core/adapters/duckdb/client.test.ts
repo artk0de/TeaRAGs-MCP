@@ -768,4 +768,49 @@ describe("DuckDbGraphClient", () => {
     client = new DuckDbGraphClient({ path: dbPath });
     await client.init();
   });
+
+  describe("getCalleeEdges (batch adjacency for trace_path)", () => {
+    it("returns callee target symbolIds keyed by source, for many sources at once", async () => {
+      // Seed method edges A->B, A->C, B->D (non-null targets).
+      await client.upsertFile(
+        { relPath: "src/a.ts", language: "typescript" },
+        {
+          fileEdges: [],
+          methodEdges: [
+            { sourceSymbolId: "A", targetSymbolId: "B", targetRelPath: "x.ts", callExpression: "call()" },
+            { sourceSymbolId: "A", targetSymbolId: "C", targetRelPath: "x.ts", callExpression: "call()" },
+          ],
+        },
+      );
+      await client.upsertFile(
+        { relPath: "src/b.ts", language: "typescript" },
+        {
+          fileEdges: [],
+          methodEdges: [{ sourceSymbolId: "B", targetSymbolId: "D", targetRelPath: "x.ts", callExpression: "call()" }],
+        },
+      );
+      const adj = await client.getCalleeEdges(["A", "B", "X"]);
+      expect(new Set(adj.get("A"))).toEqual(new Set(["B", "C"]));
+      expect(adj.get("B")).toEqual(["D"]);
+      expect(adj.get("X")).toBeUndefined(); // unknown source -> no entry
+    });
+
+    it("excludes file-only edges (null target symbol)", async () => {
+      // Seed one method edge with targetSymbolId = null on source "A".
+      await client.upsertFile(
+        { relPath: "src/a.ts", language: "typescript" },
+        {
+          fileEdges: [],
+          methodEdges: [{ sourceSymbolId: "A", targetSymbolId: null, targetRelPath: "x.ts", callExpression: "call()" }],
+        },
+      );
+      const adj = await client.getCalleeEdges(["A"]);
+      expect(adj.get("A")).toBeUndefined();
+    });
+
+    it("returns an empty map for an empty input list", async () => {
+      const adj = await client.getCalleeEdges([]);
+      expect(adj.size).toBe(0);
+    });
+  });
 });

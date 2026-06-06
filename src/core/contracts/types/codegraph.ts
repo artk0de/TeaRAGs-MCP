@@ -583,6 +583,15 @@ export interface GraphDbClient {
   getFanInP95: () => Promise<number>;
   getCallers: (symbolId: SymbolId) => Promise<CallerEdge[]>;
   getCallees: (symbolId: SymbolId) => Promise<CalleeEdge[]>;
+  /**
+   * Batch adjacency: for each input source symbolId, the list of resolved
+   * callee target symbolIds. Method edges whose callee could not be resolved
+   * to a known symbol (null `target_symbol_id`) are excluded. Used by
+   * trace_path to expand the call frontier level-by-level without
+   * materialising the whole method graph. Sources with no resolved callees
+   * are simply absent from the returned map.
+   */
+  getCalleeEdges: (symbolIds: SymbolId[]) => Promise<Map<SymbolId, SymbolId[]>>;
   getCalledByCount: (symbolId: SymbolId) => Promise<number>;
   getCallSiteCount: (symbolId: SymbolId) => Promise<number>;
 

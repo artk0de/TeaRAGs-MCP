@@ -1,6 +1,6 @@
 /**
  * Codegraph MCP tools — slice 1: get_callers, get_callees.
- * Slice 2 adds: find_cycles.
+ * Slice 2 adds: find_cycles. Slice 6 adds: trace_path.
  *
  * All tools read directly from the codegraph DuckDB via the App's
  * GraphFacade (wired in createApp()).
@@ -16,7 +16,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { PROJECT_NAME_RE, type App } from "../../core/api/public/index.js";
+import { PROJECT_NAME_RE, type App, type SchemaBuilder } from "../../core/api/public/index.js";
 import { formatMcpText } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 
@@ -85,8 +85,41 @@ const FindCyclesInputShape = {
     ),
 };
 
-export function registerCodegraphTools(server: McpServer, deps: { app: App; register: RegisterToolFn }): void {
-  const { app, register: registerToolSafe } = deps;
+/**
+ * Build the `trace_path` input shape. The `rerank` field is a curated preset
+ * ENUM derived from the registry (presets that tag `"trace_path"` in their
+ * `tools[]`), NOT a free string — a bad preset is rejected at the MCP boundary
+ * instead of silently degrading to similarity-only inside the reranker.
+ * `schemaBuilder.buildPresetSchema("trace_path")` is the single source of truth;
+ * `.optional()` keeps the field omittable (handler defaults to bugHunt).
+ */
+function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
+  return {
+    ...collectionPathFields(),
+    from: z.string().describe("Start symbol id (caller end, e.g. main)"),
+    to: z.string().describe("End symbol id (callee end, e.g. Foo.bar)"),
+    rerank: schemaBuilder
+      .buildPresetSchema("trace_path")
+      .optional()
+      .describe("Rerank preset defining 'danger' for the step overlay (default bugHunt)"),
+    maxDepth: z
+      .number()
+      .int()
+      .positive()
+      .max(20)
+      .optional()
+      .describe(
+        "Max hops on a path (default 8). Capped at 20 — deep traces on dense graphs can be expensive; prefer the default.",
+      ),
+    maxPaths: z.number().int().positive().max(50).optional().describe("Max paths returned, danger-sorted (default 10)"),
+  };
+}
+
+export function registerCodegraphTools(
+  server: McpServer,
+  deps: { app: App; schemaBuilder: SchemaBuilder; register: RegisterToolFn },
+): void {
+  const { app, schemaBuilder, register: registerToolSafe } = deps;
 
   // Provider gating — when codegraph.symbols isn't registered, none of these
   // tools should appear in the MCP `list_tools` response. Silent no-op
@@ -138,6 +171,27 @@ export function registerCodegraphTools(server: McpServer, deps: { app: App; regi
     },
     async ({ project, collection, path, scope, pathPattern }) => {
       const response = await app.findCycles({ project, collection, path, scope, pathPattern });
+      return formatMcpText(JSON.stringify(response, null, 2));
+    },
+  );
+
+  registerToolSafe(
+    server,
+    "trace_path",
+    {
+      title: "Trace Path",
+      description:
+        "Trace all simple call paths from one symbol to another, in execution order, " +
+        "each step annotated with a git/churn danger overlay. Paths are sorted most-dangerous " +
+        "first so you jump straight to the riskiest step. Backed by the codegraph DuckDB.",
+      inputSchema: buildTracePathInputShape(schemaBuilder),
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ project, collection, path, from, to, rerank, maxDepth, maxPaths }) => {
+      // `rerank` is a curated preset enum (z.ZodTypeAny erases to unknown after
+      // .optional()); narrow to the string preset name the DTO expects.
+      const preset = rerank as string | undefined;
+      const response = await app.tracePath({ project, collection, path, from, to, rerank: preset, maxDepth, maxPaths });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );

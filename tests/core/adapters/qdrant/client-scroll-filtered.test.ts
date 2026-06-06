@@ -107,3 +107,48 @@ describe("QdrantManager.scrollFiltered", () => {
     expect(results[0].id).toBe("uuid-2");
   });
 });
+
+describe("QdrantManager.scrollBySymbolIds", () => {
+  let manager: QdrantManager;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    manager = new QdrantManager("http://localhost:6333");
+  });
+
+  it("returns chunks whose symbolId is in the set, in one call", async () => {
+    mockScroll.mockResolvedValue({
+      points: [
+        { id: "uuid-a", payload: { symbolId: "A" } },
+        { id: "uuid-c", payload: { symbolId: "C" } },
+      ],
+      next_page_offset: null,
+    });
+
+    const chunks = await manager.scrollBySymbolIds("test_collection", ["A", "C"]);
+
+    const ids = chunks.map((c) => c.payload.symbolId).sort();
+    expect(ids).toEqual(["A", "C"]);
+
+    expect(mockScroll).toHaveBeenCalledTimes(1);
+    expect(mockScroll).toHaveBeenCalledWith(
+      "test_collection",
+      expect.objectContaining({
+        filter: {
+          should: [
+            { key: "symbolId", match: { value: "A" } },
+            { key: "symbolId", match: { value: "C" } },
+          ],
+        },
+        with_payload: true,
+        with_vector: false,
+      }),
+    );
+  });
+
+  it("returns [] for an empty id list without querying", async () => {
+    const chunks = await manager.scrollBySymbolIds("test_collection", []);
+    expect(chunks).toEqual([]);
+    expect(mockScroll).not.toHaveBeenCalled();
+  });
+});

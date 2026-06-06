@@ -726,6 +726,25 @@ export class DuckDbGraphClient implements GraphDbClient {
     );
   }
 
+  async getCalleeEdges(symbolIds: SymbolId[]): Promise<Map<SymbolId, SymbolId[]>> {
+    const out = new Map<SymbolId, SymbolId[]>();
+    if (symbolIds.length === 0) return out;
+    const placeholders = symbolIds.map(() => "?").join(", ");
+    const rows = await this.queryAll<{ source: SymbolId; target: SymbolId }>(
+      `SELECT source_symbol_id AS source, target_symbol_id AS target
+       FROM cg_symbols_edges_method
+       WHERE source_symbol_id IN (${placeholders}) AND target_symbol_id IS NOT NULL
+       ORDER BY source_symbol_id, target_symbol_id`,
+      symbolIds,
+    );
+    for (const { source, target } of rows) {
+      const list = out.get(source);
+      if (list) list.push(target);
+      else out.set(source, [target]);
+    }
+    return out;
+  }
+
   async getCalledByCount(symbolId: SymbolId): Promise<number> {
     const rows = await this.queryAll<{ n: number }>(
       "SELECT COUNT(*) AS n FROM cg_symbols_edges_method WHERE target_symbol_id = ?",

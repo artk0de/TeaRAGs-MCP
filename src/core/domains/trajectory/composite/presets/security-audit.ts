@@ -12,7 +12,7 @@ export class SecurityAuditCompositePreset implements CompositeRerankPreset {
   readonly name = "securityAudit";
   readonly description = "Old security-critical paths with high blast radius (audit priority targets)";
   readonly signalLevel: SignalLevel = "file";
-  readonly tools = ["semantic_search", "hybrid_search", "find_similar"];
+  readonly tools = ["semantic_search", "hybrid_search", "find_similar", "trace_path"];
   readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.2,

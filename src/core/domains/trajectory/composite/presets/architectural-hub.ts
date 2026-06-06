@@ -19,7 +19,7 @@ export class ArchitecturalHubPreset implements CompositeRerankPreset {
   readonly name = "architecturalHub";
   readonly description = "Hub files at the centre of the dependency graph under active churn";
   readonly signalLevel: SignalLevel = "file";
-  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
+  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];
   readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.2,

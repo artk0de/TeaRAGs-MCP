@@ -11,7 +11,7 @@ export class OwnershipCompositePreset implements CompositeRerankPreset {
   readonly name = "ownership";
   readonly description = "Silo-owned code that other files depend on — prioritised bus-factor target";
   readonly signalLevel: SignalLevel = "file";
-  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
+  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];
   readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.3,

@@ -9,6 +9,7 @@
  * 4. Attaches ranking overlay (raw file/chunk signals for transparency)
  */
 
+import { p95 } from "../../contracts/signal-utils.js";
 import type { ScoringWeights } from "../../contracts/types/provider.js";
 import type {
   DerivedSignalDescriptor,
@@ -25,7 +26,6 @@ import type {
   SignalConfidence,
 } from "../../contracts/types/trajectory.js";
 import { detectScope } from "../../infra/scope-detection.js";
-import { p95 } from "../../contracts/signal-utils.js";
 import type { StatsRecomputeService } from "../ingest/infra/stats-recompute.js";
 import { resolveLabel } from "./label-resolver.js";
 
@@ -37,6 +37,16 @@ export type { RerankableResult, RerankMode } from "../../contracts/types/reranke
 export interface RerankOptions {
   signalLevel?: SignalLevel;
   query?: string;
+  /**
+   * When false, overlays are still computed and attached but the final
+   * score-descending sort is skipped — the returned array preserves input
+   * order. Default true (sort as before). Used by trace_path to annotate a
+   * path with danger overlays without disturbing execution order.
+   * Note: a preset with `groupBy` still runs its group-dedup pass under
+   * reorder:false, so the per-group representative is the first input-order
+   * entry, not the highest-scored.
+   */
+  reorder?: boolean;
 }
 
 /**
@@ -131,7 +141,7 @@ export class Reranker {
   async rerank<T extends RerankableResult>(
     results: T[],
     mode: RerankMode<string>,
-    presetSet: "semantic_search" | "search_code" | "rank_chunks",
+    presetSet: "semantic_search" | "search_code" | "rank_chunks" | "trace_path",
     options?: RerankOptions,
   ): Promise<(T & { rankingOverlay?: RankingOverlay })[]> {
     const resolved = this.resolveMode(mode, presetSet);
@@ -144,8 +154,8 @@ export class Reranker {
     await this.ensureNeededPercentiles();
     const bounds = this.computeAdaptiveBounds(results);
     const scored = this.scoreResults(results, bounds, resolved, options?.query);
-    const sorted = scored.sort((a, b) => b.score - a.score);
-    return resolved.groupBy ? groupByTop(sorted, resolved.groupBy) : sorted;
+    const ordered = options?.reorder === false ? scored : scored.sort((a, b) => b.score - a.score);
+    return resolved.groupBy ? groupByTop(ordered, resolved.groupBy) : ordered;
   }
 
   /**
@@ -173,7 +183,7 @@ export class Reranker {
   /** Resolve `mode` to weights, mask, groupBy, signalLevel. Pure lookup, no side effects. */
   private resolveMode(
     mode: RerankMode<string>,
-    presetSet: "semantic_search" | "search_code" | "rank_chunks",
+    presetSet: "semantic_search" | "search_code" | "rank_chunks" | "trace_path",
   ): ResolvedMode {
     let weights: ScoringWeights;
     let presetName: string;
@@ -227,21 +237,27 @@ export class Reranker {
   /**
    * Get preset weights for a specific preset name and tool.
    */
-  getPreset(name: string, tool: "semantic_search" | "search_code" | "rank_chunks"): ScoringWeights | undefined {
+  getPreset(
+    name: string,
+    tool: "semantic_search" | "search_code" | "rank_chunks" | "trace_path",
+  ): ScoringWeights | undefined {
     return this.resolvedPresets.find((p) => p.name === name && this.matchesTool(p, tool))?.weights;
   }
 
   /**
    * Get full preset object for a specific preset name and tool.
    */
-  getFullPreset(name: string, tool: "semantic_search" | "search_code" | "rank_chunks"): RerankPreset | undefined {
+  getFullPreset(
+    name: string,
+    tool: "semantic_search" | "search_code" | "rank_chunks" | "trace_path",
+  ): RerankPreset | undefined {
     return this.resolvedPresets.find((p) => p.name === name && this.matchesTool(p, tool));
   }
 
   /**
    * Get available preset names for a tool.
    */
-  getAvailablePresets(tool: "semantic_search" | "search_code" | "rank_chunks"): string[] {
+  getAvailablePresets(tool: "semantic_search" | "search_code" | "rank_chunks" | "trace_path"): string[] {
     return this.resolvedPresets.filter((p) => this.matchesTool(p, tool)).map((p) => p.name);
   }
 

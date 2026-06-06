@@ -9,7 +9,7 @@ import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/t
 export class CodeReviewCompositePreset implements CompositeRerankPreset {
   readonly name = "codeReview";
   readonly description = "Recent high-activity code, prioritised by blast radius";
-  readonly tools = ["semantic_search", "hybrid_search", "find_similar", "rank_chunks"];
+  readonly tools = ["semantic_search", "hybrid_search", "find_similar", "rank_chunks", "trace_path"];
   readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.27,

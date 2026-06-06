@@ -10,7 +10,7 @@ import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/t
 export class TechDebtCompositePreset implements CompositeRerankPreset {
   readonly name = "techDebt";
   readonly description = "Legacy code with high churn, bug rate, and architectural blast radius";
-  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
+  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];
   readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.13,

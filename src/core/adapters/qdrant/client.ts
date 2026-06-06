@@ -1278,6 +1278,25 @@ export class QdrantManager {
 
     return results;
   }
+
+  /**
+   * Fetch chunk payloads for an exact set of symbolIds in one scroll, using a
+   * `should` (OR) filter of exact-match conditions. Used by trace_path to
+   * hydrate each path step with its relativePath / line range / git+codegraph
+   * signals. Empty input short-circuits to [] (no query). Result order is not
+   * guaranteed — callers index by `payload.symbolId`.
+   */
+  async scrollBySymbolIds(
+    collectionName: string,
+    symbolIds: string[],
+    limit = 1024,
+  ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
+    if (symbolIds.length === 0) return [];
+    const filter = {
+      should: symbolIds.map((id) => ({ key: "symbolId", match: { value: id } })),
+    };
+    return this.scrollFiltered(collectionName, filter, limit);
+  }
 }
 
 /** Detect Qdrant 409 Conflict (collection already exists). */

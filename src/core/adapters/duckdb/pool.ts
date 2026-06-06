@@ -360,7 +360,7 @@ export class GraphDbClientPool {
   /**
    * Mode-aware READ handle for the GraphFacade. When `daemonSocketPath` is
    * configured (production), returns a `DaemonGraphDbClient` that PROXIES the
-   * three facade reads (`getCallers` / `getCallees` / `findCycles`) through the
+   * facade reads (`getCallers` / `getCallees` / `findCycles` / `getCalleeEdges`) through the
    * daemon's own RW connection — DuckDB's RW lock is process-exclusive, so a
    * cross-process READ_ONLY attach throws "Conflicting lock is held" while the
    * daemon holds RW. Routing reads through the daemon (the sole file opener)
