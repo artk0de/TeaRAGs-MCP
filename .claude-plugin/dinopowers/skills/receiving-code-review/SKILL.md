@@ -122,6 +122,67 @@ Target: <symbol or file>
 Verdict: <AGREE-WITH-SCOPE | AGREE-DIRECT | PUSHBACK>
 ```
 
+## Step 3.5 — Trace the call route the change rides (optional, preferred when the comment names a call relationship)
+
+Step 2 gives a **single-symbol** blast-radius number — how many importers the
+target has. When the review comment names a **relationship between two symbols**
+("change how `X` calls `Y`", "this method should not reach `Z`", "route this
+through `W` instead"), the change doesn't just touch one symbol — it rides a
+**call route**. Promote the single fanIn number to the actual PATH: call
+`mcp__tea-rags__trace_path` between the two named endpoints to SEE the route the
+change travels and which step on it is the highest-impact chokepoint.
+
+```
+mcp__tea-rags__trace_path(
+  from="<caller symbol the comment names>",   # e.g. the X in "how X calls Y"
+  to="<callee symbol the comment names>",     # e.g. the Y, or the Z it "should not reach"
+  rerank="blastRadius"                          # rank each hop by fanIn / import impact
+)
+```
+
+Read the result like this:
+
+- **`dangerRanking[0]`** — the highest-impact step ON the route, not necessarily
+  either endpoint. This is the chokepoint the proposed change ripples through.
+  "What does this change touch" becomes a concrete hop with a measured fanIn
+  instead of one number on the named symbol.
+- **`dangerOverlay`** per step — carries `imports` / churn for that hop, so a
+  quiet intermediate that everything routes through surfaces instead of hiding
+  between the two named endpoints.
+- **Empty result** — there is NO static call path from `from` to `to`. The
+  review comment's premise ("X reaches Y") may be **structurally false** — a
+  useful pushback input: the change targets a route that doesn't exist as the
+  reviewer imagines. Confirm before agreeing.
+
+Preset selection for the trace:
+
+| Situation                                                     | `rerank`      |
+| ------------------------------------------------------------- | ------------- |
+| "What does this change ripple through" — impact-ranked route  | `blastRadius` |
+| "Who else owns the steps I'd touch" — who to loop into the PR | `ownership`   |
+
+Use `rerank="ownership"` to see who owns each step on the route — the reviewer
+named two symbols, but the change rides hops owned by other people who should be
+looped into the review. Bound the search with `maxDepth` / `maxPaths` if the
+graph is deep or branchy.
+
+Append the traced route under the impact block from Step 3:
+
+```
+**Call route the change rides (<from> → <to>), danger-ranked:**
+- chokepoint: <dangerRanking[0] symbol> @ <file>:<line>
+  overlay: imports <N>, churn <Y>
+- also on route: <next step> @ <file>:<line>
+  owner (ownership preset): <blameDominantAuthor> — loop into review
+```
+
+If the result is empty: append
+`**Call route:** no static path <from> → <to> — the reviewer's "X reaches Y" premise may not hold; confirm before agreeing`.
+
+The danger-ranked route makes "what does this change ripple through" concrete: a
+chokepoint with a measured fanIn and a named owner is a different conversation
+than a single import count on the symbol the reviewer happened to name.
+
 ## Step 3a — Tests bound to the target
 
 When the proposed change is rename / move / extract / signature change on a
@@ -189,11 +250,13 @@ cycle. This wrapper informs whether agreement is safe and at what scope.
 
 ## Common Mistakes
 
-| Mistake                                                         | Reality                                                                  |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Performative "good catch" agreement                             | Rigorous agreement requires impact data. Run Step 2.                     |
-| Blanket pushback without evidence                               | Defensive no is as bad as performative yes. Data first.                  |
-| Use `rerank: "codeReview"` preset because "this is code review" | codeReview preset is for finding reviewable code, not impact of a change |
-| `find_similar` to assess rename blast radius                    | find_similar shows analogs, not callers. Use impact rerank.              |
-| Ignore `imports` when comment proposes a rename                 | Rename affects every importer. imports count = response effort           |
-| Agree then grep for callers during implementation               | Wrong order — impact analysis informs whether to agree at all            |
+| Mistake                                                             | Reality                                                                                                                        |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Performative "good catch" agreement                                 | Rigorous agreement requires impact data. Run Step 2.                                                                           |
+| Blanket pushback without evidence                                   | Defensive no is as bad as performative yes. Data first.                                                                        |
+| Use `rerank: "codeReview"` preset because "this is code review"     | codeReview preset is for finding reviewable code, not impact of a change                                                       |
+| `find_similar` to assess rename blast radius                        | find_similar shows analogs, not callers. Use impact rerank.                                                                    |
+| Ignore `imports` when comment proposes a rename                     | Rename affects every importer. imports count = response effort                                                                 |
+| Agree then grep for callers during implementation                   | Wrong order — impact analysis informs whether to agree at all                                                                  |
+| Comment names "how X calls Y" but you only ran single-symbol Step 2 | The change rides a route. `trace_path(from=X, to=Y, rerank="blastRadius")` shows the chokepoint, not just one fanIn (Step 3.5) |
+| Loop in only the symbol's owner when the change crosses a route     | The hops between X and Y have other owners. `rerank="ownership"` on the route surfaces who else to loop in                     |

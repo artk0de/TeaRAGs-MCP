@@ -101,6 +101,66 @@ If `bug-hunt` returned 0 suspects (all healthy): state "no bug-prone zones for
 this symptom — root cause likely in recently-added untracked code or external
 dependency".
 
+## Step 3.5 — Trace the causal chain to a suspect (optional but preferred)
+
+Bug-hunt gives a **flat** suspect list. When you also have an **entry/repro
+point** — the symbol where the failing flow starts (the test, the request
+handler, the CLI entry, the symbol in the top user-code stack frame) — promote
+the prime suspect from a point to a **chain**: call `mcp__tea-rags__trace_path`
+from the entry symbol to the suspect symbol.
+
+```
+mcp__tea-rags__trace_path(
+  from="<entry/repro symbol>",   # e.g. the failing test or request handler
+  to="<prime suspect symbol>",   # the bugFixRate-critical symbol from Step 2/3
+  rerank="bugHunt"               # danger-rank the steps the same lens as bug-hunt
+)
+```
+
+What this collapses: instead of N manual `get_callers` / `get_callees` turns to
+hand-walk the call graph from entry to fault, `trace_path` returns the static
+call CHAIN in one call AND attaches temporal risk to every step.
+
+Read the result like this:
+
+- **`dangerRanking[0]`** — the step to inspect FIRST. Not the entry, not the
+  suspect necessarily — the riskiest hop on the path between them. Start the
+  hypothesis there.
+- **`dangerOverlay`** per step — carries `bugFixRate` / churn for that hop, so a
+  quiet-looking intermediate function with a critical history surfaces instead
+  of hiding between entry and suspect.
+- **Empty result** — there is NO static call path from `from` to `to`. The
+  hypothesis "the entry flow reaches this suspect" is **structurally false**.
+  That is a useful negative signal: either the repro point is wrong, the bug is
+  reached via a dynamic/async edge the static graph doesn't see, or this suspect
+  is unrelated. Drop it and trace to the next suspect.
+
+Preset selection for the trace:
+
+| Situation                                       | `rerank`      |
+| ----------------------------------------------- | ------------- |
+| General symptom, history-ranked chain (default) | `bugHunt`     |
+| **Fresh regression** — "worked last release"    | `recent`      |
+| Suspect is a hot, frequently-touched path       | `hotspots`    |
+| Failure smells like a wide blast-radius change  | `blastRadius` |
+
+For a fresh regression prefer `rerank="recent"`: it ranks the most
+**recently-changed** step on the path first — the hop most likely introduced by
+the change that broke things. Bound the search with `maxDepth` / `maxPaths` if
+the graph is deep or branchy.
+
+Append the traced chain under the hypothesis block from Step 3:
+
+```
+**Causal chain (entry → prime suspect), danger-ranked:**
+- inspect first: <dangerRanking[0] symbol> @ <file>:<line>
+  overlay: bugFixRate <X%>, churn <Y>
+- full path: <from> → … → <to> (<N> hops)
+```
+
+If you have no clear entry/repro point, skip this step — bug-hunt's flat ranking
+from Step 3 is enough to seed hypotheses.
+
 ## Step 4 — Invoke superpowers:systematic-debugging
 
 Invoke the `Skill` tool with `superpowers:systematic-debugging`. Prepend the
@@ -141,11 +201,14 @@ hypothesis space.
 
 ## Common Mistakes
 
-| Mistake                                                                       | Reality                                                                                                           |
-| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Start `superpowers:systematic-debugging` with the error message as hypothesis | Flat search. Bug-hunt narrows to bug-prone zones first.                                                           |
-| Use `tea-rags:bug-hunt` AFTER hypotheses formed ("to validate")               | Wrong order. Bug-hunt seeds the hypothesis space, not validates it post-hoc.                                      |
-| Ignore the "healthy" skip signal                                              | Healthy zones are calibrated-out by bug-hunt. If you still want to look there, you're overriding a trusted prior. |
-| Re-run bug-hunt on each new hypothesis                                        | One bug-hunt call per symptom. Hypothesis iteration is `superpowers:systematic-debugging`'s job.                  |
-| Invoke on speculative "maybe there's a race" questions                        | That's brainstorming (use `dinopowers:brainstorming`), not debugging a symptom.                                   |
-| Pass the full stack trace as `symptom`                                        | Stack traces contain noise (framework frames). Extract the user-code frame or error message only.                 |
+| Mistake                                                                       | Reality                                                                                                            |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Start `superpowers:systematic-debugging` with the error message as hypothesis | Flat search. Bug-hunt narrows to bug-prone zones first.                                                            |
+| Use `tea-rags:bug-hunt` AFTER hypotheses formed ("to validate")               | Wrong order. Bug-hunt seeds the hypothesis space, not validates it post-hoc.                                       |
+| Ignore the "healthy" skip signal                                              | Healthy zones are calibrated-out by bug-hunt. If you still want to look there, you're overriding a trusted prior.  |
+| Re-run bug-hunt on each new hypothesis                                        | One bug-hunt call per symptom. Hypothesis iteration is `superpowers:systematic-debugging`'s job.                   |
+| Invoke on speculative "maybe there's a race" questions                        | That's brainstorming (use `dinopowers:brainstorming`), not debugging a symptom.                                    |
+| Pass the full stack trace as `symptom`                                        | Stack traces contain noise (framework frames). Extract the user-code frame or error message only.                  |
+| Hand-walk `get_callers` / `get_callees` from entry to suspect                 | `trace_path(from, to, rerank="bugHunt")` returns the whole chain in one call and danger-ranks the hops.            |
+| Treat an empty `trace_path` result as "tool failed"                           | Empty = no static call path. The hypothesis that the entry reaches that suspect is structurally false — drop it.   |
+| Use `rerank="recent"` for an old, always-flaky symptom                        | `recent` ranks the newest-changed hop first — that's for fresh regressions. For long-standing bugs keep `bugHunt`. |

@@ -102,9 +102,15 @@ Already have search results for this area?
 │   │     → hybrid_search (BM25 catches exact name + semantic context)
 │   ├─ Need file structure (methods, classes, outline)
 │   │     → find_symbol(relativePath: result.relativePath)
-│   └─ Need doc TOC
-│         → find_symbol(relativePath: "docs/file.md") OR
-│           find_symbol(symbol: "doc:<parentHash>") from search result
+│   ├─ Need doc TOC
+│   │     → find_symbol(relativePath: "docs/file.md") OR
+│   │       find_symbol(symbol: "doc:<parentHash>") from search result
+│   └─ Need graph navigation (codegraph must be enabled)
+│         → get_callers / get_callees — one hop: who calls X / what X calls
+│         → find_cycles — detect circular dependency chains
+│         → trace_path — ALL call paths A→B with per-step danger ranking
+│              use when: "how does control reach B from A?" or
+│              "which step on the A→B chain is riskiest?"
 │
 └─ No (need to search)
 
@@ -211,6 +217,7 @@ harmless for non-search tasks.
 | Behavioral discovery | semantic_search                   | hybrid_search                        |
 | Cross-layer          | semantic_search × per language    | same                                 |
 | Exact text           | ripgrep MCP                       | built-in Grep                        |
+| Call path A→B        | trace_path                        | get_callees breadth-first (manual)   |
 
 ## pathPattern Rules
 

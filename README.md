@@ -158,8 +158,8 @@ stability, ownership, risk, or pure relevance.
 Beyond git history, tea-rags can enrich chunks with **structural graph signals**
 — call graph and import graph (fan-in, fan-out, instability, PageRank,
 transitive impact) — and expose graph-query MCP tools (`get_callers`,
-`get_callees`, `find_cycles`). This powers blast-radius and architectural-hub
-ranking.
+`get_callees`, `find_cycles`, `trace_path`). This powers blast-radius and
+architectural-hub ranking.
 
 Codegraph is **disabled by default** (beta). Opt in with the `CODEGRAPH_ENABLED`
 environment variable, then re-index:
