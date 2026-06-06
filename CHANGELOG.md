@@ -1,14 +1,11 @@
 ## [1.31.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.30.0...v1.31.0) (2026-06-06)
 
-### Features
+### ci
 
-- **ci:** declarative changelog automation (cloud runner, feat+fix format)
-  ([b54076c](https://github.com/artk0de/TeaRAGs-MCP/commit/b54076ceea6f819dda724a8dae3bcf1333c6bd1c))
-
-### Improvements
-
-- **ci:** semver-aware changelog splice + retro cloud agent (no tea-rags)
-  ([471606d](https://github.com/artk0de/TeaRAGs-MCP/commit/471606d3f65d77470d52743b30f751ff41479b06))
+- Automated declarative changelog: a post-release workflow groups feat/fix
+  commits by domain into release notes (fix: marked, refactor/chore folded into
+  a Full Commits spoiler) with the release date, mirrored to the website and
+  CHANGELOG ([b54076c](https://github.com/artk0de/TeaRAGs-MCP/commit/b54076c))
 
 ## [1.30.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.29.0...v1.30.0) (2026-06-06)
 
