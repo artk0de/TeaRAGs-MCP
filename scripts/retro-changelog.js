@@ -43,10 +43,8 @@ for (let i = Math.max(start, 1); i < tags.length; i++) {
     [
       "-p",
       `Read scripts/release-changelog-prompt.md, follow it. Version ${curr.replace(/^v/, "")}. Write release-notes.json.`,
-      "--mcp-config",
-      ".mcp.json",
       "--allowedTools",
-      "mcp__tea-rags__hybrid_search,mcp__tea-rags__find_similar,Read,Write",
+      "Read,Write",
     ],
     { stdio: "inherit" },
   );

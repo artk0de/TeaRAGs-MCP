@@ -76,3 +76,5 @@ website/.docusaurus/
 release-notes.json
 release-notes.md
 commits.json
+_apply-one.mjs
+changelog-*.json

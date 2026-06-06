@@ -107,9 +107,17 @@ describe("spliceVersionSection", () => {
     expect(out).toContain("* prior version stays");
   });
 
-  it("prepends when the version is not yet present", () => {
+  it("prepends a higher version not yet present", () => {
     const newSection = "## [2.0.0](url-d) (2026-07-01)\n\n### api\n\n* new ([zzz9999](z))\n";
     const out = spliceVersionSection(CHANGELOG, "2.0.0", newSection);
     expect(out.indexOf("## [2.0.0]")).toBeLessThan(out.indexOf("## [1.30.0]"));
+  });
+
+  it("inserts an absent middle version in descending-semver order", () => {
+    // CHANGELOG has 1.30.0 then 1.29.0; insert absent 1.29.5 between them.
+    const newSection = "## [1.29.5](url-e) (2026-06-05)\n\n### api\n\n* mid ([mmm5555](z))\n";
+    const out = spliceVersionSection(CHANGELOG, "1.29.5", newSection);
+    expect(out.indexOf("## [1.30.0]")).toBeLessThan(out.indexOf("## [1.29.5]"));
+    expect(out.indexOf("## [1.29.5]")).toBeLessThan(out.indexOf("## [1.29.0]"));
   });
 });
