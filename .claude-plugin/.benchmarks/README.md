@@ -161,14 +161,15 @@ run plan.
 ◇ install (step-9 register): feature-driven eval added with the new Step 9
 (Register Project Alias, before first indexing; verify renumbered to Step 10).
 Modest +18pp is honest — "register then defer indexing" is intuitive and the
-MCP/CLI tool names are self-describing, so baseline already hits 82%. The skill's
-unique value is the two conventions baseline cannot guess: alias `_`-preservation
-(`my_cool-app`, not `my-cool-app`) and the firm don't-index-during-setup boundary
-under an explicit "index now" request (baseline ran `index_codebase`
-mid-setup). Also enforces CLI `tea-rags projects register` over the
-`register_project` MCP tool, which is unreachable before the post-setup restart.
-No fixes applied — all audit findings A1–A5 passed with-rule (100%). Eval
-retained as a regression guard. See `tea-rags-setup-install/benchmark.md`.
+MCP/CLI tool names are self-describing, so baseline already hits 82%. The
+skill's unique value is the two conventions baseline cannot guess: alias
+`_`-preservation (`my_cool-app`, not `my-cool-app`) and the firm
+don't-index-during-setup boundary under an explicit "index now" request
+(baseline ran `index_codebase` mid-setup). Also enforces CLI
+`tea-rags projects register` over the `register_project` MCP tool, which is
+unreachable before the post-setup restart. No fixes applied — all audit findings
+A1–A5 passed with-rule (100%). Eval retained as a regression guard. See
+`tea-rags-setup-install/benchmark.md`.
 
 § risk-assessment pair diagnostics: rare baseline-higher-than-with-rule
 inversion. Old Phase 4 classification table lacked coupling/bug-attractor/

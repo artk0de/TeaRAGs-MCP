@@ -1,19 +1,19 @@
 # Benchmark — `tea-rags-setup:install`
 
 Feature-driven eval added alongside the new **Step 9 (Register Project Alias)**
-in the install wizard (`steps/step-9-register.md`, verify renumbered to Step 10).
-Tests instruction quality: does the skill text guide an agent to register the
-project *before* the first indexing, derive the alias by the documented
+in the install wizard (`steps/step-9-register.md`, verify renumbered to Step
+10). Tests instruction quality: does the skill text guide an agent to register
+the project _before_ the first indexing, derive the alias by the documented
 convention, respect the "don't index during setup" boundary, export `QDRANT_URL`
 so the registry captures the right backend, and keep step order 8 → 9 → 10.
 
 ## Summary
 
-| Config           | Pass rate    |
-| ---------------- | ------------ |
-| **With-rule**    | **11/11 (100%)** |
-| Without-rule     | 9/11 (82%)   |
-| **Delta**        | **+18pp**    |
+| Config        | Pass rate        |
+| ------------- | ---------------- |
+| **With-rule** | **11/11 (100%)** |
+| Without-rule  | 9/11 (82%)       |
+| **Delta**     | **+18pp**        |
 
 Method: one with-rule subagent (full skill text injected) and one without-rule
 subagent (only the available MCP/CLI tools listed), each given all 11 cases,
@@ -24,19 +24,19 @@ tool-selection eval per `optimize-skill`.
 
 5 findings (A1–A5) · 2 controls · 2 edges · 2 subagent-routing.
 
-| # | Name | Tests | With | Without |
-| - | ---- | ----- | :--: | :-----: |
-| 1 | register-before-index | next action after Step 8 = register, not index | PASS | PASS |
-| 2 | registration-is-not-indexing | Step 9 records alias only, no index | PASS | PASS |
-| 3 | alias-derivation | `/…/My_Cool-App` → `my_cool-app` (`_` preserved) | PASS | **FAIL** |
-| 4 | qdrant-url-export-external | export `QDRANT_URL` before register | PASS | PASS |
-| 5 | step-ordering | 8 configure → 9 register → 10 verify | PASS | PASS |
-| 6 | control-defer-indexing | "index now" mid-setup → defer to post-restart | PASS | **FAIL** |
-| 7 | control-mcp-config-step8 | integrator + `claude mcp add` | PASS | PASS |
-| 8 | edge-embedded-qdrant | embedded → omit `QDRANT_URL` | PASS | PASS |
-| 9 | edge-cli-not-on-path | report + continue, don't block | PASS | PASS* |
-| 10 | subagent task-agent | finalize: register `acme-api` before verify, no index | PASS | PASS |
-| 11 | subagent plan-executor | resolve abs, alias `backend`, register→verify, no index | PASS | PASS |
+| #   | Name                         | Tests                                                   | With | Without  |
+| --- | ---------------------------- | ------------------------------------------------------- | :--: | :------: |
+| 1   | register-before-index        | next action after Step 8 = register, not index          | PASS |   PASS   |
+| 2   | registration-is-not-indexing | Step 9 records alias only, no index                     | PASS |   PASS   |
+| 3   | alias-derivation             | `/…/My_Cool-App` → `my_cool-app` (`_` preserved)        | PASS | **FAIL** |
+| 4   | qdrant-url-export-external   | export `QDRANT_URL` before register                     | PASS |   PASS   |
+| 5   | step-ordering                | 8 configure → 9 register → 10 verify                    | PASS |   PASS   |
+| 6   | control-defer-indexing       | "index now" mid-setup → defer to post-restart           | PASS | **FAIL** |
+| 7   | control-mcp-config-step8     | integrator + `claude mcp add`                           | PASS |   PASS   |
+| 8   | edge-embedded-qdrant         | embedded → omit `QDRANT_URL`                            | PASS |   PASS   |
+| 9   | edge-cli-not-on-path         | report + continue, don't block                          | PASS |  PASS\*  |
+| 10  | subagent task-agent          | finalize: register `acme-api` before verify, no index   | PASS |   PASS   |
+| 11  | subagent plan-executor       | resolve abs, alias `backend`, register→verify, no index | PASS |   PASS   |
 
 \* borderline — baseline substituted the `register_project` MCP tool, which is
 not yet reachable during setup (server not restarted); it did not block, so
@@ -44,7 +44,7 @@ graded PASS.
 
 ## Key discriminators (where the skill adds value)
 
-1. **Alias convention (case 3).** The skill replaces only chars *outside*
+1. **Alias convention (case 3).** The skill replaces only chars _outside_
    `[a-z0-9_-]`, preserving `_` → `my_cool-app`. The baseline over-normalized
    `_` → `-` (`my-cool-app`), which would register a different alias than the
    documented one.

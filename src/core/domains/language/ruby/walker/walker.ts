@@ -419,6 +419,60 @@ function readScopeResolution(node: Parser.SyntaxNode): string {
 }
 
 /**
+ * Strip trailing no-arg call wrappers (`{...}.freeze`, `[...].freeze.dup`) to
+ * reach the underlying collection literal. Returns the receiver chain's root,
+ * which the caller checks for `array` / `hash`. Non-call inputs pass through.
+ */
+function unwrapTrailingCalls(node: Parser.SyntaxNode | null): Parser.SyntaxNode | null {
+  let n = node;
+  while (n?.type === "call") {
+    const receiver = n.childForFieldName("receiver");
+    if (!receiver) break;
+    n = receiver;
+  }
+  return n;
+}
+
+/**
+ * Emit a reference CallRef for every constant / scope_resolution used inside a
+ * constant-assigned collection literal (registry pattern, bd tea-rags-mcp-ki9v).
+ * Mirrors `collectRubyConstantRefs`'s outermost-only discipline for nested
+ * `scope_resolution`. Descent stops at lambda / proc / block / nested def
+ * bodies: a constant referenced there is dispatched at runtime, not a static
+ * registry reference, and is out of scope (bd tea-rags-mcp-jw9n). Receiver and
+ * member both carry the fully-qualified constant so the `constant` resolver
+ * pins it to the declaring file (file-only edge when no method matches).
+ */
+function collectRegistryConstantValueRefs(literal: Parser.SyntaxNode, out: CallRef[]): void {
+  const walkValue = (n: Parser.SyntaxNode): void => {
+    if (
+      n.type === "lambda" ||
+      n.type === "block" ||
+      n.type === "do_block" ||
+      n.type === "method" ||
+      n.type === "singleton_method"
+    ) {
+      return;
+    }
+    if (n.type === "scope_resolution") {
+      if (n.parent?.type === "scope_resolution") return; // outermost only
+      const qualified = readScopeResolution(n);
+      if (qualified) {
+        out.push({ callText: qualified, receiver: qualified, member: qualified, startLine: n.startPosition.row + 1 });
+      }
+      return;
+    }
+    if (n.type === "constant") {
+      if (n.parent?.type === "scope_resolution") return; // covered by the outer chain
+      out.push({ callText: n.text, receiver: n.text, member: n.text, startLine: n.startPosition.row + 1 });
+      return;
+    }
+    for (const child of n.children) walkValue(child);
+  };
+  walkValue(literal);
+}
+
+/**
  * Whether a constant/scope_resolution node sits in a context where it
  * DECLARES something (class header, module header, assignment target,
  * superclass position) rather than REFERENCES something. Declarations
@@ -544,6 +598,28 @@ function collectRubyCalls(root: Parser.SyntaxNode): CallRef[] {
       }
     }
 
+    // Registry constant-reference edges (bd tea-rags-mcp-ki9v). A constant
+    // assignment whose RHS is a collection literal — `CONST = { k => Klass }`
+    // or `CONST = [Klass, ...]`, optionally `.freeze`d — hard-references each
+    // value class. Those references are `constant`/`scope_resolution` nodes,
+    // not `call` nodes, so without this branch the registry chunk gets
+    // chunk fanOut=0 despite coupling to every value class. Emit a synthetic
+    // reference CallRef per literal constant; receiver === member === the
+    // fully-qualified constant so the `constant` resolver pins it to the
+    // declaring file as a file-only edge (the method-edge fan-out counts it).
+    // Constants nested in a lambda / proc / block body (STI-style
+    // `-> { Klass }` registries) are deliberately skipped — those resolve at
+    // call time, a separate type-aware concern (bd tea-rags-mcp-jw9n).
+    if (node.type === "assignment") {
+      const left = node.childForFieldName("left");
+      if (left && (left.type === "constant" || left.type === "scope_resolution")) {
+        const literal = unwrapTrailingCalls(node.childForFieldName("right"));
+        if (literal && (literal.type === "array" || literal.type === "hash")) {
+          collectRegistryConstantValueRefs(literal, out);
+        }
+      }
+    }
+
     // Bare-identifier method calls (bd tea-rags-mcp-hbie). Ruby allows
     // `foo` as shorthand for `foo()` when `foo` is a method, so the
     // walker must emit a CallRef for `identifier` nodes that sit in a
@@ -659,6 +735,25 @@ function collectRubyCalls(root: Parser.SyntaxNode): CallRef[] {
           // call (rare but possible) still emit; do NOT return early —
           // we still want the literal `alias_method` edge below as the
           // primary call (matches `attr_accessor` / `delegate` pattern).
+        }
+      }
+
+      // `delegate :a, :b, to: :recv` synthetic call edges (bd tea-rags-mcp-mx9z).
+      // ActiveSupport / Forwardable generate forwarder methods whose body calls
+      // `recv.sym`. The macro-symbol synthesiser (macros.ts) already emits the
+      // forwarder method symbols (#a, #b), but their codegraph chunk had
+      // fanOut=0 — the delegation TARGET was unlinked. Emit one CallRef per
+      // delegated symbol: receiver = the `to:` value (leading `:` stripped for a
+      // symbol literal; a constant stays as-is), member = the delegated symbol.
+      // Only the class-body form fires — `obj.delegate` is a normal method call.
+      // Syntactic-only: the resolver's same-class bare-call fallback pins a
+      // method/attr `to:`, the constant strategy pins a constant `to:`.
+      if (receiverText === null && method.text === "delegate") {
+        const recv = extractDelegateTarget(node);
+        if (recv !== null) {
+          for (const sym of extractDelegateSymbols(node)) {
+            out.push({ callText: node.text, receiver: recv, member: sym, startLine });
+          }
         }
       }
 
@@ -841,6 +936,53 @@ function extractSecondLiteralSymbol(callNode: Parser.SyntaxNode): string | null 
   const secondArg = args.namedChildren[1];
   if (secondArg?.type !== "simple_symbol") return null;
   return secondArg.text.startsWith(":") ? secondArg.text.slice(1) : secondArg.text;
+}
+
+/**
+ * Collect the leading delegated symbol names from a `delegate :a, :b, to: :recv`
+ * call — every `simple_symbol` argument UNTIL the first non-symbol (the `to:`
+ * pair, other kwargs like `allow_nil:` / `prefix:`). Mirrors macros.ts'
+ * `pushMacroSymbols` delegate loop so the synthesised CallRefs line up 1:1 with
+ * the synthesised forwarder method symbols (bd tea-rags-mcp-mx9z).
+ */
+function extractDelegateSymbols(callNode: Parser.SyntaxNode): string[] {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return [];
+  const out: string[] = [];
+  for (const arg of args.namedChildren) {
+    if (arg.type !== "simple_symbol") break;
+    const base = arg.text.startsWith(":") ? arg.text.slice(1) : arg.text;
+    if (base.length > 0) out.push(base);
+  }
+  return out;
+}
+
+/**
+ * Pull the `to:` receiver text from a `delegate ..., to: <value>` call. The
+ * value is the right side of the `to:` pair: a symbol literal (`:client` →
+ * `client`, leading `:` stripped) for a method/attr target, or a constant
+ * (`SomeConst`, returned verbatim) the resolver's constant strategy pins.
+ * Returns `null` when no `to:` pair is present or its value is neither a
+ * symbol nor a constant (e.g. a runtime expression) — no edge can be
+ * synthesised syntactically (bd tea-rags-mcp-mx9z).
+ */
+function extractDelegateTarget(callNode: Parser.SyntaxNode): string | null {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  for (const arg of args.namedChildren) {
+    if (arg.type !== "pair") continue;
+    const key = arg.childForFieldName("key");
+    if (key?.text !== "to") continue;
+    const value = arg.childForFieldName("value");
+    if (!value) return null;
+    if (value.type === "simple_symbol") {
+      return value.text.startsWith(":") ? value.text.slice(1) : value.text;
+    }
+    if (value.type === "constant") return value.text;
+    if (value.type === "scope_resolution") return readScopeResolution(value);
+    return null;
+  }
+  return null;
 }
 
 /**

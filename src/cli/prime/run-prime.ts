@@ -63,9 +63,7 @@ export async function runPrime(input: { path?: string; project?: string }): Prom
   if (!path) {
     // Only reachable when --project was given but is absent from the registry;
     // a missing path with no project resolved to cwd above.
-    process.stdout.write(
-      formatPrime({ kind: "path-not-found", path: `(project '${input.project}' not registered)` }),
-    );
+    process.stdout.write(formatPrime({ kind: "path-not-found", path: `(project '${input.project}' not registered)` }));
     return;
   }
 

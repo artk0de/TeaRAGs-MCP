@@ -1463,6 +1463,51 @@ describe("extractFromRubyFile — alias_method / alias synthetic call edges", ()
   });
 });
 
+// bd tea-rags-mcp-mx9z: `delegate :sym..., to: :recv` (ActiveSupport / Forwardable).
+// The macro generates forwarder methods whose body calls `recv.sym`. The walker
+// already synthesises the forwarder method SYMBOLS (#firm), but their codegraph
+// chunk had fanOut=0 — the delegation TARGET went unlinked. The walker now emits
+// one synthetic CallRef per delegated symbol: receiver = the `to:` value (leading
+// `:` stripped for a symbol literal), member = the delegated symbol name. The
+// `to:` value is usually a method/attr (`:client`) so the resolver's same-class
+// bare-call fallback pins it; a constant `to:` value resolves via the constant
+// strategy. Syntactic-only — no type inference.
+describe("extractFromRubyFile — delegate ... to: (bd tea-rags-mcp-mx9z)", () => {
+  it("emits synthetic CallRef from `delegate :firm, to: :client`", () => {
+    const src = "class Foo\n  delegate :firm, to: :client\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      // The chunker creates a synthetic chunk for the generated #firm
+      // forwarder method, attributed to the delegate macro line. Simulate
+      // it so innermost-chunk attribution lands the emitted edge.
+      chunks: [{ symbolId: "Foo#firm", scope: ["Foo", "firm"], startLine: 2, endLine: 2 }],
+    });
+    const c = r.chunks[0].calls.find((cr) => cr.member === "firm" && cr.receiver === "client");
+    expect(c).toBeDefined();
+    // Receiver is the `to:` value (a method/attr on the same class). The
+    // leading `:` of the symbol literal is stripped.
+    expect(c?.receiver).toBe("client");
+  });
+
+  it("emits a synthetic CallRef for EACH symbol in `delegate :a, :b, to: :proc_obj`", () => {
+    const src = "class Foo\n  delegate :a, :b, to: :proc_obj\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Foo#a", scope: ["Foo", "a"], startLine: 2, endLine: 2 }],
+    });
+    expect(r.chunks[0].calls.find((cr) => cr.member === "a" && cr.receiver === "proc_obj")).toBeDefined();
+    expect(r.chunks[0].calls.find((cr) => cr.member === "b" && cr.receiver === "proc_obj")).toBeDefined();
+  });
+});
+
 // bd tea-rags-mcp-meh1 — Symbol#to_proc literal (`&:method_name`) in a call's
 // block argument is a synthetic call to `method_name` on each iterator element.
 // `[1, 2, 3].map(&:to_s)` ≡ `[1, 2, 3].map { |x| x.to_s }`. The walker emits
@@ -1533,5 +1578,74 @@ describe("extractFromRubyFile — Symbol#to_proc block-pass (bd meh1)", () => {
     expect(r.chunks[0].calls.find((cr) => cr.member === "sort_by")).toBeDefined();
     // No to-proc synthesis — callText starting with `&:` would betray one.
     expect(r.chunks[0].calls.find((cr) => cr.callText.startsWith("&:"))).toBeUndefined();
+  });
+});
+
+describe("extractFromRubyFile — registry constant-hash value edges (bd tea-rags-mcp-ki9v)", () => {
+  it("emits a reference CallRef for each constant used as a hash value in a constant assignment", () => {
+    const src =
+      "class Registry\n" +
+      "  TABLE = {\n" +
+      "    'job' => Workflow::Job::Clone,\n" +
+      "    'task' => Workflow::Task::Clone,\n" +
+      "  }.freeze\n" +
+      "end\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "registry.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Registry", scope: [], startLine: 1, endLine: 6 }],
+    });
+    const { calls } = r.chunks[0];
+    expect(calls.find((cr) => cr.receiver === "Workflow::Job::Clone")).toBeDefined();
+    expect(calls.find((cr) => cr.receiver === "Workflow::Task::Clone")).toBeDefined();
+  });
+
+  it("emits a reference CallRef for a constant used as an array element in a constant assignment", () => {
+    const src = "class Registry\n  HANDLERS = [Foo::Bar, Baz::Qux].freeze\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "registry.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Registry", scope: [], startLine: 1, endLine: 3 }],
+    });
+    const { calls } = r.chunks[0];
+    expect(calls.find((cr) => cr.receiver === "Foo::Bar")).toBeDefined();
+    expect(calls.find((cr) => cr.receiver === "Baz::Qux")).toBeDefined();
+  });
+
+  it("does NOT emit for a constant nested inside a lambda value (STI registry, out of scope — jw9n)", () => {
+    const src =
+      "class Registry\n" +
+      "  TABLE = {\n" +
+      "    'job' => -> { Workflow::Job::Clone },\n" +
+      "  }.freeze\n" +
+      "end\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "registry.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Registry", scope: [], startLine: 1, endLine: 5 }],
+    });
+    expect(r.chunks[0].calls.find((cr) => cr.receiver === "Workflow::Job::Clone")).toBeUndefined();
+  });
+
+  it("does NOT emit registry value edges for a non-constant (local var) assignment target", () => {
+    const src = "class Registry\n  table = { 'job' => Workflow::Job::Clone }\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "registry.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Registry", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].calls.find((cr) => cr.receiver === "Workflow::Job::Clone")).toBeUndefined();
   });
 });

@@ -111,13 +111,25 @@
     "per_case": {
       "1": { "with_rule": "PASS", "without_rule": "PASS" },
       "2": { "with_rule": "PASS", "without_rule": "PASS" },
-      "3": { "with_rule": "PASS", "without_rule": "FAIL", "note": "baseline gave my-cool-app (replaced _), skill preserves _ -> my_cool-app" },
+      "3": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "note": "baseline gave my-cool-app (replaced _), skill preserves _ -> my_cool-app"
+      },
       "4": { "with_rule": "PASS", "without_rule": "PASS" },
       "5": { "with_rule": "PASS", "without_rule": "PASS" },
-      "6": { "with_rule": "PASS", "without_rule": "FAIL", "note": "baseline ran index_codebase during setup on explicit request; skill defers to post-restart" },
+      "6": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "note": "baseline ran index_codebase during setup on explicit request; skill defers to post-restart"
+      },
       "7": { "with_rule": "PASS", "without_rule": "PASS" },
       "8": { "with_rule": "PASS", "without_rule": "PASS" },
-      "9": { "with_rule": "PASS", "without_rule": "PASS", "note": "baseline borderline: used register_project MCP tool (unreachable pre-restart) but did not block" },
+      "9": {
+        "with_rule": "PASS",
+        "without_rule": "PASS",
+        "note": "baseline borderline: used register_project MCP tool (unreachable pre-restart) but did not block"
+      },
       "10": { "with_rule": "PASS", "without_rule": "PASS" },
       "11": { "with_rule": "PASS", "without_rule": "PASS" }
     },
