@@ -662,6 +662,25 @@ function collectRubyCalls(root: Parser.SyntaxNode): CallRef[] {
         }
       }
 
+      // `delegate :a, :b, to: :recv` synthetic call edges (bd tea-rags-mcp-mx9z).
+      // ActiveSupport / Forwardable generate forwarder methods whose body calls
+      // `recv.sym`. The macro-symbol synthesiser (macros.ts) already emits the
+      // forwarder method symbols (#a, #b), but their codegraph chunk had
+      // fanOut=0 — the delegation TARGET was unlinked. Emit one CallRef per
+      // delegated symbol: receiver = the `to:` value (leading `:` stripped for a
+      // symbol literal; a constant stays as-is), member = the delegated symbol.
+      // Only the class-body form fires — `obj.delegate` is a normal method call.
+      // Syntactic-only: the resolver's same-class bare-call fallback pins a
+      // method/attr `to:`, the constant strategy pins a constant `to:`.
+      if (receiverText === null && method.text === "delegate") {
+        const recv = extractDelegateTarget(node);
+        if (recv !== null) {
+          for (const sym of extractDelegateSymbols(node)) {
+            out.push({ callText: node.text, receiver: recv, member: sym, startLine });
+          }
+        }
+      }
+
       if (receiverText !== null) {
         out.push({ callText: node.text, receiver: receiverText, member: method.text, startLine });
       } else {
@@ -841,6 +860,53 @@ function extractSecondLiteralSymbol(callNode: Parser.SyntaxNode): string | null 
   const secondArg = args.namedChildren[1];
   if (secondArg?.type !== "simple_symbol") return null;
   return secondArg.text.startsWith(":") ? secondArg.text.slice(1) : secondArg.text;
+}
+
+/**
+ * Collect the leading delegated symbol names from a `delegate :a, :b, to: :recv`
+ * call — every `simple_symbol` argument UNTIL the first non-symbol (the `to:`
+ * pair, other kwargs like `allow_nil:` / `prefix:`). Mirrors macros.ts'
+ * `pushMacroSymbols` delegate loop so the synthesised CallRefs line up 1:1 with
+ * the synthesised forwarder method symbols (bd tea-rags-mcp-mx9z).
+ */
+function extractDelegateSymbols(callNode: Parser.SyntaxNode): string[] {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return [];
+  const out: string[] = [];
+  for (const arg of args.namedChildren) {
+    if (arg.type !== "simple_symbol") break;
+    const base = arg.text.startsWith(":") ? arg.text.slice(1) : arg.text;
+    if (base.length > 0) out.push(base);
+  }
+  return out;
+}
+
+/**
+ * Pull the `to:` receiver text from a `delegate ..., to: <value>` call. The
+ * value is the right side of the `to:` pair: a symbol literal (`:client` →
+ * `client`, leading `:` stripped) for a method/attr target, or a constant
+ * (`SomeConst`, returned verbatim) the resolver's constant strategy pins.
+ * Returns `null` when no `to:` pair is present or its value is neither a
+ * symbol nor a constant (e.g. a runtime expression) — no edge can be
+ * synthesised syntactically (bd tea-rags-mcp-mx9z).
+ */
+function extractDelegateTarget(callNode: Parser.SyntaxNode): string | null {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  for (const arg of args.namedChildren) {
+    if (arg.type !== "pair") continue;
+    const key = arg.childForFieldName("key");
+    if (key?.text !== "to") continue;
+    const value = arg.childForFieldName("value");
+    if (!value) return null;
+    if (value.type === "simple_symbol") {
+      return value.text.startsWith(":") ? value.text.slice(1) : value.text;
+    }
+    if (value.type === "constant") return value.text;
+    if (value.type === "scope_resolution") return readScopeResolution(value);
+    return null;
+  }
+  return null;
 }
 
 /**
