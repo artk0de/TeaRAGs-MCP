@@ -16,8 +16,9 @@
  *   5. namedImport (receiver ∈ import { … } importedNames — exact)
  *   6. importBasename (kebab→Pascal basename fallback)
  *   7. receiverSymbol (imported-files ∩ receiver-declaring-files)
- *   8. globalShortName (global short-name lookup)
- *   9. importNarrowedFallback (narrow ambiguous N>1 by caller's imports)
+ *   8. sameFile (caller-file-local definition wins over global ambiguity)
+ *   9. globalShortName (global short-name lookup)
+ *  10. importNarrowedFallback (narrow ambiguous N>1 by caller's imports)
  *
  * `resolveDispatch` is a separate fan-out contract (lookup-table dispatch, bd
  * tea-rags-mcp-n0zj) and stays in the orchestrator — it is not part of the
@@ -48,6 +49,7 @@ import {
   TSLocalBindingSymbolResolutionStrategy,
   TSNamedImportSymbolResolutionStrategy,
   TSReceiverSymbolSymbolResolutionStrategy,
+  TSSameFileSymbolResolutionStrategy,
   TSSuperSymbolResolutionStrategy,
   TSThisMemberSymbolResolutionStrategy,
   type ResolverConfig,
@@ -71,6 +73,7 @@ export class TSCallResolver implements CallResolver {
       new TSNamedImportSymbolResolutionStrategy(cfg),
       new TSImportBasenameSymbolResolutionStrategy(cfg),
       new TSReceiverSymbolSymbolResolutionStrategy(cfg),
+      new TSSameFileSymbolResolutionStrategy(cfg),
       new TSGlobalShortNameSymbolResolutionStrategy(cfg),
       new TSImportNarrowedFallbackSymbolResolutionStrategy(cfg),
     ];

@@ -1286,6 +1286,25 @@ describe("TSCallResolver", () => {
       expect(result).toEqual({ targetRelPath: "src/mixed.ts", targetSymbolId: "A#constructor" });
     });
   });
+
+  it("prefers a same-file definition over an ambiguous global short-name", () => {
+    // `helper` defined in BOTH the caller file and another file → globally
+    // ambiguous. Without the sameFile pass this drops; with it, the caller's
+    // own definition wins.
+    const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/caller.ts", [
+      { symbolId: "helper", fqName: "helper", shortName: "helper", relPath: "src/caller.ts", scope: [] },
+    ]);
+    symbolTable.upsertFile("src/other.ts", [
+      { symbolId: "helper", fqName: "helper", shortName: "helper", relPath: "src/other.ts", scope: [] },
+    ]);
+    const target = resolver.resolve(
+      { callText: "helper()", receiver: null, member: "helper", startLine: 1 },
+      { callerFile: "src/caller.ts", callerScope: [], imports: [], symbolTable },
+    );
+    expect(target).toEqual({ targetRelPath: "src/caller.ts", targetSymbolId: "helper" });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────
