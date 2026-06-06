@@ -37,7 +37,7 @@ export class TSSameFileSymbolResolutionStrategy implements SymbolResolutionStrat
     const { receiver, member } = call;
     let candidates: SymbolDefinition[];
 
-    if (receiver === null || receiver === undefined) {
+    if (receiver === null) {
       // bare call: helper()
       candidates = ctx.symbolTable.lookupByShortName(member).filter((d) => d.relPath === ctx.callerFile);
     } else if (member === "constructor" && /^[A-Z]/.test(receiver)) {

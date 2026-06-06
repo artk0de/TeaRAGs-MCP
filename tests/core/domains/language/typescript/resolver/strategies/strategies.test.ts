@@ -348,4 +348,14 @@ describe("TSSameFileSymbolResolutionStrategy", () => {
     const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
     expect(outcome.kind).toBe("continue");
   });
+
+  it("continues for a Capitalized receiver whose class is defined in another file (namedImport owns imports)", () => {
+    const symbolTable = tableWith([
+      "src/other.ts",
+      [sym("Widget#make", "make", "src/other.ts", ["Widget"])],
+    ]);
+    const call: CallRef = { callText: "Widget.make()", receiver: "Widget", member: "make", startLine: 7 };
+    const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
+    expect(outcome.kind).toBe("continue");
+  });
 });
