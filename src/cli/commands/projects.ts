@@ -4,11 +4,15 @@ import { join } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
-import { QdrantManager } from "../../core/api/public/index.js";
-import { ProjectRegistryOps } from "../../core/api/public/index.js";
-import { CollectionRegistry } from "../../core/api/public/index.js";
-import { PROJECT_NAME_RE } from "../../core/api/public/index.js";
-import type { CollectionEntry } from "../../core/api/public/index.js";
+import {
+  CollectionRegistry,
+  PROJECT_NAME_RE,
+  ProjectRegistryOps,
+  QdrantManager,
+  type CollectionEntry,
+} from "../../core/api/public/index.js";
+import { createColorizer } from "../infra/color.js";
+import { formatProjectsTable } from "./projects-format.js";
 
 interface RegisterArgs {
   path: string;
@@ -104,9 +108,8 @@ export function runList(args: ListArgs): void {
     process.stdout.write("(no projects registered)\n");
     return;
   }
-  for (const e of list) {
-    process.stdout.write(`${e.name ?? "(no name)"}\t${e.collectionName}\t${e.path}\n`);
-  }
+  const colorizer = createColorizer();
+  process.stdout.write(formatProjectsTable(list, { now: new Date(), colorizer, home: homedir() }));
 }
 
 export function runInfo(args: InfoArgs): void {
