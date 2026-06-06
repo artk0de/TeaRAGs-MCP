@@ -58,15 +58,18 @@ jobs:
           git log --no-merges --format='%H%x1f%s%x1f%b%x1e' ${{ steps.range.outputs.range }} \
             | node scripts/git-log-to-json.js > commits.json
 
+      # claude-code-action@v1 only handles issue/PR/comment events ("Unsupported
+      # event type: release"), so we drive the headless CLI directly. The OAuth
+      # token authorizes the subscription — no Anthropic API key needed.
+      - name: Install Claude CLI
+        run: npm install -g @anthropic-ai/claude-code
+
       - name: Generate declarative notes (agent)
-        uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: |
-            Read scripts/release-changelog-prompt.md and follow it exactly.
-            Version is ${{ env.TAG }} without the leading v.
-            Write release-notes.json to the working directory.
-          claude_args: "--allowedTools Read,Write,Bash(git log:*)"
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          claude -p "Read scripts/release-changelog-prompt.md and follow it exactly. Version is ${TAG} without the leading v. The file commits.json holds this release's commits. Write release-notes.json to the working directory." \
+            --allowedTools "Read,Write"
 
       - name: Build artifacts
         run: node scripts/build-changelog-artifacts.js
