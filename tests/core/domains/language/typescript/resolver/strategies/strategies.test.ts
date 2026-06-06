@@ -358,4 +358,17 @@ describe("TSSameFileSymbolResolutionStrategy", () => {
     const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
     expect(outcome.kind).toBe("continue");
   });
+
+  it("continues for a bare call when a free function and a same-named method coexist in the caller file (never guesses)", () => {
+    const symbolTable = tableWith([
+      "src/caller.ts",
+      [
+        sym("helper", "helper", "src/caller.ts", []),
+        sym("Widget#helper", "helper", "src/caller.ts", ["Widget"]),
+      ],
+    ]);
+    const call: CallRef = { callText: "helper()", receiver: null, member: "helper", startLine: 8 };
+    const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
+    expect(outcome.kind).toBe("continue");
+  });
 });
