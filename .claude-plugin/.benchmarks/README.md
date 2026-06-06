@@ -63,6 +63,7 @@ benchmarks/
 | wave2-restructure (8 long skills, 4.7)      | 2026-05-08 | n/a·· | structural | n/a       | -247 dino lines + 6 ref files                                            |
 | tests-as-context (feature-creation)         | 2026-05-17 | 12    | deferred△  | deferred△ | Phase 2 baseline ready in `evals.json`, runs scheduled next eval session |
 | extract-project-patterns (feature-creation) | 2026-05-18 | 8     | 100%       | 37.5%     | +62.5pp                                                                  |
+| install (step-9 register, feature)          | 2026-06-06 | 11    | 100%       | 82%       | +18pp◇                                                                   |
 
 \* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
 After fix, skill no longer degrades natural tool selection.
@@ -156,6 +157,18 @@ test-driven-development (Step 2 split + fallback), requesting-code-review (Step
 3a), verification-before-completion (Step 3a), receiving-code-review (Step 3a).
 See `tests-as-context/benchmark.md` for the full eval design and next-session
 run plan.
+
+◇ install (step-9 register): feature-driven eval added with the new Step 9
+(Register Project Alias, before first indexing; verify renumbered to Step 10).
+Modest +18pp is honest — "register then defer indexing" is intuitive and the
+MCP/CLI tool names are self-describing, so baseline already hits 82%. The skill's
+unique value is the two conventions baseline cannot guess: alias `_`-preservation
+(`my_cool-app`, not `my-cool-app`) and the firm don't-index-during-setup boundary
+under an explicit "index now" request (baseline ran `index_codebase`
+mid-setup). Also enforces CLI `tea-rags projects register` over the
+`register_project` MCP tool, which is unreachable before the post-setup restart.
+No fixes applied — all audit findings A1–A5 passed with-rule (100%). Eval
+retained as a regression guard. See `tea-rags-setup-install/benchmark.md`.
 
 § risk-assessment pair diagnostics: rare baseline-higher-than-with-rule
 inversion. Old Phase 4 classification table lacked coupling/bug-attractor/

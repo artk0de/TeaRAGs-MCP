@@ -172,6 +172,40 @@ describe("runPrime — failure paths", () => {
   });
 });
 
+describe("runPrime — cwd fallback", () => {
+  it("resolves to process.cwd() when neither path nor project is provided", async () => {
+    // Covers hooks whose $CLAUDE_PROJECT_DIR expanded empty: `prime ""` must
+    // prime the current working directory instead of erroring "no path provided".
+    vi.mocked(existsSync).mockReturnValue(true);
+    pingMock.mockResolvedValue(true);
+    const getStatusMock = vi.fn().mockResolvedValue({
+      isIndexed: true,
+      status: "indexed",
+      collectionName: "c",
+      chunksCount: 100,
+    });
+    createAppContextMock.mockResolvedValue({
+      app: {
+        getIndexStatus: getStatusMock,
+        getIndexMetrics: vi.fn().mockResolvedValue({
+          collection: "c",
+          totalChunks: 100,
+          totalFiles: 10,
+          distributions: { language: { typescript: 100 } },
+          signals: {},
+        }),
+        checkSchemaDrift: vi.fn().mockResolvedValue(null),
+      },
+      cleanup: vi.fn(),
+      updateService: stubUpdateService(),
+    });
+
+    await runPrime({});
+
+    expect(getStatusMock).toHaveBeenCalledWith(process.cwd());
+  });
+});
+
 describe("runPrime — update-check integration", () => {
   function buildFullCtx(checkForUpdate: ReturnType<typeof vi.fn>) {
     return {
