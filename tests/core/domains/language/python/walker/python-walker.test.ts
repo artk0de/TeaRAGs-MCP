@@ -750,3 +750,148 @@ describe("extractFromPythonFile — classFieldTypes (bd rjuc, self.field)", () =
     expect(r.classFieldTypes?.FlaskClient?._stack).toBe("ExitStack");
   });
 });
+
+// ─── collectPythonClassFieldTypes ─────────────────────────────────────────────
+describe("extractFromPythonFile — collectPythonClassFieldTypes", () => {
+  it("records `self.service = SomeService()` as a class field type (CapWords constructor)", () => {
+    const src = ["class View:", "    def __init__(self):", "        self.service = SomeService()", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({ tree, code: src, relPath: "x.py", language: "python", chunks: [] });
+    expect(r.classFieldTypes?.["View"]?.["service"]).toBe("SomeService");
+  });
+
+  it("records `self.client = module.Client()` (qualified constructor)", () => {
+    const src = ["class Service:", "    def __init__(self):", "        self.client = http.Client()", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({ tree, code: src, relPath: "x.py", language: "python", chunks: [] });
+    expect(r.classFieldTypes?.["Service"]?.["client"]).toBe("http.Client");
+  });
+
+  it("does NOT record `self.helper = make_helper()` (lowercase callee — m46z CapWords gate)", () => {
+    const src = ["class Foo:", "    def __init__(self):", "        self.helper = make_helper()", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({ tree, code: src, relPath: "x.py", language: "python", chunks: [] });
+    expect(r.classFieldTypes?.["Foo"]?.["helper"]).toBeUndefined();
+  });
+
+  it("records PEP 526 annotation `self.conn: DbConn = init()` — type annotation wins over RHS", () => {
+    const src = ["class Repo:", "    def __init__(self):", "        self.conn: DbConn = init()", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({ tree, code: src, relPath: "x.py", language: "python", chunks: [] });
+    expect(r.classFieldTypes?.["Repo"]?.["conn"]).toBe("DbConn");
+  });
+
+  it("merges field types across two separate class bodies with the same class name (last write wins)", () => {
+    // Simulates a class with `__init__` in multiple fragments (monkey-patch or
+    // re-open pattern). Last-write-wins per field mirrors localBindings discipline.
+    const src = ["class Svc:", "    def __init__(self):", "        self.a = Foo()", "        self.b = Bar()", ""].join(
+      "\n",
+    );
+    const tree = parse(src);
+    const r = extractFromPythonFile({ tree, code: src, relPath: "x.py", language: "python", chunks: [] });
+    expect(r.classFieldTypes?.["Svc"]?.["a"]).toBe("Foo");
+    expect(r.classFieldTypes?.["Svc"]?.["b"]).toBe("Bar");
+  });
+
+  it("does NOT record `self.data = []` (non-call RHS — list literal skipped)", () => {
+    const src = ["class Collector:", "    def __init__(self):", "        self.data = []", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({ tree, code: src, relPath: "x.py", language: "python", chunks: [] });
+    expect(r.classFieldTypes?.["Collector"]?.["data"]).toBeUndefined();
+  });
+});
+
+// ─── collectPythonDecoratorCalls ──────────────────────────────────────────────
+describe("extractFromPythonFile — collectPythonDecoratorCalls (bd zvsw)", () => {
+  it("records a bare `@property` decorator as a call to `property`", () => {
+    const src = ["class Foo:", "    @property", "    def name(self):", "        return self._name", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      // chunk starts at line 2 to include the @property decorator line
+      chunks: [{ symbolId: "Foo#name", scope: ["Foo"], startLine: 2, endLine: 4 }],
+    });
+    const allCalls = r.chunks.flatMap((c) => c.calls);
+    const propCall = allCalls.find((c) => c.member === "property" && c.receiver === null);
+    expect(propCall).toBeDefined();
+  });
+
+  it("records `@app.route('/')` decorator as attribute call (receiver=app, member=route)", () => {
+    const src = ["app = Flask(__name__)", "@app.route('/')", "def index():", "    return 'hello'", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "views.py",
+      language: "python",
+      // chunk starts at line 2 to include the @app.route decorator line
+      chunks: [{ symbolId: "index", scope: [], startLine: 2, endLine: 4 }],
+    });
+    const allCalls = r.chunks.flatMap((c) => c.calls);
+    const routeCall = allCalls.find((c) => c.member === "route" && c.receiver === "app");
+    expect(routeCall).toBeDefined();
+  });
+
+  it("records `@login_required` (bare identifier decorator) as a call", () => {
+    const src = ["@login_required", "def dashboard(request):", "    pass", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "views.py",
+      // chunk starts at line 1 to include the @login_required decorator line
+      language: "python",
+      chunks: [{ symbolId: "dashboard", scope: [], startLine: 1, endLine: 3 }],
+    });
+    const allCalls = r.chunks.flatMap((c) => c.calls);
+    const lrCall = allCalls.find((c) => c.member === "login_required" && c.receiver === null);
+    expect(lrCall).toBeDefined();
+  });
+
+  it("records `@pytest.mark.parametrize(...)` decorator (call with attribute callee)", () => {
+    const src = [
+      "import pytest",
+      "@pytest.mark.parametrize('x', [1, 2])",
+      "def test_thing(x):",
+      "    assert x > 0",
+      "",
+    ].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "test_x.py",
+      language: "python",
+      // chunk starts at line 2 to include the decorator line
+      chunks: [{ symbolId: "test_thing", scope: [], startLine: 2, endLine: 4 }],
+    });
+    const allCalls = r.chunks.flatMap((c) => c.calls);
+    const parametrizeCall = allCalls.find((c) => c.member === "parametrize");
+    expect(parametrizeCall).toBeDefined();
+    expect(parametrizeCall?.receiver).toBe("pytest.mark");
+  });
+});
+
+// ─── localTypeTrackingEnabled gate ───────────────────────────────────────────
+describe("extractFromPythonFile — localTypeTrackingEnabled gate", () => {
+  it("does NOT emit localBindings when CODEGRAPH_PY_LOCAL_TYPE_TRACKING=false", () => {
+    process.env.CODEGRAPH_PY_LOCAL_TYPE_TRACKING = "false";
+    try {
+      const src = "def view():\n    s = SomeService()\n";
+      const tree = parse(src);
+      const r = extractFromPythonFile({
+        tree,
+        code: src,
+        relPath: "x.py",
+        language: "python",
+        chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
+      });
+      expect(r.chunks[0].localBindings).toBeUndefined();
+    } finally {
+      delete process.env.CODEGRAPH_PY_LOCAL_TYPE_TRACKING;
+    }
+  });
+});

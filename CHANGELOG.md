@@ -1,3 +1,99 @@
+## [1.30.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.29.0...v1.30.0) (2026-06-06)
+
+### Features
+
+- **adapters:** proxy getCalleeEdges through codegraph daemon
+  ([0977346](https://github.com/artk0de/TeaRAGs-MCP/commit/09773460fdc8dee74468c52890d020c3a4301663))
+- **api:** config-driven curated rerank preset enum for trace_path
+  ([5c962af](https://github.com/artk0de/TeaRAGs-MCP/commit/5c962af9a33846aa3241c9264db3b0b3130aa7f8))
+- **api:** trace_path DTOs (TracePathRequest, PathStep, TracedPath,
+  PathTraceResult)
+  ([022cb50](https://github.com/artk0de/TeaRAGs-MCP/commit/022cb50fd8f34aa32f80d63cffe097fcf2017261))
+- **api:** TracePathOps — bounded frontier BFS + path enumeration + danger
+  overlay
+  ([859734c](https://github.com/artk0de/TeaRAGs-MCP/commit/859734cb2a44e094ae643dae60fdc6042b433022))
+- **api:** wire App.tracePath -> TracePathOps with codegraph-disabled fallback
+  ([cb74047](https://github.com/artk0de/TeaRAGs-MCP/commit/cb740476f9d7471b683cd938a86e4dbccd63ff74))
+- **cli:** colored informative table for tea-rags projects
+  ([0a16095](https://github.com/artk0de/TeaRAGs-MCP/commit/0a16095d14b52d66783622343ba3132c876fcd99))
+- **mcp:** add pathPattern scope filter to find_cycles
+  ([266cd3c](https://github.com/artk0de/TeaRAGs-MCP/commit/266cd3c6a7c535f837184dd495c4599321ccb5b6))
+- **mcp:** register trace_path tool (gated by codegraph.symbols)
+  ([8ac8a1c](https://github.com/artk0de/TeaRAGs-MCP/commit/8ac8a1c928d7f95b509790dde51dbcc9f437b8fe))
+- **qdrant:** scrollBySymbolIds batch payload hydration for trace_path
+  ([12b008c](https://github.com/artk0de/TeaRAGs-MCP/commit/12b008c92643faf8667deccdf89aabf8ae4853bb))
+- **rerank:** add annotate-only mode (reorder:false) preserving input order
+  ([7a7db0d](https://github.com/artk0de/TeaRAGs-MCP/commit/7a7db0dd363bb7d0f394e3a801e761a29144c686))
+- **signals:** add TSSameFileSymbolResolutionStrategy (same-file resolution
+  pass)
+  ([2c6dcd9](https://github.com/artk0de/TeaRAGs-MCP/commit/2c6dcd977a9ca71bbe2fa10d7fbaa07ffbffbf25))
+- **signals:** wire sameFile strategy into TS resolver chain at position 8
+  ([57396a3](https://github.com/artk0de/TeaRAGs-MCP/commit/57396a3eba1d203e487dae5bf438f167b10c55b5))
+- **skills:** add 4 codegraph sub-patterns to tea-rags:explore
+  ([771ecb8](https://github.com/artk0de/TeaRAGs-MCP/commit/771ecb8b48dd8f459409d6432194b08f23b24448))
+- **skills:** add project auto-registration step to setup wizard
+  ([d5e71d3](https://github.com/artk0de/TeaRAGs-MCP/commit/d5e71d3dd91776108ff18129953ccf20a8a3d674))
+- **trajectory:** build Ruby file-level edges from zeitwerk constants +
+  inheritance
+  ([82a375b](https://github.com/artk0de/TeaRAGs-MCP/commit/82a375b7c05d07a8cda32b574119fee997dd62bb))
+- **trajectory:** emit Ruby chunk-edges for registry constant-literal values
+  ([6fc24de](https://github.com/artk0de/TeaRAGs-MCP/commit/6fc24de3fe3755e6d9c8f884037e333cfe968037))
+- **trajectory:** GraphDbClient.getCalleeEdges batch adjacency for trace_path
+  ([b3a17f7](https://github.com/artk0de/TeaRAGs-MCP/commit/b3a17f77b0c9c606a2f1b10e657ef43ba38fc46f))
+- **trajectory:** link Ruby `delegate ... to:` methods to delegation target
+  ([1f786ec](https://github.com/artk0de/TeaRAGs-MCP/commit/1f786eca9c30f3f379c2ea154c36c459c032cfde)),
+  closes [#a](https://github.com/artk0de/TeaRAGs-MCP/issues/a)
+  [#b](https://github.com/artk0de/TeaRAGs-MCP/issues/b)
+  [Values#kind](https://github.com/artk0de/Values/issues/kind)
+- **trajectory:** pure bounded-DFS path enumerator for trace_path
+  ([063c679](https://github.com/artk0de/TeaRAGs-MCP/commit/063c679eb015939db892ed75e19e03cb29f001db))
+
+### Bug Fixes
+
+- **api:** pass exact limit to trace_path step hydration; doc tidy
+  ([fd63ee7](https://github.com/artk0de/TeaRAGs-MCP/commit/fd63ee7a90130db3cf727e96f71c5ef805d8e0cc))
+- **prime:** default prime path to cwd when no path/project given
+  ([d35f137](https://github.com/artk0de/TeaRAGs-MCP/commit/d35f137faa27a1872f948ea960fef3966a1fa6b7))
+
+### Documentation
+
+- **codegraph:** design Ruby file-level edges (zeitwerk + inheritance)
+  ([af0aa32](https://github.com/artk0de/TeaRAGs-MCP/commit/af0aa325e94d8ebbe58bc815b7a411b668de6295))
+- **codegraph:** design TS same-file resolution pass
+  ([1ff92ff](https://github.com/artk0de/TeaRAGs-MCP/commit/1ff92fffa91220d242f8a0681ce31814a780a75a))
+- **codegraph:** implementation plan for TS same-file resolution pass
+  ([34e2472](https://github.com/artk0de/TeaRAGs-MCP/commit/34e24727ef1a5fdb7a31ed62f7e3f2dd06121b3d))
+- **codegraph:** TS resolver open questions / further-investigation backlog
+  ([12f1ad5](https://github.com/artk0de/TeaRAGs-MCP/commit/12f1ad5cd5cbeb8a9b1ee6341ca75f06579812a4))
+- **mcp:** list trace_path in codegraph header; document maxDepth cap rationale
+  ([f7204a8](https://github.com/artk0de/TeaRAGs-MCP/commit/f7204a8bc2bbb44f24369654df2ef9f52600e38e))
+- **plan:** trace_path implementation plan (10 TDD tasks)
+  ([9cecb72](https://github.com/artk0de/TeaRAGs-MCP/commit/9cecb72f0b20dc23736c140a8060314268ef3f27))
+- **rerank:** note groupBy interaction under reorder:false
+  ([1086cce](https://github.com/artk0de/TeaRAGs-MCP/commit/1086cce9d9b68229309ca685e3653d4fc436a505))
+- **spec:** design colored informative table for tea-rags projects
+  ([e62eb3c](https://github.com/artk0de/TeaRAGs-MCP/commit/e62eb3c014e3e2a9e848f1b8e096bd87e7c0cd29))
+- surface trace_path in codegraph docs and plugin skills
+  ([e677b40](https://github.com/artk0de/TeaRAGs-MCP/commit/e677b40bf0b71925c06dadda8f9615ffb91c456e))
+- **trajectory:** clarify getCalleeEdges null-target wording (unresolved callee,
+  not file edge)
+  ([a5ce55c](https://github.com/artk0de/TeaRAGs-MCP/commit/a5ce55cad0b401b2e751f99233a7087881beb26d))
+- **trajectory:** document Ruby codegraph static-analysis limitations
+  ([c5d58e4](https://github.com/artk0de/TeaRAGs-MCP/commit/c5d58e481deab0dd105f521884f0d7476e591fdc))
+- **website:** methodology for code-graph edge resolution across languages
+  ([87efab3](https://github.com/artk0de/TeaRAGs-MCP/commit/87efab3ca657e73aedc131b61d49b89f6649b7b2))
+
+### Code Refactoring
+
+- **bootstrap:** hoist resolveActiveCollection closure; clarify codegraph block
+  comment
+  ([20d9f62](https://github.com/artk0de/TeaRAGs-MCP/commit/20d9f6237e2d098ca5661c1fdc6f1f64bade6311))
+- **signals:** clarify sameFile scope filter, name class-receiver regex,
+  document bare-call ambiguity
+  ([2c90b64](https://github.com/artk0de/TeaRAGs-MCP/commit/2c90b6411177497fe955ef3cdaf502a69ac4b2dd))
+- **trajectory:** domain-qualify path-tracer types, fully-readonly adjacency
+  ([a8dd6b5](https://github.com/artk0de/TeaRAGs-MCP/commit/a8dd6b5434dd5bf8cc4b283cabf29ed818052194))
+
 ## [1.29.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.28.0...v1.29.0) (2026-06-05)
 
 ### codegraph

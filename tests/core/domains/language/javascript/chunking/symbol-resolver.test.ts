@@ -759,3 +759,144 @@ describe("extractJsNestedDefinePropertyThisSymbols — additional guards", () =>
     expect(result).toEqual([{ symbolId: "outer.app.router", name: "outer.app.router" }]);
   });
 });
+
+// resolveEnclosingThisReceiver — `this` receiver in symbol-resolver.ts
+// `extractJsNestedDefinePropertyThisSymbols` collects `Object.defineProperty(this, …)`
+// and `defineGetter(this, …)` calls inside function_expression bodies.
+// The `resolveEnclosingThisReceiver` is exercised through the resolver's own
+// visitor when `this` appears in a nested defineProperty call.
+describe("extractJsNestedDefinePropertyThisSymbols — this-receiver paths", () => {
+  it("emits symbol when this-defineProperty is nested inside another property function body", () => {
+    // obj.router = function () { Object.defineProperty(this, 'path', { get: fn }) }
+    // The outer function is function_expression → resolveEnclosingThisReceiver
+    // walks up and resolves `this` to `obj`.
+    const stmt = topLevel(
+      "obj.router = function () { Object.defineProperty(this, 'path', { get: function () { return '/'; } }); };\n",
+      "expression_statement",
+    );
+    const result = extractJsNestedDefinePropertyThisSymbols(stmt);
+    expect(result).toEqual([{ symbolId: "obj.path", name: "obj.path" }]);
+  });
+
+  it("emits symbol when defineGetter(this, name, fn) is used inside a function body", () => {
+    // defineGetter(this, 'status', fn) inside an outer function assignment.
+    const stmt = topLevel(
+      "app.middleware = function () { defineGetter(this, 'status', function () { return 200; }); };\n",
+      "expression_statement",
+    );
+    const result = extractJsNestedDefinePropertyThisSymbols(stmt);
+    expect(result).toEqual([{ symbolId: "app.status", name: "app.status" }]);
+  });
+
+  it("skips nested defineProperty whose descriptor has no getter/setter", () => {
+    // data descriptor only — no accessor — resolveEnclosingThisReceiver branch
+    // reached but objectHasGetterPair returns false → symbol not emitted.
+    const stmt = topLevel(
+      "obj.init = function () { Object.defineProperty(this, 'x', { value: 1 }); };\n",
+      "expression_statement",
+    );
+    expect(extractJsNestedDefinePropertyThisSymbols(stmt)).toEqual([]);
+  });
+});
+
+// objectHasGetterPair — `set`-keyed function in descriptor counts as getter pair.
+// The existing tests cover `get`; this covers the `set`-only branch.
+describe("extractJsAssignmentSymbol — Object.defineProperty with set-only descriptor", () => {
+  it("recognises a set-only descriptor as an accessor and emits the symbol", () => {
+    const stmt = topLevel(
+      "Object.defineProperty(obj, 'flag', { set: function (v) { this._flag = v; } });\n",
+      "expression_statement",
+    );
+    const r = extractJsAssignmentSymbol(stmt);
+    expect(r).toEqual({ symbolId: "obj.flag", name: "obj.flag" });
+  });
+});
+
+// resolveReceiverText + resolveEnclosingThisReceiver — `this` via defineGetter
+// when receiver is `this` and enclosing function has assignment context.
+describe("extractJsAssignmentSymbol — defineGetter with this receiver", () => {
+  it("emits <receiver>.<name> symbol for defineGetter(this, name, fn) inside assignment function", () => {
+    // The expression_statement wraps `obj.setup = function() { defineGetter(this, 'prop', fn) }`.
+    // extractJsNestedDefinePropertyThisSymbols handles the outer level; here we verify
+    // the symbol-resolver emits obj.prop correctly.
+    const stmt = topLevel(
+      "obj.setup = function () { defineGetter(this, 'prop', function () { return 1; }); };\n",
+      "expression_statement",
+    );
+    const result = extractJsNestedDefinePropertyThisSymbols(stmt);
+    expect(result).toEqual([{ symbolId: "obj.prop", name: "obj.prop" }]);
+  });
+});
+
+describe("extractJsForEachDispatchSymbols — guard paths (early returns)", () => {
+  it("returns null when forEach fnArg is a non-function identifier (isFunctionValuedExpression false)", () => {
+    // line 249: !fnArg || !isFunctionValuedExpression(fnArg) → return null
+    const stmt = topLevel("methods.forEach(handler);\n", "expression_statement");
+    const r = extractJsForEachDispatchSymbols(stmt);
+    expect(r).toBeNull();
+  });
+
+  it("returns null when forEach receiver is a call_expression (not identifier)", () => {
+    // line 245: recv.type !== "identifier" → return null
+    const stmt = topLevel(
+      "getMethods().forEach(function(method) { app[method] = function() {}; });\n",
+      "expression_statement",
+    );
+    const r = extractJsForEachDispatchSymbols(stmt);
+    expect(r).toBeNull();
+  });
+
+  it("returns null when forEach body has no function-valued subscript assignment", () => {
+    // findFirstSubscriptDispatchAssignment: right is not function-valued → null
+    // line 280: !dispatchLhs.node → return null
+    const stmt = topLevel(
+      "methods.forEach(function(method) { if (method === 'get') {} app.method = 'string'; });\n",
+      "expression_statement",
+    );
+    const r = extractJsForEachDispatchSymbols(stmt);
+    expect(r).toBeNull();
+  });
+
+  it("emits HTTP verbs when require('methods') is present (findRequireSource path)", () => {
+    // hasHttpVerbDispatchSignal: recvName==="methods" && requireSource==="methods" → true
+    const src = [
+      "var methods = require('methods');",
+      "methods.forEach(function(method) { app[method] = function() {}; });",
+      "",
+    ].join("\n");
+    const tree = parse(src);
+    // Find the expression_statement for the forEach call
+    const root = tree.rootNode;
+    let forEachStmt: Parser.SyntaxNode | null = null;
+    for (const child of root.namedChildren) {
+      if (child.type === "expression_statement" && child.text.includes("forEach")) {
+        forEachStmt = child;
+        break;
+      }
+    }
+    expect(forEachStmt).not.toBeNull();
+    const r = extractJsForEachDispatchSymbols(forEachStmt!);
+    expect(r.map((s) => s.symbolId)).toContain("app.get");
+    expect(r.map((s) => s.symbolId)).toContain("app.post");
+  });
+});
+
+describe("extractJsNestedDefinePropertyThisSymbols — guard paths", () => {
+  it("returns [] when outer assignment LHS is a plain identifier (not member_expression)", () => {
+    // left.type !== "member_expression" guard (line 134)
+    const stmt = topLevel(
+      "init = function() { Object.defineProperty(this, 'x', { get: function() {} }); };\n",
+      "expression_statement",
+    );
+    const r = extractJsNestedDefinePropertyThisSymbols(stmt);
+    expect(r).toEqual([]);
+  });
+
+  it("returns [] for defineGetter(this, name, fn) where third arg is not function-valued (nestedGetterInstallThisName guard)", () => {
+    // nestedGetterInstallThisName: fnArg not function-valued → return null → nothing pushed
+    const src = "obj.setup = function() { defineGetter(this, 'prop', 42); };\n";
+    const stmt = topLevel(src, "expression_statement");
+    const r = extractJsNestedDefinePropertyThisSymbols(stmt);
+    expect(r).toEqual([]);
+  });
+});

@@ -652,3 +652,20 @@ describe("extractFromJavascriptFile — Object.defineProperty getters/setters (b
     expect(r.fileScope).toEqual([]);
   });
 });
+
+describe("extractFromJavascriptFile — variable_declarator without initializer (no-value guard)", () => {
+  it("skips a bare `var x` declaration that has no value (valueNode is null)", () => {
+    // `var x;` produces a variable_declarator with nameNode="x" and no value
+    // field. The null guard on valueNode in name-of.ts returns null and the
+    // symbol is not emitted — no crash and no spurious entry in fileScope.
+    const src = "var x;\n";
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "src/no-init.js",
+      language: "javascript",
+      chunks: [],
+    });
+    expect(r.fileScope).toEqual([]);
+  });
+});
