@@ -14,6 +14,7 @@ import {
   TSLocalBindingSymbolResolutionStrategy,
   TSNamedImportSymbolResolutionStrategy,
   TSReceiverSymbolSymbolResolutionStrategy,
+  TSSameFileSymbolResolutionStrategy,
   TSSuperSymbolResolutionStrategy,
   TSThisMemberSymbolResolutionStrategy,
   type ResolverConfig,
@@ -281,6 +282,70 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy", () => {
       ["src/impl-b.ts", [sym("ImplB#handle", "handle", "src/impl-b.ts", ["ImplB"])]],
     );
     const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./other.js" }] }));
+    expect(outcome.kind).toBe("continue");
+  });
+});
+
+describe("TSSameFileSymbolResolutionStrategy", () => {
+  const strat = new TSSameFileSymbolResolutionStrategy(cfg);
+
+  it("resolves a bare call to a same-file function when the short-name is globally ambiguous", () => {
+    const symbolTable = tableWith(
+      ["src/caller.ts", [sym("helper", "helper", "src/caller.ts", [])]],
+      ["src/other.ts", [sym("helper", "helper", "src/other.ts", [])]],
+    );
+    const call: CallRef = { callText: "helper()", receiver: null, member: "helper", startLine: 1 };
+    const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
+    expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "src/caller.ts", targetSymbolId: "helper" } });
+  });
+
+  it("resolves a same-file `new X()` to X#constructor", () => {
+    const symbolTable = tableWith([
+      "src/caller.ts",
+      [sym("Widget#constructor", "constructor", "src/caller.ts", ["Widget"]), sym("Widget", "Widget", "src/caller.ts", [])],
+    ]);
+    const call: CallRef = { callText: "new Widget()", receiver: "Widget", member: "constructor", startLine: 2 };
+    const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/caller.ts", targetSymbolId: "Widget#constructor" },
+    });
+  });
+
+  it("resolves a same-file `Class.staticMember()`", () => {
+    const symbolTable = tableWith([
+      "src/caller.ts",
+      [sym("Widget.make", "make", "src/caller.ts", ["Widget"])],
+    ]);
+    const call: CallRef = { callText: "Widget.make()", receiver: "Widget", member: "make", startLine: 3 };
+    const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/caller.ts", targetSymbolId: "Widget.make" },
+    });
+  });
+
+  it("continues when the same name is defined more than once WITHIN the caller file", () => {
+    const symbolTable = tableWith([
+      "src/caller.ts",
+      [sym("a.helper", "helper", "src/caller.ts", ["a"]), sym("b.helper", "helper", "src/caller.ts", ["b"])],
+    ]);
+    const call: CallRef = { callText: "helper()", receiver: null, member: "helper", startLine: 4 };
+    const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("continues when the target is not defined in the caller file", () => {
+    const symbolTable = tableWith(["src/other.ts", [sym("helper", "helper", "src/other.ts", [])]]);
+    const call: CallRef = { callText: "helper()", receiver: null, member: "helper", startLine: 5 };
+    const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("continues for a lowercase variable receiver (var.method is localBinding/fieldType's job)", () => {
+    const symbolTable = tableWith(["src/caller.ts", [sym("Repo#list", "list", "src/caller.ts", ["Repo"])]]);
+    const call: CallRef = { callText: "repo.list()", receiver: "repo", member: "list", startLine: 6 };
+    const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
     expect(outcome.kind).toBe("continue");
   });
 });
