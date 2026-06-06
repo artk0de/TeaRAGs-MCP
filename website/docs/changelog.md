@@ -5,19 +5,17 @@ sidebar_position: 99
 
 ## [1.31.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.31.0...v1.31.1) (2026-06-06)
 
-### Improvements
+### ci
 
-* **prompt:** use first scope as domain for multi-scope commits ([f02c98c](https://github.com/artk0de/TeaRAGs-MCP/commit/f02c98c58f271cb06282ecea83c93e5da60d63a0))
-
-### Bug Fixes
-
-* **ci:** drive release changelog via claude CLI, not claude-code-action ([2453abe](https://github.com/artk0de/TeaRAGs-MCP/commit/2453abe4ffb009bdc0b3447cc2dfefd446e01509))
+* fix: release changelog workflow uses headless claude CLI to support release event triggers ([2453abe](https://github.com/artk0de/TeaRAGs-MCP/commit/2453abe))
 
 ## [1.31.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.30.0...v1.31.0) (2026-06-06)
 
 ### ci
 
-* post-release workflow generates declarative changelogs grouped by domain, with fix: markers, release date headers, and dual-format rendering ([b54076c](https://github.com/artk0de/TeaRAGs-MCP/commit/b54076c))
+- post-release workflow generates declarative changelogs grouped by domain, with
+  fix: markers, release date headers, and dual-format rendering
+  ([b54076c](https://github.com/artk0de/TeaRAGs-MCP/commit/b54076c))
 
 ## [1.30.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.29.0...v1.30.0) (2026-06-06)
 
