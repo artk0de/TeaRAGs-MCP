@@ -1619,8 +1619,12 @@ describe("extractFromRubyFile — registry constant-hash value edges (bd tea-rag
   });
 
   it("does NOT emit for a constant nested inside a lambda value (STI registry, out of scope — jw9n)", () => {
-    const src =
-      "class Registry\n" + "  TABLE = {\n" + "    'job' => -> { Workflow::Job::Clone },\n" + "  }.freeze\n" + "end\n";
+    const src = `class Registry
+  TABLE = {
+    'job' => -> { Workflow::Job::Clone },
+  }.freeze
+end
+`;
     const tree = parse(src);
     const r = extractFromRubyFile({
       tree,
