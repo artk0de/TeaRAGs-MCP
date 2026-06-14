@@ -319,6 +319,19 @@ export class DuckDbGraphClient implements GraphDbClient {
           [e.sourceSymbolId, node.relPath, e.targetSymbolId, e.targetRelPath, e.callExpression],
         );
       }
+      // Inheritance edges (bd tea-rags-mcp-f10y). Per-source-file delete+insert,
+      // same lifecycle as the edge tables: re-walking a file replaces its rows.
+      // INSERT OR IGNORE dedupes a (source, ancestor, kind) declared twice in
+      // one extraction (e.g. duplicate include).
+      await this.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [node.relPath]);
+      for (const e of edges.inheritance ?? []) {
+        await this.run(
+          `INSERT OR IGNORE INTO cg_symbols_inheritance
+             (source_fq_name, source_rel_path, source_symbol_id, ancestor_fq_name, ancestor_symbol_id, kind, ordinal)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [e.sourceFqName, node.relPath, e.sourceSymbolId, e.ancestorFqName, e.ancestorSymbolId, e.kind, e.ordinal],
+        );
+      }
       await this.exec("COMMIT");
     } catch (err) {
       await this.exec("ROLLBACK");
@@ -345,6 +358,7 @@ export class DuckDbGraphClient implements GraphDbClient {
         relPath,
         relPath,
       ]);
+      await this.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [relPath]);
       await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
       await this.run("DELETE FROM cg_symbols_files WHERE rel_path = ?", [relPath]);
       await this.exec("COMMIT");
