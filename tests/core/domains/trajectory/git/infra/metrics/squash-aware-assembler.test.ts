@@ -196,3 +196,98 @@ describe("assembleChunkSignals with squash-aware sessions", () => {
     expect(withSquash.commitCount).toBe(2);
   });
 });
+
+describe("assembleChunkSignals squash-mode bugFixRate is session-based (must not exceed 100%)", () => {
+  it("counts bug-fix SESSIONS, not raw fix commits, under squash", () => {
+    // 6 fix commits collapse into 1 session. Raw bugFixCount=6 over 1 session
+    // would give (6+0.5)/(1+1)*100 = 325%. Session-based: 1 fix session over
+    // 1 session → (1+0.5)/(1+1)*100 = 75.
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(["a1", "a2", "a3", "a4", "a5", "a6"]),
+      authors: new Set(["alice"]),
+      bugFixCount: 6,
+      lastModifiedAt: BASE_TS + 25 * MIN,
+      linesAdded: 60,
+      linesDeleted: 10,
+      commitTimestamps: [0, 5, 10, 15, 20, 25].map((m) => BASE_TS + m * MIN),
+      commitAuthors: Array(6).fill("alice"),
+      commitIsFix: Array(6).fill(true),
+      taskIds: new Set(),
+    };
+
+    const withSquash = assembleChunkSignals(acc, 10, undefined, 50, SQUASH_OPTS);
+    expect(withSquash.commitCount).toBe(1);
+    expect(withSquash.bugFixRate).toBe(75);
+    expect(withSquash.bugFixRate).toBeLessThanOrEqual(100);
+  });
+
+  it("regression: squash OFF keeps raw-commit bugFixRate", () => {
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(["a1", "a2", "a3", "a4", "a5", "a6"]),
+      authors: new Set(["alice"]),
+      bugFixCount: 6,
+      lastModifiedAt: BASE_TS + 25 * MIN,
+      linesAdded: 60,
+      linesDeleted: 10,
+      commitTimestamps: [0, 5, 10, 15, 20, 25].map((m) => BASE_TS + m * MIN),
+      commitAuthors: Array(6).fill("alice"),
+      commitIsFix: Array(6).fill(true),
+      taskIds: new Set(),
+    };
+
+    const without = assembleChunkSignals(acc, 10, undefined, 50);
+    // raw: (6+0.5)/(6+1)*100 = round(92.857) = 93
+    expect(without.commitCount).toBe(6);
+    expect(without.bugFixRate).toBe(93);
+  });
+
+  it("one fix session out of two sessions → 50", () => {
+    // session 1: two feat commits; session 2 (2h later): one fix commit
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(["a1", "a2", "a3"]),
+      authors: new Set(["alice"]),
+      bugFixCount: 1,
+      lastModifiedAt: BASE_TS + 2 * HOUR,
+      linesAdded: 30,
+      linesDeleted: 5,
+      commitTimestamps: [BASE_TS, BASE_TS + 5 * MIN, BASE_TS + 2 * HOUR],
+      commitAuthors: ["alice", "alice", "alice"],
+      commitIsFix: [false, false, true],
+      taskIds: new Set(),
+    };
+
+    const withSquash = assembleChunkSignals(acc, 5, undefined, 50, SQUASH_OPTS);
+    expect(withSquash.commitCount).toBe(2);
+    expect(withSquash.bugFixRate).toBe(50);
+  });
+
+  it("property: bugFixRate stays in [0, 100] across synthetic patterns, both modes", () => {
+    const patterns: boolean[][] = [
+      [true, true, true, true, true, true],
+      [true, false, true, false],
+      [false, false, false],
+      [true],
+      Array(20).fill(true),
+    ];
+    for (const isFix of patterns) {
+      const n = isFix.length;
+      const acc: ChunkAccumulator = {
+        commitShas: new Set(isFix.map((_, i) => `c${i}`)),
+        authors: new Set(["alice"]),
+        bugFixCount: isFix.filter(Boolean).length,
+        lastModifiedAt: BASE_TS + (n - 1) * 2 * MIN,
+        linesAdded: 10,
+        linesDeleted: 2,
+        commitTimestamps: isFix.map((_, i) => BASE_TS + i * 2 * MIN),
+        commitAuthors: Array(n).fill("alice"),
+        commitIsFix: isFix,
+        taskIds: new Set(),
+      };
+      for (const opts of [undefined, SQUASH_OPTS]) {
+        const r = assembleChunkSignals(acc, Math.max(n, 1), undefined, 50, opts);
+        expect(r.bugFixRate).toBeGreaterThanOrEqual(0);
+        expect(r.bugFixRate).toBeLessThanOrEqual(100);
+      }
+    }
+  });
+});

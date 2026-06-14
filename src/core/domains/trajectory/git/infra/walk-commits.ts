@@ -283,6 +283,7 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
         acc.authors.add(commit.author);
         acc.commitTimestamps.push(commit.timestamp);
         acc.commitAuthors.push(commit.author);
+        acc.commitIsFix?.push(isBugFix);
         if (isBugFix) acc.bugFixCount++;
         for (const tid of taskIds) acc.taskIds.add(tid);
         if (commit.timestamp > acc.lastModifiedAt) {

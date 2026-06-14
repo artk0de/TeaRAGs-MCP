@@ -23,6 +23,13 @@ export interface ChunkAccumulator {
   commitTimestamps: number[];
   /** Per-timestamp author (parallel array with commitTimestamps) for session grouping */
   commitAuthors: string[];
+  /**
+   * Per-timestamp bug-fix flag (parallel array with commitTimestamps). Lets the
+   * squash path count bug-fix SESSIONS — keeping the bugFixRate numerator in the
+   * same unit as its session-count denominator. Optional: minimal accumulators
+   * (recovery / test fixtures) may omit it; the squash path then sees zero fixes.
+   */
+  commitIsFix?: boolean[];
   taskIds: Set<string>;
 }
 
