@@ -39,9 +39,6 @@ export interface SquashOptions {
   sessionGapMinutes?: number;
 }
 
-/** Jeffreys prior for Laplace smoothing of bugFixRate (alpha = 0.5). */
-export const SMOOTHING_ALPHA = 0.5;
-
 /**
  * Cosmetic/infrastructure patterns to EXCLUDE — not real bug fixes.
  * Checked against the full commit body (case-insensitive).
@@ -203,10 +200,10 @@ export function computeFileSignals(
     churnVolatility = Math.sqrt(variance);
   }
 
-  // Bug fix rate: Laplace-smoothed (Jeffreys prior) percentage of fix commits
+  // Bug fix rate: raw (unsmoothed) percentage of fix commits.
   const effectiveBugFixShas = bugFixShas ?? new Set<string>();
   const bugFixCount = commits.filter((c) => isBugFixCommitOrBranch(c.body, c.sha, effectiveBugFixShas)).length;
-  const bugFixRate = Math.round(((bugFixCount + SMOOTHING_ALPHA) / (commits.length + 2 * SMOOTHING_ALPHA)) * 100);
+  const bugFixRate = commits.length > 0 ? Math.round((bugFixCount / commits.length) * 100) : 0;
 
   return {
     recentDominantAuthor: authorship.author,
@@ -290,10 +287,7 @@ export function computeChunkSignals(
     churnRatio: Math.round((commitCount / Math.max(fileCommitCount, 1)) * 100) / 100,
     recentContributorCount:
       fileContributorCount !== undefined ? Math.min(acc.authors.size, fileContributorCount) : acc.authors.size,
-    bugFixRate:
-      commitCount > 0
-        ? Math.round(((acc.bugFixCount + SMOOTHING_ALPHA) / (commitCount + 2 * SMOOTHING_ALPHA)) * 100)
-        : 0,
+    bugFixRate: commitCount > 0 ? Math.round((acc.bugFixCount / commitCount) * 100) : 0,
     lastModifiedAt: acc.lastModifiedAt,
     ageDays: acc.lastModifiedAt > 0 ? Math.max(0, Math.floor((nowSec - acc.lastModifiedAt) / 86400)) : 0,
     relativeChurn: Math.round((totalChurn / lineCount) * (1 - Math.exp(-lineCount / 30)) * 100) / 100,

@@ -8,7 +8,7 @@
  */
 
 import type { CommitInfo } from "../../../../../adapters/git/types.js";
-import { isBugFixCommitOrBranch, SMOOTHING_ALPHA } from "../metrics.js";
+import { isBugFixCommitOrBranch } from "../metrics.js";
 import { extractTaskIds } from "../utils.js";
 
 export interface AuthorshipResult {
@@ -139,8 +139,13 @@ export function computeChurnVolatility(commits: CommitInfo[]): number {
 }
 
 /**
- * Compute bug fix rate using Laplace smoothing (Jeffreys prior).
- * Formula: (bugFixCount + alpha) / (totalCommits + 2*alpha) * 100
+ * Compute the raw (unsmoothed) bug-fix rate: bugFixCommits / totalCommits * 100.
+ *
+ * No Laplace prior: the prior existed to stabilise RANKING, but persisting it
+ * into the payload poisoned percentile labels (N=1 with zero fixes collapsed
+ * onto the point-mass 25, emptying the "concerning" tier). Small-N suppression
+ * for ranking is the derived BugFixSignal's confidence-dampening job, not a
+ * fact baked into the stored value.
  *
  * @param bugFixShas - SHAs classified as bug-fix by merge-branch-resolver
  */
@@ -148,7 +153,7 @@ export function computeBugFixRate(commits: CommitInfo[], bugFixShas?: Set<string
   if (commits.length === 0) return 0;
   const effectiveShas = bugFixShas ?? new Set<string>();
   const bugFixCount = commits.filter((c) => isBugFixCommitOrBranch(c.body, c.sha, effectiveShas)).length;
-  return Math.round(((bugFixCount + SMOOTHING_ALPHA) / (commits.length + 2 * SMOOTHING_ALPHA)) * 100);
+  return Math.round((bugFixCount / commits.length) * 100);
 }
 
 /**

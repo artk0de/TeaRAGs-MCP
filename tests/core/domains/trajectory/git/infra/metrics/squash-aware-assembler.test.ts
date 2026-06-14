@@ -200,8 +200,7 @@ describe("assembleChunkSignals with squash-aware sessions", () => {
 describe("assembleChunkSignals squash-mode bugFixRate is session-based (must not exceed 100%)", () => {
   it("counts bug-fix SESSIONS, not raw fix commits, under squash", () => {
     // 6 fix commits collapse into 1 session. Raw bugFixCount=6 over 1 session
-    // would give (6+0.5)/(1+1)*100 = 325%. Session-based: 1 fix session over
-    // 1 session → (1+0.5)/(1+1)*100 = 75.
+    // would give 6/1*100 = 600%. Session-based: 1 fix session / 1 session = 100.
     const acc: ChunkAccumulator = {
       commitShas: new Set(["a1", "a2", "a3", "a4", "a5", "a6"]),
       authors: new Set(["alice"]),
@@ -217,7 +216,7 @@ describe("assembleChunkSignals squash-mode bugFixRate is session-based (must not
 
     const withSquash = assembleChunkSignals(acc, 10, undefined, 50, SQUASH_OPTS);
     expect(withSquash.commitCount).toBe(1);
-    expect(withSquash.bugFixRate).toBe(75);
+    expect(withSquash.bugFixRate).toBe(100);
     expect(withSquash.bugFixRate).toBeLessThanOrEqual(100);
   });
 
@@ -236,9 +235,9 @@ describe("assembleChunkSignals squash-mode bugFixRate is session-based (must not
     };
 
     const without = assembleChunkSignals(acc, 10, undefined, 50);
-    // raw: (6+0.5)/(6+1)*100 = round(92.857) = 93
+    // raw: 6 fixes / 6 commits = 100
     expect(without.commitCount).toBe(6);
-    expect(without.bugFixRate).toBe(93);
+    expect(without.bugFixRate).toBe(100);
   });
 
   it("one fix session out of two sessions → 50", () => {

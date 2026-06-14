@@ -7,7 +7,7 @@
 
 import type { ChunkChurnOverlay } from "../../types.js";
 import type { BlameOwnership } from "../blame-ownership.js";
-import { SMOOTHING_ALPHA, type ChunkAccumulator, type SquashOptions } from "../metrics.js";
+import type { ChunkAccumulator, SquashOptions } from "../metrics.js";
 import { groupTimestampsIntoFixSessions } from "./sessions.js";
 
 export function assembleChunkSignals(
@@ -77,8 +77,7 @@ export function assembleChunkSignals(
     churnRatio: Math.round((commitCount / Math.max(fileCommitCount, 1)) * 100) / 100,
     recentContributorCount:
       fileContributorCount !== undefined ? Math.min(acc.authors.size, fileContributorCount) : acc.authors.size,
-    bugFixRate:
-      commitCount > 0 ? Math.round(((fixCount + SMOOTHING_ALPHA) / (commitCount + 2 * SMOOTHING_ALPHA)) * 100) : 0,
+    bugFixRate: commitCount > 0 ? Math.round((fixCount / commitCount) * 100) : 0,
     lastModifiedAt: acc.lastModifiedAt,
     ageDays: acc.lastModifiedAt > 0 ? Math.max(0, Math.floor((nowSec - acc.lastModifiedAt) / 86400)) : undefined,
     relativeChurn: Math.round((totalChurn / lineCount) * (1 - Math.exp(-lineCount / 30)) * 100) / 100,
