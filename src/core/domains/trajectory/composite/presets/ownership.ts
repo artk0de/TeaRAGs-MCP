@@ -13,12 +13,14 @@ export class OwnershipCompositePreset implements CompositeRerankPreset {
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];
   readonly requires = ["codegraph.symbols", "git"] as const;
+  // chunkChurn dropped (signalLevel "file" → payloadAlpha 0 → always-0 dead
+  // weight). Mirrors the git ownership redistribution: ownership +0.05,
+  // knowledgeSilo +0.05; fanIn (the composite's blast-radius axis) stays 0.1.
   readonly weights: ScoringWeights = {
     similarity: 0.3,
-    ownership: 0.3,
-    knowledgeSilo: 0.2,
+    ownership: 0.35,
+    knowledgeSilo: 0.25,
     fanIn: 0.1,
-    chunkChurn: 0.1,
   };
   readonly overlayMask: OverlayMask = {
     file: [

@@ -17,14 +17,16 @@ export class SecurityAuditPreset implements RerankPreset {
   readonly description = "Old code in security-critical paths needing review";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "find_similar"];
+  // chunkChurn dropped: signalLevel "file" forces payloadAlpha 0, so chunkChurn
+  // always scored 0 yet its 0.1 weight diluted every real signal by ~10%. Its
+  // budget moved to the process-metric axis (bugFix +0.05, volatility +0.05).
   readonly weights: ScoringWeights = {
     similarity: 0.25,
     age: 0.15,
     ownership: 0.1,
-    bugFix: 0.1,
-    chunkChurn: 0.1,
+    bugFix: 0.15,
     pathRisk: 0.15,
-    volatility: 0.15,
+    volatility: 0.2,
   };
   readonly overlayMask: OverlayMask = {
     file: [
