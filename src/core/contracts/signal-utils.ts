@@ -78,3 +78,51 @@ export function confidenceDampening(sampleCount: number, threshold: number, powe
   if (sampleCount >= threshold) return 1;
   return Math.pow(sampleCount / threshold, power);
 }
+
+// ---------------------------------------------------------------------------
+// Payload value resolution
+// ---------------------------------------------------------------------------
+
+/** Logical codegraph descriptor key → physical nested-symbols path. */
+const CODEGRAPH_PATH_RE = /^codegraph\.(file|chunk)\.(.+)$/;
+
+/**
+ * Resolve a dot-notation payload path to its value — the single source of truth
+ * for payload addressing across the reranker score/overlay paths and the
+ * collection-stats accumulator.
+ *
+ * Resolution order:
+ *  1. Flat key — Qdrant stores dotted paths as flat keys (`payload["git.file.x"]`).
+ *  2. Codegraph nested-symbols form — the logical descriptor key
+ *     `codegraph.{file|chunk}.X` maps to the physical
+ *     `payload.codegraph.symbols.{file|chunk}.X` (EnrichmentApplier writes
+ *     codegraph signals under the `codegraph.symbols` provider key with bare
+ *     inner keys).
+ *  3. Plain nested traversal — `payload.git.file.x` and any other dotted shape,
+ *     so test fixtures feeding alternate shapes still resolve.
+ */
+export function resolvePayloadValue(payload: Record<string, unknown>, path: string): unknown {
+  if (path in payload) return payload[path];
+
+  const cg = CODEGRAPH_PATH_RE.exec(path);
+  if (cg) {
+    const { codegraph } = payload as { codegraph?: unknown };
+    if (codegraph && typeof codegraph === "object") {
+      const { symbols } = codegraph as { symbols?: unknown };
+      if (symbols && typeof symbols === "object") {
+        const scoped = (symbols as Record<string, unknown>)[cg[1]];
+        const bareKey = cg[2];
+        if (scoped && typeof scoped === "object" && bareKey in (scoped as Record<string, unknown>)) {
+          return (scoped as Record<string, unknown>)[bareKey];
+        }
+      }
+    }
+  }
+
+  let current: unknown = payload;
+  for (const part of path.split(".")) {
+    if (current === null || current === undefined || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}

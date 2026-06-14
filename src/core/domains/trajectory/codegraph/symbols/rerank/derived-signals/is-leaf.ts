@@ -5,7 +5,7 @@ import { codegraphFileBool } from "./helpers.js";
 export class IsLeafSignal implements DerivedSignalDescriptor {
   readonly name = "isLeaf";
   readonly description = "1 when file is a leaf (fanOut == 0 and fanIn > 0)";
-  readonly sources = ["codegraph.file.isLeaf"];
+  readonly sources = ["file.isLeaf"];
   readonly defaultBound = 1;
   extract(raw: Record<string, unknown>, _ctx?: ExtractContext): number {
     return codegraphFileBool(raw, "isLeaf") ? 1 : 0;

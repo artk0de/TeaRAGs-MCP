@@ -9,7 +9,7 @@
  * 4. Attaches ranking overlay (raw file/chunk signals for transparency)
  */
 
-import { p95 } from "../../contracts/signal-utils.js";
+import { p95, resolvePayloadValue } from "../../contracts/signal-utils.js";
 import type { ScoringWeights } from "../../contracts/types/provider.js";
 import type {
   DerivedSignalDescriptor,
@@ -777,17 +777,13 @@ function calculateScore(signals: Record<string, number>, weights: ScoringWeights
 // ---------------------------------------------------------------------------
 
 /**
- * Traverse a nested payload using dot-notation path.
- * E.g. readPayloadPath(payload, "git.file.ageDays") walks payload.git.file.ageDays.
+ * Traverse a nested payload using dot-notation path. Delegates to the shared
+ * {@link resolvePayloadValue} so the score/overlay paths address codegraph's
+ * nested-symbols shape (`codegraph.symbols.file.fanIn`) identically to the
+ * collection-stats accumulator — one resolver, no duplicated regex.
  */
 function readPayloadPath(payload: Record<string, unknown>, path: string): unknown {
-  const parts = path.split(".");
-  let current: unknown = payload;
-  for (const part of parts) {
-    if (current === null || current === undefined || typeof current !== "object") return undefined;
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
+  return resolvePayloadValue(payload, path);
 }
 
 /**

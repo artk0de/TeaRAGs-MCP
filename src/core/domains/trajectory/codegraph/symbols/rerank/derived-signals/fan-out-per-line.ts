@@ -1,6 +1,6 @@
+import { normalize } from "../../../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../../contracts/types/trajectory.js";
-import { normalize } from "../../../../../../contracts/signal-utils.js";
 import { codegraphFileNum } from "./helpers.js";
 
 /**
@@ -35,7 +35,7 @@ import { codegraphFileNum } from "./helpers.js";
 export class FanOutPerLineSignal implements DerivedSignalDescriptor {
   readonly name = "fanOutPerLine";
   readonly description = "Efferent coupling (codegraph.file.fanOut) per line of code";
-  readonly sources = ["codegraph.file.fanOut"];
+  readonly sources = ["file.fanOut"];
   readonly defaultBound = 0.1;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const fanOut = codegraphFileNum(rawSignals, "fanOut");

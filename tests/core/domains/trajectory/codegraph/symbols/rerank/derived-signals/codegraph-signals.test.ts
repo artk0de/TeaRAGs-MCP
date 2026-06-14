@@ -163,7 +163,7 @@ describe("codegraph derived signals", () => {
     it("exposes descriptor metadata: name, sources, defaultBound", () => {
       const sig = new FanOutPerLineSignal();
       expect(sig.name).toBe("fanOutPerLine");
-      expect(sig.sources).toEqual(["codegraph.file.fanOut"]);
+      expect(sig.sources).toEqual(["file.fanOut"]);
       expect(sig.defaultBound).toBe(0.1);
     });
   });
@@ -192,7 +192,7 @@ describe("codegraph derived signals", () => {
     it("exposes descriptor metadata: name, sources, defaultBound", () => {
       const sig = new PageRankSignal();
       expect(sig.name).toBe("pageRank");
-      expect(sig.sources).toEqual(["codegraph.chunk.pageRank"]);
+      expect(sig.sources).toEqual(["chunk.pageRank"]);
       expect(sig.defaultBound).toBe(0.01);
     });
   });
@@ -227,7 +227,7 @@ describe("codegraph derived signals", () => {
     it("exposes descriptor metadata: name, sources, defaultBound", () => {
       const sig = new TransitiveImpactSignal();
       expect(sig.name).toBe("transitiveImpact");
-      expect(sig.sources).toEqual(["codegraph.file.transitiveImpact"]);
+      expect(sig.sources).toEqual(["file.transitiveImpact"]);
       expect(sig.defaultBound).toBe(50);
     });
   });
