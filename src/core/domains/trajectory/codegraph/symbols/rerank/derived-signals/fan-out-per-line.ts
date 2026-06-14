@@ -29,19 +29,37 @@ import { codegraphFileNum } from "./helpers.js";
  * See `.claude/rules/imports-field-semantics.md` — `imports[]` payload
  * is a visual mask only; signals route through codegraph.file.fanOut.
  *
- * Default bound 0.1 is a typical reference for "high coupling per line".
- * Collection-stats p95 overrides via `bounds["chunk.fanOutPerLine"]`.
+ * Denominator is the chunk's real line span: `methodLines` when present, else
+ * `endLine - startLine + 1`. fanOut is a FILE-graph quantity, so the chunk line
+ * span is an approximation of file size — acceptable and consistent with the
+ * size-moderation intent above. When no size field is present the span
+ * degenerates to 1 and the signal reduces to raw fanOut (saturates at the bound).
+ *
+ * The ratio is normalized against the FIXED `defaultBound` 0.1 ("high coupling
+ * per line"). It is intentionally NOT batch-p95-normalized: the adaptive bound
+ * collected for the raw `file.fanOut` source is the numerator's distribution,
+ * not the ratio's, so feeding it here would mis-scale. (Re-calibrating 0.1
+ * against the live p95 of the ratio is a follow-up that needs a fresh index.)
  */
 export class FanOutPerLineSignal implements DerivedSignalDescriptor {
   readonly name = "fanOutPerLine";
   readonly description = "Efferent coupling (codegraph.file.fanOut) per line of code";
   readonly sources = ["file.fanOut"];
   readonly defaultBound = 0.1;
-  extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
+  extract(rawSignals: Record<string, unknown>, _ctx?: ExtractContext): number {
     const fanOut = codegraphFileNum(rawSignals, "fanOut");
-    const size = Number(rawSignals.chunkSize ?? 1);
-    const ratio = fanOut / Math.max(size, 1);
-    const bound = ctx?.bounds?.["chunk.fanOutPerLine"] ?? this.defaultBound;
-    return normalize(ratio, bound);
+    if (fanOut <= 0) return 0;
+    const ratio = fanOut / lineSpan(rawSignals);
+    return normalize(ratio, this.defaultBound);
   }
+}
+
+/** Chunk line span: methodLines, else endLine-startLine+1, else 1 (no size info). */
+function lineSpan(rawSignals: Record<string, unknown>): number {
+  const methodLines = Number(rawSignals.methodLines ?? 0);
+  if (methodLines > 0) return methodLines;
+  const startLine = Number(rawSignals.startLine ?? 0);
+  const endLine = Number(rawSignals.endLine ?? 0);
+  if (endLine >= startLine && endLine > 0) return Math.max(endLine - startLine + 1, 1);
+  return 1;
 }

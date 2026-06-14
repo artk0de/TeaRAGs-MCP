@@ -121,42 +121,35 @@ describe("codegraph derived signals", () => {
   });
 
   describe("FanOutPerLineSignal", () => {
-    it("returns 0 when codegraph.file.fanOut is absent", () => {
+    it("returns 0 when codegraph.file.fanOut is absent or zero", () => {
       const sig = new FanOutPerLineSignal();
-      expect(sig.extract({ chunkSize: 100 }, {})).toBe(0);
-    });
-
-    it("returns 0 when fanOut is 0 with implicit chunkSize=1", () => {
-      const sig = new FanOutPerLineSignal();
+      expect(sig.extract({ methodLines: 100 }, {})).toBe(0);
       expect(sig.extract({}, {})).toBe(0);
-      expect(sig.extract({ "codegraph.file.fanOut": 0 }, {})).toBe(0);
+      expect(sig.extract({ "codegraph.file.fanOut": 0, methodLines: 100 }, {})).toBe(0);
     });
 
-    it("normalises fanOut=10, chunkSize=100 against default bound 0.1 to clamp at 1.0", () => {
-      const sig = new FanOutPerLineSignal();
-      // ratio = 10 / 100 = 0.1; bound = 0.1; normalize(0.1, 0.1) = 1.0
-      expect(sig.extract({ "codegraph.file.fanOut": 10, chunkSize: 100 }, {})).toBe(1);
-    });
-
-    it("normalises a mid-range value against default bound 0.1", () => {
+    it("uses methodLines as the per-line denominator: fanOut=5, methodLines=100 → 0.5", () => {
       const sig = new FanOutPerLineSignal();
       // ratio = 5 / 100 = 0.05; bound = 0.1; normalize(0.05, 0.1) = 0.5
-      expect(sig.extract({ "codegraph.file.fanOut": 5, chunkSize: 100 }, {})).toBeCloseTo(0.5, 5);
+      expect(sig.extract({ "codegraph.file.fanOut": 5, methodLines: 100 }, {})).toBeCloseTo(0.5, 5);
     });
 
-    it("respects ctx.bounds['chunk.fanOutPerLine'] override over the default bound", () => {
+    it("falls back to startLine/endLine span when methodLines absent", () => {
       const sig = new FanOutPerLineSignal();
-      // ratio = 10 / 100 = 0.1; override bound = 0.2; normalize(0.1, 0.2) = 0.5
-      expect(
-        sig.extract({ "codegraph.file.fanOut": 10, chunkSize: 100 }, { bounds: { "chunk.fanOutPerLine": 0.2 } }),
-      ).toBeCloseTo(0.5, 5);
+      // span = 59 - 10 + 1 = 50; ratio = 5 / 50 = 0.1; normalize(0.1, 0.1) = 1.0
+      expect(sig.extract({ "codegraph.file.fanOut": 5, startLine: 10, endLine: 59 }, {})).toBeCloseTo(1, 5);
     });
 
-    it("guards chunkSize=0 via Math.max so fanOut/0 does not produce NaN", () => {
+    it("saturates at the bound: fanOut=10, methodLines=100 → ratio 0.1 = bound → 1.0", () => {
       const sig = new FanOutPerLineSignal();
-      // size guarded to 1; ratio = 50 / 1 = 50; normalize(50, 0.1) clamps to 1
-      const result = sig.extract({ "codegraph.file.fanOut": 50, chunkSize: 0 }, {});
+      expect(sig.extract({ "codegraph.file.fanOut": 10, methodLines: 100 }, {})).toBe(1);
+    });
+
+    it("contract: no size fields → span 1 (degenerates to raw fanOut), guarded against NaN", () => {
+      const sig = new FanOutPerLineSignal();
+      const result = sig.extract({ "codegraph.file.fanOut": 50 }, {});
       expect(Number.isNaN(result)).toBe(false);
+      // span 1 → ratio 50 → normalize(50, 0.1) clamps to 1
       expect(result).toBe(1);
     });
 
