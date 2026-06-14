@@ -25,6 +25,7 @@ import type {
   DispatchTable,
   FileExtraction,
   ImportRef,
+  InheritanceEdgeDecl,
 } from "../../../../contracts/types/codegraph.js";
 
 export interface ExtractInput {
@@ -105,6 +106,12 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   }
   if (Object.keys(dispatchTables).length > 0) out.dispatchTables = dispatchTables;
   if (Object.keys(callbackParams).length > 0) out.callbackParams = callbackParams;
+  // bd tea-rags-mcp-f10y — unified hierarchy capture. Distinct from
+  // `classExtends` (call-graph super dispatch, single parent): this records
+  // ALL hierarchy edges incl. `implements` and interface heritage, which
+  // classExtends deliberately omits as "type-only, no runtime dispatch".
+  const inheritanceEdges = collectInheritanceEdges(input.tree.rootNode);
+  if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
   return out;
 }
 
@@ -736,6 +743,73 @@ function assignParamBindingsToInnermostChunks(
  * class's own method. Returns an empty map when the file has no class
  * declarations or no class extends anything.
  */
+/**
+ * Reduce an `extends`/`implements` heritage child to its base type name.
+ * Handles plain identifiers (`A`), qualified names (`A.B.C`), and generic
+ * instantiations (`Base<T>` → `Base`). Returns null for punctuation
+ * (`,` / `extends` / `implements` keywords) so callers can `.filter` cleanly.
+ */
+function baseTypeName(node: Parser.SyntaxNode | undefined): string | null {
+  if (!node) return null;
+  if (node.type === "identifier" || node.type === "type_identifier" || node.type === "member_expression") {
+    return node.text;
+  }
+  if (node.type === "generic_type") {
+    const base = node.children.find(
+      (c) => c.type === "identifier" || c.type === "member_expression" || c.type === "type_identifier",
+    );
+    return base ? base.text : null;
+  }
+  return null;
+}
+
+/**
+ * Collect all class-hierarchy edges (bd tea-rags-mcp-f10y): class `extends`
+ * (kind `super`), class `implements` (kind `implements`), and interface
+ * `extends` (kind `implements` — interface heritage is structural, treated as
+ * the implements channel for the hierarchy graph). `ordinal` preserves
+ * declaration order within each clause for MRO reconstruction.
+ */
+function collectInheritanceEdges(root: Parser.SyntaxNode): InheritanceEdgeDecl[] {
+  const edges: InheritanceEdgeDecl[] = [];
+  walk(root, (node) => {
+    if (node.type === "class_declaration" || node.type === "abstract_class_declaration") {
+      const className = node.childForFieldName("name")?.text;
+      if (!className) return;
+      const heritage = node.children.find((c) => c.type === "class_heritage");
+      if (!heritage) return;
+      const ext = heritage.children.find((c) => c.type === "extends_clause");
+      if (ext) {
+        const parent = baseTypeName(
+          ext.children.find(
+            (c) => c.type === "identifier" || c.type === "member_expression" || c.type === "generic_type",
+          ),
+        );
+        if (parent) edges.push({ source: className, ancestor: parent, kind: "super", ordinal: 0 });
+      }
+      const impl = heritage.children.find((c) => c.type === "implements_clause");
+      if (impl) {
+        let i = 0;
+        for (const child of impl.children) {
+          const name = baseTypeName(child);
+          if (name) edges.push({ source: className, ancestor: name, kind: "implements", ordinal: i++ });
+        }
+      }
+    } else if (node.type === "interface_declaration") {
+      const name = node.childForFieldName("name")?.text;
+      if (!name) return;
+      const ext = node.children.find((c) => c.type === "extends_type_clause");
+      if (!ext) return;
+      let i = 0;
+      for (const child of ext.children) {
+        const base = baseTypeName(child);
+        if (base) edges.push({ source: name, ancestor: base, kind: "implements", ordinal: i++ });
+      }
+    }
+  });
+  return edges;
+}
+
 function collectClassExtends(root: Parser.SyntaxNode): ReadonlyMap<string, string> {
   const result = new Map<string, string>();
   walk(root, (node) => {
