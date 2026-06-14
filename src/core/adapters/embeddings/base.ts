@@ -43,6 +43,15 @@ export interface EmbeddingProvider {
    * can show both endpoints — symmetric with QDRANT_URL tracking.
    */
   getFallbackBaseUrl?: () => string | undefined;
+  /**
+   * Live reachability probe of the configured fallback endpoint, independent of
+   * runtime failover state. Returns undefined when no fallback is configured (or
+   * the provider has no fallback concept). Surfaced via
+   * IndexStatus.infraHealth.embedding.fallbackAvailable so the prime CLI digest
+   * shows whether the backup endpoint is up — `checkHealth` only probes the
+   * active endpoint and never touches the fallback while the primary is alive.
+   */
+  checkFallbackHealth?: () => Promise<boolean | undefined>;
   /** Resolve model capabilities (context length, dimensions) from provider API. */
   resolveModelInfo?: () => Promise<{ model: string; contextLength: number; dimensions: number } | undefined>;
 }

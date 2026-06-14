@@ -114,7 +114,14 @@ export interface IndexStatus {
       /** Optimizer state (`"ok"` or `"unknown"`). */
       optimizerStatus?: string;
     };
-    embedding: { available: boolean; provider: string; url?: string; fallbackUrl?: string };
+    embedding: {
+      available: boolean;
+      provider: string;
+      url?: string;
+      fallbackUrl?: string;
+      /** Live reachability of the fallback endpoint. Omitted when no fallback configured. */
+      fallbackAvailable?: boolean;
+    };
   };
 }
 
