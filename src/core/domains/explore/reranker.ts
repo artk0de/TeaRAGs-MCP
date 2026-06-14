@@ -382,10 +382,12 @@ export class Reranker {
         bounds[source] = Math.max(sourceBound, floor);
       }
       const dampeningThreshold = this.resolveDampeningThreshold(d);
+      const dampeningThresholdChunk = this.resolveDampeningThresholdChunk(d);
       const confidence = this.resolveDerivedConfidence(d);
       signals[d.name] = d.extract(payload, {
         bounds,
         dampeningThreshold,
+        dampeningThresholdChunk,
         confidence,
         collectionStats: this.collectionStats,
         signalLevel,
@@ -411,10 +413,28 @@ export class Reranker {
    * distribution.
    */
   private resolveDampeningThreshold(descriptor: DerivedSignalDescriptor): number | undefined {
+    return this.resolveDampeningThresholdForScope(descriptor, "file");
+  }
+
+  /**
+   * Resolve the CHUNK-scope adaptive dampening threshold (k_c) — the chunk
+   * support signal's `adaptivePercentile`. Mirrors {@link resolveDampeningThreshold}
+   * but reads `chunk.{support}` collection stats, so blended signals can dampen
+   * their chunk component by its own sample size. Returns undefined when the
+   * chunk support percentile isn't available (e.g. file-only support).
+   */
+  private resolveDampeningThresholdChunk(descriptor: DerivedSignalDescriptor): number | undefined {
+    return this.resolveDampeningThresholdForScope(descriptor, "chunk");
+  }
+
+  private resolveDampeningThresholdForScope(
+    descriptor: DerivedSignalDescriptor,
+    scope: "file" | "chunk",
+  ): number | undefined {
     if (!this.collectionStats) return undefined;
     const confidence = this.resolveDerivedConfidence(descriptor);
     if (!confidence?.support) return undefined;
-    const supportFullKey = this.signalKeyMap.get(`file.${confidence.support}`);
+    const supportFullKey = this.signalKeyMap.get(`${scope}.${confidence.support}`);
     if (!supportFullKey) return undefined;
     const stats = this.collectionStats.perSignal.get(supportFullKey);
     const percentile = confidence.score?.adaptivePercentile ?? 25;

@@ -1,6 +1,6 @@
 import type { DerivedSignalDescriptor } from "../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
-import { blendSignal, confidenceDampening, fileNum } from "./helpers.js";
+import { blend, chunkField, confidenceDampening, fileNum, payloadAlpha } from "./helpers.js";
 
 /**
  * Piecewise-linear silo score over a (possibly fractional) contributor count:
@@ -39,11 +39,22 @@ export class KnowledgeSiloSignal implements DerivedSignalDescriptor {
   readonly sources = ["file.blameContributorCount", "chunk.blameContributorCount"];
   private static readonly FALLBACK_K = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    const effectiveCount = blendSignal(rawSignals, "blameContributorCount", ctx?.signalLevel);
-    const value = siloScore(effectiveCount);
-    if (value === 0) return 0;
-    const k = ctx?.dampeningThreshold ?? ctx?.confidence?.score?.threshold ?? KnowledgeSiloSignal.FALLBACK_K;
+    // Scope-aware: siloScore each scope's contributor count, dampen by that
+    // scope's own support, then blend with the same alpha (per-scope confidence,
+    // not the file scope applied to the whole blend). siloScore is piecewise
+    // linear, so within a knot segment this matches siloScore-of-the-blend.
+    const floor = ctx?.confidence?.score?.threshold ?? KnowledgeSiloSignal.FALLBACK_K;
+    const kf = ctx?.dampeningThreshold ?? floor;
+    const kc = ctx?.dampeningThresholdChunk ?? floor;
     const supportName = ctx?.confidence?.support ?? "commitCount";
-    return value * confidenceDampening(fileNum(rawSignals, supportName), k);
+    const dampFile = confidenceDampening(fileNum(rawSignals, supportName), kf);
+    const fileCount = fileNum(rawSignals, "blameContributorCount");
+    const sf = siloScore(fileCount) * dampFile;
+    const alpha = payloadAlpha(rawSignals, ctx?.signalLevel);
+    if (alpha === 0) return sf;
+    const dampChunk = confidenceDampening(chunkField(rawSignals, supportName) ?? 0, kc);
+    const chunkCount = chunkField(rawSignals, "blameContributorCount") ?? fileCount;
+    const sc = siloScore(chunkCount) * dampChunk;
+    return blend(sc, sf, alpha);
   }
 }

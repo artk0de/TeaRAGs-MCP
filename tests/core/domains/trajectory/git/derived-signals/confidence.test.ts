@@ -128,3 +128,45 @@ describe("RelativeChurnNormSignal self-dampening", () => {
     expect(value).toBeCloseTo(0.5 * 0.16);
   });
 });
+
+// ─── Scope-aware score-path dampening (eab6) ────────────────────────────────
+// The chunk component is dampened by CHUNK support, the file component by FILE
+// support, before blending — so a low-N chunk in a high-commit file is not
+// granted the file's confidence, and a high-N chunk in a low-commit file is not
+// over-dampened by the file's small N.
+describe("BugFixSignal scope-aware dampening", () => {
+  const signal = new BugFixSignal();
+  // FALLBACK_K = 10; no collection stats → both scopes use k=10.
+  const ctx: ExtractContext = { bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 } };
+  const blended = (file: Record<string, unknown>, chunk?: Record<string, unknown>) => ({
+    git: { file, ...(chunk ? { chunk } : {}) },
+  });
+
+  it("suppresses a low-N chunk component inside a high-commit file", () => {
+    // file N=6 rate 10 (norm 0.1); chunk N=3 rate 100 (norm 1.0); alpha=0.5.
+    // dampFile=(6/10)^2=0.36, dampChunk=(3/10)^2=0.09.
+    // value = 0.5*(1.0*0.09) + 0.5*(0.1*0.36) = 0.045 + 0.018 = 0.063
+    const raw = blended({ commitCount: 6, bugFixRate: 10 }, { commitCount: 3, bugFixRate: 100 });
+    expect(signal.extract(raw, ctx)).toBeCloseTo(0.063, 6);
+  });
+
+  it("trusts a high-N chunk even when the file commit count is small", () => {
+    // file N=3 rate 10; chunk N=20 rate 100; alpha=1 (chunk dominates).
+    // dampChunk=(20/10)^2→1; chunk fully trusted → value = chunkNorm*1 = 1.0.
+    // Legacy file-scope dampening would have applied (3/10)^2=0.09 → 0.09.
+    const raw = blended({ commitCount: 3, bugFixRate: 10 }, { commitCount: 20, bugFixRate: 100 });
+    expect(signal.extract(raw, ctx)).toBeCloseTo(1.0, 6);
+  });
+
+  it("numerical-equivalence: pure-file payload byte-identical to legacy", () => {
+    // file N=6 rate 50 (norm 0.5), no chunk → alpha=0 → 0.5 * dampFile(0.36) = 0.18
+    const raw = blended({ commitCount: 6, bugFixRate: 50 });
+    expect(signal.extract(raw, ctx)).toBeCloseTo(0.18, 6);
+  });
+
+  it("signalLevel:'file' forces alpha=0 — chunk data ignored", () => {
+    const raw = blended({ commitCount: 6, bugFixRate: 50 }, { commitCount: 3, bugFixRate: 100 });
+    const fileCtx: ExtractContext = { ...ctx, signalLevel: "file" };
+    expect(signal.extract(raw, fileCtx)).toBeCloseTo(0.18, 6);
+  });
+});

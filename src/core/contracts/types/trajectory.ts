@@ -193,8 +193,18 @@ export interface CollectionSignalStats {
 export interface ExtractContext {
   /** Per-source adaptive bounds keyed by source name (e.g. "file.ageDays" → 365) */
   bounds?: Record<string, number>;
-  /** Confidence dampening threshold resolved by Reranker from collection stats. */
+  /**
+   * Confidence dampening threshold for the FILE scope (k_f), resolved by Reranker
+   * from `file.{support}` collection stats. File-only signals read just this.
+   */
   dampeningThreshold?: number;
+  /**
+   * Confidence dampening threshold for the CHUNK scope (k_c), resolved by Reranker
+   * from `chunk.{support}` collection stats. Blended signals dampen their chunk
+   * component with this so a low-N chunk inside a high-commit file is not granted
+   * the file's confidence (and vice versa). Absent for file-only signals.
+   */
+  dampeningThresholdChunk?: number;
   /**
    * Unified confidence declaration from the raw payload signal descriptor.
    * Derived signals that previously hardcoded `dampeningSource` and a static
