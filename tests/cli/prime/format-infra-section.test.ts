@@ -93,4 +93,80 @@ describe("formatPrime — Infra section (embedding endpoints)", () => {
     expect(out).toContain("fallback: http://127.0.0.1:11434");
     expect(out).not.toContain(" at undefined");
   });
+
+  it("annotates the fallback segment with `(available)` when fallbackAvailable is true", () => {
+    const data: PrimeData = {
+      path: "/repo",
+      projectName: null,
+      status: {
+        ...baseStatus,
+        infraHealth: {
+          qdrant: baseQdrant,
+          embedding: {
+            available: false,
+            provider: "ollama",
+            url: "http://gpu-server:11434",
+            fallbackUrl: "http://127.0.0.1:11434",
+            fallbackAvailable: true,
+          },
+        },
+      },
+      metrics: null,
+      drift: null,
+      update: null,
+    };
+    const out = formatPrime(data, new Date("2026-05-13T00:00:00Z"));
+    expect(out).toContain("fallback: http://127.0.0.1:11434 (available)");
+  });
+
+  it("annotates the fallback segment with `(unavailable)` when fallbackAvailable is false", () => {
+    const data: PrimeData = {
+      path: "/repo",
+      projectName: null,
+      status: {
+        ...baseStatus,
+        infraHealth: {
+          qdrant: baseQdrant,
+          embedding: {
+            available: false,
+            provider: "ollama",
+            url: "http://gpu-server:11434",
+            fallbackUrl: "http://127.0.0.1:11434",
+            fallbackAvailable: false,
+          },
+        },
+      },
+      metrics: null,
+      drift: null,
+      update: null,
+    };
+    const out = formatPrime(data, new Date("2026-05-13T00:00:00Z"));
+    expect(out).toContain("fallback: http://127.0.0.1:11434 (unavailable)");
+  });
+
+  it("omits the availability annotation when fallbackAvailable is undefined", () => {
+    const data: PrimeData = {
+      path: "/repo",
+      projectName: null,
+      status: {
+        ...baseStatus,
+        infraHealth: {
+          qdrant: baseQdrant,
+          embedding: {
+            available: true,
+            provider: "ollama",
+            url: "http://gpu-server:11434",
+            fallbackUrl: "http://127.0.0.1:11434",
+          },
+        },
+      },
+      metrics: null,
+      drift: null,
+      update: null,
+    };
+    const out = formatPrime(data, new Date("2026-05-13T00:00:00Z"));
+    expect(out).toContain("fallback: http://127.0.0.1:11434");
+    expect(out).not.toContain("(available)");
+    expect(out).not.toContain("(unavailable)");
+  });
 });

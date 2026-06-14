@@ -583,4 +583,22 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   getFallbackBaseUrl(): string | undefined {
     return this.fallbackBaseUrl;
   }
+
+  /**
+   * Live reachability probe of the CONFIGURED fallback endpoint, independent of
+   * runtime failover state. Returns undefined when no fallback is configured so
+   * callers can omit the field; otherwise true/false for reachable-right-now.
+   * Surfaced via infraHealth.embedding.fallbackAvailable so the prime CLI digest
+   * shows whether the backup ollama is up — the active-endpoint `checkHealth`
+   * probe never touches the fallback while the primary is alive.
+   */
+  async checkFallbackHealth(): Promise<boolean | undefined> {
+    if (!this.fallbackBaseUrl) return undefined;
+    try {
+      const response = await fetchWithTimeout(`${this.fallbackBaseUrl}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
 }
