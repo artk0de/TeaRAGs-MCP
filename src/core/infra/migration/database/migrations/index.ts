@@ -7,6 +7,7 @@ import { SQL_001_CG_SYMBOLS_INIT } from "./001-cg-symbols-init.js";
 import { SQL_002_CG_SYMBOLS_TABLE } from "./002-cg-symbols-table.js";
 import { SQL_003_CG_SYMBOLS_CYCLES } from "./003-cg-symbols-cycles.js";
 import { SQL_004_CG_SYMBOLS_METRICS } from "./004-cg-symbols-metrics.js";
+import { SQL_005_CG_SYMBOLS_INHERITANCE } from "./005-cg-symbols-inheritance.js";
 
 export interface DatabaseMigration {
   filename: string;
@@ -18,4 +19,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "002-cg-symbols-table.sql", sql: SQL_002_CG_SYMBOLS_TABLE },
   { filename: "003-cg-symbols-cycles.sql", sql: SQL_003_CG_SYMBOLS_CYCLES },
   { filename: "004-cg-symbols-metrics.sql", sql: SQL_004_CG_SYMBOLS_METRICS },
+  { filename: "005-cg-symbols-inheritance.sql", sql: SQL_005_CG_SYMBOLS_INHERITANCE },
 ];
