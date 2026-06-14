@@ -43,7 +43,12 @@ export type DaemonOp =
   | "getTransitiveImpact"
   | "findCycles"
   | "listAdjacency"
-  | "getPageRank";
+  | "getPageRank"
+  // ── class hierarchy (bd tea-rags-mcp-f10y) ──
+  | "getSupertypes"
+  | "getSubtypes"
+  | "getTransitiveSubtypes"
+  | "loadHierarchySnapshot";
 
 export interface DaemonRequest {
   id: number;
@@ -59,7 +64,8 @@ export interface DaemonRequest {
     | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges
     | { collection: string; scope: CycleScope; pathPattern?: string } // findCycles (pathPattern) | listAdjacency
     | { collection: string; scope: CycleScope; sccs: readonly (readonly string[])[] } // replaceCycles
-    | { collection: string; ranks: [string, number][] }; // replacePageRanks
+    | { collection: string; ranks: [string, number][] } // replacePageRanks
+    | { collection: string; fqName: string }; // getSupertypes | getSubtypes | getTransitiveSubtypes
 }
 
 export type DaemonResponse =

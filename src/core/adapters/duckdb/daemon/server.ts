@@ -151,6 +151,24 @@ export class CodegraphDaemonServer {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getPageRank(p.symbolId as SymbolId);
       }
+      // ── class hierarchy (bd tea-rags-mcp-f10y) ──
+      case "getSupertypes": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getSupertypes(p.fqName as string);
+      }
+      case "getSubtypes": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getSubtypes(p.fqName as string);
+      }
+      case "getTransitiveSubtypes": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getTransitiveSubtypes(p.fqName as string);
+      }
+      case "loadHierarchySnapshot": {
+        const { graphDb } = await this.pool.acquire(collection);
+        // HierarchySnapshot is plain Records — JSON-serialisable, no entries() dance.
+        return graphDb.loadHierarchySnapshot();
+      }
       case "finalizeReindex":
         // The Qdrant alias swap (adapters/qdrant/aliases.ts:switchAlias) has
         // already flipped readers onto newVersion; delete the superseded

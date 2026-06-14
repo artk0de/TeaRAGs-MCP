@@ -8,6 +8,8 @@ import type {
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
+  HierarchySnapshot,
+  InheritanceEdge,
   RelPath,
   SymbolDefinition,
   SymbolId,
@@ -283,6 +285,24 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async getPageRank(symbolId: SymbolId): Promise<number> {
     return (await this.call("getPageRank", { symbolId })) as number;
+  }
+
+  async getSupertypes(fqName: string): Promise<InheritanceEdge[]> {
+    return (await this.call("getSupertypes", { fqName })) as InheritanceEdge[];
+  }
+
+  async getSubtypes(fqName: string): Promise<InheritanceEdge[]> {
+    return (await this.call("getSubtypes", { fqName })) as InheritanceEdge[];
+  }
+
+  async getTransitiveSubtypes(fqName: string): Promise<InheritanceEdge[]> {
+    return (await this.call("getTransitiveSubtypes", { fqName })) as InheritanceEdge[];
+  }
+
+  async loadHierarchySnapshot(): Promise<HierarchySnapshot> {
+    // HierarchySnapshot is plain Records of arrays — JSON-serialisable as-is,
+    // no Map rebuild needed (unlike getCalleeEdges / listAdjacency).
+    return (await this.call("loadHierarchySnapshot", {})) as HierarchySnapshot;
   }
 
   // ── daemon-internal (NOT proxied) ──

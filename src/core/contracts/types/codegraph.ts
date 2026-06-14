@@ -681,6 +681,16 @@ export interface GraphDbClient {
   getCalledByCount: (symbolId: SymbolId) => Promise<number>;
   getCallSiteCount: (symbolId: SymbolId) => Promise<number>;
 
+  // ── Class hierarchy (bd tea-rags-mcp-f10y) ──
+  /** Direct ancestors of a type (forward), ordered by declaration ordinal. */
+  getSupertypes: (fqName: string) => Promise<InheritanceEdge[]>;
+  /** Direct subtypes / implementers of a type (reverse index). */
+  getSubtypes: (fqName: string) => Promise<InheritanceEdge[]>;
+  /** Transitive subtypes via recursive CTE; `depth` reflects traversal level. */
+  getTransitiveSubtypes: (fqName: string) => Promise<InheritanceEdge[]>;
+  /** Bulk load both directions for the resolver snapshot. */
+  loadHierarchySnapshot: () => Promise<HierarchySnapshot>;
+
   /** Returns true if at least one row exists in `cg_symbols_files`. Used
    *  by drift detection. */
   hasData: () => Promise<boolean>;
