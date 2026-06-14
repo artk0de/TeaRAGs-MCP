@@ -48,6 +48,7 @@ import type {
   GraphEdges,
   NamedSymbol,
 } from "../../../../contracts/types/codegraph.js";
+import type { FileClassification } from "../../../../contracts/types/file-classification.js";
 import type {
   LanguageFactoryDescriptor,
   LanguageSymbolResolver,
@@ -66,7 +67,6 @@ import type {
   ProviderRunMetrics,
   WorkerEnrichmentDescriptor,
 } from "../../../../contracts/types/provider.js";
-import type { FileClassification } from "../../../../contracts/types/file-classification.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { pageRank } from "../../../../infra/graph/page-rank.js";
 import { tarjanScc } from "../../../../infra/graph/tarjan-scc.js";
@@ -78,6 +78,7 @@ import {
   CodegraphSpillIoError,
 } from "../../errors.js";
 import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
+import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 
 /**
@@ -1614,7 +1615,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       }
     }
 
-    return { fileEdges, methodEdges };
+    // Class hierarchy (bd tea-rags-mcp-f10y). Persist this file's declared
+    // inheritance edges alongside its file/method edges so cg_symbols_inheritance
+    // shares the per-file upsert lifecycle. Ancestor names resolve to in-project
+    // symbol_ids via the now-complete symbol table (pass-1 done); external
+    // ancestors keep ancestorSymbolId=null. Sources every language: TS via the
+    // unified inheritanceEdges field, others via the legacy class* Records.
+    const inheritance = normalizeInheritanceEdges(extraction, (fq) => symbolTable.lookup(fq)[0]?.symbolId ?? null);
+    return inheritance.length > 0 ? { fileEdges, methodEdges, inheritance } : { fileEdges, methodEdges };
   }
 }
 
