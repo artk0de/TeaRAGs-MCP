@@ -351,13 +351,15 @@ describe("reranker", () => {
     });
 
     it("should support blockPenalty as custom negative weight", async () => {
-      const results = [createResultWithChunkType(0.8, "block", {}), createResultWithChunkType(0.7, "function", {})];
+      // Equal raw scores so batch min-max similarity normalization is neutral
+      // (both → 1.0) and the negative blockPenalty is what separates them.
+      const results = [createResultWithChunkType(0.8, "block", {}), createResultWithChunkType(0.8, "function", {})];
       const reranked = await reranker.rerank(
         results,
         { custom: { similarity: 0.5, churn: 0.3, blockPenalty: -0.3 } },
         "semantic_search",
       );
-      // Function should rank higher despite lower similarity, because block gets penalty
+      // Function should rank higher because the block chunk gets the penalty.
       expect(reranked[0].payload?.chunkType).toBe("function");
     });
 
@@ -2633,5 +2635,49 @@ describe("rerank annotate-only mode (reorder: false)", () => {
     const sorted = await reranker.rerank(makeDangerResults(), "bugHunt", "semantic_search");
     // danger-desc: high bugFixRate (b.ts) sorts above low (a.ts).
     expect(sorted.map((r) => r.payload?.relativePath)).toEqual(["b.ts", "a.ts"]);
+  });
+});
+
+describe("reranker — batch min-max similarity normalization (cross-scale weight calibration)", () => {
+  const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
+
+  // Two results, raw scores given, both on a non-security path (pathRisk = 0),
+  // preset {similarity: 0.5, pathRisk: 0.5}. With pathRisk 0 for both,
+  // score = 0.5 * normalizedSimilarity. So the top raw score must yield 0.5 and
+  // the bottom 0.0 once similarity is min-max normalized over the batch.
+  const result = (score: number): RerankableResult => ({
+    score,
+    payload: { relativePath: `src/plain-${score}.ts`, startLine: 1, endLine: 20, language: "typescript" },
+  });
+  const weights = { similarity: 0.5, pathRisk: 0.5 };
+
+  it("RRF-scale batch: highest score normalizes to 1.0, lowest to 0.0", async () => {
+    const reranked = await reranker.rerank([result(0.66), result(0.09)], { custom: weights }, "semantic_search");
+    const byTop = [...reranked].sort((a, b) => b.score - a.score);
+    expect(byTop[0].score).toBeCloseTo(0.5, 6); // 0.5 * 1.0
+    expect(byTop[1].score).toBeCloseTo(0.0, 6); // 0.5 * 0.0
+  });
+
+  it("narrow cosine spread still fully discriminates (scale-free)", async () => {
+    const reranked = await reranker.rerank([result(0.62), result(0.6)], { custom: weights }, "semantic_search");
+    const byTop = [...reranked].sort((a, b) => b.score - a.score);
+    // raw would give a ~0.01 gap; normalized gives the full 0.5
+    expect(byTop[0].score - byTop[1].score).toBeCloseTo(0.5, 6);
+  });
+
+  it("degenerate batch (all scores equal) → no NaN, similarity 1.0 for all", async () => {
+    const reranked = await reranker.rerank([result(0.7), result(0.7)], { custom: weights }, "semantic_search");
+    for (const r of reranked) {
+      expect(Number.isNaN(r.score)).toBe(false);
+      expect(r.score).toBeCloseTo(0.5, 6); // 0.5 * 1.0
+    }
+  });
+
+  it("isSimilarityOnly fast path is untouched (no normalization, no overlay)", async () => {
+    const input = [result(0.66), result(0.09)];
+    const reranked = await reranker.rerank(input, { custom: { similarity: 1.0 } }, "semantic_search");
+    expect(reranked[0].score).toBe(0.66);
+    expect(reranked[1].score).toBe(0.09);
+    expect(reranked[0].rankingOverlay).toBeUndefined();
   });
 });

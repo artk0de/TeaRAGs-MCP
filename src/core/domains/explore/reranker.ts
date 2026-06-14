@@ -218,8 +218,14 @@ export class Reranker {
     resolved: ResolvedMode,
     query: string | undefined,
   ): (T & { score: number; rankingOverlay?: RankingOverlay })[] {
+    // Batch min-max range of the raw vector score. The similarity signal reads a
+    // normalized score so preset weights mean the same thing whether the score
+    // came from cosine (semantic_search, ~0.5-0.85 narrow) or RRF fusion
+    // (hybrid_search, rank-shaped/hyperbolic). Reached only past the
+    // isSimilarityOnly fast path, so similarity-only ranking is untouched.
+    const scoreRange = computeScoreRange(results);
     return results.map((result) => {
-      const payload = this.buildExtractPayload(result);
+      const payload = this.buildExtractPayload(result, normalizeSimilarityScore(result.score, scoreRange));
       const signals = this.extractAllDerived(payload, bounds, resolved.signalLevel, query);
       const score = calculateScore(signals, resolved.weights);
       const overlay = this.buildOverlay(
@@ -311,8 +317,8 @@ export class Reranker {
    * Build the payload Record<string, unknown> used by descriptor extract().
    * Includes _score field for similarity descriptor and all payload fields.
    */
-  private buildExtractPayload(result: RerankableResult): Record<string, unknown> {
-    return { _score: result.score, ...(result.payload ?? {}) };
+  private buildExtractPayload(result: RerankableResult, similarityScore: number): Record<string, unknown> {
+    return { _score: similarityScore, ...(result.payload ?? {}) };
   }
 
   /**
@@ -719,6 +725,35 @@ export class Reranker {
 /**
  * Calculate final score based on weights and signals
  */
+/** Min/max of the finite raw scores in a result batch, or undefined if none. */
+function computeScoreRange(results: RerankableResult[]): { min: number; max: number } | undefined {
+  let min = Infinity;
+  let max = -Infinity;
+  let seen = false;
+  for (const r of results) {
+    if (typeof r.score === "number" && Number.isFinite(r.score)) {
+      seen = true;
+      if (r.score < min) min = r.score;
+      if (r.score > max) max = r.score;
+    }
+  }
+  return seen ? { min, max } : undefined;
+}
+
+/**
+ * Min-max normalize a raw score into [0,1] over the batch range. Scale-free:
+ * works identically for cosine and RRF scores, so the similarity weight has the
+ * same meaning across tools. A degenerate batch (max === min, e.g. rank_chunks'
+ * constant scores) maps to 1.0 for every result — order-preserving, no NaN.
+ * A non-finite score with no batch range passes through unchanged (the
+ * similarity signal then falls back to 0).
+ */
+function normalizeSimilarityScore(score: number, range: { min: number; max: number } | undefined): number {
+  if (!range || typeof score !== "number" || !Number.isFinite(score)) return score;
+  if (range.max <= range.min) return 1.0;
+  return (score - range.min) / (range.max - range.min);
+}
+
 function calculateScore(signals: Record<string, number>, weights: ScoringWeights): number {
   let score = 0;
   let totalWeight = 0;

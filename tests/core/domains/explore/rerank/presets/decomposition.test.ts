@@ -39,9 +39,11 @@ describe("Decomposition reranking produces scores in 0-1", () => {
   const reranker = new Reranker(staticDerivedSignals, [new DecompositionPreset()]);
 
   it("scores large dense methods higher than small sparse ones", async () => {
+    // Equal raw scores so batch min-max similarity normalization is neutral
+    // (both → 1.0); size + density (0.6 of the weight) is what separates them.
     const results = [
       { score: 0.8, payload: { chunkType: "function", methodLines: 200, methodDensity: 80 } },
-      { score: 0.9, payload: { chunkType: "function", methodLines: 10, methodDensity: 30 } },
+      { score: 0.8, payload: { chunkType: "function", methodLines: 10, methodDensity: 30 } },
     ];
 
     const ranked = await reranker.rerank(results, "decomposition", "semantic_search");
@@ -51,7 +53,7 @@ describe("Decomposition reranking produces scores in 0-1", () => {
       expect(r.score).toBeLessThanOrEqual(1);
     }
 
-    // Large dense method should rank first despite lower similarity
+    // Large dense method should rank first on size + density.
     expect(ranked[0].payload?.methodLines).toBe(200);
   });
 
