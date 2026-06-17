@@ -37,12 +37,25 @@ overlay path read.
 Two consumers, one declaration:
 
 - **Score path** — `confidenceDampening(supportValue, k)` attenuates
-  derived-signal contribution to ranking. The reranker resolves `k` in this
-  priority order:
-  1. **Adaptive** — `ctx.dampeningThreshold` (the support signal's
-     `adaptivePercentile` value, read from collection stats).
+  derived-signal contribution to ranking. **Scope-aware (tea-rags-mcp-eab6):**
+  blended signals dampen each scope's component by its OWN support before the
+  alpha-blend —
+  `value = alpha·(chunkVal·damp_chunk) + (1-alpha)·(fileVal·damp_file)` — so a
+  low-N chunk inside a high-commit file is no longer granted the file's
+  confidence (and a high-N chunk in a low-commit file is no longer
+  over-dampened). The reranker resolves a per-scope `k` (`k_f` from
+  `file.{support}`, `k_c` from `chunk.{support}`, passed as
+  `ctx.dampeningThreshold` / `ctx.dampeningThresholdChunk`) in this priority
+  order:
+  1. **Adaptive** — the support signal's `adaptivePercentile` value at that
+     scope, read from collection stats.
   2. **Floor** — `confidence.score.threshold` (descriptor-static).
   3. **FALLBACK_K** — defensive constant on the derived signal class.
+
+  File-only signals (`ownership`, `recentActivityConcentration`) read only
+  `dampeningThreshold` and are unchanged. Pure-file payloads (alpha=0) are
+  numerically identical to the pre-eab6 single-dampening path.
+
 - **Label path** — walks `label.rules` ascending by resolved `whenSupportBelow`;
   first matching rule caps the overlay label at `ceiling`. Raw `value` in
   overlay is preserved.
@@ -202,9 +215,13 @@ fit. Ownership-flavor signals arguably want `blameContributorCount` support —
 proposed in follow-up. Don't change support without numerical-equivalence
 regression.
 
-Resolution is **same-scope only**. A `git.chunk.bugFixRate` descriptor with
-`support: "commitCount"` resolves to `git.chunk.commitCount` (not file).
-Cross-scope reads are explicitly **out of scope** for the current mechanism.
+Resolution is **same-scope only**, on BOTH the label AND the score path
+(tea-rags-mcp-eab6 closed the gap — the score path was previously file-scope
+only). A `git.chunk.bugFixRate` descriptor with `support: "commitCount"`
+resolves to `git.chunk.commitCount` (not file); a blended derived signal damps
+its chunk component by `git.chunk.commitCount` and its file component by
+`git.file.commitCount`. Cross-scope reads (a chunk signal reading file support)
+remain explicitly **out of scope**.
 
 ## `score` vs `label` — when to use each
 

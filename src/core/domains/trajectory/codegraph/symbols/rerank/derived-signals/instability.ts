@@ -1,6 +1,6 @@
+import { confidenceDampening } from "../../../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../../contracts/types/trajectory.js";
-import { confidenceDampening } from "../../../../../../contracts/signal-utils.js";
 import { codegraphFileNum } from "./helpers.js";
 
 /**
@@ -19,7 +19,7 @@ import { codegraphFileNum } from "./helpers.js";
 export class InstabilitySignal implements DerivedSignalDescriptor {
   readonly name = "instability";
   readonly description = "Martin instability ratio (already normalised to [0,1])";
-  readonly sources = ["codegraph.file.instability"];
+  readonly sources = ["file.instability"];
   readonly defaultBound = 1;
   private static readonly FALLBACK_K = 5;
   extract(raw: Record<string, unknown>, ctx?: ExtractContext): number {

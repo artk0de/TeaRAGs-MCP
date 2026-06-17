@@ -14,14 +14,16 @@ export class SecurityAuditCompositePreset implements CompositeRerankPreset {
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "find_similar", "trace_path"];
   readonly requires = ["codegraph.symbols", "git"] as const;
+  // chunkChurn dropped (signalLevel "file" → payloadAlpha 0 → always-0 dead
+  // weight). Mirrors the git securityAudit redistribution: bugFix +0.05,
+  // volatility +0.05; fanIn (the composite's blast-radius axis) stays 0.1.
   readonly weights: ScoringWeights = {
     similarity: 0.2,
     age: 0.15,
     ownership: 0.1,
-    bugFix: 0.1,
-    chunkChurn: 0.1,
+    bugFix: 0.15,
     pathRisk: 0.15,
-    volatility: 0.1,
+    volatility: 0.15,
     fanIn: 0.1,
   };
   readonly overlayMask: OverlayMask = {

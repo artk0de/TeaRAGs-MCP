@@ -16,7 +16,10 @@ export class OwnershipPreset implements RerankPreset {
   readonly description = "Code with single dominant author — knowledge transfer risk";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
-  readonly weights: ScoringWeights = { similarity: 0.35, ownership: 0.3, knowledgeSilo: 0.25, chunkChurn: 0.1 };
+  // chunkChurn dropped: signalLevel "file" forces payloadAlpha 0, so it always
+  // scored 0 while its 0.1 weight diluted the real signals. Budget moved to the
+  // file-level ownership axis (ownership +0.05, knowledgeSilo +0.05).
+  readonly weights: ScoringWeights = { similarity: 0.35, ownership: 0.35, knowledgeSilo: 0.3 };
   readonly overlayMask: OverlayMask = {
     file: ["blameDominantAuthorPct", "blameContributorCount", "recentDominantAuthorPct", "recentContributorCount"],
     chunk: ["blameDominantAuthorPct", "blameContributorCount", "recentContributorCount", "commitCount"],

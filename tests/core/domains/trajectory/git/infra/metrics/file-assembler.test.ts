@@ -34,8 +34,8 @@ describe("assembleFileSignals", () => {
     expect(result.linesDeleted).toBe(50);
     expect(result.fileChurnCount).toBe(250);
     expect(result.relativeChurn).toBeCloseTo(0.83, 1);
-    // Laplace-smoothed: (1 + 0.5) / (3 + 1.0) = 1.5/4.0 = 0.375 → 38
-    expect(result.bugFixRate).toBe(38);
+    // Unsmoothed: 1 fix / 3 commits = 33
+    expect(result.bugFixRate).toBe(33);
     expect(result.recentContributorCount).toBe(2);
     expect(result.lastCommitHash).toBe("a3");
   });

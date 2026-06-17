@@ -240,12 +240,12 @@ describe("gitDerivedSignals", () => {
       // file: blameContributorCount=1, commitCount=20, chunk: blameContributorCount=2, commitCount=10
       // alpha = 0.5
       // effectiveLineContributorCount = 0.5 * 2 + 0.5 * 1 = 1.5
-      // 1.5 is not exactly 1 or 2 → returns 0 (strict equality check)
+      // piecewise-linear siloScore(1.5) = 1.0 - 0.5*0.5 = 0.75; commitCount 20 → full confidence
       const payload = fakePayload({
         file: { blameContributorCount: 1, commitCount: 20 },
         chunk: { blameContributorCount: 2, commitCount: 10 },
       });
-      expect(byName("knowledgeSilo").extract(payload)).toBe(0);
+      expect(byName("knowledgeSilo").extract(payload)).toBeCloseTo(0.75, 6);
     });
   });
 

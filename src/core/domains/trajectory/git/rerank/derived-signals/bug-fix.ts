@@ -1,6 +1,6 @@
 import type { DerivedSignalDescriptor } from "../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
-import { blendNormalized, confidenceDampening, fileNum } from "./helpers.js";
+import { blendNormalizedDamped, chunkNum, confidenceDampening, fileNum } from "./helpers.js";
 
 /**
  * Measures the proportion of commits that were bug fixes.
@@ -31,14 +31,15 @@ export class BugFixSignal implements DerivedSignalDescriptor {
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const fb = ctx?.bounds?.["file.bugFixRate"] ?? this.defaultBound;
     const cb = ctx?.bounds?.["chunk.bugFixRate"] ?? this.defaultBound;
-    let value = blendNormalized(rawSignals, "bugFixRate", fb, cb, ctx?.signalLevel);
-    // Precedence: ADAPTIVE (from collection stats via reranker.resolveDampeningThreshold)
-    // > descriptor FLOOR (confidence.score.threshold) > FALLBACK_K (defensive constant).
-    // The static threshold on the descriptor is the floor, not the primary —
-    // adaptive scales with the codebase's commit distribution.
-    const k = ctx?.dampeningThreshold ?? ctx?.confidence?.score?.threshold ?? BugFixSignal.FALLBACK_K;
+    // Per-scope confidence: dampen each side by its OWN support sample size.
+    // Precedence per scope: ADAPTIVE (reranker collection-stats percentile) >
+    // descriptor FLOOR (confidence.score.threshold) > FALLBACK_K.
+    const floor = ctx?.confidence?.score?.threshold ?? BugFixSignal.FALLBACK_K;
+    const kf = ctx?.dampeningThreshold ?? floor;
+    const kc = ctx?.dampeningThresholdChunk ?? floor;
     const supportName = ctx?.confidence?.support ?? "commitCount";
-    value *= confidenceDampening(fileNum(rawSignals, supportName), k);
-    return value;
+    const dampFile = confidenceDampening(fileNum(rawSignals, supportName), kf);
+    const dampChunk = confidenceDampening(chunkNum(rawSignals, supportName), kc);
+    return blendNormalizedDamped(rawSignals, "bugFixRate", fb, cb, ctx?.signalLevel, dampFile, dampChunk);
   }
 }
