@@ -141,6 +141,9 @@ export function createComposition(options: CompositionOptions = {}): Composition
   const compositePresets = buildCompositePresets(new Set(registry.getRegisteredKeys()));
   const resolvedPresets = resolvePresets(registry.getAllPresets(), compositePresets);
   const reranker = new Reranker(allDerivedSignals, resolvedPresets, allPayloadSignalDescriptors);
+  // Passthrough the registered filter-preset names so the MCP schema layer
+  // (SchemaBuilder) can surface them through its single Reranker dependency.
+  reranker.setFilterPresetNames(registry.filterPresetNames());
 
   return {
     registry,

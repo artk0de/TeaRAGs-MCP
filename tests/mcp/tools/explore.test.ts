@@ -34,6 +34,7 @@ function makeHarness() {
 
   const schemaBuilder = {
     buildRerankSchema: vi.fn(() => z.any()),
+    buildFilterSchema: vi.fn(() => z.any()),
   } as unknown as SchemaBuilder;
 
   const server = {} as Parameters<typeof registerSearchTools>[0];
