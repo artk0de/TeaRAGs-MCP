@@ -57,9 +57,18 @@ L3 pathPattern = null                             (project-wide)
 1. Call `find_similar` (or `semantic_search` / `hybrid_search` if only
    `behaviorQuery` is available) with:
    - `rerank: "proven"`
+   - `filter: { presets: "battleTested" }` — narrows to genuinely
+     battle-tested code; composes (AND) with any `pathPattern` / locality scoping
    - `pathPattern: <level>` (omit for L3)
    - `limit: <input limit, default 10>`
    - inputs: `positiveIds` | `positiveCode` | `query: behaviorQuery`
+
+   **Relax-on-empty:** if the call returns 0 results, re-run once with
+   `filter: { presets: "production" }` (hygiene only; no battle-tested
+   guarantee) and record `"no battle-tested reference found; widened to
+   production code"` in `diagnostics`. A reference is required — never
+   return empty silently when a relax is still possible.
+
 2. Apply quality gate over result overlay labels:
    - `ideal_count` = chunks where
      - `commitCount` label is `"low"` or `"typical"`, AND

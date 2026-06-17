@@ -69,6 +69,8 @@ Read `## When` section. Custom conditions evaluated before hard rules.
 ### Step 2: TEMPLATE
 
 Delegate to `tea-rags:extract-project-patterns` with:
+<!-- extract-project-patterns applies filter:{presets:"battleTested"} internally;
+     on empty it relaxes to {presets:"production"} and annotates diagnostics -->
 
 - `positiveIds` | `positiveCode` = best verified result from Step 1 cascade (or
   set `behaviorQuery` if no chunk/code is available)
