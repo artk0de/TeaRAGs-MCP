@@ -138,6 +138,10 @@ export class ExploreOps {
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "rank_chunks");
+    // Load collection stats BEFORE buildFilter so filter-preset adaptive
+    // percentiles resolve from real Stats on the first (cold) query, not
+    // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
+    await this.ensureStats(collectionName);
     const filter = this.buildFilter(request, level, "rank_chunks");
     return this.executeExplore(
       this.scrollRankStrategy,
@@ -155,6 +159,10 @@ export class ExploreOps {
     await this.modelGuard?.ensureMatch(collectionName);
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(undefined, request.rerank, this.reranker, "search_code");
+    // Load collection stats BEFORE buildFilter so filter-preset adaptive
+    // percentiles resolve from real Stats on the first (cold) query, not
+    // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
+    await this.ensureStats(collectionName);
     const filter = this.buildFilter(request, level, "search_code");
     return this.executeExplore(
       this.vectorStrategy,
@@ -166,6 +174,10 @@ export class ExploreOps {
   async findSimilar(request: FindSimilarRequest, strategy: SimilarSearchStrategy): Promise<ExploreResponse> {
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
+    // Load collection stats BEFORE buildFilter so filter-preset adaptive
+    // percentiles resolve from real Stats on the first (cold) query, not
+    // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
+    await this.ensureStats(collectionName);
     const filter = this.buildFilter(request, level);
     return this.executeExplore(strategy, buildFindSimilarContext(request, collectionName, filter, level), path);
   }
@@ -240,6 +252,10 @@ export class ExploreOps {
     const { embedding } = await this.embeddings.embed(request.query);
     const rerank = resolveDocRerank(request.rerank, request.documentation, request.language);
     const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
+    // Load collection stats BEFORE buildFilter so filter-preset adaptive
+    // percentiles resolve from real Stats on the first (cold) query, not
+    // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
+    await this.ensureStats(collectionName);
     const filter = this.buildFilter(request, level);
     return this.executeExplore(
       strategy,
