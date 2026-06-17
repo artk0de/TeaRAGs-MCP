@@ -12,5 +12,8 @@ export const securityPathsFilterPreset: FilterPresetDef = {
     { signal: "relativePath", op: "contains", value: "password", occur: "should" },
     { signal: "relativePath", op: "contains", value: "credential", occur: "should" },
     { signal: "relativePath", op: "contains", value: "permission", occur: "should" },
+    { signal: "relativePath", op: "contains", value: "acl", occur: "should" },
+    { signal: "relativePath", op: "contains", value: "oauth", occur: "should" },
+    { signal: "relativePath", op: "contains", value: "jwt", occur: "should" },
   ],
 };
