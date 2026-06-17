@@ -18,7 +18,7 @@ describe("git filter presets", () => {
   it("panicZone: recency required + at-least-one of bugFix/volatility (nested should)", () => {
     const f = compileFilterPreset(byName("panicZone"), undefined, "file");
     expect(f.must).toContainEqual({ key: "git.file.recencyWeightedFreq", range: { gte: 1 } });
-    const should = (f.must as Array<{ should?: unknown[] }>).find((c) => "should" in c)?.should;
+    const should = (f.must as { should?: unknown[] }[]).find((c) => "should" in c)?.should;
     expect(should).toContainEqual({ key: "git.file.bugFixRate", range: { gte: 30 } });
     expect(should).toContainEqual({ key: "git.file.churnVolatility", range: { gte: 25 } });
   });

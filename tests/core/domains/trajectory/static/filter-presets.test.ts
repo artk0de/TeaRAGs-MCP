@@ -24,7 +24,7 @@ describe("static filter presets", () => {
   it("securityPaths matches security path tokens via should-group of text matches", () => {
     const f = compileFilterPreset(byName("securityPaths"), undefined, "chunk");
     // should-group compiles to nested must:[{should:[...]}]
-    const should = (f.must as Array<{ should?: unknown[] }>).find((c) => "should" in c)?.should as Array<Record<string, unknown>>;
+    const should = (f.must as { should?: unknown[] }[]).find((c) => "should" in c)?.should as Record<string, unknown>[];
     expect(should).toContainEqual({ key: "relativePath", match: { text: "auth" } });
     expect(should).toContainEqual({ key: "relativePath", match: { text: "crypto" } });
   });
