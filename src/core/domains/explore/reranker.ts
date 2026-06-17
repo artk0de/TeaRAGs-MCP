@@ -100,6 +100,16 @@ export class Reranker {
     return this.collectionStats !== undefined;
   }
 
+  /**
+   * Read the loaded collection stats (undefined when none loaded).
+   * Consumed at search-stage filter resolution so the filter-preset compiler
+   * can resolve adaptive percentile thresholds with the same stats the
+   * reranker uses.
+   */
+  getCollectionStats(): CollectionSignalStats | undefined {
+    return this.collectionStats;
+  }
+
   /** Set collection-wide signal stats (computed after indexing). */
   setCollectionStats(
     stats: CollectionSignalStats,

@@ -72,6 +72,7 @@ function makeMockReranker(overrides: Record<string, any> = {}) {
   return {
     hasCollectionStats: false,
     setCollectionStats: vi.fn(),
+    getCollectionStats: vi.fn().mockReturnValue(undefined),
     getPreset: vi.fn().mockReturnValue({ similarity: 1 }),
     getFullPreset: vi.fn().mockReturnValue({ signalLevel: undefined }),
     getDescriptors: vi.fn().mockReturnValue([]),

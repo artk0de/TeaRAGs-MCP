@@ -11,11 +11,20 @@
  * BEFORE delegation to ExploreOps.
  */
 
+import { mergeQdrantFilters } from "../../../adapters/qdrant/filters/utils.js";
+import type { QdrantFilter } from "../../../adapters/qdrant/types.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { FilterLevel } from "../../../contracts/types/provider.js";
+import type { FilterPresetDef, FilterSpec } from "../../../contracts/types/filter-preset.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
-import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import { CollectionNotFoundError as DomainCollectionNotFoundError } from "../../../domains/explore/errors.js";
+import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import {
+  CollectionNotFoundError as DomainCollectionNotFoundError,
+  EmptyFilterPresetError,
+  UnknownFilterPresetError,
+} from "../../../domains/explore/errors.js";
+import { compileFilterPreset } from "../../../domains/trajectory/filter-presets/compiler.js";
 import { IndexMetricsQuery } from "../../../domains/explore/queries/index-metrics.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import {
@@ -129,7 +138,7 @@ export class ExploreOps {
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "rank_chunks");
-    const filter = this.buildFilter(request, level);
+    const filter = this.buildFilter(request, level, "rank_chunks");
     return this.executeExplore(
       this.scrollRankStrategy,
       buildRankChunksContext(request, collectionName, filter, level),
@@ -146,7 +155,7 @@ export class ExploreOps {
     await this.modelGuard?.ensureMatch(collectionName);
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(undefined, request.rerank, this.reranker, "search_code");
-    const filter = this.buildFilter(request, level);
+    const filter = this.buildFilter(request, level, "search_code");
     return this.executeExplore(
       this.vectorStrategy,
       buildSearchCodeContext(request, collectionName, embedding, filter),
@@ -239,13 +248,29 @@ export class ExploreOps {
     );
   }
 
-  /** Merge typed filter params with raw filter via registry. */
+  /**
+   * Resolve the user `filter` param (raw OR {presets}) against the rerank
+   * preset's `filter` default, then merge with typed filter params via the
+   * registry.
+   *
+   * Resolution order: replace-semantics ({presets}/raw param wins over preset
+   * default, {} clears) happens FIRST in `resolveFilterSpec`, yielding a plain
+   * Qdrant filter; that resolved object is then handed to `buildMergedFilter`
+   * which AND-merges it with the typed params. Collection stats (loaded by
+   * `ensureStats` before this runs) feed the preset compiler's adaptive
+   * percentile thresholds.
+   */
   private buildFilter(
     request: Record<string, unknown> | { filter?: Record<string, unknown> },
     level: SignalLevel | undefined,
+    tool: "semantic_search" | "search_code" | "rank_chunks" = "semantic_search",
   ): Record<string, unknown> | undefined {
-    const req = request as Record<string, unknown> & { filter?: Record<string, unknown> };
-    return this.registry.buildMergedFilter(req, req.filter, level);
+    const req = request as Record<string, unknown> & { filter?: FilterSpec; rerank?: unknown };
+    const presetName = typeof req.rerank === "string" ? req.rerank : undefined;
+    const presetDefault = presetName ? this.reranker.getFullPreset(presetName, tool)?.filter : undefined;
+    const stats = this.reranker.getCollectionStats();
+    const resolved = resolveFilterSpec(req.filter, presetDefault, stats, level ?? "chunk", this.registry);
+    return this.registry.buildMergedFilter(req, resolved, level);
   }
 
   private buildFindSymbolStrategy(request: FindSymbolRequest): BaseExploreStrategy {
@@ -318,6 +343,62 @@ export class ExploreOps {
 // ---------------------------------------------------------------------------
 // File-local helpers (pure functions)
 // ---------------------------------------------------------------------------
+
+/** Minimal registry surface resolveFilterSpec needs — pure preset-def lookup. */
+interface FilterPresetLookup {
+  getFilterPresetDef: (name: string) => FilterPresetDef | undefined;
+}
+
+/** Narrow a FilterSpec to its `{presets}` variant (string `presets` field present). */
+function isPresetsSpec(spec: FilterSpec): spec is { presets: string } {
+  return typeof (spec as { presets?: unknown }).presets === "string";
+}
+
+/**
+ * Resolve a `filter` spec (raw Qdrant filter OR `{presets}` CSV) against the
+ * rerank preset's `filter` default, returning a plain Qdrant filter object.
+ *
+ * REPLACE semantics: an explicit `spec` wins outright over `presetDefault` —
+ * the default only fills the slot when no param was given (default-argument
+ * mental model). An explicit empty object `{}` clears the default (returns
+ * undefined). `{presets}` is CSV-resolved against the registry, each named
+ * preset compiled with collection stats and AND-merged.
+ *
+ * Lives here (api/internal) rather than the trajectory registry per domain
+ * isolation: this layer may legally import the compiler (trajectory), the
+ * typed errors (explore), and the filter merge (adapters).
+ */
+export function resolveFilterSpec(
+  spec: FilterSpec | undefined,
+  presetDefault: FilterSpec | undefined,
+  stats: CollectionSignalStats | undefined,
+  level: FilterLevel,
+  registry: FilterPresetLookup,
+): Record<string, unknown> | undefined {
+  const effective = spec ?? presetDefault;
+  if (effective === undefined) return undefined;
+  // Explicit empty object clears the preset default.
+  if (Object.keys(effective).length === 0) return undefined;
+
+  if (isPresetsSpec(effective)) {
+    const names = effective.presets
+      .split(",")
+      .map((n) => n.trim())
+      .filter((n) => n.length > 0);
+    if (names.length === 0) throw new EmptyFilterPresetError(effective.presets);
+
+    let merged: QdrantFilter | undefined;
+    for (const name of names) {
+      const def = registry.getFilterPresetDef(name);
+      if (!def) throw new UnknownFilterPresetError(name);
+      merged = mergeQdrantFilters(merged, compileFilterPreset(def, stats, level));
+    }
+    return merged as Record<string, unknown> | undefined;
+  }
+
+  // Raw filter — pass through as-is.
+  return effective;
+}
 
 /** Auto-apply documentationRelevance preset for doc searches without explicit rerank. */
 function resolveDocRerank(
