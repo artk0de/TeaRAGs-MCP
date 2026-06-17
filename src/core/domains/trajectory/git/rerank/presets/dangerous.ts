@@ -16,6 +16,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
  */
 export class DangerousPreset implements RerankPreset {
   readonly name = "dangerous";
+  readonly filter = { presets: "production" } as const;
   readonly description = "Surface high-risk code: bug-prone, volatile, single-owner";
   readonly tools = ["semantic_search", "hybrid_search", "find_similar", "rank_chunks"];
   readonly weights: ScoringWeights = {
