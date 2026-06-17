@@ -11,4 +11,11 @@ export type * from "./types/chunker.js";
 export type * from "./types/language.js";
 export type * from "./types/enrichment.js";
 export type * from "./types/ingest-config.js";
+export type {
+  FilterSpec,
+  FilterPresetDef,
+  AdaptiveFilterCondition,
+  FilterThreshold,
+  FilterPercentile,
+} from "./types/filter-preset.js";
 export * from "./signal-utils.js";
