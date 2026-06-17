@@ -78,3 +78,18 @@ export function confidenceDampening(sampleCount: number, threshold: number, powe
   if (sampleCount >= threshold) return 1;
   return Math.pow(sampleCount / threshold, power);
 }
+
+// ---------------------------------------------------------------------------
+// Payload key mapping
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a LOGICAL payload key to its PHYSICAL Qdrant path.
+ * Codegraph signals are stored nested as `codegraph.symbols.{scope}.X` but
+ * addressed logically as `codegraph.{scope}.X`. git/static keys are already physical.
+ * Single source for both collection-stats and the filter-preset compiler.
+ */
+export function toPhysicalPayloadKey(logicalKey: string): string {
+  const m = /^codegraph\.(file|chunk)\.(.+)$/.exec(logicalKey);
+  return m ? `codegraph.symbols.${m[1]}.${m[2]}` : logicalKey;
+}

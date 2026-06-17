@@ -19,6 +19,7 @@ import type {
   ScopedSignalStats,
   SignalStats,
 } from "../../../contracts/types/trajectory.js";
+import { toPhysicalPayloadKey } from "../../../contracts/signal-utils.js";
 import { detectScope, type ScopeDetectionConfig } from "../../../infra/scope-detection.js";
 import { CODE_LANGUAGES } from "../pipeline/chunker/config.js";
 
@@ -43,20 +44,17 @@ function readPayloadPath(payload: Record<string, unknown>, path: string): unknow
   // Try flat key first (Qdrant stores dot-notation paths as flat keys)
   if (path in payload) return payload[path];
 
-  // Codegraph nested-symbols form: payload.codegraph.symbols.{scope}.<bareKey>
-  const cgMatch = /^codegraph\.(file|chunk)\.(.+)$/.exec(path);
-  if (cgMatch) {
-    const { codegraph } = payload as { codegraph?: unknown };
-    if (codegraph && typeof codegraph === "object") {
-      const { symbols } = codegraph as { symbols?: unknown };
-      if (symbols && typeof symbols === "object") {
-        const scoped = (symbols as Record<string, unknown>)[cgMatch[1]];
-        const bareKey = cgMatch[2];
-        if (scoped && typeof scoped === "object" && bareKey in (scoped as Record<string, unknown>)) {
-          return (scoped as Record<string, unknown>)[bareKey];
-        }
-      }
+  // Codegraph nested-symbols form: logical `codegraph.{file|chunk}.X` maps to
+  // physical `codegraph.symbols.{file|chunk}.X` via shared helper (single source).
+  const physicalKey = toPhysicalPayloadKey(path);
+  if (physicalKey !== path) {
+    const parts = physicalKey.split(".");
+    let current: unknown = payload;
+    for (const part of parts) {
+      if (current === null || current === undefined || typeof current !== "object") break;
+      current = (current as Record<string, unknown>)[part];
     }
+    if (current !== undefined) return current;
   }
 
   // Fall back to nested traversal
