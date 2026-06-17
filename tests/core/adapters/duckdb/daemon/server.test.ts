@@ -325,6 +325,31 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 
+  it("recordRunStats then getRunStats round-trips the per-receiver-kind breakdown (bd j431)", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_runstats_v1";
+    await server.handle({ id: 1, op: "handshake", params: { collection: c } });
+    const rec = await server.handle({
+      id: 2,
+      op: "recordRunStats",
+      params: {
+        collection: c,
+        rows: [
+          { receiverKind: "constant", attempted: 100, resolved: 90 },
+          { receiverKind: "bareCall", attempted: 50, resolved: 10 },
+        ],
+      },
+    });
+    expect(rec.ok).toBe(true);
+    const got = await server.handle({ id: 3, op: "getRunStats", params: { collection: c } });
+    expect(got.ok).toBe(true);
+    expect((got as { result: unknown }).result).toEqual([
+      { receiverKind: "bareCall", attempted: 50, resolved: 10 },
+      { receiverKind: "constant", attempted: 100, resolved: 90 },
+    ]);
+    await pool.closeAll();
+  });
+
   it("dispatches getCalleeEdges and serialises the Map as entries", async () => {
     const { server, pool } = makeServer();
     const c = "code_callee_edges_v1";

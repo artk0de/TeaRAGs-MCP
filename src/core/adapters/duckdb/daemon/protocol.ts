@@ -3,6 +3,7 @@ import type {
   GraphEdges,
   GraphFileNode,
   RelPath,
+  ResolveRunStatsRow,
   SymbolDefinition,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
@@ -26,6 +27,7 @@ export type DaemonOp =
   | "replaceCycles"
   | "replacePageRanks"
   | "checkpoint"
+  | "recordRunStats"
   | "computeAndPersistCyclesAndSignals"
   // ── reads (the daemon owns the sole DuckDB connection, so all reads route
   //    through its own RW connection instead of a conflicting cross-process
@@ -39,6 +41,7 @@ export type DaemonOp =
   | "getCalledByCount"
   | "getCallSiteCount"
   | "hasData"
+  | "getRunStats"
   | "listAllSymbols"
   | "getTransitiveImpact"
   | "findCycles"
@@ -54,7 +57,7 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // handshake | checkpoint | computeAndPersistCyclesAndSignals | hasData | listAllSymbols
+    | { collection: string } // handshake | checkpoint | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
     | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut
     | { collection: string; relPath: RelPath; definitions: SymbolDefinition[] } // upsertSymbols
@@ -65,6 +68,7 @@ export interface DaemonRequest {
     | { collection: string; scope: CycleScope; pathPattern?: string } // findCycles (pathPattern) | listAdjacency
     | { collection: string; scope: CycleScope; sccs: readonly (readonly string[])[] } // replaceCycles
     | { collection: string; ranks: [string, number][] } // replacePageRanks
+    | { collection: string; rows: ResolveRunStatsRow[] } // recordRunStats
     | { collection: string; fqName: string }; // getSupertypes | getSubtypes | getTransitiveSubtypes
 }
 

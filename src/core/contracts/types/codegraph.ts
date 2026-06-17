@@ -695,6 +695,20 @@ export interface GraphDbClient {
    *  by drift detection. */
   hasData: () => Promise<boolean>;
 
+  // ── Resolve-stats surface (bd tea-rags-mcp-j431) ──
+  /**
+   * Replace the whole `cg_run_stats` table with the supplied per-receiver-kind
+   * breakdown. Overwrite (not merge): a run records every kind it observed, so
+   * stale rows from a prior run must not survive. Empty input clears the table.
+   */
+  recordRunStats: (rows: ResolveRunStatsRow[]) => Promise<void>;
+  /**
+   * Read the persisted per-receiver-kind resolve breakdown, ordered by
+   * `receiverKind`. Empty array before any run is recorded. Routed through the
+   * daemon proxy so MCP clients can read it without holding the DuckDB lock.
+   */
+  getRunStats: () => Promise<ResolveRunStatsRow[]>;
+
   // ── Symbol-table persistence (Slice 2 / A4c) ──
   // The in-memory GlobalSymbolTable needs a disk-backed copy so cold
   // starts and partial reindexes can hydrate without re-walking every
@@ -820,6 +834,30 @@ export interface GraphFileNode {
   language: string;
 }
 
+/**
+ * Provenance of a method-call edge (bd tea-rags-mcp-2jet).
+ *
+ * - `exact`     — receiver/ancestor method pinned directly (the baseline).
+ * - `cone`      — bounded CHA devirtualization: a polymorphic call fanned out
+ *                 to overriding subtypes (|cone| ≤ K). Each cone edge carries
+ *                 `confidence = 1/N` so N candidate targets share unit weight.
+ * - `poly-base` — hub fan-out capped: one edge to the base declaration, full
+ *                 subtype expansion deferred to query-time `getSubtypes`.
+ */
+export type MethodEdgeKind = "exact" | "cone" | "poly-base";
+
+/**
+ * One row of the per-receiver-kind resolve breakdown (bd tea-rags-mcp-j431),
+ * persisted to `cg_run_stats` (overwritten each enrichment run) so the
+ * daemon-readable proxy can surface it — worker stderr is not captured by the
+ * MCP host. `receiverKind` mirrors the `ReceiverKind` union the provider emits.
+ */
+export interface ResolveRunStatsRow {
+  receiverKind: string;
+  attempted: number;
+  resolved: number;
+}
+
 export interface GraphEdges {
   fileEdges: { targetRelPath: RelPath; importText: string | null }[];
   methodEdges: {
@@ -827,6 +865,10 @@ export interface GraphEdges {
     targetSymbolId: SymbolId | null;
     targetRelPath: RelPath;
     callExpression: string;
+    /** Edge provenance (bd 2jet). Omitted ⇒ persisted as `exact`. */
+    edgeKind?: MethodEdgeKind;
+    /** CHA fan-out dampening in (0,1]. Omitted ⇒ persisted as `1.0`. */
+    confidence?: number;
   }[];
   /** Resolved inheritance edges for this file's source classes
    *  (bd tea-rags-mcp-f10y). Persisted to cg_symbols_inheritance via upsertFile;

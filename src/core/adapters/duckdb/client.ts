@@ -33,6 +33,7 @@ import type {
   InheritanceEdgeRow,
   InheritanceKind,
   RelPath,
+  ResolveRunStatsRow,
   SymbolDefinition,
   SymbolId,
 } from "../../contracts/types/codegraph.js";
@@ -318,9 +319,21 @@ export class DuckDbGraphClient implements GraphDbClient {
         // and emits one CallRef per occurrence; the PK
         // (source_symbol_id, call_expression, target_symbol_id) is
         // edge-existence semantics, not occurrence count.
+        // edge_kind/confidence (bd 2jet) default to exact/1.0 when the
+        // resolver did not mark the edge as CHA fan-out. INSERT OR IGNORE
+        // keeps the first edge's provenance when the same (source, call,
+        // target) tuple repeats — edge-existence semantics, not occurrence.
         await this.run(
-          "INSERT OR IGNORE INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression) VALUES (?, ?, ?, ?, ?)",
-          [e.sourceSymbolId, node.relPath, e.targetSymbolId, e.targetRelPath, e.callExpression],
+          "INSERT OR IGNORE INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, edge_kind, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [
+            e.sourceSymbolId,
+            node.relPath,
+            e.targetSymbolId,
+            e.targetRelPath,
+            e.callExpression,
+            e.edgeKind ?? "exact",
+            e.confidence ?? 1.0,
+          ],
         );
       }
       // Inheritance edges (bd tea-rags-mcp-f10y). Per-source-file delete+insert,
@@ -782,6 +795,39 @@ export class DuckDbGraphClient implements GraphDbClient {
   async hasData(): Promise<boolean> {
     const rows = await this.queryAll<{ n: number }>("SELECT COUNT(*) AS n FROM cg_symbols_files");
     return Number(rows[0]?.n ?? 0) > 0;
+  }
+
+  async recordRunStats(rows: ResolveRunStatsRow[]): Promise<void> {
+    return this.serialize(async () => {
+      // Overwrite semantics: DELETE+INSERT inside one transaction so a prior
+      // run's receiver kinds never leak into this run's breakdown.
+      await this.exec("BEGIN");
+      try {
+        await this.run("DELETE FROM cg_run_stats");
+        for (const r of rows) {
+          await this.run("INSERT INTO cg_run_stats (receiver_kind, attempted, resolved) VALUES (?, ?, ?)", [
+            r.receiverKind,
+            r.attempted,
+            r.resolved,
+          ]);
+        }
+        await this.exec("COMMIT");
+      } catch (err) {
+        await this.exec("ROLLBACK");
+        throw err;
+      }
+    });
+  }
+
+  async getRunStats(): Promise<ResolveRunStatsRow[]> {
+    const rows = await this.queryAll<{ receiver_kind: string; attempted: number | bigint; resolved: number | bigint }>(
+      "SELECT receiver_kind, attempted, resolved FROM cg_run_stats ORDER BY receiver_kind",
+    );
+    return rows.map((r) => ({
+      receiverKind: r.receiver_kind,
+      attempted: Number(r.attempted),
+      resolved: Number(r.resolved),
+    }));
   }
 
   // ── Class hierarchy (bd tea-rags-mcp-f10y) ──

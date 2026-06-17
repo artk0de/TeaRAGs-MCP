@@ -11,6 +11,7 @@ import type {
   HierarchySnapshot,
   InheritanceEdge,
   RelPath,
+  ResolveRunStatsRow,
   SymbolDefinition,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
@@ -199,6 +200,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     await this.call("checkpoint", {});
   }
 
+  async recordRunStats(rows: ResolveRunStatsRow[]): Promise<void> {
+    await this.call("recordRunStats", { rows });
+  }
+
   /**
    * Delete the superseded version's DuckDB file after the Qdrant alias swap.
    * Concrete daemon method (NOT on the `GraphDbClient` interface) — driven by
@@ -262,6 +267,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async hasData(): Promise<boolean> {
     return (await this.call("hasData", {})) as boolean;
+  }
+
+  async getRunStats(): Promise<ResolveRunStatsRow[]> {
+    return (await this.call("getRunStats", {})) as ResolveRunStatsRow[];
   }
 
   async listAllSymbols(): Promise<SymbolDefinition[]> {

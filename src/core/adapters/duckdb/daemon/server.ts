@@ -4,6 +4,7 @@ import type {
   GraphEdges,
   GraphFileNode,
   RelPath,
+  ResolveRunStatsRow,
   SymbolDefinition,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
@@ -83,6 +84,11 @@ export class CodegraphDaemonServer {
         await graphDb.checkpoint();
         return null;
       }
+      case "recordRunStats": {
+        const { graphDb } = await this.pool.acquire(collection);
+        await graphDb.recordRunStats(p.rows as ResolveRunStatsRow[]);
+        return null;
+      }
       case "computeAndPersistCyclesAndSignals": {
         const { graphDb } = await this.pool.acquire(collection);
         await computeAndPersistCyclesAndSignals(graphDb);
@@ -127,6 +133,10 @@ export class CodegraphDaemonServer {
       case "hasData": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.hasData();
+      }
+      case "getRunStats": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getRunStats();
       }
       case "listAllSymbols": {
         const { graphDb } = await this.pool.acquire(collection);
