@@ -181,6 +181,78 @@ pathPattern**. The typed filter is intent-clear, schema-checked, and survives
 directory restructures. `pathPattern` is for arbitrary directory globs. They
 compose freely.
 
+## Named filter presets (`{presets}` shorthand)
+
+Pass `filter: { presets: "name" }` (or CSV `"a,b,c"` for multiple) to apply a
+named adaptive filter bundle instead of writing a raw Qdrant filter manually.
+Thresholds are collection percentiles (e.g. p75 of `commitCount`) — they scale
+per repository. Cold-start fallbacks apply when stats are unavailable.
+
+**Mutually exclusive with raw filter.** `{ presets: "..." }` and a raw Qdrant
+filter object are a discriminated union — pass one OR the other, not both in the
+same call. Typed params (`language`, `minAgeDays`, `author`, etc.) AND-compose
+freely with `{presets}`.
+
+### Preset catalog (12 total)
+
+**Static — always available:**
+
+| Name            | What it isolates                                          |
+| --------------- | --------------------------------------------------------- |
+| `production`    | Excludes test/docs — hygiene, safe in any mode            |
+| `coreLogic`     | Excludes test/docs/config — core logic only, hygiene      |
+| `securityPaths` | Path-risk signals (auth, crypto, secrets, etc.)           |
+
+**Require git trajectory:**
+
+| Name                | What it isolates                                           |
+| ------------------- | ---------------------------------------------------------- |
+| `freshLegacyEdits`  | Old code (high ageDays) recently modified                  |
+| `fragileSilo`       | Single-author, low-churn, high bug-fix rate                |
+| `panicZone`         | High churn + high bug-fix rate simultaneously              |
+| `godMethods`        | Very high per-chunk import density (structural complexity) |
+| `battleTested`      | High commit count + low bug-fix rate (stable + exercised)  |
+| `abandonedHotspots` | High churn in the past, then quiet for a long time         |
+
+**Require codegraph.symbols trajectory:**
+
+| Name            | What it isolates                                           |
+| --------------- | ---------------------------------------------------------- |
+| `hubs`          | High call-graph fan-in (many callers)                      |
+| `deadCandidates`| Zero callers, zero callees — potential dead code           |
+| `unstableCore`  | High churn + high fan-in (dangerous shared code)           |
+
+Names unavailable when their required trajectory isn't registered are gated out
+automatically. Read `tea-rags://schema/filter-presets` for the live catalog with
+exact threshold definitions.
+
+### Inventory-vs-query rule
+
+A HARD specific filter (e.g. `fragileSilo`, `panicZone`) belongs to
+**inventory mode** — where the query is absent and you want a specific slice of
+the codebase. When a natural-language query is present, rank broadly without
+hard-filtering to preserve recall. Hygiene presets (`production`, `coreLogic`)
+are safe in either mode.
+
+### Examples
+
+```jsonc
+// Inventory: all production-code files in the fragileSilo bucket
+{
+  "query": "",
+  "filter": { "presets": "coreLogic,fragileSilo" },
+  "metaOnly": true
+}
+
+// Triage: securityAudit rerank, security paths narrowed, Ruby only
+{
+  "query": "authentication token validation",
+  "language": "ruby",
+  "filter": { "presets": "securityPaths" },
+  "rerank": "securityAudit"
+}
+```
+
 ## Raw `filter` param (escape hatch)
 
 Use only when typed filters cannot express the constraint: custom payload key,
@@ -232,6 +304,10 @@ dominated by one directory.
 - Typed filter + `pathPattern`: AND across both.
 - Typed filter + raw `filter`: AND across both — raw `filter` adds its
   must/should/must_not on top of the typed constraints.
+- Typed filter + `{presets}`: AND across both — named presets AND-compose with
+  all typed params (`language`, `minAgeDays`, `author`, etc.).
+- `{presets}` vs raw `filter`: **mutually exclusive** — discriminated union;
+  pass one form or the other in a single call, never both.
 - `level: "file"` applies to typed time-based fields uniformly. If you mix a
   file-level typed time filter with a chunk-level raw filter, you must
   understand what scope each part lives in — payload paths differ (`git.file.*`
