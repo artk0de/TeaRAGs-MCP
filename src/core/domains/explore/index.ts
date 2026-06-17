@@ -4,6 +4,8 @@ export {
   HybridNotEnabledError,
   InvalidQueryError,
   InvalidStrategyError,
+  UnknownFilterPresetError,
+  EmptyFilterPresetError,
 } from "./errors.js";
 export type { ExploreErrorCode } from "./errors.js";
 export { Reranker } from "./reranker.js";

@@ -2,6 +2,7 @@
  * Trajectory type system — payload signal descriptors, stats, and extraction context.
  */
 
+import type { FilterPresetDef } from "./filter-preset.js";
 import type { EnrichmentProvider, FilterDescriptor, FilterLevel } from "./provider.js";
 import type { DerivedSignalDescriptor, RerankPreset, SignalLevel } from "./reranker.js";
 import type { StatsAccumulatorDescriptor } from "./stats-accumulator.js";
@@ -19,6 +20,16 @@ export interface TrajectoryFilterBuilder {
     rawFilter?: Record<string, unknown>,
     level?: FilterLevel,
   ) => Record<string, unknown> | undefined;
+  /**
+   * Filter-preset DATA accessors. The registry owns the definitions;
+   * CSV resolution + merge + unknown/empty errors live in the api layer
+   * (ExploreOps), keeping the trajectory→explore boundary intact.
+   * `setFilterPresets` is populated by the composition root; the read
+   * accessors are consumed by ExploreOps to resolve the `presets` CSV.
+   */
+  setFilterPresets: (presets: FilterPresetDef[]) => void;
+  getFilterPresetDef: (name: string) => FilterPresetDef | undefined;
+  filterPresetNames: () => string[];
 }
 
 /** What statistics to compute for this signal at collection level. */
