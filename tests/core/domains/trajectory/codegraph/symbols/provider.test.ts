@@ -167,6 +167,14 @@ describe("CodegraphEnrichmentProvider", () => {
     // 1 resolved / 2 attempted = 0.5
     expect((m as { resolveSuccessRate: number }).resolveSuccessRate).toBeCloseTo(0.5, 5);
 
+    // Per-idiom breakdown (bd tea-rags-mcp-j431): both calls are constant
+    // receivers (Foo, Mystery), one resolves → constant bucket 1/2.
+    const byKind = (
+      m as { resolveByReceiverKind: Record<string, { attempted: number; resolved: number; rate: number }> }
+    ).resolveByReceiverKind;
+    expect(byKind.constant).toEqual({ attempted: 2, resolved: 1, rate: 0.5 });
+    expect(byKind.dynamic).toEqual({ attempted: 0, resolved: 0, rate: 0 });
+
     // Read-and-clear semantics — the next call must start from zero
     // even before another sink cycle. Coordinator relies on this for
     // per-run isolation.
@@ -659,7 +667,10 @@ describe("CodegraphEnrichmentProvider", () => {
     it("skips generated and test files when excludeTests is on", () => {
       const strict = buildProvider(true);
       expect(
-        strict.shouldEnrich({ relPath: "db/schema.rb", classification: { ...base, isSource: false, isGenerated: true } }),
+        strict.shouldEnrich({
+          relPath: "db/schema.rb",
+          classification: { ...base, isSource: false, isGenerated: true },
+        }),
       ).toBe("none");
       expect(strict.shouldEnrich({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } })).toBe(
         "none",
@@ -673,7 +684,10 @@ describe("CodegraphEnrichmentProvider", () => {
         "full",
       );
       expect(
-        loose.shouldEnrich({ relPath: "db/schema.rb", classification: { ...base, isSource: false, isGenerated: true } }),
+        loose.shouldEnrich({
+          relPath: "db/schema.rb",
+          classification: { ...base, isSource: false, isGenerated: true },
+        }),
       ).toBe("none");
     });
   });

@@ -80,6 +80,7 @@ import {
 import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
+import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 
 /**
  * Layered ignore for `discoverSupportedFiles` (tea-rags-mcp-tf1o, hh4m):
@@ -981,10 +982,33 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       return undefined;
     }
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / callsAttempted;
+    const { byReceiverKind } = this.runStats;
+    const resolveByReceiverKind = Object.fromEntries(
+      RECEIVER_KINDS.map((kind) => {
+        const t = byReceiverKind[kind];
+        return [
+          kind,
+          { attempted: t.attempted, resolved: t.resolved, rate: t.attempted === 0 ? 0 : t.resolved / t.attempted },
+        ];
+      }),
+    );
+    // One-line per-idiom diagnostic (bd tea-rags-mcp-j431): surfaces the
+    // resolve breakdown to mcp-logs once per enrichment cycle so each cai0
+    // slice's delta is readable without a DTO change. Mirrors the unconditional
+    // `[codegraph]` diagnostics elsewhere in this provider.
+    if (callsAttempted > 0) {
+      const summary = RECEIVER_KINDS.map((kind) => {
+        const t = byReceiverKind[kind];
+        return `${kind} ${t.resolved}/${t.attempted}`;
+      }).join(", ");
+      process.stderr.write(
+        `[codegraph] resolve by receiver-kind (rate ${resolveSuccessRate.toFixed(2)}): ${summary}\n`,
+      );
+    }
     this.runStats = createEmptyRunStats();
     this.runAncestors = {};
     this.runPrependedAncestors = {};
-    return { extractedFiles, fileEdgeCount, methodEdgeCount, resolveSuccessRate };
+    return { extractedFiles, fileEdgeCount, methodEdgeCount, resolveSuccessRate, resolveByReceiverKind };
   }
 
   private collectionKey(collectionName?: string): string {
@@ -1555,6 +1579,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     for (const chunk of extraction.chunks) {
       for (const call of chunk.calls) {
         this.runStats.callsAttempted += 1;
+        const receiverKind = classifyReceiverKind(call, chunk.localBindings);
+        this.runStats.byReceiverKind[receiverKind].attempted += 1;
         const ctx = {
           callerFile: extraction.relPath,
           callerScope: chunk.scope,
@@ -1611,7 +1637,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             }
           }
         }
-        if (resolved) this.runStats.callsResolved += 1;
+        if (resolved) {
+          this.runStats.callsResolved += 1;
+          this.runStats.byReceiverKind[receiverKind].resolved += 1;
+        }
       }
     }
 
@@ -1626,16 +1655,38 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 }
 
+interface ReceiverKindTally {
+  attempted: number;
+  resolved: number;
+}
+
 interface RunStats {
   extractedFiles: number;
   fileEdgeCount: number;
   methodEdgeCount: number;
   callsAttempted: number;
   callsResolved: number;
+  // Per-idiom resolve breakdown (bd tea-rags-mcp-j431) — attempted/resolved per
+  // receiver kind so each cai0 slice proves a delta on the exact bucket it
+  // targets instead of moving one aggregate resolveSuccessRate.
+  byReceiverKind: Record<ReceiverKind, ReceiverKindTally>;
+}
+
+function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally> {
+  const out = {} as Record<ReceiverKind, ReceiverKindTally>;
+  for (const kind of RECEIVER_KINDS) out[kind] = { attempted: 0, resolved: 0 };
+  return out;
 }
 
 function createEmptyRunStats(): RunStats {
-  return { extractedFiles: 0, fileEdgeCount: 0, methodEdgeCount: 0, callsAttempted: 0, callsResolved: 0 };
+  return {
+    extractedFiles: 0,
+    fileEdgeCount: 0,
+    methodEdgeCount: 0,
+    callsAttempted: 0,
+    callsResolved: 0,
+    byReceiverKind: emptyReceiverKindTally(),
+  };
 }
 
 /**
