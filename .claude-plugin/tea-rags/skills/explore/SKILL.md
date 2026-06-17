@@ -150,6 +150,9 @@ BREADTH (search) → pick interesting results →
 Search with query=$ARGUMENTS. Tool selection: behavior/intent → semantic_search,
 known symbol → hybrid_search, bare symbol name → hybrid_search.
 
+Filter presets (`filter:{presets}`) are available but explore does NOT set them
+by default — understanding and navigation require breadth; no specific filter.
+
 Scan results: files, modules, patterns. Note domain boundaries.
 
 ### 2. PICK + EXPLORE
