@@ -35,7 +35,13 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
+import type {
+  CallRef,
+  ChunkExtraction,
+  FileExtraction,
+  ImportRef,
+  InheritanceEdgeDecl,
+} from "../../../../contracts/types/codegraph.js";
 import { RUBY_DSL } from "../dsl/index.js";
 
 export interface RubyExtractInput {
@@ -128,7 +134,74 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     for (const [k, v] of prependedMap) prependedRecord[k] = v;
     out.classPrependedAncestors = prependedRecord;
   }
+  // Unified hierarchy edges with precise kinds (bd tea-rags-mcp-lz8t). Parity
+  // with the TS walker's `collectInheritanceEdges`: where the legacy
+  // classAncestors Record flattens superclass + include + extend into one
+  // include-tagged list, this distinguishes super / include / extend / prepend
+  // for the hierarchy graph. The legacy Records stay (resolver-forward path).
+  const inheritanceEdges = collectRubyInheritanceEdges(input.tree.rootNode);
+  if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
   return out;
+}
+
+/**
+ * Collect class-hierarchy edges with precise kinds (bd tea-rags-mcp-lz8t):
+ * `class Foo < Bar` → `super`, `include Mod` → `include`, `extend Mod` →
+ * `extend`, `prepend Mod` → `prepend`. `ordinal` preserves declaration order
+ * WITHIN each kind (the cross-kind MRO position is encoded by the kind itself,
+ * ranked downstream in MapHierarchyView). Source names are fully qualified by
+ * enclosing module scope, matching `collectRubyDefinedConstants`.
+ *
+ * Mirrors `collectRubyClassAncestors`'s traversal (superclass extraction +
+ * `mixinTargetFromStatement`) but emits the unified InheritanceEdgeDecl shape
+ * instead of the flat per-kind Maps. Returns an empty array when no class /
+ * module declares any heritage.
+ */
+function collectRubyInheritanceEdges(root: Parser.SyntaxNode): InheritanceEdgeDecl[] {
+  const edges: InheritanceEdgeDecl[] = [];
+  const constRe = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
+  const walkScope = (node: Parser.SyntaxNode, scope: string[]): void => {
+    if (node.type === "class" || node.type === "module") {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) {
+        for (const child of node.children) walkScope(child, scope);
+        return;
+      }
+      const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+      const fq = scope.length === 0 ? localName : `${scope.join("::")}::${localName}`;
+      // Superclass — only `class` carries a `< Bar` clause; `module` never does.
+      if (node.type === "class") {
+        const sup = node.childForFieldName("superclass");
+        if (sup) {
+          for (const child of sup.namedChildren) {
+            if (child.type === "constant" || child.type === "scope_resolution") {
+              const supText = child.type === "scope_resolution" ? readScopeResolution(child) : child.text;
+              if (supText && constRe.test(supText)) {
+                edges.push({ source: fq, ancestor: supText, kind: "super", ordinal: 0 });
+              }
+              break;
+            }
+          }
+        }
+      }
+      // Mixins — per-kind ordinal counter so each channel records its own
+      // declaration order independently (parity with TS implements ordinals).
+      const body = node.childForFieldName("body");
+      const stmtSource = body ? body.children : node.children;
+      const ordinals: Record<"include" | "extend" | "prepend", number> = { include: 0, extend: 0, prepend: 0 };
+      for (const stmt of stmtSource) {
+        const mixin = mixinTargetFromStatement(stmt);
+        if (!mixin) continue;
+        edges.push({ source: fq, ancestor: mixin.name, kind: mixin.kind, ordinal: ordinals[mixin.kind]++ });
+      }
+      const recurseChildren = body ? body.children : node.children;
+      for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
+      return;
+    }
+    for (const child of node.children) walkScope(child, scope);
+  };
+  walkScope(root, []);
+  return edges;
 }
 
 /**
