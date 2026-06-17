@@ -65,7 +65,9 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.file.recencyWeightedFreq",
     type: "number",
     description: "Recency-weighted commit frequency",
-    stats: { labels: { p75: "normal", p95: "burst" } },
+    // Filter preset references p50 of file-scope recencyWeightedFreq; labels
+    // only declare p75/p95, so declare p50 here for index-time computation.
+    stats: { labels: { p75: "normal", p95: "burst" }, percentilesToCompute: [50] },
   },
   {
     key: "git.file.changeDensity",
@@ -85,6 +87,9 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     description: "Percentage of bug-fix commits (0-100)",
     stats: {
       labels: { p50: "healthy", p75: "concerning", p95: "critical" },
+      // Filter preset references p25 of file-scope bugFixRate; labels declare
+      // p50/p75/p95, so declare p25 here for index-time computation.
+      percentilesToCompute: [25],
       confidence: {
         support: "commitCount",
         score: { threshold: 10, adaptivePercentile: 25 },
