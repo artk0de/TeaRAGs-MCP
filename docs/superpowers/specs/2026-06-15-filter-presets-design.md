@@ -3,7 +3,7 @@
 **Date:** 2026-06-15 **Status:** Approved (brainstorming) — pending
 implementation plan **Scope:** `domains/trajectory/*`, `domains/explore` (search
 stage), `api/internal/infra/schema-builder.ts`, `api/internal/composition.ts`,
-`contracts/types`
+`contracts/types`, `.claude-plugin/tea-rags/skills/*`
 
 ## Problem
 
@@ -132,6 +132,14 @@ interface AdaptiveFilterCondition {
 
 Conditions compile to a `QdrantFilter` (`must` / `should` / `must_not` groups).
 
+**Compilation semantics of `occur: "should"`.** A top-level Qdrant `should`
+alongside any `must` is **score-only** — it does not exclude anything, so it is
+meaningless in a pre-filter. Therefore `occur: "should"` conditions compile to a
+**nested `must: [{ should: [...] }]` group** (at-least-one-required), not a
+top-level `should`. This makes "any of these" populations expressible
+(`panicZone`: recencyWeightedFreq required AND at least one of
+bugFixRate/churnVolatility).
+
 ### Adaptive boundary resolution
 
 - A `{percentile, fallback}` threshold resolves to
@@ -146,7 +154,12 @@ Conditions compile to a `QdrantFilter` (`must` / `should` / `must_not` groups).
 1. **Global percentile, not per-language.** A pushed pre-filter is one threshold
    for the whole query. Filters read `perSignal` (global), accepting that a
    polyglot repo mixes languages in the percentile — acceptable for population
-   selection, documented.
+   selection, documented. **Follow-up:** when the `language` typed param (or a
+   `fileExtension` that resolves to exactly one language) already scopes the
+   query to a single language, resolve the threshold from `perLanguage` Stats
+   for that language instead of the global `perSignal` — still a single number,
+   but a more accurate boundary. Falls back to global when the language is
+   ambiguous (multiple extensions / no language param).
 2. **`percentilesToCompute` + validation.** The filter resolves at SEARCH stage,
    BEFORE rerank, so referenced percentiles must exist without lazy machinery.
    Every `pN` referenced by a filter preset is declared in the owning
@@ -184,6 +197,7 @@ domains/trajectory/
       index.ts                      # STATIC_FILTER_PRESETS
       production.ts
       core-logic.ts
+      security-paths.ts
   git/
     filters.ts                      # unchanged
     filter-presets/                 # NEW
@@ -225,12 +239,13 @@ Fallback values are cold-start only (informed by current tea-rags Stats).
 | ------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `production`        | —                 | must_not isTest=true · must_not isDocumentation=true · must_not chunkType=block                                                              |
 | `coreLogic`         | —                 | must chunkType ∈ {function,class} · must_not isTest=true                                                                                     |
+| `securityPaths`     | —                 | must relativePath matches auth/crypto/secret/token/password/credential/permission/acl/oauth/jwt (pathPattern OR-group; static analog of the `pathRisk` derived signal) |
 | `freshLegacyEdits`  | git               | must git.file.ageDays ≥ {p75, fb 60} · must git.chunk.ageDays ≤ 7                                                                            |
 | `fragileSilo`       | git               | must git.file.blameContributorCount ≤ 1 · must git.chunk.commitCount ≥ {p75, fb 5}                                                           |
-| `panicZone`         | git               | must git.file.recencyWeightedFreq ≥ {p50, fb 1} · should git.file.bugFixRate ≥ {p75, fb 30} · should git.file.churnVolatility ≥ {p75, fb 25} |
+| `panicZone`         | git               | must git.file.recencyWeightedFreq ≥ {p50, fb 1} · should git.file.bugFixRate ≥ {p75, fb 30} · should git.file.churnVolatility ≥ {p75, fb 25} (should-group → nested must[{should}], at-least-one — see compilation semantics) |
 | `godMethods`        | git               | must git.chunk.churnRatio ≥ 0.8 · must git.file.commitCount ≥ {p50, fb 5}                                                                    |
 | `hubs`              | codegraph.symbols | must codegraph.file.isHub = true                                                                                                             |
-| `deadCandidates`    | codegraph.symbols | must codegraph.chunk.fanIn = 0 · must chunkType = function                                                                                   |
+| `deadCandidates`    | codegraph.symbols | must codegraph.chunk.fanIn = 0 · must chunkType = function (⚠ description must note: relies on method-edge resolution with low resolveSuccessRate — `lgt4`; hypothesis generator with false positives, not a verdict) |
 | `unstableCore`      | codegraph.symbols | must codegraph.file.instability ≥ {p90, fb 0.9} · must codegraph.file.connectionCount ≥ {p50, fb 5}                                          |
 | `battleTested`      | git               | must git.file.ageDays ≥ {p50, fb 30} · must git.file.bugFixRate ≤ {p25, fb 10} · must git.file.blameContributorCount ≥ 2                     |
 | `abandonedHotspots` | git               | must git.file.commitCount ≥ {p75, fb 9} · must git.file.ageDays ≥ {p75, fb 42}                                                               |
@@ -243,30 +258,99 @@ exists as a one-word convenience and as the target default for risk rankers.
 `production` = must_not [isTest, isDocumentation, chunkType=block]. `coreLogic`
 = chunkType ∈ {function,class} ∧ ¬isTest.
 
-| Rerank preset          | Default filter | Rationale                                         |
-| ---------------------- | -------------- | ------------------------------------------------- |
-| relevance              | —              | bare search — never filter                        |
-| documentationRelevance | —              | needs docs; `production` would strip them         |
-| recent                 | —              | breadth matters                                   |
-| stable                 | —              | ranking does the work                             |
-| onboarding             | —              | needs docs; `production` would break it           |
-| codeReview             | —              | needs tests; `production` would break it          |
-| proven                 | production     | reference = production code, not test scaffolding |
-| ownership              | production     | silos of production code                          |
-| bugHunt                | production     | drop test/doc/block noise, keep rank breadth      |
-| techDebt               | production     | same                                              |
-| hotspots               | production     | same                                              |
-| dangerous              | production     | same                                              |
-| securityAudit          | production     | audit of production code (file-level)             |
-| decomposition          | coreLogic      | only a method/class can be a decomposition target |
-| refactoring            | coreLogic      | same                                              |
-| blastRadius            | production     | rank by fanIn, drop noise                         |
-| architecturalHub       | production     | same                                              |
-| entryPoint             | production     | composition roots are production                  |
+**Preset defaults are hygiene-only.** Specific filter presets (panicZone,
+abandonedHotspots, hubs, …) are deliberately NOT preset defaults — they are
+applied by **inventory-mode skills** and available to any caller via `{presets}`.
+The rationale is functional and is detailed in the "Skill integration" section:
+a hard specific filter as a default destroys recall for query-driven triage (the
+bug/target often lives in non-churned code a specific filter would exclude),
+while hygiene removal of tests/docs/block is safe in every mode.
 
-**Correctness landmines:** rows `documentationRelevance`, `onboarding`,
-`codeReview` MUST NOT default to `production` — it strips the tests/docs those
-presets exist to surface.
+| Rerank preset          | Default filter | Rationale                                  |
+| ---------------------- | -------------- | ------------------------------------------ |
+| relevance              | —              | bare search — never filter                 |
+| documentationRelevance | —              | needs docs; `production` would strip them  |
+| recent                 | —              | breadth matters                            |
+| stable                 | —              | breadth (lightweight search_code preset)   |
+| onboarding             | —              | needs docs                                 |
+| codeReview             | —              | needs tests                                |
+| proven                 | production     | reference = production code                 |
+| ownership              | production     | silos of production code                    |
+| bugHunt                | production     | drop test/doc/block noise, keep rank breadth |
+| techDebt               | production     | same                                       |
+| hotspots               | production     | same                                       |
+| dangerous              | production     | same                                       |
+| securityAudit          | production     | audit of production code (file-level)      |
+| decomposition          | coreLogic      | only a method/class is a decomposition target |
+| refactoring            | coreLogic      | same                                       |
+| blastRadius            | production     | rank by fanIn, drop noise                  |
+| architecturalHub       | production     | same                                       |
+| entryPoint             | production     | composition roots are production           |
+
+**Correctness landmines:** `documentationRelevance`, `onboarding`, `codeReview`
+MUST NOT default to `production` — it strips the tests/docs those presets exist
+to surface.
+
+Specific filters move from "preset default" to **skill-applied policy** — see
+the next section.
+
+## Skill integration
+
+The tea-rags skills (`.claude-plugin/tea-rags/skills/*`) are the layer that
+decides _when_ to narrow a population with a specific filter preset. This is a
+distinct workstream from the engine/registry.
+
+### Governing principle — narrowing belongs to query-absent inventory
+
+A **hard** specific filter belongs to **query-absent inventory** mode, where an
+empty result is a valid answer ("nothing risky here"). In **query-driven
+triage**, the engine must rank broadly and let the agent triage: the target
+(a bug, a usage) frequently lives in **non-churned code that a specific filter
+would exclude entirely** — e.g. a fresh edit in an otherwise stable file. There,
+ranking (soft) strictly dominates gating (hard). Hygiene removal
+(tests/docs/block) is safe in both modes.
+
+Consequences:
+
+- No engine-level auto-relaxation, no `populationRelaxed` DTO flag. The empty
+  cliff is avoided **by construction** — query-driven skills never apply a hard
+  specific filter, inventory skills treat empty as a valid answer.
+- The specific filter presets exist for: (1) inventory skills applying them
+  explicitly, (2) any caller using `{presets}` as a one-word narrowing shorthand.
+
+### Skill taxonomy
+
+| Mode | Skills | Filter behavior |
+| --- | --- | --- |
+| **Inventory** (query-absent, empty-valid) | risk-assessment, refactoring-scan (scan mode) | apply the dimension's specific filter via `{presets}`; empty dimension → report "clean", do NOT widen |
+| **Reference-lookup** (need ≥1 template, empty-bad) | data-driven-generation, extract-project-patterns | apply `battleTested`; on empty, relax specific → hygiene, annotate |
+| **Query-driven triage** (empty-bad, recall matters) | bug-hunt, explore | broad + ranking + agent triage; NO hard specific filter |
+| **Meta / teaching** | analytics-rerank, filter-building | document the named filter presets, the inventory-vs-query rule, and `{presets}` syntax |
+
+### Per-skill target policy
+
+| Skill | Today | Target with filter presets |
+| --- | --- | --- |
+| **risk-assessment** | `rank_chunks` ×4 presets + manual `pathPattern` + manual two-pass dedup | each dimension applies its specific filter via `{presets}` (hotspots→godMethods, techDebt→abandonedHotspots, dangerous→fragileSilo, bugHunt-dim→panicZone); empty dimension reported as "clean"; the manual dedup hack is reduced since populations are pre-narrowed |
+| **refactoring-scan** | 3 presets, query+pathPattern | apply `godMethods` / `coreLogic`; if a query is present and the strict result is empty, widen to `coreLogic` only and note it |
+| **bug-hunt** | `rerank="bugHunt"`, top-10, agent triages | ranking UNCHANGED (keeps fresh-bug recall); MAY document an opt-in `{presets:"panicZone"}` "audit mode", but symptom search never hard-narrows |
+| **explore** | rerank + hybrid fallback on 0 results | unchanged; no specific filter |
+| **data-driven-generation / extract-project-patterns** | `proven` | apply `battleTested`; relax → `production` on empty (a reference is required) |
+| **analytics-rerank** | teaches manual `preset + pathPattern` pairing | document the named filter presets, `{presets}` shorthand, adaptive-percentile semantics, and the inventory-vs-query narrowing rule |
+| **filter-building** | builds raw/typed filter shapes | document `{presets}` shorthand and how it composes (AND) with typed params + raw filter |
+
+### Empty handling by mode
+
+- **Inventory:** empty = valid → report "no `<X>` in scope", do not widen.
+- **Reference-lookup:** empty = bad → relax specific → hygiene, annotate the
+  relaxation in the agent-facing summary.
+- **Query-driven:** no specific filter applied → no filter-induced empty.
+
+### Workstream
+
+Teaching the skills is a separate set of epic tasks — one per skill in the
+taxonomy. SKILL.md edits follow the skill-authoring rules; per the "no silent
+skill patches" rule each edit lists what / why / how before applying.
 
 ## SchemaBuilder
 
@@ -281,17 +365,28 @@ presets exist to surface.
 
 ## Backward compatibility & rollout
 
-**B1 (recommended, this work):** the mechanism ships additive. No existing
-rerank preset receives a default `filter` in this PR → zero behavior change.
-`relevance` never gets one. The default-filter table above is the documented
-target; defaults are enabled in a later phase, per preset, with changelog
-entries (each enabling is `feat(presets)!` because it narrows result
-populations).
+**Chosen: B2 — ship hygiene defaults immediately.** The hygiene-only preset
+defaults (the table above) are enabled in this work as a single `feat(presets)!`:
+every risk ranker begins excluding tests/docs/block. This is a behavior change
+(noise removal) but a safe one — hygiene exclusion never causes a harmful empty
+(see Skill integration → governing principle). `relevance` never gets a default.
 
-**B2 (alternative):** enable the target defaults immediately. Single
-`feat(presets)!` — every risk ranker begins excluding tests/docs/block (noise
-removal, but a behavior change). Chosen only if "batteries included" is
-preferred over a non-breaking landing.
+The narrower **specific** filter presets are NOT part of the default rollout —
+they are a separate, parallel workstream (the per-skill policy in Skill
+integration) and reach users through skills and the `{presets}` param, not
+through preset defaults.
+
+Two coordinated streams, sequenced:
+
+1. **Engine + registry + hygiene defaults** — `FilterSpec`, `FilterPresetDef`,
+   resolver, validation, SchemaBuilder, the full filter-preset catalog, and the
+   hygiene defaults wired onto presets. Lands as one `feat(presets)!`.
+2. **Skill teaching** — one task per skill in the taxonomy, applying specific
+   filters where the mode warrants (inventory / reference-lookup) and leaving
+   query-driven skills broad. Depends on stream 1.
+
+No engine auto-relaxation / `populationRelaxed` flag is built — the empty cliff
+is avoided by construction (see Skill integration).
 
 ## Error handling
 
@@ -318,6 +413,9 @@ preferred over a non-breaking landing.
 - Per-test-pattern rules: no rewrite of existing passing tests; behavioral
   integration tests over line-targeting.
 
-## Open decision for the plan phase
+## Open decisions for the plan phase
 
-Rollout B1 vs B2 (default recommended: B1).
+- Specific-filter threshold calibration (e.g. `abandonedHotspots` p75 AND p75 is
+  narrow) — tune per inventory-skill use during stream 2.
+- Whether `bug-hunt` ships an opt-in `{presets:"panicZone"}` "audit mode" doc, or
+  leaves narrowing to `risk-assessment` entirely.
