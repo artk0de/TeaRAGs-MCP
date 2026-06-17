@@ -21,13 +21,14 @@ export interface TrajectoryFilterBuilder {
     level?: FilterLevel,
   ) => Record<string, unknown> | undefined;
   /**
-   * Filter-preset DATA accessors. The registry owns the definitions;
-   * CSV resolution + merge + unknown/empty errors live in the api layer
-   * (ExploreOps), keeping the trajectory→explore boundary intact.
-   * `setFilterPresets` is populated by the composition root; the read
-   * accessors are consumed by ExploreOps to resolve the `presets` CSV.
+   * Filter-preset DATA accessors (read-only contract — ISP). The registry owns
+   * the definitions; CSV resolution + merge + unknown/empty errors live in the
+   * api layer (ExploreOps), keeping the trajectory→explore boundary intact.
+   * Population (`setFilterPresets`) is a concrete-class concern of
+   * `TrajectoryRegistry`, called only by the composition root — it is
+   * deliberately absent from this read-side contract so no read consumer can
+   * mutate the preset table through the interface.
    */
-  setFilterPresets: (presets: FilterPresetDef[]) => void;
   getFilterPresetDef: (name: string) => FilterPresetDef | undefined;
   filterPresetNames: () => string[];
 }
