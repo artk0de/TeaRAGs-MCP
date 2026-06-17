@@ -2,6 +2,7 @@
  * Reranker contract types — shared by search layer and consumers.
  */
 
+import type { FilterSpec } from "./filter-preset.js";
 import type { ScoringWeights } from "./provider.js";
 import type { ExtractContext } from "./trajectory.js";
 
@@ -69,6 +70,8 @@ export interface RerankPreset {
   readonly groupBy?: string;
   /** Signal granularity: "file" forces alpha=0 (pure file signals), "chunk" uses blending (default). */
   readonly signalLevel?: SignalLevel;
+  /** Default population for this ranking. Replace semantics: an explicit `filter` param overrides it. */
+  readonly filter?: FilterSpec;
 }
 
 /**
