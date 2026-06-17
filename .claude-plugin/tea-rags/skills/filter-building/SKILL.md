@@ -223,7 +223,7 @@ freely with `{presets}`.
 | `unstableCore`  | High churn + high fan-in (dangerous shared code)           |
 
 Names unavailable when their required trajectory isn't registered are gated out
-automatically. Read `tea-rags://schema/filter-presets` for the live catalog with
+automatically. Read `tea-rags://schema/filters` for the live catalog with
 exact threshold definitions.
 
 ### Inventory-vs-query rule

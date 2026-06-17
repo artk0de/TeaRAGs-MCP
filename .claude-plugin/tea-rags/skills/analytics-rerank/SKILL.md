@@ -219,7 +219,7 @@ also hard-filter — so recall is not lost. Hygiene presets (`production`,
 `coreLogic`) are safe in either mode and are the defaults applied automatically
 by those rerank presets.
 
-Full catalog: read `tea-rags://schema/filter-presets` (generated from the live
+Full catalog: read `tea-rags://schema/filters` (generated from the live
 registry). Do not memorize from training data — read on demand.
 
 ## Project calibration
