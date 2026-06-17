@@ -7,9 +7,13 @@ export type FilterThreshold = number | { percentile: FilterPercentile; fallback:
 /** One raw-signal condition. `signal` is the LOGICAL payload key (e.g. "git.chunk.commitCount", "codegraph.file.instability", "isTest"). */
 export interface AdaptiveFilterCondition {
   signal: string;
-  op: "gte" | "lte" | "eq";
-  /** number/FilterThreshold for range ops (gte/lte); string/boolean for eq match. */
-  value: FilterThreshold | string | boolean;
+  op: "gte" | "lte" | "eq" | "contains";
+  /**
+   * Range ops (gte/lte): number/FilterThreshold.
+   * `eq`: string/boolean/number — or an array for set membership (match.any).
+   * `contains`: string — substring text-match (match.text).
+   */
+  value: FilterThreshold | string | boolean | number | (string | number | boolean)[];
   /** default "must". "should" compiles to a nested must:[{should:[...]}] group (at-least-one-required). */
   occur?: "must" | "should" | "must_not";
 }
