@@ -202,7 +202,9 @@ function formatInfraSection(infra: InfraHealth): string[] {
   const e = infra.embedding;
   const availability = e.available ? "available" : "unavailable";
   const eAt = e.url ? ` at ${e.url}` : "";
-  const eFallback = e.fallbackUrl ? ` · fallback: ${e.fallbackUrl}` : "";
+  const eFallbackHealth =
+    e.fallbackAvailable !== undefined ? ` (${e.fallbackAvailable ? "available" : "unavailable"})` : "";
+  const eFallback = e.fallbackUrl ? ` · fallback: ${e.fallbackUrl}${eFallbackHealth}` : "";
   lines.push(`embedding: ${availability} · ${e.provider}${eAt}${eFallback}`);
   return lines;
 }

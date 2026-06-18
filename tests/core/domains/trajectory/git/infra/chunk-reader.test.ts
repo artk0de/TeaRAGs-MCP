@@ -304,8 +304,8 @@ describe("processCommitEntry — bug fix accumulation", () => {
     for (const [, o] of overlay!) {
       if (o.bugFixRate > 0) anyBugFix = true;
       if (o.commitCount > 0) {
-        // Laplace-smoothed: (1 + 0.5) / (1 + 1.0) = 1.5/2.0 = 0.75 → 75
-        expect(o.bugFixRate).toBe(75);
+        // Unsmoothed: 1 fix / 1 commit = 100
+        expect(o.bugFixRate).toBe(100);
         expect(o.ageDays).toBeGreaterThanOrEqual(0);
         expect(o.recentContributorCount).toBe(1);
       }

@@ -102,22 +102,26 @@ describe("BugFixSignal — confidence-driven dampening", () => {
   });
 
   it("uses ctx.dampeningThreshold when confidence not present (adaptive path)", () => {
-    // Pre-refactor adaptive path: ctx.dampeningThreshold=20 (e.g. p25 of commitCount=20 in a project).
+    // Pre-refactor adaptive path: adaptive k=20 (e.g. p25 of commitCount). This
+    // payload has file cc == chunk cc → alpha=1 (chunk-dominant), so the
+    // chunk-scope k drives; the reranker resolves both scopes' adaptive k.
     const score = signal.extract(payload(50, 10), {
       bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 },
       dampeningThreshold: 20,
+      dampeningThresholdChunk: 20,
     });
-    // (10/20)^2 = 0.25; blendNormalized ≈ 0.5; 0.5 * 0.25 = 0.125
+    // (10/20)^2 = 0.25; chunkNorm ≈ 0.5; 0.5 * 0.25 = 0.125
     expect(score).toBeCloseTo(0.125, 3);
   });
 
   it("ADAPTIVE wins over descriptor floor when both are present (regression for tea-rags-mcp-2h45)", () => {
-    // Both adaptive (dampeningThreshold=20 from collection p25) AND descriptor
-    // floor (confidence.score.threshold=10) are passed. Adaptive must win.
+    // Both adaptive (k=20 from collection p25) AND descriptor floor
+    // (confidence.score.threshold=10) are passed. Adaptive must win.
     // Before the fix: descriptor floor won, ignoring adaptive entirely.
     const score = signal.extract(payload(50, 10), {
       bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 },
       dampeningThreshold: 20,
+      dampeningThresholdChunk: 20,
       confidence,
     });
     // With adaptive k=20: (10/20)^2 = 0.25; ≈ 0.5 * 0.25 = 0.125

@@ -43,6 +43,7 @@ export function buildAccumulators(repoRoot: string, chunkMap: Map<string, ChunkL
         linesDeleted: 0,
         commitTimestamps: [],
         commitAuthors: [],
+        commitIsFix: [],
         taskIds: new Set(),
       });
     }

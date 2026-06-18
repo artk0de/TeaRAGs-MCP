@@ -1,6 +1,6 @@
+import { normalize } from "../../../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../../contracts/types/trajectory.js";
-import { normalize } from "../../../../../../contracts/signal-utils.js";
 import { codegraphChunkNum } from "./helpers.js";
 
 /**
@@ -12,7 +12,7 @@ import { codegraphChunkNum } from "./helpers.js";
 export class ChunkFanInSignal implements DerivedSignalDescriptor {
   readonly name = "chunkFanIn";
   readonly description = "Normalized number of distinct call sites invoking this symbol (method-level fan-in)";
-  readonly sources = ["codegraph.chunk.fanIn"];
+  readonly sources = ["chunk.fanIn"];
   readonly defaultBound = 40;
   extract(raw: Record<string, unknown>, ctx?: ExtractContext): number {
     const v = codegraphChunkNum(raw, "fanIn");

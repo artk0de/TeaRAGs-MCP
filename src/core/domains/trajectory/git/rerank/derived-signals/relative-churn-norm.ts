@@ -1,6 +1,6 @@
 import type { DerivedSignalDescriptor } from "../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
-import { blendNormalized, confidenceDampening, fileNum } from "./helpers.js";
+import { blendNormalizedDamped, chunkNum, confidenceDampening, fileNum } from "./helpers.js";
 
 /**
  * Churn relative to file size — lines changed divided by total LOC.
@@ -22,10 +22,12 @@ export class RelativeChurnNormSignal implements DerivedSignalDescriptor {
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const fb = ctx?.bounds?.["file.relativeChurn"] ?? this.defaultBound;
     const cb = ctx?.bounds?.["chunk.relativeChurn"] ?? this.defaultBound;
-    let value = blendNormalized(rawSignals, "relativeChurn", fb, cb, ctx?.signalLevel);
-    const k = ctx?.dampeningThreshold ?? ctx?.confidence?.score?.threshold ?? RelativeChurnNormSignal.FALLBACK_K;
+    const floor = ctx?.confidence?.score?.threshold ?? RelativeChurnNormSignal.FALLBACK_K;
+    const kf = ctx?.dampeningThreshold ?? floor;
+    const kc = ctx?.dampeningThresholdChunk ?? floor;
     const supportName = ctx?.confidence?.support ?? "commitCount";
-    value *= confidenceDampening(fileNum(rawSignals, supportName), k);
-    return value;
+    const dampFile = confidenceDampening(fileNum(rawSignals, supportName), kf);
+    const dampChunk = confidenceDampening(chunkNum(rawSignals, supportName), kc);
+    return blendNormalizedDamped(rawSignals, "relativeChurn", fb, cb, ctx?.signalLevel, dampFile, dampChunk);
   }
 }

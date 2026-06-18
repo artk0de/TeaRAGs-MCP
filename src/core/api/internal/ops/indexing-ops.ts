@@ -178,6 +178,10 @@ export class IndexingOps {
     // EMBEDDING_FALLBACK_URL).
     const primaryUrl = this.embeddings.getPrimaryBaseUrl?.() ?? this.embeddings.getBaseUrl?.();
     const fallbackUrl = this.embeddings.getFallbackBaseUrl?.();
+    // Live-probe the fallback endpoint separately — checkHealth above only
+    // probes the ACTIVE endpoint, so the digest would otherwise show the
+    // fallback URL with no indication of whether the backup is actually up.
+    const fallbackAvailable = fallbackUrl !== undefined ? await this.embeddings.checkFallbackHealth?.() : undefined;
     const infraHealth: IndexStatus["infraHealth"] = {
       qdrant: { available: true, url: this.qdrant.url },
       embedding: {
@@ -185,6 +189,7 @@ export class IndexingOps {
         provider: this.embeddings.getProviderName(),
         ...(primaryUrl !== undefined ? { url: primaryUrl } : {}),
         ...(fallbackUrl !== undefined ? { fallbackUrl } : {}),
+        ...(fallbackAvailable !== undefined ? { fallbackAvailable } : {}),
       },
     };
 

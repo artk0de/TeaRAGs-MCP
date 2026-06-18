@@ -1,6 +1,6 @@
 import type { DerivedSignalDescriptor } from "../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
-import { blendNormalized, confidenceDampening, fileNum } from "./helpers.js";
+import { blendNormalizedDamped, chunkNum, confidenceDampening, fileNum } from "./helpers.js";
 
 /**
  * Measures commit frequency normalized by time — commits per month.
@@ -21,10 +21,12 @@ export class DensitySignal implements DerivedSignalDescriptor {
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const fb = ctx?.bounds?.["file.changeDensity"] ?? this.defaultBound;
     const cb = ctx?.bounds?.["chunk.changeDensity"] ?? this.defaultBound;
-    let value = blendNormalized(rawSignals, "changeDensity", fb, cb, ctx?.signalLevel);
-    const k = ctx?.dampeningThreshold ?? ctx?.confidence?.score?.threshold ?? DensitySignal.FALLBACK_K;
+    const floor = ctx?.confidence?.score?.threshold ?? DensitySignal.FALLBACK_K;
+    const kf = ctx?.dampeningThreshold ?? floor;
+    const kc = ctx?.dampeningThresholdChunk ?? floor;
     const supportName = ctx?.confidence?.support ?? "commitCount";
-    value *= confidenceDampening(fileNum(rawSignals, supportName), k);
-    return value;
+    const dampFile = confidenceDampening(fileNum(rawSignals, supportName), kf);
+    const dampChunk = confidenceDampening(chunkNum(rawSignals, supportName), kc);
+    return blendNormalizedDamped(rawSignals, "changeDensity", fb, cb, ctx?.signalLevel, dampFile, dampChunk);
   }
 }

@@ -1124,6 +1124,50 @@ describe("OllamaEmbeddings", () => {
     });
   });
 
+  describe("checkFallbackHealth", () => {
+    const PRIMARY = "http://primary:11434";
+    const FALLBACK = "http://fallback:11434";
+    const flush = async () => new Promise<void>((r) => setTimeout(r, 0));
+
+    it("should return undefined when no fallback URL is configured", async () => {
+      // `embeddings` from beforeEach has no fallback configured.
+      expect(await embeddings.checkFallbackHealth()).toBeUndefined();
+    });
+
+    it("should probe the configured fallback URL and return true when it responds ok", async () => {
+      // Constructor health check succeeds so usingFallback stays false —
+      // the probe must still target the CONFIGURED fallback, not the active URL.
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      await flush();
+
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      const result = await provider.checkFallbackHealth();
+
+      expect(result).toBe(true);
+      const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
+      expect(lastCall[0]).toBe("http://fallback:11434/");
+    });
+
+    it("should return false when the fallback URL throws", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      await flush();
+
+      mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+      expect(await provider.checkFallbackHealth()).toBe(false);
+    });
+
+    it("should return false when the fallback URL returns non-ok", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      await flush();
+
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+      expect(await provider.checkFallbackHealth()).toBe(false);
+    });
+  });
+
   describe("getProviderName", () => {
     it("should return 'ollama'", () => {
       expect(embeddings.getProviderName()).toBe("ollama");

@@ -6,8 +6,8 @@
  * live in infra/signal-utils.
  */
 
-import type { SignalLevel } from "../../../../../contracts/types/reranker.js";
 import { blend, computeAlpha, normalize } from "../../../../../contracts/signal-utils.js";
+import type { SignalLevel } from "../../../../../contracts/types/reranker.js";
 
 // Re-export generic functions used directly by signal classes
 export { blend, computeAlpha, confidenceDampening, normalize } from "../../../../../contracts/signal-utils.js";
@@ -129,4 +129,31 @@ export function blendNormalized(
   const chunkVal = chunkField(payload, field);
   const normalizedChunk = chunkVal !== undefined ? normalize(chunkVal, chunkBound) : fileVal;
   return blend(normalizedChunk, fileVal, alpha);
+}
+
+/**
+ * Like {@link blendNormalized} but applies a per-scope confidence multiplier to
+ * each side BEFORE blending: the chunk component is trusted by `dampChunk`
+ * (chunk-scope support), the file component by `dampFile` (file-scope support).
+ * This keeps each scope's contribution tied to its own sample size — a low-N
+ * chunk inside a high-commit file no longer inherits the file's confidence.
+ *
+ * Pure-file (alpha=0) returns `fileVal_norm * dampFile`, byte-identical to the
+ * legacy `blendNormalized(...) * dampFile` path.
+ */
+export function blendNormalizedDamped(
+  payload: Record<string, unknown>,
+  field: string,
+  fileBound: number,
+  chunkBound: number,
+  signalLevel: SignalLevel | undefined,
+  dampFile: number,
+  dampChunk: number,
+): number {
+  const fileNorm = normalize(fileNum(payload, field), fileBound);
+  const alpha = payloadAlpha(payload, signalLevel);
+  if (alpha === 0) return fileNorm * dampFile;
+  const chunkVal = chunkField(payload, field);
+  const chunkNorm = chunkVal !== undefined ? normalize(chunkVal, chunkBound) : fileNorm;
+  return blend(chunkNorm * dampChunk, fileNorm * dampFile, alpha);
 }

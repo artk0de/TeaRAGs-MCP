@@ -97,6 +97,35 @@ describe("assembleOverlays", () => {
     expect(result.get("src/c.ts")?.has("src/c.ts:1")).toBe(false);
   });
 
+  it("squash: churnRatio uses session-based file commit count, keeping both sides one unit", () => {
+    const BASE = 1_700_000_000;
+    const MIN = 60;
+    const burst = Array.from({ length: 4 }, (_, i) => ({
+      sha: `s${i}`,
+      author: "alice",
+      authorEmail: "a@x.com",
+      timestamp: BASE + i * 5 * MIN,
+      body: "feat: x",
+    }));
+    const chunkAcc = acc({
+      commitShas: new Set(["s0", "s1", "s2", "s3"]),
+      commitTimestamps: burst.map((c) => c.timestamp),
+      commitAuthors: Array(4).fill("alice"),
+      commitIsFix: Array(4).fill(false),
+    });
+    const result = assembleOverlays({
+      relativeChunkMap: new Map([["src/a.ts", [{ chunkId: "src/a.ts:0", startLine: 1, endLine: 10 }]]]),
+      accumulators: new Map<string, ChunkAccumulator>([["src/a.ts:0", chunkAcc]]),
+      fileChurnDataMap: new Map([["src/a.ts", { commits: burst, linesAdded: 40, linesDeleted: 10 }]]),
+      squashOpts: { squashAwareSessions: true, sessionGapMinutes: 30 },
+    });
+    const overlay = result.get("src/a.ts")?.get("src/a.ts:0");
+    // chunk: 1 session; file: 4 burst commits = 1 session → churnRatio 1.0
+    // (raw denominator would give 1 / 4 = 0.25).
+    expect(overlay?.commitCount).toBe(1);
+    expect(overlay?.churnRatio).toBe(1);
+  });
+
   it("returns an empty map when relativeChunkMap is empty", () => {
     const result = assembleOverlays({
       relativeChunkMap: new Map(),

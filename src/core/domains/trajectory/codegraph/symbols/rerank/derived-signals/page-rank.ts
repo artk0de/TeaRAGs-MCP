@@ -1,6 +1,6 @@
+import { normalize } from "../../../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../../contracts/types/trajectory.js";
-import { normalize } from "../../../../../../contracts/signal-utils.js";
 import { codegraphChunkNum } from "./helpers.js";
 
 /**
@@ -18,7 +18,7 @@ import { codegraphChunkNum } from "./helpers.js";
 export class PageRankSignal implements DerivedSignalDescriptor {
   readonly name = "pageRank";
   readonly description = "Normalized PageRank over the method call graph (recursive importance)";
-  readonly sources = ["codegraph.chunk.pageRank"];
+  readonly sources = ["chunk.pageRank"];
   readonly defaultBound = 0.01;
   extract(raw: Record<string, unknown>, ctx?: ExtractContext): number {
     const v = codegraphChunkNum(raw, "pageRank");

@@ -1,6 +1,6 @@
+import { normalize } from "../../../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../../contracts/types/trajectory.js";
-import { normalize } from "../../../../../../contracts/signal-utils.js";
 import { codegraphChunkNum } from "./helpers.js";
 
 /**
@@ -11,7 +11,7 @@ import { codegraphChunkNum } from "./helpers.js";
 export class ChunkFanOutSignal implements DerivedSignalDescriptor {
   readonly name = "chunkFanOut";
   readonly description = "Normalized number of outgoing calls from this symbol (method-level fan-out)";
-  readonly sources = ["codegraph.chunk.fanOut"];
+  readonly sources = ["chunk.fanOut"];
   readonly defaultBound = 30;
   extract(raw: Record<string, unknown>, ctx?: ExtractContext): number {
     const v = codegraphChunkNum(raw, "fanOut");

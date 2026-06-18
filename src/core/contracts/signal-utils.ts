@@ -80,16 +80,60 @@ export function confidenceDampening(sampleCount: number, threshold: number, powe
 }
 
 // ---------------------------------------------------------------------------
-// Payload key mapping
+// Payload key & value resolution
 // ---------------------------------------------------------------------------
+
+/** Logical codegraph descriptor key → physical nested-symbols path. */
+const CODEGRAPH_PATH_RE = /^codegraph\.(file|chunk)\.(.+)$/;
 
 /**
  * Map a LOGICAL payload key to its PHYSICAL Qdrant path.
  * Codegraph signals are stored nested as `codegraph.symbols.{scope}.X` but
  * addressed logically as `codegraph.{scope}.X`. git/static keys are already physical.
- * Single source for both collection-stats and the filter-preset compiler.
+ * Used by the filter-preset compiler to emit the correct Qdrant condition key.
  */
 export function toPhysicalPayloadKey(logicalKey: string): string {
-  const m = /^codegraph\.(file|chunk)\.(.+)$/.exec(logicalKey);
+  const m = CODEGRAPH_PATH_RE.exec(logicalKey);
   return m ? `codegraph.symbols.${m[1]}.${m[2]}` : logicalKey;
+}
+
+/**
+ * Resolve a dot-notation payload path to its value — the single source of truth
+ * for payload addressing across the reranker score/overlay paths and the
+ * collection-stats accumulator.
+ *
+ * Resolution order:
+ *  1. Flat key — Qdrant stores dotted paths as flat keys (`payload["git.file.x"]`).
+ *  2. Codegraph nested-symbols form — the logical descriptor key
+ *     `codegraph.{file|chunk}.X` maps to the physical
+ *     `payload.codegraph.symbols.{file|chunk}.X` (EnrichmentApplier writes
+ *     codegraph signals under the `codegraph.symbols` provider key with bare
+ *     inner keys).
+ *  3. Plain nested traversal — `payload.git.file.x` and any other dotted shape,
+ *     so test fixtures feeding alternate shapes still resolve.
+ */
+export function resolvePayloadValue(payload: Record<string, unknown>, path: string): unknown {
+  if (path in payload) return payload[path];
+
+  const cg = CODEGRAPH_PATH_RE.exec(path);
+  if (cg) {
+    const { codegraph } = payload as { codegraph?: unknown };
+    if (codegraph && typeof codegraph === "object") {
+      const { symbols } = codegraph as { symbols?: unknown };
+      if (symbols && typeof symbols === "object") {
+        const scoped = (symbols as Record<string, unknown>)[cg[1]];
+        const bareKey = cg[2];
+        if (scoped && typeof scoped === "object" && bareKey in (scoped as Record<string, unknown>)) {
+          return (scoped as Record<string, unknown>)[bareKey];
+        }
+      }
+    }
+  }
+
+  let current: unknown = payload;
+  for (const part of path.split(".")) {
+    if (current === null || current === undefined || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
 }

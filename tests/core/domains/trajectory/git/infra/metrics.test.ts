@@ -135,8 +135,8 @@ describe("computeFileSignals", () => {
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileSignals(data, 100);
 
-    // Laplace-smoothed: (0 + 0.5) / (3 + 1.0) = 0.5/4.0 = 0.125 → 13
-    expect(meta.bugFixRate).toBe(13);
+    // Unsmoothed: 0 fixes / 3 commits = 0
+    expect(meta.bugFixRate).toBe(0);
   });
 
   it("should compute bugFixRate 0 for empty commits", () => {
@@ -157,8 +157,8 @@ describe("computeFileSignals", () => {
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileSignals(data, 100);
 
-    // Laplace-smoothed: (4 + 0.5) / (4 + 1.0) = 4.5/5.0 = 0.9 → 90
-    expect(meta.bugFixRate).toBe(90);
+    // Unsmoothed: 4 fixes / 4 commits = 100
+    expect(meta.bugFixRate).toBe(100);
   });
 
   it("should NOT count merge commits as bug fixes", () => {
@@ -172,8 +172,8 @@ describe("computeFileSignals", () => {
     const meta = computeFileSignals(data, 100);
 
     // Only the actual fix commit counts, not the 2 merge commits
-    // Laplace-smoothed: (1 + 0.5) / (4 + 1.0) = 1.5/5.0 = 0.3 → 30
-    expect(meta.bugFixRate).toBe(30);
+    // Unsmoothed: 1 fix / 4 commits = 25
+    expect(meta.bugFixRate).toBe(25);
   });
 
   it("should compute contributorCount = 3 (Alice, Bob, Charlie)", () => {
@@ -317,16 +317,16 @@ describe("isBugFixCommit (via computeFileSignals)", () => {
     ];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileSignals(data, 100);
-    // Laplace-smoothed: (0 + 0.5) / (2 + 1.0) = 0.5/3.0 = 0.1667 → 17
-    expect(meta.bugFixRate).toBe(17);
+    // Unsmoothed: 0 fixes (merge skipped) / 2 commits = 0
+    expect(meta.bugFixRate).toBe(0);
   });
 
   it("should skip 'Merge pull request' even if body mentions fix", () => {
     const commits = [makeCommit({ body: "Merge pull request #42 from user/fix-auth\n\nfixes auth bug" })];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileSignals(data, 100);
-    // Laplace-smoothed: (0 + 0.5) / (1 + 1.0) = 0.5/2.0 = 0.25 → 25
-    expect(meta.bugFixRate).toBe(25);
+    // Unsmoothed: 0 fixes (merge skipped) / 1 commit = 0 (was the point-mass 25)
+    expect(meta.bugFixRate).toBe(0);
   });
 });
 

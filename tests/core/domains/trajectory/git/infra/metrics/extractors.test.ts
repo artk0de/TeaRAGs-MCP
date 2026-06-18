@@ -219,14 +219,14 @@ describe("computeChurnVolatility", () => {
 // ─── computeBugFixRate ──────────────────────────────────────────────────────
 
 describe("computeBugFixRate", () => {
-  it("returns Laplace-smoothed percentage of bug fix commits", () => {
+  it("returns the raw (unsmoothed) percentage of bug-fix commits", () => {
     const commits = [
       makeCommit({ body: "fix: resolve bug" }),
       makeCommit({ body: "feat: add feature" }),
       makeCommit({ body: "fix: another bug" }),
       makeCommit({ body: "chore: cleanup" }),
     ];
-    // 2 fixes out of 4: (2 + 0.5) / (4 + 1.0) = 2.5/5.0 = 0.5 → 50
+    // 2 fixes / 4 commits = 50% (no Laplace prior)
     expect(computeBugFixRate(commits)).toBe(50);
   });
 
@@ -234,16 +234,30 @@ describe("computeBugFixRate", () => {
     expect(computeBugFixRate([])).toBe(0);
   });
 
-  it("handles all bug fix commits with smoothing", () => {
+  it("returns 100 when every commit is a fix (no prior pulling it down)", () => {
     const commits = [makeCommit({ body: "fix: bug1" }), makeCommit({ body: "fix: bug2" })];
-    // (2 + 0.5) / (2 + 1.0) = 2.5/3.0 = 0.833... → 83
-    expect(computeBugFixRate(commits)).toBe(83);
+    // 2/2 = 100 (was 83 under the +0.5/+1 prior)
+    expect(computeBugFixRate(commits)).toBe(100);
   });
 
-  it("handles zero bug fix commits with smoothing", () => {
+  it("returns 0 when no commit is a fix (no prior inflating it)", () => {
     const commits = [makeCommit({ body: "feat: something" }), makeCommit({ body: "chore: cleanup" })];
-    // (0 + 0.5) / (2 + 1.0) = 0.5/3.0 = 0.1666... → 17
-    expect(computeBugFixRate(commits)).toBe(17);
+    // 0/2 = 0 (was 17 under the prior)
+    expect(computeBugFixRate(commits)).toBe(0);
+  });
+
+  it("single non-fix commit → 0, not the prior's point-mass 25", () => {
+    expect(computeBugFixRate([makeCommit({ body: "feat: x" })])).toBe(0);
+  });
+
+  it("one fix in four commits → 25", () => {
+    const commits = [
+      makeCommit({ body: "fix: a" }),
+      makeCommit({ body: "feat: b" }),
+      makeCommit({ body: "chore: c" }),
+      makeCommit({ body: "docs: d" }),
+    ];
+    expect(computeBugFixRate(commits)).toBe(25);
   });
 });
 

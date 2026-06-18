@@ -12,6 +12,7 @@ import type { ChunkChurnOverlay } from "../types.js";
 import { computeBlameOwnership } from "./blame-ownership.js";
 import type { ChunkAccumulator, SquashOptions } from "./metrics.js";
 import { assembleChunkSignals } from "./metrics/chunk-assembler.js";
+import { groupIntoSessions } from "./metrics/sessions.js";
 
 export interface AssembleOverlaysOptions {
   relativeChunkMap: Map<string, ChunkLookupEntry[]>;
@@ -37,7 +38,15 @@ export function assembleOverlays(opts: AssembleOverlaysOptions): Map<string, Map
     let fileContributorCount: number | undefined;
 
     if (fileChurnData) {
-      fileCommitCount = Math.max(fileChurnData.commits.length, 1);
+      // Under squash, the chunk denominator becomes a session count, so the
+      // file denominator must too — otherwise churnRatio mixes units (sessions
+      // over raw commits). Mirrors the chunk-level session normalization.
+      const rawFileCommitCount = fileChurnData.commits.length;
+      const squashedFileCommitCount =
+        squashOpts?.squashAwareSessions === true
+          ? groupIntoSessions(fileChurnData.commits, squashOpts.sessionGapMinutes ?? 30).length
+          : rawFileCommitCount;
+      fileCommitCount = Math.max(squashedFileCommitCount, 1);
       const uniqueAuthors = new Set(fileChurnData.commits.map((c) => c.author));
       fileContributorCount = uniqueAuthors.size;
     } else {

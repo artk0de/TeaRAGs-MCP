@@ -6,6 +6,8 @@
  * Qdrant scrolling is handled at the API layer — this function is pure.
  */
 
+import { resolvePayloadValue } from "../../../contracts/signal-utils.js";
+import type { FilterPresetDef } from "../../../contracts/types/filter-preset.js";
 import {
   STATS_ACCUMULATOR_KEYS,
   type PointContext,
@@ -19,8 +21,6 @@ import type {
   ScopedSignalStats,
   SignalStats,
 } from "../../../contracts/types/trajectory.js";
-import type { FilterPresetDef } from "../../../contracts/types/filter-preset.js";
-import { toPhysicalPayloadKey } from "../../../contracts/signal-utils.js";
 import { detectScope, type ScopeDetectionConfig } from "../../../infra/scope-detection.js";
 import { CODE_LANGUAGES } from "../pipeline/chunker/config.js";
 
@@ -42,30 +42,7 @@ const MIN_LANGUAGE_SHARE = 0.05;
  * feed flat or alternate shapes still work.
  */
 function readPayloadPath(payload: Record<string, unknown>, path: string): unknown {
-  // Try flat key first (Qdrant stores dot-notation paths as flat keys)
-  if (path in payload) return payload[path];
-
-  // Codegraph nested-symbols form: logical `codegraph.{file|chunk}.X` maps to
-  // physical `codegraph.symbols.{file|chunk}.X` via shared helper (single source).
-  const physicalKey = toPhysicalPayloadKey(path);
-  if (physicalKey !== path) {
-    const parts = physicalKey.split(".");
-    let current: unknown = payload;
-    for (const part of parts) {
-      if (current === null || current === undefined || typeof current !== "object") break;
-      current = (current as Record<string, unknown>)[part];
-    }
-    if (current !== undefined) return current;
-  }
-
-  // Fall back to nested traversal
-  const parts = path.split(".");
-  let current: unknown = payload;
-  for (const part of parts) {
-    if (current === null || current === undefined || typeof current !== "object") return undefined;
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
+  return resolvePayloadValue(payload, path);
 }
 
 /**
