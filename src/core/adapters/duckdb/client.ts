@@ -32,6 +32,7 @@ import type {
   InheritanceEdge,
   InheritanceEdgeRow,
   InheritanceKind,
+  MethodEdgeKind,
   RelPath,
   ResolveRunStatsRow,
   SymbolDefinition,
@@ -744,17 +745,76 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async getCallers(symbolId: SymbolId): Promise<CallerEdge[]> {
-    return this.queryAll<CallerEdge>(
+    const direct = await this.queryAll<CallerEdge>(
       'SELECT source_symbol_id AS "sourceSymbolId", source_rel_path AS "sourceRelPath", call_expression AS "callExpression" FROM cg_symbols_edges_method WHERE target_symbol_id = ? ORDER BY source_rel_path, source_symbol_id',
       [symbolId],
     );
+    // bd tea-rags-mcp-2jet-E — symmetric CHA cone expansion. A large cone was
+    // capped to ONE `poly-base` edge to the base declaration `T#m`. Callers of a
+    // concrete override `Sub#m` must therefore ALSO include any caller that
+    // (polymorphically) targeted `T#m` via poly-base, for every ancestor `T` of
+    // `Sub`. Re-derive those callers through the forward inheritance index.
+    const split = splitMethodSymbol(symbolId);
+    if (!split) return direct;
+    const polyBaseCallers = await this.queryAll<CallerEdge>(
+      `SELECT m.source_symbol_id AS "sourceSymbolId", m.source_rel_path AS "sourceRelPath", m.call_expression AS "callExpression"
+         FROM cg_symbols_edges_method m
+         JOIN cg_symbols_inheritance i ON i.source_fq_name = ?
+        WHERE m.edge_kind = 'poly-base'
+          AND m.target_symbol_id = i.ancestor_fq_name || ? || ?
+        ORDER BY m.source_rel_path, m.source_symbol_id`,
+      [split.base, split.sep, split.member],
+    );
+    if (polyBaseCallers.length === 0) return direct;
+    return dedupeCallerEdges([...direct, ...polyBaseCallers]);
   }
 
   async getCallees(symbolId: SymbolId): Promise<CalleeEdge[]> {
-    return this.queryAll<CalleeEdge>(
-      'SELECT target_symbol_id AS "targetSymbolId", target_rel_path AS "targetRelPath", call_expression AS "callExpression" FROM cg_symbols_edges_method WHERE source_symbol_id = ? ORDER BY target_rel_path',
+    const edges = await this.queryAll<CalleeEdge & { edgeKind: MethodEdgeKind }>(
+      `SELECT target_symbol_id AS "targetSymbolId", target_rel_path AS "targetRelPath", call_expression AS "callExpression", edge_kind AS "edgeKind"
+         FROM cg_symbols_edges_method WHERE source_symbol_id = ? ORDER BY target_rel_path`,
       [symbolId],
     );
+    const out: CalleeEdge[] = [];
+    for (const e of edges) {
+      const base: CalleeEdge = {
+        targetSymbolId: e.targetSymbolId,
+        targetRelPath: e.targetRelPath,
+        callExpression: e.callExpression,
+      };
+      out.push(base);
+      // bd tea-rags-mcp-2jet-E — expand a `poly-base` edge to the overriding
+      // subtypes at query time. The persisted edge points at the base decl
+      // `T#m`; the reverse inheritance index yields the subtypes, and we keep
+      // only those that actually DECLARE the override (an existing `Sub#m`
+      // symbol). The base edge stays so a concrete base implementation is not
+      // lost.
+      if (e.edgeKind === "poly-base" && e.targetSymbolId) {
+        out.push(...(await this.expandPolyBaseCallees(e.targetSymbolId, e.callExpression)));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Re-derive the overriding-subtype callee edges for a capped `poly-base` edge
+   * (bd tea-rags-mcp-2jet-E). `baseTarget` is `T#m`; for each direct subtype `S`
+   * of `T` that declares its own `S#m`, emit one callee edge. Subtypes that only
+   * inherit `m` (no own declaration) are skipped — synthesizing `S#m` for them
+   * would point at a symbol that does not exist.
+   */
+  private async expandPolyBaseCallees(baseTarget: SymbolId, callExpression: string): Promise<CalleeEdge[]> {
+    const split = splitMethodSymbol(baseTarget);
+    if (!split) return [];
+    const rows = await this.queryAll<{ targetSymbolId: SymbolId; targetRelPath: RelPath }>(
+      `SELECT s.symbol_id AS "targetSymbolId", s.rel_path AS "targetRelPath"
+         FROM cg_symbols_inheritance i
+         JOIN cg_symbols s ON s.symbol_id = i.source_fq_name || ? || ?
+        WHERE i.ancestor_fq_name = ?
+        ORDER BY s.symbol_id`,
+      [split.sep, split.member, split.base],
+    );
+    return rows.map((r) => ({ targetSymbolId: r.targetSymbolId, targetRelPath: r.targetRelPath, callExpression }));
   }
 
   async getCalleeEdges(symbolIds: SymbolId[]): Promise<Map<SymbolId, SymbolId[]>> {
@@ -969,4 +1029,44 @@ function parseScope(json: string): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Split a method symbolId into its declaring type, the class↔member separator,
+ * and the member (bd tea-rags-mcp-2jet-E). Per `symbolid-convention.md` the
+ * separator between class and member is `#` (instance) or `.` (static); `::`
+ * (Ruby/Rust namespace) is NOT a member boundary. The LAST `#` wins when
+ * present (so `Acme::User#save` → base `Acme::User`, member `save`); otherwise
+ * fall back to the last `.`. Returns `null` for a bare top-level symbol with no
+ * member separator — nothing to expand.
+ */
+function splitMethodSymbol(symbolId: SymbolId): { base: string; sep: "#" | "."; member: string } | null {
+  const hash = symbolId.lastIndexOf("#");
+  if (hash > 0 && hash < symbolId.length - 1) {
+    return { base: symbolId.slice(0, hash), sep: "#", member: symbolId.slice(hash + 1) };
+  }
+  const dot = symbolId.lastIndexOf(".");
+  if (dot > 0 && dot < symbolId.length - 1) {
+    return { base: symbolId.slice(0, dot), sep: ".", member: symbolId.slice(dot + 1) };
+  }
+  return null;
+}
+
+/**
+ * Dedupe caller edges by `(sourceSymbolId, callExpression)` (bd 2jet-E). The
+ * symmetric poly-base expansion can re-surface a caller the direct query already
+ * returned (e.g. a class that both directly calls the override AND reaches it
+ * polymorphically). First occurrence wins; ordering of the merged list is
+ * preserved.
+ */
+function dedupeCallerEdges(edges: CallerEdge[]): CallerEdge[] {
+  const seen = new Set<string>();
+  const out: CallerEdge[] = [];
+  for (const e of edges) {
+    const k = `${e.sourceSymbolId} ${e.callExpression}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(e);
+  }
+  return out;
 }

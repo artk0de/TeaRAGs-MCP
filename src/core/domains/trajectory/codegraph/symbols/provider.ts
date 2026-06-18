@@ -47,6 +47,7 @@ import type {
   GraphDbClient,
   GraphEdges,
   NamedSymbol,
+  ResolveRunStatsRow,
 } from "../../../../contracts/types/codegraph.js";
 import type { FileClassification } from "../../../../contracts/types/file-classification.js";
 import type {
@@ -1222,6 +1223,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       const paths =
         options?.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
       await this.readFileOverlays(graphDb, paths, file);
+      // bd tea-rags-mcp-2jet-D — flush the per-receiver-kind resolve breakdown
+      // (j431) to `cg_run_stats` so the daemon-readable proxy surfaces each
+      // cai0 slice's per-bucket delta. Overwrite semantics live in the client;
+      // the provider only maps the in-memory tally to rows. Runs after
+      // sink.finish() so every resolved call is already counted.
+      await this.recordRunStats(graphDb);
     } finally {
       this.runSinks.delete(key);
       this.runExtractedPaths.delete(key);
@@ -1229,6 +1236,24 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
     return file;
   };
+
+  /**
+   * Map the in-memory per-receiver-kind tally (`runStats.byReceiverKind`, j431)
+   * to `ResolveRunStatsRow[]` and persist it via `graphDb.recordRunStats`
+   * (bd tea-rags-mcp-2jet-D). One row per `RECEIVER_KIND` the provider observed;
+   * the client overwrites the whole table so stale prior-run buckets never leak.
+   * The tally is NOT reset here — `getRunMetrics` owns read-and-clear; this only
+   * mirrors the current snapshot to disk at finalize.
+   */
+  private async recordRunStats(graphDb: GraphDbClient): Promise<void> {
+    const { byReceiverKind } = this.runStats;
+    const rows: ResolveRunStatsRow[] = RECEIVER_KINDS.map((kind) => ({
+      receiverKind: kind,
+      attempted: byReceiverKind[kind].attempted,
+      resolved: byReceiverKind[kind].resolved,
+    }));
+    await graphDb.recordRunStats(rows);
+  }
 
   /**
    * Release per-run extraction state after finalize: reset the run-global

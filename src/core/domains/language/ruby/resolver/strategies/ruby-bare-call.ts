@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import type { ResolverConfig } from "./shared.js";
+import { isRubyPath, type ResolverConfig } from "./shared.js";
 
 /**
  * Bare-call fallback: receiver is null, so global short-name lookup is the only
@@ -42,20 +42,4 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     return CONTINUE;
   }
-}
-
-/**
- * Defense-in-depth filter for the bare-call global short-name fallback.
- * The symbol table is shared across languages — a Ruby resolver MUST
- * NOT attribute a call edge to a JavaScript / Java / etc. definition,
- * because the file extensions and call semantics don't match.
- *
- * `SymbolDefinition` has no `language` field today, so we gate on the
- * file extension (`.rb`, `.rake`, `.gemspec` — every file that the
- * tea-rags Ruby walker would have parsed). Vendored JS in
- * `vendor/assets/javascripts/*.js` is the canonical false-positive
- * source (huginn `agents.map(&:id)` → `d3.js#map`).
- */
-function isRubyPath(relPath: string): boolean {
-  return relPath.endsWith(".rb") || relPath.endsWith(".rake") || relPath.endsWith(".gemspec");
 }

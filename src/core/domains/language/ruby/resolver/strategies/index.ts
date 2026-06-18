@@ -6,10 +6,13 @@ export { RubyArRelationGuardSymbolResolutionStrategy } from "./ruby-ar-relation-
 export { RubyReceiverSetDropSymbolResolutionStrategy } from "./ruby-receiver-set-drop.js";
 export { RubyBareCallSymbolResolutionStrategy } from "./ruby-bare-call.js";
 export { RubyConeDispatchResolver } from "./ruby-cone-dispatch.js";
+export { RubyDynamicDispatchResolver } from "./ruby-dynamic-dispatch.js";
 export {
   resolveConstant,
   collectKnownPaths,
   lastConstantSegment,
+  isRubyPath,
   CONE_MAX_DEFAULT,
+  DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
   type ResolverConfig,
 } from "./shared.js";

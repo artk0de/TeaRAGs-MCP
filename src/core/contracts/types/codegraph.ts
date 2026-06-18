@@ -856,8 +856,13 @@ export interface GraphFileNode {
  *                 `confidence = 1/N` so N candidate targets share unit weight.
  * - `poly-base` — hub fan-out capped: one edge to the base declaration, full
  *                 subtype expansion deferred to query-time `getSubtypes`.
+ * - `dynamic`   — dynamic-receiver short-name fan-out (bd tea-rags-mcp-wbj3): a
+ *                 receiver with no static type (`arr.map`, `obj[k].call`) that
+ *                 would otherwise drop is resolved by short-name lookup with a
+ *                 confidence discount (`< 1`). Distinguishable from `cone` (which
+ *                 has a static base type) so ranking can discount name-only edges.
  */
-export type MethodEdgeKind = "exact" | "cone" | "poly-base";
+export type MethodEdgeKind = "exact" | "cone" | "poly-base" | "dynamic";
 
 /**
  * One row of the per-receiver-kind resolve breakdown (bd tea-rags-mcp-j431),

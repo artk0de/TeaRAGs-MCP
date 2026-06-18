@@ -49,12 +49,20 @@ import {
   RubyBareCallSymbolResolutionStrategy,
   RubyConeDispatchResolver,
   RubyConstantSymbolResolutionStrategy,
+  RubyDynamicDispatchResolver,
   RubyExplicitRequireSymbolResolutionStrategy,
   RubyLocalTypeSymbolResolutionStrategy,
   RubyReceiverSetDropSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
   type ResolverConfig,
 } from "./strategies/index.js";
+
+/** Parse `CODEGRAPH_RB_DYNAMIC_CONFIDENCE` (a float in `(0,1]`); `undefined` on absent/invalid. */
+function resolveDynamicConfidence(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 1 ? parsed : undefined;
+}
 
 /** Parse `CODEGRAPH_RB_CONE_MAX`; fall back to the shared default on absent/invalid. */
 function resolveConeMax(raw: string | undefined): number {
@@ -66,9 +74,14 @@ export class RubyCallResolver implements CallResolver {
   readonly language = "ruby";
   private readonly strategies: SymbolResolutionStrategy[];
   private readonly cone: RubyConeDispatchResolver;
+  private readonly dynamic: RubyDynamicDispatchResolver;
 
   constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const cfg: ResolverConfig = { mode, coneMax: resolveConeMax(process.env.CODEGRAPH_RB_CONE_MAX) };
+    const cfg: ResolverConfig = {
+      mode,
+      coneMax: resolveConeMax(process.env.CODEGRAPH_RB_CONE_MAX),
+      dynamicReceiverConfidence: resolveDynamicConfidence(process.env.CODEGRAPH_RB_DYNAMIC_CONFIDENCE),
+    };
     this.strategies = [
       new RubySuperSymbolResolutionStrategy(cfg),
       new RubyLocalTypeSymbolResolutionStrategy(cfg),
@@ -79,6 +92,7 @@ export class RubyCallResolver implements CallResolver {
       new RubyBareCallSymbolResolutionStrategy(cfg),
     ];
     this.cone = new RubyConeDispatchResolver(cfg);
+    this.dynamic = new RubyDynamicDispatchResolver(cfg);
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
@@ -86,13 +100,28 @@ export class RubyCallResolver implements CallResolver {
   }
 
   /**
-   * CHA cone fan-out (bd tea-rags-mcp-2jet). Returns N `cone` edges for a
-   * polymorphic receiver whose static type has subtypes overriding the member,
-   * one `poly-base` edge when the cone exceeds the cap, or `[]` for every
-   * non-polymorphic call (the provider then takes the exact `resolve` path).
+   * Fan-out resolution for a Ruby call, composed in precedence order:
+   *
+   *   1. CHA cone (bd tea-rags-mcp-2jet) — a polymorphic TYPED receiver whose
+   *      static type has subtypes overriding the member fans out to N `cone`
+   *      edges (or one `poly-base`). Returns `[]` for every non-polymorphic
+   *      call.
+   *   2. Dynamic-receiver fan-out (bd tea-rags-mcp-wbj3) — an UNTYPED dynamic
+   *      receiver (`arr.map`, `obj[k].call`) that would otherwise DROP resolves
+   *      via discounted short-name lookup to N `dynamic` edges.
+   *
+   * Cone precedes dynamic: the cone requires a `localBinding` (typed receiver)
+   * while the dynamic fan-out explicitly excludes bound receivers, so the two
+   * are mutually exclusive by receiver shape — the order is a safety net, not a
+   * conflict resolver. When BOTH return `[]` the provider takes the exact
+   * `resolve` chain. An `external` receiver carries no in-project target on
+   * either path, so the invariant "external never cones / never fabricates an
+   * out-of-project edge" holds.
    */
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
-    return this.cone.resolveDispatch(call, ctx);
+    const cone = this.cone.resolveDispatch(call, ctx);
+    if (cone.length > 0) return cone;
+    return this.dynamic.resolveDispatch(call, ctx);
   }
 
   /**

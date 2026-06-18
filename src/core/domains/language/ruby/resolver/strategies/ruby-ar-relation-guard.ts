@@ -53,7 +53,7 @@ const AR_RELATION_BUILDERS = [
   ".pluck(",
 ];
 
-function receiverLooksLikeArRelationChain(receiver: string): boolean {
+export function receiverLooksLikeArRelationChain(receiver: string): boolean {
   for (const marker of AR_RELATION_BUILDERS) {
     if (receiver.includes(marker)) return true;
   }
