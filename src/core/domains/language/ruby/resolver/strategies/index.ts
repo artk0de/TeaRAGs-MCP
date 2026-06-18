@@ -6,6 +6,7 @@ export { RubyArRelationGuardSymbolResolutionStrategy } from "./ruby-ar-relation-
 export { RubyReceiverSetDropSymbolResolutionStrategy } from "./ruby-receiver-set-drop.js";
 export { RubyBareCallSymbolResolutionStrategy } from "./ruby-bare-call.js";
 export { RubyConeDispatchResolver } from "./ruby-cone-dispatch.js";
+export { RubyConeTypeLocator } from "./ruby-cone-type-locator.js";
 export { RubyDynamicDispatchResolver } from "./ruby-dynamic-dispatch.js";
 export {
   resolveConstant,
