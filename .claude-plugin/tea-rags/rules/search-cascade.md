@@ -86,12 +86,29 @@ file outlines, or doc TOCs from the same index.
 rankingOverlay in one call). `offset` pagination works on every search tool;
 when a page is exhausted, retry with `offset: N` instead of inflating `limit`.
 
-**symbolId conventions:**
+**symbolId conventions (LANGUAGE-AGNOSTIC — same `#`/`.` rule for every
+language; this is the input contract for `find_symbol(symbol:)`):**
 
-- Code instance methods: `Class#method` (e.g., `Reranker#rerank`)
-- Code static methods: `Class.method` (e.g., `Reranker.create`)
-- Top-level functions: `functionName`
+- Code instance methods: `Class#method` (e.g., `Reranker#rerank`) — bound to
+  `this`/`self`. Constructors are instance-bound too (`Class#constructor`).
+- Code static / class / classmethod / associated methods: `Class.method` (e.g.,
+  `Reranker.create`)
+- Top-level functions: `functionName` (no class prefix)
+- Namespace separators are NOT a method hint: Ruby/Rust `::` (`Acme::User`) and
+  TS/JS/Python nested-class `.` (`Outer.Nested`) only scope the container —
+  methods on them still use `#`/`.` (`Acme::User#save`).
 - Doc chunks: opaque hash `doc:a3f8b2c1e4d7` — do NOT guess, take from results
+
+The `#`/`.` separator is **load-bearing for `find_symbol` EXACT lookup only**:
+`find_symbol(symbol: "Class.method")` for an instance method returns EMPTY (and
+may surface a spurious drift warning) — an empty result is a WRONG-SEPARATOR
+signal, not a stale index. It is irrelevant for `hybrid_search`'s `symbolId`
+(partial, substring match — pass a bare name). When unsure instance vs static,
+pass a **partial match** to `find_symbol` (`Class` alone, or the bare `method`)
+and read the real separator off `result.symbolId`; never downgrade an empty
+`find_symbol` to ripgrep. Producer-side source of truth (how the separator is
+chosen per language at index time): `.claude/rules/symbolid-convention.md`
+(`INSTANCE_METHOD_SEPARATOR` in `infra/symbolid/classify.ts`).
 
 ### find_symbol — the navigation workhorse (two addressing modes)
 
@@ -126,8 +143,8 @@ Requires codegraph enabled. Precedence — start cheap, escalate only if needed:
    Default for impact & dependency questions; instant, no traversal.
 2. **`find_cycles`** — detect circular dependency chains.
 3. **`trace_path`** — ALL paths A→B with per-step danger ranking. Escalate here
-   ONLY when the full chain matters ("how does control reach B from A?",
-   "which step on the A→B chain is riskiest?"), never for a single hop.
+   ONLY when the full chain matters ("how does control reach B from A?", "which
+   step on the A→B chain is riskiest?"), never for a single hop.
 
 ### Optimal routes (navigate, don't re-search)
 

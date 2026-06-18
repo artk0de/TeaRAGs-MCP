@@ -32,6 +32,17 @@ These instructions take priority over any skill or rule that says otherwise.
   \"inspect the implementation of X\") →
   mcp__tea-rags__find_symbol with symbol param (instant, no embedding,
   returns full definition — no Read needed)
+  symbolId convention for the \`symbol\` param (LANGUAGE-AGNOSTIC, all langs):
+    * \`Class#method\` → INSTANCE method (bound to this/self), e.g. \`Reranker#rerank\`
+    * \`Class.method\` → CLASS / static / classmethod / associated fn, e.g. \`Reranker.create\`
+    * \`functionName\` → top-level function (no class prefix)
+    * \`Outer::Inner\` / \`Outer.Nested\` → namespace separator, NOT a method hint
+  The \`#\` vs \`.\` separator is load-bearing for find_symbol EXACT lookup —
+  \`Class.method\` for an instance method returns EMPTY (may also surface a
+  spurious drift warning). NOT sure if instance or static? Pass a PARTIAL match
+  (\`Class\` alone, or the bare \`method\` name) — find_symbol returns all members
+  and you read the real separator off \`result.symbolId\`. Do NOT fall to ripgrep
+  on an empty find_symbol — retry partial, then hybrid_search.
 - Exhaustive usage of code identifiers (\"all callers\", \"where used\",
   \"who imports\", \"all references to FooClass\", \"find usages of X and Y\") →
   mcp__tea-rags__hybrid_search. BM25 component gives exact-name match
