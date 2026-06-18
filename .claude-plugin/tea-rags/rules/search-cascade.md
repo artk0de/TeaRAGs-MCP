@@ -17,6 +17,22 @@ returns the full method/class definition — no Read needed.
 
 **MANDATORY:** ALWAYS prefer tea-rags and ripgrep MCP over built-in Search/Grep.
 
+## Tool Invocation Under Deferred Loading
+
+Recent models load only tool **names** into context; the full schema is fetched
+on demand (`ToolSearch`) AFTER you pick a tool. So pick the EXACT tool from the
+decision tree below first, then fetch only that one — a wrong pick costs a
+wasted fetch. Fully-qualified names for the fetch:
+
+- Every tea-rags tool is **`mcp__tea-rags__<name>`** — e.g.
+  `mcp__tea-rags__find_symbol`, `mcp__tea-rags__hybrid_search`,
+  `mcp__tea-rags__semantic_search`, `mcp__tea-rags__rank_chunks`,
+  `mcp__tea-rags__find_similar`, `mcp__tea-rags__get_callers`,
+  `mcp__tea-rags__trace_path`.
+- ripgrep is **`mcp__ripgrep__search`** (and `mcp__ripgrep__advanced-search`).
+
+Tool names appear bare below for readability — prepend the prefix when calling.
+
 ## Embedding Unavailable (ollama / EMBEDDING_URL down)
 
 If the prime digest shows `embedding: unavailable`, or `get_index_status`
@@ -77,6 +93,51 @@ when a page is exhausted, retry with `offset: N` instead of inflating `limit`.
 - Top-level functions: `functionName`
 - Doc chunks: opaque hash `doc:a3f8b2c1e4d7` — do NOT guess, take from results
 
+### find_symbol — the navigation workhorse (two addressing modes)
+
+`find_symbol` is instant (no embedding) and answers most "now show me X"
+follow-ups. Choose the mode by what you already hold:
+
+**Mode A — `symbol:` (you know the name)**
+
+| You have…                        | Pass                              | You get                                       |
+| -------------------------------- | --------------------------------- | --------------------------------------------- |
+| Instance method                  | `symbol: "Class#method"`          | merged full method body                       |
+| Static method / top-level fn     | `symbol: "Class.method"` / `"fn"` | merged full definition                        |
+| **Class or module name**         | `symbol: "ClassName"`             | full class/module outline + all method bodies |
+| Existence check only             | `symbol: "X", metaOnly: true`     | presence + location, no body (cheapest)       |
+| Doc section (hash from a result) | `symbol: "doc:<hash>"`            | that doc heading's chunk                      |
+
+**Mode B — `relativePath:` (you have a file path) — USE THIS MORE.** With no
+symbol, just a path, find_symbol returns a synthetic outline of the whole file.
+Agents under-use it; it is the correct route, not `Read`, not `semantic_search`:
+
+- **`relativePath: "docs/file.md"` → the doc's heading TOC** (table of contents,
+  one hash per heading). THE way to map a markdown doc before reading it.
+  Whenever a task touches a `.md` doc and you lack a `doc:<hash>`, start here.
+- **`relativePath: "src/foo.ts"` → file structure**: every class/method/function
+  outline in that file. Use instead of `Read` to answer "what's in this file".
+
+### Graph navigation — get_callers / get_callees / trace_path
+
+Requires codegraph enabled. Precedence — start cheap, escalate only if needed:
+
+1. **`get_callers` / `get_callees`** — ONE hop ("who calls X" / "what X calls").
+   Default for impact & dependency questions; instant, no traversal.
+2. **`find_cycles`** — detect circular dependency chains.
+3. **`trace_path`** — ALL paths A→B with per-step danger ranking. Escalate here
+   ONLY when the full chain matters ("how does control reach B from A?",
+   "which step on the A→B chain is riskiest?"), never for a single hop.
+
+### Optimal routes (navigate, don't re-search)
+
+- After ANY search → next call is `find_symbol`, never another search, never
+  `Read`. The chunk already names the symbol/path you need.
+- Doc structure → `find_symbol(relativePath: "docs/x.md")`, never `Read` the md.
+- A class's full API → `find_symbol(symbol: "ClassName")`, one call.
+- Who-uses-X repo-wide → `hybrid_search` (text recall) when codegraph is off;
+  `get_callers` (exact, graph) when codegraph is on.
+
 ## After Code Changes (mid-session reindex)
 
 If you (or a subagent) modified files via Write/Edit and the NEXT step uses
@@ -106,11 +167,8 @@ Already have search results for this area?
 │   │     → find_symbol(relativePath: "docs/file.md") OR
 │   │       find_symbol(symbol: "doc:<parentHash>") from search result
 │   └─ Need graph navigation (codegraph must be enabled)
-│         → get_callers / get_callees — one hop: who calls X / what X calls
-│         → find_cycles — detect circular dependency chains
-│         → trace_path — ALL call paths A→B with per-step danger ranking
-│              use when: "how does control reach B from A?" or
-│              "which step on the A→B chain is riskiest?"
+│         → see "Graph navigation" above: get_callers/get_callees (one hop,
+│           default) → find_cycles → trace_path (full A→B chain, escalate only)
 │
 └─ No (need to search)
 
@@ -129,23 +187,21 @@ Has query?
 │       + rerank preset for analytics (see /tea-rags:analytics-rerank)
 │       + minCommitCount from labelMap to filter one-off scripts
 │
-└─ Yes
-   ├─ Exhaustive usage intent? ("where is X used", "all callers")
+└─ Yes  (axis: DEFINITION vs USAGES vs INTENT — pick one)
+   ├─ Known symbol — need its DEFINITION / body / class outline?
+   │   → find_symbol (instant, no embedding). Class#method | Class.method | fn.
+   │     metaOnly=true for existence checks. (modes: "find_symbol" section above)
+   │     Fallback when the symbolId is a guess / fuzzy: hybrid_search.
+   │
+   ├─ Need file structure or a doc's TOC? → find_symbol(relativePath:)
+   │     .md path → heading TOC; src path → file outline. NOT Read.
+   │
+   ├─ Exact identifier — need all USAGES / matches? ("where is X used")
    │   → hybrid_search (BM25 full recall for exact names; paginate via offset)
    │
    ├─ Have code/chunk as example? → find_similar (code or chunk ID)
    │
-   ├─ Need definition of a known symbol? → find_symbol
-   │   symbolId convention: Class#method (instance), Class.method (static).
-   │   metaOnly=true for existence checks. Fallback: hybrid_search.
-   │
-   ├─ Need file structure or doc TOC? → find_symbol(relativePath:)
-   │
-   ├─ Have a symbol name + semantic context? → hybrid_search
-   │
-   ├─ Have a bare symbol name (no context)? → hybrid_search
-   │
-   └─ Describing behavior/intent → semantic_search
+   └─ Describing behavior / intent (no exact name) → semantic_search
 ```
 
 All except find_similar accept a rerank preset. For preset choice and custom
@@ -251,3 +307,15 @@ syntax.** They are generated from the live registry, so they reflect what THIS
 build supports. Read them via
 `ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/<name>")`
 rather than guessing names from training data.
+
+## Portability (non-Claude-Code clients)
+
+This document assumes the Claude Code harness: skill invocations
+(`/tea-rags:*`), the `Agent` tool, and `ReadMcpResourceTool`. MCP-only clients
+(Cursor, Roo, custom agents) have no skills — strip the skill directives and
+consume the same guidance from the portable MCP resources instead:
+`tea-rags://schema/search-guide` (tool routing + examples),
+`tea-rags://schema/overview` (catalog), `tea-rags://schema/presets`,
+`tea-rags://schema/filters`, `tea-rags://schema/signals`. The decision tree,
+prohibited patterns, and fallback chains above are harness-agnostic and apply to
+any client.

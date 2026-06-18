@@ -1,0 +1,31 @@
+{
+  "skill": "search-cascade",
+  "artifact": ".claude-plugin/tea-rags/rules/search-cascade.md",
+  "note": "search-cascade is a resident RULE (injected via SessionStart hook), not a SKILL.md. optimize-skill methodology adapted: the rule text is the tool-selection artifact under test. Eval is paper-style (describe first tool, no execution).",
+  "date": "2026-06-19",
+  "method": {
+    "after_fix": "full edited cascade text injected (agent reads file)",
+    "before_fix": "HEAD cascade text injected (pre-fix snapshot)",
+    "no_rule": "no cascade, tool list only"
+  },
+  "grading_notes": "Eval-3 accepts hybrid_search OR get_callers (codegraph enabled — cascade routes who-uses-X repo-wide to get_callers when codegraph on, hybrid_search otherwise).",
+  "cases": [
+    { "id": 1, "audit_finding": "find_symbol path underused (doc TOC)", "prompt": "Map the structure / TOC of docs/architecture.md before I edit it.", "expected": "find_symbol(relativePath)", "not": ["Read", "semantic_search"], "after_fix": "PASS", "before_fix": "PASS", "no_rule": "FAIL (Read)" },
+    { "id": 2, "audit_finding": "find_symbol vs hybrid disambiguation (definition)", "prompt": "Show me the full body of Reranker#rerank.", "expected": "find_symbol(symbol)", "not": ["hybrid_search", "semantic_search"], "after_fix": "PASS", "before_fix": "PASS", "no_rule": "PASS" },
+    { "id": 3, "audit_finding": "usages routing", "prompt": "Where is computeCollectionStats used across the whole repo?", "expected": "hybrid_search OR get_callers", "not": ["semantic_search", "find_symbol"], "after_fix": "PASS", "before_fix": "PASS", "no_rule": "PASS" },
+    { "id": 4, "audit_finding": "graph precedence — one hop", "prompt": "Who calls IngestFacade#index?", "expected": "get_callers", "not": ["trace_path"], "after_fix": "PASS", "before_fix": "PASS", "no_rule": "PASS" },
+    { "id": 5, "audit_finding": "graph escalation", "prompt": "On the path from CLI entry to QdrantManager.search, which step is riskiest?", "expected": "trace_path", "not": ["get_callees"], "after_fix": "PASS", "before_fix": "PASS", "no_rule": "PASS" },
+    { "id": 6, "audit_finding": "class outline route", "prompt": "Give me the full public API and method bodies of the Reranker class.", "expected": "find_symbol(symbol)", "not": ["semantic_search"], "after_fix": "PASS", "before_fix": "PASS", "no_rule": "PASS" },
+    { "id": 7, "audit_finding": "control — intent", "prompt": "How does confidence dampening work when reranking? Explain the mechanism.", "expected": "semantic_search", "not": ["hybrid_search", "find_symbol"], "after_fix": "PASS", "before_fix": "PASS", "no_rule": "FAIL (hybrid_search)" },
+    { "id": 8, "audit_finding": "control — marker", "prompt": "Find all FIXME comments in the chunker directory.", "expected": "ripgrep", "not": ["hybrid_search"], "after_fix": "PASS", "before_fix": "PASS", "no_rule": "PASS" },
+    { "id": 9, "audit_finding": "subagent:explore — doc TOC", "prompt": "[subagent: explore] List the section headings of docs/superpowers/specs/2026-05-15-lazy-percentile-recompute-design.md", "expected": "find_symbol(relativePath)", "not": ["Read"], "after_fix": "PASS", "before_fix": "PASS", "no_rule": "FAIL (Read)" },
+    { "id": 10, "audit_finding": "subagent:task-agent — definition", "prompt": "[subagent: task-agent] Get the definition of StatsRecomputeService#ensureCoverage at src/core/domains/ingest/stats-recompute.ts", "expected": "find_symbol(symbol)", "not": ["Read", "semantic_search"], "after_fix": "PASS", "before_fix": "PASS", "no_rule": "PASS" }
+  ],
+  "results": {
+    "after_fix": { "pass": 10, "total": 10, "pct": 100 },
+    "before_fix": { "pass": 10, "total": 10, "pct": 100 },
+    "no_rule": { "pass": 7, "total": 10, "pct": 70 },
+    "delta_cascade_vs_nothing_pp": 30,
+    "delta_after_vs_before_pp": 0
+  }
+}
