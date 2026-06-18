@@ -101,7 +101,7 @@ export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolut
  * Returns the file path of the class definition when an import
  * resolves there, or `null` otherwise.
  */
-function resolveTypeFile(bareType: string, ctx: CallContext): string | null {
+export function resolveTypeFile(bareType: string, ctx: CallContext): string | null {
   // First pass: scan symbol table for ANY definition matching the
   // bare type name. If it's unique we have the file directly.
   const tableMatches = ctx.symbolTable.lookupByShortName(bareType);
