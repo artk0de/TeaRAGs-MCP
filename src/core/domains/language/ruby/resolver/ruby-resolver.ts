@@ -34,6 +34,7 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
+  type DispatchEdge,
   type FileExtraction,
   type GraphEdges,
   type SymbolResolutionTarget,
@@ -42,23 +43,32 @@ import type { SymbolResolutionStrategy } from "../../../../contracts/types/langu
 import { resolveViaChain } from "../../resolver-chain.js";
 import { ZEITWERK_PREFIX } from "../walker/walker.js";
 import {
+  CONE_MAX_DEFAULT,
+  resolveConstant,
   RubyArRelationGuardSymbolResolutionStrategy,
   RubyBareCallSymbolResolutionStrategy,
+  RubyConeDispatchResolver,
   RubyConstantSymbolResolutionStrategy,
   RubyExplicitRequireSymbolResolutionStrategy,
   RubyLocalTypeSymbolResolutionStrategy,
   RubyReceiverSetDropSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
-  resolveConstant,
   type ResolverConfig,
 } from "./strategies/index.js";
+
+/** Parse `CODEGRAPH_RB_CONE_MAX`; fall back to the shared default on absent/invalid. */
+function resolveConeMax(raw: string | undefined): number {
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : CONE_MAX_DEFAULT;
+}
 
 export class RubyCallResolver implements CallResolver {
   readonly language = "ruby";
   private readonly strategies: SymbolResolutionStrategy[];
+  private readonly cone: RubyConeDispatchResolver;
 
   constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const cfg: ResolverConfig = { mode };
+    const cfg: ResolverConfig = { mode, coneMax: resolveConeMax(process.env.CODEGRAPH_RB_CONE_MAX) };
     this.strategies = [
       new RubySuperSymbolResolutionStrategy(cfg),
       new RubyLocalTypeSymbolResolutionStrategy(cfg),
@@ -68,10 +78,21 @@ export class RubyCallResolver implements CallResolver {
       new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
       new RubyBareCallSymbolResolutionStrategy(cfg),
     ];
+    this.cone = new RubyConeDispatchResolver(cfg);
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     return resolveViaChain(this.strategies, call, ctx);
+  }
+
+  /**
+   * CHA cone fan-out (bd tea-rags-mcp-2jet). Returns N `cone` edges for a
+   * polymorphic receiver whose static type has subtypes overriding the member,
+   * one `poly-base` edge when the cone exceeds the cap, or `[]` for every
+   * non-polymorphic call (the provider then takes the exact `resolve` path).
+   */
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+    return this.cone.resolveDispatch(call, ctx);
   }
 
   /**

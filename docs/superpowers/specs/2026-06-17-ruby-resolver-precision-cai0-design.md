@@ -54,23 +54,56 @@ proves a per-bucket delta.
 (`'exact' | 'cone' | 'poly-base'`, default `'exact'`) and `confidence` (REAL,
 default 1.0).
 
-**New strategy `RubyConeDispatchSymbolResolutionStrategy`** — placed **late** in
-the chain (last-resort before drop, after all exact strategies return
-`continue`). Input: a receiver whose static base type `T` is known but method
-`m` was not resolved exactly.
+**Wiring (variant A — cone is fan-out, not a chain pass).** The cone expands one
+call site to **N edges**, which the single-target `SymbolResolutionStrategy`
+chain (`resolveViaChain` → one `SymbolResolutionTarget | null`) cannot express.
+So the cone lives in the **existing fan-out contract**
+`DispatchResolverComponent.resolveDispatch` — `RubyCallResolver.resolveDispatch`
+becomes Ruby's first (and currently only) dispatch implementation.
+`DispatchEdge` gains optional `edgeKind?: MethodEdgeKind` +
+`confidence?: number` (defaulting to the persisted `'exact'`/`1.0` for the
+existing lookup-table/callback fan-outs).
+
+The provider's **normal-call branch** (`provider.ts`) tries the cone fan-out
+**first**, falling back to the exact chain when the cone is empty. Cone-first
+(not resolve-first) because the exact `localType` pass already produces a single
+base / file-only edge for a polymorphic receiver (`agent.check`, `agent: Agent`
+→ `Agent#check` or file-only) — it never returns `null` for an in-project type,
+so a "fallback on null" cone would never fire. The cone returns `[]` for every
+non-polymorphic call (no `localBinding`, or `T` has no overriding subtypes), so
+exact precedence is preserved for everything except a real cone:
 
 ```
-cone = ctx.hierarchy.getSubtypes(T) ∩ { subtypes overriding m }
-  |cone| == 0        → continue        (nothing to expand)
-  |cone| ≤ K (=8)    → resolved: N edges kind='cone' confidence=1/N
-  |cone| >  K        → resolved: 1 edge to base-decl kind='poly-base'
-                       (query-time get_callees expands via getSubtypes)
+const cone = resolver.resolveDispatch?.(call, ctx) ?? [];   // [] unless polymorphic
+if (cone.length > 0)
+  for (const e of cone) push { ...e, edgeKind: e.edgeKind, confidence: e.confidence };
+else {
+  const target = resolver.resolve(call, ctx);               // exact chain (unchanged)
+  if (target) push exact edge (kind='exact', conf=1.0);
+}
 ```
 
-`K` is env-tunable (`CODEGRAPH_RB_CONE_MAX`, default 8). First consumer of
-`ctx.hierarchy` (precise `lz8t` kinds). `get_callers`/`get_callees` learn to
-expand a `poly-base` edge through the reverse index at query time. `confidence`
-follows the `stats.confidence` dampening discipline.
+`external` receivers carry no `localBinding` ⇒ `resolveDispatch` returns `[]` ⇒
+exact path ⇒ invariant "external never cones" holds.
+
+`RubyCallResolver.resolveDispatch` computes:
+
+```
+cone = ctx.hierarchy.getDescendants(T) ∩ { subtypes overriding m }
+  |cone| == 0        → []                          (no expansion; provider drops)
+  |cone| ≤ K (=8)    → N edges kind='cone' confidence=1/N
+  |cone| >  K        → 1 edge to base-decl kind='poly-base' confidence=1.0
+                       (query-time get_callees expands via getDescendants)
+```
+
+`T` is the receiver's static base type, resolved by the same local-type binding
+the `localType` chain pass reads (`ctx.localBindings` + `resolveConstant`); an
+`external` / unknown receiver yields no `T` ⇒ `[]` (invariant: external never
+cones). `K` is env-tunable (`CODEGRAPH_RB_CONE_MAX`, default 8). First consumer
+of `ctx.hierarchy` (precise `lz8t` kinds via the sync `getDescendants` view).
+`get_callers`/`get_callees` learn to expand a `poly-base` edge through the
+reverse index at query time. `confidence` follows the `stats.confidence`
+dampening discipline.
 
 ## Slice 3 — duzy (+brg9), independent of 2jet
 

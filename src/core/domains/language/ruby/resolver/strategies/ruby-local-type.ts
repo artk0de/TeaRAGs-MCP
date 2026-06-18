@@ -6,7 +6,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { resolveConstant, type ResolverConfig } from "./shared.js";
+import { lastConstantSegment, resolveConstant, type ResolverConfig } from "./shared.js";
 
 /**
  * Walker-inferred local type wins over heuristic resolution. When the receiver
@@ -121,9 +121,4 @@ export class RubyLocalTypeSymbolResolutionStrategy implements SymbolResolutionSt
     // ancestors — file-level attribution preserved, method-level dropped.
     return { targetRelPath: targetFile, targetSymbolId: null };
   }
-}
-
-function lastConstantSegment(qualified: string): string {
-  const parts = qualified.split("::");
-  return parts[parts.length - 1] ?? qualified;
 }

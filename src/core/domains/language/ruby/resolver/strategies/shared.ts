@@ -17,6 +17,22 @@ import { resolveZeitwerkConstant } from "../zeitwerk.js";
 
 export interface ResolverConfig {
   mode: AmbiguousResolveMode;
+  /**
+   * Max cone size before CHA devirtualization collapses to a single
+   * `poly-base` edge (bd tea-rags-mcp-2jet). `|cone| ≤ coneMax` persists N
+   * `cone` edges (confidence `1/N`); `> coneMax` persists one base-decl edge
+   * expanded at query time. Defaults to `CONE_MAX_DEFAULT` (8) when omitted.
+   */
+  coneMax?: number;
+}
+
+/** Default cone-size threshold; env `CODEGRAPH_RB_CONE_MAX` overrides at composition. */
+export const CONE_MAX_DEFAULT = 8;
+
+/** Last `::`-segment of a (possibly qualified) Ruby constant — `A::B::C` → `C`. */
+export function lastConstantSegment(qualified: string): string {
+  const parts = qualified.split("::");
+  return parts[parts.length - 1] ?? qualified;
 }
 
 /**

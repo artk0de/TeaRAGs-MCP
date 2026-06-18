@@ -75,6 +75,19 @@ export interface DispatchEdge {
   sourceSymbolId: SymbolId | null;
   targetRelPath: RelPath;
   targetSymbolId: SymbolId | null;
+  /**
+   * Method-edge kind for CHA cone fan-out (bd tea-rags-mcp-2jet). Omitted for
+   * the legacy lookup-table / callback fan-outs, which the provider persists as
+   * `'exact'`. The Ruby cone resolver sets `'cone'` (one of N equal candidates)
+   * or `'poly-base'` (capped hub edge, query-time expanded).
+   */
+  edgeKind?: MethodEdgeKind;
+  /**
+   * Per-edge confidence in `(0, 1]` (bd tea-rags-mcp-2jet). `1/N` for a `cone`
+   * edge sharing unit weight across N candidates; `1.0` for `poly-base` and the
+   * legacy fan-outs (provider default when omitted).
+   */
+  confidence?: number;
 }
 
 /**

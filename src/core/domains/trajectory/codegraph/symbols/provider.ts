@@ -1608,10 +1608,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
               targetSymbolId: edge.targetSymbolId,
               targetRelPath: edge.targetRelPath,
               callExpression: call.callText,
+              edgeKind: edge.edgeKind,
+              confidence: edge.confidence,
             });
             resolved = true;
           }
-        } else {
+        } else if (call.dispatchArgs && call.dispatchArgs.length > 0) {
+          // Bounded inter-proc join: a dispatch candidate-set passed as a
+          // callback argument fans out from the CALLEE (non-null sourceSymbolId
+          // on the edge), additive to the normal callee edge.
           const target = resolver.resolve(call, ctx);
           if (target) {
             methodEdges.push({
@@ -1622,15 +1627,45 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             });
             resolved = true;
           }
-          // Bounded inter-proc join: a dispatch candidate-set passed as a
-          // callback argument fans out from the CALLEE (non-null
-          // sourceSymbolId on the edge), additive to the normal edge above.
-          if (call.dispatchArgs && call.dispatchArgs.length > 0) {
-            for (const edge of resolver.resolveDispatch?.(call, ctx) ?? []) {
+          for (const edge of resolver.resolveDispatch?.(call, ctx) ?? []) {
+            methodEdges.push({
+              sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
+              targetSymbolId: edge.targetSymbolId,
+              targetRelPath: edge.targetRelPath,
+              callExpression: call.callText,
+              edgeKind: edge.edgeKind,
+              confidence: edge.confidence,
+            });
+            resolved = true;
+          }
+        } else {
+          // CHA cone fan-out FIRST (bd tea-rags-mcp-2jet): a polymorphic
+          // receiver whose static type has subtypes overriding the member
+          // expands to N `cone` (or one `poly-base`) edges, REPLACING the
+          // single imprecise base edge the exact chain would emit. Returns `[]`
+          // for every non-polymorphic call (and every other language, whose
+          // resolveDispatch keys off call.dispatch only), so the exact `resolve`
+          // path stays the default — external receivers never cone.
+          const cone = resolver.resolveDispatch?.(call, ctx) ?? [];
+          if (cone.length > 0) {
+            for (const edge of cone) {
               methodEdges.push({
                 sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
                 targetSymbolId: edge.targetSymbolId,
                 targetRelPath: edge.targetRelPath,
+                callExpression: call.callText,
+                edgeKind: edge.edgeKind,
+                confidence: edge.confidence,
+              });
+              resolved = true;
+            }
+          } else {
+            const target = resolver.resolve(call, ctx);
+            if (target) {
+              methodEdges.push({
+                sourceSymbolId: chunk.symbolId,
+                targetSymbolId: target.targetSymbolId,
+                targetRelPath: target.targetRelPath,
                 callExpression: call.callText,
               });
               resolved = true;

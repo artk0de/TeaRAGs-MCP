@@ -5,4 +5,11 @@ export { RubyExplicitRequireSymbolResolutionStrategy } from "./ruby-explicit-req
 export { RubyArRelationGuardSymbolResolutionStrategy } from "./ruby-ar-relation-guard.js";
 export { RubyReceiverSetDropSymbolResolutionStrategy } from "./ruby-receiver-set-drop.js";
 export { RubyBareCallSymbolResolutionStrategy } from "./ruby-bare-call.js";
-export { resolveConstant, collectKnownPaths, type ResolverConfig } from "./shared.js";
+export { RubyConeDispatchResolver } from "./ruby-cone-dispatch.js";
+export {
+  resolveConstant,
+  collectKnownPaths,
+  lastConstantSegment,
+  CONE_MAX_DEFAULT,
+  type ResolverConfig,
+} from "./shared.js";
