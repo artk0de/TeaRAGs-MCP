@@ -25,7 +25,9 @@ export function registerDocumentTools(server: McpServer, deps: { app: App; regis
       description:
         "Add documents to a collection. Documents will be automatically embedded using the configured embedding provider.",
       inputSchema: schemas.AddDocumentsSchema,
-      annotations: {},
+      // Not read-only (writes points) and not idempotent: re-adding the same
+      // documents re-embeds and appends rather than no-op'ing.
+      annotations: { idempotentHint: false },
     },
     async ({ collection, documents }) => {
       const result = await app.addDocuments({ collection, documents });

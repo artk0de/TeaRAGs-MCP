@@ -31,6 +31,7 @@ benchmarks/
 | ------------------------------------------- | ---------- | ----- | ---------- | --------- | ------------------------------------------------------------------------ |
 | search-cascade                              | 2026-03-29 | 20    | 100%       | 22%       | +78pp                                                                    |
 | search-cascade (ripgrep overreach)          | 2026-05-07 | 9     | 100%‡‡     | 44%       | +56pp‡‡                                                                  |
+| search-cascade (deferred-loading fixes)     | 2026-06-19 | 10    | 100%       | 70%       | +30pp (after=before; no regression — see benchmark Limitation)          |
 | explore                                     | 2026-03-30 | 8+8   | 100%       | 12.5%     | +87.5pp                                                                  |
 | research-merge                              | 2026-03-30 | 15    | 100%       | 70%       | +30pp                                                                    |
 | risk-assessment                             | 2026-03-30 | 12    | 100%       | 10%       | +90pp                                                                    |

@@ -164,8 +164,13 @@ describe("formatPrime — polyglot + thresholds", () => {
       update: null,
     });
     expect(out).toContain("## Signal thresholds — typescript");
-    expect(out).toContain("git.file.commitCount");
-    expect(out).toContain("low ≤2 / normal ≤5 / high ≤9 / extreme >9");
+    // Collapsed: one line per signal, source + test on the same line, exact
+    // label names preserved (overlay labels must match the threshold keys).
+    expect(out).toContain(
+      "- **git.file.commitCount** — source: low ≤2 / normal ≤5 / high ≤9 / extreme >9 · test: low ≤1 / normal ≤3 / high ≤6 / extreme >6",
+    );
+    expect(out).not.toContain("  - source:");
+    expect(out).not.toContain("  - test:");
   });
 
   it("omits Polyglot/Language and Signal thresholds when metrics is null (e.g. no enrichment yet)", () => {

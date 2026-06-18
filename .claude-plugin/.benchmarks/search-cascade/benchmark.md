@@ -650,3 +650,58 @@ Single new section `## Filters` inserted before `## Filter Level: file vs chunk`
 - Is the `## Filters` table complete? It mirrors `TypedFilterParams` in
   `src/core/api/public/dto/explore.ts` as of 2026-05-15. New typed fields added
   to that interface MUST be added here.
+
+---
+
+## 2026-06-19 — Deferred-loading audit fixes (Opus 4.8)
+
+**Driver:** audit of tea-rags MCP surfaces against deferred-tool-loading best
+practices (Opus 4.8 loads tool *names* only; full schema fetched on demand via
+ToolSearch). Plus a user observation: the agent "almost never uses
+`find_symbol`'s `path` param" despite it yielding a documentation TOC.
+
+**Note on the prior iteration's deferral.** The 2026-05-15 entry deliberately
+did NOT add a deferred-tool-schemas section ("Sonnet figures it out from the
+system reminder… if Opus 4.7 needs it, the fix belongs in a separate rule or the
+prime hook"). Under Opus 4.8 deferred loading is now the live mechanism, so this
+run adds a compact "Tool Invocation Under Deferred Loading" note — kept to the
+exact-name→ToolSearch mapping only, not a duplicate of the system reminder.
+
+### Results (paper eval — describe first tool, no execution)
+
+| Condition  | Pass |
+| ---------- | ---- |
+| After-fix  | 10/10 (100%) |
+| Before-fix | 10/10 (100%) |
+| No-rule    | 7/10 (70%) |
+
+- Delta cascade-vs-nothing: **+30pp** (no-rule defaults `Read` for doc TOC
+  Eval-1/9, `hybrid_search` for intent Eval-7).
+- Delta after-vs-before: **0pp** — see Limitation.
+
+### Changes
+
+| # | Fix | Severity |
+| - | --- | -------- |
+| 1 | "Tool Invocation Under Deferred Loading" note (`mcp__tea-rags__<name>` / `mcp__ripgrep__search`) | CRITICAL |
+| 2 | Unified "find_symbol — the navigation workhorse" section: symbol-mode table + **relativePath-mode "USE THIS MORE" for doc TOC** + graph precedence + optimal routes | MAJOR + user req |
+| 3 | Decision-tree "Yes" branch rewritten on DEFINITION/USAGES/INTENT axis; removed redundant dup-route branches | MAJOR |
+| 4 | Graph tree-branch → pointer to unified section (de-dup) | — |
+| 5 | "Portability" section (Claude-Code vs portable MCP resources) | MINOR |
+
+Companion (same branch, outside cascade): `prime/format.ts` thresholds collapsed
+to 1 line/signal (TDD red→green, 80 prime tests pass); `document.ts`
+`add_documents` → `annotations: { idempotentHint: false }`.
+
+### Limitation (after-vs-before = 0pp)
+
+The eval injects FULL cascade text; the grader reads carefully. The old cascade
+already contained the `find_symbol(relativePath)` doc-TOC route (after-search
+table + tree branch), so a careful reader routed Eval-1/9 correctly pre-fix. The
+user's real-world complaint is **under-weighting of a resident rule under low
+attention / deferred loading**, not missing text. The fixes raise prominence and
+remove tree ambiguity — effects a careful-read paper eval cannot resolve. What
+it DOES prove: **no regression** (after-fix holds 100%) + cascade standalone
+value (+30pp). Measuring the prominence effect needs a live low-attention A/B.
+
+Eval cases + per-case grades: `evals.json` (this run).

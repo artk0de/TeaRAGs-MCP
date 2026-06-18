@@ -135,12 +135,13 @@ function formatThresholdsSection(
   signals: Record<string, Record<string, { labelMap: Record<string, number> }>>,
 ): string[] {
   const lines = [`## Signal thresholds — ${language}`, ""];
+  // One line per signal (source + test on the same line) to keep the digest
+  // resident-cheap. Exact label names are preserved — they must match the
+  // labels rendered in a ranking overlay for the agent to map them to a band.
   for (const [signalName, scopes] of Object.entries(signals)) {
     const source = scopes.source ? formatLabelMap(scopes.source.labelMap) : "—";
     const test = scopes.test ? formatLabelMap(scopes.test.labelMap) : "—";
-    lines.push(`- **${signalName}**`);
-    lines.push(`  - source: ${source}`);
-    lines.push(`  - test:   ${test}`);
+    lines.push(`- **${signalName}** — source: ${source} · test: ${test}`);
   }
   return lines;
 }
