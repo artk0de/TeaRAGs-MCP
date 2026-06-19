@@ -46,6 +46,8 @@ import type {
   GlobalSymbolTable,
   GraphDbClient,
   GraphEdges,
+  HierarchyView,
+  InheritanceEdgeRow,
   NamedSymbol,
   ResolveRunStatsRow,
 } from "../../../../contracts/types/codegraph.js";
@@ -69,6 +71,7 @@ import type {
   WorkerEnrichmentDescriptor,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
+import { MapHierarchyView } from "../../../../infra/graph/hierarchy-view.js";
 import { pageRank } from "../../../../infra/graph/page-rank.js";
 import { tarjanScc } from "../../../../infra/graph/tarjan-scc.js";
 import { isDebug } from "../../../../infra/runtime.js";
@@ -79,7 +82,7 @@ import {
   CodegraphSpillIoError,
 } from "../../errors.js";
 import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
-import { normalizeInheritanceEdges } from "./inheritance-edges.js";
+import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 
@@ -455,6 +458,23 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runCallbackParams: Record<string, number[]> = {};
   /**
+   * Per-run aggregation of normalized inheritance rows (bd tea-rags-mcp-o17v2).
+   * Accumulated across pass-1 `sink.write` so the pass-1→pass-2 barrier can build
+   * a complete `MapHierarchyView` BEFORE any file resolves. Inheritance edges are
+   * persisted per-file DURING pass-2, so the DB is not yet complete when the
+   * first file's CHA cone needs `getDescendants` — the in-memory snapshot closes
+   * that gap. Same lifecycle as `runExtends` — reset on finish / empty-run.
+   */
+  private runInheritanceRows: InheritanceEdgeRow[] = [];
+  /**
+   * Bidirectional class-hierarchy view built from `runInheritanceRows` at the
+   * pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2). Threaded into every resolve
+   * `CallContext.hierarchy` so the CHA cone resolver can devirtualize a
+   * polymorphic typed receiver to its overriding subtypes. `undefined` until the
+   * barrier runs (and on reset) — the cone resolver treats absent as "no cone".
+   */
+  private hierarchyView: HierarchyView | undefined;
+  /**
    * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
    * Built once at construction from `deps.exclusion`. Empty filter
    * (`excludeTests:false`, no custom patterns) is a valid no-op — every
@@ -694,6 +714,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             this.runReturnTypes[k] = v;
           }
         }
+        // Accumulate this file's inheritance edges run-global (bd tea-rags-mcp-o17v2)
+        // so the pass-1→pass-2 barrier can build a complete hierarchy view for the
+        // CHA cone resolver. Resolve ancestor symbol_ids lazily against the now-
+        // partial table is unnecessary here — the cone reads by fqName — so pass a
+        // null resolver and let the per-file persist (pass-2) own symbol_id binding.
+        const inheritanceRows = normalizeInheritanceEdges(extraction, () => null);
+        if (inheritanceRows.length > 0) this.runInheritanceRows.push(...inheritanceRows);
         // Merge dispatch tables run-global keyed by table name + defining
         // relpath so the resolver can fan a `TABLE[key].field()` call out to
         // every candidate regardless of which file declared the table (bd
@@ -745,6 +772,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             });
           });
         }
+        // Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2): pass-1 is complete, so
+        // `runInheritanceRows` holds every class's hierarchy edges. Build the
+        // in-memory view ONCE here; pass-2 `resolveExtraction` threads it into
+        // each resolve `CallContext.hierarchy` for CHA cone devirtualization.
+        this.hierarchyView = new MapHierarchyView(buildHierarchySnapshot(this.runInheritanceRows));
         try {
           if (spillWriteCount > 0) {
             await this.streamingResolveAndUpsert(spillPath, collectionName);
@@ -980,6 +1012,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runReturnTypes = {};
       this.runDispatchTables = {};
       this.runCallbackParams = {};
+      this.runInheritanceRows = [];
+      this.hierarchyView = undefined;
       return undefined;
     }
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / callsAttempted;
@@ -1269,6 +1303,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runReturnTypes = {};
     this.runDispatchTables = {};
     this.runCallbackParams = {};
+    this.runInheritanceRows = [];
+    this.hierarchyView = undefined;
   }
 
   /**
@@ -1301,6 +1337,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runReturnTypes = {};
     this.runDispatchTables = {};
     this.runCallbackParams = {};
+    this.runInheritanceRows = [];
+    this.hierarchyView = undefined;
   };
 
   /**
@@ -1622,6 +1660,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // params drive the resolver's fan-out / inter-proc join.
           dispatchTables: this.runDispatchTables,
           callbackParams: this.runCallbackParams,
+          // bd tea-rags-mcp-o17v2 — run-global class hierarchy drives CHA cone
+          // devirtualization of a polymorphic typed receiver. Built at the
+          // pass-1→pass-2 barrier; undefined ⇒ cone resolver no-ops.
+          hierarchy: this.hierarchyView,
         };
         let resolved = false;
         if (call.dispatch) {
