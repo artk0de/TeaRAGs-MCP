@@ -52,6 +52,17 @@ export interface EmbeddingProvider {
    * active endpoint and never touches the fallback while the primary is alive.
    */
   checkFallbackHealth?: () => Promise<boolean | undefined>;
+  /**
+   * Live reachability probe of the CONFIGURED primary endpoint, independent of
+   * runtime failover state. Symmetric with `checkFallbackHealth`: `checkHealth`
+   * probes whichever endpoint is currently active (the fallback once failover
+   * flips), so under failover it can no longer report the primary's health.
+   * This probe always targets the configured primary. Returns undefined when
+   * the provider has no primary/active distinction (callers then fall back to
+   * `checkHealth`). Surfaced via IndexStatus.infraHealth.embedding.primaryAvailable
+   * so the prime CLI digest shows BOTH endpoints' health, not just the active one.
+   */
+  checkPrimaryHealth?: () => Promise<boolean | undefined>;
   /** Resolve model capabilities (context length, dimensions) from provider API. */
   resolveModelInfo?: () => Promise<{ model: string; contextLength: number; dimensions: number } | undefined>;
 }

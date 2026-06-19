@@ -354,7 +354,7 @@ describe("formatPrime — infra-health and enrichment", () => {
     });
     expect(out).toContain("## Infra");
     expect(out).toContain("qdrant: green (optimizer ok) at http://127.0.0.1:63995");
-    expect(out).toContain("embedding: available · ollama at http://localhost:11434");
+    expect(out).toContain("embedding: ollama · primary http://localhost:11434 (available)");
   });
 
   it("appends 'background optimization in progress' suffix when qdrant status is yellow", () => {
@@ -405,7 +405,7 @@ describe("formatPrime — infra-health and enrichment", () => {
       drift: null,
       update: null,
     });
-    expect(out).toContain("embedding: unavailable · ollama at http://localhost:11434");
+    expect(out).toContain("embedding: ollama · primary http://localhost:11434 (unavailable)");
   });
 
   it("omits embedding url when undefined", () => {

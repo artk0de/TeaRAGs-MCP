@@ -201,12 +201,21 @@ function formatInfraSection(infra: InfraHealth): string[] {
   lines.push(qLine);
 
   const e = infra.embedding;
-  const availability = e.available ? "available" : "unavailable";
-  const eAt = e.url ? ` at ${e.url}` : "";
-  const eFallbackHealth =
-    e.fallbackAvailable !== undefined ? ` (${e.fallbackAvailable ? "available" : "unavailable"})` : "";
-  const eFallback = e.fallbackUrl ? ` · fallback: ${e.fallbackUrl}${eFallbackHealth}` : "";
-  lines.push(`embedding: ${availability} · ${e.provider}${eAt}${eFallback}`);
+  const badge = (ok: boolean) => (ok ? "available" : "unavailable");
+  if (e.url) {
+    // Per-endpoint health: each ollama endpoint carries its OWN status badge,
+    // not a single "active endpoint" availability. Primary badge falls back to
+    // the overall `available` when the provider does not expose a dedicated
+    // primary probe (non-ollama / legacy).
+    const primary = ` · primary ${e.url} (${badge(e.primaryAvailable ?? e.available)})`;
+    const fallback = e.fallbackUrl
+      ? ` · fallback ${e.fallbackUrl} (${e.fallbackAvailable === undefined ? "unknown" : badge(e.fallbackAvailable)})`
+      : "";
+    lines.push(`embedding: ${e.provider}${primary}${fallback}`);
+  } else {
+    // Providers without a url (e.g. onnx): keep the legacy headline form.
+    lines.push(`embedding: ${badge(e.available)} · ${e.provider}`);
+  }
   return lines;
 }
 

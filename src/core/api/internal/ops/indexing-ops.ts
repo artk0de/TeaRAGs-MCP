@@ -182,12 +182,18 @@ export class IndexingOps {
     // probes the ACTIVE endpoint, so the digest would otherwise show the
     // fallback URL with no indication of whether the backup is actually up.
     const fallbackAvailable = fallbackUrl !== undefined ? await this.embeddings.checkFallbackHealth?.() : undefined;
+    // Probe the CONFIGURED primary independently: `checkHealth` above reports
+    // the ACTIVE endpoint (the fallback once failover flips), so the digest
+    // would otherwise lose the primary's true status under failover. Only when
+    // a primary url is known and the provider exposes the probe.
+    const primaryAvailable = primaryUrl !== undefined ? await this.embeddings.checkPrimaryHealth?.() : undefined;
     const infraHealth: IndexStatus["infraHealth"] = {
       qdrant: { available: true, url: this.qdrant.url },
       embedding: {
         available: embeddingHealthy,
         provider: this.embeddings.getProviderName(),
         ...(primaryUrl !== undefined ? { url: primaryUrl } : {}),
+        ...(primaryAvailable !== undefined ? { primaryAvailable } : {}),
         ...(fallbackUrl !== undefined ? { fallbackUrl } : {}),
         ...(fallbackAvailable !== undefined ? { fallbackAvailable } : {}),
       },

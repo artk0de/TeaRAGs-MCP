@@ -118,6 +118,8 @@ export interface IndexStatus {
       available: boolean;
       provider: string;
       url?: string;
+      /** Live reachability of the CONFIGURED primary endpoint, independent of failover. */
+      primaryAvailable?: boolean;
       fallbackUrl?: string;
       /** Live reachability of the fallback endpoint. Omitted when no fallback configured. */
       fallbackAvailable?: boolean;
