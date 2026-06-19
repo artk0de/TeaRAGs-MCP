@@ -18,7 +18,19 @@ export type IngestErrorCode =
   | "INGEST_INDEXING_FAILED"
   | "INGEST_PARTIAL_DELETION"
   | "INGEST_PIPELINE_NOT_STARTED"
-  | "INGEST_INVARIANT_VIOLATED";
+  | "INGEST_INVARIANT_VIOLATED"
+  | "INGEST_CHUNK_OVERSIZED"
+  | "INGEST_EMBEDDING_REJECTED"
+  | "INGEST_PAYLOAD_TOO_LARGE"
+  | "INGEST_FILE_PARSE_FAILED"
+  | "INGEST_FILE_READ_FAILED";
+
+/**
+ * Phase of the indexing pipeline in which a file failed. Carried by
+ * QuarantinableIngestError so the on-disk quarantine entry records where the
+ * breakage occurred.
+ */
+export type QuarantinePhase = "parse" | "embed" | "upsert" | "enrich" | "fs";
 
 /**
  * Abstract base for all ingest domain errors.
@@ -123,6 +135,85 @@ export class IndexingFailedError extends IngestError {
       message: `Full indexing failed: ${detail}`,
       hint: "Check server logs for details, or retry with forceReindex=true",
       httpStatus: 500,
+      cause,
+    });
+  }
+}
+
+/**
+ * Marker base for errors that should quarantine the offending file instead of
+ * aborting the pipeline or being silently dropped. Subclasses pin the pipeline
+ * `phase` so the on-disk quarantine entry records where the breakage occurred.
+ */
+export abstract class QuarantinableIngestError extends IngestError {
+  abstract readonly phase: QuarantinePhase;
+}
+
+/** Chunk exceeds the embedding model context after enforceMaxChunkSize split. */
+export class ChunkOversizedError extends QuarantinableIngestError {
+  readonly phase = "embed";
+
+  constructor(relativePath: string, detail: string, cause?: Error) {
+    super({
+      code: "INGEST_CHUNK_OVERSIZED",
+      message: `Chunk in "${relativePath}" oversized: ${detail}`,
+      hint: "File quarantined; it will be retried automatically on the next index pass.",
+      cause,
+    });
+  }
+}
+
+/** Embedding adapter rejected the input (4xx: malformed input, content policy). */
+export class EmbeddingRejectedError extends QuarantinableIngestError {
+  readonly phase = "embed";
+
+  constructor(relativePath: string, detail: string, cause?: Error) {
+    super({
+      code: "INGEST_EMBEDDING_REJECTED",
+      message: `Embedding rejected for "${relativePath}": ${detail}`,
+      hint: "File quarantined; it will be retried automatically on the next index pass.",
+      cause,
+    });
+  }
+}
+
+/** Qdrant returned 413 — the upsert payload for this file was too large. */
+export class QdrantPayloadTooLargeError extends QuarantinableIngestError {
+  readonly phase = "upsert";
+
+  constructor(relativePath: string, detail: string, cause?: Error) {
+    super({
+      code: "INGEST_PAYLOAD_TOO_LARGE",
+      message: `Qdrant payload too large for "${relativePath}": ${detail}`,
+      hint: "File quarantined; it will be retried automatically on the next index pass.",
+      cause,
+    });
+  }
+}
+
+/** tree-sitter or chunker threw while parsing the file. */
+export class FileParseError extends QuarantinableIngestError {
+  readonly phase = "parse";
+
+  constructor(relativePath: string, detail: string, cause?: Error) {
+    super({
+      code: "INGEST_FILE_PARSE_FAILED",
+      message: `Failed to parse "${relativePath}": ${detail}`,
+      hint: "File quarantined; it will be retried automatically on the next index pass.",
+      cause,
+    });
+  }
+}
+
+/** fs.readFile threw (permissions, broken symlink, etc.). */
+export class FileReadError extends QuarantinableIngestError {
+  readonly phase = "fs";
+
+  constructor(relativePath: string, detail: string, cause?: Error) {
+    super({
+      code: "INGEST_FILE_READ_FAILED",
+      message: `Failed to read "${relativePath}": ${detail}`,
+      hint: "File quarantined; it will be retried automatically on the next index pass.",
       cause,
     });
   }

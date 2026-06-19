@@ -1,0 +1,123 @@
+import { promises as fs } from "node:fs";
+import { join } from "node:path";
+import type { ErrorCode } from "../../../contracts/errors.js";
+import type { QuarantinableIngestError, QuarantinePhase } from "../errors.js";
+
+/**
+ * One quarantined file: why it failed, where in the pipeline, and how often.
+ * Stable on-disk contract consumed by `tea-rags doctor <project> --quarantine`.
+ */
+export interface QuarantineEntry {
+  errorCode: ErrorCode;
+  errorMessage: string;
+  phase: QuarantinePhase;
+  firstFailedAt: string;
+  lastFailedAt: string;
+  attempts: number;
+}
+
+/** On-disk shape of quarantine.json. */
+interface QuarantineFile {
+  version: 1;
+  updatedAt: string;
+  files: Record<string, QuarantineEntry>;
+}
+
+const QUARANTINE_FILENAME = "quarantine.json";
+
+/**
+ * Persists poison-pill files that broke indexing to `quarantine.json` alongside
+ * the snapshot, so they are retried on every subsequent pass instead of
+ * silently dropping out of the index. Writes are atomic (tmp + rename), and the
+ * file lifecycle is bound to the collection's snapshot directory — dropping the
+ * collection removes the quarantine list as a side effect.
+ */
+export class QuarantineStore {
+  private readonly collectionDir: string;
+  private readonly quarantinePath: string;
+
+  constructor(snapshotDir: string, collectionName: string) {
+    this.collectionDir = join(snapshotDir, collectionName);
+    this.quarantinePath = join(this.collectionDir, QUARANTINE_FILENAME);
+  }
+
+  /** Read full map. Empty map if the file is absent or corrupted. */
+  async load(): Promise<Map<string, QuarantineEntry>> {
+    let raw: string;
+    try {
+      raw = await fs.readFile(this.quarantinePath, "utf-8");
+    } catch {
+      // Absent file — no files have failed yet.
+      return new Map();
+    }
+    try {
+      const parsed = JSON.parse(raw) as QuarantineFile;
+      return new Map(Object.entries(parsed.files ?? {}));
+    } catch {
+      // Corrupted JSON — treat as empty rather than aborting the pass.
+      return new Map();
+    }
+  }
+
+  /** Mark a single file failed. Read-modify-write via tmp + rename. */
+  async markFailed(path: string, err: QuarantinableIngestError): Promise<void> {
+    const entries = await this.load();
+    this.applyFailure(entries, path, err);
+    await this.persist(entries);
+  }
+
+  /** Mark a batch of files failed in one write (for worker-pool batch failures). */
+  async markFailedBatch(paths: string[], err: QuarantinableIngestError): Promise<void> {
+    const entries = await this.load();
+    for (const path of paths) {
+      this.applyFailure(entries, path, err);
+    }
+    await this.persist(entries);
+  }
+
+  /** Remove a path on successful re-processing. No-op if it was not quarantined. */
+  async clear(path: string): Promise<void> {
+    const entries = await this.load();
+    if (!entries.delete(path)) {
+      return;
+    }
+    await this.persist(entries);
+  }
+
+  /** Drop all entries (called on forceReindex / schema-drift reset). */
+  async clearAll(): Promise<void> {
+    await fs.rm(this.quarantinePath, { force: true });
+  }
+
+  /** Count of quarantined files (for get_index_status). */
+  async count(): Promise<number> {
+    return (await this.load()).size;
+  }
+
+  /** Upsert a failure into the in-memory map: new entry or attempts++. */
+  private applyFailure(entries: Map<string, QuarantineEntry>, path: string, err: QuarantinableIngestError): void {
+    const now = new Date().toISOString();
+    const existing = entries.get(path);
+    entries.set(path, {
+      errorCode: err.code,
+      errorMessage: err.message,
+      phase: err.phase,
+      firstFailedAt: existing?.firstFailedAt ?? now,
+      lastFailedAt: now,
+      attempts: (existing?.attempts ?? 0) + 1,
+    });
+  }
+
+  /** Atomically write the full map to quarantine.json. */
+  private async persist(entries: Map<string, QuarantineEntry>): Promise<void> {
+    const payload: QuarantineFile = {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      files: Object.fromEntries(entries),
+    };
+    await fs.mkdir(this.collectionDir, { recursive: true });
+    const tmpPath = `${this.quarantinePath}.tmp`;
+    await fs.writeFile(tmpPath, JSON.stringify(payload, null, 2), "utf-8");
+    await fs.rename(tmpPath, this.quarantinePath);
+  }
+}
