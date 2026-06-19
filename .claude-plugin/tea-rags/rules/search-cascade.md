@@ -155,13 +155,12 @@ Requires codegraph enabled. Precedence — start cheap, escalate only if needed:
 - Who-uses-X repo-wide → `hybrid_search` (text recall) when codegraph is off;
   `get_callers` (exact, graph) when codegraph is on.
 
-## After Code Changes (mid-session reindex)
+## Index Freshness → index-freshness.md
 
-If you (or a subagent) modified files via Write/Edit and the NEXT step uses
-tea-rags search for a different question — call `index_codebase` first. It's
-incremental (only changed files, takes seconds). Skip when no files were
-modified, you are continuing the same implementation task, or you'll use ripgrep
-only.
+Before searching, reindex when the index lags the working tree: prime banner
+`⚠ Index is stale` or files edited this session → `index_codebase` (incremental,
+no consent); prime `## Schema drift` ≠ `none` → `force_reindex` (full, **explicit
+consent**). Full triggers + rationale in `index-freshness.md`.
 
 ## Decision Tree
 
@@ -306,6 +305,8 @@ dominant-domain exclusion) — invoke `/tea-rags:filter-building`.
 
 For detailed guidance on specific topics, read these when needed:
 
+- `index-freshness.md` — reindex decision table: stale / schema-drift /
+  edited-not-indexed → which reindex tool, and when consent is required
 - `references/use-cases.md` — task-organized use cases with tool+parameter
   examples
 - `references/polyglot-rule.md` — mandatory per-language splitting for polyglot
