@@ -1168,6 +1168,49 @@ describe("OllamaEmbeddings", () => {
     });
   });
 
+  describe("checkPrimaryHealth", () => {
+    const PRIMARY = "http://primary:11434";
+    const FALLBACK = "http://fallback:11434";
+    const flush = async () => new Promise<void>((r) => setTimeout(r, 0));
+
+    it("should probe the configured primary URL and return true when it responds ok", async () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true);
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      const result = await provider.checkPrimaryHealth();
+
+      expect(result).toBe(true);
+      const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
+      expect(lastCall[0]).toBe("http://primary:11434/");
+    });
+
+    it("should return false when the primary URL returns non-ok", async () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true);
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+      expect(await provider.checkPrimaryHealth()).toBe(false);
+    });
+
+    it("should return false when the primary URL throws", async () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true);
+      mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+      expect(await provider.checkPrimaryHealth()).toBe(false);
+    });
+
+    it("should probe the CONFIGURED primary even while failover is active", async () => {
+      // Constructor initial probe fails → switches to fallback (usingFallback=true).
+      // checkPrimaryHealth must still target the configured primary, NOT the active fallback.
+      mockFetch.mockRejectedValueOnce(new Error("primary down at startup"));
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      await flush();
+
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      const result = await provider.checkPrimaryHealth();
+
+      expect(result).toBe(true);
+      const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
+      expect(lastCall[0]).toBe("http://primary:11434/");
+    });
+  });
+
   describe("getProviderName", () => {
     it("should return 'ollama'", () => {
       expect(embeddings.getProviderName()).toBe("ollama");

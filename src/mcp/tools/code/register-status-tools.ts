@@ -105,10 +105,8 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
   );
 }
 
-function formatInfraHealth(h: NonNullable<IndexStatus["infraHealth"]>): string {
+export function formatInfraHealth(h: NonNullable<IndexStatus["infraHealth"]>): string {
   const qdrantStatus = h.qdrant.available ? "available" : "unavailable";
-  const embeddingStatus = h.embedding.available ? "available" : "unavailable";
-  const embeddingUrl = h.embedding.url ? ` (${h.embedding.url})` : "";
   const collectionHealth =
     h.qdrant.status && h.qdrant.status !== "green"
       ? ` [collection status: ${h.qdrant.status}${
@@ -120,6 +118,20 @@ function formatInfraHealth(h: NonNullable<IndexStatus["infraHealth"]>): string {
   return (
     `Infrastructure:\n` +
     `  Qdrant: ${qdrantStatus} (${h.qdrant.url})${collectionHealth}\n` +
-    `  Embedding (${h.embedding.provider}): ${embeddingStatus}${embeddingUrl}`
+    `  Embedding (${h.embedding.provider}): ${formatEmbeddingEndpoints(h.embedding)}`
   );
+}
+
+/**
+ * Per-endpoint embedding health for the MCP status tool — symmetric with the
+ * prime CLI digest: each ollama endpoint reports its OWN status badge. Falls
+ * back to the bare overall availability for providers without a url (onnx).
+ */
+function formatEmbeddingEndpoints(e: NonNullable<IndexStatus["infraHealth"]>["embedding"]): string {
+  const badge = (ok: boolean) => (ok ? "available" : "unavailable");
+  if (!e.url) return badge(e.available);
+  const primary = `primary ${e.url} (${badge(e.primaryAvailable ?? e.available)})`;
+  if (!e.fallbackUrl) return primary;
+  const fallbackBadge = e.fallbackAvailable === undefined ? "unknown" : badge(e.fallbackAvailable);
+  return `${primary}, fallback ${e.fallbackUrl} (${fallbackBadge})`;
 }

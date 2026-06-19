@@ -601,4 +601,21 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       return false;
     }
   }
+
+  /**
+   * Live reachability probe of the CONFIGURED primary endpoint, independent of
+   * runtime failover state. Always targets `this.baseUrl` — unlike `checkHealth`
+   * (active endpoint, returns the fallback's health once failover flips), so the
+   * prime CLI digest can report the primary's true status even during failover.
+   * Surfaced via infraHealth.embedding.primaryAvailable — symmetric with
+   * `checkFallbackHealth`.
+   */
+  async checkPrimaryHealth(): Promise<boolean> {
+    try {
+      const response = await fetchWithTimeout(`${this.baseUrl}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
 }
