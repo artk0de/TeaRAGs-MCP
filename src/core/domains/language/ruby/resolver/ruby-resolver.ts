@@ -54,6 +54,7 @@ import {
   RubyLocalTypeSymbolResolutionStrategy,
   RubyReceiverSetDropSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
+  RubyTableDispatchResolver,
   type ResolverConfig,
 } from "./strategies/index.js";
 
@@ -73,6 +74,7 @@ function resolveConeMax(raw: string | undefined): number {
 export class RubyCallResolver implements CallResolver {
   readonly language = "ruby";
   private readonly strategies: SymbolResolutionStrategy[];
+  private readonly table: RubyTableDispatchResolver;
   private readonly cone: RubyConeDispatchResolver;
   private readonly dynamic: RubyDynamicDispatchResolver;
 
@@ -91,6 +93,7 @@ export class RubyCallResolver implements CallResolver {
       new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
       new RubyBareCallSymbolResolutionStrategy(cfg),
     ];
+    this.table = new RubyTableDispatchResolver(cfg);
     this.cone = new RubyConeDispatchResolver(cfg);
     this.dynamic = new RubyDynamicDispatchResolver(cfg);
   }
@@ -102,23 +105,33 @@ export class RubyCallResolver implements CallResolver {
   /**
    * Fan-out resolution for a Ruby call, composed in precedence order:
    *
-   *   1. CHA cone (bd tea-rags-mcp-2jet) — a polymorphic TYPED receiver whose
+   *   1. Registry-literal table (bd tea-rags-mcp-pq02v) — a `CONST[k].new.m`
+   *      site the walker tagged with `call.dispatch` fans out to each value
+   *      class's `#m` (`registry`/`1/N`, or `exact`/`1.0` for a static key).
+   *      Most specific: the call carries a concrete `CONST` + a statically
+   *      complete value set. Returns `[]` for every call without `call.dispatch`.
+   *   2. CHA cone (bd tea-rags-mcp-2jet) — a polymorphic TYPED receiver whose
    *      static type has subtypes overriding the member fans out to N `cone`
    *      edges (or one `poly-base`). Returns `[]` for every non-polymorphic
    *      call.
-   *   2. Dynamic-receiver fan-out (bd tea-rags-mcp-wbj3) — an UNTYPED dynamic
+   *   3. Dynamic-receiver fan-out (bd tea-rags-mcp-wbj3) — an UNTYPED dynamic
    *      receiver (`arr.map`, `obj[k].call`) that would otherwise DROP resolves
    *      via discounted short-name lookup to N `dynamic` edges.
    *
-   * Cone precedes dynamic: the cone requires a `localBinding` (typed receiver)
-   * while the dynamic fan-out explicitly excludes bound receivers, so the two
-   * are mutually exclusive by receiver shape — the order is a safety net, not a
-   * conflict resolver. When BOTH return `[]` the provider takes the exact
-   * `resolve` chain. An `external` receiver carries no in-project target on
-   * either path, so the invariant "external never cones / never fabricates an
-   * out-of-project edge" holds.
+   * Table precedes cone/dynamic by specificity, not conflict: a registry
+   * dispatch site is gated on `call.dispatch` (set only for `CONST[k].new.m`),
+   * which the cone/dynamic receiver shapes never carry, so a non-dispatch call
+   * makes the table component return `[]` immediately and the existing
+   * cone→dynamic order is unaffected. Cone precedes dynamic: the cone requires a
+   * `localBinding` (typed receiver) while the dynamic fan-out explicitly excludes
+   * bound receivers, so the two are mutually exclusive by receiver shape. When
+   * ALL THREE return `[]` the provider takes the exact `resolve` chain. An
+   * `external` receiver carries no in-project target on any path, so the
+   * invariant "external never fabricates an out-of-project edge" holds.
    */
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+    const table = this.table.resolveDispatch(call, ctx);
+    if (table.length > 0) return table;
     const cone = this.cone.resolveDispatch(call, ctx);
     if (cone.length > 0) return cone;
     return this.dynamic.resolveDispatch(call, ctx);

@@ -32,6 +32,14 @@ export type SymbolId = string;
  * Only entries / fields whose value is a plain identifier are recorded —
  * inline arrows, spreads, and computed values carry no symbol to point at
  * and are dropped (m46z safety rule).
+ *
+ * Ruby registry overload (bd tea-rags-mcp-pq02v): for a frozen registry
+ * constant (`CONST = { "k" => A::B::Klass }.freeze`) the string-arm entry
+ * value is a CLASS fully-qualified name (not a function name), and the
+ * dispatched member comes from the call site's `DispatchRef.field`
+ * (`CONST[k].new.perform` → `field: "perform"`), NOT from the entry. The
+ * resolver interprets the entry per language (it is language-scoped), so the
+ * overload is type-safe without a shape change.
  */
 export interface DispatchTable {
   entries: Record<string, string | Record<string, string>>;
@@ -861,8 +869,16 @@ export interface GraphFileNode {
  *                 would otherwise drop is resolved by short-name lookup with a
  *                 confidence discount (`< 1`). Distinguishable from `cone` (which
  *                 has a static base type) so ranking can discount name-only edges.
+ * - `registry`  — registry-literal dispatch fan-out (bd tea-rags-mcp-pq02v): a
+ *                 `CONST[key].new.m` site whose `CONST` is a frozen hash/array of
+ *                 value-classes. The candidate set is STATICALLY COMPLETE (every
+ *                 value class is known from the literal) but the runtime key picks
+ *                 one — distinct from `cone` (CHA descendants, possibly partial
+ *                 across compilation units) and from `dynamic` (no type evidence).
+ *                 `confidence = 1/N` over the N value classes; a static literal key
+ *                 narrows to one entry and is emitted as `exact`/1.0 instead.
  */
-export type MethodEdgeKind = "exact" | "cone" | "poly-base" | "dynamic";
+export type MethodEdgeKind = "exact" | "cone" | "poly-base" | "dynamic" | "registry";
 
 /**
  * One row of the per-receiver-kind resolve breakdown (bd tea-rags-mcp-j431),

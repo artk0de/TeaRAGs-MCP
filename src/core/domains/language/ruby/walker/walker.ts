@@ -38,6 +38,8 @@ import type Parser from "tree-sitter";
 import type {
   CallRef,
   ChunkExtraction,
+  DispatchRef,
+  DispatchTable,
   FileExtraction,
   ImportRef,
   InheritanceEdgeDecl,
@@ -90,7 +92,9 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const constantRefs = collectRubyConstantRefs(input.tree.rootNode);
   const fileScope = collectRubyDefinedConstants(input.tree.rootNode);
   const { ancestors: ancestorMap, prepended: prependedMap } = collectRubyClassAncestors(input.tree.rootNode);
-  const calls = collectRubyCalls(input.tree.rootNode);
+  const dispatchTables = collectRubyDispatchTables(input.tree.rootNode);
+  const dispatchTableNames = new Set(Object.keys(dispatchTables));
+  const calls = collectRubyCalls(input.tree.rootNode, dispatchTableNames);
   const imports: ImportRef[] = [...explicitImports, ...constantRefs];
   const trackTypes = localTypeTrackingEnabled();
   const yardByLine = trackTypes ? collectYardParamTypes(input.code) : new Map<number, Record<string, string>>();
@@ -146,6 +150,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // (`FileExtraction.functionReturnTypes`). Emitted only when at least one
   // single-constant return annotation was found.
   if (Object.keys(yardReturnTypes).length > 0) out.functionReturnTypes = yardReturnTypes;
+  if (Object.keys(dispatchTables).length > 0) out.dispatchTables = dispatchTables;
   return out;
 }
 
@@ -620,6 +625,115 @@ function collectRegistryConstantValueRefs(literal: Parser.SyntaxNode, out: CallR
 }
 
 /**
+ * Normalize a Ruby hash key node to the string used in `DispatchTable.entries`
+ * keys AND in `DispatchRef.key` (bd tea-rags-mcp-pq02v). String literal → inner
+ * text without quotes; symbol (`:k` / `k:` hash-key sugar) → bare name. Returns
+ * null for a non-literal / computed key (the entry is then dropped — m46z, never
+ * guess a runtime key). Shared by the table build and the call-site key read so
+ * both produce identical key strings.
+ */
+function rubyDispatchKeyText(node: Parser.SyntaxNode | null): string | null {
+  if (!node) return null;
+  if (node.type === "string") {
+    const inner = node.namedChildren.find((c) => c.type === "string_content");
+    return inner ? inner.text : node.text.replace(/^['"`]|['"`]$/g, "");
+  }
+  if (node.type === "simple_symbol") return node.text.replace(/^:/, "");
+  if (node.type === "hash_key_symbol") return node.text; // `k:` sugar → bare `k`
+  return null;
+}
+
+/**
+ * Extract a class FQ-name from a registry VALUE node (bd tea-rags-mcp-pq02v).
+ * `scope_resolution` → full `A::B::C` via readScopeResolution; bare `constant` →
+ * its text. Anything else (lambda, call, nested literal) → null (dropped).
+ */
+function rubyDispatchValueConstant(node: Parser.SyntaxNode | null): string | null {
+  if (!node) return null;
+  if (node.type === "scope_resolution") return readScopeResolution(node) || null;
+  if (node.type === "constant") return node.text;
+  return null;
+}
+
+/**
+ * Build the per-constant dispatch tables for registry-literal dispatch
+ * (bd tea-rags-mcp-pq02v). Mirrors the TS `collectDispatchTables` shape but for
+ * Ruby `CONST = <hash|array>.freeze` assignments. Entry values are class
+ * FQ-names (see DispatchTable doc overload). A hash key uses its literal text; an
+ * array element uses its positional index. Tables with zero constant-valued
+ * entries are omitted. Shares the assignment/literal detection with
+ * `collectRegistryConstantValueRefs` (which keeps emitting the chunk-ref edges).
+ */
+function collectRubyDispatchTables(root: Parser.SyntaxNode): Record<string, DispatchTable> {
+  const out: Record<string, DispatchTable> = {};
+  walk(root, (node) => {
+    if (node.type !== "assignment") return;
+    const left = node.childForFieldName("left");
+    if (!left || (left.type !== "constant" && left.type !== "scope_resolution")) return;
+    const name = left.type === "scope_resolution" ? readScopeResolution(left) : left.text;
+    const literal = unwrapTrailingCalls(node.childForFieldName("right"));
+    if (!literal) return;
+    const entries: Record<string, string> = {};
+    if (literal.type === "hash") {
+      for (const pair of literal.namedChildren) {
+        if (pair.type !== "pair") continue;
+        const key = rubyDispatchKeyText(pair.childForFieldName("key"));
+        const value = rubyDispatchValueConstant(pair.childForFieldName("value"));
+        if (key !== null && value !== null) entries[key] = value;
+      }
+    } else if (literal.type === "array") {
+      let i = 0;
+      for (const el of literal.namedChildren) {
+        const value = rubyDispatchValueConstant(el);
+        if (value !== null) entries[String(i)] = value;
+        i++;
+      }
+    } else {
+      return;
+    }
+    if (Object.keys(entries).length > 0) out[name] = { entries };
+  });
+  return out;
+}
+
+/**
+ * Abstract-interpret a Ruby callee chain to its dispatch reference
+ * (bd tea-rags-mcp-pq02v). Composes through `element_reference` (the table
+ * subscript), the `.new` instantiation (pass-through), and the outer `.member`
+ * call (the dispatched method). Returns null when the chain is not rooted at a
+ * known dispatch-table constant.
+ *
+ *   CONST            → (not a ref on its own)
+ *   CONST[k]         → { table: CONST, field: null, key: staticKeyOf }
+ *   CONST[k].new     → same ref, field stays null (Kernel#new pass-through)
+ *   CONST[k].new.m   → { table: CONST, field: "m", key }
+ */
+function exprToRubyDispatchRef(node: Parser.SyntaxNode, tableNames: ReadonlySet<string>): DispatchRef | null {
+  if (node.type === "element_reference") {
+    const obj = node.childForFieldName("object") ?? node.namedChildren[0];
+    if (!obj) return null;
+    const objName =
+      obj.type === "scope_resolution" ? readScopeResolution(obj) : obj.type === "constant" ? obj.text : null;
+    if (objName === null || !tableNames.has(objName)) return null;
+    // The subscript index is the named child after the object.
+    const index = node.namedChildren[1] ?? null;
+    return { table: objName, field: null, key: rubyDispatchKeyText(index) };
+  }
+  if (node.type === "call" || node.type === "method_call") {
+    const receiver = node.childForFieldName("receiver");
+    const method = node.childForFieldName("method");
+    if (!receiver || !method) return null;
+    const inner = exprToRubyDispatchRef(receiver, tableNames);
+    if (!inner) return null;
+    // `.new` on a table-bound chain is a pass-through (instantiation, no edge).
+    if (method.text === "new" && inner.field === null) return inner;
+    // Outer `.member` on an entry-ref (field still null) → select the member.
+    if (inner.field === null) return { table: inner.table, field: method.text, key: inner.key };
+  }
+  return null;
+}
+
+/**
  * Whether a constant/scope_resolution node sits in a context where it
  * DECLARES something (class header, module header, assignment target,
  * superclass position) rather than REFERENCES something. Declarations
@@ -803,7 +917,7 @@ function extractCallbackSymbols(callNode: Parser.SyntaxNode): string[] {
   return out;
 }
 
-function collectRubyCalls(root: Parser.SyntaxNode): CallRef[] {
+function collectRubyCalls(root: Parser.SyntaxNode, dispatchTableNames: ReadonlySet<string>): CallRef[] {
   const out: CallRef[] = [];
 
   // Recursive walk that tracks the enclosing instance / singleton method
@@ -1034,11 +1148,14 @@ function collectRubyCalls(root: Parser.SyntaxNode): CallRef[] {
         }
       }
 
-      if (receiverText !== null) {
-        out.push({ callText: node.text, receiver: receiverText, member: method.text, startLine });
-      } else {
-        out.push({ callText: node.text, receiver: null, member: method.text, startLine });
-      }
+      const callRef: CallRef = { callText: node.text, receiver: receiverText, member: method.text, startLine };
+      // Registry-literal dispatch tagging (bd tea-rags-mcp-pq02v). Only the
+      // OUTER `.member` call of a `CONST[k].new.m` chain yields a ref with
+      // `field` set; the inner `.new` node returns `field: null` and is skipped
+      // (no double tag). The `element_reference` node is not a call → never here.
+      const dispatch = exprToRubyDispatchRef(node, dispatchTableNames);
+      if (dispatch?.field) callRef.dispatch = dispatch;
+      out.push(callRef);
 
       // Block-pass shorthand: `users.each(&:save)` — &:save desugars to
       // `{ |u| u.save }`. The block-passed method is an additional call
