@@ -80,6 +80,13 @@ export interface FileProcessorOptions {
    * retried automatically on every subsequent indexing pass.
    */
   quarantineStore?: QuarantineStore;
+  /**
+   * Paths (relative to basePath) that were quarantined on a prior pass and are
+   * being retried this pass. A file in this set that now processes successfully
+   * is cleared from the quarantine. Files NOT in this set never trigger a clear,
+   * so the common (never-failed) case pays no extra write.
+   */
+  quarantinedRetry?: Set<string>;
 }
 
 export interface FileProcessResult {
@@ -257,6 +264,10 @@ export async function processFiles(
         }
 
         result.filesProcessed++;
+        // A previously-quarantined file that now succeeds is un-quarantined.
+        if (options.quarantineStore && options.quarantinedRetry?.has(relativePath)) {
+          await options.quarantineStore.clear(relativePath);
+        }
         callbacks?.onFileProcessed?.(filePath, chunksToAdd.length);
         pipelineLog.fileIngested(
           { component: "FileProcessor" },

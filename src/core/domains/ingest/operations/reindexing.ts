@@ -23,6 +23,7 @@ import type { DeletionOutcome } from "../sync/deletion/outcome.js";
 import { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
 import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.js";
 import type { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
+import { QuarantineStore } from "../sync/index.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 
 interface ReindexContext {
@@ -52,7 +53,12 @@ interface ParallelExecutionPlan {
   providerDeletedOnly: string[];
   addedFiles: string[];
   modifiedFiles: string[];
-  processOpts: { enableGitMetadata: boolean; concurrency: number };
+  processOpts: {
+    enableGitMetadata: boolean;
+    concurrency: number;
+    quarantineStore?: QuarantineStore;
+    quarantinedRetry?: Set<string>;
+  };
   parallelStart: number;
 }
 
@@ -238,7 +244,12 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     /** Count of modified files whose upsert was skipped due to delete failure (Phase 3.2). */
     filesSkippedDueToDeleteFailure?: number;
   }> {
-    const plan = this.prepareParallelExecution(ctx, changes, chunkSizeOverride);
+    // Poison-pill retry: previously-quarantined files that still exist are
+    // re-attempted this pass (a tea-rags fix may have shipped). Loaded here so
+    // the synchronous plan builder can union them into the work set.
+    const quarantineStore = new QuarantineStore(this.snapshotDir, ctx.collectionName);
+    const quarantinedPaths = Array.from((await quarantineStore.load()).keys());
+    const plan = this.prepareParallelExecution(ctx, changes, quarantineStore, quarantinedPaths, chunkSizeOverride);
 
     // Pause HNSW indexing + segment vacuum for the whole reindex window.
     // Without this, a large delete (>20% tombstones) triggers optimizer repack
@@ -280,9 +291,18 @@ export class ReindexPipeline extends BaseIndexingPipeline {
   private prepareParallelExecution(
     ctx: ReindexContext,
     changes: FileChanges,
+    quarantineStore: QuarantineStore,
+    quarantinedPaths: string[],
     chunkSizeOverride?: number,
   ): ParallelExecutionPlan {
-    const changedPaths = [...changes.added, ...changes.modified];
+    // Retry only quarantined files that still exist and aren't already being
+    // re-walked as added/modified — avoids double-processing and dead paths.
+    const alreadyQueued = new Set([...changes.added, ...changes.modified]);
+    const currentFileSet = new Set(ctx.currentFiles);
+    const retryPaths = quarantinedPaths.filter((p) => currentFileSet.has(p) && !alreadyQueued.has(p));
+    const quarantinedRetry = new Set(retryPaths);
+
+    const changedPaths = [...changes.added, ...changes.modified, ...retryPaths];
     const pCtx = this.initProcessing(
       ctx.collectionName,
       ctx.absolutePath,
@@ -294,12 +314,16 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     const filesToDelete = [...changes.modified, ...changes.deleted, ...changes.newlyIgnored];
     const providerDeletedOnly = [...changes.deleted, ...changes.newlyIgnored];
-    const addedFiles = [...changes.added];
+    // Retry files join the "added" bucket: they failed before, so they have no
+    // committed chunks to collide with and need no delete-gate coordinator.
+    const addedFiles = [...changes.added, ...retryPaths];
     const modifiedFiles = [...changes.modified];
 
     const processOpts = {
       enableGitMetadata: this.config.enableGitMetadata === true,
       concurrency: this.tuning.fileConcurrency,
+      quarantineStore,
+      quarantinedRetry,
     };
 
     const parallelStart = Date.now();

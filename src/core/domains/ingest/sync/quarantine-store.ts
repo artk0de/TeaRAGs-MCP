@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import type { ErrorCode } from "../../../contracts/errors.js";
@@ -35,10 +36,26 @@ const QUARANTINE_FILENAME = "quarantine.json";
 export class QuarantineStore {
   private readonly collectionDir: string;
   private readonly quarantinePath: string;
+  /**
+   * Serializes mutating operations. processFiles fails files concurrently, so
+   * multiple markFailed calls race on the same read-modify-write; chaining them
+   * prevents lost updates and tmp-file collisions on the atomic rename.
+   */
+  private writeChain: Promise<unknown> = Promise.resolve();
 
   constructor(snapshotDir: string, collectionName: string) {
     this.collectionDir = join(snapshotDir, collectionName);
     this.quarantinePath = join(this.collectionDir, QUARANTINE_FILENAME);
+  }
+
+  /** Run a mutating op after all previously-enqueued ones, regardless of their outcome. */
+  private async enqueue<T>(op: () => Promise<T>): Promise<T> {
+    const run = this.writeChain.then(op, op);
+    this.writeChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 
   /** Read full map. Empty map if the file is absent or corrupted. */
@@ -61,32 +78,40 @@ export class QuarantineStore {
 
   /** Mark a single file failed. Read-modify-write via tmp + rename. */
   async markFailed(path: string, err: QuarantinableIngestError): Promise<void> {
-    const entries = await this.load();
-    this.applyFailure(entries, path, err);
-    await this.persist(entries);
+    await this.enqueue(async () => {
+      const entries = await this.load();
+      this.applyFailure(entries, path, err);
+      await this.persist(entries);
+    });
   }
 
   /** Mark a batch of files failed in one write (for worker-pool batch failures). */
   async markFailedBatch(paths: string[], err: QuarantinableIngestError): Promise<void> {
-    const entries = await this.load();
-    for (const path of paths) {
-      this.applyFailure(entries, path, err);
-    }
-    await this.persist(entries);
+    await this.enqueue(async () => {
+      const entries = await this.load();
+      for (const path of paths) {
+        this.applyFailure(entries, path, err);
+      }
+      await this.persist(entries);
+    });
   }
 
   /** Remove a path on successful re-processing. No-op if it was not quarantined. */
   async clear(path: string): Promise<void> {
-    const entries = await this.load();
-    if (!entries.delete(path)) {
-      return;
-    }
-    await this.persist(entries);
+    await this.enqueue(async () => {
+      const entries = await this.load();
+      if (!entries.delete(path)) {
+        return;
+      }
+      await this.persist(entries);
+    });
   }
 
   /** Drop all entries (called on forceReindex / schema-drift reset). */
   async clearAll(): Promise<void> {
-    await fs.rm(this.quarantinePath, { force: true });
+    await this.enqueue(async () => {
+      await fs.rm(this.quarantinePath, { force: true });
+    });
   }
 
   /** Count of quarantined files (for get_index_status). */
@@ -116,7 +141,9 @@ export class QuarantineStore {
       files: Object.fromEntries(entries),
     };
     await fs.mkdir(this.collectionDir, { recursive: true });
-    const tmpPath = `${this.quarantinePath}.tmp`;
+    // Unique tmp suffix so a write from another QuarantineStore instance for the
+    // same collection (e.g. status count vs pipeline write) can't clobber ours.
+    const tmpPath = `${this.quarantinePath}.${randomUUID()}.tmp`;
     await fs.writeFile(tmpPath, JSON.stringify(payload, null, 2), "utf-8");
     await fs.rename(tmpPath, this.quarantinePath);
   }

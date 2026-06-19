@@ -135,6 +135,20 @@ describe("QuarantineStore", () => {
     });
   });
 
+  describe("concurrency", () => {
+    it("persists every entry when many files fail concurrently", async () => {
+      const paths = Array.from({ length: 20 }, (_, i) => `src/file-${i}.ts`);
+
+      await Promise.all(paths.map((p) => store.markFailed(p, new FileReadError(p, "concurrent"))));
+
+      const loaded = await store.load();
+      expect(loaded.size).toBe(20);
+      for (const p of paths) {
+        expect(loaded.has(p)).toBe(true);
+      }
+    });
+  });
+
   describe("count", () => {
     it("should return the number of quarantined files", async () => {
       expect(await store.count()).toBe(0);
