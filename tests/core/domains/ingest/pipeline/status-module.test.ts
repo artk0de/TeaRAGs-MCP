@@ -143,6 +143,41 @@ describe("StatusModule", () => {
         expect(status.chunksCount).toBeGreaterThanOrEqual(0);
         expect(typeof status.chunksCount).toBe("number");
       });
+
+      it("exposes quarantine.count when a quarantine.json exists for the collection", async () => {
+        await createTestFile(codebaseDir, "test.ts", "export const x = 1;\nconsole.log('content here');");
+        await ingest.indexCodebase(codebaseDir);
+        const indexed = await ingest.getIndexStatus(codebaseDir);
+
+        // Write a quarantine list alongside the collection's snapshot.
+        const snapshotDir = join(process.env.TEA_RAGS_DATA_DIR!, "snapshots", indexed.collectionName!);
+        await fs.mkdir(snapshotDir, { recursive: true });
+        await fs.writeFile(
+          join(snapshotDir, "quarantine.json"),
+          JSON.stringify({
+            version: 1,
+            updatedAt: new Date().toISOString(),
+            files: {
+              "a.ts": { errorCode: "INGEST_FILE_READ_FAILED", errorMessage: "x", phase: "fs", firstFailedAt: "t", lastFailedAt: "t", attempts: 1 },
+              "b.ts": { errorCode: "INGEST_CHUNK_OVERSIZED", errorMessage: "y", phase: "embed", firstFailedAt: "t", lastFailedAt: "t", attempts: 2 },
+            },
+          }),
+          "utf-8",
+        );
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.quarantine).toEqual({ count: 2 });
+      });
+
+      it("omits quarantine when no quarantine.json exists", async () => {
+        await createTestFile(codebaseDir, "test.ts", "export const y = 2;\nconsole.log('no quarantine');");
+        await ingest.indexCodebase(codebaseDir);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.quarantine).toBeUndefined();
+      });
     });
 
     describe("heartbeat during indexing", () => {

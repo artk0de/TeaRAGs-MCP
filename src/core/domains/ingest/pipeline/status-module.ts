@@ -16,6 +16,7 @@ import { resolveCollectionName, validatePath } from "../../../infra/collection-n
 import type { IndexStatus } from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../constants.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
+import { QuarantineStore } from "../sync/index.js";
 import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
 import { parseMarkerPayload } from "./indexing-marker-codec.js";
 
@@ -123,6 +124,17 @@ export class StatusModule {
   // ── Private helpers ──────────────────────────────────────
 
   /**
+   * Read the poison-pill quarantine count for a collection from its snapshot
+   * directory. Returns undefined when no snapshot dir is wired or nothing is
+   * quarantined, keeping the status surface narrow.
+   */
+  private async loadQuarantineSummary(reportedName: string): Promise<{ count: number } | undefined> {
+    if (!this.snapshotDir) return undefined;
+    const count = await new QuarantineStore(this.snapshotDir, reportedName).count();
+    return count > 0 ? { count } : undefined;
+  }
+
+  /**
    * Find the latest versioned collection (highest _vN suffix).
    * Returns undefined if no versioned collections exist.
    */
@@ -215,6 +227,7 @@ export class StatusModule {
         sparseVersion,
         lastUpdated: marker.completedAt ? new Date(marker.completedAt) : undefined,
         enrichment,
+        quarantine: await this.loadQuarantineSummary(reportedName),
       };
     }
 
