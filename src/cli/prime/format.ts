@@ -140,7 +140,11 @@ function formatThresholdsSection(
   // labels rendered in a ranking overlay for the agent to map them to a band.
   for (const [signalName, scopes] of Object.entries(signals)) {
     const source = scopes.source ? formatLabelMap(scopes.source.labelMap) : "—";
-    const test = scopes.test ? formatLabelMap(scopes.test.labelMap) : "—";
+    const testRaw = scopes.test ? formatLabelMap(scopes.test.labelMap) : "—";
+    // Lossless back-ref: when test bands are byte-identical to source, collapse
+    // to "=src" instead of repeating the full band list (common for signals
+    // whose source/test percentiles coincide, e.g. blameDominantAuthorPct).
+    const test = testRaw === source && source !== "—" ? "=src" : testRaw;
     lines.push(`- **${signalName}** — source: ${source} · test: ${test}`);
   }
   return lines;

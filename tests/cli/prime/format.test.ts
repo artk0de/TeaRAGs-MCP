@@ -173,6 +173,23 @@ describe("formatPrime — polyglot + thresholds", () => {
     expect(out).not.toContain("  - test:");
   });
 
+  it("collapses test bands to '=src' when test labelMap is identical to source (lossless)", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({
+        isIndexed: true,
+        status: "indexed",
+        collectionName: "c",
+        chunksCount: 4218,
+      }),
+      metrics: monolingualMetricsFixture(),
+      drift: null,
+      update: null,
+    });
+    // ageDays has identical source/test labelMaps in the fixture → back-ref, no repeat.
+    expect(out).toContain("- **git.file.ageDays** — source: recent ≤14 / typical ≤45 / legacy ≤45 · test: =src");
+  });
+
   it("omits Polyglot/Language and Signal thresholds when metrics is null (e.g. no enrichment yet)", () => {
     const out = formatPrime({
       path: "/p",
