@@ -128,6 +128,29 @@ describe("CodegraphEnrichmentProvider — run-stats persistence (2jet-D)", () =>
     }
   });
 
+  // bd tea-rags-mcp-svhqp (residual) — `file-phase` dedups relPaths WITHIN a
+  // batch (uniqueRelPaths) but NOT across batches: a file whose chunks span
+  // several streamed batches reaches streamFileBatch more than once. Without a
+  // cross-batch guard the file is extracted + spilled each time and its calls
+  // are tallied per spill, so callsAttempted jitters ±3% run-to-run with batch
+  // composition. The provider must extract each file ONCE per run.
+  it("does not double-count a file re-delivered across batches in one run (svhqp residual)", async () => {
+    const root = makeRoot();
+    try {
+      await provider.streamFileBatch(root, ["src/foo.ts"]);
+      await provider.streamFileBatch(root, ["src/main.ts"]);
+      // Same file again in a later batch (its chunks spanned batches).
+      await provider.streamFileBatch(root, ["src/main.ts"]);
+      await provider.finalizeSignals(root);
+      const constant = (await client.getRunStats()).find((r) => r.receiverKind === "constant");
+      // main.ts has 2 constant-receiver calls (Foo.bar resolved, Mystery.nope
+      // not). Counted ONCE, not doubled to attempted: 4.
+      expect(constant).toMatchObject({ attempted: 2, resolved: 1 });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   // tea-rags-mcp-ykj7 — an external-library call is tallied per receiver-kind
   // as externalSkipped and persisted to cg_run_stats.external_skipped, so the
   // daemon-readable breakdown shows WHY the denominator shrank.

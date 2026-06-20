@@ -1251,6 +1251,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       (p) => SUPPORTED_EXTS.has(extensionOf(p)) && !this.codegraphExclusionFilter.ignores(p),
     );
     for (const relPath of targets) {
+      // bd tea-rags-mcp-svhqp (residual) — extract each file ONCE per run.
+      // `file-phase` dedups relPaths within a batch but not across batches, so a
+      // file whose chunks span several streamed batches reaches here more than
+      // once. Without this guard it is re-extracted + re-spilled and its calls
+      // are tallied per spill, making callsAttempted (and resolveSuccessRate)
+      // jitter run-to-run with batch composition. `extracted` is the run's
+      // already-spilled set (also reused by finalize for overlay read-back).
+      if (extracted.has(relPath)) continue;
       try {
         await sink.write(this.extractOneFile(root, relPath));
         extracted.add(relPath);
