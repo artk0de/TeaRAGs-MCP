@@ -88,6 +88,8 @@ export interface IndexStats {
     filesNewlyUnignored: number;
     chunksAdded: number;
     chunksDeleted: number;
+    /** Previously-quarantined files re-attempted this pass (unchanged content). */
+    filesRetried: number;
   };
 }
 
@@ -99,6 +101,8 @@ export interface ChangeStats {
   filesNewlyIgnored: number;
   /** Files added to index because they no longer match ignore patterns */
   filesNewlyUnignored: number;
+  /** Previously-quarantined files re-attempted this pass (unchanged content). */
+  filesRetried: number;
   chunksAdded: number;
   chunksDeleted: number;
   durationMs: number;
@@ -164,6 +168,13 @@ export interface IndexStatus {
   enrichment?: EnrichmentHealthMap;
   /** BM25 sparse vector version (from schema metadata) */
   sparseVersion?: number;
+  /**
+   * Poison-pill quarantine summary. `count` is the number of files that broke
+   * indexing (oversized chunk, parse/read failure, …) and were skipped instead
+   * of aborting the pass. The full list with error codes is read by
+   * `tea-rags doctor <project> --quarantine`, not exposed here.
+   */
+  quarantine?: { count: number };
   /** Infrastructure health status (Qdrant + embedding provider) */
   infraHealth?: {
     qdrant: {

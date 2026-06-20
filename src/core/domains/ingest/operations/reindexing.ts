@@ -22,6 +22,7 @@ import type { FileScanner } from "../pipeline/scanner.js";
 import type { DeletionOutcome } from "../sync/deletion/outcome.js";
 import { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
 import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.js";
+import { QuarantineStore } from "../sync/index.js";
 import type { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 
@@ -52,7 +53,12 @@ interface ParallelExecutionPlan {
   providerDeletedOnly: string[];
   addedFiles: string[];
   modifiedFiles: string[];
-  processOpts: { enableGitMetadata: boolean; concurrency: number };
+  processOpts: {
+    enableGitMetadata: boolean;
+    concurrency: number;
+    quarantineStore?: QuarantineStore;
+    quarantinedRetry?: Set<string>;
+  };
   parallelStart: number;
 }
 
@@ -92,6 +98,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       filesDeleted: 0,
       filesNewlyIgnored: 0,
       filesNewlyUnignored: 0,
+      filesRetried: 0,
       chunksAdded: 0,
       chunksDeleted: 0,
       durationMs: 0,
@@ -111,15 +118,24 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       stats.filesNewlyIgnored = changes.newlyIgnored.length;
       stats.filesNewlyUnignored = changes.newlyUnignored.length;
 
-      if (this.hasNoChanges(stats)) {
+      // Poison-pill retry: previously-quarantined files that still exist are
+      // re-attempted even when their content is unchanged (a tea-rags fix may
+      // have shipped, or the file became readable). Computed BEFORE the
+      // no-changes / deletion-only early returns so a pure-retry pass is not
+      // short-circuited.
+      const quarantineStore = new QuarantineStore(this.snapshotDir, ctx.collectionName);
+      const retryPaths = await this.computeQuarantineRetry(quarantineStore, ctx, changes);
+      stats.filesRetried = retryPaths.length;
+
+      if (this.hasNoChanges(stats) && retryPaths.length === 0) {
         await storeIndexingMarker(this.qdrant, this.embeddings, ctx.collectionName, true);
         await ctx.synchronizer.deleteCheckpoint();
         stats.durationMs = Date.now() - startTime;
         return stats;
       }
 
-      // Deletion-only: no files to add/modify → skip pipeline init and enrichment
-      if (changes.added.length === 0 && changes.modified.length === 0) {
+      // Deletion-only: no files to add/modify/retry → skip pipeline init and enrichment
+      if (changes.added.length === 0 && changes.modified.length === 0 && retryPaths.length === 0) {
         await this.executeDeletionOnly(ctx, changes, stats, progressCallback);
         await storeIndexingMarker(this.qdrant, this.embeddings, ctx.collectionName, true);
         await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
@@ -131,7 +147,14 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
       this.startHeartbeat(ctx.collectionName);
       const { chunksAdded, chunksDeleted, processingCtx, chunkMap, filesSkippedDueToDeleteFailure } =
-        await this.executeParallelPipelines(ctx, changes, progressCallback, overrides?.chunkSize);
+        await this.executeParallelPipelines(
+          ctx,
+          changes,
+          quarantineStore,
+          retryPaths,
+          progressCallback,
+          overrides?.chunkSize,
+        );
       stats.chunksAdded = chunksAdded;
       stats.chunksDeleted = chunksDeleted;
       if (filesSkippedDueToDeleteFailure !== undefined && filesSkippedDueToDeleteFailure > 0) {
@@ -222,11 +245,32 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     return changes;
   }
 
+  /**
+   * Quarantined paths to retry this pass: still on disk and not already queued
+   * as added/modified (those are re-walked anyway). Excludes dead paths so a
+   * deleted poison file doesn't get re-attempted forever.
+   */
+  private async computeQuarantineRetry(
+    store: QuarantineStore,
+    ctx: ReindexContext,
+    changes: FileChanges,
+  ): Promise<string[]> {
+    const quarantined = Array.from((await store.load()).keys());
+    const queued = new Set([...changes.added, ...changes.modified]);
+    // ctx.currentFiles are absolute; quarantine keys + changes are relative to
+    // the codebase root. Normalize to relative before intersecting.
+    const base = ctx.absolutePath;
+    const current = new Set(ctx.currentFiles.map((f) => (f.startsWith(base) ? f.slice(base.length + 1) : f)));
+    return quarantined.filter((p) => current.has(p) && !queued.has(p));
+  }
+
   // ── Parallel processing ──────────────────────────────────
 
   private async executeParallelPipelines(
     ctx: ReindexContext,
     changes: FileChanges,
+    quarantineStore: QuarantineStore,
+    retryPaths: string[],
     progressCallback?: ProgressCallback,
     chunkSizeOverride?: number,
   ): Promise<{
@@ -238,7 +282,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     /** Count of modified files whose upsert was skipped due to delete failure (Phase 3.2). */
     filesSkippedDueToDeleteFailure?: number;
   }> {
-    const plan = this.prepareParallelExecution(ctx, changes, chunkSizeOverride);
+    const plan = this.prepareParallelExecution(ctx, changes, quarantineStore, retryPaths, chunkSizeOverride);
 
     // Pause HNSW indexing + segment vacuum for the whole reindex window.
     // Without this, a large delete (>20% tombstones) triggers optimizer repack
@@ -280,9 +324,13 @@ export class ReindexPipeline extends BaseIndexingPipeline {
   private prepareParallelExecution(
     ctx: ReindexContext,
     changes: FileChanges,
+    quarantineStore: QuarantineStore,
+    retryPaths: string[],
     chunkSizeOverride?: number,
   ): ParallelExecutionPlan {
-    const changedPaths = [...changes.added, ...changes.modified];
+    const quarantinedRetry = new Set(retryPaths);
+
+    const changedPaths = [...changes.added, ...changes.modified, ...retryPaths];
     const pCtx = this.initProcessing(
       ctx.collectionName,
       ctx.absolutePath,
@@ -290,16 +338,22 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       changedPaths,
       chunkSizeOverride,
     );
+    // Embed-phase poison-pill isolation (shares the read/parse quarantine store).
+    pCtx.chunkPipeline.setQuarantineStore(quarantineStore);
     const chunkMap = new Map<string, ChunkLookupEntry[]>();
 
     const filesToDelete = [...changes.modified, ...changes.deleted, ...changes.newlyIgnored];
     const providerDeletedOnly = [...changes.deleted, ...changes.newlyIgnored];
-    const addedFiles = [...changes.added];
+    // Retry files join the "added" bucket: they failed before, so they have no
+    // committed chunks to collide with and need no delete-gate coordinator.
+    const addedFiles = [...changes.added, ...retryPaths];
     const modifiedFiles = [...changes.modified];
 
     const processOpts = {
       enableGitMetadata: this.config.enableGitMetadata === true,
       concurrency: this.tuning.fileConcurrency,
+      quarantineStore,
+      quarantinedRetry,
     };
 
     const parallelStart = Date.now();

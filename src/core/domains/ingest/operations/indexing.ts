@@ -20,6 +20,7 @@ import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
 import type { FileScanner } from "../pipeline/scanner.js";
+import { QuarantineStore } from "../sync/index.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 import { computeNewVersion } from "./version-resolver.js";
 
@@ -81,7 +82,18 @@ export class IndexPipeline extends BaseIndexingPipeline {
         return stats;
       }
 
+      // Poison-pill quarantine is bound to the base collection's snapshot dir.
+      // A full reindex (forceReindex) wipes the slate; otherwise broken files
+      // recorded on this pass are retried by the next reindex_changes.
+      const quarantineStore = new QuarantineStore(this.snapshotDir, collectionName);
+      if (options?.forceReindex) {
+        await quarantineStore.clearAll();
+      }
+
       const ctx = this.initProcessing(setup.targetCollection, absolutePath, scanner, undefined, overrides?.chunkSize);
+      // Embed-phase poison-pill isolation: an oversized chunk quarantines its
+      // file instead of aborting the whole pass.
+      ctx.chunkPipeline.setQuarantineStore(quarantineStore);
 
       const heartbeat = new HeartbeatGuard({
         start: () => {
@@ -98,7 +110,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         // pass is 2-3× faster on large codebases. `deleted_threshold` pause is
         // harmless here (no deletes during initial index).
         return new OptimizerLifecycle(this.qdrant).with(setup.targetCollection, async () => {
-          const result = await this.processAndTrack(files, absolutePath, ctx, progressCallback);
+          const result = await this.processAndTrack(files, absolutePath, ctx, quarantineStore, progressCallback);
           stats.filesIndexed = result.filesProcessed;
           stats.chunksCreated = result.chunksCreated;
           if (result.errors.length > 0) {
@@ -312,6 +324,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
     files: string[],
     absolutePath: string,
     ctx: ProcessingContext,
+    quarantineStore: QuarantineStore,
     progressCallback?: ProgressCallback,
   ) {
     let filesProcessed = 0;
@@ -327,6 +340,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         maxChunksPerFile: this.config.maxChunksPerFile,
         maxTotalChunks: this.config.maxTotalChunks,
         concurrency: this.tuning.fileConcurrency,
+        quarantineStore,
       },
       {
         onFileProcessed: (_filePath, chunksCount) => {

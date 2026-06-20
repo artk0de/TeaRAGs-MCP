@@ -102,7 +102,7 @@ export class UnknownError extends TeaRagsError {
     super({
       code: "UNKNOWN_ERROR",
       message: isError ? original.message : typeof original === "string" ? original : "An unknown error occurred",
-      hint: "Check server logs for details",
+      hint: "Check server logs for details. If this looks like a TeaRAGs bug, your agent can file a GitHub issue for you — run the tea-rags:report-issue skill.",
       httpStatus: 500,
       cause: isError ? original : undefined,
     });

@@ -73,7 +73,11 @@ export { PROJECT_NAME_RE } from "../../infra/registry/index.js";
 export type { CollectionEntry, ProjectInfo } from "../../infra/registry/index.js";
 
 // ── Collection-name helpers (infra/collection-name.ts) ────────────────
-export { resolveCollectionName } from "../../infra/collection-name.js";
+export { resolveCollectionName, validatePath } from "../../infra/collection-name.js";
+
+// ── Poison-pill quarantine — read surface for `doctor --quarantine` ───
+export { QuarantineStore } from "../../domains/ingest/sync/index.js";
+export type { QuarantineEntry } from "../../domains/ingest/sync/index.js";
 
 // ── Relocated shared types (contracts/types/) ─────────────────────────
 export type {

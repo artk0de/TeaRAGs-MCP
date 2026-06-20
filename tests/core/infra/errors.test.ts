@@ -31,9 +31,10 @@ describe("TeaRagsError", () => {
       expect(err.message).toBe("something broke");
     });
 
-    it("has default hint", () => {
+    it("has a hint that points at log inspection and the report-issue skill", () => {
       const err = new UnknownError(new Error("boom"));
-      expect(err.hint).toBe("Check server logs for details");
+      expect(err.hint).toContain("Check server logs for details");
+      expect(err.hint).toContain("tea-rags:report-issue");
     });
 
     it("preserves cause chain", () => {
@@ -58,7 +59,9 @@ describe("TeaRagsError", () => {
   describe("toUserMessage()", () => {
     it("formats as [CODE] message with hint", () => {
       const err = new UnknownError(new Error("boom"));
-      expect(err.toUserMessage()).toBe("[UNKNOWN_ERROR] boom\n\nHint: Check server logs for details");
+      const msg = err.toUserMessage();
+      expect(msg.startsWith("[UNKNOWN_ERROR] boom\n\nHint: ")).toBe(true);
+      expect(msg).toContain("Check server logs for details");
     });
   });
 

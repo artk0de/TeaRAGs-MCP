@@ -12,6 +12,7 @@ import { join, relative } from "node:path";
 import { isTestPath } from "../../../infra/scope-detection.js";
 import type { ChunkLookupEntry, CodeChunk } from "../../../types.js";
 import type { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
+import { classifyQuarantinable, type QuarantineStore } from "../sync/index.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
 import type { ChunkerPool } from "./chunker/infra/pool.js";
 import { generateChunkId } from "./chunker/utils/chunk-id.js";
@@ -73,6 +74,19 @@ export interface FileProcessorOptions {
    * old chunks to collide with. See reindex-resilience plan Phase 3.2.
    */
   coordinator?: ReindexCoordinator;
+  /**
+   * Optional poison-pill quarantine. When set, files that fail to read or parse
+   * are recorded here (instead of silently dropping out of the index) and
+   * retried automatically on every subsequent indexing pass.
+   */
+  quarantineStore?: QuarantineStore;
+  /**
+   * Paths (relative to basePath) that were quarantined on a prior pass and are
+   * being retried this pass. A file in this set that now processes successfully
+   * is cleared from the quarantine. Files NOT in this set never trigger a clear,
+   * so the common (never-failed) case pays no extra write.
+   */
+  quarantinedRetry?: Set<string>;
 }
 
 export interface FileProcessResult {
@@ -121,10 +135,12 @@ export async function processFiles(
       let relativePath = filePath;
       let language = "unknown";
       try {
+        // Computed before readFile so the error/quarantine path keys the file
+        // by its relative path even when the read itself fails.
+        relativePath = filePath.startsWith(basePath) ? filePath.slice(basePath.length + 1) : filePath;
         const code = await fs.readFile(filePath, "utf-8");
         const bytes = Buffer.byteLength(code, "utf8");
         language = detectLanguage(filePath);
-        relativePath = filePath.startsWith(basePath) ? filePath.slice(basePath.length + 1) : filePath;
 
         // Phase 3.2 gate: skip files whose delete silently failed in this
         // reindex. Runs BEFORE parse/chunk to save CPU on blocked files.
@@ -248,6 +264,10 @@ export async function processFiles(
         }
 
         result.filesProcessed++;
+        // A previously-quarantined file that now succeeds is un-quarantined.
+        if (options.quarantineStore && options.quarantinedRetry?.has(relativePath)) {
+          await options.quarantineStore.clear(relativePath);
+        }
         callbacks?.onFileProcessed?.(filePath, chunksToAdd.length);
         pipelineLog.fileIngested(
           { component: "FileProcessor" },
@@ -262,6 +282,16 @@ export async function processFiles(
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         result.errors.push(`Skipped ${filePath}: ${errorMessage}`);
+
+        // Poison-pill quarantine: record read/parse failures so the file is
+        // retried on the next pass instead of vanishing from the index. Falls
+        // through to the plain "error" skip path when no store is wired or the
+        // error is non-quarantinable (transient infra / programming invariant).
+        const quarantinable = options.quarantineStore ? classifyQuarantinable(error, relativePath) : null;
+        if (options.quarantineStore && quarantinable) {
+          await options.quarantineStore.markFailed(relativePath, quarantinable);
+        }
+
         pipelineLog.fileIngested(
           { component: "FileProcessor" },
           {
@@ -271,7 +301,7 @@ export async function processFiles(
             chunks: 0,
             parseMs: 0,
             skipped: true,
-            skipReason: "error",
+            skipReason: quarantinable ? "quarantined" : "error",
           },
         );
       }

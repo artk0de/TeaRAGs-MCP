@@ -81,6 +81,10 @@ Indexing has a **zero-downtime guarantee**: a failed run never corrupts the live
 
 The one scenario that requires manual intervention: **snapshot corruption**. Error code `INGEST_SNAPSHOT_CORRUPTED` instructs to delete and reindex — there's no partial recovery for a snapshot, only a fresh full run.
 
+## Poison-Pill Files
+
+A failure specific to one file — an unreadable file, a chunk too large for the embedding model's context — is **quarantined** rather than allowed to abort the pass or silently disappear. The file is skipped, recorded on disk, and retried automatically on every subsequent index until it succeeds. A single oversized chunk no longer fails the whole run: the embedding batch is isolated and only the offending file is set aside. See [Poison-Pill Quarantine](/operations/quarantine) for the codes, lifecycle, and the `tea-rags doctor --quarantine` inspection command.
+
 ## Enrichment Failures
 
 Git enrichment runs asynchronously **after** indexing returns. Failures are deliberately non-fatal:
