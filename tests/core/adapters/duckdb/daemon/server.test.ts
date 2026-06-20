@@ -383,6 +383,76 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 
+  it("updateSymbolChunkIds dispatches the write op and returns null", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_chunk_ids_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "x.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "x.ts",
+        definitions: [{ symbolId: "X#run", fqName: "X.run", shortName: "run", relPath: "x.ts", scope: [] }],
+      },
+    });
+    const res = await server.handle({
+      id: 3,
+      op: "updateSymbolChunkIds",
+      params: { collection: c, relPath: "x.ts", chunkIds: [["X#run", "chunk_42"]] },
+    });
+    expect(res.ok).toBe(true);
+    expect((res as { result: null }).result).toBeNull();
+    await pool.closeAll();
+  });
+
+  it("findSymbolChunk read op returns the stored SymbolChunkLocation", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_find_chunk_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "x.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "x.ts",
+        definitions: [{ symbolId: "X#run", fqName: "X.run", shortName: "run", relPath: "x.ts", scope: [] }],
+      },
+    });
+    await server.handle({
+      id: 3,
+      op: "updateSymbolChunkIds",
+      params: { collection: c, relPath: "x.ts", chunkIds: [["X#run", "chunk_42"]] },
+    });
+    const res = await server.handle({
+      id: 4,
+      op: "findSymbolChunk",
+      params: { collection: c, symbolId: "X#run" },
+    });
+    expect(res.ok).toBe(true);
+    expect((res as { result: { relPath: string; chunkId: string } }).result).toEqual({
+      relPath: "x.ts",
+      chunkId: "chunk_42",
+    });
+    await pool.closeAll();
+  });
+
   it("finalizeReindex deletes the old version DB file, new version readable", async () => {
     const { server, pool } = makeServer();
     await server.handle({

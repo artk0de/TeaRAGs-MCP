@@ -67,6 +67,12 @@ export class CodegraphDaemonServer {
         await graphDb.upsertSymbols(p.relPath as RelPath, p.definitions as SymbolDefinition[]);
         return null;
       }
+      case "updateSymbolChunkIds": {
+        const { graphDb } = await this.pool.acquire(collection);
+        // entries → Map (mirrors replacePageRanks rebuild).
+        await graphDb.updateSymbolChunkIds(p.relPath as RelPath, new Map(p.chunkIds as [SymbolId, string][]));
+        return null;
+      }
       case "replaceCycles": {
         const { graphDb } = await this.pool.acquire(collection);
         await graphDb.replaceCycles(p.scope as CycleScope, p.sccs as readonly (readonly string[])[]);
@@ -111,6 +117,10 @@ export class CodegraphDaemonServer {
       case "getCallers": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getCallers(p.symbolId as SymbolId);
+      }
+      case "findSymbolChunk": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.findSymbolChunk(p.symbolId as SymbolId);
       }
       case "getCallees": {
         const { graphDb } = await this.pool.acquire(collection);
