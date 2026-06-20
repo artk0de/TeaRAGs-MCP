@@ -97,6 +97,37 @@ describe("CodegraphEnrichmentProvider — run-stats persistence (2jet-D)", () =>
     }
   });
 
+  // bd tea-rags-mcp-svhqp — runStats is a single mutable instance field reset
+  // ONLY by getRunMetrics (read-and-clear, driven by the completion-runner),
+  // never by the per-run cleanup paths (clearRunState / onRelease). On the
+  // long-lived daemon the provider is cached per (collection, worker) and
+  // reused for the next reindex, so the prior run's tally LEAKS into the next
+  // run's recordRunStats → callsAttempted jitters run-to-run (huginn observed
+  // 12299 <-> 16616). A second full cycle on the same instance must persist
+  // ONLY the second run's counts, not the accumulation.
+  it("resets run-stats at run START so a re-run on a cached provider does not accumulate (svhqp)", async () => {
+    const root = makeRoot();
+    try {
+      await provider.streamFileBatch(root, ["src/foo.ts"]);
+      await provider.streamFileBatch(root, ["src/main.ts"]);
+      await provider.finalizeSignals(root);
+      const after1 = (await client.getRunStats()).find((r) => r.receiverKind === "constant");
+      expect(after1).toMatchObject({ attempted: 2, resolved: 1 });
+
+      // Second reindex on the SAME provider instance — getRunMetrics is NOT
+      // called between runs (mirrors a daemon worker whose completion-runner
+      // hasn't fired, or fired after the deferred chunk pass). Without a
+      // run-start reset the persisted breakdown doubles to attempted: 4.
+      await provider.streamFileBatch(root, ["src/foo.ts"]);
+      await provider.streamFileBatch(root, ["src/main.ts"]);
+      await provider.finalizeSignals(root);
+      const after2 = (await client.getRunStats()).find((r) => r.receiverKind === "constant");
+      expect(after2).toMatchObject({ attempted: 2, resolved: 1 });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   // tea-rags-mcp-ykj7 — an external-library call is tallied per receiver-kind
   // as externalSkipped and persisted to cg_run_stats.external_skipped, so the
   // daemon-readable breakdown shows WHY the denominator shrank.

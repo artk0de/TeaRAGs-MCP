@@ -1229,6 +1229,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // AFTER finalizeSignals; clearing it at finalize zeroes every chunk's
       // fanIn/fanOut/pageRank.
       this.chunkSymbolByLine.delete(key);
+      // bd tea-rags-mcp-svhqp — reset the per-run resolve tally at run START too.
+      // `runStats` is otherwise cleared ONLY by `getRunMetrics` (read-and-clear,
+      // driven by the completion-runner) — NOT by `clearRunState` / `onRelease`.
+      // On the long-lived daemon this provider is cached per (collection, worker)
+      // and reused, so a prior run's tally leaks into the next run's
+      // `recordRunStats` and makes the persisted `resolveSuccessRate` jitter
+      // run-to-run. Resetting here (same rationale as `chunkSymbolByLine`: the
+      // deferred chunk pass and completion-runner both read AFTER finalize, so a
+      // finalize-time reset is unsafe) scopes the tally to this run.
+      this.runStats = createEmptyRunStats();
       sink = this.asExtractionSink(options?.collectionName);
       this.runSinks.set(key, sink);
     }
