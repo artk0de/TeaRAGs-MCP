@@ -313,7 +313,7 @@ describe("GraphFacade#resolveSymbolChunk", () => {
   it("resolves via the read handle and returns the location", async () => {
     const graphDb = {
       findSymbolChunk: vi.fn().mockResolvedValue({ relPath: "a.rb", chunkId: "chunk_x" }),
-      close: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
     };
     const pool = { acquireReader: vi.fn().mockResolvedValue({ graphDb }) };
     const facade = new GraphFacade({

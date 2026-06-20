@@ -101,7 +101,7 @@ export class GraphFacade {
     try {
       return await fn(handle);
     } finally {
-      await Promise.resolve(handle.graphDb.close()).catch(() => undefined);
+      await handle.graphDb.close().catch(() => undefined);
     }
   }
 
