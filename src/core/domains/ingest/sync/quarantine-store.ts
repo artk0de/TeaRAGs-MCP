@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
+
 import type { ErrorCode } from "../../../contracts/errors.js";
 import type { QuarantinableIngestError, QuarantinePhase } from "../errors.js";
 
@@ -24,17 +25,19 @@ interface QuarantineFile {
   files: Record<string, QuarantineEntry>;
 }
 
-const QUARANTINE_FILENAME = "quarantine.json";
-
 /**
- * Persists poison-pill files that broke indexing to `quarantine.json` alongside
- * the snapshot, so they are retried on every subsequent pass instead of
- * silently dropping out of the index. Writes are atomic (tmp + rename), and the
- * file lifecycle is bound to the collection's snapshot directory — dropping the
- * collection removes the quarantine list as a side effect.
+ * Persists poison-pill files that broke indexing so they are retried on every
+ * subsequent pass instead of silently dropping out of the index. Writes are
+ * atomic (tmp + rename).
+ *
+ * The file is a SIBLING of the collection's snapshot directory
+ * (`<snapshotDir>/<collection>.quarantine.json`), NOT inside it: the sharded
+ * snapshot manager atomically swaps the whole `<collection>/` directory on every
+ * save, which would wipe a quarantine file written mid-pass. Living one level up
+ * keeps it intact across snapshot saves while still being collection-scoped.
  */
 export class QuarantineStore {
-  private readonly collectionDir: string;
+  private readonly snapshotDir: string;
   private readonly quarantinePath: string;
   /**
    * Serializes mutating operations. processFiles fails files concurrently, so
@@ -44,8 +47,8 @@ export class QuarantineStore {
   private writeChain: Promise<unknown> = Promise.resolve();
 
   constructor(snapshotDir: string, collectionName: string) {
-    this.collectionDir = join(snapshotDir, collectionName);
-    this.quarantinePath = join(this.collectionDir, QUARANTINE_FILENAME);
+    this.snapshotDir = snapshotDir;
+    this.quarantinePath = join(snapshotDir, `${collectionName}.quarantine.json`);
   }
 
   /** Run a mutating op after all previously-enqueued ones, regardless of their outcome. */
@@ -140,7 +143,7 @@ export class QuarantineStore {
       updatedAt: new Date().toISOString(),
       files: Object.fromEntries(entries),
     };
-    await fs.mkdir(this.collectionDir, { recursive: true });
+    await fs.mkdir(this.snapshotDir, { recursive: true });
     // Unique tmp suffix so a write from another QuarantineStore instance for the
     // same collection (e.g. status count vs pipeline write) can't clobber ours.
     const tmpPath = `${this.quarantinePath}.${randomUUID()}.tmp`;

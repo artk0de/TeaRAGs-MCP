@@ -22,8 +22,8 @@ import type { FileScanner } from "../pipeline/scanner.js";
 import type { DeletionOutcome } from "../sync/deletion/outcome.js";
 import { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
 import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.js";
-import type { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { QuarantineStore } from "../sync/index.js";
+import type { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 
 interface ReindexContext {
@@ -117,15 +117,23 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       stats.filesNewlyIgnored = changes.newlyIgnored.length;
       stats.filesNewlyUnignored = changes.newlyUnignored.length;
 
-      if (this.hasNoChanges(stats)) {
+      // Poison-pill retry: previously-quarantined files that still exist are
+      // re-attempted even when their content is unchanged (a tea-rags fix may
+      // have shipped, or the file became readable). Computed BEFORE the
+      // no-changes / deletion-only early returns so a pure-retry pass is not
+      // short-circuited.
+      const quarantineStore = new QuarantineStore(this.snapshotDir, ctx.collectionName);
+      const retryPaths = await this.computeQuarantineRetry(quarantineStore, ctx, changes);
+
+      if (this.hasNoChanges(stats) && retryPaths.length === 0) {
         await storeIndexingMarker(this.qdrant, this.embeddings, ctx.collectionName, true);
         await ctx.synchronizer.deleteCheckpoint();
         stats.durationMs = Date.now() - startTime;
         return stats;
       }
 
-      // Deletion-only: no files to add/modify → skip pipeline init and enrichment
-      if (changes.added.length === 0 && changes.modified.length === 0) {
+      // Deletion-only: no files to add/modify/retry → skip pipeline init and enrichment
+      if (changes.added.length === 0 && changes.modified.length === 0 && retryPaths.length === 0) {
         await this.executeDeletionOnly(ctx, changes, stats, progressCallback);
         await storeIndexingMarker(this.qdrant, this.embeddings, ctx.collectionName, true);
         await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
@@ -137,7 +145,14 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
       this.startHeartbeat(ctx.collectionName);
       const { chunksAdded, chunksDeleted, processingCtx, chunkMap, filesSkippedDueToDeleteFailure } =
-        await this.executeParallelPipelines(ctx, changes, progressCallback, overrides?.chunkSize);
+        await this.executeParallelPipelines(
+          ctx,
+          changes,
+          quarantineStore,
+          retryPaths,
+          progressCallback,
+          overrides?.chunkSize,
+        );
       stats.chunksAdded = chunksAdded;
       stats.chunksDeleted = chunksDeleted;
       if (filesSkippedDueToDeleteFailure !== undefined && filesSkippedDueToDeleteFailure > 0) {
@@ -228,11 +243,32 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     return changes;
   }
 
+  /**
+   * Quarantined paths to retry this pass: still on disk and not already queued
+   * as added/modified (those are re-walked anyway). Excludes dead paths so a
+   * deleted poison file doesn't get re-attempted forever.
+   */
+  private async computeQuarantineRetry(
+    store: QuarantineStore,
+    ctx: ReindexContext,
+    changes: FileChanges,
+  ): Promise<string[]> {
+    const quarantined = Array.from((await store.load()).keys());
+    const queued = new Set([...changes.added, ...changes.modified]);
+    // ctx.currentFiles are absolute; quarantine keys + changes are relative to
+    // the codebase root. Normalize to relative before intersecting.
+    const base = ctx.absolutePath;
+    const current = new Set(ctx.currentFiles.map((f) => (f.startsWith(base) ? f.slice(base.length + 1) : f)));
+    return quarantined.filter((p) => current.has(p) && !queued.has(p));
+  }
+
   // ── Parallel processing ──────────────────────────────────
 
   private async executeParallelPipelines(
     ctx: ReindexContext,
     changes: FileChanges,
+    quarantineStore: QuarantineStore,
+    retryPaths: string[],
     progressCallback?: ProgressCallback,
     chunkSizeOverride?: number,
   ): Promise<{
@@ -244,12 +280,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     /** Count of modified files whose upsert was skipped due to delete failure (Phase 3.2). */
     filesSkippedDueToDeleteFailure?: number;
   }> {
-    // Poison-pill retry: previously-quarantined files that still exist are
-    // re-attempted this pass (a tea-rags fix may have shipped). Loaded here so
-    // the synchronous plan builder can union them into the work set.
-    const quarantineStore = new QuarantineStore(this.snapshotDir, ctx.collectionName);
-    const quarantinedPaths = Array.from((await quarantineStore.load()).keys());
-    const plan = this.prepareParallelExecution(ctx, changes, quarantineStore, quarantinedPaths, chunkSizeOverride);
+    const plan = this.prepareParallelExecution(ctx, changes, quarantineStore, retryPaths, chunkSizeOverride);
 
     // Pause HNSW indexing + segment vacuum for the whole reindex window.
     // Without this, a large delete (>20% tombstones) triggers optimizer repack
@@ -292,14 +323,9 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     ctx: ReindexContext,
     changes: FileChanges,
     quarantineStore: QuarantineStore,
-    quarantinedPaths: string[],
+    retryPaths: string[],
     chunkSizeOverride?: number,
   ): ParallelExecutionPlan {
-    // Retry only quarantined files that still exist and aren't already being
-    // re-walked as added/modified — avoids double-processing and dead paths.
-    const alreadyQueued = new Set([...changes.added, ...changes.modified]);
-    const currentFileSet = new Set(ctx.currentFiles);
-    const retryPaths = quarantinedPaths.filter((p) => currentFileSet.has(p) && !alreadyQueued.has(p));
     const quarantinedRetry = new Set(retryPaths);
 
     const changedPaths = [...changes.added, ...changes.modified, ...retryPaths];

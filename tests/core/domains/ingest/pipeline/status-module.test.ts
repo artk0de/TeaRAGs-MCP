@@ -149,17 +149,31 @@ describe("StatusModule", () => {
         await ingest.indexCodebase(codebaseDir);
         const indexed = await ingest.getIndexStatus(codebaseDir);
 
-        // Write a quarantine list alongside the collection's snapshot.
-        const snapshotDir = join(process.env.TEA_RAGS_DATA_DIR!, "snapshots", indexed.collectionName!);
+        // Write a quarantine list as a sibling of the collection's snapshot dir.
+        const snapshotDir = join(process.env.TEA_RAGS_DATA_DIR!, "snapshots");
         await fs.mkdir(snapshotDir, { recursive: true });
         await fs.writeFile(
-          join(snapshotDir, "quarantine.json"),
+          join(snapshotDir, `${indexed.collectionName}.quarantine.json`),
           JSON.stringify({
             version: 1,
             updatedAt: new Date().toISOString(),
             files: {
-              "a.ts": { errorCode: "INGEST_FILE_READ_FAILED", errorMessage: "x", phase: "fs", firstFailedAt: "t", lastFailedAt: "t", attempts: 1 },
-              "b.ts": { errorCode: "INGEST_CHUNK_OVERSIZED", errorMessage: "y", phase: "embed", firstFailedAt: "t", lastFailedAt: "t", attempts: 2 },
+              "a.ts": {
+                errorCode: "INGEST_FILE_READ_FAILED",
+                errorMessage: "x",
+                phase: "fs",
+                firstFailedAt: "t",
+                lastFailedAt: "t",
+                attempts: 1,
+              },
+              "b.ts": {
+                errorCode: "INGEST_CHUNK_OVERSIZED",
+                errorMessage: "y",
+                phase: "embed",
+                firstFailedAt: "t",
+                lastFailedAt: "t",
+                attempts: 2,
+              },
             },
           }),
           "utf-8",
