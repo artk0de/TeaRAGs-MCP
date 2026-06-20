@@ -879,5 +879,27 @@ describe("StatusModule", () => {
       const stats = await ingest.indexCodebase(codebaseDir);
       expect(stats.status).toBe("completed");
     });
+
+    it("removes the quarantine and stats sibling files on clear", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const c = 1;\nconsole.log('sibling cleanup');");
+      await ingest.indexCodebase(codebaseDir);
+      const indexed = await ingest.getIndexStatus(codebaseDir);
+
+      const snapshotsDir = join(process.env.TEA_RAGS_DATA_DIR!, "snapshots");
+      const quarantinePath = join(snapshotsDir, `${indexed.collectionName}.quarantine.json`);
+      const statsPath = join(snapshotsDir, `${indexed.collectionName}.stats.json`);
+      // stats.json is written during indexing; seed a quarantine sibling too.
+      await fs.writeFile(quarantinePath, JSON.stringify({ version: 1, updatedAt: "t", files: {} }), "utf-8");
+
+      await ingest.clearIndex(codebaseDir);
+
+      const exists = async (p: string) =>
+        fs.access(p).then(
+          () => true,
+          () => false,
+        );
+      expect(await exists(quarantinePath)).toBe(false);
+      expect(await exists(statsPath)).toBe(false);
+    });
   });
 });

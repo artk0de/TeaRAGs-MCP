@@ -13,10 +13,11 @@ import { join } from "node:path";
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import { StatsCache } from "../../../infra/stats-cache.js";
 import type { IndexStatus } from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../constants.js";
-import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { QuarantineStore } from "../sync/index.js";
+import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
 import { parseMarkerPayload } from "./indexing-marker-codec.js";
 
@@ -116,6 +117,10 @@ export class StatusModule {
       const dir = this.snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
       const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, dir);
       await synchronizer.deleteSnapshot();
+      // The quarantine and stats caches live as siblings of the snapshot dir, so
+      // the snapshot delete above does not reach them — drop them explicitly.
+      await new QuarantineStore(dir, collectionName).clearAll();
+      new StatsCache(dir).invalidate(collectionName);
     } catch (_error) {
       // Ignore snapshot deletion errors
     }
