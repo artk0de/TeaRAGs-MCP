@@ -93,6 +93,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
       id: results[i].id,
       score: meta.score as number,
       payload: meta,
+      ...(results[i].fromCodegraphFallback ? { fromCodegraphFallback: true as const } : {}),
     }));
   }
 

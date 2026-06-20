@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { PayloadSignalDescriptor } from "../../../../../src/core/contracts/types/trajectory.js";
+import { BaseExploreStrategy } from "../../../../../src/core/domains/explore/strategies/base.js";
 import { SymbolSearchStrategy } from "../../../../../src/core/domains/explore/strategies/symbol.js";
+import type { ExploreContext, ExploreResult } from "../../../../../src/core/domains/explore/strategies/types.js";
 
 function makeStrategy(opts: {
   scroll: unknown[];
@@ -93,5 +96,83 @@ describe("SymbolSearchStrategy — codegraph fallback", () => {
     );
     expect(getPoint).not.toHaveBeenCalled();
     expect(results).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyMetaOnly — fromCodegraphFallback preservation (0rskm)
+// ---------------------------------------------------------------------------
+//
+// BaseExploreStrategy#applyMetaOnly reconstructs each ExploreResult from
+// scratch: `{ id, score, payload }`. The `fromCodegraphFallback` flag that
+// resolveViaCodegraph sets on the top-level result object is silently
+// dropped. This suite exercises applyMetaOnly via execute() on a minimal
+// BaseExploreStrategy subclass that returns a codegraph-fallback result.
+// SymbolSearchStrategy is tested above (it overrides postProcess entirely);
+// this suite targets the BASE postProcess → applyMetaOnly path that any
+// other strategy extending BaseExploreStrategy would hit.
+
+class FallbackTestStrategy extends BaseExploreStrategy {
+  readonly type = "vector" as const;
+  private readonly rawResults: ExploreResult[];
+
+  constructor(results: ExploreResult[], payloadSignals: PayloadSignalDescriptor[] = []) {
+    super(
+      {} as never, // qdrant — not used by this strategy
+      { rerank: vi.fn((r: ExploreResult[]) => r) } as never, // reranker
+      payloadSignals,
+      [], // essentialKeys
+    );
+    this.rawResults = results;
+  }
+
+  protected async executeExplore(_ctx: ExploreContext): Promise<ExploreResult[]> {
+    return this.rawResults;
+  }
+}
+
+describe("BaseExploreStrategy#applyMetaOnly — fromCodegraphFallback preservation (0rskm)", () => {
+  it("preserves fromCodegraphFallback flag on results that pass through applyMetaOnly", async () => {
+    const payloadSignals: PayloadSignalDescriptor[] = [
+      { key: "relativePath", type: "string", description: "File path" },
+    ];
+    const fallbackResult: ExploreResult = {
+      id: "chunk-cls",
+      score: 1,
+      payload: { relativePath: "foo.rb", content: "class Foo; end" },
+      fromCodegraphFallback: true,
+    };
+    const strategy = new FallbackTestStrategy([fallbackResult], payloadSignals);
+
+    const results = await strategy.execute({
+      collectionName: "col",
+      limit: 10,
+      metaOnly: true,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].fromCodegraphFallback).toBe(true);
+  });
+
+  it("does NOT attach fromCodegraphFallback on normal results (flag absent by default)", async () => {
+    const payloadSignals: PayloadSignalDescriptor[] = [
+      { key: "relativePath", type: "string", description: "File path" },
+    ];
+    const normalResult: ExploreResult = {
+      id: "chunk-1",
+      score: 0.9,
+      payload: { relativePath: "bar.ts", content: "const x = 1;" },
+      // fromCodegraphFallback intentionally absent
+    };
+    const strategy = new FallbackTestStrategy([normalResult], payloadSignals);
+
+    const results = await strategy.execute({
+      collectionName: "col",
+      limit: 10,
+      metaOnly: true,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].fromCodegraphFallback).toBeUndefined();
   });
 });
