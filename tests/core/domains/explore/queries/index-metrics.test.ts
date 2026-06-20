@@ -270,4 +270,64 @@ describe("IndexMetricsQuery", () => {
       hub: 18,
     });
   });
+
+  // Display-hint passthrough: a descriptor declaring stats.format surfaces it on
+  // the SignalMetrics DTO so prime can render normalized [0,1] signals (e.g.
+  // codegraph.chunk.pageRank, whose meaningful percentiles live at 1e-4..1e-1
+  // and round to "≤0" on the raw scale) as percentages. labelMap value stays raw.
+  it("surfaces stats.format as a display hint on SignalMetrics, leaving labelMap raw", async () => {
+    const { qdrant } = makeDeps();
+    const statsCache = {
+      load: vi.fn().mockReturnValue({
+        perSignal: new Map(),
+        perLanguage: new Map([
+          [
+            "typescript",
+            new Map([
+              [
+                "codegraph.chunk.pageRank",
+                {
+                  source: {
+                    count: 100,
+                    min: 0,
+                    max: 0.1,
+                    percentiles: { 50: 0.00028, 75: 0.00041, 95: 0.0012 },
+                    mean: 0.0005,
+                  },
+                },
+              ],
+            ]),
+          ],
+        ]),
+        distributions: {
+          totalFiles: 50,
+          language: { typescript: 100 },
+          chunkType: {},
+          documentation: { docs: 0, code: 100 },
+          topAuthors: [],
+          othersCount: 0,
+        },
+        computedAt: Date.now(),
+      }),
+    } as any;
+    const payloadSignals = [
+      {
+        key: "codegraph.chunk.pageRank",
+        type: "number",
+        description: "PageRank over the method call graph",
+        stats: {
+          labels: { p50: "peripheral", p75: "important", p95: "critical" },
+          format: "percent",
+        },
+      },
+    ] as any;
+    const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+
+    const result = await query.run("col", "/project");
+
+    const metrics = result.signals["typescript"]["codegraph.chunk.pageRank"]["source"];
+    expect(metrics.format).toBe("percent");
+    // labelMap stays raw — format is a render-time hint, not a value transform.
+    expect(metrics.labelMap).toEqual({ peripheral: 0.00028, important: 0.00041, critical: 0.0012 });
+  });
 });

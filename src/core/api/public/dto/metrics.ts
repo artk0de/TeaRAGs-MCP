@@ -9,6 +9,13 @@ export interface SignalMetrics {
   count: number;
   /** Label name → threshold value. E.g. { "high": 12, "extreme": 30 } */
   labelMap: Record<string, number>;
+  /**
+   * Render hint copied from the signal descriptor's `stats.format`. A consumer
+   * (e.g. prime) displays labelMap values as percentages: `"percent"` scales a
+   * [0,1] fraction ×100; `"percent100"` appends `%` to an already-0–100 value
+   * without scaling. Values in labelMap stay raw; this only affects display.
+   */
+  format?: "percent" | "percent100";
 }
 
 /** Collection-level metrics returned by get_index_metrics MCP tool. */

@@ -85,6 +85,8 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     description: "Percentage of bug-fix commits (0-100)",
     stats: {
       labels: { p50: "healthy", p75: "concerning", p95: "critical" },
+      // Already a 0–100 percentage — render with "%" suffix, no ×100 scaling.
+      format: "percent100",
       confidence: {
         support: "commitCount",
         score: { threshold: 10, adaptivePercentile: 25 },
@@ -175,6 +177,8 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     description: "Bug-fix rate for this chunk (0-100)",
     stats: {
       labels: { p50: "healthy", p75: "concerning", p95: "critical" },
+      // Already a 0–100 percentage — render with "%" suffix, no ×100 scaling.
+      format: "percent100",
       confidence: {
         support: "commitCount",
         score: { threshold: 10, adaptivePercentile: 25 },
