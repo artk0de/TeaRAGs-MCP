@@ -50,6 +50,7 @@ import type {
   InheritanceEdgeRow,
   NamedSymbol,
   ResolveRunStatsRow,
+  SymbolId,
 } from "../../../../contracts/types/codegraph.js";
 import type { FileClassification } from "../../../../contracts/types/file-classification.js";
 import type {
@@ -1588,6 +1589,22 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           pageRank: pageRankValue,
         });
       }
+      // 0rskm — store-time symbol→covering-chunk join. The walker's per-file
+      // line map (relPath → startLine → symbolId) holds EVERY extracted symbol,
+      // including methods of a collapsed class that got no own Qdrant chunk.
+      // Invert it to symbol→startLine, run the containment join against this
+      // file's chunk entries, and backfill cg_symbols.chunk_id.
+      const lineMap = this.chunkSymbolByLine.get(this.collectionKey(options?.collectionName))?.get(relPath);
+      if (lineMap && lineMap.size > 0) {
+        const symbolStartLines = new Map<SymbolId, number>();
+        for (const [startLine, symbolId] of lineMap) {
+          symbolStartLines.set(symbolId, startLine);
+        }
+        const chunkIds = computeSymbolChunkIds(symbolStartLines, entries);
+        if (chunkIds.size > 0) {
+          await graphDb.updateSymbolChunkIds(relPath, chunkIds);
+        }
+      }
       out.set(relPath, perChunk);
     }
     return out;
@@ -1881,4 +1898,53 @@ async function collectAdjacency(graphDb: GraphDbClient, scope: "file" | "method"
     else adj.set(source, [target]);
   }
   return adj;
+}
+
+/**
+ * Symbol→covering-chunk containment join (0rskm). For each symbol start line,
+ * pick the tightest chunk whose range (or any of its non-contiguous
+ * `lineRanges`) contains that line. "Tightest" = smallest covering span, so a
+ * method's own chunk wins over the enclosing class chunk, and a `#partN` part
+ * wins over a wide fallback. Symbols with no covering chunk are omitted (their
+ * cg_symbols.chunk_id stays NULL → find_symbol fallback is a no-op for them).
+ */
+export function computeSymbolChunkIds(
+  symbolStartLines: ReadonlyMap<SymbolId, number>,
+  entries: readonly ChunkLookupEntry[],
+): Map<SymbolId, string> {
+  const out = new Map<SymbolId, string>();
+  for (const [symbolId, line] of symbolStartLines) {
+    let bestId: string | undefined;
+    let bestSpan = Number.POSITIVE_INFINITY;
+    for (const e of entries) {
+      const span = coveringSpan(e, line);
+      if (span !== undefined && span < bestSpan) {
+        bestSpan = span;
+        bestId = e.chunkId;
+      }
+    }
+    if (bestId !== undefined) out.set(symbolId, bestId);
+  }
+  return out;
+}
+
+/**
+ * Effective covering span of `entry` for `line`, or undefined if `line` is not
+ * covered. When `lineRanges` is present, containment is checked against the
+ * sub-range that holds the line and the span is that sub-range's width (Ruby
+ * body groups: a tight group beats a wide whole-chunk span).
+ */
+function coveringSpan(entry: ChunkLookupEntry, line: number): number | undefined {
+  if (entry.lineRanges && entry.lineRanges.length > 0) {
+    let best: number | undefined;
+    for (const r of entry.lineRanges) {
+      if (line >= r.start && line <= r.end) {
+        const w = r.end - r.start;
+        if (best === undefined || w < best) best = w;
+      }
+    }
+    return best;
+  }
+  if (line >= entry.startLine && line <= entry.endLine) return entry.endLine - entry.startLine;
+  return undefined;
 }
