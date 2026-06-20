@@ -34,6 +34,7 @@ sidebar_position: 3
 | **Snapshot not found**         | `INGEST_SNAPSHOT_MISSING`   | Ensure the snapshot file exists at `~/.tea-rags/snapshots/`                |
 | **Snapshot corrupted**         | `INGEST_SNAPSHOT_CORRUPTED` | Delete old snapshot and re-index with `forceReindex=true`                  |
 | **Snapshot migration failed**  | `INGEST_MIGRATION_FAILED`   | Delete old snapshot and re-index                                           |
+| **File skipped (quarantined)** | `INGEST_FILE_*`/`OVERSIZED` | Set aside + auto-retried - see [Quarantine](/operations/quarantine)        |
 | **Slow indexing**              | —                           | Use Ollama (local) for faster indexing, or increase `EMBEDDING_BATCH_SIZE` |
 | **Files not found**            | —                           | Check `.gitignore` and `.contextignore` patterns                           |
 | **Out of memory during index** | —                           | Reduce `INGEST_CHUNK_SIZE` or `EMBEDDING_BATCH_SIZE`                       |
@@ -125,6 +126,10 @@ Full table of all structured error codes returned by the MCP server.
 | `INGEST_SNAPSHOT_MISSING`              | `SnapshotMissingError`       | 404  | Snapshot not found at "`{path}`"                               | Ensure the snapshot file exists                                        |
 | `INGEST_SNAPSHOT_CORRUPTED`            | `SnapshotCorruptedError`     | 400  | Snapshot corrupted: `{detail}`                                 | Delete and re-index with `forceReindex=true`                           |
 | `INGEST_MIGRATION_FAILED`              | `MigrationFailedError`       | 400  | Snapshot migration failed: `{reason}`                          | Delete old snapshot and re-index                                       |
+| `INGEST_FILE_READ_FAILED`              | `FileReadError`              | 400  | Failed to read "`{path}`": `{detail}`                          | Quarantined + auto-retried - see [Quarantine](/operations/quarantine)  |
+| `INGEST_FILE_PARSE_FAILED`             | `FileParseError`             | 400  | Failed to parse "`{path}`": `{detail}`                         | Quarantined + auto-retried - see [Quarantine](/operations/quarantine)  |
+| `INGEST_CHUNK_OVERSIZED`               | `ChunkOversizedError`        | 400  | Chunk in "`{path}`" oversized: `{detail}`                      | Lower `INGEST_CHUNK_SIZE` - see [Quarantine](/operations/quarantine)   |
+| `INGEST_EMBEDDING_REJECTED`            | `EmbeddingRejectedError`     | 400  | Embedding rejected for "`{path}`": `{detail}`                  | Quarantined + auto-retried - see [Quarantine](/operations/quarantine)  |
 | `EXPLORE_COLLECTION_NOT_FOUND`         | `CollectionNotFoundError`    | 404  | Collection "`{collectionName}`" does not exist                 | Index the codebase first                                               |
 | `EXPLORE_HYBRID_NOT_ENABLED`           | `HybridNotEnabledError`      | 400  | Collection "`{collectionName}`" does not support hybrid search | Run `reindex_changes` — hybrid is enabled by default and auto-migrates |
 | `EXPLORE_INVALID_QUERY`                | `InvalidQueryError`          | 400  | Invalid query: `{reason}`                                      | Fix query parameters                                                   |
