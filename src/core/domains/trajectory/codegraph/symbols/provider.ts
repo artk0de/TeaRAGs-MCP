@@ -405,6 +405,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private readonly runExtractedPaths = new Map<string, Set<string>>();
   /**
+   * Per-collection serialization tail for `streamFileBatch` (bd
+   * tea-rags-mcp-svhqp layer 3). `file-phase.onBatch` pushes extract work
+   * WITHOUT awaiting, so multiple `streamFileBatch` calls run concurrently on
+   * this one cached provider and would otherwise race on the shared spill stream
+   * + `extracted` set (a check-then-add dedup is TOCTOU under concurrency). Each
+   * call chains off the prior so extract + spill + dedup run atomically and in a
+   * deterministic order. Settled-tolerant: a rejected batch does not poison the
+   * chain. Cleared per key in `finalizeSignals` / `onRelease`.
+   */
+  private readonly runBatchChains = new Map<string, Promise<unknown>>();
+  /**
    * Per-run counters surfaced via `getRunMetrics()`. Read-and-cleared by
    * `CompletionRunner` at end of each enrichment cycle. Tracked here
    * (not in the sink) so they survive across multiple sink.write/finish
@@ -1218,6 +1229,27 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     batchPaths: string[],
     options?: FileSignalOptions,
   ): Promise<Map<string, FileSignalOverlay>> => {
+    // bd tea-rags-mcp-svhqp (layer 3) — serialize concurrent batches per
+    // collection. file-phase fires streamFileBatch without awaiting, so chain
+    // each call off the prior: extract + spill + dedup then run atomically and
+    // in deterministic order on the shared spill stream + extracted set, instead
+    // of racing (a check-then-add dedup is TOCTOU under concurrency). A batch
+    // only rejects on catastrophic spill IO (per-file extraction errors are
+    // swallowed inside the inner loop) — at which point the whole run is already
+    // doomed, so letting that reject propagate down the chain is acceptable and
+    // keeps the wrapper branch-free.
+    const key = this.collectionKey(options?.collectionName);
+    const prior = this.runBatchChains.get(key) ?? Promise.resolve();
+    const result = prior.then(async () => this.streamFileBatchInner(root, batchPaths, options));
+    this.runBatchChains.set(key, result);
+    return result;
+  };
+
+  private async streamFileBatchInner(
+    root: string,
+    batchPaths: string[],
+    options?: FileSignalOptions,
+  ): Promise<Map<string, FileSignalOverlay>> {
     const key = this.collectionKey(options?.collectionName);
     let sink = this.runSinks.get(key);
     if (!sink) {
@@ -1269,7 +1301,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       }
     }
     return new Map(); // signals deferred to finalizeSignals
-  };
+  }
 
   /**
    * Finish the streamed run sink (resolve edges + recompute graph metrics),
@@ -1298,6 +1330,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     } finally {
       this.runSinks.delete(key);
       this.runExtractedPaths.delete(key);
+      this.runBatchChains.delete(key);
       this.clearRunState(key);
     }
     return file;
@@ -1364,6 +1397,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.chunkSymbolByLine.clear();
     this.runSinks.clear();
     this.runExtractedPaths.clear();
+    this.runBatchChains.clear();
     this.runAncestors = {};
     this.runPrependedAncestors = {};
     this.runExtends = {};

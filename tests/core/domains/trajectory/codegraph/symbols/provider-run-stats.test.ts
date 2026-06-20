@@ -151,6 +151,29 @@ describe("CodegraphEnrichmentProvider — run-stats persistence (2jet-D)", () =>
     }
   });
 
+  // bd tea-rags-mcp-svhqp (layer 3) — file-phase pushes extractWork WITHOUT
+  // awaiting, so multiple streamFileBatch calls run CONCURRENTLY on one cached
+  // provider. They race on the shared spill + `extracted` set: a plain
+  // check-then-add dedup is TOCTOU — two concurrent batches both pass
+  // `extracted.has()` before either `.add()`s, double-spilling the file. The
+  // provider must serialize per-collection so extract+spill+dedup is atomic.
+  it("dedups a file delivered by CONCURRENT batches in one run (svhqp layer 3 TOCTOU)", async () => {
+    const root = makeRoot();
+    try {
+      await provider.streamFileBatch(root, ["src/foo.ts"]);
+      // Two CONCURRENT deliveries of the same file (interleave at the awaits).
+      await Promise.all([
+        provider.streamFileBatch(root, ["src/main.ts"]),
+        provider.streamFileBatch(root, ["src/main.ts"]),
+      ]);
+      await provider.finalizeSignals(root);
+      const constant = (await client.getRunStats()).find((r) => r.receiverKind === "constant");
+      expect(constant).toMatchObject({ attempted: 2, resolved: 1 });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   // tea-rags-mcp-ykj7 — an external-library call is tallied per receiver-kind
   // as externalSkipped and persisted to cg_run_stats.external_skipped, so the
   // daemon-readable breakdown shows WHY the denominator shrank.
