@@ -82,7 +82,7 @@ describe("ConeDispatchResolver", () => {
     const resolver = new ConeDispatchResolver(locatorWith({ "WebsiteAgent#check": websiteTarget }), 8);
     const out = resolver.resolveDispatch(
       { callText: "check", receiver: null, member: "check", startLine: 1 },
-      ctx({ localBindings: { agent: "Agent" }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }),
+      ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }),
     );
     expect(out).toEqual([]);
   });
@@ -95,7 +95,7 @@ describe("ConeDispatchResolver", () => {
 
   it("returns [] when no hierarchy view is wired", () => {
     const resolver = new ConeDispatchResolver(locatorWith({ "WebsiteAgent#check": websiteTarget }), 8);
-    const out = resolver.resolveDispatch(call, ctx({ localBindings: { agent: "Agent" } }));
+    const out = resolver.resolveDispatch(call, ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] } }));
     expect(out).toEqual([]);
   });
 
@@ -103,7 +103,7 @@ describe("ConeDispatchResolver", () => {
     const resolver = new ConeDispatchResolver(locatorWith({}), 8);
     const out = resolver.resolveDispatch(
       call,
-      ctx({ localBindings: { agent: "Agent" }, hierarchy: hierarchyWith({}) }),
+      ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({}) }),
     );
     expect(out).toEqual([]);
   });
@@ -113,7 +113,7 @@ describe("ConeDispatchResolver", () => {
     const resolver = new ConeDispatchResolver(locatorWith({}), 8);
     const out = resolver.resolveDispatch(
       call,
-      ctx({ localBindings: { agent: "Agent" }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }),
+      ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }),
     );
     expect(out).toEqual([]);
   });
@@ -127,7 +127,7 @@ describe("ConeDispatchResolver", () => {
       resolver.resolveDispatch(
         call,
         ctx({
-          localBindings: { agent: "Agent" },
+          localBindings: { agent: [{ line: 1, type: "Agent" }] },
           hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
         }),
       ),
@@ -162,7 +162,7 @@ describe("ConeDispatchResolver", () => {
     );
     const out = resolver.resolveDispatch(
       call,
-      ctx({ localBindings: { agent: "Agent" }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }) }),
+      ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }) }),
     );
     expect(out).toEqual([
       {
@@ -187,7 +187,7 @@ describe("ConeDispatchResolver", () => {
     );
     const out = resolver.resolveDispatch(
       call,
-      ctx({ localBindings: { agent: "Agent" }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }) }),
+      ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }) }),
     );
     expect(out).toEqual([
       {
@@ -207,7 +207,7 @@ describe("ConeDispatchResolver", () => {
     );
     const out = resolver.resolveDispatch(
       call,
-      ctx({ localBindings: { agent: "Agent" }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }) }),
+      ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }) }),
     );
     expect(out).toEqual([]);
   });

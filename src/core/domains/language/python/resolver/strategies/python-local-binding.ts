@@ -1,6 +1,7 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
+  resolveLocalBindingType,
   type CallContext,
   type CallRef,
   type SymbolResolutionTarget,
@@ -31,7 +32,7 @@ export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolut
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
-    const localType = ctx.localBindings?.[call.receiver];
+    const localType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
     if (!localType) return CONTINUE;
     const localTarget = this.resolveByLocalType(localType, call.member, ctx);
     // `null` means "we know the type but cannot pin the method to its file"

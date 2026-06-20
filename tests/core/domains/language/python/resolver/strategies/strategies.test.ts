@@ -220,7 +220,10 @@ describe("PythonLocalBindingSymbolResolutionStrategy", () => {
         sym("ToggleReactionService#execute", "execute", "toggle.py", ["ToggleReactionService"]),
       ],
     ]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { service: "ToggleReactionService" } }));
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, localBindings: { service: [{ line: 1, type: "ToggleReactionService" }] } }),
+    );
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "toggle.py", targetSymbolId: "ToggleReactionService#execute" },
@@ -236,7 +239,7 @@ describe("PythonLocalBindingSymbolResolutionStrategy", () => {
     ]);
     const outcome = strat.attempt(
       { ...call, member: "is_valid", receiver: "serializer", callText: "serializer.is_valid()" },
-      ctx({ symbolTable, localBindings: { serializer: "ToggleReactionSerializer" } }),
+      ctx({ symbolTable, localBindings: { serializer: [{ line: 1, type: "ToggleReactionSerializer" }] } }),
     );
     expect(outcome).toEqual({
       kind: "resolved",
@@ -249,7 +252,7 @@ describe("PythonLocalBindingSymbolResolutionStrategy", () => {
     const symbolTable = tableWith();
     const outcome = strat.attempt(
       { ...call, member: "run", receiver: "x", callText: "x.run()" },
-      ctx({ symbolTable, localBindings: { x: "factory" } }),
+      ctx({ symbolTable, localBindings: { x: [{ line: 1, type: "factory" }] } }),
     );
     expect(outcome.kind).toBe("drop");
   });
@@ -261,7 +264,7 @@ describe("PythonLocalBindingSymbolResolutionStrategy", () => {
     );
     const outcome = strat.attempt(
       { ...call, member: "shared", receiver: "leaf", callText: "leaf.shared()" },
-      ctx({ symbolTable, localBindings: { leaf: "Leaf" }, classExtends: { Leaf: "Base" } }),
+      ctx({ symbolTable, localBindings: { leaf: [{ line: 1, type: "Leaf" }] }, classExtends: { Leaf: "Base" } }),
     );
     expect(outcome).toEqual({
       kind: "resolved",

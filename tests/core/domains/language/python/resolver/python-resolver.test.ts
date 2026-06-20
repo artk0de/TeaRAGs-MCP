@@ -275,7 +275,7 @@ describe("PythonCallResolver", () => {
       callerFile: string,
       imports: { importText: string; startLine: number }[],
       symbolTable: InMemoryGlobalSymbolTable,
-      localBindings?: Record<string, string>,
+      localBindings?: CallContext["localBindings"],
     ): CallContext {
       return { callerFile, callerScope: [], imports, symbolTable, localBindings };
     }
@@ -316,7 +316,7 @@ describe("PythonCallResolver", () => {
           startLine: 12,
         },
         makeCtxLocal("engagement/views.py", [{ importText: "engagement.serializers.reaction", startLine: 1 }], table, {
-          serializer: "ToggleReactionSerializer",
+          serializer: [{ line: 1, type: "ToggleReactionSerializer" }],
         }),
       );
       // Type's file resolved (engagement/serializers/reaction.py) but
@@ -347,7 +347,7 @@ describe("PythonCallResolver", () => {
       ]);
       const target = resolver.resolve(
         { callText: "service.execute()", receiver: "service", member: "execute", startLine: 8 },
-        makeCtxLocal("engagement/views.py", [], table, { service: "ToggleReactionService" }),
+        makeCtxLocal("engagement/views.py", [], table, { service: [{ line: 1, type: "ToggleReactionService" }] }),
       );
       expect(target?.targetSymbolId).toBe("ToggleReactionService#execute");
       expect(target?.targetRelPath).toBe("services/reaction/toggle.py");
@@ -384,7 +384,7 @@ describe("PythonCallResolver", () => {
       ]);
       const target = resolver.resolve(
         { callText: "obj.run()", receiver: "obj", member: "run", startLine: 1 },
-        makeCtxLocal("main.py", [], table, { obj: "MyClass" }),
+        makeCtxLocal("main.py", [], table, { obj: [{ line: 1, type: "MyClass" }] }),
       );
       expect(target?.targetSymbolId).toBe("MyClass#run");
     });
@@ -404,7 +404,7 @@ describe("PythonCallResolver", () => {
       ]);
       const target = resolver.resolve(
         { callText: "request.json()", receiver: "request", member: "json", startLine: 5 },
-        makeCtxLocal("views.py", [], table, { request: "HttpRequest" }),
+        makeCtxLocal("views.py", [], table, { request: [{ line: 1, type: "HttpRequest" }] }),
       );
       expect(target?.targetSymbolId).toBe("HttpRequest#json");
     });
@@ -424,7 +424,7 @@ describe("PythonCallResolver", () => {
       ]);
       const target = resolver.resolve(
         { callText: "eng.start()", receiver: "eng", member: "start", startLine: 1 },
-        makeCtxLocal("main.py", [], table, { eng: "internal.cls.Engine" }),
+        makeCtxLocal("main.py", [], table, { eng: [{ line: 1, type: "internal.cls.Engine" }] }),
       );
       expect(target?.targetSymbolId).toBe("Engine#start");
     });
@@ -437,7 +437,7 @@ describe("PythonCallResolver", () => {
       // class to attribute. Returns null rather than guessing.
       const target = resolver.resolve(
         { callText: "x.run()", receiver: "x", member: "run", startLine: 1 },
-        makeCtxLocal("main.py", [], table, { x: "factory" }),
+        makeCtxLocal("main.py", [], table, { x: [{ line: 1, type: "factory" }] }),
       );
       expect(target).toBeNull();
     });
@@ -466,7 +466,9 @@ describe("PythonCallResolver", () => {
       ]);
       const target = resolver.resolve(
         { callText: "u.save()", receiver: "u", member: "save", startLine: 5 },
-        makeCtxLocal("svc.py", [{ importText: "domain.models.user", startLine: 1 }], table, { u: "User" }),
+        makeCtxLocal("svc.py", [{ importText: "domain.models.user", startLine: 1 }], table, {
+          u: [{ line: 1, type: "User" }],
+        }),
       );
       expect(target?.targetSymbolId).toBe("User#save");
       expect(target?.targetRelPath).toBe("domain/models/user.py");
@@ -491,7 +493,7 @@ describe("PythonCallResolver", () => {
             { importText: "b.user", startLine: 2 },
           ],
           table,
-          { u: "User" },
+          { u: [{ line: 1, type: "User" }] },
         ),
       );
       expect(target).toBeNull();
@@ -508,7 +510,9 @@ describe("PythonCallResolver", () => {
       // via `.serializers.Serializer` for posix join).
       const target = resolver.resolve(
         { callText: "s.is_valid()", receiver: "s", member: "is_valid", startLine: 3 },
-        makeCtxLocal("views.py", [{ importText: ".lib.Serializer", startLine: 1 }], table, { s: "Serializer" }),
+        makeCtxLocal("views.py", [{ importText: ".lib.Serializer", startLine: 1 }], table, {
+          s: [{ line: 1, type: "Serializer" }],
+        }),
       );
       // mapPythonImportToFile resolves `.lib.Serializer` → "lib/Serializer.py"
       expect(target?.targetRelPath).toBe("lib/Serializer.py");
@@ -1097,7 +1101,7 @@ describe("PythonCallResolver", () => {
         callerScope: ["Caller"],
         imports: [],
         symbolTable: table,
-        localBindings: { leaf: "Leaf" },
+        localBindings: { leaf: [{ line: 1, type: "Leaf" }] },
         classExtends: { Leaf: "Base" },
       };
       const target = resolver.resolve(

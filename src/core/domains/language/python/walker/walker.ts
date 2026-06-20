@@ -34,6 +34,7 @@ import type {
   FileExtraction,
   ImportRef,
   InheritanceEdgeDecl,
+  LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 
 export interface PythonExtractInput {
@@ -367,8 +368,8 @@ function collectLocalBindingsForChunk(
   root: Parser.SyntaxNode,
   startLine: number,
   endLine: number,
-): Record<string, string> {
-  const out: Record<string, string> = {};
+): Record<string, LocalBinding[]> {
+  const out: Record<string, LocalBinding[]> = {};
   walk(root, (node) => {
     const line = node.startPosition.row + 1;
     if (line < startLine || line > endLine) return;
@@ -389,7 +390,7 @@ function collectLocalBindingsForChunk(
       const typeField = node.childForFieldName("type");
       if (typeField) {
         const typeName = extractTypeName(typeField);
-        if (typeName) out[varName] = typeName;
+        if (typeName) (out[varName] ??= []).push({ line, type: typeName });
         // Annotation wins — do not also infer from RHS.
         return;
       }
@@ -404,7 +405,7 @@ function collectLocalBindingsForChunk(
         const fnNode = right.childForFieldName("function");
         if (!fnNode) return;
         const typeName = extractConstructorTypeName(fnNode);
-        if (typeName) out[varName] = typeName;
+        if (typeName) (out[varName] ??= []).push({ line, type: typeName });
       }
       return;
     }
@@ -430,7 +431,7 @@ function collectLocalBindingsForChunk(
       const typeField = node.childForFieldName("type");
       if (!typeField) return;
       const typeName = extractTypeName(typeField);
-      if (typeName) out[varName] = typeName;
+      if (typeName) (out[varName] ??= []).push({ line, type: typeName });
     }
   });
   return out;

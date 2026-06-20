@@ -22,7 +22,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
+import type { CallRef, ChunkExtraction, FileExtraction, ImportRef, LocalBinding } from "../../../../contracts/types/codegraph.js";
 
 export interface GoExtractInput {
   tree: Parser.Tree;
@@ -194,8 +194,8 @@ function collectGoLocalBindingsForChunk(
   root: Parser.SyntaxNode,
   startLine: number,
   endLine: number,
-): { types: Record<string, string>; calls: Record<string, string> } {
-  const bindings: Record<string, string> = {};
+): { types: Record<string, LocalBinding[]>; calls: Record<string, string> } {
+  const bindings: Record<string, LocalBinding[]> = {};
   const callBindings: Record<string, string> = {};
   // Find the function/method declaration node whose span matches the
   // chunk's [startLine, endLine] range. Tree-sitter rows are 0-indexed;
@@ -219,7 +219,7 @@ function collectGoLocalBindingsForChunk(
       if (param.type !== "parameter_declaration") continue;
       const name = readParamName(param);
       const typeName = readParamBareType(param);
-      if (name && typeName) bindings[name] = typeName;
+      if (name && typeName) (bindings[name] ??= []).push({ line: param.startPosition.row + 1, type: typeName });
     }
   }
 
@@ -230,7 +230,7 @@ function collectGoLocalBindingsForChunk(
       if (param.type !== "parameter_declaration") continue;
       const name = readParamName(param);
       const typeName = readParamBareType(param);
-      if (name && typeName) bindings[name] = typeName;
+      if (name && typeName) (bindings[name] ??= []).push({ line: param.startPosition.row + 1, type: typeName });
     }
   }
 
@@ -245,7 +245,7 @@ function collectGoLocalBindingsForChunk(
         const name = spec.childForFieldName("name");
         const typeNode = spec.childForFieldName("type");
         const typeName = readBareTypeNode(typeNode);
-        if (name && typeName) bindings[name.text] = typeName;
+        if (name && typeName) (bindings[name.text] ??= []).push({ line: name.startPosition.row + 1, type: typeName });
       }
       return;
     }
@@ -264,7 +264,7 @@ function collectGoLocalBindingsForChunk(
       // `x := Foo{}` / `x := &Foo{}` — directly-knowable type literal.
       if (value.type === "composite_literal" || value.type === "unary_expression") {
         const typeName = readCompositeLiteralType(value);
-        if (typeName) bindings[name.text] = typeName;
+        if (typeName) (bindings[name.text] ??= []).push({ line: name.startPosition.row + 1, type: typeName });
         return;
       }
       // `x := New()` / `x := pkg.New()` — function-return assignment. Record

@@ -45,6 +45,14 @@ import type {
   InheritanceEdgeDecl,
 } from "../../../../contracts/types/codegraph.js";
 import { RUBY_DSL } from "../dsl/index.js";
+import { readScopeResolution, walk } from "./ast-utils.js";
+import {
+  collectLocalBindingsForChunk,
+  collectYardParamTypes,
+  collectYardReturnTypes,
+  localTypeTrackingEnabled,
+  YARD_CONST,
+} from "./local-bindings.js";
 
 export interface RubyExtractInput {
   tree: Parser.Tree;
@@ -66,26 +74,6 @@ export const ZEITWERK_PREFIX = "zeitwerk:";
  * exported constant is the contract between walker and resolver.
  */
 export const SUPER_RECEIVER_SENTINEL = "<super>";
-
-/**
- * AR / ActiveRecord finder methods on a Model class that return a single
- * model INSTANCE (not a Relation). Used by `collectLocalBindingsForChunk`
- * to bind `var = Model.<finder>(...)` to the Model type. Methods like
- * `where` / `order` / `joins` return a Relation, so chained `.first` /
- * `.last` need separate Relation-aware tracking (not implemented here).
- */
-const AR_INSTANCE_FINDERS = new Set(["find", "find_by", "find_by!", "create", "create!", "first", "last", "take"]);
-
-/**
- * Env-gate for the Ruby local variable type inference path. When `false`,
- * walker emits `localBindings: undefined` and the resolver falls back to
- * legacy import + short-name resolution. Default `true`.
- */
-function localTypeTrackingEnabled(): boolean {
-  const raw = process.env.CODEGRAPH_RB_LOCAL_TYPE_TRACKING;
-  if (raw === undefined) return true;
-  return raw !== "false" && raw !== "0";
-}
 
 export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const explicitImports = collectRubyRequires(input.tree.rootNode);
@@ -312,179 +300,6 @@ function mixinTargetFromStatement(
 }
 
 /**
- * Collect `varName → typeName` bindings inside the given line range.
- * Sources scanned (in walker-emission order — later writes win):
- *
- *   1. YARD `@param NAME [TYPE]` comments preceding `def NAME(...)`.
- *      Parsed line-by-line from the raw source — tree-sitter-ruby
- *      strips comment text from a normalised form, so we work on raw
- *      input.code via `collectYardParamTypes`.
- *   2. Constructor-call assignments  (`var = ClassName.new(...)`).
- *   3. AR-finder assignments         (`var = Model.find(...)`,
- *      `.first`, `.last`, `.find_by`, `.create`, `.create!`, `.take`).
- *
- * Sources deliberately NOT inferred:
- *   - Bare factory calls (`var = make_user()`) — no class name to attribute.
- *   - Chained Relation tails (`Model.where(...).first`) — `.where` returns
- *     a Relation, we'd need Relation-aware tracking. Bare `Model.first`
- *     IS inferred (the chain root is the Model class itself).
- *   - Tuple / multiple assignment (`a, b = ...`).
- */
-function collectLocalBindingsForChunk(
-  root: Parser.SyntaxNode,
-  startLine: number,
-  endLine: number,
-  yardByLine: Map<number, Record<string, string>>,
-): Record<string, string> {
-  const out: Record<string, string> = {};
-
-  // YARD `@param` bindings — attach to the def whose line falls in the chunk
-  // range. `yardByLine` is keyed by the line of the `def` keyword.
-  for (const [line, params] of yardByLine.entries()) {
-    if (line < startLine || line > endLine) continue;
-    for (const [name, type] of Object.entries(params)) out[name] = type;
-  }
-
-  walk(root, (node) => {
-    const line = node.startPosition.row + 1;
-    if (line < startLine || line > endLine) return;
-    if (node.type !== "assignment") return;
-
-    // tree-sitter-ruby `assignment` shape: left/right fields.
-    const lhs = node.childForFieldName("left");
-    if (lhs?.type !== "identifier") return;
-    const varName = lhs.text;
-    const rhs = node.childForFieldName("right");
-    if (!rhs) return;
-    if (rhs.type !== "call" && rhs.type !== "method_call") return;
-
-    const receiver = rhs.childForFieldName("receiver");
-    const method = rhs.childForFieldName("method");
-    if (!receiver || !method) return;
-
-    // Receiver must look like a class constant (e.g. `User` or `Acme::Auth`).
-    const receiverText = receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
-    if (!/^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(receiverText)) return;
-
-    const methodName = method.text;
-    // `ClassName.new(...)` is the universal Ruby constructor pattern.
-    // AR finders also bind to the Model class.
-    if (methodName === "new" || AR_INSTANCE_FINDERS.has(methodName)) {
-      out[varName] = receiverText;
-    }
-  });
-  return out;
-}
-
-/**
- * A bare-bracket YARD type — `[Foo]`, `[Acme::User]` — captured to a single
- * constant name. `null` for any shape we deliberately do NOT bind (union types
- * `[A, B]`, hashes `[Hash{...}]`, lowercase / non-constant tokens). The one
- * structured form we DO unwrap is a single-element collection container
- * (`Array<T>` / `Enumerable<T>` / `[T]`-style) whose element type is itself a
- * bare constant — `@param x [Array<Post>]` binds the ELEMENT type `Post`
- * (brg9), because `x` is iterated/element-accessed in the body, not used as an
- * Array (bd cai0/brg9).
- */
-const YARD_CONST = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
-const YARD_ELEMENT_CONTAINER = /^(?:Array|Enumerable|Set|Collection|ActiveRecord::Relation)<([\w:]+)>$/;
-
-function parseYardBracketType(inner: string): string | null {
-  const trimmed = inner.trim();
-  // `Array<Post>` / `Enumerable<Acme::Post>` → element type.
-  const container = YARD_ELEMENT_CONTAINER.exec(trimmed);
-  if (container) {
-    const element = container[1];
-    return YARD_CONST.test(element) ? element : null;
-  }
-  // Bare constant `Foo` / `Acme::User`.
-  return YARD_CONST.test(trimmed) ? trimmed : null;
-}
-
-/**
- * Parse YARD `# @param NAME [TYPE]` lines and group them by the line
- * number of the `def NAME(...)` they precede. The grammar is light: any
- * comment line matching the pattern attaches to the NEXT non-comment,
- * non-blank line that starts with `def` (with optional `self.` prefix).
- *
- * `[TYPE]` is parsed by `parseYardBracketType`: a bare constant binds
- * directly; a single-element collection (`Array<T>`) binds the ELEMENT type
- * `T` (brg9) so `x.first` / `x.each { |e| … }` element-method calls resolve.
- * Bracket-less types (`# @param x String`), unions, and lowercase tokens are
- * rejected — the bracket form is the canonical Sorbet/Solargraph/Steep
- * convention.
- */
-function collectYardParamTypes(code: string): Map<number, Record<string, string>> {
-  const lines = code.split(/\r?\n/);
-  const out = new Map<number, Record<string, string>>();
-  let pending: Record<string, string> | null = null;
-  const yardRegex = /^\s*#\s*@param\s+(\w+)\s+\[([^\]]+)\]/;
-  const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i] ?? "";
-    const yardMatch = yardRegex.exec(raw);
-    if (yardMatch) {
-      // SAFETY: regex capture groups (\w+) and ([^\]]+) are non-optional —
-      // a successful match guarantees both name and the bracket body exist.
-      const [, name, bracket] = yardMatch;
-      const type = parseYardBracketType(bracket);
-      if (type) {
-        if (!pending) pending = {};
-        pending[name] = type;
-      }
-      continue;
-    }
-    // Blank or other comment — preserve pending block.
-    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
-    // First non-blank, non-comment line. If it's a `def`, attach.
-    if (pending && defRegex.test(raw)) {
-      out.set(i + 1, pending);
-    }
-    pending = null;
-  }
-  return out;
-}
-
-/**
- * Parse YARD `# @return [TYPE]` lines and key them by the method NAME of the
- * `def NAME(...)` they precede (brg9). Mirrors `collectYardParamTypes`'
- * comment-block attachment, but produces a `functionName → returnTypeName`
- * map matching `FileExtraction.functionReturnTypes` (the same channel the Go
- * walker fills) so a resolver can bind `x = obj.foo` to `foo`'s return type.
- *
- * Only a SINGLE bare constant return is recorded — `[Array<User>]` and other
- * collection containers are skipped (a collection isn't a single instance the
- * caller's `x.method` dispatches on), matching the Go walker's "single concrete
- * return only" discipline. `parseYardBracketType` would unwrap the element type
- * for a param, but a `@return` of a collection genuinely IS a collection, so we
- * reject containers here rather than unwrap them.
- */
-function collectYardReturnTypes(code: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  let pendingReturn: string | null = null;
-  const returnRegex = /^\s*#\s*@return\s+\[([^\]]+)\]/;
-  const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
-  for (const raw of code.split(/\r?\n/)) {
-    const m = returnRegex.exec(raw);
-    if (m) {
-      const inner = (m[1] ?? "").trim();
-      // Single bare constant only — a collection `[Array<T>]` return is a
-      // collection, not a dispatch target, so it is NOT recorded.
-      pendingReturn = YARD_CONST.test(inner) ? inner : null;
-      continue;
-    }
-    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
-    const defMatch = defRegex.exec(raw);
-    // defMatch[1] is the method name (\w+) when the line is a `def`.
-    if (pendingReturn && defMatch?.[1]) {
-      out[defMatch[1]] = pendingReturn;
-    }
-    pendingReturn = null;
-  }
-  return out;
-}
-
-/**
  * `require 'foo'`, `require_relative './foo'`. Tree-sitter-ruby emits
  * these as `call` nodes with method = "require" / "require_relative"
  * and a string argument.
@@ -556,18 +371,6 @@ function collectRubyConstantRefs(root: Parser.SyntaxNode): ImportRef[] {
     out.push({ importText: ZEITWERK_PREFIX + qualified, startLine });
   });
   return out;
-}
-
-function readScopeResolution(node: Parser.SyntaxNode): string {
-  // scope_resolution has fields `scope` (left) and `name` (right).
-  // Recurse on `scope` if it's another scope_resolution, otherwise
-  // take its constant text.
-  const name = node.childForFieldName("name");
-  const scope = node.childForFieldName("scope");
-  if (!name) return "";
-  const left =
-    scope?.type === "scope_resolution" ? readScopeResolution(scope) : scope?.type === "constant" ? scope.text : "";
-  return left ? `${left}::${name.text}` : name.text;
 }
 
 /**
@@ -1438,9 +1241,4 @@ function assignCallsToInnermostChunks(
     else out.set(bestIdx, [call]);
   }
   return out;
-}
-
-function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): void {
-  visit(node);
-  for (const child of node.children) walk(child, visit);
 }

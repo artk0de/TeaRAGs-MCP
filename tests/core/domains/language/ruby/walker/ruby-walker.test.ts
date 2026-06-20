@@ -484,7 +484,7 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
       language: "ruby",
       chunks: [{ symbolId: "foo", scope: ["foo"], startLine: 1, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ user: "User" });
+    expect(r.chunks[0].localBindings).toEqual({ user: [{ line: 2, type: "User" }] });
   });
 
   it("binds qualified constructor `var = Acme::Auth::Login.new(...)` to the FQ class", () => {
@@ -497,7 +497,7 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
       language: "ruby",
       chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ l: "Acme::Auth::Login" });
+    expect(r.chunks[0].localBindings).toEqual({ l: [{ line: 2, type: "Acme::Auth::Login" }] });
   });
 
   it("binds AR finder result `var = Model.find(id)` to the Model", () => {
@@ -510,7 +510,7 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
       language: "ruby",
       chunks: [{ symbolId: "show", scope: ["show"], startLine: 1, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ user: "User" });
+    expect(r.chunks[0].localBindings).toEqual({ user: [{ line: 2, type: "User" }] });
   });
 
   it("binds AR finder variants .first / .last / .find_by / .create / .take", () => {
@@ -532,7 +532,14 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
       language: "ruby",
       chunks: [{ symbolId: "all_finders", scope: ["all_finders"], startLine: 1, endLine: 8 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ a: "User", b: "User", c: "User", d: "User", e: "User", f: "User" });
+    expect(r.chunks[0].localBindings).toEqual({
+      a: [{ line: 2, type: "User" }],
+      b: [{ line: 3, type: "User" }],
+      c: [{ line: 4, type: "User" }],
+      d: [{ line: 5, type: "User" }],
+      e: [{ line: 6, type: "User" }],
+      f: [{ line: 7, type: "User" }],
+    });
   });
 
   it("does NOT bind `var = Model.where(...)` (returns Relation, not instance)", () => {
@@ -577,7 +584,10 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
       language: "ruby",
       chunks: [{ symbolId: "authorize", scope: ["authorize"], startLine: 3, endLine: 5 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ user: "User", ability: "Symbol" });
+    expect(r.chunks[0].localBindings).toEqual({
+      user: [{ line: 3, type: "User" }],
+      ability: [{ line: 3, type: "Symbol" }],
+    });
   });
 
   it("binds YARD with qualified type `[Acme::User]`", () => {
@@ -590,7 +600,7 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
       language: "ruby",
       chunks: [{ symbolId: "f", scope: ["f"], startLine: 2, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ u: "Acme::User" });
+    expect(r.chunks[0].localBindings).toEqual({ u: [{ line: 2, type: "Acme::User" }] });
   });
 
   it("merges YARD + constructor bindings within the same chunk (later writes win)", () => {
@@ -609,7 +619,10 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
       language: "ruby",
       chunks: [{ symbolId: "do_thing", scope: ["do_thing"], startLine: 2, endLine: 5 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ user: "User", policy: "AbstractPolicy" });
+    expect(r.chunks[0].localBindings).toEqual({
+      user: [{ line: 2, type: "User" }],
+      policy: [{ line: 3, type: "AbstractPolicy" }],
+    });
   });
 
   it("does NOT emit localBindings when CODEGRAPH_RB_LOCAL_TYPE_TRACKING=false", () => {
@@ -798,8 +811,8 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
         { symbolId: "two", scope: ["two"], startLine: 4, endLine: 6 },
       ],
     });
-    expect(r.chunks[0].localBindings).toEqual({ a: "User" });
-    expect(r.chunks[1].localBindings).toEqual({ b: "Order" });
+    expect(r.chunks[0].localBindings).toEqual({ a: [{ line: 2, type: "User" }] });
+    expect(r.chunks[1].localBindings).toEqual({ b: [{ line: 5, type: "Order" }] });
   });
 
   // YARD `@param` block precedes a `def` that lives in a chunk OTHER than
@@ -828,7 +841,7 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
       // forcing the `line < startLine || line > endLine` guard to fire.
       chunks: [{ symbolId: "one", scope: ["one"], startLine: 1, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ a: "User" });
+    expect(r.chunks[0].localBindings).toEqual({ a: [{ line: 2, type: "User" }] });
   });
 
   // RHS receiver is not a class constant (lowercase / chained call) —
@@ -1719,7 +1732,7 @@ describe("extractFromRubyFile — localBindings AR finders method_call shape", (
     });
     // AR finder `find` binds `u` to `User`
     if (r.chunks[0].localBindings) {
-      expect(r.chunks[0].localBindings["u"]).toBe("User");
+      expect(r.chunks[0].localBindings["u"]).toEqual([{ line: 2, type: "User" }]);
     }
   });
 
@@ -2143,5 +2156,79 @@ describe("extractFromRubyFile — registry dispatch tables (bd tea-rags-mcp-pq02
     // The inner CONST[k].new.perform IS tagged; the outer .upcase call falls through (no dispatch)
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0].dispatch).toMatchObject({ table: "TCK", field: "perform" });
+  });
+});
+
+describe("extractFromRubyFile — localBindings P3 RHS expansion + flow-sensitivity (qo4n2)", () => {
+  const extract = (src: string, chunk: { startLine: number; endLine: number }) =>
+    extractFromRubyFile({
+      tree: parse(src.endsWith("\n") ? src : `${src}\n`),
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: chunk.startLine, endLine: chunk.endLine }],
+    });
+
+  // P3.1 — widened instance-returning method set.
+  it("binds `var = Model.build` (factory) to the Model", () => {
+    const r = extract("def f\n  p = Post.build\n  p.title\nend", { startLine: 1, endLine: 4 });
+    expect(r.chunks[0].localBindings).toEqual({ p: [{ line: 2, type: "Post" }] });
+  });
+
+  it("binds `var = Model.find!(id)` (bang finder) to the Model", () => {
+    const r = extract("def f\n  u = User.find!(1)\n  u.email\nend", { startLine: 1, endLine: 4 });
+    expect(r.chunks[0].localBindings).toEqual({ u: [{ line: 2, type: "User" }] });
+  });
+
+  // P3.2 — copy propagation.
+  it("copy-propagates `var = other_var` from a typed source", () => {
+    const r = extract("def f\n  u = User.new\n  v = u\n  v.save\nend", { startLine: 1, endLine: 5 });
+    expect(r.chunks[0].localBindings).toEqual({
+      u: [{ line: 2, type: "User" }],
+      v: [{ line: 3, type: "User" }],
+    });
+  });
+
+  it("does NOT copy-propagate from an unbound source var", () => {
+    const r = extract("def f\n  v = w\n  v.run\nend", { startLine: 1, endLine: 4 });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+
+  // P3.4 — multiple assignment.
+  it("binds matched-arity multiple assignment `a, b = X.new, Y.new`", () => {
+    const r = extract("def f\n  a, b = User.new, Post.new\n  a.id\n  b.id\nend", { startLine: 1, endLine: 5 });
+    expect(r.chunks[0].localBindings).toEqual({
+      a: [{ line: 2, type: "User" }],
+      b: [{ line: 2, type: "Post" }],
+    });
+  });
+
+  it("does NOT bind uneven-arity multiple assignment `a, b = X.new` (no guessing)", () => {
+    const r = extract("def f\n  a, b = User.new\nend", { startLine: 1, endLine: 3 });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+
+  // P3.4 — param-default inference (line = def line).
+  it("infers a param-default type `def f(x = User.new)` for the body", () => {
+    const r = extract("def f(x = User.new)\n  x.save\nend", { startLine: 1, endLine: 3 });
+    expect(r.chunks[0].localBindings).toEqual({ x: [{ line: 1, type: "User" }] });
+  });
+
+  it("infers a param-default on a singleton method `def self.g(p = Post.create)`", () => {
+    const r = extract("def self.g(p = Post.create)\n  p.id\nend", { startLine: 1, endLine: 3 });
+    expect(r.chunks[0].localBindings).toEqual({ p: [{ line: 1, type: "Post" }] });
+  });
+
+  // P3.3 — position-aware reassignment: BOTH bindings retained with their lines,
+  // so a call resolves against the most-recent on its path (see
+  // resolveLocalBindingType unit tests). Reassignment is NOT a conflict.
+  it("retains both bindings of a reassigned var with their source lines", () => {
+    const r = extract("def m\n  x = Foo.new\n  x.a\n  x = Bar.new\n  x.b\nend", { startLine: 1, endLine: 6 });
+    expect(r.chunks[0].localBindings).toEqual({
+      x: [
+        { line: 2, type: "Foo" },
+        { line: 4, type: "Bar" },
+      ],
+    });
   });
 });

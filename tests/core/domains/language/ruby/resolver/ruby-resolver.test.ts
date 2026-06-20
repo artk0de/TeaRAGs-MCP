@@ -282,7 +282,7 @@ describe("RubyCallResolver — Step 0 resolveByLocalType (walker-inferred receiv
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { policy: "AbstractPolicy" },
+      localBindings: { policy: [{ line: 1, type: "AbstractPolicy" }] },
     };
     const target = resolver.resolve(
       { callText: "policy.authorize!", receiver: "policy", member: "authorize!", startLine: 5 },
@@ -317,7 +317,7 @@ describe("RubyCallResolver — Step 0 resolveByLocalType (walker-inferred receiv
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { u: "User" },
+      localBindings: { u: [{ line: 1, type: "User" }] },
     };
     const target = resolver.resolve({ callText: "u.save", receiver: "u", member: "save", startLine: 5 }, ctx);
     // File-level edge preserved (user.rb), method-level dropped.
@@ -333,7 +333,7 @@ describe("RubyCallResolver — Step 0 resolveByLocalType (walker-inferred receiv
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { thing: "UnknownClassNotInSymbolTable" },
+      localBindings: { thing: [{ line: 1, type: "UnknownClassNotInSymbolTable" }] },
     };
     const target = resolver.resolve({ callText: "thing.foo", receiver: "thing", member: "foo", startLine: 1 }, ctx);
     expect(target).toBeNull();
@@ -729,7 +729,7 @@ describe("RubyCallResolver — Step 0 with qualified type name (scope tail = ful
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { form: "Product::IndexForm" },
+      localBindings: { form: [{ line: 1, type: "Product::IndexForm" }] },
     };
     const target = resolver.resolve(
       { callText: "form.search_params", receiver: "form", member: "search_params", startLine: 5 },
@@ -753,7 +753,7 @@ describe("RubyCallResolver — Step 0 with qualified type name (scope tail = ful
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { x: "Foo" },
+      localBindings: { x: [{ line: 1, type: "Foo" }] },
     };
     const target = resolver.resolve({ callText: "x.bar", receiver: "x", member: "bar", startLine: 1 }, ctx);
     expect(target?.targetSymbolId).toBe("Foo#bar");
@@ -796,7 +796,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { form: "Product::IndexForm" },
+      localBindings: { form: [{ line: 1, type: "Product::IndexForm" }] },
       classAncestors: { "Product::IndexForm": ["PaginatableForm"] },
     };
     const target = resolver.resolve({ callText: "form.page", receiver: "form", member: "page", startLine: 5 }, ctx);
@@ -818,7 +818,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { x: "Foo" },
+      localBindings: { x: [{ line: 1, type: "Foo" }] },
       classAncestors: { Foo: ["Bar"] },
     };
     const target = resolver.resolve({ callText: "x.m", receiver: "x", member: "m", startLine: 1 }, ctx);
@@ -847,7 +847,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { u: "User" },
+      localBindings: { u: [{ line: 1, type: "User" }] },
       classAncestors: { User: ["ApplicationRecord"] },
     };
     const target = resolver.resolve({ callText: "u.save", receiver: "u", member: "save", startLine: 1 }, ctx);
@@ -867,7 +867,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { x: "A" },
+      localBindings: { x: [{ line: 1, type: "A" }] },
       classAncestors: { A: ["A"] },
     };
     const target = resolver.resolve({ callText: "x.q", receiver: "x", member: "q", startLine: 1 }, ctx);
@@ -891,7 +891,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { x: "A" },
+      localBindings: { x: [{ line: 1, type: "A" }] },
       classAncestors: { A: ["B"], B: ["A"] },
     };
     // `m` doesn't exist on A or B — both file-only edges. A's loop sees
@@ -921,7 +921,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { x: "Foo" },
+      localBindings: { x: [{ line: 1, type: "Foo" }] },
       classAncestors: { Foo: ["Unknown", "Helper"] },
     };
     const target = resolver.resolve({ callText: "x.act", receiver: "x", member: "act", startLine: 1 }, ctx);
@@ -952,7 +952,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { x: "Foo" },
+      localBindings: { x: [{ line: 1, type: "Foo" }] },
       // Foo extends First, then includes Second — First wins for `shared`.
       classAncestors: { Foo: ["First", "Second"] },
     };
@@ -985,7 +985,7 @@ describe("RubyCallResolver — Module#prepend ancestor priority (bd 3jvn)", () =
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { x: "A" },
+      localBindings: { x: [{ line: 1, type: "A" }] },
       classPrependedAncestors: { A: ["M"] },
     };
     const target = resolver.resolve({ callText: "x.foo", receiver: "x", member: "foo", startLine: 1 }, ctx);
@@ -1015,7 +1015,7 @@ describe("RubyCallResolver — Module#prepend ancestor priority (bd 3jvn)", () =
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { x: "A" },
+      localBindings: { x: [{ line: 1, type: "A" }] },
       // Source order: M1 first, M2 second — resolver iterates in reverse.
       classPrependedAncestors: { A: ["M1", "M2"] },
     };
@@ -1038,7 +1038,7 @@ describe("RubyCallResolver — Module#prepend ancestor priority (bd 3jvn)", () =
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { x: "A" },
+      localBindings: { x: [{ line: 1, type: "A" }] },
       classPrependedAncestors: { A: ["M"] },
     };
     const target = resolver.resolve({ callText: "x.foo", receiver: "x", member: "foo", startLine: 1 }, ctx);
@@ -1060,7 +1060,7 @@ describe("RubyCallResolver — Module#prepend ancestor priority (bd 3jvn)", () =
       callerScope: [],
       imports: [],
       symbolTable: table,
-      localBindings: { x: "Foo" },
+      localBindings: { x: [{ line: 1, type: "Foo" }] },
       classAncestors: { Foo: ["Bar"] },
       // No prepended ancestors — exercises the missing-map branch.
     };

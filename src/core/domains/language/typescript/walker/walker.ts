@@ -26,6 +26,7 @@ import type {
   FileExtraction,
   ImportRef,
   InheritanceEdgeDecl,
+  LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 
 export interface ExtractInput {
@@ -685,15 +686,18 @@ function collectParamBindings(root: Parser.SyntaxNode): ParamBinding[] {
  * so a method parameter lands on the method chunk rather than the
  * enclosing class chunk that also spans the `def` line.
  *
- * Returns a Map keyed by chunk index → `Record<paramName, typeName>`.
- * Chunks with no bindings have no entry. Bindings whose line falls
- * outside every chunk are dropped silently.
+ * Returns a Map keyed by chunk index → `Record<paramName, LocalBinding[]>`.
+ * Each binding is pushed as a position-aware `{ line, type }` entry (a
+ * variable may accumulate several across its path) so a call site resolves
+ * against the most-recent binding at or before its own line. Chunks with no
+ * bindings have no entry. Bindings whose line falls outside every chunk are
+ * dropped silently.
  */
 function assignParamBindingsToInnermostChunks(
   bindings: ParamBinding[],
   chunks: { startLine: number; endLine: number; scope: string[] }[],
-): Map<number, Record<string, string>> {
-  const out = new Map<number, Record<string, string>>();
+): Map<number, Record<string, LocalBinding[]>> {
+  const out = new Map<number, Record<string, LocalBinding[]>>();
   for (const binding of bindings) {
     let bestIdx = -1;
     let bestSpan = Number.POSITIVE_INFINITY;
@@ -710,9 +714,9 @@ function assignParamBindingsToInnermostChunks(
       }
     }
     if (bestIdx === -1) continue;
-    const bucket = out.get(bestIdx);
-    if (bucket) bucket[binding.name] = binding.type;
-    else out.set(bestIdx, { [binding.name]: binding.type });
+    const bucket = out.get(bestIdx) ?? {};
+    (bucket[binding.name] ??= []).push({ line: binding.startLine, type: binding.type });
+    out.set(bestIdx, bucket);
   }
   return out;
 }

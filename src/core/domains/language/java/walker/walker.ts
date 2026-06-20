@@ -32,7 +32,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
+import type { CallRef, ChunkExtraction, FileExtraction, ImportRef, LocalBinding } from "../../../../contracts/types/codegraph.js";
 
 export interface JavaExtractInput {
   tree: Parser.Tree;
@@ -119,7 +119,7 @@ function collectJavaCalls(root: Parser.SyntaxNode): CallRef[] {
   return out;
 }
 
-interface LocalBinding {
+interface JavaParamBinding {
   name: string;
   type: string;
   /** 1-based declaration line — used for innermost-chunk attribution. */
@@ -142,8 +142,8 @@ interface LocalBinding {
  * `List`). Primitive types (`int`, `boolean`, …) and unnamed types bind
  * nothing — `baseTypeName` returns null and the entry is skipped.
  */
-function collectLocalBindings(root: Parser.SyntaxNode): LocalBinding[] {
-  const out: LocalBinding[] = [];
+function collectLocalBindings(root: Parser.SyntaxNode): JavaParamBinding[] {
+  const out: JavaParamBinding[] = [];
   walk(root, (node) => {
     if (node.type === "formal_parameter") {
       const typeName = baseTypeName(node.childForFieldName("type"));
@@ -171,14 +171,17 @@ function collectLocalBindings(root: Parser.SyntaxNode): LocalBinding[] {
  * so a method parameter lands on the method chunk rather than the
  * enclosing class chunk that also spans the declaration line.
  *
- * Returns a Map keyed by chunk index → `Record<name, type>`. Bindings
- * whose line falls outside every chunk are dropped silently.
+ * Returns a Map keyed by chunk index → `Record<name, LocalBinding[]>`
+ * (the position-aware contract shape: each name accumulates an array of
+ * `{ line, type }` so a call site resolves against the most-recent binding
+ * at or before its own line via `resolveLocalBindingType`). Bindings whose
+ * line falls outside every chunk are dropped silently.
  */
 function assignBindingsToInnermostChunks(
-  bindings: LocalBinding[],
+  bindings: JavaParamBinding[],
   chunks: { startLine: number; endLine: number; scope: string[] }[],
-): Map<number, Record<string, string>> {
-  const out = new Map<number, Record<string, string>>();
+): Map<number, Record<string, LocalBinding[]>> {
+  const out = new Map<number, Record<string, LocalBinding[]>>();
   for (const binding of bindings) {
     let bestIdx = -1;
     let bestSpan = Number.POSITIVE_INFINITY;
@@ -195,9 +198,12 @@ function assignBindingsToInnermostChunks(
       }
     }
     if (bestIdx === -1) continue;
-    const bucket = out.get(bestIdx);
-    if (bucket) bucket[binding.name] = binding.type;
-    else out.set(bestIdx, { [binding.name]: binding.type });
+    let bucket = out.get(bestIdx);
+    if (!bucket) {
+      bucket = {};
+      out.set(bestIdx, bucket);
+    }
+    (bucket[binding.name] ??= []).push({ line: binding.startLine, type: binding.type });
   }
   return out;
 }

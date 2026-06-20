@@ -12,7 +12,7 @@
  * `SUPER_RECEIVER_SENTINEL` (`"<super>"`). These are stable markers; the
  * classifier is a heuristic instrument, not a contract participant.
  */
-import type { CallRef } from "../../../../contracts/types/codegraph.js";
+import type { CallRef, LocalBinding } from "../../../../contracts/types/codegraph.js";
 
 export type ReceiverKind = "constant" | "localVar" | "selfMember" | "super" | "bareCall" | "dynamic";
 
@@ -34,7 +34,10 @@ const CONST_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
  * there is a typed local. Precedence: bare → super → self → typed-local →
  * constant → dynamic (unbound non-constant receiver: arr.map, obj[k], chains).
  */
-export function classifyReceiverKind(call: CallRef, localBindings: Record<string, string> | undefined): ReceiverKind {
+export function classifyReceiverKind(
+  call: CallRef,
+  localBindings: Record<string, LocalBinding[]> | undefined,
+): ReceiverKind {
   const r = call.receiver;
   if (r === null) return "bareCall";
   if (SUPER_MARKERS.has(r)) return "super";

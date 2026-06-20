@@ -24,7 +24,7 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
+import type { CallRef, ChunkExtraction, FileExtraction, ImportRef, LocalBinding } from "../../../../contracts/types/codegraph.js";
 
 export interface RustExtractInput {
   tree: Parser.Tree;
@@ -187,8 +187,8 @@ function collectRustLocalBindingsForChunk(
   root: Parser.SyntaxNode,
   startLine: number,
   endLine: number,
-): Record<string, string> {
-  const bindings: Record<string, string> = {};
+): Record<string, LocalBinding[]> {
+  const bindings: Record<string, LocalBinding[]> = {};
   // Find the innermost `function_item` whose span contains the chunk
   // range. Walk in document order tracking the tightest enclosing match
   // so nested functions attribute to the inner one.
@@ -214,7 +214,7 @@ function collectRustLocalBindingsForChunk(
       const pattern = param.childForFieldName("pattern");
       if (pattern?.type !== "identifier") continue;
       const typeName = readRustBareType(param.childForFieldName("type"));
-      if (typeName) bindings[pattern.text] = typeName;
+      if (typeName) (bindings[pattern.text] ??= []).push({ line: param.startPosition.row + 1, type: typeName });
     }
   }
 
@@ -233,7 +233,7 @@ function collectRustLocalBindingsForChunk(
     const typeNode = node.childForFieldName("type");
     if (typeNode) {
       const typeName = readRustBareType(typeNode);
-      if (typeName) bindings[varName] = typeName;
+      if (typeName) (bindings[varName] ??= []).push({ line: node.startPosition.row + 1, type: typeName });
       return;
     }
 
@@ -250,7 +250,7 @@ function collectRustLocalBindingsForChunk(
     if (pathNode?.type !== "identifier" || fnNameNode?.type !== "identifier") return;
     const typeName = pathNode.text;
     if (isRustConstructorAssocFn(fnNameNode.text) && isCapWordsType(typeName)) {
-      bindings[varName] = typeName;
+      (bindings[varName] ??= []).push({ line: node.startPosition.row + 1, type: typeName });
     }
   });
   return bindings;

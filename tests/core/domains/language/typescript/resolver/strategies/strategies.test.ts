@@ -139,7 +139,7 @@ describe("TSLocalBindingSymbolResolutionStrategy", () => {
 
   it("resolves `param.X()` via the walker-bound local type", () => {
     const symbolTable = tableWith(["src/store.ts", [sym("Store#read", "read", "src/store.ts", ["Store"])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { store: "Store" } }));
+    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { store: [{ line: 1, type: "Store" }] } }));
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "src/store.ts", targetSymbolId: "Store#read" },

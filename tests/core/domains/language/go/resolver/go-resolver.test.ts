@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext, LocalBinding } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { GoCallResolver } from "../../../../../../src/core/domains/language/go/resolver/go-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -9,7 +9,7 @@ function ctx(
   callerFile: string,
   imports: { importText: string; startLine: number }[],
   table: InMemoryGlobalSymbolTable,
-  localBindings?: Record<string, string>,
+  localBindings?: Record<string, LocalBinding[]>,
 ): CallContext {
   return { callerFile, callerScope: [], imports, symbolTable: table, localBindings };
 }
@@ -72,7 +72,7 @@ describe("GoCallResolver", () => {
     ]);
     const target = r.resolve(
       { callText: "c.JSON(200, obj)", receiver: "c", member: "JSON", startLine: 5 },
-      ctx("context.go", [], t, { c: "Context" }),
+      ctx("context.go", [], t, { c: [{ line: 1, type: "Context" }] }),
     );
     expect(target?.targetSymbolId).toBe("Context#JSON");
     expect(target?.targetRelPath).toBe("context.go");
@@ -95,7 +95,7 @@ describe("GoCallResolver", () => {
     ]);
     const target = r.resolve(
       { callText: "c.helper()", receiver: "c", member: "helper", startLine: 1 },
-      ctx("ctx.go", [], t, { c: "Context" }),
+      ctx("ctx.go", [], t, { c: [{ line: 1, type: "Context" }] }),
     );
     expect(target?.targetSymbolId).toBe("Context.helper");
   });
@@ -120,7 +120,7 @@ describe("GoCallResolver", () => {
     ]);
     const target = r.resolve(
       { callText: "c.unrelated()", receiver: "c", member: "unrelated", startLine: 1 },
-      ctx("ctx.go", [], t, { c: "Context" }),
+      ctx("ctx.go", [], t, { c: [{ line: 1, type: "Context" }] }),
     );
     expect(target).toBeNull();
   });
@@ -141,12 +141,12 @@ describe("GoCallResolver", () => {
     ]);
     const useTarget = r.resolve(
       { callText: "engine.Use(mw)", receiver: "engine", member: "Use", startLine: 4 },
-      ctx("gin.go", [], t, { engine: "Engine" }),
+      ctx("gin.go", [], t, { engine: [{ line: 1, type: "Engine" }] }),
     );
     expect(useTarget?.targetSymbolId).toBe("Engine#Use");
     const withTarget = r.resolve(
       { callText: "engine.With(mw)", receiver: "engine", member: "With", startLine: 5 },
-      ctx("gin.go", [], t, { engine: "Engine" }),
+      ctx("gin.go", [], t, { engine: [{ line: 1, type: "Engine" }] }),
     );
     expect(withTarget?.targetSymbolId).toBe("Engine#With");
   });
@@ -168,7 +168,7 @@ describe("GoCallResolver", () => {
     ]);
     const target = r.resolve(
       { callText: "c.GetQuery(key)", receiver: "c", member: "GetQuery", startLine: 3 },
-      ctx("context.go", [], t, { c: "Context" }),
+      ctx("context.go", [], t, { c: [{ line: 1, type: "Context" }] }),
     );
     expect(target?.targetSymbolId).toBe("Context#GetQuery");
   });
@@ -259,7 +259,7 @@ describe("GoCallResolver", () => {
           callerScope: [],
           imports: [],
           symbolTable: t,
-          localBindings: { engine: "Engine" },
+          localBindings: { engine: [{ line: 1, type: "Engine" }] },
           localCallBindings: { engine: "Bogus" },
           functionReturnTypes: { Bogus: "Nonexistent" },
         },

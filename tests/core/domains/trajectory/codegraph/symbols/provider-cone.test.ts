@@ -72,7 +72,7 @@ describe("CodegraphEnrichmentProvider — CHA cone dispatch end-to-end (bd tea-r
         {
           symbolId: "ZooKeeper#make_noise",
           scope: ["ZooKeeper"],
-          localBindings: { animal: "Animal" },
+          localBindings: { animal: [{ line: 1, type: "Animal" }] },
           calls: [{ callText: "animal.speak", receiver: "animal", member: "speak", startLine: 1 }],
         },
       ],
@@ -112,7 +112,7 @@ describe("CodegraphEnrichmentProvider — CHA cone dispatch end-to-end (bd tea-r
           {
             symbolId: "ZooKeeper#make_noise",
             scope: ["ZooKeeper"],
-            localBindings: { animal: "Animal" },
+            localBindings: { animal: [{ line: 1, type: "Animal" }] },
             calls: [{ callText: "animal.speak", receiver: "animal", member: "speak", startLine: 1 }],
           },
         ],

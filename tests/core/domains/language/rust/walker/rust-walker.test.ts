@@ -223,7 +223,7 @@ describe("extractFromRustFile — localBindings", () => {
       language: "rust",
       chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 3 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ x: "Engine" });
+    expect(r.chunks[0].localBindings).toEqual({ x: [{ line: 2, type: "Engine" }] });
   });
 
   it("strips reference from typed `let x: &mut Bar` → { x: 'Bar' }", () => {
@@ -235,7 +235,7 @@ describe("extractFromRustFile — localBindings", () => {
       language: "rust",
       chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 3 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ x: "Bar" });
+    expect(r.chunks[0].localBindings).toEqual({ x: [{ line: 2, type: "Bar" }] });
   });
 
   it("unwraps generic in typed `let v: Vec<Thing>` → { v: 'Vec' }", () => {
@@ -247,7 +247,7 @@ describe("extractFromRustFile — localBindings", () => {
       language: "rust",
       chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 3 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ v: "Vec" });
+    expect(r.chunks[0].localBindings).toEqual({ v: [{ line: 2, type: "Vec" }] });
   });
 
   it("records associated-fn constructor `let y = Worker::new()` → { y: 'Worker' }", () => {
@@ -259,7 +259,7 @@ describe("extractFromRustFile — localBindings", () => {
       language: "rust",
       chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 3 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ y: "Worker" });
+    expect(r.chunks[0].localBindings).toEqual({ y: [{ line: 2, type: "Worker" }] });
   });
 
   it("records `Foo::from(...)` and `Foo::default()` associated-fn constructors", () => {
@@ -271,7 +271,7 @@ describe("extractFromRustFile — localBindings", () => {
       language: "rust",
       chunks: [{ symbolId: "run", scope: [], startLine: 1, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ z: "Helper", w: "Other" });
+    expect(r.chunks[0].localBindings).toEqual({ z: [{ line: 2, type: "Helper" }], w: [{ line: 3, type: "Other" }] });
   });
 
   it("skips non-constructor assoc fn `let q = Worker::query()` (not a ctor name)", () => {
@@ -319,7 +319,11 @@ describe("extractFromRustFile — localBindings", () => {
       language: "rust",
       chunks: [{ symbolId: "Worker#bar", scope: ["Worker"], startLine: 1, endLine: 3 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ p: "Foo", q: "Bar", v: "Vec" });
+    expect(r.chunks[0].localBindings).toEqual({
+      p: [{ line: 1, type: "Foo" }],
+      q: [{ line: 1, type: "Bar" }],
+      v: [{ line: 1, type: "Vec" }],
+    });
   });
 
   it("attributes bindings to the innermost function chunk only", () => {
@@ -342,8 +346,8 @@ describe("extractFromRustFile — localBindings", () => {
         { symbolId: "inner", scope: [], startLine: 4, endLine: 6 },
       ],
     });
-    expect(r.chunks[0].localBindings).toEqual({ a: "Alpha" });
-    expect(r.chunks[1].localBindings).toEqual({ b: "Beta" });
+    expect(r.chunks[0].localBindings).toEqual({ a: [{ line: 2, type: "Alpha" }] });
+    expect(r.chunks[1].localBindings).toEqual({ b: [{ line: 5, type: "Beta" }] });
   });
 });
 

@@ -46,7 +46,7 @@ function makeCtx(
   callerScope: string[],
   imports: { importText: string; startLine: number }[],
   symbolTable: GlobalSymbolTable,
-  localBindings?: Record<string, string>,
+  localBindings?: CallContext["localBindings"],
 ): CallContext {
   return { callerFile, callerScope, imports, symbolTable, localBindings };
 }
@@ -79,12 +79,12 @@ describe("Python local-binding integration", () => {
     });
 
     // Sanity: walker emitted the binding before the spill.
-    expect(extraction.chunks[0].localBindings?.serializer).toBe("ToggleReactionSerializer");
+    expect(extraction.chunks[0].localBindings?.serializer).toEqual([{ line: 5, type: "ToggleReactionSerializer" }]);
 
     // Critical: round-trip through JSON to simulate the NDJSON spill.
     // Map would die here; Record survives.
     const roundTripped = roundTripExtraction(extraction);
-    expect(roundTripped.chunks[0].localBindings?.serializer).toBe("ToggleReactionSerializer");
+    expect(roundTripped.chunks[0].localBindings?.serializer).toEqual([{ line: 5, type: "ToggleReactionSerializer" }]);
 
     // Symbol table — ConfirmationCode is the ONLY is_valid in the project.
     // ToggleReactionSerializer exists but inherits is_valid from DRF
@@ -210,7 +210,7 @@ describe("Python local-binding integration", () => {
       language: "python",
       chunks: [{ symbolId: "ApiView#handle", scope: ["ApiView"], startLine: 4, endLine: 5 }],
     });
-    expect(extraction.chunks[0].localBindings?.request).toBe("HttpRequest");
+    expect(extraction.chunks[0].localBindings?.request).toEqual([{ line: 4, type: "HttpRequest" }]);
 
     const roundTripped = roundTripExtraction(extraction);
 

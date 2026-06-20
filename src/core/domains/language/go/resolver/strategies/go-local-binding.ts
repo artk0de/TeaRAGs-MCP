@@ -1,4 +1,5 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
+import { resolveLocalBindingType } from "../../../../../contracts/types/codegraph.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { resolveByLocalType, type ResolverConfig } from "./shared.js";
@@ -21,7 +22,7 @@ export class GoLocalBindingSymbolResolutionStrategy implements SymbolResolutionS
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
-    const localType = ctx.localBindings?.[call.receiver];
+    const localType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
     if (!localType) return CONTINUE;
     const target = resolveByLocalType(this.cfg, localType, call.member, ctx);
     return target ? resolved(target) : DROP;

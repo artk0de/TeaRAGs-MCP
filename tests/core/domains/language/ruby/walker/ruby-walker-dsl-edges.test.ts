@@ -134,7 +134,7 @@ describe("ruby-walker brg9 — YARD element types (@param x [Array<T>])", () => 
       language: "ruby",
       chunks: [{ symbolId: "f", scope: ["f"], startLine: 2, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ x: "Post" });
+    expect(r.chunks[0].localBindings).toEqual({ x: [{ line: 2, type: "Post" }] });
   });
 
   it("binds qualified element type `@param x [Array<Acme::Post>]` → { x: 'Acme::Post' }", () => {
@@ -147,7 +147,7 @@ describe("ruby-walker brg9 — YARD element types (@param x [Array<T>])", () => 
       language: "ruby",
       chunks: [{ symbolId: "f", scope: ["f"], startLine: 2, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ x: "Acme::Post" });
+    expect(r.chunks[0].localBindings).toEqual({ x: [{ line: 2, type: "Acme::Post" }] });
   });
 
   it("still binds a plain `@param x [Foo]` (no regression)", () => {
@@ -160,7 +160,7 @@ describe("ruby-walker brg9 — YARD element types (@param x [Array<T>])", () => 
       language: "ruby",
       chunks: [{ symbolId: "f", scope: ["f"], startLine: 2, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ x: "Foo" });
+    expect(r.chunks[0].localBindings).toEqual({ x: [{ line: 2, type: "Foo" }] });
   });
 });
 
@@ -201,7 +201,7 @@ describe("ruby-walker brg9 — YARD return types (@return [T])", () => {
       language: "ruby",
       chunks: [{ symbolId: "find_user", scope: ["find_user"], startLine: 3, endLine: 5 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ id: "Integer" });
+    expect(r.chunks[0].localBindings).toEqual({ id: [{ line: 3, type: "Integer" }] });
     expect(r.functionReturnTypes?.find_user).toBe("User");
   });
 

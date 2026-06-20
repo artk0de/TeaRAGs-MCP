@@ -1,6 +1,7 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
+  resolveLocalBindingType,
   type CallContext,
   type CallRef,
   type SymbolResolutionTarget,
@@ -28,7 +29,7 @@ export class RubyLocalTypeSymbolResolutionStrategy implements SymbolResolutionSt
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
-    const localType = ctx.localBindings?.[call.receiver];
+    const localType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
     if (!localType) return CONTINUE;
     const target = this.resolveByLocalType(localType, call.member, ctx);
     // Once a local binding exists the call is terminal — a miss (the type's
