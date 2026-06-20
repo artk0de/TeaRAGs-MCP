@@ -3,14 +3,21 @@ import { join } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
-import type { EmbeddingProvider } from "../../core/api/public/index.js";
-import { QdrantManager } from "../../core/api/public/index.js";
-import { ProjectRegistryOps } from "../../core/api/public/index.js";
-import { CollectionRegistry } from "../../core/api/public/index.js";
+import {
+  CollectionRegistry,
+  ProjectRegistryOps,
+  QdrantManager,
+  QuarantineStore,
+  resolveCollectionName,
+  validatePath,
+  type EmbeddingProvider,
+} from "../../core/api/public/index.js";
 
 interface DoctorArgs {
   json?: boolean;
   recoverRegistry?: boolean;
+  quarantine?: boolean;
+  path?: string;
 }
 
 /**
@@ -134,6 +141,39 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
 }
 
 /**
+ * `tea-rags doctor --quarantine [path]` — list the poison-pill files that broke
+ * indexing for a project. Human table by default; `--json` emits the full
+ * structured list (path, errorCode, phase, attempts, timestamps) so an agent can
+ * triage or help file a GitHub issue.
+ */
+export async function runQuarantineDoctor(args: { path: string; json?: boolean }): Promise<void> {
+  const project = await validatePath(args.path);
+  const collectionName = resolveCollectionName(project);
+  const snapshotDir = join(resolveDataDir(), "snapshots");
+  const entries = await new QuarantineStore(snapshotDir, collectionName).load();
+  const files = [...entries.entries()].map(([path, entry]) => ({ path, ...entry }));
+
+  if (args.json) {
+    process.stdout.write(`${JSON.stringify({ project, collectionName, count: files.length, files }, null, 2)}\n`);
+    return;
+  }
+
+  if (files.length === 0) {
+    process.stdout.write("No quarantined files.\n");
+    return;
+  }
+
+  process.stdout.write(`Quarantined files (${files.length}) for ${collectionName}:\n`);
+  for (const f of files) {
+    process.stdout.write(`  ${f.path}\n`);
+    process.stdout.write(`    ${f.errorCode} · phase=${f.phase} · attempts=${f.attempts} · last=${f.lastFailedAt}\n`);
+  }
+  process.stdout.write(
+    `\nThese files are retried automatically on the next index. Re-run 'tea-rags doctor --quarantine --json' to capture the full list (e.g. to file a GitHub issue).\n`,
+  );
+}
+
+/**
  * Build the same QdrantManager + EmbeddingProvider the MCP server would use.
  * Mirrors the construction path in src/bootstrap/factory.ts:resolveInfrastructure,
  * but skips embedded-daemon spawn (doctor is read-only — connection refused is
@@ -161,10 +201,15 @@ async function defaultDeps(): Promise<DoctorDeps> {
  * `ProjectRegistryOps.recoverFromQdrant` via `runDoctor`.
  */
 export const doctorCommand: CommandModule<unknown, DoctorArgs> = {
-  command: "doctor",
+  command: "doctor [path]",
   describe: "Print infrastructure + registry health summary",
   builder: (yargs: Argv) =>
     yargs
+      .positional("path", {
+        type: "string",
+        describe: "Project path (for --quarantine; defaults to current directory)",
+        default: ".",
+      })
       .option("json", {
         type: "boolean",
         default: false,
@@ -174,8 +219,17 @@ export const doctorCommand: CommandModule<unknown, DoctorArgs> = {
         type: "boolean",
         default: false,
         describe: "Repopulate the project registry from live Qdrant state",
+      })
+      .option("quarantine", {
+        type: "boolean",
+        default: false,
+        describe: "List poison-pill files that broke indexing (skipped, retried automatically)",
       }),
   handler: async (argv) => {
+    if (argv.quarantine) {
+      await runQuarantineDoctor({ path: argv.path ?? ".", json: argv.json });
+      return;
+    }
     await runDoctor({
       json: argv.json,
       recoverRegistry: Boolean(argv["recover-registry"]),
