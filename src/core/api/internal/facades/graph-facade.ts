@@ -25,6 +25,7 @@
  */
 
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import type { SymbolChunkLocation, SymbolId } from "../../../contracts/types/codegraph.js";
 import { resolveCollection } from "../../../infra/collection-name.js";
 import type { CollectionRegistry } from "../../../infra/registry/index.js";
 import type {
@@ -124,6 +125,10 @@ export class GraphFacade {
       },
       { callees: [] },
     );
+  }
+
+  async resolveSymbolChunk(addr: GraphAddressing, symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
+    return this.withReadHandle(addr, async (handle) => handle.graphDb.findSymbolChunk(symbolId), null);
   }
 
   async findCycles(req: FindCyclesRequest): Promise<FindCyclesResponse> {

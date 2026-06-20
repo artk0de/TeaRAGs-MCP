@@ -8,7 +8,11 @@ import type {
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
+  HierarchySnapshot,
+  InheritanceEdge,
   RelPath,
+  ResolveRunStatsRow,
+  SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
@@ -184,6 +188,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
     await this.call("upsertSymbols", { relPath, definitions });
   }
 
+  async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
+    await this.call("updateSymbolChunkIds", { relPath, chunkIds: [...chunkIds.entries()] });
+  }
+
+  async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
+    return (await this.call("findSymbolChunk", { symbolId })) as SymbolChunkLocation | null;
+  }
+
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {
     await this.call("replaceCycles", { scope, sccs });
   }
@@ -195,6 +207,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async checkpoint(): Promise<void> {
     await this.call("checkpoint", {});
+  }
+
+  async recordRunStats(rows: ResolveRunStatsRow[]): Promise<void> {
+    await this.call("recordRunStats", { rows });
   }
 
   /**
@@ -262,6 +278,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("hasData", {})) as boolean;
   }
 
+  async getRunStats(): Promise<ResolveRunStatsRow[]> {
+    return (await this.call("getRunStats", {})) as ResolveRunStatsRow[];
+  }
+
   async listAllSymbols(): Promise<SymbolDefinition[]> {
     return (await this.call("listAllSymbols", {})) as SymbolDefinition[];
   }
@@ -283,6 +303,24 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async getPageRank(symbolId: SymbolId): Promise<number> {
     return (await this.call("getPageRank", { symbolId })) as number;
+  }
+
+  async getSupertypes(fqName: string): Promise<InheritanceEdge[]> {
+    return (await this.call("getSupertypes", { fqName })) as InheritanceEdge[];
+  }
+
+  async getSubtypes(fqName: string): Promise<InheritanceEdge[]> {
+    return (await this.call("getSubtypes", { fqName })) as InheritanceEdge[];
+  }
+
+  async getTransitiveSubtypes(fqName: string): Promise<InheritanceEdge[]> {
+    return (await this.call("getTransitiveSubtypes", { fqName })) as InheritanceEdge[];
+  }
+
+  async loadHierarchySnapshot(): Promise<HierarchySnapshot> {
+    // HierarchySnapshot is plain Records of arrays — JSON-serialisable as-is,
+    // no Map rebuild needed (unlike getCalleeEdges / listAdjacency).
+    return (await this.call("loadHierarchySnapshot", {})) as HierarchySnapshot;
   }
 
   // ── daemon-internal (NOT proxied) ──

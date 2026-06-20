@@ -10,6 +10,7 @@
 // ExtractionPass, WalkContext, SymbolIdComposer) live in
 // contracts/types/language.ts, not here.
 export { resolveViaChain } from "./resolver-chain.js";
+export { ConeDispatchResolver } from "./cone-dispatch.js";
 export { DefaultSymbolIdComposer } from "./kernel/symbol-id.js";
 export { LanguageFactory } from "./factory.js";
 export { LanguageError, UnsupportedLanguageError } from "./errors.js";

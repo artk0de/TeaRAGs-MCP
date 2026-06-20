@@ -28,7 +28,13 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
+import type {
+  CallRef,
+  ChunkExtraction,
+  FileExtraction,
+  ImportRef,
+  InheritanceEdgeDecl,
+} from "../../../../contracts/types/codegraph.js";
 
 export interface PythonExtractInput {
   tree: Parser.Tree;
@@ -93,7 +99,74 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   };
   if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
+  // Unified hierarchy edges (CHA cone-unification Slice 2). Parity with the
+  // Ruby/TS walkers' inheritanceEdges: where the legacy `classExtends` Record
+  // keeps only the FIRST base for `super()` resolution, this emits EVERY base
+  // (Python multiple inheritance) for the descendant-set the CHA cone needs.
+  // All bases are kind `super` — Python's C3 MRO has no include/extend/prepend
+  // distinction and the cone only needs the descendant set, not MRO order. The
+  // legacy `classExtends` stays (resolver-forward path).
+  const inheritanceEdges = collectPythonInheritanceEdges(input.tree.rootNode);
+  if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
   return out;
+}
+
+/**
+ * Collect class-hierarchy edges (CHA cone-unification Slice 2). For
+ * `class C(A, M):` emit one `InheritanceEdgeDecl` per base —
+ * `{ source: "C", ancestor: "A", kind: "super", ordinal: 0 }`,
+ * `{ ancestor: "M", ordinal: 1 }`, … — preserving declaration order via
+ * `ordinal`. Every base is `kind: "super"`: Python has no
+ * include/extend/prepend channels (its C3 MRO is linearized at runtime), and
+ * the hierarchy graph only needs the descendant set.
+ *
+ * `source` is qualified by enclosing class scope with the `.` separator
+ * (`Outer.Inner`), matching Python's `scopeSeparator` and the codegraph
+ * provider's symbol composition. `ancestor` is captured verbatim — a bare
+ * identifier (`Animal`), a qualified / module base (`db.Model`,
+ * `Outer.Mixin`), or a builtin (`object`). External / builtin bases are
+ * emitted the same way the Ruby walker emits unresolved ancestors: as a raw
+ * name; resolution drops the ones that don't pin to a file.
+ *
+ * Returns an empty array when no class declares any base.
+ */
+function collectPythonInheritanceEdges(root: Parser.SyntaxNode): InheritanceEdgeDecl[] {
+  const edges: InheritanceEdgeDecl[] = [];
+  const walkScope = (node: Parser.SyntaxNode, scope: string[]): void => {
+    if (node.type === "class_definition") {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) {
+        for (const child of node.children) walkScope(child, scope);
+        return;
+      }
+      const localName = nameNode.text;
+      const fq = scope.length === 0 ? localName : `${scope.join(".")}.${localName}`;
+      // Tree-sitter-python wraps the base-list in a `superclasses`
+      // argument_list child. Emit EVERY base (multiple inheritance) in
+      // declaration order; keyword args (`metaclass=...`) are `keyword_argument`
+      // nodes, not bases, so the identifier/attribute/dotted_name filter skips
+      // them.
+      const supers = node.childForFieldName("superclasses");
+      if (supers) {
+        let ordinal = 0;
+        for (const base of supers.namedChildren) {
+          if (base.type !== "identifier" && base.type !== "attribute" && base.type !== "dotted_name") continue;
+          const ancestor = base.text;
+          if (ancestor.length === 0) continue;
+          edges.push({ source: fq, ancestor, kind: "super", ordinal: ordinal++ });
+        }
+      }
+      // Recurse — nested classes get their own source qualifier extended by
+      // this class's name (`Outer` → `Outer.Inner`).
+      const body = node.childForFieldName("body");
+      const recurseChildren = body ? body.children : node.children;
+      for (const child of recurseChildren) walkScope(child, [...scope, localName]);
+      return;
+    }
+    for (const child of node.children) walkScope(child, scope);
+  };
+  walkScope(root, []);
+  return edges;
 }
 
 /**

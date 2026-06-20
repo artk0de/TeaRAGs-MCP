@@ -2003,3 +2003,145 @@ describe("extractFromRubyFile — collectRegistryConstantValueRefs (constant in 
     expect(allCalls.find((c) => c.member === "UpdateHandler")).toBeDefined();
   });
 });
+
+describe("extractFromRubyFile — registry dispatch tables (bd tea-rags-mcp-pq02v)", () => {
+  const extract = (
+    code: string,
+    chunks: { symbolId: string; scope: string[]; startLine: number; endLine: number }[] = [],
+    relPath = "app/services/clone.rb",
+  ) => extractFromRubyFile({ tree: parse(code), code, relPath, language: "ruby", chunks });
+
+  it("builds a DispatchTable keyed by the LHS constant name for a frozen hash", () => {
+    const code = [
+      "TEMPLATE_CLONE_KLASSES = {",
+      "  'JobTemplate' => Workflow::Templates::Job::Clone,",
+      "  'PipelineTemplate' => Workflow::Templates::Pipeline::Clone,",
+      "}.freeze",
+    ].join("\n");
+    expect(extract(code).dispatchTables).toEqual({
+      TEMPLATE_CLONE_KLASSES: {
+        entries: {
+          JobTemplate: "Workflow::Templates::Job::Clone",
+          PipelineTemplate: "Workflow::Templates::Pipeline::Clone",
+        },
+      },
+    });
+  });
+
+  it("builds positional entries for a frozen array registry", () => {
+    const code = "REGISTRY_HANDLERS = [Alpha::Handler, Beta::Handler].freeze";
+    expect(extract(code).dispatchTables).toEqual({
+      REGISTRY_HANDLERS: { entries: { "0": "Alpha::Handler", "1": "Beta::Handler" } },
+    });
+  });
+
+  it("omits a table whose entries are all non-constant (no symbol to point at)", () => {
+    const code = "CALLBACKS = { a: -> { 1 }, b: ->(x) { x } }.freeze";
+    expect(extract(code).dispatchTables).toBeUndefined();
+  });
+
+  it("tags a dynamic-key dispatch site CONST[k].new.m with a DispatchRef (key null)", () => {
+    const code = [
+      "TCK = { 'JobTemplate' => Jobs::Clone }.freeze",
+      "class Runner",
+      "  def call(key)",
+      "    TCK[key].new.perform",
+      "  end",
+      "end",
+    ].join("\n");
+    const r = extract(code, [{ symbolId: "Runner#call", scope: ["Runner"], startLine: 3, endLine: 5 }]);
+    const dispatched = r.chunks.flatMap((c) => c.calls).filter((c) => c.dispatch);
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0].dispatch).toEqual({ table: "TCK", field: "perform", key: null });
+  });
+
+  it("tags a static-key dispatch site CONST['k'].new.m with the literal key", () => {
+    const code = [
+      "TCK = { 'JobTemplate' => Jobs::Clone }.freeze",
+      "class Runner",
+      "  def call",
+      "    TCK['JobTemplate'].new.perform",
+      "  end",
+      "end",
+    ].join("\n");
+    const r = extract(code, [{ symbolId: "Runner#call", scope: ["Runner"], startLine: 3, endLine: 5 }]);
+    const dispatched = r.chunks.flatMap((c) => c.calls).filter((c) => c.dispatch);
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0].dispatch).toEqual({ table: "TCK", field: "perform", key: "JobTemplate" });
+  });
+
+  it("does NOT tag a plain local-array index call arr[i].m (object not a table constant)", () => {
+    const code = ["class Runner", "  def call(arr, i)", "    arr[i].new.perform", "  end", "end"].join("\n");
+    const r = extract(code, [{ symbolId: "Runner#call", scope: ["Runner"], startLine: 2, endLine: 4 }]);
+    expect(r.chunks.flatMap((c) => c.calls).filter((c) => c.dispatch)).toHaveLength(0);
+  });
+
+  it("preserves the ki9v chunk-reference edges to value classes (additive, not replaced)", () => {
+    const code = "TCK = { 'JobTemplate' => Jobs::Clone }.freeze";
+    const r = extract(code, [{ symbolId: "TCK", scope: [], startLine: 1, endLine: 1 }]);
+    const refs = r.chunks.flatMap((c) => c.calls).filter((c) => c.member === "Jobs::Clone");
+    expect(refs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("builds a dispatch table keyed by scope_resolution LHS (Ns::CONST = {...}.freeze)", () => {
+    const code = "App::REGISTRY = { 'A' => Alpha::Handler }.freeze";
+    const result = extract(code);
+    // scope_resolution LHS path in collectRubyDispatchTables
+    expect(result.dispatchTables).toEqual({
+      "App::REGISTRY": { entries: { A: "Alpha::Handler" } },
+    });
+  });
+
+  it("builds a dispatch table with symbol key syntax (:key => Class) via simple_symbol", () => {
+    const code = "HANDLERS = { :alpha => Alpha::Handler, :beta => Beta::Handler }.freeze";
+    const result = extract(code);
+    // simple_symbol path in rubyDispatchKeyText
+    expect(result.dispatchTables).toEqual({
+      HANDLERS: { entries: { alpha: "Alpha::Handler", beta: "Beta::Handler" } },
+    });
+  });
+
+  it("builds a dispatch table with hash-key-symbol sugar (key: Class) via hash_key_symbol", () => {
+    const code = "HANDLERS = { alpha: Alpha::Handler, beta: Beta::Handler }.freeze";
+    const result = extract(code);
+    // hash_key_symbol path in rubyDispatchKeyText
+    expect(result.dispatchTables).toEqual({
+      HANDLERS: { entries: { alpha: "Alpha::Handler", beta: "Beta::Handler" } },
+    });
+  });
+
+  it("tags a namespaced-table dispatch site Ns::CONST[k].new.m with a DispatchRef", () => {
+    const code = [
+      "App::TCK = { 'JobTemplate' => Jobs::Clone }.freeze",
+      "class Runner",
+      "  def call(key)",
+      "    App::TCK[key].new.perform",
+      "  end",
+      "end",
+    ].join("\n");
+    const r = extract(code, [{ symbolId: "Runner#call", scope: ["Runner"], startLine: 3, endLine: 5 }]);
+    // scope_resolution branch in exprToRubyDispatchRef element_reference handler
+    const dispatched = r.chunks.flatMap((c) => c.calls).filter((c) => c.dispatch);
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0].dispatch).toMatchObject({ table: "App::TCK", field: "perform" });
+  });
+
+  it("skips dispatch tagging when the chain has a method called on an already-fielded inner ref", () => {
+    // exprToRubyDispatchRef: inner.field !== null → falls through to return null
+    // e.g. CONST[k].new.perform.upcase — the outer .upcase is on an already-fielded chain
+    const code = [
+      "TCK = { 'Job' => Jobs::Clone }.freeze",
+      "class Runner",
+      "  def call(key)",
+      "    TCK[key].new.perform.upcase",
+      "  end",
+      "end",
+    ].join("\n");
+    const r = extract(code, [{ symbolId: "Runner#call", scope: ["Runner"], startLine: 3, endLine: 5 }]);
+    // Only TCK[key].new.perform is dispatched; .upcase is NOT tagged
+    const dispatched = r.chunks.flatMap((c) => c.calls).filter((c) => c.dispatch);
+    // The inner CONST[k].new.perform IS tagged; the outer .upcase call falls through (no dispatch)
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0].dispatch).toMatchObject({ table: "TCK", field: "perform" });
+  });
+});

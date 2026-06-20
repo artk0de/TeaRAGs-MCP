@@ -32,6 +32,14 @@ export type SymbolId = string;
  * Only entries / fields whose value is a plain identifier are recorded —
  * inline arrows, spreads, and computed values carry no symbol to point at
  * and are dropped (m46z safety rule).
+ *
+ * Ruby registry overload (bd tea-rags-mcp-pq02v): for a frozen registry
+ * constant (`CONST = { "k" => A::B::Klass }.freeze`) the string-arm entry
+ * value is a CLASS fully-qualified name (not a function name), and the
+ * dispatched member comes from the call site's `DispatchRef.field`
+ * (`CONST[k].new.perform` → `field: "perform"`), NOT from the entry. The
+ * resolver interprets the entry per language (it is language-scoped), so the
+ * overload is type-safe without a shape change.
  */
 export interface DispatchTable {
   entries: Record<string, string | Record<string, string>>;
@@ -75,6 +83,19 @@ export interface DispatchEdge {
   sourceSymbolId: SymbolId | null;
   targetRelPath: RelPath;
   targetSymbolId: SymbolId | null;
+  /**
+   * Method-edge kind for CHA cone fan-out (bd tea-rags-mcp-2jet). Omitted for
+   * the legacy lookup-table / callback fan-outs, which the provider persists as
+   * `'exact'`. The Ruby cone resolver sets `'cone'` (one of N equal candidates)
+   * or `'poly-base'` (capped hub edge, query-time expanded).
+   */
+  edgeKind?: MethodEdgeKind;
+  /**
+   * Per-edge confidence in `(0, 1]` (bd tea-rags-mcp-2jet). `1/N` for a `cone`
+   * edge sharing unit weight across N candidates; `1.0` for `poly-base` and the
+   * legacy fan-outs (provider default when omitted).
+   */
+  confidence?: number;
 }
 
 /**
@@ -117,6 +138,76 @@ export interface NamedSymbol {
    * bd tea-rags-mcp-d1f8 this-resolve.
    */
   absolute?: boolean;
+}
+
+/**
+ * Class-hierarchy edge kind (bd tea-rags-mcp-f10y). `super`/`include`/`extend`/
+ * `prepend` mirror Ruby's MRO inputs; `implements` covers TS/Java interface
+ * heritage (and TS `interface X extends Y`). Single vocabulary across languages.
+ */
+export type InheritanceKind = "super" | "include" | "extend" | "prepend" | "implements";
+
+/**
+ * Walker emission shape — one row per declared inheritance relation, BEFORE
+ * name resolution. `source` / `ancestor` are raw fq/short names as written.
+ * Unified surface superseding the per-kind classAncestors/classExtends/
+ * classPrependedAncestors Records (which stay during the phased migration).
+ */
+export interface InheritanceEdgeDecl {
+  source: string;
+  ancestor: string;
+  kind: InheritanceKind;
+  ordinal: number;
+}
+
+/**
+ * Persisted / resolved shape — what the normalizer produces and the DB stores
+ * (minus `source_rel_path`, which the upsert supplies from `GraphFileNode`).
+ * `ancestorSymbolId` is `null` for external / unresolved ancestors.
+ */
+export interface InheritanceEdgeRow {
+  sourceFqName: string;
+  sourceSymbolId: string | null;
+  ancestorFqName: string;
+  ancestorSymbolId: string | null;
+  kind: InheritanceKind;
+  ordinal: number;
+}
+
+/** Query result — a persisted inheritance edge plus traversal depth. */
+export interface InheritanceEdge {
+  sourceFqName: string;
+  ancestorFqName: string;
+  ancestorSymbolId: string | null;
+  kind: InheritanceKind;
+  depth: number;
+}
+
+/** Options for a {@link HierarchyView} traversal. */
+export interface HierarchyQuery {
+  kinds?: readonly InheritanceKind[];
+  transitive?: boolean;
+  /** getAncestors only: MRO order (prepend ▸ include/extend ▸ implements ▸ super). */
+  ordered?: boolean;
+}
+
+/**
+ * Sync, leaf-safe read surface the resolver consumes via `CallContext.hierarchy`
+ * (bd tea-rags-mcp-f10y). Backed by an in-memory snapshot the provider loads at
+ * the pass-1→pass-2 barrier — no DB access on the resolve path.
+ */
+export interface HierarchyView {
+  getAncestors: (fqName: string, opts?: HierarchyQuery) => readonly InheritanceEdge[];
+  getDescendants: (fqName: string, opts?: HierarchyQuery) => readonly InheritanceEdge[];
+}
+
+/**
+ * Plain-data snapshot the provider loads once at the barrier; `MapHierarchyView`
+ * wraps it. Both directions keyed by fqName.
+ */
+export interface HierarchySnapshot {
+  ancestorsBySource: Record<string, InheritanceEdgeRow[]>;
+  descendantsByAncestor: Record<string, InheritanceEdgeRow[]>;
 }
 
 /**
@@ -233,6 +324,15 @@ export interface FileExtraction {
    * NDJSON-spill round-trip; undefined when no params are invoked.
    */
   callbackParams?: Record<string, number[]>;
+  /**
+   * Optional unified inheritance edge list (bd tea-rags-mcp-f10y). New capture
+   * surface superseding the per-kind classAncestors/classExtends/
+   * classPrependedAncestors Records (which stay for the phased resolver-forward
+   * path). TS walkers emit `implements` / interface-extends here — those have no
+   * legacy Record. The normalizer reads BOTH this field and the legacy Records.
+   * Plain array for NDJSON-spill round-trip.
+   */
+  inheritanceEdges?: InheritanceEdgeDecl[];
 }
 
 export interface ImportRef {
@@ -374,6 +474,26 @@ export interface SymbolDefinition {
   shortName: string;
   relPath: RelPath;
   scope: string[];
+}
+
+/**
+ * Resolved location of a symbol's covering Qdrant chunk. Returned by
+ * `GraphDbClient.findSymbolChunk` — null when no chunk_id has been
+ * backfilled for the symbol yet.
+ */
+export interface SymbolChunkLocation {
+  relPath: RelPath;
+  chunkId: string;
+}
+
+/**
+ * Narrow read seam for the find_symbol codegraph fallback (0rskm). Lives in
+ * contracts so domains/explore can depend on it without importing api/internal
+ * or adapters. Implemented by GraphFacade (adapted to a bare collectionName in
+ * bootstrap). Undefined injection = codegraph disabled = fallback no-op.
+ */
+export interface SymbolChunkResolver {
+  resolveSymbolChunk: (collectionName: string, symbolId: SymbolId) => Promise<SymbolChunkLocation | null>;
 }
 
 /**
@@ -540,6 +660,13 @@ export interface CallContext {
    * fans out to the candidates.
    */
   callbackParams?: Record<string, number[]>;
+  /**
+   * Optional bidirectional hierarchy snapshot (bd tea-rags-mcp-f10y). Built by
+   * the provider at the pass-1→pass-2 barrier and injected for pass-2. CHA /
+   * STI fan-out reads `getDescendants`; the phased follow-up migrates the
+   * forward Records onto `getAncestors`. Sync — no DB access on the resolve path.
+   */
+  hierarchy?: HierarchyView;
 }
 
 export interface SymbolResolutionTarget {
@@ -595,9 +722,33 @@ export interface GraphDbClient {
   getCalledByCount: (symbolId: SymbolId) => Promise<number>;
   getCallSiteCount: (symbolId: SymbolId) => Promise<number>;
 
+  // ── Class hierarchy (bd tea-rags-mcp-f10y) ──
+  /** Direct ancestors of a type (forward), ordered by declaration ordinal. */
+  getSupertypes: (fqName: string) => Promise<InheritanceEdge[]>;
+  /** Direct subtypes / implementers of a type (reverse index). */
+  getSubtypes: (fqName: string) => Promise<InheritanceEdge[]>;
+  /** Transitive subtypes via recursive CTE; `depth` reflects traversal level. */
+  getTransitiveSubtypes: (fqName: string) => Promise<InheritanceEdge[]>;
+  /** Bulk load both directions for the resolver snapshot. */
+  loadHierarchySnapshot: () => Promise<HierarchySnapshot>;
+
   /** Returns true if at least one row exists in `cg_symbols_files`. Used
    *  by drift detection. */
   hasData: () => Promise<boolean>;
+
+  // ── Resolve-stats surface (bd tea-rags-mcp-j431) ──
+  /**
+   * Replace the whole `cg_run_stats` table with the supplied per-receiver-kind
+   * breakdown. Overwrite (not merge): a run records every kind it observed, so
+   * stale rows from a prior run must not survive. Empty input clears the table.
+   */
+  recordRunStats: (rows: ResolveRunStatsRow[]) => Promise<void>;
+  /**
+   * Read the persisted per-receiver-kind resolve breakdown, ordered by
+   * `receiverKind`. Empty array before any run is recorded. Routed through the
+   * daemon proxy so MCP clients can read it without holding the DuckDB lock.
+   */
+  getRunStats: () => Promise<ResolveRunStatsRow[]>;
 
   // ── Symbol-table persistence (Slice 2 / A4c) ──
   // The in-memory GlobalSymbolTable needs a disk-backed copy so cold
@@ -616,6 +767,22 @@ export interface GraphDbClient {
    *  definition; consumer is expected to feed them through
    *  `GlobalSymbolTable.hydrate`. */
   listAllSymbols: () => Promise<SymbolDefinition[]>;
+
+  /**
+   * Backfill the covering-chunk reference for symbols of one file. UPDATE-only
+   * — never rewrites identity columns. Keyed by symbolId; symbols absent from
+   * the map keep their prior chunk_id (which a preceding upsertSymbols set to
+   * NULL). Written in the codegraph deferred chunk pass once chunk ids exist.
+   */
+  updateSymbolChunkIds: (relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>) => Promise<void>;
+
+  /**
+   * Resolve a symbol to its covering Qdrant chunk. Indexed lookup by
+   * symbol_id. Returns null when no row matches OR the row's chunk_id is NULL
+   * (symbol exists but no covering chunk was recorded). Used by the
+   * find_symbol codegraph fallback (0rskm) and promotable to primary (q383b).
+   */
+  findSymbolChunk: (symbolId: SymbolId) => Promise<SymbolChunkLocation | null>;
 
   // ── Tier 2 graph metrics (Slice 2 / B1) ──
 
@@ -724,6 +891,43 @@ export interface GraphFileNode {
   language: string;
 }
 
+/**
+ * Provenance of a method-call edge (bd tea-rags-mcp-2jet).
+ *
+ * - `exact`     — receiver/ancestor method pinned directly (the baseline).
+ * - `cone`      — bounded CHA devirtualization: a polymorphic call fanned out
+ *                 to overriding subtypes (|cone| ≤ K). Each cone edge carries
+ *                 `confidence = 1/N` so N candidate targets share unit weight.
+ * - `poly-base` — hub fan-out capped: one edge to the base declaration, full
+ *                 subtype expansion deferred to query-time `getSubtypes`.
+ * - `dynamic`   — dynamic-receiver short-name fan-out (bd tea-rags-mcp-wbj3): a
+ *                 receiver with no static type (`arr.map`, `obj[k].call`) that
+ *                 would otherwise drop is resolved by short-name lookup with a
+ *                 confidence discount (`< 1`). Distinguishable from `cone` (which
+ *                 has a static base type) so ranking can discount name-only edges.
+ * - `registry`  — registry-literal dispatch fan-out (bd tea-rags-mcp-pq02v): a
+ *                 `CONST[key].new.m` site whose `CONST` is a frozen hash/array of
+ *                 value-classes. The candidate set is STATICALLY COMPLETE (every
+ *                 value class is known from the literal) but the runtime key picks
+ *                 one — distinct from `cone` (CHA descendants, possibly partial
+ *                 across compilation units) and from `dynamic` (no type evidence).
+ *                 `confidence = 1/N` over the N value classes; a static literal key
+ *                 narrows to one entry and is emitted as `exact`/1.0 instead.
+ */
+export type MethodEdgeKind = "exact" | "cone" | "poly-base" | "dynamic" | "registry";
+
+/**
+ * One row of the per-receiver-kind resolve breakdown (bd tea-rags-mcp-j431),
+ * persisted to `cg_run_stats` (overwritten each enrichment run) so the
+ * daemon-readable proxy can surface it — worker stderr is not captured by the
+ * MCP host. `receiverKind` mirrors the `ReceiverKind` union the provider emits.
+ */
+export interface ResolveRunStatsRow {
+  receiverKind: string;
+  attempted: number;
+  resolved: number;
+}
+
 export interface GraphEdges {
   fileEdges: { targetRelPath: RelPath; importText: string | null }[];
   methodEdges: {
@@ -731,7 +935,15 @@ export interface GraphEdges {
     targetSymbolId: SymbolId | null;
     targetRelPath: RelPath;
     callExpression: string;
+    /** Edge provenance (bd 2jet). Omitted ⇒ persisted as `exact`. */
+    edgeKind?: MethodEdgeKind;
+    /** CHA fan-out dampening in (0,1]. Omitted ⇒ persisted as `1.0`. */
+    confidence?: number;
   }[];
+  /** Resolved inheritance edges for this file's source classes
+   *  (bd tea-rags-mcp-f10y). Persisted to cg_symbols_inheritance via upsertFile;
+   *  source_rel_path is taken from the accompanying GraphFileNode. */
+  inheritance?: InheritanceEdgeRow[];
 }
 
 export interface CallerEdge {

@@ -325,6 +325,31 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 
+  it("recordRunStats then getRunStats round-trips the per-receiver-kind breakdown (bd j431)", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_runstats_v1";
+    await server.handle({ id: 1, op: "handshake", params: { collection: c } });
+    const rec = await server.handle({
+      id: 2,
+      op: "recordRunStats",
+      params: {
+        collection: c,
+        rows: [
+          { receiverKind: "constant", attempted: 100, resolved: 90 },
+          { receiverKind: "bareCall", attempted: 50, resolved: 10 },
+        ],
+      },
+    });
+    expect(rec.ok).toBe(true);
+    const got = await server.handle({ id: 3, op: "getRunStats", params: { collection: c } });
+    expect(got.ok).toBe(true);
+    expect((got as { result: unknown }).result).toEqual([
+      { receiverKind: "bareCall", attempted: 50, resolved: 10 },
+      { receiverKind: "constant", attempted: 100, resolved: 90 },
+    ]);
+    await pool.closeAll();
+  });
+
   it("dispatches getCalleeEdges and serialises the Map as entries", async () => {
     const { server, pool } = makeServer();
     const c = "code_callee_edges_v1";
@@ -355,6 +380,76 @@ describe("CodegraphDaemonServer.handle", () => {
     expect(res.ok).toBe(true);
     // Map serialises as [key, value][] entries over the wire; targets sorted by SQL.
     expect((res as { result: [string, string[]][] }).result).toEqual([["A#run", ["B#help", "C#aid"]]]);
+    await pool.closeAll();
+  });
+
+  it("updateSymbolChunkIds dispatches the write op and returns null", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_chunk_ids_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "x.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "x.ts",
+        definitions: [{ symbolId: "X#run", fqName: "X.run", shortName: "run", relPath: "x.ts", scope: [] }],
+      },
+    });
+    const res = await server.handle({
+      id: 3,
+      op: "updateSymbolChunkIds",
+      params: { collection: c, relPath: "x.ts", chunkIds: [["X#run", "chunk_42"]] },
+    });
+    expect(res.ok).toBe(true);
+    expect((res as { result: null }).result).toBeNull();
+    await pool.closeAll();
+  });
+
+  it("findSymbolChunk read op returns the stored SymbolChunkLocation", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_find_chunk_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "x.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "x.ts",
+        definitions: [{ symbolId: "X#run", fqName: "X.run", shortName: "run", relPath: "x.ts", scope: [] }],
+      },
+    });
+    await server.handle({
+      id: 3,
+      op: "updateSymbolChunkIds",
+      params: { collection: c, relPath: "x.ts", chunkIds: [["X#run", "chunk_42"]] },
+    });
+    const res = await server.handle({
+      id: 4,
+      op: "findSymbolChunk",
+      params: { collection: c, symbolId: "X#run" },
+    });
+    expect(res.ok).toBe(true);
+    expect((res as { result: { relPath: string; chunkId: string } }).result).toEqual({
+      relPath: "x.ts",
+      chunkId: "chunk_42",
+    });
     await pool.closeAll();
   });
 

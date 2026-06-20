@@ -25,6 +25,7 @@ import {
 import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
 import { TracePathOps } from "../core/api/internal/ops/trace-path-ops.js";
+import type { SymbolChunkResolver } from "../core/contracts/types/codegraph.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
@@ -614,6 +615,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     payloadSignals: composition.allPayloadSignalDescriptors,
     essentialKeys: essentialTrajectoryFields,
     modelGuard: infra.modelGuard,
+    chunkResolver: createSymbolChunkResolver(codegraphContext?.graphFacade),
   });
   const app = createApp({
     qdrant: infra.qdrant,
@@ -689,4 +691,20 @@ export function createConfiguredServer(ctx: AppContext, promptsConfig: PromptsCo
   registerAllPrompts(server, promptsConfig);
 
   return server;
+}
+
+// ---------------------------------------------------------------------------
+// createSymbolChunkResolver — adapts GraphFacade to the SymbolChunkResolver
+// interface the explore domain consumes. bootstrap/ is the only layer allowed
+// to bridge api/internal (GraphFacade) to the contracts/ interface. Returns
+// undefined when codegraph is disabled, so the whole fallback degrades to
+// today's behaviour end-to-end.
+// ---------------------------------------------------------------------------
+
+export function createSymbolChunkResolver(graphFacade?: GraphFacade): SymbolChunkResolver | undefined {
+  if (!graphFacade) return undefined;
+  return {
+    resolveSymbolChunk: async (collectionName, symbolId) =>
+      graphFacade.resolveSymbolChunk({ collection: collectionName }, symbolId),
+  };
 }

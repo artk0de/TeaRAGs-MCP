@@ -28,7 +28,14 @@ import type {
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
+  HierarchySnapshot,
+  InheritanceEdge,
+  InheritanceEdgeRow,
+  InheritanceKind,
+  MethodEdgeKind,
   RelPath,
+  ResolveRunStatsRow,
+  SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
 } from "../../contracts/types/codegraph.js";
@@ -314,9 +321,34 @@ export class DuckDbGraphClient implements GraphDbClient {
         // and emits one CallRef per occurrence; the PK
         // (source_symbol_id, call_expression, target_symbol_id) is
         // edge-existence semantics, not occurrence count.
+        // edge_kind/confidence (bd 2jet) default to exact/1.0 when the
+        // resolver did not mark the edge as CHA fan-out. INSERT OR IGNORE
+        // keeps the first edge's provenance when the same (source, call,
+        // target) tuple repeats — edge-existence semantics, not occurrence.
         await this.run(
-          "INSERT OR IGNORE INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression) VALUES (?, ?, ?, ?, ?)",
-          [e.sourceSymbolId, node.relPath, e.targetSymbolId, e.targetRelPath, e.callExpression],
+          "INSERT OR IGNORE INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, edge_kind, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [
+            e.sourceSymbolId,
+            node.relPath,
+            e.targetSymbolId,
+            e.targetRelPath,
+            e.callExpression,
+            e.edgeKind ?? "exact",
+            e.confidence ?? 1.0,
+          ],
+        );
+      }
+      // Inheritance edges (bd tea-rags-mcp-f10y). Per-source-file delete+insert,
+      // same lifecycle as the edge tables: re-walking a file replaces its rows.
+      // INSERT OR IGNORE dedupes a (source, ancestor, kind) declared twice in
+      // one extraction (e.g. duplicate include).
+      await this.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [node.relPath]);
+      for (const e of edges.inheritance ?? []) {
+        await this.run(
+          `INSERT OR IGNORE INTO cg_symbols_inheritance
+             (source_fq_name, source_rel_path, source_symbol_id, ancestor_fq_name, ancestor_symbol_id, kind, ordinal)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [e.sourceFqName, node.relPath, e.sourceSymbolId, e.ancestorFqName, e.ancestorSymbolId, e.kind, e.ordinal],
         );
       }
       await this.exec("COMMIT");
@@ -345,6 +377,7 @@ export class DuckDbGraphClient implements GraphDbClient {
         relPath,
         relPath,
       ]);
+      await this.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [relPath]);
       await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
       await this.run("DELETE FROM cg_symbols_files WHERE rel_path = ?", [relPath]);
       await this.exec("COMMIT");
@@ -667,6 +700,35 @@ export class DuckDbGraphClient implements GraphDbClient {
     }));
   }
 
+  async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
+    if (chunkIds.size === 0) return;
+    return this.serialize(async () => {
+      await this.exec("BEGIN");
+      try {
+        for (const [symbolId, chunkId] of chunkIds) {
+          await this.run("UPDATE cg_symbols SET chunk_id = ? WHERE rel_path = ? AND symbol_id = ?", [
+            chunkId,
+            relPath,
+            symbolId,
+          ]);
+        }
+        await this.exec("COMMIT");
+      } catch (err) {
+        await this.exec("ROLLBACK");
+        throw err;
+      }
+    });
+  }
+
+  async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
+    const rows = await this.queryAll<{ rel_path: string; chunk_id: string | null }>(
+      "SELECT rel_path, chunk_id FROM cg_symbols WHERE symbol_id = ? AND chunk_id IS NOT NULL LIMIT 1",
+      [symbolId],
+    );
+    if (rows.length === 0) return null;
+    return { relPath: rows[0].rel_path, chunkId: rows[0].chunk_id as string };
+  }
+
   async getFanIn(relPath: RelPath): Promise<number> {
     const rows = await this.queryAll<{ n: number }>(
       "SELECT COUNT(*) AS n FROM cg_symbols_edges_file WHERE target_rel_path = ?",
@@ -713,17 +775,76 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async getCallers(symbolId: SymbolId): Promise<CallerEdge[]> {
-    return this.queryAll<CallerEdge>(
+    const direct = await this.queryAll<CallerEdge>(
       'SELECT source_symbol_id AS "sourceSymbolId", source_rel_path AS "sourceRelPath", call_expression AS "callExpression" FROM cg_symbols_edges_method WHERE target_symbol_id = ? ORDER BY source_rel_path, source_symbol_id',
       [symbolId],
     );
+    // bd tea-rags-mcp-2jet-E — symmetric CHA cone expansion. A large cone was
+    // capped to ONE `poly-base` edge to the base declaration `T#m`. Callers of a
+    // concrete override `Sub#m` must therefore ALSO include any caller that
+    // (polymorphically) targeted `T#m` via poly-base, for every ancestor `T` of
+    // `Sub`. Re-derive those callers through the forward inheritance index.
+    const split = splitMethodSymbol(symbolId);
+    if (!split) return direct;
+    const polyBaseCallers = await this.queryAll<CallerEdge>(
+      `SELECT m.source_symbol_id AS "sourceSymbolId", m.source_rel_path AS "sourceRelPath", m.call_expression AS "callExpression"
+         FROM cg_symbols_edges_method m
+         JOIN cg_symbols_inheritance i ON i.source_fq_name = ?
+        WHERE m.edge_kind = 'poly-base'
+          AND m.target_symbol_id = i.ancestor_fq_name || ? || ?
+        ORDER BY m.source_rel_path, m.source_symbol_id`,
+      [split.base, split.sep, split.member],
+    );
+    if (polyBaseCallers.length === 0) return direct;
+    return dedupeCallerEdges([...direct, ...polyBaseCallers]);
   }
 
   async getCallees(symbolId: SymbolId): Promise<CalleeEdge[]> {
-    return this.queryAll<CalleeEdge>(
-      'SELECT target_symbol_id AS "targetSymbolId", target_rel_path AS "targetRelPath", call_expression AS "callExpression" FROM cg_symbols_edges_method WHERE source_symbol_id = ? ORDER BY target_rel_path',
+    const edges = await this.queryAll<CalleeEdge & { edgeKind: MethodEdgeKind }>(
+      `SELECT target_symbol_id AS "targetSymbolId", target_rel_path AS "targetRelPath", call_expression AS "callExpression", edge_kind AS "edgeKind"
+         FROM cg_symbols_edges_method WHERE source_symbol_id = ? ORDER BY target_rel_path`,
       [symbolId],
     );
+    const out: CalleeEdge[] = [];
+    for (const e of edges) {
+      const base: CalleeEdge = {
+        targetSymbolId: e.targetSymbolId,
+        targetRelPath: e.targetRelPath,
+        callExpression: e.callExpression,
+      };
+      out.push(base);
+      // bd tea-rags-mcp-2jet-E — expand a `poly-base` edge to the overriding
+      // subtypes at query time. The persisted edge points at the base decl
+      // `T#m`; the reverse inheritance index yields the subtypes, and we keep
+      // only those that actually DECLARE the override (an existing `Sub#m`
+      // symbol). The base edge stays so a concrete base implementation is not
+      // lost.
+      if (e.edgeKind === "poly-base" && e.targetSymbolId) {
+        out.push(...(await this.expandPolyBaseCallees(e.targetSymbolId, e.callExpression)));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Re-derive the overriding-subtype callee edges for a capped `poly-base` edge
+   * (bd tea-rags-mcp-2jet-E). `baseTarget` is `T#m`; for each direct subtype `S`
+   * of `T` that declares its own `S#m`, emit one callee edge. Subtypes that only
+   * inherit `m` (no own declaration) are skipped — synthesizing `S#m` for them
+   * would point at a symbol that does not exist.
+   */
+  private async expandPolyBaseCallees(baseTarget: SymbolId, callExpression: string): Promise<CalleeEdge[]> {
+    const split = splitMethodSymbol(baseTarget);
+    if (!split) return [];
+    const rows = await this.queryAll<{ targetSymbolId: SymbolId; targetRelPath: RelPath }>(
+      `SELECT s.symbol_id AS "targetSymbolId", s.rel_path AS "targetRelPath"
+         FROM cg_symbols_inheritance i
+         JOIN cg_symbols s ON s.symbol_id = i.source_fq_name || ? || ?
+        WHERE i.ancestor_fq_name = ?
+        ORDER BY s.symbol_id`,
+      [split.sep, split.member, split.base],
+    );
+    return rows.map((r) => ({ targetSymbolId: r.targetSymbolId, targetRelPath: r.targetRelPath, callExpression }));
   }
 
   async getCalleeEdges(symbolIds: SymbolId[]): Promise<Map<SymbolId, SymbolId[]>> {
@@ -764,6 +885,131 @@ export class DuckDbGraphClient implements GraphDbClient {
   async hasData(): Promise<boolean> {
     const rows = await this.queryAll<{ n: number }>("SELECT COUNT(*) AS n FROM cg_symbols_files");
     return Number(rows[0]?.n ?? 0) > 0;
+  }
+
+  async recordRunStats(rows: ResolveRunStatsRow[]): Promise<void> {
+    return this.serialize(async () => {
+      // Overwrite semantics: DELETE+INSERT inside one transaction so a prior
+      // run's receiver kinds never leak into this run's breakdown.
+      await this.exec("BEGIN");
+      try {
+        await this.run("DELETE FROM cg_run_stats");
+        for (const r of rows) {
+          await this.run("INSERT INTO cg_run_stats (receiver_kind, attempted, resolved) VALUES (?, ?, ?)", [
+            r.receiverKind,
+            r.attempted,
+            r.resolved,
+          ]);
+        }
+        await this.exec("COMMIT");
+      } catch (err) {
+        await this.exec("ROLLBACK");
+        throw err;
+      }
+    });
+  }
+
+  async getRunStats(): Promise<ResolveRunStatsRow[]> {
+    const rows = await this.queryAll<{ receiver_kind: string; attempted: number | bigint; resolved: number | bigint }>(
+      "SELECT receiver_kind, attempted, resolved FROM cg_run_stats ORDER BY receiver_kind",
+    );
+    return rows.map((r) => ({
+      receiverKind: r.receiver_kind,
+      attempted: Number(r.attempted),
+      resolved: Number(r.resolved),
+    }));
+  }
+
+  // ── Class hierarchy (bd tea-rags-mcp-f10y) ──
+
+  async getSupertypes(fqName: string): Promise<InheritanceEdge[]> {
+    const rows = await this.queryAll<{
+      ancestorFqName: string;
+      ancestorSymbolId: string | null;
+      kind: InheritanceKind;
+    }>(
+      `SELECT ancestor_fq_name AS "ancestorFqName", ancestor_symbol_id AS "ancestorSymbolId", kind
+         FROM cg_symbols_inheritance WHERE source_fq_name = ? ORDER BY ordinal, ancestor_fq_name`,
+      [fqName],
+    );
+    return rows.map((r) => ({
+      sourceFqName: fqName,
+      ancestorFqName: r.ancestorFqName,
+      ancestorSymbolId: r.ancestorSymbolId,
+      kind: r.kind,
+      depth: 1,
+    }));
+  }
+
+  async getSubtypes(fqName: string): Promise<InheritanceEdge[]> {
+    const rows = await this.queryAll<{ sourceFqName: string; kind: InheritanceKind }>(
+      `SELECT source_fq_name AS "sourceFqName", kind
+         FROM cg_symbols_inheritance WHERE ancestor_fq_name = ? ORDER BY source_fq_name`,
+      [fqName],
+    );
+    return rows.map((r) => ({
+      sourceFqName: r.sourceFqName,
+      ancestorFqName: fqName,
+      ancestorSymbolId: null,
+      kind: r.kind,
+      depth: 1,
+    }));
+  }
+
+  async getTransitiveSubtypes(fqName: string): Promise<InheritanceEdge[]> {
+    const rows = await this.queryAll<{
+      sourceFqName: string;
+      ancestorFqName: string;
+      kind: InheritanceKind;
+      depth: number | bigint;
+    }>(
+      `WITH RECURSIVE sub(source_fq_name, ancestor_fq_name, kind, depth) AS (
+         SELECT source_fq_name, ancestor_fq_name, kind, 1
+           FROM cg_symbols_inheritance WHERE ancestor_fq_name = ?
+         UNION ALL
+         SELECT c.source_fq_name, c.ancestor_fq_name, c.kind, sub.depth + 1
+           FROM cg_symbols_inheritance c JOIN sub ON c.ancestor_fq_name = sub.source_fq_name
+       )
+       SELECT source_fq_name AS "sourceFqName", ancestor_fq_name AS "ancestorFqName", kind, depth FROM sub`,
+      [fqName],
+    );
+    return rows.map((r) => ({
+      sourceFqName: r.sourceFqName,
+      ancestorFqName: r.ancestorFqName,
+      ancestorSymbolId: null,
+      kind: r.kind,
+      depth: Number(r.depth),
+    }));
+  }
+
+  async loadHierarchySnapshot(): Promise<HierarchySnapshot> {
+    const rows = await this.queryAll<{
+      sourceFqName: string;
+      sourceSymbolId: string | null;
+      ancestorFqName: string;
+      ancestorSymbolId: string | null;
+      kind: InheritanceKind;
+      ordinal: number | bigint;
+    }>(
+      `SELECT source_fq_name AS "sourceFqName", source_symbol_id AS "sourceSymbolId",
+              ancestor_fq_name AS "ancestorFqName", ancestor_symbol_id AS "ancestorSymbolId", kind, ordinal
+         FROM cg_symbols_inheritance ORDER BY source_fq_name, ordinal`,
+    );
+    const ancestorsBySource: Record<string, InheritanceEdgeRow[]> = {};
+    const descendantsByAncestor: Record<string, InheritanceEdgeRow[]> = {};
+    for (const r of rows) {
+      const row: InheritanceEdgeRow = {
+        sourceFqName: r.sourceFqName,
+        sourceSymbolId: r.sourceSymbolId,
+        ancestorFqName: r.ancestorFqName,
+        ancestorSymbolId: r.ancestorSymbolId,
+        kind: r.kind,
+        ordinal: Number(r.ordinal),
+      };
+      (ancestorsBySource[row.sourceFqName] ??= []).push(row);
+      (descendantsByAncestor[row.ancestorFqName] ??= []).push(row);
+    }
+    return { ancestorsBySource, descendantsByAncestor };
   }
 
   private requireConn(): DuckDBConnection {
@@ -813,4 +1059,44 @@ function parseScope(json: string): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Split a method symbolId into its declaring type, the class↔member separator,
+ * and the member (bd tea-rags-mcp-2jet-E). Per `symbolid-convention.md` the
+ * separator between class and member is `#` (instance) or `.` (static); `::`
+ * (Ruby/Rust namespace) is NOT a member boundary. The LAST `#` wins when
+ * present (so `Acme::User#save` → base `Acme::User`, member `save`); otherwise
+ * fall back to the last `.`. Returns `null` for a bare top-level symbol with no
+ * member separator — nothing to expand.
+ */
+function splitMethodSymbol(symbolId: SymbolId): { base: string; sep: "#" | "."; member: string } | null {
+  const hash = symbolId.lastIndexOf("#");
+  if (hash > 0 && hash < symbolId.length - 1) {
+    return { base: symbolId.slice(0, hash), sep: "#", member: symbolId.slice(hash + 1) };
+  }
+  const dot = symbolId.lastIndexOf(".");
+  if (dot > 0 && dot < symbolId.length - 1) {
+    return { base: symbolId.slice(0, dot), sep: ".", member: symbolId.slice(dot + 1) };
+  }
+  return null;
+}
+
+/**
+ * Dedupe caller edges by `(sourceSymbolId, callExpression)` (bd 2jet-E). The
+ * symmetric poly-base expansion can re-surface a caller the direct query already
+ * returned (e.g. a class that both directly calls the override AND reaches it
+ * polymorphically). First occurrence wins; ordering of the merged list is
+ * preserved.
+ */
+function dedupeCallerEdges(edges: CallerEdge[]): CallerEdge[] {
+  const seen = new Set<string>();
+  const out: CallerEdge[] = [];
+  for (const e of edges) {
+    const k = `${e.sourceSymbolId} ${e.callExpression}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(e);
+  }
+  return out;
 }

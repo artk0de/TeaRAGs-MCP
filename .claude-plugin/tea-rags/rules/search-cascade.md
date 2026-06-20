@@ -35,16 +35,30 @@ Tool names appear bare below for readability — prepend the prefix when calling
 
 ## Embedding Unavailable (ollama / EMBEDDING_URL down)
 
-If the prime digest shows `embedding: unavailable`, or `get_index_status`
-reports an embedding error, or any tea-rags semantic call fails with an
-embedding/connection error — STOP, ask the user (via `AskUserQuestion`) to start
-`ollama serve` or repoint `EMBEDDING_URL`, and WAIT for an explicit answer
-before doing anything else. Do NOT silently downgrade to ripgrep / Grep / Read
-for code discovery — text search loses recall the user did not agree to trade
-away. Skip the prompt ONLY for tasks that do not need semantic search at all
-(literal TODO/FIXME scan, reading a known file by exact path, exact
-import-string lookup). See `references/runtime-introspection.md` for
-`infraHealth` diagnosis.
+**The prime digest is a point-in-time SNAPSHOT, not live state.** Its
+`embedding: unavailable` line reflects infra health at session start and goes
+stale the moment ollama comes back. NEVER treat a stale digest as a licence to
+fall back to ripgrep/Grep for code discovery. Before acting on a suspected
+outage, confirm with a LIVE `get_index_status` call — its `Infrastructure:`
+footer reports the current `Embedding (ollama): available | unavailable`. Act on
+the live read, not the snapshot.
+
+**Even when embedding is genuinely down, code-identifier search still works.**
+`find_symbol` uses Qdrant text match (zero embedding) and `hybrid_search`'s BM25
+component gives exact-name match (score up to 1.0) without the dense vector. A
+down embedding degrades behavioral/semantic recall (`semantic_search` intent
+queries) — it does NOT justify ripgrep for class/method/constant lookups.
+
+If a LIVE `get_index_status` reports an embedding error, or any tea-rags
+semantic call fails with an embedding/connection error — STOP, ask the user (via
+`AskUserQuestion`) to start `ollama serve` or repoint `EMBEDDING_URL`, and WAIT
+for an explicit answer before doing anything else. Do NOT silently downgrade to
+ripgrep / Grep / Read for code discovery — text search loses recall the user did
+not agree to trade away. Skip the prompt ONLY for tasks that do not need
+semantic search at all (literal TODO/FIXME scan, reading a known file by exact
+path, exact import-string lookup) — and for code-identifier lookups, reach for
+`find_symbol` / `hybrid_search` BM25 first (they need no embedding), not
+ripgrep. See `references/runtime-introspection.md` for `infraHealth` diagnosis.
 
 ## Addressing the Codebase (every tea-rags call)
 
@@ -159,8 +173,8 @@ Requires codegraph enabled. Precedence — start cheap, escalate only if needed:
 
 Before searching, reindex when the index lags the working tree: prime banner
 `⚠ Index is stale` or files edited this session → `index_codebase` (incremental,
-no consent); prime `## Schema drift` ≠ `none` → `force_reindex` (full, **explicit
-consent**). Full triggers + rationale in `index-freshness.md`.
+no consent); prime `## Schema drift` ≠ `none` → `force_reindex` (full,
+**explicit consent**). Full triggers + rationale in `index-freshness.md`.
 
 ## Decision Tree
 
@@ -272,6 +286,13 @@ harmless for non-search tasks.
 - **semantic_search for "find all usages"** — use hybrid_search instead. BM25
   component provides full recall for exact symbol names
 - **ripgrep for symbol existence checks** — use find_symbol with metaOnly=true
+- **ripgrep for class/method/constant usage** (e.g.
+  `classAncestors|classExtends` consumers) — these are SYMBOL searches; use
+  hybrid_search (BM25) or find_symbol
+- **ripgrep fallback justified by a stale prime digest** — the digest is a
+  start-of-session SNAPSHOT. Confirm a suspected embedding/index outage with a
+  LIVE get_index_status before downgrading; find_symbol + hybrid_search BM25
+  work with embedding down anyway
 - **hybrid_search for TODO/FIXME/HACK markers** — use ripgrep MCP
 - **git log/diff for code history** — overlay already has git signals
 - **10+ ripgrep calls instead of reading a file** — just read it

@@ -21,6 +21,7 @@ import type {
   FileExtraction,
   GraphEdges,
   NamedSymbol,
+  RelPath,
   SymbolResolutionTarget,
 } from "./codegraph.js";
 
@@ -82,6 +83,27 @@ export interface SymbolResolutionStrategy {
  */
 export interface DispatchResolverComponent {
   resolveDispatch: (call: CallRef, ctx: CallContext) => DispatchEdge[];
+}
+
+/**
+ * The two language-specific primitives the generic CHA cone-dispatch engine
+ * (`ConeDispatchResolver`, `domains/language/cone-dispatch.ts`) needs from each
+ * language (bd tea-rags-mcp-f10y). The CHA fan-out algorithm itself —
+ * descendants ∩ override, K-threshold, cone / poly-base policy, confidence —
+ * is language-neutral; the ONLY language-specific operations are (a) resolve a
+ * type name → declaring file, and (b) find a method declared DIRECTLY on a type
+ * (the override pin). One implementation per language (`RubyConeTypeLocator`,
+ * `PythonConeTypeLocator`).
+ *
+ * The engine OWNS the poly-base composition (`findDirectMethod(T,m) ??
+ * { resolveTypeFile(T), null }`) — `resolveBaseDecl` is deliberately NOT on the
+ * locator so no language's base-decl assumption leaks into the shared core.
+ */
+export interface ConeTypeLocator {
+  /** Resolve a (possibly qualified) type name to its declaring file, or null. */
+  resolveTypeFile: (typeName: string, ctx: CallContext) => RelPath | null;
+  /** Method declared DIRECTLY on `typeName` (the override pin), or null. */
+  findDirectMethod: (typeName: string, member: string, ctx: CallContext) => SymbolResolutionTarget | null;
 }
 
 /**

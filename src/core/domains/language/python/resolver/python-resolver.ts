@@ -34,11 +34,15 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
+  type DispatchEdge,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import { ConeDispatchResolver } from "../../cone-dispatch.js";
 import { resolveViaChain } from "../../resolver-chain.js";
 import {
+  CONE_MAX_DEFAULT,
+  PythonConeTypeLocator,
   PythonGlobalShortNameSymbolResolutionStrategy,
   PythonImportMatchSymbolResolutionStrategy,
   PythonLocalBindingSymbolResolutionStrategy,
@@ -48,12 +52,19 @@ import {
   type ResolverConfig,
 } from "./strategies/index.js";
 
+/** Parse `CODEGRAPH_PY_CONE_MAX`; fall back to the Python default on absent/invalid. */
+function resolveConeMax(raw: string | undefined): number {
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : CONE_MAX_DEFAULT;
+}
+
 export class PythonCallResolver implements CallResolver {
   readonly language = "python";
   private readonly strategies: SymbolResolutionStrategy[];
+  private readonly cone: ConeDispatchResolver;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const cfg: ResolverConfig = { mode };
+    const cfg: ResolverConfig = { mode, coneMax: resolveConeMax(process.env.CODEGRAPH_PY_CONE_MAX) };
     this.strategies = [
       new PythonSuperSymbolResolutionStrategy(cfg),
       new PythonSelfFieldSymbolResolutionStrategy(cfg),
@@ -62,9 +73,23 @@ export class PythonCallResolver implements CallResolver {
       new PythonImportMatchSymbolResolutionStrategy(cfg),
       new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
     ];
+    this.cone = new ConeDispatchResolver(new PythonConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     return resolveViaChain(this.strategies, call, ctx);
+  }
+
+  /**
+   * CHA cone fan-out for a Python call (bd tea-rags-mcp-f10y, N=2). A
+   * polymorphic TYPED receiver (`pet: Animal`, then `pet.speak()`) whose static
+   * type has subtypes overriding the member fans out to N `cone` edges (or one
+   * `poly-base` edge above the cone cap). Returns `[]` for every non-polymorphic
+   * call — an `external` / unbound receiver carries no `localBinding`, so `T` is
+   * undefined and the cone returns `[]` (external never cones); the provider then
+   * takes the exact `resolve` chain.
+   */
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+    return this.cone.resolveDispatch(call, ctx);
   }
 }

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
 import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../../../../../src/core/api/errors.js";
 import { GraphFacade } from "../../../../../src/core/api/internal/facades/graph-facade.js";
+import type { SymbolId } from "../../../../../src/core/contracts/types/codegraph.js";
 import type { CollectionRegistry } from "../../../../../src/core/infra/registry/index.js";
 
 /**
@@ -305,5 +306,36 @@ describe("GraphFacade", () => {
         ProjectNotRegisteredError,
       );
     });
+  });
+});
+
+describe("GraphFacade#resolveSymbolChunk", () => {
+  it("resolves via the read handle and returns the location", async () => {
+    const graphDb = {
+      findSymbolChunk: vi.fn().mockResolvedValue({ relPath: "a.rb", chunkId: "chunk_x" }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const pool = { acquireReader: vi.fn().mockResolvedValue({ graphDb }) };
+    const facade = new GraphFacade({
+      pool: pool as never,
+      collectionRegistry: {} as never,
+      resolveActiveCollection: async (c: string) => c,
+    });
+
+    const res = await facade.resolveSymbolChunk({ collection: "col" }, "Foo#bar" as SymbolId);
+    expect(res).toEqual({ relPath: "a.rb", chunkId: "chunk_x" });
+    expect(graphDb.findSymbolChunk).toHaveBeenCalledWith("Foo#bar");
+  });
+
+  it("returns null when the read handle cannot be acquired (codegraph absent)", async () => {
+    const pool = {
+      acquireReader: vi.fn().mockRejectedValue(new Error("no daemon")),
+    };
+    const facade = new GraphFacade({
+      pool: pool as never,
+      collectionRegistry: {} as never,
+      resolveActiveCollection: async (c: string) => c,
+    });
+    expect(await facade.resolveSymbolChunk({ collection: "col" }, "Foo#bar" as SymbolId)).toBeNull();
   });
 });

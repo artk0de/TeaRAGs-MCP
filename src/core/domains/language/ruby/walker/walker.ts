@@ -35,7 +35,15 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
+import type {
+  CallRef,
+  ChunkExtraction,
+  DispatchRef,
+  DispatchTable,
+  FileExtraction,
+  ImportRef,
+  InheritanceEdgeDecl,
+} from "../../../../contracts/types/codegraph.js";
 import { RUBY_DSL } from "../dsl/index.js";
 
 export interface RubyExtractInput {
@@ -84,10 +92,13 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const constantRefs = collectRubyConstantRefs(input.tree.rootNode);
   const fileScope = collectRubyDefinedConstants(input.tree.rootNode);
   const { ancestors: ancestorMap, prepended: prependedMap } = collectRubyClassAncestors(input.tree.rootNode);
-  const calls = collectRubyCalls(input.tree.rootNode);
+  const dispatchTables = collectRubyDispatchTables(input.tree.rootNode);
+  const dispatchTableNames = new Set(Object.keys(dispatchTables));
+  const calls = collectRubyCalls(input.tree.rootNode, dispatchTableNames);
   const imports: ImportRef[] = [...explicitImports, ...constantRefs];
   const trackTypes = localTypeTrackingEnabled();
   const yardByLine = trackTypes ? collectYardParamTypes(input.code) : new Map<number, Record<string, string>>();
+  const yardReturnTypes = trackTypes ? collectYardReturnTypes(input.code) : {};
   // Innermost-chunk attribution: assign each call to ONE chunk only —
   // the smallest containing range, ties broken by deeper scope length.
   // Without this guard, a call inside `module A { class B { def m ... } }`
@@ -128,7 +139,79 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     for (const [k, v] of prependedMap) prependedRecord[k] = v;
     out.classPrependedAncestors = prependedRecord;
   }
+  // Unified hierarchy edges with precise kinds (bd tea-rags-mcp-lz8t). Parity
+  // with the TS walker's `collectInheritanceEdges`: where the legacy
+  // classAncestors Record flattens superclass + include + extend into one
+  // include-tagged list, this distinguishes super / include / extend / prepend
+  // for the hierarchy graph. The legacy Records stay (resolver-forward path).
+  const inheritanceEdges = collectRubyInheritanceEdges(input.tree.rootNode);
+  if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
+  // YARD `@return [T]` return types (brg9) — same channel the Go walker fills
+  // (`FileExtraction.functionReturnTypes`). Emitted only when at least one
+  // single-constant return annotation was found.
+  if (Object.keys(yardReturnTypes).length > 0) out.functionReturnTypes = yardReturnTypes;
+  if (Object.keys(dispatchTables).length > 0) out.dispatchTables = dispatchTables;
   return out;
+}
+
+/**
+ * Collect class-hierarchy edges with precise kinds (bd tea-rags-mcp-lz8t):
+ * `class Foo < Bar` → `super`, `include Mod` → `include`, `extend Mod` →
+ * `extend`, `prepend Mod` → `prepend`. `ordinal` preserves declaration order
+ * WITHIN each kind (the cross-kind MRO position is encoded by the kind itself,
+ * ranked downstream in MapHierarchyView). Source names are fully qualified by
+ * enclosing module scope, matching `collectRubyDefinedConstants`.
+ *
+ * Mirrors `collectRubyClassAncestors`'s traversal (superclass extraction +
+ * `mixinTargetFromStatement`) but emits the unified InheritanceEdgeDecl shape
+ * instead of the flat per-kind Maps. Returns an empty array when no class /
+ * module declares any heritage.
+ */
+function collectRubyInheritanceEdges(root: Parser.SyntaxNode): InheritanceEdgeDecl[] {
+  const edges: InheritanceEdgeDecl[] = [];
+  const constRe = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
+  const walkScope = (node: Parser.SyntaxNode, scope: string[]): void => {
+    if (node.type === "class" || node.type === "module") {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) {
+        for (const child of node.children) walkScope(child, scope);
+        return;
+      }
+      const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+      const fq = scope.length === 0 ? localName : `${scope.join("::")}::${localName}`;
+      // Superclass — only `class` carries a `< Bar` clause; `module` never does.
+      if (node.type === "class") {
+        const sup = node.childForFieldName("superclass");
+        if (sup) {
+          for (const child of sup.namedChildren) {
+            if (child.type === "constant" || child.type === "scope_resolution") {
+              const supText = child.type === "scope_resolution" ? readScopeResolution(child) : child.text;
+              if (supText && constRe.test(supText)) {
+                edges.push({ source: fq, ancestor: supText, kind: "super", ordinal: 0 });
+              }
+              break;
+            }
+          }
+        }
+      }
+      // Mixins — per-kind ordinal counter so each channel records its own
+      // declaration order independently (parity with TS implements ordinals).
+      const body = node.childForFieldName("body");
+      const stmtSource = body ? body.children : node.children;
+      const ordinals: Record<"include" | "extend" | "prepend", number> = { include: 0, extend: 0, prepend: 0 };
+      for (const stmt of stmtSource) {
+        const mixin = mixinTargetFromStatement(stmt);
+        if (!mixin) continue;
+        edges.push({ source: fq, ancestor: mixin.name, kind: mixin.kind, ordinal: ordinals[mixin.kind]++ });
+      }
+      const recurseChildren = body ? body.children : node.children;
+      for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
+      return;
+    }
+    for (const child of node.children) walkScope(child, scope);
+  };
+  walkScope(root, []);
+  return edges;
 }
 
 /**
@@ -294,31 +377,61 @@ function collectLocalBindingsForChunk(
 }
 
 /**
+ * A bare-bracket YARD type — `[Foo]`, `[Acme::User]` — captured to a single
+ * constant name. `null` for any shape we deliberately do NOT bind (union types
+ * `[A, B]`, hashes `[Hash{...}]`, lowercase / non-constant tokens). The one
+ * structured form we DO unwrap is a single-element collection container
+ * (`Array<T>` / `Enumerable<T>` / `[T]`-style) whose element type is itself a
+ * bare constant — `@param x [Array<Post>]` binds the ELEMENT type `Post`
+ * (brg9), because `x` is iterated/element-accessed in the body, not used as an
+ * Array (bd cai0/brg9).
+ */
+const YARD_CONST = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
+const YARD_ELEMENT_CONTAINER = /^(?:Array|Enumerable|Set|Collection|ActiveRecord::Relation)<([\w:]+)>$/;
+
+function parseYardBracketType(inner: string): string | null {
+  const trimmed = inner.trim();
+  // `Array<Post>` / `Enumerable<Acme::Post>` → element type.
+  const container = YARD_ELEMENT_CONTAINER.exec(trimmed);
+  if (container) {
+    const element = container[1];
+    return YARD_CONST.test(element) ? element : null;
+  }
+  // Bare constant `Foo` / `Acme::User`.
+  return YARD_CONST.test(trimmed) ? trimmed : null;
+}
+
+/**
  * Parse YARD `# @param NAME [TYPE]` lines and group them by the line
  * number of the `def NAME(...)` they precede. The grammar is light: any
  * comment line matching the pattern attaches to the NEXT non-comment,
  * non-blank line that starts with `def` (with optional `self.` prefix).
  *
- * YARD also supports `# @return [TYPE]` (not used — we bind params only)
- * and bracket-less types (`# @param x String`) which we don't accept;
- * the bracket form is the dominant convention and the only one Sorbet,
- * Solargraph, and SteepGen treat as canonical.
+ * `[TYPE]` is parsed by `parseYardBracketType`: a bare constant binds
+ * directly; a single-element collection (`Array<T>`) binds the ELEMENT type
+ * `T` (brg9) so `x.first` / `x.each { |e| … }` element-method calls resolve.
+ * Bracket-less types (`# @param x String`), unions, and lowercase tokens are
+ * rejected — the bracket form is the canonical Sorbet/Solargraph/Steep
+ * convention.
  */
 function collectYardParamTypes(code: string): Map<number, Record<string, string>> {
   const lines = code.split(/\r?\n/);
   const out = new Map<number, Record<string, string>>();
   let pending: Record<string, string> | null = null;
-  const yardRegex = /^\s*#\s*@param\s+(\w+)\s+\[([\w:]+)\]/;
+  const yardRegex = /^\s*#\s*@param\s+(\w+)\s+\[([^\]]+)\]/;
   const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i] ?? "";
     const yardMatch = yardRegex.exec(raw);
     if (yardMatch) {
-      const [, name, type] = yardMatch;
-      if (!pending) pending = {};
-      // SAFETY: regex capture groups (\w+) and ([\w:]+) are non-optional —
-      // a successful match guarantees both name and type are strings.
-      pending[name] = type;
+      // SAFETY: regex capture groups (\w+) and ([^\]]+) are non-optional —
+      // a successful match guarantees both name and the bracket body exist.
+      const [, name, bracket] = yardMatch;
+      const type = parseYardBracketType(bracket);
+      if (type) {
+        if (!pending) pending = {};
+        pending[name] = type;
+      }
       continue;
     }
     // Blank or other comment — preserve pending block.
@@ -328,6 +441,45 @@ function collectYardParamTypes(code: string): Map<number, Record<string, string>
       out.set(i + 1, pending);
     }
     pending = null;
+  }
+  return out;
+}
+
+/**
+ * Parse YARD `# @return [TYPE]` lines and key them by the method NAME of the
+ * `def NAME(...)` they precede (brg9). Mirrors `collectYardParamTypes`'
+ * comment-block attachment, but produces a `functionName → returnTypeName`
+ * map matching `FileExtraction.functionReturnTypes` (the same channel the Go
+ * walker fills) so a resolver can bind `x = obj.foo` to `foo`'s return type.
+ *
+ * Only a SINGLE bare constant return is recorded — `[Array<User>]` and other
+ * collection containers are skipped (a collection isn't a single instance the
+ * caller's `x.method` dispatches on), matching the Go walker's "single concrete
+ * return only" discipline. `parseYardBracketType` would unwrap the element type
+ * for a param, but a `@return` of a collection genuinely IS a collection, so we
+ * reject containers here rather than unwrap them.
+ */
+function collectYardReturnTypes(code: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  let pendingReturn: string | null = null;
+  const returnRegex = /^\s*#\s*@return\s+\[([^\]]+)\]/;
+  const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
+  for (const raw of code.split(/\r?\n/)) {
+    const m = returnRegex.exec(raw);
+    if (m) {
+      const inner = (m[1] ?? "").trim();
+      // Single bare constant only — a collection `[Array<T>]` return is a
+      // collection, not a dispatch target, so it is NOT recorded.
+      pendingReturn = YARD_CONST.test(inner) ? inner : null;
+      continue;
+    }
+    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
+    const defMatch = defRegex.exec(raw);
+    // defMatch[1] is the method name (\w+) when the line is a `def`.
+    if (pendingReturn && defMatch?.[1]) {
+      out[defMatch[1]] = pendingReturn;
+    }
+    pendingReturn = null;
   }
   return out;
 }
@@ -473,6 +625,115 @@ function collectRegistryConstantValueRefs(literal: Parser.SyntaxNode, out: CallR
 }
 
 /**
+ * Normalize a Ruby hash key node to the string used in `DispatchTable.entries`
+ * keys AND in `DispatchRef.key` (bd tea-rags-mcp-pq02v). String literal → inner
+ * text without quotes; symbol (`:k` / `k:` hash-key sugar) → bare name. Returns
+ * null for a non-literal / computed key (the entry is then dropped — m46z, never
+ * guess a runtime key). Shared by the table build and the call-site key read so
+ * both produce identical key strings.
+ */
+function rubyDispatchKeyText(node: Parser.SyntaxNode | null): string | null {
+  if (!node) return null;
+  if (node.type === "string") {
+    const inner = node.namedChildren.find((c) => c.type === "string_content");
+    return inner ? inner.text : node.text.replace(/^['"`]|['"`]$/g, "");
+  }
+  if (node.type === "simple_symbol") return node.text.replace(/^:/, "");
+  if (node.type === "hash_key_symbol") return node.text; // `k:` sugar → bare `k`
+  return null;
+}
+
+/**
+ * Extract a class FQ-name from a registry VALUE node (bd tea-rags-mcp-pq02v).
+ * `scope_resolution` → full `A::B::C` via readScopeResolution; bare `constant` →
+ * its text. Anything else (lambda, call, nested literal) → null (dropped).
+ */
+function rubyDispatchValueConstant(node: Parser.SyntaxNode | null): string | null {
+  if (!node) return null;
+  if (node.type === "scope_resolution") return readScopeResolution(node) || null;
+  if (node.type === "constant") return node.text;
+  return null;
+}
+
+/**
+ * Build the per-constant dispatch tables for registry-literal dispatch
+ * (bd tea-rags-mcp-pq02v). Mirrors the TS `collectDispatchTables` shape but for
+ * Ruby `CONST = <hash|array>.freeze` assignments. Entry values are class
+ * FQ-names (see DispatchTable doc overload). A hash key uses its literal text; an
+ * array element uses its positional index. Tables with zero constant-valued
+ * entries are omitted. Shares the assignment/literal detection with
+ * `collectRegistryConstantValueRefs` (which keeps emitting the chunk-ref edges).
+ */
+function collectRubyDispatchTables(root: Parser.SyntaxNode): Record<string, DispatchTable> {
+  const out: Record<string, DispatchTable> = {};
+  walk(root, (node) => {
+    if (node.type !== "assignment") return;
+    const left = node.childForFieldName("left");
+    if (!left || (left.type !== "constant" && left.type !== "scope_resolution")) return;
+    const name = left.type === "scope_resolution" ? readScopeResolution(left) : left.text;
+    const literal = unwrapTrailingCalls(node.childForFieldName("right"));
+    if (!literal) return;
+    const entries: Record<string, string> = {};
+    if (literal.type === "hash") {
+      for (const pair of literal.namedChildren) {
+        if (pair.type !== "pair") continue;
+        const key = rubyDispatchKeyText(pair.childForFieldName("key"));
+        const value = rubyDispatchValueConstant(pair.childForFieldName("value"));
+        if (key !== null && value !== null) entries[key] = value;
+      }
+    } else if (literal.type === "array") {
+      let i = 0;
+      for (const el of literal.namedChildren) {
+        const value = rubyDispatchValueConstant(el);
+        if (value !== null) entries[String(i)] = value;
+        i++;
+      }
+    } else {
+      return;
+    }
+    if (Object.keys(entries).length > 0) out[name] = { entries };
+  });
+  return out;
+}
+
+/**
+ * Abstract-interpret a Ruby callee chain to its dispatch reference
+ * (bd tea-rags-mcp-pq02v). Composes through `element_reference` (the table
+ * subscript), the `.new` instantiation (pass-through), and the outer `.member`
+ * call (the dispatched method). Returns null when the chain is not rooted at a
+ * known dispatch-table constant.
+ *
+ *   CONST            → (not a ref on its own)
+ *   CONST[k]         → { table: CONST, field: null, key: staticKeyOf }
+ *   CONST[k].new     → same ref, field stays null (Kernel#new pass-through)
+ *   CONST[k].new.m   → { table: CONST, field: "m", key }
+ */
+function exprToRubyDispatchRef(node: Parser.SyntaxNode, tableNames: ReadonlySet<string>): DispatchRef | null {
+  if (node.type === "element_reference") {
+    const obj = node.childForFieldName("object") ?? node.namedChildren[0];
+    if (!obj) return null;
+    const objName =
+      obj.type === "scope_resolution" ? readScopeResolution(obj) : obj.type === "constant" ? obj.text : null;
+    if (objName === null || !tableNames.has(objName)) return null;
+    // The subscript index is the named child after the object.
+    const index = node.namedChildren[1] ?? null;
+    return { table: objName, field: null, key: rubyDispatchKeyText(index) };
+  }
+  if (node.type === "call" || node.type === "method_call") {
+    const receiver = node.childForFieldName("receiver");
+    const method = node.childForFieldName("method");
+    if (!receiver || !method) return null;
+    const inner = exprToRubyDispatchRef(receiver, tableNames);
+    if (!inner) return null;
+    // `.new` on a table-bound chain is a pass-through (instantiation, no edge).
+    if (method.text === "new" && inner.field === null) return inner;
+    // Outer `.member` on an entry-ref (field still null) → select the member.
+    if (inner.field === null) return { table: inner.table, field: method.text, key: inner.key };
+  }
+  return null;
+}
+
+/**
  * Whether a constant/scope_resolution node sits in a context where it
  * DECLARES something (class header, module header, assignment target,
  * superclass position) rather than REFERENCES something. Declarations
@@ -552,7 +813,111 @@ function collectRubyDefinedConstants(root: Parser.SyntaxNode): string[] {
  */
 const RUBY_DYNAMIC_DISPATCH = new Set(["send", "public_send", "__send__"]);
 
-function collectRubyCalls(root: Parser.SyntaxNode): CallRef[] {
+/**
+ * AR / controller association macros whose first symbol argument names an
+ * associated MODEL (duzy). `has_many :posts` references the `Post` model;
+ * the walker emits a constant-ref CallRef to that model so the association
+ * declaration carries a file→file edge to the model file (mirrors the
+ * registry-constant-ref discipline). Method-accessor synthesis for these
+ * (`User#posts` etc.) lives in `name-of.ts` `AR_ASSOCIATION_MACROS`.
+ */
+const RUBY_ASSOCIATION_MACROS = new Set(["has_many", "has_one", "belongs_to", "has_and_belongs_to_many"]);
+
+/**
+ * Whether a DSL macro name is a callback registration (duzy). A
+ * `before_action :auth` / `after_save :touch` callback names an instance
+ * method by symbol; the walker emits a bare-receiver CallRef to it so the
+ * resolver's same-class fallback pins `#auth`. Sourced from the single
+ * `ruby/dsl` catalogue by `category === "callback"` — adding a callback
+ * keyword there automatically enrols it here, no second list to maintain.
+ */
+function isRubyCallbackMacro(name: string): boolean {
+  return RUBY_DSL[name]?.category === "callback";
+}
+
+/**
+ * Naive Rails singularize for the common association-name → model-name cases
+ * (duzy). Handles `categories → category` (ies → y), `boxes → box`
+ * (xes/ses/shes/ches → strip `es`), and the dominant `posts → post`
+ * (trailing `s`). NOT a full inflector — irregulars (`people`, `mice`) and
+ * `class_name:` overrides are out of scope here; an explicit `class_name:`
+ * always wins upstream. A non-plural word passes through unchanged.
+ */
+function singularizeAssociation(word: string): string {
+  if (word.endsWith("ies")) return `${word.slice(0, -3)}y`;
+  if (/(?:xes|ses|shes|ches)$/.test(word)) return word.slice(0, -2);
+  if (word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
+  return word;
+}
+
+/**
+ * Camelize a snake_case association base into a Ruby class name (duzy):
+ * `blog_posts` → `BlogPost`. The caller singularizes first; this only
+ * upcases each `_`-separated segment's first char and joins.
+ */
+function camelizeModelName(snake: string): string {
+  return snake
+    .split("_")
+    .filter((s) => s.length > 0)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join("");
+}
+
+/**
+ * Resolve the associated model constant for an association macro call
+ * (duzy). An explicit `class_name: 'Foo'` / `class_name: "Acme::Bar"`
+ * kwarg wins verbatim (the canonical AR override); otherwise the first
+ * symbol argument is singularized + camelized by Rails convention. Returns
+ * `null` when neither a usable `class_name:` string nor a leading symbol
+ * argument is present — no model edge can be synthesised syntactically.
+ */
+function associationModelConstant(callNode: Parser.SyntaxNode): string | null {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  // Explicit `class_name:` override — a string literal constant.
+  for (const arg of args.namedChildren) {
+    if (arg.type !== "pair") continue;
+    const key = arg.childForFieldName("key");
+    if (key?.text !== "class_name") continue;
+    const value = arg.childForFieldName("value");
+    if (!value) continue;
+    if (value.type === "string" || value.type === "string_literal") {
+      const inner = value.namedChildren.find((c) => c.type === "string_content");
+      const literal = inner ? inner.text : value.text.replace(/^["']|["']$/g, "");
+      return YARD_CONST.test(literal) ? literal : null;
+    }
+    if (value.type === "constant") return value.text;
+    if (value.type === "scope_resolution") return readScopeResolution(value);
+  }
+  // Convention: first symbol argument → singularize + camelize.
+  const firstArg = args.namedChildren[0];
+  if (firstArg?.type !== "simple_symbol") return null;
+  const base = firstArg.text.startsWith(":") ? firstArg.text.slice(1) : firstArg.text;
+  if (base.length === 0) return null;
+  const model = camelizeModelName(singularizeAssociation(base));
+  return model.length > 0 ? model : null;
+}
+
+/**
+ * Collect every leading symbol-argument name from a callback macro call
+ * (duzy) — `before_action :a, :b, only: :show` → `["a", "b"]`. Stops at the
+ * first non-`simple_symbol` arg (the `only:` / `if:` kwarg pair), so guard
+ * conditions never become spurious method edges. Mirrors the `delegate`
+ * leading-symbol scan in `extractDelegateSymbols`.
+ */
+function extractCallbackSymbols(callNode: Parser.SyntaxNode): string[] {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return [];
+  const out: string[] = [];
+  for (const arg of args.namedChildren) {
+    if (arg.type !== "simple_symbol") break;
+    const base = arg.text.startsWith(":") ? arg.text.slice(1) : arg.text;
+    if (base.length > 0) out.push(base);
+  }
+  return out;
+}
+
+function collectRubyCalls(root: Parser.SyntaxNode, dispatchTableNames: ReadonlySet<string>): CallRef[] {
   const out: CallRef[] = [];
 
   // Recursive walk that tracks the enclosing instance / singleton method
@@ -757,11 +1122,40 @@ function collectRubyCalls(root: Parser.SyntaxNode): CallRef[] {
         }
       }
 
-      if (receiverText !== null) {
-        out.push({ callText: node.text, receiver: receiverText, member: method.text, startLine });
-      } else {
-        out.push({ callText: node.text, receiver: null, member: method.text, startLine });
+      // `before_action :auth` / callback macros synthetic edges (duzy). A
+      // callback registers an instance method by symbol; emit a bare-receiver
+      // CallRef per symbol so the resolver's same-class fallback (callerScope =
+      // the enclosing controller / model) pins `#auth`. Only the class-body
+      // form fires — `obj.before_action` is a normal method call. Leading
+      // symbols only: `only:` / `if:` guard kwargs never become edges.
+      if (receiverText === null && isRubyCallbackMacro(method.text)) {
+        for (const sym of extractCallbackSymbols(node)) {
+          out.push({ callText: node.text, receiver: null, member: sym, startLine });
+        }
       }
+
+      // `has_many :posts` / `belongs_to :y` association model edge (duzy). The
+      // association references the associated MODEL class; emit a constant-ref
+      // CallRef (receiver === member === the FQ constant) so the constant
+      // resolver pins it to the model's declaring file as a file→file edge —
+      // identical discipline to `collectRegistryConstantValueRefs`. The
+      // accessor methods (`User#posts` etc.) are synthesised separately in
+      // name-of.ts. Only the class-body form fires.
+      if (receiverText === null && RUBY_ASSOCIATION_MACROS.has(method.text)) {
+        const model = associationModelConstant(node);
+        if (model !== null) {
+          out.push({ callText: node.text, receiver: model, member: model, startLine });
+        }
+      }
+
+      const callRef: CallRef = { callText: node.text, receiver: receiverText, member: method.text, startLine };
+      // Registry-literal dispatch tagging (bd tea-rags-mcp-pq02v). Only the
+      // OUTER `.member` call of a `CONST[k].new.m` chain yields a ref with
+      // `field` set; the inner `.new` node returns `field: null` and is skipped
+      // (no double tag). The `element_reference` node is not a call → never here.
+      const dispatch = exprToRubyDispatchRef(node, dispatchTableNames);
+      if (dispatch?.field) callRef.dispatch = dispatch;
+      out.push(callRef);
 
       // Block-pass shorthand: `users.each(&:save)` — &:save desugars to
       // `{ |u| u.save }`. The block-passed method is an additional call

@@ -46,8 +46,13 @@ import type {
   GlobalSymbolTable,
   GraphDbClient,
   GraphEdges,
+  HierarchyView,
+  InheritanceEdgeRow,
   NamedSymbol,
+  ResolveRunStatsRow,
+  SymbolId,
 } from "../../../../contracts/types/codegraph.js";
+import type { FileClassification } from "../../../../contracts/types/file-classification.js";
 import type {
   LanguageFactoryDescriptor,
   LanguageSymbolResolver,
@@ -66,8 +71,8 @@ import type {
   ProviderRunMetrics,
   WorkerEnrichmentDescriptor,
 } from "../../../../contracts/types/provider.js";
-import type { FileClassification } from "../../../../contracts/types/file-classification.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
+import { MapHierarchyView } from "../../../../infra/graph/hierarchy-view.js";
 import { pageRank } from "../../../../infra/graph/page-rank.js";
 import { tarjanScc } from "../../../../infra/graph/tarjan-scc.js";
 import { isDebug } from "../../../../infra/runtime.js";
@@ -78,7 +83,9 @@ import {
   CodegraphSpillIoError,
 } from "../../errors.js";
 import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
+import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
+import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 
 /**
  * Layered ignore for `discoverSupportedFiles` (tea-rags-mcp-tf1o, hh4m):
@@ -452,6 +459,23 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runCallbackParams: Record<string, number[]> = {};
   /**
+   * Per-run aggregation of normalized inheritance rows (bd tea-rags-mcp-o17v2).
+   * Accumulated across pass-1 `sink.write` so the pass-1→pass-2 barrier can build
+   * a complete `MapHierarchyView` BEFORE any file resolves. Inheritance edges are
+   * persisted per-file DURING pass-2, so the DB is not yet complete when the
+   * first file's CHA cone needs `getDescendants` — the in-memory snapshot closes
+   * that gap. Same lifecycle as `runExtends` — reset on finish / empty-run.
+   */
+  private runInheritanceRows: InheritanceEdgeRow[] = [];
+  /**
+   * Bidirectional class-hierarchy view built from `runInheritanceRows` at the
+   * pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2). Threaded into every resolve
+   * `CallContext.hierarchy` so the CHA cone resolver can devirtualize a
+   * polymorphic typed receiver to its overriding subtypes. `undefined` until the
+   * barrier runs (and on reset) — the cone resolver treats absent as "no cone".
+   */
+  private hierarchyView: HierarchyView | undefined;
+  /**
    * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
    * Built once at construction from `deps.exclusion`. Empty filter
    * (`excludeTests:false`, no custom patterns) is a valid no-op — every
@@ -691,6 +715,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             this.runReturnTypes[k] = v;
           }
         }
+        // Accumulate this file's inheritance edges run-global (bd tea-rags-mcp-o17v2)
+        // so the pass-1→pass-2 barrier can build a complete hierarchy view for the
+        // CHA cone resolver. Resolve ancestor symbol_ids lazily against the now-
+        // partial table is unnecessary here — the cone reads by fqName — so pass a
+        // null resolver and let the per-file persist (pass-2) own symbol_id binding.
+        const inheritanceRows = normalizeInheritanceEdges(extraction, () => null);
+        if (inheritanceRows.length > 0) this.runInheritanceRows.push(...inheritanceRows);
         // Merge dispatch tables run-global keyed by table name + defining
         // relpath so the resolver can fan a `TABLE[key].field()` call out to
         // every candidate regardless of which file declared the table (bd
@@ -742,6 +773,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             });
           });
         }
+        // Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2): pass-1 is complete, so
+        // `runInheritanceRows` holds every class's hierarchy edges. Build the
+        // in-memory view ONCE here; pass-2 `resolveExtraction` threads it into
+        // each resolve `CallContext.hierarchy` for CHA cone devirtualization.
+        this.hierarchyView = new MapHierarchyView(buildHierarchySnapshot(this.runInheritanceRows));
         try {
           if (spillWriteCount > 0) {
             await this.streamingResolveAndUpsert(spillPath, collectionName);
@@ -977,13 +1013,38 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runReturnTypes = {};
       this.runDispatchTables = {};
       this.runCallbackParams = {};
+      this.runInheritanceRows = [];
+      this.hierarchyView = undefined;
       return undefined;
     }
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / callsAttempted;
+    const { byReceiverKind } = this.runStats;
+    const resolveByReceiverKind = Object.fromEntries(
+      RECEIVER_KINDS.map((kind) => {
+        const t = byReceiverKind[kind];
+        return [
+          kind,
+          { attempted: t.attempted, resolved: t.resolved, rate: t.attempted === 0 ? 0 : t.resolved / t.attempted },
+        ];
+      }),
+    );
+    // One-line per-idiom diagnostic (bd tea-rags-mcp-j431): surfaces the
+    // resolve breakdown to mcp-logs once per enrichment cycle so each cai0
+    // slice's delta is readable without a DTO change. Mirrors the unconditional
+    // `[codegraph]` diagnostics elsewhere in this provider.
+    if (callsAttempted > 0) {
+      const summary = RECEIVER_KINDS.map((kind) => {
+        const t = byReceiverKind[kind];
+        return `${kind} ${t.resolved}/${t.attempted}`;
+      }).join(", ");
+      process.stderr.write(
+        `[codegraph] resolve by receiver-kind (rate ${resolveSuccessRate.toFixed(2)}): ${summary}\n`,
+      );
+    }
     this.runStats = createEmptyRunStats();
     this.runAncestors = {};
     this.runPrependedAncestors = {};
-    return { extractedFiles, fileEdgeCount, methodEdgeCount, resolveSuccessRate };
+    return { extractedFiles, fileEdgeCount, methodEdgeCount, resolveSuccessRate, resolveByReceiverKind };
   }
 
   private collectionKey(collectionName?: string): string {
@@ -1197,6 +1258,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       const paths =
         options?.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
       await this.readFileOverlays(graphDb, paths, file);
+      // bd tea-rags-mcp-2jet-D — flush the per-receiver-kind resolve breakdown
+      // (j431) to `cg_run_stats` so the daemon-readable proxy surfaces each
+      // cai0 slice's per-bucket delta. Overwrite semantics live in the client;
+      // the provider only maps the in-memory tally to rows. Runs after
+      // sink.finish() so every resolved call is already counted.
+      await this.recordRunStats(graphDb);
     } finally {
       this.runSinks.delete(key);
       this.runExtractedPaths.delete(key);
@@ -1204,6 +1271,24 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
     return file;
   };
+
+  /**
+   * Map the in-memory per-receiver-kind tally (`runStats.byReceiverKind`, j431)
+   * to `ResolveRunStatsRow[]` and persist it via `graphDb.recordRunStats`
+   * (bd tea-rags-mcp-2jet-D). One row per `RECEIVER_KIND` the provider observed;
+   * the client overwrites the whole table so stale prior-run buckets never leak.
+   * The tally is NOT reset here — `getRunMetrics` owns read-and-clear; this only
+   * mirrors the current snapshot to disk at finalize.
+   */
+  private async recordRunStats(graphDb: GraphDbClient): Promise<void> {
+    const { byReceiverKind } = this.runStats;
+    const rows: ResolveRunStatsRow[] = RECEIVER_KINDS.map((kind) => ({
+      receiverKind: kind,
+      attempted: byReceiverKind[kind].attempted,
+      resolved: byReceiverKind[kind].resolved,
+    }));
+    await graphDb.recordRunStats(rows);
+  }
 
   /**
    * Release per-run extraction state after finalize: reset the run-global
@@ -1219,6 +1304,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runReturnTypes = {};
     this.runDispatchTables = {};
     this.runCallbackParams = {};
+    this.runInheritanceRows = [];
+    this.hierarchyView = undefined;
   }
 
   /**
@@ -1251,6 +1338,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runReturnTypes = {};
     this.runDispatchTables = {};
     this.runCallbackParams = {};
+    this.runInheritanceRows = [];
+    this.hierarchyView = undefined;
   };
 
   /**
@@ -1500,6 +1589,22 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           pageRank: pageRankValue,
         });
       }
+      // 0rskm — store-time symbol→covering-chunk join. The walker's per-file
+      // line map (relPath → startLine → symbolId) holds EVERY extracted symbol,
+      // including methods of a collapsed class that got no own Qdrant chunk.
+      // Invert it to symbol→startLine, run the containment join against this
+      // file's chunk entries, and backfill cg_symbols.chunk_id.
+      const lineMap = this.chunkSymbolByLine.get(this.collectionKey(options?.collectionName))?.get(relPath);
+      if (lineMap && lineMap.size > 0) {
+        const symbolStartLines = new Map<SymbolId, number>();
+        for (const [startLine, symbolId] of lineMap) {
+          symbolStartLines.set(symbolId, startLine);
+        }
+        const chunkIds = computeSymbolChunkIds(symbolStartLines, entries);
+        if (chunkIds.size > 0) {
+          await graphDb.updateSymbolChunkIds(relPath, chunkIds);
+        }
+      }
       out.set(relPath, perChunk);
     }
     return out;
@@ -1554,6 +1659,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     for (const chunk of extraction.chunks) {
       for (const call of chunk.calls) {
         this.runStats.callsAttempted += 1;
+        const receiverKind = classifyReceiverKind(call, chunk.localBindings);
+        this.runStats.byReceiverKind[receiverKind].attempted += 1;
         const ctx = {
           callerFile: extraction.relPath,
           callerScope: chunk.scope,
@@ -1570,6 +1677,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // params drive the resolver's fan-out / inter-proc join.
           dispatchTables: this.runDispatchTables,
           callbackParams: this.runCallbackParams,
+          // bd tea-rags-mcp-o17v2 — run-global class hierarchy drives CHA cone
+          // devirtualization of a polymorphic typed receiver. Built at the
+          // pass-1→pass-2 barrier; undefined ⇒ cone resolver no-ops.
+          hierarchy: this.hierarchyView,
         };
         let resolved = false;
         if (call.dispatch) {
@@ -1581,10 +1692,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
               targetSymbolId: edge.targetSymbolId,
               targetRelPath: edge.targetRelPath,
               callExpression: call.callText,
+              edgeKind: edge.edgeKind,
+              confidence: edge.confidence,
             });
             resolved = true;
           }
-        } else {
+        } else if (call.dispatchArgs && call.dispatchArgs.length > 0) {
+          // Bounded inter-proc join: a dispatch candidate-set passed as a
+          // callback argument fans out from the CALLEE (non-null sourceSymbolId
+          // on the edge), additive to the normal callee edge.
           const target = resolver.resolve(call, ctx);
           if (target) {
             methodEdges.push({
@@ -1595,27 +1711,72 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             });
             resolved = true;
           }
-          // Bounded inter-proc join: a dispatch candidate-set passed as a
-          // callback argument fans out from the CALLEE (non-null
-          // sourceSymbolId on the edge), additive to the normal edge above.
-          if (call.dispatchArgs && call.dispatchArgs.length > 0) {
-            for (const edge of resolver.resolveDispatch?.(call, ctx) ?? []) {
+          for (const edge of resolver.resolveDispatch?.(call, ctx) ?? []) {
+            methodEdges.push({
+              sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
+              targetSymbolId: edge.targetSymbolId,
+              targetRelPath: edge.targetRelPath,
+              callExpression: call.callText,
+              edgeKind: edge.edgeKind,
+              confidence: edge.confidence,
+            });
+            resolved = true;
+          }
+        } else {
+          // CHA cone fan-out FIRST (bd tea-rags-mcp-2jet): a polymorphic
+          // receiver whose static type has subtypes overriding the member
+          // expands to N `cone` (or one `poly-base`) edges, REPLACING the
+          // single imprecise base edge the exact chain would emit. Returns `[]`
+          // for every non-polymorphic call (and every other language, whose
+          // resolveDispatch keys off call.dispatch only), so the exact `resolve`
+          // path stays the default — external receivers never cone.
+          const cone = resolver.resolveDispatch?.(call, ctx) ?? [];
+          if (cone.length > 0) {
+            for (const edge of cone) {
               methodEdges.push({
                 sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
                 targetSymbolId: edge.targetSymbolId,
                 targetRelPath: edge.targetRelPath,
+                callExpression: call.callText,
+                edgeKind: edge.edgeKind,
+                confidence: edge.confidence,
+              });
+              resolved = true;
+            }
+          } else {
+            const target = resolver.resolve(call, ctx);
+            if (target) {
+              methodEdges.push({
+                sourceSymbolId: chunk.symbolId,
+                targetSymbolId: target.targetSymbolId,
+                targetRelPath: target.targetRelPath,
                 callExpression: call.callText,
               });
               resolved = true;
             }
           }
         }
-        if (resolved) this.runStats.callsResolved += 1;
+        if (resolved) {
+          this.runStats.callsResolved += 1;
+          this.runStats.byReceiverKind[receiverKind].resolved += 1;
+        }
       }
     }
 
-    return { fileEdges, methodEdges };
+    // Class hierarchy (bd tea-rags-mcp-f10y). Persist this file's declared
+    // inheritance edges alongside its file/method edges so cg_symbols_inheritance
+    // shares the per-file upsert lifecycle. Ancestor names resolve to in-project
+    // symbol_ids via the now-complete symbol table (pass-1 done); external
+    // ancestors keep ancestorSymbolId=null. Sources every language: TS via the
+    // unified inheritanceEdges field, others via the legacy class* Records.
+    const inheritance = normalizeInheritanceEdges(extraction, (fq) => symbolTable.lookup(fq)[0]?.symbolId ?? null);
+    return inheritance.length > 0 ? { fileEdges, methodEdges, inheritance } : { fileEdges, methodEdges };
   }
+}
+
+interface ReceiverKindTally {
+  attempted: number;
+  resolved: number;
 }
 
 interface RunStats {
@@ -1624,10 +1785,27 @@ interface RunStats {
   methodEdgeCount: number;
   callsAttempted: number;
   callsResolved: number;
+  // Per-idiom resolve breakdown (bd tea-rags-mcp-j431) — attempted/resolved per
+  // receiver kind so each cai0 slice proves a delta on the exact bucket it
+  // targets instead of moving one aggregate resolveSuccessRate.
+  byReceiverKind: Record<ReceiverKind, ReceiverKindTally>;
+}
+
+function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally> {
+  const out = {} as Record<ReceiverKind, ReceiverKindTally>;
+  for (const kind of RECEIVER_KINDS) out[kind] = { attempted: 0, resolved: 0 };
+  return out;
 }
 
 function createEmptyRunStats(): RunStats {
-  return { extractedFiles: 0, fileEdgeCount: 0, methodEdgeCount: 0, callsAttempted: 0, callsResolved: 0 };
+  return {
+    extractedFiles: 0,
+    fileEdgeCount: 0,
+    methodEdgeCount: 0,
+    callsAttempted: 0,
+    callsResolved: 0,
+    byReceiverKind: emptyReceiverKindTally(),
+  };
 }
 
 /**
@@ -1720,4 +1898,53 @@ async function collectAdjacency(graphDb: GraphDbClient, scope: "file" | "method"
     else adj.set(source, [target]);
   }
   return adj;
+}
+
+/**
+ * Symbol→covering-chunk containment join (0rskm). For each symbol start line,
+ * pick the tightest chunk whose range (or any of its non-contiguous
+ * `lineRanges`) contains that line. "Tightest" = smallest covering span, so a
+ * method's own chunk wins over the enclosing class chunk, and a `#partN` part
+ * wins over a wide fallback. Symbols with no covering chunk are omitted (their
+ * cg_symbols.chunk_id stays NULL → find_symbol fallback is a no-op for them).
+ */
+export function computeSymbolChunkIds(
+  symbolStartLines: ReadonlyMap<SymbolId, number>,
+  entries: readonly ChunkLookupEntry[],
+): Map<SymbolId, string> {
+  const out = new Map<SymbolId, string>();
+  for (const [symbolId, line] of symbolStartLines) {
+    let bestId: string | undefined;
+    let bestSpan = Number.POSITIVE_INFINITY;
+    for (const e of entries) {
+      const span = coveringSpan(e, line);
+      if (span !== undefined && span < bestSpan) {
+        bestSpan = span;
+        bestId = e.chunkId;
+      }
+    }
+    if (bestId !== undefined) out.set(symbolId, bestId);
+  }
+  return out;
+}
+
+/**
+ * Effective covering span of `entry` for `line`, or undefined if `line` is not
+ * covered. When `lineRanges` is present, containment is checked against the
+ * sub-range that holds the line and the span is that sub-range's width (Ruby
+ * body groups: a tight group beats a wide whole-chunk span).
+ */
+function coveringSpan(entry: ChunkLookupEntry, line: number): number | undefined {
+  if (entry.lineRanges && entry.lineRanges.length > 0) {
+    let best: number | undefined;
+    for (const r of entry.lineRanges) {
+      if (line >= r.start && line <= r.end) {
+        const w = r.end - r.start;
+        if (best === undefined || w < best) best = w;
+      }
+    }
+    return best;
+  }
+  if (line >= entry.startLine && line <= entry.endLine) return entry.endLine - entry.startLine;
+  return undefined;
 }

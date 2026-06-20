@@ -4,6 +4,7 @@ import type {
   GraphEdges,
   GraphFileNode,
   RelPath,
+  ResolveRunStatsRow,
   SymbolDefinition,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
@@ -66,6 +67,12 @@ export class CodegraphDaemonServer {
         await graphDb.upsertSymbols(p.relPath as RelPath, p.definitions as SymbolDefinition[]);
         return null;
       }
+      case "updateSymbolChunkIds": {
+        const { graphDb } = await this.pool.acquire(collection);
+        // entries → Map (mirrors replacePageRanks rebuild).
+        await graphDb.updateSymbolChunkIds(p.relPath as RelPath, new Map(p.chunkIds as [SymbolId, string][]));
+        return null;
+      }
       case "replaceCycles": {
         const { graphDb } = await this.pool.acquire(collection);
         await graphDb.replaceCycles(p.scope as CycleScope, p.sccs as readonly (readonly string[])[]);
@@ -81,6 +88,11 @@ export class CodegraphDaemonServer {
       case "checkpoint": {
         const { graphDb } = await this.pool.acquire(collection);
         await graphDb.checkpoint();
+        return null;
+      }
+      case "recordRunStats": {
+        const { graphDb } = await this.pool.acquire(collection);
+        await graphDb.recordRunStats(p.rows as ResolveRunStatsRow[]);
         return null;
       }
       case "computeAndPersistCyclesAndSignals": {
@@ -106,6 +118,10 @@ export class CodegraphDaemonServer {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getCallers(p.symbolId as SymbolId);
       }
+      case "findSymbolChunk": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.findSymbolChunk(p.symbolId as SymbolId);
+      }
       case "getCallees": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getCallees(p.symbolId as SymbolId);
@@ -127,6 +143,10 @@ export class CodegraphDaemonServer {
       case "hasData": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.hasData();
+      }
+      case "getRunStats": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getRunStats();
       }
       case "listAllSymbols": {
         const { graphDb } = await this.pool.acquire(collection);
@@ -150,6 +170,24 @@ export class CodegraphDaemonServer {
       case "getPageRank": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getPageRank(p.symbolId as SymbolId);
+      }
+      // ── class hierarchy (bd tea-rags-mcp-f10y) ──
+      case "getSupertypes": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getSupertypes(p.fqName as string);
+      }
+      case "getSubtypes": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getSubtypes(p.fqName as string);
+      }
+      case "getTransitiveSubtypes": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getTransitiveSubtypes(p.fqName as string);
+      }
+      case "loadHierarchySnapshot": {
+        const { graphDb } = await this.pool.acquire(collection);
+        // HierarchySnapshot is plain Records — JSON-serialisable, no entries() dance.
+        return graphDb.loadHierarchySnapshot();
       }
       case "finalizeReindex":
         // The Qdrant alias swap (adapters/qdrant/aliases.ts:switchAlias) has

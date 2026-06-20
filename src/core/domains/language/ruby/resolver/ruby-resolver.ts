@@ -34,6 +34,7 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
+  type DispatchEdge,
   type FileExtraction,
   type GraphEdges,
   type SymbolResolutionTarget,
@@ -42,23 +43,47 @@ import type { SymbolResolutionStrategy } from "../../../../contracts/types/langu
 import { resolveViaChain } from "../../resolver-chain.js";
 import { ZEITWERK_PREFIX } from "../walker/walker.js";
 import {
+  CONE_MAX_DEFAULT,
+  resolveConstant,
   RubyArRelationGuardSymbolResolutionStrategy,
   RubyBareCallSymbolResolutionStrategy,
+  RubyConeDispatchResolver,
   RubyConstantSymbolResolutionStrategy,
+  RubyDynamicDispatchResolver,
   RubyExplicitRequireSymbolResolutionStrategy,
   RubyLocalTypeSymbolResolutionStrategy,
   RubyReceiverSetDropSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
-  resolveConstant,
+  RubyTableDispatchResolver,
   type ResolverConfig,
 } from "./strategies/index.js";
+
+/** Parse `CODEGRAPH_RB_DYNAMIC_CONFIDENCE` (a float in `(0,1]`); `undefined` on absent/invalid. */
+function resolveDynamicConfidence(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 1 ? parsed : undefined;
+}
+
+/** Parse `CODEGRAPH_RB_CONE_MAX`; fall back to the shared default on absent/invalid. */
+function resolveConeMax(raw: string | undefined): number {
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : CONE_MAX_DEFAULT;
+}
 
 export class RubyCallResolver implements CallResolver {
   readonly language = "ruby";
   private readonly strategies: SymbolResolutionStrategy[];
+  private readonly table: RubyTableDispatchResolver;
+  private readonly cone: RubyConeDispatchResolver;
+  private readonly dynamic: RubyDynamicDispatchResolver;
 
   constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const cfg: ResolverConfig = { mode };
+    const cfg: ResolverConfig = {
+      mode,
+      coneMax: resolveConeMax(process.env.CODEGRAPH_RB_CONE_MAX),
+      dynamicReceiverConfidence: resolveDynamicConfidence(process.env.CODEGRAPH_RB_DYNAMIC_CONFIDENCE),
+    };
     this.strategies = [
       new RubySuperSymbolResolutionStrategy(cfg),
       new RubyLocalTypeSymbolResolutionStrategy(cfg),
@@ -68,10 +93,48 @@ export class RubyCallResolver implements CallResolver {
       new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
       new RubyBareCallSymbolResolutionStrategy(cfg),
     ];
+    this.table = new RubyTableDispatchResolver(cfg);
+    this.cone = new RubyConeDispatchResolver(cfg);
+    this.dynamic = new RubyDynamicDispatchResolver(cfg);
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     return resolveViaChain(this.strategies, call, ctx);
+  }
+
+  /**
+   * Fan-out resolution for a Ruby call, composed in precedence order:
+   *
+   *   1. Registry-literal table (bd tea-rags-mcp-pq02v) — a `CONST[k].new.m`
+   *      site the walker tagged with `call.dispatch` fans out to each value
+   *      class's `#m` (`registry`/`1/N`, or `exact`/`1.0` for a static key).
+   *      Most specific: the call carries a concrete `CONST` + a statically
+   *      complete value set. Returns `[]` for every call without `call.dispatch`.
+   *   2. CHA cone (bd tea-rags-mcp-2jet) — a polymorphic TYPED receiver whose
+   *      static type has subtypes overriding the member fans out to N `cone`
+   *      edges (or one `poly-base`). Returns `[]` for every non-polymorphic
+   *      call.
+   *   3. Dynamic-receiver fan-out (bd tea-rags-mcp-wbj3) — an UNTYPED dynamic
+   *      receiver (`arr.map`, `obj[k].call`) that would otherwise DROP resolves
+   *      via discounted short-name lookup to N `dynamic` edges.
+   *
+   * Table precedes cone/dynamic by specificity, not conflict: a registry
+   * dispatch site is gated on `call.dispatch` (set only for `CONST[k].new.m`),
+   * which the cone/dynamic receiver shapes never carry, so a non-dispatch call
+   * makes the table component return `[]` immediately and the existing
+   * cone→dynamic order is unaffected. Cone precedes dynamic: the cone requires a
+   * `localBinding` (typed receiver) while the dynamic fan-out explicitly excludes
+   * bound receivers, so the two are mutually exclusive by receiver shape. When
+   * ALL THREE return `[]` the provider takes the exact `resolve` chain. An
+   * `external` receiver carries no in-project target on any path, so the
+   * invariant "external never fabricates an out-of-project edge" holds.
+   */
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+    const table = this.table.resolveDispatch(call, ctx);
+    if (table.length > 0) return table;
+    const cone = this.cone.resolveDispatch(call, ctx);
+    if (cone.length > 0) return cone;
+    return this.dynamic.resolveDispatch(call, ctx);
   }
 
   /**

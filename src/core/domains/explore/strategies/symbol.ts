@@ -46,6 +46,7 @@
  */
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import { applyEssentialSignalsToOverlay } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
@@ -75,6 +76,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     essentialKeys: string[],
     private readonly registry: TrajectoryFilterBuilder,
     private readonly input: SymbolSearchInput,
+    private readonly chunkResolver?: SymbolChunkResolver,
   ) {
     super(qdrant, reranker, payloadSignals, essentialKeys);
   }
@@ -108,7 +110,30 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
       ? filterByExactSymbolId(allChunks, this.input.symbol)
       : filterByLastSegment(allChunks, this.input.symbol);
 
-    return resolveSymbols(filtered, this.input.symbol, ctx.metaOnly) as ExploreResult[];
+    const resolved = resolveSymbols(filtered, this.input.symbol, ctx.metaOnly) as ExploreResult[];
+    if (resolved.length > 0) return resolved;
+
+    // 0rskm — Qdrant scroll found no chunk for this symbolId. If codegraph is
+    // wired, the symbol may be collapsed into a covering class chunk that has a
+    // different symbolId. Two-hop: symbol_id → chunk_id → getPoint → result.
+    return this.resolveViaCodegraph(ctx);
+  }
+
+  private async resolveViaCodegraph(ctx: ExploreContext): Promise<ExploreResult[]> {
+    if (!this.chunkResolver) return [];
+    const location = await this.chunkResolver.resolveSymbolChunk(ctx.collectionName, this.input.symbol);
+    if (!location) return [];
+    const point = await this.qdrant.getPoint(ctx.collectionName, location.chunkId);
+    if (!point) return [];
+    const payload = point.payload ? { ...point.payload } : {};
+    if (ctx.metaOnly) delete (payload as { content?: unknown }).content;
+    return [
+      {
+        id: point.id,
+        score: 1,
+        payload,
+      } as ExploreResult,
+    ];
   }
 
   /**

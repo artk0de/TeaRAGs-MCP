@@ -13,6 +13,7 @@
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { CollectionNotFoundError as DomainCollectionNotFoundError } from "../../../domains/explore/errors.js";
@@ -57,6 +58,8 @@ export interface ExploreOpsDeps {
   payloadSignals: PayloadSignalDescriptor[];
   essentialKeys: string[];
   modelGuard?: EmbeddingModelGuard;
+  /** Optional — present when codegraph is wired (bootstrap adapts GraphFacade). */
+  chunkResolver?: SymbolChunkResolver;
 }
 
 export class ExploreOps {
@@ -75,6 +78,7 @@ export class ExploreOps {
   private readonly scrollRankStrategy: BaseExploreStrategy;
   private readonly indexMetricsQuery?: IndexMetricsQuery;
   private readonly recomputeService?: StatsRecomputeService;
+  private readonly chunkResolver?: SymbolChunkResolver;
 
   constructor(deps: ExploreOpsDeps) {
     this.qdrant = deps.qdrant;
@@ -87,6 +91,7 @@ export class ExploreOps {
     this.payloadSignals = deps.payloadSignals;
     this.essentialKeys = deps.essentialKeys;
     this.modelGuard = deps.modelGuard;
+    this.chunkResolver = deps.chunkResolver;
     this.vectorStrategy = createExploreStrategy(
       "vector",
       deps.qdrant,
@@ -266,6 +271,7 @@ export class ExploreOps {
         language: request.language,
         pathPattern: request.pathPattern,
       },
+      this.chunkResolver,
     );
   }
 
