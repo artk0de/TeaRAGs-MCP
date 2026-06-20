@@ -137,3 +137,33 @@ test asserts set-equality so the relocation is provably lossless.
   for now; per-language relocation is a separate follow-up if wanted.
 - Per-language test-DSL chunking (`test-dsl-filter.ts`, `rspec-scope-chunker`) —
   unrelated (chunking, not path classification).
+
+## Implemented design (supersedes Options A and B above)
+
+A hard layer constraint surfaced during implementation and decided the mechanism:
+**`core/infra` imports NOTHING** — not `contracts`, not `domains` (that is why
+`FileClassification` is duplicated in `classify.ts` rather than imported from
+`contracts`). The test classifier lives in `infra/file-classification`, so:
+
+- **Option A** (patterns in `domains/language`, injected via DI) — infeasible
+  without `workerData` plumbing AND a stateful module-global configured in every
+  process context (main + enrichment worker + chunker worker). The enrichment
+  worker loads the trajectory provider, not `domains/language`, so it cannot
+  in-thread import an aggregator; any unconfigured context silently falls back
+  and misclassifies test files. Fragile.
+- **Option B** (patterns in `contracts`) — infeasible: `infra/classify.ts`
+  cannot import `contracts` (foundation imports nothing).
+
+**Therefore patterns stay in `infra/file-classification`, organized per code
+language.** `TEST_PATTERNS_BY_LANGUAGE: Record<lang, string[]>` (keys: the seven
+code languages + a language-agnostic `common` directory bucket) is the single
+source; the flat `TEST_PATTERNS` is the derived deduped union. This delivers the
+per-language ownership/grouping goal, reachable by every consumer (classifier,
+codegraph exclusion, both workers via the existing infra import), with **zero
+plumbing, no module-global, no cross-context configuration**. Consumers
+(`classify.ts`, `codegraph/exclusion.ts`) are unchanged — they keep importing the
+flat `TEST_PATTERNS`, whose content is provably identical to before (lossless
+invariant test). Phase 2 (byLanguage metrics) reads `TEST_PATTERNS_BY_LANGUAGE`
+when a per-language view is needed.
+
+`bash`/`markdown` contribute no buckets (no test-file convention / doc language).
