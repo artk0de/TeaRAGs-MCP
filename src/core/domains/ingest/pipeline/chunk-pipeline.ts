@@ -17,6 +17,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
 import { PipelineNotStartedError } from "../errors.js";
+import { classifyEmbeddingQuarantinable, type QuarantineStore } from "../sync/index.js";
 import { AdaptiveBatchSizer } from "./adaptive-batch-sizer.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { pipelineLog } from "./infra/debug-logger.js";
@@ -71,6 +72,7 @@ export class ChunkPipeline {
   private pendingBatches: Promise<BatchResult>[] = [];
 
   private onBatchUpsertedCb?: (items: ChunkItem[]) => void;
+  private quarantineStore?: QuarantineStore;
   private isRunning = false;
   private readonly stats = {
     chunksProcessed: 0,
@@ -140,6 +142,15 @@ export class ChunkPipeline {
    */
   setOnBatchUpserted(cb: (items: ChunkItem[]) => void): void {
     this.onBatchUpsertedCb = cb;
+  }
+
+  /**
+   * Wire poison-pill quarantine. When set, a chunk whose embedding fails with a
+   * quarantinable error (context overflow, 4xx) is isolated from its batch and
+   * its file recorded — instead of aborting the whole indexing pass.
+   */
+  setQuarantineStore(store: QuarantineStore): void {
+    this.quarantineStore = store;
   }
 
   /**
@@ -318,7 +329,8 @@ export class ChunkPipeline {
       pipelineLog.batchStart(ctx, batch.id, batch.items.length);
 
       // 1. Extract texts for embedding
-      const texts = batch.items.map((item) => item.chunk.content);
+      let { items } = batch;
+      const texts = items.map((item) => item.chunk.content);
 
       // 2. Generate embeddings
       const embedStart = Date.now();
@@ -326,14 +338,23 @@ export class ChunkPipeline {
       try {
         embeddings = await this.embeddings.embedBatch(texts);
       } catch (error) {
-        throw enrichContextOverflowError(error, batch.items);
+        const wrapped = enrichContextOverflowError(error, items);
+        // Quarantinable embedding failure (context overflow, 4xx): isolate the
+        // poison chunk(s) from the batch instead of aborting the whole pass.
+        const quarantinable = this.quarantineStore ? classifyEmbeddingQuarantinable(wrapped, "") : null;
+        if (!quarantinable) throw wrapped;
+        ({ items, embeddings } = await this.isolateEmbeddingFailures(items));
+        if (items.length === 0) {
+          // Every chunk in the batch was quarantined — nothing left to store.
+          return;
+        }
       }
       const embedDuration = Date.now() - embedStart;
       pipelineLog.embedCall(ctx, texts.length, embedDuration);
       pipelineLog.addStageTime("embed", embedDuration);
 
       // 3. Build points
-      const points = batch.items.map((item, idx) => ({
+      const points = items.map((item, idx) => ({
         id: item.chunkId,
         vector: embeddings[idx].embedding,
         payload: this.payloadBuilder.buildPayload(item.chunk, item.codebasePath),
@@ -346,7 +367,7 @@ export class ChunkPipeline {
       if (this.enableHybrid) {
         const hybridPoints = points.map((point, idx) => ({
           ...point,
-          sparseVector: generateSparseVector(batch.items[idx].chunk.content),
+          sparseVector: generateSparseVector(items[idx].chunk.content),
         }));
         try {
           await this.qdrant.addPointsWithSparse(this.collectionName, hybridPoints);
@@ -375,8 +396,43 @@ export class ChunkPipeline {
       }
 
       // 5. Notify callback after successful upsert (for streaming enrichment)
-      this.onBatchUpsertedCb?.(batch.items);
+      this.onBatchUpsertedCb?.(items);
     };
+  }
+
+  /**
+   * Re-embed a failed batch one chunk at a time to find the poison chunk(s).
+   * Chunks whose solo embedding fails with a quarantinable error have their
+   * file recorded in the quarantine and are dropped; the rest are returned as
+   * survivors with their embeddings. A transient solo failure is rethrown so
+   * the WorkerPool retries the whole batch.
+   */
+  private async isolateEmbeddingFailures(
+    items: ChunkItem[],
+  ): Promise<{ items: ChunkItem[]; embeddings: Awaited<ReturnType<EmbeddingProvider["embedBatch"]>> }> {
+    const survivors: ChunkItem[] = [];
+    const survivorEmbeddings: Awaited<ReturnType<EmbeddingProvider["embedBatch"]>> = [];
+    for (const item of items) {
+      try {
+        const [embedding] = await this.embeddings.embedBatch([item.chunk.content]);
+        survivors.push(item);
+        survivorEmbeddings.push(embedding);
+      } catch (error) {
+        const relativePath = this.toRelativePath(item);
+        const quarantinable = classifyEmbeddingQuarantinable(error, relativePath);
+        if (!quarantinable) throw error;
+        await this.quarantineStore?.markFailed(relativePath, quarantinable);
+        this.stats.errors++;
+      }
+    }
+    return { items: survivors, embeddings: survivorEmbeddings };
+  }
+
+  /** Convert a chunk's absolute filePath to a path relative to its codebase root. */
+  private toRelativePath(item: ChunkItem): string {
+    const abs = item.chunk.metadata.filePath;
+    const base = item.codebasePath;
+    return abs.startsWith(base) ? abs.slice(base.length + 1) : abs;
   }
 
   /**

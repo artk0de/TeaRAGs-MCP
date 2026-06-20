@@ -336,6 +336,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       changedPaths,
       chunkSizeOverride,
     );
+    // Embed-phase poison-pill isolation (shares the read/parse quarantine store).
+    pCtx.chunkPipeline.setQuarantineStore(quarantineStore);
     const chunkMap = new Map<string, ChunkLookupEntry[]>();
 
     const filesToDelete = [...changes.modified, ...changes.deleted, ...changes.newlyIgnored];

@@ -20,8 +20,8 @@ import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
 import type { FileScanner } from "../pipeline/scanner.js";
-import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 import { QuarantineStore } from "../sync/index.js";
+import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 import { computeNewVersion } from "./version-resolver.js";
 
 /**
@@ -91,6 +91,9 @@ export class IndexPipeline extends BaseIndexingPipeline {
       }
 
       const ctx = this.initProcessing(setup.targetCollection, absolutePath, scanner, undefined, overrides?.chunkSize);
+      // Embed-phase poison-pill isolation: an oversized chunk quarantines its
+      // file instead of aborting the whole pass.
+      ctx.chunkPipeline.setQuarantineStore(quarantineStore);
 
       const heartbeat = new HeartbeatGuard({
         start: () => {
