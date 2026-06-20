@@ -222,6 +222,10 @@ export abstract class BaseIndexingPipeline {
         qdrantUrl: this.qdrant.url,
         ...(embeddingBaseUrl !== undefined ? { embeddingBaseUrl } : {}),
         ...(embeddingFallbackUrl !== undefined ? { embeddingFallbackUrl } : {}),
+        // Codegraph is enabled iff the facade wired its deps (remover omitted
+        // when CODEGRAPH_ENABLED is off — see RegistryDeps doc). prime reads
+        // this back to re-apply the flag, symmetric with the embedding URLs.
+        codegraphEnabled: this.codegraphRemover !== undefined,
         indexedAt: new Date().toISOString(),
         teaRagsVersion: this.teaRagsVersion,
         chunksCount,

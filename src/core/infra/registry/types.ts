@@ -24,6 +24,17 @@ export interface CollectionEntry {
    * none was configured at index time.
    */
   embeddingFallbackUrl?: string;
+  /**
+   * Whether the codegraph trajectory family (CODEGRAPH_ENABLED) was active at
+   * index time. Codegraph signals land in the payload only when enabled, and
+   * the prime CLI must declare the matching signal descriptors or it reports a
+   * phantom "removed fields" schema drift. The MCP server's env carries the
+   * flag, but the prime hook runs in a fresh shell without it — so prime reads
+   * this back register-first and re-applies CODEGRAPH_ENABLED before building
+   * the composition. Same registry-first lookup as `embeddingBaseUrl`. Optional
+   * for backward compatibility with pre-existing registry entries.
+   */
+  codegraphEnabled?: boolean;
   indexedAt: string;
   teaRagsVersion: string;
   chunksCount: number;

@@ -90,6 +90,15 @@ export async function runPrime(input: { path?: string; project?: string }): Prom
   if (registryEntry?.embeddingFallbackUrl) {
     process.env.EMBEDDING_FALLBACK_URL = registryEntry.embeddingFallbackUrl;
   }
+  // Codegraph is gated by CODEGRAPH_ENABLED, read from env at parseAppConfig
+  // time. When the project was indexed with codegraph (the MCP server's env
+  // carried the flag), re-apply it here so the prime composition declares the
+  // codegraph signal descriptors and does not report a phantom "removed
+  // fields" schema drift. Symmetric with the embedding URL overrides above;
+  // legacy entries (field undefined) keep the shell's env untouched.
+  if (registryEntry?.codegraphEnabled) {
+    process.env.CODEGRAPH_ENABLED = "true";
+  }
   const config = parseAppConfig();
   // Registry-first: prefer the registered qdrantUrl (the Qdrant the project was
   // indexed against). Fall back to heuristic only when the registry entry has

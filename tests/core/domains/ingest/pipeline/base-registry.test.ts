@@ -110,6 +110,22 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
     expect(entry!.teaRagsVersion).toMatch(/^\d+\.\d+\.\d+/);
   });
 
+  it("records codegraphEnabled=false when indexed without codegraph deps", async () => {
+    // The default IngestFacade wires no codegraph remover/lister, so the
+    // pipeline indexes without the codegraph trajectory family. The registry
+    // entry must reflect that — prime reads codegraphEnabled back to decide
+    // whether to declare codegraph signal descriptors (registry-first parity
+    // with embeddingBaseUrl).
+    await createTestFile(codebaseDir, "cg.ts", "export const x = 1;");
+    await ingest.indexCodebase(codebaseDir);
+    const status = await ingest.getIndexStatus(codebaseDir);
+    const collectionName = status.collectionName!;
+
+    const entry = registry.get(collectionName);
+    expect(entry).not.toBeNull();
+    expect(entry!.codegraphEnabled).toBe(false);
+  });
+
   it("preserves sticky name on reindex of same collection", async () => {
     await createTestFile(codebaseDir, "a.ts", "export const x = 1;");
     await ingest.indexCodebase(codebaseDir);
