@@ -11,10 +11,11 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import { StatsCache } from "../../../infra/stats-cache.js";
-import type { IndexStatus } from "../../../types.js";
+import type { CodegraphResolveSummary, IndexStatus } from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../constants.js";
 import { QuarantineStore } from "../sync/index.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
@@ -28,7 +29,65 @@ export class StatusModule {
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly snapshotDir?: string,
+    private readonly codegraphPool?: GraphDbClientPool,
   ) {}
+
+  /**
+   * tea-rags-mcp-ykj7 — post-hoc codegraph resolve-quality for an indexed
+   * collection, aggregated from the persisted `cg_run_stats` table. Returns
+   * `undefined` (non-fatal) when codegraph is disabled, the collection has no
+   * codegraph DB on disk, the table is empty, or any read fails — get_index_status
+   * must never break because codegraph state is absent. The existence guard
+   * (`listCollectionDbNames`, a dir read) prevents a status call from creating a
+   * phantom codegraph DB for non-codegraph collections.
+   */
+  private async readCodegraphResolve(collection: string): Promise<CodegraphResolveSummary | undefined> {
+    if (!this.codegraphPool) return undefined;
+    // The codegraph DB is keyed by the VERSIONED collection (`code_…_vN`), but
+    // the status path usually passes the base/alias name. Resolve to the on-disk
+    // DB name WITHOUT creating one — `listCollectionDbNames` is a dir read, so a
+    // status call never spins up a phantom codegraph DB for a Qdrant-only
+    // collection. Prefer the exact name, then the Qdrant alias target, then the
+    // sole version; bail (undefined) on ambiguity rather than guessing.
+    const base = collection.replace(/_v\d+$/, "");
+    const dbNames = this.codegraphPool.listCollectionDbNames(base);
+    if (dbNames.length === 0) return undefined;
+    let target: string | undefined;
+    if (dbNames.includes(collection)) {
+      target = collection;
+    } else {
+      const aliasTarget = await this.getAliasTarget(base).catch(() => undefined);
+      target =
+        aliasTarget && dbNames.includes(aliasTarget) ? aliasTarget : dbNames.length === 1 ? dbNames[0] : undefined;
+    }
+    if (!target) return undefined;
+    try {
+      const handle = await this.codegraphPool.acquireReader(target);
+      try {
+        const rows = await handle.graphDb.getRunStats();
+        if (rows.length === 0) return undefined;
+        let attempted = 0;
+        let resolved = 0;
+        let externalSkipped = 0;
+        for (const r of rows) {
+          attempted += r.attempted;
+          resolved += r.resolved;
+          externalSkipped += r.externalSkipped;
+        }
+        const denominator = Math.max(1, attempted - externalSkipped);
+        return {
+          resolveSuccessRate: attempted === 0 ? 0 : resolved / denominator,
+          callsAttempted: attempted,
+          callsResolved: resolved,
+          callsExternalSkipped: externalSkipped,
+        };
+      } finally {
+        await handle.graphDb.close();
+      }
+    } catch {
+      return undefined;
+    }
+  }
 
   /**
    * Get indexing status for a codebase.
@@ -232,6 +291,7 @@ export class StatusModule {
         sparseVersion,
         lastUpdated: marker.completedAt ? new Date(marker.completedAt) : undefined,
         enrichment,
+        codegraphResolve: await this.readCodegraphResolve(sourceCollection),
         quarantine: await this.loadQuarantineSummary(reportedName),
       };
     }
@@ -245,6 +305,7 @@ export class StatusModule {
         chunksCount: actualChunksCount,
         qdrantUrl: this.qdrant.url,
         sparseVersion,
+        codegraphResolve: await this.readCodegraphResolve(sourceCollection),
       };
     }
 

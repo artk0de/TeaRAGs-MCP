@@ -110,6 +110,49 @@ describe("StatusModule", () => {
         expect(status.chunksCount).toBeGreaterThan(0);
       });
 
+      // tea-rags-mcp-ykj7 — get_index_status surfaces post-hoc codegraph
+      // resolve-quality read from cg_run_stats, with the external-library calls
+      // excluded from the rate denominator. The codegraph pool is injected into
+      // the extracted StatusModule (codegraph is disabled in the default test
+      // facade, so without this mock the field is correctly omitted).
+      it("surfaces codegraphResolve aggregated from cg_run_stats (external excluded)", async () => {
+        await createTestFile(codebaseDir, "calc.ts", "export function run(): number {\n  return Math.max(1, 2);\n}\n");
+        await ingest.indexCodebase(codebaseDir);
+
+        const runStatsRows = [
+          { receiverKind: "constant", attempted: 100, resolved: 60, externalSkipped: 30 },
+          { receiverKind: "dynamic", attempted: 20, resolved: 0, externalSkipped: 20 },
+        ];
+        // Inject a codegraph pool into the StatusModule (extracted class). The
+        // status path passes the BASE/alias collection name, so the DB name is
+        // resolved from listCollectionDbNames (here: a single versioned DB) —
+        // exercises the base→versioned resolution that the live get_index_status
+        // bug needed.
+        (ingest as any).indexingOps.status.codegraphPool = {
+          listCollectionDbNames: () => ["code_cg_v1"],
+          acquireReader: async () => ({
+            graphDb: { getRunStats: async () => runStatsRows, close: async () => undefined },
+          }),
+        };
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        // attempted=120, resolved=60, externalSkipped=50 → denom=max(1,120-50)=70.
+        expect(status.codegraphResolve).toEqual({
+          callsAttempted: 120,
+          callsResolved: 60,
+          callsExternalSkipped: 50,
+          resolveSuccessRate: 60 / 70,
+        });
+      });
+
+      it("omits codegraphResolve when no codegraph pool is wired", async () => {
+        await createTestFile(codebaseDir, "plain.ts", "export const X = 1;\n");
+        await ingest.indexCodebase(codebaseDir);
+        const status = await ingest.getIndexStatus(codebaseDir);
+        expect(status.codegraphResolve).toBeUndefined();
+      });
+
       it("should include lastUpdated timestamp after indexing", async () => {
         await createTestFile(
           codebaseDir,

@@ -73,26 +73,26 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
   });
 
   describe("recordRunStats / getRunStats", () => {
-    it("round-trips per-receiver-kind rows ordered by kind", async () => {
+    it("round-trips per-receiver-kind rows ordered by kind (incl. externalSkipped, ykj7)", async () => {
       await db.recordRunStats([
-        { receiverKind: "constant", attempted: 100, resolved: 90 },
-        { receiverKind: "bareCall", attempted: 50, resolved: 10 },
+        { receiverKind: "constant", attempted: 100, resolved: 90, externalSkipped: 7 },
+        { receiverKind: "bareCall", attempted: 50, resolved: 10, externalSkipped: 0 },
       ]);
       const rows = await db.getRunStats();
       expect(rows).toEqual([
-        { receiverKind: "bareCall", attempted: 50, resolved: 10 },
-        { receiverKind: "constant", attempted: 100, resolved: 90 },
+        { receiverKind: "bareCall", attempted: 50, resolved: 10, externalSkipped: 0 },
+        { receiverKind: "constant", attempted: 100, resolved: 90, externalSkipped: 7 },
       ]);
     });
 
     it("overwrites the whole table each run (no stale rows from prior run)", async () => {
       await db.recordRunStats([
-        { receiverKind: "constant", attempted: 100, resolved: 90 },
-        { receiverKind: "dynamic", attempted: 30, resolved: 0 },
+        { receiverKind: "constant", attempted: 100, resolved: 90, externalSkipped: 5 },
+        { receiverKind: "dynamic", attempted: 30, resolved: 0, externalSkipped: 25 },
       ]);
-      await db.recordRunStats([{ receiverKind: "constant", attempted: 120, resolved: 118 }]);
+      await db.recordRunStats([{ receiverKind: "constant", attempted: 120, resolved: 118, externalSkipped: 1 }]);
       const rows = await db.getRunStats();
-      expect(rows).toEqual([{ receiverKind: "constant", attempted: 120, resolved: 118 }]);
+      expect(rows).toEqual([{ receiverKind: "constant", attempted: 120, resolved: 118, externalSkipped: 1 }]);
     });
 
     it("returns empty array before any run is recorded", async () => {

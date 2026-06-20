@@ -37,7 +37,10 @@ describe("006 cg edge_kind/confidence + cg_run_stats migration (bd 2jet/j431)", 
     const runStatsCols = await db.queryAll<{ column_name: string }>(
       "SELECT column_name FROM information_schema.columns WHERE table_name = 'cg_run_stats'",
     );
-    expect(runStatsCols.map((c) => c.column_name).sort()).toEqual(["attempted", "receiver_kind", "resolved"].sort());
+    // external_skipped added by migration 008 (tea-rags-mcp-ykj7).
+    expect(runStatsCols.map((c) => c.column_name).sort()).toEqual(
+      ["attempted", "external_skipped", "receiver_kind", "resolved"].sort(),
+    );
   });
 
   it("defaults edge_kind='exact' and confidence=1.0 for inserted method edges", async () => {

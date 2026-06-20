@@ -531,6 +531,21 @@ export interface CallResolver {
    * inheritance edges, which is exactly why Ruby implements this method.
    */
   resolveFileEdges?: (extraction: FileExtraction, ctx: CallContext) => GraphEdges["fileEdges"];
+  /**
+   * Optional: does this UNRESOLVED call target an external library / runtime
+   * import rather than an in-project resolver miss? (tea-rags-mcp-ykj7). The
+   * codegraph provider consults it ONLY for calls `resolve`/`resolveDispatch`
+   * could not pin to a target, so it never reclassifies a resolved call.
+   * Returning `true` excludes the call from the `resolveSuccessRate` denominator
+   * (counted separately as `callsExternalSkipped`), so the metric reflects the
+   * resolver's capability on PROJECT-INTERNAL calls rather than the unresolvable
+   * external-library noise (`Math.max`, `fs.readFile`, `Net::HTTP.get`, …).
+   *
+   * Mirrors `LanguageSymbolResolver.targetsExternalImport`. Resolvers that omit
+   * it keep every unresolved call in the denominator (conservative — never
+   * over-shrinks).
+   */
+  targetsExternalImport?: (call: CallRef, ctx: CallContext) => boolean;
 }
 
 /**
@@ -926,6 +941,15 @@ export interface ResolveRunStatsRow {
   receiverKind: string;
   attempted: number;
   resolved: number;
+  /**
+   * tea-rags-mcp-ykj7 — of the `attempted − resolved` misses in this bucket, how
+   * many the resolver classified as external-library / runtime targets
+   * (`Math.max`, `fs.readFile`, `Net::HTTP.get`). Excluded from the
+   * resolveSuccessRate denominator so the rate measures PROJECT-INTERNAL
+   * resolver capability. Defaults to 0 for pre-ykj7 rows / languages without an
+   * external classifier.
+   */
+  externalSkipped: number;
 }
 
 export interface GraphEdges {

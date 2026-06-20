@@ -895,11 +895,10 @@ export class DuckDbGraphClient implements GraphDbClient {
       try {
         await this.run("DELETE FROM cg_run_stats");
         for (const r of rows) {
-          await this.run("INSERT INTO cg_run_stats (receiver_kind, attempted, resolved) VALUES (?, ?, ?)", [
-            r.receiverKind,
-            r.attempted,
-            r.resolved,
-          ]);
+          await this.run(
+            "INSERT INTO cg_run_stats (receiver_kind, attempted, resolved, external_skipped) VALUES (?, ?, ?, ?)",
+            [r.receiverKind, r.attempted, r.resolved, r.externalSkipped],
+          );
         }
         await this.exec("COMMIT");
       } catch (err) {
@@ -910,13 +909,17 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async getRunStats(): Promise<ResolveRunStatsRow[]> {
-    const rows = await this.queryAll<{ receiver_kind: string; attempted: number | bigint; resolved: number | bigint }>(
-      "SELECT receiver_kind, attempted, resolved FROM cg_run_stats ORDER BY receiver_kind",
-    );
+    const rows = await this.queryAll<{
+      receiver_kind: string;
+      attempted: number | bigint;
+      resolved: number | bigint;
+      external_skipped: number | bigint;
+    }>("SELECT receiver_kind, attempted, resolved, external_skipped FROM cg_run_stats ORDER BY receiver_kind");
     return rows.map((r) => ({
       receiverKind: r.receiver_kind,
       attempted: Number(r.attempted),
       resolved: Number(r.resolved),
+      externalSkipped: Number(r.external_skipped),
     }));
   }
 

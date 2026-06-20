@@ -113,7 +113,7 @@ export class IndexingOps {
     this.codegraphPool = deps.codegraphPool;
     this.healthCheckRetryAttempts = deps.healthCheckRetryAttempts ?? DEFAULT_HEALTH_CHECK_RETRY_ATTEMPTS;
     this.healthCheckRetryDelayMs = deps.healthCheckRetryDelayMs ?? DEFAULT_HEALTH_CHECK_RETRY_DELAY_MS;
-    this.status = new StatusModule(deps.qdrant, deps.snapshotDir);
+    this.status = new StatusModule(deps.qdrant, deps.snapshotDir, deps.codegraphPool);
   }
 
   /** Index a codebase — first index, force re-index, or incremental fallback. */

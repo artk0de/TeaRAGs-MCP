@@ -187,6 +187,49 @@ describe("CodegraphEnrichmentProvider", () => {
     expect(provider.getRunMetrics()).toBeUndefined();
   });
 
+  // tea-rags-mcp-ykj7 — external-library calls are excluded from the
+  // resolveSuccessRate denominator. `console.log` is an ECMAScript ambient
+  // global the TS resolver flags via `targetsExternalImport`; it counts toward
+  // callsAttempted + callsExternalSkipped but NOT the rate denominator.
+  it("getRunMetrics excludes external-library calls from resolveSuccessRate", async () => {
+    const sink = provider.asExtractionSink();
+    await sink.write({
+      relPath: "src/foo.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "Foo.bar", scope: ["Foo"], calls: [] }],
+      fileScope: [],
+    });
+    await sink.write({
+      relPath: "src/main.ts",
+      language: "typescript",
+      imports: [{ importText: "./foo", startLine: 1 }],
+      chunks: [
+        {
+          symbolId: "main",
+          scope: [],
+          calls: [
+            { callText: "Foo.bar()", receiver: "Foo", member: "bar", startLine: 4 },
+            // Ambient global → external; skipped from the denominator.
+            { callText: "console.log(x)", receiver: "console", member: "log", startLine: 5 },
+          ],
+        },
+      ],
+      fileScope: [],
+    });
+    await sink.finish();
+
+    const m = provider.getRunMetrics() as {
+      resolveSuccessRate: number;
+      callsExternalSkipped: number;
+    };
+    expect(m).toBeDefined();
+    // 2 attempted, 1 external skipped → denominator = max(1, 2 - 1) = 1.
+    // 1 resolved / 1 = 1.0 (NOT the old noisy 1/2 = 0.5).
+    expect(m.callsExternalSkipped).toBe(1);
+    expect(m.resolveSuccessRate).toBeCloseTo(1.0, 5);
+  });
+
   // Slice 2 / A4a — deletion hook. When sync notices a file is gone the
   // coordinator forwards the relPath to every provider implementing
   // handleDeletedPaths. Codegraph must drop edges from DuckDB + symbol

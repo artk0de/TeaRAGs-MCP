@@ -92,4 +92,28 @@ export class PythonCallResolver implements CallResolver {
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
     return this.cone.resolveDispatch(call, ctx);
   }
+
+  /**
+   * tea-rags-mcp-ykj7 — external-import classifier for an UNRESOLVED call.
+   * Fires for a QUALIFIED module access (`os.path.join`, `numpy.linalg.norm`)
+   * whose receiver root segment matches a NON-RELATIVE import (stdlib /
+   * third-party). Conservative by construction:
+   *   - single-segment receivers (`os.getcwd`) never reach here unresolved —
+   *     the `importMatch` strategy already emits a file-only edge for them;
+   *   - bare calls (no receiver) cannot be told apart from project free
+   *     functions, so they stay attempted-unresolved;
+   *   - a receiver rooted at a RELATIVE import is in-project.
+   */
+  targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
+    const { receiver } = call;
+    if (!receiver?.includes(".")) return false;
+    const root = receiver.slice(0, receiver.indexOf("."));
+    for (const imp of ctx.imports) {
+      if (imp.importText.startsWith(".")) continue; // relative → in-project
+      const head = imp.importText.split(/\s+as\s+/)[0].trim();
+      const headRoot = head.split(".")[0];
+      if (headRoot === root) return true;
+    }
+    return false;
+  }
 }
