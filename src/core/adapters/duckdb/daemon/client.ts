@@ -12,6 +12,7 @@ import type {
   InheritanceEdge,
   RelPath,
   ResolveRunStatsRow,
+  SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
@@ -185,6 +186,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async upsertSymbols(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {
     await this.call("upsertSymbols", { relPath, definitions });
+  }
+
+  async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
+    await this.call("updateSymbolChunkIds", { relPath, chunkIds: [...chunkIds.entries()] });
+  }
+
+  async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
+    return (await this.call("findSymbolChunk", { symbolId })) as SymbolChunkLocation | null;
   }
 
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {

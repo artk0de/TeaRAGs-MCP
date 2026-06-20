@@ -220,19 +220,50 @@ describe("DaemonGraphDbClient", () => {
     await client.upsertSymbols("a.ts", [
       { symbolId: "A#run", fqName: "A.run", shortName: "run", relPath: "a.ts", scope: [] },
     ]);
+    await client.updateSymbolChunkIds("a.ts", new Map([["A#run", "chunk_abc"]]));
     await client.replaceCycles("file", [["a.ts", "b.ts"]]);
     await client.replacePageRanks(new Map([["A#run", 0.5]]));
     await client.close();
 
-    expect(seen.map((r) => r.op)).toEqual(["removeFile", "upsertSymbols", "replaceCycles", "replacePageRanks"]);
+    expect(seen.map((r) => r.op)).toEqual([
+      "removeFile",
+      "upsertSymbols",
+      "updateSymbolChunkIds",
+      "replaceCycles",
+      "replacePageRanks",
+    ]);
     expect(seen.every((r) => (r.params as { collection: string }).collection === "code_w_v1")).toBe(true);
     const upsert = seen.find((r) => r.op === "upsertSymbols");
     expect((upsert?.params as { relPath: string }).relPath).toBe("a.ts");
+    const chunkIds = seen.find((r) => r.op === "updateSymbolChunkIds");
+    expect(chunkIds?.params).toMatchObject({ relPath: "a.ts", chunkIds: [["A#run", "chunk_abc"]] });
     const cycles = seen.find((r) => r.op === "replaceCycles");
     expect(cycles?.params).toMatchObject({ scope: "file", sccs: [["a.ts", "b.ts"]] });
     // replacePageRanks Map serialises as entries over the wire.
     const ranks = seen.find((r) => r.op === "replacePageRanks");
     expect((ranks?.params as { ranks: [string, number][] }).ranks).toEqual([["A#run", 0.5]]);
+  });
+
+  it("findSymbolChunk proxies through the daemon socket and resolves the result", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      if (r.op === "findSymbolChunk") {
+        return { relPath: "a.ts", chunkId: "chunk_abc" };
+      }
+      return null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const result = await client.findSymbolChunk("A#run");
+    await client.close();
+
+    expect(result).toEqual({ relPath: "a.ts", chunkId: "chunk_abc" });
+    const req = seen.find((r) => r.op === "findSymbolChunk");
+    expect((req?.params as { symbolId: string }).symbolId).toBe("A#run");
   });
 
   it("streamAdjacency STILL throws UnsupportedDaemonReadError (daemon-internal, never proxied)", async () => {

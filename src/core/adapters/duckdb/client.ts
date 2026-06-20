@@ -35,6 +35,7 @@ import type {
   MethodEdgeKind,
   RelPath,
   ResolveRunStatsRow,
+  SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
 } from "../../contracts/types/codegraph.js";
@@ -697,6 +698,35 @@ export class DuckDbGraphClient implements GraphDbClient {
       shortName: row.short_name,
       scope: parseScope(row.scope_json),
     }));
+  }
+
+  async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
+    if (chunkIds.size === 0) return;
+    return this.serialize(async () => {
+      await this.exec("BEGIN");
+      try {
+        for (const [symbolId, chunkId] of chunkIds) {
+          await this.run("UPDATE cg_symbols SET chunk_id = ? WHERE rel_path = ? AND symbol_id = ?", [
+            chunkId,
+            relPath,
+            symbolId,
+          ]);
+        }
+        await this.exec("COMMIT");
+      } catch (err) {
+        await this.exec("ROLLBACK");
+        throw err;
+      }
+    });
+  }
+
+  async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
+    const rows = await this.queryAll<{ rel_path: string; chunk_id: string | null }>(
+      "SELECT rel_path, chunk_id FROM cg_symbols WHERE symbol_id = ? AND chunk_id IS NOT NULL LIMIT 1",
+      [symbolId],
+    );
+    if (rows.length === 0) return null;
+    return { relPath: rows[0].rel_path, chunkId: rows[0].chunk_id as string };
   }
 
   async getFanIn(relPath: RelPath): Promise<number> {

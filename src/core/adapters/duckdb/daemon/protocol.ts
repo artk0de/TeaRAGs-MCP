@@ -24,6 +24,7 @@ export type DaemonOp =
   | "removeFile"
   | "removeSymbolsForFile"
   | "upsertSymbols"
+  | "updateSymbolChunkIds"
   | "replaceCycles"
   | "replacePageRanks"
   | "checkpoint"
@@ -47,6 +48,7 @@ export type DaemonOp =
   | "findCycles"
   | "listAdjacency"
   | "getPageRank"
+  | "findSymbolChunk"
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──
   | "getSupertypes"
   | "getSubtypes"
@@ -61,6 +63,7 @@ export interface DaemonRequest {
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
     | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut
     | { collection: string; relPath: RelPath; definitions: SymbolDefinition[] } // upsertSymbols
+    | { collection: string; relPath: RelPath; chunkIds: [string, string][] } // updateSymbolChunkIds
     | { collection: string; relPath: RelPath; maxDepth?: number } // getTransitiveImpact
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
     | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount | getPageRank

@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
-import type { InheritanceEdgeRow, SymbolDefinition } from "../../../../src/core/contracts/types/codegraph.js";
+import type {
+  InheritanceEdgeRow,
+  RelPath,
+  SymbolDefinition,
+  SymbolId,
+} from "../../../../src/core/contracts/types/codegraph.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/infra/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/infra/migration/database/runner.js";
 
@@ -129,5 +134,101 @@ describe("DuckDbGraphClient — poly-base query-time expansion (2jet-E)", () => 
   it("getCallers of the base still returns the direct poly-base caller", async () => {
     const callers = await db.getCallers("Agent#check");
     expect(callers.map((c) => c.sourceSymbolId)).toContain("Caller#run");
+  });
+
+  it("dedupes a caller that appears both directly and via poly-base expansion", async () => {
+    // Caller#run already has a poly-base edge to Agent#check (from beforeEach).
+    // Now also add a DIRECT edge from Caller#run to Sub1#check with the SAME
+    // callExpression. getCallers("Sub1#check") will surface Caller#run in
+    // both the direct query AND the poly-base expansion path (because Sub1
+    // inherits Agent). dedupeCallerEdges must collapse them to one result.
+    await db.upsertFile(
+      { relPath: "caller.rb", language: "ruby" },
+      {
+        fileEdges: [],
+        methodEdges: [
+          {
+            sourceSymbolId: "Caller#run",
+            targetSymbolId: "Agent#check",
+            targetRelPath: "agent.rb",
+            callExpression: "agent.check",
+            edgeKind: "poly-base",
+            confidence: 1,
+          },
+          {
+            sourceSymbolId: "Caller#run",
+            targetSymbolId: "Sub1#check",
+            targetRelPath: "sub1.rb",
+            callExpression: "agent.check",
+          },
+        ],
+      },
+    );
+    const callers = await db.getCallers("Sub1#check" as SymbolId);
+    const fromCaller = callers.filter((c) => c.sourceSymbolId === "Caller#run");
+    // Must appear exactly once — not duplicated even though two query paths surface it.
+    expect(fromCaller).toHaveLength(1);
+  });
+});
+
+describe("DuckDbGraphClient — poly-base expansion with bare top-level target (L838)", () => {
+  let dir: string;
+  let db: DuckDbGraphClient;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), "cg-polybase-bare-"));
+    db = new DuckDbGraphClient({ path: join(dir, "g.duckdb") });
+    await db.init();
+    await runMigrations(db, DATABASE_MIGRATIONS);
+  });
+
+  afterEach(async () => {
+    await db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("getCallees returns just the base edge when poly-base target has no member separator", async () => {
+    // A poly-base edge whose targetSymbolId is a bare top-level name (no '#' or '.')
+    // cannot be expanded — splitMethodSymbol returns null and expandPolyBaseCallees
+    // returns [] immediately (L838). The base edge itself must still be returned.
+    await db.upsertSymbols("top.rb" as RelPath, [
+      {
+        symbolId: "TopLevelFunction" as SymbolId,
+        fqName: "TopLevelFunction",
+        shortName: "TopLevelFunction",
+        relPath: "top.rb" as RelPath,
+        scope: [],
+      },
+    ]);
+    await db.upsertSymbols("caller.rb" as RelPath, [
+      {
+        symbolId: "Caller#run" as SymbolId,
+        fqName: "Caller#run",
+        shortName: "run",
+        relPath: "caller.rb" as RelPath,
+        scope: ["Caller"],
+      },
+    ]);
+    await db.upsertFile({ relPath: "top.rb" as RelPath, language: "ruby" }, { fileEdges: [], methodEdges: [] });
+    await db.upsertFile(
+      { relPath: "caller.rb" as RelPath, language: "ruby" },
+      {
+        fileEdges: [],
+        methodEdges: [
+          {
+            sourceSymbolId: "Caller#run",
+            targetSymbolId: "TopLevelFunction",
+            targetRelPath: "top.rb",
+            callExpression: "TopLevelFunction()",
+            edgeKind: "poly-base",
+            confidence: 1,
+          },
+        ],
+      },
+    );
+    const callees = await db.getCallees("Caller#run" as SymbolId);
+    // expandPolyBaseCallees bails early (no member separator on "TopLevelFunction").
+    // The base poly-base edge must still be present, and no phantom expansion rows.
+    expect(callees.map((c) => c.targetSymbolId)).toEqual(["TopLevelFunction"]);
   });
 });

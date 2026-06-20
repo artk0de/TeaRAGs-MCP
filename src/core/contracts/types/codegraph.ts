@@ -477,6 +477,16 @@ export interface SymbolDefinition {
 }
 
 /**
+ * Resolved location of a symbol's covering Qdrant chunk. Returned by
+ * `GraphDbClient.findSymbolChunk` — null when no chunk_id has been
+ * backfilled for the symbol yet.
+ */
+export interface SymbolChunkLocation {
+  relPath: RelPath;
+  chunkId: string;
+}
+
+/**
  * Language-specific call resolver. One implementation per language. Slice 1
  * ships `TSCallResolver`; slice 3 adds Ruby/Python/Elixir.
  */
@@ -747,6 +757,22 @@ export interface GraphDbClient {
    *  definition; consumer is expected to feed them through
    *  `GlobalSymbolTable.hydrate`. */
   listAllSymbols: () => Promise<SymbolDefinition[]>;
+
+  /**
+   * Backfill the covering-chunk reference for symbols of one file. UPDATE-only
+   * — never rewrites identity columns. Keyed by symbolId; symbols absent from
+   * the map keep their prior chunk_id (which a preceding upsertSymbols set to
+   * NULL). Written in the codegraph deferred chunk pass once chunk ids exist.
+   */
+  updateSymbolChunkIds: (relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>) => Promise<void>;
+
+  /**
+   * Resolve a symbol to its covering Qdrant chunk. Indexed lookup by
+   * symbol_id. Returns null when no row matches OR the row's chunk_id is NULL
+   * (symbol exists but no covering chunk was recorded). Used by the
+   * find_symbol codegraph fallback (0rskm) and promotable to primary (q383b).
+   */
+  findSymbolChunk: (symbolId: SymbolId) => Promise<SymbolChunkLocation | null>;
 
   // ── Tier 2 graph metrics (Slice 2 / B1) ──
 
