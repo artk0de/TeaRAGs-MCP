@@ -36,13 +36,14 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
       let statusMessage: string;
       if (stats.changeDetails) {
         const d = stats.changeDetails;
-        if (d.filesAdded === 0 && d.filesModified === 0 && d.filesDeleted === 0) {
+        if (d.filesAdded === 0 && d.filesModified === 0 && d.filesDeleted === 0 && d.filesRetried === 0) {
           statusMessage = `No changes detected. Codebase is up to date.`;
         } else {
           statusMessage = `Incremental re-index complete:\n`;
           statusMessage += `- Files: +${d.filesAdded} ~${d.filesModified} -${d.filesDeleted}\n`;
           if (d.filesNewlyIgnored > 0) statusMessage += `  Newly ignored: ${d.filesNewlyIgnored}\n`;
           if (d.filesNewlyUnignored > 0) statusMessage += `  Newly unignored: ${d.filesNewlyUnignored}\n`;
+          if (d.filesRetried > 0) statusMessage += `  Retried (quarantined): ${d.filesRetried}\n`;
           const chunkDiff = d.chunksAdded - d.chunksDeleted;
           const sign = chunkDiff >= 0 ? "+" : "";
           statusMessage += `- Chunks: +${d.chunksAdded} -${d.chunksDeleted} (net: ${sign}${chunkDiff})\n`;
@@ -100,6 +101,9 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
       if (stats.filesNewlyUnignored > 0) {
         message += `  Newly unignored: ${stats.filesNewlyUnignored}\n`;
       }
+      if (stats.filesRetried > 0) {
+        message += `  Retried (quarantined): ${stats.filesRetried}\n`;
+      }
       const chunkDiff = stats.chunksAdded - stats.chunksDeleted;
       const sign = chunkDiff >= 0 ? "+" : "";
       message += `- Chunks: +${stats.chunksAdded} -${stats.chunksDeleted} (net: ${sign}${chunkDiff})\n`;
@@ -114,7 +118,7 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
       );
       message += enrichmentMessage;
 
-      if (stats.filesAdded === 0 && stats.filesModified === 0 && stats.filesDeleted === 0) {
+      if (stats.filesAdded === 0 && stats.filesModified === 0 && stats.filesDeleted === 0 && stats.filesRetried === 0) {
         message = `No changes detected. Codebase is up to date.`;
       }
 

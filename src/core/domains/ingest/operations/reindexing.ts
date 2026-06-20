@@ -98,6 +98,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       filesDeleted: 0,
       filesNewlyIgnored: 0,
       filesNewlyUnignored: 0,
+      filesRetried: 0,
       chunksAdded: 0,
       chunksDeleted: 0,
       durationMs: 0,
@@ -124,6 +125,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       // short-circuited.
       const quarantineStore = new QuarantineStore(this.snapshotDir, ctx.collectionName);
       const retryPaths = await this.computeQuarantineRetry(quarantineStore, ctx, changes);
+      stats.filesRetried = retryPaths.length;
 
       if (this.hasNoChanges(stats) && retryPaths.length === 0) {
         await storeIndexingMarker(this.qdrant, this.embeddings, ctx.collectionName, true);

@@ -88,6 +88,8 @@ export interface IndexStats {
     filesNewlyUnignored: number;
     chunksAdded: number;
     chunksDeleted: number;
+    /** Previously-quarantined files re-attempted this pass (unchanged content). */
+    filesRetried: number;
   };
 }
 
@@ -99,6 +101,8 @@ export interface ChangeStats {
   filesNewlyIgnored: number;
   /** Files added to index because they no longer match ignore patterns */
   filesNewlyUnignored: number;
+  /** Previously-quarantined files re-attempted this pass (unchanged content). */
+  filesRetried: number;
   chunksAdded: number;
   chunksDeleted: number;
   durationMs: number;

@@ -455,6 +455,7 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
       filesNewlyUnignored: changeStats.filesNewlyUnignored,
       chunksAdded: changeStats.chunksAdded,
       chunksDeleted: changeStats.chunksDeleted,
+      filesRetried: changeStats.filesRetried,
     },
   };
 }
