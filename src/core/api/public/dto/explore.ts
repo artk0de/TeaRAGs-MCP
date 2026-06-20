@@ -157,13 +157,6 @@ export interface SearchResult {
   score: number;
   payload?: Record<string, unknown>;
   rankingOverlay?: RankingOverlay;
-  /**
-   * 0rskm — true when this result is the covering chunk a collapsed symbol
-   * lives in, resolved via the codegraph fallback rather than an exact symbol
-   * chunk. Lets agent consumers distinguish a class-granular answer from a
-   * precise method chunk. Absent on all normal (Qdrant-primary) results.
-   */
-  fromCodegraphFallback?: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -132,7 +132,6 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
         id: point.id,
         score: 1,
         payload,
-        fromCodegraphFallback: true,
       } as ExploreResult,
     ];
   }

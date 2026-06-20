@@ -28,7 +28,6 @@ export interface ExploreResult<P = Record<string, unknown>> {
   score: number;
   payload?: P;
   rankingOverlay?: RankingOverlay;
-  fromCodegraphFallback?: boolean;
 }
 
 export interface ExploreStrategy {
