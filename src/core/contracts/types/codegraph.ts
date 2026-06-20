@@ -487,6 +487,16 @@ export interface SymbolChunkLocation {
 }
 
 /**
+ * Narrow read seam for the find_symbol codegraph fallback (0rskm). Lives in
+ * contracts so domains/explore can depend on it without importing api/internal
+ * or adapters. Implemented by GraphFacade (adapted to a bare collectionName in
+ * bootstrap). Undefined injection = codegraph disabled = fallback no-op.
+ */
+export interface SymbolChunkResolver {
+  resolveSymbolChunk: (collectionName: string, symbolId: SymbolId) => Promise<SymbolChunkLocation | null>;
+}
+
+/**
  * Language-specific call resolver. One implementation per language. Slice 1
  * ships `TSCallResolver`; slice 3 adds Ruby/Python/Elixir.
  */
