@@ -190,6 +190,59 @@ describe("formatPrime — polyglot + thresholds", () => {
     expect(out).toContain("- **git.file.ageDays** — source: recent ≤14 / typical ≤45 / legacy ≤45 · test: =src");
   });
 
+  it("renders percent-format signal bands as percentages (×100 with % suffix)", () => {
+    const metrics = monolingualMetricsFixture();
+    // pageRank-like normalized [0,1] signal: raw percentiles round to ≤0 on the
+    // raw scale; with format:"percent" they render as readable percentages.
+    metrics.signals["typescript"]["codegraph.chunk.pageRank"] = {
+      source: {
+        min: 0,
+        max: 0.1,
+        count: 250,
+        labelMap: { peripheral: 0.00028, important: 0.00041, critical: 0.0012 },
+        format: "percent",
+      },
+    };
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 4218 }),
+      metrics,
+      drift: null,
+      update: null,
+    });
+    expect(out).toContain(
+      "- **codegraph.chunk.pageRank** — source: peripheral ≤0.03% / important ≤0.04% / critical ≤0.12% · test: —",
+    );
+    // raw-scale rounding to ≤0 must NOT appear for this signal.
+    expect(out).not.toContain("peripheral ≤0 /");
+  });
+
+  it("renders percent100-format signal bands with a % suffix and NO scaling", () => {
+    const metrics = monolingualMetricsFixture();
+    // bugFixRate is stored already on a 0–100 scale → suffix-only %, no ×100.
+    metrics.signals["typescript"]["git.file.bugFixRate"] = {
+      source: {
+        min: 3,
+        max: 83,
+        count: 250,
+        labelMap: { healthy: 25, concerning: 30, critical: 50 },
+        format: "percent100",
+      },
+    };
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 4218 }),
+      metrics,
+      drift: null,
+      update: null,
+    });
+    expect(out).toContain(
+      "- **git.file.bugFixRate** — source: healthy ≤25% / concerning ≤30% / critical ≤50% · test: —",
+    );
+    // must NOT double-scale (×100 would yield ≤2500%).
+    expect(out).not.toContain("≤2500%");
+  });
+
   it("omits Polyglot/Language and Signal thresholds when metrics is null (e.g. no enrichment yet)", () => {
     const out = formatPrime({
       path: "/p",

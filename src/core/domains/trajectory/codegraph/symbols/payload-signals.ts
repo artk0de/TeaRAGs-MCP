@@ -128,6 +128,10 @@ export const CODEGRAPH_SYMBOLS_CHUNK_SIGNALS: PayloadSignalDescriptor[] = [
     stats: {
       labels: { p50: "peripheral", p75: "important", p95: "critical" },
       chunkTypeFilter: "function",
+      // Normalized [0,1] over thousands of nodes → meaningful percentiles sit at
+      // 1e-4..1e-1 and round to "≤0" on the raw scale. Render as percentages so
+      // prime thresholds stay legible (p50≈0.03% / p75≈0.04% / p95≈0.12%).
+      format: "percent",
     },
   },
 ];

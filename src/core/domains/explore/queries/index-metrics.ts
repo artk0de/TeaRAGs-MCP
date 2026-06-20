@@ -71,6 +71,8 @@ export class IndexMetricsQuery {
         mean: signalStats.mean,
         count: signalStats.count,
         labelMap,
+        // Render hint carried through to consumers (prime). labelMap stays raw.
+        ...(descriptor.stats.format ? { format: descriptor.stats.format } : {}),
       };
     }
     return result;

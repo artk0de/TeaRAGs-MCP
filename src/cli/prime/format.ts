@@ -132,15 +132,15 @@ function formatLanguageSection(languages: string[]): string[] {
 
 function formatThresholdsSection(
   language: string,
-  signals: Record<string, Record<string, { labelMap: Record<string, number> }>>,
+  signals: Record<string, Record<string, { labelMap: Record<string, number>; format?: "percent" | "percent100" }>>,
 ): string[] {
   const lines = [`## Signal thresholds — ${language}`, ""];
   // One line per signal (source + test on the same line) to keep the digest
   // resident-cheap. Exact label names are preserved — they must match the
   // labels rendered in a ranking overlay for the agent to map them to a band.
   for (const [signalName, scopes] of Object.entries(signals)) {
-    const source = scopes.source ? formatLabelMap(scopes.source.labelMap) : "—";
-    const testRaw = scopes.test ? formatLabelMap(scopes.test.labelMap) : "—";
+    const source = scopes.source ? formatLabelMap(scopes.source.labelMap, scopes.source.format) : "—";
+    const testRaw = scopes.test ? formatLabelMap(scopes.test.labelMap, scopes.test.format) : "—";
     // Lossless back-ref: when test bands are byte-identical to source, collapse
     // to "=src" instead of repeating the full band list (common for signals
     // whose source/test percentiles coincide, e.g. blameDominantAuthorPct).
@@ -150,11 +150,22 @@ function formatThresholdsSection(
   return lines;
 }
 
-function formatLabelMap(labelMap: Record<string, number>): string {
+function formatLabelMap(labelMap: Record<string, number>, format?: "percent" | "percent100"): string {
   return Object.entries(labelMap)
-    .map(([label, threshold]) => `${label} ≤${roundTwo(threshold)}`)
+    .map(([label, threshold]) => `${label} ≤${formatThreshold(threshold, format)}`)
     .join(" / ")
     .replace(/extreme ≤(\d+)/, "extreme >$1");
+}
+
+// Percent display hints (value stays raw upstream):
+//  • "percent"    — fraction ∈ [0,1] → ×100 + "%" (e.g. codegraph.chunk.pageRank,
+//    whose sub-0.01 percentiles would otherwise round to "≤0").
+//  • "percent100" — already a 0–100 percentage → suffix "%" only, no scaling
+//    (e.g. git.*.bugFixRate).
+function formatThreshold(threshold: number, format?: "percent" | "percent100"): string {
+  if (format === "percent") return `${roundTwo(threshold * 100)}%`;
+  if (format === "percent100") return `${roundTwo(threshold)}%`;
+  return `${roundTwo(threshold)}`;
 }
 
 function roundTwo(n: number): number {

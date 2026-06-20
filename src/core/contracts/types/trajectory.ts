@@ -55,6 +55,19 @@ export interface SignalStatsRequest {
   stddev?: boolean;
   /** Only include points where payload.chunkType matches this value. */
   chunkTypeFilter?: string;
+  /**
+   * Display hint for consumers rendering this signal's thresholds (prime digest,
+   * get_index_metrics labelMap). The stored labelMap / threshold value always
+   * stays RAW — this is a render-time hint only, never a value transform.
+   *
+   * - `"percent"` — value is a fraction ∈ [0,1]; render ×100 with a `%` suffix.
+   *   Use for normalized signals whose meaningful percentiles live at 1e-4..1e-1
+   *   (e.g. `codegraph.chunk.pageRank`) and otherwise round to "≤0".
+   * - `"percent100"` — value is ALREADY a percentage ∈ [0,100]; append a `%`
+   *   suffix WITHOUT scaling. Use for signals stored on the 0–100 scale
+   *   (e.g. `git.*.bugFixRate`).
+   */
+  format?: "percent" | "percent100";
 }
 
 /**
