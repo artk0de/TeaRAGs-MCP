@@ -101,7 +101,7 @@ describe("RubyConeDispatchResolver", () => {
 
   it("returns [] when no hierarchy view is wired", () => {
     const symbolTable = tableWith(agentBase, website);
-    const out = resolver.resolveDispatch(call, ctx({ symbolTable, localBindings: { agent: "Agent" } }));
+    const out = resolver.resolveDispatch(call, ctx({ symbolTable, localBindings: { agent: [{ line: 1, type: "Agent" }] } }));
     expect(out).toEqual([]);
   });
 
@@ -109,7 +109,7 @@ describe("RubyConeDispatchResolver", () => {
     const symbolTable = tableWith(agentBase);
     const out = resolver.resolveDispatch(
       call,
-      ctx({ symbolTable, localBindings: { agent: "Agent" }, hierarchy: hierarchyWith({}) }),
+      ctx({ symbolTable, localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({}) }),
     );
     expect(out).toEqual([]);
   });
@@ -122,7 +122,7 @@ describe("RubyConeDispatchResolver", () => {
     ]);
     const out = resolver.resolveDispatch(
       call,
-      ctx({ symbolTable, localBindings: { agent: "Agent" }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }),
+      ctx({ symbolTable, localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }),
     );
     expect(out).toEqual([]);
   });
@@ -134,7 +134,7 @@ describe("RubyConeDispatchResolver", () => {
         call,
         ctx({
           symbolTable,
-          localBindings: { agent: "Agent" },
+          localBindings: { agent: [{ line: 1, type: "Agent" }] },
           hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
         }),
       ),
@@ -164,7 +164,7 @@ describe("RubyConeDispatchResolver", () => {
       call,
       ctx({
         symbolTable,
-        localBindings: { agent: "Agent" },
+        localBindings: { agent: [{ line: 1, type: "Agent" }] },
         hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
       }),
     );

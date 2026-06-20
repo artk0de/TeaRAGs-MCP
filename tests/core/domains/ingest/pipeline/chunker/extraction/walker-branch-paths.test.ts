@@ -176,7 +176,7 @@ describe("python-walker — additional branch coverage", () => {
       language: "python",
       chunks: [{ symbolId: "f", startLine: 1, endLine: 2, scope: [] }],
     });
-    expect(r.chunks[0].localBindings?.req).toBe("HttpRequest");
+    expect(r.chunks[0].localBindings?.req).toEqual([{ line: 1, type: "HttpRequest" }]);
   });
 
   it("assignment to identifier `var = ClassName()` infers type", () => {
@@ -189,7 +189,7 @@ describe("python-walker — additional branch coverage", () => {
       language: "python",
       chunks: [{ symbolId: "f", startLine: 1, endLine: 3, scope: [] }],
     });
-    expect(r.chunks[0].localBindings?.x).toBe("ConfirmCode");
+    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 2, type: "ConfirmCode" }]);
   });
 
   it("assignment to identifier `var = mod.ClassName()` infers qualified type", () => {
@@ -201,7 +201,7 @@ describe("python-walker — additional branch coverage", () => {
       language: "python",
       chunks: [{ symbolId: "f", startLine: 1, endLine: 3, scope: [] }],
     });
-    expect(r.chunks[0].localBindings?.x).toBe("pkg.Serializer");
+    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 2, type: "pkg.Serializer" }]);
   });
 
   it("assignment RHS is non-call (literal) — no inference", () => {
@@ -238,7 +238,7 @@ describe("python-walker — additional branch coverage", () => {
       language: "python",
       chunks: [{ symbolId: "f", startLine: 1, endLine: 3, scope: [] }],
     });
-    expect(r.chunks[0].localBindings?.x).toBe("TargetType");
+    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 2, type: "TargetType" }]);
   });
 
   it("assignment with annotation but no RHS (`x: ClassName`) — bound by annotation", () => {
@@ -250,7 +250,7 @@ describe("python-walker — additional branch coverage", () => {
       language: "python",
       chunks: [{ symbolId: "f", startLine: 1, endLine: 3, scope: [] }],
     });
-    expect(r.chunks[0].localBindings?.x).toBe("HttpRequest");
+    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 2, type: "HttpRequest" }]);
   });
 
   it("typed_default_parameter with annotation extracts binding", () => {
@@ -262,7 +262,7 @@ describe("python-walker — additional branch coverage", () => {
       language: "python",
       chunks: [{ symbolId: "f", startLine: 1, endLine: 2, scope: [] }],
     });
-    expect(r.chunks[0].localBindings?.req).toBe("Req");
+    expect(r.chunks[0].localBindings?.req).toEqual([{ line: 1, type: "Req" }]);
   });
 
   it("typed annotation with subscript shape (Optional[X]) returns null → no binding", () => {
@@ -415,7 +415,7 @@ describe("ruby-walker — additional branch coverage", () => {
       language: "ruby",
       chunks: [{ symbolId: "Service#lookup", startLine: 2, endLine: 4, scope: ["Service"] }],
     });
-    expect(r.chunks[0].localBindings?.u).toBe("User");
+    expect(r.chunks[0].localBindings?.u).toEqual([{ line: 3, type: "User" }]);
   });
 
   it("AR `.first` finder also infers", () => {
@@ -427,7 +427,7 @@ describe("ruby-walker — additional branch coverage", () => {
       language: "ruby",
       chunks: [{ symbolId: "S#m", startLine: 2, endLine: 4, scope: ["S"] }],
     });
-    expect(r.chunks[0].localBindings?.u).toBe("User");
+    expect(r.chunks[0].localBindings?.u).toEqual([{ line: 3, type: "User" }]);
   });
 
   it("constructor assignment `var = ClassName.new(...)` binds to ClassName", () => {
@@ -439,7 +439,7 @@ describe("ruby-walker — additional branch coverage", () => {
       language: "ruby",
       chunks: [{ symbolId: "S#m", startLine: 2, endLine: 4, scope: ["S"] }],
     });
-    expect(r.chunks[0].localBindings?.p).toBe("Post");
+    expect(r.chunks[0].localBindings?.p).toEqual([{ line: 3, type: "Post" }]);
   });
 
   it("scoped constant receiver `var = Acme::User.find(id)` resolves full scoped name", () => {
@@ -451,7 +451,7 @@ describe("ruby-walker — additional branch coverage", () => {
       language: "ruby",
       chunks: [{ symbolId: "S#m", startLine: 2, endLine: 4, scope: ["S"] }],
     });
-    expect(r.chunks[0].localBindings?.u).toBe("Acme::User");
+    expect(r.chunks[0].localBindings?.u).toEqual([{ line: 3, type: "Acme::User" }]);
   });
 
   it("non-constant receiver `var = obj.method()` — rejected by regex", () => {
@@ -489,7 +489,7 @@ describe("ruby-walker — additional branch coverage", () => {
       language: "ruby",
       chunks: [{ symbolId: "Foo#handle", startLine: 3, endLine: 5, scope: ["Foo"] }],
     });
-    expect(r.chunks[0].localBindings?.req).toBe("HttpRequest");
+    expect(r.chunks[0].localBindings?.req).toEqual([{ line: 3, type: "HttpRequest" }]);
   });
 
   it("YARD with scoped type `@param x [Acme::Model]`", () => {
@@ -501,7 +501,7 @@ describe("ruby-walker — additional branch coverage", () => {
       language: "ruby",
       chunks: [{ symbolId: "Foo#find", startLine: 3, endLine: 5, scope: ["Foo"] }],
     });
-    expect(r.chunks[0].localBindings?.u).toBe("Acme::User");
+    expect(r.chunks[0].localBindings?.u).toEqual([{ line: 3, type: "Acme::User" }]);
   });
 
   it("YARD with bracket-less type form is NOT recognised", () => {
@@ -536,7 +536,7 @@ describe("ruby-walker — additional branch coverage", () => {
       language: "ruby",
       chunks: [{ symbolId: "Foo#handle", startLine: 4, endLine: 6, scope: ["Foo"] }],
     });
-    expect(r.chunks[0].localBindings?.req).toBe("HttpRequest");
+    expect(r.chunks[0].localBindings?.req).toEqual([{ line: 4, type: "HttpRequest" }]);
   });
 
   it("YARD followed by non-def line — pending block discarded", () => {
@@ -570,7 +570,7 @@ describe("ruby-walker — additional branch coverage", () => {
       language: "ruby",
       chunks: [{ symbolId: "Foo.lookup", startLine: 3, endLine: 5, scope: ["Foo"] }],
     });
-    expect(r.chunks[0].localBindings?.u).toBe("User");
+    expect(r.chunks[0].localBindings?.u).toEqual([{ line: 3, type: "User" }]);
   });
 
   it("require with single quotes — normalised import path", () => {

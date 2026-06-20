@@ -1,5 +1,6 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
+import { resolveLocalBindingType } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { resolveByLocalType, type ResolverConfig } from "./shared.js";
 
@@ -19,7 +20,7 @@ export class JavaLocalBindingSymbolResolutionStrategy implements SymbolResolutio
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
-    const boundType = ctx.localBindings?.[call.receiver];
+    const boundType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
     if (!boundType) return CONTINUE;
     return resolved(resolveByLocalType(boundType, call.member, ctx, this.cfg.mode));
   }

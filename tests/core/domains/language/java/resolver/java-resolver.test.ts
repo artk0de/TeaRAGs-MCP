@@ -393,7 +393,7 @@ describe("JavaCallResolver", () => {
           callerScope: ["StringUtils"],
           imports: [],
           symbolTable: t,
-          localBindings: { cs: "CharSequence" },
+          localBindings: { cs: [{ line: 2, type: "CharSequence" }] },
         },
       );
       expect(target?.targetSymbolId).toBe("CharSequence#charAt");
@@ -416,7 +416,7 @@ describe("JavaCallResolver", () => {
           callerScope: ["X"],
           imports: [],
           symbolTable: t,
-          localBindings: { b: "Bar" },
+          localBindings: { b: [{ line: 3, type: "Bar" }] },
         },
       );
       expect(target?.targetRelPath).toBe("Bar.java");
@@ -573,7 +573,7 @@ describe("JavaCallResolver", () => {
           callerScope: ["X"],
           imports: [],
           symbolTable: t,
-          localBindings: { Math: "Calculator" },
+          localBindings: { Math: [{ line: 1, type: "Calculator" }] },
         },
       );
       expect(target?.targetRelPath).toBe("Calculator.java");

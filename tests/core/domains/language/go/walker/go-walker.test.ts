@@ -116,7 +116,7 @@ describe("extractFromGoFile — localBindings", () => {
       language: "go",
       chunks: [{ symbolId: "Context#Render", scope: [], startLine: 2, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings?.c).toBe("Context");
+    expect(r.chunks[0].localBindings?.c).toEqual([{ line: 2, type: "Context" }]);
   });
 
   it("captures value-receiver type binding `s Service` → { s: 'Service' }", () => {
@@ -128,7 +128,7 @@ describe("extractFromGoFile — localBindings", () => {
       language: "go",
       chunks: [{ symbolId: "Service#Open", scope: [], startLine: 2, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings?.s).toBe("Service");
+    expect(r.chunks[0].localBindings?.s).toEqual([{ line: 2, type: "Service" }]);
   });
 
   it("captures parameter pointer-type bindings `func f(c *Context)` → { c: 'Context' }", () => {
@@ -140,7 +140,7 @@ describe("extractFromGoFile — localBindings", () => {
       language: "go",
       chunks: [{ symbolId: "render", scope: [], startLine: 2, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings?.c).toBe("Context");
+    expect(r.chunks[0].localBindings?.c).toEqual([{ line: 2, type: "Context" }]);
   });
 
   it("top-level function without typed pointer params has no bindings (or empty)", () => {
@@ -176,7 +176,7 @@ describe("extractFromGoFile — local var bindings", () => {
       language: "go",
       chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
     });
-    expect(r.chunks[0].localBindings?.engine).toBe("Engine");
+    expect(r.chunks[0].localBindings?.engine).toEqual([{ line: 3, type: "Engine" }]);
   });
 
   it("captures short composite-literal decl `x := Engine{}` → { x: 'Engine' }", () => {
@@ -188,7 +188,7 @@ describe("extractFromGoFile — local var bindings", () => {
       language: "go",
       chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
     });
-    expect(r.chunks[0].localBindings?.x).toBe("Engine");
+    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 3, type: "Engine" }]);
   });
 
   it("captures short pointer composite-literal decl `y := &Engine{}` → { y: 'Engine' }", () => {
@@ -200,7 +200,7 @@ describe("extractFromGoFile — local var bindings", () => {
       language: "go",
       chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
     });
-    expect(r.chunks[0].localBindings?.y).toBe("Engine");
+    expect(r.chunks[0].localBindings?.y).toEqual([{ line: 3, type: "Engine" }]);
   });
 
   it("does NOT bind constructor-return `z := NewEngine()` (out of scope)", () => {
@@ -227,8 +227,8 @@ describe("extractFromGoFile — local var bindings", () => {
       language: "go",
       chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
     });
-    expect(r.chunks[0].localBindings?.p).toBe("Engine");
-    expect(r.chunks[0].localBindings?.b).toBe("Box");
+    expect(r.chunks[0].localBindings?.p).toEqual([{ line: 3, type: "Engine" }]);
+    expect(r.chunks[0].localBindings?.b).toEqual([{ line: 4, type: "Box" }]);
   });
 
   it("does NOT bind a pointer composite literal of a non-identifier type `m := &map[string]int{}`", () => {

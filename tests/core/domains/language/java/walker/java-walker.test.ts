@@ -109,7 +109,7 @@ describe("extractFromJavaFile — parameter type bindings", () => {
       language: "java",
       chunks: [{ symbolId: "StringUtils.isBlank", scope: ["StringUtils"], startLine: 2, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ cs: "CharSequence" });
+    expect(r.chunks[0].localBindings).toEqual({ cs: [{ line: 2, type: "CharSequence" }] });
   });
 
   it("strips generics on a parameter type (`List<String>` → `List`)", () => {
@@ -121,7 +121,7 @@ describe("extractFromJavaFile — parameter type bindings", () => {
       language: "java",
       chunks: [{ symbolId: "X.go", scope: ["X"], startLine: 2, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ items: "List" });
+    expect(r.chunks[0].localBindings).toEqual({ items: [{ line: 2, type: "List" }] });
   });
 
   it("does not bind primitive-typed parameters", () => {
@@ -147,7 +147,7 @@ describe("extractFromJavaFile — local variable type bindings", () => {
       language: "java",
       chunks: [{ symbolId: "X.go", scope: ["X"], startLine: 2, endLine: 5 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ b: "Bar" });
+    expect(r.chunks[0].localBindings).toEqual({ b: [{ line: 3, type: "Bar" }] });
   });
 
   it("does not bind primitive-typed local variables", () => {

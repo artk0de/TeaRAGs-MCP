@@ -58,7 +58,7 @@ describe("GoLocalBindingSymbolResolutionStrategy", () => {
 
   it("resolves the instance form `Type#member` when localBinding names the type", () => {
     const symbolTable = tableWith(["context.go", [sym("Context#JSON", "JSON", "context.go")]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { c: "Context" } }));
+    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { c: [{ line: 1, type: "Context" }] } }));
     expect(outcome.kind).toBe("resolved");
     if (outcome.kind === "resolved") {
       expect(outcome.target.targetSymbolId).toBe("Context#JSON");
@@ -70,7 +70,7 @@ describe("GoLocalBindingSymbolResolutionStrategy", () => {
     const symbolTable = tableWith(["ctx.go", [sym("Context.helper", "helper", "ctx.go")]]);
     const outcome = strat.attempt(
       { callText: "c.helper()", receiver: "c", member: "helper", startLine: 1 },
-      ctx({ symbolTable, localBindings: { c: "Context" } }),
+      ctx({ symbolTable, localBindings: { c: [{ line: 1, type: "Context" }] } }),
     );
     expect(outcome.kind).toBe("resolved");
     if (outcome.kind === "resolved") expect(outcome.target.targetSymbolId).toBe("Context.helper");
@@ -82,7 +82,7 @@ describe("GoLocalBindingSymbolResolutionStrategy", () => {
     const symbolTable = tableWith(["other.go", [sym("Other#unrelated", "unrelated", "other.go")]]);
     const outcome = strat.attempt(
       { callText: "c.unrelated()", receiver: "c", member: "unrelated", startLine: 1 },
-      ctx({ symbolTable, localBindings: { c: "Context" } }),
+      ctx({ symbolTable, localBindings: { c: [{ line: 1, type: "Context" }] } }),
     );
     expect(outcome.kind).toBe("drop");
   });

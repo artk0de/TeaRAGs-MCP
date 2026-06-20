@@ -173,7 +173,7 @@ describe("RustCallResolver", () => {
         callerScope: [],
         imports: [],
         symbolTable: t,
-        localBindings: { obj: "Worker" },
+        localBindings: { obj: [{ line: 1, type: "Worker" }] },
       },
     );
     expect(target).toBeNull();
@@ -304,7 +304,7 @@ describe("RustCallResolver", () => {
         callerScope: [],
         imports: [],
         symbolTable: t,
-        localBindings: { x: "Worker" },
+        localBindings: { x: [{ line: 1, type: "Worker" }] },
       },
     );
     expect(target?.targetRelPath).toBe("src/worker.rs");
@@ -345,7 +345,7 @@ describe("RustCallResolver", () => {
         callerScope: [],
         imports: [],
         symbolTable: t,
-        localBindings: { parser: "Parser" },
+        localBindings: { parser: [{ line: 1, type: "Parser" }] },
       },
     );
     expect(target?.targetRelPath).toBe("crates/core/flags/parse.rs");

@@ -119,7 +119,7 @@ describe("JavaLocalBindingSymbolResolutionStrategy", () => {
 
   it("resolves `localVar.X()` to the indexed type's method via the walker-bound type", () => {
     const symbolTable = tableWith(["Bar.java", [sym("Bar#run", "run", "Bar.java", ["Bar"])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { b: "Bar" } }));
+    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { b: [{ line: 1, type: "Bar" }] } }));
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "Bar.java", targetSymbolId: "Bar#run" },
@@ -135,7 +135,7 @@ describe("JavaLocalBindingSymbolResolutionStrategy", () => {
     ]);
     const outcome = strat.attempt(
       { callText: "cs.charAt(i)", receiver: "cs", member: "charAt", startLine: 1 },
-      ctx({ symbolTable, localBindings: { cs: "CharSequence" } }),
+      ctx({ symbolTable, localBindings: { cs: [{ line: 1, type: "CharSequence" }] } }),
     );
     expect(outcome).toEqual({
       kind: "resolved",
@@ -151,7 +151,7 @@ describe("JavaLocalBindingSymbolResolutionStrategy", () => {
 
   it("continues when the receiver is null (bare call)", () => {
     const symbolTable = tableWith();
-    const outcome = strat.attempt({ ...call, receiver: null }, ctx({ symbolTable, localBindings: { b: "Bar" } }));
+    const outcome = strat.attempt({ ...call, receiver: null }, ctx({ symbolTable, localBindings: { b: [{ line: 1, type: "Bar" }] } }));
     expect(outcome.kind).toBe("continue");
   });
 });

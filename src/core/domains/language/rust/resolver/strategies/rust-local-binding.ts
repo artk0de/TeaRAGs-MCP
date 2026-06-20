@@ -1,5 +1,6 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
+import { resolveLocalBindingType } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { pickSameFileThenSingle, type ResolverConfig } from "./shared.js";
 
@@ -24,7 +25,7 @@ export class RustLocalBindingSymbolResolutionStrategy implements SymbolResolutio
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
-    const boundType = ctx.localBindings?.[call.receiver];
+    const boundType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
     if (!boundType) return CONTINUE;
 
     const instanceFq = `${boundType}#${call.member}`;

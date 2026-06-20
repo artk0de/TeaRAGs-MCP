@@ -1,6 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
+  resolveLocalBindingType,
   type CallContext,
   type CallRef,
   type SymbolResolutionTarget,
@@ -24,7 +25,7 @@ export class TSLocalBindingSymbolResolutionStrategy implements SymbolResolutionS
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
-    const boundType = ctx.localBindings?.[call.receiver];
+    const boundType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
     if (!boundType) return CONTINUE;
     const localHit = this.resolveByLocalType(boundType, call.member, ctx);
     return localHit ? resolved(localHit) : CONTINUE;

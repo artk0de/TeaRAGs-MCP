@@ -79,7 +79,7 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
     const symbolTable = tableWith(["app/models/user.rb", [sym("User#save", "save", "app/models/user.rb", ["User"])]]);
     const edges = resolver.resolveDispatch(
       { callText: "user.save", receiver: "user", member: "save", startLine: 1 },
-      ctx({ symbolTable, localBindings: { user: "User" } }),
+      ctx({ symbolTable, localBindings: { user: [{ line: 1, type: "User" }] } }),
     );
     expect(edges).toEqual([]);
   });

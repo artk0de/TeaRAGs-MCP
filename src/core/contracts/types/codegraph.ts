@@ -356,6 +356,47 @@ export interface ImportRef {
   importedNames?: string[];
 }
 
+/**
+ * A single position-aware local-variable type binding: the variable's inferred
+ * receiver type, tagged with the 1-based source line where the binding is
+ * established. A variable accumulates an array of these (one per assignment /
+ * annotation on its path); a call site resolves against the most-recent binding
+ * at or before its own line via {@link resolveLocalBindingType}. This makes
+ * `var.method()` resolution flow-sensitive — a reassignment to a different type
+ * is the correct answer per call site, not a conflict.
+ */
+export interface LocalBinding {
+  /** 1-based source line where this binding is established. */
+  line: number;
+  /** Inferred receiver type (class / constant name), e.g. "User" or "Acme::Post". */
+  type: string;
+}
+
+/**
+ * Resolve the most-recent local binding for `varName` at or before `atLine`
+ * (the binding with the greatest `line <= atLine`). Returns undefined when the
+ * variable has no binding established on or before that line — the resolver then
+ * falls through (no local type), preserving the DROP-not-guess discipline.
+ *
+ * Shared by every language's local-binding resolver AND the language-neutral
+ * cone dispatcher so the position-aware lookup is defined exactly once. `<=`
+ * (not `<`): a variable's own calls are always on a strictly later line than its
+ * binding statement, so `<=` is safe and tolerant of the rare same-line case.
+ */
+export function resolveLocalBindingType(
+  bindings: Record<string, LocalBinding[]> | undefined,
+  varName: string,
+  atLine: number,
+): string | undefined {
+  const list = bindings?.[varName];
+  if (!list || list.length === 0) return undefined;
+  let best: LocalBinding | undefined;
+  for (const binding of list) {
+    if (binding.line <= atLine && (best === undefined || binding.line > best.line)) best = binding;
+  }
+  return best?.type;
+}
+
 export interface ChunkExtraction {
   symbolId: SymbolId;
   /** Lexical scope chain enclosing this chunk, e.g. `["Acme", "Auth", "User"]`. */
@@ -380,11 +421,13 @@ export interface ChunkExtraction {
    * unambiguous local type pins `var.method()` to that type's class even
    * when the short-name has multiple project-wide definitions.
    *
-   * Shape: `Record<string, string>` (NOT `Map`) so the structure
+   * Shape: `Record<string, LocalBinding[]>` (NOT `Map`) so the structure
    * round-trips through the NDJSON spill (`JSON.stringify` / `JSON.parse`)
-   * — `Map` would serialize to `{}` and silently lose data.
+   * — `Map` would serialize to `{}` and silently lose data. Each variable
+   * carries an array of position-aware bindings (one per assignment on its
+   * path); read via {@link resolveLocalBindingType} at a call's line.
    */
-  localBindings?: Record<string, string>;
+  localBindings?: Record<string, LocalBinding[]>;
   /**
    * Per-chunk `varName → calledFunctionName` map for variables assigned from
    * a function call (`engine := New()` → `{ engine: "New" }`). DISTINCT from
@@ -591,8 +634,10 @@ export interface CallContext {
    *
    * Resolvers consult this BEFORE the receiver-matches-import path so a
    * locally-typed variable wins over ambiguous short-name resolution.
+   * Position-aware (`Record<string, LocalBinding[]>`): read via
+   * {@link resolveLocalBindingType} at the call's `startLine`.
    */
-  localBindings?: Record<string, string>;
+  localBindings?: Record<string, LocalBinding[]>;
   /**
    * Per-chunk `varName → calledFunctionName` map propagated from
    * `ChunkExtraction.localCallBindings`. Resolvers combine this with

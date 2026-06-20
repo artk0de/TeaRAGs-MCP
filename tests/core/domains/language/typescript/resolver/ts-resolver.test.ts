@@ -633,7 +633,7 @@ describe("TSCallResolver", () => {
             { importText: "../resolvers/python-resolver", startLine: 2 },
           ],
           symbolTable,
-          localBindings: { resolver: "CallResolver" },
+          localBindings: { resolver: [{ line: 1, type: "CallResolver" }] },
         },
       );
       expect(result).toEqual({
@@ -661,7 +661,7 @@ describe("TSCallResolver", () => {
           callerScope: [],
           imports: [],
           symbolTable,
-          localBindings: { f: "Factory" },
+          localBindings: { f: [{ line: 1, type: "Factory" }] },
         },
       );
       expect(result).toEqual({ targetRelPath: "src/factory.ts", targetSymbolId: "Factory.create" });
@@ -703,7 +703,7 @@ describe("TSCallResolver", () => {
           // fallback picks it. Confirms typed-param miss is non-destructive.
           imports: [{ importText: "../resolvers/ruby-resolver", startLine: 1 }],
           symbolTable,
-          localBindings: { resolver: "CallResolver" },
+          localBindings: { resolver: [{ line: 1, type: "CallResolver" }] },
         },
       );
       expect(result).toEqual({
@@ -727,7 +727,7 @@ describe("TSCallResolver", () => {
           callerScope: [],
           imports: [],
           symbolTable,
-          localBindings: { resolver: "CallResolver" },
+          localBindings: { resolver: [{ line: 1, type: "CallResolver" }] },
         },
       );
       expect(result).toEqual({ targetRelPath: "src/util.ts", targetSymbolId: "helper" });

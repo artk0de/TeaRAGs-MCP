@@ -129,7 +129,7 @@ describe("RubyLocalTypeSymbolResolutionStrategy", () => {
     const symbolTable = tableWith();
     // Binding present, but `User` resolves to no file → terminal DROP, never a
     // fall-through to the heuristic passes.
-    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { user: "User" } }));
+    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { user: [{ line: 1, type: "User" }] } }));
     expect(outcome.kind).toBe("drop");
   });
 
@@ -138,7 +138,7 @@ describe("RubyLocalTypeSymbolResolutionStrategy", () => {
       "app/models/user.rb",
       [sym("User", "User", "app/models/user.rb", []), sym("User#save", "save", "app/models/user.rb", ["User"])],
     ]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { user: "User" } }));
+    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { user: [{ line: 1, type: "User" }] } }));
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "app/models/user.rb", targetSymbolId: "User#save" },
@@ -147,7 +147,7 @@ describe("RubyLocalTypeSymbolResolutionStrategy", () => {
 
   it("resolves to a file-only edge when the bound type's file is known but the method is not", () => {
     const symbolTable = tableWith(["app/models/user.rb", [sym("User", "User", "app/models/user.rb", [])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { user: "User" } }));
+    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { user: [{ line: 1, type: "User" }] } }));
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "app/models/user.rb", targetSymbolId: null },

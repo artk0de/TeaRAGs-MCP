@@ -749,7 +749,7 @@ describe("extractFromTypescriptFile", () => {
         language: "typescript",
         chunks: [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }],
       });
-      expect(extraction.chunks[0].localBindings?.["resolver"]).toBe("CallResolver");
+      expect(extraction.chunks[0].localBindings?.["resolver"]).toEqual([{ line: 1, type: "CallResolver" }]);
     });
 
     it("binds a class method's typed parameter to its type, scoped to that method's chunk", () => {
@@ -773,7 +773,7 @@ describe("extractFromTypescriptFile", () => {
         ],
       });
       const handle = extraction.chunks.find((c) => c.symbolId === "Foo#handle");
-      expect(handle?.localBindings?.["svc"]).toBe("BarService");
+      expect(handle?.localBindings?.["svc"]).toEqual([{ line: 2, type: "BarService" }]);
       // The enclosing class chunk must NOT carry the method's parameter
       // binding — bindings are scoped to the declaring chunk's range.
       const cls = extraction.chunks.find((c) => c.symbolId === "Foo");
@@ -790,7 +790,7 @@ describe("extractFromTypescriptFile", () => {
         language: "typescript",
         chunks: [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }],
       });
-      expect(extraction.chunks[0].localBindings?.["resolver"]).toBe("CallResolver");
+      expect(extraction.chunks[0].localBindings?.["resolver"]).toEqual([{ line: 1, type: "CallResolver" }]);
     });
 
     it("strips generics — Repo<User> binds to Repo", () => {
@@ -803,7 +803,7 @@ describe("extractFromTypescriptFile", () => {
         language: "typescript",
         chunks: [{ symbolId: "load", startLine: 1, endLine: 3, scope: [] }],
       });
-      expect(extraction.chunks[0].localBindings?.["repo"]).toBe("Repo");
+      expect(extraction.chunks[0].localBindings?.["repo"]).toEqual([{ line: 1, type: "Repo" }]);
     });
 
     it("leaves localBindings undefined when no parameter carries a usable type annotation", () => {
@@ -1089,7 +1089,7 @@ describe("extractFromTypescriptFile — collectParamBindings accessor guard and 
     });
     const chunk = extraction.chunks[0];
     // `req: Request` has no accessibility modifier → localBindings carries it.
-    expect(chunk.localBindings?.["req"]).toBe("Request");
+    expect(chunk.localBindings?.["req"]).toEqual([{ line: 2, type: "Request" }]);
     // `store` has `private readonly` → skipped by collectParamBindings.
     expect(chunk.localBindings?.["store"]).toBeUndefined();
   });
@@ -1109,7 +1109,7 @@ describe("extractFromTypescriptFile — collectParamBindings accessor guard and 
     });
     const method = extraction.chunks.find((c) => c.symbolId === "Worker#process");
     const cls = extraction.chunks.find((c) => c.symbolId === "Worker");
-    expect(method?.localBindings?.["job"]).toBe("JobDescriptor");
+    expect(method?.localBindings?.["job"]).toEqual([{ line: 2, type: "JobDescriptor" }]);
     expect(cls?.localBindings?.["job"]).toBeUndefined();
   });
 });

@@ -1,4 +1,5 @@
 import type { CallContext, CallRef, DispatchEdge, SymbolResolutionTarget } from "../../contracts/types/codegraph.js";
+import { resolveLocalBindingType } from "../../contracts/types/codegraph.js";
 import type { ConeTypeLocator, DispatchResolverComponent } from "../../contracts/types/language.js";
 
 /**
@@ -42,7 +43,7 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
 
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
     if (!call.receiver) return [];
-    const baseType = ctx.localBindings?.[call.receiver];
+    const baseType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
     if (!baseType || !ctx.hierarchy) return [];
 
     // Direct subtypes of `T`; dedup by source name (a transitive view could

@@ -90,7 +90,7 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
 
   it("returns [] when no hierarchy view is wired", () => {
     const symbolTable = tableWith(animalBase, dog);
-    const out = resolver.resolveDispatch(call, ctx({ symbolTable, localBindings: { pet: "Animal" } }));
+    const out = resolver.resolveDispatch(call, ctx({ symbolTable, localBindings: { pet: [{ line: 1, type: "Animal" }] } }));
     expect(out).toEqual([]);
   });
 
@@ -98,7 +98,7 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
     const symbolTable = tableWith(animalBase);
     const out = resolver.resolveDispatch(
       call,
-      ctx({ symbolTable, localBindings: { pet: "Animal" }, hierarchy: hierarchyWith({}) }),
+      ctx({ symbolTable, localBindings: { pet: [{ line: 1, type: "Animal" }] }, hierarchy: hierarchyWith({}) }),
     );
     expect(out).toEqual([]);
   });
@@ -108,7 +108,7 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
     const symbolTable = tableWith(animalBase, ["app/animals/dog.py", [sym("Dog", "Dog", "app/animals/dog.py", [])]]);
     const out = resolver.resolveDispatch(
       call,
-      ctx({ symbolTable, localBindings: { pet: "Animal" }, hierarchy: hierarchyWith({ Animal: ["Dog"] }) }),
+      ctx({ symbolTable, localBindings: { pet: [{ line: 1, type: "Animal" }] }, hierarchy: hierarchyWith({ Animal: ["Dog"] }) }),
     );
     expect(out).toEqual([]);
   });
@@ -120,7 +120,7 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
         call,
         ctx({
           symbolTable,
-          localBindings: { pet: "Animal" },
+          localBindings: { pet: [{ line: 1, type: "Animal" }] },
           hierarchy: hierarchyWith({ Animal: ["Dog", "Cat"] }),
         }),
       ),
@@ -153,7 +153,7 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
         call,
         ctx({
           symbolTable,
-          localBindings: { pet: "Animal" },
+          localBindings: { pet: [{ line: 1, type: "Animal" }] },
           hierarchy: hierarchyWith({ Animal: ["Dog", "Cat"] }),
         }),
       );

@@ -67,7 +67,7 @@ describe("RubyCallResolver.resolveDispatch — cone-first, then dynamic fan-out 
       call,
       ctx({
         symbolTable,
-        localBindings: { agent: "Agent" },
+        localBindings: { agent: [{ line: 1, type: "Agent" }] },
         hierarchy: hierarchyOf({ Agent: ["ChildA", "ChildB"] }),
       }),
     );

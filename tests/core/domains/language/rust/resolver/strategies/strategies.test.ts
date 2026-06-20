@@ -165,7 +165,7 @@ describe("RustLocalBindingSymbolResolutionStrategy", () => {
       ["src/worker.rs", [sym("Worker#run", "run", "src/worker.rs", ["Worker"])]],
       ["src/server.rs", [sym("Server#run", "run", "src/server.rs", ["Server"])]],
     );
-    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { x: "Worker" } }));
+    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { x: [{ line: 1, type: "Worker" }] } }));
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "src/worker.rs", targetSymbolId: "Worker#run" },
@@ -179,7 +179,7 @@ describe("RustLocalBindingSymbolResolutionStrategy", () => {
     );
     const outcome = strat.attempt(
       { callText: "parser.parse()", receiver: "parser", member: "parse", startLine: 1 },
-      ctx({ symbolTable, callerFile: "crates/core/flags/parse.rs", localBindings: { parser: "Parser" } }),
+      ctx({ symbolTable, callerFile: "crates/core/flags/parse.rs", localBindings: { parser: [{ line: 1, type: "Parser" }] } }),
     );
     expect(outcome).toEqual({
       kind: "resolved",
@@ -194,7 +194,7 @@ describe("RustLocalBindingSymbolResolutionStrategy", () => {
     );
     const outcome = strat.attempt(
       { callText: "obj.clone()", receiver: "obj", member: "clone", startLine: 1 },
-      ctx({ symbolTable, localBindings: { obj: "Worker" } }),
+      ctx({ symbolTable, localBindings: { obj: [{ line: 1, type: "Worker" }] } }),
     );
     // Worker has no `clone` — DROP rather than silently route to Error#clone.
     expect(outcome.kind).toBe("drop");
