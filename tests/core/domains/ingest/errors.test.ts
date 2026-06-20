@@ -223,6 +223,8 @@ describe("IngestError hierarchy", () => {
       expect(err.message).toContain("src/broken.ts");
       expect(err.cause).toBe(cause);
       expect(err).toBeInstanceOf(QuarantinableIngestError);
+      // A parse failure on real source is usually a chunker bug — nudge to report.
+      expect(err.hint).toContain("tea-rags:report-issue");
     });
 
     it("FileReadError carries fs phase and preserves cause", () => {

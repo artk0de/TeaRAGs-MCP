@@ -199,7 +199,7 @@ export class FileParseError extends QuarantinableIngestError {
     super({
       code: "INGEST_FILE_PARSE_FAILED",
       message: `Failed to parse "${relativePath}": ${detail}`,
-      hint: "File quarantined; it will be retried automatically on the next index pass.",
+      hint: "File quarantined; it will be retried automatically on the next index pass. A parse failure on valid source is usually a chunker bug — your agent can file a GitHub issue via the tea-rags:report-issue skill.",
       cause,
     });
   }
