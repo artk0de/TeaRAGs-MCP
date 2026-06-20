@@ -39,6 +39,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import { ECMASCRIPT_GLOBALS } from "../../kernel/ecmascript-globals.js";
 import { resolveViaChain } from "../../resolver-chain.js";
 import {
   collectImportedFiles,
@@ -54,7 +55,7 @@ import {
   TSThisMemberSymbolResolutionStrategy,
   type ResolverConfig,
 } from "./strategies/index.js";
-import type { TsCompilerOptions } from "./ts-path-mapper.js";
+import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
 
 export class TSCallResolver implements CallResolver {
   readonly language = "typescript";
@@ -81,6 +82,33 @@ export class TSCallResolver implements CallResolver {
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     return resolveViaChain(this.strategies, call, ctx);
+  }
+
+  /**
+   * tea-rags-mcp-ykj7 — external-import classifier for an UNRESOLVED call.
+   * `true` when the receiver is an ECMAScript ambient global (`Math.max`,
+   * `console.log` — no import to match) OR binds to an import whose specifier
+   * does NOT map to a project file (`node:fs`, bare npm packages). `mapImportToFile`
+   * returns `null` for exactly those specifiers (relative + tsconfig-`paths`
+   * resolve to a file). Because the provider only calls this on unresolved
+   * calls, a path-aliased internal import that resolved never reaches here.
+   */
+  targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
+    const { receiver } = call;
+    if (receiver !== null && ECMASCRIPT_GLOBALS.has(receiver)) return true;
+    // Receiver-bound external, or a bare named import called directly
+    // (`import { readFile } from "node:fs"` → `readFile()`).
+    const boundName = receiver ?? call.member;
+    if (boundName.length === 0) return false;
+    for (const imp of ctx.imports) {
+      if (
+        imp.importedNames?.includes(boundName) &&
+        mapImportToFile(imp.importText, ctx.callerFile, this.tsOptions) === null
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

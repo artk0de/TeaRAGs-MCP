@@ -105,6 +105,8 @@ export class JavaScriptLanguage implements LanguageProvider {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchEdge[] =>
         callResolver.resolveDispatch?.(call, ctx) ?? [],
+      targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.targetsExternalImport?.(call, ctx) ?? false,
     };
   }
 }

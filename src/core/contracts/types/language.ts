@@ -335,6 +335,20 @@ export interface LanguageSymbolResolver {
    * `CallResolver.resolveFileEdges`.
    */
   resolveFileEdges?: (extraction: FileExtraction, ctx: CallContext) => GraphEdges["fileEdges"];
+  /**
+   * Optional: does this UNRESOLVED call target an external library / runtime
+   * import rather than an in-project resolver miss? (tea-rags-mcp-ykj7). The
+   * provider consults it ONLY for calls `resolve`/`resolveDispatch` could not
+   * pin to a target, so it never reclassifies a resolved call. Returning `true`
+   * excludes the call from the `resolveSuccessRate` denominator (it is counted
+   * separately as `callsExternalSkipped`), so the metric reflects the resolver's
+   * capability on PROJECT-INTERNAL calls instead of the un-resolvable
+   * external-library noise (`Math.max`, `fs.readFile`, `Net::HTTP.get`, …).
+   *
+   * Mirrors `CallResolver.targetsExternalImport`. Languages that omit it keep
+   * every unresolved call in the denominator (conservative — never over-shrinks).
+   */
+  targetsExternalImport?: (call: CallRef, ctx: CallContext) => boolean;
 }
 
 /**

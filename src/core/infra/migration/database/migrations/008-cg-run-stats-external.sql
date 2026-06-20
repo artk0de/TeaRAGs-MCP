@@ -1,0 +1,11 @@
+-- Codegraph external-skipped resolve bucket (bd tea-rags-mcp-ykj7).
+--
+-- `external_skipped` records, per receiver-kind, how many UNRESOLVED calls the
+-- language resolver classified as targeting an external library / runtime
+-- import (`Math.max`, `fs.readFile`, `Net::HTTP.get`). Excluded from the
+-- resolveSuccessRate denominator so the persisted breakdown reflects
+-- PROJECT-INTERNAL resolver capability.
+--
+-- DuckDB rejects NOT NULL on ALTER ... ADD COLUMN ("constraints not yet
+-- supported"); DEFAULT 0 alone backfills existing rows and new inserts.
+ALTER TABLE cg_run_stats ADD COLUMN IF NOT EXISTS external_skipped INTEGER DEFAULT 0;

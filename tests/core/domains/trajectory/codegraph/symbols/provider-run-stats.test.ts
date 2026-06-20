@@ -96,4 +96,25 @@ describe("CodegraphEnrichmentProvider — run-stats persistence (2jet-D)", () =>
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  // tea-rags-mcp-ykj7 — an external-library call is tallied per receiver-kind
+  // as externalSkipped and persisted to cg_run_stats.external_skipped, so the
+  // daemon-readable breakdown shows WHY the denominator shrank.
+  it("persists per-receiver-kind externalSkipped for external-library calls", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-runstats-ext-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    // `Math.max` — ECMAScript ambient global → external; `Math` matches the
+    // constant receiver-kind, so the constant bucket carries externalSkipped=1.
+    writeFileSync(join(root, "src", "calc.ts"), "export function run(): number {\n  return Math.max(1, 2);\n}\n");
+    try {
+      await provider.streamFileBatch(root, ["src/calc.ts"]);
+      await provider.finalizeSignals(root);
+
+      const persisted = await client.getRunStats();
+      const constant = persisted.find((r) => r.receiverKind === "constant");
+      expect(constant).toMatchObject({ attempted: 1, resolved: 0, externalSkipped: 1 });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

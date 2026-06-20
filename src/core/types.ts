@@ -150,6 +150,22 @@ export interface EnrichmentMetrics {
   byProvider?: Record<string, ProviderRunMetrics>;
 }
 
+/**
+ * tea-rags-mcp-ykj7 — post-hoc codegraph resolve-quality, read from the
+ * persisted `cg_run_stats` table at status time (NOT a per-payload signal, so
+ * it lives here on IndexStatus rather than in `get_index_metrics`, which is the
+ * signal-statistics DTO per the Stats-vs-Metrics rule). Absent when codegraph
+ * was not indexed for the collection or the run-stats table is empty.
+ */
+export interface CodegraphResolveSummary {
+  /** `callsResolved / max(1, callsAttempted − callsExternalSkipped)`; 0 when nothing attempted. */
+  resolveSuccessRate: number;
+  callsAttempted: number;
+  callsResolved: number;
+  /** Unresolved calls classified as external-library / runtime targets, excluded from the rate. */
+  callsExternalSkipped: number;
+}
+
 export interface IndexStatus {
   /** @deprecated Use `status` instead. True only when status is 'indexed'. */
   isIndexed: boolean;
@@ -166,6 +182,8 @@ export interface IndexStatus {
   qdrantUrl?: string;
   /** Per-provider enrichment health (e.g. { git: { file: ..., chunk: ... } }) */
   enrichment?: EnrichmentHealthMap;
+  /** Codegraph resolve-quality from the persisted cg_run_stats table (tea-rags-mcp-ykj7). */
+  codegraphResolve?: CodegraphResolveSummary;
   /** BM25 sparse vector version (from schema metadata) */
   sparseVersion?: number;
   /**

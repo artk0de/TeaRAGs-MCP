@@ -103,6 +103,21 @@ export class RubyCallResolver implements CallResolver {
   }
 
   /**
+   * tea-rags-mcp-ykj7 — external-import classifier for an UNRESOLVED call.
+   * Fires for a CONSTANT receiver (`Net::HTTP`, `Base64`) that `resolveConstant`
+   * cannot map to a project / Zeitwerk file — i.e. a gem or stdlib constant.
+   * Conservative: a constant that resolves to a project file is in-project (and
+   * would not reach this hook unresolved); a lowercase receiver (local var /
+   * `self`) and bare calls (`puts`) cannot be told apart from project methods,
+   * so they stay attempted-unresolved.
+   */
+  targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
+    const { receiver } = call;
+    if (receiver === null || !/^[A-Z]/.test(receiver)) return false;
+    return resolveConstant(receiver, ctx) === null;
+  }
+
+  /**
    * Fan-out resolution for a Ruby call, composed in precedence order:
    *
    *   1. Registry-literal table (bd tea-rags-mcp-pq02v) — a `CONST[k].new.m`

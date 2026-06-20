@@ -29,6 +29,7 @@ import {
   type CallResolver,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
+import { ECMASCRIPT_GLOBALS } from "../../kernel/ecmascript-globals.js";
 
 const JS_EXTS = [".js", ".jsx", ".mjs", ".cjs"];
 
@@ -166,6 +167,31 @@ export class JavascriptCallResolver implements CallResolver {
       current = ctx.classExtends[current];
     }
     return fileOnlyFallback;
+  }
+
+  /**
+   * tea-rags-mcp-ykj7 — external-import classifier for an UNRESOLVED call.
+   * `true` when the receiver is an ECMAScript ambient global (`console.log`,
+   * `Math.max` — no import), or matches an import whose specifier is BARE
+   * (npm package: `mapJavascriptImportToFile` returns `null` for everything
+   * that isn't a relative project path). The JS walker does not populate
+   * `importedNames`, so receiver↔import matching reuses the resolver's existing
+   * last-path-segment heuristic (`importMatchesReceiver`).
+   */
+  targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
+    const { receiver } = call;
+    if (receiver !== null && ECMASCRIPT_GLOBALS.has(receiver)) return true;
+    const boundName = receiver ?? call.member;
+    if (boundName.length === 0) return false;
+    for (const imp of ctx.imports) {
+      if (
+        importMatchesReceiver(imp.importText, boundName) &&
+        mapJavascriptImportToFile(imp.importText, ctx.callerFile) === null
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
