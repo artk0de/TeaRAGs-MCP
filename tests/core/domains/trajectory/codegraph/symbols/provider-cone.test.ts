@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { RubyCallResolver } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
@@ -48,6 +49,7 @@ describe("CodegraphEnrichmentProvider — CHA cone dispatch end-to-end (bd tea-r
       symbolTable: new InMemoryGlobalSymbolTable(),
       ...buildTestCodegraphDeps(new Map([["ruby", new RubyCallResolver()]])),
       composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
     });
   });
 
@@ -98,6 +100,7 @@ describe("CodegraphEnrichmentProvider — CHA cone dispatch end-to-end (bd tea-r
         symbolTable: new InMemoryGlobalSymbolTable(),
         ...buildTestCodegraphDeps(new Map([["ruby", new RubyCallResolver()]])),
         composer: new DefaultSymbolIdComposer(),
+        collectSymbols,
       });
       const sink = polyProvider.asExtractionSink();
       await sink.write(rubyClass("Animal", "speak"));

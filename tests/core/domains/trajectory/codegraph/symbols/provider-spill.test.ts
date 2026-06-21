@@ -22,11 +22,12 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
-import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
-import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
+import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
+import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
+import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { CodegraphSpillIoError } from "../../../../../../src/core/domains/trajectory/errors.js";
 
@@ -45,6 +46,7 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
       pool,
       ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
     });
   });
 
@@ -146,6 +148,7 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
         symbolTable: new InMemoryGlobalSymbolTable(),
         ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
+        collectSymbols,
       });
       const sink = directProvider.asExtractionSink();
       await expect(

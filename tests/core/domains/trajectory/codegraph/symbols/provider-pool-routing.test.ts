@@ -29,6 +29,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
+import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import {
@@ -76,6 +77,7 @@ describe("CodegraphEnrichmentProvider — versioned-write / alias-read routing",
       pool,
       ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
     });
   });
 

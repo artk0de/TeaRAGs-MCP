@@ -27,6 +27,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DuckDbGraphClient } from "../../src/core/adapters/duckdb/client.js";
 import { GraphFacade } from "../../src/core/api/internal/facades/graph-facade.js";
 import { LanguageFactory } from "../../src/core/domains/language/index.js";
+import { collectSymbols } from "../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../src/core/domains/language/kernel/symbol-id.js";
 import { extractFromTypescriptFile } from "../../src/core/domains/language/typescript/walker/walker.js";
 import { createSymbolsTrajectory } from "../../src/core/domains/trajectory/codegraph/symbols/index.js";
@@ -123,6 +124,7 @@ describe("codegraph slice 1 on real tea-rags sources", () => {
       symbolTable,
       languageFactory: new LanguageFactory(),
       composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
     });
     provider = trajectory.enrichment as CodegraphEnrichmentProvider;
     // GraphFacade takes a pool now — wrap the single client in a stub

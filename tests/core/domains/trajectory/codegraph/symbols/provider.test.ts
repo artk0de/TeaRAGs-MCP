@@ -11,6 +11,7 @@ import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/cl
 import type { GraphDbClient } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../../../../../../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { JavascriptCallResolver } from "../../../../../../src/core/domains/language/javascript/resolver/index.js";
+import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
@@ -43,6 +44,7 @@ describe("CodegraphEnrichmentProvider", () => {
         ]),
       ),
       composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
     });
   });
   afterEach(async () => {
@@ -634,6 +636,7 @@ describe("CodegraphEnrichmentProvider", () => {
         symbolTable: new InMemoryGlobalSymbolTable(),
         ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
+        collectSymbols,
         exclusion: { excludeTests: true, customPatterns: [] },
       });
       const overlays = await testExcluder.buildFileSignals(root);
@@ -684,6 +687,7 @@ describe("CodegraphEnrichmentProvider", () => {
         symbolTable: new InMemoryGlobalSymbolTable(),
         ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
+        collectSymbols,
         exclusion: { excludeTests: false, customPatterns: ["generated/**"] },
       });
       const overlays = await customExcluder.buildFileSignals(root);
@@ -703,6 +707,7 @@ describe("CodegraphEnrichmentProvider", () => {
         symbolTable: new InMemoryGlobalSymbolTable(),
         ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
+        collectSymbols,
         exclusion: { excludeTests, customPatterns: [] },
       });
     }
@@ -875,6 +880,7 @@ describe("CodegraphEnrichmentProvider", () => {
         symbolTable,
         ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
+        collectSymbols,
         exclusion: { excludeTests: true, customPatterns: [] },
       });
 
@@ -921,6 +927,7 @@ describe("CodegraphEnrichmentProvider", () => {
         symbolTable,
         ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
+        collectSymbols,
         exclusion: { excludeTests: false, customPatterns: [] },
       });
 
@@ -1152,6 +1159,7 @@ describe("CodegraphEnrichmentProvider", () => {
       symbolTable: new InMemoryGlobalSymbolTable(),
       ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
     });
     const sink = failingProvider.asExtractionSink();
     await sink.write({
@@ -1205,6 +1213,7 @@ describe("CodegraphEnrichmentProvider", () => {
       symbolTable: new InMemoryGlobalSymbolTable(),
       ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
     });
     const sink = failingProvider.asExtractionSink();
     await sink.write({

@@ -24,6 +24,7 @@ import type {
   WorkerEnrichmentDescriptor,
 } from "../../../../../../src/core/contracts/types/provider.js";
 import { JavascriptCallResolver } from "../../../../../../src/core/domains/language/javascript/resolver/index.js";
+import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import type { CodegraphWorkerConfig } from "../../../../../../src/core/domains/trajectory/codegraph/factory.js";
@@ -61,6 +62,7 @@ describe("CodegraphEnrichmentProvider — worker integration contract", () => {
           ]),
         ),
         composer: new DefaultSymbolIdComposer(),
+        collectSymbols,
       },
       descriptor,
     );

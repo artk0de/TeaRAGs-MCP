@@ -12,6 +12,7 @@
 export { resolveViaChain } from "./resolver-chain.js";
 export { ConeDispatchResolver } from "./cone-dispatch.js";
 export { DefaultSymbolIdComposer } from "./kernel/symbol-id.js";
+export { collectSymbols } from "./kernel/collect-symbols.js";
 export { LanguageFactory } from "./factory.js";
 export { LanguageError, UnsupportedLanguageError } from "./errors.js";
 export { RubyLanguage } from "./ruby/index.js";

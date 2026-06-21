@@ -38,12 +38,13 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
-import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
-import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
+import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
+import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
+import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { RubyCallResolver } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { runMigrations } from "../../../../../../src/core/infra/migration/database/runner.js";
 
@@ -65,6 +66,7 @@ describe("Codegraph fanIn ↔ getCallers consistency (tea-rags-mcp-4nch)", () =>
       symbolTable: new InMemoryGlobalSymbolTable(),
       ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
     });
   });
 
@@ -274,6 +276,7 @@ describe("Codegraph fanIn ↔ getCallers consistency — Ruby fixtures (tea-rags
         ]),
       ),
       composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
     });
   });
 
