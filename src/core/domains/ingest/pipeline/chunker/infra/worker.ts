@@ -18,16 +18,28 @@
  * + spec §5.
  *
  * Each worker thread creates its own `TreeSitterChunker` with independent
- * Parser instances (tree-sitter native bindings are per-thread).
+ * Parser instances. node-tree-sitter's native parse is process-globally
+ * thread-unsafe (concurrent parses across threads corrupt the tree), so the
+ * single-flight discipline is enforced UPSTREAM by the pool (one parse worker)
+ * — not by per-thread isolation (yl9tv).
  *
  * Protocol (`./worker-protocol.ts`):
- *   Receives: WorkerRequest { filePath, code, language }
- *   Returns:  WorkerResponse { filePath, chunks, error? }
+ *   Receives: WorkerRequest { filePath, code, language, emitExtraction? }
+ *   Returns:  WorkerResponse { filePath, chunks, extraction?, error? }
+ *
+ * When `emitExtraction` is set (codegraph enabled), the worker runs the
+ * language walker on the SAME parse it chunked with and returns a codegraph
+ * `FileExtraction` alongside the chunks — eliminating the main-thread re-parse.
  */
 
 import { parentPort, workerData } from "node:worker_threads";
 
-import type { LanguageFactoryDescriptor, SymbolIdComposer } from "../../../../../contracts/types/language.js";
+import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
+import type {
+  CollectSymbolsFn,
+  LanguageFactoryDescriptor,
+  SymbolIdComposer,
+} from "../../../../../contracts/types/language.js";
 import type { ChunkerConfig } from "../../../../../types.js";
 import { TreeSitterChunker } from "../tree-sitter.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
@@ -41,6 +53,22 @@ import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
 interface LanguageModule {
   LanguageFactory: new () => LanguageFactoryDescriptor;
   DefaultSymbolIdComposer: new () => SymbolIdComposer;
+  /** yl9tv — pure kernel symbol-range collector, run on the chunk parse when
+   *  a request asks for a codegraph extraction. */
+  collectSymbols: CollectSymbolsFn;
+}
+
+/**
+ * In-thread chunker engine: the `TreeSitterChunker` plus the language
+ * capabilities needed to emit a codegraph `FileExtraction` from the SAME parse
+ * (yl9tv). `languageFactory.create(lang)` yields the walker + kernel config;
+ * `collectSymbols` + `composer` compose the symbol ranges the walker consumes.
+ */
+interface ChunkerEngine {
+  chunker: TreeSitterChunker;
+  languageFactory: LanguageFactoryDescriptor;
+  composer: SymbolIdComposer;
+  collectSymbols: CollectSymbolsFn;
 }
 
 /**
@@ -50,7 +78,7 @@ interface LanguageModule {
  * irrelevant here — the worker only chunks, never invokes a codegraph resolver —
  * so the factory is constructed with no options.
  */
-async function buildChunker(config: ChunkerConfig): Promise<TreeSitterChunker> {
+async function buildChunker(config: ChunkerConfig): Promise<ChunkerEngine> {
   if (!config.languageModulePath) {
     // Programming error: the pool composition root must inject the path. The
     // worker cannot import the module statically, so there is no fallback.
@@ -58,7 +86,9 @@ async function buildChunker(config: ChunkerConfig): Promise<TreeSitterChunker> {
   }
   const lang = (await import(config.languageModulePath)) as LanguageModule;
   const languageFactory = new lang.LanguageFactory();
-  return new TreeSitterChunker(config, new lang.DefaultSymbolIdComposer(), languageFactory);
+  const composer = new lang.DefaultSymbolIdComposer();
+  const chunker = new TreeSitterChunker(config, composer, languageFactory);
+  return { chunker, languageFactory, composer, collectSymbols: lang.collectSymbols };
 }
 
 if (parentPort) {
@@ -80,11 +110,37 @@ if (parentPort) {
     const request = msg as WorkerRequest;
     void (async () => {
       try {
-        const chunker = await chunkerPromise;
-        const chunks = await chunker.chunk(request.code, request.filePath, request.language);
+        const engine = await chunkerPromise;
+        const { chunks, tree } = await engine.chunker.chunkWithTree(request.code, request.filePath, request.language);
+        // yl9tv — when codegraph is enabled the request sets `emitExtraction`;
+        // run the walker on the SAME parse instead of re-parsing on the main
+        // thread. `tree` is non-null iff the parse succeeded for a code
+        // language; a missing walker (doc/unsupported) yields no extraction.
+        let extraction: FileExtraction | undefined;
+        if (request.emitExtraction && tree) {
+          const provider = engine.languageFactory.create(request.language);
+          const { walker, kernel } = provider;
+          if (walker) {
+            const symbolRanges = engine.collectSymbols(
+              tree,
+              walker.nameOf,
+              kernel.scopeSeparator ?? ".",
+              kernel.disambiguateOverloads ?? false,
+              engine.composer,
+            );
+            extraction = walker.walk({
+              tree,
+              code: request.code,
+              relPath: request.filePath,
+              language: request.language,
+              chunks: symbolRanges,
+            });
+          }
+        }
         parentPort?.postMessage({
           filePath: request.filePath,
           chunks,
+          ...(extraction ? { extraction } : {}),
         } satisfies WorkerResponse);
       } catch (error) {
         parentPort?.postMessage({
