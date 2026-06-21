@@ -32,7 +32,14 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef, LocalBinding } from "../../../../contracts/types/codegraph.js";
+import type { AstNode } from "../../../../contracts/types/ast.js";
+import type {
+  CallRef,
+  ChunkExtraction,
+  FileExtraction,
+  ImportRef,
+  LocalBinding,
+} from "../../../../contracts/types/codegraph.js";
 
 export interface JavaExtractInput {
   tree: Parser.Tree;
@@ -86,7 +93,7 @@ export function extractFromJavaFile(input: JavaExtractInput): FileExtraction {
   return out;
 }
 
-function collectJavaImports(root: Parser.SyntaxNode): ImportRef[] {
+function collectJavaImports(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
     if (node.type !== "import_declaration") return;
@@ -102,7 +109,7 @@ function collectJavaImports(root: Parser.SyntaxNode): ImportRef[] {
   return out;
 }
 
-function collectJavaCalls(root: Parser.SyntaxNode): CallRef[] {
+function collectJavaCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
     if (node.type !== "method_invocation") return;
@@ -142,7 +149,7 @@ interface JavaParamBinding {
  * `List`). Primitive types (`int`, `boolean`, …) and unnamed types bind
  * nothing — `baseTypeName` returns null and the entry is skipped.
  */
-function collectLocalBindings(root: Parser.SyntaxNode): JavaParamBinding[] {
+function collectLocalBindings(root: AstNode): JavaParamBinding[] {
   const out: JavaParamBinding[] = [];
   walk(root, (node) => {
     if (node.type === "formal_parameter") {
@@ -219,7 +226,7 @@ function assignBindingsToInnermostChunks(
  * channel the resolver consults for `this.field.method()` cross-class
  * calls. Returns an empty Map when no class declares a named-type field.
  */
-function collectJavaClassFieldTypes(root: Parser.SyntaxNode): ReadonlyMap<string, ReadonlyMap<string, string>> {
+function collectJavaClassFieldTypes(root: AstNode): ReadonlyMap<string, ReadonlyMap<string, string>> {
   const result = new Map<string, Map<string, string>>();
   walk(root, (node) => {
     if (node.type !== "class_declaration") return;
@@ -251,7 +258,7 @@ function collectJavaClassFieldTypes(root: Parser.SyntaxNode): ReadonlyMap<string
  *   - primitive nodes (`integral_type`, `boolean_type`, `floating_point_type`,
  *     `void_type`) and array/other shapes → null (no class to bind).
  */
-function baseTypeName(typeNode: Parser.SyntaxNode | null): string | null {
+function baseTypeName(typeNode: AstNode | null): string | null {
   if (!typeNode) return null;
   if (typeNode.type === "type_identifier") return typeNode.text;
   if (typeNode.type === "scoped_type_identifier") return typeNode.text;
@@ -262,7 +269,7 @@ function baseTypeName(typeNode: Parser.SyntaxNode | null): string | null {
   return null;
 }
 
-function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): void {
+function walk(node: AstNode, visit: (n: AstNode) => void): void {
   visit(node);
   for (const child of node.children) walk(child, visit);
 }

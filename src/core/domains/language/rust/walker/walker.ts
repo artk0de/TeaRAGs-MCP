@@ -24,7 +24,14 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef, LocalBinding } from "../../../../contracts/types/codegraph.js";
+import type { AstNode } from "../../../../contracts/types/ast.js";
+import type {
+  CallRef,
+  ChunkExtraction,
+  FileExtraction,
+  ImportRef,
+  LocalBinding,
+} from "../../../../contracts/types/codegraph.js";
 
 export interface RustExtractInput {
   tree: Parser.Tree;
@@ -107,7 +114,7 @@ function isCapWordsType(name: string): boolean {
  *   - `generic_type`            → `Vec<Thing>`    (read `type` field base)
  *   - `scoped_type_identifier`  → `mod::Foo`      (bare last segment)
  */
-function readRustBareType(typeNode: Parser.SyntaxNode | null): string | null {
+function readRustBareType(typeNode: AstNode | null): string | null {
   if (!typeNode) return null;
   if (typeNode.type === "type_identifier") return typeNode.text;
   if (typeNode.type === "reference_type") {
@@ -142,7 +149,7 @@ function readRustBareType(typeNode: Parser.SyntaxNode | null): string | null {
  * `classFieldTypes[callerScope.at(-1)][field]`. Mirrors the Python walker's
  * `collectPythonClassFieldTypes` channel.
  */
-function collectRustStructFieldTypes(root: Parser.SyntaxNode): Record<string, Record<string, string>> {
+function collectRustStructFieldTypes(root: AstNode): Record<string, Record<string, string>> {
   const out: Record<string, Record<string, string>> = {};
   walk(root, (node) => {
     if (node.type !== "struct_item") return;
@@ -184,7 +191,7 @@ function collectRustStructFieldTypes(root: Parser.SyntaxNode): Record<string, Re
  * `function_item` whose span tightly contains the chunk range.
  */
 function collectRustLocalBindingsForChunk(
-  root: Parser.SyntaxNode,
+  root: AstNode,
   startLine: number,
   endLine: number,
 ): Record<string, LocalBinding[]> {
@@ -192,7 +199,7 @@ function collectRustLocalBindingsForChunk(
   // Find the innermost `function_item` whose span contains the chunk
   // range. Walk in document order tracking the tightest enclosing match
   // so nested functions attribute to the inner one.
-  let target: Parser.SyntaxNode | null = null;
+  let target: AstNode | null = null;
   walk(root, (node) => {
     if (node.type !== "function_item") return;
     const ns = node.startPosition.row + 1;
@@ -202,7 +209,7 @@ function collectRustLocalBindingsForChunk(
     }
   });
   if (!target) return bindings;
-  const fn = target as Parser.SyntaxNode;
+  const fn = target as AstNode;
 
   // Parameters — `fn bar(&self, p: Foo)`. `self_parameter` is anonymous
   // and skipped; only `parameter` nodes with a `pattern` identifier and a
@@ -256,7 +263,7 @@ function collectRustLocalBindingsForChunk(
   return bindings;
 }
 
-function collectRustImports(root: Parser.SyntaxNode): ImportRef[] {
+function collectRustImports(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
     if (node.type !== "use_declaration") return;
@@ -272,7 +279,7 @@ function collectRustImports(root: Parser.SyntaxNode): ImportRef[] {
   return out;
 }
 
-function collectRustCalls(root: Parser.SyntaxNode): CallRef[] {
+function collectRustCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
     // bd tea-rags-mcp-jyzb — macro_invocation (`println!()`, `my_macro!()`)
@@ -320,7 +327,7 @@ function collectRustCalls(root: Parser.SyntaxNode): CallRef[] {
   return out;
 }
 
-function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): void {
+function walk(node: AstNode, visit: (n: AstNode) => void): void {
   visit(node);
   for (const child of node.children) walk(child, visit);
 }

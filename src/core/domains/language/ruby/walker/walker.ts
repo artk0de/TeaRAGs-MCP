@@ -35,6 +35,7 @@
 
 import type Parser from "tree-sitter";
 
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
   ChunkExtraction,
@@ -155,10 +156,10 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
  * instead of the flat per-kind Maps. Returns an empty array when no class /
  * module declares any heritage.
  */
-function collectRubyInheritanceEdges(root: Parser.SyntaxNode): InheritanceEdgeDecl[] {
+function collectRubyInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
   const edges: InheritanceEdgeDecl[] = [];
   const constRe = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
-  const walkScope = (node: Parser.SyntaxNode, scope: string[]): void => {
+  const walkScope = (node: AstNode, scope: string[]): void => {
     if (node.type === "class" || node.type === "module") {
       const nameNode = node.childForFieldName("name");
       if (!nameNode) {
@@ -214,13 +215,13 @@ function collectRubyInheritanceEdges(root: Parser.SyntaxNode): InheritanceEdgeDe
  * Mixin module references are emitted as the textual qualified name
  * the source uses (`PaginatableForm` or `Acme::Concern::Trackable`).
  */
-function collectRubyClassAncestors(root: Parser.SyntaxNode): {
+function collectRubyClassAncestors(root: AstNode): {
   ancestors: Map<string, string[]>;
   prepended: Map<string, string[]>;
 } {
   const out = new Map<string, string[]>();
   const prependedOut = new Map<string, string[]>();
-  const walkScope = (node: Parser.SyntaxNode, scope: string[]): void => {
+  const walkScope = (node: AstNode, scope: string[]): void => {
     if (node.type === "class" || node.type === "module") {
       const nameNode = node.childForFieldName("name");
       if (!nameNode) {
@@ -278,9 +279,7 @@ function collectRubyClassAncestors(root: Parser.SyntaxNode): {
 
 const RUBY_MIXIN_METHODS = new Set(["include", "extend", "prepend"]);
 
-function mixinTargetFromStatement(
-  node: Parser.SyntaxNode,
-): { name: string; kind: "include" | "extend" | "prepend" } | null {
+function mixinTargetFromStatement(node: AstNode): { name: string; kind: "include" | "extend" | "prepend" } | null {
   if (node.type !== "call" && node.type !== "method_call") return null;
   if (node.childForFieldName("receiver")) return null;
   const methodField = node.childForFieldName("method") ?? node.children.find((c) => c.type === "identifier");
@@ -304,7 +303,7 @@ function mixinTargetFromStatement(
  * these as `call` nodes with method = "require" / "require_relative"
  * and a string argument.
  */
-function collectRubyRequires(root: Parser.SyntaxNode): ImportRef[] {
+function collectRubyRequires(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
     if (node.type !== "call" && node.type !== "method_call") return;
@@ -345,7 +344,7 @@ function collectRubyRequires(root: Parser.SyntaxNode): ImportRef[] {
  * the full chain via text. Single-segment references (`User.find`)
  * appear as `constant` nodes.
  */
-function collectRubyConstantRefs(root: Parser.SyntaxNode): ImportRef[] {
+function collectRubyConstantRefs(root: AstNode): ImportRef[] {
   const seen = new Set<string>();
   const out: ImportRef[] = [];
   walk(root, (node) => {
@@ -378,7 +377,7 @@ function collectRubyConstantRefs(root: Parser.SyntaxNode): ImportRef[] {
  * reach the underlying collection literal. Returns the receiver chain's root,
  * which the caller checks for `array` / `hash`. Non-call inputs pass through.
  */
-function unwrapTrailingCalls(node: Parser.SyntaxNode | null): Parser.SyntaxNode | null {
+function unwrapTrailingCalls(node: AstNode | null): AstNode | null {
   let n = node;
   while (n?.type === "call") {
     const receiver = n.childForFieldName("receiver");
@@ -398,8 +397,8 @@ function unwrapTrailingCalls(node: Parser.SyntaxNode | null): Parser.SyntaxNode 
  * member both carry the fully-qualified constant so the `constant` resolver
  * pins it to the declaring file (file-only edge when no method matches).
  */
-function collectRegistryConstantValueRefs(literal: Parser.SyntaxNode, out: CallRef[]): void {
-  const walkValue = (n: Parser.SyntaxNode): void => {
+function collectRegistryConstantValueRefs(literal: AstNode, out: CallRef[]): void {
+  const walkValue = (n: AstNode): void => {
     if (
       n.type === "lambda" ||
       n.type === "block" ||
@@ -435,7 +434,7 @@ function collectRegistryConstantValueRefs(literal: Parser.SyntaxNode, out: CallR
  * guess a runtime key). Shared by the table build and the call-site key read so
  * both produce identical key strings.
  */
-function rubyDispatchKeyText(node: Parser.SyntaxNode | null): string | null {
+function rubyDispatchKeyText(node: AstNode | null): string | null {
   if (!node) return null;
   if (node.type === "string") {
     const inner = node.namedChildren.find((c) => c.type === "string_content");
@@ -451,7 +450,7 @@ function rubyDispatchKeyText(node: Parser.SyntaxNode | null): string | null {
  * `scope_resolution` → full `A::B::C` via readScopeResolution; bare `constant` →
  * its text. Anything else (lambda, call, nested literal) → null (dropped).
  */
-function rubyDispatchValueConstant(node: Parser.SyntaxNode | null): string | null {
+function rubyDispatchValueConstant(node: AstNode | null): string | null {
   if (!node) return null;
   if (node.type === "scope_resolution") return readScopeResolution(node) || null;
   if (node.type === "constant") return node.text;
@@ -467,7 +466,7 @@ function rubyDispatchValueConstant(node: Parser.SyntaxNode | null): string | nul
  * entries are omitted. Shares the assignment/literal detection with
  * `collectRegistryConstantValueRefs` (which keeps emitting the chunk-ref edges).
  */
-function collectRubyDispatchTables(root: Parser.SyntaxNode): Record<string, DispatchTable> {
+function collectRubyDispatchTables(root: AstNode): Record<string, DispatchTable> {
   const out: Record<string, DispatchTable> = {};
   walk(root, (node) => {
     if (node.type !== "assignment") return;
@@ -511,7 +510,7 @@ function collectRubyDispatchTables(root: Parser.SyntaxNode): Record<string, Disp
  *   CONST[k].new     → same ref, field stays null (Kernel#new pass-through)
  *   CONST[k].new.m   → { table: CONST, field: "m", key }
  */
-function exprToRubyDispatchRef(node: Parser.SyntaxNode, tableNames: ReadonlySet<string>): DispatchRef | null {
+function exprToRubyDispatchRef(node: AstNode, tableNames: ReadonlySet<string>): DispatchRef | null {
   if (node.type === "element_reference") {
     const obj = node.childForFieldName("object") ?? node.namedChildren[0];
     if (!obj) return null;
@@ -542,7 +541,7 @@ function exprToRubyDispatchRef(node: Parser.SyntaxNode, tableNames: ReadonlySet<
  * superclass position) rather than REFERENCES something. Declarations
  * are exported via fileScope; references via imports.
  */
-function isInDeclarationPosition(node: Parser.SyntaxNode): boolean {
+function isInDeclarationPosition(node: AstNode): boolean {
   let p = node.parent;
   while (p) {
     if (p.type === "class" || p.type === "module") {
@@ -565,9 +564,9 @@ function isInDeclarationPosition(node: Parser.SyntaxNode): boolean {
   return false;
 }
 
-function isAncestor(maybeParent: Parser.SyntaxNode | null, child: Parser.SyntaxNode): boolean {
+function isAncestor(maybeParent: AstNode | null, child: AstNode): boolean {
   if (!maybeParent) return false;
-  let p: Parser.SyntaxNode | null = child;
+  let p: AstNode | null = child;
   while (p) {
     if (p === maybeParent) return true;
     p = p.parent;
@@ -587,9 +586,9 @@ function isAncestor(maybeParent: Parser.SyntaxNode | null, child: Parser.SyntaxN
  *   end
  * → ["Acme::Auth", "Acme::Auth::User"]
  */
-function collectRubyDefinedConstants(root: Parser.SyntaxNode): string[] {
+function collectRubyDefinedConstants(root: AstNode): string[] {
   const out: string[] = [];
-  const walkScope = (node: Parser.SyntaxNode, scope: string[]): void => {
+  const walkScope = (node: AstNode, scope: string[]): void => {
     if (node.type === "class" || node.type === "module") {
       const nameNode = node.childForFieldName("name");
       if (nameNode) {
@@ -674,7 +673,7 @@ function camelizeModelName(snake: string): string {
  * `null` when neither a usable `class_name:` string nor a leading symbol
  * argument is present — no model edge can be synthesised syntactically.
  */
-function associationModelConstant(callNode: Parser.SyntaxNode): string | null {
+function associationModelConstant(callNode: AstNode): string | null {
   const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
   if (!args) return null;
   // Explicit `class_name:` override — a string literal constant.
@@ -708,7 +707,7 @@ function associationModelConstant(callNode: Parser.SyntaxNode): string | null {
  * conditions never become spurious method edges. Mirrors the `delegate`
  * leading-symbol scan in `extractDelegateSymbols`.
  */
-function extractCallbackSymbols(callNode: Parser.SyntaxNode): string[] {
+function extractCallbackSymbols(callNode: AstNode): string[] {
   const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
   if (!args) return [];
   const out: string[] = [];
@@ -720,7 +719,7 @@ function extractCallbackSymbols(callNode: Parser.SyntaxNode): string[] {
   return out;
 }
 
-function collectRubyCalls(root: Parser.SyntaxNode, dispatchTableNames: ReadonlySet<string>): CallRef[] {
+function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>): CallRef[] {
   const out: CallRef[] = [];
 
   // Recursive walk that tracks the enclosing instance / singleton method
@@ -731,7 +730,7 @@ function collectRubyCalls(root: Parser.SyntaxNode, dispatchTableNames: ReadonlyS
   // method's scope (parameters, assignment LHS, block vars, rescue-vars,
   // for-loop vars) so bare-identifier emission can skip local-var reads
   // (bd tea-rags-mcp-hbie).
-  const visit = (node: Parser.SyntaxNode, enclosingMethod: string | null, localBindings: Set<string>): void => {
+  const visit = (node: AstNode, enclosingMethod: string | null, localBindings: Set<string>): void => {
     let nextEnclosing = enclosingMethod;
     let nextBindings = localBindings;
     if (node.type === "method" || node.type === "singleton_method") {
@@ -986,7 +985,7 @@ function collectRubyCalls(root: Parser.SyntaxNode, dispatchTableNames: ReadonlyS
  * (`prs` after `prs = {}`) are filtered separately via the localBindings
  * set in the parent walker — this guard only filters by syntactic position.
  */
-function isBareIdentifierCallSite(id: Parser.SyntaxNode): boolean {
+function isBareIdentifierCallSite(id: AstNode): boolean {
   const { parent } = id;
   if (!parent) return false;
   // Method / singleton_method's own name field — `def foo` not a call.
@@ -1047,9 +1046,9 @@ function isBareIdentifierCallSite(id: Parser.SyntaxNode): boolean {
  * which the resolver's existing language + scope filters would have
  * dropped anyway.
  */
-function collectMethodLocalBindings(methodNode: Parser.SyntaxNode): Set<string> {
+function collectMethodLocalBindings(methodNode: AstNode): Set<string> {
   const out = new Set<string>();
-  const walkBindings = (node: Parser.SyntaxNode): void => {
+  const walkBindings = (node: AstNode): void => {
     if (node.type === "method_parameters" || node.type === "block_parameters") {
       for (const child of node.namedChildren) collectParamName(child, out);
     }
@@ -1083,7 +1082,7 @@ function collectMethodLocalBindings(methodNode: Parser.SyntaxNode): Set<string> 
  * optional/keyword/splat/hash-splat/block params wrap the identifier under
  * a typed node whose `name` field carries the binding.
  */
-function collectParamName(node: Parser.SyntaxNode, out: Set<string>): void {
+function collectParamName(node: AstNode, out: Set<string>): void {
   if (node.type === "identifier") {
     out.add(node.text);
     return;
@@ -1106,7 +1105,7 @@ function collectParamName(node: Parser.SyntaxNode, out: Set<string>): void {
  * `"save"` → `save`) or `null` when the argument is a variable,
  * expression, or absent.
  */
-function extractLiteralSymbolOrString(callNode: Parser.SyntaxNode): string | null {
+function extractLiteralSymbolOrString(callNode: AstNode): string | null {
   const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
   if (!args) return null;
   const firstArg = args.namedChildren[0];
@@ -1127,7 +1126,7 @@ function extractLiteralSymbolOrString(callNode: Parser.SyntaxNode): string | nul
  * name (the alias target) so the walker can synthesise a CallRef from
  * the new alias to the old method (bd tea-rags-mcp-y2z5).
  */
-function extractSecondLiteralSymbol(callNode: Parser.SyntaxNode): string | null {
+function extractSecondLiteralSymbol(callNode: AstNode): string | null {
   const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
   if (!args) return null;
   const secondArg = args.namedChildren[1];
@@ -1142,7 +1141,7 @@ function extractSecondLiteralSymbol(callNode: Parser.SyntaxNode): string | null 
  * `pushMacroSymbols` delegate loop so the synthesised CallRefs line up 1:1 with
  * the synthesised forwarder method symbols (bd tea-rags-mcp-mx9z).
  */
-function extractDelegateSymbols(callNode: Parser.SyntaxNode): string[] {
+function extractDelegateSymbols(callNode: AstNode): string[] {
   const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
   if (!args) return [];
   const out: string[] = [];
@@ -1163,7 +1162,7 @@ function extractDelegateSymbols(callNode: Parser.SyntaxNode): string[] {
  * symbol nor a constant (e.g. a runtime expression) — no edge can be
  * synthesised syntactically (bd tea-rags-mcp-mx9z).
  */
-function extractDelegateTarget(callNode: Parser.SyntaxNode): string | null {
+function extractDelegateTarget(callNode: AstNode): string | null {
   const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
   if (!args) return null;
   for (const arg of args.namedChildren) {
@@ -1189,7 +1188,7 @@ function extractDelegateTarget(callNode: Parser.SyntaxNode): string | null {
  * a `simple_symbol`. Returns `null` for any other block shape
  * (`&proc_var`, `&Method.method(:foo)`, full `do ... end` block).
  */
-function extractBlockPassMethod(callNode: Parser.SyntaxNode): string | null {
+function extractBlockPassMethod(callNode: AstNode): string | null {
   const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
   if (!args) return null;
   for (const arg of args.namedChildren) {

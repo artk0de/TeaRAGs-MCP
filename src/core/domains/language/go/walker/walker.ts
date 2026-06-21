@@ -22,7 +22,14 @@
 
 import type Parser from "tree-sitter";
 
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef, LocalBinding } from "../../../../contracts/types/codegraph.js";
+import type { AstNode } from "../../../../contracts/types/ast.js";
+import type {
+  CallRef,
+  ChunkExtraction,
+  FileExtraction,
+  ImportRef,
+  LocalBinding,
+} from "../../../../contracts/types/codegraph.js";
 
 export interface GoExtractInput {
   tree: Parser.Tree;
@@ -85,7 +92,7 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
  * reads `localCallBindings` short names. Last-write-wins on duplicate names;
  * resolver-side ambiguity is gated by the symbol-table existence check.
  */
-function collectGoFunctionReturnTypes(root: Parser.SyntaxNode): Record<string, string> {
+function collectGoFunctionReturnTypes(root: AstNode): Record<string, string> {
   const out: Record<string, string> = {};
   walk(root, (node) => {
     if (node.type !== "function_declaration" && node.type !== "method_declaration") return;
@@ -105,7 +112,7 @@ function collectGoFunctionReturnTypes(root: Parser.SyntaxNode): Record<string, s
  * SKIP: `func New() (*Engine, error)` must not bind, because we can't tell
  * which return value the variable receives.
  */
-function readReturnTypeNode(result: Parser.SyntaxNode): string | null {
+function readReturnTypeNode(result: AstNode): string | null {
   if (result.type === "type_identifier") return result.text;
   if (result.type === "pointer_type") {
     const inner = result.children.find((c) => c.type === "type_identifier");
@@ -120,7 +127,7 @@ function readReturnTypeNode(result: Parser.SyntaxNode): string | null {
   return null;
 }
 
-function collectGoImports(root: Parser.SyntaxNode): ImportRef[] {
+function collectGoImports(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
     if (node.type !== "import_spec") return;
@@ -133,7 +140,7 @@ function collectGoImports(root: Parser.SyntaxNode): ImportRef[] {
   return out;
 }
 
-function collectGoCalls(root: Parser.SyntaxNode): CallRef[] {
+function collectGoCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
     if (node.type !== "call_expression") return;
@@ -152,7 +159,7 @@ function collectGoCalls(root: Parser.SyntaxNode): CallRef[] {
   return out;
 }
 
-function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): void {
+function walk(node: AstNode, visit: (n: AstNode) => void): void {
   visit(node);
   for (const child of node.children) walk(child, visit);
 }
@@ -191,7 +198,7 @@ function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): v
  * the only static type hints for `engine.Use()`-style calls.
  */
 function collectGoLocalBindingsForChunk(
-  root: Parser.SyntaxNode,
+  root: AstNode,
   startLine: number,
   endLine: number,
 ): { types: Record<string, LocalBinding[]>; calls: Record<string, string> } {
@@ -201,7 +208,7 @@ function collectGoLocalBindingsForChunk(
   // chunk's [startLine, endLine] range. Tree-sitter rows are 0-indexed;
   // we use the start row as the match anchor (chunks are anchored at
   // the declaration's first line).
-  let target: Parser.SyntaxNode | null = null;
+  let target: AstNode | null = null;
   walk(root, (node) => {
     if (target) return;
     if (node.type !== "function_declaration" && node.type !== "method_declaration") return;
@@ -213,7 +220,7 @@ function collectGoLocalBindingsForChunk(
   if (!target) return { types: bindings, calls: callBindings };
 
   // Method receiver.
-  const receiver = (target as Parser.SyntaxNode).childForFieldName("receiver");
+  const receiver = (target as AstNode).childForFieldName("receiver");
   if (receiver) {
     for (const param of receiver.children) {
       if (param.type !== "parameter_declaration") continue;
@@ -224,7 +231,7 @@ function collectGoLocalBindingsForChunk(
   }
 
   // Parameter list.
-  const params = (target as Parser.SyntaxNode).childForFieldName("parameters");
+  const params = (target as AstNode).childForFieldName("parameters");
   if (params) {
     for (const param of params.children) {
       if (param.type !== "parameter_declaration") continue;
@@ -238,7 +245,7 @@ function collectGoLocalBindingsForChunk(
   // Foo{}`, `x := &Foo{}` (bd tea-rags-mcp-6g9c). Walk the target
   // declaration's descendants; both forms are nested in the function's
   // `block` / `statement_list` regardless of nesting depth.
-  walk(target as Parser.SyntaxNode, (node) => {
+  walk(target as AstNode, (node) => {
     if (node.type === "var_declaration") {
       for (const spec of node.children) {
         if (spec.type !== "var_spec") continue;
@@ -290,7 +297,7 @@ function collectGoLocalBindingsForChunk(
  * itself a `call_expression`) and any other shape; the var↔return pairing is
  * only sound when the RHS is a direct call to a named function.
  */
-function readCalledFunctionName(call: Parser.SyntaxNode): string | null {
+function readCalledFunctionName(call: AstNode): string | null {
   const fn = call.childForFieldName("function");
   if (!fn) return null;
   if (fn.type === "identifier") return fn.text;
@@ -310,7 +317,7 @@ function readCalledFunctionName(call: Parser.SyntaxNode): string | null {
  * types down to the base `type_identifier`. Returns null for unsupported
  * shapes (interface types, map/slice/func types — no single class name).
  */
-function readBareTypeNode(typeNode: Parser.SyntaxNode | null): string | null {
+function readBareTypeNode(typeNode: AstNode | null): string | null {
   if (!typeNode) return null;
   if (typeNode.type === "pointer_type") {
     const inner = typeNode.children.find((c) => c.type === "type_identifier");
@@ -331,8 +338,8 @@ function readBareTypeNode(typeNode: Parser.SyntaxNode | null): string | null {
  * Returns null for any RHS whose type isn't a bare `type_identifier`
  * (e.g. `map[K]V{}`, anonymous struct literals).
  */
-function readCompositeLiteralType(node: Parser.SyntaxNode): string | null {
-  let literal: Parser.SyntaxNode | null = node;
+function readCompositeLiteralType(node: AstNode): string | null {
+  let literal: AstNode | null = node;
   if (node.type === "unary_expression") {
     literal = node.childForFieldName("operand");
   }
@@ -341,7 +348,7 @@ function readCompositeLiteralType(node: Parser.SyntaxNode): string | null {
   return typeNode?.type === "type_identifier" ? typeNode.text : null;
 }
 
-function readParamName(param: Parser.SyntaxNode): string | null {
+function readParamName(param: AstNode): string | null {
   // Go tree-sitter places multi-name `parameter_declaration` (e.g.
   // `func f(a, b int)`) with several `identifier` children before the
   // `type` field. Take the first identifier — multiple bindings of the
@@ -351,7 +358,7 @@ function readParamName(param: Parser.SyntaxNode): string | null {
   return ident?.text ?? null;
 }
 
-function readParamBareType(param: Parser.SyntaxNode): string | null {
+function readParamBareType(param: AstNode): string | null {
   const typeNode = param.childForFieldName("type");
   if (!typeNode) return null;
   // `*Receiver` → unwrap pointer, read identifier.

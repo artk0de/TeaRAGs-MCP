@@ -28,6 +28,7 @@
 
 import type Parser from "tree-sitter";
 
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
   ChunkExtraction,
@@ -131,9 +132,9 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
  *
  * Returns an empty array when no class declares any base.
  */
-function collectPythonInheritanceEdges(root: Parser.SyntaxNode): InheritanceEdgeDecl[] {
+function collectPythonInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
   const edges: InheritanceEdgeDecl[] = [];
-  const walkScope = (node: Parser.SyntaxNode, scope: string[]): void => {
+  const walkScope = (node: AstNode, scope: string[]): void => {
     if (node.type === "class_definition") {
       const nameNode = node.childForFieldName("name");
       if (!nameNode) {
@@ -199,7 +200,7 @@ function collectPythonInheritanceEdges(root: Parser.SyntaxNode): InheritanceEdge
  * Returns a plain object (Record) for NDJSON round-trip — Map would
  * serialise to `{}`.
  */
-function collectPythonClassFieldTypes(root: Parser.SyntaxNode): Record<string, Record<string, string>> {
+function collectPythonClassFieldTypes(root: AstNode): Record<string, Record<string, string>> {
   const out: Record<string, Record<string, string>> = {};
   walk(root, (node) => {
     if (node.type !== "class_definition") return;
@@ -271,7 +272,7 @@ function collectPythonClassFieldTypes(root: Parser.SyntaxNode): Record<string, R
  * Returns a plain object (Record) for NDJSON round-trip — Map would
  * serialise to `{}`.
  */
-function collectPythonClassExtends(root: Parser.SyntaxNode): Record<string, string> {
+function collectPythonClassExtends(root: AstNode): Record<string, string> {
   const out: Record<string, string> = {};
   walk(root, (node) => {
     if (node.type !== "class_definition") return;
@@ -308,7 +309,7 @@ function collectPythonClassExtends(root: Parser.SyntaxNode): Record<string, stri
  * `attribute`. For the call shape we extract the function position; for
  * the bare shape we treat the decorator text as the member name.
  */
-function collectPythonDecoratorCalls(root: Parser.SyntaxNode): CallRef[] {
+function collectPythonDecoratorCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
     if (node.type !== "decorator") return;
@@ -365,7 +366,7 @@ function collectPythonDecoratorCalls(root: Parser.SyntaxNode): CallRef[] {
  * spill — `Map` would serialize to `{}` and lose every entry.
  */
 function collectLocalBindingsForChunk(
-  root: Parser.SyntaxNode,
+  root: AstNode,
   startLine: number,
   endLine: number,
 ): Record<string, LocalBinding[]> {
@@ -445,7 +446,7 @@ function collectLocalBindingsForChunk(
  * language-specific. Returns the qualified form preserving dots when
  * the annotation is an attribute (`module.ClassName`).
  */
-function extractTypeName(typeField: Parser.SyntaxNode): string | null {
+function extractTypeName(typeField: AstNode): string | null {
   // The `type` field is a wrapper whose only named child is the actual
   // type expression. Unwrap one level when present.
   const inner = typeField.namedChild(0) ?? typeField;
@@ -463,7 +464,7 @@ function extractTypeName(typeField: Parser.SyntaxNode): string | null {
  * Anything else (call result, subscript, lambda) returns `null` and
  * the binding is dropped — there's no class name to attribute to.
  */
-function extractConstructorTypeName(fnNode: Parser.SyntaxNode): string | null {
+function extractConstructorTypeName(fnNode: AstNode): string | null {
   if (fnNode.type === "identifier") return fnNode.text;
   if (fnNode.type === "attribute") return fnNode.text;
   return null;
@@ -484,7 +485,7 @@ function isCapWordsConstructor(typeName: string): boolean {
   return /^[A-Z]/.test(finalSegment);
 }
 
-function collectPythonImports(root: Parser.SyntaxNode): ImportRef[] {
+function collectPythonImports(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
     if (node.type === "import_statement") {
@@ -520,7 +521,7 @@ function collectPythonImports(root: Parser.SyntaxNode): ImportRef[] {
   return out;
 }
 
-function pickModuleText(node: Parser.SyntaxNode): string | null {
+function pickModuleText(node: AstNode): string | null {
   switch (node.type) {
     case "dotted_name":
       return node.text;
@@ -540,7 +541,7 @@ function pickModuleText(node: Parser.SyntaxNode): string | null {
   }
 }
 
-function collectPythonCalls(root: Parser.SyntaxNode): CallRef[] {
+function collectPythonCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
     if (node.type !== "call") return;
@@ -565,7 +566,7 @@ function collectPythonCalls(root: Parser.SyntaxNode): CallRef[] {
   return out;
 }
 
-function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): void {
+function walk(node: AstNode, visit: (n: AstNode) => void): void {
   visit(node);
   for (const child of node.children) walk(child, visit);
 }

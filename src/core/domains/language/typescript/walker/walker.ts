@@ -18,6 +18,7 @@
 
 import type Parser from "tree-sitter";
 
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
   ChunkExtraction,
@@ -156,7 +157,7 @@ function assignCallsToInnermostChunks(
   return out;
 }
 
-function collectImports(root: Parser.SyntaxNode): ImportRef[] {
+function collectImports(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
     if (node.type !== "import_statement") return;
@@ -202,7 +203,7 @@ function collectImports(root: Parser.SyntaxNode): ImportRef[] {
  * Returns the names in source order. Empty when the statement is a bare
  * side-effect import (`import "./x"`) — no `import_clause` child.
  */
-function collectImportedNames(node: Parser.SyntaxNode): string[] {
+function collectImportedNames(node: AstNode): string[] {
   const clause = node.children.find((c) => c.type === "import_clause");
   if (!clause) return [];
   const names: string[] = [];
@@ -245,18 +246,13 @@ type DispatchScope = Map<string, DispatchRef>;
  * as before. `tableNames` gates which subscript receivers count as dispatch
  * tables (in-file const tables ∪ imported names).
  */
-function collectCalls(root: Parser.SyntaxNode, tableNames: ReadonlySet<string>): CallRef[] {
+function collectCalls(root: AstNode, tableNames: ReadonlySet<string>): CallRef[] {
   const out: CallRef[] = [];
   walkCalls(root, [new Map<string, DispatchRef>()], tableNames, out);
   return out;
 }
 
-function walkCalls(
-  node: Parser.SyntaxNode,
-  scopes: DispatchScope[],
-  tableNames: ReadonlySet<string>,
-  out: CallRef[],
-): void {
+function walkCalls(node: AstNode, scopes: DispatchScope[], tableNames: ReadonlySet<string>, out: CallRef[]): void {
   // Function-like nodes open a fresh binding scope; everything else (blocks,
   // statements) shares the enclosing function's scope — function-scoped
   // tracking matches `var` semantics and the real dispatcher shape.
@@ -280,12 +276,7 @@ function walkCalls(
   for (const child of node.children) walkCalls(child, localScopes, tableNames, out);
 }
 
-function emitCall(
-  node: Parser.SyntaxNode,
-  scopes: DispatchScope[],
-  tableNames: ReadonlySet<string>,
-  out: CallRef[],
-): void {
+function emitCall(node: AstNode, scopes: DispatchScope[], tableNames: ReadonlySet<string>, out: CallRef[]): void {
   // `new ClassName(args)` (bd tea-rags-mcp-i252). The grammar emits a
   // dedicated `new_expression` node whose `constructor` field is the
   // class identifier (plain identifier or member_expression for
@@ -365,7 +356,7 @@ function emitCall(
  * one path. Returns null when the expression is not a dispatch reference.
  */
 function exprToDispatchRef(
-  node: Parser.SyntaxNode,
+  node: AstNode,
   scopes: DispatchScope[],
   tableNames: ReadonlySet<string>,
 ): DispatchRef | null {
@@ -410,19 +401,19 @@ function lookupDispatchScope(scopes: DispatchScope[], name: string): DispatchRef
 }
 
 /** Static string-literal key (`TABLE["ts"]`) → `"ts"`; dynamic key → null. */
-function staticKeyOf(subscript: Parser.SyntaxNode): string | null {
+function staticKeyOf(subscript: AstNode): string | null {
   const index = subscript.childForFieldName("index");
   if (index?.type !== "string") return null;
   return index.text.replace(/^['"`]|['"`]$/g, "");
 }
 
-function isConstDeclaration(node: Parser.SyntaxNode): boolean {
+function isConstDeclaration(node: AstNode): boolean {
   // `let`/`const` are both lexical_declaration; only const qualifies (the
   // table / binding must be non-reassignable per the m46z safety rule).
   return node.children.some((c) => c.type === "const");
 }
 
-function isFunctionLike(node: Parser.SyntaxNode): boolean {
+function isFunctionLike(node: AstNode): boolean {
   return (
     node.type === "function_declaration" ||
     node.type === "function_expression" ||
@@ -440,9 +431,9 @@ function isFunctionLike(node: Parser.SyntaxNode): boolean {
  * are recorded — arrows, calls, spreads carry no symbol. Tables with zero
  * usable entries (pure config objects) are omitted.
  */
-function collectDispatchTables(root: Parser.SyntaxNode): Record<string, DispatchTable> {
+function collectDispatchTables(root: AstNode): Record<string, DispatchTable> {
   const out: Record<string, DispatchTable> = {};
-  const consider = (decl: Parser.SyntaxNode): void => {
+  const consider = (decl: AstNode): void => {
     if (decl.type !== "lexical_declaration" || !isConstDeclaration(decl)) return;
     for (const d of decl.children) {
       if (d.type !== "variable_declarator") continue;
@@ -461,7 +452,7 @@ function collectDispatchTables(root: Parser.SyntaxNode): Record<string, Dispatch
   return out;
 }
 
-function objectToTableEntries(objNode: Parser.SyntaxNode): Record<string, string | Record<string, string>> {
+function objectToTableEntries(objNode: AstNode): Record<string, string | Record<string, string>> {
   const entries: Record<string, string | Record<string, string>> = {};
   for (const pair of objNode.namedChildren) {
     if (pair.type !== "pair") continue;
@@ -478,7 +469,7 @@ function objectToTableEntries(objNode: Parser.SyntaxNode): Record<string, string
   return entries;
 }
 
-function objectFieldsToMap(objNode: Parser.SyntaxNode): Record<string, string> {
+function objectFieldsToMap(objNode: AstNode): Record<string, string> {
   const map: Record<string, string> = {};
   for (const pair of objNode.namedChildren) {
     if (pair.type !== "pair") continue;
@@ -491,7 +482,7 @@ function objectFieldsToMap(objNode: Parser.SyntaxNode): Record<string, string> {
 
 /** `property_identifier` → its text; quoted `string` key → stripped; computed
  *  keys (`[x]:`) and numeric keys → null (no stable string key). */
-function keyText(node: Parser.SyntaxNode | null): string | null {
+function keyText(node: AstNode | null): string | null {
   if (!node) return null;
   if (node.type === "property_identifier") return node.text;
   if (node.type === "string") return node.text.replace(/^['"`]|['"`]$/g, "");
@@ -505,7 +496,7 @@ function keyText(node: Parser.SyntaxNode | null): string | null {
  * innermost chunk that owns the function declaration line.
  */
 function collectCallbackParams(
-  root: Parser.SyntaxNode,
+  root: AstNode,
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[],
 ): Record<string, number[]> {
   const out: Record<string, number[]> = {};
@@ -541,7 +532,7 @@ function collectCallbackParams(
   return out;
 }
 
-function paramName(node: Parser.SyntaxNode): string | null {
+function paramName(node: AstNode): string | null {
   if (node.type === "identifier") return node.text;
   if (node.type === "required_parameter" || node.type === "optional_parameter") {
     const pattern = node.childForFieldName("pattern");
@@ -569,7 +560,7 @@ function innermostSymbolId(
   return best?.symbolId;
 }
 
-function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): void {
+function walk(node: AstNode, visit: (n: AstNode) => void): void {
   visit(node);
   for (const child of node.children) walk(child, visit);
 }
@@ -585,7 +576,7 @@ function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): v
  *
  * Returns an empty Map when no class declarations are found.
  */
-function collectClassFieldTypes(root: Parser.SyntaxNode): ReadonlyMap<string, ReadonlyMap<string, string>> {
+function collectClassFieldTypes(root: AstNode): ReadonlyMap<string, ReadonlyMap<string, string>> {
   const result = new Map<string, Map<string, string>>();
   walk(root, (node) => {
     // bd tea-rags-mcp-q3o2 — same abstract-class shape as collectClassExtends.
@@ -661,7 +652,7 @@ interface ParamBinding {
  * owned by `collectClassFieldTypes`, not local parameter bindings.
  * Untyped or destructured / rest parameters contribute nothing.
  */
-function collectParamBindings(root: Parser.SyntaxNode): ParamBinding[] {
+function collectParamBindings(root: AstNode): ParamBinding[] {
   const out: ParamBinding[] = [];
   walk(root, (node) => {
     if (node.type !== "required_parameter" && node.type !== "optional_parameter") return;
@@ -753,7 +744,7 @@ function assignParamBindingsToInnermostChunks(
  * instantiations (`Base<T>` → `Base`). Returns null for punctuation
  * (`,` / `extends` / `implements` keywords) so callers can `.filter` cleanly.
  */
-function baseTypeName(node: Parser.SyntaxNode | undefined): string | null {
+function baseTypeName(node: AstNode | undefined): string | null {
   if (!node) return null;
   if (node.type === "identifier" || node.type === "type_identifier" || node.type === "member_expression") {
     return node.text;
@@ -774,7 +765,7 @@ function baseTypeName(node: Parser.SyntaxNode | undefined): string | null {
  * the implements channel for the hierarchy graph). `ordinal` preserves
  * declaration order within each clause for MRO reconstruction.
  */
-function collectInheritanceEdges(root: Parser.SyntaxNode): InheritanceEdgeDecl[] {
+function collectInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
   const edges: InheritanceEdgeDecl[] = [];
   walk(root, (node) => {
     if (node.type === "class_declaration" || node.type === "abstract_class_declaration") {
@@ -814,7 +805,7 @@ function collectInheritanceEdges(root: Parser.SyntaxNode): InheritanceEdgeDecl[]
   return edges;
 }
 
-function collectClassExtends(root: Parser.SyntaxNode): ReadonlyMap<string, string> {
+function collectClassExtends(root: AstNode): ReadonlyMap<string, string> {
   const result = new Map<string, string>();
   walk(root, (node) => {
     // bd tea-rags-mcp-q3o2 — abstract classes declare via
@@ -864,7 +855,7 @@ function collectClassExtends(root: Parser.SyntaxNode): ReadonlyMap<string, strin
  * Returns null for union types, function types, or anything we can't pin
  * to a single class name.
  */
-function extractTypeNameFromAnnotation(annotation: Parser.SyntaxNode | undefined): string | null {
+function extractTypeNameFromAnnotation(annotation: AstNode | undefined): string | null {
   if (!annotation) return null;
   // type_annotation has form `: <type>` — first non-`:` child is the type
   const typeNode = annotation.children.find((c) => c.type !== ":");

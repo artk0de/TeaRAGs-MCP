@@ -1,5 +1,4 @@
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import { resolveLocalBindingType, type LocalBinding } from "../../../../contracts/types/codegraph.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
 
@@ -45,7 +44,7 @@ export function localTypeTrackingEnabled(): boolean {
  * method is `new` or in {@link INSTANCE_RETURNING_METHODS}; otherwise null
  * (bare factory calls, Relation tails, non-constant receivers — never guessed).
  */
-function constInstanceType(node: Parser.SyntaxNode): string | null {
+function constInstanceType(node: AstNode): string | null {
   if (node.type !== "call" && node.type !== "method_call") return null;
   const receiver = node.childForFieldName("receiver");
   const method = node.childForFieldName("method");
@@ -91,7 +90,7 @@ function constInstanceType(node: Parser.SyntaxNode): string | null {
  *   - Block parameters and untyped params — need container/element typing (VTA).
  */
 export function collectLocalBindingsForChunk(
-  root: Parser.SyntaxNode,
+  root: AstNode,
   startLine: number,
   endLine: number,
   yardByLine: Map<number, Record<string, string>>,
@@ -160,8 +159,7 @@ export function collectLocalBindingsForChunk(
     // Single assignment: class-constant instance call, else copy-propagation
     // (`var = other_var` copies other_var's most-recent type known at this line).
     const type =
-      constInstanceType(rhs) ??
-      (rhs.type === "identifier" ? resolveLocalBindingType(out, rhs.text, line) : undefined);
+      constInstanceType(rhs) ?? (rhs.type === "identifier" ? resolveLocalBindingType(out, rhs.text, line) : undefined);
     if (type) push(varName, type, line);
   });
   return out;
