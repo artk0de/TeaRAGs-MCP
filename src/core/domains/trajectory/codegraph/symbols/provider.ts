@@ -1034,7 +1034,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // `max(1, …)` guards a divide-by-zero when every attempted call was external.
     const internalAttempted = Math.max(1, callsAttempted - callsExternalSkipped);
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / internalAttempted;
-    const { byReceiverKind } = this.runStats;
+    const byReceiverKind = aggregateReceiverKinds(this.runStats);
     const resolveByReceiverKind = Object.fromEntries(
       RECEIVER_KINDS.map((kind) => {
         const t = byReceiverKind[kind];
@@ -1345,13 +1345,22 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * mirrors the current snapshot to disk at finalize.
    */
   private async recordRunStats(graphDb: GraphDbClient): Promise<void> {
-    const { byReceiverKind } = this.runStats;
-    const rows: ResolveRunStatsRow[] = RECEIVER_KINDS.map((kind) => ({
-      receiverKind: kind,
-      attempted: byReceiverKind[kind].attempted,
-      resolved: byReceiverKind[kind].resolved,
-      externalSkipped: byReceiverKind[kind].externalSkipped,
-    }));
+    // bd tea-rags-mcp-cnqrg — one row per (observed language, receiver kind).
+    // The client overwrites the whole table so stale prior-run cells never leak;
+    // a language absent from this run simply has no rows.
+    const rows: ResolveRunStatsRow[] = [];
+    for (const [language, kinds] of this.runStats.byLanguageKind) {
+      for (const kind of RECEIVER_KINDS) {
+        const t = kinds[kind];
+        rows.push({
+          language,
+          receiverKind: kind,
+          attempted: t.attempted,
+          resolved: t.resolved,
+          externalSkipped: t.externalSkipped,
+        });
+      }
+    }
     await graphDb.recordRunStats(rows);
   }
 
@@ -1722,11 +1731,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // Method-level edges from calls. Track resolve success ratio so the
     // run metrics surface how many call sites the resolver couldn't pin
     // to a target (low ratio = lots of dynamic / external calls).
+    // bd tea-rags-mcp-cnqrg — resolve the per-language tally bucket once per file
+    // (extraction.language is constant across this file's chunks). Test files
+    // never reach resolveExtraction (excluded upstream at extraction), so every
+    // call counted here is production code.
+    const kindTally = languageKindTally(this.runStats, extraction.language);
     for (const chunk of extraction.chunks) {
       for (const call of chunk.calls) {
         this.runStats.callsAttempted += 1;
         const receiverKind = classifyReceiverKind(call, chunk.localBindings);
-        this.runStats.byReceiverKind[receiverKind].attempted += 1;
+        kindTally[receiverKind].attempted += 1;
         const ctx = {
           callerFile: extraction.relPath,
           callerScope: chunk.scope,
@@ -1824,14 +1838,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         }
         if (resolved) {
           this.runStats.callsResolved += 1;
-          this.runStats.byReceiverKind[receiverKind].resolved += 1;
+          kindTally[receiverKind].resolved += 1;
         } else if (resolver.targetsExternalImport?.(call, ctx) ?? false) {
           // tea-rags-mcp-ykj7 — the resolver could not pin this call AND
           // classified it as an external-library / runtime import. Count it
-          // separately (aggregate + per-receiver-kind) so getRunMetrics excludes
-          // it from the denominator and cg_run_stats persists the breakdown.
+          // separately (aggregate + per-(language, receiver-kind)) so
+          // getRunMetrics excludes it from the denominator and cg_run_stats
+          // persists the breakdown.
           this.runStats.callsExternalSkipped += 1;
-          this.runStats.byReceiverKind[receiverKind].externalSkipped += 1;
+          kindTally[receiverKind].externalSkipped += 1;
         }
       }
     }
@@ -1867,15 +1882,47 @@ interface RunStats {
   // rate reflects PROJECT-INTERNAL resolver capability, not unresolvable
   // external-library noise. Subset of (callsAttempted − callsResolved).
   callsExternalSkipped: number;
-  // Per-idiom resolve breakdown (bd tea-rags-mcp-j431) — attempted/resolved per
-  // receiver kind so each cai0 slice proves a delta on the exact bucket it
-  // targets instead of moving one aggregate resolveSuccessRate.
-  byReceiverKind: Record<ReceiverKind, ReceiverKindTally>;
+  // Per-(code language, receiver kind) resolve breakdown (bd tea-rags-mcp-cnqrg,
+  // extends j431). Source of truth: the aggregate scalars above, the per-kind
+  // summary (getRunMetrics, j431 view) and the per-language summary
+  // (get_index_status) all derive from this by summing across the other axis.
+  // recordRunStats persists each (language, kind) cell to cg_run_stats so the
+  // daemon-readable proxy can break resolveSuccessRate down per language and
+  // locate the resolver gap. Lazily grows one entry per language observed in
+  // this run. Test files never reach here — they are excluded upstream at
+  // extraction (CODEGRAPH_EXCLUDE_TESTS, default true).
+  byLanguageKind: Map<string, Record<ReceiverKind, ReceiverKindTally>>;
 }
 
 function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally> {
   const out = {} as Record<ReceiverKind, ReceiverKindTally>;
   for (const kind of RECEIVER_KINDS) out[kind] = { attempted: 0, resolved: 0, externalSkipped: 0 };
+  return out;
+}
+
+/** Lazily fetch this language's per-kind tally, creating a zeroed one on first sight. */
+function languageKindTally(stats: RunStats, language: string): Record<ReceiverKind, ReceiverKindTally> {
+  let kinds = stats.byLanguageKind.get(language);
+  if (!kinds) {
+    kinds = emptyReceiverKindTally();
+    stats.byLanguageKind.set(language, kinds);
+  }
+  return kinds;
+}
+
+/**
+ * Project the per-(language, kind) tally onto the per-receiver-kind axis by
+ * summing across languages — the j431 view consumed by getRunMetrics.
+ */
+function aggregateReceiverKinds(stats: RunStats): Record<ReceiverKind, ReceiverKindTally> {
+  const out = emptyReceiverKindTally();
+  for (const kinds of stats.byLanguageKind.values()) {
+    for (const kind of RECEIVER_KINDS) {
+      out[kind].attempted += kinds[kind].attempted;
+      out[kind].resolved += kinds[kind].resolved;
+      out[kind].externalSkipped += kinds[kind].externalSkipped;
+    }
+  }
   return out;
 }
 
@@ -1887,7 +1934,7 @@ function createEmptyRunStats(): RunStats {
     callsAttempted: 0,
     callsResolved: 0,
     callsExternalSkipped: 0,
-    byReceiverKind: emptyReceiverKindTally(),
+    byLanguageKind: new Map(),
   };
 }
 

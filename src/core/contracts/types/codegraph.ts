@@ -983,6 +983,14 @@ export type MethodEdgeKind = "exact" | "cone" | "poly-base" | "dynamic" | "regis
  * MCP host. `receiverKind` mirrors the `ReceiverKind` union the provider emits.
  */
 export interface ResolveRunStatsRow {
+  /**
+   * tea-rags-mcp-cnqrg — the code language of the call-sites this row tallies
+   * (`extraction.language`: `typescript`, `ruby`, `python`, …). The persisted
+   * grain is per-(language, receiverKind) so `get_index_status` can break
+   * `resolveSuccessRate` down per language to locate the resolver gap. Defaults
+   * to `""` for pre-cnqrg rows / direct-mode runs without a language.
+   */
+  language: string;
   receiverKind: string;
   attempted: number;
   resolved: number;

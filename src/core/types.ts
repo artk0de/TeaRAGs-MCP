@@ -164,6 +164,29 @@ export interface CodegraphResolveSummary {
   callsResolved: number;
   /** Unresolved calls classified as external-library / runtime targets, excluded from the rate. */
   callsExternalSkipped: number;
+  /**
+   * tea-rags-mcp-cnqrg — per-code-language breakdown of the same rate, so a
+   * polyglot index reveals WHICH language's resolver carries the gap. Test
+   * call-sites are excluded from every tally (production-code capability only).
+   * Restricted to officially-supported codegraph languages and filtered by the
+   * same min-share rule as `get_index_metrics` (a language whose call-site
+   * share is below the floor is omitted as noise). Absent when only one
+   * language survives the filter (the aggregate already says it).
+   */
+  byLanguage?: CodegraphResolveLanguageRow[];
+}
+
+/**
+ * tea-rags-mcp-cnqrg — one per-language slice of {@link CodegraphResolveSummary}.
+ * `resolveSuccessRate` uses the same `resolved / max(1, attempted − external)`
+ * formula as the aggregate, scoped to this language's call-sites.
+ */
+export interface CodegraphResolveLanguageRow {
+  language: string;
+  resolveSuccessRate: number;
+  callsAttempted: number;
+  callsResolved: number;
+  callsExternalSkipped: number;
 }
 
 export interface IndexStatus {

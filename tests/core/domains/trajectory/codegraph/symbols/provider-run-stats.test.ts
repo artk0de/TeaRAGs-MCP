@@ -194,4 +194,25 @@ describe("CodegraphEnrichmentProvider — run-stats persistence (2jet-D)", () =>
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  // bd tea-rags-mcp-cnqrg — the persisted grain is per-(language, receiverKind):
+  // every row carries `extraction.language` so get_index_status can break the
+  // aggregate resolveSuccessRate down per code language and locate the resolver
+  // gap. A TS-only fixture tags every row `typescript`.
+  it("tags every persisted row with the call-site's code language (cnqrg)", async () => {
+    const root = makeRoot();
+    try {
+      await provider.streamFileBatch(root, ["src/foo.ts"]);
+      await provider.streamFileBatch(root, ["src/main.ts"]);
+      await provider.finalizeSignals(root);
+
+      const persisted = await client.getRunStats();
+      expect(persisted.length).toBeGreaterThan(0);
+      for (const r of persisted) expect(r.language).toBe("typescript");
+      const constant = persisted.find((r) => r.receiverKind === "constant" && r.language === "typescript");
+      expect(constant).toMatchObject({ attempted: 2, resolved: 1 });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

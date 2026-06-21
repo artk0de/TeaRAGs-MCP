@@ -24,7 +24,14 @@ import { detectScope, type ScopeDetectionConfig } from "../../../infra/scope-det
 import { CODE_LANGUAGES } from "../pipeline/chunker/config.js";
 
 const MIN_SAMPLE_SIZE = 10;
-const MIN_LANGUAGE_SHARE = 0.05;
+/**
+ * A language whose share of the collection is below this floor is omitted from
+ * per-language reporting as noise (misclassified extensions, a stray vendored
+ * file). Shared display policy: `get_index_metrics` uses it for per-language
+ * signal buckets and `get_index_status` (bd tea-rags-mcp-cnqrg) reuses it for
+ * the per-language codegraph resolveSuccessRate breakdown.
+ */
+export const MIN_LANGUAGE_SHARE = 0.05;
 
 /**
  * Read a value from a nested object using dot-notation path.
