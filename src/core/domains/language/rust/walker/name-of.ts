@@ -23,12 +23,11 @@
  * `find_symbol("foo")` resolves the macro definition.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
 import { methodKindFromClassify } from "../../kernel/method-kind.js";
 
-export function rustNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
+export function rustNameOf(node: AstNode): NamedSymbol | null {
   if (node.type === "function_item") {
     const id = node.childForFieldName("name");
     if (id) return { name: id.text, descendsInto: false, methodKind: methodKindFromClassify(node) };
@@ -79,7 +78,7 @@ export function rustNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
  *   `Foo`               → "Foo"
  * Returns null for unrecognized shapes.
  */
-function stripRustGenerics(typeNode: Parser.SyntaxNode): string | null {
+function stripRustGenerics(typeNode: AstNode): string | null {
   if (typeNode.type === "generic_type") {
     const base = typeNode.childForFieldName("type");
     if (base) return base.text;

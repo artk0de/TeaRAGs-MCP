@@ -15,17 +15,16 @@
  * undecorated method inside a class is instance-level (`#`).
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
 import { classifyMethod } from "../../../../infra/symbolid/index.js";
 
-function methodKindFromClassify(node: Parser.SyntaxNode): "instance" | "static" | undefined {
+function methodKindFromClassify(node: AstNode): "instance" | "static" | undefined {
   const c = classifyMethod(node);
   return c === null ? undefined : c;
 }
 
-export function pyNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
+export function pyNameOf(node: AstNode): NamedSymbol | null {
   if (node.type === "function_definition") {
     const id = node.childForFieldName("name");
     if (id) return { name: id.text, descendsInto: false, methodKind: methodKindFromClassify(node) };

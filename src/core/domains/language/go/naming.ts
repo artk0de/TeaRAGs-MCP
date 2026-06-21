@@ -7,8 +7,7 @@
  * true by construction — formerly duplicated in `chunker/hooks/go/symbol-resolver.ts`
  * (extractGoSymbol) and inline in `goNameOf`. bd tea-rags-mcp-n7x5 / j2b7 / aah9.
  */
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../contracts/types/ast.js";
 import { INSTANCE_METHOD_SEPARATOR } from "../../../infra/symbolid/index.js";
 
 export interface GoSymbol {
@@ -29,7 +28,7 @@ export interface GoSymbol {
  *   - `type_declaration` → the `type_spec` OR `type_alias` name (struct /
  *     interface / func / map / slice / `type Foo = Bar`), instanceMethod false.
  */
-export function goSymbolOf(node: Parser.SyntaxNode): GoSymbol | null {
+export function goSymbolOf(node: AstNode): GoSymbol | null {
   if (node.type === "method_declaration") {
     const id = node.childForFieldName("name");
     if (!id) return null;
@@ -66,7 +65,7 @@ export function goSymbolOf(node: Parser.SyntaxNode): GoSymbol | null {
  * pointer (`*R` → `R`) and dropping generic type-parameter lists. Returns null
  * if unparseable (tree-sitter-go is error-tolerant).
  */
-function extractGoReceiverType(method: Parser.SyntaxNode): string | null {
+function extractGoReceiverType(method: AstNode): string | null {
   const receiver = method.childForFieldName("receiver");
   if (!receiver) return null;
   const param = receiver.children.find((c) => c.type === "parameter_declaration");

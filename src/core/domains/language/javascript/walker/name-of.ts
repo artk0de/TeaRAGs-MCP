@@ -28,13 +28,12 @@
  * bd tea-rags-mcp-mwty / d1f8 / z95o / mk45.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
 import { INSTANCE_METHOD_SEPARATOR } from "../../../../infra/symbolid/index.js";
 import { tsNameOf } from "../../typescript/walker/name-of.js";
 
-export function jsNameOf(node: Parser.SyntaxNode): NamedSymbol | NamedSymbol[] | null {
+export function jsNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
   // Delegate first — TS-style declarations dominate modern JS too.
   const tsResult = tsNameOf(node);
   if (tsResult) {
@@ -132,7 +131,7 @@ export function jsNameOf(node: Parser.SyntaxNode): NamedSymbol | NamedSymbol[] |
  * structurally unresolvable without runtime info — out of scope.
  * bd tea-rags-mcp-z95o.
  */
-function jsForEachDispatchEmission(node: Parser.SyntaxNode): NamedSymbol[] | null {
+function jsForEachDispatchEmission(node: AstNode): NamedSymbol[] | null {
   const callee = node.childForFieldName("function");
   const args = node.childForFieldName("arguments");
   if (!callee || !args) return null;
@@ -189,12 +188,7 @@ function jsForEachDispatchEmission(node: Parser.SyntaxNode): NamedSymbol[] | nul
  *
  * bd tea-rags-mcp-z95o.
  */
-function hasHttpVerbDispatchSignal(
-  root: Parser.SyntaxNode,
-  recvName: string,
-  body: Parser.SyntaxNode,
-  paramName: string,
-): boolean {
+function hasHttpVerbDispatchSignal(root: AstNode, recvName: string, body: AstNode, paramName: string): boolean {
   if (bodyComparesParamToHttpVerb(body, paramName)) return true;
   if (recvName === "methods") {
     const requireSource = findRequireSource(root, recvName);
@@ -210,9 +204,9 @@ function hasHttpVerbDispatchSignal(
  * `===` as `binary_expression` with operator child `===`. The string
  * argument must be one of HTTP_VERBS to count.
  */
-function bodyComparesParamToHttpVerb(body: Parser.SyntaxNode, paramName: string): boolean {
+function bodyComparesParamToHttpVerb(body: AstNode, paramName: string): boolean {
   let found = false;
-  const visit = (n: Parser.SyntaxNode): boolean => {
+  const visit = (n: AstNode): boolean => {
     if (found) return true;
     if (n.type === "binary_expression") {
       const op = n.childForFieldName("operator");
@@ -241,11 +235,11 @@ function bodyComparesParamToHttpVerb(body: Parser.SyntaxNode, paramName: string)
   return found;
 }
 
-function isParamIdentifier(n: Parser.SyntaxNode, paramName: string): boolean {
+function isParamIdentifier(n: AstNode, paramName: string): boolean {
   return n.type === "identifier" && n.text === paramName;
 }
 
-function isHttpVerbStringLiteral(n: Parser.SyntaxNode): boolean {
+function isHttpVerbStringLiteral(n: AstNode): boolean {
   const s = readStringLiteral(n);
   if (s === null) return false;
   return (HTTP_VERBS as readonly string[]).includes(s.toLowerCase());
@@ -258,9 +252,9 @@ function isHttpVerbStringLiteral(n: Parser.SyntaxNode): boolean {
  * filename contains `util`. Bonus heuristic for the
  * `var methods = require('./utils').methods` express pattern.
  */
-function anyImportPathContainsUtil(root: Parser.SyntaxNode): boolean {
+function anyImportPathContainsUtil(root: AstNode): boolean {
   let found = false;
-  const visit = (n: Parser.SyntaxNode): boolean => {
+  const visit = (n: AstNode): boolean => {
     if (found) return true;
     if (n.type === "call_expression") {
       const callee = n.childForFieldName("function");
@@ -299,9 +293,9 @@ const HTTP_VERBS = ["get", "post", "put", "delete", "head", "options", "patch", 
  * `assignment_expression` whose LHS is `<obj>[<paramName>]`. Used by the
  * forEach-dispatch detector to anchor the receiver-name extraction.
  */
-function findFirstSubscriptDispatchAssignment(body: Parser.SyntaxNode, paramName: string): Parser.SyntaxNode | null {
-  let found: Parser.SyntaxNode | null = null;
-  const visit = (n: Parser.SyntaxNode): boolean => {
+function findFirstSubscriptDispatchAssignment(body: AstNode, paramName: string): AstNode | null {
+  let found: AstNode | null = null;
+  const visit = (n: AstNode): boolean => {
     if (found) return true;
     if (n.type === "assignment_expression") {
       const left = n.childForFieldName("left");
@@ -330,9 +324,9 @@ function findFirstSubscriptDispatchAssignment(body: Parser.SyntaxNode, paramName
  * exists. Used to validate that a `forEach` receiver originates from
  * a known package.
  */
-function findRequireSource(root: Parser.SyntaxNode, recvName: string): string | null {
+function findRequireSource(root: AstNode, recvName: string): string | null {
   let found: string | null = null;
-  const visit = (n: Parser.SyntaxNode): boolean => {
+  const visit = (n: AstNode): boolean => {
     if (found !== null) return true;
     if (n.type === "variable_declarator") {
       const name = n.childForFieldName("name");
@@ -375,7 +369,7 @@ function findRequireSource(root: Parser.SyntaxNode, recvName: string): string | 
  * helper (express `lib/request.js`); recognised by exact callee text
  * `defineGetter` and third argument being a function value.
  */
-function jsGetterHelperEmission(node: Parser.SyntaxNode): NamedSymbol | null {
+function jsGetterHelperEmission(node: AstNode): NamedSymbol | null {
   const callee = node.childForFieldName("function");
   const args = node.childForFieldName("arguments");
   if (!callee || !args) return null;
@@ -449,7 +443,7 @@ function jsGetterHelperEmission(node: Parser.SyntaxNode): NamedSymbol | null {
  * returns null — those references are unresolvable and emission is skipped
  * by the caller.
  */
-function resolveReceiverText(receiver: Parser.SyntaxNode): string | null {
+function resolveReceiverText(receiver: AstNode): string | null {
   if (receiver.type !== "this") return receiverDisplayText(receiver);
   const outer = resolveEnclosingThisReceiver(receiver);
   return outer; // null when no enclosing receiver — caller will skip.
@@ -465,8 +459,8 @@ function resolveReceiverText(receiver: Parser.SyntaxNode): string | null {
  * still walk further out so nested arrow inside `app.init = function() {}`
  * still resolves to `app`. The chain stops at any non-callable parent.
  */
-function resolveEnclosingThisReceiver(node: Parser.SyntaxNode): string | null {
-  let cur: Parser.SyntaxNode | null = node.parent;
+function resolveEnclosingThisReceiver(node: AstNode): string | null {
+  let cur: AstNode | null = node.parent;
   while (cur) {
     if (
       cur.type === "function_expression" ||
@@ -508,7 +502,7 @@ function resolveEnclosingThisReceiver(node: Parser.SyntaxNode): string | null {
  * child; template strings without interpolation parse as `template_string`.
  * Templates with interpolation are dynamic — skip them.
  */
-function readStringLiteral(node: Parser.SyntaxNode): string | null {
+function readStringLiteral(node: AstNode): string | null {
   if (node.type === "string") {
     const frag = node.namedChildren.find((c) => c.type === "string_fragment");
     return frag ? frag.text : null;
@@ -528,7 +522,7 @@ function readStringLiteral(node: Parser.SyntaxNode): string | null {
  * (`exports.proto`). Returns null for shapes we can't render cleanly
  * (computed access, calls, etc.).
  */
-function receiverDisplayText(node: Parser.SyntaxNode): string | null {
+function receiverDisplayText(node: AstNode): string | null {
   if (node.type === "identifier") return node.text;
   if (node.type === "this") return "this";
   if (node.type === "member_expression") {
@@ -549,7 +543,7 @@ function receiverDisplayText(node: Parser.SyntaxNode): string | null {
  * function. Used to filter `Object.defineProperty(obj, 'x', { value: 1 })`
  * (data descriptor — not a getter) from the getter form we care about.
  */
-function objectHasGetterPair(node: Parser.SyntaxNode): boolean {
+function objectHasGetterPair(node: AstNode): boolean {
   for (const pair of node.namedChildren) {
     if (pair.type !== "pair") continue;
     const key = pair.childForFieldName("key");
@@ -576,7 +570,7 @@ function objectHasGetterPair(node: Parser.SyntaxNode): boolean {
  * Memoised per tree-rootNode via WeakMap so the cost is O(n) per file
  * instead of O(n^2) over `collectSymbols`' walk.
  */
-function isJsConstructorFunction(node: Parser.SyntaxNode): boolean {
+function isJsConstructorFunction(node: AstNode): boolean {
   const nameNode = node.childForFieldName("name");
   if (!nameNode) return false;
   const fnName = nameNode.text;
@@ -586,13 +580,13 @@ function isJsConstructorFunction(node: Parser.SyntaxNode): boolean {
   return set.has(fnName);
 }
 
-const constructorNamesCache = new WeakMap<Parser.SyntaxNode, Set<string>>();
+const constructorNamesCache = new WeakMap<AstNode, Set<string>>();
 
-function constructorFunctionNamesForRoot(root: Parser.SyntaxNode): Set<string> {
+function constructorFunctionNamesForRoot(root: AstNode): Set<string> {
   const cached = constructorNamesCache.get(root);
   if (cached) return cached;
   const names = new Set<string>();
-  const visit = (n: Parser.SyntaxNode): void => {
+  const visit = (n: AstNode): void => {
     // Look for `Foo.prototype.X = <function>` at the assignment_expression
     // level. The walker already understands this shape in
     // `lhsToNamedSymbol` (pattern #2); here we only need the receiver name.
@@ -625,8 +619,8 @@ function constructorFunctionNamesForRoot(root: Parser.SyntaxNode): Set<string> {
   return names;
 }
 
-function findRoot(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
-  let cur: Parser.SyntaxNode | null = node;
+function findRoot(node: AstNode): AstNode | null {
+  let cur: AstNode | null = node;
   while (cur?.parent) cur = cur.parent;
   return cur;
 }
@@ -636,8 +630,8 @@ function findRoot(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
  * return the innermost non-assignment value. Caller checks whether the
  * terminal is function-valued.
  */
-function walkAssignmentChainToTerminalRhs(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
-  let cur: Parser.SyntaxNode | null = node;
+function walkAssignmentChainToTerminalRhs(node: AstNode): AstNode | null {
+  let cur: AstNode | null = node;
   while (cur?.type === "assignment_expression") {
     const right = cur.childForFieldName("right");
     if (!right) return null;
@@ -653,7 +647,7 @@ function walkAssignmentChainToTerminalRhs(node: Parser.SyntaxNode): Parser.Synta
  * scope for this slice — they're rarer and would need receiver typing
  * to be useful in the symbol table.
  */
-function isFunctionValuedExpression(node: Parser.SyntaxNode): boolean {
+function isFunctionValuedExpression(node: AstNode): boolean {
   return node.type === "function_expression" || node.type === "arrow_function" || node.type === "generator_function";
 }
 
@@ -668,7 +662,7 @@ function isFunctionValuedExpression(node: Parser.SyntaxNode): boolean {
  * top-level identifier. Caller decides which "function name" form to
  * adopt; we emit the inner function's name if present, else nothing.
  */
-function collectAssignmentTargets(node: Parser.SyntaxNode, terminalRhs: Parser.SyntaxNode, out: NamedSymbol[]): void {
+function collectAssignmentTargets(node: AstNode, terminalRhs: AstNode, out: NamedSymbol[]): void {
   if (node.type !== "assignment_expression") return;
   const left = node.childForFieldName("left");
   const right = node.childForFieldName("right");
@@ -691,7 +685,7 @@ function collectAssignmentTargets(node: Parser.SyntaxNode, terminalRhs: Parser.S
  *  - deep chains beyond `prototype` (`A.B.prototype.C` is not idiomatic)
  *  - anonymous `module.exports = function () {}` (no name to attach)
  */
-function lhsToNamedSymbol(left: Parser.SyntaxNode, terminalRhs: Parser.SyntaxNode): NamedSymbol | null {
+function lhsToNamedSymbol(left: AstNode, terminalRhs: AstNode): NamedSymbol | null {
   // Bare identifier on the left is just reassignment of an existing
   // binding; the original declarator (variable_declarator) already
   // emitted the symbol. Skip to avoid duplicates.

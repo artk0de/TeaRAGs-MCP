@@ -16,11 +16,10 @@
  * the rust/go/java walkers) — there is no method to classify.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
 
-export function bashNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
+export function bashNameOf(node: AstNode): NamedSymbol | null {
   if (node.type === "function_definition") {
     const id = node.childForFieldName("name");
     if (id) return { name: id.text, descendsInto: false };
