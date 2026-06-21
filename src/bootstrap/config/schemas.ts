@@ -60,7 +60,16 @@ export const embeddingSchema = z.object({
 
 export const ingestTuneSchema = z.object({
   pipelineConcurrency: intWithDefault(1),
-  chunkerPoolSize: intWithDefault(4),
+  /**
+   * Parse worker count. Default 1 enforces SINGLE-FLIGHT parsing (yl9tv):
+   * node-tree-sitter's native parse is process-globally thread-unsafe —
+   * concurrent parses corrupt the tree (proven ±32% codegraph jitter at pool>1)
+   * and the worker now feeds the codegraph extraction off that same parse.
+   * Parse is cheap relative to embedding (the real bottleneck), so serializing
+   * it costs negligible wall-clock. Operators can still override via
+   * `INGEST_TUNE_CHUNKER_POOL_SIZE` / `CHUNKER_POOL_SIZE` (at their own risk).
+   */
+  chunkerPoolSize: intWithDefault(1),
   fileConcurrency: intWithDefault(50),
   ioConcurrency: intWithDefault(50),
   /**
@@ -70,7 +79,8 @@ export const ingestTuneSchema = z.object({
    * seam** used by integration tests + recovery scenarios that construct
    * `IngestFacade` directly with their own executor in deps.
    *
-   * Default 4 mirrors `chunkerPoolSize` sizing — operators can override via
+   * Default 4 — independent of the single-flight `chunkerPoolSize` (enrichment
+   * has no shared native-parse hazard). Operators can override via
    * `INGEST_TUNE_ENRICHMENT_POOL_SIZE` or `ENRICHMENT_POOL_SIZE`.
    */
   enrichmentPoolSize: intWithDefault(4),

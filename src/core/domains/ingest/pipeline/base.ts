@@ -48,7 +48,10 @@ const DEFAULT_TUNING: PipelineTuning = {
     upsertAccumulator: { batchSize: 1024, flushTimeoutMs: 2000, maxQueueSize: 2 },
     deleteAccumulator: { batchSize: 500, flushTimeoutMs: 1000, maxQueueSize: 16 },
   },
-  chunkerPoolSize: 4,
+  // Single-flight parse (yl9tv): one parse worker. node-tree-sitter's native
+  // parse is process-globally thread-unsafe; pool>1 corrupts trees and the
+  // codegraph extraction now rides the same parse. Parse is cheap vs embedding.
+  chunkerPoolSize: 1,
   fileConcurrency: 50,
 };
 
