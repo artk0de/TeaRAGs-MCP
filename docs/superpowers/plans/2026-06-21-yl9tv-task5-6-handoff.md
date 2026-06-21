@@ -116,3 +116,65 @@ lifecycle. If a reviewer could reject the spill-lifetime change independently of
 the bridge, split Task 5 into 5a (provider `acceptExtraction` + eager spill +
 pool-mode no-op) and 5b (file-processor forward + base.ts hook) with the bridge
 test gating 5b.
+
+## Task 6 OUTCOME — live determinism FAILED; Task 5b required (bead tea-rags-mcp-why9b)
+
+Live probe (huginn `force_reindex` ×2 on the worktree build) showed
+callsAttempted is NOT stable: Run 1 = 12622, Run 2 = 14899 (~18% jitter
+persists; byLanguage breakdown also inconsistent between runs).
+
+Root cause: codegraph enrichment runs OFF-THREAD (`workerDescriptor` +
+`WorkerPoolEnrichmentExecutor`, collection-affinity). The executor routes
+`runFileBatch`/`finalizeSignals` to a WORKER instance via `buildCallRequest`
+(`executor/worker-pool.ts`), where a fresh `createCodegraphEnrichmentProvider`
+runs them. But `coordinator.onFileExtraction` calls `acceptExtraction` on the
+MAIN-thread provider instance (`coordinator.contexts`) — a DIFFERENT object. So:
+
+- the worker's `runFedByChunkPass` is never set → its `streamFileBatch` keeps
+  the `extractOneFile` re-parse → still races the chunker pool's parse
+  (process-global tree-sitter corruption) → jitter persists.
+- the main-thread `acceptExtraction` creates a sink that is NEVER finalized
+  (finalize runs in the worker) → spill-file/handle LEAK per run.
+
+Unit tests passed because they exercise the DIRECT-mode (main-thread) provider;
+the off-thread worker path is not covered by unit tests.
+
+Mitigation applied: the live `onFileExtraction` wiring in `indexing.ts` is gated
+OFF (commit after `64a27859`). The worker keeps `extractOneFile` (Tasks 1–4
+baseline — correct, single-flight chunker, just not the determinism win). All
+Task 5 infra (`acceptExtraction`, `coordinator.onFileExtraction` /
+`acceptsExtractions`, `file-processor.onFileExtraction`, pool `emitExtraction`)
+stays as scaffolding.
+
+### Task 5b approved design — worker-owned input spill, main writes
+
+1. **Main `acceptExtraction`**: sync-append the raw `FileExtraction`
+   (root-relative `relPath`) to a DETERMINISTIC input spill
+   `pool.spillPathFor(collection, "xpass-input")`. NO sink, NO finalize on main.
+   Dedup via a main-side per-collection set. Truncate at run start via a new
+   optional `EnrichmentProvider.beginExtractionRun(collection)` called from
+   `coordinator.beginRun`.
+2. **Run-level `crossPass` flag** threaded through `FileSignalOptions` →
+   executor → worker. TRUE only when the run actually FEEDS the input spill. The
+   FULL-index path (`indexing.ts`) wires `onFileExtraction`; **`reindex_changes`
+   is a SEPARATE `ReindexPipeline` that does NOT** — it must stay
+   `crossPass=false` so the worker keeps `extractOneFile` (no
+   incremental-codegraph regression). Thread the flag from the pipeline through
+   `setupEnrichmentHooks`/`beginRun` → `RunState` → file-phase
+   `FileSignalOptions`, NOT from provider capability.
+3. **Worker `streamFileBatch`**: `if (options.crossPass) return new Map()` (no
+   parse).
+4. **Worker `finalizeSignals`**: if `crossPass`, `ensureRunSink`, drain the
+   input spill line-by-line via `sink.write` (pass-1 symbol upsert + worker
+   resolve-spill, deduped), `rm` the input spill, THEN the existing `finish()`
+   (pass-2 resolve). `extractOneFile` stays the non-crossPass + direct-mode
+   fallback. `spillPathFor(collection, marker)` is deterministic and main+worker
+   pools share `rootDir` → identical path.
+
+### 5b validation (mandatory — BOTH paths)
+
+- `force_reindex huginn` ×2 → `get_index_status` codegraph `callsAttempted`
+  STABLE.
+- `reindex_changes` on a ruby project ×2 → codegraph still enriches changed
+  files (no regression) + stable. Re-enable the `indexing.ts` `onFileExtraction`
+  wiring as part of 5b.

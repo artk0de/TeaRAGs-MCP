@@ -110,14 +110,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         // pass is 2-3× faster on large codebases. `deleted_threshold` pause is
         // harmless here (no deletes during initial index).
         return new OptimizerLifecycle(this.qdrant).with(setup.targetCollection, async () => {
-          const result = await this.processAndTrack(
-            files,
-            absolutePath,
-            collectionName,
-            ctx,
-            quarantineStore,
-            progressCallback,
-          );
+          const result = await this.processAndTrack(files, absolutePath, ctx, quarantineStore, progressCallback);
           stats.filesIndexed = result.filesProcessed;
           stats.chunksCreated = result.chunksCreated;
           if (result.errors.length > 0) {
@@ -330,7 +323,6 @@ export class IndexPipeline extends BaseIndexingPipeline {
   private async processAndTrack(
     files: string[],
     absolutePath: string,
-    collectionName: string,
     ctx: ProcessingContext,
     quarantineStore: QuarantineStore,
     progressCallback?: ProgressCallback,
@@ -349,13 +341,13 @@ export class IndexPipeline extends BaseIndexingPipeline {
         maxTotalChunks: this.config.maxTotalChunks,
         concurrency: this.tuning.fileConcurrency,
         quarantineStore,
-        // yl9tv cross-pass — only wire the extraction tee (and flip the worker's
-        // emitExtraction on) when a provider actually consumes it (codegraph).
-        onFileExtraction: this.enrichment.acceptsExtractions()
-          ? (extraction) => {
-              this.enrichment.onFileExtraction(collectionName, extraction);
-            }
-          : undefined,
+        // yl9tv cross-pass tee is DEFERRED to Task 5b (tea-rags-mcp-why9b):
+        // codegraph enrichment runs off-thread (workerDescriptor), so feeding
+        // the MAIN-thread provider's acceptExtraction never reaches the worker
+        // that actually parses — the worker still re-parses (jitter persists)
+        // AND the main-thread sink is never finalized (spill leak). Re-enable
+        // only with the worker-owned input-spill protocol (see the handoff
+        // doc). Until then the worker keeps its extractOneFile path (baseline).
       },
       {
         onFileProcessed: (_filePath, chunksCount) => {
