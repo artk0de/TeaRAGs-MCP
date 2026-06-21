@@ -1,3 +1,8 @@
+---
+paths:
+  - "**/*"
+---
+
 # Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT

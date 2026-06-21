@@ -1,3 +1,13 @@
+---
+paths:
+  - "src/core/domains/trajectory/**/rerank/derived-signals/**"
+  - "src/core/domains/trajectory/**/rerank/presets/**"
+  - "src/core/contracts/types/trajectory.ts"
+  - "src/core/domains/ingest/infra/collection-stats.ts"
+  - "src/core/domains/ingest/infra/stats-recompute.ts"
+  - "src/core/api/internal/composition.ts"
+---
+
 # Signal Confidence (MANDATORY for new ratio/aggregate signals)
 
 > **Status:** Operative. All 7 derived signals (`BugFixSignal`,

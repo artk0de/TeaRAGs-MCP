@@ -1,3 +1,8 @@
+---
+paths:
+  - "**/*"
+---
+
 # Commit Rules
 
 ## Commit Types (MANDATORY)

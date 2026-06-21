@@ -1,3 +1,16 @@
+---
+paths:
+  - "src/core/api/internal/ops/indexing-ops.ts"
+  - "src/core/api/internal/ops/project-registry-ops.ts"
+  - "src/core/domains/ingest/pipeline/enrichment/recovery.ts"
+  - "src/core/adapters/qdrant/errors.ts"
+  - "src/core/api/public/app.ts"
+  - "src/core/api/errors.ts"
+  - "src/core/domains/explore/errors.ts"
+  - "src/core/domains/trajectory/errors.ts"
+  - "src/core/adapters/errors.ts"
+---
+
 # Silo Pairing (MANDATORY for deep-silo files)
 
 Files with `git.file.blameDominantAuthorPct = 100` (deep-silo per tea-rags

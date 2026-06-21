@@ -1,3 +1,8 @@
+---
+paths:
+  - "src/core/domains/**"
+---
+
 # Barrel Files (index.ts)
 
 Every domain boundary directory MUST have an `index.ts` barrel file that

@@ -1,3 +1,11 @@
+---
+paths:
+  - "src/core/domains/**/chunker/hooks/**"
+  - "src/core/domains/**/rerank/**"
+  - "src/core/domains/ingest/pipeline/enrichment/**"
+  - "src/core/domains/ingest/sync/**"
+---
+
 # Deep Path Navigation
 
 When working with paths deeper than 3 levels (e.g., `chunker/hooks/`,

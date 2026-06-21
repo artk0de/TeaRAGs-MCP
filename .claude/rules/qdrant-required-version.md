@@ -1,3 +1,10 @@
+---
+paths:
+  - ".qdrant-required-version"
+  - "src/core/infra/qdrant-version.ts"
+  - "src/core/adapters/qdrant/embedded/**"
+---
+
 # `.qdrant-required-version` — Qdrant Server Version
 
 ## What it is
