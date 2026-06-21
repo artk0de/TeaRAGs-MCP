@@ -9,6 +9,7 @@ class MaterializedNode implements AstNode {
   parent: AstNode | null = null;
   previousNamedSibling: AstNode | null = null;
   readonly fields = new Map<string, AstNode>();
+  isNamed = false;
   constructor(
     readonly type: string,
     readonly startIndex: number,
@@ -60,6 +61,7 @@ export function materializeTree(nativeRoot: Parser.SyntaxNode, code: string): As
       const nativeChild = native.child(i);
       if (nativeChild === null) continue;
       const child = build(nativeChild, node);
+      child.isNamed = nativeChild.isNamed;
       node.children.push(child);
       if (nativeChild.isNamed) {
         child.previousNamedSibling = prevNamed;

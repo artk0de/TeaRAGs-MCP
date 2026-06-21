@@ -18,6 +18,7 @@ export interface AstNode {
   readonly namedChildren: readonly AstNode[];
   readonly childCount: number;
   readonly namedChildCount: number;
+  readonly isNamed: boolean;
   child: (index: number) => AstNode | null;
   namedChild: (index: number) => AstNode | null;
   childForFieldName: (field: string) => AstNode | null;

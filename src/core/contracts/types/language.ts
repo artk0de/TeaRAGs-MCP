@@ -13,6 +13,7 @@
 
 import type Parser from "tree-sitter";
 
+import type { AstNode } from "./ast.js";
 import type { ChunkingHook, LanguageChunkClassifier, MacroSymbol } from "./chunker.js";
 import type {
   CallContext,
@@ -134,7 +135,7 @@ export interface WalkContext {
  * = one new `ExtractionPass` + one `FileExtraction` slot. See spec §1b.
  */
 export interface ExtractionPass<T> {
-  run: (root: Parser.SyntaxNode, ctx: WalkContext) => T;
+  run: (root: AstNode, ctx: WalkContext) => T;
 }
 
 /** Options controlling how `SymbolIdComposer.compose` joins prefix + name. */
@@ -187,7 +188,7 @@ export interface CollectedSymbolRange {
  */
 export type CollectSymbolsFn = (
   tree: Parser.Tree,
-  nameOf: (node: Parser.SyntaxNode) => NamedSymbol | NamedSymbol[] | null,
+  nameOf: (node: AstNode) => NamedSymbol | NamedSymbol[] | null,
   separator: string,
   disambiguateOverloads: boolean,
   composer: SymbolIdComposer,
@@ -245,7 +246,7 @@ export interface LanguageKernel {
    * class/static/abstract methods and non-method nodes. The `#`-vs-`.`
    * separator decision derives from this flag.
    */
-  isInstanceMethod: (node: Parser.SyntaxNode) => boolean;
+  isInstanceMethod: (node: AstNode) => boolean;
 }
 
 /**
@@ -273,7 +274,7 @@ export interface LanguageChunkerHooks {
   /** Language-specific chunking hooks (ordered chain). */
   hooks?: ChunkingHook[];
   /** Custom name extraction for language-specific node types (e.g. RSpec call nodes). */
-  nameExtractor?: (node: Parser.SyntaxNode, code: string) => string | undefined;
+  nameExtractor?: (node: AstNode, code: string) => string | undefined;
   /**
    * Child chunk types that bypass the minimum-length floor in `processChildren`.
    * For declaration-only AST shapes (Java abstract / interface methods) the
@@ -295,7 +296,7 @@ export interface LanguageChunkerHooks {
    * METHOD symbols whose final symbolId the engine STILL composes against the
    * class scope with the `#`/`.` separator (`pushMacroSymbolChunk`).
    */
-  macroSymbols?: (containerNode: Parser.SyntaxNode) => MacroSymbol[];
+  macroSymbols?: (containerNode: AstNode) => MacroSymbol[];
   /**
    * Per-language node→chunk classifier. When present, the engine consults it for
    * each chunkable node before its generic shaping. A `ChunkDecision.emit` carries
@@ -334,7 +335,7 @@ export interface WalkInput {
  */
 export interface LanguageWalker {
   walk: (input: WalkInput) => FileExtraction;
-  nameOf: (node: Parser.SyntaxNode) => NamedSymbol | NamedSymbol[] | null;
+  nameOf: (node: AstNode) => NamedSymbol | NamedSymbol[] | null;
 }
 
 /**
