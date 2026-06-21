@@ -1,3 +1,8 @@
+---
+paths:
+  - "**/*"
+---
+
 # Parallel Sessions
 
 Multiple Claude sessions may run concurrently on the same repo.

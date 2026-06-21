@@ -1,3 +1,11 @@
+---
+paths:
+  - "eslint.config.js"
+  - ".prettierrc"
+  - ".prettierignore"
+  - "commitlint.config.js"
+---
+
 # Linter Configuration (MANDATORY)
 
 **Agents MUST NOT modify ESLint, Prettier, or any linter configuration files

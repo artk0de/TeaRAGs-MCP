@@ -1,3 +1,12 @@
+---
+paths:
+  - "src/bootstrap/**"
+  - "src/core/api/internal/composition.ts"
+  - "src/core/api/internal/facades/**"
+  - "src/core/api/public/app.ts"
+  - "src/mcp/tools/**"
+---
+
 # DI Wiring Chain
 
 The application assembles through a single chain. Know where to look when adding

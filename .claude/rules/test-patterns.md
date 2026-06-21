@@ -1,3 +1,8 @@
+---
+paths:
+  - "tests/**"
+---
+
 # Test Patterns
 
 ## Golden Rule

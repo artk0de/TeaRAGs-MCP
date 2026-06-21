@@ -1,3 +1,10 @@
+---
+paths:
+  - "src/core/**"
+  - "src/bootstrap/**"
+  - "src/mcp/**"
+---
+
 # Typed Errors (MANDATORY)
 
 All runtime errors MUST use concrete error classes from the unified hierarchy. D
