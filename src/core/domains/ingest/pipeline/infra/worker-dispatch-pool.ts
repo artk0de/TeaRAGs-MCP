@@ -1,33 +1,31 @@
 /**
- * ThreadPool<Req, Res> — generic worker_threads pool extracted from ChunkerPool.
+ * WorkerDispatchPool<Req, Res> — generic worker pool with pluggable transport.
  *
  * Owns the MECHANICS of distribution only (free-worker selection, round-robin,
  * routingKey affinity, busy-tracking, overflow queue, graceful shutdown) and
- * stays trajectory-agnostic: it sees (request, routingKey?) and nothing else.
- * Consumers (ChunkerPool, the enrichment executor) supply their own compiled
- * worker entry path + workerData, and — for stateful work — a routingKey.
+ * stays transport-agnostic: consumers inject a `WorkerTransport` (thread or
+ * process) and the pool never touches Worker/ChildProcess directly.
  *
  * Worker DI rule (.claude/rules/domains-language.md): a class instance cannot
- * cross the postMessage structured-clone boundary, so workerData carries only
- * serializable init (including module-path strings the worker dynamic-imports).
+ * cross the postMessage structured-clone boundary, so `init` carries only
+ * serializable data (including module-path strings the worker dynamic-imports).
  *
  * Note: this class lives next to the legacy `WorkerPool` (in-process retry/
  * backoff batch executor for the embedding pipeline) under a deliberately
- * distinct name. "Thread" denotes node:worker_threads here; "worker" remains
- * the in-process executor's vocabulary.
+ * distinct name. "WorkerDispatch" denotes the generic transport-backed pool;
+ * "worker" remains the in-process executor's vocabulary.
  */
-import { Worker } from "node:worker_threads";
-
 import { PipelineNotStartedError } from "../../errors.js";
 import { isDebug } from "./runtime.js";
+import type { WorkerHandle, WorkerTransport } from "./worker-transport.js";
 
 interface Pending<Res> {
   resolve: (result: Res) => void;
   reject: (error: Error) => void;
 }
 
-interface PoolThread<Res> {
-  worker: Worker;
+interface PoolThread<Req, Res> {
+  handle: WorkerHandle<Req, Res>;
   busy: boolean;
   pending: Pending<Res> | null;
   index: number;
@@ -40,47 +38,42 @@ interface QueueItem<Req, Res> {
   affinityIndex: number | null;
 }
 
-/** Worker message shape: the result, or an error envelope. */
-type ThreadMessage<Res> = Res | { error: string };
-
-export class ThreadPool<Req, Res> {
-  private readonly threads: PoolThread<Res>[] = [];
+export class WorkerDispatchPool<Req, Res> {
+  private readonly threads: PoolThread<Req, Res>[] = [];
   private queue: QueueItem<Req, Res>[] = [];
   /** routingKey → pinned thread index (affinity). */
   private readonly affinity = new Map<string, number>();
   private isShutdown = false;
 
   /**
-   * @param poolSize  Number of worker threads.
-   * @param workerPath  Absolute path to a compiled worker entry (build/...js).
-   * @param workerData  Serializable `workerData` passed to every spawned worker.
-   * @param name  Public label embedded in error messages (`<name> shutting down`,
-   *              `PipelineNotStartedError(<name>)`). Lets the public facade
-   *              (e.g. `ChunkerPool`) preserve its identity in user-facing
-   *              errors without leaking the internal `ThreadPool` term.
+   * @param poolSize   Number of workers to spawn.
+   * @param transport  Factory for worker handles (ThreadTransport or ProcessTransport).
+   * @param init       Serializable init payload forwarded to each spawned worker.
+   * @param name       Public label embedded in error messages (`<name> shutting down`,
+   *                   `PipelineNotStartedError(<name>)`). Lets the public facade
+   *                   (e.g. `ChunkerPool`) preserve its identity in user-facing
+   *                   errors without leaking the internal pool term.
    */
   constructor(
     private readonly poolSize: number,
-    private readonly workerPath: string,
-    private readonly workerData: unknown,
-    private readonly name = "ThreadPool",
+    private readonly transport: WorkerTransport<Req, Res>,
+    private readonly init: unknown,
+    private readonly name = "WorkerDispatchPool",
   ) {
     this.initThreads();
   }
 
   private initThreads(): void {
     for (let i = 0; i < this.poolSize; i++) {
-      const worker = new Worker(this.workerPath, {
-        workerData: this.workerData,
-      });
-      const pt: PoolThread<Res> = {
-        worker,
+      const handle = this.transport.spawn(this.init);
+      const pt: PoolThread<Req, Res> = {
+        handle,
         busy: false,
         pending: null,
         index: i,
       };
 
-      worker.on("message", (message: ThreadMessage<Res>) => {
+      handle.onMessage((message) => {
         const { pending } = pt;
         pt.busy = false;
         pt.pending = null;
@@ -94,7 +87,7 @@ export class ThreadPool<Req, Res> {
         this.processQueue();
       });
 
-      worker.on("error", (error) => {
+      handle.onError((error) => {
         const { pending } = pt;
         pt.busy = false;
         pt.pending = null;
@@ -105,14 +98,14 @@ export class ThreadPool<Req, Res> {
       this.threads.push(pt);
     }
     if (isDebug()) {
-      console.error(`[ThreadPool] Initialized ${this.poolSize} threads for ${this.workerPath}`);
+      console.error(`[WorkerDispatchPool:${this.name}] Initialized ${this.poolSize} workers`);
     }
   }
 
   /**
-   * Dispatch a request. With routingKey, all same-key requests pin to ONE thread
+   * Dispatch a request. With routingKey, all same-key requests pin to ONE worker
    * (affinity — required for stateful trajectories like codegraph). Without it,
-   * round-robin to any free thread (today's chunker behavior).
+   * round-robin to any free worker (today's chunker behavior).
    */
   async dispatch(request: Req, routingKey?: string): Promise<Res> {
     if (this.isShutdown) throw new PipelineNotStartedError(this.name);
@@ -181,22 +174,17 @@ export class ThreadPool<Req, Res> {
       this.threads.map(
         async (pt) =>
           new Promise<void>((resolve) => {
-            const timer = setTimeout(() => {
-              void pt.worker.terminate().then(() => {
-                resolve();
-              });
-            }, 2000);
-            pt.worker.once("exit", () => {
+            const timer = setTimeout(() => void pt.handle.terminate().then(resolve), 2000);
+            pt.handle.onExit(() => {
               clearTimeout(timer);
               resolve();
             });
-            pt.worker.unref();
-            pt.worker.postMessage({ type: "shutdown" });
+            pt.handle.shutdown();
           }),
       ),
     );
     this.threads.length = 0;
-    if (isDebug()) console.error(`[ThreadPool] Shut down ${this.workerPath}`);
+    if (isDebug()) console.error(`[WorkerDispatchPool:${this.name}] Shut down`);
   }
 
   /**
@@ -207,17 +195,17 @@ export class ThreadPool<Req, Res> {
    * unpinned thread is busy. Falls back to any free thread to preserve
    * throughput when all free threads happen to be pinned.
    */
-  private findFreeStatelessThread(): PoolThread<Res> | undefined {
+  private findFreeStatelessThread(): PoolThread<Req, Res> | undefined {
     const pinnedIndices = new Set(this.affinity.values());
     const unpinnedFree = this.threads.find((w) => !w.busy && !pinnedIndices.has(w.index));
     if (unpinnedFree) return unpinnedFree;
     return this.threads.find((w) => !w.busy);
   }
 
-  private dispatchTo(pt: PoolThread<Res>, request: Req, pending: Pending<Res>): void {
+  private dispatchTo(pt: PoolThread<Req, Res>, request: Req, pending: Pending<Res>): void {
     pt.busy = true;
     pt.pending = pending;
-    pt.worker.postMessage(request);
+    pt.handle.post(request);
   }
 
   private processQueue(): void {

@@ -1,7 +1,7 @@
 /**
  * WorkerPoolEnrichmentExecutor — Phase 2 of the unified-enrichment-worker-pool
- * plan. Routes provider method invocations through a `ThreadPool` of
- * `worker_threads`, with collection-affinity routing for stateful providers
+ * plan. Routes provider method invocations through a `WorkerDispatchPool` backed
+ * by a `ThreadTransport` (`worker_threads`), with collection-affinity routing for stateful providers
  * (codegraph) and graceful inline fallback for providers that have no
  * `workerDescriptor` declared.
  *
@@ -27,7 +27,7 @@
  * Release path:
  *
  *   `releaseCollection(providers, collection)` fans out a `release`
- *   envelope per worker-descriptor provider, then drops the ThreadPool's
+ *   envelope per worker-descriptor provider, then drops the WorkerDispatchPool's
  *   affinity binding so the next collection assigned to that routingKey
  *   can land on any free thread. Inline-fallback providers are no-ops here
  *   (the inline executor itself does no-op release per spec section 5 —
@@ -44,7 +44,8 @@ import type {
   WorkerEnrichmentDescriptor,
 } from "../../../../../contracts/index.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
-import { ThreadPool } from "../../infra/thread-pool.js";
+import { ThreadTransport } from "../../infra/thread-transport.js";
+import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
 import type {
   EnrichmentCallRequest,
   EnrichmentMethod,
@@ -88,13 +89,13 @@ function buildCallRequest(
 }
 
 export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
-  private readonly pool: ThreadPool<EnrichmentWorkerRequest, EnrichmentWorkerResponse>;
+  private readonly pool: WorkerDispatchPool<EnrichmentWorkerRequest, EnrichmentWorkerResponse>;
   private readonly inlineFallback = new InlineEnrichmentExecutor();
 
   constructor(poolSize: number, workerPath: string) {
-    this.pool = new ThreadPool<EnrichmentWorkerRequest, EnrichmentWorkerResponse>(
+    this.pool = new WorkerDispatchPool<EnrichmentWorkerRequest, EnrichmentWorkerResponse>(
       poolSize,
-      workerPath,
+      new ThreadTransport<EnrichmentWorkerRequest, EnrichmentWorkerResponse>(workerPath),
       {},
       "EnrichmentPool",
     );
