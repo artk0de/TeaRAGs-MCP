@@ -52,8 +52,8 @@ function signatureOf(result: {
   };
 }
 
-// rdv7d: RED until Task 10 (materialize boundary). Skipped so the suite is green
-// for the type-swap tasks; Task 10 un-skips and turns it green.
+// rdv7d regression sentinel: GREEN since the materialize boundary landed —
+// per-file extraction is byte-stable across iterations (was flaky ~2x before).
 describe("ChunkerPool ruby jitter repro (size 8, N distinct files)", () => {
   it("never drops extraction and keeps per-file call count byte-stable across iterations", async () => {
     const N = 50;

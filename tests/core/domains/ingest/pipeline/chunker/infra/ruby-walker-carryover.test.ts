@@ -80,8 +80,8 @@ async function walkFile(engine: ReturnType<typeof buildEngine>, path: string, co
 }
 
 describe("ruby walker carryover (engine-level, no pool, no concurrency)", () => {
-  // rdv7d: RED until Task 10 (materialize boundary) lands — skipped so the suite
-  // is green for the type-swap tasks; Task 10 un-skips and turns it green.
+  // rdv7d regression sentinel: GREEN since the materialize boundary landed —
+  // walker call count no longer carries over between files (was flaky before).
   it("walking service_1 alone vs after 49 predecessors yields the same tree AND the same call count", async () => {
     const isolatedEngine = buildEngine();
     const isolated = await walkFile(isolatedEngine, "service_1.rb", rubySource(1));
