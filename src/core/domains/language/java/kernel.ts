@@ -27,8 +27,7 @@
  *     "instance" → `false`, identical to the per-engine static checks.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
 import { classifyMethod } from "../../../infra/symbolid/index.js";
 
@@ -48,5 +47,5 @@ export const javaKernel: LanguageKernel = {
     "annotation_type_declaration",
   ],
   disambiguateOverloads: true,
-  isInstanceMethod: (node: Parser.SyntaxNode) => classifyMethod(node) === "instance",
+  isInstanceMethod: (node: AstNode) => classifyMethod(node) === "instance",
 };

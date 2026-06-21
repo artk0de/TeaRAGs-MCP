@@ -22,7 +22,7 @@
  * grammars evolve and new languages are added.
  */
 
-import type Parser from "tree-sitter";
+import type { AstNode } from "../../contracts/types/ast.js";
 
 /** Universal separator between a class and its instance method. */
 export const INSTANCE_METHOD_SEPARATOR = "#";
@@ -40,7 +40,7 @@ export type MethodClassification = "instance" | "static";
  * `class_declaration`, `function_declaration` top-level). The caller
  * should use the language scope separator for non-method joins.
  */
-export function classifyMethod(node: Parser.SyntaxNode): MethodClassification | null {
+export function classifyMethod(node: AstNode): MethodClassification | null {
   // TypeScript / JavaScript — explicit `static` keyword child.
   if (node.type === "method_definition") return hasChildOfTypeOrText(node, "static") ? "static" : "instance";
   // Java — `static` modifier nested under a `modifiers` child.
@@ -71,18 +71,18 @@ export function classifyMethod(node: Parser.SyntaxNode): MethodClassification | 
 }
 
 /** Convenience for callers that only need a boolean — `true` for static. */
-export function isStaticMethodNode(node: Parser.SyntaxNode): boolean {
+export function isStaticMethodNode(node: AstNode): boolean {
   return classifyMethod(node) === "static";
 }
 
-function hasChildOfTypeOrText(node: Parser.SyntaxNode, keyword: string): boolean {
+function hasChildOfTypeOrText(node: AstNode, keyword: string): boolean {
   for (const child of node.children) {
     if (child.type === keyword || child.text === keyword) return true;
   }
   return false;
 }
 
-function javaHasStaticModifier(node: Parser.SyntaxNode): boolean {
+function javaHasStaticModifier(node: AstNode): boolean {
   for (const child of node.children) {
     if (child.type === "modifiers") {
       for (const m of child.children) {
@@ -93,7 +93,7 @@ function javaHasStaticModifier(node: Parser.SyntaxNode): boolean {
   return false;
 }
 
-function pythonHasClassOrStaticDecorator(node: Parser.SyntaxNode): boolean {
+function pythonHasClassOrStaticDecorator(node: AstNode): boolean {
   const { parent } = node;
   if (parent?.type !== "decorated_definition") return false;
   for (const child of parent.children) {
@@ -113,8 +113,8 @@ function pythonHasClassOrStaticDecorator(node: Parser.SyntaxNode): boolean {
  * ancestor (those reset the singleton-class scope) so a nested regular
  * method declaration inside an inner class doesn't get mis-classified.
  */
-export function rubyInsideSingletonClass(node: Parser.SyntaxNode): boolean {
-  let p: Parser.SyntaxNode | null = node.parent;
+export function rubyInsideSingletonClass(node: AstNode): boolean {
+  let p: AstNode | null = node.parent;
   while (p) {
     if (p.type === "singleton_class") return true;
     if (p.type === "class" || p.type === "module") return false;
@@ -123,7 +123,7 @@ export function rubyInsideSingletonClass(node: Parser.SyntaxNode): boolean {
   return false;
 }
 
-function rustHasSelfParam(node: Parser.SyntaxNode): boolean {
+function rustHasSelfParam(node: AstNode): boolean {
   const params = node.childForFieldName("parameters");
   if (!params) return false;
   for (const child of params.children) {

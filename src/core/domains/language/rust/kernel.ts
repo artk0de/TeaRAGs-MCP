@@ -27,8 +27,7 @@
  *     checks (`infra/symbolid/classify.ts::rustHasSelfParam`).
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
 import { classifyMethod } from "../../../infra/symbolid/index.js";
 
@@ -42,5 +41,5 @@ export const rustKernel: LanguageKernel = {
   extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
   scopeSeparator: "::",
   scopeContainerTypes: ["impl_item", "trait_item", "mod_item"],
-  isInstanceMethod: (node: Parser.SyntaxNode) => classifyMethod(node) === "instance",
+  isInstanceMethod: (node: AstNode) => classifyMethod(node) === "instance",
 };

@@ -1,5 +1,6 @@
 import type Parser from "tree-sitter";
 
+import type { AstNode } from "../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../contracts/types/codegraph.js";
 import type { CollectedSymbolRange, SymbolIdComposer } from "../../../contracts/types/language.js";
 
@@ -33,13 +34,13 @@ function joinSymbol(composer: SymbolIdComposer, composed: string, child: NamedSy
  */
 export function collectSymbols(
   tree: Parser.Tree,
-  nameOf: (node: Parser.SyntaxNode) => NamedSymbol | NamedSymbol[] | null,
+  nameOf: (node: AstNode) => NamedSymbol | NamedSymbol[] | null,
   separator: string,
   disambiguateOverloads: boolean,
   composer: SymbolIdComposer,
 ): CollectedSymbolRange[] {
   const out: CollectedSymbolRange[] = [];
-  const walk = (node: Parser.SyntaxNode, scope: string[], composed: string): void => {
+  const walk = (node: AstNode, scope: string[], composed: string): void => {
     const result = nameOf(node);
     // Stable nested-scope tracking lets each named declaration carry
     // a unique fully-qualified id even when same-name declarations
