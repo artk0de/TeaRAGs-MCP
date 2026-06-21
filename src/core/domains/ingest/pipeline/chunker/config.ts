@@ -1,5 +1,6 @@
 import type Parser from "tree-sitter";
 
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { LanguageChunkClassifier, MacroSymbol } from "../../../../contracts/types/chunker.js";
 import type { ChunkingHook } from "./hooks/types.js";
 
@@ -36,7 +37,7 @@ export interface LanguageDefinition {
   /** Language-specific chunking hooks */
   hooks?: ChunkingHook[];
   /** Custom name extraction for language-specific node types (e.g., RSpec call nodes) */
-  nameExtractor?: (node: Parser.SyntaxNode, code: string) => string | undefined;
+  nameExtractor?: (node: AstNode, code: string) => string | undefined;
   /**
    * AST node types that act as **intermediate scope containers** between
    * an outer chunkable container and a leaf child chunk. When set, the
@@ -88,7 +89,7 @@ export interface LanguageConfig {
   alwaysExtractChildren?: boolean;
   isDocumentation?: boolean;
   hooks?: ChunkingHook[];
-  nameExtractor?: (node: Parser.SyntaxNode, code: string) => string | undefined;
+  nameExtractor?: (node: AstNode, code: string) => string | undefined;
   scopeContainerTypes?: string[];
   scopeSeparator?: string;
   keepShortChildChunkTypes?: string[];
@@ -99,7 +100,7 @@ export interface LanguageConfig {
    * engine never imports the concrete `domains/language/<lang>` module. Absent
    * for languages with no `def`-less method idiom.
    */
-  macroSymbols?: (containerNode: Parser.SyntaxNode) => MacroSymbol[];
+  macroSymbols?: (containerNode: AstNode) => MacroSymbol[];
   /**
    * Language-agnostic node→chunk classifier capability, threaded from
    * `LanguageChunkerHooks.classifier` via the provider. The engine reads
@@ -249,7 +250,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // `impl Trait for T` shapes — tree-sitter-rust names the
     // implementing type as the `type` field regardless of trait
     // presence).
-    nameExtractor: (node: Parser.SyntaxNode, code: string): string | undefined => {
+    nameExtractor: (node: AstNode, code: string): string | undefined => {
       if (node.type !== "impl_item") return undefined;
       const ty = node.childForFieldName("type");
       if (!ty) return undefined;
@@ -372,7 +373,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // NOTE: "singleton_class" removed from childChunkTypes - we traverse THROUGH it
     // to find the methods inside (class << self ... end contains methods)
     childChunkTypes: ["method", "singleton_method", "call"],
-    nameExtractor: (node: Parser.SyntaxNode, code: string): string | undefined => {
+    nameExtractor: (node: AstNode, code: string): string | undefined => {
       if (node.type !== "call") return undefined;
       const id = node.children.find((c) => c.type === "identifier");
       const methodName = id ? code.substring(id.startIndex, id.endIndex) : "";

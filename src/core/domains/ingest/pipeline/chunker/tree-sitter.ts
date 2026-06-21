@@ -9,6 +9,7 @@
 
 import Parser from "tree-sitter";
 
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkDecision, MacroSymbol } from "../../../../contracts/types/chunker.js";
 import type {
   LanguageChunkerHooks,
@@ -76,14 +77,14 @@ export class TreeSitterChunker implements CodeChunker {
    * symbols in downstream filters / overlay masks.
    */
   private emitMacroSymbols(
-    containerNode: Parser.SyntaxNode,
+    containerNode: AstNode,
     parentSymbolId: string | undefined,
     parentType: string,
     code: string,
     filePath: string,
     language: string,
     chunks: CodeChunk[],
-    macroSymbols: ((containerNode: Parser.SyntaxNode) => MacroSymbol[]) | undefined,
+    macroSymbols: ((containerNode: AstNode) => MacroSymbol[]) | undefined,
     scopeContainerTypes: string[] | undefined,
     scopeSeparator: string | undefined,
   ): void {
@@ -117,7 +118,7 @@ export class TreeSitterChunker implements CodeChunker {
    * def-emitted chunks carry.
    */
   private walkMacroScopes(
-    containerNode: Parser.SyntaxNode,
+    containerNode: AstNode,
     currentParent: string | undefined,
     parentType: string,
     code: string,
@@ -125,7 +126,7 @@ export class TreeSitterChunker implements CodeChunker {
     language: string,
     chunks: CodeChunk[],
     lines: string[],
-    macroSymbols: (containerNode: Parser.SyntaxNode) => MacroSymbol[],
+    macroSymbols: (containerNode: AstNode) => MacroSymbol[],
     scopeContainerTypes: string[] | undefined,
     scopeSeparator: string | undefined,
   ): void {
@@ -207,7 +208,7 @@ export class TreeSitterChunker implements CodeChunker {
   /**
    * Check if a tree-sitter node has a specific modifier (e.g., "static").
    */
-  private hasModifier(node: Parser.SyntaxNode, modifier: string): boolean {
+  private hasModifier(node: AstNode, modifier: string): boolean {
     for (const child of node.children) {
       if (child.type === modifier || child.text === modifier) return true;
     }
@@ -219,7 +220,7 @@ export class TreeSitterChunker implements CodeChunker {
    * tree-sitter endPosition.row is inclusive (same row for single-line nodes),
    * so we ensure endLine > startLine for at least 1 line span.
    */
-  private computeEndLine(node: Parser.SyntaxNode): number {
+  private computeEndLine(node: AstNode): number {
     return Math.max(node.startPosition.row + 2, node.endPosition.row + 1);
   }
 
@@ -236,7 +237,7 @@ export class TreeSitterChunker implements CodeChunker {
    * because the wrapper carries no `name` field and `classifyMethod`
    * only branches on the inner `function_definition` type.
    */
-  private unwrapDecoratedDefinition(node: Parser.SyntaxNode): Parser.SyntaxNode {
+  private unwrapDecoratedDefinition(node: AstNode): AstNode {
     if (node.type !== "decorated_definition") return node;
     const inner = node.childForFieldName("definition");
     if (inner) return inner;
@@ -466,7 +467,7 @@ export class TreeSitterChunker implements CodeChunker {
    * Fallback for oversized nodes without valid children — character-based chunking.
    */
   private async chunkOversizedNode(
-    node: Parser.SyntaxNode,
+    node: AstNode,
     parentName: string | undefined,
     parentType: string,
     code: string,
@@ -506,7 +507,7 @@ export class TreeSitterChunker implements CodeChunker {
    * Returns true if the node was handled, false if it should fall through to single-node chunking.
    */
   private async chunkWithChildExtraction(
-    node: Parser.SyntaxNode,
+    node: AstNode,
     langConfig: LanguageConfig,
     code: string,
     filePath: string,
@@ -655,7 +656,7 @@ export class TreeSitterChunker implements CodeChunker {
    * Handle regular single-node chunking (no child extraction).
    */
   private chunkSingleNode(
-    node: Parser.SyntaxNode,
+    node: AstNode,
     index: number,
     code: string,
     filePath: string,
@@ -929,7 +930,7 @@ export class TreeSitterChunker implements CodeChunker {
    * Extract the opening line of a container node (e.g., "RSpec.describe User do").
    * Used to build hierarchy context for nested chunks.
    */
-  private extractContainerHeader(node: Parser.SyntaxNode, code: string): string {
+  private extractContainerHeader(node: AstNode, code: string): string {
     const lines = code.substring(node.startIndex, node.endIndex).split("\n");
     return lines[0].trim();
   }
@@ -964,7 +965,7 @@ export class TreeSitterChunker implements CodeChunker {
    * Handles the child extraction loop with support for arbitrary nesting depth.
    */
   private async processChildren(
-    validChildren: Parser.SyntaxNode[],
+    validChildren: AstNode[],
     ctx: HookContext,
     langConfig: LanguageConfig,
     code: string,
@@ -1226,7 +1227,7 @@ export class TreeSitterChunker implements CodeChunker {
    * When `scopeContainerTypes` is unset on the language config, the
    * function bails out with `[]` — the existing single-level behaviour.
    */
-  private collectIntermediateScopes(leafNode: Parser.SyntaxNode, langConfig: LanguageConfig, code: string): string[] {
+  private collectIntermediateScopes(leafNode: AstNode, langConfig: LanguageConfig, code: string): string[] {
     const scopeTypes = langConfig.scopeContainerTypes;
     if (!scopeTypes || scopeTypes.length === 0) return [];
     const chain: string[] = [];
@@ -1275,15 +1276,15 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   private findChunkableNodes(
-    node: Parser.SyntaxNode,
+    node: AstNode,
     chunkableTypes: string[],
     hooks?: ChunkingHook[],
     code?: string,
     filePath?: string,
-  ): Parser.SyntaxNode[] {
-    const nodes: Parser.SyntaxNode[] = [];
+  ): AstNode[] {
+    const nodes: AstNode[] = [];
 
-    const traverse = (n: Parser.SyntaxNode) => {
+    const traverse = (n: AstNode) => {
       if (chunkableTypes.includes(n.type)) {
         // Consult hooks for filtering (e.g., RSpec filter rejects non-DSL call nodes)
         if (hooks && code && filePath) {
@@ -1313,15 +1314,15 @@ export class TreeSitterChunker implements CodeChunker {
    * even if the parent is a chunkable type.
    */
   private findChildChunkableNodes(
-    parentNode: Parser.SyntaxNode,
+    parentNode: AstNode,
     childChunkTypes: string[],
     hooks?: ChunkingHook[],
     code?: string,
     filePath?: string,
-  ): Parser.SyntaxNode[] {
-    const nodes: Parser.SyntaxNode[] = [];
+  ): AstNode[] {
+    const nodes: AstNode[] = [];
 
-    const traverse = (n: Parser.SyntaxNode) => {
+    const traverse = (n: AstNode) => {
       // Skip the parent node itself
       if (n === parentNode) {
         for (const child of n.children) {
@@ -1369,8 +1370,8 @@ export class TreeSitterChunker implements CodeChunker {
    * bd tea-rags-mcp-b7k3.
    */
   private emitNarrowParentClassChunk(
-    containerNode: Parser.SyntaxNode,
-    validChildren: Parser.SyntaxNode[],
+    containerNode: AstNode,
+    validChildren: AstNode[],
     parentName: string | undefined,
     parentType: string,
     code: string,
@@ -1419,11 +1420,7 @@ export class TreeSitterChunker implements CodeChunker {
    * Returns the collected lines as a string, or undefined if nothing remains.
    */
   /* v8 ignore next 23 -- only called from no-hooks fallback, unreachable for current language configs */
-  private extractContainerBody(
-    containerNode: Parser.SyntaxNode,
-    childNodes: Parser.SyntaxNode[],
-    code: string,
-  ): string | undefined {
+  private extractContainerBody(containerNode: AstNode, childNodes: AstNode[], code: string): string | undefined {
     const containerStartRow = containerNode.startPosition.row;
     const containerEndRow = containerNode.endPosition.row;
     const lines = code.split("\n");
@@ -1452,7 +1449,7 @@ export class TreeSitterChunker implements CodeChunker {
    */
   private consultFilterHooks(
     hooks: ChunkingHook[],
-    node: Parser.SyntaxNode,
+    node: AstNode,
     code: string,
     filePath: string,
   ): boolean | undefined {
@@ -1469,9 +1466,9 @@ export class TreeSitterChunker implements CodeChunker {
    * Extract function/class name from AST node
    */
   private extractName(
-    node: Parser.SyntaxNode,
+    node: AstNode,
     code: string,
-    nameExtractor?: (node: Parser.SyntaxNode, code: string) => string | undefined,
+    nameExtractor?: (node: AstNode, code: string) => string | undefined,
   ): string | undefined {
     // Try custom extractor first (e.g., for RSpec call nodes)
     if (nameExtractor) {
