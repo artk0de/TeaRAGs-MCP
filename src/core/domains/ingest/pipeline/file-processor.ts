@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join, relative } from "node:path";
 
+import type { FileExtraction } from "../../../contracts/types/codegraph.js";
 import { isTestPath } from "../../../infra/scope-detection.js";
 import type { ChunkLookupEntry, CodeChunk } from "../../../types.js";
 import type { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
@@ -87,6 +88,15 @@ export interface FileProcessorOptions {
    * so the common (never-failed) case pays no extra write.
    */
   quarantinedRetry?: Set<string>;
+  /**
+   * yl9tv cross-pass. When set (codegraph enabled), the chunker worker also
+   * emits a codegraph `FileExtraction` from the SAME parse it chunks with, and
+   * this hook forwards it (with a root-relative `relPath`) to the enrichment
+   * coordinator → codegraph provider spill — eliminating the provider's
+   * main-thread re-parse. Presence of this hook is what flips the worker's
+   * `emitExtraction` on.
+   */
+  onFileExtraction?: (extraction: FileExtraction) => void;
 }
 
 export interface FileProcessResult {
@@ -181,9 +191,23 @@ export async function processFiles(
 
         const { imports } = extractImportsExports(code, language);
         const parseStart = Date.now();
-        const { chunks } = await chunkerPool.processFile(filePath, code, language);
+        const { chunks, extraction } = await chunkerPool.processFile(
+          filePath,
+          code,
+          language,
+          options.onFileExtraction !== undefined,
+        );
         const parseMs = Date.now() - parseStart;
         pipelineLog.addStageTime("parse", parseMs);
+
+        // yl9tv cross-pass — tee the codegraph extraction (from the chunker's
+        // single parse) to the enrichment coordinator with a root-relative
+        // relPath, so the codegraph provider's spill is fed from here instead of
+        // re-parsing on the main thread.
+        if (extraction && options.onFileExtraction) {
+          extraction.relPath = relativePath;
+          options.onFileExtraction(extraction);
+        }
 
         // Post-process: doc symbolIds + navigation links
         assignNavigationAndDocSymbolId(chunks, basePath);

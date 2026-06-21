@@ -10,6 +10,7 @@
 import type { Ignore } from "ignore";
 
 import type { ChunkLookupEntry } from "./chunker.js";
+import type { FileExtraction } from "./codegraph.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
 import type { PayloadSignalDescriptor } from "./trajectory.js";
 
@@ -342,6 +343,17 @@ export interface EnrichmentProvider {
    * next index pass rebuilds the provider from scratch.
    */
   readonly onRelease?: () => Promise<void>;
+  /**
+   * yl9tv — cross-pass channel. When set, the ingest chunk pass tees each
+   * file's codegraph `FileExtraction` (produced from the SAME worker parse it
+   * chunked with) here instead of the provider re-parsing on the main thread.
+   * The codegraph provider writes it to its run spill; once an extraction is
+   * accepted for a run, that run's `streamFileBatch` becomes a no-op for
+   * parsing (the spill is already populated). Providers without a codegraph
+   * spill (git) omit this. `extraction.relPath` is root-relative (set by the
+   * file-processor before forwarding).
+   */
+  acceptExtraction?: (extraction: FileExtraction, options?: { collectionName?: string }) => Promise<void>;
 }
 
 // Re-export for convenience

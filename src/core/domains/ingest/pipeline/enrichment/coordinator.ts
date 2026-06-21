@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
 import type {
   EnrichmentExecutor,
   IndexRunDaemonGuard,
@@ -131,6 +132,16 @@ export class EnrichmentCoordinator {
   /** All provider keys managed by this coordinator. */
   get providerKeys(): string[] {
     return this.providers.map((p) => p.key);
+  }
+
+  /**
+   * yl9tv — true iff any provider consumes chunk-pass `FileExtraction`s (the
+   * codegraph provider). The file-processor uses this to decide whether to flip
+   * the chunker worker's `emitExtraction` on: when no provider accepts them,
+   * computing the extraction is pure waste.
+   */
+  acceptsExtractions(): boolean {
+    return this.providers.some((p) => p.acceptExtraction !== undefined);
   }
 
   constructor(
@@ -306,6 +317,22 @@ export class EnrichmentCoordinator {
     // hung run stops producing batches → lastProgressAt freezes → the health
     // mapper derives stalled/crashed instead of a stuck in_progress.
     this.maybeHeartbeat(collectionName, run);
+  }
+
+  /**
+   * yl9tv cross-pass — called per file by the ingest chunk pass (via the
+   * file-processor's `onFileExtraction` hook) with the codegraph `FileExtraction`
+   * the chunker worker produced from its SINGLE parse. Fan it out to every
+   * provider that accepts one (only the codegraph provider does); the provider
+   * writes it to its run spill so its `streamFileBatch` skips the main-thread
+   * re-parse. Fire-and-forget: extraction writes are serialized inside the
+   * provider per collection; failures are swallowed there (best-effort spill).
+   */
+  onFileExtraction(collectionName: string, extraction: FileExtraction): void {
+    if (!this.currentRun) return;
+    for (const ctx of this.currentRun.contexts.values()) {
+      void ctx.provider.acceptExtraction?.(extraction, { collectionName });
+    }
   }
 
   /**

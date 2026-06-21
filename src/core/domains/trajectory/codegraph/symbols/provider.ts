@@ -397,6 +397,18 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private readonly runBatchChains = new Map<string, Promise<unknown>>();
   /**
+   * yl9tv — collections whose current run is fed by the ingest chunk pass via
+   * `acceptExtraction`. While a key is present, that collection's
+   * `streamFileBatch` is a NO-OP for parsing: the spill is already populated
+   * from the chunker's single parse, so the main-thread re-parse
+   * (`extractOneFile`) is skipped. Set on the first `acceptExtraction` of a run
+   * (which precedes the first `streamFileBatch` — the extraction is forwarded at
+   * file-processing time, before the file's chunks are batched/upserted) and
+   * cleared in `finalizeSignals`. Empty for direct mode (tests) and runs with no
+   * walker-able files, where `streamFileBatch` keeps its `extractOneFile` path.
+   */
+  private readonly runFedByChunkPass = new Set<string>();
+  /**
    * Per-run counters surfaced via `getRunMetrics()`. Read-and-cleared by
    * `CompletionRunner` at end of each enrichment cycle. Tracked here
    * (not in the sink) so they survive across multiple sink.write/finish
@@ -1232,34 +1244,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     options?: FileSignalOptions,
   ): Promise<Map<string, FileSignalOverlay>> {
     const key = this.collectionKey(options?.collectionName);
-    let sink = this.runSinks.get(key);
-    if (!sink) {
-      // First batch of a fresh run for this collection: reset the prior run's
-      // per-collection line map so it can't grow monotonically across runs on
-      // the long-lived daemon (the leak fix). Done at run START — NOT at
-      // finalize — because the deferred chunk pass (runDeferredChunk →
-      // buildChunkSignals → resolveChunkSymbolId) consumes chunkSymbolByLine
-      // AFTER finalizeSignals; clearing it at finalize zeroes every chunk's
-      // fanIn/fanOut/pageRank.
-      this.chunkSymbolByLine.delete(key);
-      // bd tea-rags-mcp-svhqp — reset the per-run resolve tally at run START too.
-      // `runStats` is otherwise cleared ONLY by `getRunMetrics` (read-and-clear,
-      // driven by the completion-runner) — NOT by `clearRunState` / `onRelease`.
-      // On the long-lived daemon this provider is cached per (collection, worker)
-      // and reused, so a prior run's tally leaks into the next run's
-      // `recordRunStats` and makes the persisted `resolveSuccessRate` jitter
-      // run-to-run. Resetting here (same rationale as `chunkSymbolByLine`: the
-      // deferred chunk pass and completion-runner both read AFTER finalize, so a
-      // finalize-time reset is unsafe) scopes the tally to this run.
-      this.runStats = createEmptyRunStats();
-      sink = this.asExtractionSink(options?.collectionName);
-      this.runSinks.set(key, sink);
-    }
-    let extracted = this.runExtractedPaths.get(key);
-    if (!extracted) {
-      extracted = new Set();
-      this.runExtractedPaths.set(key, extracted);
-    }
+    // yl9tv — cross-pass: the chunk pass has already spilled this run's
+    // extractions via acceptExtraction (set before the first streamed batch),
+    // so the main-thread re-parse is redundant. Skip it entirely.
+    if (this.runFedByChunkPass.has(key)) return new Map();
+    const { sink, extracted } = this.ensureRunSink(key, options?.collectionName);
     const targets = batchPaths.filter(
       (p) => SUPPORTED_EXTS.has(extensionOf(p)) && !this.codegraphExclusionFilter.ignores(p),
     );
@@ -1283,6 +1272,63 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
     return new Map(); // signals deferred to finalizeSignals
   }
+
+  /**
+   * Resolve (or lazily start) the run sink + extracted-path set for a collection
+   * key. The run-start side effects fire exactly once per run regardless of
+   * whether the first writer is `streamFileBatchInner` (direct / non-cross-pass)
+   * or `acceptExtraction` (yl9tv cross-pass): reset the prior run's
+   * per-collection `chunkSymbolByLine` line map (leak fix — done at run START,
+   * NOT finalize, because the deferred chunk pass consumes it AFTER
+   * finalizeSignals) and reset the per-run resolve tally `runStats`
+   * (bd tea-rags-mcp-svhqp — otherwise a prior run's tally leaks into the next
+   * run's `recordRunStats` on the long-lived daemon and jitters
+   * `resolveSuccessRate`), then open the spill sink.
+   */
+  private ensureRunSink(key: string, collectionName?: string): { sink: ExtractionSink; extracted: Set<string> } {
+    let sink = this.runSinks.get(key);
+    if (!sink) {
+      this.chunkSymbolByLine.delete(key);
+      this.runStats = createEmptyRunStats();
+      sink = this.asExtractionSink(collectionName);
+      this.runSinks.set(key, sink);
+    }
+    let extracted = this.runExtractedPaths.get(key);
+    if (!extracted) {
+      extracted = new Set();
+      this.runExtractedPaths.set(key, extracted);
+    }
+    return { sink, extracted };
+  }
+
+  /**
+   * yl9tv cross-pass entry. The ingest chunk pass forwards each file's codegraph
+   * `FileExtraction` (built from the chunker worker's SINGLE parse) here; we
+   * write it to the run spill exactly as `streamFileBatch` would and mark the
+   * run cross-pass-fed so `streamFileBatch` stops re-parsing on the main thread.
+   * `extraction.relPath` is already root-relative (the file-processor sets it
+   * before forwarding). Serialized per collection through the same
+   * `runBatchChains` as `streamFileBatch` so concurrent file-processing does not
+   * interleave sink writes; deduped against the run's `extracted` set.
+   */
+  acceptExtraction = async (extraction: FileExtraction, options?: { collectionName?: string }): Promise<void> => {
+    const key = this.collectionKey(options?.collectionName);
+    // Set synchronously (before any await) so a streamFileBatch that chains
+    // immediately after observes the cross-pass flag and no-ops.
+    this.runFedByChunkPass.add(key);
+    const prior = this.runBatchChains.get(key) ?? Promise.resolve();
+    const result = prior.then(async () => {
+      const { sink, extracted } = this.ensureRunSink(key, options?.collectionName);
+      if (extracted.has(extraction.relPath)) return;
+      await sink.write(extraction);
+      extracted.add(extraction.relPath);
+    });
+    this.runBatchChains.set(
+      key,
+      result.catch(() => undefined),
+    );
+    return result;
+  };
 
   /**
    * Finish the streamed run sink (resolve edges + recompute graph metrics),
@@ -1312,6 +1358,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runSinks.delete(key);
       this.runExtractedPaths.delete(key);
       this.runBatchChains.delete(key);
+      this.runFedByChunkPass.delete(key);
       this.clearRunState(key);
     }
     return file;
