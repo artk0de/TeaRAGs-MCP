@@ -2,8 +2,9 @@
  * Edge-case tests for ChunkerPool — worker error handler, shutdown with queued requests,
  * and shutdown timeout fallback.
  *
- * Uses mocked worker_threads to simulate error events and delayed exits
- * without requiring a compiled build.
+ * Uses mocked child_process.fork to simulate error events and delayed exits
+ * without requiring a compiled build. After the ThreadTransport → ProcessTransport
+ * flip, the mock target is child_process.fork (not node:worker_threads.Worker).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,94 +17,110 @@ import type { ChunkerConfig } from "../../../../../../../src/core/types.js";
 
 type MessageHandler = (msg: WorkerResponse) => void;
 type ErrorHandler = (err: Error) => void;
-type ExitHandler = (code: number) => void;
+type ExitHandler = (code: number | null, signal: NodeJS.Signals | null) => void;
 
-interface MockWorkerInstance {
+interface MockChildInstance {
   messageHandlers: MessageHandler[];
   errorHandlers: ErrorHandler[];
   exitHandlers: ExitHandler[];
   onceExitHandlers: ExitHandler[];
-  postMessageCalls: unknown[];
-  terminated: boolean;
+  sendCalls: unknown[];
+  killed: boolean;
   unrefCalled: boolean;
+  exitCode: number | null;
+  signalCode: NodeJS.Signals | null;
 }
 
 const state = vi.hoisted(() => ({
-  workers: [] as MockWorkerInstance[],
+  children: [] as MockChildInstance[],
 }));
 
-// --- Mock worker_threads ---
+// --- Mock child_process ---
 
-vi.mock("node:worker_threads", () => {
-  class MockWorker {
-    private instance: MockWorkerInstance;
+vi.mock("node:child_process", () => {
+  const mockFork = (_path: string, _args: string[], _opts?: unknown) => {
+    const instance: MockChildInstance = {
+      messageHandlers: [],
+      errorHandlers: [],
+      exitHandlers: [],
+      onceExitHandlers: [],
+      sendCalls: [],
+      killed: false,
+      unrefCalled: false,
+      exitCode: null,
+      signalCode: null,
+    };
+    state.children.push(instance);
 
-    constructor(_path: string, _opts?: unknown) {
-      this.instance = {
-        messageHandlers: [],
-        errorHandlers: [],
-        exitHandlers: [],
-        onceExitHandlers: [],
-        postMessageCalls: [],
-        terminated: false,
-        unrefCalled: false,
-      };
-      state.workers.push(this.instance);
-    }
+    return {
+      get exitCode() {
+        return instance.exitCode;
+      },
+      get signalCode() {
+        return instance.signalCode;
+      },
+      send(msg: unknown) {
+        instance.sendCalls.push(msg);
+        return true;
+      },
+      on(event: string, handler: MessageHandler | ErrorHandler | ExitHandler) {
+        if (event === "message") instance.messageHandlers.push(handler as MessageHandler);
+        if (event === "error") instance.errorHandlers.push(handler as ErrorHandler);
+        if (event === "exit") instance.exitHandlers.push(handler as ExitHandler);
+      },
+      once(event: string, handler: ExitHandler) {
+        if (event === "exit") instance.onceExitHandlers.push(handler);
+      },
+      unref() {
+        instance.unrefCalled = true;
+      },
+      kill(signal?: string) {
+        instance.killed = true;
+        instance.signalCode = (signal ?? "SIGTERM") as NodeJS.Signals;
+        // Simulate synchronous exit for SIGKILL in terminate()
+        const code = null;
+        const sig = instance.signalCode;
+        const once = [...instance.onceExitHandlers];
+        instance.onceExitHandlers = [];
+        const exitHs = [...instance.exitHandlers];
+        for (const h of once) h(code, sig);
+        for (const h of exitHs) h(code, sig);
+      },
+    };
+  };
 
-    on(event: string, handler: MessageHandler | ErrorHandler | ExitHandler): void {
-      if (event === "message") this.instance.messageHandlers.push(handler as MessageHandler);
-      if (event === "error") this.instance.errorHandlers.push(handler as ErrorHandler);
-      if (event === "exit") this.instance.exitHandlers.push(handler as ExitHandler);
-    }
-
-    once(event: string, handler: ExitHandler): void {
-      if (event === "exit") this.instance.onceExitHandlers.push(handler);
-    }
-
-    postMessage(msg: unknown): void {
-      this.instance.postMessageCalls.push(msg);
-    }
-
-    async terminate(): Promise<number> {
-      this.instance.terminated = true;
-      return 0;
-    }
-
-    unref(): void {
-      this.instance.unrefCalled = true;
-    }
-  }
-
-  return { Worker: MockWorker };
+  return { fork: mockFork };
 });
 
 // --- Helpers ---
 
-function getWorker(index: number): MockWorkerInstance {
-  return state.workers[index];
+function getChild(index: number): MockChildInstance {
+  return state.children[index];
 }
 
-function emitMessage(workerIndex: number, msg: WorkerResponse): void {
-  const w = getWorker(workerIndex);
-  for (const h of [...w.messageHandlers]) h(msg);
+function emitMessage(childIndex: number, msg: WorkerResponse): void {
+  const c = getChild(childIndex);
+  // The INIT send is index 0; real message handlers skip __init messages.
+  // We emit directly on messageHandlers (post-init ones registered by WorkerDispatchPool).
+  for (const h of [...c.messageHandlers]) h(msg);
 }
 
-function emitError(workerIndex: number, err: Error): void {
-  const w = getWorker(workerIndex);
-  for (const h of [...w.errorHandlers]) h(err);
+function emitError(childIndex: number, err: Error): void {
+  const c = getChild(childIndex);
+  for (const h of [...c.errorHandlers]) h(err);
 }
 
-function emitExit(workerIndex: number, code: number): void {
-  const w = getWorker(workerIndex);
-  for (const h of [...w.exitHandlers]) h(code);
-  const once = [...w.onceExitHandlers];
-  w.onceExitHandlers = [];
-  for (const h of once) h(code);
+function emitExit(childIndex: number, code: number | null = 0): void {
+  const c = getChild(childIndex);
+  c.exitCode = code;
+  for (const h of [...c.exitHandlers]) h(code, null);
+  const once = [...c.onceExitHandlers];
+  c.onceExitHandlers = [];
+  for (const h of once) h(code, null);
 }
 
 function resetState(): void {
-  state.workers = [];
+  state.children = [];
 }
 
 // --- Tests ---
@@ -134,8 +151,8 @@ describe("ChunkerPool (edge cases with mocked workers)", () => {
       // Submit a file — this sets up a pending request on the worker
       const promise = pool.processFile("test.ts", "const x = 1;", "typescript");
 
-      // The worker should have been created and message sent
-      expect(state.workers).toHaveLength(1);
+      // The child should have been created and init message sent
+      expect(state.children).toHaveLength(1);
 
       // Simulate the worker emitting an error
       const workerError = new Error("Worker crashed unexpectedly");
@@ -192,17 +209,17 @@ describe("ChunkerPool (edge cases with mocked workers)", () => {
 
       const shutdownPromise = pool.shutdown();
 
-      // Verify shutdown message was posted
-      const worker = getWorker(0);
-      expect(worker.postMessageCalls).toContainEqual({ type: "shutdown" });
-      expect(worker.unrefCalled).toBe(true);
+      // Verify shutdown message was sent (init message is sendCalls[0], shutdown is sendCalls[1])
+      const child = getChild(0);
+      expect(child.sendCalls).toContainEqual({ type: "shutdown" });
+      expect(child.unrefCalled).toBe(true);
 
       // Do NOT emit 'exit' — simulate a worker that hangs
       // Advance past the 2000ms timeout
       await vi.advanceTimersByTimeAsync(2100);
 
-      // The terminate() fallback should have been called
-      expect(worker.terminated).toBe(true);
+      // The kill(SIGKILL) fallback should have been called
+      expect(child.killed).toBe(true);
 
       await shutdownPromise;
 
@@ -220,9 +237,9 @@ describe("ChunkerPool (edge cases with mocked workers)", () => {
       emitExit(0, 0);
       await shutdownPromise;
 
-      // Worker should NOT have been terminated (graceful exit)
-      const worker = getWorker(0);
-      expect(worker.terminated).toBe(false);
+      // Worker should NOT have been killed (graceful exit)
+      const child = getChild(0);
+      expect(child.killed).toBe(false);
 
       vi.useRealTimers();
     });
@@ -250,7 +267,7 @@ describe("ChunkerPool (edge cases with mocked workers)", () => {
       // Simulate successful worker response
       emitMessage(0, {
         filePath: "test.ts",
-        chunks: [{ content: "const x = 1;", startLine: 1, endLine: 1, metadata: {} as any }],
+        chunks: [{ content: "const x = 1;", startLine: 1, endLine: 1, metadata: {} as never }],
       });
 
       const result = await promise;

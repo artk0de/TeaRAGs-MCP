@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../../types.js";
-import { ThreadTransport } from "../../infra/thread-transport.js";
+import { ProcessTransport } from "../../infra/process-transport.js";
 import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
 
@@ -68,7 +68,7 @@ export class ChunkerPool {
     // root) can dynamically import the concrete factory + composer in-thread.
     this.pool = new WorkerDispatchPool<WorkerRequest, WorkerResponse>(
       poolSize,
-      new ThreadTransport<WorkerRequest, WorkerResponse>(WORKER_PATH),
+      new ProcessTransport<WorkerRequest, WorkerResponse>(WORKER_PATH),
       {
         ...config,
         languageModulePath: LANGUAGE_MODULE_PATH,

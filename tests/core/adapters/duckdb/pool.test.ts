@@ -412,6 +412,59 @@ describe("GraphDbClientPool — per-collection isolation", () => {
   });
 });
 
+describe("GraphDbClientPool — spill and cross-pass path helpers", () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "pool-paths-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("spillPathFor returns <codegraphDir>/.spill/<collection>-<runId>.ndjson", () => {
+    const pool = new GraphDbClientPool({
+      rootDir: tmp,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    });
+    const path = pool.spillPathFor("code_abc", "run-42");
+    expect(path).toContain(join("codegraph", ".spill", "code_abc-run-42.ndjson"));
+  });
+
+  it("spillPathFor sanitises unsafe characters in the collection name", () => {
+    const pool = new GraphDbClientPool({
+      rootDir: tmp,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    });
+    const path = pool.spillPathFor("code/unsafe:name", "run-1");
+    // slashes and colons must be replaced with underscores
+    expect(path).not.toContain("/unsafe:");
+    expect(path).toContain("code_unsafe_name-run-1.ndjson");
+  });
+
+  it("inputSpillPathFor returns <codegraphDir>/.xpass/<collection>.ndjson", () => {
+    const pool = new GraphDbClientPool({
+      rootDir: tmp,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    });
+    const path = pool.inputSpillPathFor("code_abc");
+    expect(path).toContain(join("codegraph", ".xpass", "code_abc.ndjson"));
+  });
+
+  it("inputSpillPathFor with a custom tempDirectory still places xpass under codegraphDir", () => {
+    const pool = new GraphDbClientPool({
+      rootDir: tmp,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      resources: { tempDirectory: join(tmp, "custom-spill") },
+    });
+    // xpassDir is always <rootDir>/codegraph/.xpass regardless of tempDirectory
+    const path = pool.inputSpillPathFor("code_xyz");
+    expect(path).toContain(join("codegraph", ".xpass", "code_xyz.ndjson"));
+    expect(path).not.toContain("custom-spill");
+  });
+});
+
 describe("GraphDbClientPool — mode-aware acquireRead/acquireWrite", () => {
   it("acquireRead opens a READ_ONLY in-process client on the full (unstripped) collection name", async () => {
     const root = mkdtempSync(join(tmpdir(), "pool-"));
@@ -767,6 +820,34 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
 
     await expect(pool.closeAll()).resolves.toBeUndefined();
 
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("concurrent acquireWrite calls for the same collection share ONE daemon init (daemonInflight dedup)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pool-inflight-"));
+    const socketPath = join(root, "cg.sock");
+    await startEchoDaemon(socketPath);
+
+    const pool = new GraphDbClientPool({
+      rootDir: root,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      daemonSocketPath: socketPath,
+    });
+
+    // Fire N concurrent acquireWrite calls — only ONE socket connection should
+    // be established (the daemonInflight map deduplicates concurrent inits).
+    const [h1, h2, h3] = await Promise.all([
+      pool.acquireWrite("code_flight_v1"),
+      pool.acquireWrite("code_flight_v1"),
+      pool.acquireWrite("code_flight_v1"),
+    ]);
+
+    expect(connections).toBe(1);
+    // All three handles point at the same proxy wrapper (same graphDb identity).
+    expect(h1.graphDb).toBe(h2.graphDb);
+    expect(h2.graphDb).toBe(h3.graphDb);
+
+    await pool.closeAll();
     rmSync(root, { recursive: true, force: true });
   });
 });
