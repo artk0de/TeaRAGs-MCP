@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import type { FileExtraction } from "../../../../../src/core/contracts/types/codegraph.js";
+import { collectSymbols } from "../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { extractFromTypescriptFile } from "../../../../../src/core/domains/language/typescript/walker/walker.js";
@@ -52,6 +53,7 @@ describe("hierarchy graph E2E", () => {
       symbolTable: new InMemoryGlobalSymbolTable(),
       ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
     });
   });
 

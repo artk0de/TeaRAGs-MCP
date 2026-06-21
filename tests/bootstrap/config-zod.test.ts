@@ -498,7 +498,8 @@ describe("parseAppConfigZod — ingest", () => {
     expect(ingest.enableAST).toBe(true);
     expect(ingest.enableHybrid).toBe(true);
     expect(ingest.tune.pipelineConcurrency).toBe(1);
-    expect(ingest.tune.chunkerPoolSize).toBe(4);
+    // yl9tv — single-flight parse default (was 4).
+    expect(ingest.tune.chunkerPoolSize).toBe(1);
     expect(ingest.tune.fileConcurrency).toBe(50);
     expect(ingest.tune.ioConcurrency).toBe(50);
   });

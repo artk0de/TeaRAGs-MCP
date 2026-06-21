@@ -281,3 +281,49 @@ describe("runPrime — update-check integration", () => {
     });
   });
 });
+
+describe("runPrime — buildUpdateService fallback (yl9tv)", () => {
+  it("falls through to buildUpdateService when ctx has no updateService injected", async () => {
+    // This covers the `buildUpdateService()` factory (line 17 of run-prime.ts).
+    // The ctx returned by createAppContext lacks an `updateService` field, so
+    // the `?? buildUpdateService()` branch is taken. We mock check-service to
+    // avoid real npm network calls.
+    vi.mocked(existsSync).mockReturnValue(true);
+    pingMock.mockResolvedValue(true);
+
+    const checkForUpdateMock = vi.fn().mockResolvedValue({ kind: "unavailable", reason: "timeout" });
+    // Temporarily stub UpdateCheckService at the module level.
+    vi.doMock("../../../src/cli/update-check/check-service.js", () => ({
+      UpdateCheckService: class {
+        checkForUpdate = checkForUpdateMock;
+      },
+    }));
+
+    createAppContextMock.mockResolvedValue({
+      app: {
+        getIndexStatus: vi.fn().mockResolvedValue({
+          isIndexed: true,
+          status: "indexed",
+          collectionName: "c",
+          chunksCount: 10,
+        }),
+        getIndexMetrics: vi.fn().mockResolvedValue({
+          collection: "c",
+          totalChunks: 10,
+          totalFiles: 2,
+          distributions: { language: { typescript: 10 } },
+          signals: {},
+        }),
+        checkSchemaDrift: vi.fn().mockResolvedValue(null),
+      },
+      cleanup: vi.fn(),
+      // No updateService — forces buildUpdateService() to be called.
+    });
+
+    await runPrime({ path: "/some/project" });
+
+    // The test passes if runPrime completes without error.
+    // buildUpdateService() was invoked on the ?? branch.
+    expect(writeMock).toHaveBeenCalled();
+  });
+});

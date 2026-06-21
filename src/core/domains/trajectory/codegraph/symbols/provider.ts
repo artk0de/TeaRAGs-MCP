@@ -21,7 +21,19 @@
 
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { createReadStream, createWriteStream, readdirSync, readFileSync, type Dirent, type WriteStream } from "node:fs";
+import {
+  appendFileSync,
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  type Dirent,
+  type WriteStream,
+} from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { join, dirname as pathDirname, relative } from "node:path";
 import { createInterface } from "node:readline";
@@ -48,12 +60,12 @@ import type {
   GraphEdges,
   HierarchyView,
   InheritanceEdgeRow,
-  NamedSymbol,
   ResolveRunStatsRow,
   SymbolId,
 } from "../../../../contracts/types/codegraph.js";
 import type { FileClassification } from "../../../../contracts/types/file-classification.js";
 import type {
+  CollectSymbolsFn,
   LanguageFactoryDescriptor,
   LanguageSymbolResolver,
   SymbolIdComposer,
@@ -138,33 +150,6 @@ import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./recei
  */
 export function stripVersionSuffix(collectionName: string): string {
   return collectionName.replace(/_v\d+$/, "");
-}
-
-/**
- * `NamedSymbol` is defined in `contracts/types/codegraph.js` and imported
- * above — relocated there so the per-language `LanguageWalker` interface can
- * reference it without a domain→domain import.
- */
-
-/**
- * Compose the next fully-qualified id by appending `child.name` to
- * `composed` with the correct separator:
- *   - Top-level (`composed === ""`) → just the name.
- *   - `methodKind: "instance"` → `composed#child.name` (any language).
- *   - `methodKind: "static"`   → `composed.child.name` (any language).
- *   - Otherwise → `composed{scopeSeparator}child.name` (language-local).
- *
- * Behaviour-preserving delegation to the injected `SymbolIdComposer` — the one
- * cross-language symbolId mapper (spec §1a). The `{ methodKind, scopeSeparator,
- * absolute }` mapping is exactly the `compose` contract; this wrapper only
- * unpacks `NamedSymbol` into the option fields.
- */
-function joinSymbol(composer: SymbolIdComposer, composed: string, child: NamedSymbol, scopeSeparator: string): string {
-  return composer.compose(composed, child.name, {
-    methodKind: child.methodKind,
-    scopeSeparator,
-    absolute: child.absolute,
-  });
 }
 
 /**
@@ -337,13 +322,21 @@ export interface CodegraphProviderDeps {
    */
   languageFactory: LanguageFactoryDescriptor;
   /**
-   * Cross-language symbolId mapper used by `joinSymbol` to compose
-   * fully-qualified ids per `.claude/rules/symbolid-convention.md`. Injected as
+   * Cross-language symbolId mapper passed to the injected `collectSymbols` to
+   * compose fully-qualified ids per `.claude/rules/symbolid-convention.md`. Injected as
    * the contracts `SymbolIdComposer` interface (DI from bootstrap/api) — the
    * concrete `DefaultSymbolIdComposer` is never imported here (leaf-domain
    * guard forbids `trajectory/** -> domains/language/**`).
    */
   composer: SymbolIdComposer;
+  /**
+   * Symbol-range collector (yl9tv) — pure `domains/language/kernel` function
+   * injected via DI for the same leaf-domain reason as `composer` (trajectory
+   * may not import `domains/language`). The chunker worker imports the SAME
+   * function via its dynamic `languageModulePath` so one parse can feed both
+   * the chunks and the codegraph `FileExtraction`.
+   */
+  collectSymbols: CollectSymbolsFn;
   /** Derived signals + presets are wired by `createSymbolsTrajectory` in T9. */
   derivedSignals?: DerivedSignalDescriptor[];
   presets?: RerankPreset[];
@@ -404,6 +397,28 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * caller doesn't pass an explicit `options.paths` subset.
    */
   private readonly runExtractedPaths = new Map<string, Set<string>>();
+  /**
+   * Per-collection serialization tail for `streamFileBatch` (bd
+   * tea-rags-mcp-svhqp layer 3). `file-phase.onBatch` pushes extract work
+   * WITHOUT awaiting, so multiple `streamFileBatch` calls run concurrently on
+   * this one cached provider and would otherwise race on the shared spill stream
+   * + `extracted` set (a check-then-add dedup is TOCTOU under concurrency). Each
+   * call chains off the prior so extract + spill + dedup run atomically and in a
+   * deterministic order. Settled-tolerant: a rejected batch does not poison the
+   * chain. Cleared per key in `finalizeSignals` / `onRelease`.
+   */
+  private readonly runBatchChains = new Map<string, Promise<unknown>>();
+  /**
+   * yl9tv Task 5b — MAIN-thread per-collection dedup set for cross-pass input
+   * spill writes. `acceptExtraction` (main instance) appends each file's
+   * `FileExtraction` to the deterministic input spill exactly once; a file whose
+   * chunks span several processing units would otherwise be forwarded more than
+   * once. Reset per collection in `beginExtractionRun` (run start). NOT the
+   * worker-side parse gate — that is `options.crossPass`, sourced from the
+   * pipeline and threaded through `FileSignalOptions` (survives the worker
+   * structured-clone boundary; an in-process Set would not).
+   */
+  private readonly xpassWritten = new Map<string, Set<string>>();
   /**
    * Per-run counters surfaced via `getRunMetrics()`. Read-and-cleared by
    * `CompletionRunner` at end of each enrichment cycle. Tracked here
@@ -1023,7 +1038,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // `max(1, …)` guards a divide-by-zero when every attempted call was external.
     const internalAttempted = Math.max(1, callsAttempted - callsExternalSkipped);
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / internalAttempted;
-    const { byReceiverKind } = this.runStats;
+    const byReceiverKind = aggregateReceiverKinds(this.runStats);
     const resolveByReceiverKind = Object.fromEntries(
       RECEIVER_KINDS.map((kind) => {
         const t = byReceiverKind[kind];
@@ -1218,29 +1233,49 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     batchPaths: string[],
     options?: FileSignalOptions,
   ): Promise<Map<string, FileSignalOverlay>> => {
+    // bd tea-rags-mcp-svhqp (layer 3) — serialize concurrent batches per
+    // collection. file-phase fires streamFileBatch without awaiting, so chain
+    // each call off the prior: extract + spill + dedup then run atomically and
+    // in deterministic order on the shared spill stream + extracted set, instead
+    // of racing (a check-then-add dedup is TOCTOU under concurrency). A batch
+    // only rejects on catastrophic spill IO (per-file extraction errors are
+    // swallowed inside the inner loop) — at which point the whole run is already
+    // doomed, so letting that reject propagate down the chain is acceptable and
+    // keeps the wrapper branch-free.
     const key = this.collectionKey(options?.collectionName);
-    let sink = this.runSinks.get(key);
-    if (!sink) {
-      // First batch of a fresh run for this collection: reset the prior run's
-      // per-collection line map so it can't grow monotonically across runs on
-      // the long-lived daemon (the leak fix). Done at run START — NOT at
-      // finalize — because the deferred chunk pass (runDeferredChunk →
-      // buildChunkSignals → resolveChunkSymbolId) consumes chunkSymbolByLine
-      // AFTER finalizeSignals; clearing it at finalize zeroes every chunk's
-      // fanIn/fanOut/pageRank.
-      this.chunkSymbolByLine.delete(key);
-      sink = this.asExtractionSink(options?.collectionName);
-      this.runSinks.set(key, sink);
-    }
-    let extracted = this.runExtractedPaths.get(key);
-    if (!extracted) {
-      extracted = new Set();
-      this.runExtractedPaths.set(key, extracted);
-    }
+    const prior = this.runBatchChains.get(key) ?? Promise.resolve();
+    const result = prior.then(async () => this.streamFileBatchInner(root, batchPaths, options));
+    this.runBatchChains.set(key, result);
+    return result;
+  };
+
+  private async streamFileBatchInner(
+    root: string,
+    batchPaths: string[],
+    options?: FileSignalOptions,
+  ): Promise<Map<string, FileSignalOverlay>> {
+    const key = this.collectionKey(options?.collectionName);
+    // yl9tv Task 5b — cross-pass: the full-index chunk pass has fed this run's
+    // extractions into the input spill (drained in finalizeSignals), so the
+    // worker/main re-parse here is redundant AND would race the chunker pool's
+    // parse on the process-global tree-sitter. Skip it entirely. The flag comes
+    // from the pipeline via FileSignalOptions (NOT provider state) so it survives
+    // the worker-pool structured-clone boundary. `reindex_changes` never sets it
+    // → the incremental path keeps its extractOneFile re-parse.
+    if (options?.crossPass) return new Map();
+    const { sink, extracted } = this.ensureRunSink(key, options?.collectionName);
     const targets = batchPaths.filter(
       (p) => SUPPORTED_EXTS.has(extensionOf(p)) && !this.codegraphExclusionFilter.ignores(p),
     );
     for (const relPath of targets) {
+      // bd tea-rags-mcp-svhqp (residual) — extract each file ONCE per run.
+      // `file-phase` dedups relPaths within a batch but not across batches, so a
+      // file whose chunks span several streamed batches reaches here more than
+      // once. Without this guard it is re-extracted + re-spilled and its calls
+      // are tallied per spill, making callsAttempted (and resolveSuccessRate)
+      // jitter run-to-run with batch composition. `extracted` is the run's
+      // already-spilled set (also reused by finalize for overlay read-back).
+      if (extracted.has(relPath)) continue;
       try {
         await sink.write(this.extractOneFile(root, relPath));
         extracted.add(relPath);
@@ -1251,7 +1286,143 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       }
     }
     return new Map(); // signals deferred to finalizeSignals
+  }
+
+  /**
+   * Resolve (or lazily start) the run sink + extracted-path set for a collection
+   * key. The run-start side effects fire exactly once per run regardless of
+   * whether the first writer is `streamFileBatchInner` (direct / non-cross-pass)
+   * or `acceptExtraction` (yl9tv cross-pass): reset the prior run's
+   * per-collection `chunkSymbolByLine` line map (leak fix — done at run START,
+   * NOT finalize, because the deferred chunk pass consumes it AFTER
+   * finalizeSignals) and reset the per-run resolve tally `runStats`
+   * (bd tea-rags-mcp-svhqp — otherwise a prior run's tally leaks into the next
+   * run's `recordRunStats` on the long-lived daemon and jitters
+   * `resolveSuccessRate`), then open the spill sink.
+   */
+  private ensureRunSink(key: string, collectionName?: string): { sink: ExtractionSink; extracted: Set<string> } {
+    let sink = this.runSinks.get(key);
+    if (!sink) {
+      this.chunkSymbolByLine.delete(key);
+      this.runStats = createEmptyRunStats();
+      sink = this.asExtractionSink(collectionName);
+      this.runSinks.set(key, sink);
+    }
+    let extracted = this.runExtractedPaths.get(key);
+    if (!extracted) {
+      extracted = new Set();
+      this.runExtractedPaths.set(key, extracted);
+    }
+    return { sink, extracted };
+  }
+
+  /**
+   * yl9tv Task 5b cross-pass entry — MAIN thread. The full-index chunk pass
+   * forwards each file's codegraph `FileExtraction` (built from the chunker
+   * worker's SINGLE parse) here; we SYNC-APPEND it as one NDJSON line to the
+   * deterministic per-collection INPUT spill. No run sink, no symbol upsert, no
+   * finalize on the main thread — the off-thread worker's `finalizeSignals`
+   * (crossPass) drains this exact file later (both pools share `rootDir` →
+   * identical path), so the disk file IS the main→worker bridge. `relPath` is
+   * already root-relative (the file-processor sets it before forwarding). Deduped
+   * per collection so a file whose chunks span several processing units spills
+   * once. Append is SYNCHRONOUS (not a stream) so the bytes are flushed to disk
+   * before the worker's finalize opens the file — finalize is dispatched only
+   * after the whole file phase drains. Best-effort: IO errors are swallowed
+   * (debug-logged) so a spill hiccup never aborts indexing.
+   */
+  acceptExtraction = (extraction: FileExtraction, options?: { collectionName?: string }): void => {
+    const key = this.collectionKey(options?.collectionName);
+    let written = this.xpassWritten.get(key);
+    if (!written) {
+      written = new Set();
+      this.xpassWritten.set(key, written);
+    }
+    if (written.has(extraction.relPath)) return;
+    written.add(extraction.relPath);
+    const spillPath = this.inputSpillPath(options?.collectionName);
+    try {
+      mkdirSync(pathDirname(spillPath), { recursive: true });
+      appendFileSync(spillPath, `${JSON.stringify(extraction)}\n`, "utf8");
+    } catch (err) {
+      if (process.env.DEBUG === "true") {
+        process.stderr.write(`[codegraph] xpass spill append failed ${spillPath}: ${(err as Error).message}\n`);
+      }
+    }
   };
+
+  /**
+   * yl9tv Task 5b — truncate the per-collection input spill + reset the dedup set
+   * at run start (MAIN thread, before any acceptExtraction). Called by
+   * `coordinator.beginRun` ONLY on cross-pass (full-index) runs. Idempotent;
+   * tolerates a missing dir/file (creates them).
+   */
+  beginExtractionRun = (collectionName?: string): void => {
+    const key = this.collectionKey(collectionName);
+    this.xpassWritten.set(key, new Set());
+    const spillPath = this.inputSpillPath(collectionName);
+    try {
+      mkdirSync(pathDirname(spillPath), { recursive: true });
+      writeFileSync(spillPath, "", "utf8");
+    } catch (err) {
+      if (process.env.DEBUG === "true") {
+        process.stderr.write(`[codegraph] xpass spill reset failed ${spillPath}: ${(err as Error).message}\n`);
+      }
+    }
+  };
+
+  /**
+   * Deterministic cross-pass INPUT-spill path for a collection. Pool mode uses
+   * `GraphDbClientPool.inputSpillPathFor` (a `.xpass` dir the pool never purges,
+   * so the worker's mid-run pool construction can't wipe it); direct mode (tests,
+   * no pool) colocates under a hidden cwd subdir.
+   */
+  private inputSpillPath(collectionName?: string): string {
+    return this.deps.pool
+      ? this.deps.pool.inputSpillPathFor(collectionName ?? "__direct__")
+      : join(process.cwd(), ".tea-rags-codegraph-spill", `xpass-${collectionName ?? "__direct__"}.ndjson`);
+  }
+
+  /**
+   * yl9tv Task 5b — WORKER-side drain of the cross-pass input spill. Streams the
+   * main-written NDJSON line-by-line (O(1) memory, mirrors
+   * `streamingResolveAndUpsert`) through a fresh run sink — each `write` performs
+   * pass-1 (symbol upsert + run-global merges + output-spill append + line map)
+   * exactly as `streamFileBatchInner` would for a re-parsed file. Removes the
+   * input spill after draining. The sink it creates is finished by the caller
+   * (`finalizeSignals`) for pass-2 resolve. A missing input spill (codegraph on
+   * but no walkable files fed) is a no-op.
+   */
+  private async drainInputSpill(key: string, collectionName?: string): Promise<void> {
+    const spillPath = this.inputSpillPath(collectionName);
+    // No input spill on disk — nothing was fed this run. Leave the run sink
+    // uncreated so finalize reads back zero overlays (graceful empty run).
+    // (createReadStream surfaces ENOENT asynchronously on the stream, so guard
+    // up front rather than catching it inside the `for await`.)
+    if (!existsSync(spillPath)) return;
+    const { sink, extracted } = this.ensureRunSink(key, collectionName);
+    const reader = createInterface({
+      input: createReadStream(spillPath, { encoding: "utf8" }),
+      crlfDelay: Number.POSITIVE_INFINITY,
+    });
+    try {
+      for await (const line of reader) {
+        if (!line) continue;
+        let extraction: FileExtraction;
+        try {
+          extraction = JSON.parse(line) as FileExtraction;
+        } catch {
+          continue; // skip a corrupt line rather than abort the whole drain
+        }
+        if (extracted.has(extraction.relPath)) continue;
+        await sink.write(extraction);
+        extracted.add(extraction.relPath);
+      }
+    } finally {
+      reader.close();
+      rmSync(spillPath, { force: true });
+    }
+  }
 
   /**
    * Finish the streamed run sink (resolve edges + recompute graph metrics),
@@ -1263,9 +1434,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   finalizeSignals = async (_root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> => {
     const key = this.collectionKey(options?.collectionName);
-    const sink = this.runSinks.get(key);
     const file = new Map<string, FileSignalOverlay>();
     try {
+      // yl9tv Task 5b — cross-pass: streamFileBatch no-opped (no parse), so
+      // pass-1 is deferred to here. Drain the main-written input spill through a
+      // fresh run sink (symbol upsert + output-spill append + line map), then the
+      // sink.finish() below resolves pass-2. Non-crossPass runs (reindex_changes,
+      // direct mode) already populated the sink via streamFileBatch's
+      // extractOneFile path, so this is skipped and the existing sink is used.
+      if (options?.crossPass) await this.drainInputSpill(key, options?.collectionName);
+      const sink = this.runSinks.get(key);
       if (sink) await sink.finish();
       const { graphDb } = await this.getStore(options?.collectionName);
       const paths =
@@ -1280,6 +1458,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     } finally {
       this.runSinks.delete(key);
       this.runExtractedPaths.delete(key);
+      this.runBatchChains.delete(key);
+      this.xpassWritten.delete(key);
       this.clearRunState(key);
     }
     return file;
@@ -1294,13 +1474,22 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * mirrors the current snapshot to disk at finalize.
    */
   private async recordRunStats(graphDb: GraphDbClient): Promise<void> {
-    const { byReceiverKind } = this.runStats;
-    const rows: ResolveRunStatsRow[] = RECEIVER_KINDS.map((kind) => ({
-      receiverKind: kind,
-      attempted: byReceiverKind[kind].attempted,
-      resolved: byReceiverKind[kind].resolved,
-      externalSkipped: byReceiverKind[kind].externalSkipped,
-    }));
+    // bd tea-rags-mcp-cnqrg — one row per (observed language, receiver kind).
+    // The client overwrites the whole table so stale prior-run cells never leak;
+    // a language absent from this run simply has no rows.
+    const rows: ResolveRunStatsRow[] = [];
+    for (const [language, kinds] of this.runStats.byLanguageKind) {
+      for (const kind of RECEIVER_KINDS) {
+        const t = kinds[kind];
+        rows.push({
+          language,
+          receiverKind: kind,
+          attempted: t.attempted,
+          resolved: t.resolved,
+          externalSkipped: t.externalSkipped,
+        });
+      }
+    }
     await graphDb.recordRunStats(rows);
   }
 
@@ -1346,6 +1535,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.chunkSymbolByLine.clear();
     this.runSinks.clear();
     this.runExtractedPaths.clear();
+    this.runBatchChains.clear();
+    this.xpassWritten.clear();
     this.runAncestors = {};
     this.runPrependedAncestors = {};
     this.runExtends = {};
@@ -1450,11 +1641,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const parser = new Parser();
     parser.setLanguage(langConfig.loadParser());
     const tree = parser.parse(code);
-    const chunks = this.collectSymbols(
+    const chunks = this.deps.collectSymbols(
       tree,
       walker.nameOf,
       langConfig.scopeSeparator,
       langConfig.disambiguateOverloads ?? false,
+      this.deps.composer,
     );
     return walker.walk({
       tree,
@@ -1462,110 +1654,6 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       relPath,
       language: langConfig.language,
       chunks,
-    });
-  }
-
-  private collectSymbols(
-    tree: Parser.Tree,
-    nameOf: (node: Parser.SyntaxNode) => NamedSymbol | NamedSymbol[] | null,
-    separator: string,
-    disambiguateOverloads: boolean,
-  ): { symbolId: string; startLine: number; endLine: number; scope: string[] }[] {
-    const out: { symbolId: string; startLine: number; endLine: number; scope: string[] }[] = [];
-    const walk = (node: Parser.SyntaxNode, scope: string[], composed: string): void => {
-      const result = nameOf(node);
-      // Stable nested-scope tracking lets each named declaration carry
-      // a unique fully-qualified id even when same-name declarations
-      // are nested in different parents (e.g. four `worker()` helpers
-      // inside different outer functions). The string `composed` is
-      // the fqName we've built so far; we extend it per-named symbol
-      // with the right separator (`#` for instance methods nested
-      // under a class; the language's `scopeSeparator` otherwise).
-      //
-      // Array return form (Ruby DSL macros): emit each synthetic symbol
-      // at the current scope but do NOT descend through them — the
-      // call node itself has no useful interior for walking.
-      if (Array.isArray(result)) {
-        for (const ns of result) {
-          out.push({
-            symbolId: joinSymbol(this.deps.composer, composed, ns, separator),
-            startLine: node.startPosition.row + 1,
-            endLine: node.endPosition.row + 1,
-            scope,
-          });
-        }
-        // Continue walking children at the SAME scope (descendsInto is
-        // structurally false for array members — the call node is a leaf
-        // for symbol purposes; its children are argument expressions
-        // already covered by other nodes' nameOf).
-        for (const child of node.children) walk(child, scope, composed);
-        return;
-      }
-      const named = result;
-      const childScope = named ? [...scope, named.name] : scope;
-      const childComposed = named ? joinSymbol(this.deps.composer, composed, named, separator) : composed;
-      if (named) {
-        out.push({
-          symbolId: childComposed,
-          startLine: node.startPosition.row + 1,
-          endLine: node.endPosition.row + 1,
-          scope,
-        });
-      }
-      // Snapshot length BEFORE walking children so we can detect whether
-      // the child walk emitted an explicit `<class>#constructor` symbol.
-      // Used only when `syntheticConstructorIfMissing` is set (TS/JS
-      // class_declaration — bd tea-rags-mcp-vw1u).
-      const beforeChildren = out.length;
-      for (const child of node.children) walk(child, childScope, childComposed);
-      if (named?.syntheticConstructorIfMissing) {
-        const expectedCtor = `${childComposed}#constructor`;
-        let hasExplicit = false;
-        for (let i = beforeChildren; i < out.length; i++) {
-          if (out[i].symbolId === expectedCtor) {
-            hasExplicit = true;
-            break;
-          }
-        }
-        if (!hasExplicit) {
-          out.push({
-            symbolId: expectedCtor,
-            startLine: node.startPosition.row + 1,
-            endLine: node.endPosition.row + 1,
-            scope: childScope,
-          });
-        }
-      }
-    };
-    walk(tree.rootNode, [], "");
-    // Default behaviour: dedup by symbolId (keep first occurrence). Used
-    // by TS get/set accessor pairs (semantically one property), Python
-    // `@functools.singledispatch` stubs (bd tea-rags-mcp-d4ab — keep
-    // the first def, drop the impl-stub collision), etc.
-    //
-    // bd tea-rags-mcp-a466 — `disambiguateOverloads` opts a language IN
-    // to overload-aware suffixing: keep the FIRST occurrence's symbolId
-    // verbatim, append `~N` (1-based — second becomes `~2`) to each
-    // duplicate. Java needs this because `find_symbol("StringUtils.upperCase")`
-    // otherwise collapses multi-overload public APIs into a single
-    // merged chunk and `get_callers`/`get_callees` can't disambiguate
-    // which overload was called. Mirrors the chunker convention so
-    // cg_symbols + Qdrant payload agree on the same physical AST node.
-    if (disambiguateOverloads) {
-      const occurrences = new Map<string, number>();
-      return out.map((s) => {
-        const seen = occurrences.get(s.symbolId) ?? 0;
-        const next = seen + 1;
-        occurrences.set(s.symbolId, next);
-        if (next === 1) return s;
-        return { ...s, symbolId: `${s.symbolId}~${next}` };
-      });
-    }
-    const seen = new Set<string>();
-    return out.filter((s) => {
-      if (seen.has(s.symbolId)) return false;
-      seen.add(s.symbolId);
-      return true;
     });
   }
 
@@ -1670,11 +1758,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // Method-level edges from calls. Track resolve success ratio so the
     // run metrics surface how many call sites the resolver couldn't pin
     // to a target (low ratio = lots of dynamic / external calls).
+    // bd tea-rags-mcp-cnqrg — resolve the per-language tally bucket once per file
+    // (extraction.language is constant across this file's chunks). Test files
+    // never reach resolveExtraction (excluded upstream at extraction), so every
+    // call counted here is production code.
+    const kindTally = languageKindTally(this.runStats, extraction.language);
     for (const chunk of extraction.chunks) {
       for (const call of chunk.calls) {
         this.runStats.callsAttempted += 1;
         const receiverKind = classifyReceiverKind(call, chunk.localBindings);
-        this.runStats.byReceiverKind[receiverKind].attempted += 1;
+        kindTally[receiverKind].attempted += 1;
         const ctx = {
           callerFile: extraction.relPath,
           callerScope: chunk.scope,
@@ -1772,14 +1865,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         }
         if (resolved) {
           this.runStats.callsResolved += 1;
-          this.runStats.byReceiverKind[receiverKind].resolved += 1;
+          kindTally[receiverKind].resolved += 1;
         } else if (resolver.targetsExternalImport?.(call, ctx) ?? false) {
           // tea-rags-mcp-ykj7 — the resolver could not pin this call AND
           // classified it as an external-library / runtime import. Count it
-          // separately (aggregate + per-receiver-kind) so getRunMetrics excludes
-          // it from the denominator and cg_run_stats persists the breakdown.
+          // separately (aggregate + per-(language, receiver-kind)) so
+          // getRunMetrics excludes it from the denominator and cg_run_stats
+          // persists the breakdown.
           this.runStats.callsExternalSkipped += 1;
-          this.runStats.byReceiverKind[receiverKind].externalSkipped += 1;
+          kindTally[receiverKind].externalSkipped += 1;
         }
       }
     }
@@ -1815,15 +1909,47 @@ interface RunStats {
   // rate reflects PROJECT-INTERNAL resolver capability, not unresolvable
   // external-library noise. Subset of (callsAttempted − callsResolved).
   callsExternalSkipped: number;
-  // Per-idiom resolve breakdown (bd tea-rags-mcp-j431) — attempted/resolved per
-  // receiver kind so each cai0 slice proves a delta on the exact bucket it
-  // targets instead of moving one aggregate resolveSuccessRate.
-  byReceiverKind: Record<ReceiverKind, ReceiverKindTally>;
+  // Per-(code language, receiver kind) resolve breakdown (bd tea-rags-mcp-cnqrg,
+  // extends j431). Source of truth: the aggregate scalars above, the per-kind
+  // summary (getRunMetrics, j431 view) and the per-language summary
+  // (get_index_status) all derive from this by summing across the other axis.
+  // recordRunStats persists each (language, kind) cell to cg_run_stats so the
+  // daemon-readable proxy can break resolveSuccessRate down per language and
+  // locate the resolver gap. Lazily grows one entry per language observed in
+  // this run. Test files never reach here — they are excluded upstream at
+  // extraction (CODEGRAPH_EXCLUDE_TESTS, default true).
+  byLanguageKind: Map<string, Record<ReceiverKind, ReceiverKindTally>>;
 }
 
 function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally> {
   const out = {} as Record<ReceiverKind, ReceiverKindTally>;
   for (const kind of RECEIVER_KINDS) out[kind] = { attempted: 0, resolved: 0, externalSkipped: 0 };
+  return out;
+}
+
+/** Lazily fetch this language's per-kind tally, creating a zeroed one on first sight. */
+function languageKindTally(stats: RunStats, language: string): Record<ReceiverKind, ReceiverKindTally> {
+  let kinds = stats.byLanguageKind.get(language);
+  if (!kinds) {
+    kinds = emptyReceiverKindTally();
+    stats.byLanguageKind.set(language, kinds);
+  }
+  return kinds;
+}
+
+/**
+ * Project the per-(language, kind) tally onto the per-receiver-kind axis by
+ * summing across languages — the j431 view consumed by getRunMetrics.
+ */
+function aggregateReceiverKinds(stats: RunStats): Record<ReceiverKind, ReceiverKindTally> {
+  const out = emptyReceiverKindTally();
+  for (const kinds of stats.byLanguageKind.values()) {
+    for (const kind of RECEIVER_KINDS) {
+      out[kind].attempted += kinds[kind].attempted;
+      out[kind].resolved += kinds[kind].resolved;
+      out[kind].externalSkipped += kinds[kind].externalSkipped;
+    }
+  }
   return out;
 }
 
@@ -1835,7 +1961,7 @@ function createEmptyRunStats(): RunStats {
     callsAttempted: 0,
     callsResolved: 0,
     callsExternalSkipped: 0,
-    byReceiverKind: emptyReceiverKindTally(),
+    byLanguageKind: new Map(),
   };
 }
 

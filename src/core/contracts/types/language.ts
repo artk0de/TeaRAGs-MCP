@@ -165,6 +165,34 @@ export interface SymbolIdComposer {
   compose: (prefix: string, localName: string, opts?: ComposeSymbolIdOptions) => string;
 }
 
+/**
+ * One collected symbol-range row: a fully-qualified `symbolId` plus its
+ * 1-indexed line span and lexical scope chain. The shape the codegraph walker
+ * consumes (`FileExtraction.chunks` symbol-range input) and the
+ * `CollectSymbolsFn` result (yl9tv).
+ */
+export interface CollectedSymbolRange {
+  symbolId: string;
+  startLine: number;
+  endLine: number;
+  scope: string[];
+}
+
+/**
+ * Walks a parsed tree and collects every named symbol's fully-qualified id +
+ * line range. The kernel implementation (`domains/language/kernel`) is pure —
+ * the cross-language `composer` is passed in so the function carries no state.
+ * Injected via DI into the codegraph provider (trajectory may not import
+ * `domains/language`) and dynamically imported by the chunker worker (yl9tv).
+ */
+export type CollectSymbolsFn = (
+  tree: Parser.Tree,
+  nameOf: (node: Parser.SyntaxNode) => NamedSymbol | NamedSymbol[] | null,
+  separator: string,
+  disambiguateOverloads: boolean,
+  composer: SymbolIdComposer,
+) => CollectedSymbolRange[];
+
 // ─────────────────────────────────────────────────────────────────────────
 // Per-language CAPABILITY interfaces (spec §1, §4). A `LanguageProvider` is a
 // thin facade composing four OPTIONAL capabilities; `LanguageFactoryDescriptor.create`

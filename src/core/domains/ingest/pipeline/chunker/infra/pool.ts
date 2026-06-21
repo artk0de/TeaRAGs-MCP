@@ -13,6 +13,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../../types.js";
 import { ThreadPool } from "../../infra/thread-pool.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
@@ -49,6 +50,13 @@ const LANGUAGE_MODULE_PATH = path.join(CORE_DIR, "domains", "language", "index.j
 export interface FileChunkResult {
   filePath: string;
   chunks: CodeChunk[];
+  /**
+   * yl9tv — codegraph FileExtraction produced from the SAME worker parse,
+   * present iff the request asked for it (`emitExtraction`) and the language
+   * has a walker. The file-processor tees this into the codegraph spill so the
+   * provider no longer re-parses on the main thread.
+   */
+  extraction?: FileExtraction;
 }
 
 export class ChunkerPool {
@@ -74,12 +82,22 @@ export class ChunkerPool {
   /**
    * Process a single file in a worker thread.
    * Returns the same chunks that TreeSitterChunker.chunk() would produce.
+   *
+   * When `emitExtraction` is true (codegraph enabled), the worker also runs the
+   * language walker on the SAME parse and returns a codegraph `FileExtraction`
+   * (yl9tv) — surfaced here on the result for the file-processor to tee into the
+   * codegraph spill, eliminating the provider's main-thread re-parse.
    */
-  async processFile(filePath: string, code: string, language: string): Promise<FileChunkResult> {
-    const response = await this.pool.dispatch({ filePath, code, language });
+  async processFile(
+    filePath: string,
+    code: string,
+    language: string,
+    emitExtraction = false,
+  ): Promise<FileChunkResult> {
+    const response = await this.pool.dispatch({ filePath, code, language, emitExtraction });
     // ThreadPool already rejects on `response.error`; here we only narrow the
     // wire shape (`WorkerResponse`) to the public contract (`FileChunkResult`).
-    return { filePath: response.filePath, chunks: response.chunks };
+    return { filePath: response.filePath, chunks: response.chunks, extraction: response.extraction };
   }
 
   /**

@@ -29,7 +29,11 @@
 
 import { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
-import type { LanguageFactoryDescriptor, SymbolIdComposer } from "../../../contracts/types/language.js";
+import type {
+  CollectSymbolsFn,
+  LanguageFactoryDescriptor,
+  SymbolIdComposer,
+} from "../../../contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
 import { CodegraphEnrichmentProvider } from "./symbols/provider.js";
 import { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "./symbols/rerank/derived-signals/index.js";
@@ -121,6 +125,7 @@ export interface CodegraphWorkerConfig {
 interface LanguageModule {
   LanguageFactory: new (options?: { ambiguousResolveMode?: AmbiguousResolveMode }) => LanguageFactoryDescriptor;
   DefaultSymbolIdComposer: new () => SymbolIdComposer;
+  collectSymbols: CollectSymbolsFn;
 }
 
 /**
@@ -155,6 +160,7 @@ export async function createCodegraphEnrichmentProvider(
   const lang = (await import(config.languageModulePath)) as LanguageModule;
   const languageFactory = new lang.LanguageFactory({ ambiguousResolveMode: config.ambiguousResolveMode });
   const composer = new lang.DefaultSymbolIdComposer();
+  const { collectSymbols } = lang;
 
   const pool = new GraphDbClientPool({
     rootDir: config.rootDir,
@@ -184,6 +190,7 @@ export async function createCodegraphEnrichmentProvider(
     {
       pool,
       composer,
+      collectSymbols,
       // `ambiguousResolveMode` is NOT a provider dep — each native language
       // provider's resolver already carries the mode, baked in when the
       // factory built it above (`new LanguageFactory({ ambiguousResolveMode })`).

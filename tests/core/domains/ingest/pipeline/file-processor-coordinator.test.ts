@@ -156,3 +156,107 @@ describe("processFiles + ReindexCoordinator (Phase 3.2)", () => {
     expect(record.skipReason).toBe("delete-failed");
   });
 });
+
+describe("processFiles — onFileExtraction hook (yl9tv cross-pass)", () => {
+  let tempDir: string;
+  let codebaseDir: string;
+
+  beforeEach(async () => {
+    ({ tempDir, codebaseDir } = await createTempTestDir());
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  it("calls onFileExtraction with a root-relative relPath when the chunker emits an extraction", async () => {
+    await createTestFile(codebaseDir, "app.rb", "def hello; end\n");
+
+    const extraction = {
+      relPath: "", // will be overwritten by file-processor
+      language: "ruby",
+      imports: [],
+      chunks: [],
+      fileScope: [],
+    };
+
+    // Stub chunkerPool.processFile to return both chunks + an extraction.
+    const chunkerPool = {
+      processFile: vi.fn(async (_filePath: string) => ({
+        chunks: [
+          {
+            content: "def hello; end",
+            startLine: 1,
+            endLine: 1,
+            metadata: {
+              filePath: `${codebaseDir}/app.rb`,
+              language: "ruby",
+              chunkIndex: 0,
+              name: "hello",
+              chunkType: "function",
+            },
+          },
+        ],
+        extraction,
+      })),
+    };
+
+    const chunkPipeline = {
+      addChunk: vi.fn(() => true),
+      isBackpressured: () => false,
+      waitForBackpressure: async () => true,
+    };
+
+    const onFileExtraction = vi.fn();
+
+    await processFiles([`${codebaseDir}/app.rb`], codebaseDir, chunkerPool as never, chunkPipeline as never, {
+      enableGitMetadata: false,
+      onFileExtraction,
+    });
+
+    expect(onFileExtraction).toHaveBeenCalledTimes(1);
+    const received = onFileExtraction.mock.calls[0][0];
+    // relPath must be root-relative (no absolute prefix, no leading slash from basePath).
+    expect(received.relPath).toBe("app.rb");
+  });
+
+  it("does not call onFileExtraction when chunker returns no extraction", async () => {
+    await createTestFile(codebaseDir, "index.ts", "export const x = 1;\n");
+
+    // Stub returns chunks only, no extraction field.
+    const chunkerPool = {
+      processFile: vi.fn(async (_filePath: string) => ({
+        chunks: [
+          {
+            content: "export const x = 1;",
+            startLine: 1,
+            endLine: 1,
+            metadata: {
+              filePath: `${codebaseDir}/index.ts`,
+              language: "typescript",
+              chunkIndex: 0,
+              name: "x",
+              chunkType: "block",
+            },
+          },
+        ],
+        // extraction is undefined — emitExtraction was false
+      })),
+    };
+
+    const chunkPipeline = {
+      addChunk: vi.fn(() => true),
+      isBackpressured: () => false,
+      waitForBackpressure: async () => true,
+    };
+
+    const onFileExtraction = vi.fn();
+
+    await processFiles([`${codebaseDir}/index.ts`], codebaseDir, chunkerPool as never, chunkPipeline as never, {
+      enableGitMetadata: false,
+      onFileExtraction,
+    });
+
+    expect(onFileExtraction).not.toHaveBeenCalled();
+  });
+});

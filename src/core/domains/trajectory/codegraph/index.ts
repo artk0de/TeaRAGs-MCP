@@ -10,7 +10,11 @@
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
-import type { LanguageFactoryDescriptor, SymbolIdComposer } from "../../../contracts/types/language.js";
+import type {
+  CollectSymbolsFn,
+  LanguageFactoryDescriptor,
+  SymbolIdComposer,
+} from "../../../contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
 import type { Trajectory } from "../../../contracts/types/trajectory.js";
 import type { CodegraphExclusionOptions } from "./exclusion.js";
@@ -38,6 +42,12 @@ export interface CodegraphDeps {
    * `bootstrap/factory.ts`, never imported here (leaf-domain guard).
    */
   composer: SymbolIdComposer;
+  /**
+   * Symbol-range collector (yl9tv) — the pure `domains/language/kernel`
+   * function, injected for the same leaf-domain reason as `composer`. Wired by
+   * `bootstrap/factory.ts` (the chunker worker dynamic-imports the SAME fn).
+   */
+  collectSymbols: CollectSymbolsFn;
   /**
    * Codegraph-layer exclusion config — applied AFTER FileScanner's
    * ignoreFilter inside `discoverSupportedFiles`. Wired from

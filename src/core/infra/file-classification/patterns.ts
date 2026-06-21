@@ -19,35 +19,51 @@ export const GENERATED_PATTERNS: readonly string[] = [
   "*.g.dart",
 ];
 
-/** Conventional test-file shapes for every language with a codegraph walker. */
-export const TEST_PATTERNS: readonly string[] = [
-  "**/tests/**",
-  "**/test/**",
-  "**/__tests__/**",
-  "**/spec/**",
-  "**/*.test.js",
-  "**/*.test.jsx",
-  "**/*.test.ts",
-  "**/*.test.tsx",
-  "**/*.test.mjs",
-  "**/*.test.cjs",
-  "**/*.spec.js",
-  "**/*.spec.jsx",
-  "**/*.spec.ts",
-  "**/*.spec.tsx",
-  "**/*.spec.mjs",
-  "**/*.spec.cjs",
-  "**/test_*.py",
-  "**/*_test.py",
-  "**/conftest.py",
-  "**/*_test.rb",
-  "**/*_spec.rb",
-  "**/*Test.java",
-  "**/*Tests.java",
-  "**/*IT.java",
-  "**/*_test.go",
-  "**/*_test.rs",
-];
+/**
+ * Conventional test-file shapes, grouped per code language (+ a language-agnostic
+ * `common` directory bucket). Each language OWNS its suffix conventions so the
+ * per-code-language codegraph `resolveSuccessRate` breakdown and the classifier
+ * agree on "a test file in language X".
+ *
+ * Why this lives in `infra` (not `domains/language`): the classifier is
+ * foundation and `core/infra` imports NOTHING — neither `contracts` nor
+ * `domains` are reachable (see the duplicated `FileClassification` in
+ * `classify.ts`). The classifier, the codegraph exclusion filter, and the
+ * enrichment/chunker workers all reach these patterns via the infra import, so
+ * infra is the only layer every consumer can read. Per-language grouping gives
+ * the ownership; the flat `TEST_PATTERNS` union is derived for existing
+ * consumers.
+ *
+ * `common` holds directory conventions not specific to one language (a `spec/`
+ * dir is shared by ruby/js, a `test/` dir is universal). Code languages only —
+ * `bash` (no test convention) and `markdown` (doc language) contribute nothing.
+ */
+export const TEST_PATTERNS_BY_LANGUAGE: Readonly<Record<string, readonly string[]>> = {
+  common: ["**/tests/**", "**/test/**", "**/__tests__/**", "**/spec/**"],
+  typescript: ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+  javascript: [
+    "**/*.test.js",
+    "**/*.test.jsx",
+    "**/*.test.mjs",
+    "**/*.test.cjs",
+    "**/*.spec.js",
+    "**/*.spec.jsx",
+    "**/*.spec.mjs",
+    "**/*.spec.cjs",
+  ],
+  python: ["**/test_*.py", "**/*_test.py", "**/conftest.py"],
+  ruby: ["**/*_test.rb", "**/*_spec.rb"],
+  java: ["**/*Test.java", "**/*Tests.java", "**/*IT.java"],
+  go: ["**/*_test.go"],
+  rust: ["**/*_test.rs"],
+};
+
+/**
+ * Flat, deduped union of every per-language bucket — the shape existing
+ * consumers (the test classifier, codegraph exclusion) keep importing. Derived
+ * from {@link TEST_PATTERNS_BY_LANGUAGE} so there is one source of truth.
+ */
+export const TEST_PATTERNS: readonly string[] = [...new Set(Object.values(TEST_PATTERNS_BY_LANGUAGE).flat())];
 
 /** First-N-lines markers that identify generated files with non-standard names. */
 export const GENERATED_CONTENT_MARKERS: readonly RegExp[] = [

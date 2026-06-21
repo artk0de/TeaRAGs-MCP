@@ -2794,3 +2794,179 @@ describe("EnrichmentCoordinator — applier-site heartbeat (post-flush coverage)
     }
   });
 });
+
+describe("EnrichmentCoordinator — onFileExtraction / acceptsExtractions (yl9tv)", () => {
+  let mockQdrant: any;
+
+  beforeEach(() => {
+    mockQdrant = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+  });
+
+  function makeBaseProvider(overrides: Partial<EnrichmentProvider> = {}): EnrichmentProvider {
+    return {
+      key: "static",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+      ...overrides,
+    };
+  }
+
+  it("acceptsExtractions returns false when no provider exposes acceptExtraction", () => {
+    const provider = makeBaseProvider();
+    const coord = new EnrichmentCoordinator(mockQdrant, provider);
+    expect(coord.acceptsExtractions()).toBe(false);
+  });
+
+  it("acceptsExtractions returns true when at least one provider exposes acceptExtraction", () => {
+    const provider = makeBaseProvider({
+      acceptExtraction: vi.fn().mockResolvedValue(undefined),
+    });
+    const coord = new EnrichmentCoordinator(mockQdrant, provider);
+    expect(coord.acceptsExtractions()).toBe(true);
+  });
+
+  it("onFileExtraction before beginRun is a no-op (currentRun early-out guard)", () => {
+    const acceptExtraction = vi.fn().mockResolvedValue(undefined);
+    const provider = makeBaseProvider({ acceptExtraction });
+    const coord = new EnrichmentCoordinator(mockQdrant, provider);
+
+    // No beginRun called — currentRun is undefined.
+    coord.onFileExtraction("coll-x", {
+      relPath: "src/foo.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [],
+      fileScope: [],
+    });
+
+    expect(acceptExtraction).not.toHaveBeenCalled();
+  });
+
+  it("onFileExtraction fans extraction to every provider that declares acceptExtraction", () => {
+    const acceptExtraction = vi.fn().mockResolvedValue(undefined);
+    const providerWithHook = makeBaseProvider({ key: "codegraph", acceptExtraction });
+    const providerWithoutHook = makeBaseProvider({ key: "git" });
+    const coord = new EnrichmentCoordinator(mockQdrant, [providerWithHook, providerWithoutHook]);
+
+    coord.beginRun("/repo", "coll-y");
+
+    const extraction = {
+      relPath: "src/bar.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [],
+      fileScope: [],
+    };
+    coord.onFileExtraction("coll-y", extraction);
+
+    expect(acceptExtraction).toHaveBeenCalledTimes(1);
+    expect(acceptExtraction).toHaveBeenCalledWith(extraction, { collectionName: "coll-y" });
+  });
+
+  it("onFileExtraction is silent when no provider has the hook", () => {
+    const noHookProvider = makeBaseProvider({ key: "git" });
+    const coord = new EnrichmentCoordinator(mockQdrant, noHookProvider);
+    coord.beginRun("/repo", "coll-z");
+
+    expect(() => {
+      coord.onFileExtraction("coll-z", {
+        relPath: "src/baz.ts",
+        language: "typescript",
+        imports: [],
+        chunks: [],
+        fileScope: [],
+      });
+    }).not.toThrow();
+  });
+});
+
+describe("EnrichmentCoordinator — error resilience in async callbacks", () => {
+  let mockProvider: EnrichmentProvider;
+
+  beforeEach(() => {
+    mockProvider = {
+      key: "git",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+  });
+
+  it("swallows markRunStart rejection and still completes awaitCompletion", async () => {
+    // Line 280: .catch(() => undefined) fires when batchSetPayload rejects during markRunStart.
+    const failingQdrant: any = {
+      batchSetPayload: vi.fn().mockRejectedValue(new Error("qdrant unavailable")),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+
+    const coord = new EnrichmentCoordinator(failingQdrant, mockProvider);
+    coord.beginRun("/repo", "coll-fail-start");
+    // markRunStartPromise rejects → .catch(() => undefined) swallows it.
+    // awaitCompletion must still resolve.
+    await expect(coord.awaitCompletion("coll-fail-start")).resolves.toBeDefined();
+  });
+
+  it("swallows release() rejection in awaitCompletion finally block", async () => {
+    // Line 402: .catch(() => undefined) on release() rejection.
+    // daemonGuard.begin() succeeds but returns a release fn that rejects.
+    const okQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    const throwingRelease = vi.fn().mockRejectedValue(new Error("release error"));
+    const guard = {
+      begin: vi.fn().mockResolvedValue(throwingRelease),
+    };
+
+    const coord = new EnrichmentCoordinator(okQdrant, mockProvider, undefined, undefined, guard);
+    coord.beginRun("/repo", "coll-release-fail");
+    // awaitCompletion enters finally → awaits daemonReleasePromise → calls release() → .catch swallows.
+    await expect(coord.awaitCompletion("coll-release-fail")).resolves.toBeDefined();
+  });
+
+  it("swallows heartbeat rejection while onChunksStored progresses normally", async () => {
+    // Line 351: .catch(() => undefined) on markerStore.heartbeat rejection.
+    // First batchSetPayload call (markRunStart) succeeds; subsequent calls fail.
+    let callCount = 0;
+    const partiallyFailingQdrant: any = {
+      batchSetPayload: vi.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount > 1) throw new Error("heartbeat qdrant error");
+        return undefined;
+      }),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+
+    const coord = new EnrichmentCoordinator(partiallyFailingQdrant, mockProvider);
+    coord.beginRun("/repo", "coll-hb-fail");
+
+    // Force the heartbeat throttle to pass by zeroing lastHeartbeatAt.
+    const run = (coord as any).currentRun;
+    if (run) run.lastHeartbeatAt = 0;
+
+    // onChunksStored triggers maybeHeartbeat fire-and-forget.
+    coord.onChunksStored("coll-hb-fail", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/a.ts" }, startLine: 1, endLine: 5 } } as any,
+    ]);
+
+    // Allow the fire-and-forget heartbeat to attempt and fail.
+    await new Promise((r) => setTimeout(r, 20));
+
+    // awaitCompletion must resolve despite heartbeat failure.
+    await expect(coord.awaitCompletion("coll-hb-fail")).resolves.toBeDefined();
+  });
+});

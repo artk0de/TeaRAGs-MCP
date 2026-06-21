@@ -32,7 +32,7 @@ import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/en
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
-import { DefaultSymbolIdComposer } from "../core/domains/language/index.js";
+import { collectSymbols, DefaultSymbolIdComposer } from "../core/domains/language/index.js";
 import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
@@ -447,6 +447,7 @@ export function wireCodegraph(
   const deps: CodegraphDeps = {
     pool,
     composer: symbolIdComposer,
+    collectSymbols,
     // Threaded to composition roots so NATIVE language providers (ruby, …) build
     // their resolver with the configured mode.
     ambiguousResolveMode: ambiguousMode,

@@ -19,15 +19,16 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import type {
   GraphDbClient,
   GraphEdges,
   SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
-import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
-import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import {
   CodegraphCheckpointError,
@@ -101,6 +102,7 @@ function makeProvider(graphDb: GraphDbClient): CodegraphEnrichmentProvider {
     symbolTable: new InMemoryGlobalSymbolTable(),
     ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
     composer: new DefaultSymbolIdComposer(),
+    collectSymbols,
   });
 }
 
@@ -302,6 +304,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
           symbolTable: new InMemoryGlobalSymbolTable(),
           ...buildTestCodegraphDeps(new Map()),
           composer: new DefaultSymbolIdComposer(),
+          collectSymbols,
         }),
     ).toThrow(/mutually exclusive/);
   });
@@ -312,6 +315,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
         new CodegraphEnrichmentProvider({
           ...buildTestCodegraphDeps(new Map()),
           composer: new DefaultSymbolIdComposer(),
+          collectSymbols,
         }),
     ).toThrow(/must provide either deps\.pool/);
   });
@@ -448,6 +452,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
       pool: fakePool,
       ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
     });
     // handleDeletedPaths -> getStore() — pool mode + no collectionName -> throw.
     await expect(provider.handleDeletedPaths(["src/x.ts"])).rejects.toThrow(
@@ -489,6 +494,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
       ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
       exclusion: { excludeTests: true, customPatterns: [] },
       composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
     });
     const internalProv = provider as unknown as {
       discoverSupportedFiles: (root: string) => string[];

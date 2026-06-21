@@ -13,10 +13,12 @@ import { join } from "node:path";
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import { StatsCache } from "../../../infra/stats-cache.js";
-import type { CodegraphResolveSummary, IndexStatus } from "../../../types.js";
+import type { CodegraphResolveLanguageRow, CodegraphResolveSummary, IndexStatus } from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../constants.js";
+import { MIN_LANGUAGE_SHARE } from "../infra/index.js";
 import { QuarantineStore } from "../sync/index.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
@@ -24,6 +26,59 @@ import { parseMarkerPayload } from "./indexing-marker-codec.js";
 
 /** If indexing marker says "in progress" for longer than this, report as stale */
 const STALE_INDEXING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+
+/** `callsResolved / max(1, callsAttempted − callsExternalSkipped)`; 0 when nothing attempted. */
+function resolveRate(attempted: number, resolved: number, externalSkipped: number): number {
+  return attempted === 0 ? 0 : resolved / Math.max(1, attempted - externalSkipped);
+}
+
+/**
+ * Fold the persisted per-(language, receiverKind) `cg_run_stats` rows into the
+ * status DTO (bd tea-rags-mcp-cnqrg). The aggregate sums every row; the
+ * per-language breakdown sums per language, then applies the SAME display rule
+ * as `get_index_metrics` — drop a language whose call-site share is below
+ * {@link MIN_LANGUAGE_SHARE} (noise) — and omits the breakdown entirely when ≤1
+ * language survives (the aggregate already conveys it). "Officially supported"
+ * needs no extra filter: only resolver-backed code languages reach the tally,
+ * and unlabeled rows (`language: ""`, direct-mode) are excluded from the
+ * per-language view. Returns `undefined` when there are no rows.
+ */
+export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): CodegraphResolveSummary | undefined {
+  if (rows.length === 0) return undefined;
+  let attempted = 0;
+  let resolved = 0;
+  let externalSkipped = 0;
+  const byLang = new Map<string, { attempted: number; resolved: number; externalSkipped: number }>();
+  for (const r of rows) {
+    attempted += r.attempted;
+    resolved += r.resolved;
+    externalSkipped += r.externalSkipped;
+    if (!r.language) continue; // unlabeled (pre-cnqrg / direct-mode) — aggregate only
+    const e = byLang.get(r.language) ?? { attempted: 0, resolved: 0, externalSkipped: 0 };
+    e.attempted += r.attempted;
+    e.resolved += r.resolved;
+    e.externalSkipped += r.externalSkipped;
+    byLang.set(r.language, e);
+  }
+  const summary: CodegraphResolveSummary = {
+    resolveSuccessRate: resolveRate(attempted, resolved, externalSkipped),
+    callsAttempted: attempted,
+    callsResolved: resolved,
+    callsExternalSkipped: externalSkipped,
+  };
+  const byLanguage: CodegraphResolveLanguageRow[] = [...byLang.entries()]
+    .filter(([, t]) => attempted > 0 && t.attempted / attempted >= MIN_LANGUAGE_SHARE)
+    .map(([language, t]) => ({
+      language,
+      resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped),
+      callsAttempted: t.attempted,
+      callsResolved: t.resolved,
+      callsExternalSkipped: t.externalSkipped,
+    }))
+    .sort((a, b) => b.callsAttempted - a.callsAttempted);
+  if (byLanguage.length > 1) summary.byLanguage = byLanguage;
+  return summary;
+}
 
 export class StatusModule {
   constructor(
@@ -64,23 +119,7 @@ export class StatusModule {
     try {
       const handle = await this.codegraphPool.acquireReader(target);
       try {
-        const rows = await handle.graphDb.getRunStats();
-        if (rows.length === 0) return undefined;
-        let attempted = 0;
-        let resolved = 0;
-        let externalSkipped = 0;
-        for (const r of rows) {
-          attempted += r.attempted;
-          resolved += r.resolved;
-          externalSkipped += r.externalSkipped;
-        }
-        const denominator = Math.max(1, attempted - externalSkipped);
-        return {
-          resolveSuccessRate: attempted === 0 ? 0 : resolved / denominator,
-          callsAttempted: attempted,
-          callsResolved: resolved,
-          callsExternalSkipped: externalSkipped,
-        };
+        return summarizeCodegraphResolve(await handle.graphDb.getRunStats());
       } finally {
         await handle.graphDb.close();
       }

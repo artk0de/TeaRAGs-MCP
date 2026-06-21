@@ -84,6 +84,7 @@ export class FilePhase {
   private coll = "";
   private runId = "";
   private runStartedAt = "";
+  private crossPass = false;
   private chunkPhase: ChunkPhase | null = null;
 
   constructor(
@@ -101,13 +102,29 @@ export class FilePhase {
     this.chunkPhase = chunkPhase;
   }
 
-  init(contexts: ReadonlyMap<string, ProviderContext>, coll: string, runId: string, runStartedAt: string): void {
+  init(
+    contexts: ReadonlyMap<string, ProviderContext>,
+    coll: string,
+    runId: string,
+    runStartedAt: string,
+    crossPass = false,
+  ): void {
     this.contexts = new Map(contexts);
     this.coll = coll;
     this.runId = runId;
     this.runStartedAt = runStartedAt;
+    this.crossPass = crossPass;
     this.states.clear();
     for (const key of contexts.keys()) this.states.set(key, createState());
+  }
+
+  /**
+   * yl9tv Task 5b — whether this run feeds codegraph via the cross-pass input
+   * spill. `CompletionRunner` reads it to thread `crossPass` into the finalize
+   * `FileSignalOptions` (so the worker drains the spill instead of re-parsing).
+   */
+  get crossPassEnabled(): boolean {
+    return this.crossPass;
   }
 
   /**
@@ -164,6 +181,10 @@ export class FilePhase {
           .runFileBatch(ctx.provider, root, enrichPaths, {
             collectionName: this.coll || undefined,
             ignoreFilter: ctx.ignoreFilter ?? undefined,
+            // yl9tv Task 5b — on a cross-pass run the worker no-ops this parse
+            // (the input spill is fed from the chunker's single parse); finalize
+            // drains the spill. Off cross-pass it keeps the extractOneFile path.
+            crossPass: this.crossPass,
           })
           .then(() => undefined)
           .catch(async (error: unknown) => {

@@ -15,16 +15,23 @@
  * the import guard, so no exemption is needed.
  */
 
+import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type { CodeChunk } from "../../../../../types.js";
 
 export interface WorkerRequest {
   filePath: string;
   code: string;
   language: string;
+  /** yl9tv — when true, the worker also runs the codegraph walker on the same
+   *  parse and returns `extraction`. Off by default (chunk-only requests). */
+  emitExtraction?: boolean;
 }
 
 export interface WorkerResponse {
   filePath: string;
   chunks: CodeChunk[];
+  /** yl9tv — codegraph FileExtraction from the SAME parse, present iff the
+   *  request set emitExtraction and the language has a walker. */
+  extraction?: FileExtraction;
   error?: string;
 }

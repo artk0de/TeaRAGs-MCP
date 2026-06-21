@@ -379,6 +379,24 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   async chunk(code: string, filePath: string, language: string): Promise<CodeChunk[]> {
+    return (await this.chunkWithTree(code, filePath, language)).chunks;
+  }
+
+  /**
+   * yl9tv — the single parse site, surfacing the parsed `tree` alongside the
+   * chunks so a codegraph-enabled worker can run the walker on the SAME parse
+   * (no main-thread re-parse). `chunk()` delegates here and discards the tree;
+   * behaviour for the chunk array is unchanged. `tree` is the successfully
+   * parsed tree (even when the chunk array fell back to character chunking, so
+   * the walker can still extract symbols — parity with the codegraph provider's
+   * direct-mode `extractOneFile`); it is `null` only for documentation
+   * languages, unsupported languages, and hard parse failures.
+   */
+  async chunkWithTree(
+    code: string,
+    filePath: string,
+    language: string,
+  ): Promise<{ chunks: CodeChunk[]; tree: Parser.Tree | null }> {
     // Documentation languages (markdown) skip tree-sitter entirely and route to
     // the remark-based MarkdownChunker. `isDocumentation` is the gate: markdown
     // is the only documentation language and the only one carrying the legacy
@@ -387,12 +405,18 @@ export class TreeSitterChunker implements CodeChunker {
     // alone is behaviour-identical to the old `skipTreeSitter && isDocumentation`.
     const provider = this.tryGetProvider(language);
     if (provider?.chunkerHooks?.isDocumentation) {
-      return this.enforceMaxChunkSize(await this.markdownChunker.chunk(code, filePath, language));
+      return {
+        chunks: this.enforceMaxChunkSize(await this.markdownChunker.chunk(code, filePath, language)),
+        tree: null,
+      };
     }
 
     const langConfig = await this.getLanguageConfig(language);
     if (!langConfig) {
-      return this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language));
+      return {
+        chunks: this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)),
+        tree: null,
+      };
     }
 
     try {
@@ -424,12 +448,17 @@ export class TreeSitterChunker implements CodeChunker {
       }
 
       if (chunks.length === 0 && code.length > 100) {
-        return this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language));
+        // Chunk output falls back to character chunking, but the parse
+        // succeeded — keep the tree so the codegraph walker still sees symbols.
+        return { chunks: this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)), tree };
       }
-      return this.enforceMaxChunkSize(this.mergeSmallChunks(chunks));
+      return { chunks: this.enforceMaxChunkSize(this.mergeSmallChunks(chunks)), tree };
     } catch (error) {
       console.error(`Tree-sitter parsing failed for ${filePath}:`, error);
-      return this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language));
+      return {
+        chunks: this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)),
+        tree: null,
+      };
     }
   }
 
