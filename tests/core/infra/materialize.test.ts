@@ -2,7 +2,7 @@ import Parser from "tree-sitter";
 import Ruby from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
-import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
+import { materializeTree } from "../../../src/core/infra/materialize.js";
 
 const SRC = `module M\n  class C < Base\n    def run(x, y = {})\n      acc = x.map { |z| z.to_s.strip }\n      helper(acc)\n    end\n  end\nend\n`;
 

@@ -1,6 +1,4 @@
-import type Parser from "tree-sitter";
-
-import type { AstNode } from "../../../contracts/types/ast.js";
+import type { AstNode, MaterializedTree } from "../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../contracts/types/codegraph.js";
 import type { CollectedSymbolRange, SymbolIdComposer } from "../../../contracts/types/language.js";
 
@@ -33,7 +31,7 @@ function joinSymbol(composer: SymbolIdComposer, composed: string, child: NamedSy
  * a complete `FileExtraction` from the SAME parse it chunks with).
  */
 export function collectSymbols(
-  tree: Parser.Tree,
+  tree: MaterializedTree,
   nameOf: (node: AstNode) => NamedSymbol | NamedSymbol[] | null,
   separator: string,
   disambiguateOverloads: boolean,

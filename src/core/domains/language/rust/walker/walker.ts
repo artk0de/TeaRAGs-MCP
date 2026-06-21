@@ -22,9 +22,7 @@
  * `enum_item`, `trait_item`, `mod_item`.
  */
 
-import type Parser from "tree-sitter";
-
-import type { AstNode } from "../../../../contracts/types/ast.js";
+import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
   ChunkExtraction,
@@ -34,7 +32,7 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 
 export interface RustExtractInput {
-  tree: Parser.Tree;
+  tree: MaterializedTree;
   code: string;
   relPath: string;
   language: string;

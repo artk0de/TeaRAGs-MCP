@@ -20,13 +20,11 @@
  * adding them as call sites would drown the graph in noise.
  */
 
-import type Parser from "tree-sitter";
-
-import type { AstNode } from "../../../../contracts/types/ast.js";
+import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
 
 export interface BashExtractInput {
-  tree: Parser.Tree;
+  tree: MaterializedTree;
   code: string;
   relPath: string;
   language: string;

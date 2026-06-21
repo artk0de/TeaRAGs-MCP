@@ -11,9 +11,7 @@
  * Spec: `docs/superpowers/specs/2026-05-25-domains-language-consolidation-design.md`
  */
 
-import type Parser from "tree-sitter";
-
-import type { AstNode } from "./ast.js";
+import type { AstNode, MaterializedTree } from "./ast.js";
 import type { ChunkingHook, LanguageChunkClassifier, MacroSymbol } from "./chunker.js";
 import type {
   CallContext,
@@ -180,14 +178,18 @@ export interface CollectedSymbolRange {
 }
 
 /**
- * Walks a parsed tree and collects every named symbol's fully-qualified id +
- * line range. The kernel implementation (`domains/language/kernel`) is pure —
+ * Walks a materialized AST and collects every named symbol's fully-qualified id
+ * + line range. The kernel implementation (`domains/language/kernel`) is pure —
  * the cross-language `composer` is passed in so the function carries no state.
  * Injected via DI into the codegraph provider (trajectory may not import
  * `domains/language`) and dynamically imported by the chunker worker (yl9tv).
+ *
+ * Accepts `MaterializedTree` (not the native `Parser.Tree`) so callers that
+ * already materialized the tree (chunker worker, extractOneFile) can pass it
+ * directly without re-touching native accessors (rdv7d fix).
  */
 export type CollectSymbolsFn = (
-  tree: Parser.Tree,
+  tree: MaterializedTree,
   nameOf: (node: AstNode) => NamedSymbol | NamedSymbol[] | null,
   separator: string,
   disambiguateOverloads: boolean,
@@ -315,12 +317,16 @@ export interface LanguageChunkerHooks {
 
 /**
  * Input passed to `LanguageWalker.walk` — mirrors today's
- * `LanguageConfig.walker` argument (a parsed `Tree` plus the chunk boundaries
+ * `LanguageConfig.walker` argument (a parsed tree plus the chunk boundaries
  * already produced for the file). The walker emits a `FileExtraction` for graph
  * construction.
+ *
+ * `tree` is `MaterializedTree` (not the native `Parser.Tree`) so callers that
+ * already materialized the tree (chunker worker, extractOneFile) can pass it
+ * directly without re-touching native accessors (rdv7d fix).
  */
 export interface WalkInput {
-  tree: Parser.Tree;
+  tree: MaterializedTree;
   code: string;
   relPath: string;
   language: string;

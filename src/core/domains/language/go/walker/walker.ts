@@ -20,9 +20,7 @@
  * top level.
  */
 
-import type Parser from "tree-sitter";
-
-import type { AstNode } from "../../../../contracts/types/ast.js";
+import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
   ChunkExtraction,
@@ -32,7 +30,7 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 
 export interface GoExtractInput {
-  tree: Parser.Tree;
+  tree: MaterializedTree;
   code: string;
   relPath: string;
   language: string;

@@ -9,7 +9,7 @@
 
 import Parser from "tree-sitter";
 
-import type { AstNode } from "../../../../contracts/types/ast.js";
+import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type { ChunkDecision, MacroSymbol } from "../../../../contracts/types/chunker.js";
 import type {
   LanguageChunkerHooks,
@@ -17,6 +17,7 @@ import type {
   LanguageKernel,
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
+import { materializeTree } from "../../../../infra/materialize.js";
 import { isStaticMethodNode } from "../../../../infra/symbolid/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
 import { isDebug } from "../infra/runtime.js";
@@ -397,7 +398,7 @@ export class TreeSitterChunker implements CodeChunker {
     code: string,
     filePath: string,
     language: string,
-  ): Promise<{ chunks: CodeChunk[]; tree: Parser.Tree | null }> {
+  ): Promise<{ chunks: CodeChunk[]; tree: MaterializedTree | null }> {
     // Documentation languages (markdown) skip tree-sitter entirely and route to
     // the remark-based MarkdownChunker. `isDocumentation` is the gate: markdown
     // is the only documentation language and the only one carrying the legacy
@@ -421,9 +422,17 @@ export class TreeSitterChunker implements CodeChunker {
     }
 
     try {
-      const tree = langConfig.parser.parse(code);
+      // Materialize the native tree immediately after parse — ONE eager pass
+      // captures all fragile native accessors (childForFieldName, parent,
+      // namedChildren) into a plain-JS AstNode tree. Every downstream consumer
+      // (findChunkableNodes, walker, collectSymbols) sees the deterministic
+      // plain-JS tree; the native Parser.Tree is dropped here. Fixes rdv7d.
+      const nativeTree = langConfig.parser.parse(code);
+      const root = materializeTree(nativeTree.rootNode, code);
+      const materializedTree: MaterializedTree = { rootNode: root };
+
       const chunks: CodeChunk[] = [];
-      const nodes = this.findChunkableNodes(tree.rootNode, langConfig.chunkableTypes, langConfig.hooks, code, filePath);
+      const nodes = this.findChunkableNodes(root, langConfig.chunkableTypes, langConfig.hooks, code, filePath);
 
       for (const [index, node] of nodes.entries()) {
         const content = code.substring(node.startIndex, node.endIndex);
@@ -450,10 +459,14 @@ export class TreeSitterChunker implements CodeChunker {
 
       if (chunks.length === 0 && code.length > 100) {
         // Chunk output falls back to character chunking, but the parse
-        // succeeded — keep the tree so the codegraph walker still sees symbols.
-        return { chunks: this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)), tree };
+        // succeeded — keep the materialized tree so the codegraph walker
+        // still sees symbols.
+        return {
+          chunks: this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)),
+          tree: materializedTree,
+        };
       }
-      return { chunks: this.enforceMaxChunkSize(this.mergeSmallChunks(chunks)), tree };
+      return { chunks: this.enforceMaxChunkSize(this.mergeSmallChunks(chunks)), tree: materializedTree };
     } catch (error) {
       console.error(`Tree-sitter parsing failed for ${filePath}:`, error);
       return {

@@ -1,6 +1,6 @@
-import type Parser from "tree-sitter";
 import { describe, expect, it } from "vitest";
 
+import type { MaterializedTree } from "../../../../../../../src/core/contracts/types/ast.js";
 import { TreeSitterChunker } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
 import {
   collectSymbols,
@@ -47,11 +47,16 @@ function buildEngine() {
 // Strong, position-sensitive tree fingerprint — every node's type + byte
 // range. Catches a reused-parser corruption that leaves the S-expression
 // structure intact but shifts node positions/text (which the walker reads).
-function treeFingerprint(tree: Parser.Tree): string {
+function treeFingerprint(tree: MaterializedTree): string {
   const parts: string[] = [];
-  const visit = (n: Parser.SyntaxNode) => {
+  const visit = (n: {
+    type: string;
+    startIndex: number;
+    endIndex: number;
+    children: readonly { type: string; startIndex: number; endIndex: number; children: readonly unknown[] }[];
+  }) => {
     parts.push(`${n.type}:${n.startIndex}:${n.endIndex}`);
-    for (const c of n.children) visit(c);
+    for (const c of n.children) visit(c as never);
   };
   visit(tree.rootNode);
   return parts.join("|");
@@ -70,13 +75,14 @@ async function walkFile(engine: ReturnType<typeof buildEngine>, path: string, co
   );
   const extraction = walker!.walk({ tree: tree!, code, relPath: path, language: "ruby", chunks: symbolRanges });
   const totalCalls = extraction.chunks.reduce((n, c) => n + c.calls.length, 0);
+  // tree! is now MaterializedTree — treeFingerprint accepts it directly
   return { sexp: treeFingerprint(tree!), rangeCount: symbolRanges.length, totalCalls };
 }
 
 describe("ruby walker carryover (engine-level, no pool, no concurrency)", () => {
   // rdv7d: RED until Task 10 (materialize boundary) lands — skipped so the suite
   // is green for the type-swap tasks; Task 10 un-skips and turns it green.
-  it.skip("walking service_1 alone vs after 49 predecessors yields the same tree AND the same call count", async () => {
+  it("walking service_1 alone vs after 49 predecessors yields the same tree AND the same call count", async () => {
     const isolatedEngine = buildEngine();
     const isolated = await walkFile(isolatedEngine, "service_1.rb", rubySource(1));
 
@@ -105,7 +111,7 @@ describe("ruby walker carryover (engine-level, no pool, no concurrency)", () => 
     ).toBe(isolated.totalCalls);
   });
 
-  it.skip("DIAGNOSTIC: single fresh-engine parse+walk of service_1, repeated in-process — is it stable?", async () => {
+  it("DIAGNOSTIC: single fresh-engine parse+walk of service_1, repeated in-process — is it stable?", async () => {
     const CODE = rubySource(1);
     const rows: { calls: number; textOk: boolean; posFp: string }[] = [];
     for (let r = 0; r < 40; r++) {
@@ -137,7 +143,7 @@ describe("ruby walker carryover (engine-level, no pool, no concurrency)", () => 
     expect(distinctCalls.length, `call count NOT stable: ${JSON.stringify(distinctCalls)}`).toBe(1);
   });
 
-  it.skip("DIAGNOSTIC: walk the SAME tree object 30× — does call count vary on a fixed tree?", async () => {
+  it("DIAGNOSTIC: walk the SAME tree object 30× — does call count vary on a fixed tree?", async () => {
     const CODE = rubySource(1);
     const engine = buildEngine();
     const { tree } = await engine.chunker.chunkWithTree(CODE, "service_1.rb", "ruby");
@@ -173,12 +179,22 @@ describe("ruby walker carryover (engine-level, no pool, no concurrency)", () => 
     // count). This mirrors what a materialization boundary would capture.
     const materializeFingerprint = (): string => {
       const parts: string[] = [];
-      const visit = (n: Parser.SyntaxNode) => {
+      // After the boundary flip, tree!.rootNode is AstNode (plain-JS materialized).
+      // AstNode has the same accessors (childForFieldName, parent, namedChildren, children).
+      const visit = (n: {
+        type: string;
+        startIndex: number;
+        endIndex: number;
+        childForFieldName: (f: string) => { type: string } | null;
+        parent: { type: string } | null;
+        namedChildren: readonly unknown[];
+        children: readonly unknown[];
+      }) => {
         const fields = FIELDS.map((f) => n.childForFieldName(f)?.type ?? "_").join(",");
         parts.push(
           `${n.type}:${n.startIndex}:${n.endIndex}:[${fields}]:p=${n.parent?.type ?? "_"}:nc=${n.namedChildren.length}`,
         );
-        for (const c of n.children) visit(c);
+        for (const c of n.children) visit(c as never);
       };
       visit(tree!.rootNode);
       return parts.join("|");

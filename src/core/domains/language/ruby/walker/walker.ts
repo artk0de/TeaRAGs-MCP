@@ -33,9 +33,7 @@
  *   - `chunks[].calls[]` carries call sites for the method graph.
  */
 
-import type Parser from "tree-sitter";
-
-import type { AstNode } from "../../../../contracts/types/ast.js";
+import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
   ChunkExtraction,
@@ -56,7 +54,7 @@ import {
 } from "./local-bindings.js";
 
 export interface RubyExtractInput {
-  tree: Parser.Tree;
+  tree: MaterializedTree;
   code: string;
   relPath: string;
   language: string;
