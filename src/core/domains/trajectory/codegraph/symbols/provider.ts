@@ -87,6 +87,7 @@ import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contract
 import { MapHierarchyView } from "../../../../infra/graph/hierarchy-view.js";
 import { pageRank } from "../../../../infra/graph/page-rank.js";
 import { tarjanScc } from "../../../../infra/graph/tarjan-scc.js";
+import { materializeTree } from "../../../../infra/materialize.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import {
   CodegraphCheckpointError,
@@ -1640,16 +1641,21 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const code = readFileSync(join(root, relPath), "utf8");
     const parser = new Parser();
     parser.setLanguage(langConfig.loadParser());
-    const tree = parser.parse(code);
+    // Materialize the native tree immediately after parse so all downstream
+    // consumers (collectSymbols + walker.walk) see the deterministic plain-JS
+    // AstNode tree. Mirrors the chunker boundary (rdv7d fix for the incremental
+    // reindex_changes path).
+    const nativeTree = parser.parse(code);
+    const materializedTree = { rootNode: materializeTree(nativeTree.rootNode, code) };
     const chunks = this.deps.collectSymbols(
-      tree,
+      materializedTree,
       walker.nameOf,
       langConfig.scopeSeparator,
       langConfig.disambiguateOverloads ?? false,
       this.deps.composer,
     );
     return walker.walk({
-      tree,
+      tree: materializedTree,
       code,
       relPath,
       language: langConfig.language,
