@@ -150,6 +150,20 @@ export interface FileSignalOptions {
    * Providers that don't walk the tree (git) ignore it.
    */
   ignoreFilter?: Ignore;
+  /**
+   * yl9tv Task 5b — run-level cross-pass flag. TRUE only on the full-index path
+   * when the ingest chunk pass feeds each file's codegraph `FileExtraction` into
+   * the provider's input spill (via `acceptExtraction`). The flag is sourced
+   * from the PIPELINE (full index sets it; `reindex_changes` never does), NOT
+   * from provider capability — see `coordinator.beginRun` threading.
+   *
+   * Codegraph reads it on BOTH worker entry points: `streamFileBatch` no-ops the
+   * main/worker re-parse (the spill is already populated from the chunker's
+   * single parse), and `finalizeSignals` drains the input spill instead. Other
+   * providers (git) ignore it. Primitive boolean — survives the worker-pool
+   * `structuredClone` boundary intact.
+   */
+  crossPass?: boolean;
 }
 
 /**
@@ -344,16 +358,29 @@ export interface EnrichmentProvider {
    */
   readonly onRelease?: () => Promise<void>;
   /**
-   * yl9tv — cross-pass channel. When set, the ingest chunk pass tees each
-   * file's codegraph `FileExtraction` (produced from the SAME worker parse it
-   * chunked with) here instead of the provider re-parsing on the main thread.
-   * The codegraph provider writes it to its run spill; once an extraction is
-   * accepted for a run, that run's `streamFileBatch` becomes a no-op for
-   * parsing (the spill is already populated). Providers without a codegraph
-   * spill (git) omit this. `extraction.relPath` is root-relative (set by the
-   * file-processor before forwarding).
+   * yl9tv Task 5b — cross-pass channel. When set, the ingest chunk pass tees
+   * each file's codegraph `FileExtraction` (produced from the SAME worker parse
+   * it chunked with) here instead of the provider re-parsing. The codegraph
+   * provider SYNC-APPENDS it (root-relative `relPath`) to a DETERMINISTIC
+   * per-collection input spill on disk. This runs on the MAIN-thread provider
+   * instance (the coordinator calls it directly); the off-thread worker's
+   * `finalizeSignals` later reads that same deterministic path (both pools share
+   * `rootDir`) and drains it — the disk file IS the main→worker bridge. Providers
+   * without a codegraph spill (git) omit this. Fire-and-forget by contract; the
+   * provider dedups + swallows IO errors internally (best-effort spill). SYNC by
+   * design (`appendFileSync`) — the bytes must be flushed before the worker's
+   * finalize reads them, and the call is made directly on the main-thread
+   * instance (never dispatched through the worker executor), so it returns void.
    */
-  acceptExtraction?: (extraction: FileExtraction, options?: { collectionName?: string }) => Promise<void>;
+  acceptExtraction?: (extraction: FileExtraction, options?: { collectionName?: string }) => void;
+  /**
+   * yl9tv Task 5b — truncate the per-collection input spill + reset the
+   * main-side dedup set at run start. Called by `coordinator.beginRun` on the
+   * MAIN-thread provider BEFORE any `acceptExtraction`, ONLY when the run is
+   * cross-pass (full index). Idempotent. Providers without an input spill (git)
+   * omit this.
+   */
+  beginExtractionRun?: (collectionName?: string) => void;
 }
 
 // Re-export for convenience

@@ -178,3 +178,54 @@ stays as scaffolding.
 - `reindex_changes` on a ruby project ×2 → codegraph still enriches changed
   files (no regression) + stable. Re-enable the `indexing.ts` `onFileExtraction`
   wiring as part of 5b.
+
+## Task 5b IMPLEMENTED (worker-owned input spill) — unit-green, live pending
+
+Implemented per the approved design. tsc=0, eslint=0; targeted suites green
+(ingest 1568, codegraph/enrichment/duckdb 776, bridge contract rewritten).
+
+Mechanism (9 production files + 1 test):
+
+1. `adapters/duckdb/pool.ts` — `inputSpillPathFor(coll)` →
+   `<rootDir>/codegraph/ .xpass/<coll>.ndjson`. CRITICAL: `.xpass` is a SIBLING
+   of `.spill`; the pool constructor `rmSync`s only `.spill`, and the worker
+   builds its OWN pool mid-run (first dispatch) — putting the input spill in
+   `.spill` would let the worker wipe the main's in-flight spill. `.xpass` is
+   never purged. Deterministic (no runId): main + worker pools share `rootDir` →
+   identical path.
+2. `contracts/types/provider.ts` — `FileSignalOptions.crossPass?: boolean`;
+   `EnrichmentProvider.acceptExtraction` now returns `void` (sync append, called
+   only on the main instance) + new `beginExtractionRun?(coll)`.
+3. `codegraph/symbols/provider.ts`:
+   - `acceptExtraction` (MAIN): sync `appendFileSync` of the raw
+     `FileExtraction` (root-relative relPath) to the input spill, deduped per
+     collection via `xpassWritten` set. No sink, no symbol upsert, no finalize
+     on main.
+   - `beginExtractionRun` (MAIN): truncate the input spill + reset dedup at run
+     start.
+   - `streamFileBatchInner`: parse-gate is now
+     `if (options?.crossPass) return ∅` (was the `runFedByChunkPass` in-process
+     Set — removed; an in-process flag can't reach the off-thread worker, the
+     whole Task-5 bug).
+   - `finalizeSignals` (WORKER): on `crossPass`, `drainInputSpill` streams the
+     main-written NDJSON line-by-line through a fresh sink (pass-1 symbol
+     upsert + output-spill append), `rmSync`s the input spill, then the existing
+     `sink.finish()` resolves pass-2. `extractOneFile` stays the non-crossPass +
+     direct-mode fallback.
+4. Threading (flag from PIPELINE, not provider capability — survives the worker
+   structured-clone boundary as a primitive):
+   `IndexPipeline.crossPassExtractionEnabled()` =
+   `enrichment.acceptsExtractions()` (base default `false` → `ReindexPipeline`
+   keeps `extractOneFile`) → `setupEnrichmentHooks` →
+   `coordinator.beginRun(…, crossPass)` → `RunState.crossPass` →
+   `filePhase.init(…, crossPass)` → streamFileBatch options (onBatch) +
+   `filePhase.crossPassEnabled` → `completion-runner` runFinalize options. The
+   SAME gate wires `onFileExtraction` in `IndexPipeline.processAndTrack`
+   (re-enabled), so the main writes the spill iff the worker expects it.
+
+Live dual-path validation still REQUIRED before merge (the Task-5 lesson: unit
+green ≠ off-thread correct):
+
+- `force_reindex huginn` ×2 → `callsAttempted` STABLE (was 12622 vs 14899).
+- `reindex_changes` ruby ×2 → codegraph still enriches, no regression
+  (crossPass=false on that path).

@@ -36,11 +36,7 @@ export interface CompletionRunnerDeps {
  * EnrichmentRecovery) — passed as a callback so CompletionRunner stays
  * decoupled from Recovery. Resolves to 0 when recovery is unavailable.
  */
-export type UnenrichedReader = (
-  coll: string,
-  provider: EnrichmentProvider,
-  level: "file" | "chunk",
-) => Promise<number>;
+export type UnenrichedReader = (coll: string, provider: EnrichmentProvider, level: "file" | "chunk") => Promise<number>;
 
 export class CompletionRunner {
   constructor(private readonly deps: CompletionRunnerDeps) {}
@@ -70,7 +66,14 @@ export class CompletionRunner {
       // apply step — equivalent to the old `if (!finalizeSignals) continue`.
       if (filePhase.hasPrefetchFailed(ctx.key)) continue;
       const root = ctx.effectiveRoot ?? "";
-      const fileOverlays = await executor.runFinalize(ctx.provider, root, { collectionName: coll || undefined });
+      // yl9tv Task 5b — thread crossPass so the codegraph worker's finalize
+      // drains the main-written input spill (pass-1) before resolving (pass-2),
+      // instead of relying on a streamFileBatch that no-opped. Other providers
+      // (git) ignore the flag.
+      const fileOverlays = await executor.runFinalize(ctx.provider, root, {
+        collectionName: coll || undefined,
+        crossPass: filePhase.crossPassEnabled,
+      });
       if (fileOverlays.size > 0) {
         await filePhase.applyFinalize(coll, ctx, fileOverlays, chunkPhase.getDeferredChunkMap(ctx.key));
       }

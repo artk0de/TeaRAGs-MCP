@@ -21,7 +21,19 @@
 
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { createReadStream, createWriteStream, readdirSync, readFileSync, type Dirent, type WriteStream } from "node:fs";
+import {
+  appendFileSync,
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  type Dirent,
+  type WriteStream,
+} from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { join, dirname as pathDirname, relative } from "node:path";
 import { createInterface } from "node:readline";
@@ -397,17 +409,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private readonly runBatchChains = new Map<string, Promise<unknown>>();
   /**
-   * yl9tv — collections whose current run is fed by the ingest chunk pass via
-   * `acceptExtraction`. While a key is present, that collection's
-   * `streamFileBatch` is a NO-OP for parsing: the spill is already populated
-   * from the chunker's single parse, so the main-thread re-parse
-   * (`extractOneFile`) is skipped. Set on the first `acceptExtraction` of a run
-   * (which precedes the first `streamFileBatch` — the extraction is forwarded at
-   * file-processing time, before the file's chunks are batched/upserted) and
-   * cleared in `finalizeSignals`. Empty for direct mode (tests) and runs with no
-   * walker-able files, where `streamFileBatch` keeps its `extractOneFile` path.
+   * yl9tv Task 5b — MAIN-thread per-collection dedup set for cross-pass input
+   * spill writes. `acceptExtraction` (main instance) appends each file's
+   * `FileExtraction` to the deterministic input spill exactly once; a file whose
+   * chunks span several processing units would otherwise be forwarded more than
+   * once. Reset per collection in `beginExtractionRun` (run start). NOT the
+   * worker-side parse gate — that is `options.crossPass`, sourced from the
+   * pipeline and threaded through `FileSignalOptions` (survives the worker
+   * structured-clone boundary; an in-process Set would not).
    */
-  private readonly runFedByChunkPass = new Set<string>();
+  private readonly xpassWritten = new Map<string, Set<string>>();
   /**
    * Per-run counters surfaced via `getRunMetrics()`. Read-and-cleared by
    * `CompletionRunner` at end of each enrichment cycle. Tracked here
@@ -1244,10 +1255,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     options?: FileSignalOptions,
   ): Promise<Map<string, FileSignalOverlay>> {
     const key = this.collectionKey(options?.collectionName);
-    // yl9tv — cross-pass: the chunk pass has already spilled this run's
-    // extractions via acceptExtraction (set before the first streamed batch),
-    // so the main-thread re-parse is redundant. Skip it entirely.
-    if (this.runFedByChunkPass.has(key)) return new Map();
+    // yl9tv Task 5b — cross-pass: the full-index chunk pass has fed this run's
+    // extractions into the input spill (drained in finalizeSignals), so the
+    // worker/main re-parse here is redundant AND would race the chunker pool's
+    // parse on the process-global tree-sitter. Skip it entirely. The flag comes
+    // from the pipeline via FileSignalOptions (NOT provider state) so it survives
+    // the worker-pool structured-clone boundary. `reindex_changes` never sets it
+    // → the incremental path keeps its extractOneFile re-parse.
+    if (options?.crossPass) return new Map();
     const { sink, extracted } = this.ensureRunSink(key, options?.collectionName);
     const targets = batchPaths.filter(
       (p) => SUPPORTED_EXTS.has(extensionOf(p)) && !this.codegraphExclusionFilter.ignores(p),
@@ -1302,33 +1317,112 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * yl9tv cross-pass entry. The ingest chunk pass forwards each file's codegraph
-   * `FileExtraction` (built from the chunker worker's SINGLE parse) here; we
-   * write it to the run spill exactly as `streamFileBatch` would and mark the
-   * run cross-pass-fed so `streamFileBatch` stops re-parsing on the main thread.
-   * `extraction.relPath` is already root-relative (the file-processor sets it
-   * before forwarding). Serialized per collection through the same
-   * `runBatchChains` as `streamFileBatch` so concurrent file-processing does not
-   * interleave sink writes; deduped against the run's `extracted` set.
+   * yl9tv Task 5b cross-pass entry — MAIN thread. The full-index chunk pass
+   * forwards each file's codegraph `FileExtraction` (built from the chunker
+   * worker's SINGLE parse) here; we SYNC-APPEND it as one NDJSON line to the
+   * deterministic per-collection INPUT spill. No run sink, no symbol upsert, no
+   * finalize on the main thread — the off-thread worker's `finalizeSignals`
+   * (crossPass) drains this exact file later (both pools share `rootDir` →
+   * identical path), so the disk file IS the main→worker bridge. `relPath` is
+   * already root-relative (the file-processor sets it before forwarding). Deduped
+   * per collection so a file whose chunks span several processing units spills
+   * once. Append is SYNCHRONOUS (not a stream) so the bytes are flushed to disk
+   * before the worker's finalize opens the file — finalize is dispatched only
+   * after the whole file phase drains. Best-effort: IO errors are swallowed
+   * (debug-logged) so a spill hiccup never aborts indexing.
    */
-  acceptExtraction = async (extraction: FileExtraction, options?: { collectionName?: string }): Promise<void> => {
+  acceptExtraction = (extraction: FileExtraction, options?: { collectionName?: string }): void => {
     const key = this.collectionKey(options?.collectionName);
-    // Set synchronously (before any await) so a streamFileBatch that chains
-    // immediately after observes the cross-pass flag and no-ops.
-    this.runFedByChunkPass.add(key);
-    const prior = this.runBatchChains.get(key) ?? Promise.resolve();
-    const result = prior.then(async () => {
-      const { sink, extracted } = this.ensureRunSink(key, options?.collectionName);
-      if (extracted.has(extraction.relPath)) return;
-      await sink.write(extraction);
-      extracted.add(extraction.relPath);
-    });
-    this.runBatchChains.set(
-      key,
-      result.catch(() => undefined),
-    );
-    return result;
+    let written = this.xpassWritten.get(key);
+    if (!written) {
+      written = new Set();
+      this.xpassWritten.set(key, written);
+    }
+    if (written.has(extraction.relPath)) return;
+    written.add(extraction.relPath);
+    const spillPath = this.inputSpillPath(options?.collectionName);
+    try {
+      mkdirSync(pathDirname(spillPath), { recursive: true });
+      appendFileSync(spillPath, `${JSON.stringify(extraction)}\n`, "utf8");
+    } catch (err) {
+      if (process.env.DEBUG === "true") {
+        process.stderr.write(`[codegraph] xpass spill append failed ${spillPath}: ${(err as Error).message}\n`);
+      }
+    }
   };
+
+  /**
+   * yl9tv Task 5b — truncate the per-collection input spill + reset the dedup set
+   * at run start (MAIN thread, before any acceptExtraction). Called by
+   * `coordinator.beginRun` ONLY on cross-pass (full-index) runs. Idempotent;
+   * tolerates a missing dir/file (creates them).
+   */
+  beginExtractionRun = (collectionName?: string): void => {
+    const key = this.collectionKey(collectionName);
+    this.xpassWritten.set(key, new Set());
+    const spillPath = this.inputSpillPath(collectionName);
+    try {
+      mkdirSync(pathDirname(spillPath), { recursive: true });
+      writeFileSync(spillPath, "", "utf8");
+    } catch (err) {
+      if (process.env.DEBUG === "true") {
+        process.stderr.write(`[codegraph] xpass spill reset failed ${spillPath}: ${(err as Error).message}\n`);
+      }
+    }
+  };
+
+  /**
+   * Deterministic cross-pass INPUT-spill path for a collection. Pool mode uses
+   * `GraphDbClientPool.inputSpillPathFor` (a `.xpass` dir the pool never purges,
+   * so the worker's mid-run pool construction can't wipe it); direct mode (tests,
+   * no pool) colocates under a hidden cwd subdir.
+   */
+  private inputSpillPath(collectionName?: string): string {
+    return this.deps.pool
+      ? this.deps.pool.inputSpillPathFor(collectionName ?? "__direct__")
+      : join(process.cwd(), ".tea-rags-codegraph-spill", `xpass-${collectionName ?? "__direct__"}.ndjson`);
+  }
+
+  /**
+   * yl9tv Task 5b — WORKER-side drain of the cross-pass input spill. Streams the
+   * main-written NDJSON line-by-line (O(1) memory, mirrors
+   * `streamingResolveAndUpsert`) through a fresh run sink — each `write` performs
+   * pass-1 (symbol upsert + run-global merges + output-spill append + line map)
+   * exactly as `streamFileBatchInner` would for a re-parsed file. Removes the
+   * input spill after draining. The sink it creates is finished by the caller
+   * (`finalizeSignals`) for pass-2 resolve. A missing input spill (codegraph on
+   * but no walkable files fed) is a no-op.
+   */
+  private async drainInputSpill(key: string, collectionName?: string): Promise<void> {
+    const spillPath = this.inputSpillPath(collectionName);
+    // No input spill on disk — nothing was fed this run. Leave the run sink
+    // uncreated so finalize reads back zero overlays (graceful empty run).
+    // (createReadStream surfaces ENOENT asynchronously on the stream, so guard
+    // up front rather than catching it inside the `for await`.)
+    if (!existsSync(spillPath)) return;
+    const { sink, extracted } = this.ensureRunSink(key, collectionName);
+    const reader = createInterface({
+      input: createReadStream(spillPath, { encoding: "utf8" }),
+      crlfDelay: Number.POSITIVE_INFINITY,
+    });
+    try {
+      for await (const line of reader) {
+        if (!line) continue;
+        let extraction: FileExtraction;
+        try {
+          extraction = JSON.parse(line) as FileExtraction;
+        } catch {
+          continue; // skip a corrupt line rather than abort the whole drain
+        }
+        if (extracted.has(extraction.relPath)) continue;
+        await sink.write(extraction);
+        extracted.add(extraction.relPath);
+      }
+    } finally {
+      reader.close();
+      rmSync(spillPath, { force: true });
+    }
+  }
 
   /**
    * Finish the streamed run sink (resolve edges + recompute graph metrics),
@@ -1340,9 +1434,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   finalizeSignals = async (_root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> => {
     const key = this.collectionKey(options?.collectionName);
-    const sink = this.runSinks.get(key);
     const file = new Map<string, FileSignalOverlay>();
     try {
+      // yl9tv Task 5b — cross-pass: streamFileBatch no-opped (no parse), so
+      // pass-1 is deferred to here. Drain the main-written input spill through a
+      // fresh run sink (symbol upsert + output-spill append + line map), then the
+      // sink.finish() below resolves pass-2. Non-crossPass runs (reindex_changes,
+      // direct mode) already populated the sink via streamFileBatch's
+      // extractOneFile path, so this is skipped and the existing sink is used.
+      if (options?.crossPass) await this.drainInputSpill(key, options?.collectionName);
+      const sink = this.runSinks.get(key);
       if (sink) await sink.finish();
       const { graphDb } = await this.getStore(options?.collectionName);
       const paths =
@@ -1358,7 +1459,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runSinks.delete(key);
       this.runExtractedPaths.delete(key);
       this.runBatchChains.delete(key);
-      this.runFedByChunkPass.delete(key);
+      this.xpassWritten.delete(key);
       this.clearRunState(key);
     }
     return file;
@@ -1435,6 +1536,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runSinks.clear();
     this.runExtractedPaths.clear();
     this.runBatchChains.clear();
+    this.xpassWritten.clear();
     this.runAncestors = {};
     this.runPrependedAncestors = {};
     this.runExtends = {};

@@ -80,6 +80,14 @@ interface RunState {
    * Resolves to a no-op release when codegraph is off or the keep-alive failed.
    */
   daemonReleasePromise: Promise<IndexRunDaemonRelease>;
+  /**
+   * yl9tv Task 5b — true on the full-index path when the chunk pass feeds each
+   * file's codegraph `FileExtraction` into the provider input spill. Threaded
+   * into every `FileSignalOptions` via `FilePhase`, so the off-thread worker's
+   * `streamFileBatch` no-ops the re-parse and `finalizeSignals` drains the spill.
+   * `reindex_changes` always leaves it false (worker keeps `extractOneFile`).
+   */
+  crossPass: boolean;
 }
 
 export class EnrichmentCoordinator {
@@ -224,10 +232,17 @@ export class EnrichmentCoordinator {
    * `changedPaths` is accepted for caller compatibility but no longer drives a
    * scoped prefetch — streaming naturally scopes to the batches actually stored.
    */
-  beginRun(absolutePath: string, collectionName?: string, ignoreFilter?: Ignore, _changedPaths?: string[]): void {
+  beginRun(
+    absolutePath: string,
+    collectionName?: string,
+    ignoreFilter?: Ignore,
+    _changedPaths?: string[],
+    crossPass = false,
+  ): void {
     // Build a fresh RunState. Per-run instances guarantee old promise closures
     // mutate their orphaned RunState, never the current one.
     const runState = this.createRunState();
+    runState.crossPass = crossPass;
     this.currentRun = runState;
 
     // Wire the applier-site heartbeat: every apply batch (file, chunk, finalize,
@@ -266,7 +281,15 @@ export class EnrichmentCoordinator {
       }),
     );
 
-    runState.filePhase.init(runState.contexts, collectionName ?? "", runState.runId, runState.startedAt);
+    // yl9tv Task 5b — on a cross-pass run, truncate each provider's input spill
+    // + reset its dedup set BEFORE the chunk pass starts feeding extractions.
+    // Runs on the MAIN-thread provider instances (same instances `onFileExtraction`
+    // calls `acceptExtraction` on); only the codegraph provider implements it.
+    if (crossPass && collectionName) {
+      for (const provider of this.providers) provider.beginExtractionRun?.(collectionName);
+    }
+
+    runState.filePhase.init(runState.contexts, collectionName ?? "", runState.runId, runState.startedAt, crossPass);
     runState.chunkPhase.init(runState.contexts, collectionName ?? "", runState.startedAt);
 
     // markRunStart writes ONLY the `_run` pointer ({runId, startedAt,
@@ -331,7 +354,7 @@ export class EnrichmentCoordinator {
   onFileExtraction(collectionName: string, extraction: FileExtraction): void {
     if (!this.currentRun) return;
     for (const ctx of this.currentRun.contexts.values()) {
-      void ctx.provider.acceptExtraction?.(extraction, { collectionName });
+      ctx.provider.acceptExtraction?.(extraction, { collectionName });
     }
   }
 
@@ -441,6 +464,7 @@ export class EnrichmentCoordinator {
       markRunStartPromise: Promise.resolve(),
       lastHeartbeatAt: 0,
       daemonReleasePromise: Promise.resolve(NOOP_RELEASE),
+      crossPass: false,
     };
   }
 

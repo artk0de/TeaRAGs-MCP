@@ -260,6 +260,19 @@ export abstract class BaseIndexingPipeline {
     });
   }
 
+  /**
+   * yl9tv Task 5b — whether this pipeline drives the codegraph cross-pass (chunk
+   * pass feeds the input spill; worker no-ops its re-parse and drains the spill).
+   * Default false (incremental `ReindexPipeline` keeps the worker's extractOneFile
+   * path — no incremental-codegraph regression). The full-index `IndexPipeline`
+   * overrides to enable it when a provider accepts extractions (codegraph on).
+   * Single source of truth for BOTH the `beginRun` flag AND the `onFileExtraction`
+   * wiring in `processAndTrack`, so the two never diverge.
+   */
+  protected crossPassExtractionEnabled(): boolean {
+    return false;
+  }
+
   private setupEnrichmentHooks(
     chunkPipeline: ChunkPipeline,
     absolutePath: string,
@@ -267,7 +280,13 @@ export abstract class BaseIndexingPipeline {
     ignoreFilter: Ignore,
     changedPaths?: string[],
   ): void {
-    this.enrichment.beginRun(absolutePath, collectionName, ignoreFilter, changedPaths);
+    this.enrichment.beginRun(
+      absolutePath,
+      collectionName,
+      ignoreFilter,
+      changedPaths,
+      this.crossPassExtractionEnabled(),
+    );
     chunkPipeline.setOnBatchUpserted((items) => {
       this.enrichment.onChunksStored(collectionName, absolutePath, items);
     });

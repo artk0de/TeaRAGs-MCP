@@ -230,6 +230,28 @@ export class GraphDbClientPool {
   }
 
   /**
+   * yl9tv Task 5b — deterministic per-collection cross-pass INPUT spill path.
+   * The full-index chunk pass (main thread) sync-appends each file's
+   * `FileExtraction` here; the off-thread codegraph worker drains it in
+   * `finalizeSignals`. Lives in `.xpass`, a SIBLING of `.spill` that the pool
+   * constructor does NOT `rmSync` — critical, because the worker constructs its
+   * OWN pool mid-run (first dispatch) and would otherwise wipe the in-flight
+   * input spill the main thread is still writing. Deterministic (no runId): both
+   * the main and worker pools share `rootDir`, so both resolve the identical
+   * path. The provider truncates it at run start (`beginExtractionRun`) and
+   * removes it after draining, so a crashed run leaves at most one stale file
+   * that the next run overwrites.
+   */
+  inputSpillPathFor(collectionName: string): string {
+    return join(this.xpassDir, `${sanitiseCollectionName(collectionName)}.ndjson`);
+  }
+
+  /** Cross-pass input-spill directory — never purged at pool construction. */
+  private get xpassDir(): string {
+    return join(this.codegraphDir, ".xpass");
+  }
+
+  /**
    * Return the cached handle for `collectionName` if one is already open,
    * otherwise `undefined`. Used by the GraphFacade read path so a query
    * against a collection that was never written to does NOT open a fresh

@@ -1,13 +1,15 @@
 /**
- * yl9tv Task 5 — cross-pass channel bridge.
+ * yl9tv Task 5b — worker-owned input-spill cross-pass bridge.
  *
- * The chunk pass tees each file's codegraph `FileExtraction` into the provider
- * via `acceptExtraction`; the provider writes it to the run spill. Once a run is
- * fed this way, `streamFileBatch` becomes a NO-OP for parsing (the main-thread
- * `extractOneFile` re-parse is skipped), and `finalizeSignals` resolves the
- * pre-spilled extractions exactly as before. This test feeds two extractions
- * through the bridge, asserts ZERO `extractOneFile` calls, and confirms both
- * files' symbols were persisted.
+ * On the full-index path the chunk pass tees each file's codegraph
+ * `FileExtraction` to the provider's `acceptExtraction`, which SYNC-APPENDS it
+ * to a deterministic input spill on disk — no symbol upsert, no sink on the
+ * (main-thread) instance. The off-thread worker's `finalizeSignals(crossPass)`
+ * drains that exact file: pass-1 (symbol upsert + output-spill append) per line,
+ * then pass-2 resolve. `streamFileBatch(crossPass)` is a parse NO-OP. This test
+ * exercises the contract against a single provider instance (direct mode, cwd
+ * input-spill fallback) and asserts ZERO `extractOneFile` calls across the
+ * cross-pass run, plus the non-cross-pass fallback still re-parses.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,6 +30,13 @@ import { buildTestCodegraphDeps } from "../../trajectory/codegraph/__helpers__/l
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../src/core/infra/migration/database/migrations");
 
+// Direct-mode (no pool) input spill for the undefined-collection case. Clean up
+// ONLY this exact file between tests — the parent `.tea-rags-codegraph-spill`
+// dir is shared with other direct-mode codegraph tests running in parallel
+// (their `asExtractionSink` output spills live there too), so wiping the whole
+// dir would race their in-flight writes.
+const DIRECT_INPUT_SPILL = join(process.cwd(), ".tea-rags-codegraph-spill", "xpass-__direct__.ndjson");
+
 function extraction(relPath: string, klass: string, method: string): FileExtraction {
   return {
     relPath,
@@ -38,7 +47,7 @@ function extraction(relPath: string, klass: string, method: string): FileExtract
   };
 }
 
-describe("codegraph cross-pass extraction bridge (yl9tv)", () => {
+describe("codegraph cross-pass input-spill bridge (yl9tv Task 5b)", () => {
   let tmp: string;
   let client: DuckDbGraphClient;
   let symbolTable: InMemoryGlobalSymbolTable;
@@ -57,40 +66,42 @@ describe("codegraph cross-pass extraction bridge (yl9tv)", () => {
       composer: new DefaultSymbolIdComposer(),
       collectSymbols,
     });
+    rmSync(DIRECT_INPUT_SPILL, { force: true });
   });
 
   afterEach(async () => {
     await client.close();
     rmSync(tmp, { recursive: true, force: true });
+    rmSync(DIRECT_INPUT_SPILL, { force: true });
   });
 
-  it("accepts pre-built extractions, no-ops streamFileBatch parsing, and resolves on finalize", async () => {
+  it("appends to the input spill, no-ops streamFileBatch, and drains on cross-pass finalize", async () => {
     const extractOneFileSpy = vi.spyOn(provider as unknown as { extractOneFile: () => unknown }, "extractOneFile");
 
-    await provider.acceptExtraction(extraction("a.rb", "Alpha", "one"));
-    await provider.acceptExtraction(extraction("b.rb", "Beta", "two"));
+    provider.beginExtractionRun();
+    provider.acceptExtraction(extraction("a.rb", "Alpha", "one"));
+    provider.acceptExtraction(extraction("b.rb", "Beta", "two"));
 
-    // Both symbols were written to the in-memory table by the sink.
-    expect(symbolTable.lookupByShortName("one").map((s) => s.symbolId)).toContain("Alpha#one");
-    expect(symbolTable.lookupByShortName("two").map((s) => s.symbolId)).toContain("Beta#two");
+    // acceptExtraction is a pure input-spill append: symbols are NOT yet in the
+    // table (the worker drains + upserts them only at finalize).
+    expect(symbolTable.lookupByShortName("one")).toHaveLength(0);
 
-    // streamFileBatch over the SAME paths must NOT re-parse — the run is
-    // cross-pass-fed, so extractOneFile is never invoked.
-    await provider.streamFileBatch(tmp, ["a.rb", "b.rb"], {});
+    // streamFileBatch with crossPass must NOT re-parse — finalize owns pass-1.
+    await provider.streamFileBatch(tmp, ["a.rb", "b.rb"], { crossPass: true });
     expect(extractOneFileSpy).not.toHaveBeenCalled();
 
-    // finalizeSignals reads the spill back and resolves without error.
-    const overlays = await provider.finalizeSignals(tmp, { paths: ["a.rb", "b.rb"] });
+    // finalize drains the input spill: symbols land, edges resolve, still zero parses.
+    const overlays = await provider.finalizeSignals(tmp, { crossPass: true, paths: ["a.rb", "b.rb"] });
     expect(overlays).toBeInstanceOf(Map);
-    // Still zero parses across the whole run.
+    expect(symbolTable.lookupByShortName("one").map((s) => s.symbolId)).toContain("Alpha#one");
+    expect(symbolTable.lookupByShortName("two").map((s) => s.symbolId)).toContain("Beta#two");
     expect(extractOneFileSpy).not.toHaveBeenCalled();
   });
 
-  it("falls back to extractOneFile in direct mode when no extraction was fed", async () => {
-    // No acceptExtraction → run is NOT cross-pass-fed → streamFileBatch keeps its
-    // extractOneFile path. The fixture file does not exist on disk, so the
-    // extraction throws and is swallowed, but the spy proves the parse was
-    // attempted (the direct-mode fallback is intact).
+  it("falls back to extractOneFile when the run is not cross-pass", async () => {
+    // No crossPass flag → streamFileBatch keeps its extractOneFile path. The
+    // fixture file does not exist on disk, so the extraction throws and is
+    // swallowed, but the spy proves the parse was attempted.
     const extractOneFileSpy = vi.spyOn(provider as unknown as { extractOneFile: () => unknown }, "extractOneFile");
     await provider.streamFileBatch(tmp, ["ghost.rb"], {});
     expect(extractOneFileSpy).toHaveBeenCalled();
