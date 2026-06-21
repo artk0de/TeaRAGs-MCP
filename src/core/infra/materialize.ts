@@ -63,15 +63,20 @@ export function materializeTree(nativeRoot: Parser.SyntaxNode, code: string): As
     for (let i = 0; i < childCount; i++) {
       const nativeChild = native.child(i);
       if (nativeChild === null) continue;
+      // Read ALL native accessors for index `i` BEFORE descending into the
+      // subtree — the proven eager single-touch ordering (rdv7d). Late access
+      // after the recursive `build()` (which creates+drops many wrappers and
+      // may trigger GC) is the exact pattern the materializer exists to avoid.
+      const childIsNamed = nativeChild.isNamed;
+      const field = native.fieldNameForChild(i);
       const child = build(nativeChild, node);
-      child.isNamed = nativeChild.isNamed;
+      child.isNamed = childIsNamed;
       node.children.push(child);
-      if (nativeChild.isNamed) {
+      if (childIsNamed) {
         child.previousNamedSibling = prevNamed;
         node.namedChildren.push(child);
         prevNamed = child;
       }
-      const field = native.fieldNameForChild(i);
       if (field && !node.fields.has(field)) node.fields.set(field, child);
     }
     return node;
