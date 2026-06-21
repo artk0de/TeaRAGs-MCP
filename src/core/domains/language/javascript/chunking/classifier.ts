@@ -8,13 +8,12 @@
  * (dispatch-set wins; else assignment + nested defineProperty siblings) is owned
  * by `jsChunkSymbols`. bd tea-rags-mcp-kfzx / z95o / d1f8.
  */
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkDecision, LanguageChunkClassifier } from "../../../../contracts/types/chunker.js";
 import { jsChunkSymbols } from "./chunk-symbols.js";
 
 export class JsChunkClassifier implements LanguageChunkClassifier {
-  classifyNode(node: Parser.SyntaxNode): ChunkDecision {
+  classifyNode(node: AstNode): ChunkDecision {
     const syms = jsChunkSymbols(node);
     if (syms.length === 0) return { kind: "passthrough" };
     return {

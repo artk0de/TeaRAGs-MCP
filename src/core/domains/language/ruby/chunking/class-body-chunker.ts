@@ -8,8 +8,7 @@
  * Designed for Rails models where class bodies are 70-80% DSL declarations.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { BodyChunkResult, ChunkingHook } from "../../../../contracts/types/chunker.js";
 import { RUBY_DSL, type DslCategory } from "../dsl/index.js";
 
@@ -425,7 +424,7 @@ const bodyGrouper = new RubyClassBodyChunker();
  * Extract class/module header line for context injection.
  * Returns "class Foo < Bar" or "module Baz" or undefined.
  */
-export function extractClassHeader(node: Parser.SyntaxNode, code: string): string | undefined {
+export function extractClassHeader(node: AstNode, code: string): string | undefined {
   const lines = code.split("\n");
   const firstLine = lines[node.startPosition.row];
   if (firstLine && /^\s*(class|module)\s+/.test(firstLine)) {
@@ -438,8 +437,8 @@ export function extractClassHeader(node: Parser.SyntaxNode, code: string): strin
  * Extract body lines with source line tracking, excluding method and comment rows.
  */
 function extractContainerBodyLines(
-  containerNode: Parser.SyntaxNode,
-  childNodes: Parser.SyntaxNode[],
+  containerNode: AstNode,
+  childNodes: AstNode[],
   code: string,
   excludedRows: Set<number>,
 ): BodyLine[] {
@@ -479,8 +478,8 @@ function extractContainerBodyLines(
  * Combines body line extraction, RubyClassBodyChunker, and class header injection.
  */
 export function extractBodyChunks(
-  containerNode: Parser.SyntaxNode,
-  childNodes: Parser.SyntaxNode[],
+  containerNode: AstNode,
+  childNodes: AstNode[],
   code: string,
   excludedRows: Set<number>,
   config: { maxChunkSize: number },

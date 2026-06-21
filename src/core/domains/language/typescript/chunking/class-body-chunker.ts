@@ -17,8 +17,7 @@
  * is classified as decorated_members, not static_members.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { BodyChunkResult, ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
 import { findClassBody } from "./utils.js";
 
@@ -30,7 +29,7 @@ type GroupType = "properties" | "static_members" | "decorated_members" | "abstra
  * Classify a class_body child node into a group type.
  * Returns undefined for nodes that should be skipped (methods, comments).
  */
-function classifyNode(node: Parser.SyntaxNode): GroupType | undefined {
+function classifyNode(node: AstNode): GroupType | undefined {
   const { type } = node;
 
   // Skip methods and comments — handled elsewhere
@@ -61,7 +60,7 @@ function classifyNode(node: Parser.SyntaxNode): GroupType | undefined {
 /**
  * Check if a node has a direct child of the given type.
  */
-function hasChildOfType(node: Parser.SyntaxNode, childType: string): boolean {
+function hasChildOfType(node: AstNode, childType: string): boolean {
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i);
     if (child?.type === childType) return true;
@@ -73,7 +72,7 @@ function hasChildOfType(node: Parser.SyntaxNode, childType: string): boolean {
  * Check if a node has a modifier keyword (abstract, static, etc.)
  * by looking for unnamed children matching the keyword text.
  */
-function hasModifier(node: Parser.SyntaxNode, modifier: string): boolean {
+function hasModifier(node: AstNode, modifier: string): boolean {
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i);
     if (child && !child.isNamed && child.type === modifier) return true;
@@ -85,16 +84,16 @@ function hasModifier(node: Parser.SyntaxNode, modifier: string): boolean {
 
 interface NodeGroup {
   type: GroupType;
-  nodes: Parser.SyntaxNode[];
+  nodes: AstNode[];
 }
 
 /**
  * Group adjacent same-type nodes from class_body.
  */
-function groupAdjacentNodes(classBody: Parser.SyntaxNode, excludedRows: Set<number>): NodeGroup[] {
+function groupAdjacentNodes(classBody: AstNode, excludedRows: Set<number>): NodeGroup[] {
   const groups: NodeGroup[] = [];
   let currentType: GroupType | null = null;
-  let currentNodes: Parser.SyntaxNode[] = [];
+  let currentNodes: AstNode[] = [];
 
   const flush = () => {
     if (currentNodes.length > 0 && currentType) {
@@ -133,7 +132,7 @@ function groupAdjacentNodes(classBody: Parser.SyntaxNode, excludedRows: Set<numb
  * Extract the class declaration header line for context injection.
  * Returns "export class Foo extends Bar {" or undefined.
  */
-function extractClassHeader(containerNode: Parser.SyntaxNode, codeLines: string[]): string | undefined {
+function extractClassHeader(containerNode: AstNode, codeLines: string[]): string | undefined {
   const firstLine = codeLines[containerNode.startPosition.row];
   if (firstLine && /^\s*(export\s+)?(abstract\s+)?class\s+/.test(firstLine)) {
     return firstLine.trim();
@@ -147,8 +146,8 @@ function extractClassHeader(containerNode: Parser.SyntaxNode, codeLines: string[
  * Collect non-excluded comment nodes immediately preceding a given node.
  * Returns comment nodes in source order (top to bottom).
  */
-function collectPrecedingComments(node: Parser.SyntaxNode, excludedRows: Set<number>): Parser.SyntaxNode[] {
-  const commentNodes: Parser.SyntaxNode[] = [];
+function collectPrecedingComments(node: AstNode, excludedRows: Set<number>): AstNode[] {
+  const commentNodes: AstNode[] = [];
   let sibling = node.previousNamedSibling;
 
   while (sibling?.type === "comment") {
@@ -165,12 +164,7 @@ function collectPrecedingComments(node: Parser.SyntaxNode, excludedRows: Set<num
  * Append all rows covered by a node to the rows array, and corresponding
  * source lines to the contentLines array.
  */
-function appendNodeContent(
-  node: Parser.SyntaxNode,
-  codeLines: string[],
-  contentLines: string[],
-  allRows: number[],
-): void {
+function appendNodeContent(node: AstNode, codeLines: string[], contentLines: string[], allRows: number[]): void {
   for (let { row } = node.startPosition; row <= node.endPosition.row; row++) {
     contentLines.push(codeLines[row]);
     allRows.push(row);

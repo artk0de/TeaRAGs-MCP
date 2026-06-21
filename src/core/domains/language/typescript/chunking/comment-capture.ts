@@ -5,15 +5,14 @@
  * Unlike Ruby's text-scanning approach, walks previousNamedSibling
  * from each method_definition in the class_body.
  */
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkingHook } from "../../../../contracts/types/chunker.js";
 import { findClassBody } from "./utils.js";
 
 /**
  * Find the class_body child node matching a method node by row position.
  */
-function findMethodInClassBody(classBody: Parser.SyntaxNode, methodNode: Parser.SyntaxNode): Parser.SyntaxNode | null {
+function findMethodInClassBody(classBody: AstNode, methodNode: AstNode): AstNode | null {
   for (let i = 0; i < classBody.namedChildCount; i++) {
     const child = classBody.namedChild(i);
     if (child?.type === "method_definition" && child.startPosition.row === methodNode.startPosition.row) {
@@ -28,8 +27,8 @@ function findMethodInClassBody(classBody: Parser.SyntaxNode, methodNode: Parser.
  * Walks previousNamedSibling while type === "comment".
  * Returns comments in source order (top to bottom).
  */
-function collectPrecedingComments(methodInBody: Parser.SyntaxNode): Parser.SyntaxNode[] {
-  const comments: Parser.SyntaxNode[] = [];
+function collectPrecedingComments(methodInBody: AstNode): AstNode[] {
+  const comments: AstNode[] = [];
   let sibling = methodInBody.previousNamedSibling;
   while (sibling?.type === "comment") {
     comments.unshift(sibling);

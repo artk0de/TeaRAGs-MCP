@@ -23,12 +23,11 @@
  *
  * bd tea-rags-mcp-kfzx
  */
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import { INSTANCE_METHOD_SEPARATOR } from "../../../../infra/symbolid/index.js";
 
-function walkAssignmentChainToTerminalRhs(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
-  let cur: Parser.SyntaxNode | null = node;
+function walkAssignmentChainToTerminalRhs(node: AstNode): AstNode | null {
+  let cur: AstNode | null = node;
   while (cur?.type === "assignment_expression") {
     const right = cur.childForFieldName("right");
     if (!right) return null;
@@ -37,7 +36,7 @@ function walkAssignmentChainToTerminalRhs(node: Parser.SyntaxNode): Parser.Synta
   return cur;
 }
 
-function isFunctionValuedExpression(node: Parser.SyntaxNode): boolean {
+function isFunctionValuedExpression(node: AstNode): boolean {
   return node.type === "function_expression" || node.type === "arrow_function" || node.type === "generator_function";
 }
 
@@ -47,7 +46,7 @@ function isFunctionValuedExpression(node: Parser.SyntaxNode): boolean {
  * (computed property access, deep member chains beyond `prototype`,
  * anonymous `module.exports = function () {}`).
  */
-function lhsToSymbolId(left: Parser.SyntaxNode, terminalRhs: Parser.SyntaxNode): string | null {
+function lhsToSymbolId(left: AstNode, terminalRhs: AstNode): string | null {
   // Bare identifier reassignment is handled by the original declarator —
   // skip to avoid duplicates (name-of.ts:lhsToNamedSymbol also returns
   // null here).
@@ -113,11 +112,11 @@ export interface JsAssignmentSymbol {
  * MUST stay in sync with name-of.ts:resolveEnclosingThisReceiver +
  * name-of.ts:jsGetterHelperEmission `absolute: true` emission.
  */
-export function extractJsNestedDefinePropertyThisSymbols(node: Parser.SyntaxNode): JsAssignmentSymbol[] {
+export function extractJsNestedDefinePropertyThisSymbols(node: AstNode): JsAssignmentSymbol[] {
   if (node.type !== "expression_statement") return [];
   // The top-level expression must be `<receiver>.<member> = function () {}`.
   // Find the assignment_expression and its function-valued RHS.
-  let assign: Parser.SyntaxNode | null = null;
+  let assign: AstNode | null = null;
   for (const child of node.children) {
     if (child.type === "assignment_expression") {
       assign = child;
@@ -144,7 +143,7 @@ export function extractJsNestedDefinePropertyThisSymbols(node: Parser.SyntaxNode
   // and `defineGetter(this, '<n>', fn)` calls. Skip any call nested inside
   // a deeper non-arrow function — `this` would rebind there.
   const out: JsAssignmentSymbol[] = [];
-  const visit = (n: Parser.SyntaxNode): void => {
+  const visit = (n: AstNode): void => {
     if (
       n !== terminal &&
       (n.type === "function_expression" ||
@@ -171,7 +170,7 @@ export function extractJsNestedDefinePropertyThisSymbols(node: Parser.SyntaxNode
  * If `call` is `Object.defineProperty(this, '<name>', { get|set: fn, … })`
  * or `defineGetter(this, '<name>', fn)`, return `<name>`. Otherwise null.
  */
-function nestedGetterInstallThisName(call: Parser.SyntaxNode): string | null {
+function nestedGetterInstallThisName(call: AstNode): string | null {
   const callee = call.childForFieldName("function");
   const args = call.childForFieldName("arguments");
   if (!callee || !args) return null;
@@ -225,9 +224,9 @@ const HTTP_VERBS = ["get", "post", "put", "delete", "head", "options", "patch", 
  *
  * MUST stay in sync with `name-of.ts:jsForEachDispatchEmission`.
  */
-export function extractJsForEachDispatchSymbols(node: Parser.SyntaxNode): JsAssignmentSymbol[] | null {
+export function extractJsForEachDispatchSymbols(node: AstNode): JsAssignmentSymbol[] | null {
   if (node.type !== "expression_statement") return null;
-  let call: Parser.SyntaxNode | null = null;
+  let call: AstNode | null = null;
   for (const child of node.children) {
     if (child.type === "call_expression") {
       call = child;
@@ -257,8 +256,8 @@ export function extractJsForEachDispatchSymbols(node: Parser.SyntaxNode): JsAssi
   if (!body) return null;
 
   // Inside the body, find the subscript assignment that anchors `<obj>`.
-  const dispatchLhs: { node: Parser.SyntaxNode | null } = { node: null };
-  const visit = (n: Parser.SyntaxNode): boolean => {
+  const dispatchLhs: { node: AstNode | null } = { node: null };
+  const visit = (n: AstNode): boolean => {
     if (dispatchLhs.node) return true;
     if (n.type === "assignment_expression") {
       const left = n.childForFieldName("left");
@@ -283,7 +282,7 @@ export function extractJsForEachDispatchSymbols(node: Parser.SyntaxNode): JsAssi
   const objText = objNode.text;
 
   // Walk to the program root for require/import lookups.
-  let root: Parser.SyntaxNode | null = node;
+  let root: AstNode | null = node;
   while (root?.parent) root = root.parent;
   if (!root) return null;
 
@@ -305,12 +304,7 @@ export function extractJsForEachDispatchSymbols(node: Parser.SyntaxNode): JsAssi
  *   3. `recvName === "methods"` AND a sibling require imports a local
  *      utility module whose path contains `util`.
  */
-function hasHttpVerbDispatchSignal(
-  root: Parser.SyntaxNode,
-  recvName: string,
-  body: Parser.SyntaxNode,
-  paramName: string,
-): boolean {
+function hasHttpVerbDispatchSignal(root: AstNode, recvName: string, body: AstNode, paramName: string): boolean {
   if (bodyComparesParamToHttpVerb(body, paramName)) return true;
   if (recvName === "methods") {
     const requireSource = findRequireSource(root, recvName);
@@ -320,9 +314,9 @@ function hasHttpVerbDispatchSignal(
   return false;
 }
 
-function bodyComparesParamToHttpVerb(body: Parser.SyntaxNode, paramName: string): boolean {
+function bodyComparesParamToHttpVerb(body: AstNode, paramName: string): boolean {
   let found = false;
-  const visit = (n: Parser.SyntaxNode): boolean => {
+  const visit = (n: AstNode): boolean => {
     if (found) return true;
     if (n.type === "binary_expression") {
       const op = n.childForFieldName("operator");
@@ -351,19 +345,19 @@ function bodyComparesParamToHttpVerb(body: Parser.SyntaxNode, paramName: string)
   return found;
 }
 
-function isParamIdentifier(n: Parser.SyntaxNode, paramName: string): boolean {
+function isParamIdentifier(n: AstNode, paramName: string): boolean {
   return n.type === "identifier" && n.text === paramName;
 }
 
-function isHttpVerbStringLiteral(n: Parser.SyntaxNode): boolean {
+function isHttpVerbStringLiteral(n: AstNode): boolean {
   const s = readStringLiteral(n);
   if (s === null) return false;
   return (HTTP_VERBS as readonly string[]).includes(s.toLowerCase());
 }
 
-function anyImportPathContainsUtil(root: Parser.SyntaxNode): boolean {
+function anyImportPathContainsUtil(root: AstNode): boolean {
   let found = false;
-  const visit = (n: Parser.SyntaxNode): boolean => {
+  const visit = (n: AstNode): boolean => {
     if (found) return true;
     if (n.type === "call_expression") {
       const callee = n.childForFieldName("function");
@@ -393,9 +387,9 @@ function anyImportPathContainsUtil(root: Parser.SyntaxNode): boolean {
  *   <recvName> = require('<source>')
  * and return the source string. Mirrors name-of.ts:findRequireSource.
  */
-function findRequireSource(root: Parser.SyntaxNode, recvName: string): string | null {
+function findRequireSource(root: AstNode, recvName: string): string | null {
   let found: string | null = null;
-  const visit = (n: Parser.SyntaxNode): boolean => {
+  const visit = (n: AstNode): boolean => {
     if (found !== null) return true;
     if (n.type === "variable_declarator") {
       const name = n.childForFieldName("name");
@@ -430,7 +424,7 @@ function findRequireSource(root: Parser.SyntaxNode, recvName: string): string | 
  * the codegraph also recognises. Returns null for any other node — caller
  * should fall back to the default name extraction.
  */
-export function extractJsAssignmentSymbol(node: Parser.SyntaxNode): JsAssignmentSymbol | null {
+export function extractJsAssignmentSymbol(node: AstNode): JsAssignmentSymbol | null {
   // Pattern #5: `const|let|var Foo = function () {}` / arrow.
   if (node.type === "lexical_declaration" || node.type === "variable_declaration") {
     for (const child of node.children) {
@@ -449,8 +443,8 @@ export function extractJsAssignmentSymbol(node: Parser.SyntaxNode): JsAssignment
   // Pattern #7 (bd tea-rags-mcp-d1f8): JS getter helpers — Object.defineProperty
   // and the project-specific `defineGetter` helper.
   if (node.type === "expression_statement") {
-    let assign: Parser.SyntaxNode | null = null;
-    let call: Parser.SyntaxNode | null = null;
+    let assign: AstNode | null = null;
+    let call: AstNode | null = null;
     for (const child of node.children) {
       if (child.type === "assignment_expression") {
         assign = child;
@@ -492,7 +486,7 @@ export function extractJsAssignmentSymbol(node: Parser.SyntaxNode): JsAssignment
  * MUST stay in sync with name-of.ts:jsGetterHelperEmission. See
  * `.claude/rules/symbolid-convention.md` and bd tea-rags-mcp-d1f8.
  */
-function getterHelperSymbolId(call: Parser.SyntaxNode): string | null {
+function getterHelperSymbolId(call: AstNode): string | null {
   const callee = call.childForFieldName("function");
   const args = call.childForFieldName("arguments");
   if (!callee || !args) return null;
@@ -545,7 +539,7 @@ function getterHelperSymbolId(call: Parser.SyntaxNode): string | null {
  * text used in the emitted symbolId, with `this` resolution. Mirrors
  * `name-of.ts:resolveReceiverText`. bd tea-rags-mcp-d1f8 this-resolve.
  */
-function resolveReceiverText(receiver: Parser.SyntaxNode): string | null {
+function resolveReceiverText(receiver: AstNode): string | null {
   if (receiver.type !== "this") return receiverDisplayText(receiver);
   return resolveEnclosingThisReceiver(receiver);
 }
@@ -557,8 +551,8 @@ function resolveReceiverText(receiver: Parser.SyntaxNode): string | null {
  * receiver text (e.g. `"app"`, `"exports.proto"`) when found, else null.
  * Mirrors `name-of.ts:resolveEnclosingThisReceiver`.
  */
-function resolveEnclosingThisReceiver(node: Parser.SyntaxNode): string | null {
-  let cur: Parser.SyntaxNode | null = node.parent;
+function resolveEnclosingThisReceiver(node: AstNode): string | null {
+  let cur: AstNode | null = node.parent;
   while (cur) {
     if (
       cur.type === "function_expression" ||
@@ -588,7 +582,7 @@ function resolveEnclosingThisReceiver(node: Parser.SyntaxNode): string | null {
   return null;
 }
 
-function readStringLiteral(node: Parser.SyntaxNode): string | null {
+function readStringLiteral(node: AstNode): string | null {
   if (node.type === "string") {
     const frag = node.namedChildren.find((c) => c.type === "string_fragment");
     return frag ? frag.text : null;
@@ -601,7 +595,7 @@ function readStringLiteral(node: Parser.SyntaxNode): string | null {
   return null;
 }
 
-function receiverDisplayText(node: Parser.SyntaxNode): string | null {
+function receiverDisplayText(node: AstNode): string | null {
   if (node.type === "identifier") return node.text;
   if (node.type === "this") return "this";
   if (node.type === "member_expression") {
@@ -616,7 +610,7 @@ function receiverDisplayText(node: Parser.SyntaxNode): string | null {
   return null;
 }
 
-function objectHasGetterPair(node: Parser.SyntaxNode): boolean {
+function objectHasGetterPair(node: AstNode): boolean {
   for (const pair of node.namedChildren) {
     if (pair.type !== "pair") continue;
     const key = pair.childForFieldName("key");

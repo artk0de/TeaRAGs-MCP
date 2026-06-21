@@ -17,13 +17,12 @@
  * Naming comes from the shared `goSymbolOf` (also used by the codegraph walker),
  * so chunker and codegraph agree on the symbolId by construction.
  */
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkDecision, ChunkType, LanguageChunkClassifier } from "../../../../contracts/types/chunker.js";
 import { goSymbolOf } from "../naming.js";
 
 export class GoChunkClassifier implements LanguageChunkClassifier {
-  classifyNode(node: Parser.SyntaxNode): ChunkDecision {
+  classifyNode(node: AstNode): ChunkDecision {
     if (node.type !== "method_declaration" && node.type !== "type_declaration") {
       return { kind: "passthrough" };
     }

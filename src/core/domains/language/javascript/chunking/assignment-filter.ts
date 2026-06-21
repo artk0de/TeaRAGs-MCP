@@ -15,8 +15,7 @@
  *
  * bd tea-rags-mcp-kfzx
  */
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkingHook } from "../../../../contracts/types/chunker.js";
 
 /**
@@ -24,8 +23,8 @@ import type { ChunkingHook } from "../../../../contracts/types/chunker.js";
  * innermost non-assignment value. Mirrors
  * `name-of.ts:walkAssignmentChainToTerminalRhs`.
  */
-function walkAssignmentChainToTerminalRhs(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
-  let cur: Parser.SyntaxNode | null = node;
+function walkAssignmentChainToTerminalRhs(node: AstNode): AstNode | null {
+  let cur: AstNode | null = node;
   while (cur?.type === "assignment_expression") {
     const right = cur.childForFieldName("right");
     if (!right) return null;
@@ -38,11 +37,11 @@ function walkAssignmentChainToTerminalRhs(node: Parser.SyntaxNode): Parser.Synta
  * Accept the shapes a callable value can take. Mirrors
  * `name-of.ts:isFunctionValuedExpression`.
  */
-function isFunctionValuedExpression(node: Parser.SyntaxNode): boolean {
+function isFunctionValuedExpression(node: AstNode): boolean {
   return node.type === "function_expression" || node.type === "arrow_function" || node.type === "generator_function";
 }
 
-function expressionStatementCarriesFunction(node: Parser.SyntaxNode): boolean {
+function expressionStatementCarriesFunction(node: AstNode): boolean {
   // expression_statement -> assignment_expression -> ... -> function/arrow.
   // OR expression_statement -> call_expression -> getter-install helper /
   //                                            -> methods.forEach dispatch.
@@ -69,7 +68,7 @@ function expressionStatementCarriesFunction(node: Parser.SyntaxNode): boolean {
  * permissive — false-positive expression_statements survive but produce
  * NO chunk if the resolver rejects them. bd tea-rags-mcp-z95o.
  */
-function callExpressionIsForEachDispatch(call: Parser.SyntaxNode): boolean {
+function callExpressionIsForEachDispatch(call: AstNode): boolean {
   const callee = call.childForFieldName("function");
   const args = call.childForFieldName("arguments");
   if (!callee || !args) return false;
@@ -88,7 +87,7 @@ function callExpressionIsForEachDispatch(call: Parser.SyntaxNode): boolean {
  * (just the shape detection — the symbol resolver does the actual
  * naming). bd tea-rags-mcp-d1f8.
  */
-function callExpressionIsGetterHelper(call: Parser.SyntaxNode): boolean {
+function callExpressionIsGetterHelper(call: AstNode): boolean {
   const callee = call.childForFieldName("function");
   const args = call.childForFieldName("arguments");
   if (!callee || !args) return false;
@@ -119,7 +118,7 @@ function callExpressionIsGetterHelper(call: Parser.SyntaxNode): boolean {
   return false;
 }
 
-function declarationCarriesFunction(node: Parser.SyntaxNode): boolean {
+function declarationCarriesFunction(node: AstNode): boolean {
   // lexical_declaration / variable_declaration has 1+ variable_declarator
   // children. Keep the node if ANY declarator's `value` is function-valued.
   for (const child of node.children) {

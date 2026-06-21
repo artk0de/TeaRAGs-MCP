@@ -22,8 +22,7 @@
  *   3. No match → `[]` (engine falls through to its default name extraction).
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkSymbol } from "../../../../contracts/types/chunker.js";
 import {
   extractJsAssignmentSymbol,
@@ -31,7 +30,7 @@ import {
   extractJsNestedDefinePropertyThisSymbols,
 } from "./symbol-resolver.js";
 
-export function jsChunkSymbols(node: Parser.SyntaxNode): ChunkSymbol[] {
+export function jsChunkSymbols(node: AstNode): ChunkSymbol[] {
   // 1. Dispatch fan-out wins outright when present.
   const dispatch = extractJsForEachDispatchSymbols(node);
   if (dispatch && dispatch.length > 0) {

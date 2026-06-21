@@ -11,8 +11,7 @@
  * with identifier or member_expression callee).
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
 
 /** Methods that create describe/context containers. */
@@ -57,7 +56,7 @@ export function isTestFile(filePath: string): boolean {
  *   it.skip.each(...)        → "it"           (chained member_expression)
  *   test.each([...])(...)    → null           (callee is call_expression, not identifier)
  */
-export function getCallName(node: Parser.SyntaxNode, code: string): string | null {
+export function getCallName(node: AstNode, code: string): string | null {
   if (node.type !== "call_expression") return null;
   const callee = node.childForFieldName("function");
   if (!callee) return null;
@@ -67,7 +66,7 @@ export function getCallName(node: Parser.SyntaxNode, code: string): string | nul
   }
 
   if (callee.type === "member_expression") {
-    let cursor: Parser.SyntaxNode | null = callee;
+    let cursor: AstNode | null = callee;
     while (cursor?.type === "member_expression") {
       cursor = cursor.childForFieldName("object");
     }
@@ -82,7 +81,7 @@ export function getCallName(node: Parser.SyntaxNode, code: string): string | nul
 export const testDslFilterHook: ChunkingHook = {
   name: "test-dsl-filter",
 
-  filterNode(node: Parser.SyntaxNode, code: string, filePath: string): boolean | undefined {
+  filterNode(node: AstNode, code: string, filePath: string): boolean | undefined {
     if (node.type !== "call_expression") return undefined;
     if (!isTestFile(filePath)) return false;
 

@@ -1,5 +1,4 @@
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkingHook } from "../../../../contracts/types/chunker.js";
 
 /**
@@ -7,7 +6,7 @@ import type { ChunkingHook } from "../../../../contracts/types/chunker.js";
  * Allows up to 1 blank line between comment block and def.
  * Returns a Set of 0-based row numbers.
  */
-export function collectMethodCommentRows(methodNode: Parser.SyntaxNode, codeLines: string[]): Set<number> {
+export function collectMethodCommentRows(methodNode: AstNode, codeLines: string[]): Set<number> {
   const rows = new Set<number>();
   const defRow = methodNode.startPosition.row;
   let row = defRow - 1;
