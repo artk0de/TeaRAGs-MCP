@@ -28,13 +28,16 @@ export type DslCategory =
 export type DeclaredMethodSpec = { name: string; kind: MethodKind };
 
 export interface RubyDslEntry {
-  /** Intrinsic category. The ONLY thing group-only keywords carry. */
+  /** Intrinsic category. Drives the chunker's class-body group (`CATEGORY_TO_GROUP`). */
   category: DslCategory;
   /**
-   * Synthetic methods declared, given an already-parsed base symbol name.
-   * Present ONLY on method-declaring macros. The AST argument extraction that
-   * produces `base` lives in the consumer engine (`walker/macro-expansion.ts`),
-   * not here.
+   * Methods this macro synthesises at runtime (no source `def`): `attr_accessor`
+   * → `name`/`name=`, `has_many` → `posts`/`post_ids`, `scope` → the named class
+   * method, etc. Consumed by the CODEGRAPH alone (`walker/name-of.ts` → the
+   * `cg_symbols` call-graph, so bare calls resolve onto them). The chunker does
+   * NOT read this — it represents DSL declarations through category grouping, not
+   * per-method chunks. The AST argument extraction that produces `base` lives in
+   * `walker/macro-expansion.ts`, not here.
    */
   declares?: (base: string) => DeclaredMethodSpec[];
   /**

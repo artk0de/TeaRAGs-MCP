@@ -32,8 +32,7 @@ function methodKindFromClassify(node: AstNode): "instance" | "static" | undefine
  * Force every emitted symbol's `methodKind` to `static`. Used when a
  * macro/define/alias node sits inside a `class << self` (singleton_class):
  * those declare CLASS-level methods (`Foo.method`, `.` separator) per
- * .claude/rules/symbolid-convention.md, mirroring the chunker-side
- * `extractRubyMacroSymbols` singleton override.
+ * .claude/rules/symbolid-convention.md.
  */
 function toStaticKind(result: NamedSymbol | NamedSymbol[]): NamedSymbol | NamedSymbol[] {
   return Array.isArray(result)

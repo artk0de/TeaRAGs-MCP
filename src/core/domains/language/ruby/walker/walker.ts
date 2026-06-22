@@ -1120,9 +1120,9 @@ function extractSecondLiteralSymbol(callNode: AstNode): string | null {
 /**
  * Collect the leading delegated symbol names from a `delegate :a, :b, to: :recv`
  * call — every `simple_symbol` argument UNTIL the first non-symbol (the `to:`
- * pair, other kwargs like `allow_nil:` / `prefix:`). Mirrors macros.ts'
- * `pushMacroSymbols` delegate loop so the synthesised CallRefs line up 1:1 with
- * the synthesised forwarder method symbols (bd tea-rags-mcp-mx9z).
+ * pair, other kwargs like `allow_nil:` / `prefix:`). Mirrors the delegate loop
+ * in `macro-expansion.ts` so the synthesised CallRefs line up 1:1 with the
+ * codegraph's synthesised forwarder method symbols (bd tea-rags-mcp-mx9z).
  */
 function extractDelegateSymbols(callNode: AstNode): string[] {
   const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");

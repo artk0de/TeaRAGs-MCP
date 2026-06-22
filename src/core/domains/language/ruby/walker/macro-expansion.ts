@@ -1,21 +1,17 @@
 /**
- * Unified Ruby class-body macro expansion — the SINGLE site that turns a
- * class-body DSL macro call into the synthetic methods it declares. Both
- * consumers read it:
- *   - chunker `macros.ts` → `MacroSymbol[]` (Qdrant chunk payload), applying its
- *     own category-policy filter;
- *   - codegraph `name-of.ts` → `NamedSymbol[]` (`cg_symbols`), taking all.
- *
- * One engine means the chunker and codegraph cannot silently disagree on which
- * synthetic methods a macro declares — the lockstep the symbolId convention
- * requires (`.claude/rules/symbolid-convention.md`).
+ * Ruby class-body macro expansion — turns a class-body DSL macro call into the
+ * synthetic methods it declares (`attr_accessor :a` → `a`/`a=`; `has_many :posts`
+ * → `posts`/`posts=`/`post_ids`/…). Consumed by the CODEGRAPH alone
+ * (`walker/name-of.ts` → `cg_symbols`), so bare calls onto these runtime-defined
+ * methods resolve. The chunker does NOT expand macros to per-method chunks — it
+ * represents class-body DSL through category grouping (`class-body-chunker.ts`).
  *
  * Per-macro argument extraction (which symbols a call declares) lives HERE, not
  * in the pure-data `dsl/` catalogue: it needs the tree-sitter `AstNode`. The
  * catalogue hands an already-parsed `base` via `RubyDslEntry.declares`.
  */
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import { RUBY_DSL, type DeclaredMethodSpec, type DslCategory, type MethodKind } from "../dsl/index.js";
+import { RUBY_DSL, type DslCategory, type MethodKind } from "../dsl/index.js";
 
 /** A synthetic method a class-body macro declares, with provenance category + span. */
 export interface DeclaredMethod {
@@ -25,39 +21,6 @@ export interface DeclaredMethod {
   startLine: number;
   endLine: number;
 }
-
-/**
- * AR-association macros the CODEGRAPH synthesises but the shared catalogue keeps
- * GROUP-ONLY at Phase B (no `declares`). TRANSITIONAL: Phase C moves these into
- * the `rails.ts` module's `declares` and deletes this map. Until then the engine
- * consults it so codegraph output is unchanged while the duplicated expansion
- * logic is consolidated here. The chunker filters these categories out (it never
- * emitted association/scope accessors) — see `macros.ts`.
- *
- * Out of scope (intentional, both layers): method_missing, dynamically built
- * names, `included do` Concern mixin merge.
- */
-const AR_ASSOCIATION_MACROS: Record<string, (base: string) => DeclaredMethodSpec[]> = {
-  has_many: (b) => [
-    { name: b, kind: "instance" },
-    { name: `${b}=`, kind: "instance" },
-  ],
-  has_one: (b) => [
-    { name: b, kind: "instance" },
-    { name: `${b}=`, kind: "instance" },
-  ],
-  has_and_belongs_to_many: (b) => [
-    { name: b, kind: "instance" },
-    { name: `${b}=`, kind: "instance" },
-  ],
-  belongs_to: (b) => [
-    { name: b, kind: "instance" },
-    { name: `${b}=`, kind: "instance" },
-    { name: `${b}_id`, kind: "instance" },
-    { name: `${b}_id=`, kind: "instance" },
-  ],
-  scope: (b) => [{ name: b, kind: "static" }],
-};
 
 /**
  * Expand a class-body macro `call` / `method_call` node into the methods it
@@ -107,11 +70,11 @@ export function expandClassBodyMacros(node: AstNode): DeclaredMethod[] {
     return out;
   }
 
-  // Generic: catalogue `declares` (or the transitional AR-association builder).
+  // Generic: project each leading symbol arg through the catalogue `declares`.
   const entry = RUBY_DSL[macroName];
-  const builder = AR_ASSOCIATION_MACROS[macroName] ?? entry?.declares;
-  if (!builder || !args) return [];
-  const category = entry?.category ?? "association";
+  if (!entry?.declares || !args) return [];
+  const builder = entry.declares;
+  const { category } = entry;
   const bases: string[] = [];
   for (const arg of args.namedChildren) {
     if (arg.type !== "simple_symbol") continue;

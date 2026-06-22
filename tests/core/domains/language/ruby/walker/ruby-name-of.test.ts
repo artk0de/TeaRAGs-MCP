@@ -188,42 +188,50 @@ describe("rbNameOf — alias_method and alias keyword", () => {
   });
 });
 
-describe("rbNameOf — AR association macros (locally synthesised)", () => {
-  it("rbNameOf emits has_many reader and writer accessors", () => {
+describe("rbNameOf — AR association macros (catalogue-synthesised)", () => {
+  it("rbNameOf emits has_many collection accessors + id collection", () => {
     const tree = parse("class Order\n  has_many :products\nend\n");
     const node = findMacroCall(tree, "has_many");
     expect(rbNameOf(node)).toEqual([
       { name: "products", descendsInto: false, methodKind: "instance" },
       { name: "products=", descendsInto: false, methodKind: "instance" },
+      { name: "product_ids", descendsInto: false, methodKind: "instance" },
+      { name: "product_ids=", descendsInto: false, methodKind: "instance" },
     ]);
   });
 
-  it("rbNameOf emits belongs_to reader, writer, id reader and id writer", () => {
+  it("rbNameOf emits belongs_to reader/writer, build/create, id reader/writer", () => {
     const tree = parse("class Product\n  belongs_to :order\nend\n");
     const node = findMacroCall(tree, "belongs_to");
     expect(rbNameOf(node)).toEqual([
       { name: "order", descendsInto: false, methodKind: "instance" },
       { name: "order=", descendsInto: false, methodKind: "instance" },
+      { name: "build_order", descendsInto: false, methodKind: "instance" },
+      { name: "create_order", descendsInto: false, methodKind: "instance" },
       { name: "order_id", descendsInto: false, methodKind: "instance" },
       { name: "order_id=", descendsInto: false, methodKind: "instance" },
     ]);
   });
 
-  it("rbNameOf emits has_one reader and writer accessors", () => {
+  it("rbNameOf emits has_one reader/writer + build/create", () => {
     const tree = parse("class Order\n  has_one :invoice\nend\n");
     const node = findMacroCall(tree, "has_one");
     expect(rbNameOf(node)).toEqual([
       { name: "invoice", descendsInto: false, methodKind: "instance" },
       { name: "invoice=", descendsInto: false, methodKind: "instance" },
+      { name: "build_invoice", descendsInto: false, methodKind: "instance" },
+      { name: "create_invoice", descendsInto: false, methodKind: "instance" },
     ]);
   });
 
-  it("rbNameOf emits has_and_belongs_to_many reader and writer accessors", () => {
+  it("rbNameOf emits has_and_belongs_to_many collection accessors + id collection", () => {
     const tree = parse("class Order\n  has_and_belongs_to_many :tags\nend\n");
     const node = findMacroCall(tree, "has_and_belongs_to_many");
     expect(rbNameOf(node)).toEqual([
       { name: "tags", descendsInto: false, methodKind: "instance" },
       { name: "tags=", descendsInto: false, methodKind: "instance" },
+      { name: "tag_ids", descendsInto: false, methodKind: "instance" },
+      { name: "tag_ids=", descendsInto: false, methodKind: "instance" },
     ]);
   });
 
@@ -233,8 +241,12 @@ describe("rbNameOf — AR association macros (locally synthesised)", () => {
     expect(rbNameOf(node)).toEqual([
       { name: "products", descendsInto: false, methodKind: "instance" },
       { name: "products=", descendsInto: false, methodKind: "instance" },
+      { name: "product_ids", descendsInto: false, methodKind: "instance" },
+      { name: "product_ids=", descendsInto: false, methodKind: "instance" },
       { name: "coupons", descendsInto: false, methodKind: "instance" },
       { name: "coupons=", descendsInto: false, methodKind: "instance" },
+      { name: "coupon_ids", descendsInto: false, methodKind: "instance" },
+      { name: "coupon_ids=", descendsInto: false, methodKind: "instance" },
     ]);
   });
 
@@ -260,8 +272,8 @@ describe("rbNameOf — non-symbol nodes return null", () => {
 });
 
 describe("rbNameOf — toStaticKind array branch (macro inside class << self)", () => {
-  it("rubyMacroEmission array result is converted to all-static via toStaticKind", () => {
-    // has_many :posts inside class << self → AR_ASSOCIATION_MACROS returns an
+  it("association array result is converted to all-static via toStaticKind", () => {
+    // has_many :posts inside class << self → the association builder returns an
     // ARRAY (not a single NamedSymbol) → toStaticKind must handle the array branch.
     const tree = parse("class Foo\n  class << self\n    has_many :posts\n  end\nend\n");
     const node = findMacroCall(tree, "has_many");
@@ -270,7 +282,7 @@ describe("rbNameOf — toStaticKind array branch (macro inside class << self)", 
     expect(Array.isArray(result)).toBe(true);
     if (Array.isArray(result)) {
       expect(result.every((s) => s.methodKind === "static")).toBe(true);
-      expect(result.map((s) => s.name)).toEqual(["posts", "posts="]);
+      expect(result.map((s) => s.name)).toEqual(["posts", "posts=", "post_ids", "post_ids="]);
     }
   });
 

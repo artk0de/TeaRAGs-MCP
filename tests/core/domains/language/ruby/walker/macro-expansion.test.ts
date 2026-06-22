@@ -80,16 +80,16 @@ describe("expandClassBodyMacros — shared catalogue macros", () => {
   });
 });
 
-describe("expandClassBodyMacros — transitional AR associations + scope (codegraph parity)", () => {
-  it("has_many :posts → posts/posts= instance (association category)", () => {
+describe("expandClassBodyMacros — AR associations + scope (catalogue declares)", () => {
+  it("has_many :posts → posts/posts=/post_ids/post_ids= (collection, singularized ids)", () => {
     const out = expandClassBodyMacros(firstStmt("class User\n  has_many :posts\nend\n"));
-    expect(out.map((m) => m.name)).toEqual(["posts", "posts="]);
+    expect(out.map((m) => m.name)).toEqual(["posts", "posts=", "post_ids", "post_ids="]);
     expect(out.every((m) => m.category === "association")).toBe(true);
   });
 
-  it("belongs_to :user → user/user=/user_id/user_id=", () => {
+  it("belongs_to :user → user/user=/build_user/create_user/user_id/user_id=", () => {
     const out = expandClassBodyMacros(firstStmt("class Post\n  belongs_to :user\nend\n"));
-    expect(out.map((m) => m.name)).toEqual(["user", "user=", "user_id", "user_id="]);
+    expect(out.map((m) => m.name)).toEqual(["user", "user=", "build_user", "create_user", "user_id", "user_id="]);
   });
 
   it("scope :active, -> {} → active static, first arg only", () => {
@@ -109,28 +109,46 @@ describe("expandAliasKeyword", () => {
   });
 });
 
-describe("expandClassBodyMacros — untested AR_ASSOCIATION_MACROS builders", () => {
-  it("has_one :profile → profile/profile= instance (association category)", () => {
+describe("expandClassBodyMacros — singular/collection association builders", () => {
+  it("has_one :profile → profile/profile=/build_profile/create_profile (singular)", () => {
     const out = expandClassBodyMacros(firstStmt("class User\n  has_one :profile\nend\n"));
-    expect(out.map((m) => m.name)).toEqual(["profile", "profile="]);
+    expect(out.map((m) => m.name)).toEqual(["profile", "profile=", "build_profile", "create_profile"]);
     expect(out.every((m) => m.category === "association")).toBe(true);
     expect(out.every((m) => m.kind === "instance")).toBe(true);
   });
 
-  it("has_and_belongs_to_many :roles → roles/roles= instance (association category)", () => {
+  it("has_and_belongs_to_many :roles → roles/roles=/role_ids/role_ids= (collection)", () => {
     const out = expandClassBodyMacros(firstStmt("class User\n  has_and_belongs_to_many :roles\nend\n"));
-    expect(out.map((m) => m.name)).toEqual(["roles", "roles="]);
+    expect(out.map((m) => m.name)).toEqual(["roles", "roles=", "role_ids", "role_ids="]);
     expect(out.every((m) => m.category === "association")).toBe(true);
   });
 
   it("has_one with multiple args → expands each base independently", () => {
     const out = expandClassBodyMacros(firstStmt("class User\n  has_one :profile, :avatar\nend\n"));
-    expect(out.map((m) => m.name)).toEqual(["profile", "profile=", "avatar", "avatar="]);
+    expect(out.map((m) => m.name)).toEqual([
+      "profile",
+      "profile=",
+      "build_profile",
+      "create_profile",
+      "avatar",
+      "avatar=",
+      "build_avatar",
+      "create_avatar",
+    ]);
   });
 
   it("has_and_belongs_to_many with multiple args → expands each base", () => {
     const out = expandClassBodyMacros(firstStmt("class Admin\n  has_and_belongs_to_many :roles, :permissions\nend\n"));
-    expect(out.map((m) => m.name)).toEqual(["roles", "roles=", "permissions", "permissions="]);
+    expect(out.map((m) => m.name)).toEqual([
+      "roles",
+      "roles=",
+      "role_ids",
+      "role_ids=",
+      "permissions",
+      "permissions=",
+      "permission_ids",
+      "permission_ids=",
+    ]);
   });
 });
 
