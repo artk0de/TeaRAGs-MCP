@@ -188,6 +188,50 @@ describe("superviseIndexing — ETA and outcome formatting", () => {
   });
 });
 
+describe("superviseIndexing — overall timer + phase-done", () => {
+  it("prints overall elapsed from index start to finish (not a sum of phases)", async () => {
+    const out: string[] = [];
+    let t = 0;
+    const child = fakeChild();
+    const renderer = fakeRenderer();
+    const p = superviseIndexing(child as never, {
+      renderer,
+      waitEnrichments: true,
+      colors: plain,
+      out: (l) => out.push(l),
+      now: () => t,
+    });
+
+    t = 0;
+    child.emit("message", { type: "embedding", phase: "embedding", percentage: 100, current: 10, total: 10 });
+    t = 4200;
+    child.emit("message", { type: "done", result: { failed: [], degraded: [] } });
+    await p;
+
+    const joined = out.join("\n");
+    expect(joined).toMatch(/total.*4\.2s|total.*4200ms/);
+  });
+
+  it("prints phase-done line when a phase-done message is received", async () => {
+    const out: string[] = [];
+    const child = fakeChild();
+    const renderer = fakeRenderer();
+    const p = superviseIndexing(child as never, {
+      renderer,
+      waitEnrichments: true,
+      colors: plain,
+      out: (l) => out.push(l),
+      now: () => 0,
+    });
+
+    child.emit("message", { type: "phase-done", phase: "embedding", elapsedMs: 3500 });
+    child.emit("message", { type: "done", result: { failed: [], degraded: [] } });
+    await p;
+
+    expect(out.join("\n")).toMatch(/embedding done in 3\.5s|embedding done in 3500ms/);
+  });
+});
+
 describe("superviseIndexing — child exit event", () => {
   it("resolves 0 when the child exits with code 0 before any terminal message", async () => {
     const child = fakeChild();

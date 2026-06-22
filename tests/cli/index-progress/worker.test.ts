@@ -89,6 +89,31 @@ describe("runIndexWorker", () => {
     expect(outcome).toEqual({ failed: [], degraded: [] });
   });
 
+  it("emits phase-done for embedding after indexCodebase and for enrichment after whenEnrichmentComplete", async () => {
+    const app = fakeApp();
+    const sent: WorkerMessage[] = [];
+    let t = 0;
+
+    await runIndexWorker(
+      app as never,
+      "/repo",
+      {},
+      (m) => sent.push(m),
+      () => {
+        // Advance clock for each call so elapsed > 0
+        t += 100;
+        return t;
+      },
+    );
+
+    const embeddingDone = sent.find((m) => m.type === "phase-done" && m.phase === "embedding");
+    const enrichmentDone = sent.find((m) => m.type === "phase-done" && m.phase === "enrichment");
+    expect(embeddingDone).toBeDefined();
+    expect(enrichmentDone).toBeDefined();
+    if (embeddingDone?.type === "phase-done") expect(embeddingDone.elapsedMs).toBeGreaterThan(0);
+    if (enrichmentDone?.type === "phase-done") expect(enrichmentDone.elapsedMs).toBeGreaterThan(0);
+  });
+
   it("awaits enrichment only after indexCodebase resolves", async () => {
     const app = fakeApp();
     const order: string[] = [];

@@ -32,6 +32,7 @@ export function formatProgressLine(message: WorkerMessage): string | null {
       return `error: ${message.message}`;
     case "status":
     case "done":
+    case "phase-done":
       return null;
   }
 }

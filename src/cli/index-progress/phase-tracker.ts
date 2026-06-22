@@ -31,9 +31,7 @@ interface PhaseState {
 export class PhaseProgressTracker {
   private readonly phases = new Map<string, PhaseState>();
 
-  constructor(private readonly startMs: number) {
-    void this.startMs; // available for subclasses / future overall-elapsed use
-  }
+  constructor(_startMs: number) {}
 
   record(phaseKey: string, applied: number, total: number, nowMs: number): void {
     const existing = this.phases.get(phaseKey);

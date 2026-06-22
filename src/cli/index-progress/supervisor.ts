@@ -16,9 +16,15 @@
 import type { IndexStatus } from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
 import { isWorkerMessage, type EnrichmentOutcome } from "./ipc-protocol.js";
-import { PhaseProgressTracker } from "./phase-tracker.js";
+import { OverallTimer, PhaseProgressTracker } from "./phase-tracker.js";
 import type { ProgressRenderer } from "./renderer.js";
 import { formatIndexStatus } from "./status-format.js";
+
+/** Format a duration in ms: sub-second → "Nms", otherwise "N.Ns". */
+function fmtDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
 
 /** Minimal child handle — satisfied by Node `ChildProcess` and a test EventEmitter. */
 export interface WorkerHandle {
@@ -40,6 +46,7 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
   const { renderer, waitEnrichments, colors, out } = opts;
   const now = opts.now ?? (() => 0);
   const eta = new PhaseProgressTracker(now());
+  const overall = new OverallTimer(now());
   let latestStatus: IndexStatus | undefined;
 
   return new Promise<number>((resolve) => {
@@ -47,6 +54,8 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
     const finish = (code: number): void => {
       if (settled) return;
       settled = true;
+      overall.stop(now());
+      out(colors.bold(`total ${fmtDuration(overall.elapsedMs())}`));
       renderer.stop();
       resolve(code);
     };
@@ -73,6 +82,9 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
       if (!isWorkerMessage(raw)) return;
       renderer.handle(raw);
       switch (raw.type) {
+        case "phase-done":
+          out(colors.dim(`${raw.phase} done in ${fmtDuration(raw.elapsedMs)}`));
+          break;
         case "embedding":
           // Already forwarded to the renderer above; no supervisor-side state.
           break;

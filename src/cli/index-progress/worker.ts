@@ -35,13 +35,16 @@ export function deriveEnrichmentOutcome(status: IndexStatus): EnrichmentOutcome 
 /**
  * Index, stream progress, await background enrichment, emit the final outcome.
  * `send` delivers a message to the supervisor (a no-op once the parent detaches).
+ * `now` is an injectable clock (ms); defaults to Date.now for the real entry point.
  */
 export async function runIndexWorker(
   app: IndexWorkerApp,
   path: string,
   options: IndexOptions,
   send: (message: WorkerMessage) => void,
+  now: () => number = Date.now,
 ): Promise<EnrichmentOutcome> {
+  const embeddingStart = now();
   await app.indexCodebase(
     path,
     options,
@@ -52,13 +55,16 @@ export async function runIndexWorker(
       send({ type: "enrichment", providerKey: e.providerKey, level: e.level, applied: e.applied, total: e.total });
     },
   );
+  send({ type: "phase-done", phase: "embedding", elapsedMs: now() - embeddingStart });
 
   // Index is searchable now (alias switched) — report status before blocking on
   // enrichment, so the supervisor's default mode can print it and detach.
   send({ type: "status", status: await app.getIndexStatus(path) });
 
   // Keep this (possibly detached) process alive until enrichment finishes.
+  const enrichmentStart = now();
   await app.whenEnrichmentComplete();
+  send({ type: "phase-done", phase: "enrichment", elapsedMs: now() - enrichmentStart });
 
   const finalStatus = await app.getIndexStatus(path);
   send({ type: "status", status: finalStatus });

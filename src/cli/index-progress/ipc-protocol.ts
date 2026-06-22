@@ -12,7 +12,8 @@ export type WorkerMessage =
   | ({ type: "enrichment" } & EnrichmentProgressEvent)
   | { type: "status"; status: IndexStatus }
   | { type: "done"; result: EnrichmentOutcome }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "phase-done"; phase: string; elapsedMs: number };
 
 /** Final enrichment outcome reported by the worker (drives exit code in --wait). */
 export interface EnrichmentOutcome {
@@ -46,6 +47,8 @@ export function isWorkerMessage(value: unknown): value is WorkerMessage {
       return typeof m.result === "object" && m.result !== null;
     case "error":
       return typeof m.message === "string";
+    case "phase-done":
+      return typeof m.phase === "string" && typeof m.elapsedMs === "number";
     default:
       return false;
   }
