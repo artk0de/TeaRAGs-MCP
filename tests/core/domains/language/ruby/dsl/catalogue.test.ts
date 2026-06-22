@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { RUBY_DSL } from "../../../../../../src/core/domains/language/ruby/dsl/index.js";
 
@@ -71,5 +71,24 @@ describe("RUBY_DSL catalogue", () => {
     for (const kw of ["let", "subject", "before", "describe", "context", "it", "factory", "trait", "shared_examples"]) {
       expect(RUBY_DSL[kw], kw).toBeUndefined();
     }
+  });
+
+  it("composes keywords from every framework module exactly once", () => {
+    expect(RUBY_DSL.attr_accessor?.category).toBe("accessor"); // ruby-core
+    expect(RUBY_DSL.delegate?.category).toBe("delegation"); // activesupport
+    expect(RUBY_DSL.has_many?.category).toBe("association"); // rails
+    expect(RUBY_DSL.before_action?.category).toBe("callback"); // rails
+  });
+});
+
+describe("composeModules", () => {
+  it("throws on a duplicate keyword across modules", async () => {
+    const { composeModules } = await import("../../../../../../src/core/domains/language/ruby/dsl/catalogue.js");
+    expect(() =>
+      composeModules([
+        { framework: "a", entries: { x: { category: "other" } } },
+        { framework: "b", entries: { x: { category: "other" } } },
+      ]),
+    ).toThrow(/duplicate keyword "x"/);
   });
 });
