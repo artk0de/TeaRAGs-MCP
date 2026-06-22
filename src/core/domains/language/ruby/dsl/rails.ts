@@ -6,16 +6,46 @@
  * Composed into `RUBY_DSL` by `catalogue.ts`. Associations are GROUP-ONLY here
  * until Phase C adds their `declares` (synthesized accessors).
  */
-import type { RubyDslModule } from "./types.js";
+import { singularizeAssociation } from "./inflection.js";
+import type { DeclaredMethodSpec, RubyDslModule } from "./types.js";
+
+/**
+ * Collection association (`has_many` / `has_and_belongs_to_many`) accessors:
+ * the named reader/writer plus the `<singular>_ids` id-collection reader/writer
+ * (`has_many :posts` → `posts`, `posts=`, `post_ids`, `post_ids=`).
+ */
+const collectionAssoc = (b: string): DeclaredMethodSpec[] => [
+  { name: b, kind: "instance" },
+  { name: `${b}=`, kind: "instance" },
+  { name: `${singularizeAssociation(b)}_ids`, kind: "instance" },
+  { name: `${singularizeAssociation(b)}_ids=`, kind: "instance" },
+];
+
+/**
+ * Singular association (`has_one` / `belongs_to`) accessors: reader/writer plus
+ * the `build_<name>` / `create_<name>` constructors
+ * (`has_one :profile` → `profile`, `profile=`, `build_profile`, `create_profile`).
+ */
+const singularAssoc = (b: string): DeclaredMethodSpec[] => [
+  { name: b, kind: "instance" },
+  { name: `${b}=`, kind: "instance" },
+  { name: `build_${b}`, kind: "instance" },
+  { name: `create_${b}`, kind: "instance" },
+];
 
 export const RAILS_DSL: RubyDslModule = {
   framework: "rails",
   entries: {
-    // associations (group-only until Phase C)
-    has_many: { category: "association" },
-    has_one: { category: "association" },
-    belongs_to: { category: "association" },
-    has_and_belongs_to_many: { category: "association" },
+    // associations — synthesise the convention accessors so bare-call resolution
+    // lands on them (the model-edge synthesis stays in the walker).
+    has_many: { category: "association", declares: collectionAssoc },
+    has_one: { category: "association", declares: singularAssoc },
+    has_and_belongs_to_many: { category: "association", declares: collectionAssoc },
+    belongs_to: {
+      category: "association",
+      // singular accessors + the foreign-key reader/writer (`user_id`/`user_id=`).
+      declares: (b) => [...singularAssoc(b), { name: `${b}_id`, kind: "instance" }, { name: `${b}_id=`, kind: "instance" }],
+    },
 
     // group-only accessor-family
     attribute: { category: "accessor" },
@@ -38,8 +68,9 @@ export const RAILS_DSL: RubyDslModule = {
     validates_presence_of: { category: "validation" },
     validates_uniqueness_of: { category: "validation" },
 
-    // scopes
-    scope: { category: "scope" },
+    // scopes — `scope :active, -> { ... }` adds a class method named by the
+    // first symbol arg (the engine takes only the first arg for scope).
+    scope: { category: "scope", declares: (b) => [{ name: b, kind: "static" }] },
 
     // callbacks
     before_validation: { category: "callback" },

@@ -46,7 +46,10 @@ describe("RUBY_DSL catalogue", () => {
   });
 
   it("group-only Rails keywords carry a category and NO declares/redirect", () => {
-    for (const kw of ["has_many", "validates", "scope", "before_save", "include", "enum", "aasm", "included"]) {
+    // NOTE: associations + scope now CARRY declares (synthesised accessors) —
+    // see rails.test.ts. The keywords below remain group-only (chunk grouping
+    // and callback/redirect detection only).
+    for (const kw of ["validates", "before_save", "include", "enum", "aasm", "included"]) {
       expect(RUBY_DSL[kw], kw).toBeDefined();
       expect(RUBY_DSL[kw].declares, kw).toBeUndefined();
       expect(RUBY_DSL[kw].redirectTarget, kw).toBeUndefined();
