@@ -342,6 +342,20 @@ export class EnrichmentCoordinator {
   onChunksStored(collectionName: string, absolutePath: string, items: ChunkItem[]): void {
     if (!this.currentRun) return;
     const run = this.currentRun;
+
+    // Accumulate the per-(provider, level) denominator from this batch's chunk
+    // count. Must happen SYNCHRONOUSLY before any apply work is dispatched so
+    // that streaming file-level events (which fire from inside fileDone callbacks
+    // below) always see total >= applied > 0. startChunkEnrichment is called
+    // AFTER all batches are stored — if we seeded totals there instead, every
+    // file event that fires during embedding would emit total=0 ("2047/0" bug).
+    if (items.length > 0) {
+      for (const providerKey of run.contexts.keys()) {
+        this.addProgressTotal(providerKey, "file", items.length);
+        this.addProgressTotal(providerKey, "chunk", items.length);
+      }
+    }
+
     // Sequence file→chunk PER PROVIDER: a provider's buildChunkSignals reads the
     // batch's file result its own streamFileBatch populated (git blame needs
     // this), so each chunk dispatch must wait for the SAME provider's file work.
@@ -399,18 +413,6 @@ export class EnrichmentCoordinator {
    */
   startChunkEnrichment(collectionName: string, absolutePath: string, chunkMap: Map<string, ChunkLookupEntry[]>): void {
     if (!this.currentRun) return;
-    // The full chunk set is known here — seed per-(provider, level) denominators
-    // in chunk units so that file-level streaming applies (which fire before this
-    // point) never emit total=0 and applied(point-ops) / total(files) mismatch
-    // never renders as e.g. "2041/353". Sum the entry arrays: chunkMap.size is
-    // the FILE count, not the chunk count.
-    if (this.progressCb) {
-      const chunkCount = [...chunkMap.values()].reduce((n, entries) => n + entries.length, 0);
-      for (const providerKey of this.currentRun.contexts.keys()) {
-        this.setProgressTotal(providerKey, "file", chunkCount);
-        this.setProgressTotal(providerKey, "chunk", chunkCount);
-      }
-    }
     this.currentRun.chunkPhase.enrichRemaining(collectionName, absolutePath, chunkMap);
   }
 
@@ -438,14 +440,16 @@ export class EnrichmentCoordinator {
   }
 
   /**
-   * Record the chunk-unit denominator for a (providerKey, level) pair.
+   * Accumulate `delta` into the chunk-unit denominator for a (providerKey, level)
+   * pair. Called once per `onChunksStored` batch so the running total grows
+   * alongside `applied` — streaming file events always see total >= applied > 0.
    * No-op when no progress callback is registered.
    */
-  private setProgressTotal(providerKey: string, level: "file" | "chunk", total: number): void {
+  private addProgressTotal(providerKey: string, level: "file" | "chunk", delta: number): void {
     if (!this.progressCb) return;
     const key = `${providerKey}:${level}`;
     const cur = this.progress.get(key) ?? { applied: 0, total: 0 };
-    cur.total = total;
+    cur.total += delta;
     this.progress.set(key, cur);
   }
 
