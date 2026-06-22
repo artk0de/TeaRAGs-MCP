@@ -43,7 +43,7 @@ import type {
   ImportRef,
   InheritanceEdgeDecl,
 } from "../../../../contracts/types/codegraph.js";
-import { RUBY_DSL } from "../dsl/index.js";
+import { RUBY_DSL, singularizeAssociation } from "../dsl/index.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
 import {
   collectLocalBindingsForChunk,
@@ -633,21 +633,6 @@ const RUBY_ASSOCIATION_MACROS = new Set(["has_many", "has_one", "belongs_to", "h
  */
 function isRubyCallbackMacro(name: string): boolean {
   return RUBY_DSL[name]?.category === "callback";
-}
-
-/**
- * Naive Rails singularize for the common association-name → model-name cases
- * (duzy). Handles `categories → category` (ies → y), `boxes → box`
- * (xes/ses/shes/ches → strip `es`), and the dominant `posts → post`
- * (trailing `s`). NOT a full inflector — irregulars (`people`, `mice`) and
- * `class_name:` overrides are out of scope here; an explicit `class_name:`
- * always wins upstream. A non-plural word passes through unchanged.
- */
-function singularizeAssociation(word: string): string {
-  if (word.endsWith("ies")) return `${word.slice(0, -3)}y`;
-  if (/(?:xes|ses|shes|ches)$/.test(word)) return word.slice(0, -2);
-  if (word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
-  return word;
 }
 
 /**
