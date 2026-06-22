@@ -117,6 +117,35 @@ export function collectKnownPaths(ctx: CallContext): Iterable<string> {
 }
 
 /**
+ * Flatten a class's ancestor chain into a declaration-order list, cycle-guarded
+ * via a `visited` set (mirrors the depth-first traversal inside
+ * `resolveInstanceMethodInClassChain`). `klass` itself is NOT included — the
+ * caller decides whether to prepend it. Used by the bare-call narrowing to walk
+ * the MRO nearest-first when filtering ambiguous short-name candidates (brp1).
+ *
+ * Kept separate from `resolveInstanceMethodInClassChain`: that function
+ * interleaves per-node file resolution + method lookup with a
+ * method-pin-wins-immediately short-circuit, which a pre-flattened list cannot
+ * express without losing the early return. This helper is the pure structural
+ * traversal both the chain walk and the bareCall narrowing express the same
+ * single ancestor order with.
+ */
+export function collectAncestorChain(klass: string, ctx: CallContext, visited: Set<string> = new Set()): string[] {
+  if (visited.has(klass)) return [];
+  visited.add(klass);
+  const chain: string[] = [];
+  const ancestors = ctx.classAncestors?.[klass];
+  if (ancestors) {
+    for (const ancestor of ancestors) {
+      if (visited.has(ancestor)) continue;
+      chain.push(ancestor);
+      chain.push(...collectAncestorChain(ancestor, ctx, visited));
+    }
+  }
+  return chain;
+}
+
+/**
  * Resolve `<member>` as an instance method on `klass`, walking `classAncestors`
  * (superclass + `include`/`extend` mixins) in declaration order when the class
  * itself doesn't own it. Shared by the `super` walk (which starts at the
