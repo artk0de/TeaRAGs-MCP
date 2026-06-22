@@ -141,13 +141,19 @@ export class IndexPipeline extends BaseIndexingPipeline {
           this.logPipelineCompletion(ctx);
 
           // Final embedding flush: pipeline has drained, emit current===total.
+          // Use chunksQueued as denominator — same as in-loop updates — so the
+          // progress bar total never jumps. Under quarantine chunksQueued may
+          // exceed itemsProcessed, making percentage < 100 (truthful).
           const finalPipelineStats = ctx.chunkPipeline.getStats();
           progressCallback?.({
             phase: "embedding",
             current: finalPipelineStats.itemsProcessed,
-            total: result.chunksCreated,
-            percentage: 100,
-            message: `Embedding: ${finalPipelineStats.itemsProcessed}/${result.chunksCreated} chunks`,
+            total: result.chunksQueued,
+            percentage:
+              result.chunksQueued > 0
+                ? Math.round((finalPipelineStats.itemsProcessed / result.chunksQueued) * 100)
+                : 100,
+            message: `Embedding: ${finalPipelineStats.itemsProcessed}/${result.chunksQueued} chunks`,
             throughput: finalPipelineStats.throughput,
           });
 
@@ -360,7 +366,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
     let filesProcessed = 0;
     let chunksQueued = 0;
 
-    return processFiles(
+    const result = await processFiles(
       files,
       absolutePath,
       ctx.chunkerPool,
@@ -410,6 +416,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         },
       },
     );
+    return { ...result, chunksQueued };
   }
 
   // ── Finalization helpers ───────────────────────────────

@@ -221,6 +221,8 @@ describe("IndexPipeline", () => {
       const last = embedding.at(-1)!;
       // All chunks embedded at completion — numerator equals denominator
       expect(last.current).toBe(last.total);
+      // throughput wiring is covered: pipeline reports a numeric rate
+      expect(typeof last.throughput).toBe("number");
     });
 
     it("should respect custom extensions", async () => {
