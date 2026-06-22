@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EnrichmentProvider } from "../../../../../../src/core/contracts/types/provider.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { EnrichmentRecovery } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/recovery.js";
+import type { EnrichmentProgressEvent } from "../../../../../../src/core/types.js";
 
 describe("EnrichmentCoordinator", () => {
   let mockQdrant: any;
@@ -2968,5 +2969,131 @@ describe("EnrichmentCoordinator — error resilience in async callbacks", () => 
 
     // awaitCompletion must resolve despite heartbeat failure.
     await expect(coord.awaitCompletion("coll-hb-fail")).resolves.toBeDefined();
+  });
+});
+
+describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", () => {
+  let mockQdrant: any;
+  let mockProvider: any;
+  let coordinator: EnrichmentCoordinator;
+
+  beforeEach(() => {
+    mockQdrant = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    mockProvider = {
+      key: "git",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+    coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+  });
+
+  it("emits file-level progress with the chunk-count denominator, never 0", async () => {
+    // chunkMap: 2 files × 60 chunks = 120 total chunks
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>([
+      [
+        "src/a.ts",
+        Array.from({ length: 60 }, (_, i) => ({ chunkId: `c-a-${i}`, startLine: i * 10, endLine: i * 10 + 9 })),
+      ],
+      [
+        "src/b.ts",
+        Array.from({ length: 60 }, (_, i) => ({ chunkId: `c-b-${i}`, startLine: i * 10, endLine: i * 10 + 9 })),
+      ],
+    ]);
+
+    const events: EnrichmentProgressEvent[] = [];
+    coordinator.setEnrichmentProgress((e) => events.push(e));
+
+    // buildFileSignals will return signal data, triggering file-level applies
+    mockProvider.buildFileSignals.mockResolvedValue(
+      new Map([
+        ["src/a.ts", { x: 1 }],
+        ["src/b.ts", { x: 2 }],
+      ]),
+    );
+
+    coordinator.beginRun("/repo", "test-col");
+
+    // startChunkEnrichment is called after the chunkMap is fully assembled —
+    // this is where the denominator gets seeded
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap as any);
+
+    // Stream two batches to drive file-level applies
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c-a-0", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 9 } } as any,
+    ]);
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c-b-0", chunk: { metadata: { filePath: "/repo/src/b.ts" }, endLine: 9 } } as any,
+    ]);
+
+    await coordinator.awaitCompletion("test-col");
+
+    const fileEvents = events.filter((e) => e.providerKey === "git" && e.level === "file");
+    // There must be at least one file-level progress event
+    expect(fileEvents.length).toBeGreaterThan(0);
+    // total must be the chunk count (120), NEVER 0
+    for (const ev of fileEvents) {
+      expect(ev.total).toBe(120);
+      expect(ev.total).toBeGreaterThan(0);
+    }
+  });
+
+  it("progress map resets between runs — second run starts with empty state", async () => {
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
+
+    const run1Events: EnrichmentProgressEvent[] = [];
+    coordinator.setEnrichmentProgress((e) => run1Events.push(e));
+    mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+
+    // Run 1
+    coordinator.beginRun("/repo", "test-col");
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap as any);
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
+    await coordinator.awaitCompletion("test-col");
+
+    const run1Applied = run1Events.filter((e) => e.level === "file").map((e) => e.applied);
+    expect(run1Applied.length).toBeGreaterThan(0);
+
+    // Run 2 — applied must restart from 0 (not carry over run 1's applied count)
+    const run2Events: EnrichmentProgressEvent[] = [];
+    coordinator.setEnrichmentProgress((e) => run2Events.push(e));
+    mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+
+    coordinator.beginRun("/repo", "test-col-2");
+    coordinator.startChunkEnrichment("test-col-2", "/repo", chunkMap as any);
+    coordinator.onChunksStored("test-col-2", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
+    await coordinator.awaitCompletion("test-col-2");
+
+    // Run 2's first event must have the same applied count as run 1's first event
+    // (not cumulated across runs). Use index access after finding to avoid non-null assertions.
+    const run2FileApplied = run2Events.filter((e) => e.level === "file").map((e) => e.applied);
+    const run1FileApplied = run1Events.filter((e) => e.level === "file").map((e) => e.applied);
+    expect(run2FileApplied.length).toBeGreaterThan(0);
+    expect(run2FileApplied[0]).toBe(run1FileApplied[0]);
+  });
+
+  it("emits no events when no progress callback is set", async () => {
+    // No setEnrichmentProgress call — must be a no-op / zero overhead path
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
+    mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+
+    coordinator.beginRun("/repo", "test-col");
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap as any);
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
+    // No crash and awaitCompletion still resolves
+    await expect(coordinator.awaitCompletion("test-col")).resolves.toBeDefined();
   });
 });

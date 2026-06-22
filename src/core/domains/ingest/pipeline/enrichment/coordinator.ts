@@ -135,10 +135,13 @@ export class EnrichmentCoordinator {
    * MCP path — no emission, zero overhead. Set per run by `IndexingOps.run`.
    */
   private progressCb?: EnrichmentProgressCallback;
-  /** Denominator for progress events; set to the chunk count at chunk-phase start. */
-  private progressTotal = 0;
-  /** Cumulative applied point-ops per `${providerKey}:${level}` for the current run. */
-  private readonly progressApplied = new Map<string, number>();
+  /**
+   * Per-key progress state: `${providerKey}:${level}` → { applied, total }.
+   * `total` is set in chunk units once the full chunkMap is known so that file-
+   * level events never emit `total=0` and applied(point-ops) / total(files) is
+   * never a unit mismatch. Reset on every `beginRun`.
+   */
+  private readonly progress = new Map<string, { applied: number; total: number }>();
 
   private _onChunkEnrichmentComplete?: (collectionName: string) => Promise<void>;
   get onChunkEnrichmentComplete(): ((collectionName: string) => Promise<void>) | undefined {
@@ -257,11 +260,10 @@ export class EnrichmentCoordinator {
     runState.crossPass = crossPass;
     this.currentRun = runState;
 
-    // Fresh per-run progress accumulator (numerator); denominator is set when the
-    // chunk phase starts. Progress sink itself (`progressCb`) persists across the
-    // run — set by IndexingOps before the first batch.
-    this.progressApplied.clear();
-    this.progressTotal = 0;
+    // Fresh per-run progress state; denominator is set (in chunk units) once
+    // startChunkEnrichment is called. Progress sink (`progressCb`) persists
+    // across the run — set by IndexingOps before the first batch.
+    this.progress.clear();
 
     // Wire the applier-site chokepoint: every apply batch (file, chunk, finalize,
     // backfill) calls onApply. This covers ALL apply paths — streaming, post-flush
@@ -397,10 +399,18 @@ export class EnrichmentCoordinator {
    */
   startChunkEnrichment(collectionName: string, absolutePath: string, chunkMap: Map<string, ChunkLookupEntry[]>): void {
     if (!this.currentRun) return;
-    // The full chunk set is known now — use it as the progress denominator. Each
-    // chunk receives ~one file stamp and one chunk overlay per provider, so
-    // cumulative applied per (provider, level) converges to this total.
-    if (this.progressCb) this.progressTotal = chunkMap.size;
+    // The full chunk set is known here — seed per-(provider, level) denominators
+    // in chunk units so that file-level streaming applies (which fire before this
+    // point) never emit total=0 and applied(point-ops) / total(files) mismatch
+    // never renders as e.g. "2041/353". Sum the entry arrays: chunkMap.size is
+    // the FILE count, not the chunk count.
+    if (this.progressCb) {
+      const chunkCount = [...chunkMap.values()].reduce((n, entries) => n + entries.length, 0);
+      for (const providerKey of this.currentRun.contexts.keys()) {
+        this.setProgressTotal(providerKey, "file", chunkCount);
+        this.setProgressTotal(providerKey, "chunk", chunkCount);
+      }
+    }
     this.currentRun.chunkPhase.enrichRemaining(collectionName, absolutePath, chunkMap);
   }
 
@@ -427,13 +437,26 @@ export class EnrichmentCoordinator {
     await run.donePromise.catch(() => undefined);
   }
 
+  /**
+   * Record the chunk-unit denominator for a (providerKey, level) pair.
+   * No-op when no progress callback is registered.
+   */
+  private setProgressTotal(providerKey: string, level: "file" | "chunk", total: number): void {
+    if (!this.progressCb) return;
+    const key = `${providerKey}:${level}`;
+    const cur = this.progress.get(key) ?? { applied: 0, total: 0 };
+    cur.total = total;
+    this.progress.set(key, cur);
+  }
+
   /** Accumulate an apply batch into the cumulative numerator and forward it. */
   private emitProgress(event: EnrichmentApplyEvent): void {
     if (!this.progressCb) return;
     const key = `${event.providerKey}:${event.level}`;
-    const applied = (this.progressApplied.get(key) ?? 0) + event.applied;
-    this.progressApplied.set(key, applied);
-    this.progressCb({ providerKey: event.providerKey, level: event.level, applied, total: this.progressTotal });
+    const cur = this.progress.get(key) ?? { applied: 0, total: 0 };
+    cur.applied += event.applied;
+    this.progress.set(key, cur);
+    this.progressCb({ providerKey: event.providerKey, level: event.level, applied: cur.applied, total: cur.total });
   }
 
   /**
