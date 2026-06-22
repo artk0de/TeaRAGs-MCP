@@ -249,6 +249,11 @@ export class FilePhase {
       chunkMap,
       ctx.provider.fileSignalTransform,
       this.runStartedAt,
+      // bd tea-rags-mcp-yl9tv — classify a missing overlay by POLICY, not by
+      // overlay presence: a file the provider declined entirely ("none") is
+      // ignored, not a silent bare-stamp. Mirrors the streaming applyFileSignals
+      // call above so both apply paths agree on ignored vs missed.
+      (rel) => enrichmentScope(ctx.provider, rel) === "none",
     );
     state.streamingApplies++;
     state.prefetchEndTime = Date.now();

@@ -472,4 +472,53 @@ describe("EnrichmentApplier", () => {
       expect(applier.matchedFiles).toBe(1);
     });
   });
+
+  // bd tea-rags-mcp-yl9tv — applyFinalizeFile (codegraph deferred path)
+  // classified a missing overlay by OVERLAY PRESENCE, not by POLICY: any file
+  // the deferred provider produced no overlay for was silently bare-stamped,
+  // never counted ignored OR missed. Under fileConcurrency a marginal source
+  // file (parse error, lost to the spill) thus flipped between "stamped" and
+  // (in other paths) "ignored" run-to-run, swinging ignoredFiles 12<->32.
+  // Classification must be a POLICY decision: "none"-scope files → ignored;
+  // a genuine source-file gap → missed.
+  describe("applyFinalizeFile policy-driven classification (yl9tv)", () => {
+    it("counts a policy-skipped file as ignored, not a silent bare-stamp", async () => {
+      // schema.rb has no overlay (deferred provider declined it) AND policy says
+      // "none" → it must be classified ignored, never missed, no stamp written.
+      await applier.applyFinalizeFile(
+        "test-collection",
+        "codegraph.symbols",
+        new Map(), // no overlays produced
+        new Map([["db/schema.rb", [{ chunkId: "g1", startLine: 1, endLine: 16 }]]]),
+        undefined,
+        "2026-06-05T00:00:00Z",
+        (rel) => rel === "db/schema.rb", // policy: schema.rb is ignored
+      );
+
+      expect(applier.ignoredFiles).toBe(1);
+      expect(applier.missedFiles).toBe(0);
+      // Ignored file carries NO codegraph payload stamp.
+      const allOps = mockQdrant.batchSetPayload.mock.calls.flatMap((c: any[]) => c[1] ?? []);
+      const stampedPoints = allOps.flatMap((op: any) => op.points ?? []);
+      expect(stampedPoints).not.toContain("g1");
+    });
+
+    it("counts a source file with no overlay as missed, not silently bare-stamped", async () => {
+      // A real source file the provider produced no overlay for (e.g. dropped
+      // under concurrency) must be a genuine MISS — tracked for backfill — not
+      // an overlay-absence "ignored" and not an invisible bare-stamp.
+      await applier.applyFinalizeFile(
+        "test-collection",
+        "codegraph.symbols",
+        new Map(), // no overlays produced
+        new Map([["src/lost.ts", [{ chunkId: "m1", startLine: 1, endLine: 40 }]]]),
+        undefined,
+        "2026-06-05T00:00:00Z",
+        () => false, // policy: src/lost.ts is NOT ignored → genuine source file
+      );
+
+      expect(applier.ignoredFiles).toBe(0);
+      expect(applier.missedFiles).toBe(1);
+    });
+  });
 });
