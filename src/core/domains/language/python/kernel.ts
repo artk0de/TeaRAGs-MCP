@@ -24,8 +24,7 @@
  *     static checks.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
 import { classifyMethod } from "../../../infra/symbolid/index.js";
 
@@ -39,5 +38,5 @@ export const pythonKernel: LanguageKernel = {
   extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
   scopeSeparator: ".",
   scopeContainerTypes: ["class_definition"],
-  isInstanceMethod: (node: Parser.SyntaxNode) => classifyMethod(node) === "instance",
+  isInstanceMethod: (node: AstNode) => classifyMethod(node) === "instance",
 };

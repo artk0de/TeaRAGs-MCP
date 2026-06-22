@@ -1,11 +1,11 @@
 /**
  * ChunkerPool - Worker thread pool for parallel AST parsing
  *
- * Thin wrapper around the generic `ThreadPool<Req, Res>` (sibling at
- * `pipeline/infra/thread-pool.ts`). All distribution mechanics — worker
+ * Thin wrapper around the generic `WorkerDispatchPool<Req, Res>` (sibling at
+ * `pipeline/infra/worker-dispatch-pool.ts`). All distribution mechanics — worker
  * lifecycle, free-worker selection, round-robin, overflow queue, graceful
- * shutdown — live in `ThreadPool`. `ChunkerPool` only knows the chunker's
- * compiled worker path, its workerData shape (`ChunkerConfig` +
+ * shutdown — live in `WorkerDispatchPool`. `ChunkerPool` only knows the chunker's
+ * compiled worker path, its init shape (`ChunkerConfig` +
  * injected `languageModulePath`), and the `processFile` -> `FileChunkResult`
  * contract.
  */
@@ -15,7 +15,8 @@ import { fileURLToPath } from "node:url";
 
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../../types.js";
-import { ThreadPool } from "../../infra/thread-pool.js";
+import { ProcessTransport } from "../../infra/process-transport.js";
+import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
 
 /**
@@ -60,14 +61,14 @@ export interface FileChunkResult {
 }
 
 export class ChunkerPool {
-  private readonly pool: ThreadPool<WorkerRequest, WorkerResponse>;
+  private readonly pool: WorkerDispatchPool<WorkerRequest, WorkerResponse>;
 
   constructor(poolSize: number, config: ChunkerConfig) {
     // Inject the language-module path so the worker (a second composition
     // root) can dynamically import the concrete factory + composer in-thread.
-    this.pool = new ThreadPool<WorkerRequest, WorkerResponse>(
+    this.pool = new WorkerDispatchPool<WorkerRequest, WorkerResponse>(
       poolSize,
-      WORKER_PATH,
+      new ProcessTransport<WorkerRequest, WorkerResponse>(WORKER_PATH),
       {
         ...config,
         languageModulePath: LANGUAGE_MODULE_PATH,
@@ -95,7 +96,7 @@ export class ChunkerPool {
     emitExtraction = false,
   ): Promise<FileChunkResult> {
     const response = await this.pool.dispatch({ filePath, code, language, emitExtraction });
-    // ThreadPool already rejects on `response.error`; here we only narrow the
+    // WorkerDispatchPool already rejects on `response.error`; here we only narrow the
     // wire shape (`WorkerResponse`) to the public contract (`FileChunkResult`).
     return { filePath: response.filePath, chunks: response.chunks, extraction: response.extraction };
   }
@@ -103,7 +104,7 @@ export class ChunkerPool {
   /**
    * Shut down all workers gracefully.
    *
-   * Delegates to ThreadPool, which sends a shutdown message so each worker can
+   * Delegates to WorkerDispatchPool, which sends a shutdown message so each worker can
    * close its port and let tree-sitter NAPI destructors run in the correct
    * thread, falling back to terminate() if a worker doesn't exit within 2s.
    */

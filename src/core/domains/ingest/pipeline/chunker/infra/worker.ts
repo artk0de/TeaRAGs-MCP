@@ -32,8 +32,6 @@
  * `FileExtraction` alongside the chunks — eliminating the main-thread re-parse.
  */
 
-import { parentPort, workerData } from "node:worker_threads";
-
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type {
   CollectSymbolsFn,
@@ -41,6 +39,7 @@ import type {
   SymbolIdComposer,
 } from "../../../../../contracts/types/language.js";
 import type { ChunkerConfig } from "../../../../../types.js";
+import { createWorkerRuntime } from "../../infra/worker-runtime.js";
 import { TreeSitterChunker } from "../tree-sitter.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
 
@@ -91,64 +90,56 @@ async function buildChunker(config: ChunkerConfig): Promise<ChunkerEngine> {
   return { chunker, languageFactory, composer, collectSymbols: lang.collectSymbols };
 }
 
-if (parentPort) {
-  const config = workerData as ChunkerConfig;
-  // Build the engine once per thread. The async load is awaited before the
-  // first request is serviced: requests that arrive during load queue behind
-  // the promise, preserving order.
-  const chunkerPromise = buildChunker(config);
-
-  parentPort.on("message", (msg: WorkerRequest | { type: "shutdown" }) => {
-    // Graceful shutdown: close the port so the thread exits cleanly,
-    // letting tree-sitter NAPI destructors run in the correct thread
-    // instead of crashing with libc++abi when worker.terminate() kills it.
-    if ("type" in msg && msg.type === "shutdown") {
-      parentPort?.close();
-      return;
-    }
-
-    const request = msg as WorkerRequest;
-    void (async () => {
-      try {
-        const engine = await chunkerPromise;
-        const { chunks, tree } = await engine.chunker.chunkWithTree(request.code, request.filePath, request.language);
-        // yl9tv — when codegraph is enabled the request sets `emitExtraction`;
-        // run the walker on the SAME parse instead of re-parsing on the main
-        // thread. `tree` is non-null iff the parse succeeded for a code
-        // language; a missing walker (doc/unsupported) yields no extraction.
-        let extraction: FileExtraction | undefined;
-        if (request.emitExtraction && tree) {
-          const provider = engine.languageFactory.create(request.language);
-          const { walker, kernel } = provider;
-          if (walker) {
-            const symbolRanges = engine.collectSymbols(
-              tree,
-              walker.nameOf,
-              kernel.scopeSeparator ?? ".",
-              kernel.disambiguateOverloads ?? false,
-              engine.composer,
-            );
-            extraction = walker.walk({
-              tree,
-              code: request.code,
-              relPath: request.filePath,
-              language: request.language,
-              chunks: symbolRanges,
-            });
-          }
+const runtime = createWorkerRuntime<ChunkerConfig, WorkerRequest>();
+// Build the engine once per thread/process. The async load is awaited before
+// the first request is serviced: requests that arrive during load queue behind
+// the promise, preserving order.
+const chunkerPromise = runtime.init().then(async (config) => buildChunker(config));
+// ThreadWorkerRuntime.onShutdown closes parentPort (clean NAPI-destructor exit);
+// process.exit(0) is for the future process path. Both registered; only the
+// active transport's handler fires.
+runtime.onShutdown(() => process.exit(0));
+runtime.onRequest((request) => {
+  void (async () => {
+    try {
+      const engine = await chunkerPromise;
+      const { chunks, tree } = await engine.chunker.chunkWithTree(request.code, request.filePath, request.language);
+      // yl9tv — when codegraph is enabled the request sets `emitExtraction`;
+      // run the walker on the SAME parse instead of re-parsing on the main
+      // thread. `tree` is non-null iff the parse succeeded for a code
+      // language; a missing walker (doc/unsupported) yields no extraction.
+      let extraction: FileExtraction | undefined;
+      if (request.emitExtraction && tree) {
+        const provider = engine.languageFactory.create(request.language);
+        const { walker, kernel } = provider;
+        if (walker) {
+          const symbolRanges = engine.collectSymbols(
+            tree,
+            walker.nameOf,
+            kernel.scopeSeparator ?? ".",
+            kernel.disambiguateOverloads ?? false,
+            engine.composer,
+          );
+          extraction = walker.walk({
+            tree,
+            code: request.code,
+            relPath: request.filePath,
+            language: request.language,
+            chunks: symbolRanges,
+          });
         }
-        parentPort?.postMessage({
-          filePath: request.filePath,
-          chunks,
-          ...(extraction ? { extraction } : {}),
-        } satisfies WorkerResponse);
-      } catch (error) {
-        parentPort?.postMessage({
-          filePath: request.filePath,
-          chunks: [],
-          error: error instanceof Error ? error.message : String(error),
-        } satisfies WorkerResponse);
       }
-    })();
-  });
-}
+      runtime.respond({
+        filePath: request.filePath,
+        chunks,
+        ...(extraction ? { extraction } : {}),
+      } satisfies WorkerResponse);
+    } catch (error) {
+      runtime.respond({
+        filePath: request.filePath,
+        chunks: [],
+        error: error instanceof Error ? error.message : String(error),
+      } satisfies WorkerResponse);
+    }
+  })();
+});

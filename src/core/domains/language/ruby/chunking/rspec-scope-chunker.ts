@@ -26,8 +26,7 @@
  * the "update the 3 skills" checklist.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { BodyChunkResult, ChunkingHook } from "../../../../contracts/types/chunker.js";
 import { isRspecFile } from "./rspec-filter.js";
 
@@ -46,7 +45,7 @@ export interface ItBlock {
 
 export interface RSpecScope {
   name: string;
-  node: Parser.SyntaxNode;
+  node: AstNode;
   isLeaf: boolean;
   setupLines: SetupLine[];
   ownItBlocks: ItBlock[];
@@ -97,7 +96,7 @@ const DELEGATING_TEST_METHODS = new Set(["it_behaves_like", "include_examples"])
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function getCallMethodName(node: Parser.SyntaxNode, code: string): string | null {
+function getCallMethodName(node: AstNode, code: string): string | null {
   if (node.type !== "call") return null;
   const id = node.children.find((c) => c.type === "identifier");
   return id ? code.substring(id.startIndex, id.endIndex) : null;
@@ -109,7 +108,7 @@ function getCallMethodName(node: Parser.SyntaxNode, code: string): string | null
  * For `context 'when admin' do` → "context 'when admin'"
  * For `RSpec.describe User do` → "RSpec.describe User"
  */
-function extractScopeName(node: Parser.SyntaxNode, code: string): string {
+function extractScopeName(node: AstNode, code: string): string {
   const codeLines = code.split("\n");
   const firstLineRow = node.startPosition.row;
   const firstLine = codeLines[firstLineRow];
@@ -131,7 +130,7 @@ function extractScopeName(node: Parser.SyntaxNode, code: string): string {
  * Find the block body statement node of a container call.
  * Ruby AST: call → do_block → body_statement (contains the actual children).
  */
-function findBlockBody(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+function findBlockBody(node: AstNode): AstNode | null {
   for (const child of node.children) {
     if (child.type === "do_block" || child.type === "block") {
       // Look for body_statement inside do_block/block
@@ -173,7 +172,7 @@ function extractTopLevelName(scope: RSpecScope, code: string): string {
 
 // ── Core: buildScopeTree ─────────────────────────────────────────────
 
-export function buildScopeTree(containerNode: Parser.SyntaxNode, code: string): RSpecScope {
+export function buildScopeTree(containerNode: AstNode, code: string): RSpecScope {
   const codeLines = code.split("\n");
   const scopeName = extractScopeName(containerNode, code);
 

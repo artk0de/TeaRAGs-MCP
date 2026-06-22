@@ -21,8 +21,7 @@
  * Both MUST stay in lockstep per `.claude/rules/symbolid-convention.md`.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../contracts/types/ast.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type AmbiguousResolveMode,
@@ -67,7 +66,7 @@ const rubyChunkerHooks: LanguageChunkerHooks = {
   // In Ruby, virtually all code lives inside class/module. Without this flag,
   // small classes become a single chunk and individual methods are not searchable.
   alwaysExtractChildren: true,
-  nameExtractor: (node: Parser.SyntaxNode, code: string): string | undefined => {
+  nameExtractor: (node: AstNode, code: string): string | undefined => {
     if (node.type !== "call") return undefined;
     const id = node.children.find((c) => c.type === "identifier");
     const methodName = id ? code.substring(id.startIndex, id.endIndex) : "";

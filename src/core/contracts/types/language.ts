@@ -11,8 +11,7 @@
  * Spec: `docs/superpowers/specs/2026-05-25-domains-language-consolidation-design.md`
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode, MaterializedTree } from "./ast.js";
 import type { ChunkingHook, LanguageChunkClassifier, MacroSymbol } from "./chunker.js";
 import type {
   CallContext,
@@ -134,7 +133,7 @@ export interface WalkContext {
  * = one new `ExtractionPass` + one `FileExtraction` slot. See spec §1b.
  */
 export interface ExtractionPass<T> {
-  run: (root: Parser.SyntaxNode, ctx: WalkContext) => T;
+  run: (root: AstNode, ctx: WalkContext) => T;
 }
 
 /** Options controlling how `SymbolIdComposer.compose` joins prefix + name. */
@@ -179,15 +178,19 @@ export interface CollectedSymbolRange {
 }
 
 /**
- * Walks a parsed tree and collects every named symbol's fully-qualified id +
- * line range. The kernel implementation (`domains/language/kernel`) is pure —
+ * Walks a materialized AST and collects every named symbol's fully-qualified id
+ * + line range. The kernel implementation (`domains/language/kernel`) is pure —
  * the cross-language `composer` is passed in so the function carries no state.
  * Injected via DI into the codegraph provider (trajectory may not import
  * `domains/language`) and dynamically imported by the chunker worker (yl9tv).
+ *
+ * Accepts `MaterializedTree` (not the native `Parser.Tree`) so callers that
+ * already materialized the tree (chunker worker, extractOneFile) can pass it
+ * directly without re-touching native accessors (rdv7d fix).
  */
 export type CollectSymbolsFn = (
-  tree: Parser.Tree,
-  nameOf: (node: Parser.SyntaxNode) => NamedSymbol | NamedSymbol[] | null,
+  tree: MaterializedTree,
+  nameOf: (node: AstNode) => NamedSymbol | NamedSymbol[] | null,
   separator: string,
   disambiguateOverloads: boolean,
   composer: SymbolIdComposer,
@@ -245,7 +248,7 @@ export interface LanguageKernel {
    * class/static/abstract methods and non-method nodes. The `#`-vs-`.`
    * separator decision derives from this flag.
    */
-  isInstanceMethod: (node: Parser.SyntaxNode) => boolean;
+  isInstanceMethod: (node: AstNode) => boolean;
 }
 
 /**
@@ -273,7 +276,7 @@ export interface LanguageChunkerHooks {
   /** Language-specific chunking hooks (ordered chain). */
   hooks?: ChunkingHook[];
   /** Custom name extraction for language-specific node types (e.g. RSpec call nodes). */
-  nameExtractor?: (node: Parser.SyntaxNode, code: string) => string | undefined;
+  nameExtractor?: (node: AstNode, code: string) => string | undefined;
   /**
    * Child chunk types that bypass the minimum-length floor in `processChildren`.
    * For declaration-only AST shapes (Java abstract / interface methods) the
@@ -295,7 +298,7 @@ export interface LanguageChunkerHooks {
    * METHOD symbols whose final symbolId the engine STILL composes against the
    * class scope with the `#`/`.` separator (`pushMacroSymbolChunk`).
    */
-  macroSymbols?: (containerNode: Parser.SyntaxNode) => MacroSymbol[];
+  macroSymbols?: (containerNode: AstNode) => MacroSymbol[];
   /**
    * Per-language node→chunk classifier. When present, the engine consults it for
    * each chunkable node before its generic shaping. A `ChunkDecision.emit` carries
@@ -314,12 +317,16 @@ export interface LanguageChunkerHooks {
 
 /**
  * Input passed to `LanguageWalker.walk` — mirrors today's
- * `LanguageConfig.walker` argument (a parsed `Tree` plus the chunk boundaries
+ * `LanguageConfig.walker` argument (a parsed tree plus the chunk boundaries
  * already produced for the file). The walker emits a `FileExtraction` for graph
  * construction.
+ *
+ * `tree` is `MaterializedTree` (not the native `Parser.Tree`) so callers that
+ * already materialized the tree (chunker worker, extractOneFile) can pass it
+ * directly without re-touching native accessors (rdv7d fix).
  */
 export interface WalkInput {
-  tree: Parser.Tree;
+  tree: MaterializedTree;
   code: string;
   relPath: string;
   language: string;
@@ -334,7 +341,7 @@ export interface WalkInput {
  */
 export interface LanguageWalker {
   walk: (input: WalkInput) => FileExtraction;
-  nameOf: (node: Parser.SyntaxNode) => NamedSymbol | NamedSymbol[] | null;
+  nameOf: (node: AstNode) => NamedSymbol | NamedSymbol[] | null;
 }
 
 /**

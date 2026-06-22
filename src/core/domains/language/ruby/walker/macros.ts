@@ -31,10 +31,8 @@
  * uses these idioms heavily (bd tea-rags-mcp-3nf3 + tea-rags-mcp-zy3f).
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { MacroSymbol } from "../../../../contracts/types/chunker.js";
-
 import { RUBY_DSL } from "../dsl/index.js";
 
 /**
@@ -62,12 +60,8 @@ export type RubyMacroSymbol = MacroSymbol;
  * the codegraph provider has the same limitation today and a unified fix
  * is tracked in the Concern follow-up bead.
  */
-export function extractRubyMacroSymbols(containerNode: Parser.SyntaxNode): RubyMacroSymbol[] {
-  if (
-    containerNode.type !== "class" &&
-    containerNode.type !== "module" &&
-    containerNode.type !== "singleton_class"
-  ) {
+export function extractRubyMacroSymbols(containerNode: AstNode): RubyMacroSymbol[] {
+  if (containerNode.type !== "class" && containerNode.type !== "module" && containerNode.type !== "singleton_class") {
     return [];
   }
   const body = containerNode.childForFieldName("body");
@@ -92,7 +86,7 @@ export function extractRubyMacroSymbols(containerNode: Parser.SyntaxNode): RubyM
   return out;
 }
 
-function pushMacroSymbols(node: Parser.SyntaxNode, out: RubyMacroSymbol[]): void {
+function pushMacroSymbols(node: AstNode, out: RubyMacroSymbol[]): void {
   if (node.type !== "call" && node.type !== "method_call") return;
   // Receiver-qualified calls (`obj.attr_accessor :x`) are normal method
   // invocations, not class-body DSL. Same guard as
@@ -171,7 +165,7 @@ function pushMacroSymbols(node: Parser.SyntaxNode, out: RubyMacroSymbol[]): void
  * instance method on the enclosing class so the chunker and provider
  * agree on the symbolId for the alias.
  */
-function pushAliasKeywordSymbol(node: Parser.SyntaxNode, out: RubyMacroSymbol[]): void {
+function pushAliasKeywordSymbol(node: AstNode, out: RubyMacroSymbol[]): void {
   if (node.type !== "alias") return;
   // Skip the leading `alias` keyword child and pick up the first
   // identifier — that's the new method name.
@@ -190,7 +184,7 @@ function stripSymbolColon(text: string): string {
   return text.startsWith(":") ? text.slice(1) : text;
 }
 
-function literalNameFromArg(arg: Parser.SyntaxNode): string | null {
+function literalNameFromArg(arg: AstNode): string | null {
   if (arg.type === "simple_symbol") {
     return stripSymbolColon(arg.text);
   }

@@ -20,12 +20,11 @@
  * adding them as call sites would drown the graph in noise.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
 
 export interface BashExtractInput {
-  tree: Parser.Tree;
+  tree: MaterializedTree;
   code: string;
   relPath: string;
   language: string;
@@ -51,7 +50,7 @@ export function extractFromBashFile(input: BashExtractInput): FileExtraction {
   };
 }
 
-function collectBashImports(root: Parser.SyntaxNode): ImportRef[] {
+function collectBashImports(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
     if (node.type !== "command") return;
@@ -68,7 +67,7 @@ function collectBashImports(root: Parser.SyntaxNode): ImportRef[] {
   return out;
 }
 
-function collectBashFunctionCalls(root: Parser.SyntaxNode): CallRef[] {
+function collectBashFunctionCalls(root: AstNode): CallRef[] {
   // Collect the set of function names DEFINED in this file so we can
   // distinguish "internal call" from "external binary invocation".
   const defined = new Set<string>();
@@ -93,7 +92,7 @@ function collectBashFunctionCalls(root: Parser.SyntaxNode): CallRef[] {
   return out;
 }
 
-function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): void {
+function walk(node: AstNode, visit: (n: AstNode) => void): void {
   visit(node);
   for (const child of node.children) walk(child, visit);
 }

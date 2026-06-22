@@ -40,8 +40,7 @@
  * `.claude/rules/symbolid-convention.md`.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../contracts/types/ast.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type AmbiguousResolveMode,
@@ -91,7 +90,7 @@ const rustChunkerHooks: LanguageChunkerHooks = {
   ],
   childChunkTypes: ["function_item", "macro_definition"],
   alwaysExtractChildren: true,
-  nameExtractor: (node: Parser.SyntaxNode, code: string): string | undefined => {
+  nameExtractor: (node: AstNode, code: string): string | undefined => {
     if (node.type !== "impl_item") return undefined;
     const ty = node.childForFieldName("type");
     if (!ty) return undefined;

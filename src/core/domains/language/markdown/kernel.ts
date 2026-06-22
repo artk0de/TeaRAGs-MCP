@@ -30,8 +30,7 @@
  *     adapter's `kernelFrom` derivation.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
 import { classifyMethod } from "../../../infra/symbolid/index.js";
 
@@ -39,5 +38,5 @@ export const markdownKernel: LanguageKernel = {
   // No tree-sitter grammar — remark parses markdown. Mirrors the legacy
   // `LANGUAGE_DEFINITIONS.markdown` entry's `loadModule: () => Promise.resolve(null)`.
   loadModule: async () => Promise.resolve(null),
-  isInstanceMethod: (node: Parser.SyntaxNode) => classifyMethod(node) === "instance",
+  isInstanceMethod: (node: AstNode) => classifyMethod(node) === "instance",
 };

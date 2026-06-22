@@ -23,12 +23,11 @@
  * also handled below.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
 
 export interface JsExtractInput {
-  tree: Parser.Tree;
+  tree: MaterializedTree;
   code: string;
   relPath: string;
   language: string;
@@ -111,7 +110,7 @@ function assignCallsToInnermostChunks(
   return out;
 }
 
-function collectJsImports(root: Parser.SyntaxNode): ImportRef[] {
+function collectJsImports(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
     if (node.type === "import_statement") {
@@ -140,7 +139,7 @@ function collectJsImports(root: Parser.SyntaxNode): ImportRef[] {
   return out;
 }
 
-function collectJsCalls(root: Parser.SyntaxNode): CallRef[] {
+function collectJsCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
     // `new ClassName(args)` (bd tea-rags-mcp-i252). Same shape as the TS
@@ -212,7 +211,7 @@ function collectJsCalls(root: Parser.SyntaxNode): CallRef[] {
  * Computed property names (Symbol / variable keys) are skipped — they're not
  * statically resolvable to a name.
  */
-function collectJsDefinePropertySymbols(root: Parser.SyntaxNode): string[] {
+function collectJsDefinePropertySymbols(root: AstNode): string[] {
   const out: string[] = [];
   walk(root, (node) => {
     if (node.type !== "call_expression") return;
@@ -269,7 +268,7 @@ function collectJsDefinePropertySymbols(root: Parser.SyntaxNode): string[] {
  *   - `pair` with a `get`/`set` `property_identifier` key (`{ get: fn }`)
  *   - `method_definition` named `get`/`set` (shorthand `{ get() {} }`)
  */
-function descriptorHasAccessor(descriptor: Parser.SyntaxNode): boolean {
+function descriptorHasAccessor(descriptor: AstNode): boolean {
   for (const member of descriptor.namedChildren) {
     if (member.type === "pair") {
       const key = member.childForFieldName("key");
@@ -283,7 +282,7 @@ function descriptorHasAccessor(descriptor: Parser.SyntaxNode): boolean {
 }
 
 /** Strip the surrounding quotes from a `string` literal node. */
-function stripStringQuotes(stringNode: Parser.SyntaxNode): string {
+function stripStringQuotes(stringNode: AstNode): string {
   return stringNode.text.replace(/^["']|["']$/g, "");
 }
 
@@ -313,7 +312,7 @@ function stripStringQuotes(stringNode: Parser.SyntaxNode): string {
  * super branch has no way to find the parent class and self-loops to
  * the enclosing class's own method.
  */
-function collectJsClassExtends(root: Parser.SyntaxNode): ReadonlyMap<string, string> {
+function collectJsClassExtends(root: AstNode): ReadonlyMap<string, string> {
   const result = new Map<string, string>();
   walk(root, (node) => {
     if (node.type !== "class_declaration") return;
@@ -334,7 +333,7 @@ function collectJsClassExtends(root: Parser.SyntaxNode): ReadonlyMap<string, str
   return result;
 }
 
-function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): void {
+function walk(node: AstNode, visit: (n: AstNode) => void): void {
   visit(node);
   for (const child of node.children) walk(child, visit);
 }

@@ -9,8 +9,7 @@
  * too small for individual chunks and belong in the body "matchers" group.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
 
 /** Methods that create describe/context containers */
@@ -45,7 +44,7 @@ export function isRspecFile(filePath: string): boolean {
   return filePath.endsWith("_spec.rb") || /(^|[/\\])spec[/\\]/.test(filePath);
 }
 
-function getCallMethodName(node: Parser.SyntaxNode, code: string): string | null {
+function getCallMethodName(node: AstNode, code: string): string | null {
   if (node.type !== "call") return null;
   const id = node.children.find((c) => c.type === "identifier");
   return id ? code.substring(id.startIndex, id.endIndex) : null;
@@ -54,7 +53,7 @@ function getCallMethodName(node: Parser.SyntaxNode, code: string): string | null
 /**
  * Detect shoulda one-liner: `it { ... }` with brace block and no string argument.
  */
-function isShouldaOneLiner(node: Parser.SyntaxNode, code: string, methodName: string): boolean {
+function isShouldaOneLiner(node: AstNode, code: string, methodName: string): boolean {
   if (!RSPEC_EXAMPLE_METHODS.has(methodName)) return false;
   const hasDoBlock = node.children.some((c) => c.type === "do_block");
   if (hasDoBlock) return false; // `it 'x' do ... end` is a real test
@@ -72,7 +71,7 @@ function isShouldaOneLiner(node: Parser.SyntaxNode, code: string, methodName: st
 export const rspecFilterHook: ChunkingHook = {
   name: "rspec-filter",
 
-  filterNode(node: Parser.SyntaxNode, code: string, filePath: string): boolean | undefined {
+  filterNode(node: AstNode, code: string, filePath: string): boolean | undefined {
     if (node.type !== "call") return undefined;
     if (!isRspecFile(filePath)) return false;
 

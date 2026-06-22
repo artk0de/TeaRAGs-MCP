@@ -1,5 +1,4 @@
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { BodyChunkResult, ChunkingHook, HookContext } from "../../../../../contracts/types/chunker.js";
 
 // The hook interfaces moved to `contracts/types/chunker.ts` (foundation layer)
@@ -11,8 +10,8 @@ import type { BodyChunkResult, ChunkingHook, HookContext } from "../../../../../
 export type { BodyChunkResult, ChunkingHook, HookContext };
 
 export function createHookContext(
-  containerNode: Parser.SyntaxNode,
-  validChildren: Parser.SyntaxNode[],
+  containerNode: AstNode,
+  validChildren: AstNode[],
   code: string,
   config: { maxChunkSize: number },
   filePath = "",

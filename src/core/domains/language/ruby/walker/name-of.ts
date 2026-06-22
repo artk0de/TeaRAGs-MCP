@@ -21,13 +21,12 @@
  * order and `.claude/rules/symbolid-convention.md` for the lockstep contract.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
 import { classifyMethod, rubyInsideSingletonClass } from "../../../../infra/symbolid/index.js";
 import { RUBY_DSL } from "../dsl/index.js";
 
-function methodKindFromClassify(node: Parser.SyntaxNode): "instance" | "static" | undefined {
+function methodKindFromClassify(node: AstNode): "instance" | "static" | undefined {
   const c = classifyMethod(node);
   return c === null ? undefined : c;
 }
@@ -45,7 +44,7 @@ function toStaticKind(result: NamedSymbol | NamedSymbol[]): NamedSymbol | NamedS
     : { ...result, methodKind: "static" as const };
 }
 
-export function rbNameOf(node: Parser.SyntaxNode): NamedSymbol | NamedSymbol[] | null {
+export function rbNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
   // Both `method` and `singleton_method` route through classifyMethod
   // (in core/infra/symbolid) so the chunker and codegraph agree on the
   // separator for the same physical AST node. classifyMethod also walks
@@ -110,7 +109,7 @@ export function rbNameOf(node: Parser.SyntaxNode): NamedSymbol | NamedSymbol[] |
  * lives in the call graph via the walker's synthetic CallRef
  * (bd tea-rags-mcp-y2z5).
  */
-function rubyAliasMethodEmission(node: Parser.SyntaxNode): NamedSymbol | null {
+function rubyAliasMethodEmission(node: AstNode): NamedSymbol | null {
   if (node.childForFieldName("receiver")) return null;
   const methodField = node.childForFieldName("method");
   const methodNode = methodField ?? node.children.find((c) => c.type === "identifier");
@@ -128,7 +127,7 @@ function rubyAliasMethodEmission(node: Parser.SyntaxNode): NamedSymbol | null {
  * `alias new_name old_name` (keyword form) — separate AST node type
  * `alias` whose first identifier child is the new method name.
  */
-function rubyAliasKeywordEmission(node: Parser.SyntaxNode): NamedSymbol | null {
+function rubyAliasKeywordEmission(node: AstNode): NamedSymbol | null {
   const idents = node.children.filter((c) => c.type === "identifier");
   const newName = idents[0]?.text;
   if (!newName) return null;
@@ -143,7 +142,7 @@ function rubyAliasKeywordEmission(node: Parser.SyntaxNode): NamedSymbol | null {
  * (`define_method(verb) { ... }` where verb is a variable) remain
  * unrepresentable.
  */
-function rubyDefineMethodEmission(node: Parser.SyntaxNode): NamedSymbol | null {
+function rubyDefineMethodEmission(node: AstNode): NamedSymbol | null {
   if (node.childForFieldName("receiver")) return null;
   const methodField = node.childForFieldName("method");
   const methodNode = methodField ?? node.children.find((c) => c.type === "identifier");
@@ -205,7 +204,7 @@ const AR_ASSOCIATION_MACROS: Record<string, (base: string) => { name: string; ki
   scope: (b) => [{ name: b, kind: "static" }],
 };
 
-function rubyMacroEmission(node: Parser.SyntaxNode): NamedSymbol[] | null {
+function rubyMacroEmission(node: AstNode): NamedSymbol[] | null {
   // Macro calls in class body have no receiver field — they're direct
   // method invocations like `attr_accessor :x` rather than `obj.attr_accessor`.
   if (node.childForFieldName("receiver")) return null;
@@ -249,8 +248,8 @@ function rubyMacroEmission(node: Parser.SyntaxNode): NamedSymbol[] | null {
   return out;
 }
 
-function rubyMethodInsideExtendSelfModule(methodNode: Parser.SyntaxNode): boolean {
-  let p: Parser.SyntaxNode | null = methodNode.parent;
+function rubyMethodInsideExtendSelfModule(methodNode: AstNode): boolean {
+  let p: AstNode | null = methodNode.parent;
   while (p) {
     if (p.type === "class") return false;
     if (p.type === "module") {
@@ -273,7 +272,7 @@ function rubyMethodInsideExtendSelfModule(methodNode: Parser.SyntaxNode): boolea
   return false;
 }
 
-function scopeResolutionText(node: Parser.SyntaxNode): string {
+function scopeResolutionText(node: AstNode): string {
   // Mirror ruby-walker's readScopeResolution; kept local to avoid an
   // export from the walker just for nameOf.
   const name = node.childForFieldName("name");

@@ -1,3 +1,5 @@
+import os from "node:os";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Helper: dynamic import with cache-busting to get fresh module state per test
@@ -498,8 +500,8 @@ describe("parseAppConfigZod — ingest", () => {
     expect(ingest.enableAST).toBe(true);
     expect(ingest.enableHybrid).toBe(true);
     expect(ingest.tune.pipelineConcurrency).toBe(1);
-    // yl9tv — single-flight parse default (was 4).
-    expect(ingest.tune.chunkerPoolSize).toBe(1);
+    // process isolation (yl9tv): parallel parse is safe, default is min(4, cpus-1).
+    expect(ingest.tune.chunkerPoolSize).toBe(Math.max(1, Math.min(4, os.cpus().length - 1)));
     expect(ingest.tune.fileConcurrency).toBe(50);
     expect(ingest.tune.ioConcurrency).toBe(50);
   });

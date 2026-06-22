@@ -29,8 +29,7 @@
  * the "update the 3 skills" checklist.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { BodyChunkResult, ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
 import { getCallName, isTestFile } from "./test-dsl-filter.js";
 
@@ -49,7 +48,7 @@ export interface ItBlock {
 
 export interface TestScope {
   name: string;
-  node: Parser.SyntaxNode;
+  node: AstNode;
   isLeaf: boolean;
   setupLines: SetupLine[];
   ownItBlocks: ItBlock[];
@@ -81,7 +80,7 @@ const SETUP_METHODS = new Set([
  * expression_statement), return the inner call_expression. Otherwise
  * return null.
  */
-function unwrapStatementCall(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+function unwrapStatementCall(node: AstNode): AstNode | null {
   if (node.type === "call_expression") return node;
   if (node.type === "expression_statement") {
     const inner = node.namedChildren.find((c) => c.type === "call_expression");
@@ -95,7 +94,7 @@ function unwrapStatementCall(node: Parser.SyntaxNode): Parser.SyntaxNode | null 
  * Returns null when the call has no arrow_function / function_expression
  * argument (e.g. `describe(User)` with no callback).
  */
-function findCallbackBody(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+function findCallbackBody(node: AstNode): AstNode | null {
   const args = node.childForFieldName("arguments");
   if (!args) return null;
   for (const arg of args.namedChildren) {
@@ -111,7 +110,7 @@ function findCallbackBody(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
  * Build the descriptive scope name: "describe 'User'", "context 'when admin'",
  * "it.skip 'pending'". Mirrors Ruby extractScopeName output format.
  */
-function extractScopeName(node: Parser.SyntaxNode, code: string): string {
+function extractScopeName(node: AstNode, code: string): string {
   const callName = getCallName(node, code) ?? "unknown";
   const args = node.childForFieldName("arguments");
   if (!args || args.namedChildren.length === 0) return callName;
@@ -143,7 +142,7 @@ function extractTopLevelName(scope: TestScope, code: string): string {
 }
 
 /** True when `node` is a DSL container call (describe / context / suite). */
-export function isDslContainerCall(node: Parser.SyntaxNode, code: string): boolean {
+export function isDslContainerCall(node: AstNode, code: string): boolean {
   if (node.type !== "call_expression") return false;
   const name = getCallName(node, code);
   return name !== null && CONTAINER_METHODS.has(name);
@@ -151,7 +150,7 @@ export function isDslContainerCall(node: Parser.SyntaxNode, code: string): boole
 
 // ── Core: buildScopeTree ─────────────────────────────────────────────
 
-export function buildScopeTree(containerNode: Parser.SyntaxNode, code: string): TestScope {
+export function buildScopeTree(containerNode: AstNode, code: string): TestScope {
   const codeLines = code.split("\n");
   const scopeName = extractScopeName(containerNode, code);
 

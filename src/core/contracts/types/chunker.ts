@@ -10,7 +10,7 @@
  * `createHookContext` stays in the ingest domain (contracts has no runtime).
  */
 
-import type Parser from "tree-sitter";
+import type { AstNode } from "./ast.js";
 
 /**
  * Maps a chunk to its point ID for Phase 2 git enrichment. Relocated from
@@ -45,8 +45,8 @@ export interface BodyChunkResult {
 /** Shared mutable context passed through the hook chain */
 export interface HookContext {
   // Read-only inputs
-  readonly containerNode: Parser.SyntaxNode;
-  readonly validChildren: Parser.SyntaxNode[];
+  readonly containerNode: AstNode;
+  readonly validChildren: AstNode[];
   readonly code: string;
   readonly codeLines: string[];
   readonly config: { maxChunkSize: number };
@@ -140,10 +140,7 @@ export interface EmittedChunk {
  *   - `emit` — emit these explicit chunks at the node's source range (Go = 1,
  *     JS = N); the engine flags them `claimed`.
  */
-export type ChunkDecision =
-  | { kind: "passthrough" }
-  | { kind: "skip" }
-  | { kind: "emit"; chunks: EmittedChunk[] };
+export type ChunkDecision = { kind: "passthrough" } | { kind: "skip" } | { kind: "emit"; chunks: EmittedChunk[] };
 
 /**
  * Per-language node→chunk classification. The engine consults it for each
@@ -153,7 +150,7 @@ export type ChunkDecision =
  * one (Go, JavaScript).
  */
 export interface LanguageChunkClassifier {
-  classifyNode: (node: Parser.SyntaxNode) => ChunkDecision;
+  classifyNode: (node: AstNode) => ChunkDecision;
 }
 
 /** Single hook in the chain */
@@ -163,5 +160,5 @@ export interface ChunkingHook {
   /** Filter nodes during chunkable/child node discovery.
    *  Return true to include, false to exclude, undefined for no opinion.
    *  Called for EACH candidate node by findChunkableNodes/findChildChunkableNodes. */
-  filterNode?: (node: Parser.SyntaxNode, code: string, filePath: string) => boolean | undefined;
+  filterNode?: (node: AstNode, code: string, filePath: string) => boolean | undefined;
 }

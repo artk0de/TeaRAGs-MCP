@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
+import { defaultChunkerPoolSize } from "../../core/domains/ingest/pipeline/infra/pool-defaults.js";
 import {
   booleanFromEnv,
   booleanFromEnvWithDefault,
@@ -61,15 +62,13 @@ export const embeddingSchema = z.object({
 export const ingestTuneSchema = z.object({
   pipelineConcurrency: intWithDefault(1),
   /**
-   * Parse worker count. Default 1 enforces SINGLE-FLIGHT parsing (yl9tv):
-   * node-tree-sitter's native parse is process-globally thread-unsafe —
-   * concurrent parses corrupt the tree (proven ±32% codegraph jitter at pool>1)
-   * and the worker now feeds the codegraph extraction off that same parse.
-   * Parse is cheap relative to embedding (the real bottleneck), so serializing
-   * it costs negligible wall-clock. Operators can still override via
-   * `INGEST_TUNE_CHUNKER_POOL_SIZE` / `CHUNKER_POOL_SIZE` (at their own risk).
+   * Parse worker count. Workers now run as child processes (ProcessTransport),
+   * so concurrent tree-sitter parsing is safe — the native parse runs in an
+   * isolated process memory space (yl9tv). Default: min(4, cpus-1), floor 1.
+   * Operators can still override via `INGEST_TUNE_CHUNKER_POOL_SIZE` /
+   * `CHUNKER_POOL_SIZE`.
    */
-  chunkerPoolSize: intWithDefault(1),
+  chunkerPoolSize: intWithDefault(defaultChunkerPoolSize()),
   fileConcurrency: intWithDefault(50),
   ioConcurrency: intWithDefault(50),
   /**

@@ -15,11 +15,10 @@
  * tea-rags-mcp-cen6.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../contracts/types/ast.js";
 import { classifyMethod } from "../../../infra/symbolid/index.js";
 
-export function methodKindFromClassify(node: Parser.SyntaxNode): "instance" | "static" | undefined {
+export function methodKindFromClassify(node: AstNode): "instance" | "static" | undefined {
   const c = classifyMethod(node);
   return c === null ? undefined : c;
 }

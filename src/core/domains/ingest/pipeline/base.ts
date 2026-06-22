@@ -21,6 +21,7 @@ import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
 import { ChunkPipeline } from "./index.js";
 import { updateHeartbeat } from "./indexing-marker.js";
 import { pipelineLog } from "./infra/debug-logger.js";
+import { defaultChunkerPoolSize } from "./infra/pool-defaults.js";
 import { FileScanner } from "./scanner.js";
 import type { PipelineConfig } from "./types.js";
 
@@ -48,10 +49,9 @@ const DEFAULT_TUNING: PipelineTuning = {
     upsertAccumulator: { batchSize: 1024, flushTimeoutMs: 2000, maxQueueSize: 2 },
     deleteAccumulator: { batchSize: 500, flushTimeoutMs: 1000, maxQueueSize: 16 },
   },
-  // Single-flight parse (yl9tv): one parse worker. node-tree-sitter's native
-  // parse is process-globally thread-unsafe; pool>1 corrupts trees and the
-  // codegraph extraction now rides the same parse. Parse is cheap vs embedding.
-  chunkerPoolSize: 1,
+  // Workers run as child processes (ProcessTransport), so concurrent parsing
+  // is safe — each process owns its own tree-sitter native heap (yl9tv).
+  chunkerPoolSize: defaultChunkerPoolSize(),
   fileConcurrency: 50,
 };
 

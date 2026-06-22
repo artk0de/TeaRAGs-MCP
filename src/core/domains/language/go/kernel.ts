@@ -23,8 +23,7 @@
  *     identical to the per-engine static checks.
  */
 
-import type Parser from "tree-sitter";
-
+import type { AstNode } from "../../../contracts/types/ast.js";
 import type { LanguageKernel } from "../../../contracts/types/language.js";
 import { classifyMethod } from "../../../infra/symbolid/index.js";
 
@@ -37,5 +36,5 @@ export const goKernel: LanguageKernel = {
   loadModule: async () => import("tree-sitter-go") as Promise<TreeSitterLanguageModule>,
   extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
   scopeSeparator: ".",
-  isInstanceMethod: (node: Parser.SyntaxNode) => classifyMethod(node) === "instance",
+  isInstanceMethod: (node: AstNode) => classifyMethod(node) === "instance",
 };
