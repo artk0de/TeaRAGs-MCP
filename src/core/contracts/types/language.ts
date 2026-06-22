@@ -12,7 +12,7 @@
  */
 
 import type { AstNode, MaterializedTree } from "./ast.js";
-import type { ChunkingHook, LanguageChunkClassifier, MacroSymbol } from "./chunker.js";
+import type { ChunkingHook, LanguageChunkClassifier } from "./chunker.js";
 import type {
   CallContext,
   CallRef,
@@ -284,21 +284,6 @@ export interface LanguageChunkerHooks {
    * `find_symbol("Pair#getLeft")` resolves. bd tea-rags-mcp-52e8.
    */
   keepShortChildChunkTypes?: string[];
-  /**
-   * Extract synthetic method symbols from a class/module container's body for
-   * languages with `def`-less method declarations (Ruby DSL macros:
-   * `attr_accessor`, `delegate`, `define_method`, …). Returns one `MacroSymbol`
-   * per declared method at the container's scope. The chunker engine emits a
-   * `chunkType="function"` chunk per result so bare-id call resolution can land
-   * on `Class#accessor` and `get_callers`/`get_callees` work on Rails code (bd
-   * tea-rags-mcp-3nf3 / zy3f). Omitted for languages with no such idiom. The
-   * engine reaches this via the provider (no direct `domains/language/` import).
-   *
-   * Contrast with `classifier`: `macroSymbols` yields container-level synthetic
-   * METHOD symbols whose final symbolId the engine STILL composes against the
-   * class scope with the `#`/`.` separator (`pushMacroSymbolChunk`).
-   */
-  macroSymbols?: (containerNode: AstNode) => MacroSymbol[];
   /**
    * Per-language node→chunk classifier. When present, the engine consults it for
    * each chunkable node before its generic shaping. A `ChunkDecision.emit` carries
