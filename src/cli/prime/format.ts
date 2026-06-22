@@ -5,6 +5,8 @@ import type { PrimeData, PrimeFailureReason } from "./types.js";
 
 type InfraHealth = NonNullable<IndexStatus["infraHealth"]>;
 type EnrichmentMap = NonNullable<IndexStatus["enrichment"]>;
+type CodegraphResolve = NonNullable<IndexStatus["codegraphResolve"]>;
+type CodegraphResolveKindRow = NonNullable<CodegraphResolve["byReceiverKind"]>[number];
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
@@ -90,6 +92,12 @@ function formatDigest(data: PrimeData, now: Date): string {
       lines.push("");
       lines.push(...formatThresholdsSection(primary, data.metrics.signals[primary]));
     }
+  }
+
+  const resolveLines = formatCodegraphResolveSection(data.status.codegraphResolve);
+  if (resolveLines.length > 0) {
+    lines.push("");
+    lines.push(...resolveLines);
   }
 
   if (data.update !== null) {
@@ -242,6 +250,37 @@ function formatEnrichmentSection(enrichment: EnrichmentMap): string[] {
     lines.push(`${provider}: file ${health.file.status}, chunk ${health.chunk.status}${suffix}`);
   }
   return lines;
+}
+
+/**
+ * tea-rags-mcp-7m5xz — render the codegraph resolve tally with its
+ * per-receiver-kind breakdown so cai0 phases can read the largest unresolved
+ * bucket straight from the digest. Mirrors the DTO placement: a top-level
+ * `byReceiverKind` (single-language case) renders flat; nested `byLanguage` rows
+ * render each kind indented under its language. Renders nothing when neither
+ * breakdown is present.
+ */
+function formatCodegraphResolveSection(resolve: CodegraphResolve | undefined): string[] {
+  if (!resolve) return [];
+  const hasTopKinds = (resolve.byReceiverKind?.length ?? 0) > 0;
+  const langsWithKinds = (resolve.byLanguage ?? []).filter((l) => (l.byReceiverKind?.length ?? 0) > 0);
+  if (!hasTopKinds && langsWithKinds.length === 0) return [];
+
+  const lines = ["## Codegraph resolve"];
+  if (hasTopKinds) {
+    for (const k of resolve.byReceiverKind ?? []) lines.push(formatResolveKind(k));
+  } else {
+    for (const l of langsWithKinds) {
+      lines.push(`${l.language}:`);
+      for (const k of l.byReceiverKind ?? []) lines.push(`  ${formatResolveKind(k)}`);
+    }
+  }
+  return lines;
+}
+
+/** Compact one-line per kind: `selfMember 0.96 125/130` (kind · rate · resolved/attempted). */
+function formatResolveKind(k: CodegraphResolveKindRow): string {
+  return `${k.receiverKind} ${roundTwo(k.resolveSuccessRate)} ${k.resolved}/${k.attempted}`;
 }
 
 function formatRelativeTime(diffMs: number): string {

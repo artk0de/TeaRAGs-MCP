@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { ResolveRunStatsRow } from "../../../../../src/core/contracts/types/codegraph.js";
 import { summarizeCodegraphResolve } from "../../../../../src/core/domains/ingest/pipeline/status-module.js";
+import { setDebug } from "../../../../../src/core/infra/runtime.js";
 
 // bd tea-rags-mcp-cnqrg — the per-(language, receiverKind) cg_run_stats rows fold
 // into the status DTO: aggregate over all rows + a per-language breakdown that
@@ -69,5 +70,130 @@ describe("summarizeCodegraphResolve (cnqrg)", () => {
     expect(summary?.callsAttempted).toBe(200); // unlabeled 40 counted
     const langs = (summary?.byLanguage ?? []).map((l) => l.language);
     expect(langs).toEqual(["typescript", "ruby"]); // no "" entry
+  });
+});
+
+// bd tea-rags-mcp-7m5xz — the per-(language, receiverKind) rows ALSO fold into a
+// per-receiver-kind breakdown so cai0 phases can rank which receiver-kind bucket
+// is the largest unresolved gap per language. Placement MIRRORS the byLanguage
+// suppression: >1 language → byReceiverKind on each byLanguage row (precise
+// lang×kind); =1 language → top-level summary.byReceiverKind.
+describe("summarizeCodegraphResolve receiver-kind breakdown (7m5xz)", () => {
+  it("attaches byReceiverKind to each byLanguage row and leaves top-level undefined when >1 language", () => {
+    const summary = summarizeCodegraphResolve([
+      row("typescript", "selfMember", 130, 125, 0),
+      row("typescript", "constant", 100, 60, 0),
+      row("ruby", "constant", 50, 40, 0),
+      row("ruby", "selfMember", 30, 20, 0),
+    ]);
+    expect(summary?.byReceiverKind).toBeUndefined(); // top-level NOT set for multi-language
+
+    const byLang = summary?.byLanguage ?? [];
+    const ts = byLang.find((l) => l.language === "typescript");
+    expect(ts?.byReceiverKind?.map((k) => k.receiverKind)).toEqual(["selfMember", "constant"]);
+    const tsSelf = ts?.byReceiverKind?.find((k) => k.receiverKind === "selfMember");
+    expect(tsSelf).toMatchObject({ attempted: 130, resolved: 125, externalSkipped: 0 });
+    expect(tsSelf?.resolveSuccessRate).toBeCloseTo(125 / 130, 6);
+
+    const ruby = byLang.find((l) => l.language === "ruby");
+    expect(ruby?.byReceiverKind?.map((k) => k.receiverKind)).toEqual(["constant", "selfMember"]);
+  });
+
+  it("sets top-level byReceiverKind and leaves byLanguage undefined when exactly 1 language", () => {
+    const summary = summarizeCodegraphResolve([
+      row("typescript", "selfMember", 130, 125, 0),
+      row("typescript", "constant", 100, 60, 0),
+    ]);
+    expect(summary?.byLanguage).toBeUndefined(); // existing suppression intact
+    const kinds = summary?.byReceiverKind ?? [];
+    expect(kinds.map((k) => k.receiverKind)).toEqual(["selfMember", "constant"]);
+    const self = kinds.find((k) => k.receiverKind === "selfMember");
+    expect(self).toMatchObject({ attempted: 130, resolved: 125, externalSkipped: 0 });
+    expect(self?.resolveSuccessRate).toBeCloseTo(125 / 130, 6); // ~0.96
+  });
+
+  it("omits a zero-attempt receiver kind from the breakdown", () => {
+    const summary = summarizeCodegraphResolve([
+      row("typescript", "selfMember", 100, 90, 0),
+      row("typescript", "ghostKind", 0, 0, 0),
+    ]);
+    const kinds = summary?.byReceiverKind ?? [];
+    expect(kinds.map((k) => k.receiverKind)).toEqual(["selfMember"]); // ghostKind omitted
+  });
+
+  it("sorts receiver kinds by attempted desc", () => {
+    const summary = summarizeCodegraphResolve([
+      row("typescript", "constant", 30, 20, 0),
+      row("typescript", "selfMember", 200, 180, 0),
+      row("typescript", "instanceMember", 90, 50, 0),
+    ]);
+    expect((summary?.byReceiverKind ?? []).map((k) => k.receiverKind)).toEqual([
+      "selfMember",
+      "instanceMember",
+      "constant",
+    ]);
+  });
+
+  it("excludes externalSkipped from the per-kind resolveSuccessRate denominator", () => {
+    const summary = summarizeCodegraphResolve([
+      // selfMember: no external → 125 / (130 − 0) ≈ 0.96
+      row("typescript", "selfMember", 130, 125, 0),
+      // constant: 20 external → 60 / (100 − 20) = 60/80 = 0.75
+      row("typescript", "constant", 100, 60, 20),
+    ]);
+    const kinds = summary?.byReceiverKind ?? [];
+    const self = kinds.find((k) => k.receiverKind === "selfMember");
+    expect(self?.resolveSuccessRate).toBeCloseTo(125 / 130, 6);
+    const constant = kinds.find((k) => k.receiverKind === "constant");
+    expect(constant).toMatchObject({ attempted: 100, resolved: 60, externalSkipped: 20 });
+    expect(constant?.resolveSuccessRate).toBeCloseTo(60 / 80, 6);
+  });
+});
+
+// bd tea-rags-mcp-7m5xz follow-up — byReceiverKind is verbose; it appears ONLY
+// under DEBUG. By default get_index_status shows the short form (aggregate +
+// byLanguage) exactly as before this session. vitest.setup sets DEBUG=true
+// globally, so the regression cases above run under debug; here we explicitly
+// flip it off, assert byReceiverKind is absent (nested AND top-level), then
+// restore so no leak reaches other tests.
+describe("summarizeCodegraphResolve byReceiverKind DEBUG gate (7m5xz)", () => {
+  afterEach(() => {
+    setDebug(true); // vitest.setup baseline — restore so other files see DEBUG on
+  });
+
+  it("omits byReceiverKind entirely when DEBUG is off (top-level, single language)", () => {
+    setDebug(false);
+    const summary = summarizeCodegraphResolve([
+      row("typescript", "selfMember", 130, 125, 0),
+      row("typescript", "constant", 100, 60, 0),
+    ]);
+    // Short form intact: aggregate present, byLanguage suppressed (≤1 language).
+    expect(summary?.resolveSuccessRate).toBeCloseTo(185 / 230, 6);
+    expect(summary?.byReceiverKind).toBeUndefined();
+  });
+
+  it("omits byReceiverKind on every byLanguage row when DEBUG is off (multi-language)", () => {
+    setDebug(false);
+    const summary = summarizeCodegraphResolve([
+      row("typescript", "selfMember", 130, 125, 0),
+      row("typescript", "constant", 100, 60, 0),
+      row("ruby", "constant", 50, 40, 0),
+      row("ruby", "selfMember", 30, 20, 0),
+    ]);
+    expect(summary?.byReceiverKind).toBeUndefined(); // top-level absent
+    const byLang = summary?.byLanguage ?? [];
+    expect(byLang.map((l) => l.language)).toEqual(["typescript", "ruby"]); // short form intact
+    for (const l of byLang) {
+      expect(l.byReceiverKind).toBeUndefined(); // nested absent
+    }
+  });
+
+  it("populates byReceiverKind when DEBUG is on (regression — gate does not break the feature)", () => {
+    setDebug(true);
+    const summary = summarizeCodegraphResolve([
+      row("typescript", "selfMember", 130, 125, 0),
+      row("typescript", "constant", 100, 60, 0),
+    ]);
+    expect((summary?.byReceiverKind ?? []).map((k) => k.receiverKind)).toEqual(["selfMember", "constant"]);
   });
 });

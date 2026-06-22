@@ -406,4 +406,49 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
     const outcome = strat.attempt(call, ctx({ symbolTable }));
     expect(outcome.kind).toBe("continue");
   });
+
+  it("resolves an ambiguous short-name to the SUPERCLASS method via the MRO chain (brp1)", () => {
+    // Child does NOT own `notify`; Parent (in classAncestors) does, and an
+    // unrelated Other#notify collides on the short name. Before brp1 the
+    // direct-enclosing narrowing found nothing on Child and the edge dropped.
+    const symbolTable = tableWith(
+      ["app/parent.rb", [sym("Parent#notify", "notify", "app/parent.rb", ["Parent"])]],
+      ["app/other.rb", [sym("Other#notify", "notify", "app/other.rb", ["Other"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "notify", receiver: null, member: "notify", startLine: 1 },
+      ctx({ symbolTable, callerScope: ["Child"], classAncestors: { Child: ["Parent"] } }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/parent.rb", targetSymbolId: "Parent#notify" },
+    });
+  });
+
+  it("prefers the NEAREST ancestor when the short-name is on both Parent and Grandparent (brp1)", () => {
+    const symbolTable = tableWith(
+      ["app/parent.rb", [sym("Parent#render", "render", "app/parent.rb", ["Parent"])]],
+      ["app/grandparent.rb", [sym("Grandparent#render", "render", "app/grandparent.rb", ["Grandparent"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "render", receiver: null, member: "render", startLine: 1 },
+      ctx({ symbolTable, callerScope: ["Child"], classAncestors: { Child: ["Parent", "Grandparent"] } }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/parent.rb", targetSymbolId: "Parent#render" },
+    });
+  });
+
+  it("continues when no candidate's class is in the MRO chain (true cross-class collision — brp1)", () => {
+    const symbolTable = tableWith(
+      ["app/foo.rb", [sym("Foo#perform", "perform", "app/foo.rb", ["Foo"])]],
+      ["app/bar.rb", [sym("Bar#perform", "perform", "app/bar.rb", ["Bar"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "perform", receiver: null, member: "perform", startLine: 1 },
+      ctx({ symbolTable, callerScope: ["Child"], classAncestors: { Child: ["Parent"] } }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
 });

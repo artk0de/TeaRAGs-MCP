@@ -15,8 +15,14 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import { isDebug } from "../../../infra/runtime.js";
 import { StatsCache } from "../../../infra/stats-cache.js";
-import type { CodegraphResolveLanguageRow, CodegraphResolveSummary, IndexStatus } from "../../../types.js";
+import type {
+  CodegraphResolveKindRow,
+  CodegraphResolveLanguageRow,
+  CodegraphResolveSummary,
+  IndexStatus,
+} from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../constants.js";
 import { MIN_LANGUAGE_SHARE } from "../infra/index.js";
 import { QuarantineStore } from "../sync/index.js";
@@ -32,6 +38,33 @@ function resolveRate(attempted: number, resolved: number, externalSkipped: numbe
   return attempted === 0 ? 0 : resolved / Math.max(1, attempted - externalSkipped);
 }
 
+/** Running tally aggregated from `cg_run_stats` rows (per language or per kind). */
+interface ResolveTally {
+  attempted: number;
+  resolved: number;
+  externalSkipped: number;
+}
+
+/**
+ * Build the per-receiver-kind breakdown for one language (bd tea-rags-mcp-7m5xz).
+ * Includes a kind only when it was actually attempted (`attempted > 0`) — NO
+ * min-share filter, since small buckets (e.g. `selfMember`) are the target.
+ * Sorted by `attempted` DESC; per-kind `resolveSuccessRate` reuses the shared
+ * {@link resolveRate} helper so the external-skip exclusion stays consistent.
+ */
+function buildByReceiverKind(kinds: Map<string, ResolveTally>): CodegraphResolveKindRow[] {
+  return [...kinds.entries()]
+    .filter(([, t]) => t.attempted > 0)
+    .map(([receiverKind, t]) => ({
+      receiverKind,
+      attempted: t.attempted,
+      resolved: t.resolved,
+      externalSkipped: t.externalSkipped,
+      resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped),
+    }))
+    .sort((a, b) => b.attempted - a.attempted);
+}
+
 /**
  * Fold the persisted per-(language, receiverKind) `cg_run_stats` rows into the
  * status DTO (bd tea-rags-mcp-cnqrg). The aggregate sums every row; the
@@ -42,13 +75,30 @@ function resolveRate(attempted: number, resolved: number, externalSkipped: numbe
  * needs no extra filter: only resolver-backed code languages reach the tally,
  * and unlabeled rows (`language: ""`, direct-mode) are excluded from the
  * per-language view. Returns `undefined` when there are no rows.
+ *
+ * tea-rags-mcp-7m5xz — the same rows ALSO fold into a per-receiver-kind
+ * breakdown, placed by MIRRORING the byLanguage suppression: when >1 language
+ * survives, `byReceiverKind` is attached to EACH byLanguage row (precise
+ * lang×kind) and the top-level stays absent; when exactly 1 language survives
+ * (byLanguage suppressed), the top-level `byReceiverKind` carries that single
+ * language's kinds.
  */
 export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): CodegraphResolveSummary | undefined {
   if (rows.length === 0) return undefined;
+  // tea-rags-mcp-7m5xz follow-up: byReceiverKind is verbose — it is computed and
+  // attached ONLY under DEBUG. The single gate point is this flag: when false,
+  // the per-(language, receiverKind) tally is never built, so `buildByReceiverKind`
+  // is never called and the field is absent from both the per-byLanguage rows
+  // (nested) and the single-language top-level case. The prime `## Codegraph
+  // resolve` per-kind section auto-omits when no breakdown is present.
+  const debug = isDebug();
   let attempted = 0;
   let resolved = 0;
   let externalSkipped = 0;
-  const byLang = new Map<string, { attempted: number; resolved: number; externalSkipped: number }>();
+  const byLang = new Map<string, ResolveTally>();
+  // Per-language receiver-kind tally (bd tea-rags-mcp-7m5xz). Unlabeled rows are
+  // excluded here exactly as they are for byLanguage. Populated only under DEBUG.
+  const byLangKind = new Map<string, Map<string, ResolveTally>>();
   for (const r of rows) {
     attempted += r.attempted;
     resolved += r.resolved;
@@ -59,6 +109,14 @@ export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): 
     e.resolved += r.resolved;
     e.externalSkipped += r.externalSkipped;
     byLang.set(r.language, e);
+    if (!debug) continue; // short form: skip receiver-kind tally entirely
+    const kinds = byLangKind.get(r.language) ?? new Map<string, ResolveTally>();
+    const k = kinds.get(r.receiverKind) ?? { attempted: 0, resolved: 0, externalSkipped: 0 };
+    k.attempted += r.attempted;
+    k.resolved += r.resolved;
+    k.externalSkipped += r.externalSkipped;
+    kinds.set(r.receiverKind, k);
+    byLangKind.set(r.language, kinds);
   }
   const summary: CodegraphResolveSummary = {
     resolveSuccessRate: resolveRate(attempted, resolved, externalSkipped),
@@ -74,9 +132,17 @@ export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): 
       callsAttempted: t.attempted,
       callsResolved: t.resolved,
       callsExternalSkipped: t.externalSkipped,
+      // Absent unless DEBUG built the tally above.
+      ...(debug ? { byReceiverKind: buildByReceiverKind(byLangKind.get(language) ?? new Map<string, ResolveTally>()) } : {}),
     }))
     .sort((a, b) => b.callsAttempted - a.callsAttempted);
-  if (byLanguage.length > 1) summary.byLanguage = byLanguage;
+  if (byLanguage.length > 1) {
+    summary.byLanguage = byLanguage;
+  } else if (byLanguage.length === 1 && debug) {
+    // Single surviving language: byLanguage is suppressed (aggregate conveys it),
+    // so surface that language's kind breakdown at the top level — DEBUG only.
+    summary.byReceiverKind = byLanguage[0].byReceiverKind;
+  }
   return summary;
 }
 

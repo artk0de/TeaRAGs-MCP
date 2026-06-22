@@ -29,7 +29,7 @@ import {
   type CallResolver,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
-import { ECMASCRIPT_GLOBALS } from "../../kernel/ecmascript-globals.js";
+import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
 
 const JS_EXTS = [".js", ".jsx", ".mjs", ".cjs"];
 

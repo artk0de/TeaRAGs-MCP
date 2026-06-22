@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { isRubyPath, type ResolverConfig } from "./shared.js";
+import { collectAncestorChain, isRubyPath, type ResolverConfig } from "./shared.js";
 
 /**
  * Bare-call fallback: receiver is null, so global short-name lookup is the only
@@ -21,21 +21,29 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     const fallback = ctx.symbolTable.lookupByShortName(call.member).filter((def) => isRubyPath(def.relPath));
-    // Same-class scope preference (bug t5iw). When multiple short-name
+    // MRO-aware scope narrowing (bug t5iw + brp1). When multiple short-name
     // candidates exist (e.g. `WebRequestConcern#user_agent` AND
     // `Agents::PhantomJsCloudAgent#user_agent`), strict-mode
     // pickSingleCandidate returns null and the edge drops silently.
-    // Prefer candidates whose `scope[last]` matches the caller's
-    // enclosing class — bare calls inside `Agents::PhantomJsCloudAgent`
-    // should bind to that class's `user_agent` override, not be lost.
-    // Mirrors the Java scope-filtered fallback (java-resolver.ts:50-54).
-    // Ancestor-class preference is intentionally NOT applied here
-    // (out-of-scope follow-up brp1) — only the direct enclosing class.
+    // Walk the caller's MRO nearest-first — the enclosing class followed by
+    // its `classAncestors` chain in declaration order — and prefer the unique
+    // candidate at the closest level. The first iteration subsumes the old
+    // direct-enclosing case (t5iw); subsequent iterations bind inherited
+    // methods on a superclass / mixin (brp1: an ambiguous bare call whose true
+    // target is an INHERITED method was previously dropped). Mirrors the Java
+    // scope-filtered fallback (java-resolver.ts:50-54), generalized to the MRO.
     if (fallback.length > 1 && ctx.callerScope.length > 0) {
-      const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-      const sameClass = fallback.filter((def) => def.scope[def.scope.length - 1] === enclosing);
-      if (sameClass.length === 1) {
-        return resolved({ targetRelPath: sameClass[0].relPath, targetSymbolId: sameClass[0].symbolId });
+      const enclosing = ctx.callerScope.join("::");
+      const mro = [enclosing, ...collectAncestorChain(enclosing, ctx)];
+      for (const klass of mro) {
+        const short = klass.split("::").pop();
+        const atLevel = fallback.filter((def) => def.scope[def.scope.length - 1] === short);
+        if (atLevel.length === 1) {
+          return resolved({ targetRelPath: atLevel[0].relPath, targetSymbolId: atLevel[0].symbolId });
+        }
+        // Genuinely ambiguous within one class — do NOT guess; fall through to
+        // pickSingleCandidate (which CONTINUEs in strict mode).
+        if (atLevel.length > 1) break;
       }
     }
     const target = pickSingleCandidate(fallback, this.cfg.mode);

@@ -39,8 +39,8 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
-import { ECMASCRIPT_GLOBALS } from "../../kernel/ecmascript-globals.js";
 import { resolveViaChain } from "../../resolver-chain.js";
+import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
 import {
   collectImportedFiles,
   TSFieldTypeSymbolResolutionStrategy,
