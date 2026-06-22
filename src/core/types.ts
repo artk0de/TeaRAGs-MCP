@@ -174,6 +174,15 @@ export interface CodegraphResolveSummary {
    * language survives the filter (the aggregate already says it).
    */
   byLanguage?: CodegraphResolveLanguageRow[];
+  /**
+   * tea-rags-mcp-7m5xz — per-receiver-kind breakdown of the resolve tally so
+   * cai0 phases can rank which receiver-kind bucket is the largest unresolved
+   * gap. Set at the TOP level only in the single-language case (when
+   * {@link byLanguage} is suppressed); in the multi-language case the
+   * per-kind rows are nested under each {@link CodegraphResolveLanguageRow}
+   * instead (precise lang×kind), and this stays absent.
+   */
+  byReceiverKind?: CodegraphResolveKindRow[];
 }
 
 /**
@@ -187,6 +196,26 @@ export interface CodegraphResolveLanguageRow {
   callsAttempted: number;
   callsResolved: number;
   callsExternalSkipped: number;
+  /**
+   * tea-rags-mcp-7m5xz — per-receiver-kind breakdown scoped to this language's
+   * call-sites. Present only in the multi-language case (precise lang×kind).
+   */
+  byReceiverKind?: CodegraphResolveKindRow[];
+}
+
+/**
+ * tea-rags-mcp-7m5xz — one per-receiver-kind slice of the resolve tally.
+ * `receiverKind` mirrors {@link ResolveRunStatsRow.receiverKind} (a plain
+ * string — the domain `ReceiverKind` enum is NOT imported across this
+ * boundary). `resolveSuccessRate` uses the same
+ * `resolved / max(1, attempted − externalSkipped)` formula as the aggregate.
+ */
+export interface CodegraphResolveKindRow {
+  receiverKind: string;
+  attempted: number;
+  resolved: number;
+  externalSkipped: number;
+  resolveSuccessRate: number;
 }
 
 export interface IndexStatus {

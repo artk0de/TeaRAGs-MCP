@@ -808,3 +808,101 @@ describe("formatPrime — tea-rags package section", () => {
     expect(out).not.toContain("## tea-rags package");
   });
 });
+
+describe("formatPrime — codegraph resolve (7m5xz)", () => {
+  function indexed(overrides: Partial<IndexStatus> = {}): IndexStatus {
+    return statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 1, ...overrides });
+  }
+
+  it("renders top-level byReceiverKind compactly, sorted by attempted desc", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexed({
+        codegraphResolve: {
+          resolveSuccessRate: 0.8,
+          callsAttempted: 230,
+          callsResolved: 185,
+          callsExternalSkipped: 0,
+          byReceiverKind: [
+            {
+              receiverKind: "selfMember",
+              attempted: 130,
+              resolved: 125,
+              externalSkipped: 0,
+              resolveSuccessRate: 125 / 130,
+            },
+            { receiverKind: "constant", attempted: 100, resolved: 60, externalSkipped: 0, resolveSuccessRate: 0.6 },
+          ],
+        },
+      }),
+      metrics: monolingualMetricsFixture(),
+      drift: null,
+      update: null,
+    });
+    expect(out).toContain("## Codegraph resolve");
+    expect(out).toContain("selfMember 0.96 125/130");
+    expect(out).toContain("constant 0.6 60/100");
+    expect(out.indexOf("selfMember")).toBeLessThan(out.indexOf("constant"));
+  });
+
+  it("renders byReceiverKind nested under each language in the multi-language case", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexed({
+        codegraphResolve: {
+          resolveSuccessRate: 0.7,
+          callsAttempted: 310,
+          callsResolved: 245,
+          callsExternalSkipped: 0,
+          byLanguage: [
+            {
+              language: "typescript",
+              resolveSuccessRate: 0.82,
+              callsAttempted: 230,
+              callsResolved: 185,
+              callsExternalSkipped: 0,
+              byReceiverKind: [
+                {
+                  receiverKind: "selfMember",
+                  attempted: 130,
+                  resolved: 125,
+                  externalSkipped: 0,
+                  resolveSuccessRate: 125 / 130,
+                },
+              ],
+            },
+            {
+              language: "ruby",
+              resolveSuccessRate: 0.75,
+              callsAttempted: 80,
+              callsResolved: 60,
+              callsExternalSkipped: 0,
+              byReceiverKind: [
+                { receiverKind: "constant", attempted: 80, resolved: 60, externalSkipped: 0, resolveSuccessRate: 0.75 },
+              ],
+            },
+          ],
+        },
+      }),
+      metrics: metricsFixture(),
+      drift: null,
+      update: null,
+    });
+    expect(out).toContain("## Codegraph resolve");
+    expect(out).toContain("typescript");
+    expect(out).toContain("selfMember 0.96 125/130");
+    expect(out).toContain("ruby");
+    expect(out).toContain("constant 0.75 60/80");
+  });
+
+  it("omits the Codegraph resolve section when codegraphResolve is absent", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexed(),
+      metrics: monolingualMetricsFixture(),
+      drift: null,
+      update: null,
+    });
+    expect(out).not.toContain("## Codegraph resolve");
+  });
+});

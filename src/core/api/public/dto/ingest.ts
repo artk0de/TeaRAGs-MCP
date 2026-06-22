@@ -5,7 +5,7 @@
  */
 
 import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
-import type { EnrichmentMetrics, IndexingStatus, ProgressUpdate } from "../../../types.js";
+import type { CodegraphResolveSummary, EnrichmentMetrics, IndexingStatus, ProgressUpdate } from "../../../types.js";
 import type { CollectionIdentifier } from "./common.js";
 
 // ---------------------------------------------------------------------------
@@ -108,6 +108,8 @@ export interface IndexStatus {
   enrichment?: EnrichmentHealthMap;
   /** BM25 sparse vector version (from schema metadata) */
   sparseVersion?: number;
+  /** Codegraph resolve-quality from the persisted cg_run_stats table (tea-rags-mcp-ykj7 / cnqrg / 7m5xz). */
+  codegraphResolve?: CodegraphResolveSummary;
   /** Infrastructure health status (Qdrant + embedding provider) */
   infraHealth?: {
     qdrant: {
