@@ -13,8 +13,9 @@
 
 import cliProgress from "cli-progress";
 
+import type { IndexStatus } from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
-import type { WorkerMessage } from "./ipc-protocol.js";
+import type { EnrichmentOutcome, WorkerMessage } from "./ipc-protocol.js";
 
 export interface ProgressRenderer {
   handle: (message: WorkerMessage) => void;
@@ -117,14 +118,70 @@ export class TtyProgressRenderer implements ProgressRenderer {
   }
 }
 
+/**
+ * JSON-mode renderer: bars are no-ops. Records the latest status, phase-done
+ * timings, done outcome, and error so the supervisor can emit one JSON object
+ * at finish. Forces NO_COLOR semantics — callers should pass a plain colorizer.
+ */
+export class JsonProgressRenderer implements ProgressRenderer {
+  private _latestStatus: IndexStatus | undefined;
+  private _phases: Record<string, number> = {};
+  private _outcome: EnrichmentOutcome | undefined;
+  private _error: string | undefined;
+
+  handle(message: WorkerMessage): void {
+    switch (message.type) {
+      case "status":
+        this._latestStatus = message.status;
+        break;
+      case "phase-done":
+        this._phases[message.phase] = message.elapsedMs;
+        break;
+      case "done":
+        this._outcome = message.result;
+        break;
+      case "error":
+        this._error = message.message;
+        break;
+      case "embedding":
+      case "enrichment":
+        // no-op in JSON mode — progress bars suppressed
+        break;
+    }
+  }
+
+  stop(): void {
+    // no persistent handle to release
+  }
+
+  get latestStatus(): IndexStatus | undefined {
+    return this._latestStatus;
+  }
+
+  get phases(): Record<string, number> {
+    return this._phases;
+  }
+
+  get outcome(): EnrichmentOutcome | undefined {
+    return this._outcome;
+  }
+
+  get error(): string | undefined {
+    return this._error;
+  }
+}
+
 export interface RendererOptions {
   isTTY: boolean;
   colors: Colorizer;
+  /** Set true to suppress all human-readable output and collect JSON state. */
+  json?: boolean;
   /** Sink for the non-TTY line renderer. Defaults to stderr. */
   sink?: (line: string) => void;
 }
 
 export function createRenderer(opts: RendererOptions): ProgressRenderer {
+  if (opts.json) return new JsonProgressRenderer();
   if (opts.isTTY) return new TtyProgressRenderer(opts.colors);
   const sink = opts.sink ?? ((line: string) => process.stderr.write(`${line}\n`));
   return new LineProgressRenderer(sink);

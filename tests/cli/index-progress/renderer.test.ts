@@ -4,6 +4,7 @@ import type { WorkerMessage } from "../../../src/cli/index-progress/ipc-protocol
 import {
   createRenderer,
   formatProgressLine,
+  JsonProgressRenderer,
   LineProgressRenderer,
   TtyProgressRenderer,
 } from "../../../src/cli/index-progress/renderer.js";
@@ -235,6 +236,67 @@ describe("createRenderer", () => {
     r.handle({ type: "embedding", phase: "embedding", percentage: 75, current: 75, total: 100 });
     expect(written).toHaveLength(1);
     expect(written[0]).toContain("75%");
+  });
+
+  it("returns a JsonProgressRenderer when json is true", () => {
+    const r = createRenderer({ isTTY: true, colors, json: true });
+    expect(r).toBeInstanceOf(JsonProgressRenderer);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JsonProgressRenderer — no-op bars, state collection for JSON mode
+// ---------------------------------------------------------------------------
+describe("JsonProgressRenderer", () => {
+  it("records the latest status from status messages", () => {
+    const r = new JsonProgressRenderer();
+    r.handle({ type: "status", status: { isIndexed: true, status: "indexed" } });
+    expect(r.latestStatus?.status).toBe("indexed");
+  });
+
+  it("records phase-done timings", () => {
+    const r = new JsonProgressRenderer();
+    r.handle({ type: "phase-done", phase: "embedding", elapsedMs: 1500 });
+    expect(r.phases["embedding"]).toBe(1500);
+  });
+
+  it("records done outcome", () => {
+    const r = new JsonProgressRenderer();
+    r.handle({ type: "done", result: { failed: ["git"], degraded: [] } });
+    expect(r.outcome?.failed).toEqual(["git"]);
+  });
+
+  it("records error message", () => {
+    const r = new JsonProgressRenderer();
+    r.handle({ type: "error", message: "something went wrong" });
+    expect(r.error).toBe("something went wrong");
+  });
+
+  it("ignores embedding and enrichment progress messages (no-op bars)", () => {
+    const r = new JsonProgressRenderer();
+    r.handle({ type: "embedding", phase: "embedding", percentage: 50, current: 50, total: 100 });
+    r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 5, total: 20 });
+    expect(r.latestStatus).toBeUndefined();
+    expect(r.outcome).toBeUndefined();
+  });
+
+  it("stop() is a no-op", () => {
+    const r = new JsonProgressRenderer();
+    expect(() => {
+      r.stop();
+    }).not.toThrow();
+  });
+});
+
+describe("createRenderer — original tests continued", () => {
+  const colors = createColorizer({ env: {}, isTTY: false });
+
+  beforeEach(() => {
+    mockMultibar.create.mockClear();
+    mockMultibar.stop.mockClear();
+    mockSingleBar.update.mockClear();
+    mockSingleBar.setTotal.mockClear();
+    mockMultibar.create.mockReturnValue(mockSingleBar);
   });
 
   it("uses process.stderr as the default sink when no sink is provided (non-TTY)", () => {

@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 
 import type { WorkerMessage } from "../../../src/cli/index-progress/ipc-protocol.js";
+import { JsonProgressRenderer } from "../../../src/cli/index-progress/renderer.js";
 import { superviseIndexing } from "../../../src/cli/index-progress/supervisor.js";
 import { createColorizer } from "../../../src/cli/infra/color.js";
 
@@ -315,5 +316,33 @@ describe("superviseIndexing — child exit event", () => {
     expect(code).toBe(0);
     // stop must have been called exactly once (from the first settle)
     expect(renderer.stop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("superviseIndexing — JSON mode", () => {
+  it("emits one JSON object and suppresses the human total line when JsonProgressRenderer is used", async () => {
+    const child = fakeChild();
+    const renderer = new JsonProgressRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child as never, {
+      renderer,
+      waitEnrichments: false,
+      colors: plain,
+      out: (s) => out.push(s),
+      projectName: "tea-rags",
+      path: "/repo",
+    });
+
+    child.emit("message", statusMsg);
+    const code = await p;
+
+    expect(code).toBe(0);
+    // Should have emitted exactly one line: the JSON object
+    expect(out).toHaveLength(1);
+    const parsed = JSON.parse(out[0] ?? "") as Record<string, unknown>;
+    expect(parsed.projectName).toBe("tea-rags");
+    expect(parsed.status).toBe("indexed");
+    // No "total Nms" human line in JSON mode
+    expect(out.join("\n")).not.toContain("total");
   });
 });

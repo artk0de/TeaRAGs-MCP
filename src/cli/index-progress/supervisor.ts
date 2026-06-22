@@ -17,8 +17,8 @@ import type { IndexStatus } from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
 import { isWorkerMessage, type EnrichmentOutcome } from "./ipc-protocol.js";
 import { OverallTimer, PhaseProgressTracker } from "./phase-tracker.js";
-import type { ProgressRenderer } from "./renderer.js";
-import { formatIndexStatus } from "./status-format.js";
+import { JsonProgressRenderer, type ProgressRenderer } from "./renderer.js";
+import { formatIndexStatus, formatIndexStatusJson } from "./status-format.js";
 
 /** Format a duration in ms: sub-second → "Nms", otherwise "N.Ns". */
 function fmtDuration(ms: number): string {
@@ -40,6 +40,10 @@ export interface SuperviseOptions {
   out: (line: string) => void;
   /** Injectable clock for the ETA tracker (ms). Defaults to a monotonic counter base. */
   now?: () => number;
+  /** Registered project alias, threaded into the human and JSON status blocks. */
+  projectName?: string;
+  /** Resolved absolute path being indexed, threaded into the JSON status block. */
+  path?: string;
 }
 
 export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOptions): Promise<number> {
@@ -48,6 +52,7 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
   const eta = new PhaseProgressTracker(now());
   const overall = new OverallTimer(now());
   let latestStatus: IndexStatus | undefined;
+  const jsonRenderer = renderer instanceof JsonProgressRenderer ? renderer : null;
 
   return new Promise<number>((resolve) => {
     let settled = false;
@@ -57,12 +62,26 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
       overall.stop(now());
       renderer.stop();
       printAfterStop?.();
-      out(colors.bold(`total ${fmtDuration(overall.elapsedMs())}`));
+      if (!jsonRenderer) {
+        out(colors.bold(`total ${fmtDuration(overall.elapsedMs())}`));
+      }
       resolve(code);
     };
 
     const printStatus = (): void => {
-      if (latestStatus) out(formatIndexStatus(latestStatus, colors));
+      if (!latestStatus) return;
+      if (jsonRenderer) {
+        const o = formatIndexStatusJson(latestStatus, {
+          projectName: opts.projectName,
+          path: opts.path ?? "",
+          phases: jsonRenderer.phases,
+          overallMs: overall.elapsedMs(),
+          outcome: jsonRenderer.outcome,
+        });
+        out(JSON.stringify(o, null, 2));
+      } else {
+        out(formatIndexStatus(latestStatus, colors, { projectName: opts.projectName, path: opts.path }));
+      }
     };
 
     const printEta = (): void => {
@@ -99,7 +118,7 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
             child.disconnect?.();
             finish(0, () => {
               printStatus();
-              printEta();
+              if (!jsonRenderer) printEta();
             });
           }
           break;

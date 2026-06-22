@@ -1,7 +1,16 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WorkerMessage } from "../../../src/cli/index-progress/ipc-protocol.js";
-import { deriveEnrichmentOutcome, runIndexWorker } from "../../../src/cli/index-progress/worker.js";
+import {
+  computeDirSize,
+  deriveEnrichmentOutcome,
+  resolveIndexSizeBytes,
+  runIndexWorker,
+} from "../../../src/cli/index-progress/worker.js";
 import type { IndexStatus } from "../../../src/core/api/public/index.js";
 
 // Bootstrap is dynamically imported inside main(); mock it so the worker entry
@@ -30,6 +39,80 @@ const healthy: IndexStatus = {
   status: "indexed",
   enrichment: { git: { file: { status: "healthy" }, chunk: { status: "healthy" } } },
 };
+
+describe("computeDirSize", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "worker-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns 0 for a non-existent directory", () => {
+    expect(computeDirSize("/definitely/does/not/exist/abc123")).toBe(0);
+  });
+
+  it("sums file sizes in a flat directory", () => {
+    writeFileSync(join(tmpDir, "a.bin"), Buffer.alloc(100));
+    writeFileSync(join(tmpDir, "b.bin"), Buffer.alloc(200));
+    expect(computeDirSize(tmpDir)).toBe(300);
+  });
+
+  it("recurses into subdirectories", () => {
+    const sub = join(tmpDir, "sub");
+    mkdirSync(sub);
+    writeFileSync(join(tmpDir, "top.bin"), Buffer.alloc(50));
+    writeFileSync(join(sub, "nested.bin"), Buffer.alloc(150));
+    expect(computeDirSize(tmpDir)).toBe(200);
+  });
+});
+
+describe("resolveIndexSizeBytes", () => {
+  const originalQdrantUrl = process.env.QDRANT_URL;
+  const originalStoragePath = process.env.QDRANT_EMBEDDED_STORAGE_PATH;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "worker-resolve-test-"));
+  });
+
+  afterEach(() => {
+    if (originalQdrantUrl !== undefined) process.env.QDRANT_URL = originalQdrantUrl;
+    else delete process.env.QDRANT_URL;
+    if (originalStoragePath !== undefined) process.env.QDRANT_EMBEDDED_STORAGE_PATH = originalStoragePath;
+    else delete process.env.QDRANT_EMBEDDED_STORAGE_PATH;
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns undefined when QDRANT_URL is set (remote Qdrant)", () => {
+    process.env.QDRANT_URL = "http://remote:6333";
+    expect(resolveIndexSizeBytes("my_collection")).toBeUndefined();
+  });
+
+  it("returns undefined when collectionName is undefined", () => {
+    delete process.env.QDRANT_URL;
+    expect(resolveIndexSizeBytes(undefined)).toBeUndefined();
+  });
+
+  it("returns undefined when the collection directory does not exist", () => {
+    delete process.env.QDRANT_URL;
+    process.env.QDRANT_EMBEDDED_STORAGE_PATH = join(tmpDir, "no-qdrant");
+    expect(resolveIndexSizeBytes("code_abc")).toBeUndefined();
+  });
+
+  it("returns the directory byte size when the collection dir exists", () => {
+    delete process.env.QDRANT_URL;
+    process.env.QDRANT_EMBEDDED_STORAGE_PATH = tmpDir;
+    const collectionDir = join(tmpDir, "collections", "code_test");
+    mkdirSync(collectionDir, { recursive: true });
+    writeFileSync(join(collectionDir, "segment.bin"), Buffer.alloc(512));
+    const result = resolveIndexSizeBytes("code_test");
+    expect(result).toBe(512);
+  });
+});
 
 describe("deriveEnrichmentOutcome", () => {
   it("reports a provider with a failed level as failed", () => {

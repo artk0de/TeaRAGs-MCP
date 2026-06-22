@@ -10,6 +10,10 @@
  * bootstrap entry the forked process executes.
  */
 
+import { readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import type { App, IndexOptions, IndexStatus } from "../../core/api/public/index.js";
 import type { EnrichmentOutcome, WorkerMessage } from "./ipc-protocol.js";
 
@@ -18,6 +22,51 @@ export interface IndexWorkerApp {
   indexCodebase: App["indexCodebase"];
   getIndexStatus: App["getIndexStatus"];
   whenEnrichmentComplete: App["whenEnrichmentComplete"];
+}
+
+/**
+ * Recursively compute the total byte size of a directory.
+ * Returns 0 on any I/O error (non-existent path, permission denied).
+ * Used to populate `indexSizeBytes` for embedded Qdrant collections only.
+ */
+export function computeDirSize(dirPath: string): number {
+  try {
+    let total = 0;
+    for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+      const full = join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        total += computeDirSize(full);
+      } else if (entry.isFile() || entry.isSymbolicLink()) {
+        try {
+          total += statSync(full).size;
+        } catch {
+          // skip unreadable file
+        }
+      }
+    }
+    return total;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Resolve the on-disk size of an embedded Qdrant collection directory.
+ * Returns undefined when QDRANT_URL is set (remote Qdrant — no local dir to read)
+ * or when the collection directory does not exist yet.
+ */
+export function resolveIndexSizeBytes(collectionName: string | undefined): number | undefined {
+  // Remote Qdrant: no local dir available.
+  if (process.env.QDRANT_URL) return undefined;
+  if (!collectionName) return undefined;
+
+  const storagePath = process.env.QDRANT_EMBEDDED_STORAGE_PATH
+    ? process.env.QDRANT_EMBEDDED_STORAGE_PATH
+    : join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "qdrant");
+
+  const collectionDir = join(storagePath, "collections", collectionName);
+  const size = computeDirSize(collectionDir);
+  return size > 0 ? size : undefined;
 }
 
 /** Classify per-provider enrichment health into failed / degraded provider keys. */
@@ -45,7 +94,7 @@ export async function runIndexWorker(
   now: () => number = Date.now,
 ): Promise<EnrichmentOutcome> {
   const embeddingStart = now();
-  await app.indexCodebase(
+  const indexStats = await app.indexCodebase(
     path,
     options,
     (p) => {
@@ -66,7 +115,16 @@ export async function runIndexWorker(
 
   // Index is searchable now (alias switched) — report status before blocking on
   // enrichment, so the supervisor's default mode can print it and detach.
-  send({ type: "status", status: await app.getIndexStatus(path) });
+  const earlyStatus = await app.getIndexStatus(path);
+  const earlyIndexSizeBytes = resolveIndexSizeBytes(earlyStatus.collectionName);
+  send({
+    type: "status",
+    status: {
+      ...earlyStatus,
+      enrichmentMetrics: indexStats.enrichmentMetrics,
+      ...(earlyIndexSizeBytes !== undefined ? { indexSizeBytes: earlyIndexSizeBytes } : {}),
+    },
+  });
 
   // Keep this (possibly detached) process alive until enrichment finishes.
   const enrichmentStart = now();
@@ -74,8 +132,14 @@ export async function runIndexWorker(
   send({ type: "phase-done", phase: "enrichment", elapsedMs: now() - enrichmentStart });
 
   const finalStatus = await app.getIndexStatus(path);
-  send({ type: "status", status: finalStatus });
-  const outcome = deriveEnrichmentOutcome(finalStatus);
+  const finalIndexSizeBytes = resolveIndexSizeBytes(finalStatus.collectionName);
+  const enrichedFinalStatus: IndexStatus = {
+    ...finalStatus,
+    enrichmentMetrics: indexStats.enrichmentMetrics,
+    ...(finalIndexSizeBytes !== undefined ? { indexSizeBytes: finalIndexSizeBytes } : {}),
+  };
+  send({ type: "status", status: enrichedFinalStatus });
+  const outcome = deriveEnrichmentOutcome(enrichedFinalStatus);
   send({ type: "done", result: outcome });
   return outcome;
 }
