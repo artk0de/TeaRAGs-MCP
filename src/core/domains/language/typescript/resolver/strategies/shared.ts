@@ -13,7 +13,18 @@ import { mapImportToFile, type TsCompilerOptions } from "../ts-path-mapper.js";
 export interface ResolverConfig {
   tsOptions: TsCompilerOptions;
   mode: AmbiguousResolveMode;
+  /**
+   * Max cone size before CHA devirtualization collapses to a single
+   * `poly-base` edge (bd tea-rags-mcp-k4wpn). `|cone| ≤ coneMax` persists N
+   * `cone` edges (confidence `1/N`); `> coneMax` persists one base-decl edge
+   * expanded at query time. Defaults to `CONE_MAX_DEFAULT` (8) when omitted;
+   * env `CODEGRAPH_TS_CONE_MAX` overrides at composition.
+   */
+  coneMax?: number;
 }
+
+/** Default cone-size threshold; env `CODEGRAPH_TS_CONE_MAX` overrides at composition. */
+export const CONE_MAX_DEFAULT = 8;
 
 /**
  * The set of in-project files the caller imports, each mapped through the

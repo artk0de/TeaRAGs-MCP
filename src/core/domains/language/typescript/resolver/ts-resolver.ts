@@ -39,10 +39,13 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import { ConeDispatchResolver } from "../../cone-dispatch.js";
 import { resolveViaChain } from "../../resolver-chain.js";
 import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
 import {
   collectImportedFiles,
+  CONE_MAX_DEFAULT,
+  TSConeTypeLocator,
   TSFieldTypeSymbolResolutionStrategy,
   TSGlobalShortNameSymbolResolutionStrategy,
   TSImportBasenameSymbolResolutionStrategy,
@@ -57,15 +60,23 @@ import {
 } from "./strategies/index.js";
 import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
 
+/** Parse `CODEGRAPH_TS_CONE_MAX`; fall back to the TS default on absent/invalid. */
+function resolveConeMax(raw: string | undefined): number {
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : CONE_MAX_DEFAULT;
+}
+
 export class TSCallResolver implements CallResolver {
   readonly language = "typescript";
   private readonly strategies: SymbolResolutionStrategy[];
+  private readonly cone: ConeDispatchResolver;
 
   constructor(
     private readonly tsOptions: TsCompilerOptions,
     private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   ) {
-    const cfg: ResolverConfig = { tsOptions, mode };
+    const cfg: ResolverConfig = { tsOptions, mode, coneMax: resolveConeMax(process.env.CODEGRAPH_TS_CONE_MAX) };
+    this.cone = new ConeDispatchResolver(new TSConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
     this.strategies = [
       new TSSuperSymbolResolutionStrategy(cfg),
       new TSThisMemberSymbolResolutionStrategy(cfg),
@@ -125,6 +136,14 @@ export class TSCallResolver implements CallResolver {
    *
    * Unresolvable tables / candidate names are dropped (never fabricated).
    * The provider calls `resolve` separately for the normal callee edge.
+   *
+   * After the lookup-table fan-out, the CHA cone (bd tea-rags-mcp-k4wpn) runs:
+   * an interface / class-typed receiver whose static type has subtypes
+   * overriding the member fans out to N `cone` edges (or one `poly-base` edge
+   * above the cone cap). The cone returns `[]` for every non-polymorphic call —
+   * an `external` / unbound receiver carries no `localBinding`, so `T` is
+   * undefined (external never cones). The lookup-table path takes precedence so
+   * the existing dispatch-table behaviour is unchanged.
    */
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
     const edges: DispatchEdge[] = [];
@@ -154,6 +173,9 @@ export class TSCallResolver implements CallResolver {
         }
       }
     }
+    if (edges.length > 0) return edges;
+    const cone = this.cone.resolveDispatch(call, ctx);
+    if (cone.length > 0) return cone;
     return edges;
   }
 
