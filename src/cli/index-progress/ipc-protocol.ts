@@ -8,7 +8,7 @@
 import type { EnrichmentProgressEvent, IndexStatus } from "../../core/api/public/index.js";
 
 export type WorkerMessage =
-  | { type: "embedding"; phase: string; percentage: number; current: number; total: number }
+  | { type: "embedding"; phase: string; percentage: number; current: number; total: number; throughput?: number }
   | ({ type: "enrichment" } & EnrichmentProgressEvent)
   | { type: "status"; status: IndexStatus }
   | { type: "done"; result: EnrichmentOutcome }

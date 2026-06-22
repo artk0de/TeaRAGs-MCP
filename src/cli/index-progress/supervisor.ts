@@ -51,12 +51,13 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
 
   return new Promise<number>((resolve) => {
     let settled = false;
-    const finish = (code: number): void => {
+    const finish = (code: number, printAfterStop?: () => void): void => {
       if (settled) return;
       settled = true;
       overall.stop(now());
-      out(colors.bold(`total ${fmtDuration(overall.elapsedMs())}`));
       renderer.stop();
+      printAfterStop?.();
+      out(colors.bold(`total ${fmtDuration(overall.elapsedMs())}`));
       resolve(code);
     };
 
@@ -94,21 +95,24 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
         case "status":
           latestStatus = raw.status;
           if (!waitEnrichments) {
-            // Index is searchable — print status + ETA, detach, return control.
-            printStatus();
-            printEta();
+            // Index is searchable — stop bars first, then print status + ETA.
             child.disconnect?.();
-            finish(0);
+            finish(0, () => {
+              printStatus();
+              printEta();
+            });
           }
           break;
         case "done":
-          printStatus();
-          printOutcome(raw.result);
-          finish(raw.result.failed.length > 0 ? 1 : 0);
+          finish(raw.result.failed.length > 0 ? 1 : 0, () => {
+            printStatus();
+            printOutcome(raw.result);
+          });
           break;
         case "error":
-          out(colors.alert(`error: ${raw.message}`));
-          finish(1);
+          finish(1, () => {
+            out(colors.alert(`error: ${raw.message}`));
+          });
           break;
       }
     });

@@ -49,7 +49,14 @@ export async function runIndexWorker(
     path,
     options,
     (p) => {
-      send({ type: "embedding", phase: p.phase, percentage: p.percentage, current: p.current, total: p.total });
+      send({
+        type: "embedding",
+        phase: p.phase,
+        percentage: p.percentage,
+        current: p.current,
+        total: p.total,
+        throughput: p.throughput,
+      });
     },
     (e) => {
       send({ type: "enrichment", providerKey: e.providerKey, level: e.level, applied: e.applied, total: e.total });

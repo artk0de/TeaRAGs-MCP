@@ -52,6 +52,34 @@ describe("formatProgressLine", () => {
     expect(line).toContain("20");
   });
 
+  it("renders fixed-width label before the counts", () => {
+    expect(
+      formatProgressLine({ type: "enrichment", providerKey: "git", level: "file", applied: 120, total: 120 }),
+    ).toBe("git file              120/120 (100%)");
+  });
+
+  it("renders embedding with chunk/sec rate when throughput present", () => {
+    const line = formatProgressLine({
+      type: "embedding",
+      phase: "embedding",
+      percentage: 80,
+      current: 80,
+      total: 100,
+      throughput: 42.5,
+    });
+    expect(line).toContain("42.5 ch/s");
+  });
+
+  it("renders embedding without rate segment when throughput absent", () => {
+    const line = formatProgressLine({ type: "embedding", phase: "embedding", percentage: 80, current: 80, total: 100 });
+    expect(line).not.toContain("ch/s");
+  });
+
+  it("guards percentage when total is zero", () => {
+    const line = formatProgressLine({ type: "enrichment", providerKey: "git", level: "file", applied: 0, total: 0 });
+    expect(line).toContain("0%");
+  });
+
   it("formats an error message", () => {
     expect(formatProgressLine({ type: "error", message: "boom" })).toContain("boom");
   });
@@ -139,9 +167,16 @@ describe("TtyProgressRenderer", () => {
     const r = new TtyProgressRenderer(colors);
     r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 5, total: 20 });
 
-    expect(mockMultibar.create).toHaveBeenCalledWith(20, 0, expect.objectContaining({ label: "git file" }));
+    expect(mockMultibar.create).toHaveBeenCalledWith(
+      20,
+      0,
+      expect.objectContaining({ label: expect.stringContaining("git file") }),
+    );
     expect(mockSingleBar.setTotal).toHaveBeenCalledWith(20);
-    expect(mockSingleBar.update).toHaveBeenCalledWith(5, expect.objectContaining({ label: "git file" }));
+    expect(mockSingleBar.update).toHaveBeenCalledWith(
+      5,
+      expect.objectContaining({ label: expect.stringContaining("git file") }),
+    );
   });
 
   it("reuses the enrichment bar for the same provider+level on subsequent messages", () => {

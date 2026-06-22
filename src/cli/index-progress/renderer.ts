@@ -21,13 +21,26 @@ export interface ProgressRenderer {
   stop: () => void;
 }
 
+/** Fixed label column width for aligned output (label padded to this width). */
+const LABEL_WIDTH = 22;
+
 /** Pure: render a progress message as one log line, or null when it is not a progress line. */
 export function formatProgressLine(message: WorkerMessage): string | null {
   switch (message.type) {
-    case "embedding":
-      return `embedding ${message.percentage}% (${message.current}/${message.total})`;
-    case "enrichment":
-      return `${message.providerKey} ${message.level} ${message.applied}/${message.total}`;
+    case "embedding": {
+      const label = "embedding".padEnd(LABEL_WIDTH);
+      const pct = message.total > 0 ? Math.round((message.current / message.total) * 100) : 0;
+      const base = `${label}${message.current}/${message.total} (${pct}%)`;
+      return message.throughput !== null && message.throughput !== undefined
+        ? `${base} (${message.throughput.toFixed(1)} ch/s)`
+        : base;
+    }
+    case "enrichment": {
+      const rawLabel = `${message.providerKey} ${message.level}`;
+      const label = rawLabel.padEnd(LABEL_WIDTH);
+      const pct = message.total > 0 ? Math.round((message.applied / message.total) * 100) : 0;
+      return `${label}${message.applied}/${message.total} (${pct}%)`;
+    }
     case "error":
       return `error: ${message.message}`;
     case "status":
@@ -66,7 +79,7 @@ export class TtyProgressRenderer implements ProgressRenderer {
       {
         clearOnComplete: false,
         hideCursor: true,
-        format: " {bar} {label} {value}/{total} ({percentage}%)",
+        format: " {label} {bar} {value}/{total} ({percentage}%) {eta_formatted} {rate}",
         stream: process.stderr,
       },
       cliProgress.Presets.shades_classic,
@@ -75,22 +88,27 @@ export class TtyProgressRenderer implements ProgressRenderer {
 
   handle(message: WorkerMessage): void {
     if (message.type === "embedding") {
+      const label = this.colors.brand("embeddings".padEnd(LABEL_WIDTH));
+      const rate =
+        message.throughput !== null && message.throughput !== undefined ? `${message.throughput.toFixed(1)} ch/s` : "";
       if (!this.embeddingBar) {
-        this.embeddingBar = this.multibar.create(message.total, 0, { label: this.colors.brand("embeddings") });
+        this.embeddingBar = this.multibar.create(message.total, 0, { label, rate });
       }
-      this.embeddingBar.update(message.current, { label: this.colors.brand("embeddings") });
+      this.embeddingBar.update(message.current, { label, rate });
       this.embeddingBar.setTotal(message.total);
       return;
     }
     if (message.type === "enrichment") {
       const key = `${message.providerKey}:${message.level}`;
+      const rawLabel = `${message.providerKey} ${message.level}`;
+      const label = this.colors.brand(rawLabel.padEnd(LABEL_WIDTH));
       let bar = this.enrichmentBars.get(key);
       if (!bar) {
-        bar = this.multibar.create(message.total, 0, { label: `${message.providerKey} ${message.level}` });
+        bar = this.multibar.create(message.total, 0, { label, rate: "" });
         this.enrichmentBars.set(key, bar);
       }
       bar.setTotal(message.total);
-      bar.update(message.applied, { label: `${message.providerKey} ${message.level}` });
+      bar.update(message.applied, { label, rate: "" });
     }
   }
 

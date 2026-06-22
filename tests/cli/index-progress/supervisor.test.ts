@@ -44,6 +44,33 @@ describe("superviseIndexing — default mode (no wait)", () => {
     expect(child.disconnect).toHaveBeenCalled();
   });
 
+  it("calls renderer.stop before writing to the out sink (no interleave)", async () => {
+    const child = fakeChild();
+    const callOrder: string[] = [];
+    const renderer = {
+      handle: vi.fn(),
+      stop: vi.fn(() => {
+        callOrder.push("stop");
+      }),
+    };
+    const p = superviseIndexing(child as never, {
+      renderer,
+      waitEnrichments: false,
+      colors: plain,
+      out: (s) => {
+        callOrder.push(`out:${s}`);
+      },
+    });
+
+    child.emit("message", statusMsg);
+    await p;
+
+    const stopIdx = callOrder.indexOf("stop");
+    const firstOutIdx = callOrder.findIndex((e) => e.startsWith("out:"));
+    expect(stopIdx).toBeGreaterThanOrEqual(0);
+    expect(firstOutIdx).toBeGreaterThan(stopIdx);
+  });
+
   it("forwards progress messages to the renderer", async () => {
     const child = fakeChild();
     const renderer = fakeRenderer();
