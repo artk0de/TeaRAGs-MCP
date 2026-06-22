@@ -1360,6 +1360,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   beginExtractionRun = (collectionName?: string): void => {
     const key = this.collectionKey(collectionName);
+    // bd tea-rags-mcp-svhqp — this is a run-START seam that bypasses
+    // `ensureRunSink` (the cross-pass main thread feeds the input spill, the
+    // sink is created later by the worker's `drainInputSpill`). On the
+    // long-lived daemon the provider instance is cached and reused, so unless
+    // EVERY run-start path zeroes the per-run resolve tally + run-global maps,
+    // a prior run whose `getRunMetrics` (read-and-clear) never fired leaks its
+    // counts into this run's `recordRunStats` → `resolveSuccessRate` jitters
+    // run-to-run. Make this the authoritative zero-seam for the cross-pass
+    // entry, mirroring `ensureRunSink` for the streaming entry.
+    this.runStats = createEmptyRunStats();
+    this.clearRunState(key);
     this.xpassWritten.set(key, new Set());
     const spillPath = this.inputSpillPath(collectionName);
     try {
@@ -1406,22 +1417,33 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       input: createReadStream(spillPath, { encoding: "utf8" }),
       crlfDelay: Number.POSITIVE_INFINITY,
     });
+    // bd tea-rags-mcp-yl9tv — the input spill is appended in file-COMPLETION
+    // order under `fileConcurrency`, which is non-deterministic run-to-run.
+    // Buffer every line, then SORT by relPath before resolving so the drain
+    // order — and therefore every order-dependent run-global merge
+    // (runAncestors / runReturnTypes / runDispatchTables, all last-write-wins)
+    // plus the resolve tally — is reproducible regardless of the order the
+    // chunk pass happened to spill files in. The spill is one line per file
+    // (deduped at acceptExtraction), so the buffer is bounded by file count.
+    const extractions: FileExtraction[] = [];
     try {
       for await (const line of reader) {
         if (!line) continue;
-        let extraction: FileExtraction;
         try {
-          extraction = JSON.parse(line) as FileExtraction;
+          extractions.push(JSON.parse(line) as FileExtraction);
         } catch {
           continue; // skip a corrupt line rather than abort the whole drain
         }
-        if (extracted.has(extraction.relPath)) continue;
-        await sink.write(extraction);
-        extracted.add(extraction.relPath);
       }
     } finally {
       reader.close();
       rmSync(spillPath, { force: true });
+    }
+    extractions.sort((a, b) => (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0));
+    for (const extraction of extractions) {
+      if (extracted.has(extraction.relPath)) continue;
+      await sink.write(extraction);
+      extracted.add(extraction.relPath);
     }
   }
 
