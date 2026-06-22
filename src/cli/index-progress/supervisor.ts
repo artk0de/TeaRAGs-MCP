@@ -15,8 +15,8 @@
 
 import type { IndexStatus } from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
-import { EnrichmentEtaTracker } from "./eta.js";
 import { isWorkerMessage, type EnrichmentOutcome } from "./ipc-protocol.js";
+import { PhaseProgressTracker } from "./phase-tracker.js";
 import type { ProgressRenderer } from "./renderer.js";
 import { formatIndexStatus } from "./status-format.js";
 
@@ -39,7 +39,7 @@ export interface SuperviseOptions {
 export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOptions): Promise<number> {
   const { renderer, waitEnrichments, colors, out } = opts;
   const now = opts.now ?? (() => 0);
-  const eta = new EnrichmentEtaTracker(now());
+  const eta = new PhaseProgressTracker(now());
   let latestStatus: IndexStatus | undefined;
 
   return new Promise<number>((resolve) => {
@@ -56,7 +56,7 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
     };
 
     const printEta = (): void => {
-      const seconds = eta.etaSeconds(now());
+      const seconds = eta.aggregateEtaSeconds(now());
       if (seconds === null) {
         out(colors.dim("enrichments: running in background…"));
       } else {
@@ -77,7 +77,7 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
           // Already forwarded to the renderer above; no supervisor-side state.
           break;
         case "enrichment":
-          eta.record(raw, now());
+          eta.record(`${raw.providerKey}:${raw.level}`, raw.applied, raw.total, now());
           break;
         case "status":
           latestStatus = raw.status;
