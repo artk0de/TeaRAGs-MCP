@@ -40,5 +40,8 @@ describe("ChunkerPool process determinism (size 4)", () => {
     } finally {
       await pool.shutdown();
     }
-  });
+    // Spawns 4 child processes and runs 24 concurrent parses — legitimately
+    // heavy. ~1.5s in isolation but exceeds the 5s default under full-suite
+    // parallel-fork CPU contention (flaky-timeout, not a determinism failure).
+  }, 30_000);
 });
