@@ -14,7 +14,16 @@
  */
 import type { CallRef, LocalBinding } from "../../../../contracts/types/codegraph.js";
 
-export type ReceiverKind = "constant" | "localVar" | "selfMember" | "super" | "bareCall" | "dynamic";
+export type ReceiverKind =
+  | "constant"
+  | "localVar"
+  | "selfMember"
+  | "super"
+  | "bareCall"
+  | "ivar"
+  | "chain"
+  | "index"
+  | "dynamic";
 
 export const RECEIVER_KINDS: readonly ReceiverKind[] = [
   "constant",
@@ -22,6 +31,9 @@ export const RECEIVER_KINDS: readonly ReceiverKind[] = [
   "selfMember",
   "super",
   "bareCall",
+  "ivar",
+  "chain",
+  "index",
   "dynamic",
 ] as const;
 
@@ -32,7 +44,21 @@ const CONST_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
  * Classify the receiver idiom of a call. `localBindings` maps in-scope variable
  * names to their inferred type (the chunk's `localBindings`); a receiver present
  * there is a typed local. Precedence: bare → super → self → typed-local →
- * constant → dynamic (unbound non-constant receiver: arr.map, obj[k], chains).
+ * constant → (residual unbound non-constant receiver, sub-classified below).
+ *
+ * The residual bucket — what used to be a single `dynamic` lump — is split by
+ * heuristic source markers in the raw receiver text (`receiver.text`), with this
+ * precedence:
+ *   1. `[` present  → `index`   (element-reference receiver `obj[k]`)
+ *   2. `.` present  → `chain`   (method-chain receiver `a.b`, `@x.y`, safe-nav `a&.b`)
+ *   3. starts `@`   → `ivar`    (Ruby instance/class variable `@foo` / `@@foo`)
+ *   4. else         → `dynamic` (true-dynamic: unbound bare identifier / method result)
+ *
+ * Decomposition example: `@account.posts.first` — the OUTER call's receiver is
+ * `@account.posts` (has `.`) → `chain`; the INNER call's receiver is `@account`
+ * (no `.`/`[`, starts `@`) → `ivar` (the Rails-dense case). `@`/`[`/`.` are
+ * heuristic source markers — same spirit as the `SUPER_MARKERS` literals above:
+ * the classifier is an instrument, not a contract participant.
  */
 export function classifyReceiverKind(
   call: CallRef,
@@ -44,5 +70,8 @@ export function classifyReceiverKind(
   if (r === "self") return "selfMember";
   if (localBindings && Object.prototype.hasOwnProperty.call(localBindings, r)) return "localVar";
   if (CONST_RE.test(r)) return "constant";
+  if (r.includes("[")) return "index";
+  if (r.includes(".")) return "chain";
+  if (r.startsWith("@")) return "ivar";
   return "dynamic";
 }

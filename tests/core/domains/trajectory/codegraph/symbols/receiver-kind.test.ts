@@ -36,9 +36,33 @@ describe("classifyReceiverKind (bd j431)", () => {
     expect(classifyReceiverKind(call("user"), { user: "User" })).toBe("localVar");
   });
 
-  it("unbound lowercase receiver → dynamic", () => {
+  it("unbound bare identifier → dynamic (residual true-dynamic)", () => {
     expect(classifyReceiverKind(call("items"), {})).toBe("dynamic");
     expect(classifyReceiverKind(call("obj"), { other: "X" })).toBe("dynamic");
+  });
+
+  // bd tea-rags-mcp-7m5xz follow-up — split the former `dynamic` lump into
+  // ivar / chain / index sub-idioms by receiver source markers (@, ., [).
+  describe("dynamic sub-classification (ivar/chain/index)", () => {
+    it("instance/class variable receiver → ivar", () => {
+      expect(classifyReceiverKind(call("@foo"), {})).toBe("ivar");
+      expect(classifyReceiverKind(call("@@foo"), {})).toBe("ivar");
+    });
+
+    it("element-reference receiver → index (precedence over chain/ivar)", () => {
+      expect(classifyReceiverKind(call("obj[k]"), {})).toBe("index");
+      // `@foo[k]` has both `[` and `@` — `[` wins.
+      expect(classifyReceiverKind(call("@foo[k]"), {})).toBe("index");
+    });
+
+    it("method-chain receiver → chain (precedence over ivar)", () => {
+      expect(classifyReceiverKind(call("a.b"), {})).toBe("chain");
+      // `@x.y` has both `.` and `@` — `.` wins (decomposition: outer call's
+      // receiver `@x.y` is a chain; the inner `@x` is separately an ivar).
+      expect(classifyReceiverKind(call("@x.y"), {})).toBe("chain");
+      // safe navigation still carries a `.`
+      expect(classifyReceiverKind(call("a&.b"), {})).toBe("chain");
+    });
   });
 
   it("super sentinel wins over constant-shaped check", () => {
