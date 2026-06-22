@@ -23,10 +23,10 @@ import type {
   IndexRunDaemonGuard,
   IndexRunDaemonRelease,
 } from "../../../../contracts/types/enrichment-executor.js";
-import type { ChunkLookupEntry, EnrichmentMetrics } from "../../../../types.js";
+import type { ChunkLookupEntry, EnrichmentMetrics, EnrichmentProgressCallback } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
-import { EnrichmentApplier } from "./applier.js";
+import { EnrichmentApplier, type EnrichmentApplyEvent } from "./applier.js";
 import { EnrichmentBackfiller } from "./backfiller.js";
 import { ChunkPhase, type BlobReaderFactory } from "./chunk-phase.js";
 import { CompletionRunner } from "./completion-runner.js";
@@ -128,6 +128,18 @@ export class EnrichmentCoordinator {
    * contract is preserved: the first fire still awaits streaming work inside
    * ChunkPhase before invoking the callback.
    */
+  /**
+   * Per-run enrichment progress sink (CLI only). When set, every apply batch
+   * (via `applier.onApply`) accumulates a cumulative per-(provider, level)
+   * numerator and forwards an {@link EnrichmentProgressEvent}. Undefined on the
+   * MCP path — no emission, zero overhead. Set per run by `IndexingOps.run`.
+   */
+  private progressCb?: EnrichmentProgressCallback;
+  /** Denominator for progress events; set to the chunk count at chunk-phase start. */
+  private progressTotal = 0;
+  /** Cumulative applied point-ops per `${providerKey}:${level}` for the current run. */
+  private readonly progressApplied = new Map<string, number>();
+
   private _onChunkEnrichmentComplete?: (collectionName: string) => Promise<void>;
   get onChunkEnrichmentComplete(): ((collectionName: string) => Promise<void>) | undefined {
     return this._onChunkEnrichmentComplete;
@@ -245,15 +257,20 @@ export class EnrichmentCoordinator {
     runState.crossPass = crossPass;
     this.currentRun = runState;
 
-    // Wire the applier-site heartbeat: every apply batch (file, chunk, finalize,
-    // backfill) calls onApply → maybeHeartbeat. This covers ALL apply paths —
-    // streaming, post-flush enrichRemaining, deferred codegraph, recovery — from
-    // the single chokepoint. The coordinator owns the 30s throttle (DRY).
-    if (collectionName) {
-      runState.applier.onApply = () => {
-        this.maybeHeartbeat(collectionName, runState);
-      };
-    }
+    // Fresh per-run progress accumulator (numerator); denominator is set when the
+    // chunk phase starts. Progress sink itself (`progressCb`) persists across the
+    // run — set by IndexingOps before the first batch.
+    this.progressApplied.clear();
+    this.progressTotal = 0;
+
+    // Wire the applier-site chokepoint: every apply batch (file, chunk, finalize,
+    // backfill) calls onApply. This covers ALL apply paths — streaming, post-flush
+    // enrichRemaining, deferred codegraph, recovery — from one place. Two
+    // consumers: the throttled `_run` heartbeat and the per-run progress sink.
+    runState.applier.onApply = (event) => {
+      if (collectionName) this.maybeHeartbeat(collectionName, runState);
+      this.emitProgress(event);
+    };
 
     if (this._onChunkEnrichmentComplete) {
       runState.chunkPhase.setOnComplete(this._onChunkEnrichmentComplete);
@@ -380,7 +397,43 @@ export class EnrichmentCoordinator {
    */
   startChunkEnrichment(collectionName: string, absolutePath: string, chunkMap: Map<string, ChunkLookupEntry[]>): void {
     if (!this.currentRun) return;
+    // The full chunk set is known now — use it as the progress denominator. Each
+    // chunk receives ~one file stamp and one chunk overlay per provider, so
+    // cumulative applied per (provider, level) converges to this total.
+    if (this.progressCb) this.progressTotal = chunkMap.size;
     this.currentRun.chunkPhase.enrichRemaining(collectionName, absolutePath, chunkMap);
+  }
+
+  /**
+   * Register the per-run enrichment progress sink (CLI). Pass `undefined` to
+   * disable (MCP path). Must be called before the first batch is stored so the
+   * `onApply` wiring (set in `beginRun`) sees it. Idempotent per run.
+   */
+  setEnrichmentProgress(cb: EnrichmentProgressCallback | undefined): void {
+    this.progressCb = cb;
+  }
+
+  /**
+   * Resolve once the current run's background enrichment has settled. Reuses the
+   * single in-flight `awaitCompletion` (via the run's donePromise) — does NOT
+   * start a second completion pass. Resolves immediately when there is no active
+   * run or the run has no providers (donePromise is never resolved in that case).
+   * Never rejects: a failed enrichment is reported through the terminal markers,
+   * not by throwing here.
+   */
+  async whenComplete(): Promise<void> {
+    const run = this.currentRun;
+    if (!run || run.contexts.size === 0) return;
+    await run.donePromise.catch(() => undefined);
+  }
+
+  /** Accumulate an apply batch into the cumulative numerator and forward it. */
+  private emitProgress(event: EnrichmentApplyEvent): void {
+    if (!this.progressCb) return;
+    const key = `${event.providerKey}:${event.level}`;
+    const applied = (this.progressApplied.get(key) ?? 0) + event.applied;
+    this.progressApplied.set(key, applied);
+    this.progressCb({ providerKey: event.providerKey, level: event.level, applied, total: this.progressTotal });
   }
 
   /**

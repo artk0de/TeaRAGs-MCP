@@ -252,7 +252,8 @@ describe("createApp", () => {
       const progress = vi.fn();
       await app.indexCodebase("/foo", opts, progress);
 
-      expect(deps.ingest.indexCodebase).toHaveBeenCalledWith("/foo", opts, progress);
+      // App forwards the optional 4th enrichmentProgress arg (undefined here).
+      expect(deps.ingest.indexCodebase).toHaveBeenCalledWith("/foo", opts, progress, undefined);
     });
 
     it("delegates reindexChanges to IngestFacade", async () => {

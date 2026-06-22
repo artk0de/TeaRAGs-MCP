@@ -33,6 +33,8 @@ export type {
   IndexStatus,
   ChangeStats,
   ProgressCallback,
+  EnrichmentProgressCallback,
+  EnrichmentProgressEvent,
   // Collection DTOs
   CreateCollectionRequest,
   CollectionInfo,

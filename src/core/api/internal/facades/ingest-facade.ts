@@ -34,6 +34,7 @@ import type { CollectionRegistry } from "../../../infra/registry/collection-regi
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,
+  EnrichmentProgressCallback,
   IndexOptions,
   IndexStats,
   IndexStatus,
@@ -142,8 +143,18 @@ export class IngestFacade {
     };
   }
 
-  async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
-    return this.indexingOps.run(path, options, progressCallback);
+  async indexCodebase(
+    path: string,
+    options?: IndexOptions,
+    progressCallback?: ProgressCallback,
+    enrichmentProgress?: EnrichmentProgressCallback,
+  ): Promise<IndexStats> {
+    return this.indexingOps.run(path, options, progressCallback, enrichmentProgress);
+  }
+
+  /** Resolve once the current run's background enrichment has settled (CLI worker). */
+  async whenEnrichmentComplete(): Promise<void> {
+    return this.indexingOps.whenEnrichmentComplete();
   }
 
   /** @deprecated Use indexCodebase — it auto-detects incremental reindex */

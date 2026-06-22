@@ -29,6 +29,8 @@ export type {
   IndexStatus,
   ChangeStats,
   ProgressCallback,
+  EnrichmentProgressCallback,
+  EnrichmentProgressEvent,
 } from "./ingest.js";
 
 export type {
