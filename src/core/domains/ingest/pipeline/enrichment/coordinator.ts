@@ -260,9 +260,12 @@ export class EnrichmentCoordinator {
     runState.crossPass = crossPass;
     this.currentRun = runState;
 
-    // Fresh per-run progress state; denominator is set (in chunk units) once
-    // startChunkEnrichment is called. Progress sink (`progressCb`) persists
-    // across the run — set by IndexingOps before the first batch.
+    // Fresh per-run progress state; the per-(provider,level) denominator is
+    // accumulated (in chunk units) across onChunksStored batches as chunks
+    // arrive — NOT seeded late in startChunkEnrichment (that left streaming
+    // file applies emitting total=0; see onChunksStored). Progress sink
+    // (`progressCb`) persists across the run — set by IndexingOps before the
+    // first batch.
     this.progress.clear();
 
     // Wire the applier-site chokepoint: every apply batch (file, chunk, finalize,
