@@ -11,7 +11,12 @@
  * once.
  */
 
-import type { AmbiguousResolveMode, CallContext } from "../../../../../contracts/types/codegraph.js";
+import {
+  pickSingleCandidate,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type SymbolResolutionTarget,
+} from "../../../../../contracts/types/codegraph.js";
 import { ZEITWERK_PREFIX } from "../../walker/walker.js";
 import { resolveZeitwerkConstant } from "../zeitwerk.js";
 
@@ -109,4 +114,57 @@ export function collectKnownPaths(ctx: CallContext): Iterable<string> {
   }
   paths.add(ctx.callerFile);
   return paths;
+}
+
+/**
+ * Resolve `<member>` as an instance method on `klass`, walking `classAncestors`
+ * (superclass + `include`/`extend` mixins) in declaration order when the class
+ * itself doesn't own it. Shared by the `super` walk (which starts at the
+ * ancestors) and the `self.<member>` walk (which starts at the enclosing class
+ * itself) so both express the same Ruby MRO traversal once.
+ *
+ *   1. Resolve `klass` to its declaring file via `resolveConstant`.
+ *   2. Within that file, look for `<member>` (short-name match scoped to the
+ *      file). A unique candidate is a method-level edge.
+ *   3. Miss → recurse into `classAncestors[klass]`, accumulating into `visited`
+ *      so `A < B < A` cycles short-circuit. The first ancestor that owns
+ *      `member` at the method level wins.
+ *   4. File known but method absent anywhere in the chain → file-only edge
+ *      (`targetSymbolId: null`) for the FIRST class whose file resolved, keeping
+ *      file-level fan accurate for out-of-project parents (`ApplicationRecord`).
+ *   5. No class in the chain resolves to a known file → `null` (caller DROPs).
+ */
+export function resolveInstanceMethodInClassChain(
+  klass: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+  visited: Set<string>,
+): SymbolResolutionTarget | null {
+  if (visited.has(klass)) return null;
+  visited.add(klass);
+
+  const klassFile = resolveConstant(klass, ctx);
+  let fileOnlyFallback: SymbolResolutionTarget | null =
+    klassFile !== null ? { targetRelPath: klassFile, targetSymbolId: null } : null;
+
+  if (klassFile !== null) {
+    const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => def.relPath === klassFile);
+    const target = pickSingleCandidate(candidates, mode);
+    if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+  }
+
+  const ancestors = ctx.classAncestors?.[klass];
+  if (ancestors) {
+    for (const ancestor of ancestors) {
+      const inherited = resolveInstanceMethodInClassChain(ancestor, member, ctx, mode, visited);
+      if (inherited === null) continue;
+      // Method-level pin wins immediately; remember the first known file as a
+      // fallback so a file-only ancestor edge survives if nothing pins later.
+      if (inherited.targetSymbolId !== null) return inherited;
+      if (fileOnlyFallback === null) fileOnlyFallback = inherited;
+    }
+  }
+
+  return fileOnlyFallback;
 }

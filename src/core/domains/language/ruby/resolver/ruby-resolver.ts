@@ -20,12 +20,13 @@
  *
  * The pass order (each `name` in parens):
  *   1. super (super/zsuper via classAncestors — terminal guard)
- *   2. localType (receiver.X via walker-bound local type — terminal guard)
- *   3. constant (Zeitwerk-style Constant.X via resolveConstant)
- *   4. explicitRequire (receiver names a require / require_relative import)
- *   5. arRelationGuard (AR::Relation chain receiver — terminal guard)
- *   6. receiverSetDrop (any remaining receiver-set call — terminal guard)
- *   7. bareCall (bare-call global short-name fallback — last pass)
+ *   2. selfMember (explicit self.X via enclosing class + classAncestors — terminal guard)
+ *   3. localType (receiver.X via walker-bound local type — terminal guard)
+ *   4. constant (Zeitwerk-style Constant.X via resolveConstant)
+ *   5. explicitRequire (receiver names a require / require_relative import)
+ *   6. arRelationGuard (AR::Relation chain receiver — terminal guard)
+ *   7. receiverSetDrop (any remaining receiver-set call — terminal guard)
+ *   8. bareCall (bare-call global short-name fallback — last pass)
  */
 
 import {
@@ -53,6 +54,7 @@ import {
   RubyExplicitRequireSymbolResolutionStrategy,
   RubyLocalTypeSymbolResolutionStrategy,
   RubyReceiverSetDropSymbolResolutionStrategy,
+  RubySelfMemberSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
   RubyTableDispatchResolver,
   type ResolverConfig,
@@ -86,6 +88,7 @@ export class RubyCallResolver implements CallResolver {
     };
     this.strategies = [
       new RubySuperSymbolResolutionStrategy(cfg),
+      new RubySelfMemberSymbolResolutionStrategy(cfg),
       new RubyLocalTypeSymbolResolutionStrategy(cfg),
       new RubyConstantSymbolResolutionStrategy(cfg),
       new RubyExplicitRequireSymbolResolutionStrategy(cfg),
