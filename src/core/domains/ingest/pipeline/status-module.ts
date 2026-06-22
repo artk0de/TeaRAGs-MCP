@@ -15,6 +15,7 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import { isDebug } from "../../../infra/runtime.js";
 import { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   CodegraphResolveKindRow,
@@ -84,12 +85,19 @@ function buildByReceiverKind(kinds: Map<string, ResolveTally>): CodegraphResolve
  */
 export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): CodegraphResolveSummary | undefined {
   if (rows.length === 0) return undefined;
+  // tea-rags-mcp-7m5xz follow-up: byReceiverKind is verbose — it is computed and
+  // attached ONLY under DEBUG. The single gate point is this flag: when false,
+  // the per-(language, receiverKind) tally is never built, so `buildByReceiverKind`
+  // is never called and the field is absent from both the per-byLanguage rows
+  // (nested) and the single-language top-level case. The prime `## Codegraph
+  // resolve` per-kind section auto-omits when no breakdown is present.
+  const debug = isDebug();
   let attempted = 0;
   let resolved = 0;
   let externalSkipped = 0;
   const byLang = new Map<string, ResolveTally>();
   // Per-language receiver-kind tally (bd tea-rags-mcp-7m5xz). Unlabeled rows are
-  // excluded here exactly as they are for byLanguage.
+  // excluded here exactly as they are for byLanguage. Populated only under DEBUG.
   const byLangKind = new Map<string, Map<string, ResolveTally>>();
   for (const r of rows) {
     attempted += r.attempted;
@@ -101,6 +109,7 @@ export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): 
     e.resolved += r.resolved;
     e.externalSkipped += r.externalSkipped;
     byLang.set(r.language, e);
+    if (!debug) continue; // short form: skip receiver-kind tally entirely
     const kinds = byLangKind.get(r.language) ?? new Map<string, ResolveTally>();
     const k = kinds.get(r.receiverKind) ?? { attempted: 0, resolved: 0, externalSkipped: 0 };
     k.attempted += r.attempted;
@@ -123,14 +132,15 @@ export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): 
       callsAttempted: t.attempted,
       callsResolved: t.resolved,
       callsExternalSkipped: t.externalSkipped,
-      byReceiverKind: buildByReceiverKind(byLangKind.get(language) ?? new Map<string, ResolveTally>()),
+      // Absent unless DEBUG built the tally above.
+      ...(debug ? { byReceiverKind: buildByReceiverKind(byLangKind.get(language) ?? new Map<string, ResolveTally>()) } : {}),
     }))
     .sort((a, b) => b.callsAttempted - a.callsAttempted);
   if (byLanguage.length > 1) {
     summary.byLanguage = byLanguage;
-  } else if (byLanguage.length === 1) {
+  } else if (byLanguage.length === 1 && debug) {
     // Single surviving language: byLanguage is suppressed (aggregate conveys it),
-    // so surface that language's kind breakdown at the top level instead.
+    // so surface that language's kind breakdown at the top level — DEBUG only.
     summary.byReceiverKind = byLanguage[0].byReceiverKind;
   }
   return summary;

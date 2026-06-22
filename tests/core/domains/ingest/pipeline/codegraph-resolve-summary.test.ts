@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { ResolveRunStatsRow } from "../../../../../src/core/contracts/types/codegraph.js";
 import { summarizeCodegraphResolve } from "../../../../../src/core/domains/ingest/pipeline/status-module.js";
+import { setDebug } from "../../../../../src/core/infra/runtime.js";
 
 // bd tea-rags-mcp-cnqrg — the per-(language, receiverKind) cg_run_stats rows fold
 // into the status DTO: aggregate over all rows + a per-language breakdown that
@@ -146,5 +147,53 @@ describe("summarizeCodegraphResolve receiver-kind breakdown (7m5xz)", () => {
     const constant = kinds.find((k) => k.receiverKind === "constant");
     expect(constant).toMatchObject({ attempted: 100, resolved: 60, externalSkipped: 20 });
     expect(constant?.resolveSuccessRate).toBeCloseTo(60 / 80, 6);
+  });
+});
+
+// bd tea-rags-mcp-7m5xz follow-up — byReceiverKind is verbose; it appears ONLY
+// under DEBUG. By default get_index_status shows the short form (aggregate +
+// byLanguage) exactly as before this session. vitest.setup sets DEBUG=true
+// globally, so the regression cases above run under debug; here we explicitly
+// flip it off, assert byReceiverKind is absent (nested AND top-level), then
+// restore so no leak reaches other tests.
+describe("summarizeCodegraphResolve byReceiverKind DEBUG gate (7m5xz)", () => {
+  afterEach(() => {
+    setDebug(true); // vitest.setup baseline — restore so other files see DEBUG on
+  });
+
+  it("omits byReceiverKind entirely when DEBUG is off (top-level, single language)", () => {
+    setDebug(false);
+    const summary = summarizeCodegraphResolve([
+      row("typescript", "selfMember", 130, 125, 0),
+      row("typescript", "constant", 100, 60, 0),
+    ]);
+    // Short form intact: aggregate present, byLanguage suppressed (≤1 language).
+    expect(summary?.resolveSuccessRate).toBeCloseTo(185 / 230, 6);
+    expect(summary?.byReceiverKind).toBeUndefined();
+  });
+
+  it("omits byReceiverKind on every byLanguage row when DEBUG is off (multi-language)", () => {
+    setDebug(false);
+    const summary = summarizeCodegraphResolve([
+      row("typescript", "selfMember", 130, 125, 0),
+      row("typescript", "constant", 100, 60, 0),
+      row("ruby", "constant", 50, 40, 0),
+      row("ruby", "selfMember", 30, 20, 0),
+    ]);
+    expect(summary?.byReceiverKind).toBeUndefined(); // top-level absent
+    const byLang = summary?.byLanguage ?? [];
+    expect(byLang.map((l) => l.language)).toEqual(["typescript", "ruby"]); // short form intact
+    for (const l of byLang) {
+      expect(l.byReceiverKind).toBeUndefined(); // nested absent
+    }
+  });
+
+  it("populates byReceiverKind when DEBUG is on (regression — gate does not break the feature)", () => {
+    setDebug(true);
+    const summary = summarizeCodegraphResolve([
+      row("typescript", "selfMember", 130, 125, 0),
+      row("typescript", "constant", 100, 60, 0),
+    ]);
+    expect((summary?.byReceiverKind ?? []).map((k) => k.receiverKind)).toEqual(["selfMember", "constant"]);
   });
 });
