@@ -249,6 +249,22 @@ export interface ProgressUpdate {
   message: string;
 }
 
+/**
+ * Per-batch enrichment progress event emitted by the in-process enrichment
+ * pipeline (one per provider, per level, as work is applied). The denominator
+ * (`total`) is known once the level starts; `applied` is cumulative. Used by the
+ * CLI to render determinate per-provider bars and a real ETA — the terminal-only
+ * enrichment markers cannot supply a live numerator.
+ */
+export interface EnrichmentProgressEvent {
+  providerKey: string;
+  level: "file" | "chunk";
+  applied: number;
+  total: number;
+}
+
+export type EnrichmentProgressCallback = (event: EnrichmentProgressEvent) => void;
+
 export interface CodeChunk {
   content: string;
   startLine: number;

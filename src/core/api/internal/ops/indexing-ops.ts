@@ -27,6 +27,7 @@ import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.j
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,
+  EnrichmentProgressCallback,
   IndexOptions,
   IndexStats,
   IndexStatus,
@@ -116,8 +117,22 @@ export class IndexingOps {
     this.status = new StatusModule(deps.qdrant, deps.snapshotDir, deps.codegraphPool);
   }
 
-  /** Index a codebase — first index, force re-index, or incremental fallback. */
-  async run(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
+  /**
+   * Index a codebase — first index, force re-index, or incremental fallback.
+   *
+   * `enrichmentProgress` (CLI only) is registered on the shared coordinator
+   * before any pipeline runs, so both the full and incremental paths emit
+   * per-(provider, level) progress through it. The call itself returns once
+   * embeddings + alias are done (enrichment continues in the background) —
+   * callers that must outlive enrichment await {@link whenEnrichmentComplete}.
+   */
+  async run(
+    path: string,
+    options?: IndexOptions,
+    progressCallback?: ProgressCallback,
+    enrichmentProgress?: EnrichmentProgressCallback,
+  ): Promise<IndexStats> {
+    this.enrichment.setEnrichmentProgress(enrichmentProgress);
     if (!options?.forceReindex) {
       const incremental = await this.tryIncrementalIndex(path, progressCallback);
       if (incremental) return incremental;
@@ -133,6 +148,16 @@ export class IndexingOps {
       await this.codegraphPool.removeCollection(collectionName);
     }
     return this.fullIndex(path, options, progressCallback);
+  }
+
+  /**
+   * Resolve once the current run's background enrichment has settled. Lets a
+   * short-lived caller (the CLI worker) keep its process alive until every
+   * provider finishes, even though `run` returned at embedding completion.
+   * Never rejects — failure is read from the terminal markers via getStatus.
+   */
+  async whenEnrichmentComplete(): Promise<void> {
+    await this.enrichment.whenComplete();
   }
 
   /**

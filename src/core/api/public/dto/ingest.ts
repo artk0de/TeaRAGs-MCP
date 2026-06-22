@@ -5,8 +5,18 @@
  */
 
 import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
-import type { EnrichmentMetrics, IndexingStatus, ProgressUpdate } from "../../../types.js";
+import type {
+  EnrichmentMetrics,
+  EnrichmentProgressCallback,
+  EnrichmentProgressEvent,
+  IndexingStatus,
+  ProgressUpdate,
+} from "../../../types.js";
 import type { CollectionIdentifier } from "./common.js";
+
+// Re-export the enrichment progress contract on the public surface so cli/mcp
+// consumers import it without crossing into core/types.ts directly.
+export type { EnrichmentProgressCallback, EnrichmentProgressEvent };
 
 // ---------------------------------------------------------------------------
 // Indexing options

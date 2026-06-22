@@ -945,4 +945,107 @@ describe("StatusModule", () => {
       expect(await exists(statsPath)).toBe(false);
     });
   });
+
+  describe("codegraphResolve — byLanguage breakdown", () => {
+    // Exercises summarizeCodegraphResolve branch: byLanguage.length > 1 → summary.byLanguage populated.
+    it("surfaces byLanguage when 2+ languages each hold a significant share", async () => {
+      await createTestFile(codebaseDir, "multi.ts", "export const X = 1;\n");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Two languages, each with 50% of total attempts → both above MIN_LANGUAGE_SHARE (5%).
+      const runStatsRows = [
+        { language: "typescript", attempted: 50, resolved: 40, externalSkipped: 0 },
+        { language: "ruby", attempted: 50, resolved: 20, externalSkipped: 10 },
+      ];
+      (ingest as any).indexingOps.status.codegraphPool = {
+        listCollectionDbNames: () => ["code_cg_v1"],
+        acquireReader: async () => ({
+          graphDb: { getRunStats: async () => runStatsRows, close: async () => undefined },
+        }),
+      };
+
+      const status = await ingest.getIndexStatus(codebaseDir);
+
+      expect(status.codegraphResolve).toBeDefined();
+      // Total: attempted=100, resolved=60, externalSkipped=10 → rate=60/90
+      expect(status.codegraphResolve!.callsAttempted).toBe(100);
+      expect(status.codegraphResolve!.resolveSuccessRate).toBeCloseTo(60 / 90, 8);
+      // Both languages should appear in byLanguage breakdown.
+      expect(status.codegraphResolve!.byLanguage).toBeDefined();
+      const langs = status.codegraphResolve!.byLanguage!.map((r: { language: string }) => r.language).sort();
+      expect(langs).toEqual(["ruby", "typescript"]);
+    });
+
+    // Exercises resolveRate(0, ...) branch: attempted === 0 → return 0.
+    it("returns resolveSuccessRate=0 and empty breakdown when all rows have attempted=0", async () => {
+      await createTestFile(codebaseDir, "zero.ts", "export const Z = 0;\n");
+      await ingest.indexCodebase(codebaseDir);
+
+      const runStatsRows = [{ language: "typescript", attempted: 0, resolved: 0, externalSkipped: 0 }];
+      (ingest as any).indexingOps.status.codegraphPool = {
+        listCollectionDbNames: () => ["code_cg_v1"],
+        acquireReader: async () => ({
+          graphDb: { getRunStats: async () => runStatsRows, close: async () => undefined },
+        }),
+      };
+
+      const status = await ingest.getIndexStatus(codebaseDir);
+
+      expect(status.codegraphResolve).toBeDefined();
+      expect(status.codegraphResolve!.resolveSuccessRate).toBe(0);
+      expect(status.codegraphResolve!.byLanguage).toBeUndefined();
+    });
+  });
+
+  describe("findLatestVersionedCollection — alias fallback to highest _vN", () => {
+    // Exercises findLatestVersionedCollection: multiple _vN collections exist,
+    // the method picks the highest-versioned one as fallback.
+    it("reads status from highest _vN when alias exists pointing to completed version", async () => {
+      const { resolveCollectionName, validatePath } = await import("../../../../../src/core/infra/collection-name.js");
+      const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+      const absolutePath = await validatePath(codebaseDir);
+      const collectionName = resolveCollectionName(absolutePath);
+
+      // Create _v1 (orphaned, completed) and _v2 (in-progress), alias → _v1.
+      const v1 = `${collectionName}_v1`;
+      const v2 = `${collectionName}_v2`;
+
+      await qdrant.createCollection(v1, 384, "Cosine", false);
+      await qdrant.addPoints(v1, [
+        {
+          id: INDEXING_METADATA_ID,
+          vector: new Array(384).fill(0),
+          payload: { indexingComplete: true, embeddingModel: "test-model" },
+        },
+        {
+          id: "chunk-v1",
+          vector: new Array(384).fill(0.1),
+          payload: { relativePath: "a.ts" },
+        },
+      ]);
+
+      await qdrant.createCollection(v2, 384, "Cosine", false);
+      await qdrant.addPoints(v2, [
+        {
+          id: INDEXING_METADATA_ID,
+          vector: new Array(384).fill(0),
+          payload: {
+            indexingComplete: false,
+            startedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+            lastHeartbeat: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+            embeddingModel: "test-model",
+          },
+        },
+      ]);
+
+      // Alias points to v1 (the completed one).
+      await qdrant.aliases.createAlias(collectionName, v1);
+
+      const status = await ingest.getIndexStatus(codebaseDir);
+
+      // StatusModule should follow the alias → v1 (indexed).
+      expect(status.status).toBe("indexed");
+      expect(status.isIndexed).toBe(true);
+    });
+  });
 });

@@ -34,6 +34,7 @@ import type {
   CollectionInfo,
   CreateCollectionRequest,
   DeleteDocumentsRequest,
+  EnrichmentProgressCallback,
   ExploreCodeRequest,
   ExploreResponse,
   FindCyclesRequest,
@@ -72,7 +73,18 @@ export interface App {
   findSymbol: (request: FindSymbolRequest) => Promise<ExploreResponse>;
 
   // -- Indexing (→ internal/facades/ingest-facade.ts) --
-  indexCodebase: (path: string, options?: IndexOptions, progress?: ProgressCallback) => Promise<IndexStats>;
+  indexCodebase: (
+    path: string,
+    options?: IndexOptions,
+    progress?: ProgressCallback,
+    enrichmentProgress?: EnrichmentProgressCallback,
+  ) => Promise<IndexStats>;
+  /**
+   * Resolve once the current run's background enrichment has settled. The CLI
+   * worker awaits this so its short-lived process outlives enrichment; the MCP
+   * server (long-lived) never needs it.
+   */
+  whenEnrichmentComplete: () => Promise<void>;
   /** @deprecated Use indexCodebase — it auto-detects incremental reindex */
   reindexChanges: (path: string, progress?: ProgressCallback) => Promise<ChangeStats>;
   getIndexStatus: (path: string) => Promise<IndexStatus>;
@@ -216,7 +228,9 @@ export function createApp(deps: AppDeps): App {
     findSymbol: async (req) => facades.explore.findSymbol(req),
 
     // -- Indexing — delegate to IngestFacade --
-    indexCodebase: async (path, options, progress) => facades.ingest.indexCodebase(path, options, progress),
+    indexCodebase: async (path, options, progress, enrichmentProgress) =>
+      facades.ingest.indexCodebase(path, options, progress, enrichmentProgress),
+    whenEnrichmentComplete: async () => facades.ingest.whenEnrichmentComplete(),
     reindexChanges: async (path, progress) => facades.ingest.reindexChanges(path, progress),
     getIndexStatus: async (path) => facades.ingest.getIndexStatus(path),
     clearIndex: async (path) => facades.ingest.clearIndex(path),

@@ -25,6 +25,17 @@ import type { MissedFileChunk } from "./types.js";
 const BATCH_SIZE = 100;
 const MISSED_PATH_SAMPLE_LIMIT = 10;
 
+/**
+ * Emitted once per apply batch. `applied` is the number of point-ops this batch
+ * wrote (approximately one per chunk point), used by the coordinator to build a
+ * cumulative per-(provider, level) progress numerator for CLI rendering.
+ */
+export interface EnrichmentApplyEvent {
+  providerKey: string;
+  level: "file" | "chunk";
+  applied: number;
+}
+
 export class EnrichmentApplier {
   private readonly matchedPaths = new Set<string>();
   private readonly missedTracker = new MissedFileTracker({
@@ -34,12 +45,16 @@ export class EnrichmentApplier {
   /**
    * Optional callback invoked once per apply batch across ALL apply methods
    * (applyFileSignals, applyChunkSignals, applyFinalizeFile).
-   * Wired by the coordinator to `maybeHeartbeat` — fires at the single
-   * chokepoint all enrichment writes flow through, covering streaming, post-
-   * flush enrichRemaining, deferred codegraph, and backfill paths uniformly.
-   * The coordinator owns the 30s throttle; this callback is unconditional (DRY).
+   * Wired by the coordinator to `maybeHeartbeat` (throttled) AND to the per-run
+   * enrichment-progress sink — fires at the single chokepoint all enrichment
+   * writes flow through, covering streaming, post-flush enrichRemaining, deferred
+   * codegraph, and backfill paths uniformly. The event carries which provider /
+   * level was applied and how many point-ops this batch wrote, so the coordinator
+   * can accumulate a cumulative per-(provider, level) numerator for CLI progress.
+   * The coordinator owns the 30s heartbeat throttle; this callback is
+   * unconditional (DRY).
    */
-  onApply?: () => void;
+  onApply?: (event: EnrichmentApplyEvent) => void;
 
   constructor(
     private readonly qdrant: QdrantManager,
@@ -190,7 +205,7 @@ export class EnrichmentApplier {
       if (!ok) this.trackResidualBatch(opResidual.slice(i, i + BATCH_SIZE));
     }
 
-    this.onApply?.();
+    this.onApply?.({ providerKey, level: "file", applied: operations.length });
     pipelineLog.addStageTime("enrichApply", Date.now() - applyStart);
   }
 
@@ -252,7 +267,7 @@ export class EnrichmentApplier {
       await batchSetPayloadWithRetry(this.qdrant, collectionName, ops.slice(i, i + BATCH_SIZE), this.retryOptions);
     }
 
-    if (ops.length > 0) this.onApply?.();
+    if (ops.length > 0) this.onApply?.({ providerKey, level: "file", applied: ops.length });
     return appliedFiles;
   }
 
@@ -327,7 +342,7 @@ export class EnrichmentApplier {
       }
     }
 
-    if (applied > 0) this.onApply?.();
+    if (applied > 0) this.onApply?.({ providerKey, level: "chunk", applied });
     return applied;
   }
 
