@@ -1,13 +1,8 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import {
-  pickSingleCandidate,
-  type CallContext,
-  type CallRef,
-  type SymbolResolutionTarget,
-} from "../../../../../contracts/types/codegraph.js";
+import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
-import { resolveConstant, type ResolverConfig } from "./shared.js";
+import { resolveInstanceMethodInClassChain, type ResolverConfig } from "./shared.js";
 
 /**
  * `super` / `zsuper` keyword (bd brp1). The walker emits a synthetic CallRef
@@ -65,59 +60,22 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
     const enclosingClass = ctx.callerScope.join("::");
     const ancestors = ctx.classAncestors?.[enclosingClass];
     if (!ancestors) return null;
+    // `super` dispatches to the PARENT, never the enclosing class itself, so
+    // start the MRO walk AT the ancestors with the enclosing class pre-seeded
+    // into `visited`. Each ancestor reuses the shared class-chain walk (the same
+    // traversal the `self.<member>` pass uses) — instance-method (`#`) and
+    // class-form (`.`) candidates both bind by short name, covering
+    // `def self.foo; super; end`. A file-only edge is preferred over `null` when
+    // an ancestor's file is known but the method lives outside the project
+    // (`ApplicationRecord#save` actually on `ActiveRecord::Base`).
     const visited = new Set<string>([enclosingClass]);
     let fileOnlyFallback: SymbolResolutionTarget | null = null;
     for (const ancestor of ancestors) {
-      if (visited.has(ancestor)) continue;
-      visited.add(ancestor);
-      const ancestorFile = resolveConstant(ancestor, ctx);
-      if (!ancestorFile) continue;
-      // Prefer instance-form (`#`) for `super` — bare `super` inside
-      // `def foo` dispatches to the parent's instance method. Accept
-      // class-form (`.`) too because `def self.foo; super; end` uses
-      // the same sentinel CallRef and resolves against the parent's
-      // class method by the same short name.
-      const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => def.relPath === ancestorFile);
-      const target = pickSingleCandidate(candidates, this.cfg.mode);
-      if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
-      // Memo the first ancestor whose file is known so we can fall back
-      // to a file-only edge if no ancestor has the method.
-      if (fileOnlyFallback === null) {
-        fileOnlyFallback = { targetRelPath: ancestorFile, targetSymbolId: null };
-      }
-      // Recurse one level deeper — multi-level inheritance (A < B < C)
-      // where the method lives on C, not B. The deeper call carries the
-      // already-visited set so cycles short-circuit.
-      const deeper = this.resolveSuperRecurse(ancestor, member, ctx, visited);
-      if (deeper && deeper.targetSymbolId !== null) return deeper;
+      const resolvedTarget = resolveInstanceMethodInClassChain(ancestor, member, ctx, this.cfg.mode, visited);
+      if (resolvedTarget === null) continue;
+      if (resolvedTarget.targetSymbolId !== null) return resolvedTarget;
+      if (fileOnlyFallback === null) fileOnlyFallback = resolvedTarget;
     }
     return fileOnlyFallback;
-  }
-
-  /**
-   * Inner recursion for {@link resolveSuper}. Walks `classAncestors`
-   * starting at `klass`; `visited` is the cumulative set so deeper calls
-   * can't re-enter a class already being inspected by the outer loop.
-   */
-  private resolveSuperRecurse(
-    klass: string,
-    member: string,
-    ctx: CallContext,
-    visited: Set<string>,
-  ): SymbolResolutionTarget | null {
-    const ancestors = ctx.classAncestors?.[klass];
-    if (!ancestors) return null;
-    for (const ancestor of ancestors) {
-      if (visited.has(ancestor)) continue;
-      visited.add(ancestor);
-      const ancestorFile = resolveConstant(ancestor, ctx);
-      if (!ancestorFile) continue;
-      const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => def.relPath === ancestorFile);
-      const target = pickSingleCandidate(candidates, this.cfg.mode);
-      if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
-      const deeper = this.resolveSuperRecurse(ancestor, member, ctx, visited);
-      if (deeper && deeper.targetSymbolId !== null) return deeper;
-    }
-    return null;
   }
 }

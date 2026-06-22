@@ -1912,6 +1912,149 @@ describe("RubyCallResolver — super keyword resolution (bd brp1)", () => {
   });
 });
 
+// bd tea-rags-mcp-kh9vo — explicit `self.<member>` calls (receiver = "self")
+// must resolve to the enclosing class's instance method, walking classAncestors
+// exactly like the bare-call inheritance path. Before the fix these dropped at
+// the receiver-set guard (receiver !== null → DROP), resolving 0 of ~130 sites.
+// Mirrors the super-keyword walk but STARTS at the enclosing class itself
+// (direct definition wins before any ancestor).
+describe("RubyCallResolver — explicit self receiver (bd kh9vo)", () => {
+  it("resolves `self.foo` to the enclosing class's own instance method", () => {
+    // class Bar; def baz; self.foo; end; def foo; end; end → Bar#foo.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("bar.rb", [
+      { symbolId: "Bar", fqName: "Bar", shortName: "Bar", relPath: "bar.rb", scope: [] },
+      { symbolId: "Bar#foo", fqName: "Bar#foo", shortName: "foo", relPath: "bar.rb", scope: ["Bar"] },
+      { symbolId: "Bar#baz", fqName: "Bar#baz", shortName: "baz", relPath: "bar.rb", scope: ["Bar"] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "bar.rb",
+      callerScope: ["Bar"],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve({ callText: "self.foo", receiver: "self", member: "foo", startLine: 3 }, ctx);
+    expect(target?.targetSymbolId).toBe("Bar#foo");
+    expect(target?.targetRelPath).toBe("bar.rb");
+  });
+
+  it("resolves `self.foo` to enclosing class even when an unrelated class defines `foo`", () => {
+    // Same short name on two classes — `self` must bind to the enclosing Bar#foo,
+    // NOT the ambiguous global short-name path that would tie-break to Other#foo.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("bar.rb", [
+      { symbolId: "Bar", fqName: "Bar", shortName: "Bar", relPath: "bar.rb", scope: [] },
+      { symbolId: "Bar#foo", fqName: "Bar#foo", shortName: "foo", relPath: "bar.rb", scope: ["Bar"] },
+    ]);
+    table.upsertFile("other.rb", [
+      { symbolId: "Other", fqName: "Other", shortName: "Other", relPath: "other.rb", scope: [] },
+      { symbolId: "Other#foo", fqName: "Other#foo", shortName: "foo", relPath: "other.rb", scope: ["Other"] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "bar.rb",
+      callerScope: ["Bar"],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve({ callText: "self.foo", receiver: "self", member: "foo", startLine: 3 }, ctx);
+    expect(target?.targetSymbolId).toBe("Bar#foo");
+    expect(target?.targetRelPath).toBe("bar.rb");
+  });
+
+  it("resolves `self.inherited_method` through classAncestors to the superclass", () => {
+    // class Child < Parent; def run; self.inherited_method; end; end
+    // inherited_method is defined on Parent → resolves to Parent#inherited_method.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("child.rb", [
+      { symbolId: "Child", fqName: "Child", shortName: "Child", relPath: "child.rb", scope: [] },
+      { symbolId: "Child#run", fqName: "Child#run", shortName: "run", relPath: "child.rb", scope: ["Child"] },
+    ]);
+    table.upsertFile("parent.rb", [
+      { symbolId: "Parent", fqName: "Parent", shortName: "Parent", relPath: "parent.rb", scope: [] },
+      {
+        symbolId: "Parent#inherited_method",
+        fqName: "Parent#inherited_method",
+        shortName: "inherited_method",
+        relPath: "parent.rb",
+        scope: ["Parent"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "child.rb",
+      callerScope: ["Child"],
+      imports: [],
+      symbolTable: table,
+      classAncestors: { Child: ["Parent"] },
+    };
+    const target = resolver.resolve(
+      { callText: "self.inherited_method", receiver: "self", member: "inherited_method", startLine: 3 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("Parent#inherited_method");
+    expect(target?.targetRelPath).toBe("parent.rb");
+  });
+
+  it("emits a file-only edge for `self.foo` when the class is known but `foo` is undefined — never leaks to an unrelated class", () => {
+    // `self` is terminal: `foo` is absent on the enclosing class AND its
+    // ancestors, but the enclosing class file IS known — keep the file-level
+    // edge (method-level dropped), exactly like the super-keyword
+    // `ApplicationRecord` case. Crucially the call must NOT fall through to the
+    // ambiguous global short-name path and bind to the unrelated `Unrelated#foo`.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("bar.rb", [{ symbolId: "Bar", fqName: "Bar", shortName: "Bar", relPath: "bar.rb", scope: [] }]);
+    table.upsertFile("unrelated.rb", [
+      { symbolId: "Unrelated", fqName: "Unrelated", shortName: "Unrelated", relPath: "unrelated.rb", scope: [] },
+      {
+        symbolId: "Unrelated#foo",
+        fqName: "Unrelated#foo",
+        shortName: "foo",
+        relPath: "unrelated.rb",
+        scope: ["Unrelated"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "bar.rb",
+      callerScope: ["Bar"],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve({ callText: "self.foo", receiver: "self", member: "foo", startLine: 3 }, ctx);
+    expect(target?.targetRelPath).toBe("bar.rb");
+    expect(target?.targetSymbolId).toBeNull();
+  });
+
+  it("DROPs `self.foo` to null when the enclosing class itself is not in the symbol table", () => {
+    // No file resolves for the enclosing class and no ancestors are declared —
+    // the walk has nothing to pin, so DROP entirely rather than guess. The
+    // unrelated `Unrelated#foo` must NOT be attributed (guard against the
+    // ambiguous global short-name fall-through, same family as bd lttd).
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("unrelated.rb", [
+      { symbolId: "Unrelated", fqName: "Unrelated", shortName: "Unrelated", relPath: "unrelated.rb", scope: [] },
+      {
+        symbolId: "Unrelated#foo",
+        fqName: "Unrelated#foo",
+        shortName: "foo",
+        relPath: "unrelated.rb",
+        scope: ["Unrelated"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "caller.rb",
+      callerScope: ["GhostClassNotIndexed"],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve({ callText: "self.foo", receiver: "self", member: "foo", startLine: 3 }, ctx);
+    expect(target).toBeNull();
+  });
+});
+
 // bd tea-rags-mcp-hbie — Bare-identifier CallRefs emitted by the walker for
 // parenless method references must reach the global short-name fallback path
 // (since they have receiver=null) and bind to a real edge when the symbol
