@@ -262,13 +262,17 @@ When the change touches **enrichment** and validating it requires a reindex, use
 the CLI — NOT the MCP `index_codebase` tool:
 
 ```bash
-tea-rags index-codebase --project <alias> --wait-enrichments --force
+tea-rags index-codebase --project <alias> --wait-enrichments --force --json
 ```
 
 - `--wait-enrichments` stays attached until every enrichment provider finishes,
   rendering per-provider progress bars + **durations** — you get enrichment
   timing for free (perf-regression signal) and a precise "done" marker.
 - `--force` runs a full re-index from scratch; drop it for incremental.
+- `--json` emits the final result as machine-readable JSON (file counts,
+  per-provider enrichment durations, `codegraphResolve` byReceiverKind) instead
+  of human bars — parse it directly rather than scraping rendered output. Always
+  pass it when an agent consumes the result.
 - The MCP `mcp__tea-rags__index_codebase` tool returns once embeddings are
   stored and **detaches** enrichment to the background — so MCP-side testing
   forces you to poll `get_index_status` repeatedly and guess when enrichment
@@ -302,7 +306,7 @@ npm run build
 npm link
 # → reconnect MCP servers
 # enrichment-affecting change: prefer the CLI (synchronous + timed)
-tea-rags index-codebase --project tea-rags --wait-enrichments --force   # full reset
+tea-rags index-codebase --project tea-rags --wait-enrichments --force --json   # full reset
 mcp__tea-rags__index_codebase project=production-rails-app              # other projects: incremental
 
 # 2. Validate via mcp__tea-rags__semantic_search / find_symbol against
