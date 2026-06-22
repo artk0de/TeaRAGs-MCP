@@ -81,6 +81,31 @@ hand-written expanders silently breaks chunker↔codegraph `symbolId` agreement.
   imports: a new framework module needs one line in the composition list. That
   is a normal registration seam (open for extension), not a violation.
 
+## Design correction (2026-06-22, during implementation)
+
+The original "both consumers emit, chunker filters by category" design below was
+**superseded** during implementation. Emitting a chunk function-symbol per
+synthesised macro method created N empty-body chunks per macro line (all sharing
+the macro's source line) and the category skip-list was a hardcoded crutch. The
+landed design is cleaner:
+
+- **The chunker does NOT expand macros into per-method chunks at all.** It
+  represents class-body DSL purely through category grouping
+  (`class-body-chunker.ts` → `CATEGORY_TO_GROUP`) — it consumes `category`, not
+  `declares`.
+- **The codegraph alone synthesises macro methods** (`name-of.ts` →
+  `macro-expansion.ts` → `cg_symbols`) so bare calls resolve onto them.
+- There is no category skip-list and no two-field split: the chunker simply does
+  not read the `declares` facet. The `macroSymbols` chunker hook + the engine's
+  `emitMacroSymbols`/`pushMacroSymbolChunk` subsystem were removed as dead.
+- Consequence (accepted): per-accessor symbols (`attr_accessor`/association
+  accessors) are no longer individual search chunks — they appear in their
+  category group chunk; resolution (`get_callers`) is unaffected (codegraph).
+  This reverses the per-method chunk behaviour of bd 3nf3/zy3f.
+
+The "Mechanism vs Policy" section below is retained for history; read it as the
+rejected midpoint, not the final design.
+
 ## Design
 
 ### Mechanism vs Policy (the load-bearing principle)
