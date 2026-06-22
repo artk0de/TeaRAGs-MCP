@@ -43,6 +43,7 @@ import {
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { resolveViaChain } from "../../resolver-chain.js";
 import { ZEITWERK_PREFIX } from "../walker/walker.js";
+import { RUBY_KERNEL_BUILTINS } from "./kernel-builtins.js";
 import {
   CONE_MAX_DEFAULT,
   resolveConstant,
@@ -107,16 +108,23 @@ export class RubyCallResolver implements CallResolver {
 
   /**
    * tea-rags-mcp-ykj7 — external-import classifier for an UNRESOLVED call.
-   * Fires for a CONSTANT receiver (`Net::HTTP`, `Base64`) that `resolveConstant`
-   * cannot map to a project / Zeitwerk file — i.e. a gem or stdlib constant.
-   * Conservative: a constant that resolves to a project file is in-project (and
-   * would not reach this hook unresolved); a lowercase receiver (local var /
-   * `self`) and bare calls (`puts`) cannot be told apart from project methods,
-   * so they stay attempted-unresolved.
+   * Two branches:
+   *   - Bare call (`receiver === null`, e.g. `puts`, `raise`, `require`):
+   *     external iff the member is a Ruby CORE method in `RUBY_KERNEL_BUILTINS`
+   *     (Kernel-module / universal Object methods, NOT Rails). A project method
+   *     that shadows a core name resolves first via the chain and never reaches
+   *     this hook, so it is never mis-marked (tea-rags-mcp-5os8y).
+   *   - CONSTANT receiver (`Net::HTTP`, `Base64`): external iff `resolveConstant`
+   *     cannot map it to a project / Zeitwerk file — i.e. a gem or stdlib
+   *     constant. A constant that resolves to a project file is in-project (and
+   *     would not reach this hook unresolved).
+   * Conservative: a lowercase receiver (local var / `self`) cannot be told apart
+   * from a project method, so it stays attempted-unresolved.
    */
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
     const { receiver } = call;
-    if (receiver === null || !/^[A-Z]/.test(receiver)) return false;
+    if (receiver === null) return RUBY_KERNEL_BUILTINS.has(call.member);
+    if (!/^[A-Z]/.test(receiver)) return false;
     return resolveConstant(receiver, ctx) === null;
   }
 

@@ -10,6 +10,10 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
  * project / Zeitwerk file. `Net::HTTP.get` → gem path. A constant that DOES
  * resolve to a project file is in-project (and would not reach this hook
  * unresolved).
+ *
+ * tea-rags-mcp-5os8y — bare calls (receiver null) consult RUBY_KERNEL_BUILTINS:
+ * a Ruby CORE method (`puts`, `raise`, `require`) is classified external; a
+ * bare project-method name not in the set stays attempted-unresolved (false).
  */
 describe("RubyCallResolver.targetsExternalImport", () => {
   function makeCtx(
@@ -44,8 +48,22 @@ describe("RubyCallResolver.targetsExternalImport", () => {
     expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
   });
 
-  it("does NOT flag a bare call (no receiver — conservative)", () => {
+  it("flags a bare Ruby core builtin call (puts → in RUBY_KERNEL_BUILTINS)", () => {
     const call: CallRef = { callText: "puts(x)", receiver: null, member: "puts", startLine: 3 };
+    const ctx = makeCtx("app/models/account.rb", [], new InMemoryGlobalSymbolTable());
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(true);
+  });
+
+  it("flags bare raise / require (Kernel core methods)", () => {
+    const ctx = makeCtx("app/models/account.rb", [], new InMemoryGlobalSymbolTable());
+    const raise: CallRef = { callText: "raise(e)", receiver: null, member: "raise", startLine: 3 };
+    const require: CallRef = { callText: "require('x')", receiver: null, member: "require", startLine: 4 };
+    expect(resolver.targetsExternalImport(raise, ctx)).toBe(true);
+    expect(resolver.targetsExternalImport(require, ctx)).toBe(true);
+  });
+
+  it("does NOT flag a bare project-method name not in the builtin set (my_helper)", () => {
+    const call: CallRef = { callText: "my_helper(x)", receiver: null, member: "my_helper", startLine: 3 };
     const ctx = makeCtx("app/models/account.rb", [], new InMemoryGlobalSymbolTable());
     expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
   });
