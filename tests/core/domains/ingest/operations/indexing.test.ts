@@ -205,6 +205,24 @@ describe("IndexPipeline", () => {
       expect(progressCallback.mock.calls.some((call) => call[0].phase === "chunking")).toBe(true);
     });
 
+    it("reports embedding progress from pipeline itemsProcessed, not files scanned", async () => {
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export interface User {\n  id: string;\n  name: string;\n  email: string;\n}",
+      );
+
+      const updates: { phase: string; current: number; total: number; throughput?: number }[] = [];
+      await ingest.indexCodebase(codebaseDir, {}, (u) => updates.push(u));
+
+      const embedding = updates.filter((u) => u.phase === "embedding");
+      expect(embedding.length).toBeGreaterThan(0);
+
+      const last = embedding.at(-1)!;
+      // All chunks embedded at completion — numerator equals denominator
+      expect(last.current).toBe(last.total);
+    });
+
     it("should respect custom extensions", async () => {
       await createTestFile(codebaseDir, "test.ts", "const x = 1;");
       await createTestFile(codebaseDir, "test.md", "# Documentation");

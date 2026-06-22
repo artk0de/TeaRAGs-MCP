@@ -271,11 +271,21 @@ export interface IndexStatus {
 export type ProgressCallback = (progress: ProgressUpdate) => void;
 
 export interface ProgressUpdate {
+  /**
+   * Canonical phases:
+   * - `scanning`  — file discovery
+   * - `chunking`  — files parsed and queued (current=filesProcessed, total=files.length)
+   * - `embedding` — chunks embedded by the pipeline (current=itemsProcessed, total=chunksQueued)
+   * - `storing`   — finalization
+   * - `enriching` — git/static enrichment
+   */
   phase: "scanning" | "chunking" | "embedding" | "storing" | "enriching";
   current: number;
   total: number;
   percentage: number;
   message: string;
+  /** Chunks per second from the embedding pipeline; present on `embedding` phase updates only. */
+  throughput?: number;
 }
 
 /**

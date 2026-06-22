@@ -140,6 +140,17 @@ export class IndexPipeline extends BaseIndexingPipeline {
           );
           this.logPipelineCompletion(ctx);
 
+          // Final embedding flush: pipeline has drained, emit current===total.
+          const finalPipelineStats = ctx.chunkPipeline.getStats();
+          progressCallback?.({
+            phase: "embedding",
+            current: finalPipelineStats.itemsProcessed,
+            total: result.chunksCreated,
+            percentage: 100,
+            message: `Embedding: ${finalPipelineStats.itemsProcessed}/${result.chunksCreated} chunks`,
+            throughput: finalPipelineStats.throughput,
+          });
+
           await this.finalizeAlias(collectionName, setup);
           await storeIndexingMarker(this.qdrant, this.embeddings, setup.targetCollection, true, overrides?.modelInfo);
           await this.saveSnapshot(absolutePath, collectionName, files, stats, setup.aliasVersion);
@@ -384,8 +395,16 @@ export class IndexPipeline extends BaseIndexingPipeline {
               phase: "chunking",
               current: filesProcessed,
               total: files.length,
-              percentage: 10 + Math.round((filesProcessed / files.length) * 40),
-              message: `Processing: ${filesProcessed}/${files.length} files, ${pipelineStats.itemsProcessed}/${chunksQueued} chunks embedded`,
+              percentage: Math.round((filesProcessed / files.length) * 100),
+              message: `Chunking: ${filesProcessed}/${files.length} files`,
+            });
+            progressCallback?.({
+              phase: "embedding",
+              current: pipelineStats.itemsProcessed,
+              total: chunksQueued,
+              percentage: chunksQueued > 0 ? Math.round((pipelineStats.itemsProcessed / chunksQueued) * 100) : 0,
+              message: `Embedding: ${pipelineStats.itemsProcessed}/${chunksQueued} chunks`,
+              throughput: pipelineStats.throughput,
             });
           }
         },
