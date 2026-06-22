@@ -202,4 +202,18 @@ describe("formatIndexStatusJson", () => {
     const o = formatIndexStatusJson(status, { path: "/p" }) as Record<string, unknown>;
     expect(o.enrichmentHealth).toBeDefined();
   });
+
+  it("omits phases key when phases object is empty", () => {
+    const o = formatIndexStatusJson(baseStatus, { path: "/p", phases: {} }) as Record<string, unknown>;
+    expect(o.phases).toBeUndefined();
+  });
+
+  it("includes phases key when phases object has entries", () => {
+    const o = formatIndexStatusJson(baseStatus, {
+      path: "/p",
+      phases: { embedding: 1200, enrichment: 2300 },
+    }) as Record<string, unknown>;
+    expect(o.phases).toBeDefined();
+    expect(o.phases).toEqual({ embedding: 1200, enrichment: 2300 });
+  });
 });

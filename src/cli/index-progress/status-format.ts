@@ -116,7 +116,7 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
     base.overallMs = extra.overallMs;
   }
 
-  if (extra.phases) {
+  if (extra.phases && Object.keys(extra.phases).length > 0) {
     base.phases = extra.phases;
   }
 

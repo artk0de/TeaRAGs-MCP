@@ -345,4 +345,89 @@ describe("superviseIndexing — JSON mode", () => {
     // No "total Nms" human line in JSON mode
     expect(out.join("\n")).not.toContain("total");
   });
+
+  it("--wait mode with phase-done: stdout contains EXACTLY ONE parseable JSON, no human lines", async () => {
+    const child = fakeChild();
+    const renderer = new JsonProgressRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child as never, {
+      renderer,
+      waitEnrichments: true,
+      colors: plain,
+      out: (s) => out.push(s),
+      projectName: "tea-rags",
+      path: "/repo",
+    });
+
+    // Worker emits phase-done lines before done — these must NOT appear on stdout in json mode
+    child.emit("message", { type: "phase-done", phase: "embedding", elapsedMs: 1200 });
+    child.emit("message", { type: "phase-done", phase: "enrichment", elapsedMs: 2300 });
+    child.emit("message", statusMsg);
+    child.emit("message", { type: "done", result: { failed: [], degraded: [] } });
+    await p;
+
+    // Exactly one item in stdout
+    expect(out).toHaveLength(1);
+    // Must be valid JSON
+    const parsed = JSON.parse(out[0] ?? "") as Record<string, unknown>;
+    expect(parsed.status).toBe("indexed");
+    // No "done in" human text
+    expect(out.join("\n")).not.toContain("done in");
+    // No "total" human text
+    expect(out.join("\n")).not.toContain("total");
+  });
+
+  it("--wait mode with outcome failures: failures appear inside JSON, not as human lines on stdout", async () => {
+    const child = fakeChild();
+    const renderer = new JsonProgressRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child as never, {
+      renderer,
+      waitEnrichments: true,
+      colors: plain,
+      out: (s) => out.push(s),
+      path: "/repo",
+    });
+
+    child.emit("message", statusMsg);
+    child.emit("message", { type: "done", result: { failed: ["git"], degraded: ["codegraph"] } });
+    await p;
+
+    // Still exactly one JSON item on stdout
+    expect(out).toHaveLength(1);
+    const parsed = JSON.parse(out[0] ?? "") as Record<string, unknown>;
+    // Outcome must be in the JSON object
+    expect(parsed.outcome).toBeDefined();
+    const outcome = parsed.outcome as { failed: string[]; degraded: string[] };
+    expect(outcome.failed).toContain("git");
+    expect(outcome.degraded).toContain("codegraph");
+    // No human "✗" or "⚠" lines on stdout
+    expect(out.join("\n")).not.toContain("✗");
+    expect(out.join("\n")).not.toContain("⚠");
+  });
+
+  it("error message in json mode: stdout has exactly one JSON object with no human error text", async () => {
+    const child = fakeChild();
+    const renderer = new JsonProgressRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child as never, {
+      renderer,
+      waitEnrichments: true,
+      colors: plain,
+      out: (s) => out.push(s),
+      path: "/repo",
+    });
+
+    child.emit("message", { type: "error", message: "disk full" });
+    await p;
+
+    // In error path without a status there may be 0 JSON items (no status to format),
+    // but there must be NO human error text on stdout
+    const joined = out.join("\n");
+    expect(joined).not.toContain("disk full");
+    // If anything is on stdout it must be valid JSON
+    for (const line of out) {
+      expect(() => JSON.parse(line)).not.toThrow();
+    }
+  });
 });

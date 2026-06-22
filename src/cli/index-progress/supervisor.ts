@@ -85,6 +85,7 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
     };
 
     const printEta = (): void => {
+      if (jsonRenderer) return;
       const seconds = eta.aggregateEtaSeconds(now());
       if (seconds === null) {
         out(colors.dim("enrichments: running in background…"));
@@ -94,6 +95,7 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
     };
 
     const printOutcome = (outcome: EnrichmentOutcome): void => {
+      if (jsonRenderer) return;
       for (const p of outcome.failed) out(colors.alert(`✗ ${p}: enrichment failed`));
       for (const p of outcome.degraded) out(colors.warn(`⚠ ${p}: enrichment degraded`));
     };
@@ -103,7 +105,7 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
       renderer.handle(raw);
       switch (raw.type) {
         case "phase-done":
-          out(colors.dim(`${raw.phase} done in ${fmtDuration(raw.elapsedMs)}`));
+          if (!jsonRenderer) out(colors.dim(`${raw.phase} done in ${fmtDuration(raw.elapsedMs)}`));
           break;
         case "embedding":
           // Already forwarded to the renderer above; no supervisor-side state.
@@ -130,7 +132,7 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
           break;
         case "error":
           finish(1, () => {
-            out(colors.alert(`error: ${raw.message}`));
+            if (!jsonRenderer) out(colors.alert(`error: ${raw.message}`));
           });
           break;
       }
