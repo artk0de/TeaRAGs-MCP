@@ -172,9 +172,13 @@ server keeps pointing at the global install. Without re-linking, MCP-side
 integration tests via `mcp__tea-rags__*` tools cannot validate local changes —
 they exercise whatever was published last.
 
-### Sequence (worktree → merge → main link)
+### Sequence (worktree → merge)
 
-The link is **flipped twice** with a merge between. Skip neither step.
+Point the global link at the **worktree** build for MCP-side testing. After the
+merge, do NOT relink main — parallel sessions may have their own worktree builds
+linked, and relinking main would clobber whichever build another session is
+testing against. The link is a per-session / per-worktree concern; main carries
+the canonical _source_ after merge, not necessarily the global link.
 
 ```bash
 # 1. Worktree: build the worktree branch + point global tea-rags at it
@@ -189,19 +193,19 @@ npm link
 cd /Users/artk0re/Dev/Tools/tea-rags-mcp
 git merge worktree-<branch> --no-ff
 
-# 4. Main: build the merged code + re-link so global tea-rags reflects main.
-npm run build
-npm link
-
-# 5. Reconnect MCP servers again. Subsequent sessions see merged content.
+# Do NOT relink main here. Leave the global link where your session needs it
+# (typically the worktree build you just tested). A parallel session may have its
+# own build linked — relinking main would yank the link out from under it. Relink
+# a specific checkout only when YOU need the global link to point there.
 ```
 
-The reason step 4 happens AFTER the merge (not before, not skipped): the link in
-step 1 pointed at the worktree's working tree. After the merge integrates the
-worktree's commits into main, only main has the canonical post-merge state.
-Re-linking main at step 4 makes the global tea-rags reflect what is actually
-committed on main — not a stale worktree directory that may be removed or
-evolved further.
+Why no automatic main relink after merge: the global `npm link` is a single
+machine-wide pointer, but multiple sessions test in parallel, each against its
+own worktree build. Forcing the link back to main after every merge would break
+whatever build a concurrent session is mid-test on. Treat the link as owned by
+whoever is actively testing — point it at the build you need and leave it there.
+Once a worktree's commits are merged, its source is preserved on main regardless
+of where the link points, so a later `npm link` from any checkout reproduces it.
 
 ### Why build AND link each time
 
@@ -224,9 +228,11 @@ evolved further.
 - **Building+linking main BEFORE merging.** Main's `build/` doesn't yet contain
   the worktree's changes. The global link will point at main's pre-merge state
   and MCP tests regress to the un-tested baseline.
-- **Skipping the post-merge re-link.** Global tea-rags stays pinned to the
-  worktree directory. If that worktree is removed (`git worktree remove`) the
-  link breaks; if it evolves further, MCP exercises mismatched code.
+- **Relinking main after merge by reflex.** The global link is machine-wide and
+  shared across parallel sessions; yanking it back to main can break a
+  concurrent session mid-test. Relink a checkout only when your own session
+  needs the link there. Caveat: if you remove the worktree the link currently
+  points at, the link breaks — relink before `git worktree remove`.
 - **Publishing instead of linking** as a quick test path. `npm publish` is
   permanent; the link is reversible (`npm unlink` or another `npm link` on a
   different checkout).
@@ -249,6 +255,29 @@ fields or stale shape and silently behave as before.
 # Standard: incremental reindex (added + modified files only)
 mcp__tea-rags__index_codebase project=<alias>
 ```
+
+### Prefer the CLI when testing enrichments with reindex
+
+When the change touches **enrichment** and validating it requires a reindex, use
+the CLI — NOT the MCP `index_codebase` tool:
+
+```bash
+tea-rags index-codebase --project <alias> --wait-enrichments --force --json
+```
+
+- `--wait-enrichments` stays attached until every enrichment provider finishes,
+  rendering per-provider progress bars + **durations** — you get enrichment
+  timing for free (perf-regression signal) and a precise "done" marker.
+- `--force` runs a full re-index from scratch; drop it for incremental.
+- `--json` emits the final result as machine-readable JSON (file counts,
+  per-provider enrichment durations, `codegraphResolve` byReceiverKind) instead
+  of human bars — parse it directly rather than scraping rendered output. Always
+  pass it when an agent consumes the result.
+- The MCP `mcp__tea-rags__index_codebase` tool returns once embeddings are
+  stored and **detaches** enrichment to the background — so MCP-side testing
+  forces you to poll `get_index_status` repeatedly and guess when enrichment
+  settled. The CLI's synchronous wait removes both the polling and the
+  guesswork.
 
 ### Schema drift — reindex from scratch (tea-rags self-test only)
 
@@ -276,12 +305,13 @@ cd .claude/worktrees/<branch>
 npm run build
 npm link
 # → reconnect MCP servers
-mcp__tea-rags__force_reindex project=tea-rags   # schema drift: full reset
-mcp__tea-rags__index_codebase project=production-rails-app    # other projects: incremental
+# enrichment-affecting change: prefer the CLI (synchronous + timed)
+tea-rags index-codebase --project tea-rags --wait-enrichments --force --json   # full reset
+mcp__tea-rags__index_codebase project=production-rails-app              # other projects: incremental
 
 # 2. Validate via mcp__tea-rags__semantic_search / find_symbol against
 #    the freshly indexed payload.
 
-# 3. Merge, build+link main, reconnect MCP, leave indices as-is
-#    (master's payload schema should match worktree's after merge).
+# 3. Merge. Do NOT relink main (parallel sessions own their own links).
+#    Leave indices as-is (main's payload schema matches the worktree after merge).
 ```

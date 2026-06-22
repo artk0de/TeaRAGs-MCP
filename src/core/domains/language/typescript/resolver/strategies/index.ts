@@ -8,4 +8,5 @@ export { TSReceiverSymbolSymbolResolutionStrategy } from "./ts-receiver-symbol.j
 export { TSSameFileSymbolResolutionStrategy } from "./ts-same-file.js";
 export { TSGlobalShortNameSymbolResolutionStrategy } from "./ts-global-short-name.js";
 export { TSImportNarrowedFallbackSymbolResolutionStrategy } from "./ts-import-narrowed-fallback.js";
-export { collectImportedFiles, type ResolverConfig } from "./shared.js";
+export { TSConeTypeLocator } from "./ts-cone-type-locator.js";
+export { collectImportedFiles, CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";

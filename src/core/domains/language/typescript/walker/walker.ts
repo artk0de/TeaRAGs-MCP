@@ -75,7 +75,16 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   // to the method chunk, not the enclosing class chunk that also spans
   // the `def` line (mirrors the innermost call-attribution discipline).
   const paramBindings = collectParamBindings(input.tree.rootNode);
-  const bindingOwnership = assignParamBindingsToInnermostChunks(paramBindings, input.chunks);
+  // bd tea-rags-mcp-2yfi — also bind concrete-class types from variable
+  // declarations and re-assignments so the SAME `localBindings` channel (and
+  // thus the existing ts-local-binding resolver strategy) resolves
+  // `x.method()` for `const x = new T()` / `const x: T = …` / `x = new T()`.
+  // Merged with the typed-parameter bindings and sorted by declaration line
+  // so `resolveLocalBindingType` sees the bindings in source order (the
+  // re-assignment / shadowing case relies on the most-recent line ≤ call).
+  const variableBindings = collectVariableBindings(input.tree.rootNode);
+  const allBindings = [...paramBindings, ...variableBindings].sort((a, b) => a.startLine - b.startLine);
+  const bindingOwnership = assignParamBindingsToInnermostChunks(allBindings, input.chunks);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const chunk: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -594,8 +603,19 @@ function collectClassFieldTypes(root: AstNode): ReadonlyMap<string, ReadonlyMap<
       // Pattern 2: public/private/protected/readonly field declaration
       if (member.type === "public_field_definition") {
         const fieldName = member.childForFieldName("name")?.text;
-        const typeName = extractTypeNameFromAnnotation(member.children.find((c) => c.type === "type_annotation"));
-        if (fieldName && typeName) fields.set(fieldName, typeName);
+        // Annotated field wins: `field: T`.
+        const annotated = extractTypeNameFromAnnotation(member.children.find((c) => c.type === "type_annotation"));
+        if (fieldName && annotated) {
+          fields.set(fieldName, annotated);
+          continue;
+        }
+        // bd tea-rags-mcp-2yfi — un-annotated field initialized from a
+        // constructor: `private reg = new CollectionRegistry()`. The
+        // `new_expression`'s constructor name IS the field type, so the
+        // ts-field-type resolver strategy can pin `this.reg.method()` even
+        // without a written annotation.
+        const initialized = constructorTypeName(member.childForFieldName("value"));
+        if (fieldName && initialized) fields.set(fieldName, initialized);
         continue;
       }
       // Pattern 1: constructor parameter properties
@@ -666,6 +686,70 @@ function collectParamBindings(root: AstNode): ParamBinding[] {
     if (typeName) out.push({ name: pattern.text, type: typeName, startLine: node.startPosition.row + 1 });
   });
   return out;
+}
+
+/**
+ * Collect `{ name, type, startLine }` for concrete-class type bindings from
+ * variable declarations and re-assignments (bd tea-rags-mcp-2yfi). Three
+ * deterministic single-target forms feed the SAME `localBindings` channel the
+ * typed-parameter path uses, so the existing ts-local-binding resolver
+ * strategy resolves `x.method()` without a new strategy:
+ *
+ *   A. `const x = new T()` / `let x = new T()` / `x = new T()`
+ *      → bind `x → T` (the `new_expression`'s constructor name).
+ *   B. `const x: T = …` → bind `x → T` via the declarator's `type_annotation`.
+ *
+ * Only bare-identifier targets bind — destructuring patterns
+ * (`const { a } = new T()`) have no single receiver name and are skipped
+ * (mirrors the param-binding SAFE boundary). Form B reuses
+ * `extractTypeNameFromAnnotation`; Form A reuses `baseTypeName` so generics
+ * (`new Map<K,V>()`) and qualified names (`new ns.Foo()`) normalise
+ * identically to the field-type / extends paths.
+ */
+function collectVariableBindings(root: AstNode): ParamBinding[] {
+  const out: ParamBinding[] = [];
+  walk(root, (node) => {
+    // `const/let x = …` — one or more `variable_declarator` children.
+    if (node.type === "variable_declaration" || node.type === "lexical_declaration") {
+      for (const decl of node.children) {
+        if (decl.type !== "variable_declarator") continue;
+        const name = decl.childForFieldName("name");
+        if (name?.type !== "identifier") continue; // skip destructuring patterns
+        // Form B precedence: an explicit `: T` annotation pins the type even
+        // when the initializer is a call / cast we can't read.
+        const annotated = extractTypeNameFromAnnotation(decl.children.find((c) => c.type === "type_annotation"));
+        if (annotated) {
+          out.push({ name: name.text, type: annotated, startLine: decl.startPosition.row + 1 });
+          continue;
+        }
+        // Form A: `= new T()`.
+        const value = decl.childForFieldName("value");
+        const ctor = constructorTypeName(value);
+        if (ctor) out.push({ name: name.text, type: ctor, startLine: decl.startPosition.row + 1 });
+      }
+      return;
+    }
+    // Form A re-assignment: `x = new T()` — a bare-identifier left side.
+    if (node.type === "assignment_expression") {
+      const left = node.childForFieldName("left");
+      if (left?.type !== "identifier") return;
+      const ctor = constructorTypeName(node.childForFieldName("right"));
+      if (ctor) out.push({ name: left.text, type: ctor, startLine: node.startPosition.row + 1 });
+    }
+  });
+  return out;
+}
+
+/**
+ * Reduce a `new_expression` to its base constructor type name (or null when
+ * the node is not a `new T()`). Type arguments live in a sibling
+ * `type_arguments` node, so the `constructor` field is already the base name;
+ * `baseTypeName` additionally tolerates a `generic_type` constructor shape and
+ * keeps qualified `ns.Foo` chains intact.
+ */
+function constructorTypeName(node: AstNode | null): string | null {
+  if (node?.type !== "new_expression") return null;
+  return baseTypeName(node.childForFieldName("constructor") ?? undefined);
 }
 
 /**

@@ -228,6 +228,20 @@ export class EnrichmentApplier {
     chunkMap: ReadonlyMap<string, readonly { chunkId: string; startLine: number; endLine: number }[]>,
     transform?: FileSignalTransform,
     enrichedAt?: string,
+    /**
+     * Policy predicate (injected by the caller, which knows the provider's
+     * policy): true ⇒ this file was intentionally skipped by
+     * `shouldEnrich === "none"`. bd tea-rags-mcp-yl9tv — classification of a
+     * MISSING overlay must be a POLICY decision, NOT overlay-presence: a file
+     * absent from `fileOverlays` because policy declined it is `ignored` (no
+     * stamp); a genuine source-file gap (declined by NO policy yet still no
+     * overlay — e.g. dropped under concurrency) is a real `missed` tracked for
+     * backfill. Without this, a missing overlay was silently bare-stamped and
+     * counted neither way, so ignoredFiles swung run-to-run with file timing.
+     * Mirrors `applyFileSignals`. Optional so existing callers stay valid;
+     * absent ⇒ legacy bare-stamp (no provider policy available).
+     */
+    isIgnored?: (relativePath: string) => boolean,
   ): Promise<number> {
     const fileKey = `${providerKey}.file`;
     const ops: {
@@ -240,10 +254,20 @@ export class EnrichmentApplier {
     for (const [relPath, entries] of chunkMap) {
       const overlay = fileOverlays.get(relPath);
       if (!overlay) {
-        // File the deferred provider didn't produce a file overlay for (e.g. a
-        // language it doesn't graph: markdown / json). Stamp a bare enrichedAt
-        // so these chunks aren't counted "unenriched" forever — mirrors the
-        // miss-stamp semantics of applyFileSignals / applyChunkSignals.
+        // No overlay for this file. Classify by POLICY (bd tea-rags-mcp-yl9tv),
+        // not by overlay presence:
+        //   - policy "none" (e.g. generated / vendored, OR a language the
+        //     provider doesn't graph) ⇒ ignored, NO stamp (carries no payload).
+        //   - otherwise a genuine miss ⇒ track for backfill AND bare-stamp so
+        //     recovery doesn't count it unenriched forever.
+        if (isIgnored?.(relPath)) {
+          this.ignoredPaths.add(relPath);
+          continue;
+        }
+        this.missedTracker.track(
+          relPath,
+          entries.map((e) => ({ chunkId: e.chunkId, startLine: e.startLine, endLine: e.endLine })),
+        );
         if (enrichedAt) {
           for (const entry of entries) {
             ops.push({ payload: { enrichedAt }, points: [entry.chunkId], key: fileKey });

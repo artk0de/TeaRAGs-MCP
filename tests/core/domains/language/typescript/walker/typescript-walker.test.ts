@@ -860,6 +860,155 @@ describe("extractFromTypescriptFile", () => {
       expect(extraction.chunks[0].localBindings).toBeUndefined();
     });
   });
+
+  // bd tea-rags-mcp-2yfi — concrete-class type bindings from variable
+  // declarations + field initializers. Extends localBindings beyond typed
+  // PARAMETERS (x6ta) to the three highest-value deterministic single-target
+  // forms so the EXISTING resolver strategies (ts-local-binding, ts-field-type)
+  // resolve `x.method()` where `x` was declared via `new T()` / `: T` / a
+  // field initialized from `new T()`. No new resolver strategy — better data
+  // fed into the existing ones.
+  describe("concrete-class type bindings (localBindings/classFieldTypes) — bd tea-rags-mcp-2yfi", () => {
+    // Form A — `const x = new T()` binds x → T in localBindings.
+    it("binds `const x = new T()` to T", () => {
+      const code = ["function run() {", "  const reg = new CollectionRegistry();", "  reg.list();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/run.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["reg"]).toEqual([{ line: 2, type: "CollectionRegistry" }]);
+    });
+
+    // Form A — `let x = new T()` binds the same way.
+    it("binds `let x = new T()` to T", () => {
+      const code = ["function run() {", "  let reg = new CollectionRegistry();", "  reg.list();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/run.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["reg"]).toEqual([{ line: 2, type: "CollectionRegistry" }]);
+    });
+
+    // Form A — generic constructor `new T<U>()` strips to base T.
+    it("strips generics on `new T<U>()` — binds to T", () => {
+      const code = ["function run() {", "  const map = new Map<string, number>();", "  map.get();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/run.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["map"]).toEqual([{ line: 2, type: "Map" }]);
+    });
+
+    // Form B — `const x: T = ...` binds x → T via the declarator's annotation.
+    it("binds `const x: T = makeT()` to T via the declarator annotation", () => {
+      const code = ["function run() {", "  const reg: CollectionRegistry = makeReg();", "  reg.list();", "}", ""].join(
+        "\n",
+      );
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/run.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["reg"]).toEqual([{ line: 2, type: "CollectionRegistry" }]);
+    });
+
+    // Re-assignment — position-aware bindings: the most-recent binding at or
+    // before a call line wins (resolveLocalBindingType picks it). Each
+    // assignment contributes its own `{ line, type }` entry in source order.
+    it("records re-assignment as ordered bindings: `let x = new A(); x = new B()`", () => {
+      const code = ["function run() {", "  let x = new A();", "  x = new B();", "  x.go();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/run.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "run", startLine: 1, endLine: 5, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["x"]).toEqual([
+        { line: 2, type: "A" },
+        { line: 3, type: "B" },
+      ]);
+    });
+
+    // Form C — class field initialized from `new T()` WITHOUT a type
+    // annotation lands in classFieldTypes so the ts-field-type strategy
+    // resolves `this.reg.method()`.
+    it("binds an un-annotated field initializer `private reg = new T()` to T in classFieldTypes", () => {
+      const code = [
+        "class S {",
+        "  private reg = new CollectionRegistry();",
+        "  go() { this.reg.list(); }",
+        "}",
+        "",
+      ].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/s.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "S#go", startLine: 3, endLine: 3, scope: ["S"] }],
+      });
+      expect(extraction.classFieldTypes?.["S"]?.["reg"]).toBe("CollectionRegistry");
+    });
+
+    // BOUNDARY (bd tea-rags-mcp-2yfi) — destructuring declarators have no
+    // single receiver name; binding any destructured name would create a
+    // phantom receiver the resolver could mis-pin. Lock bind-nothing.
+    it("destructured declarator `const { a } = new T()` produces NO localBinding for `a`", () => {
+      const code = ["function run() {", "  const { a } = new T();", "  a.go();", "}", ""].join("\n");
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/run.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["a"]).toBeUndefined();
+      expect(extraction.chunks[0].localBindings).toBeUndefined();
+    });
+
+    // BOUNDARY — `as` casts (P3, out of scope) must not throw and must not
+    // produce a binding via the cast type.
+    it("does not throw and does not bind on `const x = y as unknown as X`", () => {
+      const code = ["function run(y: unknown) {", "  const x = y as unknown as X;", "  x.go();", "}", ""].join("\n");
+      const tree = parse(code);
+      expect(() =>
+        extractFromTypescriptFile({
+          tree,
+          code,
+          relPath: "src/run.ts",
+          language: "typescript",
+          chunks: [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }],
+        }),
+      ).not.toThrow();
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/run.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }],
+      });
+      expect(extraction.chunks[0].localBindings?.["x"]).toBeUndefined();
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────
