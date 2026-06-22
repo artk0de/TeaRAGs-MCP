@@ -258,3 +258,66 @@ describe("rbNameOf — non-symbol nodes return null", () => {
     expect(rbNameOf(node)).toBeNull();
   });
 });
+
+describe("rbNameOf — toStaticKind array branch (macro inside class << self)", () => {
+  it("rubyMacroEmission array result is converted to all-static via toStaticKind", () => {
+    // has_many :posts inside class << self → AR_ASSOCIATION_MACROS returns an
+    // ARRAY (not a single NamedSymbol) → toStaticKind must handle the array branch.
+    const tree = parse("class Foo\n  class << self\n    has_many :posts\n  end\nend\n");
+    const node = findMacroCall(tree, "has_many");
+    const result = rbNameOf(node);
+    // Should be an array of NamedSymbols, all with methodKind === 'static'.
+    expect(Array.isArray(result)).toBe(true);
+    if (Array.isArray(result)) {
+      expect(result.every((s) => s.methodKind === "static")).toBe(true);
+      expect(result.map((s) => s.name)).toEqual(["posts", "posts="]);
+    }
+  });
+
+  it("alias keyword inside class << self uses toStaticKind on single NamedSymbol", () => {
+    // rubyAliasKeywordEmission returns a single NamedSymbol → toStaticKind non-array branch.
+    const tree = parse("class Foo\n  class << self\n    alias fresh stale\n  end\nend\n");
+    const node = findFirst(tree, "alias");
+    const result = rbNameOf(node);
+    expect(result).toMatchObject({ name: "fresh", methodKind: "static" });
+  });
+});
+
+describe("rbNameOf — rubyMacroEmission guard: no args → null", () => {
+  it("macro call with no argument list returns null for catalogue-based macro", () => {
+    // `attr_reader` alone with no parens and no symbols → args absent → rubyMacroEmission returns null.
+    const tree = parse("class C\n  attr_reader\nend\n");
+    // The node may parse as identifier, not a call — either way rbNameOf returns null.
+    const body = findFirst(tree, "class").childForFieldName("body");
+    const stmt = body ? body.namedChildren[0] : null;
+    if (!stmt) return;
+    const result = rbNameOf(stmt);
+    // Either null or empty array — never a populated result.
+    if (Array.isArray(result)) {
+      expect(result).toEqual([]);
+    } else {
+      expect(result).toBeNull();
+    }
+  });
+});
+
+describe("rbNameOf — class with no name node returns null", () => {
+  it("class node without a name field returns null (defensive)", () => {
+    // Can't produce this via normal Ruby syntax; test that rbNameOf handles
+    // a `class` node gracefully when nameNode is missing — verified via
+    // normal parse: a plain `class << self` has no name field.
+    const tree = parse("class Foo\n  class << self\n  end\nend\n");
+    const sc = findFirst(tree, "singleton_class");
+    // singleton_class has no `name` field → rbNameOf returns null at the class/module branch.
+    expect(rbNameOf(sc)).toBeNull();
+  });
+});
+
+describe("rbNameOf — scopeResolutionText with deep nesting (A::B::C)", () => {
+  it("rbNameOf composes a 3-level scope_resolution class name without empty segment", () => {
+    // Exercises scopeResolutionText recursive path where left is another scope_resolution.
+    const tree = parse("class A::B::C\nend\n");
+    const node = findFirst(tree, "class");
+    expect(rbNameOf(node)).toEqual({ name: "A::B::C", descendsInto: true });
+  });
+});
