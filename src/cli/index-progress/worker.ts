@@ -51,21 +51,70 @@ export function computeDirSize(dirPath: string): number {
 }
 
 /**
+ * Returns true when QDRANT_URL points at a genuinely remote host (not localhost/127.0.0.1/[::1]).
+ * Embedded daemon is addressed via a localhost URL — that still counts as local.
+ * Unparseable URLs are treated as not-remote (proceed to compute size).
+ */
+function isRemoteQdrantUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return hostname !== "localhost" && hostname !== "127.0.0.1" && hostname !== "[::1]" && hostname !== "::1";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Resolve the on-disk size of an embedded Qdrant collection directory.
- * Returns undefined when QDRANT_URL is set (remote Qdrant — no local dir to read)
- * or when the collection directory does not exist yet.
+ *
+ * Returns undefined when:
+ * - QDRANT_URL is set and points at a non-localhost remote (no local dir available)
+ * - collectionName is undefined
+ * - no versioned dir matching `<collectionName>_v<N>` exists under collections/
+ *
+ * The embedded Qdrant stores collections under a versioned name:
+ * `<collections>/<collectionName>_v<N>` (e.g. `code_f78fcda5_v1`). The alias
+ * itself (`code_f78fcda5`) is never a real directory — always pick the highest N.
+ *
+ * Why: live-validation found that (a) the embedded daemon is addressed via a
+ * localhost URL so QDRANT_URL is always set in embedded mode, and (b) the real
+ * on-disk dir has a `_v<N>` suffix that the alias name lacks.
  */
 export function resolveIndexSizeBytes(collectionName: string | undefined): number | undefined {
-  // Remote Qdrant: no local dir available.
-  if (process.env.QDRANT_URL) return undefined;
+  // Skip only for genuinely remote Qdrant (non-localhost host).
+  if (process.env.QDRANT_URL && isRemoteQdrantUrl(process.env.QDRANT_URL)) return undefined;
   if (!collectionName) return undefined;
 
   const storagePath = process.env.QDRANT_EMBEDDED_STORAGE_PATH
     ? process.env.QDRANT_EMBEDDED_STORAGE_PATH
     : join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "qdrant");
 
-  const collectionDir = join(storagePath, "collections", collectionName);
-  const size = computeDirSize(collectionDir);
+  const collectionsDir = join(storagePath, "collections");
+
+  // Resolve the highest versioned dir: `<collectionName>_v<N>`.
+  let versionedDir: string | undefined;
+  try {
+    const versionPattern = new RegExp(`^${collectionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}_v(\\d+)$`);
+    let highestVersion = -1;
+    for (const entry of readdirSync(collectionsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const match = versionPattern.exec(entry.name);
+      if (match) {
+        const version = parseInt(match[1], 10);
+        if (version > highestVersion) {
+          highestVersion = version;
+          versionedDir = join(collectionsDir, entry.name);
+        }
+      }
+    }
+  } catch {
+    // collections/ dir does not exist or is unreadable
+    return undefined;
+  }
+
+  if (!versionedDir) return undefined;
+
+  const size = computeDirSize(versionedDir);
   return size > 0 ? size : undefined;
 }
 

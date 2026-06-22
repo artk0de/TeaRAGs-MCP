@@ -87,9 +87,19 @@ describe("resolveIndexSizeBytes", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("returns undefined when QDRANT_URL is set (remote Qdrant)", () => {
-    process.env.QDRANT_URL = "http://remote:6333";
+  it("returns undefined when QDRANT_URL is a non-localhost remote", () => {
+    process.env.QDRANT_URL = "http://my-remote-qdrant.example.com:6333";
     expect(resolveIndexSizeBytes("my_collection")).toBeUndefined();
+  });
+
+  it("does NOT skip when QDRANT_URL points at localhost (embedded daemon)", () => {
+    process.env.QDRANT_URL = "http://127.0.0.1:57331";
+    process.env.QDRANT_EMBEDDED_STORAGE_PATH = tmpDir;
+    const collectionDir = join(tmpDir, "collections", "code_x_v1");
+    mkdirSync(collectionDir, { recursive: true });
+    writeFileSync(join(collectionDir, "segment.bin"), Buffer.alloc(256));
+    const result = resolveIndexSizeBytes("code_x");
+    expect(result).toBeGreaterThan(0);
   });
 
   it("returns undefined when collectionName is undefined", () => {
@@ -97,20 +107,30 @@ describe("resolveIndexSizeBytes", () => {
     expect(resolveIndexSizeBytes(undefined)).toBeUndefined();
   });
 
-  it("returns undefined when the collection directory does not exist", () => {
+  it("returns undefined when no versioned dir exists for the collection", () => {
     delete process.env.QDRANT_URL;
     process.env.QDRANT_EMBEDDED_STORAGE_PATH = join(tmpDir, "no-qdrant");
     expect(resolveIndexSizeBytes("code_abc")).toBeUndefined();
   });
 
-  it("returns the directory byte size when the collection dir exists", () => {
+  it("resolves the highest versioned dir (code_x_v3 over code_x_v2)", () => {
     delete process.env.QDRANT_URL;
     process.env.QDRANT_EMBEDDED_STORAGE_PATH = tmpDir;
-    const collectionDir = join(tmpDir, "collections", "code_test");
-    mkdirSync(collectionDir, { recursive: true });
-    writeFileSync(join(collectionDir, "segment.bin"), Buffer.alloc(512));
-    const result = resolveIndexSizeBytes("code_test");
-    expect(result).toBe(512);
+    const v2Dir = join(tmpDir, "collections", "code_x_v2");
+    const v3Dir = join(tmpDir, "collections", "code_x_v3");
+    mkdirSync(v2Dir, { recursive: true });
+    mkdirSync(v3Dir, { recursive: true });
+    writeFileSync(join(v2Dir, "old.bin"), Buffer.alloc(100));
+    writeFileSync(join(v3Dir, "current.bin"), Buffer.alloc(400));
+    const result = resolveIndexSizeBytes("code_x");
+    expect(result).toBe(400);
+  });
+
+  it("returns undefined when collections dir does not exist", () => {
+    delete process.env.QDRANT_URL;
+    process.env.QDRANT_EMBEDDED_STORAGE_PATH = tmpDir;
+    // no collections/ subdir created
+    expect(resolveIndexSizeBytes("code_missing")).toBeUndefined();
   });
 });
 
