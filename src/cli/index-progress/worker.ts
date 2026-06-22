@@ -38,7 +38,14 @@ export function computeDirSize(dirPath: string): number {
         total += computeDirSize(full);
       } else if (entry.isFile() || entry.isSymbolicLink()) {
         try {
-          total += statSync(full).size;
+          const stat = statSync(full);
+          // Use allocated blocks (512-byte units) to get real on-disk usage.
+          // Sparse mmap segment files (e.g. Qdrant embedded collections) have
+          // large logical size but few allocated blocks — stat.size is wildly
+          // inflated (1.5 GB apparent vs 382 MB actual observed live).
+          // Fallback for exotic platforms where blocks is undefined: round up
+          // to nearest 512-byte sector so the result is never NaN.
+          total += stat.blocks !== undefined ? stat.blocks * 512 : Math.ceil(stat.size / 512) * 512;
         } catch {
           // skip unreadable file
         }

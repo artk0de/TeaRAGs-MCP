@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -55,10 +55,30 @@ describe("computeDirSize", () => {
     expect(computeDirSize("/definitely/does/not/exist/abc123")).toBe(0);
   });
 
+  it("uses allocated blocks (stat.blocks * 512), not logical file size", () => {
+    // A real file: stat.blocks * 512 reflects actual on-disk allocation.
+    // On macOS/Linux this is always >= logical size due to block granularity.
+    // This test locks the block-based semantics — the old .size-based code
+    // would return stat.size (e.g. 100), not stat.blocks * 512 (e.g. 4096).
+    const filePath = join(tmpDir, "probe.bin");
+    writeFileSync(filePath, Buffer.alloc(100));
+    const st = statSync(filePath);
+    const expectedBlocks = st.blocks * 512;
+    const result = computeDirSize(tmpDir);
+    // Must equal blocks * 512 (real allocation), not logical size (100).
+    expect(result).toBe(expectedBlocks);
+    // Guard: if the platform happens to give blocks=0 for tiny files, the
+    // test would trivially pass for both old and new code — assert they differ.
+    if (expectedBlocks !== st.size) {
+      expect(result).not.toBe(st.size);
+    }
+  });
+
   it("sums file sizes in a flat directory", () => {
     writeFileSync(join(tmpDir, "a.bin"), Buffer.alloc(100));
     writeFileSync(join(tmpDir, "b.bin"), Buffer.alloc(200));
-    expect(computeDirSize(tmpDir)).toBe(300);
+    const expected = statSync(join(tmpDir, "a.bin")).blocks * 512 + statSync(join(tmpDir, "b.bin")).blocks * 512;
+    expect(computeDirSize(tmpDir)).toBe(expected);
   });
 
   it("recurses into subdirectories", () => {
@@ -66,7 +86,8 @@ describe("computeDirSize", () => {
     mkdirSync(sub);
     writeFileSync(join(tmpDir, "top.bin"), Buffer.alloc(50));
     writeFileSync(join(sub, "nested.bin"), Buffer.alloc(150));
-    expect(computeDirSize(tmpDir)).toBe(200);
+    const expected = statSync(join(tmpDir, "top.bin")).blocks * 512 + statSync(join(sub, "nested.bin")).blocks * 512;
+    expect(computeDirSize(tmpDir)).toBe(expected);
   });
 });
 
@@ -123,7 +144,8 @@ describe("resolveIndexSizeBytes", () => {
     writeFileSync(join(v2Dir, "old.bin"), Buffer.alloc(100));
     writeFileSync(join(v3Dir, "current.bin"), Buffer.alloc(400));
     const result = resolveIndexSizeBytes("code_x");
-    expect(result).toBe(400);
+    const expectedBlocks = statSync(join(v3Dir, "current.bin")).blocks * 512;
+    expect(result).toBe(expectedBlocks);
   });
 
   it("returns undefined when collections dir does not exist", () => {
