@@ -14,6 +14,7 @@ import {
   RubyIvarFieldSymbolResolutionStrategy,
   RubyLocalTypeSymbolResolutionStrategy,
   RubyReceiverSetDropSymbolResolutionStrategy,
+  RubyReturnTypeBindingSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
@@ -528,5 +529,73 @@ describe("RubyIvarFieldSymbolResolutionStrategy", () => {
       ctx({ symbolTable: tableWith(), callerScope: ["Foo"], classFieldTypes: { Foo: { "@client": "HttpClient" } } }),
     );
     expect(outcome.kind).toBe("continue");
+  });
+});
+
+describe("RubyReturnTypeBindingSymbolResolutionStrategy", () => {
+  const strat = new RubyReturnTypeBindingSymbolResolutionStrategy(cfg);
+  const call: CallRef = { callText: "x.get", receiver: "x", member: "get", startLine: 1 };
+
+  it("continues when the call has no receiver", () => {
+    const outcome = strat.attempt({ ...call, receiver: null }, ctx({ symbolTable: tableWith() }));
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("continues when the receiver has no localCallBinding", () => {
+    const outcome = strat.attempt(call, ctx({ symbolTable: tableWith(), localCallBindings: {} }));
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("continues when the called method has no recorded return type", () => {
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable: tableWith(), localCallBindings: { x: "make_client" }, functionReturnTypes: {} }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("continues when the return type resolves to no project file (gem/stdlib — additive, never DROP)", () => {
+    const outcome = strat.attempt(
+      call,
+      ctx({
+        symbolTable: tableWith(),
+        localCallBindings: { x: "make_client" },
+        functionReturnTypes: { make_client: "Net::HTTP" },
+      }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("resolves x→make_client→HttpClient#get when the return type is an in-project class", () => {
+    const symbolTable = tableWith([
+      "app/clients/http_client.rb",
+      [
+        sym("HttpClient", "HttpClient", "app/clients/http_client.rb", []),
+        sym("HttpClient#get", "get", "app/clients/http_client.rb", ["HttpClient"]),
+      ],
+    ]);
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, localCallBindings: { x: "make_client" }, functionReturnTypes: { make_client: "HttpClient" } }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/clients/http_client.rb", targetSymbolId: "HttpClient#get" },
+    });
+  });
+
+  it("resolves to a file-only edge when the return type's file is known but the method is not", () => {
+    const symbolTable = tableWith([
+      "app/clients/http_client.rb",
+      [sym("HttpClient", "HttpClient", "app/clients/http_client.rb", [])],
+    ]);
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, localCallBindings: { x: "make_client" }, functionReturnTypes: { make_client: "HttpClient" } }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/clients/http_client.rb", targetSymbolId: null },
+    });
   });
 });

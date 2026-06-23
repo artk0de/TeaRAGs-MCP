@@ -2,6 +2,7 @@ export { RubySuperSymbolResolutionStrategy } from "./ruby-super.js";
 export { RubySelfMemberSymbolResolutionStrategy } from "./ruby-self-member.js";
 export { RubyLocalTypeSymbolResolutionStrategy } from "./ruby-local-type.js";
 export { RubyIvarFieldSymbolResolutionStrategy } from "./ruby-ivar-field.js";
+export { RubyReturnTypeBindingSymbolResolutionStrategy } from "./ruby-return-type-binding.js";
 export { RubyConstantSymbolResolutionStrategy } from "./ruby-constant.js";
 export { RubyExplicitRequireSymbolResolutionStrategy } from "./ruby-explicit-require.js";
 export { RubyArRelationGuardSymbolResolutionStrategy } from "./ruby-ar-relation-guard.js";
