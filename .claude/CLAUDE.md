@@ -215,6 +215,26 @@ of where the link points, so a later `npm link` from any checkout reproduces it.
 - The `npm run build` step ensures `build/` reflects current source. Skipping it
   leaves the link pointing at stale compiled output.
 
+### Never auto-build / auto-reindex (MANDATORY)
+
+- **Do NOT `npm run build` a worktree automatically** when MORE than one worktree
+  is active (`git worktree list` shows >1 entry under `.claude/worktrees/` —
+  parallel sessions present). Wait for an explicit "build"/"собери". A build +
+  relink can collide with a concurrent session's build/link.
+- **Single active worktree is the exception:** if `git worktree list` shows
+  exactly one worktree, you MAY build automatically to verify — there is no
+  parallel session to disturb.
+- **Reindex / `index-codebase --force` is ALWAYS user-gated**, regardless of
+  worktree count — it rewrites the shared Qdrant index and depends on ollama
+  embeddings (which can flap mid-run). NEVER chain a reindex off a build; stop at
+  green tests and wait for an explicit "reindex"/"замер".
+- **Commit after successful live validation is auto-authorized.** Once a
+  user-triggered live validation SUCCEEDS (reindex clean + measured
+  resolveSuccessRate delta confirms the change), you MAY commit the change
+  immediately on the worktree branch without waiting for an explicit "commit" —
+  the successful validation is the authorization. Still worktree-only: never
+  merge to main or push without an explicit ask.
+
 ### When to skip the link-flip entirely
 
 - Pure docs / spec / plan changes that don't touch `src/` — no rebuild needed.
