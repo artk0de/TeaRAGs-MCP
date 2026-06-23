@@ -26,9 +26,13 @@ const BATCH_SIZE = 100;
 const MISSED_PATH_SAMPLE_LIMIT = 10;
 
 /**
- * Emitted once per apply batch. `applied` is the number of point-ops this batch
- * wrote (approximately one per chunk point), used by the coordinator to build a
- * cumulative per-(provider, level) progress numerator for CLI rendering.
+ * Emitted once per apply batch. `applied` is the CUMULATIVE per-(provider,level)
+ * value as of this batch:
+ * - file level: cumulative count of distinct files processed by this provider
+ *   across all batches so far (Set-deduped, so the same relPath in two batches
+ *   counts as 1).
+ * - chunk level: cumulative count of chunk overlays applied by this provider
+ *   across all batches so far (running sum, not a delta).
  */
 export interface EnrichmentApplyEvent {
   providerKey: string;
@@ -41,6 +45,22 @@ export class EnrichmentApplier {
   private readonly missedTracker = new MissedFileTracker({
     sampleLimit: MISSED_PATH_SAMPLE_LIMIT,
   });
+
+  /**
+   * Per-provider tracking for cumulative file-level progress. Keyed by
+   * providerKey; Set holds relPaths seen so far (deduped across batches).
+   * Populated by applyFileSignals and applyFinalizeFile; emitted as the
+   * `applied` value in EnrichmentApplyEvent for level="file".
+   */
+  private readonly filesByProvider = new Map<string, Set<string>>();
+
+  /**
+   * Per-provider tracking for cumulative chunk-level progress. Keyed by
+   * providerKey; value is the running sum of chunk overlays applied.
+   * Populated by applyChunkSignals; emitted as the `applied` value in
+   * EnrichmentApplyEvent for level="chunk".
+   */
+  private readonly chunksByProvider = new Map<string, number>();
 
   /**
    * Optional callback invoked once per apply batch across ALL apply methods
@@ -197,7 +217,28 @@ export class EnrichmentApplier {
       }
     }
 
-    if (operations.length === 0) return;
+    // Track every file that was processed in this batch (including missed/ignored
+    // paths that produced no overlay — they were still seen). Do this BEFORE the
+    // early-return so the file count advances even for stamp-only batches.
+    let providerFileSet = this.filesByProvider.get(providerKey);
+    if (providerFileSet === undefined) {
+      providerFileSet = new Set<string>();
+      this.filesByProvider.set(providerKey, providerFileSet);
+    }
+    const prevSize = providerFileSet.size;
+    for (const filePath of byFile.keys()) {
+      providerFileSet.add(relative(pathBase, filePath));
+    }
+    const seenNewFiles = providerFileSet.size > prevSize || byFile.size > 0;
+
+    if (operations.length === 0) {
+      // Still emit a file event if any new files were seen (e.g. all-ignored batch)
+      if (seenNewFiles) {
+        this.onApply?.({ providerKey, level: "file", applied: providerFileSet.size });
+      }
+      pipelineLog.addStageTime("enrichApply", Date.now() - applyStart);
+      return;
+    }
 
     for (let i = 0; i < operations.length; i += BATCH_SIZE) {
       const batch = operations.slice(i, i + BATCH_SIZE);
@@ -205,7 +246,7 @@ export class EnrichmentApplier {
       if (!ok) this.trackResidualBatch(opResidual.slice(i, i + BATCH_SIZE));
     }
 
-    this.onApply?.({ providerKey, level: "file", applied: operations.length });
+    this.onApply?.({ providerKey, level: "file", applied: providerFileSet.size });
     pipelineLog.addStageTime("enrichApply", Date.now() - applyStart);
   }
 
@@ -287,11 +328,21 @@ export class EnrichmentApplier {
       this.matchedPaths.add(relPath);
     }
 
+    // Track every relPath in the chunkMap as a processed file for this provider.
+    let finalizeFileSet = this.filesByProvider.get(providerKey);
+    if (finalizeFileSet === undefined) {
+      finalizeFileSet = new Set<string>();
+      this.filesByProvider.set(providerKey, finalizeFileSet);
+    }
+    for (const relPath of chunkMap.keys()) {
+      finalizeFileSet.add(relPath);
+    }
+
     for (let i = 0; i < ops.length; i += BATCH_SIZE) {
       await batchSetPayloadWithRetry(this.qdrant, collectionName, ops.slice(i, i + BATCH_SIZE), this.retryOptions);
     }
 
-    if (ops.length > 0) this.onApply?.({ providerKey, level: "file", applied: ops.length });
+    if (chunkMap.size > 0) this.onApply?.({ providerKey, level: "file", applied: finalizeFileSet.size });
     return appliedFiles;
   }
 
@@ -366,7 +417,11 @@ export class EnrichmentApplier {
       }
     }
 
-    if (applied > 0) this.onApply?.({ providerKey, level: "chunk", applied });
+    if (applied > 0) {
+      const cumulative = (this.chunksByProvider.get(providerKey) ?? 0) + applied;
+      this.chunksByProvider.set(providerKey, cumulative);
+      this.onApply?.({ providerKey, level: "chunk", applied: cumulative });
+    }
     return applied;
   }
 

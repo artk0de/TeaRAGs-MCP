@@ -251,6 +251,33 @@ export interface IndexStatus {
    * `tea-rags doctor <project> --quarantine`, not exposed here.
    */
   quarantine?: { count: number };
+  /**
+   * On-disk / reported index size in bytes.
+   * Omitted: Qdrant REST API exposes no disk/memory size field (only points_count /
+   * segments_count / indexed_vectors_count). Cannot be populated without fabrication.
+   * Task 7 (CLI rendering) uses chunksCount as a proxy instead.
+   */
+  indexSizeBytes?: number;
+  /**
+   * On-disk size of the codegraph database in bytes, when CODEGRAPH_ENABLED.
+   * Reported separately from indexSizeBytes (Qdrant). Omitted when codegraph
+   * disabled or absent.
+   */
+  codegraphSizeBytes?: number;
+  /**
+   * Minimal per-run enrichment metrics (matched/missed/durations).
+   * Omitted at status-read time: full EnrichmentMetrics is in-memory per-run only;
+   * the persisted marker stores only a subset per provider level (matchedFiles,
+   * missedFiles, durationMs, unenrichedChunks). Task 7 sources enrichmentMetrics
+   * from IndexStats.enrichmentMetrics returned by the live indexing run instead.
+   */
+  enrichmentMetrics?: EnrichmentMetrics;
+  /**
+   * Registered project alias for this collection, when one exists.
+   * Intentionally unset in StatusModule to keep it registry-free (domain-boundary
+   * rule). Resolved at the CLI layer in Task 7.
+   */
+  projectName?: string;
   /** Infrastructure health status (Qdrant + embedding provider) */
   infraHealth?: {
     qdrant: {
@@ -277,11 +304,21 @@ export interface IndexStatus {
 export type ProgressCallback = (progress: ProgressUpdate) => void;
 
 export interface ProgressUpdate {
+  /**
+   * Canonical phases:
+   * - `scanning`  — file discovery
+   * - `chunking`  — files parsed and queued (current=filesProcessed, total=files.length)
+   * - `embedding` — chunks embedded by the pipeline (current=itemsProcessed, total=chunksQueued)
+   * - `storing`   — finalization
+   * - `enriching` — git/static enrichment
+   */
   phase: "scanning" | "chunking" | "embedding" | "storing" | "enriching";
   current: number;
   total: number;
   percentage: number;
   message: string;
+  /** Chunks per second from the embedding pipeline; present on `embedding` phase updates only. */
+  throughput?: number;
 }
 
 /**

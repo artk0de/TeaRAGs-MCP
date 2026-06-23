@@ -135,10 +135,26 @@ export class EnrichmentCoordinator {
    * MCP path — no emission, zero overhead. Set per run by `IndexingOps.run`.
    */
   private progressCb?: EnrichmentProgressCallback;
-  /** Denominator for progress events; set to the chunk count at chunk-phase start. */
-  private progressTotal = 0;
-  /** Cumulative applied point-ops per `${providerKey}:${level}` for the current run. */
-  private readonly progressApplied = new Map<string, number>();
+  /**
+   * Per-key progress state: `${providerKey}:${level}` → last applied value.
+   * The applier now emits CUMULATIVE applied values, so we store them as-is
+   * (no accumulation here). Reset on every `beginRun`.
+   */
+  private readonly progress = new Map<string, { applied: number; total: number }>();
+
+  /**
+   * Grand file count for the current run — the denominator for file-level
+   * progress events. Set in `beginRun` from the scanned file list size.
+   * Zero means the run hasn't started or no files to scan.
+   */
+  private grandFileCount = 0;
+
+  /**
+   * Running sum of stored chunk counts across all `onChunksStored` batches
+   * for the current run. Used as the denominator for chunk-level progress
+   * events. Reset in `beginRun`.
+   */
+  private chunkTotalAccumulated = 0;
 
   private _onChunkEnrichmentComplete?: (collectionName: string) => Promise<void>;
   get onChunkEnrichmentComplete(): ((collectionName: string) => Promise<void>) | undefined {
@@ -250,6 +266,7 @@ export class EnrichmentCoordinator {
     ignoreFilter?: Ignore,
     _changedPaths?: string[],
     crossPass = false,
+    fileCount = 0,
   ): void {
     // Build a fresh RunState. Per-run instances guarantee old promise closures
     // mutate their orphaned RunState, never the current one.
@@ -257,11 +274,15 @@ export class EnrichmentCoordinator {
     runState.crossPass = crossPass;
     this.currentRun = runState;
 
-    // Fresh per-run progress accumulator (numerator); denominator is set when the
-    // chunk phase starts. Progress sink itself (`progressCb`) persists across the
-    // run — set by IndexingOps before the first batch.
-    this.progressApplied.clear();
-    this.progressTotal = 0;
+    // Reset per-run progress state. grandFileCount is the denominator for
+    // file-level events (known up front from the scanned file list).
+    // chunkTotalAccumulated grows in onChunksStored as chunks arrive —
+    // the denominator for chunk-level events. The progress map stores the
+    // last emitted applied value per (provider,level) for display; cleared
+    // here so run 2 never sees run 1's stale state.
+    this.grandFileCount = fileCount;
+    this.chunkTotalAccumulated = 0;
+    this.progress.clear();
 
     // Wire the applier-site chokepoint: every apply batch (file, chunk, finalize,
     // backfill) calls onApply. This covers ALL apply paths — streaming, post-flush
@@ -340,6 +361,14 @@ export class EnrichmentCoordinator {
   onChunksStored(collectionName: string, absolutePath: string, items: ChunkItem[]): void {
     if (!this.currentRun) return;
     const run = this.currentRun;
+
+    // Accumulate the chunk-level denominator from this batch's chunk count.
+    // File-level denominator is now grandFileCount (set at beginRun from the
+    // scanned file list — known up front). Chunk total keeps growing per batch.
+    if (items.length > 0) {
+      this.chunkTotalAccumulated += items.length;
+    }
+
     // Sequence file→chunk PER PROVIDER: a provider's buildChunkSignals reads the
     // batch's file result its own streamFileBatch populated (git blame needs
     // this), so each chunk dispatch must wait for the SAME provider's file work.
@@ -397,10 +426,6 @@ export class EnrichmentCoordinator {
    */
   startChunkEnrichment(collectionName: string, absolutePath: string, chunkMap: Map<string, ChunkLookupEntry[]>): void {
     if (!this.currentRun) return;
-    // The full chunk set is known now — use it as the progress denominator. Each
-    // chunk receives ~one file stamp and one chunk overlay per provider, so
-    // cumulative applied per (provider, level) converges to this total.
-    if (this.progressCb) this.progressTotal = chunkMap.size;
     this.currentRun.chunkPhase.enrichRemaining(collectionName, absolutePath, chunkMap);
   }
 
@@ -427,13 +452,21 @@ export class EnrichmentCoordinator {
     await run.donePromise.catch(() => undefined);
   }
 
-  /** Accumulate an apply batch into the cumulative numerator and forward it. */
+  /**
+   * Forward an apply event from the applier as an enrichment-progress callback
+   * invocation. The applier now emits CUMULATIVE applied values per
+   * (providerKey, level):
+   * - file level: distinct files processed (Set-deduped) → total = grandFileCount
+   * - chunk level: running chunk overlay sum → total = chunkTotalAccumulated
+   *
+   * We SET (not accumulate) applied — the applier already did the accumulation.
+   */
   private emitProgress(event: EnrichmentApplyEvent): void {
     if (!this.progressCb) return;
     const key = `${event.providerKey}:${event.level}`;
-    const applied = (this.progressApplied.get(key) ?? 0) + event.applied;
-    this.progressApplied.set(key, applied);
-    this.progressCb({ providerKey: event.providerKey, level: event.level, applied, total: this.progressTotal });
+    const total = event.level === "file" ? this.grandFileCount : this.chunkTotalAccumulated;
+    this.progress.set(key, { applied: event.applied, total });
+    this.progressCb({ providerKey: event.providerKey, level: event.level, applied: event.applied, total });
   }
 
   /**
