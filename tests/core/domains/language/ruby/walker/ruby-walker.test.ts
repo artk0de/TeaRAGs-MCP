@@ -2336,3 +2336,29 @@ describe("collectRubyIvarFieldTypes (ivar → type, classFieldTypes channel)", (
     });
   });
 });
+
+describe("extractFromRubyFile — classFieldTypes (ivar inference)", () => {
+  it("surfaces @ivar constructor types on the FileExtraction", () => {
+    const src = `
+      class Foo
+        def initialize
+          @client = HttpClient.new
+        end
+      end
+    `;
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "app/models/foo.rb", language: "ruby", chunks: [] });
+    expect(r.classFieldTypes).toEqual({ Foo: { "@client": "HttpClient" } });
+  });
+
+  it("omits classFieldTypes when no ivar constructor types are present", () => {
+    const src = `
+      class Bar
+        def run; helper; end
+      end
+    `;
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "app/models/bar.rb", language: "ruby", chunks: [] });
+    expect(r.classFieldTypes).toBeUndefined();
+  });
+});

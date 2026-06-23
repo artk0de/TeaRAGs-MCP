@@ -47,6 +47,7 @@ import { RUBY_DSL, singularizeAssociation } from "../dsl/index.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
 import {
   collectLocalBindingsForChunk,
+  collectRubyIvarFieldTypes,
   collectYardParamTypes,
   collectYardReturnTypes,
   localTypeTrackingEnabled,
@@ -138,6 +139,13 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // single-constant return annotation was found.
   if (Object.keys(yardReturnTypes).length > 0) out.functionReturnTypes = yardReturnTypes;
   if (Object.keys(dispatchTables).length > 0) out.dispatchTables = dispatchTables;
+  // `@ivar` receiver types via the universal `classFieldTypes` channel (cai0
+  // imass) — same env gate as the other type-inference paths. Ruby is the 5th
+  // language to fill this channel (after TS/Java/Python/Rust).
+  if (trackTypes) {
+    const ivarFieldTypes = collectRubyIvarFieldTypes(input.tree.rootNode);
+    if (Object.keys(ivarFieldTypes).length > 0) out.classFieldTypes = ivarFieldTypes;
+  }
   return out;
 }
 
