@@ -15,10 +15,10 @@
 
 import type { IndexStatus } from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
-import { EnrichmentEtaTracker } from "./eta.js";
 import { isWorkerMessage, type EnrichmentOutcome } from "./ipc-protocol.js";
-import type { ProgressRenderer } from "./renderer.js";
-import { formatIndexStatus } from "./status-format.js";
+import { fmtDuration, OverallTimer, PhaseProgressTracker } from "./phase-tracker.js";
+import { JsonProgressRenderer, type ProgressRenderer } from "./renderer.js";
+import { formatIndexStatus, formatIndexStatusJson } from "./status-format.js";
 
 /** Minimal child handle — satisfied by Node `ChildProcess` and a test EventEmitter. */
 export interface WorkerHandle {
@@ -34,29 +34,53 @@ export interface SuperviseOptions {
   out: (line: string) => void;
   /** Injectable clock for the ETA tracker (ms). Defaults to a monotonic counter base. */
   now?: () => number;
+  /** Registered project alias, threaded into the human and JSON status blocks. */
+  projectName?: string;
+  /** Resolved absolute path being indexed, threaded into the JSON status block. */
+  path?: string;
 }
 
 export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOptions): Promise<number> {
   const { renderer, waitEnrichments, colors, out } = opts;
   const now = opts.now ?? (() => 0);
-  const eta = new EnrichmentEtaTracker(now());
+  const eta = new PhaseProgressTracker(now());
+  const overall = new OverallTimer(now());
   let latestStatus: IndexStatus | undefined;
+  const jsonRenderer = renderer instanceof JsonProgressRenderer ? renderer : null;
 
   return new Promise<number>((resolve) => {
     let settled = false;
-    const finish = (code: number): void => {
+    const finish = (code: number, printAfterStop?: () => void): void => {
       if (settled) return;
       settled = true;
+      overall.stop(now());
       renderer.stop();
+      printAfterStop?.();
+      if (!jsonRenderer) {
+        out(colors.bold(`total ${fmtDuration(overall.elapsedMs())}`));
+      }
       resolve(code);
     };
 
     const printStatus = (): void => {
-      if (latestStatus) out(formatIndexStatus(latestStatus, colors));
+      if (!latestStatus) return;
+      if (jsonRenderer) {
+        const o = formatIndexStatusJson(latestStatus, {
+          projectName: opts.projectName,
+          path: opts.path ?? "",
+          phases: jsonRenderer.phases,
+          overallMs: overall.elapsedMs(),
+          outcome: jsonRenderer.outcome,
+        });
+        out(JSON.stringify(o, null, 2));
+      } else {
+        out(formatIndexStatus(latestStatus, colors, { projectName: opts.projectName, path: opts.path }));
+      }
     };
 
     const printEta = (): void => {
-      const seconds = eta.etaSeconds(now());
+      if (jsonRenderer) return;
+      const seconds = eta.aggregateEtaSeconds(now());
       if (seconds === null) {
         out(colors.dim("enrichments: running in background…"));
       } else {
@@ -65,6 +89,7 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
     };
 
     const printOutcome = (outcome: EnrichmentOutcome): void => {
+      if (jsonRenderer) return;
       for (const p of outcome.failed) out(colors.alert(`✗ ${p}: enrichment failed`));
       for (const p of outcome.degraded) out(colors.warn(`⚠ ${p}: enrichment degraded`));
     };
@@ -73,30 +98,36 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
       if (!isWorkerMessage(raw)) return;
       renderer.handle(raw);
       switch (raw.type) {
+        case "phase-done":
+          // Handled by renderer.handle (called above): TTY → multibar.log, line → sink, JSON → no-op.
+          break;
         case "embedding":
           // Already forwarded to the renderer above; no supervisor-side state.
           break;
         case "enrichment":
-          eta.record(raw, now());
+          eta.record(`${raw.providerKey}:${raw.level}`, raw.applied, raw.total, now());
           break;
         case "status":
           latestStatus = raw.status;
           if (!waitEnrichments) {
-            // Index is searchable — print status + ETA, detach, return control.
-            printStatus();
-            printEta();
+            // Index is searchable — stop bars first, then print status + ETA.
             child.disconnect?.();
-            finish(0);
+            finish(0, () => {
+              printStatus();
+              if (!jsonRenderer) printEta();
+            });
           }
           break;
         case "done":
-          printStatus();
-          printOutcome(raw.result);
-          finish(raw.result.failed.length > 0 ? 1 : 0);
+          finish(raw.result.failed.length > 0 ? 1 : 0, () => {
+            printStatus();
+            printOutcome(raw.result);
+          });
           break;
         case "error":
-          out(colors.alert(`error: ${raw.message}`));
-          finish(1);
+          finish(1, () => {
+            if (!jsonRenderer) out(colors.alert(`error: ${raw.message}`));
+          });
           break;
       }
     });

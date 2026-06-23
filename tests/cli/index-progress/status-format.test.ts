@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatIndexStatus } from "../../../src/cli/index-progress/status-format.js";
+import { formatIndexStatus, formatIndexStatusJson } from "../../../src/cli/index-progress/status-format.js";
 import { createColorizer } from "../../../src/cli/infra/color.js";
 import type { IndexStatus } from "../../../src/core/api/public/index.js";
 
@@ -57,5 +57,185 @@ describe("formatIndexStatus", () => {
   it("handles a not_indexed status without throwing", () => {
     const out = formatIndexStatus({ isIndexed: false, status: "not_indexed" }, plain);
     expect(out).toContain("not_indexed");
+  });
+
+  it("renders project name, qdrant health, counts, size and enrichment metrics", () => {
+    const status: IndexStatus = {
+      ...baseStatus,
+      indexSizeBytes: 1048576,
+      infraHealth: {
+        qdrant: { available: true, url: "http://localhost:6333", status: "green" },
+        embedding: { available: true, provider: "jina" },
+      },
+      enrichmentMetrics: {
+        prefetchDurationMs: 100,
+        streamingApplies: 5,
+        flushApplies: 2,
+        chunkChurnDurationMs: 50,
+        totalDurationMs: 300,
+        matchedFiles: 80,
+        missedFiles: 10,
+        missedPathSamples: [],
+      },
+    };
+    const out = formatIndexStatus(status, plain, { projectName: "tea-rags", path: "/x" });
+    expect(out).toContain("project:    tea-rags");
+    expect(out).toMatch(/qdrant:\s+(green|yellow|red)/);
+    expect(out).toContain("chunks:");
+    expect(out).toContain("size:");
+    expect(out).toMatch(/matched\s+80/);
+  });
+
+  it("falls back to path when no projectName", () => {
+    const out = formatIndexStatus(baseStatus, plain, { path: "/my/project" });
+    expect(out).toContain("path:       /my/project");
+  });
+
+  it("omits size line when indexSizeBytes is absent", () => {
+    const out = formatIndexStatus(baseStatus, plain, { projectName: "p" });
+    expect(out).not.toContain("size:");
+  });
+
+  it("renders yellow qdrant status with warn color word", () => {
+    const status: IndexStatus = {
+      ...baseStatus,
+      infraHealth: {
+        qdrant: { available: true, url: "http://localhost:6333", status: "yellow" },
+        embedding: { available: true, provider: "jina" },
+      },
+    };
+    const out = formatIndexStatus(status, plain);
+    expect(out).toContain("yellow");
+  });
+
+  it("renders red qdrant status with alert color word", () => {
+    const status: IndexStatus = {
+      ...baseStatus,
+      infraHealth: {
+        qdrant: { available: true, url: "http://localhost:6333", status: "red" },
+        embedding: { available: true, provider: "jina" },
+      },
+    };
+    const out = formatIndexStatus(status, plain);
+    expect(out).toContain("red");
+  });
+
+  it("renders size in KB for small sizes", () => {
+    const out = formatIndexStatus({ ...baseStatus, indexSizeBytes: 2048 }, plain);
+    expect(out).toContain("KB");
+  });
+
+  it("renders size in GB for very large sizes", () => {
+    const out = formatIndexStatus({ ...baseStatus, indexSizeBytes: 2 * 1024 * 1024 * 1024 }, plain);
+    expect(out).toContain("GB");
+  });
+
+  it("renders codegraph size line when codegraphSizeBytes is present", () => {
+    const out = formatIndexStatus({ ...baseStatus, indexSizeBytes: 1048576, codegraphSizeBytes: 14680064 }, plain);
+    expect(out).toContain("codegraph:");
+    expect(out).toContain("MB");
+  });
+
+  it("omits codegraph line when codegraphSizeBytes is absent", () => {
+    const out = formatIndexStatus({ ...baseStatus, indexSizeBytes: 1048576 }, plain);
+    expect(out).not.toContain("codegraph:");
+  });
+});
+
+describe("formatIndexStatusJson", () => {
+  it("returns a stable machine object with expected shape", () => {
+    const status: IndexStatus = {
+      ...baseStatus,
+      indexSizeBytes: 2097152,
+      enrichmentMetrics: {
+        prefetchDurationMs: 200,
+        streamingApplies: 3,
+        flushApplies: 1,
+        chunkChurnDurationMs: 60,
+        totalDurationMs: 500,
+        matchedFiles: 100,
+        missedFiles: 5,
+        missedPathSamples: ["a/b.ts"],
+      },
+    };
+    const o = formatIndexStatusJson(status, { path: "/x", projectName: "tea-rags", overallMs: 4200 });
+    expect(o).toMatchObject({ projectName: "tea-rags", status: status.status, overallMs: 4200 });
+  });
+
+  it("contains no ANSI escape codes", () => {
+    const o = formatIndexStatusJson(baseStatus, { path: "/x", projectName: "p", overallMs: 100 });
+    const s = JSON.stringify(o);
+    expect(s).not.toContain("\x1b");
+  });
+
+  it("includes indexSizeBytes and enrichmentMetrics when present", () => {
+    const status: IndexStatus = {
+      ...baseStatus,
+      indexSizeBytes: 512,
+      enrichmentMetrics: {
+        prefetchDurationMs: 10,
+        streamingApplies: 1,
+        flushApplies: 0,
+        chunkChurnDurationMs: 5,
+        totalDurationMs: 50,
+        matchedFiles: 20,
+        missedFiles: 2,
+        missedPathSamples: [],
+      },
+    };
+    const o = formatIndexStatusJson(status, { path: "/p" }) as Record<string, unknown>;
+    expect(o.indexSizeBytes).toBe(512);
+    expect(o.enrichmentMetrics).toBeDefined();
+  });
+
+  it("omits indexSizeBytes when absent", () => {
+    const o = formatIndexStatusJson(baseStatus, { path: "/p" }) as Record<string, unknown>;
+    expect(o.indexSizeBytes).toBeUndefined();
+  });
+
+  it("includes codegraphSizeBytes when present", () => {
+    const status: IndexStatus = { ...baseStatus, codegraphSizeBytes: 14680064 };
+    const o = formatIndexStatusJson(status, { path: "/p" }) as Record<string, unknown>;
+    expect(o.codegraphSizeBytes).toBe(14680064);
+  });
+
+  it("omits codegraphSizeBytes when absent", () => {
+    const o = formatIndexStatusJson(baseStatus, { path: "/p" }) as Record<string, unknown>;
+    expect(o.codegraphSizeBytes).toBeUndefined();
+  });
+
+  it("includes infraHealth when present", () => {
+    const status: IndexStatus = {
+      ...baseStatus,
+      infraHealth: {
+        qdrant: { available: true, url: "http://localhost:6333", status: "green" },
+        embedding: { available: true, provider: "jina" },
+      },
+    };
+    const o = formatIndexStatusJson(status, { path: "/p" }) as Record<string, unknown>;
+    expect(o.infraHealth).toBeDefined();
+  });
+
+  it("includes enrichmentHealth when enrichment is present", () => {
+    const status: IndexStatus = {
+      ...baseStatus,
+      enrichment: { git: { file: { status: "healthy" }, chunk: { status: "healthy" } } },
+    };
+    const o = formatIndexStatusJson(status, { path: "/p" }) as Record<string, unknown>;
+    expect(o.enrichmentHealth).toBeDefined();
+  });
+
+  it("omits phases key when phases object is empty", () => {
+    const o = formatIndexStatusJson(baseStatus, { path: "/p", phases: {} }) as Record<string, unknown>;
+    expect(o.phases).toBeUndefined();
+  });
+
+  it("includes phases key when phases object has entries", () => {
+    const o = formatIndexStatusJson(baseStatus, {
+      path: "/p",
+      phases: { embedding: 1200, enrichment: 2300 },
+    }) as Record<string, unknown>;
+    expect(o.phases).toBeDefined();
+    expect(o.phases).toEqual({ embedding: 1200, enrichment: 2300 });
   });
 });

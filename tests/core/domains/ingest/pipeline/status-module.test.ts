@@ -13,6 +13,7 @@ import {
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
+import { StatsCache } from "../../../../../src/core/infra/stats-cache.js";
 import type { IngestCodeConfig } from "../../../../../src/core/types.js";
 
 vi.mock("tree-sitter", () => ({
@@ -266,6 +267,84 @@ describe("StatusModule", () => {
         const status = await ingest.getIndexStatus(codebaseDir);
 
         expect(status.quarantine).toBeUndefined();
+      });
+
+      // Task 6 (Workstream E): indexSizeBytes / enrichmentMetrics / projectName
+      // on IndexStatus DTO. All three fields are OPTIONAL — this test verifies:
+      // 1. chunksCount is still populated (real source: Qdrant points_count).
+      // 2. indexSizeBytes is undefined — Qdrant REST API exposes no disk/memory
+      //    size field (only points_count / segments_count / indexed_vectors_count),
+      //    so we CANNOT populate it without fabrication. Task 7 can display
+      //    chunksCount as a proxy.
+      // 3. enrichmentMetrics is undefined — full EnrichmentMetrics (prefetchDurationMs,
+      //    streamingApplies, flushApplies, etc.) is in-memory per-run only; the
+      //    persisted marker stores only a subset (matchedFiles/missedFiles/durationMs
+      //    per provider level). Populating would require fabricating the missing
+      //    fields. Task 7 sources enrichmentMetrics from IndexStats.enrichmentMetrics
+      //    returned by the live indexing run instead.
+      // 4. projectName is undefined — intentionally deferred to CLI layer (Task 7)
+      //    to keep StatusModule registry-free (domain-boundary rule).
+      it("exposes chunksCount but leaves indexSizeBytes / enrichmentMetrics / projectName unset after indexing", async () => {
+        await createTestFile(
+          codebaseDir,
+          "status-fields.ts",
+          "export const STATUS_VERSION = 1;\nconsole.log('status fields test');\nfunction getVersion() { return STATUS_VERSION; }",
+        );
+        await ingest.indexCodebase(codebaseDir);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.isIndexed).toBe(true);
+        expect(status.status).toBe("indexed");
+        // Real source (Qdrant points_count) — always populated.
+        expect(typeof status.chunksCount).toBe("number");
+        // No honest source available at status-read time — must remain absent.
+        expect(status.indexSizeBytes).toBeUndefined();
+        expect(status.enrichmentMetrics).toBeUndefined();
+        expect(status.projectName).toBeUndefined();
+      });
+
+      it("exposes filesCount from persisted StatsCache distributions.totalFiles after indexing", async () => {
+        await createTestFile(codebaseDir, "fc.ts", "export const FC = 1;\nconsole.log('fc');");
+        await ingest.indexCodebase(codebaseDir);
+        const indexed = await ingest.getIndexStatus(codebaseDir);
+
+        // Write a stats cache sibling with distributions.totalFiles = 7.
+        const snapshotDir = join(process.env.TEA_RAGS_DATA_DIR!, "snapshots");
+        await fs.mkdir(snapshotDir, { recursive: true });
+        new StatsCache(snapshotDir).save(indexed.collectionName!, {
+          perSignal: new Map(),
+          perLanguage: new Map(),
+          distributions: {
+            totalFiles: 7,
+            language: {},
+            chunkType: {},
+            documentation: { docs: 0, code: 0 },
+            topAuthors: [],
+            topBlameAuthors: [],
+            othersCount: 0,
+          },
+          computedAt: Date.now(),
+        });
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.filesCount).toBe(7);
+      });
+
+      it("omits filesCount when no stats cache exists for the collection", async () => {
+        await createTestFile(codebaseDir, "nofc.ts", "export const NFC = 2;\nconsole.log('nofc');");
+        await ingest.indexCodebase(codebaseDir);
+
+        // No stats file written — filesCount should remain undefined.
+        // Note: indexCodebase itself may write a stats file; delete it to test clean state.
+        const snapshotDir = join(process.env.TEA_RAGS_DATA_DIR!, "snapshots");
+        const indexed = await ingest.getIndexStatus(codebaseDir);
+        new StatsCache(snapshotDir).invalidate(indexed.collectionName!);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.filesCount).toBeUndefined();
       });
     });
 

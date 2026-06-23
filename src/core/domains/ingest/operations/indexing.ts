@@ -90,7 +90,14 @@ export class IndexPipeline extends BaseIndexingPipeline {
         await quarantineStore.clearAll();
       }
 
-      const ctx = this.initProcessing(setup.targetCollection, absolutePath, scanner, undefined, overrides?.chunkSize);
+      const ctx = this.initProcessing(
+        setup.targetCollection,
+        absolutePath,
+        scanner,
+        undefined,
+        overrides?.chunkSize,
+        files.length,
+      );
       // Embed-phase poison-pill isolation: an oversized chunk quarantines its
       // file instead of aborting the whole pass.
       ctx.chunkPipeline.setQuarantineStore(quarantineStore);
@@ -139,6 +146,23 @@ export class IndexPipeline extends BaseIndexingPipeline {
             absolutePath,
           );
           this.logPipelineCompletion(ctx);
+
+          // Final embedding flush: pipeline has drained, emit current===total.
+          // Use chunksQueued as denominator — same as in-loop updates — so the
+          // progress bar total never jumps. Under quarantine chunksQueued may
+          // exceed itemsProcessed, making percentage < 100 (truthful).
+          const finalPipelineStats = ctx.chunkPipeline.getStats();
+          progressCallback?.({
+            phase: "embedding",
+            current: finalPipelineStats.itemsProcessed,
+            total: result.chunksQueued,
+            percentage:
+              result.chunksQueued > 0
+                ? Math.round((finalPipelineStats.itemsProcessed / result.chunksQueued) * 100)
+                : 100,
+            message: `Embedding: ${finalPipelineStats.itemsProcessed}/${result.chunksQueued} chunks`,
+            throughput: finalPipelineStats.throughput,
+          });
 
           await this.finalizeAlias(collectionName, setup);
           await storeIndexingMarker(this.qdrant, this.embeddings, setup.targetCollection, true, overrides?.modelInfo);
@@ -349,7 +373,18 @@ export class IndexPipeline extends BaseIndexingPipeline {
     let filesProcessed = 0;
     let chunksQueued = 0;
 
-    return processFiles(
+    ctx.chunkPipeline.setOnProgress((itemsProcessed, throughput) => {
+      progressCallback?.({
+        phase: "embedding",
+        current: itemsProcessed,
+        total: chunksQueued,
+        percentage: chunksQueued > 0 ? Math.round((itemsProcessed / chunksQueued) * 100) : 0,
+        message: `Embedding: ${itemsProcessed}/${chunksQueued} chunks`,
+        throughput,
+      });
+    });
+
+    const result = await processFiles(
       files,
       absolutePath,
       ctx.chunkerPool,
@@ -379,18 +414,18 @@ export class IndexPipeline extends BaseIndexingPipeline {
           filesProcessed++;
           chunksQueued += chunksCount;
           if (filesProcessed === 1 || filesProcessed % 10 === 0) {
-            const pipelineStats = ctx.chunkPipeline.getStats();
             progressCallback?.({
               phase: "chunking",
               current: filesProcessed,
               total: files.length,
-              percentage: 10 + Math.round((filesProcessed / files.length) * 40),
-              message: `Processing: ${filesProcessed}/${files.length} files, ${pipelineStats.itemsProcessed}/${chunksQueued} chunks embedded`,
+              percentage: Math.round((filesProcessed / files.length) * 100),
+              message: `Chunking: ${filesProcessed}/${files.length} files`,
             });
           }
         },
       },
     );
+    return { ...result, chunksQueued };
   }
 
   // ── Finalization helpers ───────────────────────────────

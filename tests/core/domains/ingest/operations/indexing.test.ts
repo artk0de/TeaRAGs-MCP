@@ -205,6 +205,56 @@ describe("IndexPipeline", () => {
       expect(progressCallback.mock.calls.some((call) => call[0].phase === "chunking")).toBe(true);
     });
 
+    it("reports embedding progress from pipeline itemsProcessed, not files scanned", async () => {
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export interface User {\n  id: string;\n  name: string;\n  email: string;\n}",
+      );
+
+      const updates: { phase: string; current: number; total: number; throughput?: number }[] = [];
+      await ingest.indexCodebase(codebaseDir, {}, (u) => updates.push(u));
+
+      const embedding = updates.filter((u) => u.phase === "embedding");
+      expect(embedding.length).toBeGreaterThan(0);
+
+      const last = embedding.at(-1)!;
+      // All chunks embedded at completion — numerator equals denominator
+      expect(last.current).toBe(last.total);
+      // throughput wiring is covered: pipeline reports a numeric rate
+      expect(typeof last.throughput).toBe("number");
+    });
+
+    it("embedding progress fires from stored batches, not from onFileProcessed (chunking cadence)", async () => {
+      // Multi-file codebase so chunking fires multiple onFileProcessed events.
+      // Embedding progress must arrive from the stored-batch hook, not chunking cadence,
+      // so the last embedding update should reflect actual stored chunk count.
+      // Use content known to produce ≥1 chunk with mock tree-sitter (file content chunk)
+      for (let i = 0; i < 3; i++) {
+        await createTestFile(
+          codebaseDir,
+          `file${i}.ts`,
+
+          `export function hello${i}(name: string): string {\n  console.log("Greeting user ${i}");\n  return \`Hello, \${name}!\`;\n}`,
+        );
+      }
+
+      const embeddingUpdates: { current: number; total: number }[] = [];
+      const chunkingUpdates: number[] = [];
+      await ingest.indexCodebase(codebaseDir, {}, (u) => {
+        if (u.phase === "embedding") embeddingUpdates.push({ current: u.current, total: u.total });
+        if (u.phase === "chunking") chunkingUpdates.push(u.current);
+      });
+
+      // At least one embedding update must exist
+      expect(embeddingUpdates.length).toBeGreaterThan(0);
+      // The final embedding update must have current > 0 (real batch stored)
+      const lastEmbed = embeddingUpdates.at(-1)!;
+      expect(lastEmbed.current).toBeGreaterThan(0);
+      // chunking fires independently (per-file) — its count is driven by files
+      expect(chunkingUpdates.length).toBeGreaterThan(0);
+    });
+
     it("should respect custom extensions", async () => {
       await createTestFile(codebaseDir, "test.ts", "const x = 1;");
       await createTestFile(codebaseDir, "test.md", "# Documentation");

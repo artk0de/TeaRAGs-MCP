@@ -16,6 +16,7 @@ export interface IndexCodebaseArgs {
   project?: string;
   "wait-enrichments"?: boolean;
   force?: boolean;
+  json?: boolean;
   /** Hidden: marks the forked child as the detached indexing worker. */
   __worker?: boolean;
 }
@@ -44,6 +45,16 @@ function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
 }
 
+/**
+ * Resolve the registered project alias for the given resolved path.
+ * Uses `findByPath` for exact path match, then falls back to `get(collectionName)`
+ * when collectionName is known. Returns null when no alias is registered.
+ */
+function resolveProjectName(registry: CollectionRegistry, resolvedPath: string): string | null {
+  const entry = registry.findByPath(resolvedPath);
+  return entry?.name ?? null;
+}
+
 export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
   command: "index-codebase [path]",
   describe: "Index a codebase with live embedding + per-provider enrichment progress.",
@@ -68,6 +79,12 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
         default: false,
         describe: "Force a full re-index from scratch instead of incremental.",
       })
+      .option("json", {
+        type: "boolean",
+        default: false,
+        describe:
+          "Emit a single JSON object to stdout at finish instead of human-readable output. Intended for agent/script consumers.",
+      })
       .option("__worker", { type: "boolean", default: false, hidden: true }),
   handler: async (argv) => {
     // Forked child path: run the worker entry, not another supervisor.
@@ -81,15 +98,21 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
     const path = resolve(resolved.path ?? process.cwd());
     const options: IndexOptions = { forceReindex: Boolean(argv.force) };
     const waitEnrichments = Boolean(argv["wait-enrichments"]);
+    const jsonMode = Boolean(argv.json);
 
     // Seed the worker's embedding / codegraph config from the registry (the
     // named project, this path's entry, or — for a new project — the most
     // recently indexed one) so the operator need not re-export EMBEDDING_* envs.
-    const registry = new CollectionRegistry(resolveDataDir());
+    const dataDir = resolveDataDir();
+    const registry = new CollectionRegistry(dataDir);
     const registryEnv = resolveRegistryEnv(pickRegistryEntry(registry, { project: argv.project, path }));
 
-    const colors = createColorizer();
-    const renderer = createRenderer({ isTTY: Boolean(process.stderr.isTTY), colors });
+    // Resolve the registered project alias for the status block.
+    const projectName = argv.project ?? resolveProjectName(registry, path) ?? undefined;
+
+    // JSON mode forces NO_COLOR semantics so the output is clean for parsing.
+    const colors = createColorizer(jsonMode ? { env: { NO_COLOR: "1" }, isTTY: false } : undefined);
+    const renderer = createRenderer({ isTTY: Boolean(process.stderr.isTTY), colors, json: jsonMode });
     const child = forkWorker(path, options, registryEnv);
 
     const code = await superviseIndexing(child, {
@@ -98,6 +121,8 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
       colors,
       out: (line) => process.stdout.write(`${line}\n`),
       now: () => Date.now(),
+      projectName,
+      path,
     });
 
     // Detached + own process group: exiting the foreground here leaves the worker

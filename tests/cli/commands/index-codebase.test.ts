@@ -62,6 +62,7 @@ vi.mock("../../../src/core/api/public/index.js", async () => {
     CollectionRegistry: class {
       constructor(public readonly dataDir: string) {}
       listProjects = vi.fn().mockReturnValue([]);
+      findByPath = vi.fn().mockReturnValue(null);
     },
   };
 });

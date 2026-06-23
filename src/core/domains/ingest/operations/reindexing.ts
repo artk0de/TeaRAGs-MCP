@@ -337,6 +337,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       ctx.scanner,
       changedPaths,
       chunkSizeOverride,
+      ctx.currentFiles.length,
     );
     // Embed-phase poison-pill isolation (shares the read/parse quarantine store).
     pCtx.chunkPipeline.setQuarantineStore(quarantineStore);
