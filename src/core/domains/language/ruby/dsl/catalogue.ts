@@ -23,17 +23,17 @@
  * catalogue. AST argument extraction stays in the consumer engine, never here.
  */
 
-import { ACTIVESUPPORT_DSL } from "./activesupport.js";
-import { RAILS_DSL } from "./rails.js";
-import { RUBY_CORE_DSL } from "./ruby-core.js";
-import type { RubyDslEntry, RubyDslModule } from "./types.js";
+import { ACTIVESUPPORT_VOCABULARY } from "./activesupport.js";
+import { RAILS_VOCABULARY } from "./rails.js";
+import { RUBY_CORE_VOCABULARY } from "./ruby-core.js";
+import type { RubyDslEntry, RubyFrameworkVocabulary } from "./types.js";
 
 /**
- * Merge per-framework modules into one keyword → entry lookup. Throws on a
+ * Merge per-framework `entries` into one keyword → entry lookup. Throws on a
  * duplicate keyword across modules (a keyword must belong to exactly one
  * framework) — a programming error caught at module load, not a user fault.
  */
-export function composeModules(modules: readonly RubyDslModule[]): Record<string, RubyDslEntry> {
+export function composeEntries(modules: readonly RubyFrameworkVocabulary[]): Record<string, RubyDslEntry> {
   const out: Record<string, RubyDslEntry> = {};
   for (const mod of modules) {
     for (const [keyword, entry] of Object.entries(mod.entries)) {
@@ -46,6 +46,18 @@ export function composeModules(modules: readonly RubyDslModule[]): Record<string
   return out;
 }
 
-const MODULES: readonly RubyDslModule[] = [RUBY_CORE_DSL, ACTIVESUPPORT_DSL, RAILS_DSL];
+const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
+  RUBY_CORE_VOCABULARY,
+  ACTIVESUPPORT_VOCABULARY,
+  RAILS_VOCABULARY,
+];
 
-export const RUBY_DSL: Record<string, RubyDslEntry> = composeModules(MODULES);
+export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);
+
+/**
+ * Is `member` an external bare-call name in ANY registered framework — a
+ * declaring macro (`entries`) OR a runtime/kernel helper (`runtimeBuiltins`)?
+ * Fold over the registry; adding a framework needs no edit here. Equivalent to
+ * the legacy `member in RUBY_DSL || RUBY_KERNEL_BUILTINS.has || RAILS_RUNTIME_BUILTINS.has`.
+ */
+export const isExternalBareCall = (member: string): boolean => FRAMEWORKS.some((f) => f.hasExternalMember(member));

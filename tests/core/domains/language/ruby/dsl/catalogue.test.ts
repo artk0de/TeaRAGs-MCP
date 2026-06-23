@@ -84,13 +84,15 @@ describe("RUBY_DSL catalogue", () => {
   });
 });
 
-describe("composeModules", () => {
+describe("composeEntries", () => {
   it("throws on a duplicate keyword across modules", async () => {
-    const { composeModules } = await import("../../../../../../src/core/domains/language/ruby/dsl/catalogue.js");
+    const { composeEntries } = await import("../../../../../../src/core/domains/language/ruby/dsl/catalogue.js");
+    const { defineFrameworkVocabulary } =
+      await import("../../../../../../src/core/domains/language/ruby/dsl/framework-module.js");
     expect(() =>
-      composeModules([
-        { framework: "a", entries: { x: { category: "other" } } },
-        { framework: "b", entries: { x: { category: "other" } } },
+      composeEntries([
+        defineFrameworkVocabulary("a", { x: { category: "other" } }),
+        defineFrameworkVocabulary("b", { x: { category: "other" } }),
       ]),
     ).toThrow(/duplicate keyword "x"/);
   });

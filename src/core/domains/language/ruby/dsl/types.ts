@@ -50,11 +50,18 @@ export interface RubyDslEntry {
 }
 
 /**
- * A per-framework slice of the catalogue. Each framework owns its keywords in
- * its own file; `composeModules` merges them into the single `RUBY_DSL` lookup.
- * Adding a framework = a new module file + one line in `catalogue.ts`'s MODULES.
+ * A per-framework slice of the external vocabulary. Each framework owns its
+ * class-body declaring macros (`entries`) AND its non-declaring runtime / kernel
+ * helpers (`runtimeBuiltins`) in its own file; `catalogue.ts` composes their
+ * `entries` into `RUBY_DSL` and folds `hasExternalMember` into
+ * `isExternalBareCall`. Adding a framework = a new module file + one line in
+ * `catalogue.ts`'s `FRAMEWORKS`.
  */
-export interface RubyDslModule {
+export interface RubyFrameworkVocabulary {
   readonly framework: string; // "ruby-core" | "activesupport" | "rails"
   readonly entries: Record<string, RubyDslEntry>;
+  /** Non-declaring framework/runtime/kernel helpers (params/render; puts/raise/require). */
+  readonly runtimeBuiltins?: ReadonlySet<string>;
+  /** Is `member` part of this framework's external-callable surface? */
+  hasExternalMember: (member: string) => boolean;
 }
