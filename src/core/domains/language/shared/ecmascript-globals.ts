@@ -73,3 +73,78 @@ export const ECMASCRIPT_GLOBALS: ReadonlySet<string> = new Set([
   "TextEncoder",
   "TextDecoder",
 ]);
+
+/**
+ * ECMAScript / Node runtime builtin CONSTRUCTOR / TYPE names — the set used by
+ * the TypeScript resolver's `targetsExternalImport` to classify a call by its
+ * RECEIVER TYPE (not by the receiver text). A variable typed as one of these
+ * (`const m = new Map()`, `private pending = new Map()`, `p: Promise<T>`) whose
+ * method call (`m.get()`, `this.pending.set()`, `p.then()`) the symbol-table
+ * resolver cannot pin is targeting the JS runtime instance method, NOT an
+ * in-repo symbol — exactly like a `node:fs` import or `Math.max()`. Such calls
+ * must increment `callsExternalSkipped` so they leave the internal
+ * `resolveSuccessRate` denominator. Mirrors Ruby ykj7 (commit 1dade557 —
+ * classify bare Kernel/core builtins as external).
+ *
+ * Distinct from `ECMASCRIPT_GLOBALS`: that set matches the receiver TEXT for
+ * namespace-style static calls (`Math.max`, `JSON.parse`, `console.log`); THIS
+ * set matches an INSTANCE's declared TYPE for method calls on builtin objects.
+ * Curated to the builtins whose instances carry runtime instance methods that
+ * show up as call heads. Deliberately EXCLUDES TS-only utility types
+ * (`Record`, `Partial`, `Readonly`, …) — they have no runtime constructor and a
+ * receiver typed as one is not a builtin instance (keeps it an internal miss).
+ */
+export const ECMASCRIPT_BUILTIN_TYPES: ReadonlySet<string> = new Set([
+  // Collections
+  "Map",
+  "WeakMap",
+  "Set",
+  "WeakSet",
+  "WeakRef",
+  // Async
+  "Promise",
+  // Indexed / structural objects
+  "Array",
+  "Object",
+  "Date",
+  "RegExp",
+  // Primitive wrapper objects (instances carry runtime methods)
+  "String",
+  "Number",
+  "Boolean",
+  "Symbol",
+  "BigInt",
+  // Reflection / proxy
+  "Proxy",
+  "Function",
+  // Typed arrays / binary
+  "ArrayBuffer",
+  "SharedArrayBuffer",
+  "DataView",
+  "Int8Array",
+  "Uint8Array",
+  "Uint8ClampedArray",
+  "Int16Array",
+  "Uint16Array",
+  "Int32Array",
+  "Uint32Array",
+  "Float32Array",
+  "Float64Array",
+  "BigInt64Array",
+  "BigUint64Array",
+  // Errors
+  "Error",
+  "TypeError",
+  "RangeError",
+  "SyntaxError",
+  "ReferenceError",
+  "EvalError",
+  "URIError",
+  "AggregateError",
+  // Web / Node ambient instances
+  "URL",
+  "URLSearchParams",
+  "TextEncoder",
+  "TextDecoder",
+  "Buffer",
+]);
