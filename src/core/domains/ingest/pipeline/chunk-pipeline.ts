@@ -72,6 +72,7 @@ export class ChunkPipeline {
   private pendingBatches: Promise<BatchResult>[] = [];
 
   private onBatchUpsertedCb?: (items: ChunkItem[]) => void;
+  private onProgressCb?: (itemsProcessed: number, throughput: number) => void;
   private quarantineStore?: QuarantineStore;
   private isRunning = false;
   private readonly stats = {
@@ -142,6 +143,15 @@ export class ChunkPipeline {
    */
   setOnBatchUpserted(cb: (items: ChunkItem[]) => void): void {
     this.onBatchUpsertedCb = cb;
+  }
+
+  /**
+   * Register a callback that fires after each successful batch upsert with
+   * cumulative stored-chunk count and current throughput. Used to drive real
+   * embedding progress (as opposed to chunking cadence).
+   */
+  setOnProgress(cb: (itemsProcessed: number, throughput: number) => void): void {
+    this.onProgressCb = cb;
   }
 
   /**
@@ -477,6 +487,10 @@ export class ChunkPipeline {
   private onBatchComplete(result: BatchResult): void {
     this.stats.batchesProcessed++;
     this.stats.chunksProcessed += result.itemCount;
+    if (result.success) {
+      const s = this.getStats();
+      this.onProgressCb?.(s.itemsProcessed, s.throughput);
+    }
 
     const ctx = { ...LOG_CTX, batchId: result.batchId };
 

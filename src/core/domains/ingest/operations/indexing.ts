@@ -373,6 +373,17 @@ export class IndexPipeline extends BaseIndexingPipeline {
     let filesProcessed = 0;
     let chunksQueued = 0;
 
+    ctx.chunkPipeline.setOnProgress((itemsProcessed, throughput) => {
+      progressCallback?.({
+        phase: "embedding",
+        current: itemsProcessed,
+        total: chunksQueued,
+        percentage: chunksQueued > 0 ? Math.round((itemsProcessed / chunksQueued) * 100) : 0,
+        message: `Embedding: ${itemsProcessed}/${chunksQueued} chunks`,
+        throughput,
+      });
+    });
+
     const result = await processFiles(
       files,
       absolutePath,
@@ -403,21 +414,12 @@ export class IndexPipeline extends BaseIndexingPipeline {
           filesProcessed++;
           chunksQueued += chunksCount;
           if (filesProcessed === 1 || filesProcessed % 10 === 0) {
-            const pipelineStats = ctx.chunkPipeline.getStats();
             progressCallback?.({
               phase: "chunking",
               current: filesProcessed,
               total: files.length,
               percentage: Math.round((filesProcessed / files.length) * 100),
               message: `Chunking: ${filesProcessed}/${files.length} files`,
-            });
-            progressCallback?.({
-              phase: "embedding",
-              current: pipelineStats.itemsProcessed,
-              total: chunksQueued,
-              percentage: chunksQueued > 0 ? Math.round((pipelineStats.itemsProcessed / chunksQueued) * 100) : 0,
-              message: `Embedding: ${pipelineStats.itemsProcessed}/${chunksQueued} chunks`,
-              throughput: pipelineStats.throughput,
             });
           }
         },

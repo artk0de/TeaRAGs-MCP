@@ -665,6 +665,69 @@ describe("ChunkPipeline", () => {
     });
   });
 
+  describe("Progress callback", () => {
+    it("should call setOnProgress after each successful batch upsert with cumulative itemsProcessed", async () => {
+      vi.useRealTimers();
+      const realQdrant = {
+        addPointsOptimized: vi.fn().mockResolvedValue(undefined),
+        addPointsWithSparse: vi.fn().mockResolvedValue(undefined),
+      };
+      const realEmbeddings = {
+        embedBatch: vi.fn().mockImplementation(async (texts: string[]) => texts.map(() => ({ embedding: [1, 2, 3] }))),
+        embed: vi.fn(),
+        getDimensions: vi.fn(() => 3),
+      };
+      const progPipeline = new ChunkPipeline(
+        realQdrant as any,
+        realEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+        {
+          workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+          accumulator: { batchSize: 2, flushTimeoutMs: 100, maxQueueSize: 10 },
+          enableHybrid: false,
+        },
+      );
+
+      const progressArgs: { itemsProcessed: number; throughput: number }[] = [];
+      progPipeline.setOnProgress((itemsProcessed, throughput) => {
+        progressArgs.push({ itemsProcessed, throughput });
+      });
+      progPipeline.start();
+
+      // Two full batches of 2 chunks each = 2 setOnProgress calls
+      for (let i = 0; i < 4; i++) {
+        progPipeline.addChunk(createChunk(i), `pc${i}`, "/test/path");
+      }
+      await progPipeline.flush();
+      await progPipeline.shutdown();
+
+      // One call per batch
+      expect(progressArgs.length).toBeGreaterThanOrEqual(1);
+      // itemsProcessed grows monotonically
+      for (let i = 1; i < progressArgs.length; i++) {
+        expect(progressArgs[i].itemsProcessed).toBeGreaterThanOrEqual(progressArgs[i - 1].itemsProcessed);
+      }
+      // Final itemsProcessed equals total chunks processed
+      expect(progressArgs.at(-1)!.itemsProcessed).toBe(4);
+      // throughput is a non-negative number
+      expect(typeof progressArgs.at(-1)!.throughput).toBe("number");
+      expect(progressArgs.at(-1)!.throughput).toBeGreaterThanOrEqual(0);
+
+      vi.useFakeTimers();
+    });
+
+    it("should not call setOnProgress if it was never registered", async () => {
+      // No setOnProgress call — pipeline should process without error
+      pipeline.addChunk(createChunk(1), "chunk-1", "/test/path");
+      pipeline.addChunk(createChunk(2), "chunk-2", "/test/path");
+      pipeline.addChunk(createChunk(3), "chunk-3", "/test/path");
+      await vi.runAllTimersAsync();
+      await pipeline.flush();
+      expect(mockQdrant.addPointsOptimized).toHaveBeenCalled();
+    });
+  });
+
   describe("Error tracking in onBatchComplete", () => {
     it("should increment error count on batch failure after retries exhausted", async () => {
       // Make embedBatch always fail to exhaust retries
