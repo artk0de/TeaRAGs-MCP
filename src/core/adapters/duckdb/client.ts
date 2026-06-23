@@ -896,8 +896,8 @@ export class DuckDbGraphClient implements GraphDbClient {
         await this.run("DELETE FROM cg_run_stats");
         for (const r of rows) {
           await this.run(
-            "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped) VALUES (?, ?, ?, ?, ?)",
-            [r.language, r.receiverKind, r.attempted, r.resolved, r.externalSkipped],
+            "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable) VALUES (?, ?, ?, ?, ?, ?)",
+            [r.language, r.receiverKind, r.attempted, r.resolved, r.externalSkipped, r.unresolvable],
           );
         }
         await this.exec("COMMIT");
@@ -915,8 +915,9 @@ export class DuckDbGraphClient implements GraphDbClient {
       attempted: number | bigint;
       resolved: number | bigint;
       external_skipped: number | bigint;
+      unresolvable: number | bigint;
     }>(
-      "SELECT language, receiver_kind, attempted, resolved, external_skipped FROM cg_run_stats ORDER BY language, receiver_kind",
+      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable FROM cg_run_stats ORDER BY language, receiver_kind",
     );
     return rows.map((r) => ({
       language: r.language,
@@ -924,6 +925,7 @@ export class DuckDbGraphClient implements GraphDbClient {
       attempted: Number(r.attempted),
       resolved: Number(r.resolved),
       externalSkipped: Number(r.external_skipped),
+      unresolvable: Number(r.unresolvable),
     }));
   }
 

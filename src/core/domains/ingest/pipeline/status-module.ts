@@ -33,9 +33,9 @@ import { parseMarkerPayload } from "./indexing-marker-codec.js";
 /** If indexing marker says "in progress" for longer than this, report as stale */
 const STALE_INDEXING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
-/** `callsResolved / max(1, callsAttempted − callsExternalSkipped)`; 0 when nothing attempted. */
-function resolveRate(attempted: number, resolved: number, externalSkipped: number): number {
-  return attempted === 0 ? 0 : resolved / Math.max(1, attempted - externalSkipped);
+/** `callsResolved / max(1, callsAttempted − callsExternalSkipped − callsUnresolvable)`; 0 when nothing attempted. */
+function resolveRate(attempted: number, resolved: number, externalSkipped: number, unresolvable: number): number {
+  return attempted === 0 ? 0 : resolved / Math.max(1, attempted - externalSkipped - unresolvable);
 }
 
 /** Running tally aggregated from `cg_run_stats` rows (per language or per kind). */
@@ -43,6 +43,7 @@ interface ResolveTally {
   attempted: number;
   resolved: number;
   externalSkipped: number;
+  unresolvable: number;
 }
 
 /**
@@ -60,7 +61,8 @@ function buildByReceiverKind(kinds: Map<string, ResolveTally>): CodegraphResolve
       attempted: t.attempted,
       resolved: t.resolved,
       externalSkipped: t.externalSkipped,
-      resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped),
+      unresolvable: t.unresolvable,
+      resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped, t.unresolvable),
     }))
     .sort((a, b) => b.attempted - a.attempted);
 }
@@ -95,6 +97,7 @@ export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): 
   let attempted = 0;
   let resolved = 0;
   let externalSkipped = 0;
+  let unresolvable = 0;
   const byLang = new Map<string, ResolveTally>();
   // Per-language receiver-kind tally (bd tea-rags-mcp-7m5xz). Unlabeled rows are
   // excluded here exactly as they are for byLanguage. Populated only under DEBUG.
@@ -103,37 +106,44 @@ export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): 
     attempted += r.attempted;
     resolved += r.resolved;
     externalSkipped += r.externalSkipped;
+    unresolvable += r.unresolvable ?? 0; // pre-cai0 rows default to 0 (field added by migration 010)
     if (!r.language) continue; // unlabeled (pre-cnqrg / direct-mode) — aggregate only
-    const e = byLang.get(r.language) ?? { attempted: 0, resolved: 0, externalSkipped: 0 };
+    const e = byLang.get(r.language) ?? { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0 };
     e.attempted += r.attempted;
     e.resolved += r.resolved;
     e.externalSkipped += r.externalSkipped;
+    e.unresolvable += r.unresolvable ?? 0;
     byLang.set(r.language, e);
     if (!debug) continue; // short form: skip receiver-kind tally entirely
     const kinds = byLangKind.get(r.language) ?? new Map<string, ResolveTally>();
-    const k = kinds.get(r.receiverKind) ?? { attempted: 0, resolved: 0, externalSkipped: 0 };
+    const k = kinds.get(r.receiverKind) ?? { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0 };
     k.attempted += r.attempted;
     k.resolved += r.resolved;
     k.externalSkipped += r.externalSkipped;
+    k.unresolvable += r.unresolvable ?? 0;
     kinds.set(r.receiverKind, k);
     byLangKind.set(r.language, kinds);
   }
   const summary: CodegraphResolveSummary = {
-    resolveSuccessRate: resolveRate(attempted, resolved, externalSkipped),
+    resolveSuccessRate: resolveRate(attempted, resolved, externalSkipped, unresolvable),
     callsAttempted: attempted,
     callsResolved: resolved,
     callsExternalSkipped: externalSkipped,
+    callsUnresolvable: unresolvable,
   };
   const byLanguage: CodegraphResolveLanguageRow[] = [...byLang.entries()]
     .filter(([, t]) => attempted > 0 && t.attempted / attempted >= MIN_LANGUAGE_SHARE)
     .map(([language, t]) => ({
       language,
-      resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped),
+      resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped, t.unresolvable),
       callsAttempted: t.attempted,
       callsResolved: t.resolved,
       callsExternalSkipped: t.externalSkipped,
+      callsUnresolvable: t.unresolvable,
       // Absent unless DEBUG built the tally above.
-      ...(debug ? { byReceiverKind: buildByReceiverKind(byLangKind.get(language) ?? new Map<string, ResolveTally>()) } : {}),
+      ...(debug
+        ? { byReceiverKind: buildByReceiverKind(byLangKind.get(language) ?? new Map<string, ResolveTally>()) }
+        : {}),
     }))
     .sort((a, b) => b.callsAttempted - a.callsAttempted);
   if (byLanguage.length > 1) {

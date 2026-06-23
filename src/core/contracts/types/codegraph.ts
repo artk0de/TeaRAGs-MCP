@@ -1012,6 +1012,13 @@ export interface ResolveRunStatsRow {
    * external classifier.
    */
   externalSkipped: number;
+  /**
+   * bd cai0 — of the `attempted − resolved` misses in this bucket, how many were
+   * statically UNDETERMINABLE (dynamic `send(var)`), not resolver failures. Like
+   * `externalSkipped`, excluded from the resolveSuccessRate denominator. Defaults
+   * to 0 for pre-cai0 rows / languages without dynamic-send tagging.
+   */
+  unresolvable: number;
 }
 
 export interface GraphEdges {

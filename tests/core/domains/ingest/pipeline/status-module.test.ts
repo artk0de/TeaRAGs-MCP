@@ -142,8 +142,40 @@ describe("StatusModule", () => {
           callsAttempted: 120,
           callsResolved: 60,
           callsExternalSkipped: 50,
+          callsUnresolvable: 0,
           resolveSuccessRate: 60 / 70,
         });
+      });
+
+      it("excludes unresolvable (dynamic send) from the resolveSuccessRate denominator (cai0)", async () => {
+        await createTestFile(codebaseDir, "calc.ts", "export function run(): number {\n  return Math.max(1, 2);\n}\n");
+        await ingest.indexCodebase(codebaseDir);
+
+        const runStatsRows = [
+          {
+            language: "ruby",
+            receiverKind: "bareCall",
+            attempted: 100,
+            resolved: 60,
+            externalSkipped: 10,
+            unresolvable: 20,
+          },
+        ];
+        (ingest as any).indexingOps.status.codegraphPool = {
+          listCollectionDbNames: () => ["code_cg_v1"],
+          acquireReader: async () => ({
+            graphDb: { getRunStats: async () => runStatsRows, close: async () => undefined },
+          }),
+        };
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        // denom = max(1, 100 − 10 externalSkipped − 20 unresolvable) = 70 → rate = 60/70.
+        expect(status.codegraphResolve!.callsUnresolvable).toBe(20);
+        expect(status.codegraphResolve!.resolveSuccessRate).toBeCloseTo(60 / 70, 8);
+        const bareCall = status.codegraphResolve!.byReceiverKind?.find((r) => r.receiverKind === "bareCall");
+        expect(bareCall?.unresolvable).toBe(20);
+        expect(bareCall?.resolveSuccessRate).toBeCloseTo(60 / 70, 8);
       });
 
       it("omits codegraphResolve when no codegraph pool is wired", async () => {

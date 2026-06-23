@@ -1,0 +1,11 @@
+-- Codegraph unresolvable resolve bucket (bd cai0).
+--
+-- `unresolvable` records, per (language, receiver-kind), how many UNRESOLVED
+-- calls were statically UNDETERMINABLE — dynamic `send(var)` / `public_send(x)`
+-- with a non-literal target — rather than resolver misses. Like
+-- `external_skipped`, excluded from the resolveSuccessRate denominator so the
+-- rate measures the resolver's capability on STATICALLY-DETERMINABLE calls.
+--
+-- DuckDB rejects NOT NULL on ALTER ... ADD COLUMN ("constraints not yet
+-- supported"); DEFAULT 0 alone backfills existing rows and new inserts.
+ALTER TABLE cg_run_stats ADD COLUMN IF NOT EXISTS unresolvable INTEGER DEFAULT 0;

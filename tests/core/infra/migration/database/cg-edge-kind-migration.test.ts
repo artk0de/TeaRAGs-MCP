@@ -38,9 +38,10 @@ describe("006 cg edge_kind/confidence + cg_run_stats migration (bd 2jet/j431)", 
       "SELECT column_name FROM information_schema.columns WHERE table_name = 'cg_run_stats'",
     );
     // external_skipped added by migration 008 (tea-rags-mcp-ykj7); language added
-    // by migration 009 re-graining to per-(language, receiver_kind) (cnqrg).
+    // by migration 009 re-graining to per-(language, receiver_kind) (cnqrg);
+    // unresolvable added by migration 010 (cai0).
     expect(runStatsCols.map((c) => c.column_name).sort()).toEqual(
-      ["attempted", "external_skipped", "language", "receiver_kind", "resolved"].sort(),
+      ["attempted", "external_skipped", "language", "receiver_kind", "resolved", "unresolvable"].sort(),
     );
   });
 
