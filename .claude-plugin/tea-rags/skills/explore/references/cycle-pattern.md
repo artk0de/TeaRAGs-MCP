@@ -35,5 +35,9 @@ breaks the cycle's blast radius. Resolve the exact symbol id with `find_symbol`
 first when the member is a method (method-scope members are `Class.method` /
 `Class#method` ids, not paths).
 
-Empty result is a valid answer: "no cycles in `<scope>`" means the graph is a
-DAG there — state it plainly, don't fall back to content search.
+Empty result is a valid answer **when codegraph is on** (prime shows
+`codegraph.symbols`): "no cycles in `<scope>`" means the graph is a DAG there —
+state it plainly, don't fall back to content search. But if `find_cycles` is
+**not registered** (no `codegraph.symbols` in prime), there is no empty result
+to read — cycle detection is unavailable; say so and never claim "no cycles / it
+is a DAG".

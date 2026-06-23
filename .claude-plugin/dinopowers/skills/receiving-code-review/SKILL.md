@@ -130,7 +130,10 @@ target has. When the review comment names a **relationship between two symbols**
 through `W` instead"), the change doesn't just touch one symbol — it rides a
 **call route**. Promote the single fanIn number to the actual PATH: call
 `mcp__tea-rags__trace_path` between the two named endpoints to SEE the route the
-change travels and which step on it is the highest-impact chokepoint.
+change travels and which step on it is the highest-impact chokepoint. **Requires
+codegraph** (prime shows `codegraph.symbols`); when it is off `trace_path` is not
+registered — stay with the Step 2 single-symbol fanIn number and note the route
+view is unavailable.
 
 ```
 mcp__tea-rags__trace_path(

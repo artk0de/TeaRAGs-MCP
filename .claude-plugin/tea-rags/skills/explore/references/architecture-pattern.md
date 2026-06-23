@@ -19,6 +19,12 @@ hubs in `<scope>`, falling back to relevance ranking" — never present the top
 similarity hit as "the architectural centre" when no hub exists. Optionally
 confirm with `isHub=true` as a filter: zero results = no hubs.
 
+**Codegraph off** (no `codegraph.symbols` in prime): `architecturalHub` has no
+fan-graph signals and silently degrades to similarity. Say fan-in centrality is
+unavailable and offer git imports/churn or relevance instead — do NOT present a
+similarity top hit as "the architectural centre". This is distinct from the
+no-hubs case above (there codegraph is on but the scope is flat).
+
 ## Tail-suggestion (drill into the hub)
 
 After naming the top hub, offer the dependents view:

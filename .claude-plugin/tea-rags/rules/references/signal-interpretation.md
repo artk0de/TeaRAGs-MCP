@@ -51,13 +51,34 @@ Two ownership signal families coexist because they answer different questions:
 
 | Signal          | What it measures                                   |
 | --------------- | -------------------------------------------------- |
-| `imports`       | fan-in — how many files import this (blast radius) |
+| `imports`       | fan-in PROXY — how many files import this (raw import-line count) |
 | `pathRisk`      | path-based risk (e.g., `adapters/`, `legacy/`)     |
 | `chunkSize`     | chunk line count                                   |
 | `documentation` | doc density                                        |
 
 `imports` is the critical disambiguator for churn-based patterns. Without it,
 god module and bug attractor look identical.
+
+#### Codegraph signals (only when codegraph is active)
+
+Present ONLY when prime `## Enrichment` lists `codegraph.symbols`; absent
+otherwise. These are real call/import-edge measures and **supersede the
+`imports` proxy** wherever both exist — `imports` counts import lines, `fanIn`
+counts actual graph edges.
+
+| Signal               | Scope | What it measures                                            |
+| -------------------- | ----- | ----------------------------------------------------------- |
+| `fanIn`              | file/chunk | incoming edges — who depends on this (true blast radius) |
+| `fanOut`             | file/chunk | outgoing edges — how much this drives                  |
+| `isHub`              | file  | high-fan-in backbone flag (the structural centre)           |
+| `instability`        | file  | `fanOut / (fanIn + fanOut)` — efferent coupling (Martin)    |
+| `connectionCount`    | file  | `fanIn + fanOut` — total coupling / confidence support      |
+| `transitiveImpact`   | file  | reachable dependents — systemic blast radius beyond 1 hop   |
+| `pageRank`           | chunk | global centrality of a method in the call graph             |
+| cycle membership     | file/chunk | member of an SCC (`find_cycles`) — circular coupling   |
+
+When codegraph is off, fall back to the `imports` proxy and say structural
+centrality is approximate (see search-cascade "Graph navigation").
 
 ## When to use `recent*` vs `blame*` (ownership-pair selection)
 
@@ -232,19 +253,42 @@ When file-level points to a pattern, chunk-level refines WHERE the work is:
 ### God module / Coupling point
 
 **Signature:**
-`churn ↑ + imports ↑ + recentContributorCount ↑ + blameContributorCount ↑`
+`churn ↑ + fanIn ↑ / isHub (or imports ↑ proxy) + recentContributorCount ↑ + blameContributorCount ↑`
 **What it is:** Central file imported by many, edited by many (recent activity
 AND surviving authorship distributed), because any change passes through. Not a
 quality problem per se — an architectural coupling problem. Example:
-`adapters/qdrant-client.ts` (65 commits over project life). **Remediation:**
-decouple or stabilize interface; freeze signature.
+`adapters/qdrant-client.ts` (65 commits over project life). **Codegraph:** real
+`fanIn` / `isHub` confirms the centre far more precisely than the `imports`
+proxy; high `instability` (fanOut-dominated) points to a coupling SOURCE, high
+fanIn to a coupling SINK. **Remediation:** decouple or stabilize interface;
+freeze signature.
 
 ### Bug attractor
 
-**Signature:** `churn ↑ + bugFixRate ↑ + imports ↓` **What it is:** Broken
-abstraction. High fix-rate with low fan-in means bugs don't propagate from
-elsewhere — they originate here. Single file misbehaves. **Remediation:**
-redesign the abstraction, not patch another fix.
+**Signature:** `churn ↑ + bugFixRate ↑ + imports ↓` (codegraph: `fanIn ↓`)
+**What it is:** Broken abstraction. High fix-rate with low fan-in means bugs
+don't propagate from elsewhere — they originate here. Single file misbehaves.
+**Remediation:** redesign the abstraction, not patch another fix.
+
+### Blast-radius hub (codegraph)
+
+**Signature:** `isHub / fanIn ↑ + transitiveImpact ↑ + (churn ↑ or bugFixRate ↑)`
+**What it is:** A high-fan-in backbone that ALSO carries git risk — the worst
+combination, because a fault or a change there propagates to every dependent
+(wide `transitiveImpact`). Distinct from a clean hub (high fanIn, healthy git
+signals = stable backbone, NOT risk). This is the escalation the risk-assessment
+structural amplifier surfaces. **Remediation:** harden + freeze the interface,
+add a regression net before touching; treat changes as high-blast.
+
+### Cyclic coupling (codegraph)
+
+**Signature:** member of an SCC from `find_cycles` (file or method scope).
+**What it is:** Two or more units that mutually depend, directly or transitively
+— neither can be understood, tested, or replaced in isolation. Invisible to
+churn/ownership signals. Cross-boundary cycles (one member inside a domain, one
+outside) are the most damaging. **Remediation:** break the loop at its weakest
+edge (often found via `get_callers` on a cycle member); introduce an interface
+seam or invert one dependency.
 
 ### Toxic silo
 

@@ -209,6 +209,26 @@ ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/filters")
 The resource is generated from the live registry; it always reflects what THIS
 build supports. Do NOT memorize the payload key list — read it on demand.
 
+### Codegraph filters (only when codegraph is active)
+
+The `codegraph.file.*` / `codegraph.chunk.*` payload keys exist ONLY when prime
+`## Enrichment` lists `codegraph.symbols`; filtering on them against an index
+built without codegraph matches nothing. Examples:
+
+```jsonc
+// Architectural hubs — high-fan-in backbone files
+{ "filter": { "must": [{ "key": "codegraph.file.isHub", "match": { "value": true } }] } }
+
+// High blast radius — many incoming call/import edges
+{ "filter": { "must": [{ "key": "codegraph.file.fanIn", "range": { "gte": 10 } }] } }
+
+// Efferent-coupling sources (instability near 1 = depends on many, few depend on it)
+{ "filter": { "must": [{ "key": "codegraph.file.instability", "range": { "gte": 0.8 } }] } }
+```
+
+`fanIn` / `isHub` are the edge-truth replacements for the `git`/`imports` proxy.
+When codegraph is off, filter on `imports` instead and treat it as approximate.
+
 ## Stratified scanning (excluding a dominant domain)
 
 A common analytics pattern: an unfiltered scan of a broad project returns

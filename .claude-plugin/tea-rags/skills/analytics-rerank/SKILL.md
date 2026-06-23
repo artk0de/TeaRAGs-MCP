@@ -83,7 +83,16 @@ The catalog has the full list; this is the routing tier.
 | "Refactor candidates by size+volatility+bug-fix history" | `refactoring`                                         |
 | "Bug-prone + volatile + high blast radius"               | `dangerous`                                           |
 | "Find candidates to decompose"                           | `decomposition`                                       |
-| "High-fan-in files (blast radius before a change)"       | custom `{ imports: 0.5, churn: 0.3, ownership: 0.2 }` |
+| "Blast radius before a change (real call edges)"         | `blastRadius` (codegraph on) — else custom `{ imports: 0.5, churn: 0.3, ownership: 0.2 }` |
+| "Structural backbone — high-fan-in hubs"                 | `architecturalHub` (codegraph)                        |
+| "Entry points / flow drivers of a scope"                 | `entryPoint` (codegraph)                              |
+
+**Codegraph composites** (`blastRadius` / `architecturalHub` / `entryPoint`)
+rank on real call/import edges (`fanIn`, `isHub`, `fanOutPerLine`). They are
+meaningful only when prime `## Enrichment` lists `codegraph.symbols`; with
+codegraph off they degrade to similarity — fall back to the `imports`-proxy
+custom weights and say centrality is approximate. See search-cascade "Graph
+navigation".
 
 ## Custom weight recipes
 
@@ -140,6 +149,11 @@ High `imports` = many files import this one = wide blast radius. `churn` is
 included because high-churn high-import files are the genuine danger ("everyone
 depends on this AND it keeps changing"). `ownership` surfaces single-owner
 high-impact files — knowledge silo with reach.
+
+**Prefer the `blastRadius` preset when codegraph is on:** it ranks on real
+`fanIn` (actual call/import edges) + churn + bugFix, not the raw `imports`-line
+proxy. Use this custom recipe only as the codegraph-off fallback (the result is
+then approximate — import-proxy, not edge truth).
 
 ### Active driver concentration (who's mentally loaded right now)
 

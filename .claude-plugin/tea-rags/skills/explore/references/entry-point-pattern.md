@@ -28,3 +28,7 @@ starts" into "here's what it does next", a natural drill-down chain.
 Honest fallback: if the scope is small or flat (no clear high-fan-out driver),
 say the ranking degraded to relevance — don't present a utility as "the entry
 point" with false confidence.
+
+**Codegraph off** (no `codegraph.symbols` in prime): `entryPoint` has no
+fan-graph signals at all — use relevance + `chunkSize` and flag results as
+content-inferred, not graph-confirmed entry points.

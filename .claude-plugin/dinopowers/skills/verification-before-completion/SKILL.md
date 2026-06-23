@@ -23,11 +23,12 @@ surfaces which dependents should be verified too.
 **tea-rags collateral-damage scan MUST run BEFORE claiming "done"** — whenever
 the session has edited ≥1 existing file.
 
-Correct tool (`semantic_search`) + correct custom impact rerank
-(`imports: 0.5, churn: 0.3, ownership: 0.2`) + correct parameters
-(brace-expanded `pathPattern` over `git diff --name-only`, `metaOnly: true`) +
-correct verdict (surface high-`imports` files with explicit "verify dependents"
-recommendation) = core value.
+Correct tool (`semantic_search`), correct impact rerank (`"blastRadius"` when
+codegraph is on, the `{imports 0.5, churn 0.3, ownership 0.2}` fallback when
+off), correct parameters
+(brace-expanded `pathPattern` over `git diff --name-only`, `metaOnly: true`),
+correct verdict (surface high-`fanIn`/`imports` files with explicit "verify
+dependents" recommendation) = core value.
 
 If only new files were created (no edits to existing files): skip scan with
 verdict `SAFE (no existing-file edits)`. Do not fabricate pathPattern.
@@ -36,11 +37,14 @@ verdict `SAFE (no existing-file edits)`. Do not fabricate pathPattern.
 
 🛑 STOP — read the ladder, then act.
 
+Read the blast signal from `fanIn` when codegraph is on (real dependents),
+otherwise from the `imports` proxy.
+
 | Verdict        | Triggers                                                     |
 | -------------- | ------------------------------------------------------------ |
-| `HIGH-BLAST`   | `imports` top 10% of result set (or absolute: >20 importers) |
-| `MEDIUM-BLAST` | `imports` top 30% (or 5-20 importers)                        |
-| `LOW-BLAST`    | `imports` ≤ 5 importers                                      |
+| `HIGH-BLAST`   | `fanIn`/`imports` top 10% of result set (or absolute: >20 dependents) |
+| `MEDIUM-BLAST` | `fanIn`/`imports` top 30% (or 5-20 dependents)               |
+| `LOW-BLAST`    | `fanIn`/`imports` ≤ 5 dependents                            |
 
 Block is prescriptive, not informational — DO NOT skip ladder evaluation.
 
@@ -80,17 +84,22 @@ project:     <alias from list_projects — RECOMMENDED, omit path when set>
 path:        <current project path — fallback when no alias is registered>
 query:       <intent from Step 1>
 pathPattern: "{editedFile1,editedFile2,...}"   ← brace expansion
-rerank:      { custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }
+rerank:      "blastRadius"               ← codegraph on; OFF fallback below
 limit:       <editedFiles.length * 3>
 metaOnly:    true
 ```
+
+**Codegraph gating for `rerank`:** `"blastRadius"` (real `fanIn`) when prime
+`## Enrichment` lists `codegraph.symbols`; fall back to
+`{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy) when
+that line is absent.
 
 Do NOT substitute:
 
 | Wrong tool                                                        | Why wrong                                                                                           |
 | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `mcp__tea-rags__hybrid_search`                                    | Custom impact rerank tied to `semantic_search`                                                      |
-| Named preset (`"hotspots"` / `"codeReview"` / `"impactAnalysis"`) | `impactAnalysis` does not exist; named presets miss `imports` weight                                |
+| Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"`   | `impactAnalysis` does not exist; these miss the blast-radius dimension. `"blastRadius"` IS correct when codegraph is on |
 | `mcp__tree-sitter__trace_impact`                                  | Structural trace is complementary (call graph), not blast-radius on git signals; use tea-rags first |
 | One call per file                                                 | Brace expansion covers all                                                                          |
 | Built-in `grep -r "import.*<file>"`                               | Misses the ranked `imports` overlay signal; slower                                                  |

@@ -92,6 +92,18 @@ Empty results (files too new to be indexed): skip bundle, invoke
 `superpowers:requesting-code-review` with note "diff files not yet indexed — no
 git-context available". Do not fabricate.
 
+## Step 2.5 — Reviewer-hub awareness (codegraph only)
+
+When codegraph is active (prime `## Enrichment` lists `codegraph.symbols`), for
+the changed symbols the diff touches run `get_callers symbolId=<id>` (resolve the
+exact id with `find_symbol` first). The callers are the code that depends on the
+change — their `blameDominantAuthor`s are stakeholders who should be looped into
+the review. Add a "Affected callers / suggested reviewers" line to the bundle.
+
+Skip this step when codegraph is off (graph tools not registered) — the
+ownership bundle from Step 2/3 still stands; just note caller-impact was not
+computed. Never invent caller lists.
+
 ## Step 3 — Build reviewer-context bundle
 
 Aggregate by `relativePath`. Per unique file extract:
