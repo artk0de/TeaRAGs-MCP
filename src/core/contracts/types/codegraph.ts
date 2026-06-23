@@ -476,6 +476,15 @@ export interface CallRef {
    * `TABLE[k].field` or a dispatch-bound local.
    */
   dispatchArgs?: { argIndex: number; candidate: DispatchRef }[];
+  /**
+   * Set by the walker when this call is a dynamic dispatch whose target is NOT a
+   * statically-known literal — `send(var)` / `public_send(expr)` / `__send__(x)`
+   * with a non-literal first argument. The codegraph counts an UNRESOLVED
+   * dynamicSend as `callsUnresolvable` (statically undeterminable), excluded from
+   * the resolveSuccessRate denominator — distinct from `externalSkipped`
+   * (framework) and from a genuine internal miss (bd cai0).
+   */
+  dynamicSend?: boolean;
 }
 
 /**

@@ -687,6 +687,33 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
     expect(r.chunks[0].calls.find((cr) => cr.member === "send")).toBeDefined();
   });
 
+  it("tags `send(var)` with dynamicSend (non-literal arg, statically undeterminable)", () => {
+    const src = "def f\n  send(action)\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    const sendCall = r.chunks[0].calls.find((cr) => cr.member === "send");
+    expect(sendCall?.dynamicSend).toBe(true);
+  });
+
+  it("does NOT tag `send(:literal)` with dynamicSend (resolves to a real method)", () => {
+    const src = "def f\n  send(:foo)\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].calls.every((cr) => !cr.dynamicSend)).toBe(true);
+  });
+
   it("extracts &:method block-pass as a separate CallRef", () => {
     const src = "def f\n  users.each(&:save)\nend\n";
     const tree = parse(src);

@@ -861,6 +861,7 @@ function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>
       // resolver's same-class bare-call fallback (callerScope-aware
       // pickSingleCandidate filter) takes over. The receiver-set
       // unknown-type drop guard would otherwise refuse to emit an edge.
+      let dynamicSend = false;
       if (RUBY_DYNAMIC_DISPATCH.has(method.text)) {
         const unwrapped = extractLiteralSymbolOrString(node);
         if (unwrapped !== null) {
@@ -872,6 +873,11 @@ function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>
           for (const child of node.children) visit(child, nextEnclosing, nextBindings);
           return;
         }
+        // Non-literal first arg — `send(var)` / `public_send(expr)`. The target
+        // is statically undeterminable; keep the literal `send` CallRef but tag
+        // it so an UNRESOLVED dispatch counts as `callsUnresolvable`, not a
+        // resolver miss (bd cai0).
+        dynamicSend = true;
       }
 
       // `alias_method :new, :old` synthetic call edge (bd tea-rags-mcp-y2z5).
@@ -934,6 +940,7 @@ function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>
       }
 
       const callRef: CallRef = { callText: node.text, receiver: receiverText, member: method.text, startLine };
+      if (dynamicSend) callRef.dynamicSend = true;
       // Registry-literal dispatch tagging (bd tea-rags-mcp-pq02v). Only the
       // OUTER `.member` call of a `CONST[k].new.m` chain yields a ref with
       // `field` set; the inner `.new` node returns `field: null` and is skipped
