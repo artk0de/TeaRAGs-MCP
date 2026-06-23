@@ -90,7 +90,14 @@ export class IndexPipeline extends BaseIndexingPipeline {
         await quarantineStore.clearAll();
       }
 
-      const ctx = this.initProcessing(setup.targetCollection, absolutePath, scanner, undefined, overrides?.chunkSize);
+      const ctx = this.initProcessing(
+        setup.targetCollection,
+        absolutePath,
+        scanner,
+        undefined,
+        overrides?.chunkSize,
+        files.length,
+      );
       // Embed-phase poison-pill isolation: an oversized chunk quarantines its
       // file instead of aborting the whole pass.
       ctx.chunkPipeline.setQuarantineStore(quarantineStore);

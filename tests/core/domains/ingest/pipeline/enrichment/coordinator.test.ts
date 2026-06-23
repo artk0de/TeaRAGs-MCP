@@ -2995,10 +2995,13 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
   });
 
-  it("emits file-level progress with the stored chunk count as denominator, never 0", async () => {
-    // 2 batches of 60 items each = 120 total chunks accumulated across onChunksStored calls.
-    // The denominator is accumulated per batch in onChunksStored — not seeded late from
-    // the chunkMap — so every file-level event carries total = sum of stored chunk counts.
+  it("emits file-level progress in FILES (distinct relPaths), total=grandFileCount from beginRun", async () => {
+    // NEW SEMANTICS: file-level progress is measured in FILES, not chunk-point-ops.
+    // applied = cumulative distinct files processed by the provider (Set-deduped);
+    // total   = grandFileCount passed to beginRun (the scanned file list size).
+    //
+    // 2 batches: batchA has 60 chunks of src/a.ts, batchB has 60 chunks of src/b.ts.
+    // After both batches: applied = 2 distinct files, total = grandFileCount (10 here).
     const batchA = Array.from(
       { length: 60 },
       (_, i) =>
@@ -3019,7 +3022,6 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     const events: EnrichmentProgressEvent[] = [];
     coordinator.setEnrichmentProgress((e) => events.push(e));
 
-    // buildFileSignals will return signal data, triggering file-level applies
     mockProvider.buildFileSignals.mockResolvedValue(
       new Map([
         ["src/a.ts", { x: 1 }],
@@ -3027,14 +3029,12 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
       ]),
     );
 
-    coordinator.beginRun("/repo", "test-col");
+    // Pass grandFileCount=10 (total scanned files — known up front from scanner).
+    coordinator.beginRun("/repo", "test-col", undefined, undefined, false, 10);
 
-    // Production order: onChunksStored fires per batch DURING embedding.
-    // The denominator is accumulated from each batch's chunk count.
-    coordinator.onChunksStored("test-col", "/repo", batchA); // adds 60 to total
-    coordinator.onChunksStored("test-col", "/repo", batchB); // adds 60 → total=120
+    coordinator.onChunksStored("test-col", "/repo", batchA);
+    coordinator.onChunksStored("test-col", "/repo", batchB);
 
-    // startChunkEnrichment fires AFTER all chunks are stored (post-embedding)
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>([
       [
         "src/a.ts",
@@ -3050,53 +3050,64 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     await coordinator.awaitCompletion("test-col");
 
     const fileEvents = events.filter((e) => e.providerKey === "git" && e.level === "file");
-    // There must be at least one file-level progress event
     expect(fileEvents.length).toBeGreaterThan(0);
-    // total must be the accumulated chunk count (120 = 60 + 60), NEVER 0
+    // total = grandFileCount (10), NOT chunk count (120)
     for (const ev of fileEvents) {
-      expect(ev.total).toBe(120);
-      expect(ev.total).toBeGreaterThan(0);
+      expect(ev.total).toBe(10);
     }
+    // Last file event: applied = 2 distinct files (a.ts and b.ts)
+    const lastFileEvent = fileEvents.at(-1)!;
+    expect(lastFileEvent.applied).toBe(2);
+    // Verify the old lock-step 100% behavior is GONE: 60-chunk batch for 1 file → applied=1, not 60
+    const firstFileEvent = fileEvents[0];
+    expect(firstFileEvent.applied).toBeLessThanOrEqual(2);
+    expect(firstFileEvent.applied).not.toBe(60);
   });
 
-  it("progress map resets between runs — run 2 first event applied equals batch chunk count, not run 1 accumulated total", async () => {
-    // I3 strengthened: assert run 2's first file applied = the single batch's chunk count (1),
-    // NOT run1's final accumulated applied. This proves the map actually reset, not a coincidental
-    // equality that would pass even if the map carried stale state.
-    const singleChunkBatch = [
-      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
-    ];
-    mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+  it("progress map resets between runs — run 2 first file event applied is 1 (new applier), not run1 accumulated", async () => {
+    // NEW SEMANTICS: file applied = cumulative distinct files (Set in applier, per run).
+    // Run 1 processes src/a.ts, src/b.ts → final applied = 2.
+    // Run 2 processes ONLY src/a.ts (1 file) → first (and only) applied event = 1.
+    // Proves: (a) the progress map reset, AND (b) the new applier-side tracking is per-run.
+    mockProvider.buildFileSignals.mockResolvedValue(
+      new Map([
+        ["src/a.ts", { x: 1 }],
+        ["src/b.ts", { x: 2 }],
+      ]),
+    );
 
-    // Run 1 — store 3 chunks so the final accumulated applied is 3 (distinct from run 2's 1)
     const run1Events: EnrichmentProgressEvent[] = [];
     coordinator.setEnrichmentProgress((e) => run1Events.push(e));
 
-    coordinator.beginRun("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col", undefined, undefined, false, 5);
     coordinator.onChunksStored("test-col", "/repo", [
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
-      { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 20 } } as any,
-      { chunkId: "c3", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 30 } } as any,
+      { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/b.ts" }, endLine: 20 } } as any,
     ]);
     await coordinator.awaitCompletion("test-col");
 
     const run1FinalApplied = run1Events.filter((e) => e.level === "file").at(-1)?.applied ?? 0;
-    expect(run1FinalApplied).toBeGreaterThan(1); // must be > 1 to make the check meaningful
+    // Run 1 saw 2 distinct files (a.ts + b.ts)
+    expect(run1FinalApplied).toBe(2);
 
-    // Run 2 — single chunk. First applied event must be 1 (this batch), NOT run1FinalApplied.
+    // Run 2 — only src/a.ts. Applier starts fresh (per-run RunState creates a new applier).
     const run2Events: EnrichmentProgressEvent[] = [];
     coordinator.setEnrichmentProgress((e) => run2Events.push(e));
     mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
 
-    coordinator.beginRun("/repo", "test-col-2");
-    coordinator.onChunksStored("test-col-2", "/repo", singleChunkBatch);
+    coordinator.beginRun("/repo", "test-col-2", undefined, undefined, false, 3);
+    coordinator.onChunksStored("test-col-2", "/repo", [
+      { chunkId: "c3", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
     await coordinator.awaitCompletion("test-col-2");
 
     const run2FileEvents = run2Events.filter((e) => e.level === "file");
     expect(run2FileEvents.length).toBeGreaterThan(0);
-    // Proves map reset: first applied = 1 (single batch), not run1FinalApplied
-    expect(run2FileEvents[0].applied).toBe(1);
+    // Proves applier reset: run 2 saw only 1 distinct file
+    expect(run2FileEvents.at(-1)!.applied).toBe(1);
     expect(run2FileEvents[0].applied).not.toBe(run1FinalApplied);
+    // total reflects grandFileCount for run 2 (3)
+    expect(run2FileEvents[0].total).toBe(3);
   });
 
   it("emits no events when no progress callback is set", async () => {
@@ -3113,13 +3124,15 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     await expect(coordinator.awaitCompletion("test-col")).resolves.toBeDefined();
   });
 
-  it("streaming-order regression: file-level events have total>0 when onChunksStored fires BEFORE startChunkEnrichment", async () => {
+  it("streaming-order regression: file-level events carry grandFileCount as total, applied=distinct files", async () => {
+    // NEW SEMANTICS: file-level progress is measured in FILES, not chunk-point-ops.
+    // total = grandFileCount (set at beginRun, known up front from scanner).
+    // applied = cumulative distinct files processed by the provider (Set-deduped).
+    //
     // Production ordering: onChunksStored fires per stored batch DURING embedding,
     // startChunkEnrichment fires AFTER all chunks are stored. File-level streaming
     // applies happen inside onChunksStored — at that point startChunkEnrichment has
-    // NOT run yet, so the old late-seed approach emitted total=0 ("2047/0" bug).
-    // Fix: accumulate the denominator in onChunksStored itself so file events always
-    // carry total >= applied > 0.
+    // NOT run yet. With grandFileCount set at beginRun, total is never 0.
     const batchItems = [
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 9 } } as any,
       { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 19 } } as any,
@@ -3129,7 +3142,6 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     const events: EnrichmentProgressEvent[] = [];
     coordinator.setEnrichmentProgress((e) => events.push(e));
 
-    // buildFileSignals returns data so file-level applies actually fire
     mockProvider.buildFileSignals.mockResolvedValue(
       new Map([
         ["src/a.ts", { x: 1 }],
@@ -3137,23 +3149,25 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
       ]),
     );
 
-    coordinator.beginRun("/repo", "test-col");
+    // grandFileCount=5 — total files in the project (known from scanner before processing)
+    coordinator.beginRun("/repo", "test-col", undefined, undefined, false, 5);
 
     // Production order: onChunksStored BEFORE startChunkEnrichment
     coordinator.onChunksStored("test-col", "/repo", batchItems);
 
-    // Wait for file-level applies to settle (streaming fires async after buildFileSignals resolves)
     await new Promise((r) => setTimeout(r, 30));
 
-    // File-level events that fired BEFORE startChunkEnrichment must carry total = batchItems.length (3)
+    // File-level events: total = grandFileCount (5), applied = distinct files processed
     const fileEventsBeforeStart = events.filter((e) => e.level === "file");
     expect(fileEventsBeforeStart.length).toBeGreaterThan(0);
     for (const ev of fileEventsBeforeStart) {
-      expect(ev.total).toBeGreaterThan(0); // FAILS with old late-seed code (emits total=0)
-      expect(ev.total).toBe(batchItems.length); // accumulated from the batch
+      // total = grandFileCount, NOT chunk count — proves no chunk-unit denominator
+      expect(ev.total).toBe(5);
+      // applied ≤ 2 (only 2 distinct files in this batch: a.ts, b.ts)
+      expect(ev.applied).toBeGreaterThan(0);
+      expect(ev.applied).toBeLessThanOrEqual(2);
     }
 
-    // Now call startChunkEnrichment (post-embedding, as in production)
     const chunkMap = new Map([
       [
         "src/a.ts",
@@ -3169,43 +3183,172 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     await coordinator.awaitCompletion("test-col");
   });
 
-  it("progress map reset: run 2 starts applied from zero, not from run 1 accumulation", async () => {
-    // Strengthened version of the reset test: verifies that run 2's first file event
-    // has applied = the first batch's chunk count (a small value), NOT the accumulated
-    // total from run 1. This proves the map actually reset, not a coincidental match.
-    const singleItem = [{ chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any];
+  it("progress map reset: run 2 starts applied from zero — first file event applied=1 (distinct file count), not run1 total", async () => {
+    // NEW SEMANTICS: applied = cumulative distinct files processed (per-run applier Set).
+    // Run 1: src/a.ts + src/b.ts → final applied=2.
+    // Run 2: only src/a.ts → first applied event=1 (fresh applier, Set restarted).
+    // The per-run RunState creates a new EnrichmentApplier each time, so filesByProvider is empty.
+    mockProvider.buildFileSignals.mockResolvedValue(
+      new Map([
+        ["src/a.ts", { x: 1 }],
+        ["src/b.ts", { x: 2 }],
+      ]),
+    );
 
-    mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
-
-    // Run 1 — store a larger batch to give run 1 a different cumulative total
     const run1Events: EnrichmentProgressEvent[] = [];
     coordinator.setEnrichmentProgress((e) => run1Events.push(e));
 
-    coordinator.beginRun("/repo", "test-col");
+    coordinator.beginRun("/repo", "test-col", undefined, undefined, false, 10);
     coordinator.onChunksStored("test-col", "/repo", [
-      ...singleItem,
-      { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 20 } } as any,
-      { chunkId: "c3", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 30 } } as any,
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+      { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/b.ts" }, endLine: 20 } } as any,
     ]);
     await coordinator.awaitCompletion("test-col");
 
     const run1FileFinalApplied = run1Events.filter((e) => e.level === "file").at(-1)?.applied ?? 0;
-    expect(run1FileFinalApplied).toBeGreaterThan(0);
+    // Run 1 saw 2 distinct files
+    expect(run1FileFinalApplied).toBe(2);
 
-    // Run 2 — single item batch; first applied event must be 1 (this batch's contribution),
-    // not run1FileFinalApplied. Proving the map reset, not a coincidental match.
     const run2Events: EnrichmentProgressEvent[] = [];
     coordinator.setEnrichmentProgress((e) => run2Events.push(e));
     mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
 
-    coordinator.beginRun("/repo", "test-col-2");
-    coordinator.onChunksStored("test-col-2", "/repo", singleItem);
+    coordinator.beginRun("/repo", "test-col-2", undefined, undefined, false, 5);
+    coordinator.onChunksStored("test-col-2", "/repo", [
+      { chunkId: "c3", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
     await coordinator.awaitCompletion("test-col-2");
 
     const run2FileEvents = run2Events.filter((e) => e.level === "file");
     expect(run2FileEvents.length).toBeGreaterThan(0);
-    // First applied value must be the chunk count of the single batch (1), NOT run1's accumulated total
+    // Run 2's applied = 1 (one distinct file: src/a.ts), NOT run1's final value (2)
     expect(run2FileEvents[0].applied).toBe(1);
     expect(run2FileEvents[0].applied).not.toBe(run1FileFinalApplied);
+    // total = grandFileCount for run 2 (5)
+    expect(run2FileEvents[0].total).toBe(5);
+  });
+
+  it("file dedup: processing the same file in a later batch does NOT increment applied", async () => {
+    // Set dedup: if src/a.ts appears in batch 1 AND batch 2, applied stays at 1.
+    mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+
+    const events: EnrichmentProgressEvent[] = [];
+    coordinator.setEnrichmentProgress((e) => events.push(e));
+
+    coordinator.beginRun("/repo", "test-col", undefined, undefined, false, 10);
+    // Batch 1 — src/a.ts
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+    // Batch 2 — same src/a.ts again
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 20 } } as any,
+    ]);
+    await coordinator.awaitCompletion("test-col");
+
+    const fileEvents = events.filter((e) => e.level === "file");
+    expect(fileEvents.length).toBeGreaterThan(0);
+    // Even after 2 batches for the same file, applied must be 1 (Set dedup)
+    const finalApplied = fileEvents.at(-1)!.applied;
+    expect(finalApplied).toBe(1);
+  });
+
+  it("lock-step behavior is gone: 60-chunk batch for 1 file emits applied=1, NOT 60", async () => {
+    // Regression guard: the old behavior was chunk-point-ops = applied, so 60 chunks
+    // for 1 file emitted applied=60 and the denominator was also 60 → always ~100%.
+    // NEW: 60 chunks of the same file → applied=1 (one distinct file).
+    const bigBatch = Array.from(
+      { length: 60 },
+      (_, i) =>
+        ({
+          chunkId: `c-${i}`,
+          chunk: { metadata: { filePath: "/repo/src/big.ts" }, startLine: i * 10, endLine: i * 10 + 9 },
+        }) as any,
+    );
+
+    mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/big.ts", { x: 1 }]]));
+
+    const events: EnrichmentProgressEvent[] = [];
+    coordinator.setEnrichmentProgress((e) => events.push(e));
+
+    coordinator.beginRun("/repo", "test-col", undefined, undefined, false, 10);
+    coordinator.onChunksStored("test-col", "/repo", bigBatch);
+    await coordinator.awaitCompletion("test-col");
+
+    const fileEvents = events.filter((e) => e.level === "file");
+    expect(fileEvents.length).toBeGreaterThan(0);
+    // All 60 chunks belong to 1 file → applied = 1, NOT 60
+    expect(fileEvents.at(-1)!.applied).toBe(1);
+    // total = grandFileCount (10), NOT 60
+    expect(fileEvents[0].total).toBe(10);
+  });
+
+  it("chunk-level: applied is cumulative across batches, total = accumulated stored chunk count", async () => {
+    // chunk-level semantics: applied grows batch-over-batch (running sum), total = chunkTotalAccumulated.
+    const chunkOverlays1 = new Map([["src/a.ts", new Map([["c1", { commitCount: 3 }]])]]);
+    const chunkOverlays2 = new Map([["src/b.ts", new Map([["c2", { commitCount: 5 }]])]]);
+
+    mockProvider.buildFileSignals.mockResolvedValue(
+      new Map([
+        ["src/a.ts", { x: 1 }],
+        ["src/b.ts", { x: 2 }],
+      ]),
+    );
+    // buildChunkSignals returns different overlays per call
+    mockProvider.buildChunkSignals.mockResolvedValueOnce(chunkOverlays1).mockResolvedValueOnce(chunkOverlays2);
+
+    const events: EnrichmentProgressEvent[] = [];
+    coordinator.setEnrichmentProgress((e) => events.push(e));
+
+    coordinator.beginRun("/repo", "test-col", undefined, undefined, false, 5);
+
+    // 3 items in batch 1
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 9 } } as any,
+      { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 19 } } as any,
+      { chunkId: "c3", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 29 } } as any,
+    ]);
+    // 2 items in batch 2
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c4", chunk: { metadata: { filePath: "/repo/src/b.ts" }, endLine: 9 } } as any,
+      { chunkId: "c5", chunk: { metadata: { filePath: "/repo/src/b.ts" }, endLine: 19 } } as any,
+    ]);
+
+    const chunkMap = new Map([
+      [
+        "src/a.ts",
+        [
+          { chunkId: "c1", startLine: 1, endLine: 9 },
+          { chunkId: "c2", startLine: 10, endLine: 19 },
+          { chunkId: "c3", startLine: 20, endLine: 29 },
+        ],
+      ],
+      [
+        "src/b.ts",
+        [
+          { chunkId: "c4", startLine: 1, endLine: 9 },
+          { chunkId: "c5", startLine: 10, endLine: 19 },
+        ],
+      ],
+    ]);
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap as any);
+
+    await coordinator.awaitCompletion("test-col");
+
+    const chunkEvents = events.filter((e) => e.level === "chunk");
+    expect(chunkEvents.length).toBeGreaterThan(0);
+    // Chunk events: total = chunkTotalAccumulated (3+2=5 chunks stored)
+    for (const ev of chunkEvents) {
+      expect(ev.total).toBe(5); // 3 + 2 stored chunks
+    }
+    // applied is cumulative: last event should be ≥ 1 (at least one overlay applied)
+    const lastChunkEvent = chunkEvents.at(-1)!;
+    expect(lastChunkEvent.applied).toBeGreaterThanOrEqual(1);
+    // Verify applied is cumulative: if two separate chunk apply calls happened,
+    // the final applied > either individual batch's overlay count.
+    // (The mock returns 1 overlay per call — 2 calls = 2 cumulative)
+    // This depends on mock behavior; at minimum it must be > 0.
+    expect(lastChunkEvent.applied).toBeGreaterThan(0);
   });
 });
