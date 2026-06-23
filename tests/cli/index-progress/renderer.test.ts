@@ -720,6 +720,82 @@ describe("TtyProgressRenderer — tick interval lifecycle", () => {
 });
 
 // ---------------------------------------------------------------------------
+// TtyProgressRenderer — freeze elapsed at 100% (pre-done) — Bug 3
+// ---------------------------------------------------------------------------
+describe("TtyProgressRenderer — freeze elapsed at 100% (pre-done)", () => {
+  const colors = createColorizer({ env: {}, isTTY: false });
+  let nowMs = 0;
+
+  beforeEach(() => {
+    nowMs = 0;
+    mockMultibar.create.mockClear();
+    mockMultibar.stop.mockClear();
+    mockMultibar.log.mockClear();
+    mockSingleBar.update.mockClear();
+    mockSingleBar.setTotal.mockClear();
+    mockMultibar.create.mockReturnValue(mockSingleBar);
+  });
+
+  it("refreshActiveBars does NOT call update on a full (value>=total) non-done bar", () => {
+    const r = new TtyProgressRenderer(colors, () => nowMs);
+    nowMs = 10_000;
+    r.handle({ type: "embedding", phase: "embedding", percentage: 100, current: 7344, total: 7344 });
+    mockSingleBar.update.mockClear();
+    nowMs = 15_000;
+    (r as unknown as { refreshActiveBars: () => void }).refreshActiveBars();
+    expect(mockSingleBar.update).not.toHaveBeenCalled();
+  });
+
+  it("full bar (value>=total, not done) shows eta='' in the update payload", () => {
+    const r = new TtyProgressRenderer(colors, () => nowMs);
+    nowMs = 10_000;
+    r.handle({
+      type: "embedding",
+      phase: "embedding",
+      percentage: 100,
+      current: 7344,
+      total: 7344,
+      throughput: 60,
+    });
+    const updateCalls = mockSingleBar.update.mock.calls;
+    const lastPayload = updateCalls[updateCalls.length - 1][1] as Record<string, unknown>;
+    expect(lastPayload["eta"]).toBe("");
+  });
+
+  it("non-full bar (value<total) still ticks on refreshActiveBars (regression guard)", () => {
+    const r = new TtyProgressRenderer(colors, () => nowMs);
+    nowMs = 0;
+    r.handle({ type: "embedding", phase: "embedding", percentage: 50, current: 50, total: 100 });
+    mockSingleBar.update.mockClear();
+    nowMs = 5_000;
+    (r as unknown as { refreshActiveBars: () => void }).refreshActiveBars();
+    expect(mockSingleBar.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("phase-done still marks bar done and emits Done ✓ payload after bar was full", () => {
+    const r = new TtyProgressRenderer(colors, () => nowMs);
+    nowMs = 10_000;
+    r.handle({ type: "embedding", phase: "embedding", percentage: 100, current: 7344, total: 7344 });
+    mockSingleBar.update.mockClear();
+    r.handle({ type: "phase-done", phase: "embedding", elapsedMs: 10_000 });
+    const { barStates } = r as unknown as { barStates: Map<string, { done: boolean }> };
+    expect(barStates.get("embedding")?.done).toBe(true);
+    const updateCalls = mockSingleBar.update.mock.calls;
+    expect(updateCalls.some((c) => (c[1] as Record<string, unknown>)["done"] !== undefined)).toBe(true);
+  });
+
+  it("zero-total bar is NOT considered full (refreshActiveBars still ticks it)", () => {
+    const r = new TtyProgressRenderer(colors, () => nowMs);
+    nowMs = 0;
+    r.handle({ type: "embedding", phase: "embedding", percentage: 0, current: 0, total: 0 });
+    mockSingleBar.update.mockClear();
+    nowMs = 5_000;
+    (r as unknown as { refreshActiveBars: () => void }).refreshActiveBars();
+    expect(mockSingleBar.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // TtyProgressRenderer — refreshActiveBars
 // ---------------------------------------------------------------------------
 describe("TtyProgressRenderer — refreshActiveBars", () => {

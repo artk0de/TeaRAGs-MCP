@@ -225,7 +225,7 @@ export class TtyProgressRenderer implements ProgressRenderer {
 
   refreshActiveBars(): void {
     for (const state of this.barStates.values()) {
-      if (state.done) continue;
+      if (state.done || (state.total > 0 && state.value >= state.total)) continue;
       const nowMs = this.now();
       const elapsed = fmtDuration(nowMs - state.startMs);
       const eta = formatEta(countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs));
