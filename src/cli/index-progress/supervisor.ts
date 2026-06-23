@@ -16,15 +16,9 @@
 import type { IndexStatus } from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
 import { isWorkerMessage, type EnrichmentOutcome } from "./ipc-protocol.js";
-import { OverallTimer, PhaseProgressTracker } from "./phase-tracker.js";
+import { fmtDuration, OverallTimer, PhaseProgressTracker } from "./phase-tracker.js";
 import { JsonProgressRenderer, type ProgressRenderer } from "./renderer.js";
 import { formatIndexStatus, formatIndexStatusJson } from "./status-format.js";
-
-/** Format a duration in ms: sub-second → "Nms", otherwise "N.Ns". */
-function fmtDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
 
 /** Minimal child handle — satisfied by Node `ChildProcess` and a test EventEmitter. */
 export interface WorkerHandle {
@@ -105,7 +99,7 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
       renderer.handle(raw);
       switch (raw.type) {
         case "phase-done":
-          if (!jsonRenderer) out(colors.dim(`${raw.phase} done in ${fmtDuration(raw.elapsedMs)}`));
+          // Handled by renderer.handle (called above): TTY → multibar.log, line → sink, JSON → no-op.
           break;
         case "embedding":
           // Already forwarded to the renderer above; no supervisor-side state.

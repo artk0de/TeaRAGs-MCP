@@ -240,7 +240,7 @@ describe("superviseIndexing — overall timer + phase-done", () => {
     expect(joined).toMatch(/total.*4\.2s|total.*4200ms/);
   });
 
-  it("prints phase-done line when a phase-done message is received", async () => {
+  it("does NOT write phase-done 'done in' lines to out (renderer's responsibility now)", async () => {
     const out: string[] = [];
     const child = fakeChild();
     const renderer = fakeRenderer();
@@ -256,7 +256,12 @@ describe("superviseIndexing — overall timer + phase-done", () => {
     child.emit("message", { type: "done", result: { failed: [], degraded: [] } });
     await p;
 
-    expect(out.join("\n")).toMatch(/embedding done in 3\.5s|embedding done in 3500ms/);
+    // The supervisor must NOT write "done in" to out — that's now renderer.handle()'s job
+    expect(out.join("\n")).not.toContain("done in");
+    // But renderer.handle must have been called with the phase-done message
+    expect(renderer.handle).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "phase-done", phase: "embedding", elapsedMs: 3500 }),
+    );
   });
 });
 

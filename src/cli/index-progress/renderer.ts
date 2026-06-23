@@ -9,6 +9,9 @@
  *
  * `formatProgressLine` is the pure event→string core shared by the line renderer
  * and unit tests.
+ *
+ * `buildBarLine` is the pure bar-assembly helper used by the TTY format function
+ * and unit tests.
  */
 
 import cliProgress from "cli-progress";
@@ -16,7 +19,7 @@ import cliProgress from "cli-progress";
 import type { IndexStatus } from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
 import type { EnrichmentOutcome, WorkerMessage } from "./ipc-protocol.js";
-import { computeEtaSeconds } from "./phase-tracker.js";
+import { computeEtaSeconds, fmtDuration } from "./phase-tracker.js";
 
 export interface ProgressRenderer {
   handle: (message: WorkerMessage) => void;
@@ -36,6 +39,39 @@ export function formatEta(seconds: number | null): string {
   return `~${(seconds / 60).toFixed(1)}m`;
 }
 
+export interface BuildBarLineParams {
+  label: string;
+  /** Fraction 0..1. */
+  progress: number;
+  /** Raw value (may exceed total; will be clamped to total before display). */
+  value: number;
+  total: number;
+  elapsed: string;
+  eta: string;
+  rate: string;
+  barsize: number;
+  colors: Colorizer;
+}
+
+/**
+ * Pure function: assembles one progress bar line.
+ * Bar glyphs use `colors.brand` (filled) and `colors.dim` (incomplete).
+ * When colors are disabled both are identity, producing plain glyphs.
+ * Value is clamped to total so displayed fraction never exceeds 100%.
+ */
+export function buildBarLine(params: BuildBarLineParams): string {
+  const { label, progress, value, total, elapsed, eta, rate, barsize, colors } = params;
+  const filled = Math.round((progress ?? 0) * barsize);
+  const empty = Math.max(0, barsize - filled);
+  const bar = colors.brand("█".repeat(filled)) + colors.dim("░".repeat(empty));
+  const clampedValue = Math.min(value, total);
+  const pct = `${Math.round((progress ?? 0) * 100)}%`;
+  const parts = [` ${label}`, bar, `${clampedValue}/${total}`, `(${pct})`, elapsed, eta, rate].filter(
+    (p) => p.trim() !== "",
+  );
+  return parts.join(" ");
+}
+
 /** Pure: render a progress message as one log line, or null when it is not a progress line. */
 export function formatProgressLine(message: WorkerMessage): string | null {
   switch (message.type) {
@@ -53,11 +89,12 @@ export function formatProgressLine(message: WorkerMessage): string | null {
       const pct = message.total > 0 ? Math.round((message.applied / message.total) * 100) : 0;
       return `${label}${message.applied}/${message.total} (${pct}%)`;
     }
+    case "phase-done":
+      return `${message.phase} done in ${fmtDuration(message.elapsedMs)}`;
     case "error":
       return `error: ${message.message}`;
     case "status":
     case "done":
-    case "phase-done":
       return null;
   }
 }
@@ -84,7 +121,9 @@ export class LineProgressRenderer implements ProgressRenderer {
 export class TtyProgressRenderer implements ProgressRenderer {
   private readonly multibar: cliProgress.MultiBar;
   private embeddingBar: cliProgress.SingleBar | null = null;
+  private embeddingTotal = 0;
   private readonly enrichmentBars = new Map<string, cliProgress.SingleBar>();
+  private readonly enrichmentTotals = new Map<string, number>();
   /** Per-bar start timestamp keyed by bar key ("embedding" or "providerKey:level"). */
   private readonly barStartMs = new Map<string, number>();
 
@@ -96,7 +135,20 @@ export class TtyProgressRenderer implements ProgressRenderer {
       {
         clearOnComplete: false,
         hideCursor: true,
-        format: " {label} {bar} {value}/{total} ({percentage}%) {eta} {rate}",
+        format: (options: cliProgress.Options, params: cliProgress.Params, payload: Record<string, string>): string => {
+          const size = options.barsize ?? 40;
+          return buildBarLine({
+            label: payload["label"] ?? "",
+            progress: params.progress ?? 0,
+            value: params.value,
+            total: params.total,
+            elapsed: payload["elapsed"] ?? "",
+            eta: payload["eta"] ?? "",
+            rate: payload["rate"] ?? "",
+            barsize: size,
+            colors: this.colors,
+          });
+        },
         stream: process.stderr,
       },
       cliProgress.Presets.shades_classic,
@@ -110,11 +162,15 @@ export class TtyProgressRenderer implements ProgressRenderer {
         message.throughput !== null && message.throughput !== undefined ? `${message.throughput.toFixed(1)} ch/s` : "";
       if (!this.embeddingBar) {
         this.barStartMs.set("embedding", this.now());
-        this.embeddingBar = this.multibar.create(message.total, 0, { label, rate, eta: "" });
+        this.embeddingTotal = message.total;
+        this.embeddingBar = this.multibar.create(message.total, 0, { label, rate, eta: "", elapsed: "" });
       }
+      this.embeddingTotal = message.total;
       const startMs = this.barStartMs.get("embedding") ?? this.now();
+      const elapsed = fmtDuration(this.now() - startMs);
       const eta = formatEta(computeEtaSeconds(message.current, message.total, this.now() - startMs));
-      this.embeddingBar.update(message.current, { label, rate, eta });
+      const clamped = Math.min(message.current, message.total);
+      this.embeddingBar.update(clamped, { label, rate, eta, elapsed });
       this.embeddingBar.setTotal(message.total);
       return;
     }
@@ -125,13 +181,31 @@ export class TtyProgressRenderer implements ProgressRenderer {
       let bar = this.enrichmentBars.get(key);
       if (!bar) {
         this.barStartMs.set(key, this.now());
-        bar = this.multibar.create(message.total, 0, { label, rate: "", eta: "" });
+        this.enrichmentTotals.set(key, message.total);
+        bar = this.multibar.create(message.total, 0, { label, rate: "", eta: "", elapsed: "" });
         this.enrichmentBars.set(key, bar);
       }
+      this.enrichmentTotals.set(key, message.total);
       const startMs = this.barStartMs.get(key) ?? this.now();
+      const elapsed = fmtDuration(this.now() - startMs);
       const eta = formatEta(computeEtaSeconds(message.applied, message.total, this.now() - startMs));
+      const clamped = Math.min(message.applied, message.total);
       bar.setTotal(message.total);
-      bar.update(message.applied, { label, rate: "", eta });
+      bar.update(clamped, { label, rate: "", eta, elapsed });
+      return;
+    }
+    if (message.type === "phase-done") {
+      // Complete that phase's bars to 100% — the phase IS done; small gap is quarantined chunks.
+      if (message.phase === "embedding" && this.embeddingBar) {
+        this.embeddingBar.update(this.embeddingTotal);
+      } else if (message.phase === "enrichment") {
+        for (const [key, bar] of this.enrichmentBars) {
+          bar.update(this.enrichmentTotals.get(key) ?? 0);
+        }
+      }
+      // Print above the live bars — no stdout collision.
+      const line = this.colors.dim(`${message.phase} done in ${fmtDuration(message.elapsedMs)}`);
+      (this.multibar as unknown as { log: (s: string) => void }).log(`${line}\n`);
     }
   }
 

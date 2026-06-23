@@ -5,6 +5,12 @@
  * calls Date.now() internally.
  */
 
+/** Format a duration in ms: sub-second → "Nms", otherwise "N.Ns". */
+export function fmtDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
 /**
  * Seconds until completion given cumulative units applied over an elapsed
  * window. Returns null when throughput cannot yet be estimated (no work applied
