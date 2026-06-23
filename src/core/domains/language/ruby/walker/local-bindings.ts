@@ -115,6 +115,43 @@ export function collectRubyIvarFieldTypes(root: AstNode): Record<string, Record<
 }
 
 /**
+ * Infer `methodName → returnTypeName` from each method's BODY when no YARD
+ * `@return` is present (cai0 a71lj body-inference). The return value of a Ruby
+ * method is its LAST evaluated expression (implicit return) or an explicit
+ * `return EXPR`; when that expression is a constructor / instance-returning
+ * factory (`Widget.new`, `User.find(id)` — typed by {@link constInstanceType}),
+ * the method's return type is that constant. Conservative: a conditional /
+ * identifier / literal last expression records NOTHING (no guessing across
+ * branches), mirroring the single-concrete-return discipline of
+ * `collectYardReturnTypes`. Keyed by the bare method name (`def self.make` →
+ * `make`), matching how the resolver reads `localCallBindings` short names.
+ * YARD annotations win over body inference at the merge site (the walker).
+ */
+export function collectRubyBodyReturnTypes(root: AstNode): Record<string, string> {
+  const out: Record<string, string> = {};
+  walk(root, (node) => {
+    if (node.type !== "method" && node.type !== "singleton_method") return;
+    const nameNode = node.childForFieldName("name");
+    const body = node.childForFieldName("body");
+    if (!nameNode || !body) return;
+    // Last value-producing statement of the body (skip rescue/ensure/else tails).
+    const stmts = body.namedChildren.filter((n) => n.type !== "rescue" && n.type !== "ensure" && n.type !== "else");
+    let last = stmts[stmts.length - 1];
+    if (!last) return;
+    // Explicit `return EXPR` — unwrap to the returned expression.
+    if (last.type === "return") {
+      const arg = last.namedChildren[0];
+      if (!arg) return;
+      last = arg.type === "argument_list" ? arg.namedChildren[0] : arg;
+      if (!last) return;
+    }
+    const type = constInstanceType(last);
+    if (type) out[nameNode.text] = type;
+  });
+  return out;
+}
+
+/**
  * Collect `varName → calledMethodName` for assignments whose RHS is a method
  * call WITHOUT a directly-knowable type (`x = client.fetch`, `x = build_thing()`).
  * Pairs with the run-global `functionReturnTypes` channel so the resolver binds

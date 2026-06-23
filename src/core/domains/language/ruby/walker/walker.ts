@@ -47,6 +47,7 @@ import { RUBY_DSL, singularizeAssociation } from "../dsl/index.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
 import {
   collectLocalBindingsForChunk,
+  collectRubyBodyReturnTypes,
   collectRubyIvarFieldTypes,
   collectRubyLocalCallBindingsForChunk,
   collectYardParamTypes,
@@ -143,7 +144,12 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // YARD `@return [T]` return types (brg9) — same channel the Go walker fills
   // (`FileExtraction.functionReturnTypes`). Emitted only when at least one
   // single-constant return annotation was found.
-  if (Object.keys(yardReturnTypes).length > 0) out.functionReturnTypes = yardReturnTypes;
+  // Return types feed the `returnTypeBinding` pass (cai0 a71lj). Body inference
+  // (last-expression constructor) covers un-annotated Rails code; YARD `@return`
+  // wins on conflict (explicit annotation beats inferred).
+  const bodyReturnTypes = trackTypes ? collectRubyBodyReturnTypes(input.tree.rootNode) : {};
+  const returnTypes = { ...bodyReturnTypes, ...yardReturnTypes };
+  if (Object.keys(returnTypes).length > 0) out.functionReturnTypes = returnTypes;
   if (Object.keys(dispatchTables).length > 0) out.dispatchTables = dispatchTables;
   // `@ivar` receiver types via the universal `classFieldTypes` channel (cai0
   // imass) — same env gate as the other type-inference paths. Ruby is the 5th

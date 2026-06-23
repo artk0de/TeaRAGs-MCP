@@ -16,6 +16,7 @@ import RbLang from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
 import {
+  collectRubyBodyReturnTypes,
   collectRubyIvarFieldTypes,
   collectRubyLocalCallBindingsForChunk,
 } from "../../../../../../src/core/domains/language/ruby/walker/local-bindings.js";
@@ -2421,5 +2422,67 @@ describe("collectRubyLocalCallBindingsForChunk (var → called method, localCall
     `).rootNode;
     // lines: class=2, def a=3, def b=4 (1-based with leading newline)
     expect(collectRubyLocalCallBindingsForChunk(root, 3, 3)).toEqual({ x: "in_range" });
+  });
+});
+
+describe("collectRubyBodyReturnTypes (return-type from method body last expression)", () => {
+  it("infers a constructor as the implicit return (def build; Klass.new; end)", () => {
+    const root = parse(`
+      class Foo
+        def build; Widget.new; end
+      end
+    `).rootNode;
+    expect(collectRubyBodyReturnTypes(root)).toEqual({ build: "Widget" });
+  });
+
+  it("infers an explicit return Klass.new", () => {
+    const root = parse(`
+      class Foo
+        def build
+          do_setup
+          return Widget.new
+        end
+      end
+    `).rootNode;
+    expect(collectRubyBodyReturnTypes(root)).toEqual({ build: "Widget" });
+  });
+
+  it("infers an instance-returning finder (Model.find) as the return type", () => {
+    const root = parse(`
+      class Foo
+        def load; User.find(id); end
+      end
+    `).rootNode;
+    expect(collectRubyBodyReturnTypes(root)).toEqual({ load: "User" });
+  });
+
+  it("infers a singleton method return (def self.make)", () => {
+    const root = parse(`
+      class Foo
+        def self.make; Widget.new; end
+      end
+    `).rootNode;
+    expect(collectRubyBodyReturnTypes(root)).toEqual({ make: "Widget" });
+  });
+
+  it("records nothing when the last expression is not a constructor (identifier / literal)", () => {
+    const root = parse(`
+      class Foo
+        def a; helper; end
+        def b; 42; end
+      end
+    `).rootNode;
+    expect(collectRubyBodyReturnTypes(root)).toEqual({});
+  });
+
+  it("records nothing for a conditional last expression (no guessing)", () => {
+    const root = parse(`
+      class Foo
+        def pick
+          if cond then A.new else B.new end
+        end
+      end
+    `).rootNode;
+    expect(collectRubyBodyReturnTypes(root)).toEqual({});
   });
 });
