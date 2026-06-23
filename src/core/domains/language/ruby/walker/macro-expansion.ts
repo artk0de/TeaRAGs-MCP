@@ -82,8 +82,10 @@ export function expandClassBodyMacros(node: AstNode): DeclaredMethod[] {
     if (base.length > 0) bases.push(base);
   }
   if (bases.length === 0) return [];
-  // `scope :active, -> { ... }` — only the first symbol names the method.
-  if (macroName === "scope") {
+  // First-symbol-only macros: `scope :active, -> { ... }` (rest is the lambda)
+  // and `attribute :name, :string` (2nd positional symbol is the cast type, not
+  // a second attribute name).
+  if (macroName === "scope" || macroName === "attribute") {
     return builder(bases[0]).map((m) => mk(m.name, m.kind, category));
   }
   const out: DeclaredMethod[] = [];

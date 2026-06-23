@@ -63,11 +63,13 @@ describe("RUBY_DSL catalogue", () => {
     expect(RUBY_DSL.included.category).toBe("concern-hook");
   });
 
-  it("group-only accessor keywords (attribute, attachments) have NO declares", () => {
+  it("accessor library macros (attribute, attachments, class_attribute) carry declares (Phase C)", () => {
     for (const kw of ["attribute", "class_attribute", "has_one_attached", "has_many_attached"]) {
       expect(RUBY_DSL[kw].category, kw).toBe("accessor");
-      expect(RUBY_DSL[kw].declares, kw).toBeUndefined();
+      expect(RUBY_DSL[kw].declares, kw).toBeDefined();
     }
+    // accepts_nested_attributes_for synthesises the `<name>_attributes=` writer.
+    expect(RUBY_DSL.accepts_nested_attributes_for.declares).toBeDefined();
   });
 
   it("excludes RSpec / FactoryBot keywords (separate testing DSL)", () => {

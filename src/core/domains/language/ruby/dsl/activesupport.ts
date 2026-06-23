@@ -26,8 +26,12 @@ const ACTIVESUPPORT_ENTRIES: Record<string, RubyDslEntry> = {
   // delegation
   delegate: { category: "delegation", declares: (b) => [{ name: b, kind: "instance" }] },
   delegate_missing_to: { category: "delegation" },
-  // group-only accessor-family
-  class_attribute: { category: "accessor" },
+  // `class_attribute :foo` → instance reader/writer + predicate (`foo`/`foo=`/`foo?`);
+  // also class-level, but bare calls inside instance methods hit the instance form.
+  class_attribute: {
+    category: "accessor",
+    declares: (b) => [...accessorPair(b, "instance"), { name: `${b}?`, kind: "instance" }],
+  },
   // ActiveSupport::Concern hooks
   included: { category: "concern-hook" },
   extended: { category: "concern-hook" },

@@ -98,6 +98,37 @@ describe("expandClassBodyMacros — AR associations + scope (catalogue declares)
   });
 });
 
+describe("expandClassBodyMacros — accessor-family library macros (declares-coverage)", () => {
+  it("attribute :name → name/name= instance (first symbol only; 2nd arg is the cast type)", () => {
+    const out = expandClassBodyMacros(firstStmt("class User\n  attribute :name, :string\nend\n"));
+    expect(out.map((m) => `${m.name}:${m.kind}`)).toEqual(["name:instance", "name=:instance"]);
+    expect(out.every((m) => m.category === "accessor")).toBe(true);
+  });
+
+  it("class_attribute :foo, :bar → reader/writer/predicate per base (instance)", () => {
+    const out = expandClassBodyMacros(firstStmt("class Base\n  class_attribute :foo, :bar\nend\n"));
+    expect(out.map((m) => m.name)).toEqual(["foo", "foo=", "foo?", "bar", "bar=", "bar?"]);
+    expect(out.every((m) => m.kind === "instance")).toBe(true);
+  });
+
+  it("has_one_attached :avatar → avatar/avatar= (ActiveStorage)", () => {
+    const out = expandClassBodyMacros(firstStmt("class User\n  has_one_attached :avatar\nend\n"));
+    expect(out.map((m) => m.name)).toEqual(["avatar", "avatar="]);
+  });
+
+  it("has_many_attached :photos → photos/photos=", () => {
+    const out = expandClassBodyMacros(firstStmt("class Post\n  has_many_attached :photos\nend\n"));
+    expect(out.map((m) => m.name)).toEqual(["photos", "photos="]);
+  });
+
+  it("accepts_nested_attributes_for :posts → posts_attributes= (writer only)", () => {
+    const out = expandClassBodyMacros(
+      firstStmt("class User\n  accepts_nested_attributes_for :posts, :comments\nend\n"),
+    );
+    expect(out.map((m) => m.name)).toEqual(["posts_attributes=", "comments_attributes="]);
+  });
+});
+
 describe("expandAliasKeyword", () => {
   it("alias new old → new instance", () => {
     const out = expandAliasKeyword(firstStmt("class Foo\n  def old_name; end\n  alias new_name old_name\nend\n"));

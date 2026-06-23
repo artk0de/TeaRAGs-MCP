@@ -16,6 +16,12 @@ import type { DeclaredMethodSpec, RubyDslEntry } from "./types.js";
  * the named reader/writer plus the `<singular>_ids` id-collection reader/writer
  * (`has_many :posts` → `posts`, `posts=`, `post_ids`, `post_ids=`).
  */
+/** Plain reader/writer accessor pair (`attribute`, `has_one_attached`, …). */
+const attrPair = (b: string): DeclaredMethodSpec[] => [
+  { name: b, kind: "instance" },
+  { name: `${b}=`, kind: "instance" },
+];
+
 const collectionAssoc = (b: string): DeclaredMethodSpec[] => [
   { name: b, kind: "instance" },
   { name: `${b}=`, kind: "instance" },
@@ -51,10 +57,12 @@ const RAILS_ENTRIES: Record<string, RubyDslEntry> = {
     ],
   },
 
-  // group-only accessor-family
-  attribute: { category: "accessor" },
-  has_one_attached: { category: "accessor" },
-  has_many_attached: { category: "accessor" },
+  // accessor-family — reader/writer per field. `attribute` is first-symbol-only
+  // (the engine drops its 2nd positional cast-type arg); the attachments take
+  // each symbol independently.
+  attribute: { category: "accessor", declares: (b) => attrPair(b) },
+  has_one_attached: { category: "accessor", declares: (b) => attrPair(b) },
+  has_many_attached: { category: "accessor", declares: (b) => attrPair(b) },
 
   // validations
   validates: { category: "validation" },
@@ -106,8 +114,11 @@ const RAILS_ENTRIES: Record<string, RubyDslEntry> = {
   skip_after_action: { category: "callback" },
   skip_around_action: { category: "callback" },
 
-  // nested attributes
-  accepts_nested_attributes_for: { category: "nested-attrs" },
+  // nested attributes — `accepts_nested_attributes_for :posts` → `posts_attributes=`.
+  accepts_nested_attributes_for: {
+    category: "nested-attrs",
+    declares: (b) => [{ name: `${b}_attributes=`, kind: "instance" }],
+  },
 
   // enums / state machine / misc
   enum: { category: "enum" },
