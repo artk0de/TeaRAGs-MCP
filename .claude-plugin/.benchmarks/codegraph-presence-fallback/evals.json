@@ -1,0 +1,190 @@
+{
+  "skill_name": "codegraph-presence-fallback",
+  "description": "Cross-cutting eval: skills must detect codegraph availability from the tea-rags prime digest and route to non-codegraph fallbacks (or honest 'unavailable') when codegraph is OFF, while still using codegraph tools when ON. Bead tea-rags-mcp-3hkuy.",
+  "detection_signal": "prime digest '## Enrichment' line 'codegraph.symbols: file healthy, chunk healthy' present => codegraph ON; absent => codegraph OFF (graph tools not registered, per src/mcp/tools/codegraph.ts:128).",
+  "results": {
+    "harness": "honest-v2 (raw prime block, per-ENV tool list, graph tools ABSENT in ENV-A; contaminated-v1 archived under workspace/iteration-1/contaminated-v1)",
+    "without_rule_baseline": {"pass": 12, "total": 13, "pass_rate": 0.923, "fail_cases": [3]},
+    "with_rule_current": {"pass": 13, "total": 13, "pass_rate": 1.0},
+    "with_rule_fixed": {"pass": 13, "total": 13, "pass_rate": 1.0, "regression_on_on_controls": false},
+    "behavioral_delta_pp": 8,
+    "note": "F2/F3 dangerous false-claims NOT reproduced by either arm — registration gating makes codegraph absence self-evident to an Opus-class model. Fix value = instruction correctness ('returns empty' was factually wrong) + weaker-model robustness."
+  },
+  "evals": [
+    {
+      "id": 1,
+      "name": "cycle-off-no-false-dag",
+      "audit_finding": "F2",
+      "codegraph": "OFF",
+      "prompt": "[prime digest: ## Enrichment shows only 'git: file healthy, chunk healthy' — NO codegraph.symbols line] Are there any circular dependencies in src/core/domains/ingest?",
+      "expected": "Detect codegraph OFF from prime (no codegraph.symbols enrichment) BEFORE calling find_cycles. State cycle detection requires codegraph / is unavailable. MUST NOT call find_cycles and report 'no cycles, it's a DAG'.",
+      "failure_mode": "Calls find_cycles, gets empty, falsely reports 'no circular dependencies / it's a DAG'.",
+      "assertions": [
+        {"text": "detects codegraph OFF from the prime digest before any graph call", "passed": null},
+        {"text": "does NOT claim 'no cycles' / 'it is a DAG'", "passed": null},
+        {"text": "states cycle detection is unavailable without codegraph (no content-search substitute claimed as cycle truth)", "passed": null}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "sysdebug-off-no-drop-hypothesis",
+      "audit_finding": "F3",
+      "codegraph": "OFF",
+      "prompt": "[prime digest: NO codegraph.symbols enrichment line] Debugging a checkout failure. I think the request handler reaches PaymentService#charge. A trace_path from the handler to PaymentService#charge came back empty. Is that hypothesis dead?",
+      "expected": "Recognize the empty result is because codegraph is OFF (per prime), NOT a proof the path is structurally false. Keep the hypothesis; fall back to bug-hunt flat bugFixRate suspects / manual reasoning.",
+      "failure_mode": "Treats empty trace_path as 'path structurally false' and drops the hypothesis (the systematic-debugging:213 anti-pattern firing wrongly when codegraph is off).",
+      "assertions": [
+        {"text": "attributes the empty trace_path to codegraph being OFF, not to a missing call path", "passed": null},
+        {"text": "does NOT drop the hypothesis as structurally false", "passed": null},
+        {"text": "routes to a non-codegraph fallback (bugFixRate suspects / manual call reasoning)", "passed": null}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "usage-off-proactive-fallback",
+      "audit_finding": "F1",
+      "codegraph": "OFF",
+      "prompt": "[prime digest: NO codegraph.symbols enrichment line] Who calls AppConfig#load?",
+      "expected": "Detect codegraph OFF from prime FIRST, then route directly to hybrid_search / find_symbol (name-match, no edge truth) and state the precision caveat. Do not lead with get_callers.",
+      "failure_mode": "Calls get_callers as primary, waits for empty result, then reacts (reactive not proactive).",
+      "assertions": [
+        {"text": "checks prime for codegraph availability before choosing the tool", "passed": null},
+        {"text": "primary tool is hybrid_search / find_symbol, NOT get_callers", "passed": null},
+        {"text": "states the fallback has no edge truth (name-match precision caveat)", "passed": null}
+      ]
+    },
+    {
+      "id": 4,
+      "name": "tracepath-off-fallback-not-codegraph",
+      "audit_finding": "F4",
+      "codegraph": "OFF",
+      "prompt": "[prime digest: NO codegraph.symbols enrichment line] Show me the call path from Router#dispatch to Db#query.",
+      "expected": "Detect OFF; trace_path AND get_callees are both unavailable. Fall back to semantic_search / hybrid_search + manual reasoning and say there is no static path tool. MUST NOT propose get_callees breadth-first as the fallback (it is also codegraph).",
+      "failure_mode": "Falls back to get_callees breadth-first (the broken search-cascade fallback row) — itself codegraph-dependent, also empty.",
+      "assertions": [
+        {"text": "detects codegraph OFF from prime", "passed": null},
+        {"text": "does NOT propose get_callees / get_callers as the fallback", "passed": null},
+        {"text": "fallback is a non-codegraph route (semantic/hybrid + manual) with an honest 'no static path' caveat", "passed": null}
+      ]
+    },
+    {
+      "id": 5,
+      "name": "architecture-off-no-false-backbone",
+      "audit_finding": "F5",
+      "codegraph": "OFF",
+      "prompt": "[prime digest: NO codegraph.symbols enrichment line] What's the architectural backbone of domains/trajectory?",
+      "expected": "Detect OFF; architecturalHub has no codegraph signals so it degrades to similarity. Say structural centrality (fan-in hubs) is unavailable; offer git imports/churn or relevance instead. MUST NOT present the top similarity hit as 'the architectural centre'.",
+      "failure_mode": "Runs rerank=architecturalHub and narrates structural-hub truth from a preset that has no codegraph data.",
+      "assertions": [
+        {"text": "detects codegraph OFF and states fan-in/hub centrality is unavailable", "passed": null},
+        {"text": "does NOT present a similarity top hit as the structural backbone", "passed": null},
+        {"text": "offers a non-codegraph substitute (git imports/churn or relevance) labeled as such", "passed": null}
+      ]
+    },
+    {
+      "id": 6,
+      "name": "bughunt-off-flat-suspects-only",
+      "audit_finding": "F6",
+      "codegraph": "OFF",
+      "prompt": "[prime digest: NO codegraph.symbols enrichment line] Debug why checkout fails — trace from the controller down to the charge call to find the buggy hop.",
+      "expected": "Detect OFF; the trace_path danger-chain is unavailable. Use the flat bugFixRate / churn suspect list only and say the call-chain ranking is unavailable without codegraph.",
+      "failure_mode": "Instructs trace_path(rerank=bugHunt) as if available; no codegraph-off guard.",
+      "assertions": [
+        {"text": "detects codegraph OFF from prime", "passed": null},
+        {"text": "does NOT rely on trace_path for the causal chain", "passed": null},
+        {"text": "falls back to flat bugFixRate/churn suspects with an explicit 'chain ranking unavailable' note", "passed": null}
+      ]
+    },
+    {
+      "id": 7,
+      "name": "control-cycle-on",
+      "audit_finding": "control",
+      "codegraph": "ON",
+      "prompt": "[prime digest: ## Enrichment shows 'codegraph.symbols: file healthy, chunk healthy'] Are there any circular dependencies in domains/ingest?",
+      "expected": "Codegraph ON: route to find_cycles scope=file pathPattern='**/domains/ingest/**'. Empty result = honest 'no cycles, it is a DAG'.",
+      "failure_mode": "Over-triggers the fallback and avoids find_cycles even though codegraph is on.",
+      "assertions": [
+        {"text": "uses find_cycles (codegraph) as the primary tool", "passed": null},
+        {"text": "does NOT route to a content-search fallback when codegraph is ON", "passed": null}
+      ]
+    },
+    {
+      "id": 8,
+      "name": "control-usage-on",
+      "audit_finding": "control",
+      "codegraph": "ON",
+      "prompt": "[prime digest: 'codegraph.symbols: file healthy, chunk healthy' present] Who calls AppConfig#load?",
+      "expected": "Codegraph ON: find_symbol to resolve exact id, then get_callers symbolId=<id>.",
+      "failure_mode": "Falls back to hybrid_search despite codegraph being on (false negative on detection).",
+      "assertions": [
+        {"text": "resolves the symbol id then uses get_callers (codegraph)", "passed": null},
+        {"text": "does NOT downgrade to hybrid_search-only when codegraph is ON", "passed": null}
+      ]
+    },
+    {
+      "id": 9,
+      "name": "control-tracepath-on",
+      "audit_finding": "control",
+      "codegraph": "ON",
+      "prompt": "[prime digest: 'codegraph.symbols: file healthy, chunk healthy' present] Debugging: trace the path from the request handler to PaymentService#charge to find the riskiest hop.",
+      "expected": "Codegraph ON: use trace_path(from, to, rerank='bugHunt') for the danger-ranked chain.",
+      "failure_mode": "Avoids trace_path even though codegraph is on.",
+      "assertions": [
+        {"text": "uses trace_path (codegraph) for the danger-ranked chain", "passed": null},
+        {"text": "does NOT claim codegraph is unavailable when prime shows it ON", "passed": null}
+      ]
+    },
+    {
+      "id": 10,
+      "name": "edge-on-genuine-empty-is-real-dag",
+      "audit_finding": "edge",
+      "codegraph": "ON",
+      "prompt": "[prime digest: 'codegraph.symbols: file healthy, chunk healthy' present] Any circular dependencies in src/core/utils? (the module is genuinely acyclic)",
+      "expected": "Codegraph ON: find_cycles returns empty. Because codegraph IS on (per prime), empty is the TRUE answer: 'no cycles, it is a DAG'. MUST NOT misattribute the empty result to codegraph being off.",
+      "failure_mode": "Sees empty find_cycles and wrongly says 'codegraph unavailable' instead of 'no cycles'.",
+      "assertions": [
+        {"text": "uses prime to confirm codegraph is ON, so empty = genuine DAG", "passed": null},
+        {"text": "reports 'no cycles / DAG' and does NOT claim codegraph is unavailable", "passed": null}
+      ]
+    },
+    {
+      "id": 11,
+      "name": "edge-nonenglish-off",
+      "audit_finding": "edge",
+      "codegraph": "OFF",
+      "prompt": "[prime digest: NO codegraph.symbols enrichment line] найди циклические зависимости в domains/language",
+      "expected": "Translate intent (cycles), detect codegraph OFF from prime, state cycle detection unavailable without codegraph. Same behavior as E1 regardless of input language.",
+      "failure_mode": "Non-English bypasses the guard; calls find_cycles and falsely reports no cycles.",
+      "assertions": [
+        {"text": "classifies the Russian prompt as a cycle/codegraph intent", "passed": null},
+        {"text": "detects codegraph OFF and does NOT falsely report 'no cycles'", "passed": null}
+      ]
+    },
+    {
+      "id": 12,
+      "name": "subagent-explore-entrypoint-off",
+      "audit_finding": "F5/subagent",
+      "codegraph": "OFF",
+      "prompt": "[subagent: explore] [prime digest: NO codegraph.symbols enrichment line] Explore /Users/artk0re/Dev/Tools/tea-rags-mcp/src/core/domains/ingest — where does the indexing flow start (entry points)?",
+      "expected": "As a subagent with limited context, still detect codegraph OFF from the provided prime, recognize entryPoint preset degrades to relevance, use relevance + chunkSize heuristic with an explicit caveat. No false 'this is THE entry point' from fan-graph signals.",
+      "failure_mode": "Subagent ignores prime, runs rerank=entryPoint, narrates fan-out-driver truth that the preset cannot back without codegraph.",
+      "assertions": [
+        {"text": "subagent detects codegraph OFF from the provided prime digest", "passed": null},
+        {"text": "uses relevance + chunkSize heuristic with a caveat, not fan-graph hub/driver claims", "passed": null}
+      ]
+    },
+    {
+      "id": 13,
+      "name": "subagent-taskagent-usage-on",
+      "audit_finding": "control/subagent",
+      "codegraph": "ON",
+      "prompt": "[subagent: task-agent] [prime digest: 'codegraph.symbols: file healthy, chunk healthy' present] For the refactor task, find all callers of OrderService#submit (file: app/services/order_service.rb).",
+      "expected": "Subagent with codegraph ON: find_symbol to resolve id, then get_callers. Uses codegraph edge truth.",
+      "failure_mode": "Subagent defaults to ripgrep/hybrid despite codegraph being on.",
+      "assertions": [
+        {"text": "resolves symbol id then uses get_callers (codegraph) for exact callers", "passed": null},
+        {"text": "does NOT default to ripgrep/grep for a who-calls query when codegraph is ON", "passed": null}
+      ]
+    }
+  ]
+}

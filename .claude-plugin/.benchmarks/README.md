@@ -32,6 +32,12 @@ benchmarks/
 | search-cascade                              | 2026-03-29 | 20    | 100%       | 22%       | +78pp                                                                    |
 | search-cascade (ripgrep overreach)          | 2026-05-07 | 9     | 100%‡‡     | 44%       | +56pp‡‡                                                                  |
 | search-cascade (deferred-loading fixes)     | 2026-06-19 | 10    | 100%       | 70%       | +30pp (after=before; no regression — see benchmark Limitation)          |
+| codegraph-presence-fallback (cross-cutting) | 2026-06-23 | 13    | 100%       | 92%       | +8pp (correctness pass; registration-gating makes false-claims self-evident — see benchmark Key finding) |
+| risk-assessment (codegraph integration TR3) | 2026-06-23 | 8     | 100%       | ~62%      | structural axis prescribed (architecturalHub amplifier + find_cycles) + signal-interpretation codegraph signals; modest Opus delta, value=prescription — see benchmark |
+| data-driven-generation (codegraph impact TR4) | 2026-06-23 | 4     | 100%       | n/a‡      | Step 6 IMPACT → blastRadius preset (codegraph on) + custom-weights fallback (off); ‡baseline not re-measured, localized swap — see benchmark note |
+| dinopowers codegraph series (DP1/2/3/5/6/8) | 2026-06-23 | 10    | 100%       | n/a‡      | blastRadius idiom (DP1/2/5) + architecturalHub Call D (DP3) + get_callers reviewer-hub (DP6) + find_cycles inherit (DP8), all codegraph-gated; ‡baseline per session-wide finding — see benchmark |
+| bug-hunt codegraph fault-chain (TR2 done)   | 2026-06-23 | 4     | 100%       | n/a‡      | get_callers/get_callees + entryPoint + find_cycles fault-chain navigation, codegraph-gated; completes TR2 (trace_path+blastRadius already shipped) |
+| analytics-rerank + filter-building (TR7/TR8) | 2026-06-23 | doc   | n/a        | n/a       | doc-only catalogues: codegraph composites in cheat-sheet/recipe + codegraph filter examples; no behavioral eval (reference, not routing) — see benchmark |
 | explore                                     | 2026-03-30 | 8+8   | 100%       | 12.5%     | +87.5pp                                                                  |
 | research-merge                              | 2026-03-30 | 15    | 100%       | 70%       | +30pp                                                                    |
 | risk-assessment                             | 2026-03-30 | 12    | 100%       | 10%       | +90pp                                                                    |

@@ -53,16 +53,22 @@ Compose:
 If no area is mentioned or derivable: skip to Step 4 with empty enrichment.
 Report "no area identifiable — proceeding without tea-rags enrichment".
 
-## Step 2 — Three tea-rags enrichment calls
+## Step 2 — Three tea-rags enrichment calls (four with codegraph)
 
 Run these three `mcp__tea-rags__semantic_search` calls **in parallel** (same
 tool call block), each with `metaOnly: true` (we want signals, not content):
 
-| Call          | `rerank` preset | Why                                                                             |
-| ------------- | --------------- | ------------------------------------------------------------------------------- |
-| A — Hotspots  | `"hotspots"`    | Bug-prone zones the brainstorm must account for (high churn + recency + bugFix) |
-| B — Ownership | `"ownership"`   | Knowledge silos — single-owner files that need reviewer pairing                 |
-| C — Tech debt | `"techDebt"`    | Legacy zones where "just refactor it" hides cost (age + churn + bugFix)         |
+| Call          | `rerank` preset      | Why                                                                             |
+| ------------- | -------------------- | ------------------------------------------------------------------------------- |
+| A — Hotspots  | `"hotspots"`         | Bug-prone zones the brainstorm must account for (high churn + recency + bugFix) |
+| B — Ownership | `"ownership"`        | Knowledge silos — single-owner files that need reviewer pairing                 |
+| C — Tech debt | `"techDebt"`         | Legacy zones where "just refactor it" hides cost (age + churn + bugFix)         |
+| D — Backbone  | `"architecturalHub"` | **Codegraph only** — structural hubs (high `fanIn` / `isHub`) the design must respect; a change to a backbone has wide blast radius |
+
+Call D runs ONLY when codegraph is active (prime `## Enrichment` lists
+`codegraph.symbols`). When that line is absent, omit Call D — run A/B/C only and
+note structural backbone was not assessed (do NOT substitute a similarity-ranked
+list as "the hubs"). See search-cascade "Graph navigation".
 
 Exact parameters for each call:
 
@@ -71,10 +77,12 @@ project:     <alias from list_projects — RECOMMENDED, omit path when set>
 path:        <current project path — fallback when no alias is registered>
 query:       <intent sentence from Step 1>
 pathPattern: <pathPattern from Step 1>
-rerank:      "hotspots" | "ownership" | "techDebt"
+rerank:      "hotspots" | "ownership" | "techDebt" | "architecturalHub"
 limit:       10
 metaOnly:    true
 ```
+
+(`"architecturalHub"` = Call D, codegraph-gated per the note above.)
 
 Do NOT substitute:
 

@@ -107,7 +107,9 @@ Bug-hunt gives a **flat** suspect list. When you also have an **entry/repro
 point** — the symbol where the failing flow starts (the test, the request
 handler, the CLI entry, the symbol in the top user-code stack frame) — promote
 the prime suspect from a point to a **chain**: call `mcp__tea-rags__trace_path`
-from the entry symbol to the suspect symbol.
+from the entry symbol to the suspect symbol. **Requires codegraph** (prime shows
+`codegraph.symbols`); when it is off `trace_path` is not registered — skip this
+step and stay with the flat suspect list from Step 2/3.
 
 ```
 mcp__tea-rags__trace_path(
@@ -210,5 +212,5 @@ hypothesis space.
 | Invoke on speculative "maybe there's a race" questions                        | That's brainstorming (use `dinopowers:brainstorming`), not debugging a symptom.                                    |
 | Pass the full stack trace as `symptom`                                        | Stack traces contain noise (framework frames). Extract the user-code frame or error message only.                  |
 | Hand-walk `get_callers` / `get_callees` from entry to suspect                 | `trace_path(from, to, rerank="bugHunt")` returns the whole chain in one call and danger-ranks the hops.            |
-| Treat an empty `trace_path` result as "tool failed"                           | Empty = no static call path. The hypothesis that the entry reaches that suspect is structurally false — drop it.   |
+| Treat an empty `trace_path` result as "tool failed"                           | **When codegraph is on** (prime shows `codegraph.symbols`): empty = no static call path, so the hypothesis that the entry reaches that suspect is structurally false — drop it. **When codegraph is off** `trace_path` is not registered (absent, not empty) — that is NOT evidence; keep the hypothesis and verify via bug-hunt suspects / manual call reading. |
 | Use `rerank="recent"` for an old, always-flaky symptom                        | `recent` ranks the newest-changed hop first — that's for fresh regressions. For long-standing bugs keep `bugHunt`. |

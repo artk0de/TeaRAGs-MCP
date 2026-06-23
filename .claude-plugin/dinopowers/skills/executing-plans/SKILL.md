@@ -24,9 +24,10 @@ commit.
 **For every plan Task that modifies files, the pre-touch guard MUST run BEFORE
 the first Edit/Write/MultiEdit of that Task.**
 
-Correct tool (`semantic_search`) + correct custom impact rerank
-(`imports: 0.5, churn: 0.3, ownership: 0.2`) + correct parameters
-(brace-expanded `pathPattern` over Task-local files, `metaOnly: true`) + correct
+Correct tool (`semantic_search`), correct impact rerank (`"blastRadius"` when
+codegraph is on, the `{imports 0.5, churn 0.3, ownership 0.2}` fallback when
+off), correct parameters
+(brace-expanded `pathPattern` over Task-local files, `metaOnly: true`), correct
 verdict ladder (SAFE / CAUTION / UNSAFE) + correct gating (CAUTION = confirm,
 UNSAFE = pause) is the core value.
 
@@ -87,10 +88,15 @@ project:     <alias from list_projects — RECOMMENDED, omit path when set>
 path:        <current project path — fallback when no alias is registered>
 query:       <taskIntent from Step 1>
 pathPattern: "{taskFile1,taskFile2,...}"   ← brace expansion
-rerank:      { custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }
+rerank:      "blastRadius"               ← codegraph on; OFF fallback below
 limit:       <taskFileList.length * 3>
 metaOnly:    true
 ```
+
+**Codegraph gating for `rerank`:** `"blastRadius"` (real `fanIn` + churn +
+bugFix) when prime `## Enrichment` lists `codegraph.symbols`; fall back to
+`{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy,
+approximate) when that line is absent.
 
 Do NOT substitute:
 
@@ -98,15 +104,15 @@ Do NOT substitute:
 | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `mcp__tree-sitter__modification_guard`                          | Structural (AST) guard, misses git-signal blast radius (imports count, bugFixRate, ownership) |
 | `mcp__tea-rags__hybrid_search`                                  | Custom rerank is tied to `semantic_search`                                                    |
-| Named preset (`"hotspots"`, `"codeReview"`, `"impactAnalysis"`) | `impactAnalysis` does not exist; named presets miss `imports` weight                          |
+| Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"` | `impactAnalysis` does not exist; these miss the blast-radius dimension. `"blastRadius"` IS correct when codegraph is on |
 | One call per file, sequential                                   | Brace expansion covers all in one                                                             |
 | `mcp__tea-rags__find_similar` without a prior guard call        | Finds analogs, doesn't return blast-radius signals                                            |
 
 Do NOT pass:
 
 - `metaOnly: false` — we want verdict inputs, not content
-- Different weights — the project idiom
-  `{imports 0.5, churn 0.3, ownership 0.2}` must match
+- The wrong rerank for the codegraph state — `"blastRadius"` when on, the
+  `{imports 0.5, churn 0.3, ownership 0.2}` fallback when off, matching
   `dinopowers:writing-plans` and `tea-rags:data-driven-generation` Step 6 for
   cross-skill comparability
 - `filter` narrowing the file set — the `pathPattern` already scopes; filters

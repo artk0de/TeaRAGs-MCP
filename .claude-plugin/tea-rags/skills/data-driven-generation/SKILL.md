@@ -121,10 +121,19 @@ Verify ALL referenced identifiers:
 
 ### Step 6: IMPACT
 
-Follow search-cascade with impact analysis query + custom weights
-`{ imports: 0.5, churn: 0.3, ownership: 0.2 }`, metaOnly=true.
+Assess the blast radius of the change you just generated.
 
-Warn on high-import modules. Flag shared taskIds → coordinated change.
+- **Codegraph on** (prime `## Enrichment` lists `codegraph.symbols`): use the
+  `blastRadius` preset (`rerank="blastRadius"`, metaOnly=true) — real `fanIn` +
+  churn + bugFix, so the ranking reflects actual call/import edges, not the
+  raw-import proxy. Warn on high-`fanIn` / `isHub` dependents.
+- **Codegraph off** (no `codegraph.symbols` in prime → the `fanIn` signal is
+  absent): fall back to the custom weights
+  `{ imports: 0.5, churn: 0.3, ownership: 0.2 }`, metaOnly=true, and note the
+  blast radius is approximate (import-proxy, not edge truth). See search-cascade
+  "Graph navigation".
+
+Warn on high-impact modules. Flag shared taskIds → coordinated change.
 
 ---
 

@@ -71,6 +71,14 @@ Wait for its standard `PRESENT` output — tier-classified risk candidates
 (Critical / High / Medium) with multi-preset convergence (hotspots + ownership +
 techDebt).
 
+When codegraph is active, risk-assessment's structural axis runs automatically
+over the branch-diff scope: blast-radius hubs (`architecturalHub` amplifier) and
+**circular dependencies the branch introduces or touches** (`find_cycles`).
+A branch that adds a cross-module cycle is a merge-blocker even with clean git
+signals — read the risk-assessment "Structural risks" section before deciding
+merge/PR/cleanup. When codegraph is off, that section is absent (not "no
+cycles"); structural risk is simply unassessed.
+
 Do NOT substitute:
 
 | Wrong approach                                   | Why wrong                                                                                                          |

@@ -23,10 +23,10 @@ are "risky" or "safe".
 `Skill(superpowers:writing-plans)`** — whenever the plan touches a known set of
 files.
 
-Correct tool (`semantic_search`) + correct custom rerank weights
-(`imports: 0.5, churn: 0.3, ownership: 0.2`) + correct parameters
-(brace-expanded `pathPattern`, `metaOnly: true`) + correct ordering is the core
-value of this wrapper.
+Correct tool (`semantic_search`) + correct rerank (`"blastRadius"` when codegraph
+is on, the `{imports 0.5, churn 0.3, ownership 0.2}` fallback when off) + correct
+parameters (brace-expanded `pathPattern`, `metaOnly: true`) + correct ordering is
+the core value of this wrapper.
 
 If the plan is conceptual with no file list derivable (e.g. "plan for migrating
 to Postgres") — skip enrichment and invoke `superpowers:writing-plans` directly.
@@ -67,21 +67,25 @@ project:     <alias from list_projects — RECOMMENDED, omit path when set>
 path:        <current project path — fallback when no alias is registered>
 query:       <intent from Step 1>
 pathPattern: "{file1,file2,file3,...}"   ← brace expansion over fileList
-rerank:      { custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }
+rerank:      "blastRadius"               ← codegraph on; see OFF fallback below
 limit:       <fileList.length * 3>       ← aim for ~3 chunks per file
 metaOnly:    true
 ```
 
-This is the **impact analysis** idiom established in
+**Codegraph gating for `rerank`:** when prime `## Enrichment` lists
+`codegraph.symbols`, use `"blastRadius"` (real `fanIn` + churn + bugFix — true
+blast radius). When that line is absent the `fanIn` signal is gone — fall back
+to `{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy,
+approximate). This is the **impact analysis** idiom established in
 `tea-rags:data-driven-generation` Step 6 and documented in
-`tea-rags-analytics.md`. Do NOT substitute.
+`tea-rags-analytics.md`. Do NOT substitute the tool.
 
 Do NOT substitute:
 
 | Wrong tool                                                      | Why wrong                                                                             |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | Separate calls per file                                         | Wasteful — brace expansion does it in one call                                        |
-| Named preset (`"hotspots"`, `"codeReview"`, `"impactAnalysis"`) | `impactAnalysis` preset does not exist; named risk presets miss the imports dimension |
+| Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"` | `impactAnalysis` does not exist; these miss the blast-radius dimension. `"blastRadius"` IS the correct named preset when codegraph is on |
 | `mcp__tea-rags__hybrid_search`                                  | Custom rerank weights are tied to `semantic_search`                                   |
 | `mcp__tea-rags__find_similar`                                   | Gives symbol analogs, not file impact                                                 |
 | `mcp__tea-rags__find_symbol`                                    | Per-symbol, not per-file signal aggregation                                           |
@@ -90,9 +94,9 @@ Do NOT substitute:
 Do NOT pass:
 
 - `metaOnly: false` — content is not needed for impact analysis; bloats payload
-- Different custom weights — the `{imports 0.5, churn 0.3, ownership 0.2}` set
-  is the project idiom; deviating makes results non-comparable to
-  `tea-rags:data-driven-generation` output
+- The wrong rerank for the codegraph state — `"blastRadius"` when codegraph is
+  on, the `{imports 0.5, churn 0.3, ownership 0.2}` fallback when off. Both match
+  `tea-rags:data-driven-generation` Step 6; don't invent other weights
 - `filter` on `git.ageDays` / `git.commitCount` — the weights already encode
   these; additional filters hide signal
 
