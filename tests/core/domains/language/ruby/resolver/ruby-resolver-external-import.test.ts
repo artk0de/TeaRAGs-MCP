@@ -67,4 +67,31 @@ describe("RubyCallResolver.targetsExternalImport", () => {
     const ctx = makeCtx("app/models/account.rb", [], new InMemoryGlobalSymbolTable());
     expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
   });
+
+  // cai0 — no-receiver class-body DSL macro keyword is a framework macro
+  // invocation (catalogue-derived, zero project defs) → external.
+  it("flags bare DSL macro keywords as external (has_many / validates / scope / before_save / delegate)", () => {
+    const ctx = makeCtx("app/models/user.rb", [], new InMemoryGlobalSymbolTable());
+    for (const m of ["has_many", "validates", "scope", "before_save", "delegate"]) {
+      const call: CallRef = { callText: m, receiver: null, member: m, startLine: 3 };
+      expect(resolver.targetsExternalImport(call, ctx), m).toBe(true);
+    }
+  });
+
+  // cai0 — no-receiver Rails controller/ActiveSupport runtime helper → external.
+  it("flags bare Rails runtime helpers as external (params / render / redirect_to / t)", () => {
+    const ctx = makeCtx("app/controllers/users_controller.rb", [], new InMemoryGlobalSymbolTable());
+    for (const m of ["params", "render", "redirect_to", "t"]) {
+      const call: CallRef = { callText: m, receiver: null, member: m, startLine: 3 };
+      expect(resolver.targetsExternalImport(call, ctx), m).toBe(true);
+    }
+  });
+
+  // cai0 — a receiver-qualified call to a DSL-macro name is NOT a class-body
+  // macro invocation; the new bare-call branches must not touch it.
+  it("does NOT flag a receiver-qualified call sharing a DSL macro name (x.has_many)", () => {
+    const call: CallRef = { callText: "x.has_many", receiver: "x", member: "has_many", startLine: 3 };
+    const ctx = makeCtx("app/models/user.rb", [], new InMemoryGlobalSymbolTable());
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
+  });
 });
