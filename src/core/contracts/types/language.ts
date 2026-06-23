@@ -106,6 +106,24 @@ export interface ConeTypeLocator {
 }
 
 /**
+ * The language-specific predicates the generic `ExternalCallClassifier`
+ * (`domains/language/external-classifier.ts`) needs to decide whether an
+ * UNRESOLVED call targets an external library / framework runtime rather than an
+ * in-project resolver miss (bd tea-rags-mcp-cai0). The engine owns the
+ * language-neutral receiver-shape branch (bare call vs qualified receiver);
+ * these two predicates own the language-specific decisions — which bare member
+ * names are framework vocabulary, and whether a qualified receiver resolves
+ * in-project. One implementation per language (`RubyExternalVocabulary`, …).
+ * Mirrors `ConeTypeLocator`.
+ */
+export interface ExternalVocabulary {
+  /** Is this no-receiver member a framework/runtime/builtin name (zero project defs)? */
+  isBareCallExternal: (member: string) => boolean;
+  /** Does this qualified receiver name a gem/stdlib symbol (no in-project target)? */
+  isQualifiedReceiverExternal: (receiver: string, ctx: CallContext) => boolean;
+}
+
+/**
  * Inputs shared across a file's extraction passes. Mirrors the walker's
  * `ExtractInput` minus the parsed `Tree` (passes receive the root node
  * directly). `dispatchTableNames` is threaded from the table pass into the
