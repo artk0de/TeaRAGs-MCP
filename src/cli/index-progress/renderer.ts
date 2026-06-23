@@ -16,6 +16,7 @@ import cliProgress from "cli-progress";
 import type { IndexStatus } from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
 import type { EnrichmentOutcome, WorkerMessage } from "./ipc-protocol.js";
+import { computeEtaSeconds } from "./phase-tracker.js";
 
 export interface ProgressRenderer {
   handle: (message: WorkerMessage) => void;
@@ -24,6 +25,16 @@ export interface ProgressRenderer {
 
 /** Fixed label column width for aligned output (label padded to this width). */
 const LABEL_WIDTH = 22;
+
+/**
+ * Format an ETA (seconds, or null when not yet computable) for a progress bar.
+ * Returns empty string when unknown or complete (value ≤ 0 or null).
+ */
+export function formatEta(seconds: number | null): string {
+  if (seconds === null || seconds <= 0) return "";
+  if (seconds < 60) return `~${Math.ceil(seconds)}s`;
+  return `~${(seconds / 60).toFixed(1)}m`;
+}
 
 /** Pure: render a progress message as one log line, or null when it is not a progress line. */
 export function formatProgressLine(message: WorkerMessage): string | null {
@@ -74,13 +85,18 @@ export class TtyProgressRenderer implements ProgressRenderer {
   private readonly multibar: cliProgress.MultiBar;
   private embeddingBar: cliProgress.SingleBar | null = null;
   private readonly enrichmentBars = new Map<string, cliProgress.SingleBar>();
+  /** Per-bar start timestamp keyed by bar key ("embedding" or "providerKey:level"). */
+  private readonly barStartMs = new Map<string, number>();
 
-  constructor(private readonly colors: Colorizer) {
+  constructor(
+    private readonly colors: Colorizer,
+    private readonly now: () => number = () => Date.now(),
+  ) {
     this.multibar = new cliProgress.MultiBar(
       {
         clearOnComplete: false,
         hideCursor: true,
-        format: " {label} {bar} {value}/{total} ({percentage}%) {eta_formatted} {rate}",
+        format: " {label} {bar} {value}/{total} ({percentage}%) {eta} {rate}",
         stream: process.stderr,
       },
       cliProgress.Presets.shades_classic,
@@ -93,9 +109,12 @@ export class TtyProgressRenderer implements ProgressRenderer {
       const rate =
         message.throughput !== null && message.throughput !== undefined ? `${message.throughput.toFixed(1)} ch/s` : "";
       if (!this.embeddingBar) {
-        this.embeddingBar = this.multibar.create(message.total, 0, { label, rate });
+        this.barStartMs.set("embedding", this.now());
+        this.embeddingBar = this.multibar.create(message.total, 0, { label, rate, eta: "" });
       }
-      this.embeddingBar.update(message.current, { label, rate });
+      const startMs = this.barStartMs.get("embedding") ?? this.now();
+      const eta = formatEta(computeEtaSeconds(message.current, message.total, this.now() - startMs));
+      this.embeddingBar.update(message.current, { label, rate, eta });
       this.embeddingBar.setTotal(message.total);
       return;
     }
@@ -105,11 +124,14 @@ export class TtyProgressRenderer implements ProgressRenderer {
       const label = this.colors.brand(rawLabel.padEnd(LABEL_WIDTH));
       let bar = this.enrichmentBars.get(key);
       if (!bar) {
-        bar = this.multibar.create(message.total, 0, { label, rate: "" });
+        this.barStartMs.set(key, this.now());
+        bar = this.multibar.create(message.total, 0, { label, rate: "", eta: "" });
         this.enrichmentBars.set(key, bar);
       }
+      const startMs = this.barStartMs.get(key) ?? this.now();
+      const eta = formatEta(computeEtaSeconds(message.applied, message.total, this.now() - startMs));
       bar.setTotal(message.total);
-      bar.update(message.applied, { label, rate: "" });
+      bar.update(message.applied, { label, rate: "", eta });
     }
   }
 

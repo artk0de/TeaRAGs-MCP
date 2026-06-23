@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WorkerMessage } from "../../../src/cli/index-progress/ipc-protocol.js";
+import { computeEtaSeconds } from "../../../src/cli/index-progress/phase-tracker.js";
 import {
   createRenderer,
+  formatEta,
   formatProgressLine,
   JsonProgressRenderer,
   LineProgressRenderer,
@@ -285,6 +287,93 @@ describe("JsonProgressRenderer", () => {
     expect(() => {
       r.stop();
     }).not.toThrow();
+  });
+});
+
+// This will fail until formatEta is exported from renderer.ts
+describe("formatEta", () => {
+  it("returns empty string for null (no throughput yet)", () => {
+    expect(formatEta(null)).toBe("");
+  });
+
+  it("returns empty string for zero (complete — nothing remaining)", () => {
+    expect(formatEta(0)).toBe("");
+  });
+
+  it("formats seconds under 60 with ceil", () => {
+    expect(formatEta(5)).toBe("~5s");
+    expect(formatEta(5.2)).toBe("~6s");
+    expect(formatEta(59.9)).toBe("~60s");
+  });
+
+  it("formats minutes when >= 60 seconds", () => {
+    expect(formatEta(90)).toBe("~1.5m");
+    expect(formatEta(120)).toBe("~2.0m");
+  });
+
+  it("composes correctly with computeEtaSeconds: returns sensible value after partial progress", () => {
+    // 100 units applied, 3040 total, 10s elapsed → remaining=2940, rate=10/s → 294s → ~4.9m
+    const eta = formatEta(computeEtaSeconds(100, 3040, 10_000));
+    expect(eta).toMatch(/^~\d+(\.\d+)?[sm]$/);
+    expect(eta).not.toBe("");
+  });
+
+  it("composes correctly with computeEtaSeconds: blank at applied=0", () => {
+    expect(formatEta(computeEtaSeconds(0, 3040, 0))).toBe("");
+  });
+});
+
+// ETA wiring in TtyProgressRenderer — injected clock + per-bar start tracking
+describe("TtyProgressRenderer ETA wiring", () => {
+  const colors = createColorizer({ env: {}, isTTY: false });
+  let nowMs = 0;
+  const fakeClock = () => nowMs;
+
+  beforeEach(() => {
+    nowMs = 0;
+    mockMultibar.create.mockClear();
+    mockMultibar.stop.mockClear();
+    mockSingleBar.update.mockClear();
+    mockSingleBar.setTotal.mockClear();
+    mockMultibar.create.mockReturnValue(mockSingleBar);
+  });
+
+  it("passes eta='' on first embedding message (applied=0 → no throughput)", () => {
+    const r = new TtyProgressRenderer(colors, fakeClock);
+    r.handle({ type: "embedding", phase: "embedding", percentage: 0, current: 0, total: 3040 });
+    // create payload should have eta: ""
+    expect(mockMultibar.create).toHaveBeenCalledWith(3040, 0, expect.objectContaining({ eta: "" }));
+  });
+
+  it("passes a non-empty eta on subsequent embedding messages with progress and elapsed time", () => {
+    const r = new TtyProgressRenderer(colors, fakeClock);
+    nowMs = 0;
+    r.handle({ type: "embedding", phase: "embedding", percentage: 0, current: 0, total: 3040 });
+    nowMs = 10_000; // 10s elapsed
+    r.handle({ type: "embedding", phase: "embedding", percentage: 3, current: 100, total: 3040 });
+    // update payload should have a non-empty eta
+    const updateCalls = mockSingleBar.update.mock.calls;
+    const lastPayload = updateCalls[updateCalls.length - 1][1] as Record<string, unknown>;
+    expect(lastPayload["eta"]).not.toBe("");
+    expect(typeof lastPayload["eta"]).toBe("string");
+  });
+
+  it("passes eta='' for enrichment bar at first message (applied=0)", () => {
+    const r = new TtyProgressRenderer(colors, fakeClock);
+    nowMs = 0;
+    r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 0, total: 1024 });
+    expect(mockMultibar.create).toHaveBeenCalledWith(1024, 0, expect.objectContaining({ eta: "" }));
+  });
+
+  it("passes a non-empty eta for enrichment after progress and elapsed time", () => {
+    const r = new TtyProgressRenderer(colors, fakeClock);
+    nowMs = 0;
+    r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 0, total: 1024 });
+    nowMs = 5_000;
+    r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 200, total: 1024 });
+    const updateCalls = mockSingleBar.update.mock.calls;
+    const lastPayload = updateCalls[updateCalls.length - 1][1] as Record<string, unknown>;
+    expect(lastPayload["eta"]).not.toBe("");
   });
 });
 
