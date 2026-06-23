@@ -15,7 +15,10 @@ import Parser from "tree-sitter";
 import RbLang from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
-import { collectRubyIvarFieldTypes } from "../../../../../../src/core/domains/language/ruby/walker/local-bindings.js";
+import {
+  collectRubyIvarFieldTypes,
+  collectRubyLocalCallBindingsForChunk,
+} from "../../../../../../src/core/domains/language/ruby/walker/local-bindings.js";
 import {
   extractFromRubyFile,
   ZEITWERK_PREFIX,
@@ -2360,5 +2363,63 @@ describe("extractFromRubyFile — classFieldTypes (ivar inference)", () => {
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "app/models/bar.rb", language: "ruby", chunks: [] });
     expect(r.classFieldTypes).toBeUndefined();
+  });
+});
+
+describe("collectRubyLocalCallBindingsForChunk (var → called method, localCallBindings channel)", () => {
+  it("records x = recv.meth() as {x: meth}", () => {
+    const root = parse(`
+      class Foo
+        def run; x = client.fetch; x.body; end
+      end
+    `).rootNode;
+    expect(collectRubyLocalCallBindingsForChunk(root, 1, 99)).toEqual({ x: "fetch" });
+  });
+
+  it("records a bare call x = helper() as {x: helper}", () => {
+    const root = parse(`
+      class Foo
+        def run; x = build_thing(); x.use; end
+      end
+    `).rootNode;
+    expect(collectRubyLocalCallBindingsForChunk(root, 1, 99)).toEqual({ x: "build_thing" });
+  });
+
+  it("excludes a constructor RHS (x = Foo.new is a direct type, not a call-binding)", () => {
+    const root = parse(`
+      class Foo
+        def run; x = HttpClient.new; end
+      end
+    `).rootNode;
+    expect(collectRubyLocalCallBindingsForChunk(root, 1, 99)).toEqual({});
+  });
+
+  it("excludes a non-call RHS (literal / identifier copy)", () => {
+    const root = parse(`
+      class Foo
+        def run; a = 5; b = other; end
+      end
+    `).rootNode;
+    expect(collectRubyLocalCallBindingsForChunk(root, 1, 99)).toEqual({});
+  });
+
+  it("last-write-wins on reassignment", () => {
+    const root = parse(`
+      class Foo
+        def run; x = first_call(); x = second_call(); end
+      end
+    `).rootNode;
+    expect(collectRubyLocalCallBindingsForChunk(root, 1, 99)).toEqual({ x: "second_call" });
+  });
+
+  it("respects the chunk line range", () => {
+    const root = parse(`
+      class Foo
+        def a; x = in_range(); end
+        def b; y = out_of_range(); end
+      end
+    `).rootNode;
+    // lines: class=2, def a=3, def b=4 (1-based with leading newline)
+    expect(collectRubyLocalCallBindingsForChunk(root, 3, 3)).toEqual({ x: "in_range" });
   });
 });

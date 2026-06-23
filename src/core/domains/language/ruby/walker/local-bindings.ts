@@ -115,6 +115,39 @@ export function collectRubyIvarFieldTypes(root: AstNode): Record<string, Record<
 }
 
 /**
+ * Collect `varName → calledMethodName` for assignments whose RHS is a method
+ * call WITHOUT a directly-knowable type (`x = client.fetch`, `x = build_thing()`).
+ * Pairs with the run-global `functionReturnTypes` channel so the resolver binds
+ * `x.member` to `<fetch's return type>#member` (the universal return-type channel;
+ * Go fills it via `collectGoLocalBindingsForChunk`, bd 6g9c). Constructor /
+ * factory RHS (`Foo.new`, `Model.find`) is EXCLUDED — `constInstanceType` already
+ * types those directly into `localBindings`, so recording them here too would be
+ * a redundant weaker binding. The method name is the OUTERMOST call's method
+ * (`x = a.b.c` → `c`), matching how `collectYardReturnTypes` keys return types.
+ * Simple `Record` (last-write-wins), mirroring Go's `localCallBindings`.
+ */
+export function collectRubyLocalCallBindingsForChunk(
+  root: AstNode,
+  startLine: number,
+  endLine: number,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  walk(root, (node) => {
+    const line = node.startPosition.row + 1;
+    if (line < startLine || line > endLine) return;
+    if (node.type !== "assignment") return;
+    const lhs = node.childForFieldName("left");
+    const rhs = node.childForFieldName("right");
+    if (lhs?.type !== "identifier" || !rhs) return;
+    if (rhs.type !== "call" && rhs.type !== "method_call") return;
+    if (constInstanceType(rhs) !== null) return; // directly typed → localBindings owns it
+    const method = rhs.childForFieldName("method");
+    if (method) out[lhs.text] = method.text; // last-write-wins
+  });
+  return out;
+}
+
+/**
  * Collect position-aware `varName → LocalBinding[]` bindings inside the given
  * line range. Each binding carries the 1-based source line where it is
  * established; a call site resolves against the most-recent binding at or before

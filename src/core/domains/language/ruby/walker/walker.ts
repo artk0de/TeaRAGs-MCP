@@ -48,6 +48,7 @@ import { readScopeResolution, walk } from "./ast-utils.js";
 import {
   collectLocalBindingsForChunk,
   collectRubyIvarFieldTypes,
+  collectRubyLocalCallBindingsForChunk,
   collectYardParamTypes,
   collectYardReturnTypes,
   localTypeTrackingEnabled,
@@ -104,6 +105,11 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     if (trackTypes) {
       const bindings = collectLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine, yardByLine);
       if (Object.keys(bindings).length > 0) base.localBindings = bindings;
+      // `localCallBindings` (var → called method) pairs with the run-global
+      // `functionReturnTypes` so the resolver binds `x = recv.meth(); x.member`
+      // to `<meth's return type>#member` (cai0 a71lj, same channel as Go).
+      const callBindings = collectRubyLocalCallBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
+      if (Object.keys(callBindings).length > 0) base.localCallBindings = callBindings;
     }
     return base;
   });
