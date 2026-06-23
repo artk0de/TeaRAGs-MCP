@@ -133,7 +133,9 @@ export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): 
       callsResolved: t.resolved,
       callsExternalSkipped: t.externalSkipped,
       // Absent unless DEBUG built the tally above.
-      ...(debug ? { byReceiverKind: buildByReceiverKind(byLangKind.get(language) ?? new Map<string, ResolveTally>()) } : {}),
+      ...(debug
+        ? { byReceiverKind: buildByReceiverKind(byLangKind.get(language) ?? new Map<string, ResolveTally>()) }
+        : {}),
     }))
     .sort((a, b) => b.callsAttempted - a.callsAttempted);
   if (byLanguage.length > 1) {
@@ -304,6 +306,23 @@ export class StatusModule {
   }
 
   /**
+   * Distinct-file count from the persisted collection stats
+   * (DistinctPathsAccumulator → Distributions.totalFiles), keyed by public alias.
+   * Undefined when no snapshot dir or no stats cached.
+   *
+   * Why: Qdrant points are chunk-level; file count comes from the
+   * DistinctPathsAccumulator → Distributions.totalFiles persisted in StatsCache
+   * under the alias.
+   */
+  private readFileCount(reportedName: string): number | undefined {
+    /* v8 ignore next -- fallback mirrors clearIndex dir-resolution */
+    const dir = this.snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
+    const stats = new StatsCache(dir).load(reportedName);
+    const totalFiles = stats?.distributions.totalFiles;
+    return typeof totalFiles === "number" && totalFiles > 0 ? totalFiles : undefined;
+  }
+
+  /**
    * Find the latest versioned collection (highest _vN suffix).
    * Returns undefined if no versioned collections exist.
    */
@@ -391,6 +410,7 @@ export class StatusModule {
         status: "indexed",
         collectionName: reportedName,
         chunksCount: actualChunksCount,
+        filesCount: this.readFileCount(reportedName),
         embeddingModel: marker.embeddingModel,
         qdrantUrl: this.qdrant.url,
         sparseVersion,
@@ -408,6 +428,7 @@ export class StatusModule {
         status: "indexed",
         collectionName: reportedName,
         chunksCount: actualChunksCount,
+        filesCount: this.readFileCount(reportedName),
         qdrantUrl: this.qdrant.url,
         sparseVersion,
         codegraphResolve: await this.readCodegraphResolve(sourceCollection),

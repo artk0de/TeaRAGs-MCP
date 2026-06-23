@@ -13,6 +13,7 @@ import {
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
+import { StatsCache } from "../../../../../src/core/infra/stats-cache.js";
 import type { IngestCodeConfig } from "../../../../../src/core/types.js";
 
 vi.mock("tree-sitter", () => ({
@@ -269,6 +270,49 @@ describe("StatusModule", () => {
         expect(status.indexSizeBytes).toBeUndefined();
         expect(status.enrichmentMetrics).toBeUndefined();
         expect(status.projectName).toBeUndefined();
+      });
+
+      it("exposes filesCount from persisted StatsCache distributions.totalFiles after indexing", async () => {
+        await createTestFile(codebaseDir, "fc.ts", "export const FC = 1;\nconsole.log('fc');");
+        await ingest.indexCodebase(codebaseDir);
+        const indexed = await ingest.getIndexStatus(codebaseDir);
+
+        // Write a stats cache sibling with distributions.totalFiles = 7.
+        const snapshotDir = join(process.env.TEA_RAGS_DATA_DIR!, "snapshots");
+        await fs.mkdir(snapshotDir, { recursive: true });
+        new StatsCache(snapshotDir).save(indexed.collectionName!, {
+          perSignal: new Map(),
+          perLanguage: new Map(),
+          distributions: {
+            totalFiles: 7,
+            language: {},
+            chunkType: {},
+            documentation: { docs: 0, code: 0 },
+            topAuthors: [],
+            topBlameAuthors: [],
+            othersCount: 0,
+          },
+          computedAt: Date.now(),
+        });
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.filesCount).toBe(7);
+      });
+
+      it("omits filesCount when no stats cache exists for the collection", async () => {
+        await createTestFile(codebaseDir, "nofc.ts", "export const NFC = 2;\nconsole.log('nofc');");
+        await ingest.indexCodebase(codebaseDir);
+
+        // No stats file written — filesCount should remain undefined.
+        // Note: indexCodebase itself may write a stats file; delete it to test clean state.
+        const snapshotDir = join(process.env.TEA_RAGS_DATA_DIR!, "snapshots");
+        const indexed = await ingest.getIndexStatus(codebaseDir);
+        new StatsCache(snapshotDir).invalidate(indexed.collectionName!);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.filesCount).toBeUndefined();
       });
     });
 
