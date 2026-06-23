@@ -40,10 +40,11 @@ import {
   type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
-import { resolveViaChain } from "../../resolver-chain.js";
+import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import { ExternalCallClassifier } from "../../external-classifier.js";
+import { resolveDispatchViaComponents, resolveViaChain } from "../../resolver-chain.js";
 import { ZEITWERK_PREFIX } from "../walker/walker.js";
-import { RUBY_KERNEL_BUILTINS } from "./kernel-builtins.js";
+import { RubyExternalVocabulary } from "./ruby-external-vocabulary.js";
 import {
   CONE_MAX_DEFAULT,
   resolveConstant,
@@ -80,6 +81,8 @@ export class RubyCallResolver implements CallResolver {
   private readonly table: RubyTableDispatchResolver;
   private readonly cone: RubyConeDispatchResolver;
   private readonly dynamic: RubyDynamicDispatchResolver;
+  private readonly dispatchComponents: readonly DispatchResolverComponent[];
+  private readonly externalClassifier: ExternalCallClassifier;
 
   constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const cfg: ResolverConfig = {
@@ -100,6 +103,8 @@ export class RubyCallResolver implements CallResolver {
     this.table = new RubyTableDispatchResolver(cfg);
     this.cone = new RubyConeDispatchResolver(cfg);
     this.dynamic = new RubyDynamicDispatchResolver(cfg);
+    this.dispatchComponents = [this.table, this.cone, this.dynamic];
+    this.externalClassifier = new ExternalCallClassifier(new RubyExternalVocabulary());
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
@@ -107,25 +112,14 @@ export class RubyCallResolver implements CallResolver {
   }
 
   /**
-   * tea-rags-mcp-ykj7 — external-import classifier for an UNRESOLVED call.
-   * Two branches:
-   *   - Bare call (`receiver === null`, e.g. `puts`, `raise`, `require`):
-   *     external iff the member is a Ruby CORE method in `RUBY_KERNEL_BUILTINS`
-   *     (Kernel-module / universal Object methods, NOT Rails). A project method
-   *     that shadows a core name resolves first via the chain and never reaches
-   *     this hook, so it is never mis-marked (tea-rags-mcp-5os8y).
-   *   - CONSTANT receiver (`Net::HTTP`, `Base64`): external iff `resolveConstant`
-   *     cannot map it to a project / Zeitwerk file — i.e. a gem or stdlib
-   *     constant. A constant that resolves to a project file is in-project (and
-   *     would not reach this hook unresolved).
-   * Conservative: a lowercase receiver (local var / `self`) cannot be told apart
-   * from a project method, so it stays attempted-unresolved.
+   * tea-rags-mcp-ykj7 / cai0 — external-import classifier for an UNRESOLVED call.
+   * Delegates to the language-neutral `ExternalCallClassifier`; the Ruby
+   * predicates (bare-call framework/kernel vocabulary via the `dsl/` registry,
+   * constant-receiver gem/stdlib detection via `resolveConstant`) live in
+   * `RubyExternalVocabulary`.
    */
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
-    const { receiver } = call;
-    if (receiver === null) return RUBY_KERNEL_BUILTINS.has(call.member);
-    if (!/^[A-Z]/.test(receiver)) return false;
-    return resolveConstant(receiver, ctx) === null;
+    return this.externalClassifier.targetsExternal(call, ctx);
   }
 
   /**
@@ -156,11 +150,7 @@ export class RubyCallResolver implements CallResolver {
    * invariant "external never fabricates an out-of-project edge" holds.
    */
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
-    const table = this.table.resolveDispatch(call, ctx);
-    if (table.length > 0) return table;
-    const cone = this.cone.resolveDispatch(call, ctx);
-    if (cone.length > 0) return cone;
-    return this.dynamic.resolveDispatch(call, ctx);
+    return resolveDispatchViaComponents(this.dispatchComponents, call, ctx);
   }
 
   /**

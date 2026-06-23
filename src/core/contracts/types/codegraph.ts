@@ -476,6 +476,15 @@ export interface CallRef {
    * `TABLE[k].field` or a dispatch-bound local.
    */
   dispatchArgs?: { argIndex: number; candidate: DispatchRef }[];
+  /**
+   * Set by the walker when this call is a dynamic dispatch whose target is NOT a
+   * statically-known literal — `send(var)` / `public_send(expr)` / `__send__(x)`
+   * with a non-literal first argument. The codegraph counts an UNRESOLVED
+   * dynamicSend as `callsUnresolvable` (statically undeterminable), excluded from
+   * the resolveSuccessRate denominator — distinct from `externalSkipped`
+   * (framework) and from a genuine internal miss (bd cai0).
+   */
+  dynamicSend?: boolean;
 }
 
 /**
@@ -1003,6 +1012,13 @@ export interface ResolveRunStatsRow {
    * external classifier.
    */
   externalSkipped: number;
+  /**
+   * bd cai0 — of the `attempted − resolved` misses in this bucket, how many were
+   * statically UNDETERMINABLE (dynamic `send(var)`), not resolver failures. Like
+   * `externalSkipped`, excluded from the resolveSuccessRate denominator. Defaults
+   * to 0 for pre-cai0 rows / languages without dynamic-send tagging.
+   */
+  unresolvable: number;
 }
 
 export interface GraphEdges {

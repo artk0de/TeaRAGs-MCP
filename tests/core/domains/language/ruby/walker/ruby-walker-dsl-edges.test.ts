@@ -252,3 +252,191 @@ describe("ruby-walker brg9 — YARD return types (@return [T])", () => {
     }
   });
 });
+
+describe("ruby-walker — dispatch tables (registry-constant-ref, pq02v)", () => {
+  it("CONST = { key => ClassName } hash literal emits dispatchTables entry with string key", () => {
+    const src = "HANDLERS = { 'create' => CreateHandler, 'update' => UpdateHandler }\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.dispatchTables).toBeDefined();
+    expect(r.dispatchTables?.["HANDLERS"]).toMatchObject({
+      entries: { create: "CreateHandler", update: "UpdateHandler" },
+    });
+  });
+
+  it("CONST = { sym: ClassName } symbol-key hash emits dispatchTables entry with symbol key", () => {
+    const src = "REGISTRY = { create: CreateService, delete: DeleteService }\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.dispatchTables?.["REGISTRY"]).toMatchObject({
+      entries: { create: "CreateService", delete: "DeleteService" },
+    });
+  });
+
+  it("CONST = [ClassA, ClassB] array literal emits dispatchTables with positional indices", () => {
+    const src = "PIPELINE = [ValidatorClass, ProcessorClass]\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.dispatchTables?.["PIPELINE"]).toMatchObject({
+      entries: { "0": "ValidatorClass", "1": "ProcessorClass" },
+    });
+  });
+
+  it("CONST = { k => Klass }.freeze emits dispatchTables (unwraps freeze call)", () => {
+    const src = "HANDLERS = { 'run' => RunHandler }.freeze\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.dispatchTables?.["HANDLERS"]).toBeDefined();
+    expect(r.dispatchTables?.["HANDLERS"].entries).toMatchObject({ run: "RunHandler" });
+  });
+
+  it("hash with computed (non-literal) key → entry is dropped", () => {
+    const src = "MAP = { method_name => Handler }\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    // computed key → no entries → table is omitted entirely
+    expect(r.dispatchTables?.["MAP"]).toBeUndefined();
+  });
+
+  it("hash with non-constant value → value entry is dropped", () => {
+    const src = "MAP = { 'action' => build_handler() }\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.dispatchTables?.["MAP"]).toBeUndefined();
+  });
+
+  it("scope_resolution constant as hash key value → emits qualified constant", () => {
+    const src = "HANDLERS = { 'go' => Acme::GoHandler }\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.dispatchTables?.["HANDLERS"]?.entries?.["go"]).toBe("Acme::GoHandler");
+  });
+
+  it("no constant-assignment → no dispatchTables key", () => {
+    const src = "x = { 'a' => Foo }\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.dispatchTables).toBeUndefined();
+  });
+});
+
+describe("ruby-walker — registry constant-value refs (collectRegistryConstantValueRefs, ki9v)", () => {
+  it("constant values inside a hash literal emit synthetic CallRefs for the assigned constant", () => {
+    const src = "HANDLERS = { 'run' => RunHandler }\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "HANDLERS", scope: [], startLine: 1, endLine: 1 }],
+    });
+    const allCalls = r.chunks.flatMap((c) => c.calls);
+    expect(allCalls).toContainEqual(expect.objectContaining({ receiver: "RunHandler", member: "RunHandler" }));
+  });
+
+  it("scope_resolution constant value in hash emits qualified CallRef", () => {
+    const src = "MAP = { 'go' => Acme::GoHandler }\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "MAP", scope: [], startLine: 1, endLine: 1 }],
+    });
+    const allCalls = r.chunks.flatMap((c) => c.calls);
+    expect(allCalls).toContainEqual(
+      expect.objectContaining({ receiver: "Acme::GoHandler", member: "Acme::GoHandler" }),
+    );
+  });
+});
+
+describe("ruby-walker — inheritance edges (collectRubyInheritanceEdges, lz8t)", () => {
+  function inheritanceEdgesOf(src: string) {
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    return r.inheritanceEdges ?? [];
+  }
+
+  it("`class Foo < Bar` emits a super edge (kind=super, ordinal=0)", () => {
+    const edges = inheritanceEdgesOf("class Foo < Bar\nend\n");
+    expect(edges).toContainEqual(
+      expect.objectContaining({ source: "Foo", ancestor: "Bar", kind: "super", ordinal: 0 }),
+    );
+  });
+
+  it("`include Mod` inside class body emits an include edge", () => {
+    const edges = inheritanceEdgesOf("class Foo\n  include Trackable\nend\n");
+    expect(edges).toContainEqual(expect.objectContaining({ source: "Foo", ancestor: "Trackable", kind: "include" }));
+  });
+
+  it("`extend Mod` inside class body emits an extend edge", () => {
+    const edges = inheritanceEdgesOf("class Foo\n  extend ClassMethods\nend\n");
+    expect(edges).toContainEqual(expect.objectContaining({ source: "Foo", ancestor: "ClassMethods", kind: "extend" }));
+  });
+
+  it("`prepend Mod` emits a prepend edge", () => {
+    const edges = inheritanceEdgesOf("class Foo\n  prepend Instrumentation\nend\n");
+    expect(edges).toContainEqual(
+      expect.objectContaining({ source: "Foo", ancestor: "Instrumentation", kind: "prepend" }),
+    );
+  });
+
+  it("multiple include/extend in ordinal order", () => {
+    const edges = inheritanceEdgesOf("class Foo\n  include A\n  include B\nend\n");
+    const includes = edges.filter((e) => e.kind === "include");
+    expect(includes[0]).toMatchObject({ ancestor: "A", ordinal: 0 });
+    expect(includes[1]).toMatchObject({ ancestor: "B", ordinal: 1 });
+  });
+
+  it("no inheritance → inheritanceEdges is undefined (empty result not set)", () => {
+    const tree = parse("class Plain\nend\n");
+    const r = extractFromRubyFile({ tree, code: "class Plain\nend\n", relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.inheritanceEdges).toBeUndefined();
+  });
+
+  it("nested class with superclass emits fully-qualified source name", () => {
+    const edges = inheritanceEdgesOf("module Acme\n  class Auth < Base\n  end\nend\n");
+    expect(edges).toContainEqual(expect.objectContaining({ source: "Acme::Auth", ancestor: "Base", kind: "super" }));
+  });
+
+  it("scope_resolution superclass (class Foo < Acme::Base) is recognised", () => {
+    const edges = inheritanceEdgesOf("class Foo < Acme::Base\nend\n");
+    expect(edges).toContainEqual(expect.objectContaining({ source: "Foo", ancestor: "Acme::Base", kind: "super" }));
+  });
+});
+
+describe("ruby-walker — has_and_belongs_to_many association model edge", () => {
+  it("`has_and_belongs_to_many :roles` emits constant-ref CallRef to `Role`", () => {
+    const src = "class User\n  has_and_belongs_to_many :roles\nend\n";
+    const calls = (() => {
+      const tree = parse(src);
+      const r = extractFromRubyFile({
+        tree,
+        code: src,
+        relPath: "x.rb",
+        language: "ruby",
+        chunks: [{ symbolId: "User", scope: ["User"], startLine: 1, endLine: 3 }],
+      });
+      return r.chunks.flatMap((c) => c.calls);
+    })();
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "Role", member: "Role" }));
+  });
+});
+
+describe("ruby-walker — class_name: with constant node (scope_resolution / constant)", () => {
+  it("`class_name: SomeClass` (constant node) resolves to the constant text", () => {
+    const src = "class Post\n  belongs_to :author, class_name: Author\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Post", scope: ["Post"], startLine: 1, endLine: 3 }],
+    });
+    const calls = r.chunks.flatMap((c) => c.calls);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "Author", member: "Author" }));
+  });
+});

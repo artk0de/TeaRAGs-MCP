@@ -164,6 +164,8 @@ export interface CodegraphResolveSummary {
   callsResolved: number;
   /** Unresolved calls classified as external-library / runtime targets, excluded from the rate. */
   callsExternalSkipped: number;
+  /** bd cai0 — unresolved dynamic-send calls (statically undeterminable), excluded from the rate. */
+  callsUnresolvable: number;
   /**
    * tea-rags-mcp-cnqrg — per-code-language breakdown of the same rate, so a
    * polyglot index reveals WHICH language's resolver carries the gap. Test
@@ -196,6 +198,8 @@ export interface CodegraphResolveLanguageRow {
   callsAttempted: number;
   callsResolved: number;
   callsExternalSkipped: number;
+  /** bd cai0 — unresolved dynamic-send calls in this language, excluded from the rate. */
+  callsUnresolvable: number;
   /**
    * tea-rags-mcp-7m5xz — per-receiver-kind breakdown scoped to this language's
    * call-sites. Present only in the multi-language case (precise lang×kind).
@@ -215,6 +219,8 @@ export interface CodegraphResolveKindRow {
   attempted: number;
   resolved: number;
   externalSkipped: number;
+  /** bd cai0 — unresolved dynamic-send calls in this bucket, excluded from the rate. */
+  unresolvable: number;
   resolveSuccessRate: number;
 }
 

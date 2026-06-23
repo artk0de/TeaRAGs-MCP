@@ -188,42 +188,50 @@ describe("rbNameOf — alias_method and alias keyword", () => {
   });
 });
 
-describe("rbNameOf — AR association macros (locally synthesised)", () => {
-  it("rbNameOf emits has_many reader and writer accessors", () => {
+describe("rbNameOf — AR association macros (catalogue-synthesised)", () => {
+  it("rbNameOf emits has_many collection accessors + id collection", () => {
     const tree = parse("class Order\n  has_many :products\nend\n");
     const node = findMacroCall(tree, "has_many");
     expect(rbNameOf(node)).toEqual([
       { name: "products", descendsInto: false, methodKind: "instance" },
       { name: "products=", descendsInto: false, methodKind: "instance" },
+      { name: "product_ids", descendsInto: false, methodKind: "instance" },
+      { name: "product_ids=", descendsInto: false, methodKind: "instance" },
     ]);
   });
 
-  it("rbNameOf emits belongs_to reader, writer, id reader and id writer", () => {
+  it("rbNameOf emits belongs_to reader/writer, build/create, id reader/writer", () => {
     const tree = parse("class Product\n  belongs_to :order\nend\n");
     const node = findMacroCall(tree, "belongs_to");
     expect(rbNameOf(node)).toEqual([
       { name: "order", descendsInto: false, methodKind: "instance" },
       { name: "order=", descendsInto: false, methodKind: "instance" },
+      { name: "build_order", descendsInto: false, methodKind: "instance" },
+      { name: "create_order", descendsInto: false, methodKind: "instance" },
       { name: "order_id", descendsInto: false, methodKind: "instance" },
       { name: "order_id=", descendsInto: false, methodKind: "instance" },
     ]);
   });
 
-  it("rbNameOf emits has_one reader and writer accessors", () => {
+  it("rbNameOf emits has_one reader/writer + build/create", () => {
     const tree = parse("class Order\n  has_one :invoice\nend\n");
     const node = findMacroCall(tree, "has_one");
     expect(rbNameOf(node)).toEqual([
       { name: "invoice", descendsInto: false, methodKind: "instance" },
       { name: "invoice=", descendsInto: false, methodKind: "instance" },
+      { name: "build_invoice", descendsInto: false, methodKind: "instance" },
+      { name: "create_invoice", descendsInto: false, methodKind: "instance" },
     ]);
   });
 
-  it("rbNameOf emits has_and_belongs_to_many reader and writer accessors", () => {
+  it("rbNameOf emits has_and_belongs_to_many collection accessors + id collection", () => {
     const tree = parse("class Order\n  has_and_belongs_to_many :tags\nend\n");
     const node = findMacroCall(tree, "has_and_belongs_to_many");
     expect(rbNameOf(node)).toEqual([
       { name: "tags", descendsInto: false, methodKind: "instance" },
       { name: "tags=", descendsInto: false, methodKind: "instance" },
+      { name: "tag_ids", descendsInto: false, methodKind: "instance" },
+      { name: "tag_ids=", descendsInto: false, methodKind: "instance" },
     ]);
   });
 
@@ -233,8 +241,12 @@ describe("rbNameOf — AR association macros (locally synthesised)", () => {
     expect(rbNameOf(node)).toEqual([
       { name: "products", descendsInto: false, methodKind: "instance" },
       { name: "products=", descendsInto: false, methodKind: "instance" },
+      { name: "product_ids", descendsInto: false, methodKind: "instance" },
+      { name: "product_ids=", descendsInto: false, methodKind: "instance" },
       { name: "coupons", descendsInto: false, methodKind: "instance" },
       { name: "coupons=", descendsInto: false, methodKind: "instance" },
+      { name: "coupon_ids", descendsInto: false, methodKind: "instance" },
+      { name: "coupon_ids=", descendsInto: false, methodKind: "instance" },
     ]);
   });
 
@@ -256,5 +268,68 @@ describe("rbNameOf — non-symbol nodes return null", () => {
     const tree = parse("class C\n  puts :hello\nend\n");
     const node = findMacroCall(tree, "puts");
     expect(rbNameOf(node)).toBeNull();
+  });
+});
+
+describe("rbNameOf — toStaticKind array branch (macro inside class << self)", () => {
+  it("association array result is converted to all-static via toStaticKind", () => {
+    // has_many :posts inside class << self → the association builder returns an
+    // ARRAY (not a single NamedSymbol) → toStaticKind must handle the array branch.
+    const tree = parse("class Foo\n  class << self\n    has_many :posts\n  end\nend\n");
+    const node = findMacroCall(tree, "has_many");
+    const result = rbNameOf(node);
+    // Should be an array of NamedSymbols, all with methodKind === 'static'.
+    expect(Array.isArray(result)).toBe(true);
+    if (Array.isArray(result)) {
+      expect(result.every((s) => s.methodKind === "static")).toBe(true);
+      expect(result.map((s) => s.name)).toEqual(["posts", "posts=", "post_ids", "post_ids="]);
+    }
+  });
+
+  it("alias keyword inside class << self uses toStaticKind on single NamedSymbol", () => {
+    // rubyAliasKeywordEmission returns a single NamedSymbol → toStaticKind non-array branch.
+    const tree = parse("class Foo\n  class << self\n    alias fresh stale\n  end\nend\n");
+    const node = findFirst(tree, "alias");
+    const result = rbNameOf(node);
+    expect(result).toMatchObject({ name: "fresh", methodKind: "static" });
+  });
+});
+
+describe("rbNameOf — rubyMacroEmission guard: no args → null", () => {
+  it("macro call with no argument list returns null for catalogue-based macro", () => {
+    // `attr_reader` alone with no parens and no symbols → args absent → rubyMacroEmission returns null.
+    const tree = parse("class C\n  attr_reader\nend\n");
+    // The node may parse as identifier, not a call — either way rbNameOf returns null.
+    const body = findFirst(tree, "class").childForFieldName("body");
+    const stmt = body ? body.namedChildren[0] : null;
+    if (!stmt) return;
+    const result = rbNameOf(stmt);
+    // Either null or empty array — never a populated result.
+    if (Array.isArray(result)) {
+      expect(result).toEqual([]);
+    } else {
+      expect(result).toBeNull();
+    }
+  });
+});
+
+describe("rbNameOf — class with no name node returns null", () => {
+  it("class node without a name field returns null (defensive)", () => {
+    // Can't produce this via normal Ruby syntax; test that rbNameOf handles
+    // a `class` node gracefully when nameNode is missing — verified via
+    // normal parse: a plain `class << self` has no name field.
+    const tree = parse("class Foo\n  class << self\n  end\nend\n");
+    const sc = findFirst(tree, "singleton_class");
+    // singleton_class has no `name` field → rbNameOf returns null at the class/module branch.
+    expect(rbNameOf(sc)).toBeNull();
+  });
+});
+
+describe("rbNameOf — scopeResolutionText with deep nesting (A::B::C)", () => {
+  it("rbNameOf composes a 3-level scope_resolution class name without empty segment", () => {
+    // Exercises scopeResolutionText recursive path where left is another scope_resolution.
+    const tree = parse("class A::B::C\nend\n");
+    const node = findFirst(tree, "class");
+    expect(rbNameOf(node)).toEqual({ name: "A::B::C", descendsInto: true });
   });
 });

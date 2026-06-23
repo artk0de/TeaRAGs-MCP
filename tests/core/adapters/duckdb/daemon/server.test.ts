@@ -335,8 +335,22 @@ describe("CodegraphDaemonServer.handle", () => {
       params: {
         collection: c,
         rows: [
-          { language: "typescript", receiverKind: "constant", attempted: 100, resolved: 90, externalSkipped: 7 },
-          { language: "ruby", receiverKind: "bareCall", attempted: 50, resolved: 10, externalSkipped: 0 },
+          {
+            language: "typescript",
+            receiverKind: "constant",
+            attempted: 100,
+            resolved: 90,
+            externalSkipped: 7,
+            unresolvable: 0,
+          },
+          {
+            language: "ruby",
+            receiverKind: "bareCall",
+            attempted: 50,
+            resolved: 10,
+            externalSkipped: 0,
+            unresolvable: 3,
+          },
         ],
       },
     });
@@ -345,8 +359,15 @@ describe("CodegraphDaemonServer.handle", () => {
     expect(got.ok).toBe(true);
     // ORDER BY language, receiver_kind → ruby/bareCall before typescript/constant.
     expect((got as { result: unknown }).result).toEqual([
-      { language: "ruby", receiverKind: "bareCall", attempted: 50, resolved: 10, externalSkipped: 0 },
-      { language: "typescript", receiverKind: "constant", attempted: 100, resolved: 90, externalSkipped: 7 },
+      { language: "ruby", receiverKind: "bareCall", attempted: 50, resolved: 10, externalSkipped: 0, unresolvable: 3 },
+      {
+        language: "typescript",
+        receiverKind: "constant",
+        attempted: 100,
+        resolved: 90,
+        externalSkipped: 7,
+        unresolvable: 0,
+      },
     ]);
     await pool.closeAll();
   });

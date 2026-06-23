@@ -215,6 +215,26 @@ of where the link points, so a later `npm link` from any checkout reproduces it.
 - The `npm run build` step ensures `build/` reflects current source. Skipping it
   leaves the link pointing at stale compiled output.
 
+### Never auto-build / auto-reindex (MANDATORY)
+
+- **Do NOT `npm run build` a worktree automatically** when MORE than one worktree
+  is active (`git worktree list` shows >1 entry under `.claude/worktrees/` —
+  parallel sessions present). Wait for an explicit "build"/"собери". A build +
+  relink can collide with a concurrent session's build/link.
+- **Single active worktree is the exception:** if `git worktree list` shows
+  exactly one worktree, you MAY build automatically to verify — there is no
+  parallel session to disturb.
+- **Reindex / `index-codebase --force` is ALWAYS user-gated**, regardless of
+  worktree count — it rewrites the shared Qdrant index and depends on ollama
+  embeddings (which can flap mid-run). NEVER chain a reindex off a build; stop at
+  green tests and wait for an explicit "reindex"/"замер".
+- **Commit after successful live validation is auto-authorized.** Once a
+  user-triggered live validation SUCCEEDS (reindex clean + measured
+  resolveSuccessRate delta confirms the change), you MAY commit the change
+  immediately on the worktree branch without waiting for an explicit "commit" —
+  the successful validation is the authorization. Still worktree-only: never
+  merge to main or push without an explicit ask.
+
 ### When to skip the link-flip entirely
 
 - Pure docs / spec / plan changes that don't touch `src/` — no rebuild needed.
@@ -262,13 +282,17 @@ When the change touches **enrichment** and validating it requires a reindex, use
 the CLI — NOT the MCP `index_codebase` tool:
 
 ```bash
-tea-rags index-codebase --project <alias> --wait-enrichments --force
+tea-rags index-codebase --project <alias> --wait-enrichments --force --json
 ```
 
 - `--wait-enrichments` stays attached until every enrichment provider finishes,
   rendering per-provider progress bars + **durations** — you get enrichment
   timing for free (perf-regression signal) and a precise "done" marker.
 - `--force` runs a full re-index from scratch; drop it for incremental.
+- `--json` emits the final result as machine-readable JSON (file counts,
+  per-provider enrichment durations, `codegraphResolve` byReceiverKind) instead
+  of human bars — parse it directly rather than scraping rendered output. Always
+  pass it when an agent consumes the result.
 - The MCP `mcp__tea-rags__index_codebase` tool returns once embeddings are
   stored and **detaches** enrichment to the background — so MCP-side testing
   forces you to poll `get_index_status` repeatedly and guess when enrichment
@@ -302,7 +326,7 @@ npm run build
 npm link
 # → reconnect MCP servers
 # enrichment-affecting change: prefer the CLI (synchronous + timed)
-tea-rags index-codebase --project tea-rags --wait-enrichments --force   # full reset
+tea-rags index-codebase --project tea-rags --wait-enrichments --force --json   # full reset
 mcp__tea-rags__index_codebase project=production-rails-app              # other projects: incremental
 
 # 2. Validate via mcp__tea-rags__semantic_search / find_symbol against

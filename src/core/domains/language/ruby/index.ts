@@ -14,11 +14,11 @@
  * `Parser`, spec §5). The capability logic here is stateless, so the only
  * per-instance cost is the Parser the chunker/codegraph engines build.
  *
- * symbolId macro coverage convergence: the chunker emits synthetic method
- * symbols for class-body macros via `chunker/tree-sitter.ts:emitMacroSymbols`
- * (calling the relocated `extractRubyMacroSymbols` through the factory's walker
- * capability), while the codegraph emits them via `walker.nameOf` (`rbNameOf`).
- * Both MUST stay in lockstep per `.claude/rules/symbolid-convention.md`.
+ * Class-body DSL macros: the chunker represents them through category grouping
+ * (`class-body-chunker.ts`), while the codegraph synthesises the methods they
+ * declare into `cg_symbols` via `walker.nameOf` (`rbNameOf` → `macro-expansion`).
+ * The chunker wires no `macroSymbols` hook — synthesised accessors are a
+ * codegraph-only resolution concern.
  */
 
 import type { AstNode } from "../../../contracts/types/ast.js";
@@ -41,7 +41,6 @@ import type {
 import { rubyHooks } from "./chunking/index.js";
 import { rubyKernel } from "./kernel.js";
 import { RubyCallResolver } from "./resolver/ruby-resolver.js";
-import { extractRubyMacroSymbols, type RubyMacroSymbol } from "./walker/macros.js";
 import { rbNameOf } from "./walker/name-of.js";
 import { extractFromRubyFile, type RubyExtractInput } from "./walker/walker.js";
 
@@ -79,9 +78,11 @@ const rubyChunkerHooks: LanguageChunkerHooks = {
     return methodName || undefined;
   },
   hooks: rubyHooks,
-  // Synthetic method symbols from class-body DSL macros (attr_accessor / delegate
-  // / define_method / alias). The chunker engine emits a chunk per result.
-  macroSymbols: (containerNode) => extractRubyMacroSymbols(containerNode),
+  // Class-body DSL macros are represented in chunks by category grouping
+  // (`class-body-chunker.ts` via `CATEGORY_TO_GROUP`), NOT as per-method chunks.
+  // The synthesised methods they declare are a codegraph concern only — emitted
+  // into `cg_symbols` by `walker/name-of.ts` for call resolution — so the chunker
+  // wires no `macroSymbols` hook.
 };
 
 /**
@@ -114,6 +115,6 @@ export class RubyLanguage implements LanguageProvider {
 
 export { rubyKernel } from "./kernel.js";
 export { rubyHooks } from "./chunking/index.js";
-export { extractFromRubyFile, rbNameOf, extractRubyMacroSymbols } from "./walker/index.js";
+export { extractFromRubyFile, rbNameOf } from "./walker/index.js";
 export { RubyCallResolver } from "./resolver/index.js";
-export type { FileExtraction, RubyExtractInput, RubyMacroSymbol };
+export type { FileExtraction, RubyExtractInput };

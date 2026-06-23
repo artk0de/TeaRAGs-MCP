@@ -1020,8 +1020,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * once per cycle.
    */
   getRunMetrics(): ProviderRunMetrics | undefined {
-    const { extractedFiles, fileEdgeCount, methodEdgeCount, callsAttempted, callsResolved, callsExternalSkipped } =
-      this.runStats;
+    const {
+      extractedFiles,
+      fileEdgeCount,
+      methodEdgeCount,
+      callsAttempted,
+      callsResolved,
+      callsExternalSkipped,
+      callsUnresolvable,
+    } = this.runStats;
     if (extractedFiles === 0 && fileEdgeCount === 0 && methodEdgeCount === 0) {
       this.runStats = createEmptyRunStats();
       this.runAncestors = {};
@@ -1037,7 +1044,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // tea-rags-mcp-ykj7 — denominator excludes external-library calls so the
     // rate measures the resolver's capability on PROJECT-INTERNAL calls.
     // `max(1, …)` guards a divide-by-zero when every attempted call was external.
-    const internalAttempted = Math.max(1, callsAttempted - callsExternalSkipped);
+    const internalAttempted = Math.max(1, callsAttempted - callsExternalSkipped - callsUnresolvable);
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / internalAttempted;
     const byReceiverKind = aggregateReceiverKinds(this.runStats);
     const resolveByReceiverKind = Object.fromEntries(
@@ -1060,7 +1067,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       }).join(", ");
       process.stderr.write(
         `[codegraph] resolve by receiver-kind (rate ${resolveSuccessRate.toFixed(2)}, ` +
-          `${callsExternalSkipped}/${callsAttempted} external-skipped): ${summary}\n`,
+          `${callsExternalSkipped}/${callsAttempted} external-skipped, ` +
+          `${callsUnresolvable} unresolvable): ${summary}\n`,
       );
     }
     this.runStats = createEmptyRunStats();
@@ -1072,6 +1080,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       methodEdgeCount,
       resolveSuccessRate,
       callsExternalSkipped,
+      callsUnresolvable,
       resolveByReceiverKind,
     };
   }
@@ -1510,6 +1519,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           attempted: t.attempted,
           resolved: t.resolved,
           externalSkipped: t.externalSkipped,
+          unresolvable: t.unresolvable,
         });
       }
     }
@@ -1894,6 +1904,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         if (resolved) {
           this.runStats.callsResolved += 1;
           kindTally[receiverKind].resolved += 1;
+        } else if (call.dynamicSend === true) {
+          // bd cai0 — a dynamic `send(var)` / `public_send(expr)` whose target
+          // is statically undeterminable. NOT a resolver miss and NOT external —
+          // count it as `unresolvable` (excluded from the denominator). Checked
+          // BEFORE targetsExternalImport: `send` ∈ RUBY_KERNEL_BUILTINS, so the
+          // external classifier would otherwise mis-bucket it as externalSkipped.
+          this.runStats.callsUnresolvable += 1;
+          kindTally[receiverKind].unresolvable += 1;
         } else if (resolver.targetsExternalImport?.(call, ctx) ?? false) {
           // tea-rags-mcp-ykj7 — the resolver could not pin this call AND
           // classified it as an external-library / runtime import. Count it
@@ -1923,6 +1941,9 @@ interface ReceiverKindTally {
   // tea-rags-mcp-ykj7 — unresolved-but-external calls in this bucket (subset of
   // attempted − resolved). Persisted to cg_run_stats.external_skipped.
   externalSkipped: number;
+  // bd cai0 — unresolved-but-statically-undeterminable calls in this bucket
+  // (dynamic send(var)). Persisted to cg_run_stats.unresolvable.
+  unresolvable: number;
 }
 
 interface RunStats {
@@ -1937,6 +1958,11 @@ interface RunStats {
   // rate reflects PROJECT-INTERNAL resolver capability, not unresolvable
   // external-library noise. Subset of (callsAttempted − callsResolved).
   callsExternalSkipped: number;
+  // bd cai0 — unresolved calls flagged by the walker as dynamic send(var) with a
+  // non-literal target: statically undeterminable, not a resolver miss. Excluded
+  // from the resolveSuccessRate denominator. Subset of (callsAttempted −
+  // callsResolved − callsExternalSkipped).
+  callsUnresolvable: number;
   // Per-(code language, receiver kind) resolve breakdown (bd tea-rags-mcp-cnqrg,
   // extends j431). Source of truth: the aggregate scalars above, the per-kind
   // summary (getRunMetrics, j431 view) and the per-language summary
@@ -1951,7 +1977,7 @@ interface RunStats {
 
 function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally> {
   const out = {} as Record<ReceiverKind, ReceiverKindTally>;
-  for (const kind of RECEIVER_KINDS) out[kind] = { attempted: 0, resolved: 0, externalSkipped: 0 };
+  for (const kind of RECEIVER_KINDS) out[kind] = { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0 };
   return out;
 }
 
@@ -1976,6 +2002,7 @@ function aggregateReceiverKinds(stats: RunStats): Record<ReceiverKind, ReceiverK
       out[kind].attempted += kinds[kind].attempted;
       out[kind].resolved += kinds[kind].resolved;
       out[kind].externalSkipped += kinds[kind].externalSkipped;
+      out[kind].unresolvable += kinds[kind].unresolvable;
     }
   }
   return out;
@@ -1989,6 +2016,7 @@ function createEmptyRunStats(): RunStats {
     callsAttempted: 0,
     callsResolved: 0,
     callsExternalSkipped: 0,
+    callsUnresolvable: 0,
     byLanguageKind: new Map(),
   };
 }

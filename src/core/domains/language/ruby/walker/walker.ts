@@ -43,7 +43,7 @@ import type {
   ImportRef,
   InheritanceEdgeDecl,
 } from "../../../../contracts/types/codegraph.js";
-import { RUBY_DSL } from "../dsl/index.js";
+import { RUBY_DSL, singularizeAssociation } from "../dsl/index.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
 import {
   collectLocalBindingsForChunk,
@@ -636,21 +636,6 @@ function isRubyCallbackMacro(name: string): boolean {
 }
 
 /**
- * Naive Rails singularize for the common association-name → model-name cases
- * (duzy). Handles `categories → category` (ies → y), `boxes → box`
- * (xes/ses/shes/ches → strip `es`), and the dominant `posts → post`
- * (trailing `s`). NOT a full inflector — irregulars (`people`, `mice`) and
- * `class_name:` overrides are out of scope here; an explicit `class_name:`
- * always wins upstream. A non-plural word passes through unchanged.
- */
-function singularizeAssociation(word: string): string {
-  if (word.endsWith("ies")) return `${word.slice(0, -3)}y`;
-  if (/(?:xes|ses|shes|ches)$/.test(word)) return word.slice(0, -2);
-  if (word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
-  return word;
-}
-
-/**
  * Camelize a snake_case association base into a Ruby class name (duzy):
  * `blog_posts` → `BlogPost`. The caller singularizes first; this only
  * upcases each `_`-separated segment's first char and joins.
@@ -876,6 +861,7 @@ function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>
       // resolver's same-class bare-call fallback (callerScope-aware
       // pickSingleCandidate filter) takes over. The receiver-set
       // unknown-type drop guard would otherwise refuse to emit an edge.
+      let dynamicSend = false;
       if (RUBY_DYNAMIC_DISPATCH.has(method.text)) {
         const unwrapped = extractLiteralSymbolOrString(node);
         if (unwrapped !== null) {
@@ -887,6 +873,11 @@ function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>
           for (const child of node.children) visit(child, nextEnclosing, nextBindings);
           return;
         }
+        // Non-literal first arg — `send(var)` / `public_send(expr)`. The target
+        // is statically undeterminable; keep the literal `send` CallRef but tag
+        // it so an UNRESOLVED dispatch counts as `callsUnresolvable`, not a
+        // resolver miss (bd cai0).
+        dynamicSend = true;
       }
 
       // `alias_method :new, :old` synthetic call edge (bd tea-rags-mcp-y2z5).
@@ -949,6 +940,7 @@ function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>
       }
 
       const callRef: CallRef = { callText: node.text, receiver: receiverText, member: method.text, startLine };
+      if (dynamicSend) callRef.dynamicSend = true;
       // Registry-literal dispatch tagging (bd tea-rags-mcp-pq02v). Only the
       // OUTER `.member` call of a `CONST[k].new.m` chain yields a ref with
       // `field` set; the inner `.new` node returns `field: null` and is skipped
@@ -1135,9 +1127,9 @@ function extractSecondLiteralSymbol(callNode: AstNode): string | null {
 /**
  * Collect the leading delegated symbol names from a `delegate :a, :b, to: :recv`
  * call — every `simple_symbol` argument UNTIL the first non-symbol (the `to:`
- * pair, other kwargs like `allow_nil:` / `prefix:`). Mirrors macros.ts'
- * `pushMacroSymbols` delegate loop so the synthesised CallRefs line up 1:1 with
- * the synthesised forwarder method symbols (bd tea-rags-mcp-mx9z).
+ * pair, other kwargs like `allow_nil:` / `prefix:`). Mirrors the delegate loop
+ * in `macro-expansion.ts` so the synthesised CallRefs line up 1:1 with the
+ * codegraph's synthesised forwarder method symbols (bd tea-rags-mcp-mx9z).
  */
 function extractDelegateSymbols(callNode: AstNode): string[] {
   const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");

@@ -1,7 +1,7 @@
 import type Parser from "tree-sitter";
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import type { LanguageChunkClassifier, MacroSymbol } from "../../../../contracts/types/chunker.js";
+import type { LanguageChunkClassifier } from "../../../../contracts/types/chunker.js";
 import type { ChunkingHook } from "./hooks/types.js";
 
 // Type for tree-sitter language modules
@@ -94,13 +94,6 @@ export interface LanguageConfig {
   scopeSeparator?: string;
   keepShortChildChunkTypes?: string[];
   disambiguateOverloads?: boolean;
-  /**
-   * Synthetic class-body macro symbol extractor (Ruby `attr_accessor` etc.),
-   * threaded from `LanguageChunkerHooks.macroSymbols` via the provider so the
-   * engine never imports the concrete `domains/language/<lang>` module. Absent
-   * for languages with no `def`-less method idiom.
-   */
-  macroSymbols?: (containerNode: AstNode) => MacroSymbol[];
   /**
    * Language-agnostic node→chunk classifier capability, threaded from
    * `LanguageChunkerHooks.classifier` via the provider. The engine reads

@@ -10,7 +10,7 @@
 import Parser from "tree-sitter";
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
-import type { ChunkDecision, MacroSymbol } from "../../../../contracts/types/chunker.js";
+import type { ChunkDecision } from "../../../../contracts/types/chunker.js";
 import type {
   LanguageChunkerHooks,
   LanguageFactoryDescriptor,
@@ -52,158 +52,6 @@ export class TreeSitterChunker implements CodeChunker {
     if (!name) return undefined;
     if (!parentName) return name;
     return this.symbolIds.compose(parentName, name, { methodKind: isStatic ? "static" : "instance" });
-  }
-
-  /**
-   * Emit synthetic method-symbol chunks for Ruby class-body DSL macros
-   * (attr_accessor / attr_reader / attr_writer / cattr_* / mattr_* /
-   * delegate / define_method) found anywhere inside `containerNode`. Each
-   * macro can declare multiple methods at the enclosing class scope;
-   * without these chunks, a language's bare-id call resolution can't
-   * land on `Class#accessor` / `Class#delegated_method` and
-   * `get_callers` / `get_callees` come up empty on macro-heavy code
-   * (e.g. Rails — bd tea-rags-mcp-3nf3 + tea-rags-mcp-zy3f).
-   *
-   * No-op unless the language provider supplies a macro-symbol extractor.
-   *
-   * Recurses into every nested scope container (driven by
-   * `scopeContainerTypes` from the kernel; defaults to `class` / `module`)
-   * so that nested-namespace cases (`class A; class B; attr_accessor :x;
-   * end; end` → `A::B#x`) compose the full scope qualifier. Mirrors the
-   * bdvm fix for regular `def`-emitted symbols.
-   *
-   * The chunk content is the literal source line of the macro call
-   * (sufficient context for search hits to surface the declaration).
-   * `chunkType` is `"function"` so it lines up with regular method
-   * symbols in downstream filters / overlay masks.
-   */
-  private emitMacroSymbols(
-    containerNode: AstNode,
-    parentSymbolId: string | undefined,
-    parentType: string,
-    code: string,
-    filePath: string,
-    language: string,
-    chunks: CodeChunk[],
-    macroSymbols: ((containerNode: AstNode) => MacroSymbol[]) | undefined,
-    scopeContainerTypes: string[] | undefined,
-    scopeSeparator: string | undefined,
-  ): void {
-    // No-op unless the language provider supplies a macro-symbol extractor.
-    // Reached via the provider capability, not a direct import — keeps the
-    // engine free of any `domains/language/<lang>` dependency.
-    if (!macroSymbols) return;
-    const lines = code.split("\n");
-    this.walkMacroScopes(
-      containerNode,
-      parentSymbolId,
-      parentType,
-      code,
-      filePath,
-      language,
-      chunks,
-      lines,
-      macroSymbols,
-      scopeContainerTypes,
-      scopeSeparator,
-    );
-  }
-
-  /**
-   * Walk a container tree depth-first, emitting macro symbols at each scope
-   * with the correctly-composed `parentSymbolId`. When the walk crosses into
-   * a nested scope container (a node type listed in `scopeContainerTypes`),
-   * the parent qualifier is extended with that container's name using
-   * `scopeSeparator` (the language's namespace join). The container's own
-   * `parentType` is its tree-sitter node type — same shape the regular
-   * def-emitted chunks carry.
-   */
-  private walkMacroScopes(
-    containerNode: AstNode,
-    currentParent: string | undefined,
-    parentType: string,
-    code: string,
-    filePath: string,
-    language: string,
-    chunks: CodeChunk[],
-    lines: string[],
-    macroSymbols: (containerNode: AstNode) => MacroSymbol[],
-    scopeContainerTypes: string[] | undefined,
-    scopeSeparator: string | undefined,
-  ): void {
-    // Emit macros declared directly in this container's body.
-    const macros = macroSymbols(containerNode);
-    for (const macro of macros) {
-      const content = (lines[macro.startLine - 1] ?? "").trim() || `# ${macro.name}`;
-      this.pushMacroSymbolChunk(macro, content, currentParent, parentType, filePath, language, chunks);
-    }
-
-    // Recurse into nested scope-container bodies. We descend the immediate
-    // body statements only — same one-step-deep convention as the macro
-    // extractor. Macros nested in `if` blocks or ActiveSupport::Concern
-    // `included do … end` are intentionally out of scope (matches the
-    // codegraph provider's top-level walk).
-    const body = containerNode.childForFieldName("body");
-    const stmts = body ? body.children : containerNode.children;
-    const containers = scopeContainerTypes ?? ["class", "module"];
-    for (const stmt of stmts) {
-      if (!containers.includes(stmt.type)) continue;
-      // A scope container without a name node is an unnamed scope
-      // (Ruby `class << self` singleton_class). It contributes no segment
-      // to the qualifier — macros declared inside compose at the enclosing
-      // class scope, mirroring how the regular def-path treats singleton
-      // methods (parent stays the class, `#` separator).
-      const localName = this.extractName(stmt, code);
-      const nestedParent = localName
-        ? this.symbolIds.compose(currentParent ?? "", localName, {
-            scopeSeparator: scopeSeparator ?? "::",
-          })
-        : currentParent;
-      this.walkMacroScopes(
-        stmt,
-        nestedParent,
-        // An unnamed scope keeps the enclosing container's parentType so
-        // emitted symbols inherit the class/module shape, not the raw
-        // singleton_class node type.
-        localName ? stmt.type : parentType,
-        code,
-        filePath,
-        language,
-        chunks,
-        lines,
-        macroSymbols,
-        scopeContainerTypes,
-        scopeSeparator,
-      );
-    }
-  }
-
-  private pushMacroSymbolChunk(
-    macro: MacroSymbol,
-    content: string,
-    parentSymbolId: string | undefined,
-    parentType: string,
-    filePath: string,
-    language: string,
-    chunks: CodeChunk[],
-  ): void {
-    const isStatic = macro.kind === "static";
-    chunks.push({
-      content,
-      startLine: macro.startLine,
-      endLine: macro.endLine,
-      metadata: {
-        filePath,
-        language,
-        chunkIndex: chunks.length,
-        chunkType: "function",
-        name: macro.name,
-        parentSymbolId,
-        parentType,
-        symbolId: this.buildSymbolId(macro.name, parentSymbolId, isStatic),
-        methodLines: macro.endLine - macro.startLine + 1,
-      },
-    });
   }
 
   /**
@@ -371,7 +219,6 @@ export class TreeSitterChunker implements CodeChunker {
         scopeSeparator: kernel.scopeSeparator,
         keepShortChildChunkTypes: hooks.keepShortChildChunkTypes,
         disambiguateOverloads: kernel.disambiguateOverloads,
-        macroSymbols: hooks.macroSymbols,
         classifier: hooks.classifier,
       };
     } catch (error) {
@@ -571,23 +418,6 @@ export class TreeSitterChunker implements CodeChunker {
         [containerHeader],
       );
 
-      // Synthetic method symbols from DSL macros (e.g. Ruby attr_accessor /
-      // delegate / cattr_* / mattr_* / define_method). No-op unless the
-      // provider supplies a macro extractor. Scope walk is driven by the
-      // kernel's scopeContainerTypes + scopeSeparator.
-      this.emitMacroSymbols(
-        node,
-        parentName,
-        parentType,
-        code,
-        filePath,
-        language,
-        chunks,
-        langConfig.macroSymbols,
-        langConfig.scopeContainerTypes,
-        langConfig.scopeSeparator,
-      );
-
       if (langConfig.alwaysExtractChildren) {
         const hasHookChain = langConfig.hooks && langConfig.hooks.length > 0;
         if (hasHookChain) {
@@ -643,25 +473,6 @@ export class TreeSitterChunker implements CodeChunker {
       return true;
     }
 
-    // alwaysExtractChildren but no valid children — fall through to single
-    // chunk. But still emit DSL macro symbols at this scope, so a small
-    // class like `class A; attr_reader :foo; end` produces `A#foo` even when
-    // its body has no `def` large enough to trigger child extraction
-    // (bd tea-rags-mcp-3nf3 + tea-rags-mcp-zy3f). The caller will emit the
-    // single-class chunk via chunkSingleNode after this returns false; we
-    // emit the per-accessor function chunks here so they ship alongside it.
-    this.emitMacroSymbols(
-      node,
-      parentName,
-      parentType,
-      code,
-      filePath,
-      language,
-      chunks,
-      langConfig.macroSymbols,
-      langConfig.scopeContainerTypes,
-      langConfig.scopeSeparator,
-    );
     return false;
   }
 
@@ -1154,11 +965,6 @@ export class TreeSitterChunker implements CodeChunker {
           });
         }
 
-        // Note: DSL macros for nested scope containers are emitted by the
-        // outer `chunkWithChildExtraction` call via `walkMacroScopes`, which
-        // descends into every nested scope container from the top-level
-        // container. We do NOT call `emitMacroSymbols` here — that would
-        // duplicate the synthetic method chunks.
         continue;
       }
 
