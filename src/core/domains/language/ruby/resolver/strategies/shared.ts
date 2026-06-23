@@ -173,6 +173,20 @@ export function resolveInstanceMethodInClassChain(
   if (visited.has(klass)) return null;
   visited.add(klass);
 
+  // `prepend M` inserts M BEFORE the class itself in Ruby's MRO, so a prepended
+  // module's method shadows the class's own (and is found before ancestors).
+  // Method-level pin required — a file-only edge from a prepend is no better
+  // than the class's own file edge. Reverse order: later `prepend` wins in MRO.
+  // Mirrors `resolveTypeMethod`; shared so self/super honour prepend like the
+  // local-type/ivar passes already do (bd tea-rags-mcp-3jvn family).
+  const prepended = ctx.classPrependedAncestors?.[klass];
+  if (prepended) {
+    for (let i = prepended.length - 1; i >= 0; i--) {
+      const inherited = resolveInstanceMethodInClassChain(prepended[i], member, ctx, mode, visited);
+      if (inherited && inherited.targetSymbolId !== null) return inherited;
+    }
+  }
+
   const klassFile = resolveConstant(klass, ctx);
   let fileOnlyFallback: SymbolResolutionTarget | null =
     klassFile !== null ? { targetRelPath: klassFile, targetSymbolId: null } : null;

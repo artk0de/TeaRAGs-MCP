@@ -2412,3 +2412,27 @@ describe("RubyCallResolver — return-type binding resolution (end-to-end, cai0 
     });
   });
 });
+
+describe("RubyCallResolver — prepend shadows the class in MRO resolution (self/super)", () => {
+  it("resolves self.bar to a prepended module's method over the class's own def", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/foo.rb", [
+      { symbolId: "Foo", fqName: "Foo", shortName: "Foo", relPath: "app/foo.rb", scope: [] },
+      { symbolId: "Foo#bar", fqName: "Foo#bar", shortName: "bar", relPath: "app/foo.rb", scope: ["Foo"] },
+    ]);
+    table.upsertFile("app/m.rb", [
+      { symbolId: "M", fqName: "M", shortName: "M", relPath: "app/m.rb", scope: [] },
+      { symbolId: "M#bar", fqName: "M#bar", shortName: "bar", relPath: "app/m.rb", scope: ["M"] },
+    ]);
+    const call = { callText: "self.bar", receiver: "self", member: "bar", startLine: 2 };
+    const ctx: CallContext = {
+      callerFile: "app/foo.rb",
+      callerScope: ["Foo"],
+      imports: [],
+      symbolTable: table,
+      classPrependedAncestors: { Foo: ["M"] },
+    };
+    expect(resolver.resolve(call, ctx)).toEqual({ targetRelPath: "app/m.rb", targetSymbolId: "M#bar" });
+  });
+});
