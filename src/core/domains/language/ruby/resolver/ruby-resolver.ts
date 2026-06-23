@@ -23,11 +23,12 @@
  *   2. selfMember (explicit self.X via enclosing class + classAncestors — terminal guard)
  *   3. localType (receiver.X via walker-bound local type — terminal guard)
  *   4. ivarField (@ivar.X via walker-inferred classFieldTypes — terminal guard)
- *   5. constant (Zeitwerk-style Constant.X via resolveConstant)
- *   6. explicitRequire (receiver names a require / require_relative import)
- *   7. arRelationGuard (AR::Relation chain receiver — terminal guard)
- *   8. receiverSetDrop (any remaining receiver-set call — terminal guard)
- *   9. bareCall (bare-call global short-name fallback — last pass)
+ *   5. returnTypeBinding (x.X via localCallBindings + functionReturnTypes — additive)
+ *   6. constant (Zeitwerk-style Constant.X via resolveConstant)
+ *   7. explicitRequire (receiver names a require / require_relative import)
+ *   8. arRelationGuard (AR::Relation chain receiver — terminal guard)
+ *   9. receiverSetDrop (any remaining receiver-set call — terminal guard)
+ *  10. bareCall (bare-call global short-name fallback — last pass)
  */
 
 import {
@@ -58,6 +59,7 @@ import {
   RubyIvarFieldSymbolResolutionStrategy,
   RubyLocalTypeSymbolResolutionStrategy,
   RubyReceiverSetDropSymbolResolutionStrategy,
+  RubyReturnTypeBindingSymbolResolutionStrategy,
   RubySelfMemberSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
   RubyTableDispatchResolver,
@@ -97,6 +99,7 @@ export class RubyCallResolver implements CallResolver {
       new RubySelfMemberSymbolResolutionStrategy(cfg),
       new RubyLocalTypeSymbolResolutionStrategy(cfg),
       new RubyIvarFieldSymbolResolutionStrategy(cfg),
+      new RubyReturnTypeBindingSymbolResolutionStrategy(cfg),
       new RubyConstantSymbolResolutionStrategy(cfg),
       new RubyExplicitRequireSymbolResolutionStrategy(cfg),
       new RubyArRelationGuardSymbolResolutionStrategy(cfg),

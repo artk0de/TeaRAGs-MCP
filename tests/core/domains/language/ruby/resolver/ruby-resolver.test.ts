@@ -2376,3 +2376,39 @@ describe("RubyCallResolver — @ivar type-inference resolution (end-to-end, cai0
     });
   });
 });
+
+describe("RubyCallResolver — return-type binding resolution (end-to-end, cai0 a71lj)", () => {
+  it("resolves x.body via x = client.fetch when fetch has a known return type", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/clients/http_response.rb", [
+      {
+        symbolId: "HttpResponse",
+        fqName: "HttpResponse",
+        shortName: "HttpResponse",
+        relPath: "app/clients/http_response.rb",
+        scope: [],
+      },
+      {
+        symbolId: "HttpResponse#body",
+        fqName: "HttpResponse#body",
+        shortName: "body",
+        relPath: "app/clients/http_response.rb",
+        scope: ["HttpResponse"],
+      },
+    ]);
+    const call = { callText: "x.body", receiver: "x", member: "body", startLine: 6 };
+    const ctx: CallContext = {
+      callerFile: "app/services/fetcher.rb",
+      callerScope: ["Fetcher"],
+      imports: [],
+      symbolTable: table,
+      localCallBindings: { x: "fetch" },
+      functionReturnTypes: { fetch: "HttpResponse" },
+    };
+    expect(resolver.resolve(call, ctx)).toEqual({
+      targetRelPath: "app/clients/http_response.rb",
+      targetSymbolId: "HttpResponse#body",
+    });
+  });
+});
