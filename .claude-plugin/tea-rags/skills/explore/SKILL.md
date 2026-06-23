@@ -54,10 +54,14 @@ calls X?" is always USAGE (row 2) even when X is named `findCycles` /
 CYCLE (row 1) request. Row 1 fires only on graph-shape phrasing about the loop
 itself ("circular dependency", "dependency loop", "cycles in <scope>").
 
-**Codegraph availability:** these sub-patterns need a codegraph index. If
-`get_callers` / `get_callees` / `find_cycles` return empty for every input (no
-codegraph), fall back to the content-matching table below — TRACE covers usage,
-EXPLAIN covers architecture. Each sub-pattern states its own fallback.
+**Codegraph availability:** these sub-patterns need a codegraph index. The prime
+digest lists `codegraph.symbols` under `## Enrichment` when it is active; when
+that line is absent the graph tools (`get_callers` / `get_callees` /
+`find_cycles`) are **not registered** — they are absent from the tool list, not
+returning empty. Check prime first. With codegraph off, fall back to the
+content-matching table below — TRACE covers usage, EXPLAIN covers architecture —
+and never read an absent tool as a positive fact. Each sub-pattern states its
+own fallback.
 
 ## Pattern-search keyword groups (used by EXEMPLAR routing)
 

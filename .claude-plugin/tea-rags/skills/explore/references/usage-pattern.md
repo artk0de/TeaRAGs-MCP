@@ -38,5 +38,6 @@ Quote the call site, don't dump the whole calling function.
 
 This pattern WINS over the TRACE pattern for usage queries when codegraph is
 available — TRACE's `hybrid_search` / `imports[]` route is the fallback when the
-project has no codegraph index (get_callers/get_callees return empty for every
-id).
+project has no codegraph index (prime shows no `codegraph.symbols`, so
+`get_callers` / `get_callees` are not registered, not returning empty). Check
+prime first; don't call an absent tool to discover it is missing.

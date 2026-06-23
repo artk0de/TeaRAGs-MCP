@@ -1,0 +1,89 @@
+{
+  "skill_name": "risk-assessment (codegraph integration — b65a TR3)",
+  "feature": "Add structural risk axis: architecturalHub as a Phase-4 blast-radius amplifier + find_cycles structural section, codegraph-gated; expand rules/references/signal-interpretation.md with codegraph pair-diagnostics (fanIn/isHub/instability/transitiveImpact/cycle membership).",
+  "detection_signal": "prime '## Enrichment' lists codegraph.symbols when ON; ENV-A omits it AND find_cycles is not registered. architecturalHub is a rerank preset (always callable) but degrades to similarity when codegraph OFF.",
+  "evals": [
+    {
+      "id": 1, "name": "integration-hub-amplifier-and-cycles", "codegraph": "ON",
+      "prompt": "[ENV-B: prime lists codegraph.symbols + codegraph.file.fanIn thresholds] Assess risk in domains/ingest.",
+      "expected": "Runs the existing 4-preset churn scan (bugHunt/hotspots/techDebt/dangerous) AND adds the structural axis: architecturalHub as a Phase-4 amplifier escalating any Critical/High churn candidate that is also a high-fanIn hub (blast-radius), plus a find_cycles structural-risk section.",
+      "failure_mode": "Churn scan only; no architecturalHub amplifier, no find_cycles — structural risk invisible.",
+      "assertions": [
+        {"text": "runs the 4 git-signal presets (existing flow preserved)", "passed": null},
+        {"text": "uses architecturalHub to escalate a churny high-fanIn file as blast-radius risk (amplifier, NOT a 5th overlap preset)", "passed": null},
+        {"text": "runs find_cycles and reports cycles as a structural risk dimension", "passed": null}
+      ]
+    },
+    {
+      "id": 2, "name": "integration-explicit-cycles", "codegraph": "ON",
+      "prompt": "[ENV-B] Evaluate the code health of the whole project, including any circular dependencies.",
+      "expected": "Stratified 4-preset broad scan + find_cycles scope=file (with noise guard >20 -> narrow) surfaced as its own structural section.",
+      "failure_mode": "Ignores find_cycles; circular-dependency risk omitted.",
+      "assertions": [
+        {"text": "includes find_cycles for circular-dependency risk", "passed": null},
+        {"text": "still runs the stratified churn scan for broad scope (no regression)", "passed": null}
+      ]
+    },
+    {
+      "id": 3, "name": "classification-codegraph-pair-diagnostics", "codegraph": "ON",
+      "prompt": "[ENV-B] Is adapters/qdrant-client.ts a god module / coupling point or a bug attractor?",
+      "expected": "Disambiguate using codegraph fanIn/isHub (high fanIn + isHub -> coupling/god module; low fanIn + high bugFixRate -> bug attractor), per the expanded signal-interpretation. codegraph fanIn supersedes the imports proxy when available.",
+      "failure_mode": "Uses only the imports proxy / churn; ignores codegraph fanIn/isHub pair-diagnostic.",
+      "assertions": [
+        {"text": "uses codegraph fanIn / isHub (not just the imports proxy) to disambiguate god-module vs bug-attractor", "passed": null},
+        {"text": "states codegraph fanIn supersedes the imports proxy where present", "passed": null}
+      ]
+    },
+    {
+      "id": 4, "name": "off-guard-hub-amplifier", "codegraph": "OFF",
+      "prompt": "[ENV-A: prime has no codegraph.symbols; find_cycles not in tool list] Assess risk in domains/ingest.",
+      "expected": "4-preset churn scan runs normally. architecturalHub amplifier is skipped or explicitly noted as degraded (no fanIn signals -> similarity); find_cycles section skipped with an honest note. No fabricated 'structural hub' from a degraded preset.",
+      "failure_mode": "Presents architecturalHub similarity output as a real blast-radius hub, or claims a structural section it cannot compute.",
+      "assertions": [
+        {"text": "the 4 git-signal presets still run (churn risk map unaffected)", "passed": null},
+        {"text": "does NOT present a degraded architecturalHub result as a real fanIn hub", "passed": null},
+        {"text": "skips find_cycles and notes structural/cycle analysis needs codegraph (does NOT claim 'no cycles')", "passed": null}
+      ]
+    },
+    {
+      "id": 5, "name": "off-guard-cycles-no-false-clean", "codegraph": "OFF",
+      "prompt": "[ENV-A] Is there any circular-dependency risk in domains/trajectory?",
+      "expected": "Detect codegraph OFF; find_cycles not registered. Say cycle detection needs codegraph; do NOT claim 'no circular dependencies'.",
+      "failure_mode": "Reports 'no circular-dependency risk' as if verified.",
+      "assertions": [
+        {"text": "detects codegraph OFF and states cycle detection is unavailable", "passed": null},
+        {"text": "does NOT claim 'no cycles / clean' when it cannot compute them", "passed": null}
+      ]
+    },
+    {
+      "id": 6, "name": "control-no-regression-broad", "codegraph": "ON",
+      "prompt": "[ENV-B] Assess risk across the whole project.",
+      "expected": "Existing flow preserved: stratified second scan with !**/dominant-domain/**, negativeIds dedup MERGE, pair-diagnostics report. Structural axis is ADDITIVE, not a replacement.",
+      "failure_mode": "Structural axis displaces the stratified churn MERGE.",
+      "assertions": [
+        {"text": "runs the stratified second scan (dominant-domain exclusion) — core flow intact", "passed": null},
+        {"text": "structural axis is additive on top of the churn MERGE, not a replacement", "passed": null}
+      ]
+    },
+    {
+      "id": 7, "name": "edge-no-hubs-no-cycles", "codegraph": "ON",
+      "prompt": "[ENV-B] Assess risk in src/core/utils (a flat leaf module with no hubs and no cycles).",
+      "expected": "Churn scan runs; architecturalHub finds no isHub files -> say so; find_cycles empty -> 'no cycles (DAG)' is valid because codegraph is ON. No fabricated structural risk.",
+      "failure_mode": "Invents a structural hub or cycle where none exist.",
+      "assertions": [
+        {"text": "honestly reports no architectural hubs in a flat module", "passed": null},
+        {"text": "treats empty find_cycles as a real DAG (codegraph ON) — no fabricated cycle", "passed": null}
+      ]
+    },
+    {
+      "id": 8, "name": "subagent-delegated-pathpattern", "codegraph": "ON",
+      "prompt": "[ENV-B] [subagent: explore delegated a pathPattern] Run risk-assessment on pathPattern **/domains/language/**.",
+      "expected": "Uses the delegated pathPattern as-is (scopeType=domain, skip resolution), runs the 4-preset scan + architecturalHub amplifier + find_cycles scoped to that pathPattern.",
+      "failure_mode": "Re-resolves scope, or drops the structural axis in a delegated/subagent context.",
+      "assertions": [
+        {"text": "uses the delegated pathPattern directly and scopes find_cycles/architecturalHub to it", "passed": null},
+        {"text": "includes the structural axis even in the delegated subagent flow", "passed": null}
+      ]
+    }
+  ]
+}

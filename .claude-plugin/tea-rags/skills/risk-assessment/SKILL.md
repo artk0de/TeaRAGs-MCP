@@ -64,8 +64,8 @@ scopes.
 1. SCAN               → rank_chunks × 4 presets (parallel)
 2. MERGE              → cross-reference by relativePath, assign tiers
 3. EXPAND             → find_similar from Critical only
-4. ENRICH             → partial Read + test coverage check + classify
-5. OUTPUT             → top-10 risk map
+4. ENRICH             → partial Read + test coverage + structural axis (codegraph) + classify
+5. OUTPUT             → top-10 risk map + structural risks
 ```
 
 ## Phase 0: SCOPE RESOLUTION
@@ -111,6 +111,12 @@ Run `rank_chunks` × 4 presets. **All 4 calls in ONE message** (parallel).
 | `hotspots`  | Chunk-level churn + burst + instability          |
 | `techDebt`  | Old + churny + bug-prone + dense code            |
 | `dangerous` | Bug-prone + volatile + single-owner (bus factor) |
+
+**Codegraph transparency:** when codegraph is active (prime `## Enrichment`
+lists `codegraph.symbols`), `techDebt` and `dangerous` already absorb structural
+signals via reranker override — no parameter change, the risk map sharpens
+automatically. The explicit structural axis (blast-radius hubs + cycles) is added
+in Phase 4, not here.
 
 Parameters per call:
 
@@ -254,6 +260,26 @@ label = high+ from labelMap) → add "Oversized" classification. This is NOT a 4
 preset in MERGE — decomposition measures size, not risk. It's a post-filter on
 already-identified risk zones.
 
+**3b. Structural amplifier + cycles (codegraph axis).** ONLY when prime shows
+`codegraph.symbols` under `## Enrichment`. When that line is absent the graph
+tools are not registered — skip this step and note structural risk was not
+assessed (never claim "no cycles" / "no hubs"). See search-cascade "Graph
+navigation" for the off-routing.
+
+- **Blast-radius amplifier (`architecturalHub`).** Run `rank_chunks`
+  `rerank="architecturalHub"` scoped to the same `pathPattern`. Cross-reference
+  the resulting `isHub=true` / high-`fanIn` files with the Critical/High
+  candidates by `relativePath`. A risk candidate that is ALSO a hub is a
+  **blast-radius hub** — escalate it (tag the Risk Type, sort it to the top of
+  its tier): a change there ripples across many dependents. This is an
+  amplifier on already-identified risk, NOT a 5th MERGE preset — a clean
+  high-fanIn hub with healthy git signals is backbone, not risk.
+- **Cycles (`find_cycles`).** Run `find_cycles scope=file pathPattern=<scope>`.
+  Circular dependencies are a structural risk the churn presets cannot see.
+  Noise guard: >20 cycles unscoped → narrow by subdomain. Empty result, with
+  codegraph ON, is a valid "no cycles (DAG)". Surface findings in the OUTPUT
+  Structural risks section.
+
 **4. Risk classification** — from overlay labels + tier + test coverage.
 
 **BEFORE picking a class, consult pair diagnostics.** Single overlay signals are
@@ -265,7 +291,10 @@ it whenever the overlay shows more than one strong signal.
 **Key disambiguators** (always check before classifying):
 
 - `imports` (fan-in, file-level) separates coupling (high) from bug attractor
-  (low)
+  (low). **When codegraph is on, prefer the real `fanIn` / `isHub` /
+  `transitiveImpact` signals over the `imports` proxy** — they measure call/
+  import edges, not raw import-line count. See signal-interpretation
+  "Structural signals" + the blast-radius-hub / cyclic-coupling patterns.
 - `bugFixRate` separates healthy (stable) from fragile (unstable)
 - `ageDays` inverts churn meaning (old+churn = minefield, young+churn = feature)
 - `blameDominantAuthorPct` alone does NOT mean silo; pair with bugFixRate or age
@@ -320,6 +349,15 @@ Scanned: [N chunks across M presets], [K unique files]
 ## Medium (N-2/N) — [count] candidates
 
 Count only. "Show medium risks" to expand.
+
+## Structural risks (codegraph axis)
+
+Only when codegraph is active. Omit the whole section (or state "structural risk
+not assessed — codegraph off") when prime has no `codegraph.symbols`.
+
+- **Blast-radius hubs** — Critical/High candidates that are also `isHub` /
+  high-`fanIn`: `symbol() file.ts:line — fanIn:N, blast-radius`.
+- **Cycles** — from `find_cycles`: `a.ts → b.ts → a.ts` (or "no cycles — DAG").
 
 ## Summary
 
