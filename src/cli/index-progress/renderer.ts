@@ -39,6 +39,22 @@ export function formatEta(seconds: number | null): string {
   return `~${(seconds / 60).toFixed(1)}m`;
 }
 
+/**
+ * Pure helper: compute elapsed and eta strings from bar state + current clock.
+ * Exported for direct testing.
+ */
+export function barTimeFields(
+  startMs: number,
+  value: number,
+  total: number,
+  nowMs: number,
+): { elapsed: string; eta: string } {
+  const elapsedMs = nowMs - startMs;
+  const elapsed = fmtDuration(elapsedMs);
+  const eta = formatEta(computeEtaSeconds(value, total, elapsedMs));
+  return { elapsed, eta };
+}
+
 export interface BuildBarLineParams {
   label: string;
   /** Fraction 0..1. */
@@ -51,6 +67,8 @@ export interface BuildBarLineParams {
   rate: string;
   barsize: number;
   colors: Colorizer;
+  /** When set: renders Done ✓ in <elapsed> on the bar. Text segments are bold. */
+  done?: { elapsed: string };
 }
 
 /**
@@ -58,14 +76,28 @@ export interface BuildBarLineParams {
  * Bar glyphs use `colors.brand` (filled) and `colors.dim` (incomplete).
  * When colors are disabled both are identity, producing plain glyphs.
  * Value is clamped to total so displayed fraction never exceeds 100%.
+ * When `done` is set: text segments are bold, right segment is "Done ✓ in Ns".
  */
 export function buildBarLine(params: BuildBarLineParams): string {
-  const { label, progress, value, total, elapsed, eta, rate, barsize, colors } = params;
+  const { label, progress, value, total, elapsed, eta, rate, barsize, colors, done } = params;
   const filled = Math.round((progress ?? 0) * barsize);
   const empty = Math.max(0, barsize - filled);
   const bar = colors.brand("█".repeat(filled)) + colors.dim("░".repeat(empty));
   const clampedValue = Math.min(value, total);
   const pct = `${Math.round((progress ?? 0) * 100)}%`;
+
+  if (done) {
+    const b = colors.bold;
+    const parts = [
+      ` ${b(label.trim())}`,
+      bar,
+      b(`${clampedValue}/${total}`),
+      b(`(${pct})`),
+      b(`Done ✓ in ${done.elapsed}`),
+    ].filter((p) => p.trim() !== "");
+    return parts.join(" ");
+  }
+
   const parts = [` ${label}`, bar, `${clampedValue}/${total}`, `(${pct})`, elapsed, eta, rate].filter(
     (p) => p.trim() !== "",
   );
@@ -117,15 +149,22 @@ export class LineProgressRenderer implements ProgressRenderer {
   }
 }
 
+interface BarState {
+  bar: cliProgress.SingleBar;
+  startMs: number;
+  value: number;
+  total: number;
+  label: string;
+  rate: string;
+  done: boolean;
+  doneElapsed?: string;
+}
+
 /** TTY renderer: a cli-progress multibar with an embedding bar + per-provider bars. */
 export class TtyProgressRenderer implements ProgressRenderer {
   private readonly multibar: cliProgress.MultiBar;
-  private embeddingBar: cliProgress.SingleBar | null = null;
-  private embeddingTotal = 0;
-  private readonly enrichmentBars = new Map<string, cliProgress.SingleBar>();
-  private readonly enrichmentTotals = new Map<string, number>();
-  /** Per-bar start timestamp keyed by bar key ("embedding" or "providerKey:level"). */
-  private readonly barStartMs = new Map<string, number>();
+  private readonly barStates = new Map<string, BarState>();
+  private tickInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly colors: Colorizer,
@@ -135,16 +174,21 @@ export class TtyProgressRenderer implements ProgressRenderer {
       {
         clearOnComplete: false,
         hideCursor: true,
-        format: (options: cliProgress.Options, params: cliProgress.Params, payload: Record<string, string>): string => {
+        format: (
+          options: cliProgress.Options,
+          params: cliProgress.Params,
+          payload: Record<string, unknown>,
+        ): string => {
           const size = options.barsize ?? 40;
           return buildBarLine({
-            label: payload["label"] ?? "",
+            label: (payload["label"] as string | undefined) ?? "",
             progress: params.progress ?? 0,
             value: params.value,
             total: params.total,
-            elapsed: payload["elapsed"] ?? "",
-            eta: payload["eta"] ?? "",
-            rate: payload["rate"] ?? "",
+            elapsed: (payload["elapsed"] as string | undefined) ?? "",
+            eta: (payload["eta"] as string | undefined) ?? "",
+            rate: (payload["rate"] as string | undefined) ?? "",
+            done: payload["done"] as { elapsed: string } | undefined,
             barsize: size,
             colors: this.colors,
           });
@@ -155,61 +199,93 @@ export class TtyProgressRenderer implements ProgressRenderer {
     );
   }
 
+  private startTickIfNeeded(): void {
+    if (!this.tickInterval) {
+      const interval = setInterval(() => {
+        this.refreshActiveBars();
+      }, 250);
+      interval.unref();
+      this.tickInterval = interval;
+    }
+  }
+
+  refreshActiveBars(): void {
+    for (const state of this.barStates.values()) {
+      if (state.done) continue;
+      const { elapsed, eta } = barTimeFields(state.startMs, state.value, state.total, this.now());
+      state.bar.update(state.value, { label: state.label, rate: state.rate, elapsed, eta });
+    }
+  }
+
   handle(message: WorkerMessage): void {
     if (message.type === "embedding") {
       const label = this.colors.brand("embeddings".padEnd(LABEL_WIDTH));
       const rate =
         message.throughput !== null && message.throughput !== undefined ? `${message.throughput.toFixed(1)} ch/s` : "";
-      if (!this.embeddingBar) {
-        this.barStartMs.set("embedding", this.now());
-        this.embeddingTotal = message.total;
-        this.embeddingBar = this.multibar.create(message.total, 0, { label, rate, eta: "", elapsed: "" });
+      let state = this.barStates.get("embedding");
+      if (!state) {
+        const bar = this.multibar.create(message.total, 0, { label, rate, eta: "", elapsed: "" });
+        state = { bar, startMs: this.now(), value: 0, total: message.total, label, rate, done: false };
+        this.barStates.set("embedding", state);
+        this.startTickIfNeeded();
       }
-      this.embeddingTotal = message.total;
-      const startMs = this.barStartMs.get("embedding") ?? this.now();
-      const elapsed = fmtDuration(this.now() - startMs);
-      const eta = formatEta(computeEtaSeconds(message.current, message.total, this.now() - startMs));
-      const clamped = Math.min(message.current, message.total);
-      this.embeddingBar.update(clamped, { label, rate, eta, elapsed });
-      this.embeddingBar.setTotal(message.total);
+      state.total = message.total;
+      state.label = label;
+      state.rate = rate;
+      state.value = Math.min(message.current, message.total);
+      const { elapsed, eta } = barTimeFields(state.startMs, state.value, state.total, this.now());
+      state.bar.update(state.value, { label, rate, eta, elapsed });
+      state.bar.setTotal(message.total);
       return;
     }
     if (message.type === "enrichment") {
       const key = `${message.providerKey}:${message.level}`;
       const rawLabel = `${message.providerKey} ${message.level}`;
       const label = this.colors.brand(rawLabel.padEnd(LABEL_WIDTH));
-      let bar = this.enrichmentBars.get(key);
-      if (!bar) {
-        this.barStartMs.set(key, this.now());
-        this.enrichmentTotals.set(key, message.total);
-        bar = this.multibar.create(message.total, 0, { label, rate: "", eta: "", elapsed: "" });
-        this.enrichmentBars.set(key, bar);
+      let state = this.barStates.get(key);
+      if (!state) {
+        const bar = this.multibar.create(message.total, 0, { label, rate: "", eta: "", elapsed: "" });
+        state = { bar, startMs: this.now(), value: 0, total: message.total, label, rate: "", done: false };
+        this.barStates.set(key, state);
+        this.startTickIfNeeded();
       }
-      this.enrichmentTotals.set(key, message.total);
-      const startMs = this.barStartMs.get(key) ?? this.now();
-      const elapsed = fmtDuration(this.now() - startMs);
-      const eta = formatEta(computeEtaSeconds(message.applied, message.total, this.now() - startMs));
-      const clamped = Math.min(message.applied, message.total);
-      bar.setTotal(message.total);
-      bar.update(clamped, { label, rate: "", eta, elapsed });
+      state.total = message.total;
+      state.label = label;
+      state.value = Math.min(message.applied, message.total);
+      const { elapsed, eta } = barTimeFields(state.startMs, state.value, state.total, this.now());
+      state.bar.setTotal(message.total);
+      state.bar.update(state.value, { label, rate: "", eta, elapsed });
       return;
     }
     if (message.type === "phase-done") {
-      // Complete that phase's bars to 100% — the phase IS done; small gap is quarantined chunks.
-      if (message.phase === "embedding" && this.embeddingBar) {
-        this.embeddingBar.update(this.embeddingTotal);
-      } else if (message.phase === "enrichment") {
-        for (const [key, bar] of this.enrichmentBars) {
-          bar.update(this.enrichmentTotals.get(key) ?? 0);
-        }
+      let keysToMark: string[];
+      if (message.phase === "embedding") {
+        keysToMark = ["embedding"];
+      } else {
+        // all non-embedding bars (enrichment)
+        keysToMark = [...this.barStates.keys()].filter((k) => k !== "embedding");
       }
-      // Print above the live bars — no stdout collision.
-      const line = this.colors.dim(`${message.phase} done in ${fmtDuration(message.elapsedMs)}`);
-      (this.multibar as unknown as { log: (s: string) => void }).log(`${line}\n`);
+      for (const key of keysToMark) {
+        const state = this.barStates.get(key);
+        if (!state) continue;
+        state.done = true;
+        state.doneElapsed = fmtDuration(this.now() - state.startMs);
+        state.bar.update(state.value, {
+          label: state.label,
+          rate: state.rate,
+          elapsed: "",
+          eta: "",
+          done: { elapsed: state.doneElapsed },
+        });
+      }
     }
   }
 
   stop(): void {
+    if (this.tickInterval) {
+      clearInterval(this.tickInterval);
+      this.tickInterval = null;
+    }
     this.multibar.stop();
   }
 }
