@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CallContext, CallRef } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { RubyCallResolver } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
+import { SUPER_RECEIVER_SENTINEL } from "../../../../../../src/core/domains/language/ruby/walker/walker.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 /**
@@ -92,6 +93,65 @@ describe("RubyCallResolver.targetsExternalImport", () => {
   it("does NOT flag a receiver-qualified call sharing a DSL macro name (x.has_many)", () => {
     const call: CallRef = { callText: "x.has_many", receiver: "x", member: "has_many", startLine: 3 };
     const ctx = makeCtx("app/models/user.rb", [], new InMemoryGlobalSymbolTable());
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
+  });
+
+  // cai0 super-quick-win — a `super` whose enclosing class's ancestor chain
+  // resolves to ZERO in-project files (e.g. `class Agent < ActiveRecord::Base`)
+  // targets a gem method (`ActiveRecord::Base#destroy`). It is EXTERNAL, not an
+  // internal resolver miss: the super pass correctly DROPs it (no in-project
+  // file), and it must be excluded from the denominator like any gem call.
+  it("flags a super call whose ancestor chain is entirely external (Agent < ActiveRecord::Base)", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/agent.rb", [
+      { symbolId: "Agent", fqName: "Agent", shortName: "Agent", relPath: "app/models/agent.rb", scope: [] },
+    ]);
+    const call: CallRef = { callText: "super", receiver: SUPER_RECEIVER_SENTINEL, member: "destroy", startLine: 155 };
+    const ctx: CallContext = {
+      callerFile: "app/models/agent.rb",
+      callerScope: ["Agent"],
+      imports: [],
+      symbolTable: table,
+      classAncestors: { Agent: ["ActiveRecord::Base"] },
+    };
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(true);
+  });
+
+  // cai0 — a `super` with an IN-PROJECT ancestor (nested `Agents::WebsiteAgent <
+  // Agent`) is NOT external: the super pass resolves it (file-only edge to
+  // agent.rb), so it never reaches this hook unresolved; the classifier must not
+  // claim it.
+  it("does NOT flag a super call with an in-project ancestor (Agents::WebsiteAgent < Agent)", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/agent.rb", [
+      { symbolId: "Agent", fqName: "Agent", shortName: "Agent", relPath: "app/models/agent.rb", scope: [] },
+    ]);
+    const call: CallRef = {
+      callText: "super",
+      receiver: SUPER_RECEIVER_SENTINEL,
+      member: "default_encoding",
+      startLine: 436,
+    };
+    const ctx: CallContext = {
+      callerFile: "app/models/agents/website_agent.rb",
+      callerScope: ["Agents", "WebsiteAgent"],
+      imports: [],
+      symbolTable: table,
+      classAncestors: { "Agents::WebsiteAgent": ["Agent"], Agent: ["ActiveRecord::Base"] },
+    };
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
+  });
+
+  // cai0 — a `super` with no declared ancestors (no classAncestors entry) is NOT
+  // provably external — stay conservative (attempted-unresolved), never over-shrink.
+  it("does NOT flag a super call with no declared ancestor chain", () => {
+    const call: CallRef = { callText: "super", receiver: SUPER_RECEIVER_SENTINEL, member: "foo", startLine: 3 };
+    const ctx: CallContext = {
+      callerFile: "app/models/plain.rb",
+      callerScope: ["Plain"],
+      imports: [],
+      symbolTable: new InMemoryGlobalSymbolTable(),
+    };
     expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
   });
 });

@@ -12,6 +12,7 @@ export { RubyDynamicDispatchResolver } from "./ruby-dynamic-dispatch.js";
 export { RubyTableDispatchResolver } from "./ruby-table-dispatch.js";
 export {
   resolveConstant,
+  collectAncestorChain,
   collectKnownPaths,
   lastConstantSegment,
   isRubyPath,
