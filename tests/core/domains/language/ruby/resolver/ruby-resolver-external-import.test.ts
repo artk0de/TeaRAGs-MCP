@@ -154,4 +154,51 @@ describe("RubyCallResolver.targetsExternalImport", () => {
     };
     expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
   });
+
+  // cai0 imass — an @ivar whose inferred type (classFieldTypes) is a gem (no
+  // project file) is honestly external: the ivar strategy DROPs it, and it must
+  // leave the denominator like any gem call, NOT remain an internal-miss.
+  it("flags an @ivar call whose recorded type is a gem (Net::HTTP)", () => {
+    const call: CallRef = { callText: "@http.get(uri)", receiver: "@http", member: "get", startLine: 3 };
+    const ctx: CallContext = {
+      callerFile: "app/services/fetcher.rb",
+      callerScope: ["Fetcher"],
+      imports: [],
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      classFieldTypes: { Fetcher: { "@http": "Net::HTTP" } },
+    };
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(true);
+  });
+
+  // cai0 imass — an @ivar typed to an IN-PROJECT class is NOT external (the ivar
+  // strategy resolves it); the classifier must not claim it.
+  it("does NOT flag an @ivar call whose recorded type resolves to a project file", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/user.rb", [
+      { symbolId: "User", fqName: "User", shortName: "User", relPath: "app/models/user.rb", scope: [] },
+    ]);
+    const call: CallRef = { callText: "@user.save", receiver: "@user", member: "save", startLine: 3 };
+    const ctx: CallContext = {
+      callerFile: "app/services/fetcher.rb",
+      callerScope: ["Fetcher"],
+      imports: [],
+      symbolTable: table,
+      classFieldTypes: { Fetcher: { "@user": "User" } },
+    };
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
+  });
+
+  // cai0 imass — an @ivar with NO recorded type is genuinely attempted-unresolved
+  // (we don't know it's a gem) — stay conservative, never over-shrink.
+  it("does NOT flag an @ivar call with no recorded type", () => {
+    const call: CallRef = { callText: "@x.save", receiver: "@x", member: "save", startLine: 3 };
+    const ctx: CallContext = {
+      callerFile: "app/services/fetcher.rb",
+      callerScope: ["Fetcher"],
+      imports: [],
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      classFieldTypes: { Fetcher: {} },
+    };
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
+  });
 });

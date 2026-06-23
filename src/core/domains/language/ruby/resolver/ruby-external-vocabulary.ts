@@ -22,8 +22,27 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
 
   isQualifiedReceiverExternal(receiver: string, ctx: CallContext): boolean {
     if (receiver === SUPER_RECEIVER_SENTINEL) return superTargetsExternal(ctx);
+    if (IVAR_RECEIVER.test(receiver)) return ivarTargetsExternal(receiver, ctx);
     return /^[A-Z]/.test(receiver) && resolveConstant(receiver, ctx) === null;
   }
+}
+
+/** A single instance-variable receiver (`@client`); a chained `@a.b` is out of scope. */
+const IVAR_RECEIVER = /^@\w+$/;
+
+/**
+ * An `@ivar` receiver whose walker-inferred type (`classFieldTypes`) resolves to
+ * NO project file is a gem / stdlib instance (`@http = Net::HTTP.new`): the ivar
+ * strategy DROPs it, so it reaches this classifier unresolved and is honestly
+ * external — excluded from the resolveSuccessRate denominator, not an internal
+ * miss (cai0 imass). An in-project type → false (the strategy resolved it). An
+ * unrecorded ivar → false (genuinely attempted-unresolved; we don't know it's a
+ * gem, so we never over-shrink the denominator).
+ */
+function ivarTargetsExternal(receiver: string, ctx: CallContext): boolean {
+  if (ctx.callerScope.length === 0) return false;
+  const typeName = ctx.classFieldTypes?.[ctx.callerScope.join("::")]?.[receiver];
+  return typeName !== undefined && resolveConstant(typeName, ctx) === null;
 }
 
 /**
