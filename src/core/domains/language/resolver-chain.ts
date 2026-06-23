@@ -1,5 +1,5 @@
-import type { CallContext, CallRef, SymbolResolutionTarget } from "../../contracts/types/codegraph.js";
-import type { SymbolResolutionStrategy } from "../../contracts/types/language.js";
+import type { CallContext, CallRef, DispatchEdge, SymbolResolutionTarget } from "../../contracts/types/codegraph.js";
+import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../contracts/types/language.js";
 
 /**
  * Drive an ordered chain of resolution strategies, returning the first
@@ -32,4 +32,24 @@ export function resolveViaChain(
     // continue → next strategy
   }
   return null;
+}
+
+/**
+ * Drive an ordered list of dispatch components, returning the first NON-EMPTY
+ * fan-out. The order IS the precedence (a component earlier in the array wins).
+ * This is the fan-out mirror of `resolveViaChain`: "decisive" = non-empty here.
+ * A per-language resolver composes its `DispatchResolverComponent[]` (e.g. Ruby:
+ * registry-table → CHA-cone → dynamic-receiver) through this engine instead of
+ * an inline if-ladder, so the precedence-compose is shared across languages.
+ */
+export function resolveDispatchViaComponents(
+  components: readonly DispatchResolverComponent[],
+  call: CallRef,
+  ctx: CallContext,
+): DispatchEdge[] {
+  for (const component of components) {
+    const edges = component.resolveDispatch(call, ctx);
+    if (edges.length > 0) return edges;
+  }
+  return [];
 }

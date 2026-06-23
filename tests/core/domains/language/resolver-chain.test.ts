@@ -1,11 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../../src/core/contracts/types/codegraph.js";
 import type {
+  CallContext,
+  CallRef,
+  DispatchEdge,
+  SymbolResolutionTarget,
+} from "../../../../src/core/contracts/types/codegraph.js";
+import type {
+  DispatchResolverComponent,
   SymbolResolutionOutcome,
   SymbolResolutionStrategy,
 } from "../../../../src/core/contracts/types/language.js";
-import { resolveViaChain } from "../../../../src/core/domains/language/resolver-chain.js";
+import { resolveDispatchViaComponents, resolveViaChain } from "../../../../src/core/domains/language/resolver-chain.js";
 
 const target = (id: string): SymbolResolutionTarget =>
   ({ targetRelPath: "a.ts", targetSymbolId: id }) as unknown as SymbolResolutionTarget;
@@ -44,5 +50,30 @@ describe("resolveViaChain", () => {
 
   it("returns null for an empty chain", () => {
     expect(resolveViaChain([], call, ctx)).toBeNull();
+  });
+});
+
+const edge = (rel: string): DispatchEdge =>
+  ({
+    sourceSymbolId: null,
+    targetRelPath: rel,
+    targetSymbolId: null,
+    edgeKind: "dynamic",
+    confidence: 1,
+  }) as DispatchEdge;
+const component = (edges: DispatchEdge[]): DispatchResolverComponent => ({ resolveDispatch: () => edges });
+
+describe("resolveDispatchViaComponents", () => {
+  it("returns the first non-empty component result (precedence = array order)", () => {
+    const result = resolveDispatchViaComponents(
+      [component([]), component([edge("a.rb")]), component([edge("b.rb")])],
+      call,
+      ctx,
+    );
+    expect(result).toEqual([edge("a.rb")]);
+  });
+
+  it("returns [] when every component is empty", () => {
+    expect(resolveDispatchViaComponents([component([]), component([])], call, ctx)).toEqual([]);
   });
 });
