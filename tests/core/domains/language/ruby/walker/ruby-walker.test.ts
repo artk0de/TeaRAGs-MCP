@@ -15,6 +15,7 @@ import Parser from "tree-sitter";
 import RbLang from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
+import { collectRubyIvarFieldTypes } from "../../../../../../src/core/domains/language/ruby/walker/local-bindings.js";
 import {
   extractFromRubyFile,
   ZEITWERK_PREFIX,
@@ -2256,6 +2257,82 @@ describe("extractFromRubyFile — localBindings P3 RHS expansion + flow-sensitiv
         { line: 2, type: "Foo" },
         { line: 4, type: "Bar" },
       ],
+    });
+  });
+});
+
+describe("collectRubyIvarFieldTypes (ivar → type, classFieldTypes channel)", () => {
+  it("records @ivar = Const.new under the enclosing class", () => {
+    const root = parse(`
+      class Foo
+        def initialize
+          @client = HttpClient.new
+        end
+      end
+    `).rootNode;
+    expect(collectRubyIvarFieldTypes(root)).toEqual({ Foo: { "@client": "HttpClient" } });
+  });
+
+  it("records an instance-returning finder RHS (@user = User.find)", () => {
+    const root = parse(`
+      class Foo
+        def load; @user = User.find(1); end
+      end
+    `).rootNode;
+    expect(collectRubyIvarFieldTypes(root)).toEqual({ Foo: { "@user": "User" } });
+  });
+
+  it("last-write-wins on a within-class conflict", () => {
+    const root = parse(`
+      class Foo
+        def initialize; @client = HttpClient.new; end
+        def reset; @client = FakeClient.new; end
+      end
+    `).rootNode;
+    expect(collectRubyIvarFieldTypes(root)).toEqual({ Foo: { "@client": "FakeClient" } });
+  });
+
+  it("skips a lowercase / non-constructor RHS", () => {
+    const root = parse(`
+      class Foo
+        def initialize; @client = build_client; end
+      end
+    `).rootNode;
+    expect(collectRubyIvarFieldTypes(root)).toEqual({});
+  });
+
+  it("skips a local-variable assignment (not an ivar)", () => {
+    const root = parse(`
+      class Foo
+        def initialize; client = HttpClient.new; end
+      end
+    `).rootNode;
+    expect(collectRubyIvarFieldTypes(root)).toEqual({});
+  });
+
+  it("keys ivars of a nested-namespace class by its full scope name", () => {
+    const root = parse(`
+      module Agents
+        class WebsiteAgent
+          def initialize; @parser = HtmlParser.new; end
+        end
+      end
+    `).rootNode;
+    expect(collectRubyIvarFieldTypes(root)).toEqual({ "Agents::WebsiteAgent": { "@parser": "HtmlParser" } });
+  });
+
+  it("attributes ivars of a nested class to the nested fq, not the outer class", () => {
+    const root = parse(`
+      class Outer
+        def initialize; @outer = OuterDep.new; end
+        class Inner
+          def initialize; @inner = InnerDep.new; end
+        end
+      end
+    `).rootNode;
+    expect(collectRubyIvarFieldTypes(root)).toEqual({
+      Outer: { "@outer": "OuterDep" },
+      "Outer::Inner": { "@inner": "InnerDep" },
     });
   });
 });

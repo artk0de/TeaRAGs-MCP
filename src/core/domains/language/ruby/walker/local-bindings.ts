@@ -59,6 +59,62 @@ function constInstanceType(node: AstNode): string | null {
 }
 
 /**
+ * Per-class `@ivar -> typeName` map for the universal `classFieldTypes` channel
+ * (Ruby is the 5th implementation after TS/Java/Python/Rust). Walks each class /
+ * module and records `@ivar = Const.new` (or instance-returning finder, via
+ * {@link constInstanceType}) assignments found ANYWHERE in that class's own
+ * method bodies — `initialize`, lazy memoization, setup helpers — but NOT in
+ * nested classes, which get their own fq map. The class key is the fully
+ * qualified scope-stack name (`Outer::Inner`), matching `collectRubyClassAncestors`
+ * and the resolver's `ctx.callerScope.join("::")`. The `@`-prefixed field key
+ * matches the call-site receiver text verbatim (`@client`). Mirrors
+ * `collectPythonClassFieldTypes`: within-class conflict is last-write-wins; a
+ * non-constructor RHS records nothing (the uppercase-constant gate lives in
+ * `constInstanceType`).
+ */
+export function collectRubyIvarFieldTypes(root: AstNode): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  const walkScope = (node: AstNode, scope: string[]): void => {
+    if (node.type === "class" || node.type === "module") {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) {
+        for (const child of node.children) walkScope(child, scope);
+        return;
+      }
+      const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+      const fq = scope.length === 0 ? localName : `${scope.join("::")}::${localName}`;
+      const body = node.childForFieldName("body");
+
+      // Collect `@ivar = Const.new` across THIS class's own bodies. Stop at any
+      // nested class/module — those are attributed to their own fq via the
+      // walkScope recursion below.
+      const fields: Record<string, string> = {};
+      const collectIvars = (n: AstNode): void => {
+        if (n.type === "class" || n.type === "module") return;
+        if (n.type === "assignment") {
+          const lhs = n.childForFieldName("left");
+          const rhs = n.childForFieldName("right");
+          if (lhs?.type === "instance_variable" && rhs) {
+            const type = constInstanceType(rhs);
+            if (type) fields[lhs.text] = type; // source-order DFS → last-write-wins
+          }
+        }
+        for (const child of n.children) collectIvars(child);
+      };
+      for (const child of (body ?? node).children) collectIvars(child);
+      if (Object.keys(fields).length > 0) out[fq] = { ...(out[fq] ?? {}), ...fields };
+
+      const recurseChildren = body ? body.children : node.children;
+      for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
+      return;
+    }
+    for (const child of node.children) walkScope(child, scope);
+  };
+  walkScope(root, []);
+  return out;
+}
+
+/**
  * Collect position-aware `varName → LocalBinding[]` bindings inside the given
  * line range. Each binding carries the 1-based source line where it is
  * established; a call site resolves against the most-recent binding at or before
