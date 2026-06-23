@@ -124,7 +124,10 @@ const RAILS_ENTRIES: Record<string, RubyDslEntry> = {
   enum: { category: "enum" },
   aasm: { category: "state-machine" },
   serialize: { category: "other" },
-  store_accessor: { category: "other" },
+  // store_accessor synthesises the key accessors via a dedicated skip-store-name
+  // handler in macro-expansion (the first symbol is the JSON column), not a
+  // per-symbol `declares` builder.
+  store_accessor: { category: "accessor" },
 };
 
 /** Rails declaring macros + the controller/ActiveSupport runtime helpers (params/render/…). */

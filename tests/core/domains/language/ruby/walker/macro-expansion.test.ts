@@ -127,6 +127,15 @@ describe("expandClassBodyMacros — accessor-family library macros (declares-cov
     );
     expect(out.map((m) => m.name)).toEqual(["posts_attributes=", "comments_attributes="]);
   });
+
+  it("store_accessor :settings, :color, :theme → color/color=/theme/theme= (first arg is the store)", () => {
+    const out = expandClassBodyMacros(firstStmt("class User\n  store_accessor :settings, :color, :theme\nend\n"));
+    expect(out.map((m) => m.name)).toEqual(["color", "color=", "theme", "theme="]);
+  });
+
+  it("store_accessor with only the store name → [] (no accessor keys)", () => {
+    expect(expandClassBodyMacros(firstStmt("class User\n  store_accessor :settings\nend\n"))).toEqual([]);
+  });
 });
 
 describe("expandAliasKeyword", () => {

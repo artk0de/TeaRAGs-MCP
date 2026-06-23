@@ -70,6 +70,23 @@ export function expandClassBodyMacros(node: AstNode): DeclaredMethod[] {
     return out;
   }
 
+  // store_accessor :store, :a, :b — the FIRST symbol is the JSON store column;
+  // the rest are the accessor keys (`a`/`a=`/`b`/`b=`).
+  if (macroName === "store_accessor") {
+    if (!args) return [];
+    const syms: string[] = [];
+    for (const arg of args.namedChildren) {
+      if (arg.type !== "simple_symbol") continue;
+      const base = stripSymbolColon(arg.text);
+      if (base.length > 0) syms.push(base);
+    }
+    const out: DeclaredMethod[] = [];
+    for (const key of syms.slice(1)) {
+      out.push(mk(key, "instance", "accessor"), mk(`${key}=`, "instance", "accessor"));
+    }
+    return out;
+  }
+
   // Generic: project each leading symbol arg through the catalogue `declares`.
   const entry = RUBY_DSL[macroName];
   if (!entry?.declares || !args) return [];
