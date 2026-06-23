@@ -2341,3 +2341,38 @@ describe("RubyCallResolver — ActiveSupport::Concern mixin propagation (bd tea-
     expect(target?.targetRelPath).toBe("app/models/user.rb");
   });
 });
+
+describe("RubyCallResolver — @ivar type-inference resolution (end-to-end, cai0 imass)", () => {
+  it("resolves @client.get to the inferred HttpClient#get", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/clients/http_client.rb", [
+      {
+        symbolId: "HttpClient",
+        fqName: "HttpClient",
+        shortName: "HttpClient",
+        relPath: "app/clients/http_client.rb",
+        scope: [],
+      },
+      {
+        symbolId: "HttpClient#get",
+        fqName: "HttpClient#get",
+        shortName: "get",
+        relPath: "app/clients/http_client.rb",
+        scope: ["HttpClient"],
+      },
+    ]);
+    const call = { callText: "@client.get", receiver: "@client", member: "get", startLine: 5 };
+    const ctx: CallContext = {
+      callerFile: "app/services/fetcher.rb",
+      callerScope: ["Fetcher"],
+      imports: [],
+      symbolTable: table,
+      classFieldTypes: { Fetcher: { "@client": "HttpClient" } },
+    };
+    expect(resolver.resolve(call, ctx)).toEqual({
+      targetRelPath: "app/clients/http_client.rb",
+      targetSymbolId: "HttpClient#get",
+    });
+  });
+});
