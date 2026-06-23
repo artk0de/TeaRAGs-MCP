@@ -28,6 +28,7 @@
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   pickSingleCandidate,
+  resolveLocalBindingType,
   type AmbiguousResolveMode,
   type CallContext,
   type CallRef,
@@ -41,7 +42,7 @@ import {
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ConeDispatchResolver } from "../../cone-dispatch.js";
 import { resolveViaChain } from "../../resolver-chain.js";
-import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
+import { ECMASCRIPT_BUILTIN_TYPES, ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
 import {
   collectImportedFiles,
   CONE_MAX_DEFAULT,
@@ -97,12 +98,23 @@ export class TSCallResolver implements CallResolver {
 
   /**
    * tea-rags-mcp-ykj7 — external-import classifier for an UNRESOLVED call.
-   * `true` when the receiver is an ECMAScript ambient global (`Math.max`,
-   * `console.log` — no import to match) OR binds to an import whose specifier
-   * does NOT map to a project file (`node:fs`, bare npm packages). `mapImportToFile`
-   * returns `null` for exactly those specifiers (relative + tsconfig-`paths`
-   * resolve to a file). Because the provider only calls this on unresolved
-   * calls, a path-aliased internal import that resolved never reaches here.
+   * `true` when any of:
+   *   1. the receiver is an ECMAScript ambient global (`Math.max`,
+   *      `console.log` — no import to match);
+   *   2. the receiver / member binds to an import whose specifier does NOT map
+   *      to a project file (`node:fs`, bare npm packages) — `mapImportToFile`
+   *      returns `null` for exactly those (relative + tsconfig-`paths` resolve);
+   *   3. the receiver's declared TYPE is an ECMAScript runtime builtin (`Map`,
+   *      `Set`, `Promise`, typed arrays, …): `m.get()`, `this.pending.set()`,
+   *      `arr.map()`, `p.then()` target the JS runtime instance method, not an
+   *      in-repo symbol — same class of miss as a `node:fs` import.
+   *
+   * PRECISION: case 3 only fires on a CONFIDENTLY-bound builtin type (an actual
+   * local-binding / class-field type that is a builtin name). An unknown /
+   * unbound receiver stays an internal miss — we never hide a real in-repo gap.
+   * Because the provider only calls this on unresolved calls, a path-aliased
+   * internal import (or an in-repo-typed receiver) that resolved never reaches
+   * here.
    */
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
     const { receiver } = call;
@@ -119,7 +131,36 @@ export class TSCallResolver implements CallResolver {
         return true;
       }
     }
-    return false;
+    return this.receiverTypeIsBuiltin(call, ctx);
+  }
+
+  /**
+   * Case 3 of {@link targetsExternalImport}: resolve the receiver's declared
+   * type and report whether it is an ECMAScript runtime builtin.
+   *
+   *   - `this.<field>.x()` → field type from `ctx.classFieldTypes[scope][field]`
+   *     (mirrors {@link TSFieldTypeSymbolResolutionStrategy}); chained
+   *     `this.a.b.x()` is out of scope (one level only).
+   *   - bare `<name>.x()` → walker-bound local type via
+   *     {@link resolveLocalBindingType} (mirrors
+   *     {@link TSLocalBindingSymbolResolutionStrategy}).
+   *
+   * Returns `false` when the receiver has no confidently-bound type — keeping
+   * unknown receivers as internal misses (precision over recall).
+   */
+  private receiverTypeIsBuiltin(call: CallRef, ctx: CallContext): boolean {
+    const { receiver } = call;
+    if (receiver === null || receiver.length === 0) return false;
+    let typeName: string | undefined;
+    if (receiver.startsWith("this.")) {
+      const fieldSegment = receiver.slice("this.".length);
+      if (fieldSegment.includes(".") || ctx.callerScope.length === 0) return false;
+      const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+      typeName = ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
+    } else {
+      typeName = resolveLocalBindingType(ctx.localBindings, receiver, call.startLine) ?? undefined;
+    }
+    return typeName !== undefined && ECMASCRIPT_BUILTIN_TYPES.has(typeName);
   }
 
   /**
