@@ -158,14 +158,32 @@ export interface EnrichmentMetrics {
  * was not indexed for the collection or the run-stats table is empty.
  */
 export interface CodegraphResolveSummary {
-  /** `callsResolved / max(1, callsAttempted − callsExternalSkipped)`; 0 when nothing attempted. */
-  resolveSuccessRate: number;
+  /**
+   * Graph-completeness metric, always present: `callsResolved / (callsResolved +
+   * missWithInProjectDef)` where `missWithInProjectDef` excludes misses whose
+   * member has no in-project definition (gem/core/runtime-generated — they can
+   * never produce an in-project edge). This is the honest "what fraction of
+   * resolvable in-project calls became edges" number a casual reader wants.
+   */
+  inProjectEdgeRecall: number;
+  /**
+   * Raw resolver capability over ALL internal-attempted calls (denominator
+   * polluted by no-in-project-def calls, so it reads far lower than recall).
+   * Surfaced ONLY under DEBUG — it misleads a casual reader who expects it to
+   * mean graph completeness.
+   */
+  resolveSuccessRate?: number;
   callsAttempted: number;
   callsResolved: number;
   /** Unresolved calls classified as external-library / runtime targets, excluded from the rate. */
   callsExternalSkipped: number;
   /** bd cai0 — unresolved dynamic-send calls (statically undeterminable), excluded from the rate. */
   callsUnresolvable: number;
+  /**
+   * Genuine-miss calls whose member has no in-project definition — excluded from
+   * the inProjectEdgeRecall denominator (they cannot become an in-project edge).
+   */
+  callsNoInProjectDef: number;
   /**
    * tea-rags-mcp-cnqrg — per-code-language breakdown of the same rate, so a
    * polyglot index reveals WHICH language's resolver carries the gap. Test
@@ -194,12 +212,17 @@ export interface CodegraphResolveSummary {
  */
 export interface CodegraphResolveLanguageRow {
   language: string;
-  resolveSuccessRate: number;
+  /** Graph-completeness for this language (always present). See {@link CodegraphResolveSummary.inProjectEdgeRecall}. */
+  inProjectEdgeRecall: number;
+  /** Raw resolver capability for this language. DEBUG-only (see summary). */
+  resolveSuccessRate?: number;
   callsAttempted: number;
   callsResolved: number;
   callsExternalSkipped: number;
   /** bd cai0 — unresolved dynamic-send calls in this language, excluded from the rate. */
   callsUnresolvable: number;
+  /** Genuine-miss calls in this language whose member has no in-project def. */
+  callsNoInProjectDef: number;
   /**
    * tea-rags-mcp-7m5xz — per-receiver-kind breakdown scoped to this language's
    * call-sites. Present only in the multi-language case (precise lang×kind).

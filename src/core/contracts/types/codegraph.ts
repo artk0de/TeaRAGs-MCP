@@ -1019,6 +1019,15 @@ export interface ResolveRunStatsRow {
    * to 0 for pre-cai0 rows / languages without dynamic-send tagging.
    */
   unresolvable: number;
+  /**
+   * Of the `attempted − resolved` misses in this bucket, how many have NO
+   * in-project definition for their member short-name (gem/core/runtime-
+   * generated/dynamic targets). Excluded from the inProjectEdgeRecall
+   * denominator so recall measures graph completeness over calls that COULD
+   * resolve to a project symbol. Defaults to 0 for rows persisted before the
+   * column was added (the recall then collapses to raw capability).
+   */
+  noInProjectDef?: number;
 }
 
 export interface GraphEdges {

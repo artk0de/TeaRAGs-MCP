@@ -1028,6 +1028,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       callsResolved,
       callsExternalSkipped,
       callsUnresolvable,
+      callsNoInProjectDef,
     } = this.runStats;
     if (extractedFiles === 0 && fileEdgeCount === 0 && methodEdgeCount === 0) {
       this.runStats = createEmptyRunStats();
@@ -1046,6 +1047,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // `max(1, …)` guards a divide-by-zero when every attempted call was external.
     const internalAttempted = Math.max(1, callsAttempted - callsExternalSkipped - callsUnresolvable);
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / internalAttempted;
+    // inProjectEdgeRecall — graph completeness. A genuine miss whose member has
+    // no in-project definition (callsNoInProjectDef) can never yield an edge, so
+    // it is excluded; only misses WITH an in-project def are true recall holes.
+    const missWithInProjectDef = Math.max(
+      0,
+      callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef,
+    );
+    const recallDenominator = callsResolved + missWithInProjectDef;
+    const inProjectEdgeRecall = recallDenominator === 0 ? 0 : callsResolved / recallDenominator;
     const byReceiverKind = aggregateReceiverKinds(this.runStats);
     const resolveByReceiverKind = Object.fromEntries(
       RECEIVER_KINDS.map((kind) => {
@@ -1079,8 +1089,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       fileEdgeCount,
       methodEdgeCount,
       resolveSuccessRate,
+      inProjectEdgeRecall,
+      callsResolved,
       callsExternalSkipped,
       callsUnresolvable,
+      callsNoInProjectDef,
       resolveByReceiverKind,
     };
   }
@@ -1520,6 +1533,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           resolved: t.resolved,
           externalSkipped: t.externalSkipped,
           unresolvable: t.unresolvable,
+          noInProjectDef: t.noInProjectDef,
         });
       }
     }
@@ -1920,6 +1934,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // persists the breakdown.
           this.runStats.callsExternalSkipped += 1;
           kindTally[receiverKind].externalSkipped += 1;
+        } else if (symbolTable.lookupByShortName(call.member).length === 0) {
+          // Genuine miss whose member has NO in-project definition — it can
+          // never produce an in-project edge (gem/core/runtime-generated/
+          // dynamic), so it is excluded from the inProjectEdgeRecall
+          // denominator. The complement (miss WITH an in-project def) is the
+          // true recall hole, derived in getRunMetrics.
+          this.runStats.callsNoInProjectDef += 1;
+          kindTally[receiverKind].noInProjectDef += 1;
         }
       }
     }
@@ -1944,6 +1966,10 @@ interface ReceiverKindTally {
   // bd cai0 — unresolved-but-statically-undeterminable calls in this bucket
   // (dynamic send(var)). Persisted to cg_run_stats.unresolvable.
   unresolvable: number;
+  // Unresolved calls in this bucket whose member has NO in-project definition
+  // (gem/core/runtime-generated/dynamic). Excluded from the inProjectEdgeRecall
+  // denominator. Persisted to cg_run_stats.no_in_project_def.
+  noInProjectDef: number;
 }
 
 interface RunStats {
@@ -1963,6 +1989,14 @@ interface RunStats {
   // from the resolveSuccessRate denominator. Subset of (callsAttempted −
   // callsResolved − callsExternalSkipped).
   callsUnresolvable: number;
+  // Genuine-miss calls whose member short-name has NO in-project definition
+  // (symbolTable.lookupByShortName empty) — gem/core/runtime-generated/dynamic
+  // targets that can never produce an in-project edge. Excluded from the
+  // inProjectEdgeRecall denominator so recall measures graph completeness over
+  // calls that COULD resolve to a project symbol. Subset of the genuine-miss
+  // bucket (callsAttempted − callsResolved − callsExternalSkipped −
+  // callsUnresolvable).
+  callsNoInProjectDef: number;
   // Per-(code language, receiver kind) resolve breakdown (bd tea-rags-mcp-cnqrg,
   // extends j431). Source of truth: the aggregate scalars above, the per-kind
   // summary (getRunMetrics, j431 view) and the per-language summary
@@ -1977,7 +2011,9 @@ interface RunStats {
 
 function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally> {
   const out = {} as Record<ReceiverKind, ReceiverKindTally>;
-  for (const kind of RECEIVER_KINDS) out[kind] = { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0 };
+  for (const kind of RECEIVER_KINDS) {
+    out[kind] = { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0, noInProjectDef: 0 };
+  }
   return out;
 }
 
@@ -2017,6 +2053,7 @@ function createEmptyRunStats(): RunStats {
     callsResolved: 0,
     callsExternalSkipped: 0,
     callsUnresolvable: 0,
+    callsNoInProjectDef: 0,
     byLanguageKind: new Map(),
   };
 }

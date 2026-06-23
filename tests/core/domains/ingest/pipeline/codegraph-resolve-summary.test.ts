@@ -168,7 +168,11 @@ describe("summarizeCodegraphResolve byReceiverKind DEBUG gate (7m5xz)", () => {
       row("typescript", "constant", 100, 60, 0),
     ]);
     // Short form intact: aggregate present, byLanguage suppressed (≤1 language).
-    expect(summary?.resolveSuccessRate).toBeCloseTo(185 / 230, 6);
+    // resolveSuccessRate is DEBUG-only now (Variant B) → absent here; the
+    // always-on inProjectEdgeRecall carries the same value when nothing is
+    // external / unresolvable / no-in-project-def.
+    expect(summary?.resolveSuccessRate).toBeUndefined();
+    expect(summary?.inProjectEdgeRecall).toBeCloseTo(185 / 230, 6);
     expect(summary?.byReceiverKind).toBeUndefined();
   });
 
@@ -195,5 +199,52 @@ describe("summarizeCodegraphResolve byReceiverKind DEBUG gate (7m5xz)", () => {
       row("typescript", "constant", 100, 60, 0),
     ]);
     expect((summary?.byReceiverKind ?? []).map((k) => k.receiverKind)).toEqual(["selfMember", "constant"]);
+  });
+});
+
+// Variant B — inProjectEdgeRecall is the always-on graph-completeness metric;
+// resolveSuccessRate (raw resolver capability, denominator-polluted by
+// no-in-project-def calls) drops to DEBUG-only since it misleads a casual reader.
+const rowN = (
+  language: string,
+  receiverKind: string,
+  attempted: number,
+  resolved: number,
+  externalSkipped: number,
+  noInProjectDef: number,
+): ResolveRunStatsRow => ({ language, receiverKind, attempted, resolved, externalSkipped, noInProjectDef });
+
+describe("summarizeCodegraphResolve inProjectEdgeRecall (Variant B)", () => {
+  afterEach(() => {
+    setDebug(true); // vitest.setup baseline — restore so other files see DEBUG on
+  });
+
+  it("computes inProjectEdgeRecall excluding no-in-project-def misses", () => {
+    // attempted 100, resolved 80, external 0, noInProjectDef 15 →
+    // genuine miss 20; missWithInProjectDef = 20 − 15 = 5; recall = 80/(80+5).
+    const summary = summarizeCodegraphResolve([rowN("typescript", "constant", 100, 80, 0, 15)]);
+    expect(summary?.inProjectEdgeRecall).toBeCloseTo(80 / 85, 6);
+    expect(summary?.callsNoInProjectDef).toBe(15);
+  });
+
+  it("includes inProjectEdgeRecall ALWAYS but resolveSuccessRate ONLY under DEBUG", () => {
+    setDebug(false);
+    const off = summarizeCodegraphResolve([rowN("typescript", "constant", 100, 80, 0, 15)]);
+    expect(off?.inProjectEdgeRecall).toBeCloseTo(80 / 85, 6); // always present
+    expect(off?.callsNoInProjectDef).toBe(15);
+    expect(off?.resolveSuccessRate).toBeUndefined(); // hidden from the casual reader
+
+    setDebug(true);
+    const on = summarizeCodegraphResolve([rowN("typescript", "constant", 100, 80, 0, 15)]);
+    expect(on?.resolveSuccessRate).toBeCloseTo(80 / 100, 6); // surfaced under DEBUG
+    expect(on?.inProjectEdgeRecall).toBeCloseTo(80 / 85, 6);
+  });
+
+  it("defaults noInProjectDef to 0 for pre-migration rows (recall == raw capability)", () => {
+    // A row without the field (old persisted shape) → every genuine miss counts
+    // as a recall hole, so recall collapses to resolved/(attempted−external).
+    const summary = summarizeCodegraphResolve([row("typescript", "constant", 100, 80, 0)]);
+    expect(summary?.callsNoInProjectDef).toBe(0);
+    expect(summary?.inProjectEdgeRecall).toBeCloseTo(80 / 100, 6);
   });
 });

@@ -94,6 +94,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
       ]);
       const rows = await db.getRunStats();
       // ORDER BY language, receiver_kind → ruby/bareCall before typescript/constant.
+      // noInProjectDef defaults to 0 (input omitted it) and round-trips back.
       expect(rows).toEqual([
         {
           language: "ruby",
@@ -102,6 +103,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           resolved: 10,
           externalSkipped: 0,
           unresolvable: 4,
+          noInProjectDef: 0,
         },
         {
           language: "typescript",
@@ -110,6 +112,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           resolved: 90,
           externalSkipped: 7,
           unresolvable: 0,
+          noInProjectDef: 0,
         },
       ]);
     });
@@ -152,6 +155,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           resolved: 118,
           externalSkipped: 1,
           unresolvable: 0,
+          noInProjectDef: 0,
         },
       ]);
     });
