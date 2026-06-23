@@ -11,6 +11,7 @@ import {
   RubyBareCallSymbolResolutionStrategy,
   RubyConstantSymbolResolutionStrategy,
   RubyExplicitRequireSymbolResolutionStrategy,
+  RubyIvarFieldSymbolResolutionStrategy,
   RubyLocalTypeSymbolResolutionStrategy,
   RubyReceiverSetDropSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
@@ -448,6 +449,83 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
     const outcome = strat.attempt(
       { callText: "perform", receiver: null, member: "perform", startLine: 1 },
       ctx({ symbolTable, callerScope: ["Child"], classAncestors: { Child: ["Parent"] } }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+});
+
+describe("RubyIvarFieldSymbolResolutionStrategy", () => {
+  const strat = new RubyIvarFieldSymbolResolutionStrategy(cfg);
+  const call: CallRef = { callText: "@client.get", receiver: "@client", member: "get", startLine: 1 };
+
+  it("resolves @ivar.X via the recorded field type", () => {
+    const symbolTable = tableWith([
+      "app/clients/http_client.rb",
+      [
+        sym("HttpClient", "HttpClient", "app/clients/http_client.rb", []),
+        sym("HttpClient#get", "get", "app/clients/http_client.rb", ["HttpClient"]),
+      ],
+    ]);
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, callerScope: ["Foo"], classFieldTypes: { Foo: { "@client": "HttpClient" } } }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/clients/http_client.rb", targetSymbolId: "HttpClient#get" },
+    });
+  });
+
+  it("resolves to a file-only edge when the type's file is known but the method is not", () => {
+    const symbolTable = tableWith([
+      "app/clients/http_client.rb",
+      [sym("HttpClient", "HttpClient", "app/clients/http_client.rb", [])],
+    ]);
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, callerScope: ["Foo"], classFieldTypes: { Foo: { "@client": "HttpClient" } } }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/clients/http_client.rb", targetSymbolId: null },
+    });
+  });
+
+  it("DROPS when the ivar has no recorded type — never falls through", () => {
+    const symbolTable = tableWith(["other.rb", [sym("Other#get", "get", "other.rb", ["Other"])]]);
+    const outcome = strat.attempt(call, ctx({ symbolTable, callerScope: ["Foo"], classFieldTypes: { Foo: {} } }));
+    expect(outcome.kind).toBe("drop");
+  });
+
+  it("DROPS when the recorded type is a gem (no project file) — routes to external, not resolved", () => {
+    const symbolTable = tableWith();
+    const outcome = strat.attempt(
+      { ...call, receiver: "@http", member: "get" },
+      ctx({ symbolTable, callerScope: ["Foo"], classFieldTypes: { Foo: { "@http": "Net::HTTP" } } }),
+    );
+    expect(outcome.kind).toBe("drop");
+  });
+
+  it("continues when the receiver is not a single ivar (chained @a.b)", () => {
+    const outcome = strat.attempt(
+      { ...call, receiver: "@a.b" },
+      ctx({ symbolTable: tableWith(), callerScope: ["Foo"], classFieldTypes: { Foo: { "@a": "A" } } }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("continues outside a class scope (callerScope empty)", () => {
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable: tableWith(), classFieldTypes: { Foo: { "@client": "HttpClient" } } }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("continues when the receiver is not an ivar", () => {
+    const outcome = strat.attempt(
+      { ...call, receiver: "user" },
+      ctx({ symbolTable: tableWith(), callerScope: ["Foo"], classFieldTypes: { Foo: { "@client": "HttpClient" } } }),
     );
     expect(outcome.kind).toBe("continue");
   });
