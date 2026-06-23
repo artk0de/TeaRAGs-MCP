@@ -129,6 +129,17 @@ describe("formatIndexStatus", () => {
     const out = formatIndexStatus({ ...baseStatus, indexSizeBytes: 2 * 1024 * 1024 * 1024 }, plain);
     expect(out).toContain("GB");
   });
+
+  it("renders codegraph size line when codegraphSizeBytes is present", () => {
+    const out = formatIndexStatus({ ...baseStatus, indexSizeBytes: 1048576, codegraphSizeBytes: 14680064 }, plain);
+    expect(out).toContain("codegraph:");
+    expect(out).toContain("MB");
+  });
+
+  it("omits codegraph line when codegraphSizeBytes is absent", () => {
+    const out = formatIndexStatus({ ...baseStatus, indexSizeBytes: 1048576 }, plain);
+    expect(out).not.toContain("codegraph:");
+  });
 });
 
 describe("formatIndexStatusJson", () => {
@@ -180,6 +191,17 @@ describe("formatIndexStatusJson", () => {
   it("omits indexSizeBytes when absent", () => {
     const o = formatIndexStatusJson(baseStatus, { path: "/p" }) as Record<string, unknown>;
     expect(o.indexSizeBytes).toBeUndefined();
+  });
+
+  it("includes codegraphSizeBytes when present", () => {
+    const status: IndexStatus = { ...baseStatus, codegraphSizeBytes: 14680064 };
+    const o = formatIndexStatusJson(status, { path: "/p" }) as Record<string, unknown>;
+    expect(o.codegraphSizeBytes).toBe(14680064);
+  });
+
+  it("omits codegraphSizeBytes when absent", () => {
+    const o = formatIndexStatusJson(baseStatus, { path: "/p" }) as Record<string, unknown>;
+    expect(o.codegraphSizeBytes).toBeUndefined();
   });
 
   it("includes infraHealth when present", () => {

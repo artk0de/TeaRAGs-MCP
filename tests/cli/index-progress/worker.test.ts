@@ -8,6 +8,7 @@ import type { WorkerMessage } from "../../../src/cli/index-progress/ipc-protocol
 import {
   computeDirSize,
   deriveEnrichmentOutcome,
+  resolveCodegraphSizeBytes,
   resolveIndexSizeBytes,
   runIndexWorker,
 } from "../../../src/cli/index-progress/worker.js";
@@ -153,6 +154,98 @@ describe("resolveIndexSizeBytes", () => {
     process.env.QDRANT_EMBEDDED_STORAGE_PATH = tmpDir;
     // no collections/ subdir created
     expect(resolveIndexSizeBytes("code_missing")).toBeUndefined();
+  });
+});
+
+describe("resolveCodegraphSizeBytes", () => {
+  const originalCodegraphEnabled = process.env.CODEGRAPH_ENABLED;
+  const originalDataDir = process.env.TEA_RAGS_DATA_DIR;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "worker-codegraph-test-"));
+  });
+
+  afterEach(() => {
+    if (originalCodegraphEnabled !== undefined) process.env.CODEGRAPH_ENABLED = originalCodegraphEnabled;
+    else delete process.env.CODEGRAPH_ENABLED;
+    if (originalDataDir !== undefined) process.env.TEA_RAGS_DATA_DIR = originalDataDir;
+    else delete process.env.TEA_RAGS_DATA_DIR;
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns undefined when CODEGRAPH_ENABLED is not set", () => {
+    delete process.env.CODEGRAPH_ENABLED;
+    expect(resolveCodegraphSizeBytes("code_abc")).toBeUndefined();
+  });
+
+  it("returns undefined when CODEGRAPH_ENABLED is 'false'", () => {
+    process.env.CODEGRAPH_ENABLED = "false";
+    expect(resolveCodegraphSizeBytes("code_abc")).toBeUndefined();
+  });
+
+  it("returns undefined when collectionName is undefined", () => {
+    process.env.CODEGRAPH_ENABLED = "true";
+    process.env.TEA_RAGS_DATA_DIR = tmpDir;
+    expect(resolveCodegraphSizeBytes(undefined)).toBeUndefined();
+  });
+
+  it("returns undefined when no matching .duckdb file exists", () => {
+    process.env.CODEGRAPH_ENABLED = "true";
+    process.env.TEA_RAGS_DATA_DIR = tmpDir;
+    const codegraphDir = join(tmpDir, "codegraph");
+    mkdirSync(codegraphDir, { recursive: true });
+    // no matching file
+    expect(resolveCodegraphSizeBytes("code_abc")).toBeUndefined();
+  });
+
+  it("returns size (blocks*512) of the matching .duckdb file", () => {
+    process.env.CODEGRAPH_ENABLED = "true";
+    process.env.TEA_RAGS_DATA_DIR = tmpDir;
+    const codegraphDir = join(tmpDir, "codegraph");
+    mkdirSync(codegraphDir, { recursive: true });
+    const dbPath = join(codegraphDir, "code_abc_v3.duckdb");
+    writeFileSync(dbPath, Buffer.alloc(4096));
+    const st = statSync(dbPath);
+    const result = resolveCodegraphSizeBytes("code_abc");
+    expect(result).toBe(st.blocks * 512);
+    expect(result).toBeGreaterThan(0);
+  });
+
+  it("includes .duckdb.wal sibling in the size when present", () => {
+    process.env.CODEGRAPH_ENABLED = "true";
+    process.env.TEA_RAGS_DATA_DIR = tmpDir;
+    const codegraphDir = join(tmpDir, "codegraph");
+    mkdirSync(codegraphDir, { recursive: true });
+    const dbPath = join(codegraphDir, "code_abc_v3.duckdb");
+    const walPath = join(codegraphDir, "code_abc_v3.duckdb.wal");
+    writeFileSync(dbPath, Buffer.alloc(4096));
+    writeFileSync(walPath, Buffer.alloc(512));
+    const stDb = statSync(dbPath);
+    const stWal = statSync(walPath);
+    const result = resolveCodegraphSizeBytes("code_abc");
+    expect(result).toBe(stDb.blocks * 512 + stWal.blocks * 512);
+  });
+
+  it("picks the highest version (v3 over v2) when multiple versions exist", () => {
+    process.env.CODEGRAPH_ENABLED = "true";
+    process.env.TEA_RAGS_DATA_DIR = tmpDir;
+    const codegraphDir = join(tmpDir, "codegraph");
+    mkdirSync(codegraphDir, { recursive: true });
+    const v2Path = join(codegraphDir, "code_abc_v2.duckdb");
+    const v3Path = join(codegraphDir, "code_abc_v3.duckdb");
+    writeFileSync(v2Path, Buffer.alloc(4096));
+    writeFileSync(v3Path, Buffer.alloc(8192));
+    const stV3 = statSync(v3Path);
+    const result = resolveCodegraphSizeBytes("code_abc");
+    expect(result).toBe(stV3.blocks * 512);
+  });
+
+  it("returns undefined when codegraph dir does not exist", () => {
+    process.env.CODEGRAPH_ENABLED = "true";
+    process.env.TEA_RAGS_DATA_DIR = tmpDir;
+    // no codegraph/ subdir created
+    expect(resolveCodegraphSizeBytes("code_abc")).toBeUndefined();
   });
 });
 

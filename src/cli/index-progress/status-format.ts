@@ -54,6 +54,9 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
   if (status.indexSizeBytes !== undefined) {
     lines.push(`  size:       ${humanBytes(status.indexSizeBytes)}`);
   }
+  if (status.codegraphSizeBytes !== undefined) {
+    lines.push(`  codegraph:  ${humanBytes(status.codegraphSizeBytes)}`);
+  }
 
   if (status.languages?.length) lines.push(`  languages:  ${status.languages.join(", ")}`);
   if (status.embeddingModel) lines.push(`  embedding:  ${status.embeddingModel}`);
@@ -110,6 +113,10 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
 
   if (status.indexSizeBytes !== undefined) {
     base.indexSizeBytes = status.indexSizeBytes;
+  }
+
+  if (status.codegraphSizeBytes !== undefined) {
+    base.codegraphSizeBytes = status.codegraphSizeBytes;
   }
 
   if (extra.overallMs !== undefined) {

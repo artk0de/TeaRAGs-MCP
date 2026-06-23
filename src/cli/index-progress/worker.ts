@@ -125,6 +125,67 @@ export function resolveIndexSizeBytes(collectionName: string | undefined): numbe
   return size > 0 ? size : undefined;
 }
 
+/**
+ * Returns the real on-disk size of a single file in bytes (blocks * 512).
+ * Falls back to the next-512-byte-boundary of stat.size when blocks is undefined.
+ * Returns 0 on any error (non-existent path, permission denied).
+ */
+function computeFileSize(filePath: string): number {
+  try {
+    const st = statSync(filePath);
+    return st.blocks !== undefined ? st.blocks * 512 : Math.ceil(st.size / 512) * 512;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Resolve the on-disk size of the codegraph DuckDB file for a collection.
+ *
+ * Returns undefined when:
+ * - CODEGRAPH_ENABLED is not set or is "false"
+ * - collectionName is undefined
+ * - no versioned file matching `<collectionName>_v<N>.duckdb` exists in the codegraph dir
+ *
+ * The codegraph stores databases under `<dataDir>/codegraph/<collectionName>_v<N>.duckdb`.
+ * Size = real disk usage of the .duckdb file + its .duckdb.wal sibling (if present).
+ * Picks the highest version N when multiple versions exist.
+ */
+export function resolveCodegraphSizeBytes(collectionName: string | undefined): number | undefined {
+  const enabled = process.env.CODEGRAPH_ENABLED;
+  if (!enabled || enabled === "false") return undefined;
+  if (!collectionName) return undefined;
+
+  const codegraphDir = join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "codegraph");
+
+  let highestVersion = -1;
+  let versionedBaseName: string | undefined;
+  try {
+    const versionPattern = new RegExp(`^${collectionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}_v(\\d+)\\.duckdb$`);
+    for (const entry of readdirSync(codegraphDir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const match = versionPattern.exec(entry.name);
+      if (match) {
+        const version = parseInt(match[1], 10);
+        if (version > highestVersion) {
+          highestVersion = version;
+          versionedBaseName = entry.name;
+        }
+      }
+    }
+  } catch {
+    // codegraph dir does not exist or is unreadable
+    return undefined;
+  }
+
+  if (!versionedBaseName) return undefined;
+
+  const dbPath = join(codegraphDir, versionedBaseName);
+  const walPath = `${dbPath}.wal`;
+  const size = computeFileSize(dbPath) + computeFileSize(walPath);
+  return size > 0 ? size : undefined;
+}
+
 /** Classify per-provider enrichment health into failed / degraded provider keys. */
 export function deriveEnrichmentOutcome(status: IndexStatus): EnrichmentOutcome {
   const failed: string[] = [];
@@ -173,12 +234,14 @@ export async function runIndexWorker(
   // enrichment, so the supervisor's default mode can print it and detach.
   const earlyStatus = await app.getIndexStatus(path);
   const earlyIndexSizeBytes = resolveIndexSizeBytes(earlyStatus.collectionName);
+  const earlyCodegraphSizeBytes = resolveCodegraphSizeBytes(earlyStatus.collectionName);
   send({
     type: "status",
     status: {
       ...earlyStatus,
       enrichmentMetrics: indexStats.enrichmentMetrics,
       ...(earlyIndexSizeBytes !== undefined ? { indexSizeBytes: earlyIndexSizeBytes } : {}),
+      ...(earlyCodegraphSizeBytes !== undefined ? { codegraphSizeBytes: earlyCodegraphSizeBytes } : {}),
     },
   });
 
@@ -189,10 +252,12 @@ export async function runIndexWorker(
 
   const finalStatus = await app.getIndexStatus(path);
   const finalIndexSizeBytes = resolveIndexSizeBytes(finalStatus.collectionName);
+  const finalCodegraphSizeBytes = resolveCodegraphSizeBytes(finalStatus.collectionName);
   const enrichedFinalStatus: IndexStatus = {
     ...finalStatus,
     enrichmentMetrics: indexStats.enrichmentMetrics,
     ...(finalIndexSizeBytes !== undefined ? { indexSizeBytes: finalIndexSizeBytes } : {}),
+    ...(finalCodegraphSizeBytes !== undefined ? { codegraphSizeBytes: finalCodegraphSizeBytes } : {}),
   };
   send({ type: "status", status: enrichedFinalStatus });
   const outcome = deriveEnrichmentOutcome(enrichedFinalStatus);

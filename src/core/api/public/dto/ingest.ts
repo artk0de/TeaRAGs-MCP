@@ -129,6 +129,12 @@ export interface IndexStatus {
    */
   indexSizeBytes?: number;
   /**
+   * On-disk size of the codegraph database in bytes, when CODEGRAPH_ENABLED.
+   * Reported separately from indexSizeBytes (Qdrant). Omitted when codegraph
+   * disabled or absent.
+   */
+  codegraphSizeBytes?: number;
+  /**
    * Minimal per-run enrichment metrics (matched/missed/durations).
    * Omitted at status-read time: full EnrichmentMetrics is in-memory per-run only;
    * the persisted marker stores only a subset per provider level (matchedFiles,
