@@ -197,3 +197,75 @@ export function resolveInstanceMethodInClassChain(
 
   return fileOnlyFallback;
 }
+
+/**
+ * Resolve `<typeName>#<member>` for a receiver whose static type is KNOWN
+ * (walker-inferred local binding `var = ClassName.new`, or `@ivar` field type
+ * from `classFieldTypes`):
+ *
+ *   1. Resolve `typeName` to its declaring file via `resolveConstant`.
+ *   2. Check `prepend`ed modules FIRST (reverse MRO; method-level pin required —
+ *      a file-only edge from a prepend is no better than the class's own).
+ *   3. Within the type's file, look for `<member>` whose scope tail matches the
+ *      type (FQ `Product::IndexForm` or bare `PaginatableForm` — both forms exist
+ *      in the table depending on how the class header was declared).
+ *   4. Miss → walk `classAncestors` in declaration order; the first ancestor that
+ *      method-level-pins `<member>` wins.
+ *   5. File known but method absent → file-only edge (`targetSymbolId: null`),
+ *      keeping file-level fan accurate for out-of-project parents (AR `save`).
+ *   6. Type's file unknown (gem / stdlib) → `null` (caller DROPs).
+ *
+ * Shared by the local-var (`var.X`) and `@ivar.X` type-resolution strategies so
+ * the precise scope-tail + prepend + ancestor MRO walk lives once. Distinct from
+ * `resolveInstanceMethodInClassChain` (super / self): that matches any short-name
+ * in the file and has no prepend step; this pins the scope tail and honours
+ * `prepend`.
+ */
+export function resolveTypeMethod(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  return resolveTypeMethodInternal(typeName, member, ctx, mode, new Set());
+}
+
+function resolveTypeMethodInternal(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+  visited: Set<string>,
+): SymbolResolutionTarget | null {
+  if (visited.has(typeName)) return null;
+  visited.add(typeName);
+  const targetFile = resolveConstant(typeName, ctx);
+  if (!targetFile) return null;
+
+  const prepended = ctx.classPrependedAncestors?.[typeName];
+  if (prepended) {
+    for (let i = prepended.length - 1; i >= 0; i--) {
+      const inherited = resolveTypeMethodInternal(prepended[i], member, ctx, mode, visited);
+      if (inherited && inherited.targetSymbolId !== null) return inherited;
+    }
+  }
+
+  const bareType = lastConstantSegment(typeName);
+  const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
+    if (def.relPath !== targetFile) return false;
+    const tail = def.scope[def.scope.length - 1];
+    return tail === typeName || tail === bareType;
+  });
+  const target = pickSingleCandidate(candidates, mode);
+  if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+
+  const ancestors = ctx.classAncestors?.[typeName];
+  if (ancestors) {
+    for (const ancestor of ancestors) {
+      const inherited = resolveTypeMethodInternal(ancestor, member, ctx, mode, visited);
+      if (inherited && inherited.targetSymbolId !== null) return inherited;
+    }
+  }
+
+  return { targetRelPath: targetFile, targetSymbolId: null };
+}
