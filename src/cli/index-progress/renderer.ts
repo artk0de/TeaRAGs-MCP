@@ -55,6 +55,16 @@ export function barTimeFields(
   return { elapsed, eta };
 }
 
+/**
+ * Pure helper: countdown ETA from a fixed base estimate.
+ * Subtracts wall-clock elapsed since the base was set.
+ * Returns null when etaBaseSeconds is null (unknown).
+ */
+export function countdownEta(etaBaseSeconds: number | null, etaBaseAtMs: number, nowMs: number): number | null {
+  if (etaBaseSeconds === null) return null;
+  return Math.max(0, etaBaseSeconds - (nowMs - etaBaseAtMs) / 1000);
+}
+
 export interface BuildBarLineParams {
   label: string;
   /** Fraction 0..1. */
@@ -158,6 +168,10 @@ interface BarState {
   rate: string;
   done: boolean;
   doneElapsed?: string;
+  /** ETA estimate (seconds) from the last fresh message; null = not yet known. */
+  etaBaseSeconds: number | null;
+  /** Clock snapshot (ms) when etaBaseSeconds was last set. */
+  etaBaseAtMs: number;
 }
 
 /** TTY renderer: a cli-progress multibar with an embedding bar + per-provider bars. */
@@ -212,7 +226,9 @@ export class TtyProgressRenderer implements ProgressRenderer {
   refreshActiveBars(): void {
     for (const state of this.barStates.values()) {
       if (state.done) continue;
-      const { elapsed, eta } = barTimeFields(state.startMs, state.value, state.total, this.now());
+      const nowMs = this.now();
+      const elapsed = fmtDuration(nowMs - state.startMs);
+      const eta = formatEta(countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs));
       state.bar.update(state.value, { label: state.label, rate: state.rate, elapsed, eta });
     }
   }
@@ -225,15 +241,34 @@ export class TtyProgressRenderer implements ProgressRenderer {
       let state = this.barStates.get("embedding");
       if (!state) {
         const bar = this.multibar.create(message.total, 0, { label, rate, eta: "", elapsed: "" });
-        state = { bar, startMs: this.now(), value: 0, total: message.total, label, rate, done: false };
+        state = {
+          bar,
+          startMs: this.now(),
+          value: 0,
+          total: message.total,
+          label,
+          rate,
+          done: false,
+          etaBaseSeconds: null,
+          etaBaseAtMs: this.now(),
+        };
         this.barStates.set("embedding", state);
         this.startTickIfNeeded();
       }
+      const nowMs = this.now();
       state.total = message.total;
       state.label = label;
       state.rate = rate;
       state.value = Math.min(message.current, message.total);
-      const { elapsed, eta } = barTimeFields(state.startMs, state.value, state.total, this.now());
+      // Recompute ETA base from fresh message data
+      if (message.throughput !== null && message.throughput !== undefined && message.throughput > 0) {
+        state.etaBaseSeconds = Math.max(0, (message.total - message.current) / message.throughput);
+      } else {
+        state.etaBaseSeconds = computeEtaSeconds(state.value, state.total, nowMs - state.startMs);
+      }
+      state.etaBaseAtMs = nowMs;
+      const elapsed = fmtDuration(nowMs - state.startMs);
+      const eta = formatEta(countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs));
       state.bar.update(state.value, { label, rate, eta, elapsed });
       state.bar.setTotal(message.total);
       return;
@@ -245,14 +280,29 @@ export class TtyProgressRenderer implements ProgressRenderer {
       let state = this.barStates.get(key);
       if (!state) {
         const bar = this.multibar.create(message.total, 0, { label, rate: "", eta: "", elapsed: "" });
-        state = { bar, startMs: this.now(), value: 0, total: message.total, label, rate: "", done: false };
+        state = {
+          bar,
+          startMs: this.now(),
+          value: 0,
+          total: message.total,
+          label,
+          rate: "",
+          done: false,
+          etaBaseSeconds: null,
+          etaBaseAtMs: this.now(),
+        };
         this.barStates.set(key, state);
         this.startTickIfNeeded();
       }
+      const nowMs = this.now();
       state.total = message.total;
       state.label = label;
       state.value = Math.min(message.applied, message.total);
-      const { elapsed, eta } = barTimeFields(state.startMs, state.value, state.total, this.now());
+      // Recompute ETA base from fresh message data
+      state.etaBaseSeconds = computeEtaSeconds(state.value, state.total, nowMs - state.startMs);
+      state.etaBaseAtMs = nowMs;
+      const elapsed = fmtDuration(nowMs - state.startMs);
+      const eta = formatEta(countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs));
       state.bar.setTotal(message.total);
       state.bar.update(state.value, { label, rate: "", eta, elapsed });
       return;
@@ -269,6 +319,7 @@ export class TtyProgressRenderer implements ProgressRenderer {
         const state = this.barStates.get(key);
         if (!state) continue;
         state.done = true;
+        state.value = state.total;
         state.doneElapsed = fmtDuration(this.now() - state.startMs);
         state.bar.update(state.value, {
           label: state.label,

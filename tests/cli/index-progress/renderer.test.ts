@@ -5,6 +5,7 @@ import { computeEtaSeconds } from "../../../src/cli/index-progress/phase-tracker
 import {
   barTimeFields,
   buildBarLine,
+  countdownEta,
   createRenderer,
   formatEta,
   formatProgressLine,
@@ -614,21 +615,21 @@ describe("TtyProgressRenderer — phase-done via multibar.log (legacy: now inlin
     expect(mockMultibar.log).not.toHaveBeenCalled();
   });
 
-  it("marks embedding bar done inline (does not force value to total)", () => {
+  it("marks embedding bar done inline (fills value to total)", () => {
     const r = new TtyProgressRenderer(colors);
     // Create the embedding bar first
     r.handle({ type: "embedding", phase: "embedding", percentage: 99, current: 7325, total: 7339 });
     mockSingleBar.update.mockClear();
     // Now fire phase-done
     r.handle({ type: "phase-done", phase: "embedding", elapsedMs: 129400 });
-    // update must be called with done payload, NOT with forced total
+    // update must be called with done payload and value filled to total (7339)
     const updateCalls = mockSingleBar.update.mock.calls;
     expect(updateCalls.some((c) => (c[1] as Record<string, unknown>)["done"] !== undefined)).toBe(true);
-    // Must NOT force value to 7339 (total)
-    expect(updateCalls.some((c) => c[0] === 7339)).toBe(false);
+    // Value MUST be filled to total (7339) on done
+    expect(updateCalls.some((c) => c[0] === 7339)).toBe(true);
   });
 
-  it("marks all enrichment bars done inline on enrichment phase-done", () => {
+  it("marks all enrichment bars done inline on enrichment phase-done (fills to total)", () => {
     const r = new TtyProgressRenderer(colors);
     // Create two enrichment bars
     r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 7000, total: 7325 });
@@ -640,8 +641,8 @@ describe("TtyProgressRenderer — phase-done via multibar.log (legacy: now inlin
     // Both bars get done payload
     const doneUpdates = updateCalls.filter((c) => (c[1] as Record<string, unknown>)["done"] !== undefined);
     expect(doneUpdates).toHaveLength(2);
-    // No forced-to-total value
-    expect(updateCalls.every((c) => c[0] !== 7325)).toBe(true);
+    // Values MUST be filled to total (7325) on done
+    expect(updateCalls.every((c) => c[0] === 7325)).toBe(true);
   });
 });
 
@@ -878,7 +879,7 @@ describe("TtyProgressRenderer — phase-done inline", () => {
     expect(barStates.get("git:chunk")?.done).toBe(true);
   });
 
-  it("marks embedding bar done inline (does not force value to total)", () => {
+  it("marks embedding bar done inline (fills value to total)", () => {
     const r = new TtyProgressRenderer(colors);
     r.handle({ type: "embedding", phase: "embedding", percentage: 57, current: 4096, total: 7194 });
     mockSingleBar.update.mockClear();
@@ -886,11 +887,11 @@ describe("TtyProgressRenderer — phase-done inline", () => {
     const updateCalls = mockSingleBar.update.mock.calls;
     // Must be called with done payload
     expect(updateCalls.some((c) => (c[1] as Record<string, unknown>)["done"] !== undefined)).toBe(true);
-    // Must NOT force value to 7194
-    expect(updateCalls.some((c) => c[0] === 7194)).toBe(false);
+    // MUST fill value to total (7194) on done
+    expect(updateCalls.some((c) => c[0] === 7194)).toBe(true);
   });
 
-  it("marks all enrichment bars done inline on enrichment phase-done", () => {
+  it("marks all enrichment bars done inline on enrichment phase-done (fills to total)", () => {
     const r = new TtyProgressRenderer(colors);
     r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 7000, total: 7325 });
     r.handle({ type: "enrichment", providerKey: "git", level: "chunk", applied: 5000, total: 7325 });
@@ -900,8 +901,8 @@ describe("TtyProgressRenderer — phase-done inline", () => {
     // Both bars get update called with done payload
     const doneUpdates = updateCalls.filter((c) => (c[1] as Record<string, unknown>)["done"] !== undefined);
     expect(doneUpdates).toHaveLength(2);
-    // No forced total (7325) in the update value position
-    expect(updateCalls.every((c) => c[0] !== 7325)).toBe(true);
+    // Values MUST be filled to total (7325) on done
+    expect(updateCalls.every((c) => c[0] === 7325)).toBe(true);
   });
 });
 
@@ -924,5 +925,157 @@ describe("LineProgressRenderer — phase-done", () => {
     r.handle({ type: "phase-done", phase: "embedding", elapsedMs: 3500 });
     r.handle({ type: "phase-done", phase: "embedding", elapsedMs: 3500 });
     expect(written).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// countdownEta — pure helper (Bug 1 fix)
+// ---------------------------------------------------------------------------
+describe("countdownEta", () => {
+  it("returns the base when no time has elapsed", () => {
+    expect(countdownEta(50, 0, 0)).toBe(50);
+  });
+
+  it("counts down by the elapsed wall time", () => {
+    expect(countdownEta(50, 0, 10_000)).toBe(40);
+  });
+
+  it("clamps to 0 when wall time exceeds base", () => {
+    expect(countdownEta(50, 0, 60_000)).toBe(0);
+  });
+
+  it("returns null when etaBaseSeconds is null", () => {
+    expect(countdownEta(null, 0, 10_000)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bug 1 — ETA uses throughput when present + counts DOWN between messages
+// ---------------------------------------------------------------------------
+describe("TtyProgressRenderer — ETA countdown (Bug 1)", () => {
+  const colors = createColorizer({ env: { NO_COLOR: "1" }, isTTY: false });
+  let nowMs = 0;
+
+  beforeEach(() => {
+    nowMs = 0;
+    mockMultibar.create.mockClear();
+    mockMultibar.stop.mockClear();
+    mockMultibar.log.mockClear();
+    mockSingleBar.update.mockClear();
+    mockSingleBar.setTotal.mockClear();
+    mockMultibar.create.mockReturnValue(mockSingleBar);
+  });
+
+  it("embedding ETA base uses throughput when present (not cumulative rate)", () => {
+    const r = new TtyProgressRenderer(colors, () => nowMs);
+    nowMs = 0;
+    r.handle({ type: "embedding", phase: "embedding", percentage: 0, current: 0, total: 7344 });
+    nowMs = 10_000;
+    r.handle({
+      type: "embedding",
+      phase: "embedding",
+      percentage: 99,
+      current: 7283,
+      total: 7344,
+      throughput: 60,
+    });
+    const { barStates } = r as unknown as { barStates: Map<string, { etaBaseSeconds: number | null }> };
+    const state = barStates.get("embedding");
+    // expected = (7344 - 7283) / 60 = 61/60 ≈ 1.017
+    expect(state?.etaBaseSeconds).not.toBeNull();
+    expect(state!.etaBaseSeconds!).toBeCloseTo((7344 - 7283) / 60, 1);
+  });
+
+  it("ETA in rendered bar line decreases (not increases) between messages when value is fixed", () => {
+    const r = new TtyProgressRenderer(colors, () => nowMs);
+
+    // Use throughput=1 ch/s with 100 remaining → base ETA = 100s
+    // After 5s tick the countdown gives ~95s — clearly less than ~100s
+    nowMs = 0;
+    r.handle({ type: "embedding", phase: "embedding", percentage: 0, current: 0, total: 200 });
+    nowMs = 10_000;
+    r.handle({
+      type: "embedding",
+      phase: "embedding",
+      percentage: 50,
+      current: 100,
+      total: 200,
+      throughput: 1, // 1 ch/s → base = (200-100)/1 = 100s
+    });
+    // Capture eta from the update call right after the message
+    const callsAfterMsg = mockSingleBar.update.mock.calls;
+    const etaAfterMsg = (callsAfterMsg[callsAfterMsg.length - 1][1] as Record<string, unknown>)["eta"] as string;
+
+    mockSingleBar.update.mockClear();
+    // Advance clock by 5 seconds — no new message, just a tick
+    nowMs = 15_000;
+    (r as unknown as { refreshActiveBars: () => void }).refreshActiveBars();
+
+    const callsAfterTick = mockSingleBar.update.mock.calls;
+    const etaAfterTick = (callsAfterTick[callsAfterTick.length - 1][1] as Record<string, unknown>)["eta"] as string;
+
+    // Both ETAs must be non-empty (base=100s, after 5s tick=95s — both > 0)
+    expect(etaAfterMsg).not.toBe("");
+    expect(etaAfterTick).not.toBe("");
+
+    // Parse numeric value (strip ~, s, m)
+    const parse = (s: string): number => {
+      const n = parseFloat(s.replace(/[^0-9.]/g, ""));
+      return s.includes("m") ? n * 60 : n;
+    };
+    expect(parse(etaAfterTick)).toBeLessThan(parse(etaAfterMsg));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bug 2 — phase-done fills bar to 100%
+// ---------------------------------------------------------------------------
+describe("TtyProgressRenderer — phase-done fills to 100% (Bug 2)", () => {
+  const colors = createColorizer({ env: { NO_COLOR: "1" }, isTTY: false });
+  let nowMs = 0;
+
+  beforeEach(() => {
+    nowMs = 0;
+    mockMultibar.create.mockClear();
+    mockMultibar.stop.mockClear();
+    mockMultibar.log.mockClear();
+    mockSingleBar.update.mockClear();
+    mockSingleBar.setTotal.mockClear();
+    mockMultibar.create.mockReturnValue(mockSingleBar);
+  });
+
+  it("after phase-done embedding: bar.value equals bar.total", () => {
+    const r = new TtyProgressRenderer(colors, () => nowMs);
+    r.handle({ type: "embedding", phase: "embedding", percentage: 99, current: 7325, total: 7344 });
+    r.handle({ type: "phase-done", phase: "embedding", elapsedMs: 5000 });
+    const { barStates } = r as unknown as {
+      barStates: Map<string, { value: number; total: number }>;
+    };
+    const state = barStates.get("embedding");
+    expect(state?.value).toBe(state?.total);
+  });
+
+  it("after phase-done embedding: update is called with total as value argument", () => {
+    const r = new TtyProgressRenderer(colors, () => nowMs);
+    r.handle({ type: "embedding", phase: "embedding", percentage: 99, current: 7325, total: 7344 });
+    mockSingleBar.update.mockClear();
+    r.handle({ type: "phase-done", phase: "embedding", elapsedMs: 5000 });
+    const updateCalls = mockSingleBar.update.mock.calls;
+    // update called with value=total=7344
+    expect(updateCalls.some((c) => c[0] === 7344)).toBe(true);
+  });
+
+  it("after phase-done enrichment: bar.value equals bar.total for all enrichment bars", () => {
+    const r = new TtyProgressRenderer(colors, () => nowMs);
+    r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 7000, total: 7325 });
+    r.handle({ type: "enrichment", providerKey: "git", level: "chunk", applied: 5000, total: 7325 });
+    r.handle({ type: "phase-done", phase: "enrichment", elapsedMs: 45000 });
+    const { barStates } = r as unknown as {
+      barStates: Map<string, { value: number; total: number }>;
+    };
+    const file = barStates.get("git:file");
+    const chunk = barStates.get("git:chunk");
+    expect(file?.value).toBe(file?.total);
+    expect(chunk?.value).toBe(chunk?.total);
   });
 });
