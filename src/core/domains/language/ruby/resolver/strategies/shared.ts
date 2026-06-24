@@ -85,16 +85,16 @@ export function receiverIsIndexAccess(receiver: string): boolean {
  * receiver dispatches on (`req.headers.to_h`, `e.backtrace.first`,
  * `type.constantize`). NARROW + unambiguous on purpose: in-project association
  * tails (`agents`, `user`) are absent, so `event.user.agents` is never
- * suppressed. High-frequency ambiguous tails (`.map`/`.each`/`.first`) are
- * EXCLUDED (deferred — they need a root-segment vocab gate). bd Increment B / B-suppress.
+ * suppressed. High-frequency / in-project-overridable tails (`.map`/`.each`/
+ * `.first`, and `.to_h`/`.to_json` which Rails models & serializers routinely
+ * define) are EXCLUDED (deferred — they need a root-segment vocab gate). bd
+ * Increment B / B-suppress.
  */
 const EXTERNAL_CHAIN_TAILS = [
   ".headers",
   ".backtrace",
   ".constantize",
   ".deconstantize",
-  ".to_h",
-  ".to_json",
   ".to_param",
   ".class_name",
 ];

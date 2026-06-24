@@ -54,7 +54,6 @@ export const RELATION_RETURNING_METHODS = new Set([
   "all",
   "readonly",
   "lock",
-  "merge",
   "none",
 ]);
 
