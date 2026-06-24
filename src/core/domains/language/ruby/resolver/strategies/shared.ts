@@ -65,6 +65,21 @@ export function isRubyPath(relPath: string): boolean {
   return relPath.endsWith(".rb") || relPath.endsWith(".rake") || relPath.endsWith(".gemspec");
 }
 
+/**
+ * True when a call receiver's OUTERMOST operation is an element reference
+ * (`recv[k]`, `arr[i]`, `[1,2,3]`) — the trimmed text ends in `]` and contains a
+ * `[`. An index on an untyped container yields an element whose type is
+ * statically untrackable (Hash/Array element → core/external), so the dynamic
+ * resolver must NOT fan out to same-named in-project methods. A chain off an
+ * index (`a[0].b`) ends in `b`, not `]`, so it is correctly excluded (outermost
+ * op is the chain — deferred to increment B). Text-shape, mirroring
+ * `receiverLooksLikeArRelationChain` (bd tea-rags-mcp-mktkk increment A).
+ */
+export function receiverIsIndexAccess(receiver: string): boolean {
+  const t = receiver.trimEnd();
+  return t.endsWith("]") && t.includes("[");
+}
+
 /** Last `::`-segment of a (possibly qualified) Ruby constant — `A::B::C` → `C`. */
 export function lastConstantSegment(qualified: string): string {
   const parts = qualified.split("::");

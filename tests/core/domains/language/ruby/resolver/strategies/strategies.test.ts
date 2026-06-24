@@ -18,6 +18,7 @@ import {
   RubySuperSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
+import { receiverIsIndexAccess } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/shared.js";
 import {
   SUPER_RECEIVER_SENTINEL,
   ZEITWERK_PREFIX,
@@ -597,5 +598,23 @@ describe("RubyReturnTypeBindingSymbolResolutionStrategy", () => {
       kind: "resolved",
       target: { targetRelPath: "app/clients/http_client.rb", targetSymbolId: null },
     });
+  });
+});
+
+describe("receiverIsIndexAccess (mktkk increment A)", () => {
+  it("is true when the receiver's outermost op is an element reference", () => {
+    expect(receiverIsIndexAccess("options['subject']")).toBe(true);
+    expect(receiverIsIndexAccess("payload[key]")).toBe(true);
+    expect(receiverIsIndexAccess("arr[i]")).toBe(true);
+    expect(receiverIsIndexAccess("context.registers[:agent]")).toBe(true); // outermost is [:agent]
+    expect(receiverIsIndexAccess("[1, 2, 3]")).toBe(true); // array literal receiver
+  });
+
+  it("is false for chain / bare / constant receivers (deferred to increment B)", () => {
+    expect(receiverIsIndexAccess("event.user")).toBe(false); // chain
+    expect(receiverIsIndexAccess("a[0].b")).toBe(false); // outermost op is .b, not index
+    expect(receiverIsIndexAccess("obj")).toBe(false); // bare identifier
+    expect(receiverIsIndexAccess("User")).toBe(false); // constant
+    expect(receiverIsIndexAccess("@client")).toBe(false); // ivar
   });
 });
