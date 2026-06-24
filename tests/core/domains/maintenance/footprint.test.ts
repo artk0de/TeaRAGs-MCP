@@ -1,8 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CollectionFootprintFactory } from "../../../../src/core/domains/maintenance/footprint/factory.js";
 import { QdrantArtifact } from "../../../../src/core/domains/maintenance/footprint/qdrant-artifact.js";
 import { CodegraphArtifact } from "../../../../src/core/domains/maintenance/footprint/codegraph-artifact.js";
 import { StatsArtifact } from "../../../../src/core/domains/maintenance/footprint/stats-artifact.js";
+import { SnapshotArtifact } from "../../../../src/core/domains/maintenance/footprint/snapshot-artifact.js";
+import { QuarantineArtifact } from "../../../../src/core/domains/maintenance/footprint/quarantine-artifact.js";
 
 function resolved(over: Record<string, unknown> = {}) {
   return {
@@ -148,5 +153,109 @@ describe("StatsArtifact", () => {
     };
     await artifact.remove(ctx);
     expect(statsCache.invalidate).toHaveBeenCalledWith("code_dst");
+  });
+});
+
+describe("SnapshotArtifact", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "snap-art-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("clone: delegates to ShardedSnapshotManager.cloneTo and target snapshot exists", async () => {
+    // seed source snapshot via the real manager so cloneTo has something to copy
+    const { ShardedSnapshotManager } = await import(
+      "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js"
+    );
+    const src = new ShardedSnapshotManager(dir, "code_src");
+    await src.save("/old/path", new Map([["a.ts", { hash: "h", mtime: 1, size: 2 }]]));
+
+    const artifact = new SnapshotArtifact(dir);
+    const ctx = {
+      source: { ...resolved(), logicalName: "code_src" },
+      target: { ...resolved(), logicalName: "code_dst", path: "/new/path" },
+    };
+    await artifact.clone(ctx);
+
+    const dst = new ShardedSnapshotManager(dir, "code_dst");
+    expect(await dst.exists()).toBe(true);
+  });
+
+  it("clone: is a no-op when source snapshot is absent", async () => {
+    const artifact = new SnapshotArtifact(dir);
+    const ctx = {
+      source: { ...resolved(), logicalName: "code_missing" },
+      target: { ...resolved(), logicalName: "code_dst", path: "/new/path" },
+    };
+    await expect(artifact.clone(ctx)).resolves.not.toThrow();
+  });
+
+  it("remove: deletes the target snapshot directory", async () => {
+    const { ShardedSnapshotManager } = await import(
+      "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js"
+    );
+    const mgr = new ShardedSnapshotManager(dir, "code_dst");
+    await mgr.save("/some/path", new Map([["a.ts", { hash: "h", mtime: 1, size: 2 }]]));
+    expect(await mgr.exists()).toBe(true);
+
+    const artifact = new SnapshotArtifact(dir);
+    const ctx = {
+      source: resolved(),
+      target: { ...resolved(), logicalName: "code_dst", path: "/some/path" },
+    };
+    await artifact.remove(ctx);
+    expect(await mgr.exists()).toBe(false);
+  });
+});
+
+describe("QuarantineArtifact", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "quar-art-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("clone: delegates to QuarantineStore.cloneTo and target quarantine file exists", async () => {
+    // seed source quarantine file so cloneTo has something to copy
+    writeFileSync(
+      join(dir, "code_src.quarantine.json"),
+      '{"version":1,"updatedAt":"2026-01-01","files":{}}',
+    );
+
+    const artifact = new QuarantineArtifact(dir);
+    const ctx = {
+      source: { ...resolved(), logicalName: "code_src" },
+      target: { ...resolved(), logicalName: "code_dst" },
+    };
+    await artifact.clone(ctx);
+
+    expect(existsSync(join(dir, "code_dst.quarantine.json"))).toBe(true);
+  });
+
+  it("clone: is a no-op when source quarantine is absent", async () => {
+    const artifact = new QuarantineArtifact(dir);
+    const ctx = {
+      source: { ...resolved(), logicalName: "code_missing" },
+      target: { ...resolved(), logicalName: "code_dst" },
+    };
+    await expect(artifact.clone(ctx)).resolves.not.toThrow();
+    expect(existsSync(join(dir, "code_dst.quarantine.json"))).toBe(false);
+  });
+
+  it("remove: clears the target quarantine file via clearAll", async () => {
+    writeFileSync(
+      join(dir, "code_dst.quarantine.json"),
+      '{"version":1,"updatedAt":"2026-01-01","files":{}}',
+    );
+    expect(existsSync(join(dir, "code_dst.quarantine.json"))).toBe(true);
+
+    const artifact = new QuarantineArtifact(dir);
+    const ctx = {
+      source: resolved(),
+      target: { ...resolved(), logicalName: "code_dst" },
+    };
+    await artifact.remove(ctx);
+    expect(existsSync(join(dir, "code_dst.quarantine.json"))).toBe(false);
   });
 });

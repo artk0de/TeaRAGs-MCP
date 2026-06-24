@@ -18,5 +18,12 @@ export interface FootprintContext {
 export interface CollectionArtifact {
   readonly id: ArtifactId;
   clone(ctx: FootprintContext): Promise<void>;
+  /**
+   * Best-effort teardown of the TARGET artifact (used for create-saga rollback
+   * and worktree removal). The orchestrator wraps each call, so an implementation
+   * MAY throw; the caller treats a throw as a non-fatal skip. Multi-step removes
+   * should still attempt every step internally (swallow per-step) so a single
+   * failed step does not abandon the rest of that artifact's cleanup.
+   */
   remove(ctx: FootprintContext): Promise<void>;
 }
