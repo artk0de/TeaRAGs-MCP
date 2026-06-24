@@ -18,6 +18,7 @@ export {
   collectKnownPaths,
   lastConstantSegment,
   isRubyPath,
+  receiverIsIndexAccess,
   CONE_MAX_DEFAULT,
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
   type ResolverConfig,
