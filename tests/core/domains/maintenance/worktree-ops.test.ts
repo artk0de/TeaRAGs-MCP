@@ -35,7 +35,7 @@ function makeDeps(over: Partial<Record<string, unknown>> = {}, calls: string[] =
       registry: {
         findByName: vi.fn(() => sourceEntry),
         findByPath: vi.fn(() => sourceEntry),
-        get: vi.fn(() => sourceEntry),
+        get: vi.fn(() => null),
         record: vi.fn((e: Record<string, unknown>) => recorded.push(e)),
         setName: vi.fn(),
         setWorktreeProvenance: vi.fn(),
@@ -90,6 +90,16 @@ describe("WorktreeOps.create saga", () => {
       "remove:qdrant",
     ]);
     expect(recorded).toHaveLength(0);
+  });
+
+  it("throws if the target collection already exists, before any clone", async () => {
+    const calls: string[] = [];
+    const { deps } = makeDeps({}, calls);
+    // make registry.get return a non-null entry for the target
+    deps.registry.get = vi.fn(() => ({ collectionName: "code_dst" }));
+    const ops = new WorktreeOps(deps);
+    await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(/already exists/);
+    expect(calls).toEqual([]); // no artifact cloned
   });
 });
 

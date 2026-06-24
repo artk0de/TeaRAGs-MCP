@@ -47,6 +47,8 @@ export class WorktreeOps {
     const worktreePath = resolve(input.path ?? input.name);
     const targetLogical = resolveCollectionName(worktreePath);
 
+    if (registry.get(targetLogical)) throw new Error(`Target collection already exists: ${targetLogical}`);
+
     const srcPhysical = await qdrant.aliases.resolveActive(sourceEntry.collectionName);
 
     const source: ResolvedCollection = {
@@ -78,7 +80,7 @@ export class WorktreeOps {
         done.push(a);
       }
     } catch (err) {
-      for (const a of done.reverse()) await a.remove(context).catch(() => undefined);
+      for (const a of [...done].reverse()) await a.remove(context).catch(() => undefined);
       throw err;
     }
 
