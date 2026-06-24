@@ -5,245 +5,129 @@ sidebar_position: 99
 
 ## [1.32.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.31.1...v1.32.0) (2026-06-24)
 
-### ⚠ BREAKING CHANGES
+### trajectory
 
-* **trajectory:** get_index_status.codegraphResolve.resolveSuccessRate is now
-present only when DEBUG is set. inProjectEdgeRecall and callsNoInProjectDef are
-the new always-on completeness fields.
+* inProjectEdgeRecall replaces resolveSuccessRate as the always-on completeness metric in get_index_status (resolveSuccessRate is now DEBUG-only) ([2039ece](https://github.com/artk0de/TeaRAGs-MCP/commit/2039ece))
+* CHA cone devirtualization for Ruby and Python: polymorphic dispatch fans out to overriding subtypes ([241a560](https://github.com/artk0de/TeaRAGs-MCP/commit/241a560), [3a0034a](https://github.com/artk0de/TeaRAGs-MCP/commit/3a0034a), [f036350](https://github.com/artk0de/TeaRAGs-MCP/commit/f036350))
+* class hierarchy edges persisted and normalized per file as substrate for CHA and blast-radius queries ([83b3320](https://github.com/artk0de/TeaRAGs-MCP/commit/83b3320), [eb31405](https://github.com/artk0de/TeaRAGs-MCP/commit/eb31405))
+* Ruby @ivar field type inference: constructor-assigned types collected and fed into receiver resolution ([90036e7](https://github.com/artk0de/TeaRAGs-MCP/commit/90036e7), [978ec6a](https://github.com/artk0de/TeaRAGs-MCP/commit/978ec6a), [af0a4fc](https://github.com/artk0de/TeaRAGs-MCP/commit/af0a4fc))
+* Ruby return-type binding resolution: method body return types resolve subsequent call receivers ([e5b650c](https://github.com/artk0de/TeaRAGs-MCP/commit/e5b650c), [0f26fb5](https://github.com/artk0de/TeaRAGs-MCP/commit/0f26fb5), [570174a](https://github.com/artk0de/TeaRAGs-MCP/commit/570174a))
+* Ruby receiver type inference for ActiveRecord association chains, block params, and class-valued vars (increment B) ([64f6f93](https://github.com/artk0de/TeaRAGs-MCP/commit/64f6f93), [7a61733](https://github.com/artk0de/TeaRAGs-MCP/commit/7a61733), [ee2f1e2](https://github.com/artk0de/TeaRAGs-MCP/commit/ee2f1e2), [9b97fb7](https://github.com/artk0de/TeaRAGs-MCP/commit/9b97fb7), [9b0fb95](https://github.com/artk0de/TeaRAGs-MCP/commit/9b0fb95))
+* Ruby DSL/dynamic/YARD resolution and poly-base edge expansion via per-framework vocabulary registry ([fd5a3b7](https://github.com/artk0de/TeaRAGs-MCP/commit/fd5a3b7), [cef11a4](https://github.com/artk0de/TeaRAGs-MCP/commit/cef11a4), [3456e28](https://github.com/artk0de/TeaRAGs-MCP/commit/3456e28), [954db08](https://github.com/artk0de/TeaRAGs-MCP/commit/954db08))
+* index-access receivers (arr[k].method) classified as external and suppressed from dynamic dispatch fan-out ([73fa33f](https://github.com/artk0de/TeaRAGs-MCP/commit/73fa33f), [c21fc94](https://github.com/artk0de/TeaRAGs-MCP/commit/c21fc94), [47ac9bd](https://github.com/artk0de/TeaRAGs-MCP/commit/47ac9bd))
+* dynamic send(var) counted as unresolvable instead of a resolver miss, keeping the denominator honest ([f70ae96](https://github.com/artk0de/TeaRAGs-MCP/commit/f70ae96), [046c5bb](https://github.com/artk0de/TeaRAGs-MCP/commit/046c5bb))
+* registry-literal dispatch: CONST[k].new.method edges resolved for Ruby dispatch-table idioms ([1a01fca](https://github.com/artk0de/TeaRAGs-MCP/commit/1a01fca))
+* dynamic receiver kind split into ivar/chain/index sub-buckets for targeted precision measurement ([f0b50e0](https://github.com/artk0de/TeaRAGs-MCP/commit/f0b50e0))
+* external-library and gem calls excluded from codegraph resolve rate ([fcef101](https://github.com/artk0de/TeaRAGs-MCP/commit/fcef101))
+* symbol→covering-chunk ID stored on cg_symbols so find_symbol can locate collapsed-class methods via two-hop fallback ([acabb67](https://github.com/artk0de/TeaRAGs-MCP/commit/acabb67), [e4ce2d3](https://github.com/artk0de/TeaRAGs-MCP/commit/e4ce2d3), [3beb400](https://github.com/artk0de/TeaRAGs-MCP/commit/3beb400), [0fd66bb](https://github.com/artk0de/TeaRAGs-MCP/commit/0fd66bb))
+* prepended modules walked in Ruby self/super MRO resolution ([70b10e5](https://github.com/artk0de/TeaRAGs-MCP/commit/70b10e5))
+* Ruby accessor methods synthesized for attribute/attachments/class_attribute/store_accessor macros ([29eb2d1](https://github.com/artk0de/TeaRAGs-MCP/commit/29eb2d1), [5ecc572](https://github.com/artk0de/TeaRAGs-MCP/commit/5ecc572))
+* per-receiver-kind resolve instrumentation with method edge_kind and confidence persisted to cg_run_stats ([58cc525](https://github.com/artk0de/TeaRAGs-MCP/commit/58cc525), [70af7e8](https://github.com/artk0de/TeaRAGs-MCP/commit/70af7e8), [df00c27](https://github.com/artk0de/TeaRAGs-MCP/commit/df00c27))
+* fix: explicit self.&lt;member&gt; calls now resolve via enclosing-class MRO walk ([4a1248e](https://github.com/artk0de/TeaRAGs-MCP/commit/4a1248e))
+* fix: CHA cone hierarchy snapshot threaded into resolve context — cone dispatch was producing zero edges in production ([9dfe811](https://github.com/artk0de/TeaRAGs-MCP/commit/9dfe811))
+* fix: increment B receiver-type sets pruned of merge/.to_h/.to_json false positives ([a418e6e](https://github.com/artk0de/TeaRAGs-MCP/commit/a418e6e))
+* fix: extractOneFile materializes AST after parse for deterministic incremental codegraph path ([d743780](https://github.com/artk0de/TeaRAGs-MCP/commit/d743780))
 
-Co-Authored-By: Claude Opus 4.8 (1M context) &lt;noreply@anthropic.com&gt;
-* **config:** default INGEST_TUNE_CHUNKER_POOL_SIZE changes from 1 to
-min(4, cpus-1). Indexing now spawns up to 4 chunker child processes by default
-(higher memory, faster parse). Set INGEST_TUNE_CHUNKER_POOL_SIZE=1 to restore
-single-process behavior.
+### ingest
 
-Co-Authored-By: Claude Opus 4.8 (1M context) &lt;noreply@anthropic.com&gt;
+* poison-pill quarantine: files that crash indexing are isolated, retried on reindex, and their count surfaced in get_index_status ([0a7b04c](https://github.com/artk0de/TeaRAGs-MCP/commit/0a7b04c), [a7928f1](https://github.com/artk0de/TeaRAGs-MCP/commit/a7928f1), [6e4570b](https://github.com/artk0de/TeaRAGs-MCP/commit/6e4570b))
+* embed-phase quarantine isolation: oversized or rejected chunks no longer abort the entire embedding pass ([791c499](https://github.com/artk0de/TeaRAGs-MCP/commit/791c499))
+* index-codebase CLI command with live progress streaming and enrichment waiting ([355c472](https://github.com/artk0de/TeaRAGs-MCP/commit/355c472))
+* filesCount populated from the persisted distinct-paths stat in get_index_status ([e8b1533](https://github.com/artk0de/TeaRAGs-MCP/commit/e8b1533))
+* fix: quarantine durability across snapshot swaps and reindex retry path corrected (3 bugs found by live MCP test) ([9d4dce5](https://github.com/artk0de/TeaRAGs-MCP/commit/9d4dce5))
+* fix: clear_index removes quarantine and stats sibling files so stale quarantines do not persist ([f94e1c0](https://github.com/artk0de/TeaRAGs-MCP/commit/f94e1c0))
+* fix: codegraphEnabled persisted in project registry so tea-rags prime applies the correct signal set ([249863b](https://github.com/artk0de/TeaRAGs-MCP/commit/249863b))
+* fix: enrichment progress bars use correct denominator and unit (chunks vs files) across all phases ([ab36584](https://github.com/artk0de/TeaRAGs-MCP/commit/ab36584), [6c3f479](https://github.com/artk0de/TeaRAGs-MCP/commit/6c3f479), [ca7a189](https://github.com/artk0de/TeaRAGs-MCP/commit/ca7a189), [5a65f7e](https://github.com/artk0de/TeaRAGs-MCP/commit/5a65f7e), [ca2f336](https://github.com/artk0de/TeaRAGs-MCP/commit/ca2f336), [ac25994](https://github.com/artk0de/TeaRAGs-MCP/commit/ac25994), [641bc40](https://github.com/artk0de/TeaRAGs-MCP/commit/641bc40))
 
-### Features
+### cli
 
-* **adapters:** hierarchy read queries — getSubtypes/getSupertypes/transitive CTE/snapshot (f10y) ([0f60f88](https://github.com/artk0de/TeaRAGs-MCP/commit/0f60f88b40efb08a64e2a39e2167695a869cc0bc))
-* **adapters:** persist inheritance edges via upsertFile + removeFile cascade (f10y) ([63c3fe4](https://github.com/artk0de/TeaRAGs-MCP/commit/63c3fe40f8e26101a0a689341c2d5baf251d211d))
-* **api:** add indexSizeBytes, enrichmentMetrics, projectName to IndexStatus ([8cb1586](https://github.com/artk0de/TeaRAGs-MCP/commit/8cb1586b8a37aca93872b553b37c9051e8ec13af))
-* **api:** exactEdgeRatio — edge-kind precision-confidence breakdown in codegraphResolve ([f018e95](https://github.com/artk0de/TeaRAGs-MCP/commit/f018e958f63f4835a26f8fd5431c786a1ebb9b38))
-* **api:** per-receiverKind inProjectEdgeRecall + callsNoInProjectDef in codegraphResolve ([167d850](https://github.com/artk0de/TeaRAGs-MCP/commit/167d8500834138748dcc622554556d646cbe74f2))
-* **chunker:** additive worker-protocol codegraph extraction fields (yl9tv) ([1ff870a](https://github.com/artk0de/TeaRAGs-MCP/commit/1ff870a6166d5e500aeaf6ebd55dc0d30f30b086))
-* **chunker:** process pool + materialized AST boundary (rdv7d determinism) ([2fa5d89](https://github.com/artk0de/TeaRAGs-MCP/commit/2fa5d89040d5bf00ff2a1b2fc254dcc323989a74))
-* **chunker:** ProcessTransport; run chunker workers as child processes ([1f3c029](https://github.com/artk0de/TeaRAGs-MCP/commit/1f3c0293c8dc024ce4b45b0ce532765c4251b7e2))
-* **chunker:** propagate extraction + single-flight parse (yl9tv) ([7022b7e](https://github.com/artk0de/TeaRAGs-MCP/commit/7022b7e4c2da220d4a54fb62fb51b2e2e4def4db)), closes [ChunkerPool#processFile](https://github.com/artk0de/ChunkerPool/issues/processFile)
-* **chunker:** Ruby walker inheritanceEdges full kind parity (lz8t) ([7db0b24](https://github.com/artk0de/TeaRAGs-MCP/commit/7db0b2466627762c784b41ef6d075b05bb2358bd))
-* **chunker:** TS walker captures extends/implements/interface-extends into inheritanceEdges (f10y) ([47766ed](https://github.com/artk0de/TeaRAGs-MCP/commit/47766edb6da7ef0e657b8bb2d41defee87c0c94d))
-* **chunker:** worker emits codegraph FileExtraction from one parse (yl9tv) ([60d2cd1](https://github.com/artk0de/TeaRAGs-MCP/commit/60d2cd109e8fa33261d8587ed69bf8d3c6775919)), closes [TreeSitterChunker#chunkWithTree](https://github.com/artk0de/TreeSitterChunker/issues/chunkWithTree)
-* **cli:** index-codebase live progress + status overhaul (epic tea-rags-mcp-hrnk3) ([295e1c4](https://github.com/artk0de/TeaRAGs-MCP/commit/295e1c4d91b6bb4d72e63455e83a5e8288b37057))
-* **cli:** per-phase done timing + overall start→finish wall-clock in supervisor ([16c19ac](https://github.com/artk0de/TeaRAGs-MCP/commit/16c19ac8cbcac8a4391b444ed61f7b6404d6745f))
-* **cli:** PhaseProgressTracker + OverallTimer for per-phase ETA and overall wall-clock ([eb4c81b](https://github.com/artk0de/TeaRAGs-MCP/commit/eb4c81b9cc38145457751386ad1fee75e1ee60a5))
-* **cli:** report codegraph DB size separately as codegraphSizeBytes ([446e47e](https://github.com/artk0de/TeaRAGs-MCP/commit/446e47e383fce3deb61a755cd969047edc00cdfc))
-* **cli:** rich status block (project/path, qdrant health, size, enrichment counts) + --json output ([6e35dfe](https://github.com/artk0de/TeaRAGs-MCP/commit/6e35dfe6a35a9fc5d808fdae437d61b95eeb7728))
-* **cli:** tea-rags doctor --quarantine — human table + agent JSON ([21a101d](https://github.com/artk0de/TeaRAGs-MCP/commit/21a101d48facb9c05b0aa3115bce5e8e318bd1e3))
-* **codegraph:** consume chunker-fed FileExtraction, drop main-thread re-parse in pool mode (yl9tv) ([64a2785](https://github.com/artk0de/TeaRAGs-MCP/commit/64a27859484c75ad4db6394c95df0d38d5bc5914))
-* **codegraph:** per-language grain for cg_run_stats resolve summary (cnqrg) ([3727cd1](https://github.com/artk0de/TeaRAGs-MCP/commit/3727cd11630f70eb5e5b94ce3537c3c157074846))
-* **codegraph:** position-aware localBindings + ruby RHS expansion (P3 qo4n2) ([5e707d0](https://github.com/artk0de/TeaRAGs-MCP/commit/5e707d0bbfc83ea9bbda39a6805ee183fbc722d5))
-* **codegraph:** wire TypeScript into CHA cone-dispatch engine (TSConeTypeLocator, k4wpn) ([48c68c1](https://github.com/artk0de/TeaRAGs-MCP/commit/48c68c18ef5ee16ad12047149f1efa0ef5fa6dd5))
-* **codegraph:** wire TypeScript into CHA cone-dispatch engine (TSConeTypeLocator, k4wpn) ([8657fcc](https://github.com/artk0de/TeaRAGs-MCP/commit/8657fccdd8f0c8936166c7b861dde2259573bf36))
-* **codegraph:** worker-owned input-spill cross-pass (yl9tv Task 5b) ([25c8418](https://github.com/artk0de/TeaRAGs-MCP/commit/25c84182d720e691c113667ee8ce0cb09f161730))
-* **config:** restore chunker pool default to min(4, cpus-1) on process isolation ([f190873](https://github.com/artk0de/TeaRAGs-MCP/commit/f19087378210690949c603bb29b2e2d23a5fd36b))
-* **contracts:** AstNode + materializeTree eager single-pass boundary primitive ([aa7253c](https://github.com/artk0de/TeaRAGs-MCP/commit/aa7253c68aff624a9678c7f9660a5f7351d76669))
-* **contracts:** ExternalVocabulary interface + generic ExternalCallClassifier engine ([18fa4b1](https://github.com/artk0de/TeaRAGs-MCP/commit/18fa4b17d1de80e1e89e34ddbbad7b30f2f60f67))
-* **contracts:** GraphDbClient updateSymbolChunkIds + findSymbolChunk (0rskm) ([532ba33](https://github.com/artk0de/TeaRAGs-MCP/commit/532ba3374e545ff63a5b219e7939ade61c6a5ba8))
-* **contracts:** hierarchy graph types — HierarchyView, InheritanceEdge, snapshot (f10y) ([8b8d058](https://github.com/artk0de/TeaRAGs-MCP/commit/8b8d058a0f6928675057aba1b9ce2b03dc25659f))
-* **contracts:** SymbolChunkResolver + GraphFacade.resolveSymbolChunk (0rskm) ([fab7c01](https://github.com/artk0de/TeaRAGs-MCP/commit/fab7c01253d5aa78cc876ec0ddfa3e190802d50f))
-* **embedding:** probe and surface both ollama endpoints' health in prime ([59593a2](https://github.com/artk0de/TeaRAGs-MCP/commit/59593a2848c1674b8398a1d884455a7d4eac3164))
-* **explore:** additive fromCodegraphFallback provenance flag on SearchResult (0rskm) ([cb4cfac](https://github.com/artk0de/TeaRAGs-MCP/commit/cb4cfac969ed50a7cb13f9d4c06cda0465d34843))
-* **explore:** find_symbol two-hop codegraph fallback in SymbolSearchStrategy (0rskm) ([3c607ad](https://github.com/artk0de/TeaRAGs-MCP/commit/3c607ade84a0a0acc4a764943a92eb9d1aef8056))
-* **explore:** thread codegraph chunkResolver into find_symbol strategy (0rskm) ([1c06c37](https://github.com/artk0de/TeaRAGs-MCP/commit/1c06c37ad5a46e90d06136d0a00b0ab9cdd32a88))
-* **infra:** MapHierarchyView — sync bidirectional view over hierarchy snapshot (f10y) ([6ea3aa3](https://github.com/artk0de/TeaRAGs-MCP/commit/6ea3aa347ce8b62929fe9ef6f9438d97925cfa59))
-* **ingest:** add index-codebase CLI command with live progress ([355c472](https://github.com/artk0de/TeaRAGs-MCP/commit/355c47214529803f599e2dc97f217177d17bdbc6))
-* **ingest:** embed-phase poison-pill isolation (D4b) ([791c499](https://github.com/artk0de/TeaRAGs-MCP/commit/791c499117185111ab18f88f83dd01916c393702))
-* **ingest:** expose quarantine count in get_index_status (D6) ([6e4570b](https://github.com/artk0de/TeaRAGs-MCP/commit/6e4570be8b1cdab22fec1db396f5811c1455096c))
-* **ingest:** merge index-codebase CLI command with live progress ([bbd8eee](https://github.com/artk0de/TeaRAGs-MCP/commit/bbd8eee48f6b3ed5cb660b9d5c697af9a3b53c27))
-* **ingest:** poison-pill quarantine core — error taxonomy, store, classifier, file-processor integration ([0a7b04c](https://github.com/artk0de/TeaRAGs-MCP/commit/0a7b04c82209be3f9222c5c6b0fdba060c02a1f8))
-* **ingest:** poison-pill quarantine epic (a1pp) + doctor CLI + docs + follow-ups ([9222118](https://github.com/artk0de/TeaRAGs-MCP/commit/922211841ca5ddb0b752ccc7196fd956fbf76536))
-* **ingest:** populate IndexStatus.filesCount from persisted distinct-paths stat ([e8b1533](https://github.com/artk0de/TeaRAGs-MCP/commit/e8b15334e11ffa08f817680cd354772b4e5193a1))
-* **ingest:** wire quarantine into index/reindex pipelines + concurrent-write fix (D5) ([a7928f1](https://github.com/artk0de/TeaRAGs-MCP/commit/a7928f12a56faf93e76c2086d13d0f1d06c46953))
-* **language:** ActiveRecord association + scope declares in rails DSL module ([64086d7](https://github.com/artk0de/TeaRAGs-MCP/commit/64086d75649b5f9c9cf47b4a5abe89ac7be7daf6))
-* **mcp:** per-receiver-kind resolve breakdown in get_index_status (7m5xz) ([42bb424](https://github.com/artk0de/TeaRAGs-MCP/commit/42bb424465e0d7a8f72c155685ad2be690f8357f))
-* **mcp:** tea-rags:report-issue skill + bug-error report nudges (jola7) ([91edb07](https://github.com/artk0de/TeaRAGs-MCP/commit/91edb07850531d4b65de655c6e2238e30954bc31))
-* **migration:** add cg_symbols_inheritance table + reverse indexes (f10y) ([3e252fa](https://github.com/artk0de/TeaRAGs-MCP/commit/3e252fa8b85b5393cd6e782b065b8ab82be274a0))
-* **pipeline:** worker-side WorkerRuntime; chunker worker entry runs under either transport ([3636f5a](https://github.com/artk0de/TeaRAGs-MCP/commit/3636f5a4993bba23990cca716d67152dd47d8ff2))
-* **pipeline:** WorkerTransport interface + ThreadTransport (additive) ([f912b2f](https://github.com/artk0de/TeaRAGs-MCP/commit/f912b2f5ecfa15bf0dd66d9ca5465efcb59c6e8a))
-* **rerank:** integrate codegraph composites + graph tools across plugin skills (tea-rags-mcp-b65a) ([97a0da3](https://github.com/artk0de/TeaRAGs-MCP/commit/97a0da3e443f0644bc808a2e2da6434fee5d950a))
-* **signals:** percent display-format hint for prime thresholds ([9b4d2dc](https://github.com/artk0de/TeaRAGs-MCP/commit/9b4d2dc11bf6abb117e78479a6a839b99f610b60))
-* **trajectory:** add inProjectEdgeRecall metric, gate resolveSuccessRate behind DEBUG ([2039ece](https://github.com/artk0de/TeaRAGs-MCP/commit/2039ecefa4f0440bfbc81d3ef27cb6ce86613065))
-* **trajectory:** add RubyIvarFieldSymbolResolutionStrategy for [@ivar](https://github.com/ivar) receiver resolution ([af0a4fc](https://github.com/artk0de/TeaRAGs-MCP/commit/af0a4fca6d256cc894f37fbd191edf7adb40cd6c))
-* **trajectory:** add RubyReturnTypeBindingSymbolResolutionStrategy (a71lj) ([0f26fb5](https://github.com/artk0de/TeaRAGs-MCP/commit/0f26fb517ea8052c3ad3ef71367df1b166666131))
-* **trajectory:** callsUnresolvable counter for dynamic send (honest resolve denominator) ([046c5bb](https://github.com/artk0de/TeaRAGs-MCP/commit/046c5bb59d9cfce3c101e0e3f676fc50eeb6172d))
-* **trajectory:** cg_symbols.chunk_id column + symbol_id index (0rskm) ([acabb67](https://github.com/artk0de/TeaRAGs-MCP/commit/acabb67fb868737ca75b69104eb6254ab7ffcdae))
-* **trajectory:** classify index-access receiver calls as external (mktkk) ([47ac9bd](https://github.com/artk0de/TeaRAGs-MCP/commit/47ac9bd40130f18107b5c57e6c2b4371729bd562))
-* **trajectory:** collect Ruby [@ivar](https://github.com/ivar) constructor types into classFieldTypes channel ([90036e7](https://github.com/artk0de/TeaRAGs-MCP/commit/90036e7a1ca972a5cbe566cb822c4fb4b72791a3))
-* **trajectory:** collect Ruby localCallBindings for return-type binding (a71lj) ([e5b650c](https://github.com/artk0de/TeaRAGs-MCP/commit/e5b650c3652bc83a9b4cd7ab0fd5b402e0fce56b))
-* **trajectory:** daemon routing for chunk_id ops (0rskm) ([e4ce2d3](https://github.com/artk0de/TeaRAGs-MCP/commit/e4ce2d392cf00f793bc91e4bf6382a1d61e58e82))
-* **trajectory:** exclude external-library calls from codegraph resolveSuccessRate ([fcef101](https://github.com/artk0de/TeaRAGs-MCP/commit/fcef10155320aacfc02ad5f2997da90addf27765))
-* **trajectory:** infer Ruby return types from method body for return-type binding (a71lj) ([570174a](https://github.com/artk0de/TeaRAGs-MCP/commit/570174a33f1920304f9da209c120016fda1e1769))
-* **trajectory:** inheritance-edges normalizer — unify capture + resolve ancestors (f10y) ([83b3320](https://github.com/artk0de/TeaRAGs-MCP/commit/83b3320548cb2074f79f45574c27dfcf1c9ccd0a))
-* **trajectory:** migration 006 — cg edge_kind/confidence + cg_run_stats (2jet/j431) ([df00c27](https://github.com/artk0de/TeaRAGs-MCP/commit/df00c27f00cc279afb1e3b10f7b625e663e188b5))
-* **trajectory:** per-framework RubyFrameworkVocabulary registry + isExternalBareCall fold ([3456e28](https://github.com/artk0de/TeaRAGs-MCP/commit/3456e28dea413e46e5ed0b7cfbd505834f283eff))
-* **trajectory:** per-receiver-kind resolve instrumentation (j431) ([58cc525](https://github.com/artk0de/TeaRAGs-MCP/commit/58cc52519701a0a20440c1b33b3da50d7a364eba))
-* **trajectory:** persist class hierarchy edges in resolveExtraction (f10y) ([eb31405](https://github.com/artk0de/TeaRAGs-MCP/commit/eb314050726ae107608e42780aee68a14ad2681d))
-* **trajectory:** persist method edge_kind/confidence + daemon run-stats proxy (2jet/j431) ([70af7e8](https://github.com/artk0de/TeaRAGs-MCP/commit/70af7e89418f818f85b85047d9d1041e808e74a2))
-* **trajectory:** Python CHA cone dispatch — N=2 consumer of the unified engine (cha S3) ([f036350](https://github.com/artk0de/TeaRAGs-MCP/commit/f03635004ac28dc70b815d6c6e74dbe18e012a56))
-* **trajectory:** receiverIsIndexAccess predicate for ruby dynamic-edge suppression (mktkk) ([73fa33f](https://github.com/artk0de/TeaRAGs-MCP/commit/73fa33f46e4ac59e38caf91f8e288eb225b8c1fe))
-* **trajectory:** registry-literal dispatch (CONST[k].new.m) method edges (9zlt/pq02v) ([1a01fca](https://github.com/artk0de/TeaRAGs-MCP/commit/1a01fcaa01e84a0985e50a59c72381036743143c)), closes [Class#field](https://github.com/artk0de/Class/issues/field)
-* **trajectory:** resolve class-valued (var=CONST) receivers to static methods (increment B / var=CONST) ([7a61733](https://github.com/artk0de/TeaRAGs-MCP/commit/7a617332db9c8c5442d180f18cab541e49bd5e56))
-* **trajectory:** resolveDispatchViaComponents engine (fan-out mirror of resolveViaChain) ([954db08](https://github.com/artk0de/TeaRAGs-MCP/commit/954db08521731672805da2461d868c51ef66f9ac))
-* **trajectory:** Ruby CHA cone devirtualization fan-out (2jet) ([241a560](https://github.com/artk0de/TeaRAGs-MCP/commit/241a56084def57015df743471dbd0b67f00be8d6))
-* **trajectory:** Ruby DSL/dynamic/YARD resolution + 2jet run-stats & poly-base expansion (cai0) ([fd5a3b7](https://github.com/artk0de/TeaRAGs-MCP/commit/fd5a3b7375f468ecc4ec38f5572b94105fbeab5d)), closes [#post_ids](https://github.com/artk0de/TeaRAGs-MCP/issues/post_ids)
-* **trajectory:** ruby walker tags dynamic send(var) as CallRef.dynamicSend ([f70ae96](https://github.com/artk0de/TeaRAGs-MCP/commit/f70ae9605829acf32ddd7e26ba69798250a4ca08))
-* **trajectory:** RubyExternalVocabulary bridging dsl registry + resolveConstant ([cef11a4](https://github.com/artk0de/TeaRAGs-MCP/commit/cef11a442629d71daec1d60e3e4ed91da64bd01c))
-* **trajectory:** split dynamic receiver-kind into ivar/chain/index ([f0b50e0](https://github.com/artk0de/TeaRAGs-MCP/commit/f0b50e01a54ca459f718da3ce452d50f30bdc560))
-* **trajectory:** suppress index-access receiver fan-out in ruby dynamic dispatch (mktkk) ([c21fc94](https://github.com/artk0de/TeaRAGs-MCP/commit/c21fc942ad85684845af992c985cd667c8f1e4f2))
-* **trajectory:** suppress provably-external chain-tail receivers (increment B / B-suppress) ([9b97fb7](https://github.com/artk0de/TeaRAGs-MCP/commit/9b97fb7379d2e72b77794c4e230c9171821f5e49))
-* **trajectory:** symbol→covering-chunk containment join in deferred pass (0rskm) ([3beb400](https://github.com/artk0de/TeaRAGs-MCP/commit/3beb400dafb94f6890ba47ee029ff1e6168613d5))
-* **trajectory:** synthesize accessor methods for attribute/attachments/class_attribute macros ([29eb2d1](https://github.com/artk0de/TeaRAGs-MCP/commit/29eb2d10d0e18ec84a49bafbed589774d47ce90e))
-* **trajectory:** synthesize store_accessor key accessors (skip the store-name arg) ([5ecc572](https://github.com/artk0de/TeaRAGs-MCP/commit/5ecc57286ae9c47fe5e4fb8b226a4cd965755dce))
-* **trajectory:** type ActiveRecord relation-tail locals (increment B / B2) ([9b0fb95](https://github.com/artk0de/TeaRAGs-MCP/commit/9b0fb95d0982917a5e3d29bee807508ddf24fc3d))
-* **trajectory:** type association-chain receivers via Rails DSL map (increment B / B1) ([64f6f93](https://github.com/artk0de/TeaRAGs-MCP/commit/64f6f93f6f8595d77b125e9635ef9ca22ba1936a))
-* **trajectory:** type block params to iterated element type (increment B / B-block) ([ee2f1e2](https://github.com/artk0de/TeaRAGs-MCP/commit/ee2f1e26caa3b11ca73c0b6e8916211e2de2b684))
-* **trajectory:** unify CHA cone engine + Python inheritance substrate (cha S1/S2) ([3a0034a](https://github.com/artk0de/TeaRAGs-MCP/commit/3a0034a0aea00eea4f2ebd05303fd5f84b160e93))
-* **trajectory:** walk prepended modules in self/super MRO resolution ([70b10e5](https://github.com/artk0de/TeaRAGs-MCP/commit/70b10e5edb8989cd218585fa627f7d5b190cdb0b))
-* **trajectory:** wire codegraph SymbolChunkResolver into find_symbol path (0rskm) ([0fd66bb](https://github.com/artk0de/TeaRAGs-MCP/commit/0fd66bb8798188878b365c5d044ac1fa8b71dc8f))
-* **trajectory:** wire Ruby walker to emit classFieldTypes from [@ivar](https://github.com/ivar) inference ([978ec6a](https://github.com/artk0de/TeaRAGs-MCP/commit/978ec6a518853b598ff3a9e95b06a8fe28add8ee))
+* live progress bars for index-codebase — embedding and enrichment phases with per-phase timing, ETA, and --json output ([6e35dfe](https://github.com/artk0de/TeaRAGs-MCP/commit/6e35dfe), [eb4c81b](https://github.com/artk0de/TeaRAGs-MCP/commit/eb4c81b), [16c19ac](https://github.com/artk0de/TeaRAGs-MCP/commit/16c19ac), [446e47e](https://github.com/artk0de/TeaRAGs-MCP/commit/446e47e))
+* tea-rags doctor --quarantine renders quarantine list as a human table or --json for agent triage ([21a101d](https://github.com/artk0de/TeaRAGs-MCP/commit/21a101d))
+* fix: progress bar ETA uses observed throughput rate; bars freeze on completion; --json mode keeps stdout clean ([272356b](https://github.com/artk0de/TeaRAGs-MCP/commit/272356b), [275ddba](https://github.com/artk0de/TeaRAGs-MCP/commit/275ddba), [a70183f](https://github.com/artk0de/TeaRAGs-MCP/commit/a70183f), [add671b](https://github.com/artk0de/TeaRAGs-MCP/commit/add671b))
+* fix: index size reports actual disk usage (blocks×512) and resolves versioned Qdrant collection paths correctly ([5c89e76](https://github.com/artk0de/TeaRAGs-MCP/commit/5c89e76), [0ef3d59](https://github.com/artk0de/TeaRAGs-MCP/commit/0ef3d59))
 
-### Improvements
+### codegraph
 
-* **cli:** align progress bars, apply color palette, embedding chunk/sec, status after bars stop ([c31c9e2](https://github.com/artk0de/TeaRAGs-MCP/commit/c31c9e2f1c126f74d71db6b1ab61518653981162))
-* **cli:** gold bars + elapsed + phase-done via multibar.log (fix collision & completion) ([b8731da](https://github.com/artk0de/TeaRAGs-MCP/commit/b8731da6a5594fdbd43eb29b357fc6e73723ecfc))
-* **cli:** realtime ETA tick + inline per-bar Done ✓ completion (no separate done-in lines) ([2d68a41](https://github.com/artk0de/TeaRAGs-MCP/commit/2d68a4198e32d4d0f015d45abbb52a3e976237ad))
-* **codegraph:** classify builtin-typed receivers as external (TS ykj7) ([6496ab8](https://github.com/artk0de/TeaRAGs-MCP/commit/6496ab82ed797913da657b8e3b0ec61ddb13ca6c))
-* **codegraph:** TS builtin-receiver external + 6x6e gate + worktree build rules ([d399c8c](https://github.com/artk0de/TeaRAGs-MCP/commit/d399c8c776fe9c9f08b13771582aec98dd7bfe86))
-* **codegraph:** TS walker binds const/new/field-init concrete types (2yfi) ([8f4da30](https://github.com/artk0de/TeaRAGs-MCP/commit/8f4da30aa88367d6c969209e5d1eb7087c3effe4))
-* **codegraph:** TS walker binds const/new/field-init concrete types for resolver (2yfi) ([33de57f](https://github.com/artk0de/TeaRAGs-MCP/commit/33de57f1a1b4999c8615d4e53747d49606a0e452))
-* **config:** per-language test-file patterns (TEST_PATTERNS_BY_LANGUAGE) ([8b6d95e](https://github.com/artk0de/TeaRAGs-MCP/commit/8b6d95e89b3703cc0df96fd18af2e063c57b5e88))
-* **dx:** document find_symbol symbolId convention for subagents ([060a146](https://github.com/artk0de/TeaRAGs-MCP/commit/060a1462ff42bcf7d92e59de49c9a4e9a70e9d2c)), closes [Class#method](https://github.com/artk0de/Class/issues/method)
-* **embedding:** surface fallback ollama availability in prime digest ([f35a53d](https://github.com/artk0de/TeaRAGs-MCP/commit/f35a53d53b87a63ea3a44f2a2306dc50ba0983b2))
-* **embedding:** surface fallback ollama availability in prime digest ([b73ac39](https://github.com/artk0de/TeaRAGs-MCP/commit/b73ac39c88b498404a5b0604232132dc29fc06be))
-* **explore:** harden search-cascade tool routing for deferred loading ([4eefb31](https://github.com/artk0de/TeaRAGs-MCP/commit/4eefb31ab40da16b7a2c0131d4a8fc0ab548b47c))
-* **ingest:** report quarantine retries instead of "No changes detected" ([a66e3b8](https://github.com/artk0de/TeaRAGs-MCP/commit/a66e3b8268679fac1cc3e7524e48e20d6f17b330))
-* **mcp:** gate per-receiver-kind breakdown behind DEBUG ([5331f18](https://github.com/artk0de/TeaRAGs-MCP/commit/5331f18055311e21d9f24796f7d2f4f99b37d46a))
-* **prime:** collapse identical test bands to "=src" in signal thresholds ([db85ffb](https://github.com/artk0de/TeaRAGs-MCP/commit/db85ffb6a1015ee42ffefc0bdb28624ef99c219e))
-* **signals:** make score-path confidence dampening scope-aware ([a1dfc3c](https://github.com/artk0de/TeaRAGs-MCP/commit/a1dfc3cffd9b36cbc61a501414b7b0e4f53c1cdf))
-* **signals:** persist raw (unsmoothed) bugFixRate, drop the Laplace prior ([e087065](https://github.com/artk0de/TeaRAGs-MCP/commit/e087065f91cd3039da389fdbde37abe423016aac))
-* **trajectory:** ancestor-aware narrowing for ruby bare-call resolver (brp1) ([c4697a6](https://github.com/artk0de/TeaRAGs-MCP/commit/c4697a67120340d986dfc6d78c448422dfc6777b))
-* **trajectory:** classify bare Ruby Kernel/core builtins as external (ykj7) ([1dade55](https://github.com/artk0de/TeaRAGs-MCP/commit/1dade5573a10fd24c5bb54fe6b893c84694fa57d)), closes [RubyCallResolver#targetsExternalImport](https://github.com/artk0de/RubyCallResolver/issues/targetsExternalImport)
-* **trajectory:** classify gem-typed [@ivar](https://github.com/ivar) calls as external (honest denominator) ([b44037a](https://github.com/artk0de/TeaRAGs-MCP/commit/b44037a85c7ec14304b7d48e5c5346d558638fe9))
-* **trajectory:** classify ruby framework bareCalls (DSL macros + rails runtime) as external ([c5af636](https://github.com/artk0de/TeaRAGs-MCP/commit/c5af636bf8f959b1f5ce4750501d417de3f07c63))
-* **trajectory:** classify super-to-external-ancestor as external, not internal-miss ([cc966bf](https://github.com/artk0de/TeaRAGs-MCP/commit/cc966bf7a6f40a9c64dfae3f9de8c5e962fea2c2))
+* chunker workers feed FileExtraction to codegraph — one parse serves both chunk storage and call-graph extraction ([64a2785](https://github.com/artk0de/TeaRAGs-MCP/commit/64a2785), [25c8418](https://github.com/artk0de/TeaRAGs-MCP/commit/25c8418))
+* TypeScript CHA cone-dispatch engine wired (TSConeTypeLocator) for polymorphic TS call resolution ([8657fcc](https://github.com/artk0de/TeaRAGs-MCP/commit/8657fcc))
+* per-language grain for cg_run_stats resolve summary ([3727cd1](https://github.com/artk0de/TeaRAGs-MCP/commit/3727cd1))
+* position-aware localBindings and Ruby RHS expansion for flow-sensitive type inference ([5e707d0](https://github.com/artk0de/TeaRAGs-MCP/commit/5e707d0))
+* fix: deterministic resolve metrics: run-state reset, cross-batch dedup, per-collection serialization, and spill ordering all corrected ([8a9c592](https://github.com/artk0de/TeaRAGs-MCP/commit/8a9c592), [bfba7e9](https://github.com/artk0de/TeaRAGs-MCP/commit/bfba7e9), [b1c1d3a](https://github.com/artk0de/TeaRAGs-MCP/commit/b1c1d3a), [2b20110](https://github.com/artk0de/TeaRAGs-MCP/commit/2b20110), [d2563d2](https://github.com/artk0de/TeaRAGs-MCP/commit/d2563d2))
 
-### Bug Fixes
+### chunker
 
-* **chunker:** hoist materializer native reads before recursion; drop dup test ([f906fb8](https://github.com/artk0de/TeaRAGs-MCP/commit/f906fb86ac3f5cb05992aafa995f3632e302cef2))
-* **chunker:** hoist materializer native reads before subtree recursion ([e66135d](https://github.com/artk0de/TeaRAGs-MCP/commit/e66135d6c9b20b85ddbefffc0fbfe6af6fd478e6))
-* **chunker:** materialize AST after parse — deterministic walker extraction (rdv7d) ([bbe75bb](https://github.com/artk0de/TeaRAGs-MCP/commit/bbe75bb7ad5110565d292c5dba222d7ac090d158))
-* **cli:** compute progress-bar ETA from observed rate instead of cli-progress native eta ([a70183f](https://github.com/artk0de/TeaRAGs-MCP/commit/a70183f0108f7436d9c65833cc9102e4d2bff8be))
-* **cli:** ETA countdown between messages + fill bars to 100% on done ([275ddba](https://github.com/artk0de/TeaRAGs-MCP/commit/275ddba899bcf14ec597b8e18a03d7b3f8ec51cf))
-* **cli:** freeze bar elapsed + drop ETA once a bar reaches 100% (stop ticking before done) ([272356b](https://github.com/artk0de/TeaRAGs-MCP/commit/272356bc8e79dc4800c91dd04991dc0ec0e20760))
-* **cli:** keep --json stdout pure (suppress human progress lines in json mode) ([add671b](https://github.com/artk0de/TeaRAGs-MCP/commit/add671be733e89aa7e8df9975f79d1ee01320ee4))
-* **cli:** report real disk usage for index size (blocks*512, not sparse apparent size) ([5c89e76](https://github.com/artk0de/TeaRAGs-MCP/commit/5c89e7698fbe40a7df575c6111772e63fcef1f84))
-* **cli:** resolve embedded Qdrant collection size by versioned dir + localhost-aware remote check ([0ef3d59](https://github.com/artk0de/TeaRAGs-MCP/commit/0ef3d59e0571a1ae0f14988e66a25933f4c71779))
-* **codegraph:** dedup file extraction across batches in a run (svhqp residual) ([b1c1d3a](https://github.com/artk0de/TeaRAGs-MCP/commit/b1c1d3a4014c7edcca9d34f49cf8f34fb93ec2ce))
-* **codegraph:** deterministic resolve-metric — yl9tv spill ordering + svhqp run-state reset ([6e10e52](https://github.com/artk0de/TeaRAGs-MCP/commit/6e10e52a8ba3b331b9da8d7599e9b975ced799cc))
-* **codegraph:** deterministic resolve-metric (yl9tv spill ordering + svhqp run-state reset) ([8a9c592](https://github.com/artk0de/TeaRAGs-MCP/commit/8a9c592950c6c92a195749bc67ab04843bb14eb2))
-* **codegraph:** gate off yl9tv cross-pass tee (off-thread leak); defer to Task 5b (why9b) ([d2563d2](https://github.com/artk0de/TeaRAGs-MCP/commit/d2563d2805614e9a7303c71098605a617d9da036))
-* **codegraph:** reset runStats at run start — deterministic resolveSuccessRate (svhqp) ([2b20110](https://github.com/artk0de/TeaRAGs-MCP/commit/2b201101323ef951f130410b5d138e2fcf5d9168))
-* **codegraph:** serialize streamFileBatch per collection (svhqp layer 3) ([bfba7e9](https://github.com/artk0de/TeaRAGs-MCP/commit/bfba7e9a2963976ce265ec51b606764981036eee))
-* **contracts:** revert withReadHandle close change; fix resolveSymbolChunk test mock (0rskm) ([e72cb1f](https://github.com/artk0de/TeaRAGs-MCP/commit/e72cb1f65eaea25f40be43eb448cf0e8f65bf4f2))
-* **explore:** preserve fromCodegraphFallback flag through applyMetaOnly (0rskm) ([9e41c45](https://github.com/artk0de/TeaRAGs-MCP/commit/9e41c45bdb952406316f63f05f0f4a2f8c331e50)), closes [BaseExploreStrategy#applyMetaOnly](https://github.com/artk0de/BaseExploreStrategy/issues/applyMetaOnly) [Reranker#rerank](https://github.com/artk0de/Reranker/issues/rerank)
-* **ingest:** accumulate enrichment progress denominator in onChunksStored ([ac25994](https://github.com/artk0de/TeaRAGs-MCP/commit/ac259942599752cfb4a8073f701024da1497bf5d))
-* **ingest:** clear_index removes the quarantine + stats sibling files (e0eng) ([f94e1c0](https://github.com/artk0de/TeaRAGs-MCP/commit/f94e1c0944975166b2c004692a7eed2f14487701))
-* **ingest:** consistent embedding-progress denominator (chunksQueued) at flush ([5a65f7e](https://github.com/artk0de/TeaRAGs-MCP/commit/5a65f7e79c7ca76ba98ca8e36102a6f0ebbd1e7b))
-* **ingest:** correct index-codebase progress bar lifecycle and ordering ([dc5e207](https://github.com/artk0de/TeaRAGs-MCP/commit/dc5e207242d38ac330d6cc53478b0d594e552c03))
-* **ingest:** correct index-codebase progress bar lifecycle and ordering ([ab36584](https://github.com/artk0de/TeaRAGs-MCP/commit/ab3658431e1e695d38ecb87ec003aac73eddb065))
-* **ingest:** drive embedding progress from real stored batches (not chunking cadence) ([6c3f479](https://github.com/artk0de/TeaRAGs-MCP/commit/6c3f479a2ea3bdc5d0a3bbf5c52726b27b4395e2))
-* **ingest:** feed embedding progress from pipeline itemsProcessed ([ca2f336](https://github.com/artk0de/TeaRAGs-MCP/commit/ca2f33600c33b49d921fa29d167e4211ffddf32e))
-* **ingest:** file-level progress in files, chunk-level in chunks (per-provider cumulative) ([ca7a189](https://github.com/artk0de/TeaRAGs-MCP/commit/ca7a1896aa2a9b01b680782814bb6faedb39b86d))
-* **ingest:** per-(provider,level) enrichment progress with chunk-unit denominator ([641bc40](https://github.com/artk0de/TeaRAGs-MCP/commit/641bc40ab2ea59622e665b07ca642f81a38c2568))
-* **ingest:** persist codegraphEnabled in project registry for prime parity ([249863b](https://github.com/artk0de/TeaRAGs-MCP/commit/249863b27da9ed07935f0b509e0b57614f0094b0))
-* **ingest:** persist codegraphEnabled in project registry so prime re-applies ([658c662](https://github.com/artk0de/TeaRAGs-MCP/commit/658c6623101dcebc9844039387020fc3636a58f3))
-* **ingest:** quarantine durability + reindex retry — 3 bugs found by live MCP test ([9d4dce5](https://github.com/artk0de/TeaRAGs-MCP/commit/9d4dce5f577b2a8d76a950b4d66b57e910491b9c))
-* **presets:** drop dead chunkChurn weight from file-level securityAudit/ownership ([1f2631a](https://github.com/artk0de/TeaRAGs-MCP/commit/1f2631a0edaef05e17ac9432f4dd809d0f6fa716))
-* **rerank:** address codegraph payloads through nested-symbols shape in raw paths ([213abeb](https://github.com/artk0de/TeaRAGs-MCP/commit/213abeb921ad39464391a4cad83852aa6784f4fb))
-* **rerank:** batch min-max normalize similarity so preset weights calibrate across tools ([f6342b1](https://github.com/artk0de/TeaRAGs-MCP/commit/f6342b1940e0da5a26ed9dcbc7d97e5c141d938e))
-* **signals:** FanOutPerLineSignal divides fanOut by real line span, not a phantom field ([766922a](https://github.com/artk0de/TeaRAGs-MCP/commit/766922af900235fbee75d11ad80f19126a816947))
-* **signals:** KnowledgeSiloSignal scores blended contributor count piecewise-linear ([61e5b00](https://github.com/artk0de/TeaRAGs-MCP/commit/61e5b00eca85a2b2d9552e545f4dfc0597c6a70e))
-* **signals:** PathRiskSignal matches path tokens, not raw substrings ([8fe01df](https://github.com/artk0de/TeaRAGs-MCP/commit/8fe01dfb4c90303e1f5fd8e490ad90deeca1be7d))
-* **signals:** squash-mode chunk bugFixRate counts fix sessions, not raw commits ([7486a26](https://github.com/artk0de/TeaRAGs-MCP/commit/7486a26fb6ee6c1500fe972e0672b406049937b4))
-* **trajectory:** drop merge + .to_h/.to_json from increment B sets (review: mis-type/recall risk) ([a418e6e](https://github.com/artk0de/TeaRAGs-MCP/commit/a418e6ef5e0f52bc191a66fd0fd5f9e1df5a9259))
-* **trajectory:** extractOneFile materializes AST (deterministic incremental path) ([d743780](https://github.com/artk0de/TeaRAGs-MCP/commit/d7437801d0a0215479df187015f9b60e420f9472))
-* **trajectory:** resolve explicit self.&lt;member&gt; via enclosing-class MRO walk (kh9vo) ([4a1248e](https://github.com/artk0de/TeaRAGs-MCP/commit/4a1248e9aec7e9e15f57626162fa6b5a4fa4f904))
-* **trajectory:** thread class-hierarchy snapshot into resolve ctx — CHA cone was dead (o17v2) ([9dfe811](https://github.com/artk0de/TeaRAGs-MCP/commit/9dfe8116da4ea051060870ec04e8c84a0e7cfa30)), closes [ZooKeeper#make_noise](https://github.com/artk0de/ZooKeeper/issues/make_noise) [Dog#speak](https://github.com/artk0de/Dog/issues/speak) [Cat#speak](https://github.com/artk0de/Cat/issues/speak) [Calc#total](https://github.com/artk0de/Calc/issues/total) [Circle#area](https://github.com/artk0de/Circle/issues/area)
+* chunker workers run as child processes — process-isolated tree-sitter parsing eliminates parallel parse corruption ([1f3c029](https://github.com/artk0de/TeaRAGs-MCP/commit/1f3c029), [7022b7e](https://github.com/artk0de/TeaRAGs-MCP/commit/7022b7e), [60d2cd1](https://github.com/artk0de/TeaRAGs-MCP/commit/60d2cd1), [1ff870a](https://github.com/artk0de/TeaRAGs-MCP/commit/1ff870a))
+* Ruby walker emits inheritance edges with full kind parity (super/include/extend/prepend) with per-kind ordinals ([7db0b24](https://github.com/artk0de/TeaRAGs-MCP/commit/7db0b24))
+* TS walker captures class extends, implements, and interface-extends into unified inheritanceEdges ([47766ed](https://github.com/artk0de/TeaRAGs-MCP/commit/47766ed))
+* fix: AST materialized eagerly after parse for deterministic walker extraction (rdv7d root cause resolved) ([bbe75bb](https://github.com/artk0de/TeaRAGs-MCP/commit/bbe75bb), [e66135d](https://github.com/artk0de/TeaRAGs-MCP/commit/e66135d), [f906fb8](https://github.com/artk0de/TeaRAGs-MCP/commit/f906fb8))
 
-### Documentation
+### explore
 
-* **api:** add tea-rags plugin system design spec (augment-only MVP) ([a45ad3a](https://github.com/artk0de/TeaRAGs-MCP/commit/a45ad3ab3750ee24cf4114ded5ac7352ece9f40d))
-* **chunker:** process-pool implementation plan (6 tasks, TDD) ([9d6c3dd](https://github.com/artk0de/TeaRAGs-MCP/commit/9d6c3ddbda089cea839c59db717948ce6afc9da9))
-* **chunker:** process-pool pluggable-transport design spec ([9825255](https://github.com/artk0de/TeaRAGs-MCP/commit/9825255c5f2667560d95078ea15fe9263021df0c))
-* **codegraph:** hierarchy graph substrate design (f10y) ([4f5dfc3](https://github.com/artk0de/TeaRAGs-MCP/commit/4f5dfc3645b9993c686ed7c649bf263310ed3fa4))
-* **codegraph:** hierarchy graph substrate implementation plan (f10y) ([857a59a](https://github.com/artk0de/TeaRAGs-MCP/commit/857a59ad4c2b1819b6c5766e73d5a47757eeec96))
-* **codegraph:** implementation plan for single parser thread + parse reuse (yl9tv) ([42c7658](https://github.com/artk0de/TeaRAGs-MCP/commit/42c76586ea08c90613c201a68fc7858bfa430e9c))
-* **codegraph:** plan for increment B — ruby receiver type inference ([4b58b44](https://github.com/artk0de/TeaRAGs-MCP/commit/4b58b44b834cad890a22dc5ee4dd99e49ef4fc86))
-* **codegraph:** plan for mktkk increment A (index-receiver suppression) ([caf489d](https://github.com/artk0de/TeaRAGs-MCP/commit/caf489d8ef70ff25eb9073d360acf7c3d5fab73e))
-* **codegraph:** single parser thread + parse-reuse design (yl9tv) ([8b1f3fb](https://github.com/artk0de/TeaRAGs-MCP/commit/8b1f3fb19c7f318dae49f9c442495166b8ad0314))
-* **codegraph:** spec — ruby dynamic-edge precision increment A (index-access receiver suppression) ([8359cbf](https://github.com/artk0de/TeaRAGs-MCP/commit/8359cbf2a7fba2a458f90980a24571a9d9c78304))
-* **codegraph:** spec for increment B — ruby receiver type inference ([76ed6bf](https://github.com/artk0de/TeaRAGs-MCP/commit/76ed6bf77768e96602f2a7419c371f8c65be290a))
-* **codegraph:** yl9tv Task 5+6 execution handoff (cross-pass spill map) ([1fc777a](https://github.com/artk0de/TeaRAGs-MCP/commit/1fc777a6341643f2ba42a1bc8f1eb0d54859382f))
-* **config:** document --json on index-codebase for machine-readable reindex output ([ff9d347](https://github.com/artk0de/TeaRAGs-MCP/commit/ff9d347320ee8b370f3e13b70a41dc6d7fd89741))
-* **config:** gate worktree auto-build on single-worktree; commit on live-validation pass ([7bc1acf](https://github.com/artk0de/TeaRAGs-MCP/commit/7bc1acf1e91a208d62854797b3d319f9507acd59))
-* **config:** per-session npm link + CLI index-codebase for enrichment reindex ([277cf1c](https://github.com/artk0de/TeaRAGs-MCP/commit/277cf1cfc03c77bfd4c6bbf7f1cdd042bf2b2bdf))
-* **contracts:** position-aware localBindings + ruby RHS expansion design ([d82737d](https://github.com/artk0de/TeaRAGs-MCP/commit/d82737da82545eb0d9193824f4195a2d15c18ac0))
-* **ingest:** agent-assisted GitHub issue reporting design spec (jola7) ([84abb7e](https://github.com/artk0de/TeaRAGs-MCP/commit/84abb7ece309c20225d4e32d2d428bb2502b33a0))
-* **ingest:** correct beginRun progress comment (denominator accumulates in onChunksStored) ([a6a33cd](https://github.com/artk0de/TeaRAGs-MCP/commit/a6a33cd49935f182e11d43ec1889c9660a63c7d8))
-* **ingest:** D4b embed-phase quarantine isolation design spec ([b9da6a5](https://github.com/artk0de/TeaRAGs-MCP/commit/b9da6a54ab724564774983e18a661e1e4de3e1f0))
-* **language:** per-language test-file path patterns (substrate) design ([b947487](https://github.com/artk0de/TeaRAGs-MCP/commit/b9474872c5ca008948529fcb0d3a7905b6e27d98))
-* **plan:** ruby call-resolver collaborator substrate implementation plan ([6609233](https://github.com/artk0de/TeaRAGs-MCP/commit/6609233e521ff462ae9238b2a816eb68d5913e90))
-* **plan:** ruby DSL per-framework decomposition implementation plan ([ebff041](https://github.com/artk0de/TeaRAGs-MCP/commit/ebff04157cac4dedee8788512309aaed7c151ae4))
-* **plan:** ruby honest resolve denominator implementation plan ([24635c4](https://github.com/artk0de/TeaRAGs-MCP/commit/24635c40390127aeb1936bc7d07a05795fc5862c))
-* **plan:** Ruby ivar type-inference implementation plan (6 tasks, imass) ([9f9dcd1](https://github.com/artk0de/TeaRAGs-MCP/commit/9f9dcd18300ad89273b11c7ea6919eef1d09afbb))
-* **plugin:** add guidance-layers placement rule + index-freshness reindex rule ([ac9c201](https://github.com/artk0de/TeaRAGs-MCP/commit/ac9c201599ed7a6b90500f36e31b24d8ad7b5a31))
-* **spec:** cross-language call-resolver collaborator substrate (ruby pilot) ([06ee40a](https://github.com/artk0de/TeaRAGs-MCP/commit/06ee40aaeeec914cbfaf670a1ab3851da175f7a4))
-* **spec:** record landed design — chunker drops macro emission, codegraph owns synthesis ([437837c](https://github.com/artk0de/TeaRAGs-MCP/commit/437837c303dbf0394ece0355369638c54e6418fd))
-* **spec:** ruby DSL per-framework decomposition + unified macro-expansion engine ([82e2776](https://github.com/artk0de/TeaRAGs-MCP/commit/82e277612760f4c4649d40d475355928080f021a))
-* **spec:** ruby honest resolve denominator — external + unresolvable classification ([130eff1](https://github.com/artk0de/TeaRAGs-MCP/commit/130eff1c867a936e10e02e94442c5f9459e6e1bf))
-* **spec:** Ruby ivar type-inference (slice 1, imass) via classFieldTypes ([e38d348](https://github.com/artk0de/TeaRAGs-MCP/commit/e38d34868d99e4d4fc1d92e71eedab542ea74409))
-* **tea-rags:** search-cascade stale-digest guard (plugin 0.25.2) ([7f4d60b](https://github.com/artk0de/TeaRAGs-MCP/commit/7f4d60b607189af27941f6fa9cc9b80c5d7731b1))
-* **trajectory:** add resolver-architecture rule (engines + injected collaborators) ([2e63bb2](https://github.com/artk0de/TeaRAGs-MCP/commit/2e63bb264abd8236eb733e9eec4f6db75cf4cc81))
-* **trajectory:** cai0 Ruby resolver precision program design (j431/2jet/duzy/wbj3/9zlt) ([8d0029d](https://github.com/artk0de/TeaRAGs-MCP/commit/8d0029d29bb78d538079600c4de61bed78916434))
-* **trajectory:** find_symbol codegraph fallback implementation plan (0rskm) ([9374b52](https://github.com/artk0de/TeaRAGs-MCP/commit/9374b52912f074b71c3c8c4bf57f3d1efa40a339))
-* **trajectory:** find_symbol codegraph-aware fallback design — cg_symbols.chunk_id (0rskm) ([c0ffad8](https://github.com/artk0de/TeaRAGs-MCP/commit/c0ffad8a226dd04c1f356ba6e55a1f3e1470d7b3))
-* **trajectory:** registry-literal dispatch design — reuse dispatchTables (9zlt/pq02v) ([70a8aef](https://github.com/artk0de/TeaRAGs-MCP/commit/70a8aefbe6f2937a2a54e353ddaf5acded1feddd))
-* **website:** poison-pill quarantine documentation ([fbb9fc8](https://github.com/artk0de/TeaRAGs-MCP/commit/fbb9fc8870453cd375e885148b6cd171569a8100))
+* find_symbol resolves collapsed-class methods via two-hop codegraph fallback (symbol_id → chunk_id → getPoint) ([3c607ad](https://github.com/artk0de/TeaRAGs-MCP/commit/3c607ad), [1c06c37](https://github.com/artk0de/TeaRAGs-MCP/commit/1c06c37))
 
-### Code Refactoring
+### rerank
 
-* **chunker:** core chunker consumes AstNode internally (type-only) ([70ad4f0](https://github.com/artk0de/TeaRAGs-MCP/commit/70ad4f0bc0088d31e931c482de6f9dff12f42d7a))
-* **chunker:** remove dead macroSymbols hook subsystem ([80b0652](https://github.com/artk0de/TeaRAGs-MCP/commit/80b06524ff0d1c620e5b88a4cd53853fa6c91c0f))
-* **codegraph:** relocate collectSymbols to language/kernel (worker-callable, yl9tv) ([bf2e9ad](https://github.com/artk0de/TeaRAGs-MCP/commit/bf2e9ad36f11bdac7601e4d34c38625f7d9280f8))
-* **contracts:** node members take AstNode (type-only, values still native) ([272b48a](https://github.com/artk0de/TeaRAGs-MCP/commit/272b48ac9d582fe2751773175e2a07572c26914e))
-* **explore:** drop fromCodegraphFallback provenance flag (0rskm) ([108684d](https://github.com/artk0de/TeaRAGs-MCP/commit/108684d07917f8fd1cc67ffc1a6dc1b7f7904e60))
-* **language:** add unified ruby class-body macro-expansion engine ([84728b5](https://github.com/artk0de/TeaRAGs-MCP/commit/84728b5783ebfaad61ae54dd0e36c68b71ef98bc))
-* **language:** chunker macros.ts delegates to unified expansion engine ([af84649](https://github.com/artk0de/TeaRAGs-MCP/commit/af8464921a157dece54c934b5ae285ce9bc3bb56))
-* **language:** chunking hooks consume AstNode (type-only) ([d47d67b](https://github.com/artk0de/TeaRAGs-MCP/commit/d47d67bb9b4f10e4409e399a2f756c19cfee5321))
-* **language:** codegraph name-of.ts delegates to unified expansion engine ([c412b24](https://github.com/artk0de/TeaRAGs-MCP/commit/c412b24a4b165d705dd09daaca4037a731b66f24))
-* **language:** extract ruby dsl types + inflection to own files ([6304f95](https://github.com/artk0de/TeaRAGs-MCP/commit/6304f95c72f5dde81dded0c33d0e664f4eda0904))
-* **language:** kernel + classify helpers consume AstNode (type-only) ([884dedd](https://github.com/artk0de/TeaRAGs-MCP/commit/884dedd533da20972ac26d4c87a80c80fb93fe83))
-* **language:** relocate ecmascript-globals from kernel to shared/ ([f7d332c](https://github.com/artk0de/TeaRAGs-MCP/commit/f7d332cde2e23b1e7f5aaada1c57ffbfb220e5b5))
-* **language:** represent ruby class-body DSL by category grouping, not per-method chunks ([64c3992](https://github.com/artk0de/TeaRAGs-MCP/commit/64c3992618a0142e257cafc2472876680a5c4233))
-* **language:** split ruby DSL catalogue into per-framework modules ([4d5663c](https://github.com/artk0de/TeaRAGs-MCP/commit/4d5663c40d4b1f79cc2343b09be0451d3beedcf5))
-* **language:** walker collect* helpers consume AstNode (type-only) ([0e85c90](https://github.com/artk0de/TeaRAGs-MCP/commit/0e85c90eccce4ae6b5772a85115a3977dd443af4))
-* **language:** walker nameOf + naming helpers consume AstNode (type-only) ([25853ee](https://github.com/artk0de/TeaRAGs-MCP/commit/25853ee2e91460f49ee4090e2e90ca97e15aa90f))
-* **pipeline:** ThreadPool -&gt; WorkerDispatchPool over injected WorkerTransport ([99af2eb](https://github.com/artk0de/TeaRAGs-MCP/commit/99af2eb299a64263d52cecb96169a8cfa22cb17c))
-* **trajectory:** drop orphaned resolver kernel-builtins copy (absorbed into dsl) ([c1c8e25](https://github.com/artk0de/TeaRAGs-MCP/commit/c1c8e257aff8896751efc65da8a5838e17e8dd38))
-* **trajectory:** extract resolveTypeMethod into shared for reuse by ivar strategy ([7a2fa10](https://github.com/artk0de/TeaRAGs-MCP/commit/7a2fa101b01d28c8ea9c21e774f1c26e6a603489))
-* **trajectory:** RubyCallResolver delegates dispatch + external classification ([1672565](https://github.com/artk0de/TeaRAGs-MCP/commit/16725659b2284fc2caaef2cc711d3cb1661d533c))
-* **trajectory:** wire RubyIvarFieldSymbolResolutionStrategy into the resolve chain ([12da467](https://github.com/artk0de/TeaRAGs-MCP/commit/12da4678e0e4ca15be035ec1471d165ef10e81f0))
-* **trajectory:** wire RubyReturnTypeBindingSymbolResolutionStrategy into the chain (a71lj) ([55b05f9](https://github.com/artk0de/TeaRAGs-MCP/commit/55b05f9295bde5c8b16cfff1847e97877c33c31f))
+* codegraph composites and graph tools (get_callers, get_callees, find_cycles, blast-radius) integrated across plugin skills ([97a0da3](https://github.com/artk0de/TeaRAGs-MCP/commit/97a0da3))
+* fix: codegraph nested-symbols payload shape resolved in raw signal paths so adaptive bounds are now active ([213abeb](https://github.com/artk0de/TeaRAGs-MCP/commit/213abeb))
+* fix: similarity min-max normalized per result batch so preset weights calibrate consistently across tools ([f6342b1](https://github.com/artk0de/TeaRAGs-MCP/commit/f6342b1))
+
+### signals
+
+* percent display-format hint on prime signal thresholds (codegraph.chunk.pageRank, git.*.bugFixRate) ([9b4d2dc](https://github.com/artk0de/TeaRAGs-MCP/commit/9b4d2dc))
+* fix: FanOutPerLineSignal denominator uses the real chunk line span instead of a phantom payload field ([766922a](https://github.com/artk0de/TeaRAGs-MCP/commit/766922a))
+* fix: squash-mode chunk bugFixRate counts fix sessions (not raw commits), keeping the rate in [0, 100] ([7486a26](https://github.com/artk0de/TeaRAGs-MCP/commit/7486a26))
+* fix: KnowledgeSiloSignal uses piecewise-linear scoring for blended contributor counts ([61e5b00](https://github.com/artk0de/TeaRAGs-MCP/commit/61e5b00))
+* fix: PathRiskSignal matches path tokens instead of raw substrings, eliminating false positives on common words ([8fe01df](https://github.com/artk0de/TeaRAGs-MCP/commit/8fe01df))
+
+### api
+
+* codegraphResolve gains exactEdgeRatio edge-kind breakdown and per-receiver-kind inProjectEdgeRecall in get_index_status ([f018e95](https://github.com/artk0de/TeaRAGs-MCP/commit/f018e95), [167d850](https://github.com/artk0de/TeaRAGs-MCP/commit/167d850))
+* IndexStatus extended with indexSizeBytes, enrichmentMetrics, and projectName fields ([8cb1586](https://github.com/artk0de/TeaRAGs-MCP/commit/8cb1586))
+
+### mcp
+
+* tea-rags:report-issue skill guides users through filing GitHub issues with mandatory known-issue dedup ([91edb07](https://github.com/artk0de/TeaRAGs-MCP/commit/91edb07))
+* per-receiver-kind resolve breakdown added to get_index_status (DEBUG-gated) ([42bb424](https://github.com/artk0de/TeaRAGs-MCP/commit/42bb424))
+
+### contracts
+
+* ExternalVocabulary interface and generic ExternalCallClassifier engine for cross-language external-call classification ([18fa4b1](https://github.com/artk0de/TeaRAGs-MCP/commit/18fa4b1))
+* AstNode type and materializeTree eager single-pass boundary primitive ([aa7253c](https://github.com/artk0de/TeaRAGs-MCP/commit/aa7253c))
+* hierarchy graph types: HierarchyView, InheritanceEdge, InheritanceKind, HierarchySnapshot ([8b8d058](https://github.com/artk0de/TeaRAGs-MCP/commit/8b8d058))
+* SymbolChunkResolver and GraphFacade.resolveSymbolChunk for symbol-to-chunk lookup ([fab7c01](https://github.com/artk0de/TeaRAGs-MCP/commit/fab7c01), [532ba33](https://github.com/artk0de/TeaRAGs-MCP/commit/532ba33))
+* fix: withReadHandle close behavior reverted; resolveSymbolChunk test mock corrected ([e72cb1f](https://github.com/artk0de/TeaRAGs-MCP/commit/e72cb1f))
+
+### adapters
+
+* hierarchy read queries: getSubtypes, getSupertypes, transitive CTE, bulk snapshot, and inheritance edge persistence ([0f60f88](https://github.com/artk0de/TeaRAGs-MCP/commit/0f60f88), [63c3fe4](https://github.com/artk0de/TeaRAGs-MCP/commit/63c3fe4))
+
+### pipeline
+
+* pluggable WorkerTransport interface with ThreadTransport and ProcessTransport implementations ([f912b2f](https://github.com/artk0de/TeaRAGs-MCP/commit/f912b2f), [3636f5a](https://github.com/artk0de/TeaRAGs-MCP/commit/3636f5a))
+
+### embedding
+
+* primary and fallback ollama endpoints probed and surfaced independently in prime digest ([59593a2](https://github.com/artk0de/TeaRAGs-MCP/commit/59593a2))
+
+### config
+
+* chunker pool default restored to min(4, cpus-1) now that process isolation makes parallel parsing safe ([f190873](https://github.com/artk0de/TeaRAGs-MCP/commit/f190873))
+
+### migration
+
+* cg_symbols_inheritance table with bidirectional reverse indexes for class hierarchy edges ([3e252fa](https://github.com/artk0de/TeaRAGs-MCP/commit/3e252fa))
+
+### language
+
+* ActiveRecord association and scope declares added to Rails DSL module (single source for chunker and codegraph) ([64086d7](https://github.com/artk0de/TeaRAGs-MCP/commit/64086d7))
+
+### infra
+
+* MapHierarchyView: in-memory sync bidirectional view over hierarchy snapshot with MRO-ordered traversal ([6ea3aa3](https://github.com/artk0de/TeaRAGs-MCP/commit/6ea3aa3))
+
+### presets
+
+* fix: dead chunkChurn weight removed from file-level securityAudit and ownership presets where it always scored zero ([1f2631a](https://github.com/artk0de/TeaRAGs-MCP/commit/1f2631a))
 
 ## [1.31.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.31.0...v1.31.1) (2026-06-06)
 
