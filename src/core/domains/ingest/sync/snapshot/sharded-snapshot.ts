@@ -285,6 +285,24 @@ export class ShardedSnapshotManager {
   }
 
   /**
+   * Clone this snapshot to targetCollection, rewriting codebasePath to newCodebasePath.
+   * No-op when this snapshot does not yet exist.
+   */
+  async cloneTo(targetCollection: string, newCodebasePath: string): Promise<void> {
+    const loaded = await this.load();
+    if (!loaded) return;
+    const target = new ShardedSnapshotManager(
+      dirname(this.snapshotDir),
+      targetCollection,
+      this.shardCount,
+      this.virtualNodesPerShard,
+    );
+    await target.save(newCodebasePath, loaded.files, {
+      aliasVersion: loaded.aliasVersion !== 0 ? loaded.aliasVersion : undefined,
+    });
+  }
+
+  /**
    * Delete snapshot
    */
   async delete(): Promise<void> {

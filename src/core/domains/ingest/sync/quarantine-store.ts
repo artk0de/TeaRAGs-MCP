@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
+import { copyFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { ErrorCode } from "../../../contracts/errors.js";
@@ -108,6 +109,16 @@ export class QuarantineStore {
       }
       await this.persist(entries);
     });
+  }
+
+  /** Copy this collection's quarantine file to targetCollection. No-op when absent. */
+  async cloneTo(targetCollection: string): Promise<void> {
+    const to = join(this.snapshotDir, `${targetCollection}.quarantine.json`);
+    try {
+      await copyFile(this.quarantinePath, to);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
   }
 
   /** Drop all entries (called on forceReindex / schema-drift reset). */
