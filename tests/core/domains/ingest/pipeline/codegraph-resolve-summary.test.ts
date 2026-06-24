@@ -248,3 +248,23 @@ describe("summarizeCodegraphResolve inProjectEdgeRecall (Variant B)", () => {
     expect(summary?.inProjectEdgeRecall).toBeCloseTo(80 / 100, 6);
   });
 });
+
+// Phase D (tea-rags-mcp-zhutn) — surface the recall split PER receiver-kind so
+// the dominant recall-hole bucket is data-driven, not estimated. byReceiverKind
+// is DEBUG-only, so these per-kind fields ride alongside the existing per-kind
+// resolveSuccessRate under DEBUG.
+describe("summarizeCodegraphResolve per-kind inProjectEdgeRecall (Phase D)", () => {
+  afterEach(() => {
+    setDebug(true); // vitest.setup baseline — restore so other files see DEBUG on
+  });
+
+  it("attaches inProjectEdgeRecall + callsNoInProjectDef to each byReceiverKind row", () => {
+    setDebug(true);
+    // chain: attempted 100, resolved 40, noInProjectDef 20 → genuine miss 60;
+    // missWithInProjectDef = 60 − 20 = 40; recall = 40/(40+40) = 0.5.
+    const summary = summarizeCodegraphResolve([rowN("ruby", "chain", 100, 40, 0, 20)]);
+    const chain = (summary?.byReceiverKind ?? []).find((k) => k.receiverKind === "chain");
+    expect(chain?.callsNoInProjectDef).toBe(20);
+    expect(chain?.inProjectEdgeRecall).toBeCloseTo(40 / 80, 6);
+  });
+});

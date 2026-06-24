@@ -239,11 +239,17 @@ export interface CodegraphResolveLanguageRow {
  */
 export interface CodegraphResolveKindRow {
   receiverKind: string;
+  /** Graph completeness for this receiver-kind bucket — `resolved / (resolved +
+   *  missWithInProjectDef)`, excluding no-in-project-def misses. Surfaces WHICH
+   *  bucket holds the real recall holes so recall work is targeted, not estimated. */
+  inProjectEdgeRecall: number;
   attempted: number;
   resolved: number;
   externalSkipped: number;
   /** bd cai0 — unresolved dynamic-send calls in this bucket, excluded from the rate. */
   unresolvable: number;
+  /** Genuine-miss calls in this bucket whose member has no in-project def. */
+  callsNoInProjectDef: number;
   resolveSuccessRate: number;
 }
 

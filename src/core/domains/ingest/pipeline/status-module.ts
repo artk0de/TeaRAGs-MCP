@@ -81,10 +81,12 @@ function buildByReceiverKind(kinds: Map<string, ResolveTally>): CodegraphResolve
     .filter(([, t]) => t.attempted > 0)
     .map(([receiverKind, t]) => ({
       receiverKind,
+      inProjectEdgeRecall: edgeRecall(t.attempted, t.resolved, t.externalSkipped, t.unresolvable, t.noInProjectDef),
       attempted: t.attempted,
       resolved: t.resolved,
       externalSkipped: t.externalSkipped,
       unresolvable: t.unresolvable,
+      callsNoInProjectDef: t.noInProjectDef,
       resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped, t.unresolvable),
     }))
     .sort((a, b) => b.attempted - a.attempted);
