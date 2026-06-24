@@ -120,6 +120,19 @@ branch-is-done signal the hook cannot see).
   is the mechanism there. Add a one-line pointer in the tea-rags canon for
   discoverability.
 
+### Method: SKILL.md changes go through `/optimize-skill`
+
+The three wrapper edits above touch `SKILL.md` files. Each is applied via the
+`/optimize-skill` eval cycle, NOT ad-hoc editing: audit → baseline eval (with /
+without the change) → fix → verify to 100% with-rule pass → PERSIST benchmark
+artifacts (`evals.json` + `benchmark.md`) under
+`.claude-plugin/.benchmarks/<skill>/`. This measures that the new freshness
+guidance actually changes agent behavior (delta ≥ +50pp target) rather than
+adding dead instruction weight. Plain rules and docs
+(`tea-rags/rules/index-freshness.md`, `dinopowers/FRESHNESS.md`) and the hook
+script are NOT SKILL.md files — they are edited normally and covered by the hook
+unit test and the freshness eval, not the optimize-skill cycle.
+
 ## Component 3 — deprecation sweep
 
 Replace every `reindex_changes` reference with `index_codebase` across
