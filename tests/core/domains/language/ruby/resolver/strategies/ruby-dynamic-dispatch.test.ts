@@ -125,7 +125,7 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       [sym("Runner#run", "run", "app/services/runner.rb", ["Runner"])],
     ]);
     const edges = resolver.resolveDispatch(
-      { callText: "obj[k].run", receiver: "obj[k]", member: "run", startLine: 1 },
+      { callText: "obj.run", receiver: "obj", member: "run", startLine: 1 },
       ctx({ symbolTable }),
     );
     expect(edges).toEqual([
@@ -168,10 +168,39 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       dynamicReceiverConfidence: 0.3,
     });
     const edges = tuned.resolveDispatch(
-      { callText: "obj[k].run", receiver: "obj[k]", member: "run", startLine: 1 },
+      { callText: "obj.run", receiver: "obj", member: "run", startLine: 1 },
       ctx({ symbolTable }),
     );
     expect(edges).toHaveLength(1);
     expect(edges[0].confidence).toBeCloseTo(0.3, 10);
+  });
+
+  it("suppresses fan-out for an index-access receiver (mktkk increment A)", () => {
+    // Two in-project `fetch` defs → without suppression this fans out to 2
+    // dynamic edges. The index receiver `opts[k]` yields an untrackable element
+    // type, so it must produce NONE.
+    const symbolTable = tableWith(
+      ["app/a.rb", [sym("A#fetch", "fetch", "app/a.rb", ["A"])]],
+      ["app/b.rb", [sym("B#fetch", "fetch", "app/b.rb", ["B"])]],
+    );
+    const edges = resolver.resolveDispatch(
+      { callText: "opts[k].fetch", receiver: "opts[k]", member: "fetch", startLine: 1 },
+      ctx({ symbolTable }),
+    );
+    expect(edges).toEqual([]);
+  });
+
+  it("still fans out a bare-identifier untyped receiver (increment B, NOT suppressed here)", () => {
+    // Same two-`fetch`-defs table; a bare-identifier receiver `obj` is the
+    // generic untyped fan-out the index guard must NOT touch.
+    const symbolTable = tableWith(
+      ["app/a.rb", [sym("A#fetch", "fetch", "app/a.rb", ["A"])]],
+      ["app/b.rb", [sym("B#fetch", "fetch", "app/b.rb", ["B"])]],
+    );
+    const edges = resolver.resolveDispatch(
+      { callText: "obj.fetch", receiver: "obj", member: "fetch", startLine: 1 },
+      ctx({ symbolTable }),
+    );
+    expect(edges.length).toBeGreaterThan(0);
   });
 });
