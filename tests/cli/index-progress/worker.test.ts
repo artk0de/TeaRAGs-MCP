@@ -307,6 +307,26 @@ describe("runIndexWorker", () => {
     expect(outcome).toEqual({ failed: [], degraded: [] });
   });
 
+  it("forwards totalFinal from progress + enrichmentProgress callbacks onto the IPC messages", async () => {
+    const app = {
+      indexCodebase: vi.fn(async (_path, _opts, progress, enrichmentProgress) => {
+        progress?.({ phase: "embedding", current: 1024, total: 1024, percentage: 38, message: "", totalFinal: false });
+        enrichmentProgress?.({ providerKey: "git", level: "chunk", applied: 1005, total: 1024, totalFinal: false });
+        return { status: "completed" };
+      }),
+      getIndexStatus: vi.fn().mockResolvedValue(healthy),
+      whenEnrichmentComplete: vi.fn().mockResolvedValue(undefined),
+    };
+    const sent: WorkerMessage[] = [];
+
+    await runIndexWorker(app as never, "/repo", {}, (m) => sent.push(m));
+
+    const embedding = sent.find((m) => m.type === "embedding") as { totalFinal?: boolean } | undefined;
+    const enrichment = sent.find((m) => m.type === "enrichment") as { totalFinal?: boolean } | undefined;
+    expect(embedding?.totalFinal).toBe(false);
+    expect(enrichment?.totalFinal).toBe(false);
+  });
+
   it("emits phase-done for embedding after indexCodebase and for enrichment after whenEnrichmentComplete", async () => {
     const app = fakeApp();
     const sent: WorkerMessage[] = [];

@@ -222,10 +222,18 @@ export async function runIndexWorker(
         current: p.current,
         total: p.total,
         throughput: p.throughput,
+        totalFinal: p.totalFinal,
       });
     },
     (e) => {
-      send({ type: "enrichment", providerKey: e.providerKey, level: e.level, applied: e.applied, total: e.total });
+      send({
+        type: "enrichment",
+        providerKey: e.providerKey,
+        level: e.level,
+        applied: e.applied,
+        total: e.total,
+        totalFinal: e.totalFinal,
+      });
     },
   );
   send({ type: "phase-done", phase: "embedding", elapsedMs: now() - embeddingStart });

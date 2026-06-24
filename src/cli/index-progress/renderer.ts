@@ -79,7 +79,19 @@ export interface BuildBarLineParams {
   colors: Colorizer;
   /** When set: renders Done ✓ in <elapsed> on the bar. Text segments are bold. */
   done?: { elapsed: string };
+  /**
+   * False renders an INDETERMINATE bar: no usable denominator yet (the chunk
+   * total is still growing, or a deferred provider is building its graph), so a
+   * percentage and proportional fill would be misleading. We show a distinct
+   * glyph row + elapsed + rate + a neutral "(working…)" hint, omitting the
+   * numerator entirely. Undefined/true → determinate (the default,
+   * back-compatible behavior). Ignored when `done`.
+   */
+  totalFinal?: boolean;
 }
+
+/** Glyph for an indeterminate bar — visually distinct from the determinate █/░ fill. */
+const INDETERMINATE_GLYPH = "◍";
 
 /**
  * Pure function: assembles one progress bar line.
@@ -87,9 +99,11 @@ export interface BuildBarLineParams {
  * When colors are disabled both are identity, producing plain glyphs.
  * Value is clamped to total so displayed fraction never exceeds 100%.
  * When `done` is set: text segments are bold, right segment is "Done ✓ in Ns".
+ * When `totalFinal === false` (and not done): renders an indeterminate bar with
+ * no percentage and no proportional fill — the denominator is not yet known.
  */
 export function buildBarLine(params: BuildBarLineParams): string {
-  const { label, progress, value, total, elapsed, eta, rate, barsize, colors, done } = params;
+  const { label, progress, value, total, elapsed, eta, rate, barsize, colors, done, totalFinal } = params;
   const filled = Math.round((progress ?? 0) * barsize);
   const empty = Math.max(0, barsize - filled);
   const bar = colors.brand("█".repeat(filled)) + colors.dim("░".repeat(empty));
@@ -105,6 +119,18 @@ export function buildBarLine(params: BuildBarLineParams): string {
       b(`(${pct})`),
       b(`Done ✓ in ${done.elapsed}`),
     ].filter((p) => p.trim() !== "");
+    return parts.join(" ");
+  }
+
+  if (totalFinal === false) {
+    // Indeterminate: no usable denominator yet (chunk total still growing, or a
+    // deferred provider building its graph) → glyph row + elapsed + a neutral
+    // hint, no numerator/percentage/proportional fill. The numerator is omitted
+    // because it is meaningless without a trustworthy total.
+    const indeterminateBar = colors.dim(INDETERMINATE_GLYPH.repeat(barsize));
+    const parts = [` ${label}`, indeterminateBar, elapsed, rate, colors.dim("(working…)")].filter(
+      (p) => p.trim() !== "",
+    );
     return parts.join(" ");
   }
 
@@ -172,6 +198,12 @@ interface BarState {
   etaBaseSeconds: number | null;
   /** Clock snapshot (ms) when etaBaseSeconds was last set. */
   etaBaseAtMs: number;
+  /**
+   * False while `total` is still growing (chunk-keyed bar before its final chunk
+   * total is known) → the bar renders indeterminate. Defaults to true; a message
+   * carrying `totalFinal === false` flips it, a later `true` flips it back.
+   */
+  totalFinal: boolean;
 }
 
 /** TTY renderer: a cli-progress multibar with an embedding bar + per-provider bars. */
@@ -203,6 +235,7 @@ export class TtyProgressRenderer implements ProgressRenderer {
             eta: (payload["eta"] as string | undefined) ?? "",
             rate: (payload["rate"] as string | undefined) ?? "",
             done: payload["done"] as { elapsed: string } | undefined,
+            totalFinal: payload["totalFinal"] as boolean | undefined,
             barsize: size,
             colors: this.colors,
           });
@@ -225,61 +258,50 @@ export class TtyProgressRenderer implements ProgressRenderer {
 
   refreshActiveBars(): void {
     for (const state of this.barStates.values()) {
-      if (state.done || (state.total > 0 && state.value >= state.total)) continue;
+      // Freeze a bar only when it is done OR genuinely complete. An indeterminate
+      // bar (totalFinal=false) can have value>=total against its partial denominator
+      // — it is NOT complete, so keep ticking its elapsed.
+      if (state.done || (state.totalFinal && state.total > 0 && state.value >= state.total)) continue;
       const nowMs = this.now();
       const elapsed = fmtDuration(nowMs - state.startMs);
-      const eta = formatEta(countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs));
-      state.bar.update(state.value, { label: state.label, rate: state.rate, elapsed, eta });
+      // Smooth throughput countdown while it lasts; once it exhausts before the
+      // next (sparse) message arrives, fall back to a fresh average-rate estimate
+      // so an active bar never loses its ETA between messages.
+      const countdown = countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs);
+      const etaSeconds =
+        countdown !== null && countdown > 0
+          ? countdown
+          : computeEtaSeconds(state.value, state.total, nowMs - state.startMs);
+      const eta = formatEta(etaSeconds);
+      state.bar.update(state.value, {
+        label: state.label,
+        rate: state.rate,
+        elapsed,
+        eta,
+        totalFinal: state.totalFinal,
+      });
     }
   }
 
   handle(message: WorkerMessage): void {
     if (message.type === "embedding") {
       const label = this.colors.brand("embeddings".padEnd(LABEL_WIDTH));
-      const rate =
-        message.throughput !== null && message.throughput !== undefined ? `${message.throughput.toFixed(1)} ch/s` : "";
+      // The worker forwards EVERY ProgressUpdate (scanning/chunking/storing/embedding)
+      // onto this single bar. Only the embedding phase carries the chunk numerator
+      // and a meaningful total — the others must not hijack value/total/totalFinal
+      // (a chunking update is filesProcessed/files.length, not chunks).
+      const isEmbeddingPhase = message.phase === "embedding";
       let state = this.barStates.get("embedding");
       if (!state) {
-        const bar = this.multibar.create(message.total, 0, { label, rate, eta: "", elapsed: "" });
-        state = {
-          bar,
-          startMs: this.now(),
-          value: 0,
-          total: message.total,
+        // Born indeterminate: the bar is visible while chunking runs, before any
+        // embedding-phase message has supplied a trustworthy chunk total.
+        const bar = this.multibar.create(message.total, 0, {
           label,
-          rate,
-          done: false,
-          etaBaseSeconds: null,
-          etaBaseAtMs: this.now(),
-        };
-        this.barStates.set("embedding", state);
-        this.startTickIfNeeded();
-      }
-      const nowMs = this.now();
-      state.total = message.total;
-      state.label = label;
-      state.rate = rate;
-      state.value = Math.min(message.current, message.total);
-      // Recompute ETA base from fresh message data
-      if (message.throughput !== null && message.throughput !== undefined && message.throughput > 0) {
-        state.etaBaseSeconds = Math.max(0, (message.total - message.current) / message.throughput);
-      } else {
-        state.etaBaseSeconds = computeEtaSeconds(state.value, state.total, nowMs - state.startMs);
-      }
-      state.etaBaseAtMs = nowMs;
-      const elapsed = fmtDuration(nowMs - state.startMs);
-      const eta = formatEta(countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs));
-      state.bar.update(state.value, { label, rate, eta, elapsed });
-      state.bar.setTotal(message.total);
-      return;
-    }
-    if (message.type === "enrichment") {
-      const key = `${message.providerKey}:${message.level}`;
-      const rawLabel = `${message.providerKey} ${message.level}`;
-      const label = this.colors.brand(rawLabel.padEnd(LABEL_WIDTH));
-      let state = this.barStates.get(key);
-      if (!state) {
-        const bar = this.multibar.create(message.total, 0, { label, rate: "", eta: "", elapsed: "" });
+          rate: "",
+          eta: "",
+          elapsed: "",
+          totalFinal: false,
+        });
         state = {
           bar,
           startMs: this.now(),
@@ -290,6 +312,64 @@ export class TtyProgressRenderer implements ProgressRenderer {
           done: false,
           etaBaseSeconds: null,
           etaBaseAtMs: this.now(),
+          totalFinal: false,
+        };
+        this.barStates.set("embedding", state);
+        this.startTickIfNeeded();
+      }
+      const nowMs = this.now();
+      state.label = label;
+      if (isEmbeddingPhase) {
+        const rate =
+          message.throughput !== null && message.throughput !== undefined
+            ? `${message.throughput.toFixed(1)} ch/s`
+            : "";
+        state.total = message.total;
+        state.rate = rate;
+        // Missing flag (legacy emitters) → determinate; only an explicit false is indeterminate.
+        state.totalFinal = message.totalFinal !== false;
+        state.value = Math.min(message.current, message.total);
+        // Recompute ETA base from fresh message data
+        if (message.throughput !== null && message.throughput !== undefined && message.throughput > 0) {
+          state.etaBaseSeconds = Math.max(0, (message.total - message.current) / message.throughput);
+        } else {
+          state.etaBaseSeconds = computeEtaSeconds(state.value, state.total, nowMs - state.startMs);
+        }
+        state.etaBaseAtMs = nowMs;
+        state.bar.setTotal(message.total);
+      }
+      const elapsed = fmtDuration(nowMs - state.startMs);
+      const eta = formatEta(countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs));
+      state.bar.update(state.value, {
+        label: state.label,
+        rate: state.rate,
+        eta,
+        elapsed,
+        totalFinal: state.totalFinal,
+      });
+      return;
+    }
+    if (message.type === "enrichment") {
+      const key = `${message.providerKey}:${message.level}`;
+      const rawLabel = `${message.providerKey} ${message.level}`;
+      const label = this.colors.brand(rawLabel.padEnd(LABEL_WIDTH));
+      // File-level events are always final; chunk-level are false until the final
+      // chunk total is pinned. Missing flag (legacy) → determinate.
+      const totalFinal = message.totalFinal !== false;
+      let state = this.barStates.get(key);
+      if (!state) {
+        const bar = this.multibar.create(message.total, 0, { label, rate: "", eta: "", elapsed: "", totalFinal });
+        state = {
+          bar,
+          startMs: this.now(),
+          value: 0,
+          total: message.total,
+          label,
+          rate: "",
+          done: false,
+          etaBaseSeconds: null,
+          etaBaseAtMs: this.now(),
+          totalFinal,
         };
         this.barStates.set(key, state);
         this.startTickIfNeeded();
@@ -297,6 +377,7 @@ export class TtyProgressRenderer implements ProgressRenderer {
       const nowMs = this.now();
       state.total = message.total;
       state.label = label;
+      state.totalFinal = totalFinal;
       state.value = Math.min(message.applied, message.total);
       // Recompute ETA base from fresh message data
       state.etaBaseSeconds = computeEtaSeconds(state.value, state.total, nowMs - state.startMs);
@@ -304,7 +385,7 @@ export class TtyProgressRenderer implements ProgressRenderer {
       const elapsed = fmtDuration(nowMs - state.startMs);
       const eta = formatEta(countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs));
       state.bar.setTotal(message.total);
-      state.bar.update(state.value, { label, rate: "", eta, elapsed });
+      state.bar.update(state.value, { label, rate: "", eta, elapsed, totalFinal });
       return;
     }
     if (message.type === "phase-done") {
