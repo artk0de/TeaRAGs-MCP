@@ -32,6 +32,18 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reindex-on-git-commit.sh",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
     "PreCompact": [
       {
         "matcher": "",
