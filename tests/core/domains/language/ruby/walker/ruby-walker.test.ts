@@ -951,6 +951,49 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
     // where() returns a Relation — no instance binding expected.
     expect(r.chunks[0].localBindings).toBeUndefined();
   });
+
+  // B-block — block-parameter element typing (Increment B / B-block)
+  it("block param: `posts.each { |p| ... }` binds `p` to the element type Post (from YARD Array<Post>)", () => {
+    const src = [
+      "class Digest",
+      "  # @param posts [Array<Post>]",
+      "  def run(posts)",
+      "    posts.each { |p| p.publish }",
+      "  end",
+      "end",
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "app/digest.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Digest#run", scope: ["Digest"], startLine: 3, endLine: 5 }],
+    });
+    // `posts` is bound to element type "Post" via YARD Array<Post> (brg9).
+    // `p` (first block param of `each`) inherits that element type.
+    expect(r.chunks[0].localBindings?.["p"]).toEqual([{ line: 4, type: "Post" }]);
+  });
+
+  it("block param NEGATIVE: `untyped.each { |q| q.foo }` — untyped receiver produces no binding for `q`", () => {
+    const src = [
+      "class Worker",
+      "  def process",
+      "    untyped.each { |q| q.foo }",
+      "  end",
+      "end",
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "app/worker.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Worker#process", scope: ["Worker"], startLine: 2, endLine: 4 }],
+    });
+    // `untyped` has no YARD binding → `q` must NOT be bound.
+    expect(r.chunks[0].localBindings?.["q"]).toBeUndefined();
+  });
 });
 
 describe("extractFromRubyFile — classAncestors (inheritance + mixins)", () => {

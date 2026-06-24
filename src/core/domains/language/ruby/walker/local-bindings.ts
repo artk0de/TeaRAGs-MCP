@@ -59,6 +59,32 @@ export const RELATION_RETURNING_METHODS = new Set([
 ]);
 
 /**
+ * Enumerable / collection methods that yield each element to a block. When the
+ * iterated receiver has a known element type, the FIRST positional block param
+ * is that element type (bd Increment B / B-block).
+ */
+export const RUBY_BLOCK_ITERATOR_METHODS = new Set([
+  "each",
+  "map",
+  "collect",
+  "select",
+  "filter",
+  "filter_map",
+  "reject",
+  "find",
+  "detect",
+  "find_all",
+  "flat_map",
+  "each_with_index",
+  "each_with_object",
+  "group_by",
+  "sort_by",
+  "min_by",
+  "max_by",
+  "partition",
+]);
+
+/**
  * Env-gate for the Ruby local variable type inference path. When `false`,
  * walker emits `localBindings: undefined` and the resolver falls back to
  * legacy import + short-name resolution. Default `true`.
@@ -302,6 +328,30 @@ export function collectLocalBindingsForChunk(
           const type = constInstanceType(valueNode);
           if (type) push(nameNode.text, type, line);
         }
+      }
+      return;
+    }
+
+    // Block-parameter element typing: `coll.each { |e| ... }` binds `e` to
+    // coll's resolved (element) type. The block's parent is the iterator `call`
+    // node. Only the FIRST positional param is the element (each_with_object /
+    // reduce later params are accumulators — skipped). VTA is sound only when
+    // the receiver already has a binding; unknown receiver → no binding.
+    if (node.type === "block" || node.type === "do_block") {
+      const parent = node.parent;
+      const callMethod = parent?.childForFieldName("method")?.text;
+      const recvNode = parent?.childForFieldName("receiver");
+      if (
+        parent &&
+        (parent.type === "call" || parent.type === "method_call") &&
+        callMethod &&
+        RUBY_BLOCK_ITERATOR_METHODS.has(callMethod) &&
+        recvNode?.type === "identifier"
+      ) {
+        const elemType = resolveLocalBindingType(out, recvNode.text, line);
+        const paramsNode = node.childForFieldName("parameters"); // block_parameters
+        const firstParam = paramsNode?.namedChildren.find((p) => p.type === "identifier");
+        if (elemType && firstParam) push(firstParam.text, elemType, line);
       }
       return;
     }
