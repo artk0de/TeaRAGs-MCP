@@ -1,8 +1,13 @@
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { ExternalVocabulary } from "../../../../contracts/types/language.js";
-import { isExternalBareCall } from "../dsl/index.js";
+import { isExternalBareCall, isExternalQualifiedMember } from "../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../walker/walker.js";
-import { collectAncestorChain, receiverChainTailIsExternal, receiverIsIndexAccess, resolveConstant } from "./strategies/index.js";
+import {
+  collectAncestorChain,
+  receiverChainTailIsExternal,
+  receiverIsIndexAccess,
+  resolveConstant,
+} from "./strategies/index.js";
 
 /**
  * Ruby implementation of `ExternalVocabulary`, bridging the `dsl/` framework
@@ -18,6 +23,10 @@ import { collectAncestorChain, receiverChainTailIsExternal, receiverIsIndexAcces
 export class RubyExternalVocabulary implements ExternalVocabulary {
   isBareCallExternal(member: string): boolean {
     return isExternalBareCall(member);
+  }
+
+  isQualifiedMemberExternal(member: string): boolean {
+    return isExternalQualifiedMember(member);
   }
 
   isQualifiedReceiverExternal(receiver: string, ctx: CallContext): boolean {

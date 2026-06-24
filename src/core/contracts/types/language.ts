@@ -121,6 +121,13 @@ export interface ExternalVocabulary {
   isBareCallExternal: (member: string) => boolean;
   /** Does this qualified receiver name a gem/stdlib symbol (no in-project target)? */
   isQualifiedReceiverExternal: (receiver: string, ctx: CallContext) => boolean;
+  /**
+   * Is this MEMBER, on an untyped qualified receiver, an external base-class
+   * instance method (e.g. `agent.update` → ActiveRecord::Base#update)? Optional:
+   * a vocabulary that does not distinguish the member axis omits it and the
+   * classifier treats it as `false` (no behavior change). bd tea-rags-mcp-i9id8.
+   */
+  isQualifiedMemberExternal?: (member: string) => boolean;
 }
 
 /**

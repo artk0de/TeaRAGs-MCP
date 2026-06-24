@@ -8,6 +8,7 @@ import {
 import {
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
   RubyDynamicDispatchResolver,
+  RubyLocalTypeSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
@@ -247,6 +248,51 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
           startLine: 1,
         };
         expect(resolver.resolveDispatch(call, ctx({ symbolTable })).length).toBeGreaterThan(0); // table seeds a def
+      }
+    });
+  });
+
+  describe("chain-order safety: typed receiver resolves exact via localType, never reaches member guard", () => {
+    // A TYPED receiver (localBindings binds `model` → "Model") with an in-project
+    // `Model#update` def resolves EXACT via the localType chain strategy, not
+    // suppressed by the AR-core member guard. Two assertions together:
+    //   1. resolveDispatch returns [] (typed receiver exits at the localBindings
+    //      guard, before the isExternalQualifiedMember check — correct ordering).
+    //   2. The chain strategy (RubyLocalTypeSymbolResolutionStrategy) resolves
+    //      model.update to Model#update exactly — the in-project edge is NOT lost.
+    //
+    // The table includes BOTH the class-level "Model" symbol (so resolveConstant
+    // can map the type name to its file) AND the "Model#update" method symbol (so
+    // the method lookup succeeds). Without the class symbol, resolveConstant finds
+    // nothing and the localType strategy returns DROP — which would make the test
+    // vacuous (DROP != suppression by member guard).
+    const modelTable = tableWith([
+      "app/models/model.rb",
+      [
+        sym("Model", "Model", "app/models/model.rb", []),
+        sym("Model#update", "update", "app/models/model.rb", ["Model"]),
+      ],
+    ]);
+
+    const typedCtx = ctx({
+      symbolTable: modelTable,
+      localBindings: { model: [{ line: 1, type: "Model" }] },
+    });
+
+    it("resolveDispatch returns [] for a typed receiver (localBindings guard fires before member guard)", () => {
+      const call = { callText: "model.update", receiver: "model", member: "update", startLine: 2 };
+      expect(resolver.resolveDispatch(call, typedCtx)).toEqual([]);
+    });
+
+    it("the localType chain strategy resolves model.update to the in-project Model#update target", () => {
+      const strategy = new RubyLocalTypeSymbolResolutionStrategy(cfg);
+      const call = { callText: "model.update", receiver: "model", member: "update", startLine: 2 };
+      const RESOLVED = "resolved";
+      const outcome = strategy.attempt(call, typedCtx);
+      expect(outcome.kind).toBe(RESOLVED);
+      if (outcome.kind === RESOLVED) {
+        expect(outcome.target.targetSymbolId).toBe("Model#update");
+        expect(outcome.target.targetRelPath).toBe("app/models/model.rb");
       }
     });
   });
