@@ -234,6 +234,22 @@ export interface FileExtraction {
    */
   classFieldTypes?: Record<string, Record<string, string>>;
   /**
+   * Optional per-class Rails association map: `className → accessorName →
+   * modelType`. Populated by the Ruby walker from class-body association macros
+   * (`belongs_to`/`has_one`/`has_many`/`has_and_belongs_to_many`); the accessor
+   * name is the macro's first symbol verbatim (`:user` → `user`,
+   * `:agents` → `agents`) and the model type is the associated constant —
+   * honouring an explicit `class_name:` override (`belongs_to :author,
+   * class_name: "User"` → `User`, NOT `Author`). Drives compound-receiver
+   * chain typing: `event.user.agents` binds each prefix left-to-right
+   * (`event.user` → User, `event.user.agents` → Agent) so the existing
+   * local-type strategy resolves the deepest call exactly. Languages without
+   * Rails-style associations leave this undefined.
+   *
+   * Plain Record (NOT Map) so the value round-trips through the NDJSON spill.
+   */
+  associationTypes?: Record<string, Record<string, string>>;
+  /**
    * Optional per-class superclass + mixin map: `className → ancestor[]`.
    * Walkers populate this when the source declares an explicit inheritance
    * chain (`class Foo < Bar` in Ruby) or module mixin (`include Mod`).
@@ -671,6 +687,14 @@ export interface CallContext {
    * in the global symbol table.
    */
   classFieldTypes?: Record<string, Record<string, string>>;
+  /**
+   * Optional per-class Rails association map (`className → accessor →
+   * modelType`) propagated from `FileExtraction.associationTypes`. The walker
+   * consumes it directly to type compound-receiver chains into `localBindings`;
+   * it is also carried on the context for resolvers that want association-aware
+   * receiver typing without re-deriving the map.
+   */
+  associationTypes?: Record<string, Record<string, string>>;
   /**
    * Per-chunk local variable bindings (`varName → typeName`) inferred by
    * the walker from assignments / type annotations within the enclosing

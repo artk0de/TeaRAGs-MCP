@@ -89,6 +89,10 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const trackTypes = localTypeTrackingEnabled();
   const yardByLine = trackTypes ? collectYardParamTypes(input.code) : new Map<number, Record<string, string>>();
   const yardReturnTypes = trackTypes ? collectYardReturnTypes(input.code) : {};
+  // Per-class Rails association map (B1): `class → accessor → modelType`. Drives
+  // compound-receiver chain typing (`event.user.agents`) in the binding pass and
+  // is surfaced on the FileExtraction so resolvers can read it run-global.
+  const associationTypes = trackTypes ? collectRubyAssociationTypes(input.tree.rootNode) : {};
   // Innermost-chunk attribution: assign each call to ONE chunk only —
   // the smallest containing range, ties broken by deeper scope length.
   // Without this guard, a call inside `module A { class B { def m ... } }`
@@ -104,7 +108,13 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
       calls: callOwnership.get(chunkIndex) ?? [],
     };
     if (trackTypes) {
-      const bindings = collectLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine, yardByLine);
+      const bindings = collectLocalBindingsForChunk(
+        input.tree.rootNode,
+        c.startLine,
+        c.endLine,
+        yardByLine,
+        associationTypes,
+      );
       if (Object.keys(bindings).length > 0) base.localBindings = bindings;
       // `localCallBindings` (var → called method) pairs with the run-global
       // `functionReturnTypes` so the resolver binds `x = recv.meth(); x.member`
@@ -158,6 +168,10 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     const ivarFieldTypes = collectRubyIvarFieldTypes(input.tree.rootNode);
     if (Object.keys(ivarFieldTypes).length > 0) out.classFieldTypes = ivarFieldTypes;
   }
+  // Rails association map (B1) — emitted only when at least one class declares an
+  // association. Consumed run-global by the codegraph provider (mirrors
+  // `classFieldTypes` plumbing) and already used by the binding pass above.
+  if (Object.keys(associationTypes).length > 0) out.associationTypes = associationTypes;
   return out;
 }
 
@@ -660,12 +674,31 @@ function isRubyCallbackMacro(name: string): boolean {
  * `blog_posts` → `BlogPost`. The caller singularizes first; this only
  * upcases each `_`-separated segment's first char and joins.
  */
-function camelizeModelName(snake: string): string {
+export function camelizeModelName(snake: string): string {
   return snake
     .split("_")
     .filter((s) => s.length > 0)
     .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
     .join("");
+}
+
+/**
+ * The accessor name a Rails association macro declares — its FIRST symbol
+ * argument verbatim (`belongs_to :user` → `user`, `has_many :blog_posts` →
+ * `blog_posts`). This is the convention reader/writer name, NOT singularized
+ * (the model constant is derived separately by {@link associationModelConstant},
+ * which DOES singularize + honour `class_name:`). Returns `null` when the call
+ * has no leading symbol argument (no accessor to name). Exported so the
+ * association-map builder keys the map on the same accessor text the call-site
+ * receiver uses (`event.user`).
+ */
+export function associationAccessorName(callNode: AstNode): string | null {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  const firstArg = args.namedChildren[0];
+  if (firstArg?.type !== "simple_symbol") return null;
+  const base = firstArg.text.startsWith(":") ? firstArg.text.slice(1) : firstArg.text;
+  return base.length > 0 ? base : null;
 }
 
 /**
@@ -676,7 +709,7 @@ function camelizeModelName(snake: string): string {
  * `null` when neither a usable `class_name:` string nor a leading symbol
  * argument is present — no model edge can be synthesised syntactically.
  */
-function associationModelConstant(callNode: AstNode): string | null {
+export function associationModelConstant(callNode: AstNode): string | null {
   const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
   if (!args) return null;
   // Explicit `class_name:` override — a string literal constant.
@@ -701,6 +734,65 @@ function associationModelConstant(callNode: AstNode): string | null {
   if (base.length === 0) return null;
   const model = camelizeModelName(singularizeAssociation(base));
   return model.length > 0 ? model : null;
+}
+
+/**
+ * Per-class Rails association map for the `associationTypes` channel (B1):
+ * `className → accessorName → modelType`. Mirrors {@link collectRubyIvarFieldTypes}'s
+ * scope-stack walk — each class / module records its OWN class-body association
+ * macros (`belongs_to`/`has_one`/`has_many`/`has_and_belongs_to_many`); nested
+ * classes get their own fq map. For each macro call the accessor name is the
+ * first symbol verbatim ({@link associationAccessorName}) and the model type is
+ * {@link associationModelConstant} — so an explicit `class_name:` override is
+ * honoured (`belongs_to :author, class_name: "User"` → `author → User`, NOT
+ * `Author`). The class key is the fully-qualified scope-stack name
+ * (`Outer::Inner`), matching `collectRubyClassAncestors` and the resolver's
+ * `ctx.callerScope.join("::")`. Only class-body macro calls (no receiver, or a
+ * `self` receiver) record; an instance call `obj.has_many` is ignored.
+ * Within-class conflict is last-write-wins (source-order DFS).
+ */
+export function collectRubyAssociationTypes(root: AstNode): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  const walkScope = (node: AstNode, scope: string[]): void => {
+    if (node.type === "class" || node.type === "module") {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) {
+        for (const child of node.children) walkScope(child, scope);
+        return;
+      }
+      const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+      const fq = scope.length === 0 ? localName : `${scope.join("::")}::${localName}`;
+      const body = node.childForFieldName("body");
+
+      // Collect association macros across THIS class's own body. Stop at any
+      // nested class/module — those are attributed to their own fq below.
+      const assocs: Record<string, string> = {};
+      const collectAssocs = (n: AstNode): void => {
+        if (n.type === "class" || n.type === "module") return;
+        if (n.type === "call" || n.type === "method_call") {
+          const method = n.childForFieldName("method");
+          const receiver = n.childForFieldName("receiver");
+          // Class-body macro form only: bare call or explicit `self` receiver.
+          const isClassBodyForm = !receiver || receiver.type === "self";
+          if (method && isClassBodyForm && RUBY_ASSOCIATION_MACROS.has(method.text)) {
+            const accessor = associationAccessorName(n);
+            const model = associationModelConstant(n);
+            if (accessor !== null && model !== null) assocs[accessor] = model; // last-write-wins
+          }
+        }
+        for (const child of n.children) collectAssocs(child);
+      };
+      for (const child of (body ?? node).children) collectAssocs(child);
+      if (Object.keys(assocs).length > 0) out[fq] = { ...(out[fq] ?? {}), ...assocs };
+
+      const recurseChildren = body ? body.children : node.children;
+      for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
+      return;
+    }
+    for (const child of node.children) walkScope(child, scope);
+  };
+  walkScope(root, []);
+  return out;
 }
 
 /**

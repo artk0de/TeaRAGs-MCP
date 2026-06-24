@@ -21,6 +21,7 @@ import {
   collectRubyLocalCallBindingsForChunk,
 } from "../../../../../../src/core/domains/language/ruby/walker/local-bindings.js";
 import {
+  collectRubyAssociationTypes,
   extractFromRubyFile,
   ZEITWERK_PREFIX,
 } from "../../../../../../src/core/domains/language/ruby/walker/walker.js";
@@ -2486,6 +2487,173 @@ describe("extractFromRubyFile — classFieldTypes (ivar inference)", () => {
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "app/models/bar.rb", language: "ruby", chunks: [] });
     expect(r.classFieldTypes).toBeUndefined();
+  });
+});
+
+describe("extractFromRubyFile — compound-receiver association-chain bindings (B1)", () => {
+  // `event : Event` (YARD param), Event belongs_to :user (→User),
+  // User has_many :agents (→Agent). The walker emits CallRefs keyed on the
+  // FULL compound receiver text (`event.user`, `event.user.agents`); the
+  // compound-binding pass types each prefix left-to-right via associationTypes
+  // so the existing localType strategy resolves the deepest call exactly.
+  it("binds each prefix of `event.user.agents` left-to-right (Event→User→Agent)", () => {
+    const src = [
+      "class User",
+      "  has_many :agents",
+      "end",
+      "class Event",
+      "  belongs_to :user",
+      "end",
+      "# @param event [Event]",
+      "def process(event)",
+      "  event.user.agents.each { |a| a.run }",
+      "end",
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "app/models/event.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "process", scope: ["process"], startLine: 8, endLine: 10 }],
+    });
+    const b = r.chunks[0].localBindings ?? {};
+    expect(b["event"]).toEqual([{ line: 8, type: "Event" }]);
+    expect(b["event.user"]).toEqual([{ line: 9, type: "User" }]);
+    expect(b["event.user.agents"]).toEqual([{ line: 9, type: "Agent" }]);
+  });
+
+  it("honors class_name: on a chain hop — `event.author` binds to User (NOT Author)", () => {
+    const src = [
+      "class Event",
+      '  belongs_to :author, class_name: "User"',
+      "end",
+      "# @param event [Event]",
+      "def show(event)",
+      "  event.author.name",
+      "end",
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "app/models/event.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "show", scope: ["show"], startLine: 5, endLine: 7 }],
+    });
+    const b = r.chunks[0].localBindings ?? {};
+    expect(b["event.author"]).toEqual([{ line: 6, type: "User" }]);
+  });
+
+  it("STOPS at an unknown hop — no binding past an accessor absent from the map", () => {
+    const src = [
+      "class Event",
+      "  belongs_to :user",
+      "end",
+      "# @param event [Event]",
+      "def go(event)",
+      "  event.user.mystery.field",
+      "end",
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "app/models/event.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "go", scope: ["go"], startLine: 5, endLine: 7 }],
+    });
+    const b = r.chunks[0].localBindings ?? {};
+    expect(b["event.user"]).toEqual([{ line: 6, type: "User" }]);
+    // `mystery` is not an association on User → no binding for the deeper prefix.
+    expect(b["event.user.mystery"]).toBeUndefined();
+  });
+
+  it("does NOT walk when the chain root is untyped (honest fan-out)", () => {
+    const src = ["def go(thing)", "  thing.user.agents", "end"].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "app/models/event.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "go", scope: ["go"], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+});
+
+describe("collectRubyAssociationTypes (accessor → model, associationTypes channel)", () => {
+  it("records belongs_to :user under the enclosing class as accessor→model", () => {
+    const root = parse(`
+      class Event
+        belongs_to :user
+      end
+    `).rootNode;
+    expect(collectRubyAssociationTypes(root)).toEqual({ Event: { user: "User" } });
+  });
+
+  it("honors class_name: override (belongs_to :author, class_name: \"User\" → User, NOT Author)", () => {
+    const root = parse(`
+      class Event
+        belongs_to :user
+        belongs_to :author, class_name: "User"
+      end
+    `).rootNode;
+    expect(collectRubyAssociationTypes(root)).toEqual({ Event: { user: "User", author: "User" } });
+  });
+
+  it("singularizes + camelizes a has_many collection accessor (has_many :agents → Agent)", () => {
+    const root = parse(`
+      class User
+        has_many :agents
+        has_many :blog_posts
+      end
+    `).rootNode;
+    expect(collectRubyAssociationTypes(root)).toEqual({ User: { agents: "Agent", blog_posts: "BlogPost" } });
+  });
+
+  it("keys associations of a nested-namespace class by its full scope name", () => {
+    const root = parse(`
+      module Crm
+        class Account
+          has_one :owner
+        end
+      end
+    `).rootNode;
+    expect(collectRubyAssociationTypes(root)).toEqual({ "Crm::Account": { owner: "Owner" } });
+  });
+
+  it("returns empty for a class with no association macros", () => {
+    const root = parse(`
+      class Plain
+        def run; helper; end
+      end
+    `).rootNode;
+    expect(collectRubyAssociationTypes(root)).toEqual({});
+  });
+
+  it("surfaces the association map on the FileExtraction (associationTypes field)", () => {
+    const src = `
+      class Event
+        belongs_to :user
+        belongs_to :author, class_name: "User"
+      end
+    `;
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "app/models/event.rb", language: "ruby", chunks: [] });
+    expect(r.associationTypes).toEqual({ Event: { user: "User", author: "User" } });
+  });
+
+  it("omits associationTypes when no association macros are present", () => {
+    const src = `
+      class Plain
+        def run; helper; end
+      end
+    `;
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "app/models/plain.rb", language: "ruby", chunks: [] });
+    expect(r.associationTypes).toBeUndefined();
   });
 });
 

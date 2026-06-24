@@ -296,6 +296,7 @@ export function collectLocalBindingsForChunk(
   startLine: number,
   endLine: number,
   yardByLine: Map<number, Record<string, string>>,
+  associationTypes: Record<string, Record<string, string>> = {},
 ): Record<string, LocalBinding[]> {
   const out: Record<string, LocalBinding[]> = {};
   const push = (name: string, type: string, line: number): void => {
@@ -402,7 +403,79 @@ export function collectLocalBindingsForChunk(
       constInstanceType(rhs) ?? (rhs.type === "identifier" ? resolveLocalBindingType(out, rhs.text, line) : undefined);
     if (type) push(varName, type, line);
   });
+
+  // Compound-receiver association-chain binding (B1). After single-var / ivar /
+  // YARD bindings are known, type each PREFIX of a dotted chain receiver
+  // (`event.user`, `event.user.agents`) left-to-right via the association map, so
+  // the existing localType strategy — which keys on the FULL `call.receiver`
+  // text — resolves the deepest call exactly. The root segment must already be
+  // typed (Task 1-3 binding / YARD param / ivar); an unknown hop STOPS the walk
+  // (honest fan-out). The cap is the chain's own segment count, and a cycle-guard
+  // breaks a self-referential `has_many` so the walk never loops.
+  bindCompoundReceiverChains(root, startLine, endLine, associationTypes, out, push);
+
   return out;
+}
+
+/** A dotted member chain whose root is a bare local — `event.user.agents`.
+ *  Rejects constants, `::` scopes, `()` calls, `[]` index access, and `self`. */
+const COMPOUND_CHAIN_RE = /^[a-z_][A-Za-z0-9_]*(?:\.[a-z_][A-Za-z0-9_]*)+$/;
+
+/**
+ * Walk every distinct dotted-chain call receiver in the chunk range and bind
+ * each prefix to its association model type. For `event.user.agents` with
+ * `event : Event`, `Event belongs_to :user` (→User), `User has_many :agents`
+ * (→Agent): binds `event.user → User`, then `event.user.agents → Agent`. The
+ * binding line is the receiver's own line so the position-aware lookup attaches
+ * it correctly. Honours `class_name:` implicitly — the association map already
+ * carries the rewritten model (`event.author → User`).
+ */
+function bindCompoundReceiverChains(
+  root: AstNode,
+  startLine: number,
+  endLine: number,
+  associationTypes: Record<string, Record<string, string>>,
+  out: Record<string, LocalBinding[]>,
+  push: (name: string, type: string, line: number) => void,
+): void {
+  // Distinct chain receiver texts (longest first so a deeper chain's prefixes
+  // are all reachable) paired with the call line they appear on.
+  const chains = new Map<string, number>();
+  walk(root, (node) => {
+    if (node.type !== "call" && node.type !== "method_call") return;
+    const receiver = node.childForFieldName("receiver");
+    if (!receiver) return;
+    const line = receiver.startPosition.row + 1;
+    if (line < startLine || line > endLine) return;
+    const text = receiver.text;
+    if (!COMPOUND_CHAIN_RE.test(text)) return;
+    if (!chains.has(text)) chains.set(text, line);
+  });
+
+  for (const [chain, line] of chains) {
+    const segments = chain.split(".");
+    const root0 = segments[0];
+    if (!root0) continue;
+    // Root segment type from an already-established binding at this line.
+    const rootType = resolveLocalBindingType(out, root0, line);
+    if (!rootType) continue; // untyped root → no walk (honest fan-out)
+    let currentType: string = rootType;
+    let prefix = root0;
+    const seenTypes = new Set<string>([currentType]); // cycle-guard
+    // Cap at the chain's own segment count (a self-referential has_many can't loop).
+    for (let i = 1; i < segments.length; i++) {
+      const accessor = segments[i];
+      if (!accessor) break;
+      const nextType: string | undefined = associationTypes[currentType]?.[accessor];
+      if (!nextType) break; // unknown hop STOPS the walk
+      prefix = `${prefix}.${accessor}`;
+      // Bind the prefix only when not already typed (e.g. a single-var binding).
+      if (resolveLocalBindingType(out, prefix, line) === undefined) push(prefix, nextType, line);
+      if (seenTypes.has(nextType)) break; // self-referential chain → stop
+      seenTypes.add(nextType);
+      currentType = nextType;
+    }
+  }
 }
 
 /**
