@@ -35,6 +35,10 @@ export interface CollectionEntry {
    * for backward compatibility with pre-existing registry entries.
    */
   codegraphEnabled?: boolean;
+  /** Source collection logical name when this entry is a worktree clone. */
+  worktreeOf?: string;
+  /** Worktree name (the `<name>` in `<project>-worktree-<name>`). */
+  worktreeName?: string;
   indexedAt: string;
   teaRagsVersion: string;
   chunksCount: number;

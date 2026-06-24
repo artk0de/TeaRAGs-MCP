@@ -140,6 +140,27 @@ export class CollectionRegistry {
     return had;
   }
 
+  listWorktrees(): CollectionEntry[] {
+    return [...this.ensureLoaded().values()].filter((e) => typeof e.worktreeOf === "string");
+  }
+
+  findWorktree(name: string): CollectionEntry | null {
+    const map = this.ensureLoaded();
+    for (const entry of map.values()) {
+      if (entry.worktreeOf !== undefined && entry.worktreeName === name) return entry;
+    }
+    return null;
+  }
+
+  setWorktreeProvenance(collectionName: string, worktreeOf: string, worktreeName: string): void {
+    const map = this.ensureLoaded();
+    const entry = map.get(collectionName);
+    if (!entry) throw new Error(`Cannot set worktree provenance: ${collectionName} not registered`);
+    entry.worktreeOf = worktreeOf;
+    entry.worktreeName = worktreeName;
+    this.flush();
+  }
+
   /**
    * Subscribe to registry.json mtime changes and invalidate the in-process
    * cache on every event so the next read sees fresh data written by a
