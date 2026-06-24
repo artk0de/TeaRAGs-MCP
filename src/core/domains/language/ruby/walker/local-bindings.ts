@@ -27,6 +27,38 @@ export const INSTANCE_RETURNING_METHODS = new Set([
 ]);
 
 /**
+ * AR::Relation-returning query methods: `Const.where(...)` is a
+ * `Relation<Const>`, and chaining another of these stays `Relation<Const>`
+ * (same element type). A terminal instance-returning method
+ * ({@link INSTANCE_RETURNING_METHODS}) on such a relation yields ONE `Const`
+ * instance — so `Const.where(...).first` is typed `Const` (bd Increment B / B2).
+ */
+export const RELATION_RETURNING_METHODS = new Set([
+  "where",
+  "not",
+  "order",
+  "joins",
+  "includes",
+  "eager_load",
+  "preload",
+  "references",
+  "group",
+  "having",
+  "limit",
+  "offset",
+  "distinct",
+  "select",
+  "reorder",
+  "unscope",
+  "except",
+  "all",
+  "readonly",
+  "lock",
+  "merge",
+  "none",
+]);
+
+/**
  * Env-gate for the Ruby local variable type inference path. When `false`,
  * walker emits `localBindings: undefined` and the resolver falls back to
  * legacy import + short-name resolution. Default `true`.
@@ -38,24 +70,43 @@ export function localTypeTrackingEnabled(): boolean {
 }
 
 /**
+ * Walk a relation chain `Const.<rel>(...)[.<rel>(...)]*` down to its root
+ * constant. Returns the fully-qualified const when the chain bottoms out at a
+ * `YARD_CONST` receiver through only {@link RELATION_RETURNING_METHODS}; null
+ * for any non-relation link (no guessing).
+ */
+function relationRootConst(node: AstNode): string | null {
+  const asConst =
+    node.type === "scope_resolution" ? readScopeResolution(node) : node.type === "constant" ? node.text : null;
+  if (asConst && YARD_CONST.test(asConst)) return asConst;
+  if (node.type !== "call" && node.type !== "method_call") return null;
+  const recv = node.childForFieldName("receiver");
+  const method = node.childForFieldName("method");
+  if (!recv || !method || !RELATION_RETURNING_METHODS.has(method.text)) return null;
+  return relationRootConst(recv);
+}
+
+/**
  * Infer the INSTANCE type of an RHS expression that is a class-constant call
- * (`ClassName.new(...)` / `Model.find(...)` / `Model.create!(...)` …). Returns
- * the fully-qualified constant name when the receiver is a constant and the
- * method is `new` or in {@link INSTANCE_RETURNING_METHODS}; otherwise null
- * (bare factory calls, Relation tails, non-constant receivers — never guessed).
+ * (`ClassName.new(...)` / `Model.find(...)` / `Model.create!(...)` …) or a
+ * relation-tail chain (`Const.where(...).first`). Returns the fully-qualified
+ * constant name when the receiver is a constant (or a relation chain rooted at
+ * one) and the method is `new` or in {@link INSTANCE_RETURNING_METHODS};
+ * otherwise null (bare factory calls, bare Relation chains, non-constant
+ * receivers — never guessed).
  */
 function constInstanceType(node: AstNode): string | null {
   if (node.type !== "call" && node.type !== "method_call") return null;
   const receiver = node.childForFieldName("receiver");
   const method = node.childForFieldName("method");
   if (!receiver || !method) return null;
-  const receiverText = receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
-  if (!YARD_CONST.test(receiverText)) return null;
   const methodName = method.text;
-  // `ClassName.new(...)` is the universal Ruby constructor; the rest are
-  // instance-returning factories / finders that bind to the receiver class.
-  if (methodName === "new" || INSTANCE_RETURNING_METHODS.has(methodName)) return receiverText;
-  return null;
+  if (methodName !== "new" && !INSTANCE_RETURNING_METHODS.has(methodName)) return null;
+  const receiverText = receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
+  // Direct `ClassName.new` / `ClassName.find` — receiver is the constant itself.
+  if (YARD_CONST.test(receiverText)) return receiverText;
+  // B2 relation tail `Const.where(...).first` — receiver is a relation chain.
+  return relationRootConst(receiver);
 }
 
 /**

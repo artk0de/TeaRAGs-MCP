@@ -913,6 +913,44 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
       delete process.env.CODEGRAPH_RB_LOCAL_TYPE_TRACKING;
     }
   });
+
+  // B2 — relation tail: `Const.where(...)[.<rel>(...)]*.<instance-method>` types
+  // the local to the Const model, not a Relation.
+  it("relation tail: binds `post = Post.where(...).order(...).first` to Post", () => {
+    const src = [
+      "class PostsController",
+      "  def show",
+      "    post = Post.where(published: true).order(:created_at).first",
+      "    post.touch",
+      "  end",
+      "end",
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "app/posts_controller.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "PostsController#show", scope: ["PostsController"], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ post: [{ line: 3, type: "Post" }] });
+  });
+
+  it("relation tail NEGATIVE: bare `rel = Post.where(...)` (no terminal instance method) does NOT bind to Post instance", () => {
+    const src = ["class PostsController", "  def index", "    rel = Post.where(published: true)", "  end", "end"].join(
+      "\n",
+    );
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "app/posts_controller.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "PostsController#index", scope: ["PostsController"], startLine: 2, endLine: 4 }],
+    });
+    // where() returns a Relation — no instance binding expected.
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
 });
 
 describe("extractFromRubyFile — classAncestors (inheritance + mixins)", () => {
