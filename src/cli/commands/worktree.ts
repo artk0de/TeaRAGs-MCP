@@ -133,7 +133,7 @@ export const worktreeCommand: CommandModule = {
     yargs
       .command(
         "create <name>",
-        "Clone the source index into a worktree collection and diff-reindex",
+        "Clone the source index into a worktree collection (run index-codebase after to index the live diff)",
         (y) =>
           y
             .positional("name", { type: "string", demandOption: true, describe: "Worktree name" })

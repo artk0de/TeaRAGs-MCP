@@ -256,3 +256,30 @@ guard.
 - Native-snapshot vs scroll copy strategy abstraction (only snapshot/recover is
   implemented; a `CopyStrategy` seam can be introduced later under OCP if a
   remote/external-Qdrant deployment needs scroll+upsert).
+
+## 12. Amendments (live validation, 2026-06-24)
+
+Live T9 smoke (clone tea-rags into a worktree collection, search, remove)
+revealed integration facts that supersede the original §5/§6 text:
+
+- **Diff reindex is DECOUPLED from `create`.** §5's "post-commit
+  `reindexPipeline.reindexChanges(target)` inside the create flow" is removed. A
+  synchronous in-process reindex blocked the CLI command on a large diff
+  (observed >7 min hang) and auto-triggered a heavy reindex against the
+  reindex-is-user-gated rule. `create` now does **clone + register only** and
+  prints `nextStep: tea-rags index-codebase --project <alias>`; the diff reindex
+  is an explicit, separately-invoked step.
+- **Codegraph clones by PHYSICAL version, not logical name.** The DuckDB files
+  are keyed by the physical versioned collection (`code_<hash>_vN.duckdb`), so
+  `CodegraphArtifact` uses `physicalName` (snapshot/stats stay on `logicalName`
+  — those are keyed by logical on disk). The original §6 text implied logical
+  throughout; only codegraph is physical-keyed.
+- **`remove` resolves the active physical via the alias** (not a hardcoded
+  `_v1`) so it cleans the live collection even after a reindex bumped the
+  version.
+- **CLI `create`/`remove` `process.exit(0|1)` after cleanup** — the AppContext
+  keeps open handles that otherwise prevent the process from terminating.
+
+Validated live: clone produces a searchable collection (find_symbol) AND a
+working codegraph (get_callers) against the worktree alias; remove tears down
+every artifact. See `.superpowers/sdd/progress.md` for the full ledger.
