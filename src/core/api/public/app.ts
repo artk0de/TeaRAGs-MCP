@@ -15,6 +15,7 @@
  */
 
 import type { GraphDbClientPool } from "../../adapters/duckdb/pool.js";
+import type { WorktreeCreateResult, WorktreeInfo, WorktreeOps } from "../../domains/maintenance/worktree/index.js";
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { Reranker } from "../../domains/explore/reranker.js";
@@ -123,6 +124,18 @@ export interface App {
   findCycles: (request: FindCyclesRequest) => Promise<FindCyclesResponse>;
   tracePath: (request: TracePathRequest) => Promise<PathTraceResult>;
 
+  // -- Worktree management (→ domains/maintenance/worktree/WorktreeOps) --
+  createWorktree: (input: {
+    name: string;
+    from?: string;
+    path?: string;
+    createGit: boolean;
+    branch?: string;
+  }) => Promise<WorktreeCreateResult>;
+  listWorktrees: () => Promise<WorktreeInfo[]>;
+  removeWorktree: (input: { name: string; force: boolean; keepGit: boolean }) => Promise<{ removed: boolean }>;
+  worktreeInfo: (input: { cwd: string }) => Promise<WorktreeInfo>;
+
   // -- Provider availability — sync query used by MCP tool registrars to
   // skip registration when a required trajectory provider is not loaded.
   // Source of truth is the registered trajectory keys at composition time.
@@ -162,6 +175,8 @@ export interface AppDeps {
    * required provider is not loaded. Defaults to empty when omitted.
    */
   registeredProviderKeys?: ReadonlySet<string>;
+  /** Optional — present when worktree management is wired (added in bootstrap). */
+  worktreeOps?: WorktreeOps;
 }
 
 // ---------------------------------------------------------------------------
@@ -285,6 +300,24 @@ export function createApp(deps: AppDeps): App {
     getCallees: async (req) => (deps.graphFacade ? deps.graphFacade.getCallees(req) : { callees: [] }),
     findCycles: async (req) => (deps.graphFacade ? deps.graphFacade.findCycles(req) : { cycles: [] }),
     tracePath: async (req) => (deps.tracePathOps ? deps.tracePathOps.tracePath(req) : { paths: [], truncated: false }),
+
+    // -- Worktree management — delegate to WorktreeOps (optional until T7 wires factory) --
+    createWorktree: async (input) => {
+      if (!deps.worktreeOps) throw new Error("worktreeOps is not configured");
+      return deps.worktreeOps.create(input);
+    },
+    listWorktrees: async () => {
+      if (!deps.worktreeOps) throw new Error("worktreeOps is not configured");
+      return deps.worktreeOps.list();
+    },
+    removeWorktree: async (input) => {
+      if (!deps.worktreeOps) throw new Error("worktreeOps is not configured");
+      return deps.worktreeOps.remove(input);
+    },
+    worktreeInfo: async (input) => {
+      if (!deps.worktreeOps) throw new Error("worktreeOps is not configured");
+      return deps.worktreeOps.info(input.cwd);
+    },
 
     // -- Provider availability — backs MCP tool-registrar gating. Source
     // of truth is `registeredProviderKeys` populated by composition from
