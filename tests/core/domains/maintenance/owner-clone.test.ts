@@ -40,6 +40,13 @@ describe("owner clone methods", () => {
     expect(await dst.exists()).toBe(true);
   });
 
+  it("ShardedSnapshotManager.cloneTo is a no-op when source has no snapshot", async () => {
+    const src = new ShardedSnapshotManager(dir, "code_nosnap");
+    await src.cloneTo("code_dst2", "/new/worktree");
+    const dst = new ShardedSnapshotManager(dir, "code_dst2");
+    expect(await dst.exists()).toBe(false);
+  });
+
   // --- QuarantineStore ---
   it("QuarantineStore.cloneTo copies quarantine file to target collection name", async () => {
     const store = new QuarantineStore(dir, "code_src");

@@ -26,7 +26,7 @@
 
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { copyFile, unlink } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
 import { DuckDbGraphClient } from "./client.js";
@@ -467,6 +467,7 @@ export class GraphDbClientPool {
     await this.release(sourceCollection);
     const from = this.pathFor(sourceCollection);
     if (!existsSync(from)) return;
+    mkdirSync(dirname(this.pathFor(targetCollection)), { recursive: true });
     await copyFile(from, this.pathFor(targetCollection));
   }
 
