@@ -30,7 +30,6 @@ import type { ProjectRegistryOps } from "../internal/ops/project-registry-ops.js
 import type { TracePathOps } from "../internal/ops/trace-path-ops.js";
 import type {
   AddDocumentsRequest,
-  ChangeStats,
   CollectionInfo,
   CreateCollectionRequest,
   DeleteDocumentsRequest,
@@ -85,8 +84,6 @@ export interface App {
    * server (long-lived) never needs it.
    */
   whenEnrichmentComplete: () => Promise<void>;
-  /** @deprecated Use indexCodebase — it auto-detects incremental reindex */
-  reindexChanges: (path: string, progress?: ProgressCallback) => Promise<ChangeStats>;
   getIndexStatus: (path: string) => Promise<IndexStatus>;
   clearIndex: (path: string) => Promise<void>;
 
@@ -231,7 +228,6 @@ export function createApp(deps: AppDeps): App {
     indexCodebase: async (path, options, progress, enrichmentProgress) =>
       facades.ingest.indexCodebase(path, options, progress, enrichmentProgress),
     whenEnrichmentComplete: async () => facades.ingest.whenEnrichmentComplete(),
-    reindexChanges: async (path, progress) => facades.ingest.reindexChanges(path, progress),
     getIndexStatus: async (path) => facades.ingest.getIndexStatus(path),
     clearIndex: async (path) => facades.ingest.clearIndex(path),
 

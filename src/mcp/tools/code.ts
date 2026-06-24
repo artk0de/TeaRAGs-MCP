@@ -2,7 +2,7 @@
  * Code indexing tools registration — orchestrator delegating to per-family modules.
  *
  * Families:
- * - index: index_codebase, reindex_changes (build/update lifecycle)
+ * - index: index_codebase (build/update lifecycle; auto-detects incremental changes)
  * - status: get_index_status, get_index_metrics (inspection)
  * - maintenance: clear_index (destructive)
  * - search: search_code (query)

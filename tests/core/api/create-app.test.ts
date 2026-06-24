@@ -135,7 +135,6 @@ describe("createApp", () => {
 
     // Indexing
     expect(app.indexCodebase).toBeDefined();
-    expect(app.reindexChanges).toBeDefined();
     expect(app.getIndexStatus).toBeDefined();
     expect(app.clearIndex).toBeDefined();
 
@@ -254,14 +253,6 @@ describe("createApp", () => {
 
       // App forwards the optional 4th enrichmentProgress arg (undefined here).
       expect(deps.ingest.indexCodebase).toHaveBeenCalledWith("/foo", opts, progress, undefined);
-    });
-
-    it("delegates reindexChanges to IngestFacade", async () => {
-      const app = createApp(deps);
-      const progress = vi.fn();
-      await app.reindexChanges("/foo", progress);
-
-      expect(deps.ingest.reindexChanges).toHaveBeenCalledWith("/foo", progress);
     });
 
     it("delegates getIndexStatus to IngestFacade", async () => {

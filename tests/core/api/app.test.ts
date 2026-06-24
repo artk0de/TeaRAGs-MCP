@@ -478,7 +478,6 @@ describe("App interface", () => {
       findSimilar: true,
       findSymbol: true,
       indexCodebase: true,
-      reindexChanges: true,
       getIndexStatus: true,
       clearIndex: true,
       createCollection: true,
@@ -494,7 +493,7 @@ describe("App interface", () => {
       listProjects: true,
       unregisterProject: true,
     };
-    expect(Object.keys(_methods)).toHaveLength(22);
+    expect(Object.keys(_methods)).toHaveLength(21);
   });
 
   it("method return types are Promises (except getSchemaDescriptors)", () => {
@@ -507,7 +506,6 @@ describe("App interface", () => {
       rankChunks: AssertPromise<ReturnType<App["rankChunks"]>>;
       searchCode: AssertPromise<ReturnType<App["searchCode"]>>;
       indexCodebase: AssertPromise<ReturnType<App["indexCodebase"]>>;
-      reindexChanges: AssertPromise<ReturnType<App["reindexChanges"]>>;
       getIndexStatus: AssertPromise<ReturnType<App["getIndexStatus"]>>;
       clearIndex: AssertPromise<ReturnType<App["clearIndex"]>>;
       createCollection: AssertPromise<ReturnType<App["createCollection"]>>;
@@ -523,7 +521,6 @@ describe("App interface", () => {
       rankChunks: true,
       searchCode: true,
       indexCodebase: true,
-      reindexChanges: true,
       getIndexStatus: true,
       clearIndex: true,
       createCollection: true,
