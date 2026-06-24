@@ -158,14 +158,32 @@ export interface EnrichmentMetrics {
  * was not indexed for the collection or the run-stats table is empty.
  */
 export interface CodegraphResolveSummary {
-  /** `callsResolved / max(1, callsAttempted − callsExternalSkipped)`; 0 when nothing attempted. */
-  resolveSuccessRate: number;
+  /**
+   * Graph-completeness metric, always present: `callsResolved / (callsResolved +
+   * missWithInProjectDef)` where `missWithInProjectDef` excludes misses whose
+   * member has no in-project definition (gem/core/runtime-generated — they can
+   * never produce an in-project edge). This is the honest "what fraction of
+   * resolvable in-project calls became edges" number a casual reader wants.
+   */
+  inProjectEdgeRecall: number;
+  /**
+   * Raw resolver capability over ALL internal-attempted calls (denominator
+   * polluted by no-in-project-def calls, so it reads far lower than recall).
+   * Surfaced ONLY under DEBUG — it misleads a casual reader who expects it to
+   * mean graph completeness.
+   */
+  resolveSuccessRate?: number;
   callsAttempted: number;
   callsResolved: number;
   /** Unresolved calls classified as external-library / runtime targets, excluded from the rate. */
   callsExternalSkipped: number;
   /** bd cai0 — unresolved dynamic-send calls (statically undeterminable), excluded from the rate. */
   callsUnresolvable: number;
+  /**
+   * Genuine-miss calls whose member has no in-project definition — excluded from
+   * the inProjectEdgeRecall denominator (they cannot become an in-project edge).
+   */
+  callsNoInProjectDef: number;
   /**
    * tea-rags-mcp-cnqrg — per-code-language breakdown of the same rate, so a
    * polyglot index reveals WHICH language's resolver carries the gap. Test
@@ -185,6 +203,28 @@ export interface CodegraphResolveSummary {
    * instead (precise lang×kind), and this stays absent.
    */
   byReceiverKind?: CodegraphResolveKindRow[];
+  /**
+   * Precision-confidence signal: how many emitted method edges are `exact`
+   * (pinned to one target, confidence 1) vs cone / poly-base / dynamic
+   * over-approximations. Present when the edge distribution was read alongside
+   * the resolve stats; absent otherwise.
+   */
+  edgeKinds?: EdgeKindBreakdown;
+}
+
+/**
+ * Emitted method-edge `edge_kind` counts + the exact ratio. `exactRatio` is the
+ * fraction of edges pinned to a single target (confidence 1) — the rest are
+ * fan-out over-approximations whose precision is below 1.
+ */
+export interface EdgeKindBreakdown {
+  exact: number;
+  cone: number;
+  polyBase: number;
+  dynamic: number;
+  registry: number;
+  total: number;
+  exactRatio: number;
 }
 
 /**
@@ -194,12 +234,17 @@ export interface CodegraphResolveSummary {
  */
 export interface CodegraphResolveLanguageRow {
   language: string;
-  resolveSuccessRate: number;
+  /** Graph-completeness for this language (always present). See {@link CodegraphResolveSummary.inProjectEdgeRecall}. */
+  inProjectEdgeRecall: number;
+  /** Raw resolver capability for this language. DEBUG-only (see summary). */
+  resolveSuccessRate?: number;
   callsAttempted: number;
   callsResolved: number;
   callsExternalSkipped: number;
   /** bd cai0 — unresolved dynamic-send calls in this language, excluded from the rate. */
   callsUnresolvable: number;
+  /** Genuine-miss calls in this language whose member has no in-project def. */
+  callsNoInProjectDef: number;
   /**
    * tea-rags-mcp-7m5xz — per-receiver-kind breakdown scoped to this language's
    * call-sites. Present only in the multi-language case (precise lang×kind).
@@ -216,11 +261,17 @@ export interface CodegraphResolveLanguageRow {
  */
 export interface CodegraphResolveKindRow {
   receiverKind: string;
+  /** Graph completeness for this receiver-kind bucket — `resolved / (resolved +
+   *  missWithInProjectDef)`, excluding no-in-project-def misses. Surfaces WHICH
+   *  bucket holds the real recall holes so recall work is targeted, not estimated. */
+  inProjectEdgeRecall: number;
   attempted: number;
   resolved: number;
   externalSkipped: number;
   /** bd cai0 — unresolved dynamic-send calls in this bucket, excluded from the rate. */
   unresolvable: number;
+  /** Genuine-miss calls in this bucket whose member has no in-project def. */
+  callsNoInProjectDef: number;
   resolveSuccessRate: number;
 }
 

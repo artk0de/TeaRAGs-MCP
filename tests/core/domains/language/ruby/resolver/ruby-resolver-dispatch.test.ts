@@ -80,7 +80,7 @@ describe("RubyCallResolver.resolveDispatch — cone-first, then dynamic fan-out 
       "app/services/runner.rb",
       [sym("Runner#run", "run", "app/services/runner.rb", ["Runner"])],
     ]);
-    const call: CallRef = { callText: "obj[k].run", receiver: "obj[k]", member: "run", startLine: 1 };
+    const call: CallRef = { callText: "obj.run", receiver: "obj", member: "run", startLine: 1 };
     const edges = resolver.resolveDispatch(call, ctx({ symbolTable }));
     expect(edges).toHaveLength(1);
     expect(edges[0].edgeKind).toBe("dynamic");

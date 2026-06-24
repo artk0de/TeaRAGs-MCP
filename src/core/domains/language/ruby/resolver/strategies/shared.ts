@@ -65,6 +65,51 @@ export function isRubyPath(relPath: string): boolean {
   return relPath.endsWith(".rb") || relPath.endsWith(".rake") || relPath.endsWith(".gemspec");
 }
 
+/**
+ * True when a call receiver's OUTERMOST operation is an element reference
+ * (`recv[k]`, `arr[i]`, `[1,2,3]`) — the trimmed text ends in `]` and contains a
+ * `[`. An index on an untyped container yields an element whose type is
+ * statically untrackable (Hash/Array element → core/external), so the dynamic
+ * resolver must NOT fan out to same-named in-project methods. A chain off an
+ * index (`a[0].b`) ends in `b`, not `]`, so it is correctly excluded (outermost
+ * op is the chain — deferred to increment B). Text-shape, mirroring
+ * `receiverLooksLikeArRelationChain` (bd tea-rags-mcp-mktkk increment A).
+ */
+export function receiverIsIndexAccess(receiver: string): boolean {
+  const t = receiver.trimEnd();
+  return t.endsWith("]") && t.includes("[");
+}
+
+/**
+ * Provably-external chain tails — Ruby-core / Rails-runtime methods that a chain
+ * receiver dispatches on (`req.headers.to_h`, `e.backtrace.first`,
+ * `type.constantize`). NARROW + unambiguous on purpose: in-project association
+ * tails (`agents`, `user`) are absent, so `event.user.agents` is never
+ * suppressed. High-frequency / in-project-overridable tails (`.map`/`.each`/
+ * `.first`, and `.to_h`/`.to_json` which Rails models & serializers routinely
+ * define) are EXCLUDED (deferred — they need a root-segment vocab gate). bd
+ * Increment B / B-suppress.
+ */
+const EXTERNAL_CHAIN_TAILS = [
+  ".headers",
+  ".backtrace",
+  ".constantize",
+  ".deconstantize",
+  ".to_param",
+  ".class_name",
+];
+
+/**
+ * True when a chain receiver ends in a provably-external core/runtime method —
+ * the receiver text contains one of {@link EXTERNAL_CHAIN_TAILS} as a suffix
+ * segment. Text-shape, mirroring `receiverIsIndexAccess` /
+ * `receiverLooksLikeArRelationChain`.
+ */
+export function receiverChainTailIsExternal(receiver: string): boolean {
+  const t = receiver.trimEnd();
+  return EXTERNAL_CHAIN_TAILS.some((tail) => t.endsWith(tail));
+}
+
 /** Last `::`-segment of a (possibly qualified) Ruby constant — `A::B::C` → `C`. */
 export function lastConstantSegment(qualified: string): string {
   const parts = qualified.split("::");
@@ -241,7 +286,41 @@ export function resolveTypeMethod(
   ctx: CallContext,
   mode: AmbiguousResolveMode,
 ): SymbolResolutionTarget | null {
-  return resolveTypeMethodInternal(typeName, member, ctx, mode, new Set());
+  return resolveTypeMethodInternal(typeName, member, ctx, mode, new Set(), null);
+}
+
+/**
+ * Resolve `<typeName>#<member>` for an INSTANCE receiver — same MRO walk as
+ * `resolveTypeMethod` but explicitly restricts candidates to the instance-method
+ * symbolId form (`Type#method`), avoiding ambiguity when both a class method
+ * (`Type.method`) and an instance method share the same short name. Use this when
+ * the receiver's `LocalBinding.valueKind` is `"instance"` (or absent). Callers
+ * that never track `valueKind` (ivar, return-type) keep using `resolveTypeMethod`
+ * for backward compatibility.
+ */
+export function resolveTypeInstanceMethod(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  return resolveTypeMethodInternal(typeName, member, ctx, mode, new Set(), symbolIdIsInstanceMethod);
+}
+
+/**
+ * Resolve `<typeName>.<member>` for a CLASS-valued receiver (`var = ClassName`) —
+ * same MRO walk as `resolveTypeMethod` but restricts candidates to the class-method
+ * symbolId form (`Type.method`) so `klass.find` resolves to `User.find` rather
+ * than `User#find`. Mirrors the `.`-form preference already used by
+ * `RubyConstantSymbolResolutionStrategy` for direct `Const.method` calls.
+ */
+export function resolveTypeStaticMethod(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  return resolveTypeMethodInternal(typeName, member, ctx, mode, new Set(), symbolIdIsClassMethod);
 }
 
 function resolveTypeMethodInternal(
@@ -250,6 +329,7 @@ function resolveTypeMethodInternal(
   ctx: CallContext,
   mode: AmbiguousResolveMode,
   visited: Set<string>,
+  symbolIdFilter: ((symbolId: string, member: string) => boolean) | null,
 ): SymbolResolutionTarget | null {
   if (visited.has(typeName)) return null;
   visited.add(typeName);
@@ -259,7 +339,7 @@ function resolveTypeMethodInternal(
   const prepended = ctx.classPrependedAncestors?.[typeName];
   if (prepended) {
     for (let i = prepended.length - 1; i >= 0; i--) {
-      const inherited = resolveTypeMethodInternal(prepended[i], member, ctx, mode, visited);
+      const inherited = resolveTypeMethodInternal(prepended[i], member, ctx, mode, visited, symbolIdFilter);
       if (inherited && inherited.targetSymbolId !== null) return inherited;
     }
   }
@@ -268,7 +348,8 @@ function resolveTypeMethodInternal(
   const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
     if (def.relPath !== targetFile) return false;
     const tail = def.scope[def.scope.length - 1];
-    return tail === typeName || tail === bareType;
+    if (tail !== typeName && tail !== bareType) return false;
+    return symbolIdFilter === null || symbolIdFilter(def.symbolId, member);
   });
   const target = pickSingleCandidate(candidates, mode);
   if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
@@ -276,10 +357,30 @@ function resolveTypeMethodInternal(
   const ancestors = ctx.classAncestors?.[typeName];
   if (ancestors) {
     for (const ancestor of ancestors) {
-      const inherited = resolveTypeMethodInternal(ancestor, member, ctx, mode, visited);
+      const inherited = resolveTypeMethodInternal(ancestor, member, ctx, mode, visited, symbolIdFilter);
       if (inherited && inherited.targetSymbolId !== null) return inherited;
     }
   }
 
   return { targetRelPath: targetFile, targetSymbolId: null };
+}
+
+/**
+ * True when a symbolId is a class-form method (uses `.` as the class↔method
+ * separator). Mirrors the same predicate in `ruby-constant.ts` for the static
+ * method resolution path shared by `resolveTypeStaticMethod` and
+ * `RubyConstantSymbolResolutionStrategy`.
+ */
+function symbolIdIsClassMethod(symbolId: string, member: string): boolean {
+  if (symbolId === member) return true; // top-level function
+  return symbolId.endsWith(`.${member}`);
+}
+
+/**
+ * True when a symbolId is an instance-form method (uses `#` as the class↔method
+ * separator). Used by `resolveTypeInstanceMethod` to exclude class methods when
+ * both `Type.method` and `Type#method` exist in the symbol table.
+ */
+function symbolIdIsInstanceMethod(symbolId: string, member: string): boolean {
+  return symbolId.endsWith(`#${member}`);
 }

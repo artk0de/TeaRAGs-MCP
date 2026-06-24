@@ -5,6 +5,7 @@ import type {
   CallerEdge,
   CycleEntry,
   CycleScope,
+  EdgeKindCount,
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
@@ -280,6 +281,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async getRunStats(): Promise<ResolveRunStatsRow[]> {
     return (await this.call("getRunStats", {})) as ResolveRunStatsRow[];
+  }
+
+  async getEdgeKindDistribution(): Promise<EdgeKindCount[]> {
+    return (await this.call("getEdgeKindDistribution", {})) as EdgeKindCount[];
   }
 
   async listAllSymbols(): Promise<SymbolDefinition[]> {

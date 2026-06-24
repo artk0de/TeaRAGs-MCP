@@ -234,6 +234,22 @@ export interface FileExtraction {
    */
   classFieldTypes?: Record<string, Record<string, string>>;
   /**
+   * Optional per-class Rails association map: `className → accessorName →
+   * modelType`. Populated by the Ruby walker from class-body association macros
+   * (`belongs_to`/`has_one`/`has_many`/`has_and_belongs_to_many`); the accessor
+   * name is the macro's first symbol verbatim (`:user` → `user`,
+   * `:agents` → `agents`) and the model type is the associated constant —
+   * honouring an explicit `class_name:` override (`belongs_to :author,
+   * class_name: "User"` → `User`, NOT `Author`). Drives compound-receiver
+   * chain typing: `event.user.agents` binds each prefix left-to-right
+   * (`event.user` → User, `event.user.agents` → Agent) so the existing
+   * local-type strategy resolves the deepest call exactly. Languages without
+   * Rails-style associations leave this undefined.
+   *
+   * Plain Record (NOT Map) so the value round-trips through the NDJSON spill.
+   */
+  associationTypes?: Record<string, Record<string, string>>;
+  /**
    * Optional per-class superclass + mixin map: `className → ancestor[]`.
    * Walkers populate this when the source declares an explicit inheritance
    * chain (`class Foo < Bar` in Ruby) or module mixin (`include Mod`).
@@ -370,6 +386,13 @@ export interface LocalBinding {
   line: number;
   /** Inferred receiver type (class / constant name), e.g. "User" or "Acme::Post". */
   type: string;
+  /**
+   * Whether `type` is held as a CLASS (`var = User` → `var.find` resolves
+   * `User.find`, a static method) or an INSTANCE (default; `var = User.new` →
+   * `var.save` resolves `User#save`). Absent ⇒ `"instance"` so every existing
+   * binding and every other language is unaffected (bd Increment B / var=CONST).
+   */
+  valueKind?: "instance" | "class";
 }
 
 /**
@@ -388,13 +411,27 @@ export function resolveLocalBindingType(
   varName: string,
   atLine: number,
 ): string | undefined {
+  return resolveLocalBinding(bindings, varName, atLine)?.type;
+}
+
+/**
+ * Resolve the most-recent `LocalBinding` for `varName` at or before `atLine`,
+ * returning the full binding (so callers can inspect `valueKind` and other
+ * fields). Returns `undefined` when no binding is established on or before that
+ * line. Position-aware lookup shared with `resolveLocalBindingType`.
+ */
+export function resolveLocalBinding(
+  bindings: Record<string, LocalBinding[]> | undefined,
+  varName: string,
+  atLine: number,
+): LocalBinding | undefined {
   const list = bindings?.[varName];
   if (!list || list.length === 0) return undefined;
   let best: LocalBinding | undefined;
   for (const binding of list) {
     if (binding.line <= atLine && (best === undefined || binding.line > best.line)) best = binding;
   }
-  return best?.type;
+  return best;
 }
 
 export interface ChunkExtraction {
@@ -651,6 +688,14 @@ export interface CallContext {
    */
   classFieldTypes?: Record<string, Record<string, string>>;
   /**
+   * Optional per-class Rails association map (`className → accessor →
+   * modelType`) propagated from `FileExtraction.associationTypes`. The walker
+   * consumes it directly to type compound-receiver chains into `localBindings`;
+   * it is also carried on the context for resolvers that want association-aware
+   * receiver typing without re-deriving the map.
+   */
+  associationTypes?: Record<string, Record<string, string>>;
+  /**
    * Per-chunk local variable bindings (`varName → typeName`) inferred by
    * the walker from assignments / type annotations within the enclosing
    * function or method body. Set by the provider per-call from the
@@ -818,6 +863,13 @@ export interface GraphDbClient {
    * daemon proxy so MCP clients can read it without holding the DuckDB lock.
    */
   getRunStats: () => Promise<ResolveRunStatsRow[]>;
+  /**
+   * Count emitted method edges grouped by `edge_kind` (exact / cone / poly-base
+   * / dynamic / registry). The exact-vs-fan-out split is a precision-confidence
+   * signal: `exact` edges are pinned to a single target, the rest are
+   * over-approximations with confidence < 1. Routed through the daemon proxy.
+   */
+  getEdgeKindDistribution: () => Promise<EdgeKindCount[]>;
 
   // ── Symbol-table persistence (Slice 2 / A4c) ──
   // The in-memory GlobalSymbolTable needs a disk-backed copy so cold
@@ -985,6 +1037,12 @@ export interface GraphFileNode {
  */
 export type MethodEdgeKind = "exact" | "cone" | "poly-base" | "dynamic" | "registry";
 
+/** One row of the method-edge `edge_kind` count distribution (precision-confidence signal). */
+export interface EdgeKindCount {
+  edgeKind: MethodEdgeKind;
+  count: number;
+}
+
 /**
  * One row of the per-receiver-kind resolve breakdown (bd tea-rags-mcp-j431),
  * persisted to `cg_run_stats` (overwritten each enrichment run) so the
@@ -1019,6 +1077,15 @@ export interface ResolveRunStatsRow {
    * to 0 for pre-cai0 rows / languages without dynamic-send tagging.
    */
   unresolvable: number;
+  /**
+   * Of the `attempted − resolved` misses in this bucket, how many have NO
+   * in-project definition for their member short-name (gem/core/runtime-
+   * generated/dynamic targets). Excluded from the inProjectEdgeRecall
+   * denominator so recall measures graph completeness over calls that COULD
+   * resolve to a project symbol. Defaults to 0 for rows persisted before the
+   * column was added (the recall then collapses to raw capability).
+   */
+  noInProjectDef?: number;
 }
 
 export interface GraphEdges {

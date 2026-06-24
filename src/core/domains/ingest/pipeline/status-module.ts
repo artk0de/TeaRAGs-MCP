@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
+import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { StatsCache } from "../../../infra/stats-cache.js";
@@ -21,6 +21,7 @@ import type {
   CodegraphResolveKindRow,
   CodegraphResolveLanguageRow,
   CodegraphResolveSummary,
+  EdgeKindBreakdown,
   IndexStatus,
 } from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../constants.js";
@@ -38,12 +39,52 @@ function resolveRate(attempted: number, resolved: number, externalSkipped: numbe
   return attempted === 0 ? 0 : resolved / Math.max(1, attempted - externalSkipped - unresolvable);
 }
 
+/**
+ * Graph completeness: `resolved / (resolved + missWithInProjectDef)`. A genuine
+ * miss whose member has no in-project def (`noInProjectDef`) can never yield an
+ * edge, so it is excluded — recall reflects only the calls that COULD resolve to
+ * a project symbol. 0 when the denominator is empty.
+ */
+function edgeRecall(
+  attempted: number,
+  resolved: number,
+  externalSkipped: number,
+  unresolvable: number,
+  noInProjectDef: number,
+): number {
+  const missWithInProjectDef = Math.max(0, attempted - resolved - externalSkipped - unresolvable - noInProjectDef);
+  const denominator = resolved + missWithInProjectDef;
+  return denominator === 0 ? 0 : resolved / denominator;
+}
+
 /** Running tally aggregated from `cg_run_stats` rows (per language or per kind). */
 interface ResolveTally {
   attempted: number;
   resolved: number;
   externalSkipped: number;
   unresolvable: number;
+  noInProjectDef: number;
+}
+
+function emptyTally(): ResolveTally {
+  return { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0, noInProjectDef: 0 };
+}
+
+/**
+ * Fold the per-`edge_kind` counts into the precision-confidence breakdown.
+ * `exactRatio` = exact / total — the rest (cone / poly-base / dynamic) are
+ * fan-out over-approximations with confidence < 1. `registry` (dispatch-table
+ * pinned) is reported but NOT counted as exact.
+ */
+function buildEdgeKindBreakdown(counts: readonly EdgeKindCount[]): EdgeKindBreakdown {
+  const by = (k: MethodEdgeKind): number => counts.find((c) => c.edgeKind === k)?.count ?? 0;
+  const exact = by("exact");
+  const cone = by("cone");
+  const polyBase = by("poly-base");
+  const dynamic = by("dynamic");
+  const registry = by("registry");
+  const total = exact + cone + polyBase + dynamic + registry;
+  return { exact, cone, polyBase, dynamic, registry, total, exactRatio: total === 0 ? 0 : exact / total };
 }
 
 /**
@@ -58,10 +99,12 @@ function buildByReceiverKind(kinds: Map<string, ResolveTally>): CodegraphResolve
     .filter(([, t]) => t.attempted > 0)
     .map(([receiverKind, t]) => ({
       receiverKind,
+      inProjectEdgeRecall: edgeRecall(t.attempted, t.resolved, t.externalSkipped, t.unresolvable, t.noInProjectDef),
       attempted: t.attempted,
       resolved: t.resolved,
       externalSkipped: t.externalSkipped,
       unresolvable: t.unresolvable,
+      callsNoInProjectDef: t.noInProjectDef,
       resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped, t.unresolvable),
     }))
     .sort((a, b) => b.attempted - a.attempted);
@@ -85,7 +128,10 @@ function buildByReceiverKind(kinds: Map<string, ResolveTally>): CodegraphResolve
  * (byLanguage suppressed), the top-level `byReceiverKind` carries that single
  * language's kinds.
  */
-export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): CodegraphResolveSummary | undefined {
+export function summarizeCodegraphResolve(
+  rows: readonly ResolveRunStatsRow[],
+  edgeCounts?: readonly EdgeKindCount[],
+): CodegraphResolveSummary | undefined {
   if (rows.length === 0) return undefined;
   // tea-rags-mcp-7m5xz follow-up: byReceiverKind is verbose — it is computed and
   // attached ONLY under DEBUG. The single gate point is this flag: when false,
@@ -98,6 +144,7 @@ export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): 
   let resolved = 0;
   let externalSkipped = 0;
   let unresolvable = 0;
+  let noInProjectDef = 0;
   const byLang = new Map<string, ResolveTally>();
   // Per-language receiver-kind tally (bd tea-rags-mcp-7m5xz). Unlabeled rows are
   // excluded here exactly as they are for byLanguage. Populated only under DEBUG.
@@ -107,39 +154,48 @@ export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): 
     resolved += r.resolved;
     externalSkipped += r.externalSkipped;
     unresolvable += r.unresolvable ?? 0; // pre-cai0 rows default to 0 (field added by migration 010)
+    noInProjectDef += r.noInProjectDef ?? 0; // pre-recall rows default to 0 (column added later)
     if (!r.language) continue; // unlabeled (pre-cnqrg / direct-mode) — aggregate only
-    const e = byLang.get(r.language) ?? { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0 };
+    const e = byLang.get(r.language) ?? emptyTally();
     e.attempted += r.attempted;
     e.resolved += r.resolved;
     e.externalSkipped += r.externalSkipped;
     e.unresolvable += r.unresolvable ?? 0;
+    e.noInProjectDef += r.noInProjectDef ?? 0;
     byLang.set(r.language, e);
     if (!debug) continue; // short form: skip receiver-kind tally entirely
     const kinds = byLangKind.get(r.language) ?? new Map<string, ResolveTally>();
-    const k = kinds.get(r.receiverKind) ?? { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0 };
+    const k = kinds.get(r.receiverKind) ?? emptyTally();
     k.attempted += r.attempted;
     k.resolved += r.resolved;
     k.externalSkipped += r.externalSkipped;
     k.unresolvable += r.unresolvable ?? 0;
+    k.noInProjectDef += r.noInProjectDef ?? 0;
     kinds.set(r.receiverKind, k);
     byLangKind.set(r.language, kinds);
   }
   const summary: CodegraphResolveSummary = {
-    resolveSuccessRate: resolveRate(attempted, resolved, externalSkipped, unresolvable),
+    // Variant B — recall is the always-on graph-completeness number; raw
+    // resolveSuccessRate is DEBUG-only (denominator-polluted, misleads casuals).
+    inProjectEdgeRecall: edgeRecall(attempted, resolved, externalSkipped, unresolvable, noInProjectDef),
     callsAttempted: attempted,
     callsResolved: resolved,
     callsExternalSkipped: externalSkipped,
     callsUnresolvable: unresolvable,
+    callsNoInProjectDef: noInProjectDef,
+    ...(debug ? { resolveSuccessRate: resolveRate(attempted, resolved, externalSkipped, unresolvable) } : {}),
   };
   const byLanguage: CodegraphResolveLanguageRow[] = [...byLang.entries()]
     .filter(([, t]) => attempted > 0 && t.attempted / attempted >= MIN_LANGUAGE_SHARE)
     .map(([language, t]) => ({
       language,
-      resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped, t.unresolvable),
+      inProjectEdgeRecall: edgeRecall(t.attempted, t.resolved, t.externalSkipped, t.unresolvable, t.noInProjectDef),
       callsAttempted: t.attempted,
       callsResolved: t.resolved,
       callsExternalSkipped: t.externalSkipped,
       callsUnresolvable: t.unresolvable,
+      callsNoInProjectDef: t.noInProjectDef,
+      ...(debug ? { resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped, t.unresolvable) } : {}),
       // Absent unless DEBUG built the tally above.
       ...(debug
         ? { byReceiverKind: buildByReceiverKind(byLangKind.get(language) ?? new Map<string, ResolveTally>()) }
@@ -153,6 +209,7 @@ export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): 
     // so surface that language's kind breakdown at the top level — DEBUG only.
     summary.byReceiverKind = byLanguage[0].byReceiverKind;
   }
+  if (edgeCounts && edgeCounts.length > 0) summary.edgeKinds = buildEdgeKindBreakdown(edgeCounts);
   return summary;
 }
 
@@ -195,7 +252,11 @@ export class StatusModule {
     try {
       const handle = await this.codegraphPool.acquireReader(target);
       try {
-        return summarizeCodegraphResolve(await handle.graphDb.getRunStats());
+        const [rows, edgeCounts] = await Promise.all([
+          handle.graphDb.getRunStats(),
+          handle.graphDb.getEdgeKindDistribution(),
+        ]);
+        return summarizeCodegraphResolve(rows, edgeCounts);
       } finally {
         await handle.graphDb.close();
       }

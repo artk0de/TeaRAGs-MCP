@@ -10,6 +10,7 @@ import {
   RubyArRelationGuardSymbolResolutionStrategy,
   RubyBareCallSymbolResolutionStrategy,
   RubyConstantSymbolResolutionStrategy,
+  RubyDynamicDispatchResolver,
   RubyExplicitRequireSymbolResolutionStrategy,
   RubyIvarFieldSymbolResolutionStrategy,
   RubyLocalTypeSymbolResolutionStrategy,
@@ -18,6 +19,10 @@ import {
   RubySuperSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
+import {
+  receiverChainTailIsExternal,
+  receiverIsIndexAccess,
+} from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/shared.js";
 import {
   SUPER_RECEIVER_SENTINEL,
   ZEITWERK_PREFIX,
@@ -150,6 +155,60 @@ describe("RubyLocalTypeSymbolResolutionStrategy", () => {
   it("resolves to a file-only edge when the bound type's file is known but the method is not", () => {
     const symbolTable = tableWith(["app/models/user.rb", [sym("User", "User", "app/models/user.rb", [])]]);
     const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { user: [{ line: 1, type: "User" }] } }));
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/user.rb", targetSymbolId: null },
+    });
+  });
+
+  // B-const — class-valued (var=CONST) bindings (Increment B / var=CONST)
+  it("resolves `klass = User; klass.find` to the static method symbolId `User.find` (class-valued binding)", () => {
+    const symbolTable = tableWith([
+      "app/models/user.rb",
+      [
+        sym("User", "User", "app/models/user.rb", []),
+        sym("User.find", "find", "app/models/user.rb", ["User"]),
+        sym("User#find", "find", "app/models/user.rb", ["User"]),
+      ],
+    ]);
+    const klassCall: CallRef = { callText: "klass.find", receiver: "klass", member: "find", startLine: 2 };
+    const outcome = strat.attempt(
+      klassCall,
+      ctx({ symbolTable, localBindings: { klass: [{ line: 1, type: "User", valueKind: "class" }] } }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/user.rb", targetSymbolId: "User.find" },
+    });
+  });
+
+  it("REGRESSION: `obj = User.new; obj.find` still resolves to instance method `User#find` (instance-valued binding)", () => {
+    const symbolTable = tableWith([
+      "app/models/user.rb",
+      [
+        sym("User", "User", "app/models/user.rb", []),
+        sym("User.find", "find", "app/models/user.rb", ["User"]),
+        sym("User#find", "find", "app/models/user.rb", ["User"]),
+      ],
+    ]);
+    const instanceCall: CallRef = { callText: "obj.find", receiver: "obj", member: "find", startLine: 2 };
+    const outcome = strat.attempt(
+      instanceCall,
+      ctx({ symbolTable, localBindings: { obj: [{ line: 1, type: "User" }] } }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/user.rb", targetSymbolId: "User#find" },
+    });
+  });
+
+  it("resolves class-valued binding to file-only edge when static method is absent", () => {
+    const symbolTable = tableWith(["app/models/user.rb", [sym("User", "User", "app/models/user.rb", [])]]);
+    const klassCall: CallRef = { callText: "klass.find", receiver: "klass", member: "find", startLine: 2 };
+    const outcome = strat.attempt(
+      klassCall,
+      ctx({ symbolTable, localBindings: { klass: [{ line: 1, type: "User", valueKind: "class" }] } }),
+    );
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "app/models/user.rb", targetSymbolId: null },
@@ -597,5 +656,60 @@ describe("RubyReturnTypeBindingSymbolResolutionStrategy", () => {
       kind: "resolved",
       target: { targetRelPath: "app/clients/http_client.rb", targetSymbolId: null },
     });
+  });
+});
+
+describe("receiverIsIndexAccess (mktkk increment A)", () => {
+  it("is true when the receiver's outermost op is an element reference", () => {
+    expect(receiverIsIndexAccess("options['subject']")).toBe(true);
+    expect(receiverIsIndexAccess("payload[key]")).toBe(true);
+    expect(receiverIsIndexAccess("arr[i]")).toBe(true);
+    expect(receiverIsIndexAccess("context.registers[:agent]")).toBe(true); // outermost is [:agent]
+    expect(receiverIsIndexAccess("[1, 2, 3]")).toBe(true); // array literal receiver
+  });
+
+  it("is false for chain / bare / constant receivers (deferred to increment B)", () => {
+    expect(receiverIsIndexAccess("event.user")).toBe(false); // chain
+    expect(receiverIsIndexAccess("a[0].b")).toBe(false); // outermost op is .b, not index
+    expect(receiverIsIndexAccess("obj")).toBe(false); // bare identifier
+    expect(receiverIsIndexAccess("User")).toBe(false); // constant
+    expect(receiverIsIndexAccess("@client")).toBe(false); // ivar
+  });
+});
+
+describe("receiverChainTailIsExternal (increment B / B-suppress)", () => {
+  it("is true when the receiver ends in a provably-external core/runtime tail", () => {
+    expect(receiverChainTailIsExternal("req.headers")).toBe(true);
+    expect(receiverChainTailIsExternal("e.backtrace")).toBe(true);
+    expect(receiverChainTailIsExternal("type.constantize")).toBe(true);
+  });
+
+  it("is false for in-project association tails or bare identifiers", () => {
+    expect(receiverChainTailIsExternal("event.user.agents")).toBe(false); // in-project assoc — NOT external
+    expect(receiverChainTailIsExternal("user")).toBe(false); // bare identifier
+  });
+});
+
+describe("RubyDynamicDispatchResolver — chain-tail suppression (increment B / B-suppress)", () => {
+  const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
+  const resolver = new RubyDynamicDispatchResolver(cfg);
+
+  it("returns [] for a provably-external chain-tail receiver (req.headers.to_h)", () => {
+    // `req.headers.to_h` → receiver is `req.headers`; `.headers` is an EXTERNAL_CHAIN_TAIL
+    const call: CallRef = { callText: "req.headers.to_h", receiver: "req.headers", member: "to_h", startLine: 1 };
+    const symbolTable = tableWith(["app/lib/to_h.rb", [sym("SomeClass#to_h", "to_h", "app/lib/to_h.rb", ["SomeClass"])]]);
+    const result = resolver.resolveDispatch(call, ctx({ symbolTable }));
+    expect(result).toEqual([]);
+  });
+
+  it("still fans out for a non-external chain receiver (regression guard: event.user)", () => {
+    // `event.user` → `.user` is NOT in EXTERNAL_CHAIN_TAILS → fan-out proceeds
+    const call: CallRef = { callText: "event.user.save", receiver: "event.user", member: "save", startLine: 1 };
+    const symbolTable = tableWith([
+      "app/models/user.rb",
+      [sym("User#save", "save", "app/models/user.rb", ["User"])],
+    ]);
+    const result = resolver.resolveDispatch(call, ctx({ symbolTable }));
+    expect(result.length).toBeGreaterThan(0);
   });
 });

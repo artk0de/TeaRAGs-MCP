@@ -27,6 +27,63 @@ export const INSTANCE_RETURNING_METHODS = new Set([
 ]);
 
 /**
+ * AR::Relation-returning query methods: `Const.where(...)` is a
+ * `Relation<Const>`, and chaining another of these stays `Relation<Const>`
+ * (same element type). A terminal instance-returning method
+ * ({@link INSTANCE_RETURNING_METHODS}) on such a relation yields ONE `Const`
+ * instance — so `Const.where(...).first` is typed `Const` (bd Increment B / B2).
+ */
+export const RELATION_RETURNING_METHODS = new Set([
+  "where",
+  "not",
+  "order",
+  "joins",
+  "includes",
+  "eager_load",
+  "preload",
+  "references",
+  "group",
+  "having",
+  "limit",
+  "offset",
+  "distinct",
+  "select",
+  "reorder",
+  "unscope",
+  "except",
+  "all",
+  "readonly",
+  "lock",
+  "none",
+]);
+
+/**
+ * Enumerable / collection methods that yield each element to a block. When the
+ * iterated receiver has a known element type, the FIRST positional block param
+ * is that element type (bd Increment B / B-block).
+ */
+export const RUBY_BLOCK_ITERATOR_METHODS = new Set([
+  "each",
+  "map",
+  "collect",
+  "select",
+  "filter",
+  "filter_map",
+  "reject",
+  "find",
+  "detect",
+  "find_all",
+  "flat_map",
+  "each_with_index",
+  "each_with_object",
+  "group_by",
+  "sort_by",
+  "min_by",
+  "max_by",
+  "partition",
+]);
+
+/**
  * Env-gate for the Ruby local variable type inference path. When `false`,
  * walker emits `localBindings: undefined` and the resolver falls back to
  * legacy import + short-name resolution. Default `true`.
@@ -38,24 +95,43 @@ export function localTypeTrackingEnabled(): boolean {
 }
 
 /**
+ * Walk a relation chain `Const.<rel>(...)[.<rel>(...)]*` down to its root
+ * constant. Returns the fully-qualified const when the chain bottoms out at a
+ * `YARD_CONST` receiver through only {@link RELATION_RETURNING_METHODS}; null
+ * for any non-relation link (no guessing).
+ */
+function relationRootConst(node: AstNode): string | null {
+  const asConst =
+    node.type === "scope_resolution" ? readScopeResolution(node) : node.type === "constant" ? node.text : null;
+  if (asConst && YARD_CONST.test(asConst)) return asConst;
+  if (node.type !== "call" && node.type !== "method_call") return null;
+  const recv = node.childForFieldName("receiver");
+  const method = node.childForFieldName("method");
+  if (!recv || !method || !RELATION_RETURNING_METHODS.has(method.text)) return null;
+  return relationRootConst(recv);
+}
+
+/**
  * Infer the INSTANCE type of an RHS expression that is a class-constant call
- * (`ClassName.new(...)` / `Model.find(...)` / `Model.create!(...)` …). Returns
- * the fully-qualified constant name when the receiver is a constant and the
- * method is `new` or in {@link INSTANCE_RETURNING_METHODS}; otherwise null
- * (bare factory calls, Relation tails, non-constant receivers — never guessed).
+ * (`ClassName.new(...)` / `Model.find(...)` / `Model.create!(...)` …) or a
+ * relation-tail chain (`Const.where(...).first`). Returns the fully-qualified
+ * constant name when the receiver is a constant (or a relation chain rooted at
+ * one) and the method is `new` or in {@link INSTANCE_RETURNING_METHODS};
+ * otherwise null (bare factory calls, bare Relation chains, non-constant
+ * receivers — never guessed).
  */
 function constInstanceType(node: AstNode): string | null {
   if (node.type !== "call" && node.type !== "method_call") return null;
   const receiver = node.childForFieldName("receiver");
   const method = node.childForFieldName("method");
   if (!receiver || !method) return null;
-  const receiverText = receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
-  if (!YARD_CONST.test(receiverText)) return null;
   const methodName = method.text;
-  // `ClassName.new(...)` is the universal Ruby constructor; the rest are
-  // instance-returning factories / finders that bind to the receiver class.
-  if (methodName === "new" || INSTANCE_RETURNING_METHODS.has(methodName)) return receiverText;
-  return null;
+  if (methodName !== "new" && !INSTANCE_RETURNING_METHODS.has(methodName)) return null;
+  const receiverText = receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
+  // Direct `ClassName.new` / `ClassName.find` — receiver is the constant itself.
+  if (YARD_CONST.test(receiverText)) return receiverText;
+  // B2 relation tail `Const.where(...).first` — receiver is a relation chain.
+  return relationRootConst(receiver);
 }
 
 /**
@@ -220,6 +296,7 @@ export function collectLocalBindingsForChunk(
   startLine: number,
   endLine: number,
   yardByLine: Map<number, Record<string, string>>,
+  associationTypes: Record<string, Record<string, string>> = {},
 ): Record<string, LocalBinding[]> {
   const out: Record<string, LocalBinding[]> = {};
   const push = (name: string, type: string, line: number): void => {
@@ -255,6 +332,30 @@ export function collectLocalBindingsForChunk(
       return;
     }
 
+    // Block-parameter element typing: `coll.each { |e| ... }` binds `e` to
+    // coll's resolved (element) type. The block's parent is the iterator `call`
+    // node. Only the FIRST positional param is the element (each_with_object /
+    // reduce later params are accumulators — skipped). VTA is sound only when
+    // the receiver already has a binding; unknown receiver → no binding.
+    if (node.type === "block" || node.type === "do_block") {
+      const parent = node.parent;
+      const callMethod = parent?.childForFieldName("method")?.text;
+      const recvNode = parent?.childForFieldName("receiver");
+      if (
+        parent &&
+        (parent.type === "call" || parent.type === "method_call") &&
+        callMethod &&
+        RUBY_BLOCK_ITERATOR_METHODS.has(callMethod) &&
+        recvNode?.type === "identifier"
+      ) {
+        const elemType = resolveLocalBindingType(out, recvNode.text, line);
+        const paramsNode = node.childForFieldName("parameters"); // block_parameters
+        const firstParam = paramsNode?.namedChildren.find((p) => p.type === "identifier");
+        if (elemType && firstParam) push(firstParam.text, elemType, line);
+      }
+      return;
+    }
+
     if (node.type !== "assignment") return;
     const lhs = node.childForFieldName("left");
     const rhs = node.childForFieldName("right");
@@ -282,13 +383,99 @@ export function collectLocalBindingsForChunk(
     if (lhs.type !== "identifier") return;
     const varName = lhs.text;
 
+    // `var = CONST` — var holds the CLASS itself (not an instance). Bare constant
+    // RHS only (a call RHS is handled by constInstanceType above).
+    const rhsConst =
+      rhs.type === "scope_resolution"
+        ? readScopeResolution(rhs)
+        : rhs.type === "constant"
+          ? rhs.text
+          : null;
+    if (rhsConst && YARD_CONST.test(rhsConst)) {
+      push(varName, rhsConst, line);
+      (out[varName]![out[varName]!.length - 1] as LocalBinding).valueKind = "class";
+      return;
+    }
+
     // Single assignment: class-constant instance call, else copy-propagation
     // (`var = other_var` copies other_var's most-recent type known at this line).
     const type =
       constInstanceType(rhs) ?? (rhs.type === "identifier" ? resolveLocalBindingType(out, rhs.text, line) : undefined);
     if (type) push(varName, type, line);
   });
+
+  // Compound-receiver association-chain binding (B1). After single-var / ivar /
+  // YARD bindings are known, type each PREFIX of a dotted chain receiver
+  // (`event.user`, `event.user.agents`) left-to-right via the association map, so
+  // the existing localType strategy — which keys on the FULL `call.receiver`
+  // text — resolves the deepest call exactly. The root segment must already be
+  // typed (Task 1-3 binding / YARD param / ivar); an unknown hop STOPS the walk
+  // (honest fan-out). The cap is the chain's own segment count, and a cycle-guard
+  // breaks a self-referential `has_many` so the walk never loops.
+  bindCompoundReceiverChains(root, startLine, endLine, associationTypes, out, push);
+
   return out;
+}
+
+/** A dotted member chain whose root is a bare local — `event.user.agents`.
+ *  Rejects constants, `::` scopes, `()` calls, `[]` index access, and `self`. */
+const COMPOUND_CHAIN_RE = /^[a-z_][A-Za-z0-9_]*(?:\.[a-z_][A-Za-z0-9_]*)+$/;
+
+/**
+ * Walk every distinct dotted-chain call receiver in the chunk range and bind
+ * each prefix to its association model type. For `event.user.agents` with
+ * `event : Event`, `Event belongs_to :user` (→User), `User has_many :agents`
+ * (→Agent): binds `event.user → User`, then `event.user.agents → Agent`. The
+ * binding line is the receiver's own line so the position-aware lookup attaches
+ * it correctly. Honours `class_name:` implicitly — the association map already
+ * carries the rewritten model (`event.author → User`).
+ */
+function bindCompoundReceiverChains(
+  root: AstNode,
+  startLine: number,
+  endLine: number,
+  associationTypes: Record<string, Record<string, string>>,
+  out: Record<string, LocalBinding[]>,
+  push: (name: string, type: string, line: number) => void,
+): void {
+  // Distinct chain receiver texts (longest first so a deeper chain's prefixes
+  // are all reachable) paired with the call line they appear on.
+  const chains = new Map<string, number>();
+  walk(root, (node) => {
+    if (node.type !== "call" && node.type !== "method_call") return;
+    const receiver = node.childForFieldName("receiver");
+    if (!receiver) return;
+    const line = receiver.startPosition.row + 1;
+    if (line < startLine || line > endLine) return;
+    const text = receiver.text;
+    if (!COMPOUND_CHAIN_RE.test(text)) return;
+    if (!chains.has(text)) chains.set(text, line);
+  });
+
+  for (const [chain, line] of chains) {
+    const segments = chain.split(".");
+    const root0 = segments[0];
+    if (!root0) continue;
+    // Root segment type from an already-established binding at this line.
+    const rootType = resolveLocalBindingType(out, root0, line);
+    if (!rootType) continue; // untyped root → no walk (honest fan-out)
+    let currentType: string = rootType;
+    let prefix = root0;
+    const seenTypes = new Set<string>([currentType]); // cycle-guard
+    // Cap at the chain's own segment count (a self-referential has_many can't loop).
+    for (let i = 1; i < segments.length; i++) {
+      const accessor = segments[i];
+      if (!accessor) break;
+      const nextType: string | undefined = associationTypes[currentType]?.[accessor];
+      if (!nextType) break; // unknown hop STOPS the walk
+      prefix = `${prefix}.${accessor}`;
+      // Bind the prefix only when not already typed (e.g. a single-var binding).
+      if (resolveLocalBindingType(out, prefix, line) === undefined) push(prefix, nextType, line);
+      if (seenTypes.has(nextType)) break; // self-referential chain → stop
+      seenTypes.add(nextType);
+      currentType = nextType;
+    }
+  }
 }
 
 /**

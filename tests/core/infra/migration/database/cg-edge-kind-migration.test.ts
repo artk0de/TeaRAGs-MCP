@@ -41,7 +41,16 @@ describe("006 cg edge_kind/confidence + cg_run_stats migration (bd 2jet/j431)", 
     // by migration 009 re-graining to per-(language, receiver_kind) (cnqrg);
     // unresolvable added by migration 010 (cai0).
     expect(runStatsCols.map((c) => c.column_name).sort()).toEqual(
-      ["attempted", "external_skipped", "language", "receiver_kind", "resolved", "unresolvable"].sort(),
+      // no_in_project_def added by migration 011 (inProjectEdgeRecall).
+      [
+        "attempted",
+        "external_skipped",
+        "language",
+        "no_in_project_def",
+        "receiver_kind",
+        "resolved",
+        "unresolvable",
+      ].sort(),
     );
   });
 

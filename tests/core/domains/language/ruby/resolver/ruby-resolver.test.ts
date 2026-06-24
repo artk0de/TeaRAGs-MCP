@@ -340,6 +340,67 @@ describe("RubyCallResolver — Step 0 resolveByLocalType (walker-inferred receiv
   });
 });
 
+describe("RubyCallResolver — compound-receiver association-chain bindings (B1)", () => {
+  it("resolves `event.user.agents` to User#agents via the compound-receiver binding", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/user.rb", [
+      { symbolId: "User", fqName: "User", shortName: "User", relPath: "app/models/user.rb", scope: [] },
+      // `has_many :agents` synthesises the `User#agents` accessor symbol.
+      {
+        symbolId: "User#agents",
+        fqName: "User#agents",
+        shortName: "agents",
+        relPath: "app/models/user.rb",
+        scope: ["User"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/models/event.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      // Walker-emitted compound-receiver binding: event.user : User.
+      localBindings: { "event.user": [{ line: 1, type: "User" }] },
+    };
+    const target = resolver.resolve(
+      { callText: "event.user.agents", receiver: "event.user", member: "agents", startLine: 2 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("User#agents");
+    expect(target?.targetRelPath).toBe("app/models/user.rb");
+  });
+
+  it("resolves `event.author.name` to User#name when class_name: \"User\" rewrote the hop", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/user.rb", [
+      { symbolId: "User", fqName: "User", shortName: "User", relPath: "app/models/user.rb", scope: [] },
+      {
+        symbolId: "User#name",
+        fqName: "User#name",
+        shortName: "name",
+        relPath: "app/models/user.rb",
+        scope: ["User"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/models/event.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      // class_name: "User" → the compound hop binds to User, NOT Author.
+      localBindings: { "event.author": [{ line: 1, type: "User" }] },
+    };
+    const target = resolver.resolve(
+      { callText: "event.author.name", receiver: "event.author", member: "name", startLine: 2 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("User#name");
+    expect(target?.targetRelPath).toBe("app/models/user.rb");
+  });
+});
+
 describe("RubyCallResolver — explicit require with mixed import channels", () => {
   // When ctx.imports contains both a zeitwerk-prefixed entry AND a plain
   // require entry, the explicit-require scan must SKIP the zeitwerk one

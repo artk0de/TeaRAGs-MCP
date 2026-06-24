@@ -25,6 +25,7 @@ import type {
   CallerEdge,
   CycleEntry,
   CycleScope,
+  EdgeKindCount,
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
@@ -896,8 +897,16 @@ export class DuckDbGraphClient implements GraphDbClient {
         await this.run("DELETE FROM cg_run_stats");
         for (const r of rows) {
           await this.run(
-            "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable) VALUES (?, ?, ?, ?, ?, ?)",
-            [r.language, r.receiverKind, r.attempted, r.resolved, r.externalSkipped, r.unresolvable],
+            "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+              r.language,
+              r.receiverKind,
+              r.attempted,
+              r.resolved,
+              r.externalSkipped,
+              r.unresolvable,
+              r.noInProjectDef ?? 0,
+            ],
           );
         }
         await this.exec("COMMIT");
@@ -916,8 +925,9 @@ export class DuckDbGraphClient implements GraphDbClient {
       resolved: number | bigint;
       external_skipped: number | bigint;
       unresolvable: number | bigint;
+      no_in_project_def: number | bigint;
     }>(
-      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable FROM cg_run_stats ORDER BY language, receiver_kind",
+      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def FROM cg_run_stats ORDER BY language, receiver_kind",
     );
     return rows.map((r) => ({
       language: r.language,
@@ -926,7 +936,15 @@ export class DuckDbGraphClient implements GraphDbClient {
       resolved: Number(r.resolved),
       externalSkipped: Number(r.external_skipped),
       unresolvable: Number(r.unresolvable),
+      noInProjectDef: Number(r.no_in_project_def),
     }));
+  }
+
+  async getEdgeKindDistribution(): Promise<EdgeKindCount[]> {
+    const rows = await this.queryAll<{ edge_kind: string; cnt: number | bigint }>(
+      "SELECT edge_kind, COUNT(*) AS cnt FROM cg_symbols_edges_method GROUP BY edge_kind ORDER BY edge_kind",
+    );
+    return rows.map((r) => ({ edgeKind: r.edge_kind as MethodEdgeKind, count: Number(r.cnt) }));
   }
 
   // ── Class hierarchy (bd tea-rags-mcp-f10y) ──

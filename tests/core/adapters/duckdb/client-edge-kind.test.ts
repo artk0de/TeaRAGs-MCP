@@ -49,6 +49,39 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
       expect(rows[0]?.confidence).toBeCloseTo(0.125, 5);
     });
 
+    it("getEdgeKindDistribution counts method edges grouped by edge_kind", async () => {
+      await db.upsertFile(
+        { relPath: "app/a.rb", language: "ruby" },
+        {
+          fileEdges: [],
+          methodEdges: [
+            // exact (default), one cone, two cones → exact:1, cone:2.
+            { sourceSymbolId: "A#x", targetSymbolId: "B#y", targetRelPath: "app/b.rb", callExpression: "b.y" },
+            {
+              sourceSymbolId: "A#x2",
+              targetSymbolId: "C#z",
+              targetRelPath: "app/c.rb",
+              callExpression: "c.z",
+              edgeKind: "cone",
+              confidence: 0.5,
+            },
+            {
+              sourceSymbolId: "A#x3",
+              targetSymbolId: "D#w",
+              targetRelPath: "app/d.rb",
+              callExpression: "d.w",
+              edgeKind: "cone",
+              confidence: 0.5,
+            },
+          ],
+        },
+      );
+      const dist = await db.getEdgeKindDistribution();
+      const byKind = Object.fromEntries(dist.map((r) => [r.edgeKind, r.count]));
+      expect(byKind.exact).toBe(1);
+      expect(byKind.cone).toBe(2);
+    });
+
     it("defaults omitted edgeKind/confidence to exact/1.0", async () => {
       await db.upsertFile(
         { relPath: "app/x.rb", language: "ruby" },
@@ -94,6 +127,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
       ]);
       const rows = await db.getRunStats();
       // ORDER BY language, receiver_kind → ruby/bareCall before typescript/constant.
+      // noInProjectDef defaults to 0 (input omitted it) and round-trips back.
       expect(rows).toEqual([
         {
           language: "ruby",
@@ -102,6 +136,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           resolved: 10,
           externalSkipped: 0,
           unresolvable: 4,
+          noInProjectDef: 0,
         },
         {
           language: "typescript",
@@ -110,6 +145,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           resolved: 90,
           externalSkipped: 7,
           unresolvable: 0,
+          noInProjectDef: 0,
         },
       ]);
     });
@@ -152,6 +188,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           resolved: 118,
           externalSkipped: 1,
           unresolvable: 0,
+          noInProjectDef: 0,
         },
       ]);
     });

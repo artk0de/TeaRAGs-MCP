@@ -168,7 +168,11 @@ describe("summarizeCodegraphResolve byReceiverKind DEBUG gate (7m5xz)", () => {
       row("typescript", "constant", 100, 60, 0),
     ]);
     // Short form intact: aggregate present, byLanguage suppressed (≤1 language).
-    expect(summary?.resolveSuccessRate).toBeCloseTo(185 / 230, 6);
+    // resolveSuccessRate is DEBUG-only now (Variant B) → absent here; the
+    // always-on inProjectEdgeRecall carries the same value when nothing is
+    // external / unresolvable / no-in-project-def.
+    expect(summary?.resolveSuccessRate).toBeUndefined();
+    expect(summary?.inProjectEdgeRecall).toBeCloseTo(185 / 230, 6);
     expect(summary?.byReceiverKind).toBeUndefined();
   });
 
@@ -195,5 +199,95 @@ describe("summarizeCodegraphResolve byReceiverKind DEBUG gate (7m5xz)", () => {
       row("typescript", "constant", 100, 60, 0),
     ]);
     expect((summary?.byReceiverKind ?? []).map((k) => k.receiverKind)).toEqual(["selfMember", "constant"]);
+  });
+});
+
+// Variant B — inProjectEdgeRecall is the always-on graph-completeness metric;
+// resolveSuccessRate (raw resolver capability, denominator-polluted by
+// no-in-project-def calls) drops to DEBUG-only since it misleads a casual reader.
+const rowN = (
+  language: string,
+  receiverKind: string,
+  attempted: number,
+  resolved: number,
+  externalSkipped: number,
+  noInProjectDef: number,
+): ResolveRunStatsRow => ({ language, receiverKind, attempted, resolved, externalSkipped, noInProjectDef });
+
+describe("summarizeCodegraphResolve inProjectEdgeRecall (Variant B)", () => {
+  afterEach(() => {
+    setDebug(true); // vitest.setup baseline — restore so other files see DEBUG on
+  });
+
+  it("computes inProjectEdgeRecall excluding no-in-project-def misses", () => {
+    // attempted 100, resolved 80, external 0, noInProjectDef 15 →
+    // genuine miss 20; missWithInProjectDef = 20 − 15 = 5; recall = 80/(80+5).
+    const summary = summarizeCodegraphResolve([rowN("typescript", "constant", 100, 80, 0, 15)]);
+    expect(summary?.inProjectEdgeRecall).toBeCloseTo(80 / 85, 6);
+    expect(summary?.callsNoInProjectDef).toBe(15);
+  });
+
+  it("includes inProjectEdgeRecall ALWAYS but resolveSuccessRate ONLY under DEBUG", () => {
+    setDebug(false);
+    const off = summarizeCodegraphResolve([rowN("typescript", "constant", 100, 80, 0, 15)]);
+    expect(off?.inProjectEdgeRecall).toBeCloseTo(80 / 85, 6); // always present
+    expect(off?.callsNoInProjectDef).toBe(15);
+    expect(off?.resolveSuccessRate).toBeUndefined(); // hidden from the casual reader
+
+    setDebug(true);
+    const on = summarizeCodegraphResolve([rowN("typescript", "constant", 100, 80, 0, 15)]);
+    expect(on?.resolveSuccessRate).toBeCloseTo(80 / 100, 6); // surfaced under DEBUG
+    expect(on?.inProjectEdgeRecall).toBeCloseTo(80 / 85, 6);
+  });
+
+  it("defaults noInProjectDef to 0 for pre-migration rows (recall == raw capability)", () => {
+    // A row without the field (old persisted shape) → every genuine miss counts
+    // as a recall hole, so recall collapses to resolved/(attempted−external).
+    const summary = summarizeCodegraphResolve([row("typescript", "constant", 100, 80, 0)]);
+    expect(summary?.callsNoInProjectDef).toBe(0);
+    expect(summary?.inProjectEdgeRecall).toBeCloseTo(80 / 100, 6);
+  });
+});
+
+// Phase D (tea-rags-mcp-zhutn) — surface the recall split PER receiver-kind so
+// the dominant recall-hole bucket is data-driven, not estimated. byReceiverKind
+// is DEBUG-only, so these per-kind fields ride alongside the existing per-kind
+// resolveSuccessRate under DEBUG.
+describe("summarizeCodegraphResolve per-kind inProjectEdgeRecall (Phase D)", () => {
+  afterEach(() => {
+    setDebug(true); // vitest.setup baseline — restore so other files see DEBUG on
+  });
+
+  it("attaches inProjectEdgeRecall + callsNoInProjectDef to each byReceiverKind row", () => {
+    setDebug(true);
+    // chain: attempted 100, resolved 40, noInProjectDef 20 → genuine miss 60;
+    // missWithInProjectDef = 60 − 20 = 40; recall = 40/(40+40) = 0.5.
+    const summary = summarizeCodegraphResolve([rowN("ruby", "chain", 100, 40, 0, 20)]);
+    const chain = (summary?.byReceiverKind ?? []).find((k) => k.receiverKind === "chain");
+    expect(chain?.callsNoInProjectDef).toBe(20);
+    expect(chain?.inProjectEdgeRecall).toBeCloseTo(40 / 80, 6);
+  });
+});
+
+// Phase B1 (tea-rags-mcp-zyoqs) — exact-vs-fan-out edge-kind distribution is a
+// precision-confidence signal: exact edges are pinned to one target; cone /
+// poly-base / dynamic are over-approximations (confidence < 1).
+describe("summarizeCodegraphResolve edgeKinds (Phase B1)", () => {
+  it("attaches an edge-kind breakdown with exactRatio when edge counts are provided", () => {
+    const summary = summarizeCodegraphResolve(
+      [row("ruby", "constant", 100, 80, 0)],
+      [
+        { edgeKind: "exact", count: 80 },
+        { edgeKind: "cone", count: 15 },
+        { edgeKind: "poly-base", count: 5 },
+      ],
+    );
+    expect(summary?.edgeKinds).toMatchObject({ exact: 80, cone: 15, polyBase: 5, dynamic: 0, registry: 0, total: 100 });
+    expect(summary?.edgeKinds?.exactRatio).toBeCloseTo(0.8, 6);
+  });
+
+  it("omits edgeKinds when no edge counts are provided (back-compat)", () => {
+    const summary = summarizeCodegraphResolve([row("ruby", "constant", 100, 80, 0)]);
+    expect(summary?.edgeKinds).toBeUndefined();
   });
 });

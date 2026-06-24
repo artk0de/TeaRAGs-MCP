@@ -359,7 +359,16 @@ describe("CodegraphDaemonServer.handle", () => {
     expect(got.ok).toBe(true);
     // ORDER BY language, receiver_kind → ruby/bareCall before typescript/constant.
     expect((got as { result: unknown }).result).toEqual([
-      { language: "ruby", receiverKind: "bareCall", attempted: 50, resolved: 10, externalSkipped: 0, unresolvable: 3 },
+      // noInProjectDef defaults to 0 (input omitted it) and round-trips back.
+      {
+        language: "ruby",
+        receiverKind: "bareCall",
+        attempted: 50,
+        resolved: 10,
+        externalSkipped: 0,
+        unresolvable: 3,
+        noInProjectDef: 0,
+      },
       {
         language: "typescript",
         receiverKind: "constant",
@@ -367,6 +376,7 @@ describe("CodegraphDaemonServer.handle", () => {
         resolved: 90,
         externalSkipped: 7,
         unresolvable: 0,
+        noInProjectDef: 0,
       },
     ]);
     await pool.closeAll();

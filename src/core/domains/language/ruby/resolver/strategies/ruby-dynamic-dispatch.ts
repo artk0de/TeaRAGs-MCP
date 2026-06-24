@@ -2,7 +2,13 @@ import type { CallContext, CallRef, DispatchEdge } from "../../../../../contract
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
 import { receiverLooksLikeArRelationChain } from "./ruby-ar-relation-guard.js";
-import { DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT, isRubyPath, type ResolverConfig } from "./shared.js";
+import {
+  DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
+  isRubyPath,
+  receiverChainTailIsExternal,
+  receiverIsIndexAccess,
+  type ResolverConfig,
+} from "./shared.js";
 
 /** Ruby constants begin uppercase; `::`-joined segments form a scope chain. */
 const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
@@ -49,6 +55,16 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     if (CONSTANT_RE.test(r)) return []; // constant / type receiver
     if (ctx.localBindings && Object.prototype.hasOwnProperty.call(ctx.localBindings, r)) return []; // typed local
     if (receiverLooksLikeArRelationChain(r)) return []; // AR::Relation chain
+    // Index-access receiver (`opts[k]`, `arr[i]`): the element type is untrackable
+    // (Hash/Array element → core/external). Fanning out to same-named in-project
+    // methods is ~10%-precision noise. Suppress; the external classifier (Task 3)
+    // reclassifies the call as external so recall is not falsely penalised
+    // (bd tea-rags-mcp-mktkk increment A).
+    if (receiverIsIndexAccess(r)) return [];
+    // Provably-external chain tail (`req.headers`, `type.constantize`): the element
+    // is core/runtime, no in-project target. Suppress; the external classifier
+    // reclassifies so recall is not falsely penalised (bd Increment B / B-suppress).
+    if (receiverChainTailIsExternal(r)) return [];
 
     // Truly dynamic receiver: short-name lookup, ruby-files only.
     const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => isRubyPath(def.relPath));
