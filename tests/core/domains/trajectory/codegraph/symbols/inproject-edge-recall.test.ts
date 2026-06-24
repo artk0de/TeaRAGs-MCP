@@ -138,4 +138,55 @@ describe("CodegraphEnrichmentProvider — inProjectEdgeRecall", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  // mktkk increment A — an index-access receiver call (`cfg[:k].run`) whose
+  // member `run` HAS an in-project def (Worker#run) is classified as
+  // externalSkipped (not resolved, not a recall hole). Contrast: a bare dynamic
+  // receiver `obj.run` fans out normally and is counted as attempted/resolved or
+  // attempted/dynamic in the `dynamic` bucket.
+  it("an index-access receiver call is externalSkipped, not resolved nor a recall hole (mktkk)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-mktkk-idx-"));
+    try {
+      // worker.rb defines Worker#run — `run` DOES have an in-project def.
+      // Without this, cfg[:k].run would fall into noInProjectDef instead of
+      // externalSkipped, and the test would prove nothing about the suppression.
+      writeFileSync(join(root, "worker.rb"), ["class Worker", "  def run", "    :ok", "  end", "end", ""].join("\n"));
+      // caller.rb has two calls:
+      //   1. cfg[:k].run  — index-access receiver → receiverKind "index"
+      //                     → targetsExternalImport returns true (mktkk Task 3)
+      //                     → counted externalSkipped
+      //   2. obj.run      — bare lowercase receiver → receiverKind "dynamic"
+      //                     → fans out (dynamic dispatch, mktkk Increment B still fans)
+      //                     → counted attempted (resolved or dynamic miss)
+      writeFileSync(
+        join(root, "caller.rb"),
+        ["class Caller", "  def invoke(cfg, obj)", "    cfg[:k].run", "    obj.run", "  end", "end", ""].join("\n"),
+      );
+
+      await provider.streamFileBatch(root, ["worker.rb", "caller.rb"]);
+      await provider.finalizeSignals(root);
+
+      const rows = await client.getRunStats();
+      const rubyRows = rows.filter((r) => r.language === "ruby");
+
+      // 1. The index-access receiver call is counted externalSkipped (not resolved,
+      //    not noInProjectDef). This is the central assertion of mktkk increment A.
+      const indexRow = rubyRows.find((r) => r.receiverKind === "index");
+      expect(indexRow, "expected an 'index' receiverKind row for ruby").toBeDefined();
+      expect(indexRow!.externalSkipped).toBeGreaterThanOrEqual(1);
+      expect(indexRow!.resolved).toBe(0);
+      expect(indexRow!.noInProjectDef ?? 0).toBe(0);
+
+      // 2. Control: obj.run (dynamic receiver) is attempted in the `dynamic` bucket.
+      //    Worker#run is an in-project def with a single implementation → the
+      //    dynamic fan-out resolver may resolve it (resolved >= 1) OR leave it as a
+      //    dynamic miss. Either way the call is NOT externalSkipped.
+      const dynamicRow = rubyRows.find((r) => r.receiverKind === "dynamic");
+      expect(dynamicRow, "expected a 'dynamic' receiverKind row for ruby").toBeDefined();
+      expect(dynamicRow!.attempted).toBeGreaterThanOrEqual(1);
+      expect(dynamicRow!.externalSkipped).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
