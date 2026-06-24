@@ -279,7 +279,12 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       localBindings: { model: [{ line: 1, type: "Model" }] },
     });
 
-    it("resolveDispatch returns [] for a typed receiver (localBindings guard fires before member guard)", () => {
+    it("resolveDispatch returns [] for a typed receiver (localBindings guard short-circuits before any dynamic fan-out)", () => {
+      // A typed receiver (localBindings binds `model` → "Model") never reaches the
+      // dynamic dispatch path — the localBindings guard returns [] early. This is an
+      // early-exit regression guard: it proves the resolver does NOT produce a
+      // spurious dynamic edge for a typed receiver, regardless of AR-core membership.
+      // The in-project-resolution-is-preserved proof is the sibling `Model#update` test below.
       const call = { callText: "model.update", receiver: "model", member: "update", startLine: 2 };
       expect(resolver.resolveDispatch(call, typedCtx)).toEqual([]);
     });
