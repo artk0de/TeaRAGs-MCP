@@ -40,6 +40,14 @@ auto-reindexes after commits/merges; run `mcp__tea-rags__index_codebase`
 manually only to search code edited but not yet committed, BEFORE the first
 tea-rags call.
 
+**Second Iron Rule — post-merge index cleanup (MANDATORY).** When the completion
+path is a LOCAL MERGE to `main`, after the merge you MUST: (1) NOT manually
+reindex `main` — the post-commit hook already did it; (2) if the branch had a
+per-worktree index clone, tear it down with
+**`tea-rags worktree remove <name>`** — NOT `delete_collection` (which drops
+only the Qdrant collection and leaks the DuckDB + snapshot + registry
+footprint). Full procedure: Step 5. Never use the deprecated `reindex_changes`.
+
 ## Step 1 — Determine branch scope
 
 From git state, collect:
@@ -147,6 +155,37 @@ Let `superpowers:finishing-a-development-branch` run its standard
 merge/PR/cleanup decision presentation. The wrapper informs the recommendation,
 does not force a specific outcome.
 
+## Step 5 — Post-merge index cleanup
+
+After a merge to `main` succeeds (the `superpowers` cycle performs it), close
+the index lifecycle:
+
+- **`main` is already fresh — do NOT manually reindex it.** The `PostToolUse`
+  reindex hook fires on the merge commit and incrementally reindexes the `main`
+  collection. (`index_codebase` is the only incremental entrypoint if you ever
+  do need a manual one; never the deprecated `reindex_changes`.)
+- **Drop the per-worktree index clone.** If this branch was developed in a
+  worktree that had its own tea-rags index clone (collection
+  `<project>-worktree-<name>`, created by `tea-rags worktree create`), remove it
+  now: `tea-rags worktree remove <name>`. The clone is throwaway; leaving it
+  leaks Qdrant + DuckDB + snapshot footprint. Run this even if the git worktree
+  directory is already gone — the index clone is tracked separately and outlives
+  the directory.
+- **No clone → no cleanup.** If the branch was developed on the main checkout
+  (no `tea-rags worktree` clone), there is nothing to remove.
+
+Skip this step only on a PR-only completion path (no local merge): the clone
+stays until the PR merges — note it for later cleanup.
+
+Do NOT substitute:
+
+| Wrong approach                                   | Why wrong                                                                                                                                                                                      |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mcp__tea-rags__delete_collection` for the clone | Drops ONLY the Qdrant collection — leaks the clone's DuckDB graph, file-hash snapshots, stats/quarantine, and registry entry. `tea-rags worktree remove <name>` tears down the FULL footprint. |
+| Manually reindexing `main` after the merge       | The post-commit hook already reindexed `main` on the merge commit — a manual reindex is redundant.                                                                                             |
+| `mcp__tea-rags__reindex_changes` (any context)   | Deprecated. `index_codebase` is the only incremental entrypoint.                                                                                                                               |
+| Removing only the git worktree directory         | The index clone is tracked separately and survives the directory — it must be removed with `tea-rags worktree remove`.                                                                         |
+
 ## Red Flags — STOP and restart from Step 2
 
 - "All tests pass, just merge" → tests pass ≠ branch-wide risk clean. Run
@@ -161,6 +200,13 @@ does not force a specific outcome.
   `superpowers:verification-before-completion` without redirecting to the
   `dinopowers:Y` wrapper → intercept and invoke the wrapper instead (see
   Chaining rule)
+- Merged to `main` and then manually reindexed `main` → redundant; the
+  post-commit hook already reindexed it on the merge commit. Skip Step 5's
+  manual reindex.
+- Cleaned up a per-worktree clone with `delete_collection` (or by deleting the
+  worktree directory) → incomplete; leaks DuckDB + snapshots + registry. Use
+  `tea-rags worktree remove <name>` (Step 5).
+- Reached for `reindex_changes` → deprecated; use `index_codebase`.
 
 ## Common Mistakes
 
