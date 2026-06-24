@@ -67,28 +67,38 @@ suites) and `ruby-resolver*.test.ts` staying GREEN with only import-path edits.
 
 **Files:**
 
-- Modify: `src/core/contracts/types/language.ts` (append, beside
-  `ConeTypeLocator`)
-- Test: `tests/core/contracts/types/ruby-type-source.contract.test.ts` (new)
+- Modify: `src/core/contracts/types/language.ts` — append `RubyTypeRef` ONLY
+  (pure data, zero domain dep; `CallContext` references it in Task 1.1, an
+  intra-`contracts/` reference, legal).
+- Create: `src/core/domains/language/ruby/walker/type-sources/types.ts` —
+  `RubyTypeFact` + the source interfaces. They bind `RubyExtractInput` (declared
+  in `ruby/walker/walker.ts:59`, a DOMAIN type), so they MUST NOT live in
+  `contracts/` (`contracts/` -x-> `domains/` is a hard layer violation). They
+  import `RubyTypeRef` from contracts (domain→contracts, legal) and
+  `RubyExtractInput` from `../walker.js` (intra-domain, legal).
+- Test:
+  `tests/core/domains/language/ruby/walker/type-sources/types.contract.test.ts`
+  (new)
 
 **Interfaces:**
 
-- Produces: `RubyTypeRef`, `RubyTypeFact`, `RubyInlineTypeSource`,
-  `RubySidecarTypeSource`, `ProjectTypeSourceContext`.
+- Produces (contracts): `RubyTypeRef`.
+- Produces (domain `type-sources/types.ts`): `RubyTypeFact`,
+  `RubyInlineTypeSource`, `RubySidecarTypeSource`, `ProjectTypeSourceContext`.
 
 - [ ] **Step 1: Write the failing contract test** (type-level + a structural
       assertion the symbols exist and a fact round-trips through a trivial
       source)
 
 ```ts
-// tests/core/contracts/types/ruby-type-source.contract.test.ts
+// tests/core/domains/language/ruby/walker/type-sources/types.contract.test.ts
 import { describe, expect, it } from "vitest";
 
+import type { RubyTypeRef } from "../../../../../../../../src/core/contracts/types/language.js";
 import type {
   RubyInlineTypeSource,
   RubyTypeFact,
-  RubyTypeRef,
-} from "../../../../../src/core/contracts/types/language.js";
+} from "../../../../../../../../src/core/domains/language/ruby/walker/type-sources/types.js";
 
 describe("RubyTypeFact contract", () => {
   it("models class/instance/union/container type refs", () => {
@@ -130,24 +140,33 @@ describe("RubyTypeFact contract", () => {
 - [ ] **Step 2: Run it, verify it fails**
 
 Run:
-`npx vitest run tests/core/contracts/types/ruby-type-source.contract.test.ts`
-Expected: FAIL — `RubyTypeFact` / `RubyInlineTypeSource` not exported.
+`npx vitest run tests/core/domains/language/ruby/walker/type-sources/types.contract.test.ts`
+Expected: FAIL — `RubyTypeRef` / `RubyTypeFact` / `RubyInlineTypeSource` not
+exported.
 
-- [ ] **Step 3: Append the contracts to `language.ts`**
+- [ ] **Step 3a: Append `RubyTypeRef` to `contracts/types/language.ts`** (pure
+      data — nothing else goes in contracts)
 
 ```ts
 /**
-
  * Normalized receiver-type reference emitted by a Ruby type source (YARD /
  * Sorbet / RBS). `class` vs `instance` mirrors {@link LocalBinding.valueKind};
  * `union` fans out to a CHA cone; `container` carries an element type for
- * `Array<Post>` / `Relation<X>` element flow.
-
+ * `Array<Post>` / `Relation<X>` element flow. Lives in contracts because
+ * `CallContext.structuredReturnTypes` (Task 1.1) references it.
  */
 export type RubyTypeRef =
   | { form: "class" | "instance"; name: string }
   | { form: "union"; members: RubyTypeRef[] }
   | { form: "container"; element: RubyTypeRef };
+```
+
+- [ ] **Step 3b: Create the domain types file**
+      `src/core/domains/language/ruby/walker/type-sources/types.ts`
+
+```ts
+import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+import type { RubyExtractInput } from "../walker.js";
 
 /** One receiver-type fact a source attributes to a symbol coordinate. */
 export interface RubyTypeFact {
@@ -184,21 +203,22 @@ export interface ProjectTypeSourceContext {
 }
 ```
 
-> Note: reuse the existing `RubyExtractInput` import already present in
-> `language.ts`. If it is not in scope there, import its type from the walker
-> contract rather than redefining it.
+> Verify the relative import depths against the real files before committing
+> (`RubyExtractInput` is `export`ed from `ruby/walker/walker.ts`; adjust the
+> `../` count if the new file's nesting differs). Do NOT redefine
+> `RubyExtractInput` — import it.
 
 - [ ] **Step 4: Run it, verify it passes**
 
 Run:
-`npx vitest run tests/core/contracts/types/ruby-type-source.contract.test.ts && npx tsc --noEmit`
+`npx vitest run tests/core/domains/language/ruby/walker/type-sources/types.contract.test.ts && npx tsc --noEmit`
 Expected: PASS, tsc clean.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/core/contracts/types/language.ts tests/core/contracts/types/ruby-type-source.contract.test.ts
-git commit -m "feat(contracts): RubyTypeFact/RubyTypeRef + type-source interfaces"
+git add src/core/contracts/types/language.ts src/core/domains/language/ruby/walker/type-sources/types.ts tests/core/domains/language/ruby/walker/type-sources/types.contract.test.ts
+git commit -m "feat(contracts): RubyTypeRef + ruby type-source interfaces (domain)"
 ```
 
 ## Task 0.2: TypeFactStore (pass-through parity)
@@ -228,8 +248,8 @@ outputs from facts; precedence/normalization land in Increment 1.
 ```ts
 import { describe, expect, it } from "vitest";
 
-import type { RubyTypeFact } from "../../../../../../src/core/contracts/types/language.js";
 import { RubyTypeFactStore } from "../../../../../../src/core/domains/language/ruby/walker/type-fact-store.js";
+import type { RubyTypeFact } from "../../../../../../src/core/domains/language/ruby/walker/type-sources/types.js";
 
 describe("RubyTypeFactStore parity", () => {
   it("param fact -> position-scoped LocalBinding", () => {
@@ -287,10 +307,8 @@ describe("RubyTypeFactStore parity", () => {
 
 ```ts
 import type { LocalBinding } from "../../../../contracts/types/codegraph.js";
-import type {
-  RubyTypeFact,
-  RubyTypeRef,
-} from "../../../../contracts/types/language.js";
+import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+import type { RubyTypeFact } from "./type-sources/types.js";
 
 /** Flatten a RubyTypeRef to the bare class name today's LocalBinding.type holds (Incr 0 parity). */
 function refToName(ref: RubyTypeRef): string | undefined {
