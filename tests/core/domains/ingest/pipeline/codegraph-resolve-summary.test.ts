@@ -268,3 +268,26 @@ describe("summarizeCodegraphResolve per-kind inProjectEdgeRecall (Phase D)", () 
     expect(chain?.inProjectEdgeRecall).toBeCloseTo(40 / 80, 6);
   });
 });
+
+// Phase B1 (tea-rags-mcp-zyoqs) — exact-vs-fan-out edge-kind distribution is a
+// precision-confidence signal: exact edges are pinned to one target; cone /
+// poly-base / dynamic are over-approximations (confidence < 1).
+describe("summarizeCodegraphResolve edgeKinds (Phase B1)", () => {
+  it("attaches an edge-kind breakdown with exactRatio when edge counts are provided", () => {
+    const summary = summarizeCodegraphResolve(
+      [row("ruby", "constant", 100, 80, 0)],
+      [
+        { edgeKind: "exact", count: 80 },
+        { edgeKind: "cone", count: 15 },
+        { edgeKind: "poly-base", count: 5 },
+      ],
+    );
+    expect(summary?.edgeKinds).toMatchObject({ exact: 80, cone: 15, polyBase: 5, dynamic: 0, registry: 0, total: 100 });
+    expect(summary?.edgeKinds?.exactRatio).toBeCloseTo(0.8, 6);
+  });
+
+  it("omits edgeKinds when no edge counts are provided (back-compat)", () => {
+    const summary = summarizeCodegraphResolve([row("ruby", "constant", 100, 80, 0)]);
+    expect(summary?.edgeKinds).toBeUndefined();
+  });
+});

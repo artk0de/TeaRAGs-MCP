@@ -203,6 +203,28 @@ export interface CodegraphResolveSummary {
    * instead (precise lang×kind), and this stays absent.
    */
   byReceiverKind?: CodegraphResolveKindRow[];
+  /**
+   * Precision-confidence signal: how many emitted method edges are `exact`
+   * (pinned to one target, confidence 1) vs cone / poly-base / dynamic
+   * over-approximations. Present when the edge distribution was read alongside
+   * the resolve stats; absent otherwise.
+   */
+  edgeKinds?: EdgeKindBreakdown;
+}
+
+/**
+ * Emitted method-edge `edge_kind` counts + the exact ratio. `exactRatio` is the
+ * fraction of edges pinned to a single target (confidence 1) — the rest are
+ * fan-out over-approximations whose precision is below 1.
+ */
+export interface EdgeKindBreakdown {
+  exact: number;
+  cone: number;
+  polyBase: number;
+  dynamic: number;
+  registry: number;
+  total: number;
+  exactRatio: number;
 }
 
 /**

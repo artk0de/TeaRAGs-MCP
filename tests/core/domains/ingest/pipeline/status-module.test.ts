@@ -132,7 +132,11 @@ describe("StatusModule", () => {
         (ingest as any).indexingOps.status.codegraphPool = {
           listCollectionDbNames: () => ["code_cg_v1"],
           acquireReader: async () => ({
-            graphDb: { getRunStats: async () => runStatsRows, close: async () => undefined },
+            graphDb: {
+              getRunStats: async () => runStatsRows,
+              getEdgeKindDistribution: async () => [],
+              close: async () => undefined,
+            },
           }),
         };
 
@@ -169,7 +173,11 @@ describe("StatusModule", () => {
         (ingest as any).indexingOps.status.codegraphPool = {
           listCollectionDbNames: () => ["code_cg_v1"],
           acquireReader: async () => ({
-            graphDb: { getRunStats: async () => runStatsRows, close: async () => undefined },
+            graphDb: {
+              getRunStats: async () => runStatsRows,
+              getEdgeKindDistribution: async () => [],
+              close: async () => undefined,
+            },
           }),
         };
 
@@ -1075,7 +1083,11 @@ describe("StatusModule", () => {
       (ingest as any).indexingOps.status.codegraphPool = {
         listCollectionDbNames: () => ["code_cg_v1"],
         acquireReader: async () => ({
-          graphDb: { getRunStats: async () => runStatsRows, close: async () => undefined },
+          graphDb: {
+            getRunStats: async () => runStatsRows,
+            getEdgeKindDistribution: async () => [],
+            close: async () => undefined,
+          },
         }),
       };
 
@@ -1100,7 +1112,11 @@ describe("StatusModule", () => {
       (ingest as any).indexingOps.status.codegraphPool = {
         listCollectionDbNames: () => ["code_cg_v1"],
         acquireReader: async () => ({
-          graphDb: { getRunStats: async () => runStatsRows, close: async () => undefined },
+          graphDb: {
+            getRunStats: async () => runStatsRows,
+            getEdgeKindDistribution: async () => [],
+            close: async () => undefined,
+          },
         }),
       };
 

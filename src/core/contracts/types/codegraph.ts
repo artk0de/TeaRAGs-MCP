@@ -818,6 +818,13 @@ export interface GraphDbClient {
    * daemon proxy so MCP clients can read it without holding the DuckDB lock.
    */
   getRunStats: () => Promise<ResolveRunStatsRow[]>;
+  /**
+   * Count emitted method edges grouped by `edge_kind` (exact / cone / poly-base
+   * / dynamic / registry). The exact-vs-fan-out split is a precision-confidence
+   * signal: `exact` edges are pinned to a single target, the rest are
+   * over-approximations with confidence < 1. Routed through the daemon proxy.
+   */
+  getEdgeKindDistribution: () => Promise<EdgeKindCount[]>;
 
   // ── Symbol-table persistence (Slice 2 / A4c) ──
   // The in-memory GlobalSymbolTable needs a disk-backed copy so cold
@@ -984,6 +991,12 @@ export interface GraphFileNode {
  *                 narrows to one entry and is emitted as `exact`/1.0 instead.
  */
 export type MethodEdgeKind = "exact" | "cone" | "poly-base" | "dynamic" | "registry";
+
+/** One row of the method-edge `edge_kind` count distribution (precision-confidence signal). */
+export interface EdgeKindCount {
+  edgeKind: MethodEdgeKind;
+  count: number;
+}
 
 /**
  * One row of the per-receiver-kind resolve breakdown (bd tea-rags-mcp-j431),

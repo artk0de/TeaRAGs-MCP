@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
+import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { StatsCache } from "../../../infra/stats-cache.js";
@@ -21,6 +21,7 @@ import type {
   CodegraphResolveKindRow,
   CodegraphResolveLanguageRow,
   CodegraphResolveSummary,
+  EdgeKindBreakdown,
   IndexStatus,
 } from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../constants.js";
@@ -70,6 +71,23 @@ function emptyTally(): ResolveTally {
 }
 
 /**
+ * Fold the per-`edge_kind` counts into the precision-confidence breakdown.
+ * `exactRatio` = exact / total — the rest (cone / poly-base / dynamic) are
+ * fan-out over-approximations with confidence < 1. `registry` (dispatch-table
+ * pinned) is reported but NOT counted as exact.
+ */
+function buildEdgeKindBreakdown(counts: readonly EdgeKindCount[]): EdgeKindBreakdown {
+  const by = (k: MethodEdgeKind): number => counts.find((c) => c.edgeKind === k)?.count ?? 0;
+  const exact = by("exact");
+  const cone = by("cone");
+  const polyBase = by("poly-base");
+  const dynamic = by("dynamic");
+  const registry = by("registry");
+  const total = exact + cone + polyBase + dynamic + registry;
+  return { exact, cone, polyBase, dynamic, registry, total, exactRatio: total === 0 ? 0 : exact / total };
+}
+
+/**
  * Build the per-receiver-kind breakdown for one language (bd tea-rags-mcp-7m5xz).
  * Includes a kind only when it was actually attempted (`attempted > 0`) — NO
  * min-share filter, since small buckets (e.g. `selfMember`) are the target.
@@ -110,7 +128,10 @@ function buildByReceiverKind(kinds: Map<string, ResolveTally>): CodegraphResolve
  * (byLanguage suppressed), the top-level `byReceiverKind` carries that single
  * language's kinds.
  */
-export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): CodegraphResolveSummary | undefined {
+export function summarizeCodegraphResolve(
+  rows: readonly ResolveRunStatsRow[],
+  edgeCounts?: readonly EdgeKindCount[],
+): CodegraphResolveSummary | undefined {
   if (rows.length === 0) return undefined;
   // tea-rags-mcp-7m5xz follow-up: byReceiverKind is verbose — it is computed and
   // attached ONLY under DEBUG. The single gate point is this flag: when false,
@@ -188,6 +209,7 @@ export function summarizeCodegraphResolve(rows: readonly ResolveRunStatsRow[]): 
     // so surface that language's kind breakdown at the top level — DEBUG only.
     summary.byReceiverKind = byLanguage[0].byReceiverKind;
   }
+  if (edgeCounts && edgeCounts.length > 0) summary.edgeKinds = buildEdgeKindBreakdown(edgeCounts);
   return summary;
 }
 
@@ -230,7 +252,11 @@ export class StatusModule {
     try {
       const handle = await this.codegraphPool.acquireReader(target);
       try {
-        return summarizeCodegraphResolve(await handle.graphDb.getRunStats());
+        const [rows, edgeCounts] = await Promise.all([
+          handle.graphDb.getRunStats(),
+          handle.graphDb.getEdgeKindDistribution(),
+        ]);
+        return summarizeCodegraphResolve(rows, edgeCounts);
       } finally {
         await handle.graphDb.close();
       }

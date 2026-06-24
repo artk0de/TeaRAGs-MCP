@@ -25,6 +25,7 @@ import type {
   CallerEdge,
   CycleEntry,
   CycleScope,
+  EdgeKindCount,
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
@@ -937,6 +938,13 @@ export class DuckDbGraphClient implements GraphDbClient {
       unresolvable: Number(r.unresolvable),
       noInProjectDef: Number(r.no_in_project_def),
     }));
+  }
+
+  async getEdgeKindDistribution(): Promise<EdgeKindCount[]> {
+    const rows = await this.queryAll<{ edge_kind: string; cnt: number | bigint }>(
+      "SELECT edge_kind, COUNT(*) AS cnt FROM cg_symbols_edges_method GROUP BY edge_kind ORDER BY edge_kind",
+    );
+    return rows.map((r) => ({ edgeKind: r.edge_kind as MethodEdgeKind, count: Number(r.cnt) }));
   }
 
   // ── Class hierarchy (bd tea-rags-mcp-f10y) ──

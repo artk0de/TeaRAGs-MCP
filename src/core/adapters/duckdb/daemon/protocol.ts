@@ -43,6 +43,7 @@ export type DaemonOp =
   | "getCallSiteCount"
   | "hasData"
   | "getRunStats"
+  | "getEdgeKindDistribution"
   | "listAllSymbols"
   | "getTransitiveImpact"
   | "findCycles"

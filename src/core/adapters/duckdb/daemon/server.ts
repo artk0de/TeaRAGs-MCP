@@ -148,6 +148,10 @@ export class CodegraphDaemonServer {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getRunStats();
       }
+      case "getEdgeKindDistribution": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getEdgeKindDistribution();
+      }
       case "listAllSymbols": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.listAllSymbols();
