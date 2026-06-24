@@ -1,11 +1,10 @@
 /**
- * Index lifecycle tools: index_codebase, reindex_changes.
+ * Index lifecycle tool: index_codebase (auto-detects incremental changes).
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { App } from "../../../core/api/public/index.js";
-import { appendDriftWarning, formatMcpText } from "../../format.js";
 import type { RegisterToolFn } from "../../middleware/error-handler.js";
 import { formatEnrichmentStatus } from "../formatters/enrichment.js";
 import * as schemas from "../schemas.js";
@@ -72,58 +71,6 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
         content: [{ type: "text" as const, text: statusMessage }],
         isError: stats.status === "failed",
       };
-    },
-  );
-
-  // reindex_changes (deprecated — use index_codebase which auto-detects)
-  registerToolSafe(
-    server,
-    "reindex_changes",
-    {
-      title: "Reindex Changes",
-      description:
-        "Deprecated: use index_codebase instead — it automatically detects changes and does incremental reindex.\n\n" +
-        "Incrementally re-index only changed files. Detects added, modified, and deleted files since last index. Requires previous indexing with index_codebase.",
-      inputSchema: schemas.ReindexChangesSchema,
-      annotations: { idempotentHint: true },
-    },
-    async ({ path: pathArg, project }) => {
-      const path = await resolvePathFromProject({ path: pathArg, project }, app);
-      const stats = await app.reindexChanges(path, (progress) => {
-        console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
-      });
-
-      let message = `Incremental re-index complete:\n`;
-      message += `- Files: +${stats.filesAdded} ~${stats.filesModified} -${stats.filesDeleted}\n`;
-      if (stats.filesNewlyIgnored > 0) {
-        message += `  Newly ignored: ${stats.filesNewlyIgnored}\n`;
-      }
-      if (stats.filesNewlyUnignored > 0) {
-        message += `  Newly unignored: ${stats.filesNewlyUnignored}\n`;
-      }
-      if (stats.filesRetried > 0) {
-        message += `  Retried (quarantined): ${stats.filesRetried}\n`;
-      }
-      const chunkDiff = stats.chunksAdded - stats.chunksDeleted;
-      const sign = chunkDiff >= 0 ? "+" : "";
-      message += `- Chunks: +${stats.chunksAdded} -${stats.chunksDeleted} (net: ${sign}${chunkDiff})\n`;
-      message += `- Duration: ${(stats.durationMs / 1000).toFixed(1)}s`;
-
-      const enrichmentMessage = await formatEnrichmentStatus(
-        stats.enrichmentStatus,
-        stats.enrichmentDurationMs,
-        async (p) => app.getIndexStatus(p),
-        path,
-        stats.enrichmentMetrics,
-      );
-      message += enrichmentMessage;
-
-      if (stats.filesAdded === 0 && stats.filesModified === 0 && stats.filesDeleted === 0 && stats.filesRetried === 0) {
-        message = `No changes detected. Codebase is up to date.`;
-      }
-
-      const driftWarning = await app.checkSchemaDrift({ path });
-      return appendDriftWarning(formatMcpText(message), driftWarning);
     },
   );
 }

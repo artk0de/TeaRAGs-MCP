@@ -205,10 +205,10 @@ describe("Resource builders", () => {
       expect(md).toContain("ISO 8601");
     });
 
-    it("contains reindex workflow", () => {
+    it("contains index lifecycle workflow without the removed reindex_changes tool", () => {
       const md = buildIndexingGuide();
       expect(md).toContain("index_codebase");
-      expect(md).toContain("reindex_changes");
+      expect(md).not.toContain("reindex_changes");
       expect(md).toContain("get_index_status");
       expect(md).toContain("clear_index");
     });

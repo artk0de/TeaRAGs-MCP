@@ -13,8 +13,7 @@
 
 import { z } from "zod";
 
-import type { SchemaBuilder } from "../../core/api/public/index.js";
-import { PROJECT_NAME_RE } from "../../core/api/public/index.js";
+import { PROJECT_NAME_RE, type SchemaBuilder } from "../../core/api/public/index.js";
 
 /** Coerce string→number for MCP params (agents sometimes send "5" instead of 5) */
 const coerceNumber = () => z.preprocess((v) => (typeof v === "string" ? Number(v) : v), z.number());
@@ -108,17 +107,6 @@ export const IndexCodebaseSchema = {
     .array(z.string())
     .optional()
     .describe("Additional patterns to ignore (e.g., ['**/test/**', '**/*.test.ts'])"),
-};
-
-export const ReindexChangesSchema = {
-  path: z
-    .string()
-    .optional()
-    .describe(
-      "Filesystem path to codebase. " +
-        "Prefer 'project' when an alias is registered; provide one of 'project' or 'path'.",
-    ),
-  project: projectField(),
 };
 
 export const GetIndexStatusSchema = {

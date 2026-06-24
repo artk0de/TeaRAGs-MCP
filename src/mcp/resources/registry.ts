@@ -4,10 +4,8 @@
 
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { InvalidParameterError } from "../../core/api/public/index.js";
-import type { App } from "../../core/api/public/index.js";
 import type { PresetDescriptors } from "../../core/api/public/dto/explore.js";
-import type { PayloadSignalDescriptor } from "../../core/api/public/index.js";
+import { InvalidParameterError, type App, type PayloadSignalDescriptor } from "../../core/api/public/index.js";
 
 export function buildOverview(): string {
   return `# tea-rags Schema Overview
@@ -194,12 +192,11 @@ Enables filters:
 
 Git enrichment runs in background after indexing. Check \`get_index_status\` for enrichment progress.
 
-## Reindex Workflow
+## Index Workflow
 
-1. \`index_codebase\` — full initial index
-2. \`reindex_changes\` — incremental update (changed files only)
-3. \`get_index_status\` — check status and enrichment progress
-4. \`clear_index\` — delete all indexed data (irreversible)
+1. \`index_codebase\` — full initial index; on a re-run it auto-detects changed files and does an incremental update (no separate reindex tool)
+2. \`get_index_status\` — check status and enrichment progress
+3. \`clear_index\` — delete all indexed data (irreversible)
 `;
 }
 
