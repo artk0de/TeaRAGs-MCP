@@ -30,9 +30,10 @@ State that explicitly — do not fabricate an area.
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — MUST run
-`mcp__tea-rags__reindex_changes` if any file was edited in this session, BEFORE
-the first tea-rags call.
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — a post-commit hook
+auto-reindexes after commits/merges; run `mcp__tea-rags__index_codebase`
+manually only to search code edited but not yet committed, BEFORE the first
+tea-rags call.
 
 ## Step 1 — Extract target area
 
@@ -58,11 +59,11 @@ Report "no area identifiable — proceeding without tea-rags enrichment".
 Run these three `mcp__tea-rags__semantic_search` calls **in parallel** (same
 tool call block), each with `metaOnly: true` (we want signals, not content):
 
-| Call          | `rerank` preset      | Why                                                                             |
-| ------------- | -------------------- | ------------------------------------------------------------------------------- |
-| A — Hotspots  | `"hotspots"`         | Bug-prone zones the brainstorm must account for (high churn + recency + bugFix) |
-| B — Ownership | `"ownership"`        | Knowledge silos — single-owner files that need reviewer pairing                 |
-| C — Tech debt | `"techDebt"`         | Legacy zones where "just refactor it" hides cost (age + churn + bugFix)         |
+| Call          | `rerank` preset      | Why                                                                                                                                 |
+| ------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| A — Hotspots  | `"hotspots"`         | Bug-prone zones the brainstorm must account for (high churn + recency + bugFix)                                                     |
+| B — Ownership | `"ownership"`        | Knowledge silos — single-owner files that need reviewer pairing                                                                     |
+| C — Tech debt | `"techDebt"`         | Legacy zones where "just refactor it" hides cost (age + churn + bugFix)                                                             |
 | D — Backbone  | `"architecturalHub"` | **Codegraph only** — structural hubs (high `fanIn` / `isHub`) the design must respect; a change to a backbone has wide blast radius |
 
 Call D runs ONLY when codegraph is active (prime `## Enrichment` lists

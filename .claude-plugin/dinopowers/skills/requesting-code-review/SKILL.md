@@ -34,9 +34,10 @@ directly. Do not fabricate.
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — MUST run
-`mcp__tea-rags__reindex_changes` if any file was edited in this session, BEFORE
-the first tea-rags call.
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — a post-commit hook
+auto-reindexes after commits/merges; run `mcp__tea-rags__index_codebase`
+manually only to search code edited but not yet committed, BEFORE the first
+tea-rags call.
 
 ## Step 1 — Collect diff file list
 
@@ -95,10 +96,11 @@ git-context available". Do not fabricate.
 ## Step 2.5 — Reviewer-hub awareness (codegraph only)
 
 When codegraph is active (prime `## Enrichment` lists `codegraph.symbols`), for
-the changed symbols the diff touches run `get_callers symbolId=<id>` (resolve the
-exact id with `find_symbol` first). The callers are the code that depends on the
-change — their `blameDominantAuthor`s are stakeholders who should be looped into
-the review. Add a "Affected callers / suggested reviewers" line to the bundle.
+the changed symbols the diff touches run `get_callers symbolId=<id>` (resolve
+the exact id with `find_symbol` first). The callers are the code that depends on
+the change — their `blameDominantAuthor`s are stakeholders who should be looped
+into the review. Add a "Affected callers / suggested reviewers" line to the
+bundle.
 
 Skip this step when codegraph is off (graph tools not registered) — the
 ownership bundle from Step 2/3 still stands; just note caller-impact was not

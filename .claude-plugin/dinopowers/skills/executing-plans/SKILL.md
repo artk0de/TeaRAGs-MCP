@@ -26,10 +26,9 @@ the first Edit/Write/MultiEdit of that Task.**
 
 Correct tool (`semantic_search`), correct impact rerank (`"blastRadius"` when
 codegraph is on, the `{imports 0.5, churn 0.3, ownership 0.2}` fallback when
-off), correct parameters
-(brace-expanded `pathPattern` over Task-local files, `metaOnly: true`), correct
-verdict ladder (SAFE / CAUTION / UNSAFE) + correct gating (CAUTION = confirm,
-UNSAFE = pause) is the core value.
+off), correct parameters (brace-expanded `pathPattern` over Task-local files,
+`metaOnly: true`), correct verdict ladder (SAFE / CAUTION / UNSAFE) + correct
+gating (CAUTION = confirm, UNSAFE = pause) is the core value.
 
 If a Task is purely additive (creates new files, touches no existing ones): skip
 the guard for that Task — state it explicitly. Do not invent a pathPattern to
@@ -49,9 +48,10 @@ workflow never runs.
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — MUST run
-`mcp__tea-rags__reindex_changes` if any file was edited in this session, BEFORE
-the first tea-rags call.
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — a post-commit hook
+auto-reindexes after commits/merges; run `mcp__tea-rags__index_codebase`
+manually only to search code edited but not yet committed, BEFORE the first
+tea-rags call.
 
 Plus the cross-plugin chain for code generation:
 
@@ -100,13 +100,13 @@ approximate) when that line is absent.
 
 Do NOT substitute:
 
-| Wrong tool                                                      | Why wrong                                                                                     |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `mcp__tree-sitter__modification_guard`                          | Structural (AST) guard, misses git-signal blast radius (imports count, bugFixRate, ownership) |
-| `mcp__tea-rags__hybrid_search`                                  | Custom rerank is tied to `semantic_search`                                                    |
+| Wrong tool                                                      | Why wrong                                                                                                               |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `mcp__tree-sitter__modification_guard`                          | Structural (AST) guard, misses git-signal blast radius (imports count, bugFixRate, ownership)                           |
+| `mcp__tea-rags__hybrid_search`                                  | Custom rerank is tied to `semantic_search`                                                                              |
 | Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"` | `impactAnalysis` does not exist; these miss the blast-radius dimension. `"blastRadius"` IS correct when codegraph is on |
-| One call per file, sequential                                   | Brace expansion covers all in one                                                             |
-| `mcp__tea-rags__find_similar` without a prior guard call        | Finds analogs, doesn't return blast-radius signals                                            |
+| One call per file, sequential                                   | Brace expansion covers all in one                                                                                       |
+| `mcp__tea-rags__find_similar` without a prior guard call        | Finds analogs, doesn't return blast-radius signals                                                                      |
 
 Do NOT pass:
 

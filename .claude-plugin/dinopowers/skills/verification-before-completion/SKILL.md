@@ -25,10 +25,10 @@ the session has edited ≥1 existing file.
 
 Correct tool (`semantic_search`), correct impact rerank (`"blastRadius"` when
 codegraph is on, the `{imports 0.5, churn 0.3, ownership 0.2}` fallback when
-off), correct parameters
-(brace-expanded `pathPattern` over `git diff --name-only`, `metaOnly: true`),
-correct verdict (surface high-`fanIn`/`imports` files with explicit "verify
-dependents" recommendation) = core value.
+off), correct parameters (brace-expanded `pathPattern` over
+`git diff --name-only`, `metaOnly: true`), correct verdict (surface
+high-`fanIn`/`imports` files with explicit "verify dependents" recommendation) =
+core value.
 
 If only new files were created (no edits to existing files): skip scan with
 verdict `SAFE (no existing-file edits)`. Do not fabricate pathPattern.
@@ -40,20 +40,21 @@ verdict `SAFE (no existing-file edits)`. Do not fabricate pathPattern.
 Read the blast signal from `fanIn` when codegraph is on (real dependents),
 otherwise from the `imports` proxy.
 
-| Verdict        | Triggers                                                     |
-| -------------- | ------------------------------------------------------------ |
+| Verdict        | Triggers                                                              |
+| -------------- | --------------------------------------------------------------------- |
 | `HIGH-BLAST`   | `fanIn`/`imports` top 10% of result set (or absolute: >20 dependents) |
-| `MEDIUM-BLAST` | `fanIn`/`imports` top 30% (or 5-20 dependents)               |
-| `LOW-BLAST`    | `fanIn`/`imports` ≤ 5 dependents                            |
+| `MEDIUM-BLAST` | `fanIn`/`imports` top 30% (or 5-20 dependents)                        |
+| `LOW-BLAST`    | `fanIn`/`imports` ≤ 5 dependents                                      |
 
 Block is prescriptive, not informational — DO NOT skip ladder evaluation.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — MUST run
-`mcp__tea-rags__reindex_changes` if any file was edited in this session, BEFORE
-the first tea-rags call.
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — a post-commit hook
+auto-reindexes after commits/merges; run `mcp__tea-rags__index_codebase`
+manually only to search code edited but not yet committed, BEFORE the first
+tea-rags call.
 
 ## Step 1 — Collect edited file set
 
@@ -96,14 +97,14 @@ that line is absent.
 
 Do NOT substitute:
 
-| Wrong tool                                                        | Why wrong                                                                                           |
-| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `mcp__tea-rags__hybrid_search`                                    | Custom impact rerank tied to `semantic_search`                                                      |
-| Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"`   | `impactAnalysis` does not exist; these miss the blast-radius dimension. `"blastRadius"` IS correct when codegraph is on |
-| `mcp__tree-sitter__trace_impact`                                  | Structural trace is complementary (call graph), not blast-radius on git signals; use tea-rags first |
-| One call per file                                                 | Brace expansion covers all                                                                          |
-| Built-in `grep -r "import.*<file>"`                               | Misses the ranked `imports` overlay signal; slower                                                  |
-| `git log --oneline <files>`                                       | Shows history of edited files, not their dependents                                                 |
+| Wrong tool                                                      | Why wrong                                                                                                               |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `mcp__tea-rags__hybrid_search`                                  | Custom impact rerank tied to `semantic_search`                                                                          |
+| Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"` | `impactAnalysis` does not exist; these miss the blast-radius dimension. `"blastRadius"` IS correct when codegraph is on |
+| `mcp__tree-sitter__trace_impact`                                | Structural trace is complementary (call graph), not blast-radius on git signals; use tea-rags first                     |
+| One call per file                                               | Brace expansion covers all                                                                                              |
+| Built-in `grep -r "import.*<file>"`                             | Misses the ranked `imports` overlay signal; slower                                                                      |
+| `git log --oneline <files>`                                     | Shows history of edited files, not their dependents                                                                     |
 
 Do NOT pass:
 

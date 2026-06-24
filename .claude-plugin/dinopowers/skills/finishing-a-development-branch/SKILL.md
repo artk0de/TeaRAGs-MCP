@@ -35,9 +35,10 @@ scan needed".
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — MUST run
-`mcp__tea-rags__reindex_changes` if any file was edited in this session, BEFORE
-the first tea-rags call.
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — a post-commit hook
+auto-reindexes after commits/merges; run `mcp__tea-rags__index_codebase`
+manually only to search code edited but not yet committed, BEFORE the first
+tea-rags call.
 
 ## Step 1 — Determine branch scope
 
@@ -73,8 +74,8 @@ techDebt).
 
 When codegraph is active, risk-assessment's structural axis runs automatically
 over the branch-diff scope: blast-radius hubs (`architecturalHub` amplifier) and
-**circular dependencies the branch introduces or touches** (`find_cycles`).
-A branch that adds a cross-module cycle is a merge-blocker even with clean git
+**circular dependencies the branch introduces or touches** (`find_cycles`). A
+branch that adds a cross-module cycle is a merge-blocker even with clean git
 signals — read the risk-assessment "Structural risks" section before deciding
 merge/PR/cleanup. When codegraph is off, that section is absent (not "no
 cycles"); structural risk is simply unassessed.
