@@ -4,14 +4,16 @@ import { existsSync } from "node:fs";
 /**
  * Idempotent: no-op when targetPath already exists (attach to existing worktree).
  * Otherwise: `git -C repoRoot worktree add [-b branch] targetPath`.
+ * Returns true when a new worktree was created, false when attached to an existing dir.
  */
-export function ensureGitWorktree(repoRoot: string, name: string, targetPath: string, branch?: string): void {
-  if (existsSync(targetPath)) return;
+export function ensureGitWorktree(repoRoot: string, name: string, targetPath: string, branch?: string): boolean {
+  if (existsSync(targetPath)) return false;
   const args = ["-C", repoRoot, "worktree", "add"];
   if (branch) args.push("-b", branch);
   else args.push("-b", name);
   args.push(targetPath);
   execFileSync("git", args, { stdio: "pipe" });
+  return true;
 }
 
 /**

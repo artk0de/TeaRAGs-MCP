@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { WorktreeOps } from "../../../../src/core/domains/maintenance/worktree/worktree-ops.js";
+import {
+  WorktreeCollectionExistsError,
+  WorktreeNotFoundError,
+  WorktreeSourceNotFoundError,
+} from "../../../../src/core/domains/maintenance/errors.js";
 
 function fakeArtifact(id: string, calls: string[], failOn?: string) {
   return {
@@ -78,7 +83,8 @@ describe("WorktreeOps.create saga", () => {
     expect(res.alias).toContain("worktree-x");
   });
 
-  it("rolls back already-cloned artifacts in reverse on failure and does NOT record", async () => {
+  it("rolls back ALL artifacts including the failing one in reverse on failure", async () => {
+    // C2: the failing artifact (snapshot) must participate in rollback
     const { deps, calls, recorded } = makeDeps({}, [], "snapshot");
     const ops = new WorktreeOps(deps);
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(/boom snapshot/);
@@ -86,29 +92,104 @@ describe("WorktreeOps.create saga", () => {
       "clone:qdrant",
       "clone:codegraph",
       "clone:snapshot",
-      "remove:codegraph", // reverse of successfully-cloned (snapshot failed mid-clone)
+      "remove:snapshot", // failing artifact participates in rollback
+      "remove:codegraph",
       "remove:qdrant",
     ]);
     expect(recorded).toHaveLength(0);
   });
 
-  it("throws if the target collection already exists, before any clone", async () => {
+  it("throws WorktreeCollectionExistsError if the target collection already exists, before any clone", async () => {
+    // I1: typed error for target-exists guard
     const calls: string[] = [];
     const { deps } = makeDeps({}, calls);
-    // make registry.get return a non-null entry for the target
     deps.registry.get = vi.fn(() => ({ collectionName: "code_dst" }));
     const ops = new WorktreeOps(deps);
+    await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(WorktreeCollectionExistsError);
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(/already exists/);
-    expect(calls).toEqual([]); // no artifact cloned
+    expect(calls).toEqual([]);
+  });
+
+  it("throws WorktreeSourceNotFoundError when source project is not found", async () => {
+    // I1: typed error for source-not-found guard
+    const { deps } = makeDeps();
+    deps.registry.findByName = vi.fn(() => null);
+    deps.registry.findByPath = vi.fn(() => null);
+    const ops = new WorktreeOps(deps);
+    await expect(ops.create({ name: "x", from: "missing", createGit: false })).rejects.toThrow(
+      WorktreeSourceNotFoundError,
+    );
+    await expect(ops.create({ name: "x", from: "missing", createGit: false })).rejects.toThrow(
+      /Source project not found/,
+    );
+  });
+});
+
+describe("WorktreeOps.create with git (C1)", () => {
+  it("calls injected removeGitWorktree when gitCreated=true and artifact clone fails", async () => {
+    const calls: string[] = [];
+    const removeGitWorktree = vi.fn();
+    const ensureGitWorktree = vi.fn(() => true); // returns true = worktree was created
+
+    const { deps } = makeDeps({}, calls, "qdrant");
+    const ops = new WorktreeOps({
+      ...deps,
+      ensureGitWorktree,
+      removeGitWorktree,
+    } as never);
+
+    await expect(ops.create({ name: "x", createGit: true })).rejects.toThrow(/boom qdrant/);
+    expect(ensureGitWorktree).toHaveBeenCalled();
+    // worktree was created → must be rolled back
+    expect(removeGitWorktree).toHaveBeenCalledWith("/repo", expect.any(String), true);
+  });
+
+  it("does NOT call removeGitWorktree when gitCreated=false (attach path) and artifact fails", async () => {
+    const calls: string[] = [];
+    const removeGitWorktree = vi.fn();
+    const ensureGitWorktree = vi.fn(() => false); // returns false = attached to existing dir
+
+    const { deps } = makeDeps({}, calls, "qdrant");
+    const ops = new WorktreeOps({
+      ...deps,
+      ensureGitWorktree,
+      removeGitWorktree,
+    } as never);
+
+    await expect(ops.create({ name: "x", createGit: true })).rejects.toThrow(/boom qdrant/);
+    expect(ensureGitWorktree).toHaveBeenCalled();
+    // was not created (attached) → must NOT be removed
+    expect(removeGitWorktree).not.toHaveBeenCalled();
+  });
+
+  it("does NOT call removeGitWorktree when createGit=false and artifact fails", async () => {
+    const calls: string[] = [];
+    const removeGitWorktree = vi.fn();
+    const ensureGitWorktree = vi.fn(() => false);
+
+    const { deps } = makeDeps({}, calls, "qdrant");
+    const ops = new WorktreeOps({
+      ...deps,
+      ensureGitWorktree,
+      removeGitWorktree,
+    } as never);
+
+    await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(/boom qdrant/);
+    expect(ensureGitWorktree).not.toHaveBeenCalled();
+    expect(removeGitWorktree).not.toHaveBeenCalled();
   });
 });
 
 describe("WorktreeOps.remove guard", () => {
-  it("refuses to remove an entry without worktree provenance", async () => {
+  it("throws WorktreeNotFoundError when entry has no worktree provenance", async () => {
+    // I1: typed error for remove guard
     const { deps } = makeDeps({
       registry: { findWorktree: vi.fn(() => null) },
     });
     const ops = new WorktreeOps(deps);
+    await expect(ops.remove({ name: "real-project", force: false, keepGit: true })).rejects.toThrow(
+      WorktreeNotFoundError,
+    );
     await expect(ops.remove({ name: "real-project", force: false, keepGit: true })).rejects.toThrow(
       /not a worktree/i,
     );

@@ -4,13 +4,22 @@ import { resolveCollectionName } from "../../../infra/collection-name.js";
 import type { CollectionRegistry } from "../../../infra/registry/index.js";
 import type { CollectionArtifact, ResolvedCollection } from "../footprint/index.js";
 import type { CollectionFootprintFactory } from "../footprint/index.js";
-import { ensureGitWorktree, removeGitWorktree } from "./git-worktree.js";
+import {
+  WorktreeCollectionExistsError,
+  WorktreeNotFoundError,
+  WorktreeSourceNotFoundError,
+} from "../errors.js";
+import { ensureGitWorktree as defaultEnsureGitWorktree, removeGitWorktree as defaultRemoveGitWorktree } from "./git-worktree.js";
 
 export interface WorktreeOpsDeps {
   registry: CollectionRegistry;
   qdrant: QdrantManager;
   footprintFactory: CollectionFootprintFactory;
   dataDir: string;
+  /** Injectable for testing — defaults to the real git-worktree implementation. */
+  ensureGitWorktree?: (repoRoot: string, name: string, targetPath: string, branch?: string) => boolean;
+  /** Injectable for testing — defaults to the real git-worktree implementation. */
+  removeGitWorktree?: (repoRoot: string, targetPath: string, force: boolean) => void;
 }
 
 export interface WorktreeCreateResult {
@@ -30,7 +39,13 @@ export interface WorktreeInfo {
 }
 
 export class WorktreeOps {
-  constructor(private readonly deps: WorktreeOpsDeps) {}
+  private readonly ensureGitWorktree: NonNullable<WorktreeOpsDeps["ensureGitWorktree"]>;
+  private readonly removeGitWorktree: NonNullable<WorktreeOpsDeps["removeGitWorktree"]>;
+
+  constructor(private readonly deps: WorktreeOpsDeps) {
+    this.ensureGitWorktree = deps.ensureGitWorktree ?? defaultEnsureGitWorktree;
+    this.removeGitWorktree = deps.removeGitWorktree ?? defaultRemoveGitWorktree;
+  }
 
   async create(input: {
     name: string;
@@ -42,12 +57,12 @@ export class WorktreeOps {
     const { registry, qdrant, footprintFactory } = this.deps;
 
     const sourceEntry = input.from ? registry.findByName(input.from) : registry.findByPath(process.cwd());
-    if (!sourceEntry) throw new Error(`Source project not found (from=${input.from ?? "cwd"})`);
+    if (!sourceEntry) throw new WorktreeSourceNotFoundError(input.from ?? "cwd");
 
     const worktreePath = resolve(input.path ?? input.name);
     const targetLogical = resolveCollectionName(worktreePath);
 
-    if (registry.get(targetLogical)) throw new Error(`Target collection already exists: ${targetLogical}`);
+    if (registry.get(targetLogical)) throw new WorktreeCollectionExistsError(targetLogical);
 
     const srcPhysical = await qdrant.aliases.resolveActive(sourceEntry.collectionName);
 
@@ -68,19 +83,27 @@ export class WorktreeOps {
       path: worktreePath,
     };
 
-    if (input.createGit) {
-      ensureGitWorktree(sourceEntry.path, input.name, worktreePath, input.branch);
-    }
+    // C1: track whether we actually created a new git worktree (vs attached).
+    const gitCreated = input.createGit ? this.ensureGitWorktree(sourceEntry.path, input.name, worktreePath, input.branch) : false;
 
     const { context, artifacts } = footprintFactory.build(source, target);
     const done: CollectionArtifact[] = [];
     try {
       for (const a of artifacts) {
-        await a.clone(context);
+        // C2: push BEFORE clone so the failing artifact participates in rollback.
         done.push(a);
+        await a.clone(context);
       }
     } catch (err) {
       for (const a of [...done].reverse()) await a.remove(context).catch(() => undefined);
+      // C1: roll back the git worktree if we created it.
+      if (gitCreated) {
+        try {
+          this.removeGitWorktree(sourceEntry.path, worktreePath, true);
+        } catch {
+          /* best-effort */
+        }
+      }
       throw err;
     }
 
@@ -112,7 +135,7 @@ export class WorktreeOps {
     const { registry, qdrant, footprintFactory } = this.deps;
 
     const entry = registry.findWorktree(input.name);
-    if (!entry) throw new Error(`'${input.name}' is not a worktree clone (refusing to remove)`);
+    if (!entry) throw new WorktreeNotFoundError(input.name);
 
     const srcPhysical = await qdrant.aliases
       .resolveActive(entry.worktreeOf as string)
@@ -145,7 +168,7 @@ export class WorktreeOps {
     registry.remove(entry.collectionName);
 
     if (!input.keepGit && sourceRepoRoot && entry.path) {
-      removeGitWorktree(sourceRepoRoot, entry.path, input.force);
+      this.removeGitWorktree(sourceRepoRoot, entry.path, input.force);
     }
 
     return { removed: true };
