@@ -35,32 +35,35 @@ empty()  { [ ! -s "$CALLS" ]; }
 
 DIR="$(mktemp -d)"  # not a git repo → hook falls back to .cwd
 
+# Cases use the canonical PostToolUse key `.tool_response`; case 6 uses the
+# legacy `.tool_output` key to prove the hook's fallback read path also filters.
+
 # 1. successful commit in a registered dir → reindex by alias
-run "{\"tool_name\":\"Bash\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"git commit -m x\"},\"tool_output\":{\"stdout\":\"1 file changed\"}}" "$DIR" "demo"
+run "{\"tool_name\":\"Bash\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"git commit -m x\"},\"tool_response\":{\"stdout\":\"1 file changed\"}}" "$DIR" "demo"
 called -- "--project demo"; note $? "commit in registered dir reindexes by alias"
 
 # 2. unregistered dir → skip (no reindex)
-run "{\"tool_name\":\"Bash\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"git commit -m x\"},\"tool_output\":{\"stdout\":\"1 file changed\"}}" "" ""
+run "{\"tool_name\":\"Bash\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"git commit -m x\"},\"tool_response\":{\"stdout\":\"1 file changed\"}}" "" ""
 empty; note $? "commit in unregistered dir skips reindex"
 
 # 3. non-git Bash command → no-op
-run "{\"tool_name\":\"Bash\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"ls -la\"},\"tool_output\":{\"stdout\":\"\"}}" "$DIR" "demo"
+run "{\"tool_name\":\"Bash\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"ls -la\"},\"tool_response\":{\"stdout\":\"\"}}" "$DIR" "demo"
 empty; note $? "non-git command is a no-op"
 
-# 4. failed commit (nothing to commit) → no-op
-run "{\"tool_name\":\"Bash\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"git commit -m x\"},\"tool_output\":{\"stdout\":\"nothing to commit, working tree clean\"}}" "$DIR" "demo"
-empty; note $? "failed commit (nothing to commit) is a no-op"
+# 4. failed commit (nothing to commit) → no-op  [canonical tool_response key]
+run "{\"tool_name\":\"Bash\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"git commit -m x\"},\"tool_response\":{\"stdout\":\"nothing to commit, working tree clean\"}}" "$DIR" "demo"
+empty; note $? "failed commit (nothing to commit) via tool_response is a no-op"
 
 # 5. successful merge in a registered dir → reindex
-run "{\"tool_name\":\"Bash\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"git merge worktree-x\"},\"tool_output\":{\"stdout\":\"Fast-forward\"}}" "$DIR" "demo"
+run "{\"tool_name\":\"Bash\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"git merge worktree-x\"},\"tool_response\":{\"stdout\":\"Fast-forward\"}}" "$DIR" "demo"
 called -- "--project demo"; note $? "successful merge reindexes"
 
-# 6. merge conflict → no-op
+# 6. merge conflict via LEGACY tool_output key → no-op (fallback read path)
 run "{\"tool_name\":\"Bash\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"git merge x\"},\"tool_output\":{\"stdout\":\"CONFLICT (content): Merge conflict in a.ts\"}}" "$DIR" "demo"
-empty; note $? "merge conflict is a no-op"
+empty; note $? "merge conflict via legacy tool_output is a no-op (fallback)"
 
 # 7. non-Bash tool → no-op
-run "{\"tool_name\":\"Edit\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"git commit\"},\"tool_output\":{\"stdout\":\"\"}}" "$DIR" "demo"
+run "{\"tool_name\":\"Edit\",\"cwd\":\"$DIR\",\"tool_input\":{\"command\":\"git commit\"},\"tool_response\":{\"stdout\":\"\"}}" "$DIR" "demo"
 empty; note $? "non-Bash tool is a no-op"
 
 rm -rf "$FAKEBIN" "$DIR" "$CALLS"

@@ -15,7 +15,10 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 echo "$COMMAND" | grep -qE '(^|&&|;|\|)[[:space:]]*git[[:space:]]+(commit|merge)' || exit 0
 
-TOOL_OUTPUT=$(echo "$INPUT" | jq -r '.tool_output.stdout // .tool_output.content // empty')
+# PostToolUse carries the tool's result under `.tool_response` (canonical:
+# .tool_response.stdout for Bash); older/alternate schemas use `.tool_output`.
+# Read both so the success/failure filter works regardless of payload shape.
+TOOL_OUTPUT=$(echo "$INPUT" | jq -r '.tool_response.stdout // .tool_response.content // .tool_output.stdout // .tool_output.content // empty')
 if echo "$TOOL_OUTPUT" | grep -qiE 'nothing to commit|no changes added|CONFLICT|Merge conflict|Automatic merge failed|not something we can merge'; then
   exit 0
 fi
