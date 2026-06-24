@@ -33,6 +33,8 @@ import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/in
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { collectSymbols, DefaultSymbolIdComposer } from "../core/domains/language/index.js";
+import { CollectionFootprintFactory } from "../core/domains/maintenance/footprint/index.js";
+import { WorktreeOps } from "../core/domains/maintenance/worktree/index.js";
 import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
@@ -605,6 +607,27 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     embeddings: infra.embeddings,
     snapshotDir: config.paths.snapshots,
   });
+  // Worktree index cloning (domains/maintenance). Reuses the live codegraph
+  // pool when enabled; falls back to a throwaway pool (codegraph artifact is a
+  // no-op when codegraphEnabled is false) so the footprint factory always has
+  // a pool to delegate to.
+  const footprintFactory = new CollectionFootprintFactory({
+    qdrant: infra.qdrant,
+    pool:
+      codegraphContext?.pool ??
+      new GraphDbClientPool({
+        rootDir: config.paths.appData,
+        symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      }),
+    statsCache,
+    snapshotBaseDir: config.paths.snapshots,
+  });
+  const worktreeOps = new WorktreeOps({
+    registry: collectionRegistry,
+    qdrant: infra.qdrant,
+    footprintFactory,
+    dataDir: config.paths.appData,
+  });
   const explore = new ExploreFacade({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -626,6 +649,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     reranker: composition.reranker,
     schemaDriftMonitor,
     projectRegistryOps,
+    worktreeOps,
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
     modelGuard: infra.modelGuard,
     graphFacade: codegraphContext?.graphFacade,
