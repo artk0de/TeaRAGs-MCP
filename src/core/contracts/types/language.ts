@@ -423,3 +423,15 @@ export interface LanguageFactoryDescriptor {
   /** The languages this factory can `create`. */
   supported: () => string[];
 }
+
+/**
+ * Normalized receiver-type reference emitted by a Ruby type source (YARD /
+ * Sorbet / RBS). `class` vs `instance` mirrors {@link LocalBinding.valueKind};
+ * `union` fans out to a CHA cone; `container` carries an element type for
+ * `Array<Post>` / `Relation<X>` element flow. Lives in contracts because
+ * `CallContext.structuredReturnTypes` (Task 1.1) references it.
+ */
+export type RubyTypeRef =
+  | { form: "class" | "instance"; name: string }
+  | { form: "union"; members: RubyTypeRef[] }
+  | { form: "container"; element: RubyTypeRef };
