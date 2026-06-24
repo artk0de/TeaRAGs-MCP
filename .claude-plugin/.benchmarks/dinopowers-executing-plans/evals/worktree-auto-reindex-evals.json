@@ -1,0 +1,81 @@
+{
+  "skill": "dinopowers:executing-plans",
+  "feature": "worktree-aware-auto-reindex",
+  "date": "2026-06-25",
+  "kind": "feature-driven-update",
+  "outcome": "NO skill-body edit applied. Phase 2 baseline measured the skill AS-IS after the Task-5 FRESHNESS sweep (which gave every dinopowers wrapper a hook-aware 'Index freshness' line). The with-rule run scored 8/8 on the freshness behavior, so per optimize-skill triage the proposed executing-plans-specific between-tasks guidance was DROPPED as dead weight — the generic swept line already drives correct behavior. This eval is retained as a regression test for the freshness behavior; it complements (does not replace) the primary pre-touch-guard suite in ../evals.json.",
+  "scenario": "Executing a multi-task plan in a git worktree; tea-rags MCP available; a PostToolUse:Bash hook auto-reindexes the resolved collection after a successful git commit/merge.",
+  "metrics": {
+    "withRulePassRate": "8/8 (100%)",
+    "withoutRulePassRate": "1/8 (12.5%)",
+    "deltaPP": 87.5,
+    "iterations": 0,
+    "skillEdited": false
+  },
+  "cases": [
+    {
+      "id": "Eval-1",
+      "category": "freshness",
+      "prompt": "Just committed Task 3 (added code). Task 4 guard needs to search Task 3's code. Reindex first?",
+      "expected": "No manual reindex (post-commit hook already reindexed); proceed to semantic_search guard.",
+      "withRule": "PASS",
+      "withoutRule": "FAIL (chose reindex_changes)"
+    },
+    {
+      "id": "Eval-2",
+      "category": "freshness",
+      "prompt": "Mid-Task 4, edited foo.ts but NOT committed; need to search a symbol just added in foo.ts.",
+      "expected": "Run index_codebase (incremental) manually first — uncommitted WIP is the only manual case.",
+      "withRule": "PASS",
+      "withoutRule": "FAIL (chose reindex_changes)"
+    },
+    {
+      "id": "Eval-3",
+      "category": "freshness-subagent",
+      "prompt": "[subagent: plan-executor] Committed task 2; before task 3 guard search, what reindex step?",
+      "expected": "None — the post-commit hook reindexed; proceed.",
+      "withRule": "PASS",
+      "withoutRule": "FAIL (conditional reindex_changes)"
+    },
+    {
+      "id": "Eval-4",
+      "category": "deprecation",
+      "prompt": "Refresh the index after a commit: reindex_changes or index_codebase?",
+      "expected": "index_codebase (reindex_changes deprecated / not the entrypoint).",
+      "withRule": "PASS",
+      "withoutRule": "FAIL (chose reindex_changes, mischaracterized index_codebase)"
+    },
+    {
+      "id": "Eval-5",
+      "category": "freshness-subagent",
+      "prompt": "[subagent: task-agent] Committed a task in the worktree; manually reindex before next search?",
+      "expected": "No — hook handles it.",
+      "withRule": "PASS",
+      "withoutRule": "FAIL (reindex_changes when needed)"
+    },
+    {
+      "id": "Eval-6",
+      "category": "control-guard",
+      "prompt": "Task 5 modifies existing src/reranker.ts + src/presets.ts. First tea-rags action before editing?",
+      "expected": "Pre-touch blast-radius guard via semantic_search (rerank blastRadius), metaOnly; no reindex.",
+      "withRule": "PASS",
+      "withoutRule": "PARTIAL (generic usage scan, not the blastRadius guard idiom)"
+    },
+    {
+      "id": "Eval-7",
+      "category": "control-skip",
+      "prompt": "Task 6 is pure new-file creation (no existing files). Run the blast-radius guard?",
+      "expected": "Skip the guard — SAFE (new files only).",
+      "withRule": "PASS",
+      "withoutRule": "FAIL (over-triggered an impact check)"
+    },
+    {
+      "id": "Eval-8",
+      "category": "edge",
+      "prompt": "Unsure whether the hook ran; want to search committed code. Reindex to be safe, with which tool?",
+      "expected": "Trust the hook; optionally get_index_status to verify; index_codebase only if stale; never reindex_changes.",
+      "withRule": "PASS",
+      "withoutRule": "FAIL (chose reindex_changes)"
+    }
+  ]
+}
