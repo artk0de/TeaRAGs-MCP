@@ -80,6 +80,36 @@ export function receiverIsIndexAccess(receiver: string): boolean {
   return t.endsWith("]") && t.includes("[");
 }
 
+/**
+ * Provably-external chain tails — Ruby-core / Rails-runtime methods that a chain
+ * receiver dispatches on (`req.headers.to_h`, `e.backtrace.first`,
+ * `type.constantize`). NARROW + unambiguous on purpose: in-project association
+ * tails (`agents`, `user`) are absent, so `event.user.agents` is never
+ * suppressed. High-frequency ambiguous tails (`.map`/`.each`/`.first`) are
+ * EXCLUDED (deferred — they need a root-segment vocab gate). bd Increment B / B-suppress.
+ */
+const EXTERNAL_CHAIN_TAILS = [
+  ".headers",
+  ".backtrace",
+  ".constantize",
+  ".deconstantize",
+  ".to_h",
+  ".to_json",
+  ".to_param",
+  ".class_name",
+];
+
+/**
+ * True when a chain receiver ends in a provably-external core/runtime method —
+ * the receiver text contains one of {@link EXTERNAL_CHAIN_TAILS} as a suffix
+ * segment. Text-shape, mirroring `receiverIsIndexAccess` /
+ * `receiverLooksLikeArRelationChain`.
+ */
+export function receiverChainTailIsExternal(receiver: string): boolean {
+  const t = receiver.trimEnd();
+  return EXTERNAL_CHAIN_TAILS.some((tail) => t.endsWith(tail));
+}
+
 /** Last `::`-segment of a (possibly qualified) Ruby constant — `A::B::C` → `C`. */
 export function lastConstantSegment(qualified: string): string {
   const parts = qualified.split("::");

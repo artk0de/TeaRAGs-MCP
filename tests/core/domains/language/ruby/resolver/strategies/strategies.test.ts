@@ -10,6 +10,7 @@ import {
   RubyArRelationGuardSymbolResolutionStrategy,
   RubyBareCallSymbolResolutionStrategy,
   RubyConstantSymbolResolutionStrategy,
+  RubyDynamicDispatchResolver,
   RubyExplicitRequireSymbolResolutionStrategy,
   RubyIvarFieldSymbolResolutionStrategy,
   RubyLocalTypeSymbolResolutionStrategy,
@@ -18,7 +19,10 @@ import {
   RubySuperSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
-import { receiverIsIndexAccess } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/shared.js";
+import {
+  receiverChainTailIsExternal,
+  receiverIsIndexAccess,
+} from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/shared.js";
 import {
   SUPER_RECEIVER_SENTINEL,
   ZEITWERK_PREFIX,
@@ -616,5 +620,42 @@ describe("receiverIsIndexAccess (mktkk increment A)", () => {
     expect(receiverIsIndexAccess("obj")).toBe(false); // bare identifier
     expect(receiverIsIndexAccess("User")).toBe(false); // constant
     expect(receiverIsIndexAccess("@client")).toBe(false); // ivar
+  });
+});
+
+describe("receiverChainTailIsExternal (increment B / B-suppress)", () => {
+  it("is true when the receiver ends in a provably-external core/runtime tail", () => {
+    expect(receiverChainTailIsExternal("req.headers")).toBe(true);
+    expect(receiverChainTailIsExternal("e.backtrace")).toBe(true);
+    expect(receiverChainTailIsExternal("type.constantize")).toBe(true);
+  });
+
+  it("is false for in-project association tails or bare identifiers", () => {
+    expect(receiverChainTailIsExternal("event.user.agents")).toBe(false); // in-project assoc — NOT external
+    expect(receiverChainTailIsExternal("user")).toBe(false); // bare identifier
+  });
+});
+
+describe("RubyDynamicDispatchResolver — chain-tail suppression (increment B / B-suppress)", () => {
+  const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
+  const resolver = new RubyDynamicDispatchResolver(cfg);
+
+  it("returns [] for a provably-external chain-tail receiver (req.headers.to_h)", () => {
+    // `req.headers.to_h` → receiver is `req.headers`; `.headers` is an EXTERNAL_CHAIN_TAIL
+    const call: CallRef = { callText: "req.headers.to_h", receiver: "req.headers", member: "to_h", startLine: 1 };
+    const symbolTable = tableWith(["app/lib/to_h.rb", [sym("SomeClass#to_h", "to_h", "app/lib/to_h.rb", ["SomeClass"])]]);
+    const result = resolver.resolveDispatch(call, ctx({ symbolTable }));
+    expect(result).toEqual([]);
+  });
+
+  it("still fans out for a non-external chain receiver (regression guard: event.user)", () => {
+    // `event.user` → `.user` is NOT in EXTERNAL_CHAIN_TAILS → fan-out proceeds
+    const call: CallRef = { callText: "event.user.save", receiver: "event.user", member: "save", startLine: 1 };
+    const symbolTable = tableWith([
+      "app/models/user.rb",
+      [sym("User#save", "save", "app/models/user.rb", ["User"])],
+    ]);
+    const result = resolver.resolveDispatch(call, ctx({ symbolTable }));
+    expect(result.length).toBeGreaterThan(0);
   });
 });

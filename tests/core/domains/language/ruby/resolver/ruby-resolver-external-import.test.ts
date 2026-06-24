@@ -219,4 +219,22 @@ describe("RubyCallResolver.targetsExternalImport", () => {
     // `obj` is lowercase, non-index → not external by THIS rule.
     expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
   });
+
+  // increment B / B-suppress — a chain receiver whose tail is a provably-external
+  // core/runtime method (`req.headers`, `e.backtrace`, `type.constantize`) is
+  // classified external. The dynamic-dispatch pass suppresses fan-out; the
+  // classifier ensures the suppressed call leaves the denominator as
+  // callsExternalSkipped rather than becoming a recall hole.
+  it("classifies a chain-tail-external receiver call as external (req.headers.to_h)", () => {
+    const call: CallRef = { callText: "req.headers.to_h", receiver: "req.headers", member: "to_h", startLine: 1 };
+    const ctx = makeCtx("app/controllers/api_controller.rb", [], new InMemoryGlobalSymbolTable());
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(true);
+  });
+
+  it("does NOT classify an in-project chain receiver as external on chain-tail grounds (event.user)", () => {
+    const call: CallRef = { callText: "event.user.save", receiver: "event.user", member: "save", startLine: 1 };
+    const ctx = makeCtx("app/models/event.rb", [], new InMemoryGlobalSymbolTable());
+    // `.user` is NOT in EXTERNAL_CHAIN_TAILS → NOT external by this rule.
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
+  });
 });

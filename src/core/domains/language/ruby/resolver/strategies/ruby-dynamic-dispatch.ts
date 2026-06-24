@@ -5,6 +5,7 @@ import { receiverLooksLikeArRelationChain } from "./ruby-ar-relation-guard.js";
 import {
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
   isRubyPath,
+  receiverChainTailIsExternal,
   receiverIsIndexAccess,
   type ResolverConfig,
 } from "./shared.js";
@@ -60,6 +61,10 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     // reclassifies the call as external so recall is not falsely penalised
     // (bd tea-rags-mcp-mktkk increment A).
     if (receiverIsIndexAccess(r)) return [];
+    // Provably-external chain tail (`req.headers`, `type.constantize`): the element
+    // is core/runtime, no in-project target. Suppress; the external classifier
+    // reclassifies so recall is not falsely penalised (bd Increment B / B-suppress).
+    if (receiverChainTailIsExternal(r)) return [];
 
     // Truly dynamic receiver: short-name lookup, ruby-files only.
     const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => isRubyPath(def.relPath));

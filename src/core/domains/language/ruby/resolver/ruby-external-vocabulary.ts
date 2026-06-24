@@ -2,7 +2,7 @@ import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { ExternalVocabulary } from "../../../../contracts/types/language.js";
 import { isExternalBareCall } from "../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../walker/walker.js";
-import { collectAncestorChain, receiverIsIndexAccess, resolveConstant } from "./strategies/index.js";
+import { collectAncestorChain, receiverChainTailIsExternal, receiverIsIndexAccess, resolveConstant } from "./strategies/index.js";
 
 /**
  * Ruby implementation of `ExternalVocabulary`, bridging the `dsl/` framework
@@ -26,6 +26,7 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
     // suppressed call leaves the inProjectEdgeRecall denominator as
     // callsExternalSkipped instead of becoming a recall hole.
     if (receiverIsIndexAccess(receiver)) return true;
+    if (receiverChainTailIsExternal(receiver)) return true; // provably-external chain tail (B-suppress)
     if (receiver === SUPER_RECEIVER_SENTINEL) return superTargetsExternal(ctx);
     if (IVAR_RECEIVER.test(receiver)) return ivarTargetsExternal(receiver, ctx);
     return /^[A-Z]/.test(receiver) && resolveConstant(receiver, ctx) === null;
