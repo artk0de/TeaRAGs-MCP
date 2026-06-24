@@ -6,6 +6,7 @@ import { indexCodebaseCommand } from "./commands/index-codebase.js";
 import { primeCommand } from "./commands/prime.js";
 import { projectsCommand } from "./commands/projects.js";
 import { serverCommand } from "./commands/server.js";
+import { worktreeCommand } from "./commands/worktree.js";
 import { tuneCommand } from "./commands/tune.js";
 import { updateCommand } from "./commands/update.js";
 import { maybeCompleteProjectName } from "./completion.js";
@@ -23,6 +24,7 @@ export function createCli(argv?: string[]): ReturnType<typeof yargs> {
     .command(primeCommand)
     .command(updateCommand)
     .command(projectsCommand)
+    .command(worktreeCommand)
     .command(doctorCommand)
     .command(indexCodebaseCommand)
     .completion(
