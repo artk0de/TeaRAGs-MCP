@@ -115,3 +115,32 @@ No iteration needed.
   evolved, old tests may encode deprecated patterns. Consider combining with a
   recency cross-check (one `rerank: "recent"` call as secondary signal if proven
   tests look ancient).
+
+---
+
+## Appendix — worktree-aware auto-reindex (feature-driven update, 2026-06-25)
+
+Eval set: `evals/worktree-auto-reindex-evals.json` (8 cases — 4 freshness, 2
+controls, 1 deprecation, 1 edge; 2 subagent-context).
+
+| Metric                | Value       |
+| --------------------- | ----------- |
+| With-rule pass rate   | 100% (8/8)  |
+| Without-rule baseline | 62.5% (5/8) |
+| Delta                 | +37.5pp     |
+| Iterations            | 0           |
+| **Skill body edited** | **No**      |
+
+**Outcome: no skill-body edit.** The Task-5 sweep already gave the wrapper a
+hook-aware `Index freshness` line. The with-rule run scored 8/8 on the freshness
+behavior; per optimize-skill triage the planned TDD-specific reindex guidance
+was dropped as dead weight.
+
+**Delta interpretation (+37.5pp, below the +50pp target — appropriate).** Unlike
+executing-plans (+87.5pp), the TDD framing makes several no-reindex cases
+naturally correct for the baseline: when writing impl after a RED commit or
+checking for an existing test, the code being searched is already committed, so
+even an unguided agent answers "no reindex". The skill's value concentrates on
+the cases the baseline reliably fails — picking the deprecated `reindex_changes`
+(cases 4, 5, 8) where the swept line steers to `index_codebase` and
+hook-awareness. Eval retained as a regression test.
