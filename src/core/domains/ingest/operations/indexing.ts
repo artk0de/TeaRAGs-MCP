@@ -162,6 +162,8 @@ export class IndexPipeline extends BaseIndexingPipeline {
                 : 100,
             message: `Embedding: ${finalPipelineStats.itemsProcessed}/${result.chunksQueued} chunks`,
             throughput: finalPipelineStats.throughput,
+            // Chunking has completed by now → chunksQueued is the final denominator.
+            totalFinal: true,
           });
 
           await this.finalizeAlias(collectionName, setup);
@@ -373,6 +375,9 @@ export class IndexPipeline extends BaseIndexingPipeline {
     let filesProcessed = 0;
     let chunksQueued = 0;
 
+    // The embedding bar is determinate from the first embedding job (numbers
+    // present); the CLI renderer shows glyphs only before that, during
+    // scanning/chunking. So embedding updates are always totalFinal: true.
     ctx.chunkPipeline.setOnProgress((itemsProcessed, throughput) => {
       progressCallback?.({
         phase: "embedding",
@@ -381,6 +386,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         percentage: chunksQueued > 0 ? Math.round((itemsProcessed / chunksQueued) * 100) : 0,
         message: `Embedding: ${itemsProcessed}/${chunksQueued} chunks`,
         throughput,
+        totalFinal: true,
       });
     });
 
@@ -413,6 +419,25 @@ export class IndexPipeline extends BaseIndexingPipeline {
         onFileProcessed: (_filePath, chunksCount) => {
           filesProcessed++;
           chunksQueued += chunksCount;
+          // Push the growing chunk total so git chunk enrichment divides by the
+          // SAME denominator embeddings uses (chunksQueued), not its own lagging
+          // stored count — that is what produced the misleading 98% bar.
+          this.enrichment.setChunkTotal(chunksQueued);
+          // Make the embeddings bar determinate from the moment a chunk queue
+          // exists (chunksQueued > 0): real embedded count over the queue size.
+          // The bar appears at the first chunked file instead of waiting for the
+          // first completed embed batch (which can be many seconds in). `current`
+          // is the actual embedded count (itemsProcessed), never the file count,
+          // so the percentage still reflects embedding — not chunking — progress.
+          const embedded = ctx.chunkPipeline.getStats().itemsProcessed;
+          progressCallback?.({
+            phase: "embedding",
+            current: embedded,
+            total: chunksQueued,
+            percentage: chunksQueued > 0 ? Math.round((embedded / chunksQueued) * 100) : 0,
+            message: `Embedding: ${embedded}/${chunksQueued} chunks`,
+            totalFinal: true,
+          });
           if (filesProcessed === 1 || filesProcessed % 10 === 0) {
             progressCallback?.({
               phase: "chunking",
@@ -425,6 +450,9 @@ export class IndexPipeline extends BaseIndexingPipeline {
         },
       },
     );
+    // Reliable final push: chunking is done, chunksQueued is final regardless of
+    // any files skipped before onFileProcessed could fire for them.
+    this.enrichment.setChunkTotal(chunksQueued);
     return { ...result, chunksQueued };
   }
 

@@ -3351,4 +3351,190 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     // This depends on mock behavior; at minimum it must be > 0.
     expect(lastChunkEvent.applied).toBeGreaterThan(0);
   });
+
+  it("file-level events carry totalFinal=true (grandFileCount is known up front)", async () => {
+    mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+
+    const events: EnrichmentProgressEvent[] = [];
+    coordinator.setEnrichmentProgress((e) => events.push(e));
+
+    coordinator.beginRun("/repo", "test-col", undefined, undefined, false, 10);
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
+    await coordinator.awaitCompletion("test-col");
+
+    const fileEvents = events.filter((e) => e.level === "file");
+    expect(fileEvents.length).toBeGreaterThan(0);
+    for (const ev of fileEvents) {
+      expect(ev.totalFinal).toBe(true);
+    }
+  });
+
+  it("emits an early indeterminate event (applied=0, totalFinal=false) for a deferred provider on the first stored batch", async () => {
+    // codegraph is a deferred provider: it builds the graph during embedding but
+    // only applies after finalize, so its bar otherwise pops up at 100% right
+    // before completion. The coordinator emits an early indeterminate file+chunk
+    // event so the bar is visible (as glyphs) from the start of extraction.
+    const deferredProvider = {
+      key: "codegraph.symbols",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+      defersChunkEnrichment: true,
+    };
+    const coord = new EnrichmentCoordinator(mockQdrant, deferredProvider as any);
+    const events: EnrichmentProgressEvent[] = [];
+    coord.setEnrichmentProgress((e) => events.push(e));
+
+    coord.beginRun("/repo", "test-col", undefined, undefined, false, 10);
+    coord.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
+
+    // The early indeterminate events fire synchronously on the first stored batch,
+    // before any async apply settles.
+    const earlyFile = events.find((e) => e.level === "file" && e.applied === 0 && e.totalFinal === false);
+    const earlyChunk = events.find((e) => e.level === "chunk" && e.applied === 0 && e.totalFinal === false);
+    expect(earlyFile?.providerKey).toBe("codegraph.symbols");
+    expect(earlyChunk?.providerKey).toBe("codegraph.symbols");
+
+    await coord.awaitCompletion("test-col");
+  });
+
+  it("does NOT emit an early indeterminate event for a streaming (non-deferred) provider", async () => {
+    // git streams its applies, so its bars appear with real progress naturally —
+    // no synthetic indeterminate placeholder.
+    mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+    const events: EnrichmentProgressEvent[] = [];
+    coordinator.setEnrichmentProgress((e) => events.push(e));
+
+    coordinator.beginRun("/repo", "test-col", undefined, undefined, false, 10);
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
+    const synthetic = events.find((e) => e.applied === 0 && e.totalFinal === false);
+    expect(synthetic).toBeUndefined();
+    await coordinator.awaitCompletion("test-col");
+  });
+
+  it("creates enrichment start bars in order: streaming (git) before deferred (codegraph), regardless of registration order", async () => {
+    // Deferred providers must render AFTER streaming providers in the bar list.
+    // Register codegraph FIRST to prove the ordering comes from streaming-vs-deferred,
+    // not registration order.
+    const mkProvider = (key: string, deferred: boolean) => ({
+      key,
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+      ...(deferred ? { defersChunkEnrichment: true } : {}),
+    });
+    const coord = new EnrichmentCoordinator(mockQdrant, [
+      mkProvider("codegraph.symbols", true),
+      mkProvider("git", false),
+    ] as any);
+    const order: string[] = [];
+    coord.setEnrichmentProgress((e) => order.push(`${e.providerKey}:${e.level}`));
+
+    coord.beginRun("/repo", "test-col", undefined, undefined, false, 10);
+    coord.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
+
+    // The synchronous start emits establish bar creation order (git before codegraph).
+    expect(order.slice(0, 4)).toEqual(["git:file", "git:chunk", "codegraph.symbols:file", "codegraph.symbols:chunk"]);
+
+    await coord.awaitCompletion("test-col");
+  });
+
+  it("chunk-level total uses the pushed embedding chunk total (setChunkTotal), not the stored count", async () => {
+    // The chunk denominator is the SAME chunk total embeddings uses (chunksQueued),
+    // pushed via setChunkTotal — NOT the lagging accumulated stored count. This is
+    // the fix for the 98% bug (1005/1024 stored → should be 1005/2687 total).
+    mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+    mockProvider.buildChunkSignals.mockResolvedValue(new Map([["src/a.ts", new Map([["c1", { commitCount: 3 }]])]]));
+
+    const events: EnrichmentProgressEvent[] = [];
+    coordinator.setEnrichmentProgress((e) => events.push(e));
+
+    coordinator.beginRun("/repo", "test-col", undefined, undefined, false, 5);
+    // Embedding has queued 2687 chunks even though only 1 is stored so far.
+    coordinator.setChunkTotal(2687);
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 9 } } as any,
+    ]);
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 9 }]]]);
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap as any);
+    await coordinator.awaitCompletion("test-col");
+
+    const chunkEvents = events.filter((e) => e.level === "chunk");
+    expect(chunkEvents.length).toBeGreaterThan(0);
+    for (const ev of chunkEvents) {
+      // total = pushed embedding chunk total (2687), NOT the stored count (1)
+      expect(ev.total).toBe(2687);
+      // determinate from the first apply — a real progress bar, not glyphs
+      expect(ev.totalFinal).toBe(true);
+    }
+  });
+
+  it("without setChunkTotal, chunk total falls back to the accumulated stored count (still determinate)", async () => {
+    mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+    mockProvider.buildChunkSignals.mockResolvedValue(new Map([["src/a.ts", new Map([["c1", { commitCount: 3 }]])]]));
+
+    const events: EnrichmentProgressEvent[] = [];
+    coordinator.setEnrichmentProgress((e) => events.push(e));
+
+    coordinator.beginRun("/repo", "test-col", undefined, undefined, false, 5);
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 9 } } as any,
+    ]);
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 9 }]]]);
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap as any);
+    await coordinator.awaitCompletion("test-col");
+
+    const chunkEvents = events.filter((e) => e.level === "chunk");
+    expect(chunkEvents.length).toBeGreaterThan(0);
+    for (const ev of chunkEvents) {
+      expect(ev.total).toBe(1); // fallback: accumulated stored count
+      expect(ev.totalFinal).toBe(true);
+    }
+  });
+
+  it("setChunkTotal resets per run — run 2 falls back to the stored count, not run 1's pushed total", async () => {
+    mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+    mockProvider.buildChunkSignals.mockResolvedValue(new Map([["src/a.ts", new Map([["c1", { commitCount: 3 }]])]]));
+
+    // Run 1 pushes a large chunk total.
+    coordinator.setEnrichmentProgress(() => {});
+    coordinator.beginRun("/repo", "test-col", undefined, undefined, false, 5);
+    coordinator.setChunkTotal(2687);
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 9 } } as any,
+    ]);
+    await coordinator.awaitCompletion("test-col");
+
+    // Run 2 — beginRun must reset the pushed chunk total back to 0.
+    const run2Events: EnrichmentProgressEvent[] = [];
+    coordinator.setEnrichmentProgress((e) => run2Events.push(e));
+    coordinator.beginRun("/repo", "test-col-2", undefined, undefined, false, 5);
+    coordinator.onChunksStored("test-col-2", "/repo", [
+      { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 9 } } as any,
+    ]);
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c2", startLine: 1, endLine: 9 }]]]);
+    coordinator.startChunkEnrichment("test-col-2", "/repo", chunkMap as any);
+    await coordinator.awaitCompletion("test-col-2");
+
+    const chunkEvents = run2Events.filter((e) => e.level === "chunk");
+    expect(chunkEvents.length).toBeGreaterThan(0);
+    for (const ev of chunkEvents) {
+      // run 2 has no pushed total → fallback to stored count (1), NOT 2687
+      expect(ev.total).toBe(1);
+    }
+  });
 });

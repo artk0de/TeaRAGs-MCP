@@ -156,6 +156,24 @@ export class EnrichmentCoordinator {
    */
   private chunkTotalAccumulated = 0;
 
+  /**
+   * Embedding chunk total for the current run, pushed by the indexing layer via
+   * `setChunkTotal` as `chunksQueued` grows. This is the SAME denominator the
+   * embeddings bar uses — chunk-level progress events divide by it so git chunk
+   * tracks embeddings instead of its own lagging stored count (which produced the
+   * misleading 1005/1024 = 98% bar). 0 until the first push; emitProgress falls
+   * back to `chunkTotalAccumulated` while it is 0. Reset to 0 in `beginRun`.
+   */
+  private chunkTotal = 0;
+
+  /**
+   * Guards the one-time early indeterminate progress emit for deferred providers
+   * (codegraph). They build their graph during embedding but only apply after
+   * finalize, so without this their bars pop up at 100% right before completion.
+   * Reset to false per run in `beginRun`.
+   */
+  private deferredStartEmitted = false;
+
   private _onChunkEnrichmentComplete?: (collectionName: string) => Promise<void>;
   get onChunkEnrichmentComplete(): ((collectionName: string) => Promise<void>) | undefined {
     return this._onChunkEnrichmentComplete;
@@ -282,6 +300,8 @@ export class EnrichmentCoordinator {
     // here so run 2 never sees run 1's stale state.
     this.grandFileCount = fileCount;
     this.chunkTotalAccumulated = 0;
+    this.chunkTotal = 0;
+    this.deferredStartEmitted = false;
     this.progress.clear();
 
     // Wire the applier-site chokepoint: every apply batch (file, chunk, finalize,
@@ -369,6 +389,34 @@ export class EnrichmentCoordinator {
       this.chunkTotalAccumulated += items.length;
     }
 
+    // One-time per run: create every enrichment bar up front in a STABLE order so
+    // the list reads embeddings → streaming providers (git) → deferred providers
+    // (codegraph). Streaming bars start as real determinate 0% bars (their applies
+    // fill them); deferred bars start as indeterminate glyphs (they build their
+    // graph overlapped with embedding but only apply after finalize, so without
+    // this they pop up at 100% right before completion). Two passes guarantee
+    // streaming-before-deferred regardless of provider registration order.
+    // Only needed when a deferred provider is present — that is the case where a
+    // deferred bar would otherwise jump in at 100% out of order. With streaming
+    // providers alone there is nothing to order, so we leave their event stream
+    // untouched (no synthetic applied=0 start event).
+    const hasDeferred = [...run.contexts.values()].some((ctx) => ctx.provider.defersChunkEnrichment);
+    if (!this.deferredStartEmitted && this.progressCb && hasDeferred) {
+      this.deferredStartEmitted = true;
+      const cb = this.progressCb;
+      const emitStartBars = (providerKey: string, deferred: boolean): void => {
+        const totalFinal = !deferred;
+        cb({ providerKey, level: "file", applied: 0, total: this.grandFileCount, totalFinal });
+        cb({ providerKey, level: "chunk", applied: 0, total: this.chunkTotal, totalFinal });
+      };
+      for (const [providerKey, ctx] of run.contexts) {
+        if (!ctx.provider.defersChunkEnrichment) emitStartBars(providerKey, false);
+      }
+      for (const [providerKey, ctx] of run.contexts) {
+        if (ctx.provider.defersChunkEnrichment) emitStartBars(providerKey, true);
+      }
+    }
+
     // Sequence file→chunk PER PROVIDER: a provider's buildChunkSignals reads the
     // batch's file result its own streamFileBatch populated (git blame needs
     // this), so each chunk dispatch must wait for the SAME provider's file work.
@@ -439,6 +487,17 @@ export class EnrichmentCoordinator {
   }
 
   /**
+   * Push the embedding chunk total (`chunksQueued`) for the current run. The
+   * indexing layer calls this as chunking discovers chunks, so git chunk progress
+   * divides by the SAME total the embeddings bar uses — a real determinate bar
+   * that tracks embeddings, instead of its own lagging stored count. Monotonic in
+   * practice (chunksQueued only grows); reset to 0 per run in `beginRun`.
+   */
+  setChunkTotal(total: number): void {
+    this.chunkTotal = total;
+  }
+
+  /**
    * Resolve once the current run's background enrichment has settled. Reuses the
    * single in-flight `awaitCompletion` (via the run's donePromise) — does NOT
    * start a second completion pass. Resolves immediately when there is no active
@@ -456,17 +515,25 @@ export class EnrichmentCoordinator {
    * Forward an apply event from the applier as an enrichment-progress callback
    * invocation. The applier now emits CUMULATIVE applied values per
    * (providerKey, level):
-   * - file level: distinct files processed (Set-deduped) → total = grandFileCount
-   * - chunk level: running chunk overlay sum → total = chunkTotalAccumulated
+   * - file level: distinct files processed (Set-deduped) → total = grandFileCount,
+   *   always final (the scan knows the file count up front).
+   * - chunk level: running chunk overlay sum → total = the pushed embedding chunk
+   *   total (`chunkTotal`, the same denominator embeddings uses), falling back to
+   *   the accumulated stored count before the first push. Determinate as soon as
+   *   there is a non-zero total — git chunk is a real bar, not glyphs.
    *
    * We SET (not accumulate) applied — the applier already did the accumulation.
    */
   private emitProgress(event: EnrichmentApplyEvent): void {
     if (!this.progressCb) return;
     const key = `${event.providerKey}:${event.level}`;
-    const total = event.level === "file" ? this.grandFileCount : this.chunkTotalAccumulated;
+    const isFile = event.level === "file";
+    // chunkTotal (chunksQueued) leads the stored count; max keeps the denominator
+    // honest if a stored batch races ahead of the latest push.
+    const total = isFile ? this.grandFileCount : Math.max(this.chunkTotal, this.chunkTotalAccumulated);
+    const totalFinal = isFile ? true : total > 0;
     this.progress.set(key, { applied: event.applied, total });
-    this.progressCb({ providerKey: event.providerKey, level: event.level, applied: event.applied, total });
+    this.progressCb({ providerKey: event.providerKey, level: event.level, applied: event.applied, total, totalFinal });
   }
 
   /**

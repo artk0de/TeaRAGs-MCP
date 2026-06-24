@@ -61,6 +61,7 @@ vi.mock("../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js"
     startChunkEnrichment = vi.fn();
     awaitCompletion = vi.fn().mockResolvedValue({});
     setEnrichmentProgress = vi.fn();
+    setChunkTotal = vi.fn();
     whenComplete = vi.fn().mockResolvedValue(undefined);
     // yl9tv — no codegraph provider in this mock, so the cross-pass tee is off.
     acceptsExtractions = vi.fn(() => false);

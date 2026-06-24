@@ -1104,6 +1104,57 @@ describe("TtyProgressRenderer — ETA countdown (Bug 1)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// An active bar must never lose its ETA between sparse messages: the throughput
+// countdown can run to 0 before the next enrichment message arrives — when it
+// does, refreshActiveBars falls back to a fresh average-rate estimate so the ETA
+// stays visible while value < total.
+// ---------------------------------------------------------------------------
+describe("TtyProgressRenderer — ETA survives countdown exhaustion on sparse bars", () => {
+  const colors = createColorizer({ env: { NO_COLOR: "1" }, isTTY: false });
+  let nowMs = 0;
+
+  beforeEach(() => {
+    nowMs = 0;
+    mockMultibar.create.mockClear();
+    mockMultibar.stop.mockClear();
+    mockMultibar.log.mockClear();
+    mockSingleBar.update.mockClear();
+    mockSingleBar.setTotal.mockClear();
+    mockMultibar.create.mockReturnValue(mockSingleBar);
+  });
+
+  it("an enrichment bar keeps a non-empty ETA after its countdown would exhaust", () => {
+    const r = new TtyProgressRenderer(colors, () => nowMs);
+    nowMs = 0;
+    r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 0, total: 363 });
+    nowMs = 2000;
+    // base ETA ≈ (363-100)/(100/2000s) ≈ 5.3s
+    r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 100, total: 363 });
+    mockSingleBar.update.mockClear();
+
+    // Tick far past the base ETA — the raw countdown would hit 0 → "".
+    nowMs = 60_000;
+    (r as unknown as { refreshActiveBars: () => void }).refreshActiveBars();
+
+    const { calls } = mockSingleBar.update.mock;
+    const eta = (calls.at(-1)![1] as Record<string, unknown>)["eta"] as string;
+    // Bar is still at 100/363 (not done) → ETA must remain visible via fallback.
+    expect(eta).not.toBe("");
+  });
+
+  it("a completed bar (value === total) shows no ETA", () => {
+    const r = new TtyProgressRenderer(colors, () => nowMs);
+    nowMs = 1000;
+    r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 363, total: 363 });
+    mockSingleBar.update.mockClear();
+    nowMs = 5000;
+    (r as unknown as { refreshActiveBars: () => void }).refreshActiveBars();
+    // value >= total with totalFinal → bar is frozen/complete, refresh skips it.
+    expect(mockSingleBar.update).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Bug 2 — phase-done fills bar to 100%
 // ---------------------------------------------------------------------------
 describe("TtyProgressRenderer — phase-done fills to 100% (Bug 2)", () => {
@@ -1153,5 +1204,197 @@ describe("TtyProgressRenderer — phase-done fills to 100% (Bug 2)", () => {
     const chunk = barStates.get("git:chunk");
     expect(file?.value).toBe(file?.total);
     expect(chunk?.value).toBe(chunk?.total);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildBarLine — indeterminate mode: when the denominator is still growing
+// (chunk total not yet final), the bar must NOT show a percentage or a
+// proportional fill — only the live numerator + rate + elapsed + a hint.
+// ---------------------------------------------------------------------------
+describe("buildBarLine — indeterminate mode (totalFinal=false)", () => {
+  const identityColors = createColorizer({ env: { NO_COLOR: "1" }, isTTY: false });
+
+  it("omits the percentage and the value/total fraction", () => {
+    const line = buildBarLine({
+      label: "embeddings",
+      progress: 0.99,
+      value: 1024,
+      total: 1024,
+      elapsed: "18.0s",
+      eta: "",
+      rate: "105.0 ch/s",
+      barsize: 10,
+      colors: identityColors,
+      totalFinal: false,
+    });
+    expect(line).not.toContain("%");
+    expect(line).not.toContain("1024/1024");
+  });
+
+  it("never renders a near-full determinate fill even at high progress", () => {
+    // The core bug: a growing denominator made the fraction near 1.0 → a near-full
+    // █ bar that looked ~done. Indeterminate must never draw the determinate glyph.
+    const line = buildBarLine({
+      label: "git chunk",
+      progress: 0.98,
+      value: 1005,
+      total: 1024,
+      elapsed: "11.0s",
+      eta: "",
+      rate: "",
+      barsize: 10,
+      colors: identityColors,
+      totalFinal: false,
+    });
+    expect(line).not.toContain("█");
+  });
+
+  it("shows elapsed, rate and the neutral hint but omits the numerator", () => {
+    const line = buildBarLine({
+      label: "embeddings",
+      progress: 0.4,
+      value: 1024,
+      total: 1024,
+      elapsed: "18.0s",
+      eta: "",
+      rate: "105.0 ch/s",
+      barsize: 10,
+      colors: identityColors,
+      totalFinal: false,
+    });
+    expect(line).toContain("18.0s");
+    expect(line).toContain("105.0 ch/s");
+    expect(line).toContain("working");
+    // numerator is meaningless without a trustworthy total → not shown
+    expect(line).not.toContain("1024");
+  });
+
+  it("totalFinal=true renders the determinate value/total and percent (back-compat)", () => {
+    const line = buildBarLine({
+      label: "embeddings",
+      progress: 0.5,
+      value: 50,
+      total: 100,
+      elapsed: "5.0s",
+      eta: "",
+      rate: "",
+      barsize: 10,
+      colors: identityColors,
+      totalFinal: true,
+    });
+    expect(line).toContain("50/100");
+    expect(line).toContain("50%");
+  });
+
+  it("omitting totalFinal defaults to determinate (back-compat)", () => {
+    const line = buildBarLine({
+      label: "embeddings",
+      progress: 0.5,
+      value: 50,
+      total: 100,
+      elapsed: "5.0s",
+      eta: "",
+      rate: "",
+      barsize: 10,
+      colors: identityColors,
+    });
+    expect(line).toContain("50/100");
+    expect(line).toContain("50%");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TtyProgressRenderer — threads message.totalFinal into BarState so the
+// render loop can switch a bar between indeterminate and determinate.
+// ---------------------------------------------------------------------------
+describe("TtyProgressRenderer — totalFinal threading into BarState", () => {
+  const colors = createColorizer({ env: {}, isTTY: false });
+
+  beforeEach(() => {
+    mockMultibar.create.mockClear();
+    mockMultibar.stop.mockClear();
+    mockMultibar.log.mockClear();
+    mockSingleBar.update.mockClear();
+    mockSingleBar.setTotal.mockClear();
+    mockMultibar.create.mockReturnValue(mockSingleBar);
+  });
+
+  it("embedding message with totalFinal=false marks the bar indeterminate", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({ type: "embedding", phase: "embedding", percentage: 38, current: 1024, total: 1024, totalFinal: false });
+    const { barStates } = r as unknown as { barStates: Map<string, { totalFinal: boolean }> };
+    expect(barStates.get("embedding")?.totalFinal).toBe(false);
+  });
+
+  it("embedding message without totalFinal defaults the bar to determinate", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({ type: "embedding", phase: "embedding", percentage: 20, current: 20, total: 100 });
+    const { barStates } = r as unknown as { barStates: Map<string, { totalFinal: boolean }> };
+    expect(barStates.get("embedding")?.totalFinal).toBe(true);
+  });
+
+  it("chunk-level enrichment message with totalFinal=false marks the bar indeterminate", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({ type: "enrichment", providerKey: "git", level: "chunk", applied: 1005, total: 1024, totalFinal: false });
+    const { barStates } = r as unknown as { barStates: Map<string, { totalFinal: boolean }> };
+    expect(barStates.get("git:chunk")?.totalFinal).toBe(false);
+  });
+
+  it("a later totalFinal=true message flips the bar back to determinate", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({ type: "embedding", phase: "embedding", percentage: 38, current: 1024, total: 1024, totalFinal: false });
+    r.handle({ type: "embedding", phase: "embedding", percentage: 70, current: 1900, total: 2687, totalFinal: true });
+    const { barStates } = r as unknown as { barStates: Map<string, { totalFinal: boolean }> };
+    expect(barStates.get("embedding")?.totalFinal).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The worker forwards EVERY ProgressUpdate (scanning/chunking/storing/embedding)
+// onto the single "embedding" bar. Only the embedding phase carries the chunk
+// numerator + totalFinal — the others must not hijack the bar (the chunking %
+// filling to ~100 then flipping to indeterminate was the reported regression).
+// ---------------------------------------------------------------------------
+describe("TtyProgressRenderer — only the embedding phase drives the embeddings bar", () => {
+  const colors = createColorizer({ env: {}, isTTY: false });
+
+  beforeEach(() => {
+    mockMultibar.create.mockClear();
+    mockMultibar.stop.mockClear();
+    mockMultibar.log.mockClear();
+    mockSingleBar.update.mockClear();
+    mockSingleBar.setTotal.mockClear();
+    mockMultibar.create.mockReturnValue(mockSingleBar);
+  });
+
+  it("a chunking-phase message neither flips the bar determinate nor overwrites the chunk numerator", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({ type: "embedding", phase: "embedding", percentage: 38, current: 1024, total: 1024, totalFinal: false });
+    // worker forwards a chunking update on the same channel (filesProcessed/files.length)
+    r.handle({ type: "embedding", phase: "chunking", percentage: 33, current: 120, total: 363 });
+    const { barStates } = r as unknown as { barStates: Map<string, { totalFinal: boolean; value: number }> };
+    const st = barStates.get("embedding")!;
+    // chunking must NOT make the bar determinate (no fill against a file-count denominator)
+    expect(st.totalFinal).toBe(false);
+    // chunking must NOT replace the embedding numerator (1024 chunks) with the file count (120)
+    expect(st.value).toBe(1024);
+  });
+
+  it("a storing-phase message does not regress a determinate bar back to indeterminate", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({ type: "embedding", phase: "embedding", percentage: 100, current: 2687, total: 2687, totalFinal: true });
+    r.handle({ type: "embedding", phase: "storing", percentage: 90, current: 2687, total: 2687 });
+    const { barStates } = r as unknown as { barStates: Map<string, { totalFinal: boolean }> };
+    expect(barStates.get("embedding")?.totalFinal).toBe(true);
+  });
+
+  it("creates the embeddings bar as indeterminate when the first message is a non-embedding phase", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({ type: "embedding", phase: "scanning", percentage: 0, current: 0, total: 100 });
+    const { barStates } = r as unknown as { barStates: Map<string, { totalFinal: boolean; value: number }> };
+    const st = barStates.get("embedding")!;
+    expect(st.totalFinal).toBe(false);
+    expect(st.value).toBe(0);
   });
 });

@@ -319,6 +319,15 @@ export interface ProgressUpdate {
   message: string;
   /** Chunks per second from the embedding pipeline; present on `embedding` phase updates only. */
   throughput?: number;
+  /**
+   * True once `total` is the final value and the percentage is meaningful.
+   * On `embedding` updates `total` is `chunksQueued`, which grows while chunking
+   * runs — so it is `false` until chunking completes, then `true`. Consumers (the
+   * CLI progress bar) render an indeterminate bar while this is `false` so a
+   * still-growing denominator never produces a misleading near-100% fraction.
+   * Absent on phases where `total` is known up front (scanning/chunking/storing).
+   */
+  totalFinal?: boolean;
 }
 
 /**
@@ -333,6 +342,15 @@ export interface EnrichmentProgressEvent {
   level: "file" | "chunk";
   applied: number;
   total: number;
+  /**
+   * True when `total` is a usable denominator for a determinate bar. File-level
+   * events are always final (`total` = grandFileCount, known up front). Chunk-level
+   * events are determinate as soon as a non-zero total is known: `total` is the
+   * embedding chunk total (`chunksQueued`, pushed via `setChunkTotal` — the SAME
+   * denominator embeddings uses), so git chunk tracks embeddings rather than its
+   * own lagging stored count.
+   */
+  totalFinal?: boolean;
 }
 
 export type EnrichmentProgressCallback = (event: EnrichmentProgressEvent) => void;

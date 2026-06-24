@@ -225,10 +225,28 @@ describe("IndexPipeline", () => {
       expect(typeof last.throughput).toBe("number");
     });
 
-    it("embedding progress fires from stored batches, not from onFileProcessed (chunking cadence)", async () => {
-      // Multi-file codebase so chunking fires multiple onFileProcessed events.
-      // Embedding progress must arrive from the stored-batch hook, not chunking cadence,
-      // so the last embedding update should reflect actual stored chunk count.
+    it("final embedding update carries totalFinal=true (chunking has completed)", async () => {
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export interface User {\n  id: string;\n  name: string;\n  email: string;\n}",
+      );
+
+      const updates: { phase: string; totalFinal?: boolean }[] = [];
+      await ingest.indexCodebase(codebaseDir, {}, (u) => updates.push(u));
+
+      const embedding = updates.filter((u) => u.phase === "embedding");
+      expect(embedding.length).toBeGreaterThan(0);
+      // By the final flush the chunk total is known → the bar can render determinately.
+      expect(embedding.at(-1)!.totalFinal).toBe(true);
+    });
+
+    it("embedding progress current is the embedded count over the chunk queue, never the file count", async () => {
+      // The embeddings bar becomes determinate from the moment a chunk queue
+      // exists (so it can be emitted on chunking cadence via onFileProcessed), but
+      // `current` is always the real embedded count (itemsProcessed) bounded by
+      // `total` (chunksQueued) — NOT the file-processed count. This keeps the
+      // percentage reflecting embedding progress, not chunking progress.
       // Use content known to produce ≥1 chunk with mock tree-sitter (file content chunk)
       for (let i = 0; i < 3; i++) {
         await createTestFile(
@@ -251,6 +269,11 @@ describe("IndexPipeline", () => {
       // The final embedding update must have current > 0 (real batch stored)
       const lastEmbed = embeddingUpdates.at(-1)!;
       expect(lastEmbed.current).toBeGreaterThan(0);
+      // Invariant: embedded count never exceeds the queued chunk count — proves
+      // `current` is the embedded count, not the (independent) file/chunking count.
+      for (const u of embeddingUpdates) {
+        expect(u.current).toBeLessThanOrEqual(u.total);
+      }
       // chunking fires independently (per-file) — its count is driven by files
       expect(chunkingUpdates.length).toBeGreaterThan(0);
     });
