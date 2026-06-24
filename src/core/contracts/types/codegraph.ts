@@ -370,6 +370,13 @@ export interface LocalBinding {
   line: number;
   /** Inferred receiver type (class / constant name), e.g. "User" or "Acme::Post". */
   type: string;
+  /**
+   * Whether `type` is held as a CLASS (`var = User` → `var.find` resolves
+   * `User.find`, a static method) or an INSTANCE (default; `var = User.new` →
+   * `var.save` resolves `User#save`). Absent ⇒ `"instance"` so every existing
+   * binding and every other language is unaffected (bd Increment B / var=CONST).
+   */
+  valueKind?: "instance" | "class";
 }
 
 /**
@@ -388,13 +395,27 @@ export function resolveLocalBindingType(
   varName: string,
   atLine: number,
 ): string | undefined {
+  return resolveLocalBinding(bindings, varName, atLine)?.type;
+}
+
+/**
+ * Resolve the most-recent `LocalBinding` for `varName` at or before `atLine`,
+ * returning the full binding (so callers can inspect `valueKind` and other
+ * fields). Returns `undefined` when no binding is established on or before that
+ * line. Position-aware lookup shared with `resolveLocalBindingType`.
+ */
+export function resolveLocalBinding(
+  bindings: Record<string, LocalBinding[]> | undefined,
+  varName: string,
+  atLine: number,
+): LocalBinding | undefined {
   const list = bindings?.[varName];
   if (!list || list.length === 0) return undefined;
   let best: LocalBinding | undefined;
   for (const binding of list) {
     if (binding.line <= atLine && (best === undefined || binding.line > best.line)) best = binding;
   }
-  return best?.type;
+  return best;
 }
 
 export interface ChunkExtraction {

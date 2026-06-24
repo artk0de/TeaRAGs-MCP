@@ -160,6 +160,60 @@ describe("RubyLocalTypeSymbolResolutionStrategy", () => {
       target: { targetRelPath: "app/models/user.rb", targetSymbolId: null },
     });
   });
+
+  // B-const — class-valued (var=CONST) bindings (Increment B / var=CONST)
+  it("resolves `klass = User; klass.find` to the static method symbolId `User.find` (class-valued binding)", () => {
+    const symbolTable = tableWith([
+      "app/models/user.rb",
+      [
+        sym("User", "User", "app/models/user.rb", []),
+        sym("User.find", "find", "app/models/user.rb", ["User"]),
+        sym("User#find", "find", "app/models/user.rb", ["User"]),
+      ],
+    ]);
+    const klassCall: CallRef = { callText: "klass.find", receiver: "klass", member: "find", startLine: 2 };
+    const outcome = strat.attempt(
+      klassCall,
+      ctx({ symbolTable, localBindings: { klass: [{ line: 1, type: "User", valueKind: "class" }] } }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/user.rb", targetSymbolId: "User.find" },
+    });
+  });
+
+  it("REGRESSION: `obj = User.new; obj.find` still resolves to instance method `User#find` (instance-valued binding)", () => {
+    const symbolTable = tableWith([
+      "app/models/user.rb",
+      [
+        sym("User", "User", "app/models/user.rb", []),
+        sym("User.find", "find", "app/models/user.rb", ["User"]),
+        sym("User#find", "find", "app/models/user.rb", ["User"]),
+      ],
+    ]);
+    const instanceCall: CallRef = { callText: "obj.find", receiver: "obj", member: "find", startLine: 2 };
+    const outcome = strat.attempt(
+      instanceCall,
+      ctx({ symbolTable, localBindings: { obj: [{ line: 1, type: "User" }] } }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/user.rb", targetSymbolId: "User#find" },
+    });
+  });
+
+  it("resolves class-valued binding to file-only edge when static method is absent", () => {
+    const symbolTable = tableWith(["app/models/user.rb", [sym("User", "User", "app/models/user.rb", [])]]);
+    const klassCall: CallRef = { callText: "klass.find", receiver: "klass", member: "find", startLine: 2 };
+    const outcome = strat.attempt(
+      klassCall,
+      ctx({ symbolTable, localBindings: { klass: [{ line: 1, type: "User", valueKind: "class" }] } }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/user.rb", targetSymbolId: null },
+    });
+  });
 });
 
 describe("RubyConstantSymbolResolutionStrategy", () => {

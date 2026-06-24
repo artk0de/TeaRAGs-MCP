@@ -1,7 +1,7 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
+import { resolveLocalBinding, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { resolveTypeMethod, type ResolverConfig } from "./shared.js";
+import { resolveTypeInstanceMethod, resolveTypeStaticMethod, type ResolverConfig } from "./shared.js";
 
 /**
  * Walker-inferred local type wins over heuristic resolution. When the receiver
@@ -23,13 +23,20 @@ export class RubyLocalTypeSymbolResolutionStrategy implements SymbolResolutionSt
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
-    const localType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
-    if (!localType) return CONTINUE;
+    const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine);
+    if (!binding) return CONTINUE;
     // Walker-inferred local type → shared precise type→method lookup (scope-tail
     // + prepend + ancestor MRO). Once a local binding exists the call is terminal
     // — a miss (the type's file is unknown) DROPS rather than falling through to
     // a heuristic pass.
-    const target = resolveTypeMethod(localType, call.member, ctx, this.cfg.mode);
+    //
+    // Class-valued binding (`var = User`): resolve the STATIC method (`User.find`)
+    // via the dot-form filter. Instance-valued binding (default): resolve the
+    // instance method (`User#save`) via the hash-form filter, excluding any same-
+    // named class method from ambiguating the pick (bd Increment B / var=CONST).
+    const resolve =
+      binding.valueKind === "class" ? resolveTypeStaticMethod : resolveTypeInstanceMethod;
+    const target = resolve(binding.type, call.member, ctx, this.cfg.mode);
     return target ? resolved(target) : DROP;
   }
 }

@@ -382,6 +382,20 @@ export function collectLocalBindingsForChunk(
     if (lhs.type !== "identifier") return;
     const varName = lhs.text;
 
+    // `var = CONST` — var holds the CLASS itself (not an instance). Bare constant
+    // RHS only (a call RHS is handled by constInstanceType above).
+    const rhsConst =
+      rhs.type === "scope_resolution"
+        ? readScopeResolution(rhs)
+        : rhs.type === "constant"
+          ? rhs.text
+          : null;
+    if (rhsConst && YARD_CONST.test(rhsConst)) {
+      push(varName, rhsConst, line);
+      (out[varName]![out[varName]!.length - 1] as LocalBinding).valueKind = "class";
+      return;
+    }
+
     // Single assignment: class-constant instance call, else copy-propagation
     // (`var = other_var` copies other_var's most-recent type known at this line).
     const type =

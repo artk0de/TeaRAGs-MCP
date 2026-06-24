@@ -286,7 +286,41 @@ export function resolveTypeMethod(
   ctx: CallContext,
   mode: AmbiguousResolveMode,
 ): SymbolResolutionTarget | null {
-  return resolveTypeMethodInternal(typeName, member, ctx, mode, new Set());
+  return resolveTypeMethodInternal(typeName, member, ctx, mode, new Set(), null);
+}
+
+/**
+ * Resolve `<typeName>#<member>` for an INSTANCE receiver — same MRO walk as
+ * `resolveTypeMethod` but explicitly restricts candidates to the instance-method
+ * symbolId form (`Type#method`), avoiding ambiguity when both a class method
+ * (`Type.method`) and an instance method share the same short name. Use this when
+ * the receiver's `LocalBinding.valueKind` is `"instance"` (or absent). Callers
+ * that never track `valueKind` (ivar, return-type) keep using `resolveTypeMethod`
+ * for backward compatibility.
+ */
+export function resolveTypeInstanceMethod(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  return resolveTypeMethodInternal(typeName, member, ctx, mode, new Set(), symbolIdIsInstanceMethod);
+}
+
+/**
+ * Resolve `<typeName>.<member>` for a CLASS-valued receiver (`var = ClassName`) —
+ * same MRO walk as `resolveTypeMethod` but restricts candidates to the class-method
+ * symbolId form (`Type.method`) so `klass.find` resolves to `User.find` rather
+ * than `User#find`. Mirrors the `.`-form preference already used by
+ * `RubyConstantSymbolResolutionStrategy` for direct `Const.method` calls.
+ */
+export function resolveTypeStaticMethod(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  return resolveTypeMethodInternal(typeName, member, ctx, mode, new Set(), symbolIdIsClassMethod);
 }
 
 function resolveTypeMethodInternal(
@@ -295,6 +329,7 @@ function resolveTypeMethodInternal(
   ctx: CallContext,
   mode: AmbiguousResolveMode,
   visited: Set<string>,
+  symbolIdFilter: ((symbolId: string, member: string) => boolean) | null,
 ): SymbolResolutionTarget | null {
   if (visited.has(typeName)) return null;
   visited.add(typeName);
@@ -304,7 +339,7 @@ function resolveTypeMethodInternal(
   const prepended = ctx.classPrependedAncestors?.[typeName];
   if (prepended) {
     for (let i = prepended.length - 1; i >= 0; i--) {
-      const inherited = resolveTypeMethodInternal(prepended[i], member, ctx, mode, visited);
+      const inherited = resolveTypeMethodInternal(prepended[i], member, ctx, mode, visited, symbolIdFilter);
       if (inherited && inherited.targetSymbolId !== null) return inherited;
     }
   }
@@ -313,7 +348,8 @@ function resolveTypeMethodInternal(
   const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
     if (def.relPath !== targetFile) return false;
     const tail = def.scope[def.scope.length - 1];
-    return tail === typeName || tail === bareType;
+    if (tail !== typeName && tail !== bareType) return false;
+    return symbolIdFilter === null || symbolIdFilter(def.symbolId, member);
   });
   const target = pickSingleCandidate(candidates, mode);
   if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
@@ -321,10 +357,30 @@ function resolveTypeMethodInternal(
   const ancestors = ctx.classAncestors?.[typeName];
   if (ancestors) {
     for (const ancestor of ancestors) {
-      const inherited = resolveTypeMethodInternal(ancestor, member, ctx, mode, visited);
+      const inherited = resolveTypeMethodInternal(ancestor, member, ctx, mode, visited, symbolIdFilter);
       if (inherited && inherited.targetSymbolId !== null) return inherited;
     }
   }
 
   return { targetRelPath: targetFile, targetSymbolId: null };
+}
+
+/**
+ * True when a symbolId is a class-form method (uses `.` as the class↔method
+ * separator). Mirrors the same predicate in `ruby-constant.ts` for the static
+ * method resolution path shared by `resolveTypeStaticMethod` and
+ * `RubyConstantSymbolResolutionStrategy`.
+ */
+function symbolIdIsClassMethod(symbolId: string, member: string): boolean {
+  if (symbolId === member) return true; // top-level function
+  return symbolId.endsWith(`.${member}`);
+}
+
+/**
+ * True when a symbolId is an instance-form method (uses `#` as the class↔method
+ * separator). Used by `resolveTypeInstanceMethod` to exclude class methods when
+ * both `Type.method` and `Type#method` exist in the symbol table.
+ */
+function symbolIdIsInstanceMethod(symbolId: string, member: string): boolean {
+  return symbolId.endsWith(`#${member}`);
 }

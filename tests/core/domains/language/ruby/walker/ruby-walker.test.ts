@@ -994,6 +994,47 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
     // `untyped` has no YARD binding → `q` must NOT be bound.
     expect(r.chunks[0].localBindings?.["q"]).toBeUndefined();
   });
+
+  // B-const — class-valued (var=CONST) bindings (Increment B / var=CONST)
+  it("binds `klass = User` (bare constant RHS) as class-valued (valueKind: 'class')", () => {
+    const src = [
+      "class Registry",
+      "  def lookup",
+      "    klass = User",
+      "    klass.find(1)",
+      "  end",
+      "end",
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "app/registry.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "Registry#lookup", scope: ["Registry"], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localBindings?.["klass"]).toEqual([{ line: 3, type: "User", valueKind: "class" }]);
+  });
+
+  it("binds `klass = Acme::Auth::Login` (qualified constant RHS) as class-valued", () => {
+    const src = [
+      "def resolve",
+      "  klass = Acme::Auth::Login",
+      "  klass.call(params)",
+      "end",
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "resolve", scope: [], startLine: 1, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings?.["klass"]).toEqual([
+      { line: 2, type: "Acme::Auth::Login", valueKind: "class" },
+    ]);
+  });
 });
 
 describe("extractFromRubyFile — classAncestors (inheritance + mixins)", () => {
