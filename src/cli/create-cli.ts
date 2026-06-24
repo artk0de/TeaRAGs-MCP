@@ -4,6 +4,7 @@ import { hideBin } from "yargs/helpers";
 import { doctorCommand } from "./commands/doctor.js";
 import { indexCodebaseCommand } from "./commands/index-codebase.js";
 import { primeCommand } from "./commands/prime.js";
+import { projectCommand } from "./commands/project.js";
 import { projectsCommand } from "./commands/projects.js";
 import { serverCommand } from "./commands/server.js";
 import { tuneCommand } from "./commands/tune.js";
@@ -23,6 +24,7 @@ export function createCli(argv?: string[]): ReturnType<typeof yargs> {
     .command(tuneCommand)
     .command(primeCommand)
     .command(updateCommand)
+    .command(projectCommand)
     .command(projectsCommand)
     .command(worktreeCommand)
     .command(doctorCommand)
