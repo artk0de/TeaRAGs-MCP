@@ -203,4 +203,51 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
     );
     expect(edges.length).toBeGreaterThan(0);
   });
+
+  describe("increment D / i9id8 — AR-core member suppression on untyped receivers", () => {
+    // Seed the table with in-project defs for every member used in this block so
+    // that the control/exclusion cases genuinely fan out absent the guard.
+    const symbolTable = tableWith([
+      "app/a.rb",
+      [
+        sym("A#update", "update", "app/a.rb", ["A"]),
+        sym("A#handle_details_post", "handle_details_post", "app/a.rb", ["A"]),
+        sym("A#save", "save", "app/a.rb", ["A"]),
+        sym("A#class", "class", "app/a.rb", ["A"]),
+      ],
+    ]);
+
+    it("suppresses fan-out for an AR-core member on an untyped receiver (V_core)", () => {
+      // table seeded with an in-project `update` def so a fan-out WOULD occur
+      const call = {
+        callText: "agent.update",
+        receiver: "agent",
+        member: "update",
+        startLine: 1,
+      };
+      expect(resolver.resolveDispatch(call, ctx({ symbolTable }))).toEqual([]);
+    });
+
+    it("does NOT suppress a project member on an untyped receiver (control)", () => {
+      const call = {
+        callText: "agent.handle_details_post",
+        receiver: "agent",
+        member: "handle_details_post",
+        startLine: 1,
+      };
+      expect(resolver.resolveDispatch(call, ctx({ symbolTable })).length).toBeGreaterThan(0); // table seeds a def
+    });
+
+    it("does NOT suppress an EXCLUDED member (save / class stay fan-out)", () => {
+      for (const member of ["save", "class"]) {
+        const call = {
+          callText: `agent.${member}`,
+          receiver: "agent",
+          member,
+          startLine: 1,
+        };
+        expect(resolver.resolveDispatch(call, ctx({ symbolTable })).length).toBeGreaterThan(0); // table seeds a def
+      }
+    });
+  });
 });
