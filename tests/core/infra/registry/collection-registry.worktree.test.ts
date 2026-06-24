@@ -30,6 +30,11 @@ describe("CollectionRegistry worktree provenance", () => {
     expect(wts[0].worktreeName).toBe("x");
   });
 
+  it("setWorktreeProvenance throws on unknown collection", () => {
+    expect(() => reg.setWorktreeProvenance("ghost", "code_main", "x"))
+      .toThrow(/ghost not registered/);
+  });
+
   it("findWorktree resolves by worktree name, ignoring non-worktree entries", () => {
     reg.record(baseEntry("code_main", "/repo"));
     reg.record(baseEntry("code_wt", "/repo/.wt/x"));

@@ -156,8 +156,7 @@ export class CollectionRegistry {
     const map = this.ensureLoaded();
     const entry = map.get(collectionName);
     if (!entry) throw new Error(`Cannot set worktree provenance: ${collectionName} not registered`);
-    entry.worktreeOf = worktreeOf;
-    entry.worktreeName = worktreeName;
+    map.set(collectionName, { ...entry, worktreeOf, worktreeName });
     this.flush();
   }
 
