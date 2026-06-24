@@ -1,15 +1,14 @@
 import { resolve } from "node:path";
+
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { resolveCollectionName } from "../../../infra/collection-name.js";
 import type { CollectionRegistry } from "../../../infra/registry/index.js";
-import type { CollectionArtifact, ResolvedCollection } from "../footprint/index.js";
-import type { CollectionFootprintFactory } from "../footprint/index.js";
+import { WorktreeCollectionExistsError, WorktreeNotFoundError, WorktreeSourceNotFoundError } from "../errors.js";
+import type { CollectionArtifact, CollectionFootprintFactory, ResolvedCollection } from "../footprint/index.js";
 import {
-  WorktreeCollectionExistsError,
-  WorktreeNotFoundError,
-  WorktreeSourceNotFoundError,
-} from "../errors.js";
-import { ensureGitWorktree as defaultEnsureGitWorktree, removeGitWorktree as defaultRemoveGitWorktree } from "./git-worktree.js";
+  ensureGitWorktree as defaultEnsureGitWorktree,
+  removeGitWorktree as defaultRemoveGitWorktree,
+} from "./git-worktree.js";
 
 export interface WorktreeOpsDeps {
   registry: CollectionRegistry;
@@ -84,7 +83,9 @@ export class WorktreeOps {
     };
 
     // C1: track whether we actually created a new git worktree (vs attached).
-    const gitCreated = input.createGit ? this.ensureGitWorktree(sourceEntry.path, input.name, worktreePath, input.branch) : false;
+    const gitCreated = input.createGit
+      ? this.ensureGitWorktree(sourceEntry.path, input.name, worktreePath, input.branch)
+      : false;
 
     const { context, artifacts } = footprintFactory.build(source, target);
     const done: CollectionArtifact[] = [];
@@ -155,10 +156,14 @@ export class WorktreeOps {
       codegraphEnabled: entry.codegraphEnabled ?? false,
     };
 
+    const targetPhysical = await qdrant.aliases
+      .resolveActive(entry.collectionName)
+      .catch(() => `${entry.collectionName}_v1`);
+
     const target: ResolvedCollection = {
       ...source,
       logicalName: entry.collectionName,
-      physicalName: `${entry.collectionName}_v1`,
+      physicalName: targetPhysical,
       path: entry.path,
     };
 
@@ -187,7 +192,7 @@ export class WorktreeOps {
 
   info(cwd: string): WorktreeInfo {
     const entry = this.deps.registry.findByPath(resolve(cwd));
-    if (!entry || entry.worktreeOf === undefined) return { isWorktree: false };
+    if (entry?.worktreeOf === undefined) return { isWorktree: false };
     return {
       isWorktree: true,
       collectionName: entry.collectionName,

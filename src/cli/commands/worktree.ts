@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
-import { CollectionRegistry } from "../../core/infra/registry/index.js";
+import { CollectionRegistry } from "../../core/api/public/index.js";
 
 function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
@@ -31,7 +31,7 @@ export function runWorktreeInfo(args: { json: boolean; dataDir?: string }): void
   const registry = new CollectionRegistry(args.dataDir ?? resolveDataDir());
   const entry = registry.findByPath(process.cwd());
   const info =
-    !entry || entry.worktreeOf === undefined
+    entry?.worktreeOf === undefined
       ? { isWorktree: false }
       : {
           isWorktree: true,
@@ -63,26 +63,29 @@ async function runWorktreeCreate(argv: {
       createGit: Boolean(argv.git),
       branch: argv.branch,
     });
-    // Best-effort diff reindex — warning on failure, NOT fatal (clone already succeeded).
-    try {
-      await ctx.app.indexCodebase(res.worktreePath, {});
-    } catch (e) {
-      process.stderr.write(
-        `worktree '${argv.name}' created but diff index failed: ${(e as Error).message}\n`,
-      );
-    }
+    // Clone only. The diff reindex is a separate, explicitly user-invoked step:
+    // a synchronous in-process reindex here blocks the command on a large diff
+    // and would auto-trigger a heavy reindex against the user-gating rule. Hint
+    // the next step instead.
+    const nextStep = `tea-rags index-codebase --project ${res.alias}`;
     if (argv.json) {
-      process.stdout.write(`${JSON.stringify(res, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({ ...res, nextStep }, null, 2)}\n`);
     } else {
       process.stdout.write(
-        `Created worktree '${res.alias}' -> ${res.collectionName} at ${res.worktreePath}\n`,
+        `Created worktree '${res.alias}' -> ${res.collectionName} at ${res.worktreePath}\n` +
+          `Next: index the live diff with  ${nextStep}\n`,
       );
     }
+    ctx.cleanup?.();
+    process.exit(0);
   } catch (err) {
     process.stderr.write(`worktree create failed: ${(err as Error).message}\n`);
+    try {
+      ctx.cleanup?.();
+    } catch {
+      /* best-effort */
+    }
     process.exit(1);
-  } finally {
-    ctx.cleanup?.();
   }
 }
 
@@ -106,11 +109,16 @@ async function runWorktreeRemove(argv: {
     } else {
       process.stdout.write(res.removed ? `Removed worktree '${argv.name}'.\n` : `'${argv.name}' was not found.\n`);
     }
+    ctx.cleanup?.();
+    process.exit(0);
   } catch (err) {
     process.stderr.write(`worktree remove failed: ${(err as Error).message}\n`);
+    try {
+      ctx.cleanup?.();
+    } catch {
+      /* best-effort */
+    }
     process.exit(1);
-  } finally {
-    ctx.cleanup?.();
   }
 }
 
@@ -141,9 +149,9 @@ export const worktreeCommand: CommandModule = {
         async (argv) =>
           runWorktreeCreate({
             name: String(argv.name),
-            from: argv.from as string | undefined,
-            path: argv.path as string | undefined,
-            branch: argv.branch as string | undefined,
+            from: argv.from,
+            path: argv.path,
+            branch: argv.branch,
             git: Boolean(argv.git),
             json: Boolean(argv.json),
           }),
@@ -154,12 +162,16 @@ export const worktreeCommand: CommandModule = {
         (y) =>
           y
             .positional("name", { type: "string", demandOption: true, describe: "Worktree name to remove" })
-            .option("force", { type: "boolean", default: false, describe: "Force removal even with uncommitted changes" })
+            .option("force", {
+              type: "boolean",
+              default: false,
+              describe: "Force removal even with uncommitted changes",
+            })
             .option("keep-git", { type: "boolean", default: false, describe: "Keep the git worktree on disk" })
             .option("json", { type: "boolean", default: false, describe: "Output as JSON" }),
         async (argv) =>
           runWorktreeRemove({
-            name: argv.name as string,
+            name: argv.name,
             force: Boolean(argv.force),
             keepGit: Boolean(argv["keep-git"]),
             json: Boolean(argv.json),
@@ -169,19 +181,25 @@ export const worktreeCommand: CommandModule = {
         "list",
         "List worktree indexes",
         (y) => y.option("json", { type: "boolean", default: false, describe: "Output as JSON" }),
-        (argv) => runWorktreeList({ json: Boolean(argv.json) }),
+        (argv) => {
+          runWorktreeList({ json: Boolean(argv.json) });
+        },
       )
       .command(
         "info",
         "Show worktree info for the current directory",
         (y) => y.option("json", { type: "boolean", default: false, describe: "Output as JSON" }),
-        (argv) => runWorktreeInfo({ json: Boolean(argv.json) }),
+        (argv) => {
+          runWorktreeInfo({ json: Boolean(argv.json) });
+        },
       )
       .command(
         "$0",
         "List worktree indexes (default subcommand)",
         (y) => y.option("json", { type: "boolean", default: false, describe: "Output as JSON" }),
-        (argv) => runWorktreeList({ json: Boolean(argv.json) }),
+        (argv) => {
+          runWorktreeList({ json: Boolean(argv.json) });
+        },
       )
       .demandCommand(0)
       .strict(),

@@ -7,10 +7,10 @@ export class CodegraphArtifact implements CollectionArtifact {
 
   async clone(ctx: FootprintContext): Promise<void> {
     if (!ctx.source.codegraphEnabled) return;
-    await this.pool.cloneDatabase(ctx.source.logicalName, ctx.target.logicalName);
+    await this.pool.cloneDatabase(ctx.source.physicalName, ctx.target.physicalName);
   }
 
   async remove(ctx: FootprintContext): Promise<void> {
-    await this.pool.removeCollection(ctx.target.logicalName);
+    await this.pool.removeCollection(ctx.target.physicalName);
   }
 }

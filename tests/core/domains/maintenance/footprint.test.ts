@@ -1,13 +1,15 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { CodegraphArtifact } from "../../../../src/core/domains/maintenance/footprint/codegraph-artifact.js";
 import { CollectionFootprintFactory } from "../../../../src/core/domains/maintenance/footprint/factory.js";
 import { QdrantArtifact } from "../../../../src/core/domains/maintenance/footprint/qdrant-artifact.js";
-import { CodegraphArtifact } from "../../../../src/core/domains/maintenance/footprint/codegraph-artifact.js";
-import { StatsArtifact } from "../../../../src/core/domains/maintenance/footprint/stats-artifact.js";
-import { SnapshotArtifact } from "../../../../src/core/domains/maintenance/footprint/snapshot-artifact.js";
 import { QuarantineArtifact } from "../../../../src/core/domains/maintenance/footprint/quarantine-artifact.js";
+import { SnapshotArtifact } from "../../../../src/core/domains/maintenance/footprint/snapshot-artifact.js";
+import { StatsArtifact } from "../../../../src/core/domains/maintenance/footprint/stats-artifact.js";
 
 function resolved(over: Record<string, unknown> = {}) {
   return {
@@ -120,15 +122,27 @@ describe("CodegraphArtifact", () => {
     expect(pool.cloneDatabase).not.toHaveBeenCalled();
   });
 
-  it("clone: calls cloneDatabase with source and target logical names when enabled", async () => {
+  it("clone: calls cloneDatabase with source and target PHYSICAL names when enabled", async () => {
     const pool = { cloneDatabase: vi.fn().mockResolvedValue(undefined), removeCollection: vi.fn() };
     const artifact = new CodegraphArtifact(pool as never);
+    // logical != physical to catch regressions that pass logicalName instead
     const ctx = {
-      source: resolved(),
+      source: resolved({ logicalName: "code_src", physicalName: "code_src_v30" }),
       target: resolved({ logicalName: "code_dst", physicalName: "code_dst_v1" }),
     };
     await artifact.clone(ctx);
-    expect(pool.cloneDatabase).toHaveBeenCalledWith("code_src", "code_dst");
+    expect(pool.cloneDatabase).toHaveBeenCalledWith("code_src_v30", "code_dst_v1");
+  });
+
+  it("remove: calls removeCollection with target PHYSICAL name", async () => {
+    const pool = { cloneDatabase: vi.fn(), removeCollection: vi.fn().mockResolvedValue(undefined) };
+    const artifact = new CodegraphArtifact(pool as never);
+    const ctx = {
+      source: resolved(),
+      target: resolved({ logicalName: "code_dst", physicalName: "code_dst_v30" }),
+    };
+    await artifact.remove(ctx);
+    expect(pool.removeCollection).toHaveBeenCalledWith("code_dst_v30");
   });
 });
 
@@ -161,13 +175,14 @@ describe("SnapshotArtifact", () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "snap-art-"));
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("clone: delegates to ShardedSnapshotManager.cloneTo and target snapshot exists", async () => {
     // seed source snapshot via the real manager so cloneTo has something to copy
-    const { ShardedSnapshotManager } = await import(
-      "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js"
-    );
+    const { ShardedSnapshotManager } =
+      await import("../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js");
     const src = new ShardedSnapshotManager(dir, "code_src");
     await src.save("/old/path", new Map([["a.ts", { hash: "h", mtime: 1, size: 2 }]]));
 
@@ -192,9 +207,8 @@ describe("SnapshotArtifact", () => {
   });
 
   it("remove: deletes the target snapshot directory", async () => {
-    const { ShardedSnapshotManager } = await import(
-      "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js"
-    );
+    const { ShardedSnapshotManager } =
+      await import("../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js");
     const mgr = new ShardedSnapshotManager(dir, "code_dst");
     await mgr.save("/some/path", new Map([["a.ts", { hash: "h", mtime: 1, size: 2 }]]));
     expect(await mgr.exists()).toBe(true);
@@ -214,14 +228,13 @@ describe("QuarantineArtifact", () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "quar-art-"));
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("clone: delegates to QuarantineStore.cloneTo and target quarantine file exists", async () => {
     // seed source quarantine file so cloneTo has something to copy
-    writeFileSync(
-      join(dir, "code_src.quarantine.json"),
-      '{"version":1,"updatedAt":"2026-01-01","files":{}}',
-    );
+    writeFileSync(join(dir, "code_src.quarantine.json"), '{"version":1,"updatedAt":"2026-01-01","files":{}}');
 
     const artifact = new QuarantineArtifact(dir);
     const ctx = {
@@ -244,10 +257,7 @@ describe("QuarantineArtifact", () => {
   });
 
   it("remove: clears the target quarantine file via clearAll", async () => {
-    writeFileSync(
-      join(dir, "code_dst.quarantine.json"),
-      '{"version":1,"updatedAt":"2026-01-01","files":{}}',
-    );
+    writeFileSync(join(dir, "code_dst.quarantine.json"), '{"version":1,"updatedAt":"2026-01-01","files":{}}');
     expect(existsSync(join(dir, "code_dst.quarantine.json"))).toBe(true);
 
     const artifact = new QuarantineArtifact(dir);
