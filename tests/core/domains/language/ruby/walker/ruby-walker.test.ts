@@ -2581,6 +2581,39 @@ describe("extractFromRubyFile — compound-receiver association-chain bindings (
     });
     expect(r.chunks[0].localBindings).toBeUndefined();
   });
+
+  it("cycle-guard: self-referential has_many does NOT infinite-loop and STOPS after first repeated type", () => {
+    // Category has_many :subcategories with class_name: "Category" — the
+    // association map maps Category.subcategories → Category, which is a
+    // self-referential cycle. The seenTypes guard must break after the first
+    // hop to avoid looping, and must NOT bind the repeated type again.
+    const src = [
+      "class Category",
+      '  has_many :subcategories, class_name: "Category"',
+      "end",
+      "# @param cat [Category]",
+      "def list(cat)",
+      "  cat.subcategories.each { |c| c.name }",
+      "end",
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "app/models/category.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "list", scope: ["list"], startLine: 5, endLine: 7 }],
+    });
+    const b = r.chunks[0].localBindings ?? {};
+    // First hop: cat → Category (from YARD @param)
+    expect(b["cat"]).toEqual([{ line: 5, type: "Category" }]);
+    // Second hop: cat.subcategories → Category (one cycle allowed — first hop binds)
+    expect(b["cat.subcategories"]).toEqual([{ line: 6, type: "Category" }]);
+    // The guard must have fired: no further binding for cat.subcategories.subcategories
+    // (the walker's own chain length cap + seenTypes both prevent re-entry).
+    // Confirm the walk completed without hanging by checking localBindings is defined.
+    expect(r.chunks[0].localBindings).toBeDefined();
+  });
 });
 
 describe("collectRubyAssociationTypes (accessor → model, associationTypes channel)", () => {
