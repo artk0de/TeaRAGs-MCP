@@ -138,7 +138,15 @@ export const worktreeCommand: CommandModule = {
               describe: "Create the git worktree; use --no-git to attach to an existing dir",
             })
             .option("json", { type: "boolean", default: false, describe: "Output as JSON" }),
-        async (argv) => runWorktreeCreate(argv as never),
+        async (argv) =>
+          runWorktreeCreate({
+            name: String(argv.name),
+            from: argv.from as string | undefined,
+            path: argv.path as string | undefined,
+            branch: argv.branch as string | undefined,
+            git: Boolean(argv.git),
+            json: Boolean(argv.json),
+          }),
       )
       .command(
         "remove <name>",
