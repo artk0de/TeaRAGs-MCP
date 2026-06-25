@@ -50,11 +50,9 @@ import {
   collectRubyBodyReturnTypes,
   collectRubyIvarFieldTypes,
   collectRubyLocalCallBindingsForChunk,
-  collectYardParamTypes,
-  collectYardReturnTypes,
   localTypeTrackingEnabled,
-  YARD_CONST,
 } from "./local-bindings.js";
+import { collectYardParamTypes, collectYardReturnTypes, YARD_CONST } from "./type-sources/yard.js";
 
 export interface RubyExtractInput {
   tree: MaterializedTree;
