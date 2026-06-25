@@ -32,14 +32,13 @@ describe("rubyYardTypeSource", () => {
       expect(f?.line).toBe(2);
     });
 
-    it("emits instance fact for Array<T> param — element type binds (brg9)", () => {
-      // collectYardParamTypes already unwraps Array<Post> → "Post" (the brg9 rule:
-      // x is iterated/element-accessed, so bind the ELEMENT type Post, not the Array).
-      // yardBracketToRef("Post") → { form: "instance", name: "Post" }.
+    it("emits container typeRef for Array<T> param (INFRA-A: full RubyTypeRef)", () => {
+      // INFRA-A: yardBracketToRef now receives the raw bracket "Array<Post>" and
+      // returns a container RubyTypeRef so the engine can handle element-method dispatch.
       const code = ["# @param posts [Array<Post>]", "def publish(posts)", "end"].join("\n");
       const facts = rubyYardTypeSource.extract(makeInput(code));
       expect(facts).toHaveLength(1);
-      expect(facts[0]?.type).toEqual({ form: "instance", name: "Post" });
+      expect(facts[0]?.type).toEqual({ form: "container", element: { form: "instance", name: "Post" } });
     });
 
     it("emits instance fact for qualified constant (Acme::User)", () => {
@@ -55,11 +54,18 @@ describe("rubyYardTypeSource", () => {
       expect(facts).toHaveLength(0);
     });
 
-    it("ignores union param types", () => {
+    it("emits union typeRef for comma-separated param types (INFRA-A)", () => {
       const code = ["# @param val [String, Integer]", "def set(val)", "end"].join("\n");
-      // No comma-separated unions resolved in Increment 0
+      // INFRA-A: unions now emit a fact with {form:"union", members:[...]}.
       const facts = rubyYardTypeSource.extract(makeInput(code));
-      expect(facts).toHaveLength(0);
+      expect(facts).toHaveLength(1);
+      expect(facts[0]?.type).toEqual({
+        form: "union",
+        members: [
+          { form: "instance", name: "String" },
+          { form: "instance", name: "Integer" },
+        ],
+      });
     });
   });
 

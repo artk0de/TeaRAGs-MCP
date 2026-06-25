@@ -134,7 +134,10 @@ describe("ruby-walker brg9 — YARD element types (@param x [Array<T>])", () => 
       language: "ruby",
       chunks: [{ symbolId: "f", scope: ["f"], startLine: 2, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ x: [{ line: 2, type: "Post" }] });
+    // INFRA-A: container params now also carry typeRef for the full container ref.
+    expect(r.chunks[0].localBindings).toEqual({
+      x: [{ line: 2, type: "Post", typeRef: { form: "container", element: { form: "instance", name: "Post" } } }],
+    });
   });
 
   it("binds qualified element type `@param x [Array<Acme::Post>]` → { x: 'Acme::Post' }", () => {
@@ -147,7 +150,16 @@ describe("ruby-walker brg9 — YARD element types (@param x [Array<T>])", () => 
       language: "ruby",
       chunks: [{ symbolId: "f", scope: ["f"], startLine: 2, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ x: [{ line: 2, type: "Acme::Post" }] });
+    // INFRA-A: container params now also carry typeRef for the full container ref.
+    expect(r.chunks[0].localBindings).toEqual({
+      x: [
+        {
+          line: 2,
+          type: "Acme::Post",
+          typeRef: { form: "container", element: { form: "instance", name: "Acme::Post" } },
+        },
+      ],
+    });
   });
 
   it("still binds a plain `@param x [Foo]` (no regression)", () => {

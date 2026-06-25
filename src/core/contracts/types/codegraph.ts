@@ -407,6 +407,14 @@ export interface LocalBinding {
    * binding and every other language is unaffected (bd Increment B / var=CONST).
    */
   valueKind?: "instance" | "class";
+  /**
+   * Richer receiver type when the bare `type` string can't represent it (union /
+   * container); engine prefers `typeRef` when present. Added by INFRA-A so
+   * union (`[A,B]`) and container (`Array<Post>`) receiver types ride the
+   * EXISTING localBindings channel to the propagation engine at resolve time.
+   * Absent for plain class/instance bindings (the string `type` is sufficient).
+   */
+  typeRef?: RubyTypeRef;
 }
 
 /**

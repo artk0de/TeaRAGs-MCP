@@ -13,6 +13,18 @@ function refToName(ref: RubyTypeRef): string | undefined {
 }
 
 /**
+ * Best-effort string name for union: the first member's refToName.
+ * Used to populate LocalBinding.type when typeRef carries the full union
+ * (INFRA-A: union params were previously dropped; now emitted with a
+ * best-effort string + the full typeRef for the engine).
+ */
+function firstMemberName(ref: RubyTypeRef): string | undefined {
+  if (ref.form !== "union") return undefined;
+  const first = ref.members[0];
+  return first !== undefined ? refToName(first) : undefined;
+}
+
+/**
  * Resolve source precedence rank: lower index = higher precedence.
  * Undefined or unknown source → Infinity (lowest precedence).
  */
@@ -75,10 +87,14 @@ export class RubyTypeFactStore {
         continue;
       }
       const { name } = f;
-      const type = refToName(f.type);
+      // For union/container: typeRef carries the full ref; type = best-effort string.
+      // For class/instance: typeRef not needed (string suffices, parity preserved).
+      const isUnionOrContainer = f.type.form === "union" || f.type.form === "container";
+      const type = isUnionOrContainer ? (refToName(f.type) ?? firstMemberName(f.type) ?? "") : refToName(f.type);
       if (!name || type === undefined) continue;
       const binding: LocalBinding = { line: f.line, type };
       if (f.type.form === "class") binding.valueKind = "class";
+      if (isUnionOrContainer) binding.typeRef = f.type;
       (out[name] ??= []).push(binding);
     }
     for (const list of Object.values(out)) list.sort((a, b) => a.line - b.line);

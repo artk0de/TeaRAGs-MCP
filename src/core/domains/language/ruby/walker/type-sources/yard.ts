@@ -28,6 +28,41 @@ function parseYardBracketType(inner: string): string | null {
 }
 
 /**
+ * Like `collectYardParamTypes` but stores the RAW bracket string
+ * (e.g. `"Array<Post>"`, `"String, Integer"`, `"User"`) instead of
+ * the parsed element/constant name. Used by `rubyYardTypeSource` so
+ * `yardBracketToRef` can produce the full `RubyTypeRef` (including
+ * union/container forms). Does NOT break `ast-inference.ts` which
+ * consumes `collectYardParamTypes` (the string-returning variant) directly.
+ */
+function collectYardRawParamBrackets(code: string): Map<number, Record<string, string>> {
+  const lines = code.split(/\r?\n/);
+  const out = new Map<number, Record<string, string>>();
+  let pending: Record<string, string> | null = null;
+  const yardRegex = /^\s*#\s*@param\s+(\w+)\s+\[([^\]]+)\]/;
+  const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i] ?? "";
+    const yardMatch = yardRegex.exec(raw);
+    if (yardMatch) {
+      const [, name, bracket] = yardMatch;
+      // Keep the RAW bracket string; yardBracketToRef will validate it.
+      if (name && bracket) {
+        if (!pending) pending = {};
+        pending[name] = bracket.trim();
+      }
+      continue;
+    }
+    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
+    if (pending && defRegex.test(raw)) {
+      out.set(i + 1, pending);
+    }
+    pending = null;
+  }
+  return out;
+}
+
+/**
  * Parse YARD `# @param NAME [TYPE]` lines and group them by the line
  * number of the `def NAME(...)` they precede. The grammar is light: any
  * comment line matching the pattern attaches to the NEXT non-comment,
@@ -110,11 +145,12 @@ export function collectYardReturnTypes(code: string): Record<string, string> {
   return out;
 }
 
-/** Bracket type string ("User", "Array<Post>", "Acme::Post") -> RubyTypeRef. */
-function yardBracketToRef(raw: string): RubyTypeRef | undefined {
-  // delegates to the relocated parseYardBracketType + container regex; container -> element ref.
-  // Keep the SAME acceptance as today (bare const + the 5 hardcoded containers); union deferred to Incr 1.
-  const trimmed = raw.trim();
+/**
+ * Parse a single non-comma bracket token ("User", "Array<Post>", "Acme::Post") → RubyTypeRef.
+ * Returns undefined for unrecognized / lowercase tokens.
+ */
+function parseSingleBracketToken(token: string): RubyTypeRef | undefined {
+  const trimmed = token.trim();
   const container = YARD_ELEMENT_CONTAINER.exec(trimmed);
   if (container) {
     const element = container[1];
@@ -125,12 +161,37 @@ function yardBracketToRef(raw: string): RubyTypeRef | undefined {
   return undefined;
 }
 
+/**
+ * Bracket type string → RubyTypeRef (INFRA-A).
+ *
+ * - Bare constant `"User"` / `"Acme::Post"` → `{form:"instance", name}`.
+ * - Container `"Array<Post>"` → `{form:"container", element:{form:"instance",name:"Post"}}`.
+ * - Union `"A, B"` / `"A, B, C"` → `{form:"union", members:[...]}`.
+ *   Any member that fails `YARD_CONST` (or is itself unrecognized) → entire union dropped.
+ */
+function yardBracketToRef(raw: string): RubyTypeRef | undefined {
+  const trimmed = raw.trim();
+  // ── Union: comma-separated members ─────────────────────────────────────────
+  if (trimmed.includes(",")) {
+    const memberTokens = trimmed.split(",");
+    const members: RubyTypeRef[] = [];
+    for (const token of memberTokens) {
+      const ref = parseSingleBracketToken(token);
+      if (ref === undefined) return undefined; // any invalid member → drop whole union
+      members.push(ref);
+    }
+    return members.length >= 2 ? { form: "union", members } : members[0];
+  }
+  // ── Single token (container or bare constant) ────────────────────────────
+  return parseSingleBracketToken(trimmed);
+}
+
 export const rubyYardTypeSource: RubyInlineTypeSource = {
   name: "yard",
   extract(input: RubyExtractInput): RubyTypeFact[] {
     const facts: RubyTypeFact[] = [];
-    // @param: collectYardParamTypes(input.code) -> Map<defLine, Record<param, bracketStr>>
-    for (const [defLine, params] of collectYardParamTypes(input.code)) {
+    // @param: raw bracket strings → full RubyTypeRef (union/container via yardBracketToRef)
+    for (const [defLine, params] of collectYardRawParamBrackets(input.code)) {
       for (const [name, raw] of Object.entries(params)) {
         const type = yardBracketToRef(raw);
         if (type) {

@@ -83,10 +83,14 @@ export function typeOfReceiver(receiver: string, atLine: number, ctx: CallContex
   const binding = resolveLocalBinding(ctx.localBindings, receiver, atLine);
   if (!binding) return undefined;
 
-  return {
-    form: binding.valueKind === "class" ? "class" : "instance",
-    name: binding.type,
-  };
+  // Prefer the richer typeRef (union / container) when present (INFRA-A);
+  // fall back to reconstructing from type + valueKind for plain bindings.
+  return (
+    binding.typeRef ?? {
+      form: binding.valueKind === "class" ? "class" : "instance",
+      name: binding.type,
+    }
+  );
 }
 
 /**
