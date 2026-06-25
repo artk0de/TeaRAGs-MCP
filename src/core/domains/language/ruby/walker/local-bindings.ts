@@ -1,37 +1,11 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { resolveLocalBindingType, type LocalBinding } from "../../../../contracts/types/codegraph.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
-import { constInstanceType } from "./type-sources/ast-inference.js";
+import { constInstanceType, RUBY_BLOCK_ITERATOR_METHODS } from "./type-sources/ast-inference.js";
 import { YARD_CONST } from "./type-sources/yard.js";
 
 export { collectYardParamTypes, collectYardReturnTypes, YARD_CONST } from "./type-sources/yard.js";
-export { INSTANCE_RETURNING_METHODS, RELATION_RETURNING_METHODS } from "./type-sources/ast-inference.js";
-
-/**
- * Enumerable / collection methods that yield each element to a block. When the
- * iterated receiver has a known element type, the FIRST positional block param
- * is that element type (bd Increment B / B-block).
- */
-export const RUBY_BLOCK_ITERATOR_METHODS = new Set([
-  "each",
-  "map",
-  "collect",
-  "select",
-  "filter",
-  "filter_map",
-  "reject",
-  "find",
-  "detect",
-  "find_all",
-  "flat_map",
-  "each_with_index",
-  "each_with_object",
-  "group_by",
-  "sort_by",
-  "min_by",
-  "max_by",
-  "partition",
-]);
+export { INSTANCE_RETURNING_METHODS, RELATION_RETURNING_METHODS, RUBY_BLOCK_ITERATOR_METHODS } from "./type-sources/ast-inference.js";
 
 /**
  * Env-gate for the Ruby local variable type inference path. When `false`,
@@ -334,9 +308,10 @@ const COMPOUND_CHAIN_RE = /^[a-z_][A-Za-z0-9_]*(?:\.[a-z_][A-Za-z0-9_]*)+$/;
  * (→Agent): binds `event.user → User`, then `event.user.agents → Agent`. The
  * binding line is the receiver's own line so the position-aware lookup attaches
  * it correctly. Honours `class_name:` implicitly — the association map already
- * carries the rewritten model (`event.author → User`).
+ * carries the rewritten model (`event.author → User`). Exported for use by the
+ * walker's store-path rewire (Task 0.5) as a post-store association-chain pass.
  */
-function bindCompoundReceiverChains(
+export function bindCompoundReceiverChains(
   root: AstNode,
   startLine: number,
   endLine: number,

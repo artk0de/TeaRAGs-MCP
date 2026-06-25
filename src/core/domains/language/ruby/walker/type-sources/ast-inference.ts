@@ -3,7 +3,36 @@ import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import { readScopeResolution, walk } from "../ast-utils.js";
 import type { RubyExtractInput } from "../walker.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
-import { YARD_CONST } from "./yard.js";
+import { collectYardParamTypes, YARD_CONST } from "./yard.js";
+
+/**
+ * Enumerable / collection methods that yield each element to a block. When the
+ * iterated receiver has a known element type (from YARD `@param [Array<T>]` or
+ * a prior binding), the FIRST positional block param is typed to that element
+ * type (bd Increment B / B-block). This is the single source of truth for the
+ * iterator-method set used by both `rubyAstInferenceTypeSource` (block-param
+ * inference) and `collectLocalBindingsForChunk` (re-exported via local-bindings).
+ */
+export const RUBY_BLOCK_ITERATOR_METHODS = new Set([
+  "each",
+  "map",
+  "collect",
+  "select",
+  "filter",
+  "filter_map",
+  "reject",
+  "find",
+  "detect",
+  "find_all",
+  "flat_map",
+  "each_with_index",
+  "each_with_object",
+  "group_by",
+  "sort_by",
+  "min_by",
+  "max_by",
+  "partition",
+]);
 
 /**
  * Instance-returning methods on a class constant that bind a local to the
@@ -123,10 +152,20 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
   name: "ast",
   extract(input: RubyExtractInput): RubyTypeFact[] {
     const facts: RubyTypeFact[] = [];
-    // Track per-variable most-recent binding for copy-propagation.
-    // Maps varName → { type, line } so propagation resolves to the
-    // most-recent binding at or before the copy-site line.
+    // Track per-variable most-recent binding for copy-propagation and
+    // block-parameter element typing. Maps varName → { type, line }.
+    // Pre-seeded with YARD @param types so block-iteration over a
+    // YARD-typed collection (`posts.each { |p| }`) resolves `posts` to its
+    // element type and binds the block param correctly — mirroring
+    // `collectLocalBindingsForChunk`'s behaviour where yardByLine is applied
+    // before the AST walk. YARD @param uses the ELEMENT type for collection
+    // params (Array<Post> → "Post"), so no unwrapping is needed here.
     const latestBinding = new Map<string, { type: string; line: number }>();
+    for (const [defLine, params] of collectYardParamTypes(input.code)) {
+      for (const [name, type] of Object.entries(params)) {
+        latestBinding.set(name, { type, line: defLine });
+      }
+    }
 
     const emitFact = (name: string, typeName: string, line: number, form: "class" | "instance"): void => {
       const typeRef: RubyTypeRef = { form, name: typeName };
@@ -149,6 +188,31 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
             if (nameNode?.type !== "identifier" || !valueNode) continue;
             const type = constInstanceType(valueNode);
             if (type) emitFact(nameNode.text, type, line, "instance");
+          }
+        }
+        return;
+      }
+
+      // Block-parameter element typing: `coll.each { |e| ... }` binds `e` to
+      // coll's resolved element type. Only the FIRST positional param (element);
+      // subsequent params (index, accumulator) are skipped. VTA is sound only
+      // when the receiver already has a binding in latestBinding.
+      if (node.type === "block" || node.type === "do_block") {
+        const { parent } = node;
+        const callMethod = parent?.childForFieldName("method")?.text;
+        const recvNode = parent?.childForFieldName("receiver");
+        if (
+          parent &&
+          (parent.type === "call" || parent.type === "method_call") &&
+          callMethod &&
+          RUBY_BLOCK_ITERATOR_METHODS.has(callMethod) &&
+          recvNode?.type === "identifier"
+        ) {
+          const recvBinding = latestBinding.get(recvNode.text);
+          if (recvBinding && recvBinding.line <= line) {
+            const paramsNode = node.childForFieldName("parameters"); // block_parameters
+            const firstParam = paramsNode?.namedChildren.find((p) => p.type === "identifier");
+            if (firstParam) emitFact(firstParam.text, recvBinding.type, line, "instance");
           }
         }
         return;
