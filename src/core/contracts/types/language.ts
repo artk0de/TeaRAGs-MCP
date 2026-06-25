@@ -129,8 +129,16 @@ export interface ExternalVocabulary {
    * than counted as an in-project miss (bd tea-rags-mcp-dnd9s). When `atLine` is
    * absent the implementation falls back to the pre-dnd9s behaviour so callers that
    * don't thread the call's `startLine` are unaffected.
+   *
+   * `member` (optional) is the call's member name — for a `super` CallRef it is
+   * the ENCLOSING method's name. It lets a `super` to a Ruby runtime hook
+   * (`method_missing`, `respond_to_missing?`, …) be classified external even
+   * when the enclosing class has in-project ancestors: such a hook's `super`
+   * always targets BasicObject / Module in the runtime when no ancestor DEFINES
+   * the hook (the super pass suppresses the file-only fallback and drops it).
+   * Absent `member` preserves the pre-existing behaviour (bd 08tss follow-up).
    */
-  isQualifiedReceiverExternal: (receiver: string, ctx: CallContext, atLine?: number) => boolean;
+  isQualifiedReceiverExternal: (receiver: string, ctx: CallContext, atLine?: number, member?: string) => boolean;
   /**
    * Is this MEMBER, on an untyped qualified receiver, an external base-class
    * instance method (e.g. `agent.update` → ActiveRecord::Base#update)? Optional:

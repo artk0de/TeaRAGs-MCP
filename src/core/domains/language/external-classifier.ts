@@ -21,7 +21,7 @@ export class ExternalCallClassifier {
   targetsExternal(call: CallRef, ctx: CallContext): boolean {
     if (call.receiver === null) return this.vocab.isBareCallExternal(call.member);
     return (
-      this.vocab.isQualifiedReceiverExternal(call.receiver, ctx, call.startLine) ||
+      this.vocab.isQualifiedReceiverExternal(call.receiver, ctx, call.startLine, call.member) ||
       (this.vocab.isQualifiedMemberExternal?.(call.member) ?? false)
     );
   }

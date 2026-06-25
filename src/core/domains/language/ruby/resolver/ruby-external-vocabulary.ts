@@ -7,6 +7,7 @@ import {
   receiverChainTailIsExternal,
   receiverIsIndexAccess,
   resolveConstant,
+  RUBY_RUNTIME_HOOKS,
 } from "./strategies/index.js";
 import { typeOfReceiver } from "./type-propagation.js";
 
@@ -30,14 +31,14 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
     return isExternalQualifiedMember(member);
   }
 
-  isQualifiedReceiverExternal(receiver: string, ctx: CallContext, atLine?: number): boolean {
+  isQualifiedReceiverExternal(receiver: string, ctx: CallContext, atLine?: number, member?: string): boolean {
     // Index-access receiver (`opts[k]`): element type untrackable → external.
     // Paired with the dynamic-dispatch suppression (mktkk increment A) so the
     // suppressed call leaves the inProjectEdgeRecall denominator as
     // callsExternalSkipped instead of becoming a recall hole.
     if (receiverIsIndexAccess(receiver)) return true;
     if (receiverChainTailIsExternal(receiver)) return true; // provably-external chain tail (B-suppress)
-    if (receiver === SUPER_RECEIVER_SENTINEL) return superTargetsExternal(ctx);
+    if (receiver === SUPER_RECEIVER_SENTINEL) return superTargetsExternal(ctx, member);
     if (IVAR_RECEIVER.test(receiver)) return ivarTargetsExternal(receiver, ctx);
     if (/^[A-Z]/.test(receiver)) return resolveConstant(receiver, ctx) === null;
     // Lowercase receiver: check if it's a locally-typed core/gem variable (dnd9s).
@@ -81,8 +82,18 @@ function ivarTargetsExternal(receiver: string, ctx: CallContext): boolean {
  *    chain is NOT flagged — `every` over an empty chain would be vacuously true,
  *    so guard `length > 0`. A super with even ONE in-project ancestor resolves
  *    (file-only) and never reaches here.
+ *
+ * 3. `member` is a Ruby runtime hook (`method_missing`, `respond_to_missing?`,
+ *    `inherited`, …) — its `super` targets BasicObject / Module in the runtime.
+ *    Reaching this classifier means the super pass already DROPPED it: a
+ *    METHOD-LEVEL ancestor match would have resolved earlier, so no in-project
+ *    ancestor DEFINES the hook (the file-only fallback is suppressed by
+ *    RUBY_RUNTIME_HOOKS). Honestly EXTERNAL even when the enclosing class has
+ *    in-project ancestors (`module Octokit; class << self; include Configurable;
+ *    def method_missing(...); super`, octokit.rb:61 — bd 08tss follow-up).
  */
-function superTargetsExternal(ctx: CallContext): boolean {
+function superTargetsExternal(ctx: CallContext, member?: string): boolean {
+  if (member !== undefined && RUBY_RUNTIME_HOOKS.has(member)) return true;
   if (ctx.callerScope.length === 0) return true;
   const enclosingClass = ctx.callerScope.join("::");
   const chain = collectAncestorChain(enclosingClass, ctx);

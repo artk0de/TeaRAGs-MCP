@@ -66,4 +66,52 @@ describe("RubyExternalVocabulary — superTargetsExternal / anonymous module (bd
     });
     expect(vocab.isQualifiedReceiverExternal(SUPER_RECEIVER_SENTINEL, callCtx)).toBe(true);
   });
+
+  // Runtime-hook super follow-up (octokit residual): a `super` whose enclosing
+  // method is a Ruby runtime hook (`method_missing`, `respond_to_missing?`, …)
+  // targets BasicObject / Module in the runtime when no in-project ancestor
+  // DEFINES the hook. The super pass suppresses the file-only fallback in that
+  // case (RUBY_RUNTIME_HOOKS) and DROPs, so the call reaches this classifier —
+  // it is honestly EXTERNAL, not an in-project miss, even though the enclosing
+  // class HAS in-project ancestors. Mirrors `module Octokit; class << self;
+  // include Configurable; def method_missing(...); super` in octokit.rb:61.
+  it("flags runtime-hook super (method_missing) as external even when an in-project ancestor exists", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("lib/octokit/configurable.rb", [
+      {
+        symbolId: "Octokit::Configurable",
+        fqName: "Octokit::Configurable",
+        shortName: "Configurable",
+        relPath: "lib/octokit/configurable.rb",
+        scope: ["Octokit"],
+      },
+    ]);
+    const callCtx = ctx(table, {
+      callerScope: ["Octokit"],
+      classAncestors: { Octokit: ["Octokit::Configurable"] },
+    });
+    expect(vocab.isQualifiedReceiverExternal(SUPER_RECEIVER_SENTINEL, callCtx, undefined, "method_missing")).toBe(true);
+  });
+
+  // Guard: the runtime-hook rule must NOT fire for an ordinary method super.
+  // `class RepoArguments < Arguments; def initialize(args); super` resolves
+  // method-level to `Arguments#initialize` (in-project) — it must stay a real
+  // in-project edge, never auto-classified external.
+  it("does NOT flag a non-hook super (initialize) as external when an in-project ancestor exists", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("lib/octokit/arguments.rb", [
+      {
+        symbolId: "Octokit::Arguments",
+        fqName: "Octokit::Arguments",
+        shortName: "Arguments",
+        relPath: "lib/octokit/arguments.rb",
+        scope: ["Octokit"],
+      },
+    ]);
+    const callCtx = ctx(table, {
+      callerScope: ["Octokit", "RepoArguments"],
+      classAncestors: { "Octokit::RepoArguments": ["Octokit::Arguments"] },
+    });
+    expect(vocab.isQualifiedReceiverExternal(SUPER_RECEIVER_SENTINEL, callCtx, undefined, "initialize")).toBe(false);
+  });
 });
