@@ -36,4 +36,9 @@ describe("RubyExternalVocabulary", () => {
   it("does NOT flag a lowercase receiver (local var / self)", () => {
     expect(vocab.isQualifiedReceiverExternal("user", ctx(new InMemoryGlobalSymbolTable()))).toBe(false);
   });
+
+  it("isQualifiedMemberExternal is true for an AR-core member, false for a project method", () => {
+    expect(vocab.isQualifiedMemberExternal("update")).toBe(true);
+    expect(vocab.isQualifiedMemberExternal("handle_details_post")).toBe(false);
+  });
 });

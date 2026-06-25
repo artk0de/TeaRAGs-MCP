@@ -24,6 +24,7 @@
  */
 
 import { ACTIVESUPPORT_VOCABULARY } from "./activesupport.js";
+import { ACTIVE_RECORD_INSTANCE_BUILTINS } from "./rails-runtime.js";
 import { RAILS_VOCABULARY } from "./rails.js";
 import { RUBY_CORE_VOCABULARY } from "./ruby-core.js";
 import type { RubyDslEntry, RubyFrameworkVocabulary } from "./types.js";
@@ -61,3 +62,12 @@ export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS)
  * the legacy `member in RUBY_DSL || RUBY_KERNEL_BUILTINS.has || RAILS_RUNTIME_BUILTINS.has`.
  */
 export const isExternalBareCall = (member: string): boolean => FRAMEWORKS.some((f) => f.hasExternalMember(member));
+
+/**
+ * Is `member` an AR/core instance method that, on an UNTYPED qualified receiver
+ * (`agent.update`), targets an external base class rather than any in-project
+ * def of the same name? Direct membership in the curated set — single source,
+ * NOT a framework fold (the set is Rails/AR-specific). The dynamic-dispatch
+ * guard + external classifier consult this (bd tea-rags-mcp-i9id8).
+ */
+export const isExternalQualifiedMember = (member: string): boolean => ACTIVE_RECORD_INSTANCE_BUILTINS.has(member);

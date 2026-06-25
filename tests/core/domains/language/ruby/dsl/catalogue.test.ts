@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { RUBY_DSL } from "../../../../../../src/core/domains/language/ruby/dsl/index.js";
+import { isExternalQualifiedMember, RUBY_DSL } from "../../../../../../src/core/domains/language/ruby/dsl/index.js";
 
 describe("RUBY_DSL catalogue", () => {
   it("attr_accessor declares getter + setter (instance)", () => {
@@ -97,5 +97,21 @@ describe("composeEntries", () => {
         defineFrameworkVocabulary("b", { x: { category: "other" } }),
       ]),
     ).toThrow(/duplicate keyword "x"/);
+  });
+});
+
+describe("isExternalQualifiedMember (AR-core instance members, qualified-untyped axis)", () => {
+  it("is true for AR-core identity / write / serialization members", () => {
+    for (const m of ["id", "update", "destroy", "to_json", "persisted?", "reload"]) {
+      expect(isExternalQualifiedMember(m)).toBe(true);
+    }
+  });
+  it("is false for an excluded lifecycle / universal member", () => {
+    for (const m of ["save", "save!", "present?", "to_s", "each", "class"]) {
+      expect(isExternalQualifiedMember(m)).toBe(false);
+    }
+  });
+  it("is false for a project method name", () => {
+    expect(isExternalQualifiedMember("handle_details_post")).toBe(false);
   });
 });

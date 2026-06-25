@@ -1,5 +1,6 @@
 import type { CallContext, CallRef, DispatchEdge } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
+import { isExternalQualifiedMember } from "../../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
 import { receiverLooksLikeArRelationChain } from "./ruby-ar-relation-guard.js";
 import {
@@ -65,6 +66,13 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     // is core/runtime, no in-project target. Suppress; the external classifier
     // reclassifies so recall is not falsely penalised (bd Increment B / B-suppress).
     if (receiverChainTailIsExternal(r)) return [];
+    // AR/core instance member on an untyped receiver (`agent.update`): the true
+    // target is an external base class (ActiveRecord::Base, ActiveModel). Fanning
+    // out to a coincidental in-project def of the same name is wrong-type noise.
+    // Suppress; the external classifier (Consumer 2) reclassifies so recall is not
+    // penalised (bd tea-rags-mcp-i9id8). The receiver is already untyped here — all
+    // typed/constant/relation/index/external-chain receivers returned [] above.
+    if (isExternalQualifiedMember(call.member)) return [];
 
     // Truly dynamic receiver: short-name lookup, ruby-files only.
     const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => isRubyPath(def.relPath));
