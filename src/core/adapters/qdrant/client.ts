@@ -351,6 +351,27 @@ export class QdrantManager {
     await this.call(async () => this.client.deleteCollection(name));
   }
 
+  async createSnapshot(name: string): Promise<string> {
+    const desc = await this.call(async () => this.client.createSnapshot(name));
+    if (!desc?.name) throw new QdrantOperationError("createSnapshot", `Snapshot creation returned no name for collection ${name}`);
+    return desc.name;
+  }
+
+  snapshotDownloadUrl(collection: string, snapshotName: string): string {
+    return `${this.qdrantUrl.replace(/\/$/, "")}/collections/${collection}/snapshots/${snapshotName}`;
+  }
+
+  async recoverFromSnapshot(targetCollection: string, location: string): Promise<void> {
+    const ok = await this.call(async () =>
+      this.client.recoverSnapshot(targetCollection, { location, priority: "snapshot" }),
+    );
+    if (!ok) throw new QdrantOperationError("recoverFromSnapshot", `Snapshot recovery failed for collection ${targetCollection}`);
+  }
+
+  async deleteSnapshot(collection: string, snapshotName: string): Promise<void> {
+    await this.call(async () => this.client.deleteSnapshot(collection, snapshotName));
+  }
+
   async countPoints(collectionName: string, filter?: Record<string, unknown>): Promise<number> {
     try {
       const result = await this.call(async () => this.client.count(collectionName, { filter, exact: true }));

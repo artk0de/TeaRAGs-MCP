@@ -52,9 +52,10 @@ search, invoke `superpowers:test-driven-development` directly. State it.
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — MUST run
-`mcp__tea-rags__reindex_changes` if any file was edited in this session, BEFORE
-the first tea-rags call.
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — a post-commit hook
+auto-reindexes after commits/merges; run `mcp__tea-rags__index_codebase`
+manually only to search code edited but not yet committed, BEFORE the first
+tea-rags call.
 
 ## Step 1 — Frame the test intent
 

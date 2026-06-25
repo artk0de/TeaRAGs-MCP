@@ -110,6 +110,16 @@ export class QuarantineStore {
     });
   }
 
+  /** Copy this collection's quarantine file to targetCollection. No-op when absent. */
+  async cloneTo(targetCollection: string): Promise<void> {
+    const to = join(this.snapshotDir, `${targetCollection}.quarantine.json`);
+    try {
+      await fs.copyFile(this.quarantinePath, to);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+  }
+
   /** Drop all entries (called on forceReindex / schema-drift reset). */
   async clearAll(): Promise<void> {
     await this.enqueue(async () => {

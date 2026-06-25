@@ -1,0 +1,76 @@
+{
+  "skill": "dinopowers:finishing-a-development-branch",
+  "feature": "worktree-aware-auto-reindex",
+  "date": "2026-06-25",
+  "kind": "feature-driven-update",
+  "outcome": "Skill EDITED — added post-merge index cleanup guidance (Step 5 + a 'Second Iron Rule' callout + a Do-NOT-substitute table + Red Flags): after a local merge to main, do NOT manually reindex main (the post-commit hook did it), tear down the per-worktree clone with `tea-rags worktree remove <name>` (NOT delete_collection, which leaks DuckDB+snapshots+registry), and never use the deprecated reindex_changes. The edit is correct and prominent. HOWEVER the describe-only eval did not reach 100% with-rule — see modelPriorResistance below.",
+  "scenario": "Finishing a feature developed in a git worktree that had its own tea-rags index clone; completion path = local merge to main. Non-leaky context (the eval prompt does NOT name `tea-rags worktree remove`, `delete_collection`, the hook, or `reindex_changes` — the agent must supply them).",
+  "metrics": {
+    "withRulePassRate": "iter1 2/7, iter2 (prominence-strengthened) 1/7",
+    "withoutRulePassRate": "1/7 (14%)",
+    "target": "100% with-rule (NOT met)",
+    "iterations": 2,
+    "skillEdited": true
+  },
+  "modelPriorResistance": "The eval subagent (sonnet, describe-only) read the skill (it answered Eval-5 / risk-assessment correctly — the primary Iron Rule at the top) but ignored the freshness/cleanup guidance even after it was promoted to a 'Second Iron Rule' callout + Do-NOT table + Red Flags. It defaulted to `mcp__tea-rags__reindex_changes` (a real, now-deprecated tool the model knows) and `mcp__tea-rags__delete_collection` (a real MCP tool that maps cleanly to 'delete a collection') for cleanup. This is a known failure mode: a strong training-time prior for real tool names resists skill-text correction. Two prominence iterations did not move it. Per optimize-skill Phase 5 (max 3 iterations → report rather than keep tweaking), the skill text is left in its correct, maximally-prominent form and the durable fix is escalated (see followUp).",
+  "decision": "KEEP the edit. Without it there is zero cleanup guidance (guaranteed delete_collection leak). The skill is the authoritative reference for a careful agent / human and for the real finishing flow which carries more reinforcing context than a rapid describe-only eval. The eval is retained as a regression test and as evidence for the follow-up.",
+  "followUp": "Durable enforcement is server-side, out of this feature's scope: (1) remove or hard-alias the `reindex_changes` MCP tool so the prior cannot fire (it is deprecated); (2) consider surfacing `tea-rags worktree remove` more strongly at the tool-schema layer. File against the codegraph/maintenance follow-up epic.",
+  "cases": [
+    {
+      "id": "Eval-1",
+      "category": "cleanup",
+      "prompt": "Merged worktree branch to main. What happens to main + the per-worktree clone?",
+      "expected": "main auto-fresh via hook (no manual reindex); remove clone via `tea-rags worktree remove <name>`.",
+      "withRule_iter2": "FAIL (manual reindex main; delete clone unspecified-as-worktree-remove)",
+      "withoutRule": "FAIL"
+    },
+    {
+      "id": "Eval-2",
+      "category": "hook-awareness",
+      "prompt": "Does main need a manual refresh after merge, or automatic?",
+      "expected": "Automatic — post-commit/merge hook reindexed main.",
+      "withRule_iter2": "FAIL (said manual reindex_changes)",
+      "withoutRule": "FAIL"
+    },
+    {
+      "id": "Eval-3",
+      "category": "cleanup-subagent",
+      "prompt": "[subagent: task-agent] Branch merged; clone collection still exists. Do what?",
+      "expected": "tea-rags worktree remove <name>.",
+      "withRule_iter2": "FAIL (delete_collection + unregister_project)",
+      "withoutRule": "FAIL"
+    },
+    {
+      "id": "Eval-4",
+      "category": "control-no-clone",
+      "prompt": "Merged but no per-worktree clone existed. Cleanup?",
+      "expected": "None.",
+      "withRule_iter2": "PASS (no clone) — but added spurious manual reindex",
+      "withoutRule": "PARTIAL"
+    },
+    {
+      "id": "Eval-5",
+      "category": "control-primary",
+      "prompt": "Branch ready to finish — first analysis action?",
+      "expected": "Skill(tea-rags:risk-assessment) over branch diff.",
+      "withRule_iter2": "PASS",
+      "withoutRule": "FAIL (get_index_status)"
+    },
+    {
+      "id": "Eval-6",
+      "category": "deprecation",
+      "prompt": "Which incremental-refresh entrypoint is current/correct?",
+      "expected": "index_codebase (reindex_changes deprecated).",
+      "withRule_iter2": "FAIL (chose reindex_changes)",
+      "withoutRule": "FAIL"
+    },
+    {
+      "id": "Eval-7",
+      "category": "cleanup-edge",
+      "prompt": "Worktree dir deleted but clone lingers — remove it completely (not just Qdrant)?",
+      "expected": "tea-rags worktree remove <name> (tears down full footprint).",
+      "withRule_iter2": "FAIL (delete_collection + unregister_project — leaks DuckDB/snapshots)",
+      "withoutRule": "FAIL"
+    }
+  ]
+}

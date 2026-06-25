@@ -1,0 +1,82 @@
+{
+  "skill": "dinopowers:test-driven-development",
+  "feature": "worktree-aware-auto-reindex",
+  "date": "2026-06-25",
+  "kind": "feature-driven-update",
+  "outcome": "NO skill-body edit applied. Phase 2 baseline measured the skill AS-IS after the Task-5 FRESHNESS sweep. With-rule scored 8/8 on the freshness behavior, so per optimize-skill triage the proposed TDD-specific reindex guidance was DROPPED as dead weight — the generic swept Index-freshness line already drives correct behavior. This eval complements (does not replace) the primary tests-as-context suite in ../evals.json.",
+  "scenario": "TDD in a git worktree; tea-rags MCP available; a PostToolUse:Bash hook auto-reindexes the resolved collection after a successful git commit/merge.",
+  "metrics": {
+    "withRulePassRate": "8/8 (100%)",
+    "withoutRulePassRate": "5/8 (62.5%)",
+    "deltaPP": 37.5,
+    "iterations": 0,
+    "skillEdited": false,
+    "deltaNote": "Lower than executing-plans (+87.5pp) because the TDD framing makes several no-reindex cases (helper/tests already committed) naturally correct for the baseline. The skill's value concentrates on the deprecation correction (reindex_changes -> index_codebase) and hook-awareness, where baseline reliably fails (cases 4, 5, 8)."
+  },
+  "cases": [
+    {
+      "id": "Eval-1",
+      "category": "freshness",
+      "prompt": "Committed a failing test (RED commit); now writing impl, need to search a helper the test references. Reindex first?",
+      "expected": "No — the post-commit hook reindexed the RED commit; search directly.",
+      "withRule": "PASS",
+      "withoutRule": "PASS"
+    },
+    {
+      "id": "Eval-2",
+      "category": "freshness",
+      "prompt": "Wrote a failing test but NOT committed; want to search whether a similar test exists.",
+      "expected": "No reindex — searching EXISTING committed tests reads the current index; the uncommitted test is irrelevant to that search.",
+      "withRule": "PASS",
+      "withoutRule": "PASS"
+    },
+    {
+      "id": "Eval-3",
+      "category": "freshness-subagent",
+      "prompt": "[subagent: task-agent] After the GREEN commit, before searching the next test target, what reindex step?",
+      "expected": "None — the post-commit hook reindexed the GREEN commit.",
+      "withRule": "PASS",
+      "withoutRule": "PARTIAL (vague 'background sync', lands on no-manual-reindex)"
+    },
+    {
+      "id": "Eval-4",
+      "category": "deprecation",
+      "prompt": "Refresh the index after a commit: reindex_changes or index_codebase?",
+      "expected": "index_codebase (reindex_changes deprecated).",
+      "withRule": "PASS",
+      "withoutRule": "FAIL (chose reindex_changes)"
+    },
+    {
+      "id": "Eval-5",
+      "category": "freshness-subagent",
+      "prompt": "[subagent: other] Committed RED then GREEN; manually reindex between/after before searches?",
+      "expected": "No — the hook fired on each commit.",
+      "withRule": "PASS",
+      "withoutRule": "FAIL (reindex_changes after GREEN)"
+    },
+    {
+      "id": "Eval-6",
+      "category": "control-tdd-order",
+      "prompt": "User: 'Implement feature X' (no test yet). First action?",
+      "expected": "Brainstorm/design first then test-first per the workflow — NOT impl-first; no reindex (nothing changed).",
+      "withRule": "PASS",
+      "withoutRule": "PASS"
+    },
+    {
+      "id": "Eval-7",
+      "category": "control-context",
+      "prompt": "About to write a test — gather tea-rags context first, with which tool?",
+      "expected": "Yes — tests-as-context: semantic_search (proven, chunkType test/test_setup).",
+      "withRule": "PASS",
+      "withoutRule": "PASS (generic hybrid_search + find_symbol — right intent)"
+    },
+    {
+      "id": "Eval-8",
+      "category": "edge",
+      "prompt": "Unsure the hook ran after commit; want to search committed code. Reindex to be safe, which tool?",
+      "expected": "Trust hook; index_codebase incremental only if genuinely stale; never reindex_changes.",
+      "withRule": "PASS",
+      "withoutRule": "FAIL (chose reindex_changes)"
+    }
+  ]
+}

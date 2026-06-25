@@ -35,9 +35,10 @@ not fabricate a target.
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — MUST run
-`mcp__tea-rags__reindex_changes` if any file was edited in this session, BEFORE
-the first tea-rags call.
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — a post-commit hook
+auto-reindexes after commits/merges; run `mcp__tea-rags__index_codebase`
+manually only to search code edited but not yet committed, BEFORE the first
+tea-rags call.
 
 ## Step 1 — Extract review target
 
@@ -131,9 +132,9 @@ through `W` instead"), the change doesn't just touch one symbol — it rides a
 **call route**. Promote the single fanIn number to the actual PATH: call
 `mcp__tea-rags__trace_path` between the two named endpoints to SEE the route the
 change travels and which step on it is the highest-impact chokepoint. **Requires
-codegraph** (prime shows `codegraph.symbols`); when it is off `trace_path` is not
-registered — stay with the Step 2 single-symbol fanIn number and note the route
-view is unavailable.
+codegraph** (prime shows `codegraph.symbols`); when it is off `trace_path` is
+not registered — stay with the Step 2 single-symbol fanIn number and note the
+route view is unavailable.
 
 ```
 mcp__tea-rags__trace_path(

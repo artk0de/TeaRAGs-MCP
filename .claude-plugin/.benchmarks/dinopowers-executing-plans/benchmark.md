@@ -142,3 +142,37 @@ No iteration needed.
 - **Gating UI**: "ask for confirmation" is a protocol; user may need a dedicated
   UI hint (e.g. `AskUserQuestion` tool) for CAUTION verdicts. Out of scope for
   Phase 2 — revisit in Phase 8.
+
+---
+
+## Appendix — worktree-aware auto-reindex (feature-driven update, 2026-06-25)
+
+Eval set: `evals/worktree-auto-reindex-evals.json` (8 cases — 5 freshness, 2
+controls, 1 edge; 2 subagent-context). Tests whether the agent, while executing
+a plan, handles index freshness correctly now that a `PostToolUse:Bash` hook
+auto-reindexes after every commit/merge.
+
+| Metric                | Value       |
+| --------------------- | ----------- |
+| With-rule pass rate   | 100% (8/8)  |
+| Without-rule baseline | 12.5% (1/8) |
+| Delta                 | +87.5pp     |
+| Iterations            | 0           |
+| **Skill body edited** | **No**      |
+
+**Outcome: no skill-body edit.** The Task-5 deprecation sweep already gave every
+dinopowers wrapper a hook-aware `Index freshness` header line (`index_codebase`
+for uncommitted WIP, never `reindex_changes`). The with-rule run — reading the
+post-sweep skill — scored 8/8 on the freshness behavior: correctly trusts the
+hook (no manual reindex after a committed task), reindexes only uncommitted WIP
+via `index_codebase`, never reaches for the deprecated `reindex_changes`, and
+uses `get_index_status` to resolve uncertainty. Per optimize-skill triage
+("finding passes with-rule → not broken, drop from fix list"), the planned
+executing-plans-specific between-tasks guidance was dropped as dead weight —
+adding it would bloat a 298-line skill for zero behavioral gain.
+
+The baseline (no skill) defaulted to the deprecated `reindex_changes` on 5 of 6
+freshness cases and over-triggered the guard on the new-file control, despite
+the scenario explicitly mentioning the hook — confirming the swept line, not
+general competence, drives the correct behavior. This eval is retained as a
+regression test guarding that the freshness behavior survives future edits.

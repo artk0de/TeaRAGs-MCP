@@ -1,6 +1,9 @@
 # Claude Code project config
 .mcp.json
 
+# Superpowers SDD scratch (briefs, reports, review packages, progress ledger)
+.superpowers/
+
 # Dependencies
 node_modules/
 

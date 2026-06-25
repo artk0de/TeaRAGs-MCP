@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type {
@@ -101,6 +101,13 @@ export class StatsCache {
       payloadFieldKeys,
     };
     writeFileSync(this.filePath(collectionName), JSON.stringify(content, null, 2), "utf-8");
+  }
+
+  /** Copy the stats file from sourceCollection to targetCollection. No-op if source is absent. */
+  clone(sourceCollection: string, targetCollection: string): void {
+    const from = this.filePath(sourceCollection);
+    if (!existsSync(from)) return;
+    copyFileSync(from, this.filePath(targetCollection));
   }
 
   /** Invalidate (delete) cache file. */

@@ -24,9 +24,9 @@
  * need to reset state.
  */
 
-import { mkdirSync, readdirSync, rmSync } from "node:fs";
-import { unlink } from "node:fs/promises";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { copyFile, unlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
 import { DuckDbGraphClient } from "./client.js";
@@ -456,6 +456,19 @@ export class GraphDbClientPool {
     this.clients.delete(collectionName);
     await entry.graphDb.close().catch(() => undefined);
     return true;
+  }
+
+  /**
+   * Copy the DuckDB file for sourceCollection to targetCollection.
+   * Releases the cached source connection first (implicit checkpoint).
+   * No-op when the source file does not exist (codegraph disabled / not built).
+   */
+  async cloneDatabase(sourceCollection: string, targetCollection: string): Promise<void> {
+    await this.release(sourceCollection);
+    const from = this.pathFor(sourceCollection);
+    if (!existsSync(from)) return;
+    mkdirSync(dirname(this.pathFor(targetCollection)), { recursive: true });
+    await copyFile(from, this.pathFor(targetCollection));
   }
 
   /**
