@@ -252,6 +252,49 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
     });
   });
 
+  describe("typeable chain receiver guard (epydb — defer to chainType, suppress dynamic fan-out)", () => {
+    // Seed with an in-project def for the same member name so without the guard
+    // a dynamic fan-out WOULD be produced. This makes the green/red flip observable.
+    const accountSymbolTable = tableWith([
+      "app/models/account.rb",
+      [sym("Account#balance", "balance", "app/models/account.rb", ["Account"])],
+    ]);
+
+    it("returns [] when chain receiver is typeable (defers to chainType, suppresses dynamic fan-out)", () => {
+      // user.account: head `user` is bound to User in localBindings; hop `account`
+      // resolves via structuredReturnTypes["User#account"] → {form:"instance", name:"Account"}.
+      // typeOfReceiver returns a known instance type → guard fires → [].
+      const call = {
+        callText: "user.account.balance",
+        receiver: "user.account",
+        member: "balance",
+        startLine: 5,
+      };
+      const typedChainCtx = ctx({
+        symbolTable: accountSymbolTable,
+        localBindings: { user: [{ line: 1, type: "User" }] },
+        structuredReturnTypes: { "User#account": { form: "instance", name: "Account" } },
+      });
+      expect(resolver.resolveDispatch(call, typedChainCtx)).toEqual([]);
+    });
+
+    it("still fans out when chain receiver is untypeable (head has no binding — dynamic path unchanged)", () => {
+      // unknown.account: head `unknown` has no localBindings entry → typeOfReceiver
+      // returns undefined → guard does NOT fire → existing dynamic fan-out runs.
+      const call = {
+        callText: "unknown.account.balance",
+        receiver: "unknown.account",
+        member: "balance",
+        startLine: 5,
+      };
+      const untypedChainCtx = ctx({
+        symbolTable: accountSymbolTable,
+        // No localBindings — head is unresolvable
+      });
+      expect(resolver.resolveDispatch(call, untypedChainCtx).length).toBeGreaterThan(0);
+    });
+  });
+
   describe("chain-order safety: typed receiver resolves exact via localType, never reaches member guard", () => {
     // A TYPED receiver (localBindings binds `model` → "Model") with an in-project
     // `Model#update` def resolves EXACT via the localType chain strategy, not

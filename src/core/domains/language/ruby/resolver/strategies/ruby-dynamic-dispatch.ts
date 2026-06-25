@@ -2,6 +2,7 @@ import type { CallContext, CallRef, DispatchEdge } from "../../../../../contract
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
 import { isExternalQualifiedMember } from "../../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
+import { typeOfReceiver } from "../type-propagation.js";
 import { receiverLooksLikeArRelationChain } from "./ruby-ar-relation-guard.js";
 import {
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
@@ -66,6 +67,14 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     // is core/runtime, no in-project target. Suppress; the external classifier
     // reclassifies so recall is not falsely penalised (bd Increment B / B-suppress).
     if (receiverChainTailIsExternal(r)) return [];
+    // Typeable chain receiver: the propagation engine threads it to a known class/
+    // instance type, so the precise `chainType` strategy (in resolve()) must own it
+    // — returning [] here defers to it instead of fanning out speculative dynamic
+    // edges. (bd tea-rags-mcp-epydb)
+    if (r.includes(".")) {
+      const t = typeOfReceiver(r, call.startLine, ctx);
+      if (t && (t.form === "class" || t.form === "instance")) return [];
+    }
     // AR/core instance member on an untyped receiver (`agent.update`): the true
     // target is an external base class (ActiveRecord::Base, ActiveModel). Fanning
     // out to a coincidental in-project def of the same name is wrong-type noise.
