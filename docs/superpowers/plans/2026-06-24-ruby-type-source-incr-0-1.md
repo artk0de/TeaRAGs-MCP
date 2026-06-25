@@ -395,12 +395,9 @@ git commit -m "feat(trajectory): RubyTypeFactStore parity orchestrator (Incr 0)"
 - [ ] **Step 2: Add the adapter that converts existing parser output to facts**
 
 ```ts
-import type { RubyExtractInput } from "../../../../../contracts/types/ast.js"; // adjust to real RubyExtractInput home
-import type {
-  RubyInlineTypeSource,
-  RubyTypeFact,
-  RubyTypeRef,
-} from "../../../../../contracts/types/language.js";
+import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+import type { RubyExtractInput } from "../walker.js";
+import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 
 // ...relocated collectYardParamTypes / collectYardReturnTypes live above in this file...
 
