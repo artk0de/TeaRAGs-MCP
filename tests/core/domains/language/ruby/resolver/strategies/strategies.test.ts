@@ -512,6 +512,61 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
     );
     expect(outcome.kind).toBe("continue");
   });
+
+  // RC-1 (tea-rags-mcp-55xil): instance-form preference over class-form on
+  // cross-form ambiguity. A bare call from a class that INCLUDES a mixin
+  // (Octokit::Client includes Octokit::Configurable) where classAncestors is
+  // absent. The MRO narrowing finds no candidate scoped to "Client" or any
+  // ancestor, so it falls to pickSingleCandidate. Before the fix that returned
+  // null (>1 candidate, strict mode) → CONTINUE (miss). With the form-preference
+  // filter, the class-form candidate (Octokit::Default.client_id) is dropped
+  // first, leaving only the instance-form candidate → resolves.
+  it("prefers instance-form (#) candidate over class-form (.) when MRO narrowing exhausts without a match (rc1)", () => {
+    const symbolTable = tableWith(
+      [
+        "lib/octokit/configurable.rb",
+        [
+          sym("Octokit::Configurable#client_id", "client_id", "lib/octokit/configurable.rb", [
+            "Octokit",
+            "Configurable",
+          ]),
+        ],
+      ],
+      [
+        "lib/octokit/default.rb",
+        [sym("Octokit::Default.client_id", "client_id", "lib/octokit/default.rb", ["Octokit", "Default"])],
+      ],
+    );
+    // Caller is Octokit::Client which INCLUDES Configurable, but classAncestors
+    // is absent (mixin — no MRO entry). MRO narrowing finds nothing scoped to
+    // "Client", falls to pickSingleCandidate with 2 candidates → old: CONTINUE.
+    const outcome = strat.attempt(
+      { callText: "client_id", receiver: null, member: "client_id", startLine: 1 },
+      ctx({ symbolTable, callerScope: ["Octokit", "Client"] }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "lib/octokit/configurable.rb",
+        targetSymbolId: "Octokit::Configurable#client_id",
+      },
+    });
+  });
+
+  it("still CONTINUEs (does not guess) when two instance-form candidates collide (no MRO, same form — rc1 regression)", () => {
+    // Two instance methods with the same short name in unrelated classes and no
+    // MRO entry: the form-preference filter leaves two instance candidates, which
+    // is still genuinely ambiguous — must NOT guess.
+    const symbolTable = tableWith(
+      ["lib/a.rb", [sym("A#client_id", "client_id", "lib/a.rb", ["A"])]],
+      ["lib/b.rb", [sym("B#client_id", "client_id", "lib/b.rb", ["B"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "client_id", receiver: null, member: "client_id", startLine: 1 },
+      ctx({ symbolTable, callerScope: ["Mod"] }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
 });
 
 describe("RubyIvarFieldSymbolResolutionStrategy", () => {
@@ -697,7 +752,10 @@ describe("RubyDynamicDispatchResolver — chain-tail suppression (increment B / 
   it("returns [] for a provably-external chain-tail receiver (req.headers.to_h)", () => {
     // `req.headers.to_h` → receiver is `req.headers`; `.headers` is an EXTERNAL_CHAIN_TAIL
     const call: CallRef = { callText: "req.headers.to_h", receiver: "req.headers", member: "to_h", startLine: 1 };
-    const symbolTable = tableWith(["app/lib/to_h.rb", [sym("SomeClass#to_h", "to_h", "app/lib/to_h.rb", ["SomeClass"])]]);
+    const symbolTable = tableWith([
+      "app/lib/to_h.rb",
+      [sym("SomeClass#to_h", "to_h", "app/lib/to_h.rb", ["SomeClass"])],
+    ]);
     const result = resolver.resolveDispatch(call, ctx({ symbolTable }));
     expect(result).toEqual([]);
   });
@@ -705,10 +763,7 @@ describe("RubyDynamicDispatchResolver — chain-tail suppression (increment B / 
   it("still fans out for a non-external chain receiver (regression guard: event.user)", () => {
     // `event.user` → `.user` is NOT in EXTERNAL_CHAIN_TAILS → fan-out proceeds
     const call: CallRef = { callText: "event.user.save", receiver: "event.user", member: "save", startLine: 1 };
-    const symbolTable = tableWith([
-      "app/models/user.rb",
-      [sym("User#save", "save", "app/models/user.rb", ["User"])],
-    ]);
+    const symbolTable = tableWith(["app/models/user.rb", [sym("User#save", "save", "app/models/user.rb", ["User"])]]);
     const result = resolver.resolveDispatch(call, ctx({ symbolTable }));
     expect(result.length).toBeGreaterThan(0);
   });

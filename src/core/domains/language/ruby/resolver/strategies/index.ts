@@ -22,6 +22,8 @@ export {
   isRubyPath,
   receiverIsIndexAccess,
   receiverChainTailIsExternal,
+  symbolIdIsClassMethod,
+  symbolIdIsInstanceMethod,
   CONE_MAX_DEFAULT,
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
   type ResolverConfig,

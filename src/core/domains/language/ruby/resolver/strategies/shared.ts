@@ -90,14 +90,7 @@ export function receiverIsIndexAccess(receiver: string): boolean {
  * define) are EXCLUDED (deferred — they need a root-segment vocab gate). bd
  * Increment B / B-suppress.
  */
-const EXTERNAL_CHAIN_TAILS = [
-  ".headers",
-  ".backtrace",
-  ".constantize",
-  ".deconstantize",
-  ".to_param",
-  ".class_name",
-];
+const EXTERNAL_CHAIN_TAILS = [".headers", ".backtrace", ".constantize", ".deconstantize", ".to_param", ".class_name"];
 
 /**
  * True when a chain receiver ends in a provably-external core/runtime method —
@@ -371,7 +364,7 @@ function resolveTypeMethodInternal(
  * method resolution path shared by `resolveTypeStaticMethod` and
  * `RubyConstantSymbolResolutionStrategy`.
  */
-function symbolIdIsClassMethod(symbolId: string, member: string): boolean {
+export function symbolIdIsClassMethod(symbolId: string, member: string): boolean {
   if (symbolId === member) return true; // top-level function
   return symbolId.endsWith(`.${member}`);
 }
@@ -381,6 +374,6 @@ function symbolIdIsClassMethod(symbolId: string, member: string): boolean {
  * separator). Used by `resolveTypeInstanceMethod` to exclude class methods when
  * both `Type.method` and `Type#method` exist in the symbol table.
  */
-function symbolIdIsInstanceMethod(symbolId: string, member: string): boolean {
+export function symbolIdIsInstanceMethod(symbolId: string, member: string): boolean {
   return symbolId.endsWith(`#${member}`);
 }
