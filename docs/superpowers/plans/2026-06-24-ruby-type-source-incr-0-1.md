@@ -848,20 +848,22 @@ export class RubyChainTypeSymbolResolutionStrategy implements SymbolResolutionSt
   `tests/core/domains/language/ruby/resolver/type-propagation-container.test.ts`
   (new)
 
-- [ ] **Step 1: Failing test** — `posts : Array<Post>` (container ref);
+- [x] **Step 1: Failing test** — `posts : Array<Post>` (container ref);
       `posts.first.title` resolves `Post#title`; `posts.each { |p| p.title }`
       infers block param `p : Post` and resolves `Post#title`; an untyped
       `arr[i].x` still returns `undefined` (suppression preserved).
-- [ ] **Step 2: Verify fail.**
-- [ ] **Step 3: Implement** — container element unwrap on element-returning
+- [x] **Step 2: Verify fail.** 17 tests RED.
+- [x] **Step 3: Implement** — container element unwrap on element-returning
       members (`first`/`last`/`[]`/`sample`); block-param fact emission in the
       ast source for `each`/`map`/`select` over a container-typed receiver; lift
       `receiverIsIndexAccess` suppression in the chain strategy ONLY when
       `typeOfReceiver` yields a known element type.
-- [ ] **Step 4: Verify pass + full ruby suite green (index-access suppression
-      for untyped containers unchanged).**
-- [ ] **Step 5: Commit** —
-      `feat(trajectory): container element + block-param receiver types`.
+- [x] **Step 4: Verify pass + full ruby suite green (index-access suppression
+      for untyped containers unchanged).** 32/32 new tests GREEN. 7879 total
+      GREEN.
+- [x] **Step 5: Commit** —
+      `feat(trajectory): container element + block-param receiver types`. SHA
+      8313eae6.
 
 ## Task 1.7: Capability 3 — union `[A,B]` → cone fan-out
 

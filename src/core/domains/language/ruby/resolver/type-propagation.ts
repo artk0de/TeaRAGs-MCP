@@ -22,6 +22,62 @@
 import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 
+/**
+ * Array/Enumerable methods that return a SINGLE ELEMENT from a typed container.
+ * When `recv` is `{form:"container", element:E}` and the member is in this set,
+ * `returnTypeOf` unwraps the container and returns `E` so multi-hop chains like
+ * `posts.first.title` thread correctly: posts→container(Post), .first→Post,
+ * .title→Post#title.
+ *
+ * Non-element methods (`size`, `count`, `map`, `length`) are intentionally
+ * absent — those operate on the container itself (Array/Enumerable = external)
+ * and their return types are not trackable without a full Enumerable type model.
+ */
+export const CONTAINER_ELEMENT_RETURNING_METHODS = new Set([
+  "first",
+  "last",
+  "[]",
+  "fetch",
+  "sample",
+  "find",
+  "detect",
+  "min",
+  "max",
+  "dig",
+]);
+
+/**
+ * Block-iteration methods whose FIRST block parameter is bound to the container's
+ * element type at walk-time. When `recv` has a known container element type E,
+ * `posts.each { |p| … }` binds `p` to `E`. This constant is the single source
+ * of truth for the block-param inference set (bd Increment B / B-block) used by
+ * both `rubyAstInferenceTypeSource` (via the `latestBinding` seed) and
+ * `collectLocalBindingsForChunk` (via `RUBY_BLOCK_ITERATOR_METHODS`).
+ *
+ * Exported here so the engine and the walker share one definition; the walker's
+ * `RUBY_BLOCK_ITERATOR_METHODS` re-exports this.
+ */
+export const CONTAINER_BLOCK_ITERATION_METHODS = new Set([
+  "each",
+  "map",
+  "collect",
+  "select",
+  "filter",
+  "filter_map",
+  "reject",
+  "find",
+  "detect",
+  "find_all",
+  "flat_map",
+  "each_with_index",
+  "each_with_object",
+  "group_by",
+  "sort_by",
+  "min_by",
+  "max_by",
+  "partition",
+]);
+
 /** `@ivar` — a single leading `@` followed by word characters only. */
 const IVAR_RECEIVER = /^@\w+$/;
 
@@ -66,6 +122,26 @@ export function typeOfReceiver(receiver: string, atLine: number, ctx: CallContex
     return resolveChain(receiver, atLine, ctx);
   }
 
+  // ── Index-access on a typed container: `arr[i]` → element type (Task 1.6) ─
+  // When the outermost operation is `[...]` and the base var has a container
+  // binding, return the element type so call sites like `arr[0].title` can
+  // resolve to the element class rather than being suppressed as untrackable.
+  // UNTYPED containers (no binding or non-container typeRef) return `undefined`
+  // — suppression is preserved as before.
+  const trimmed = receiver.trimEnd();
+  if (trimmed.endsWith("]") && trimmed.includes("[")) {
+    const bracketIdx = trimmed.indexOf("[");
+    const baseVar = bracketIdx > 0 ? trimmed.slice(0, bracketIdx) : "";
+    if (baseVar && /^[a-z_]\w*$/.test(baseVar)) {
+      const baseBinding = resolveLocalBinding(ctx.localBindings, baseVar, atLine);
+      if (baseBinding?.typeRef?.form === "container") {
+        return baseBinding.typeRef.element;
+      }
+    }
+    // Untyped index-access → undefined (suppression unchanged).
+    return undefined;
+  }
+
   // ── @ivar ───────────────────────────────────────────────────────────────
   if (IVAR_RECEIVER.test(receiver)) {
     return resolveIvarType(receiver, ctx);
@@ -77,8 +153,7 @@ export function typeOfReceiver(receiver: string, atLine: number, ctx: CallContex
   // on `resolveLocalBinding` returning `undefined` for constants/keywords (no
   // binding recorded), so no pre-filter on casing is strictly required — but
   // dotted receivers and ivars are already guarded above, and index-access
-  // (`arr[0]`) contains `[` which is not a word character: `resolveLocalBinding`
-  // returns `undefined` for them too. The explicit chain guard above is the only
+  // (`arr[0]`) is handled above. The explicit chain guard above is the only
   // structural guard needed.
   const binding = resolveLocalBinding(ctx.localBindings, receiver, atLine);
   if (!binding) return undefined;
@@ -145,7 +220,13 @@ function resolveChain(receiver: string, atLine: number, ctx: CallContext): RubyT
  * Union / container forms are NOT threaded here (Task 1.6/1.7) — returns `undefined`.
  */
 function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): RubyTypeRef | undefined {
-  // Only class/instance forms are threadable; union/container deferred to later tasks.
+  // Container form: element-returning methods unwrap to the element type (Task 1.6).
+  // Non-element methods (size, count, map, …) → undefined (Array/Enumerable = external).
+  if (recv.form === "container") {
+    return CONTAINER_ELEMENT_RETURNING_METHODS.has(member) ? recv.element : undefined;
+  }
+
+  // Only class/instance forms are threadable beyond the container branch; union deferred.
   if (recv.form !== "class" && recv.form !== "instance") return undefined;
 
   // 1. Precise structured return type for this class#member key.

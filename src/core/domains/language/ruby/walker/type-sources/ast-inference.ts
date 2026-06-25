@@ -1,38 +1,20 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+import { CONTAINER_BLOCK_ITERATION_METHODS } from "../../resolver/type-propagation.js";
 import { readScopeResolution, walk } from "../ast-utils.js";
 import type { RubyExtractInput } from "../walker.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 import { collectYardParamTypes, YARD_CONST } from "./yard.js";
 
 /**
- * Enumerable / collection methods that yield each element to a block. When the
- * iterated receiver has a known element type (from YARD `@param [Array<T>]` or
- * a prior binding), the FIRST positional block param is typed to that element
- * type (bd Increment B / B-block). This is the single source of truth for the
- * iterator-method set used by both `rubyAstInferenceTypeSource` (block-param
- * inference) and `collectLocalBindingsForChunk` (re-exported via local-bindings).
+ * Re-export of {@link CONTAINER_BLOCK_ITERATION_METHODS} from the type-propagation
+ * engine — the single source of truth for block-iterator methods shared by
+ * `rubyAstInferenceTypeSource` (walk-time block-param inference) and
+ * `collectLocalBindingsForChunk`. Kept as a named export so callers that already
+ * import `RUBY_BLOCK_ITERATOR_METHODS` from this module don't need a mechanical
+ * import-path change.
  */
-export const RUBY_BLOCK_ITERATOR_METHODS = new Set([
-  "each",
-  "map",
-  "collect",
-  "select",
-  "filter",
-  "filter_map",
-  "reject",
-  "find",
-  "detect",
-  "find_all",
-  "flat_map",
-  "each_with_index",
-  "each_with_object",
-  "group_by",
-  "sort_by",
-  "min_by",
-  "max_by",
-  "partition",
-]);
+export const RUBY_BLOCK_ITERATOR_METHODS = CONTAINER_BLOCK_ITERATION_METHODS;
 
 /**
  * Instance-returning methods on a class constant that bind a local to the

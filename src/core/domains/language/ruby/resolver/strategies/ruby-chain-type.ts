@@ -40,15 +40,21 @@ export class RubyChainTypeSymbolResolutionStrategy implements SymbolResolutionSt
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     const r = call.receiver;
-    // Only multi-segment dotted chains. Single-segment receivers (`user`,
-    // `@client`) are already owned by localType / ivarField; returning CONTINUE
-    // here lets them reach those earlier passes unchanged (the chain runs from
-    // top — this is called after them, so a single-var hit would have already
-    // returned resolved/drop before reaching this strategy).
-    if (!r?.includes(".")) return CONTINUE;
+    if (!r) return CONTINUE;
+
+    // Multi-segment dotted chains OR index-access receivers (`arr[0]`, `items[k]`).
+    // Single-segment plain-identifier receivers (`user`, `@client`) are already
+    // owned by localType / ivarField; returning CONTINUE here lets them reach
+    // those earlier passes unchanged.
+    const isDotChain = r.includes(".");
+    const rt = r.trimEnd();
+    const isIndexAccess = rt.endsWith("]") && rt.includes("[");
+    if (!isDotChain && !isIndexAccess) return CONTINUE;
 
     const t = typeOfReceiver(r, call.startLine, ctx);
-    // Unknown or union/container form — let existing passes handle (CONTINUE).
+    // Unknown, union, or container form — let existing passes handle (CONTINUE).
+    // For index-access: typeOfReceiver already unwraps container → element (instance
+    // form), so `t` will be a class/instance ref when the element type is known.
     if (!t || (t.form !== "class" && t.form !== "instance")) return CONTINUE;
 
     const resolve = t.form === "class" ? resolveTypeStaticMethod : resolveTypeInstanceMethod;
