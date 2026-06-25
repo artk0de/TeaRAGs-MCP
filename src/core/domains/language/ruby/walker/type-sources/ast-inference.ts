@@ -169,7 +169,7 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
 
     const emitFact = (name: string, typeName: string, line: number, form: "class" | "instance"): void => {
       const typeRef: RubyTypeRef = { form, name: typeName };
-      facts.push({ kind: "local", symbolScope: [], name, line, type: typeRef });
+      facts.push({ kind: "local", source: "ast", symbolScope: [], name, line, type: typeRef });
       latestBinding.set(name, { type: typeName, line });
     };
 

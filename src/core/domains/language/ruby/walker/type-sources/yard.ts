@@ -136,6 +136,7 @@ export const rubyYardTypeSource: RubyInlineTypeSource = {
         if (type) {
           facts.push({
             kind: "param",
+            source: "yard",
             symbolScope: [],
             methodName: undefined,
             name,
@@ -149,7 +150,7 @@ export const rubyYardTypeSource: RubyInlineTypeSource = {
     for (const [methodName, raw] of Object.entries(collectYardReturnTypes(input.code))) {
       const type = yardBracketToRef(raw);
       if (type) {
-        facts.push({ kind: "return", symbolScope: [], methodName, type });
+        facts.push({ kind: "return", source: "yard", symbolScope: [], methodName, type });
       }
     }
     return facts;

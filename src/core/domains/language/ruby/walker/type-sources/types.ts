@@ -4,6 +4,8 @@ import type { RubyExtractInput } from "../walker.js";
 /** One receiver-type fact a source attributes to a symbol coordinate. */
 export interface RubyTypeFact {
   kind: "param" | "return" | "ivar" | "local" | "attr";
+  /** Source name that produced this fact — used for precedence resolution in RubyTypeFactStore. */
+  source?: string;
   /** Enclosing class/module FQ scope, e.g. ["Octokit","Client"]. */
   symbolScope: string[];
   /** Owning def short name (param/return/local). Undefined for class-level ivar/attr. */
