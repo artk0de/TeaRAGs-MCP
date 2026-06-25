@@ -94,4 +94,26 @@ describe("index-codebase --name", () => {
         .parse(`index-codebase ${projPath} --name a --project b`);
     }).toThrow(/mutually exclusive/i);
   });
+
+  it("aborts before forking when the alias is invalid (exit 1, no worker)", async () => {
+    const err = await runHandler({ name: "Bad Name", path: projPath }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ExitError);
+    expect((err as ExitError).code).toBe(1);
+    expect(vi.mocked(fork)).not.toHaveBeenCalled();
+  });
+
+  it("emits a parseable {error} object in --json mode on register failure", async () => {
+    const out: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation(((s: string) => {
+      out.push(String(s));
+      return true;
+    }) as never);
+
+    await runHandler({ name: "Bad Name", path: projPath, json: true }).catch(() => undefined);
+
+    const parsed = JSON.parse(out.join("")) as { error: { code: string; message: string } };
+    expect(parsed.error.code).toBe("INPUT_PROJECT_NAME_INVALID");
+    expect(parsed.error.message).toMatch(/invalid/i);
+    expect(vi.mocked(fork)).not.toHaveBeenCalled();
+  });
 });

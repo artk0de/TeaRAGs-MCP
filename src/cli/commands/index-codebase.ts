@@ -4,11 +4,16 @@ import { join, resolve } from "node:path";
 
 import type { CommandModule } from "yargs";
 
-import { CollectionRegistry, ProjectRegistryOps, type IndexOptions } from "../../core/api/public/index.js";
+import {
+  CollectionRegistry,
+  InputValidationError,
+  ProjectRegistryOps,
+  type IndexOptions,
+} from "../../core/api/public/index.js";
 import { pickRegistryEntry, resolveRegistryEnv } from "../index-progress/registry-env.js";
 import { createRenderer } from "../index-progress/renderer.js";
 import { superviseIndexing } from "../index-progress/supervisor.js";
-import { createColorizer } from "../infra/color.js";
+import { createColorizer, type Colorizer } from "../infra/color.js";
 import { applyProjectDefaults } from "../registry-resolver.js";
 
 export interface IndexCodebaseArgs {
@@ -55,6 +60,21 @@ function resolveDataDir(): string {
 function resolveProjectName(registry: CollectionRegistry, resolvedPath: string): string | null {
   const entry = registry.findByPath(resolvedPath);
   return entry?.name ?? null;
+}
+
+/**
+ * Render a typed registration failure and let the handler exit(1) before any
+ * worker is forked. JSON mode emits a parseable { error } object on stdout;
+ * text mode writes a colorized one-liner to stderr. Non-typed errors (program
+ * bugs) propagate unchanged.
+ */
+function renderRegisterError(err: unknown, opts: { json: boolean; colors: Colorizer }): void {
+  if (!(err instanceof InputValidationError)) throw err;
+  if (opts.json) {
+    process.stdout.write(`${JSON.stringify({ error: { code: err.code, message: err.message } })}\n`);
+  } else {
+    process.stderr.write(`${opts.colors.alert(`index-codebase: ${err.message}`)}\n`);
+  }
 }
 
 export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
@@ -115,19 +135,26 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
     const registry = new CollectionRegistry(dataDir);
     const registryEnv = resolveRegistryEnv(pickRegistryEntry(registry, { project: argv.project, path }));
 
+    // JSON mode forces NO_COLOR semantics so the output is clean for parsing.
+    const colors = createColorizer(jsonMode ? { env: { NO_COLOR: "1" }, isTTY: false } : undefined);
+
     // --name: register this path under the alias BEFORE indexing so a new
     // project gets its alias in one command. Env is already resolved above, so
     // the fresh stub entry does not shadow the most-recently-indexed embedding
-    // fallback. No qdrant in deps — the collection does not exist yet.
+    // fallback. No qdrant in deps — the collection does not exist yet. A typed
+    // failure renders and exits before any worker is forked.
     if (argv.name) {
-      await new ProjectRegistryOps({ registry }).register({ path, name: argv.name });
+      try {
+        await new ProjectRegistryOps({ registry }).register({ path, name: argv.name });
+      } catch (err) {
+        renderRegisterError(err, { json: jsonMode, colors });
+        process.exit(1);
+      }
     }
 
     // Resolve the registered project alias for the status block.
     const projectName = argv.name ?? argv.project ?? resolveProjectName(registry, path) ?? undefined;
 
-    // JSON mode forces NO_COLOR semantics so the output is clean for parsing.
-    const colors = createColorizer(jsonMode ? { env: { NO_COLOR: "1" }, isTTY: false } : undefined);
     const renderer = createRenderer({ isTTY: Boolean(process.stderr.isTTY), colors, json: jsonMode });
     const child = forkWorker(path, options, registryEnv);
 
