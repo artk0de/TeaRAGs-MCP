@@ -66,19 +66,24 @@ function ivarTargetsExternal(receiver: string, ctx: CallContext): boolean {
 }
 
 /**
- * A `super` call (receiver `<super>`) whose enclosing class's FULL ancestor chain
- * resolves to ZERO in-project files targets a gem / runtime ancestor method
- * (`class Agent < ActiveRecord::Base` → `super` is `ActiveRecord::Base#…`, bd
- * cai0). The super pass correctly DROPs it (no in-project file to pin), so it
- * reaches this hook unresolved; it is honestly EXTERNAL, not an internal resolver
- * miss, and must be excluded from the resolveSuccessRate denominator like any gem
- * call. Conservative: a class with no declared ancestor chain is NOT flagged —
- * `every` over an empty chain would be vacuously true, so guard `length > 0`. A
- * super with even ONE in-project ancestor resolves (file-only) and never reaches
- * here.
+ * A `super` call (receiver `<super>`) is classified EXTERNAL in two cases:
+ *
+ * 1. `callerScope` is empty — `super` is inside an anonymous `Module.new { }`
+ *    block. The enclosing class is unknown so the target is always a Ruby
+ *    runtime ancestor (BasicObject / Module) — honestly external
+ *    (bd tea-rags-mcp-08tss Part 3).
+ *
+ * 2. The enclosing class's FULL ancestor chain resolves to ZERO in-project files
+ *    — targets a gem / runtime ancestor method (`class Agent < ActiveRecord::Base`
+ *    → `super` is `ActiveRecord::Base#…`, bd cai0). The super pass correctly
+ *    DROPs it (no in-project file to pin), so it reaches this hook unresolved;
+ *    it is honestly EXTERNAL. Conservative: a class with no declared ancestor
+ *    chain is NOT flagged — `every` over an empty chain would be vacuously true,
+ *    so guard `length > 0`. A super with even ONE in-project ancestor resolves
+ *    (file-only) and never reaches here.
  */
 function superTargetsExternal(ctx: CallContext): boolean {
-  if (ctx.callerScope.length === 0) return false;
+  if (ctx.callerScope.length === 0) return true;
   const enclosingClass = ctx.callerScope.join("::");
   const chain = collectAncestorChain(enclosingClass, ctx);
   return chain.length > 0 && chain.every((ancestor) => resolveConstant(ancestor, ctx) === null);

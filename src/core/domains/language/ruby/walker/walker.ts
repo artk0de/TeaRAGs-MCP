@@ -229,8 +229,28 @@ function collectRubyInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
       const ordinals: Record<"include" | "extend" | "prepend", number> = { include: 0, extend: 0, prepend: 0 };
       for (const stmt of stmtSource) {
         const mixin = mixinTargetFromStatement(stmt);
-        if (!mixin) continue;
-        edges.push({ source: fq, ancestor: mixin.name, kind: mixin.kind, ordinal: ordinals[mixin.kind]++ });
+        if (mixin) {
+          edges.push({ source: fq, ancestor: mixin.name, kind: mixin.kind, ordinal: ordinals[mixin.kind]++ });
+          continue;
+        }
+        // `class << self` (singleton_class) — descend its body and attribute
+        // any include/extend/prepend inside it to the enclosing class/module.
+        // Pattern: `module M; class << self; include Configurable; end; end`
+        // emits an ancestor edge `M → Configurable` (bd tea-rags-mcp-08tss).
+        if (stmt.type === "singleton_class") {
+          const singBody = stmt.childForFieldName("body");
+          const singStmts = singBody ? singBody.children : stmt.children;
+          for (const singStmt of singStmts) {
+            const singMixin = mixinTargetFromStatement(singStmt);
+            if (!singMixin) continue;
+            edges.push({
+              source: fq,
+              ancestor: singMixin.name,
+              kind: singMixin.kind,
+              ordinal: ordinals[singMixin.kind]++,
+            });
+          }
+        }
       }
       const recurseChildren = body ? body.children : node.children;
       for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
@@ -293,13 +313,29 @@ function collectRubyClassAncestors(root: AstNode): {
       // `prepend Mod` is collected separately (bd tea-rags-mcp-3jvn) because
       // it inserts BEFORE the class itself in Ruby's MRO — the resolver
       // checks prepended modules first, then the class, then includes/super.
+      // `class << self` (singleton_class) bodies are also descended —
+      // include/extend/prepend inside them contribute to the enclosing class
+      // ancestor chain so `module M; class << self; include C; end; end`
+      // populates classAncestors["M"] (bd tea-rags-mcp-08tss).
       const body = node.childForFieldName("body");
       const stmtSource = body ? body.children : node.children;
       for (const stmt of stmtSource) {
         const mixin = mixinTargetFromStatement(stmt);
-        if (!mixin) continue;
-        if (mixin.kind === "prepend") prepended.push(mixin.name);
-        else ancestors.push(mixin.name);
+        if (mixin) {
+          if (mixin.kind === "prepend") prepended.push(mixin.name);
+          else ancestors.push(mixin.name);
+          continue;
+        }
+        if (stmt.type === "singleton_class") {
+          const singBody = stmt.childForFieldName("body");
+          const singStmts = singBody ? singBody.children : stmt.children;
+          for (const singStmt of singStmts) {
+            const singMixin = mixinTargetFromStatement(singStmt);
+            if (!singMixin) continue;
+            if (singMixin.kind === "prepend") prepended.push(singMixin.name);
+            else ancestors.push(singMixin.name);
+          }
+        }
       }
       if (ancestors.length > 0) out.set(fq, ancestors);
       if (prepended.length > 0) prependedOut.set(fq, prepended);
