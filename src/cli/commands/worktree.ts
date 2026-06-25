@@ -67,6 +67,11 @@ async function runWorktreeCreate(argv: {
     // a synchronous in-process reindex here blocks the command on a large diff
     // and would auto-trigger a heavy reindex against the user-gating rule. Hint
     // the next step instead.
+    //
+    // The hint uses --project, NOT --name: createWorktree already registered the
+    // alias WITH worktree provenance. --name is for the first index of a fresh,
+    // unregistered project — using it here would create a second, provenance-less
+    // registration of the same path.
     const nextStep = `tea-rags index-codebase --project ${res.alias}`;
     if (argv.json) {
       process.stdout.write(`${JSON.stringify({ ...res, nextStep }, null, 2)}\n`);

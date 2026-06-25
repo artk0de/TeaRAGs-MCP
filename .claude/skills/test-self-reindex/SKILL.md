@@ -68,61 +68,31 @@ The cwd should already be the worktree (`.claude/worktrees/<branch>` under the
 main tea-rags-mcp repo). If the user provided a path, use it; otherwise use the
 current working directory via `pwd`. Worktree path must be an **absolute** path.
 
-### Step 2 — Register the worktree as `tea-rags-worktree`
+### Step 2 — Register + force-reindex in one CLI command
 
-ALWAYS use the static name `tea-rags-worktree` and ALWAYS call
-`register_project` first, even when an entry already exists. `register_project`
-implements **alias-rename semantics**: when the existing entry under this name
-points at a stale (deleted) path, it RE-POINTS the existing entry at the new
-worktree path. The physical Qdrant collection, snapshot file and codegraph DB
-all stay intact — only the registry's `path` field is updated. No data is
-dropped; no full reindex is forced.
-
-```
-mcp__tea-rags__register_project
-  name: "tea-rags-worktree"
-  path: <absolute worktree path>
-```
-
-The MCP tool returns `alreadyIndexed: true` when the rename preserved a
-previously-indexed collection (worktree switch), and `alreadyIndexed: false`
-when a brand-new collection is being created (first-ever worktree register).
-Step 3's `forceReindex: true` runs in both cases — for a switch it exercises the
-re-index path against the preserved collection; for a fresh register it performs
-the first full index.
-
-### Step 3 — Force reindex via the alias
-
-```
-mcp__tea-rags__index_codebase
-  project: "tea-rags-worktree"
-  forceReindex: true
-```
-
-This rebuilds the index from scratch — exercises chunker, all extraction walkers
-(TS / JS / Python / Ruby / Go / Java / Rust / Bash), all symbol-table inserts,
-the graph adapter, Tarjan SCC, PageRank, payload writers, and the enrichment
-coordinator (markStart → file-phase → chunk-phase → markFileFinal /
-markChunkFinal).
-
-The MCP call returns when the **chunk-write** phase completes, BEFORE enrichment
-finishes. Do not assume the markers are settled at this point.
-
-### Step 4 — Wait for enrichment to settle
-
-Enrichment runs in background. Poll the pipeline log until `ALL_COMPLETE`
-appears:
+`--name tea-rags-worktree` registers the worktree path under the static alias
+and then indexes, all in one command. **Alias-rename semantics** still apply:
+when the name already points at a stale (deleted) path, register RE-POINTS the
+existing entry at the new worktree path — the physical Qdrant collection,
+snapshot file and codegraph DB stay intact (no data dropped, no forced reindex
+from the rename alone). `--force` then rebuilds the index from scratch;
+`--wait-enrichments` stays attached until every enrichment provider finishes;
+`--json` emits a parseable result.
 
 ```bash
-until ls -t ~/.tea-rags/logs/pipeline-*.log | head -1 \
-  | xargs grep -qE "ALL_COMPLETE" 2>/dev/null; do sleep 5; done
+tea-rags index-codebase <absolute-worktree-path> --name tea-rags-worktree --force --wait-enrichments --json
 ```
 
-(Adjust timeout to match the worktree size — typical tea-rags-mcp run is ~2
-minutes; bound with a hard wall-clock limit of ~5 minutes via the Bash `timeout`
-parameter so a hung enrichment doesn't lock the session.)
+This rebuilds from scratch — exercises chunker, all extraction walkers (TS / JS
+/ Python / Ruby / Go / Java / Rust / Bash), all symbol-table inserts, the graph
+adapter, Tarjan SCC, PageRank, payload writers, and the enrichment coordinator
+(markStart → file-phase → chunk-phase → markFileFinal / markChunkFinal). Because
+`--wait-enrichments` blocks until completion, the command returns only after
+enrichment settles — no log polling needed. (Bound it with a hard wall-clock
+limit of ~5 minutes via the Bash `timeout` parameter so a hung enrichment
+doesn't lock the session.)
 
-### Step 5 — Verify all four enrichment levels reach `healthy`
+### Step 3 — Verify all four enrichment levels reach `healthy`
 
 ```
 mcp__tea-rags__get_index_status project: "tea-rags-worktree"
@@ -143,7 +113,7 @@ the raw payload of the metadata point for diagnosis:
 curl -s "<qdrant-url>/collections/<collection>/points/<uuid>" | jq .
 ```
 
-### Step 6 — Functional smoke tests against the new alias
+### Step 4 — Functional smoke tests against the new alias
 
 Run a short battery to confirm the codegraph + composite-preset path works
 end-to-end on the freshly indexed alias. Each call should succeed and return
@@ -160,7 +130,7 @@ non-empty results.
 Any tool returning an InputValidationError, empty result, or stack trace is a
 regression — surface the raw error to the user before claiming success.
 
-### Step 7 — Report
+### Step 5 — Report
 
 Summarize the outcome in a compact table. Show:
 
@@ -181,12 +151,13 @@ user can decide whether to fix-forward or revert.
 - **Skipping the link verification.** If `npm root -g`/tea-rags doesn't point at
   this worktree, the MCP server is running PUBLISHED code and the test validates
   nothing about your local changes.
-- **Polling `get_index_status` in a tight loop instead of watching the pipeline
-  log.** The status endpoint reads from qdrant and adds load; the pipeline log
-  is the cheap canonical signal.
+- **Re-introducing a manual enrichment-wait loop.** `--wait-enrichments` already
+  blocks until every provider finishes, so the Step 2 command returns only after
+  enrichment settles — do not poll `get_index_status` or the pipeline log to
+  wait.
 - **Declaring success while file-level enrichment is `in_progress`.** The user
-  cares about end-state health, not intermediate. Wait for `ALL_COMPLETE` and
-  then re-check status.
-- **Mutating the worktree source between Step 3 and Step 6.** That invalidates
-  the index you just built. If you need to edit source, re-run from Step 3. //
-  touch 1779362382
+  cares about end-state health, not intermediate. With `--wait-enrichments` the
+  command returns settled; the Step 3 health check is the gate — re-check status
+  if anything reads non-`healthy`.
+- **Mutating the worktree source between Step 2 and Step 4.** That invalidates
+  the index you just built. If you need to edit source, re-run from Step 2.
