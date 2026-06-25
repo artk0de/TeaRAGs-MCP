@@ -186,6 +186,122 @@ function yardBracketToRef(raw: string): RubyTypeRef | undefined {
   return parseSingleBracketToken(trimmed);
 }
 
+/**
+ * Parse YARD `# @type [TYPE] name` lines and emit `kind:"local"` facts.
+ * Conservative: requires both bracket type and a trailing name token.
+ * Line number is 1-based index of the comment line itself.
+ */
+function collectYardLocalTypeFacts(code: string): RubyTypeFact[] {
+  const facts: RubyTypeFact[] = [];
+  // `# @type [Type] varName` — bracket is required; trailing name is required.
+  const typeRegex = /^\s*#\s*@type\s+\[([^\]]+)\]\s+(\w+)/;
+  const lines = code.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i] ?? "";
+    const m = typeRegex.exec(raw);
+    if (!m) continue;
+    const [, bracket, name] = m;
+    if (!bracket || !name) continue;
+    const type = yardBracketToRef(bracket.trim());
+    if (!type) continue;
+    facts.push({
+      kind: "local",
+      source: "yard",
+      symbolScope: [],
+      name,
+      line: i + 1, // 1-based line of the @type comment
+      type,
+    });
+  }
+  return facts;
+}
+
+/**
+ * Parse `# @!attribute [r|w|rw] name` / `# @return [TYPE]` pairs and emit
+ * `kind:"attr"` facts. The two tags must appear as consecutive comment lines
+ * (other comments may intervene; a blank line or non-comment line resets).
+ * The `@return [TYPE]` line provides the type; `@!attribute` provides the name.
+ * Conservative: only emits when both tags are present and type passes yardBracketToRef.
+ */
+function collectYardAttrFacts(code: string): RubyTypeFact[] {
+  const facts: RubyTypeFact[] = [];
+  const attrRegex = /^\s*#\s*@!attribute\s+\[(?:r|w|rw)\]\s+(\w+)/;
+  const returnRegex = /^\s*#\s*@return\s+\[([^\]]+)\]/;
+  const lines = code.split(/\r?\n/);
+  let pendingAttrName: string | null = null;
+  for (const raw of lines) {
+    const attrMatch = attrRegex.exec(raw);
+    if (attrMatch) {
+      pendingAttrName = attrMatch[1] ?? null;
+      continue;
+    }
+    const retMatch = returnRegex.exec(raw);
+    if (retMatch && pendingAttrName) {
+      const bracket = (retMatch[1] ?? "").trim();
+      const type = yardBracketToRef(bracket);
+      if (type) {
+        facts.push({
+          kind: "attr",
+          source: "yard",
+          symbolScope: [],
+          name: pendingAttrName,
+          type,
+        });
+      }
+      pendingAttrName = null;
+      continue;
+    }
+    // Blank or other comment line — preserve pendingAttrName across non-return comment lines.
+    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
+    // Non-comment, non-blank line resets state.
+    pendingAttrName = null;
+  }
+  return facts;
+}
+
+/**
+ * Parse `# @option OPTS [TYPE] :key` lines and emit `kind:"param"` facts keyed
+ * by the option key name (`:key` → `"key"`). Conservative: requires bracket type
+ * and a colon-prefixed key; attaches to the NEXT non-comment `def` line.
+ * Does NOT collide with the named `opts` param fact (different `name` value).
+ */
+function collectYardOptionFacts(code: string): RubyTypeFact[] {
+  const facts: RubyTypeFact[] = [];
+  // `# @option OPTS_NAME [Type] :key` (optional trailing description ignored)
+  const optionRegex = /^\s*#\s*@option\s+\w+\s+\[([^\]]+)\]\s+:(\w+)/;
+  const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
+  const lines = code.split(/\r?\n/);
+  let pending: { name: string; type: RubyTypeRef }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i] ?? "";
+    const optMatch = optionRegex.exec(raw);
+    if (optMatch) {
+      const [, bracket, key] = optMatch;
+      if (!bracket || !key) continue;
+      const type = yardBracketToRef(bracket.trim());
+      if (type) pending.push({ name: key, type });
+      continue;
+    }
+    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
+    // Non-comment, non-blank: if it's a def, emit accumulated option facts.
+    if (pending.length > 0 && defRegex.test(raw)) {
+      const defLine = i + 1;
+      for (const { name, type } of pending) {
+        facts.push({
+          kind: "param",
+          source: "yard",
+          symbolScope: [],
+          name,
+          line: defLine,
+          type,
+        });
+      }
+    }
+    pending = [];
+  }
+  return facts;
+}
+
 export const rubyYardTypeSource: RubyInlineTypeSource = {
   name: "yard",
   extract(input: RubyExtractInput): RubyTypeFact[] {
@@ -214,6 +330,12 @@ export const rubyYardTypeSource: RubyInlineTypeSource = {
         facts.push({ kind: "return", source: "yard", symbolScope: [], methodName, type });
       }
     }
+    // @type [TYPE] name → local var facts
+    facts.push(...collectYardLocalTypeFacts(input.code));
+    // @!attribute [r|w|rw] name + @return [TYPE] → attr facts
+    facts.push(...collectYardAttrFacts(input.code));
+    // @option OPTS [TYPE] :key → param facts (option key scoped)
+    facts.push(...collectYardOptionFacts(input.code));
     return facts;
   },
 };
