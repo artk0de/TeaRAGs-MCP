@@ -217,17 +217,28 @@ of where the link points, so a later `npm link` from any checkout reproduces it.
 
 ### Never auto-build / auto-reindex (MANDATORY)
 
-- **Do NOT `npm run build` a worktree automatically** when MORE than one worktree
-  is active (`git worktree list` shows >1 entry under `.claude/worktrees/` —
-  parallel sessions present). Wait for an explicit "build"/"собери". A build +
-  relink can collide with a concurrent session's build/link.
+- **Do NOT `npm run build` a worktree automatically** when MORE than one
+  worktree is active (`git worktree list` shows >1 entry under
+  `.claude/worktrees/` — parallel sessions present). Wait for an explicit
+  "build"/"собери". A build + relink can collide with a concurrent session's
+  build/link.
 - **Single active worktree is the exception:** if `git worktree list` shows
   exactly one worktree, you MAY build automatically to verify — there is no
   parallel session to disturb.
+- **A worktree build is ALWAYS paired with `npm link` (MANDATORY).** Whenever a
+  build IS authorized for a worktree — the single-worktree auto-build case
+  above, OR an explicit "build"/"собери" — run `npm run build && npm link` as
+  **one unit**. Never `npm run build` a worktree without the
+  immediately-following `npm link`: a bare build leaves the global `tea-rags`
+  pointer on a stale checkout (or another worktree), so the freshly-built
+  `build/` is never the one the MCP server loads. The link is yours to own; a
+  parallel session re-links when it resumes. (This gates only _whether_ to build
+  — it does not loosen the ">1 worktree → ask first" rule above; once you build,
+  you link.)
 - **Reindex / `index-codebase --force` is ALWAYS user-gated**, regardless of
   worktree count — it rewrites the shared Qdrant index and depends on ollama
-  embeddings (which can flap mid-run). NEVER chain a reindex off a build; stop at
-  green tests and wait for an explicit "reindex"/"замер".
+  embeddings (which can flap mid-run). NEVER chain a reindex off a build; stop
+  at green tests and wait for an explicit "reindex"/"замер".
 - **Commit after successful live validation is auto-authorized.** Once a
   user-triggered live validation SUCCEEDS (reindex clean + measured
   resolveSuccessRate delta confirms the change), you MAY commit the change
@@ -245,6 +256,11 @@ of where the link points, so a later `npm link` from any checkout reproduces it.
 
 - **Linking without building.** Leaves stale `build/` content under the link.
   Run `npm run build` first.
+- **Building without linking (for a worktree).** The mirror image: a bare
+  `npm run build` in a worktree, with no paired `npm link`, leaves the global
+  `tea-rags` pointer on another checkout — the new `build/` is compiled but
+  never loaded by the MCP server. A worktree build is
+  `npm run build && npm link`, always together.
 - **Building+linking main BEFORE merging.** Main's `build/` doesn't yet contain
   the worktree's changes. The global link will point at main's pre-merge state
   and MCP tests regress to the un-tested baseline.
