@@ -8,6 +8,7 @@ import {
   receiverIsIndexAccess,
   resolveConstant,
 } from "./strategies/index.js";
+import { typeOfReceiver } from "./type-propagation.js";
 
 /**
  * Ruby implementation of `ExternalVocabulary`, bridging the `dsl/` framework
@@ -29,7 +30,7 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
     return isExternalQualifiedMember(member);
   }
 
-  isQualifiedReceiverExternal(receiver: string, ctx: CallContext): boolean {
+  isQualifiedReceiverExternal(receiver: string, ctx: CallContext, atLine?: number): boolean {
     // Index-access receiver (`opts[k]`): element type untrackable → external.
     // Paired with the dynamic-dispatch suppression (mktkk increment A) so the
     // suppressed call leaves the inProjectEdgeRecall denominator as
@@ -38,7 +39,11 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
     if (receiverChainTailIsExternal(receiver)) return true; // provably-external chain tail (B-suppress)
     if (receiver === SUPER_RECEIVER_SENTINEL) return superTargetsExternal(ctx);
     if (IVAR_RECEIVER.test(receiver)) return ivarTargetsExternal(receiver, ctx);
-    return /^[A-Z]/.test(receiver) && resolveConstant(receiver, ctx) === null;
+    if (/^[A-Z]/.test(receiver)) return resolveConstant(receiver, ctx) === null;
+    // Lowercase receiver: check if it's a locally-typed core/gem variable (dnd9s).
+    // Only when atLine is provided (threaded from CallRef.startLine by ExternalCallClassifier).
+    if (atLine !== undefined) return localBindingTypedReceiverIsExternal(receiver, atLine, ctx);
+    return false;
   }
 }
 
@@ -77,4 +82,53 @@ function superTargetsExternal(ctx: CallContext): boolean {
   const enclosingClass = ctx.callerScope.join("::");
   const chain = collectAncestorChain(enclosingClass, ctx);
   return chain.length > 0 && chain.every((ancestor) => resolveConstant(ancestor, ctx) === null);
+}
+
+/**
+ * A LOWERCASE receiver (local variable / method parameter) is external when its
+ * static type is KNOWN via the type-propagation engine AND that type does NOT
+ * resolve to any in-project file (Ruby core `Hash`/`String`/`Integer` or a gem
+ * type like `Sawyer::Resource`). This gate fires ONLY when the resolver already
+ * DROPs the call (strategies exhausted with no edge); it re-classifies the drop
+ * from "in-project miss" to "external skip" so `inProjectEdgeRecall` is honest.
+ *
+ * PRECISION gate — over-classification is the real risk:
+ * - Unknown receiver (`typeOfReceiver → undefined`) → FALSE: we don't know it's
+ *   external, so we don't shrink the miss denominator.
+ * - Known type resolveConstant → non-null → FALSE: in-project class; a drop
+ *   there IS a real miss and must remain in the denominator.
+ * - Known type resolveConstant → null → TRUE: external class (core/gem); the
+ *   drop is a CORRECT external skip. (bd tea-rags-mcp-dnd9s)
+ *
+ * Union form: a union with ALL members resolveConstant→null is external (all
+ * branches are external). A single in-project member → false (drop is real miss).
+ * Container: the container itself (Array/Hash) is always external; the element
+ * type does not affect classification of the container's own methods.
+ */
+function localBindingTypedReceiverIsExternal(receiver: string, atLine: number, ctx: CallContext): boolean {
+  const typeRef = typeOfReceiver(receiver, atLine, ctx);
+  if (typeRef === undefined) return false;
+
+  if (typeRef.form === "class" || typeRef.form === "instance") {
+    return resolveConstant(typeRef.name, ctx) === null;
+  }
+
+  if (typeRef.form === "union") {
+    // External only when EVERY member of the union is external.
+    // A single in-project member means there is a possible in-project target.
+    return (
+      typeRef.members.length > 0 &&
+      typeRef.members.every(
+        (m) => (m.form === "class" || m.form === "instance") && resolveConstant(m.name, ctx) === null,
+      )
+    );
+  }
+
+  // container form: the container itself (Array, Hash, Relation…) is external — its
+  // own structural methods (size, count, each…) are not in-project. Calls that DO
+  // reach a typed element are handled by the chain strategy before hitting this
+  // classifier, so a container receiver arriving here is genuinely an external drop.
+  if (typeRef.form === "container") return true;
+
+  return false;
 }

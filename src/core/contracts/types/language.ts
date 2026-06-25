@@ -119,8 +119,18 @@ export interface ConeTypeLocator {
 export interface ExternalVocabulary {
   /** Is this no-receiver member a framework/runtime/builtin name (zero project defs)? */
   isBareCallExternal: (member: string) => boolean;
-  /** Does this qualified receiver name a gem/stdlib symbol (no in-project target)? */
-  isQualifiedReceiverExternal: (receiver: string, ctx: CallContext) => boolean;
+  /**
+   * Does this qualified receiver name a gem/stdlib symbol (no in-project target)?
+   *
+   * `atLine` (optional, 1-based) enables position-aware local-binding type lookup:
+   * when a lowercase receiver resolves to a LOCAL VARIABLE whose inferred type is a
+   * KNOWN non-in-project class (Ruby core `Hash`/`String`/`Integer`, or a gem type
+   * like `Sawyer::Resource`), the call is correctly classified as external rather
+   * than counted as an in-project miss (bd tea-rags-mcp-dnd9s). When `atLine` is
+   * absent the implementation falls back to the pre-dnd9s behaviour so callers that
+   * don't thread the call's `startLine` are unaffected.
+   */
+  isQualifiedReceiverExternal: (receiver: string, ctx: CallContext, atLine?: number) => boolean;
   /**
    * Is this MEMBER, on an untyped qualified receiver, an external base-class
    * instance method (e.g. `agent.update` → ActiveRecord::Base#update)? Optional:
