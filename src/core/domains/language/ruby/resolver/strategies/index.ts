@@ -11,6 +11,7 @@ export { RubyReceiverSetDropSymbolResolutionStrategy } from "./ruby-receiver-set
 export { RubyBareCallSymbolResolutionStrategy } from "./ruby-bare-call.js";
 export { RubyConeDispatchResolver } from "./ruby-cone-dispatch.js";
 export { RubyConeTypeLocator } from "./ruby-cone-type-locator.js";
+export { RubyUnionDispatchResolver } from "./ruby-union-dispatch.js";
 export { RubyDynamicDispatchResolver } from "./ruby-dynamic-dispatch.js";
 export { RubyTableDispatchResolver } from "./ruby-table-dispatch.js";
 export {
