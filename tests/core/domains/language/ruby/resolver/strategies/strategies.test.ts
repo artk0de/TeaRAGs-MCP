@@ -214,6 +214,110 @@ describe("RubyLocalTypeSymbolResolutionStrategy", () => {
       target: { targetRelPath: "app/models/user.rb", targetSymbolId: null },
     });
   });
+
+  // RC-2 (tea-rags-mcp-nts2b): ancestor walk must proceed even when the class's
+  // own file cannot be resolved (e.g. class reopened across N>1 files so
+  // resolveConstant returns null). Before the fix the function bailed on
+  // `if (!targetFile) return null` and never visited classAncestors.
+  it("RC-2: resolves inherited method via classAncestors when class file is unresolvable (N>1 declarations)", () => {
+    // EnterpriseAdminClient is declared in 2 files → resolveConstant returns null.
+    // But it includes Configurable which defines `configure` — the ancestor DOES
+    // resolve and owns the method.
+    const symbolTable = tableWith(
+      // Two declarations of the same constant → lookup().length === 2 → resolveConstant returns null
+      [
+        "lib/octokit/enterprise_admin_client.rb",
+        [
+          sym("Octokit::EnterpriseAdminClient", "EnterpriseAdminClient", "lib/octokit/enterprise_admin_client.rb", [
+            "Octokit",
+          ]),
+        ],
+      ],
+      [
+        "lib/octokit/enterprise_admin_client/admins.rb",
+        [
+          sym(
+            "Octokit::EnterpriseAdminClient",
+            "EnterpriseAdminClient",
+            "lib/octokit/enterprise_admin_client/admins.rb",
+            ["Octokit"],
+          ),
+        ],
+      ],
+      // Ancestor Configurable has `configure` as an instance method
+      [
+        "lib/octokit/configurable.rb",
+        [
+          sym("Octokit::Configurable", "Configurable", "lib/octokit/configurable.rb", ["Octokit"]),
+          sym("Octokit::Configurable#configure", "configure", "lib/octokit/configurable.rb", [
+            "Octokit",
+            "Configurable",
+          ]),
+        ],
+      ],
+    );
+    const clientCall: CallRef = {
+      callText: "client.configure",
+      receiver: "client",
+      member: "configure",
+      startLine: 1,
+    };
+    const outcome = strat.attempt(
+      clientCall,
+      ctx({
+        symbolTable,
+        localBindings: { client: [{ line: 1, type: "Octokit::EnterpriseAdminClient" }] },
+        classAncestors: { "Octokit::EnterpriseAdminClient": ["Octokit::Configurable"] },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "lib/octokit/configurable.rb",
+        targetSymbolId: "Octokit::Configurable#configure",
+      },
+    });
+  });
+
+  it("RC-2 control: class file unresolvable AND no classAncestors entry → DROP (not continue)", () => {
+    // Same N>1 declaration scenario but no classAncestors → null returned → DROP.
+    const symbolTable = tableWith(
+      [
+        "lib/octokit/enterprise_admin_client.rb",
+        [
+          sym("Octokit::EnterpriseAdminClient", "EnterpriseAdminClient", "lib/octokit/enterprise_admin_client.rb", [
+            "Octokit",
+          ]),
+        ],
+      ],
+      [
+        "lib/octokit/enterprise_admin_client/admins.rb",
+        [
+          sym(
+            "Octokit::EnterpriseAdminClient",
+            "EnterpriseAdminClient",
+            "lib/octokit/enterprise_admin_client/admins.rb",
+            ["Octokit"],
+          ),
+        ],
+      ],
+    );
+    const clientCall: CallRef = {
+      callText: "client.configure",
+      receiver: "client",
+      member: "configure",
+      startLine: 1,
+    };
+    const outcome = strat.attempt(
+      clientCall,
+      ctx({
+        symbolTable,
+        localBindings: { client: [{ line: 1, type: "Octokit::EnterpriseAdminClient" }] },
+        // no classAncestors
+      }),
+    );
+    expect(outcome.kind).toBe("drop");
+  });
 });
 
 describe("RubyConstantSymbolResolutionStrategy", () => {

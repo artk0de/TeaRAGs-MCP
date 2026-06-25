@@ -327,25 +327,33 @@ function resolveTypeMethodInternal(
   if (visited.has(typeName)) return null;
   visited.add(typeName);
   const targetFile = resolveConstant(typeName, ctx);
-  if (!targetFile) return null;
 
-  const prepended = ctx.classPrependedAncestors?.[typeName];
-  if (prepended) {
-    for (let i = prepended.length - 1; i >= 0; i--) {
-      const inherited = resolveTypeMethodInternal(prepended[i], member, ctx, mode, visited, symbolIdFilter);
-      if (inherited && inherited.targetSymbolId !== null) return inherited;
+  // When the class's own file cannot be resolved (e.g. reopened across N>1
+  // files so resolveConstant returns null) but classAncestors is present,
+  // skip own-file and prepend lookups and fall through to the ancestor walk.
+  // Without ancestors there is nothing to resolve — return null so the caller
+  // can DROP. (RC-2 fix: tea-rags-mcp-nts2b)
+  if (!targetFile && !ctx.classAncestors?.[typeName]) return null;
+
+  if (targetFile !== null) {
+    const prepended = ctx.classPrependedAncestors?.[typeName];
+    if (prepended) {
+      for (let i = prepended.length - 1; i >= 0; i--) {
+        const inherited = resolveTypeMethodInternal(prepended[i], member, ctx, mode, visited, symbolIdFilter);
+        if (inherited && inherited.targetSymbolId !== null) return inherited;
+      }
     }
-  }
 
-  const bareType = lastConstantSegment(typeName);
-  const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
-    if (def.relPath !== targetFile) return false;
-    const tail = def.scope[def.scope.length - 1];
-    if (tail !== typeName && tail !== bareType) return false;
-    return symbolIdFilter === null || symbolIdFilter(def.symbolId, member);
-  });
-  const target = pickSingleCandidate(candidates, mode);
-  if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+    const bareType = lastConstantSegment(typeName);
+    const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
+      if (def.relPath !== targetFile) return false;
+      const tail = def.scope[def.scope.length - 1];
+      if (tail !== typeName && tail !== bareType) return false;
+      return symbolIdFilter === null || symbolIdFilter(def.symbolId, member);
+    });
+    const target = pickSingleCandidate(candidates, mode);
+    if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+  }
 
   const ancestors = ctx.classAncestors?.[typeName];
   if (ancestors) {
@@ -355,7 +363,11 @@ function resolveTypeMethodInternal(
     }
   }
 
-  return { targetRelPath: targetFile, targetSymbolId: null };
+  // File-only fallback is only possible when the class's own file is known.
+  // If targetFile is null (reopened class), the ancestor walk is the only
+  // resolution path; returning null here lets the caller treat it as unresolved.
+  if (targetFile !== null) return { targetRelPath: targetFile, targetSymbolId: null };
+  return null;
 }
 
 /**
