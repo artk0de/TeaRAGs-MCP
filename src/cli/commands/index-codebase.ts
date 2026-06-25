@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 
 import type { CommandModule } from "yargs";
 
-import { CollectionRegistry, type IndexOptions } from "../../core/api/public/index.js";
+import { CollectionRegistry, ProjectRegistryOps, type IndexOptions } from "../../core/api/public/index.js";
 import { pickRegistryEntry, resolveRegistryEnv } from "../index-progress/registry-env.js";
 import { createRenderer } from "../index-progress/renderer.js";
 import { superviseIndexing } from "../index-progress/supervisor.js";
@@ -14,6 +14,8 @@ import { applyProjectDefaults } from "../registry-resolver.js";
 export interface IndexCodebaseArgs {
   path?: string;
   project?: string;
+  /** Register the resolved path under this alias before indexing (first index of a new project). */
+  name?: string;
   "wait-enrichments"?: boolean;
   force?: boolean;
   json?: boolean;
@@ -68,6 +70,12 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
         type: "string",
         describe: "Project alias from the registry. Resolves --path from the registered entry.",
       })
+      .option("name", {
+        type: "string",
+        describe:
+          "Register the path under <alias> in the project registry, then index. Use for the first index of a new project.",
+      })
+      .conflicts("name", "project")
       .option("wait-enrichments", {
         type: "boolean",
         default: false,
@@ -107,8 +115,16 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
     const registry = new CollectionRegistry(dataDir);
     const registryEnv = resolveRegistryEnv(pickRegistryEntry(registry, { project: argv.project, path }));
 
+    // --name: register this path under the alias BEFORE indexing so a new
+    // project gets its alias in one command. Env is already resolved above, so
+    // the fresh stub entry does not shadow the most-recently-indexed embedding
+    // fallback. No qdrant in deps — the collection does not exist yet.
+    if (argv.name) {
+      await new ProjectRegistryOps({ registry }).register({ path, name: argv.name });
+    }
+
     // Resolve the registered project alias for the status block.
-    const projectName = argv.project ?? resolveProjectName(registry, path) ?? undefined;
+    const projectName = argv.name ?? argv.project ?? resolveProjectName(registry, path) ?? undefined;
 
     // JSON mode forces NO_COLOR semantics so the output is clean for parsing.
     const colors = createColorizer(jsonMode ? { env: { NO_COLOR: "1" }, isTTY: false } : undefined);
