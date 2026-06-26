@@ -117,9 +117,17 @@ export class FileScanner {
       for (const entry of entries) {
         const fullPath = join(currentPath, entry.name);
         const relativePath = relative(rootPath, fullPath);
+        const isDirectory = entry.isDirectory();
 
-        // Skip ignored paths
-        if (this.ig.ignores(relativePath)) {
+        // Probe directories with a trailing slash so gitignore directory
+        // patterns apply — the `ignore` package only honors directory-scoped
+        // patterns (the `!*/` whitelist re-include AND builtin `dir/` rules)
+        // when the candidate path is explicitly marked as a directory.
+        // Without it, a `*` catch-all matches the bare directory name while
+        // `!*/` cannot re-include it, so every dir is pruned at entry and a
+        // keep-only whitelist returns zero nested files (kgjzq).
+        const ignoreProbe = isDirectory ? `${relativePath}/` : relativePath;
+        if (this.ig.ignores(ignoreProbe)) {
           continue;
         }
 
@@ -128,7 +136,7 @@ export class FileScanner {
           continue;
         }
 
-        if (entry.isDirectory()) {
+        if (isDirectory) {
           await this.walkDirectory(fullPath, rootPath, files);
         } else if (entry.isFile()) {
           const ext = extname(entry.name);
