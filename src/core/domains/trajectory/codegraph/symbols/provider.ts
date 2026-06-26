@@ -68,6 +68,7 @@ import type {
   CollectSymbolsFn,
   LanguageFactoryDescriptor,
   LanguageSymbolResolver,
+  RubyTypeRef,
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
 import type {
@@ -459,6 +460,25 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runReturnTypes: Record<string, string> = {};
   /**
+   * Per-run aggregation of `FileExtraction.ivarTypes` (Ruby type-source engine,
+   * Increment 1, Task 1.5). `fqClassName → "@ivar" → typeName` merged across
+   * pass-1 files so the resolver's PRECISE `@ivar.method()` path
+   * (`ctx.ivarTypes`) sees a class's annotated ivars regardless of which file
+   * declared the class. Same lifecycle as `runReturnTypes` — last-write-wins on
+   * duplicate class keys, reset on finish / empty-run.
+   */
+  private runIvarTypes: Record<string, Record<string, string>> = {};
+  /**
+   * Per-run aggregation of `FileExtraction.structuredReturnTypes` (Ruby
+   * type-source engine, Increment 1, Task 1.5). `"<fqClass>#method" →
+   * RubyTypeRef` merged across pass-1 files so the resolver's PRECISE
+   * structured-return path (`ctx.structuredReturnTypes`) threads
+   * `recv.method().member` chains to the richer ref (union / container
+   * preserved) regardless of which file declared the method. Same lifecycle as
+   * `runReturnTypes` — last-write-wins, reset on finish / empty-run.
+   */
+  private runStructuredReturnTypes: Record<string, RubyTypeRef> = {};
+  /**
    * Per-run aggregation of `FileExtraction.dispatchTables` keyed by table
    * NAME (bd tea-rags-mcp-n0zj). The value is a `DispatchTableDef[]` because
    * the same name may be declared in several files; the resolver
@@ -729,6 +749,20 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         if (extraction.functionReturnTypes) {
           for (const [k, v] of Object.entries(extraction.functionReturnTypes)) {
             this.runReturnTypes[k] = v;
+          }
+        }
+        // Merge the Ruby type-source PRECISE maps run-global so the resolver's
+        // precise `@ivar.method()` / structured-return paths see annotated types
+        // keyed by class regardless of which file declared the class/method
+        // (Increment 1, Task 1.5). Last-write-wins, mirroring functionReturnTypes.
+        if (extraction.ivarTypes) {
+          for (const [k, v] of Object.entries(extraction.ivarTypes)) {
+            this.runIvarTypes[k] = v;
+          }
+        }
+        if (extraction.structuredReturnTypes) {
+          for (const [k, v] of Object.entries(extraction.structuredReturnTypes)) {
+            this.runStructuredReturnTypes[k] = v;
           }
         }
         // Accumulate this file's inheritance edges run-global (bd tea-rags-mcp-o17v2)
@@ -1036,6 +1070,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runPrependedAncestors = {};
       this.runExtends = {};
       this.runReturnTypes = {};
+      this.runIvarTypes = {};
+      this.runStructuredReturnTypes = {};
       this.runDispatchTables = {};
       this.runCallbackParams = {};
       this.runInheritanceRows = [];
@@ -1552,6 +1588,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runPrependedAncestors = {};
     this.runExtends = {};
     this.runReturnTypes = {};
+    this.runIvarTypes = {};
+    this.runStructuredReturnTypes = {};
     this.runDispatchTables = {};
     this.runCallbackParams = {};
     this.runInheritanceRows = [];
@@ -1588,6 +1626,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runPrependedAncestors = {};
     this.runExtends = {};
     this.runReturnTypes = {};
+    this.runIvarTypes = {};
+    this.runStructuredReturnTypes = {};
     this.runDispatchTables = {};
     this.runCallbackParams = {};
     this.runInheritanceRows = [];
@@ -1788,6 +1828,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const extendsForResolver = Object.keys(this.runExtends).length > 0 ? this.runExtends : extraction.classExtends;
     const returnTypesForResolver =
       Object.keys(this.runReturnTypes).length > 0 ? this.runReturnTypes : extraction.functionReturnTypes;
+    // Ruby type-source PRECISE maps (Increment 1, Task 1.5): run-global if any
+    // file contributed, else this file's own — same "run-global if present else
+    // extraction" pattern as ancestors / return types.
+    const ivarTypesForResolver = Object.keys(this.runIvarTypes).length > 0 ? this.runIvarTypes : extraction.ivarTypes;
+    const structuredReturnTypesForResolver =
+      Object.keys(this.runStructuredReturnTypes).length > 0
+        ? this.runStructuredReturnTypes
+        : extraction.structuredReturnTypes;
     // File-level edges. A resolver that implements `resolveFileEdges` owns its
     // language's full set of file-coupling channels (Ruby: require + Zeitwerk
     // constants + inheritance/mixins). Resolvers that don't fall back to the
@@ -1803,6 +1851,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       classAncestors: ancestorsForResolver,
       classPrependedAncestors: prependedAncestorsForResolver,
       classExtends: extendsForResolver,
+      ivarTypes: ivarTypesForResolver,
+      structuredReturnTypes: structuredReturnTypesForResolver,
     };
     const fileEdges: GraphEdges["fileEdges"] = resolver.resolveFileEdges
       ? resolver.resolveFileEdges(extraction, fileEdgeCtx)
@@ -1831,6 +1881,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           localBindings: chunk.localBindings,
           localCallBindings: chunk.localCallBindings,
           functionReturnTypes: returnTypesForResolver,
+          // Ruby type-source PRECISE paths (Increment 1, Task 1.5) — these wire
+          // the previously-dead `ctx.ivarTypes` / `ctx.structuredReturnTypes`
+          // reads in `type-propagation.ts`.
+          ivarTypes: ivarTypesForResolver,
+          structuredReturnTypes: structuredReturnTypesForResolver,
           classAncestors: ancestorsForResolver,
           classPrependedAncestors: prependedAncestorsForResolver,
           classExtends: extendsForResolver,

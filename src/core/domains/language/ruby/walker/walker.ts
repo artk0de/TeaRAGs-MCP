@@ -175,6 +175,20 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     const ivarFieldTypes = collectRubyIvarFieldTypes(input.tree.rootNode);
     if (Object.keys(ivarFieldTypes).length > 0) out.classFieldTypes = ivarFieldTypes;
   }
+  // Precise type-source maps for the resolver's PRECISE propagation paths
+  // (Increment 1, Task 1.5). `structuredReturnTypes` keys `"<fqClass>#method"` →
+  // RubyTypeRef (engine's structured-return path); `ivarTypes` keys
+  // `fqClass → "@ivar" → typeName` (engine's precise ivar path). Both derive
+  // from the SAME store as the flat `functionReturnTypes` / `classFieldTypes`
+  // fallbacks — the precise maps win in the engine, the flat maps stay as
+  // fallback. Conditionally set (omit when empty) so files with no annotations
+  // don't carry empty objects through the NDJSON spill.
+  if (trackTypes) {
+    const structuredReturnTypes = store.structuredReturnTypesMap();
+    if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;
+    const ivarTypes = store.ivarTypesMap();
+    if (Object.keys(ivarTypes).length > 0) out.ivarTypes = ivarTypes;
+  }
   // Rails association map (B1) — emitted only when at least one class declares an
   // association. Consumed run-global by the codegraph provider (mirrors
   // `classFieldTypes` plumbing) and already used by the binding pass above.

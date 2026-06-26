@@ -153,4 +153,58 @@ export class RubyTypeFactStore {
     }
     return best?.type;
   }
+
+  /**
+   * Full `"<fqClass>#<method>" → RubyTypeRef` map over every return fact, in the
+   * engine's `structuredReturnTypes` key convention (the codegraph
+   * `fqMethodKey`): fq class = `symbolScope.join("::")`, member joined with `#`.
+   * Return facts carry no static flag, so the instance form `#` is always used
+   * — matching the engine's `recv.name#member` lookup and {@link returnTypeByMethod}.
+   * Union / container refs are preserved verbatim. Source precedence matches the
+   * {@link structuredReturnType} point lookup: the highest-precedence source
+   * (lowest `sourceRank`) wins per key.
+   */
+  structuredReturnTypesMap(): Record<string, RubyTypeRef> {
+    const out: Record<string, RubyTypeRef> = {};
+    const bestRank = new Map<string, number>();
+    for (const f of this.resolvedFacts) {
+      if (f.kind !== "return" || !f.methodName) continue;
+      const key = `${f.symbolScope.join("::")}#${f.methodName}`;
+      const rank = sourceRank(f.source, DEFAULT_SOURCE_ORDER);
+      const prev = bestRank.get(key);
+      if (prev === undefined || rank < prev) {
+        out[key] = f.type;
+        bestRank.set(key, rank);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Full `fqClass → "@ivar" → typeName` map over every ivar fact, in the engine's
+   * `ivarTypes` key convention: fq class = `symbolScope.join("::")`, ivar name
+   * retains its leading `@`. The value is the bare type NAME reduced via the same
+   * {@link refToName} the point lookups use (container → element name; union →
+   * undefined and skipped, since the string-valued map cannot carry a union).
+   * Source precedence matches the {@link ivarType} point lookup: the
+   * highest-precedence string-reducible source wins per `(fqClass, @ivar)`.
+   */
+  ivarTypesMap(): Record<string, Record<string, string>> {
+    const out: Record<string, Record<string, string>> = {};
+    const bestRank = new Map<string, number>();
+    for (const f of this.resolvedFacts) {
+      if (f.kind !== "ivar" || !f.name) continue;
+      const type = refToName(f.type);
+      if (type === undefined) continue;
+      const fqClass = f.symbolScope.join("::");
+      const coord = ivarCoordKey(f.symbolScope, f.name);
+      const rank = sourceRank(f.source, DEFAULT_SOURCE_ORDER);
+      const prev = bestRank.get(coord);
+      if (prev === undefined || rank < prev) {
+        (out[fqClass] ??= {})[f.name] = type;
+        bestRank.set(coord, rank);
+      }
+    }
+    return out;
+  }
 }
