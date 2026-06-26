@@ -348,6 +348,48 @@ describe("FileScanner", () => {
     });
   });
 
+  // gitignore-style whitelist: keep ONLY a chosen language, drop everything
+  // else. The idiom needs `!*/` to re-include directories so traversal can
+  // descend and reach the `!*.rb` files inside them. Regression: the scanner
+  // probed each directory entry WITHOUT a trailing slash, so the `*` catch-all
+  // matched the directory name while `!*/` (a directory-only pattern) did not
+  // re-include it — every dir was pruned at entry and the scan returned ZERO
+  // nested files on a clean octokit.rb clone (kgjzq).
+  describe("gitignore whitelist (.contextignore)", () => {
+    it("keeps only .rb at any depth under a `* + !*/ + !*.rb` whitelist", async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-whitelist-"));
+      // Ruby sources at root and nested — all must survive the whitelist.
+      writeFileSync(join(tmpDir, "app.rb"), "class App; end");
+      mkdirSync(join(tmpDir, "lib", "octokit"), { recursive: true });
+      writeFileSync(join(tmpDir, "lib", "octokit.rb"), "module Octokit; end");
+      writeFileSync(join(tmpDir, "lib", "octokit", "client.rb"), "class Client; end");
+      // Non-Ruby files — the whitelist must drop them even though their
+      // extensions are otherwise in supportedExtensions.
+      writeFileSync(join(tmpDir, "README.md"), "# readme");
+      mkdirSync(join(tmpDir, "spec", "fixtures"), { recursive: true });
+      writeFileSync(join(tmpDir, "spec", "fixtures", "x.json"), "{}");
+      // The idiomatic keep-only-Ruby whitelist.
+      writeFileSync(join(tmpDir, ".contextignore"), "*\n!*/\n!*.rb\n");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".rb", ".json", ".md"],
+        ignorePatterns: [],
+      });
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const files = await localScanner.scanDirectory(tmpDir);
+
+      // The whole point: traversal descends, .rb survives at every depth.
+      expect(files.some((f) => f.endsWith("app.rb"))).toBe(true);
+      expect(files.some((f) => f.endsWith("lib/octokit.rb"))).toBe(true);
+      expect(files.some((f) => f.endsWith("lib/octokit/client.rb"))).toBe(true);
+      // Everything non-Ruby is dropped by the catch-all `*`.
+      expect(files.some((f) => f.endsWith("README.md"))).toBe(false);
+      expect(files.some((f) => f.endsWith("x.json"))).toBe(false);
+      // Regression guard: the bug returned only the root-level match.
+      expect(files).toHaveLength(3);
+    });
+  });
+
   describe("getSupportedExtensions", () => {
     it("should return configured extensions", () => {
       const extensions = scanner.getSupportedExtensions();
