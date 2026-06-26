@@ -191,6 +191,20 @@ export class QdrantPayloadTooLargeError extends QuarantinableIngestError {
   }
 }
 
+/**
+ * Stable, recognizable prefix for the graceful-degradation ladder's distinct
+ * quarantine reason: a supported-language file whose AST parse genuinely failed
+ * (parse threw OR `rootNode.hasError`) AND whose character fallback ALSO threw.
+ * The composed `FileParseError` detail reads
+ * `AST not processed: <parse cause> (character fallback also failed: <detail>)`,
+ * surfacing BOTH what prevented parsing (the prominent root cause) and the
+ * fallback failure. Carried in `QuarantineEntry.errorMessage` so the
+ * `tea-rags doctor --quarantine` output distinguishes it from a generic parse
+ * throw. A clean parse of a valid structureless file that merely yields zero
+ * chunks is NOT this case (the AST was fine) and stays a generic FileParseError.
+ */
+export const AST_NOT_PROCESSED_REASON = "AST not processed";
+
 /** tree-sitter or chunker threw while parsing the file. */
 export class FileParseError extends QuarantinableIngestError {
   readonly phase = "parse";

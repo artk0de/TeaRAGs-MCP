@@ -90,6 +90,38 @@ describe("runQuarantineDoctor", () => {
     }
   });
 
+  it("surfaces the quarantine reason (e.g. 'AST not processed') in the human table", async () => {
+    await fs.writeFile(
+      join(dataDir, "snapshots", `${collectionName}.quarantine.json`),
+      JSON.stringify({
+        version: 1,
+        updatedAt: "2026-06-20T00:00:00Z",
+        files: {
+          "src/weird.rb": {
+            errorCode: "INGEST_FILE_PARSE_FAILED",
+            errorMessage:
+              'Failed to parse "src/weird.rb": AST not processed: tree-sitter reported a syntax error at line 2 (character fallback also failed: boom)',
+            phase: "parse",
+            firstFailedAt: "2026-06-20T00:00:00Z",
+            lastFailedAt: "2026-06-20T00:00:00Z",
+            attempts: 1,
+          },
+        },
+      }),
+      "utf-8",
+    );
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      const { runQuarantineDoctor } = await import("../../../src/cli/commands/doctor.js");
+      await runQuarantineDoctor({ path: projectDir, json: false });
+      const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+      expect(out).toContain("src/weird.rb");
+      expect(out).toContain("AST not processed");
+    } finally {
+      stdout.mockRestore();
+    }
+  });
+
   it("reports an empty quarantine cleanly", async () => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {

@@ -20,6 +20,7 @@ import type {
 import { materializeTree } from "../../../../infra/materialize.js";
 import { isStaticMethodNode } from "../../../../infra/symbolid/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
+import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../errors.js";
 import { isDebug } from "../infra/runtime.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
@@ -268,6 +269,17 @@ export class TreeSitterChunker implements CodeChunker {
       };
     }
 
+    // Captured at the single parse site so the shared character-fallback below
+    // can tell a genuinely-broken AST (parse threw OR rootNode.hasError) — which
+    // earns the distinct "AST not processed" quarantine reason when the fallback
+    // ALSO fails — from a clean parse of a valid structureless file.
+    let astBroken: boolean;
+    let materializedTree: MaterializedTree | null;
+    // The original parse-stage failure ("what prevented parsing") when parse()
+    // threw — set on the catch path, undefined on the rootNode.hasError path
+    // (no exception there; the syntax-error cause is derived from the tree).
+    let parseError: unknown = undefined;
+
     try {
       // Materialize the native tree immediately after parse — ONE eager pass
       // captures all fragile native accessors (childForFieldName, parent,
@@ -275,8 +287,9 @@ export class TreeSitterChunker implements CodeChunker {
       // (findChunkableNodes, walker, collectSymbols) sees the deterministic
       // plain-JS tree; the native Parser.Tree is dropped here. Fixes rdv7d.
       const nativeTree = langConfig.parser.parse(code);
+      astBroken = nativeTree.rootNode.hasError;
       const root = materializeTree(nativeTree.rootNode, code);
-      const materializedTree: MaterializedTree = { rootNode: root };
+      materializedTree = { rootNode: root };
 
       const chunks: CodeChunk[] = [];
       const nodes = this.findChunkableNodes(root, langConfig.chunkableTypes, langConfig.hooks, code, filePath);
@@ -304,23 +317,84 @@ export class TreeSitterChunker implements CodeChunker {
         this.chunkSingleNode(node, index, code, filePath, language, chunks, decision);
       }
 
-      if (chunks.length === 0 && code.length > 100) {
-        // Chunk output falls back to character chunking, but the parse
-        // succeeded — keep the materialized tree so the codegraph walker
-        // still sees symbols.
-        return {
-          chunks: this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)),
-          tree: materializedTree,
-        };
+      // Parse produced usable chunks (or the file is too short to bother with a
+      // character fallback): done. A degraded AST (rootNode.hasError) that still
+      // yields chunks is indexed exactly as today — no quarantine, no marker.
+      if (chunks.length > 0 || code.length <= 100) {
+        return { chunks: this.enforceMaxChunkSize(this.mergeSmallChunks(chunks)), tree: materializedTree };
       }
-      return { chunks: this.enforceMaxChunkSize(this.mergeSmallChunks(chunks)), tree: materializedTree };
+      // Parse succeeded but yielded zero chunks on a non-trivial file — fall
+      // through to the shared character-fallback site below (keeping the
+      // materialized tree so the codegraph walker still sees symbols).
     } catch (error) {
       console.error(`Tree-sitter parsing failed for ${filePath}:`, error);
+      // parse / materialize / node walk threw — the AST genuinely failed. Keep
+      // the exception: it is "what prevented parsing", the prominent root cause
+      // for the quarantine record (more useful than the downstream fallback error).
+      astBroken = true;
+      materializedTree = null;
+      parseError = error;
+    }
+
+    // Single character-fallback site for BOTH "clean parse, zero chunks" and
+    // "AST threw". On success the file stays indexed (no marker). On failure a
+    // genuinely-broken AST (astBroken) is quarantined with the distinct
+    // "AST not processed" reason so `doctor --quarantine` explains it; a clean
+    // parse of a structureless file lets the raw fallback error propagate
+    // (classified as a generic FileParseError downstream).
+    try {
       return {
         chunks: this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)),
-        tree: null,
+        tree: materializedTree,
       };
+    } catch (fallbackError) {
+      if (!astBroken) throw fallbackError;
+      const fallbackDetail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      // Prominent root cause: the parse exception when parse() threw, else a
+      // syntax-error descriptor walked from the degraded materialized tree
+      // (the rootNode.hasError path produced no exception to carry).
+      const parseCause =
+        parseError instanceof Error
+          ? parseError.message
+          : typeof parseError === "string"
+            ? parseError
+            : parseError !== undefined
+              ? `non-Error value thrown during parse (${typeof parseError})`
+              : this.describeSyntaxErrors(materializedTree);
+      // The parse exception is the more useful root cause than the fallback
+      // error; fall back to the fallback error only on the hasError path.
+      const cause =
+        parseError instanceof Error ? parseError : fallbackError instanceof Error ? fallbackError : undefined;
+      throw new FileParseError(
+        filePath,
+        `${AST_NOT_PROCESSED_REASON}: ${parseCause} (character fallback also failed: ${fallbackDetail})`,
+        cause,
+      );
     }
+  }
+
+  /**
+   * Concise syntax-error descriptor for the `rootNode.hasError` quarantine path
+   * (no exception was thrown). Walks the already-degraded materialized tree for
+   * the first ERROR node and reports its 1-based line; falls back to a generic
+   * marker when the tree is gone or carries no ERROR node (e.g. only MISSING
+   * nodes). Cheap: only ever runs on the about-to-be-quarantined broken path.
+   */
+  private describeSyntaxErrors(tree: MaterializedTree | null): string {
+    const line = tree ? this.findFirstErrorLine(tree.rootNode) : null;
+    return line !== null
+      ? `tree-sitter reported a syntax error at line ${line}`
+      : "tree-sitter reported syntax errors (rootNode.hasError)";
+  }
+
+  /** DFS for the first `type === "ERROR"` node, returning its 1-based start line. */
+  private findFirstErrorLine(node: AstNode): number | null {
+    if (node.type === "ERROR") return node.startPosition.row + 1;
+    for (const child of node.children) {
+      const line = this.findFirstErrorLine(child);
+      if (line !== null) return line;
+    }
+    return null;
   }
 
   /**
