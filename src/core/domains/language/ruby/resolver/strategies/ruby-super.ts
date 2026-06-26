@@ -5,6 +5,29 @@ import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
 import { resolveInstanceMethodInClassChain, type ResolverConfig } from "./shared.js";
 
 /**
+ * Ruby runtime hook methods whose `super` MUST NOT produce a file-only fallback
+ * edge (bd tea-rags-mcp-08tss Part 2). These are methods whose super target is
+ * ALWAYS BasicObject / Module in the Ruby runtime — emitting a file-only edge to
+ * an in-project ancestor that doesn't define the hook would be a false edge.
+ *
+ * Only the file-only fallback is suppressed; a METHOD-LEVEL match in an ancestor
+ * is still returned (a project that explicitly defines `method_missing` in a base
+ * class IS a real edge).
+ */
+export const RUBY_RUNTIME_HOOKS = new Set([
+  "method_missing",
+  "respond_to_missing?",
+  "method_added",
+  "method_removed",
+  "inherited",
+  "included",
+  "extended",
+  "prepended",
+  "const_missing",
+  "singleton_method_added",
+]);
+
+/**
  * `super` / `zsuper` keyword (bd brp1). The walker emits a synthetic CallRef
  * whose receiver is `SUPER_RECEIVER_SENTINEL` and whose `member` is the
  * enclosing method's name — both decided at extraction time so the resolver
@@ -76,6 +99,11 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
       if (resolvedTarget.targetSymbolId !== null) return resolvedTarget;
       if (fileOnlyFallback === null) fileOnlyFallback = resolvedTarget;
     }
+    // Runtime hooks (method_missing, respond_to_missing?, etc.) always chain to
+    // BasicObject/Module in the Ruby runtime. When no ancestor provides a
+    // METHOD-LEVEL edge, suppress the file-only fallback to prevent fabricating
+    // a false edge to the enclosing module (bd tea-rags-mcp-08tss Part 2).
+    if (fileOnlyFallback !== null && RUBY_RUNTIME_HOOKS.has(member)) return null;
     return fileOnlyFallback;
   }
 }

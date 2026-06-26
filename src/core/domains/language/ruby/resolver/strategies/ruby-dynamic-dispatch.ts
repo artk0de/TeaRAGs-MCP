@@ -1,7 +1,13 @@
-import type { CallContext, CallRef, DispatchEdge } from "../../../../../contracts/types/codegraph.js";
+import {
+  resolveLocalBinding,
+  type CallContext,
+  type CallRef,
+  type DispatchEdge,
+} from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
 import { isExternalQualifiedMember } from "../../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
+import { typeOfReceiver } from "../type-propagation.js";
 import { receiverLooksLikeArRelationChain } from "./ruby-ar-relation-guard.js";
 import {
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
@@ -56,16 +62,40 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     if (CONSTANT_RE.test(r)) return []; // constant / type receiver
     if (ctx.localBindings && Object.prototype.hasOwnProperty.call(ctx.localBindings, r)) return []; // typed local
     if (receiverLooksLikeArRelationChain(r)) return []; // AR::Relation chain
-    // Index-access receiver (`opts[k]`, `arr[i]`): the element type is untrackable
-    // (Hash/Array element → core/external). Fanning out to same-named in-project
-    // methods is ~10%-precision noise. Suppress; the external classifier (Task 3)
-    // reclassifies the call as external so recall is not falsely penalised
-    // (bd tea-rags-mcp-mktkk increment A).
-    if (receiverIsIndexAccess(r)) return [];
+    // Index-access receiver (`opts[k]`, `arr[i]`): suppress dynamic fan-out by
+    // default (element type is untrackable → ~10%-precision noise). EXCEPTION:
+    // when the base var has a typed container binding, the element type IS known
+    // and `chainType` will resolve the method precisely — return [] here to defer
+    // to it rather than fanning out speculative dynamic edges. Untyped index-access
+    // keeps the existing suppress behaviour (bd tea-rags-mcp-mktkk increment A;
+    // Task 1.6 typed-container lift).
+    if (receiverIsIndexAccess(r)) {
+      // Attempt to extract the base var: `arr[…]` → `arr`.
+      const rtrim = r.trimEnd();
+      const bracketIdx = rtrim.indexOf("[");
+      const baseVar = bracketIdx > 0 ? rtrim.slice(0, bracketIdx) : "";
+      if (baseVar && /^[a-z_]\w*$/.test(baseVar)) {
+        const baseBinding = resolveLocalBinding(ctx.localBindings, baseVar, call.startLine);
+        if (baseBinding?.typeRef?.form === "container") {
+          // Typed container — chainType owns the resolution; defer to it.
+          return [];
+        }
+      }
+      // Untyped index-access — suppress as before.
+      return [];
+    }
     // Provably-external chain tail (`req.headers`, `type.constantize`): the element
     // is core/runtime, no in-project target. Suppress; the external classifier
     // reclassifies so recall is not falsely penalised (bd Increment B / B-suppress).
     if (receiverChainTailIsExternal(r)) return [];
+    // Typeable chain receiver: the propagation engine threads it to a known class/
+    // instance type, so the precise `chainType` strategy (in resolve()) must own it
+    // — returning [] here defers to it instead of fanning out speculative dynamic
+    // edges. (bd tea-rags-mcp-epydb)
+    if (r.includes(".")) {
+      const t = typeOfReceiver(r, call.startLine, ctx);
+      if (t && (t.form === "class" || t.form === "instance")) return [];
+    }
     // AR/core instance member on an untyped receiver (`agent.update`): the true
     // target is an external base class (ActiveRecord::Base, ActiveModel). Fanning
     // out to a coincidental in-project def of the same name is wrong-type noise.

@@ -1,4 +1,4 @@
-export { RubySuperSymbolResolutionStrategy } from "./ruby-super.js";
+export { RubySuperSymbolResolutionStrategy, RUBY_RUNTIME_HOOKS } from "./ruby-super.js";
 export { RubySelfMemberSymbolResolutionStrategy } from "./ruby-self-member.js";
 export { RubyLocalTypeSymbolResolutionStrategy } from "./ruby-local-type.js";
 export { RubyIvarFieldSymbolResolutionStrategy } from "./ruby-ivar-field.js";
@@ -6,10 +6,12 @@ export { RubyReturnTypeBindingSymbolResolutionStrategy } from "./ruby-return-typ
 export { RubyConstantSymbolResolutionStrategy } from "./ruby-constant.js";
 export { RubyExplicitRequireSymbolResolutionStrategy } from "./ruby-explicit-require.js";
 export { RubyArRelationGuardSymbolResolutionStrategy } from "./ruby-ar-relation-guard.js";
+export { RubyChainTypeSymbolResolutionStrategy } from "./ruby-chain-type.js";
 export { RubyReceiverSetDropSymbolResolutionStrategy } from "./ruby-receiver-set-drop.js";
 export { RubyBareCallSymbolResolutionStrategy } from "./ruby-bare-call.js";
 export { RubyConeDispatchResolver } from "./ruby-cone-dispatch.js";
 export { RubyConeTypeLocator } from "./ruby-cone-type-locator.js";
+export { RubyUnionDispatchResolver } from "./ruby-union-dispatch.js";
 export { RubyDynamicDispatchResolver } from "./ruby-dynamic-dispatch.js";
 export { RubyTableDispatchResolver } from "./ruby-table-dispatch.js";
 export {
@@ -20,6 +22,8 @@ export {
   isRubyPath,
   receiverIsIndexAccess,
   receiverChainTailIsExternal,
+  symbolIdIsClassMethod,
+  symbolIdIsInstanceMethod,
   CONE_MAX_DEFAULT,
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
   type ResolverConfig,

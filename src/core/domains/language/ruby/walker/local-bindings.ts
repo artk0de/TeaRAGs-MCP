@@ -1,87 +1,11 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { resolveLocalBindingType, type LocalBinding } from "../../../../contracts/types/codegraph.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
+import { constInstanceType, RUBY_BLOCK_ITERATOR_METHODS } from "./type-sources/ast-inference.js";
+import { YARD_CONST } from "./type-sources/yard.js";
 
-/**
- * Instance-returning methods on a class constant that bind a local to the
- * receiver's INSTANCE type. `new` is the universal constructor; the rest are
- * Rails/ActiveRecord factories and finders that return a single model instance
- * (not a Relation). Methods like `where` / `order` / `joins` return a Relation,
- * so chained `.first` / `.last` need separate Relation-aware tracking (not done
- * here). This is the single source of truth for the instance-returning set
- * (bd tea-rags-mcp-va9ng will later wire it onto ResolverConfig); the walker's
- * binding inference consumes it directly. Note `new` is handled separately as
- * the universal constructor and is NOT listed here.
- */
-export const INSTANCE_RETURNING_METHODS = new Set([
-  "find",
-  "find!",
-  "find_by",
-  "find_by!",
-  "create",
-  "create!",
-  "build",
-  "first",
-  "last",
-  "take",
-]);
-
-/**
- * AR::Relation-returning query methods: `Const.where(...)` is a
- * `Relation<Const>`, and chaining another of these stays `Relation<Const>`
- * (same element type). A terminal instance-returning method
- * ({@link INSTANCE_RETURNING_METHODS}) on such a relation yields ONE `Const`
- * instance — so `Const.where(...).first` is typed `Const` (bd Increment B / B2).
- */
-export const RELATION_RETURNING_METHODS = new Set([
-  "where",
-  "not",
-  "order",
-  "joins",
-  "includes",
-  "eager_load",
-  "preload",
-  "references",
-  "group",
-  "having",
-  "limit",
-  "offset",
-  "distinct",
-  "select",
-  "reorder",
-  "unscope",
-  "except",
-  "all",
-  "readonly",
-  "lock",
-  "none",
-]);
-
-/**
- * Enumerable / collection methods that yield each element to a block. When the
- * iterated receiver has a known element type, the FIRST positional block param
- * is that element type (bd Increment B / B-block).
- */
-export const RUBY_BLOCK_ITERATOR_METHODS = new Set([
-  "each",
-  "map",
-  "collect",
-  "select",
-  "filter",
-  "filter_map",
-  "reject",
-  "find",
-  "detect",
-  "find_all",
-  "flat_map",
-  "each_with_index",
-  "each_with_object",
-  "group_by",
-  "sort_by",
-  "min_by",
-  "max_by",
-  "partition",
-]);
+export { collectYardParamTypes, collectYardReturnTypes, YARD_CONST } from "./type-sources/yard.js";
+export { INSTANCE_RETURNING_METHODS, RELATION_RETURNING_METHODS, RUBY_BLOCK_ITERATOR_METHODS } from "./type-sources/ast-inference.js";
 
 /**
  * Env-gate for the Ruby local variable type inference path. When `false`,
@@ -92,46 +16,6 @@ export function localTypeTrackingEnabled(): boolean {
   const raw = process.env.CODEGRAPH_RB_LOCAL_TYPE_TRACKING;
   if (raw === undefined) return true;
   return raw !== "false" && raw !== "0";
-}
-
-/**
- * Walk a relation chain `Const.<rel>(...)[.<rel>(...)]*` down to its root
- * constant. Returns the fully-qualified const when the chain bottoms out at a
- * `YARD_CONST` receiver through only {@link RELATION_RETURNING_METHODS}; null
- * for any non-relation link (no guessing).
- */
-function relationRootConst(node: AstNode): string | null {
-  const asConst =
-    node.type === "scope_resolution" ? readScopeResolution(node) : node.type === "constant" ? node.text : null;
-  if (asConst && YARD_CONST.test(asConst)) return asConst;
-  if (node.type !== "call" && node.type !== "method_call") return null;
-  const recv = node.childForFieldName("receiver");
-  const method = node.childForFieldName("method");
-  if (!recv || !method || !RELATION_RETURNING_METHODS.has(method.text)) return null;
-  return relationRootConst(recv);
-}
-
-/**
- * Infer the INSTANCE type of an RHS expression that is a class-constant call
- * (`ClassName.new(...)` / `Model.find(...)` / `Model.create!(...)` …) or a
- * relation-tail chain (`Const.where(...).first`). Returns the fully-qualified
- * constant name when the receiver is a constant (or a relation chain rooted at
- * one) and the method is `new` or in {@link INSTANCE_RETURNING_METHODS};
- * otherwise null (bare factory calls, bare Relation chains, non-constant
- * receivers — never guessed).
- */
-function constInstanceType(node: AstNode): string | null {
-  if (node.type !== "call" && node.type !== "method_call") return null;
-  const receiver = node.childForFieldName("receiver");
-  const method = node.childForFieldName("method");
-  if (!receiver || !method) return null;
-  const methodName = method.text;
-  if (methodName !== "new" && !INSTANCE_RETURNING_METHODS.has(methodName)) return null;
-  const receiverText = receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
-  // Direct `ClassName.new` / `ClassName.find` — receiver is the constant itself.
-  if (YARD_CONST.test(receiverText)) return receiverText;
-  // B2 relation tail `Const.where(...).first` — receiver is a relation chain.
-  return relationRootConst(receiver);
 }
 
 /**
@@ -338,7 +222,7 @@ export function collectLocalBindingsForChunk(
     // reduce later params are accumulators — skipped). VTA is sound only when
     // the receiver already has a binding; unknown receiver → no binding.
     if (node.type === "block" || node.type === "do_block") {
-      const parent = node.parent;
+      const { parent } = node;
       const callMethod = parent?.childForFieldName("method")?.text;
       const recvNode = parent?.childForFieldName("receiver");
       if (
@@ -386,14 +270,10 @@ export function collectLocalBindingsForChunk(
     // `var = CONST` — var holds the CLASS itself (not an instance). Bare constant
     // RHS only (a call RHS is handled by constInstanceType above).
     const rhsConst =
-      rhs.type === "scope_resolution"
-        ? readScopeResolution(rhs)
-        : rhs.type === "constant"
-          ? rhs.text
-          : null;
+      rhs.type === "scope_resolution" ? readScopeResolution(rhs) : rhs.type === "constant" ? rhs.text : null;
     if (rhsConst && YARD_CONST.test(rhsConst)) {
       push(varName, rhsConst, line);
-      (out[varName]![out[varName]!.length - 1] as LocalBinding).valueKind = "class";
+      out[varName][out[varName].length - 1].valueKind = "class";
       return;
     }
 
@@ -428,9 +308,10 @@ const COMPOUND_CHAIN_RE = /^[a-z_][A-Za-z0-9_]*(?:\.[a-z_][A-Za-z0-9_]*)+$/;
  * (→Agent): binds `event.user → User`, then `event.user.agents → Agent`. The
  * binding line is the receiver's own line so the position-aware lookup attaches
  * it correctly. Honours `class_name:` implicitly — the association map already
- * carries the rewritten model (`event.author → User`).
+ * carries the rewritten model (`event.author → User`). Exported for use by the
+ * walker's store-path rewire (Task 0.5) as a post-store association-chain pass.
  */
-function bindCompoundReceiverChains(
+export function bindCompoundReceiverChains(
   root: AstNode,
   startLine: number,
   endLine: number,
@@ -447,7 +328,7 @@ function bindCompoundReceiverChains(
     if (!receiver) return;
     const line = receiver.startPosition.row + 1;
     if (line < startLine || line > endLine) return;
-    const text = receiver.text;
+    const { text } = receiver;
     if (!COMPOUND_CHAIN_RE.test(text)) return;
     if (!chains.has(text)) chains.set(text, line);
   });
@@ -476,112 +357,4 @@ function bindCompoundReceiverChains(
       currentType = nextType;
     }
   }
-}
-
-/**
- * A bare-bracket YARD type — `[Foo]`, `[Acme::User]` — captured to a single
- * constant name. `null` for any shape we deliberately do NOT bind (union types
- * `[A, B]`, hashes `[Hash{...}]`, lowercase / non-constant tokens). The one
- * structured form we DO unwrap is a single-element collection container
- * (`Array<T>` / `Enumerable<T>` / `[T]`-style) whose element type is itself a
- * bare constant — `@param x [Array<Post>]` binds the ELEMENT type `Post`
- * (brg9), because `x` is iterated/element-accessed in the body, not used as an
- * Array (bd cai0/brg9).
- */
-export const YARD_CONST = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
-const YARD_ELEMENT_CONTAINER = /^(?:Array|Enumerable|Set|Collection|ActiveRecord::Relation)<([\w:]+)>$/;
-
-function parseYardBracketType(inner: string): string | null {
-  const trimmed = inner.trim();
-  // `Array<Post>` / `Enumerable<Acme::Post>` → element type.
-  const container = YARD_ELEMENT_CONTAINER.exec(trimmed);
-  if (container) {
-    const element = container[1];
-    return YARD_CONST.test(element) ? element : null;
-  }
-  // Bare constant `Foo` / `Acme::User`.
-  return YARD_CONST.test(trimmed) ? trimmed : null;
-}
-
-/**
- * Parse YARD `# @param NAME [TYPE]` lines and group them by the line
- * number of the `def NAME(...)` they precede. The grammar is light: any
- * comment line matching the pattern attaches to the NEXT non-comment,
- * non-blank line that starts with `def` (with optional `self.` prefix).
- *
- * `[TYPE]` is parsed by `parseYardBracketType`: a bare constant binds
- * directly; a single-element collection (`Array<T>`) binds the ELEMENT type
- * `T` (brg9) so `x.first` / `x.each { |e| … }` element-method calls resolve.
- * Bracket-less types (`# @param x String`), unions, and lowercase tokens are
- * rejected — the bracket form is the canonical Sorbet/Solargraph/Steep
- * convention.
- */
-export function collectYardParamTypes(code: string): Map<number, Record<string, string>> {
-  const lines = code.split(/\r?\n/);
-  const out = new Map<number, Record<string, string>>();
-  let pending: Record<string, string> | null = null;
-  const yardRegex = /^\s*#\s*@param\s+(\w+)\s+\[([^\]]+)\]/;
-  const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i] ?? "";
-    const yardMatch = yardRegex.exec(raw);
-    if (yardMatch) {
-      // SAFETY: regex capture groups (\w+) and ([^\]]+) are non-optional —
-      // a successful match guarantees both name and the bracket body exist.
-      const [, name, bracket] = yardMatch;
-      const type = parseYardBracketType(bracket);
-      if (type) {
-        if (!pending) pending = {};
-        pending[name] = type;
-      }
-      continue;
-    }
-    // Blank or other comment — preserve pending block.
-    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
-    // First non-blank, non-comment line. If it's a `def`, attach.
-    if (pending && defRegex.test(raw)) {
-      out.set(i + 1, pending);
-    }
-    pending = null;
-  }
-  return out;
-}
-
-/**
- * Parse YARD `# @return [TYPE]` lines and key them by the method NAME of the
- * `def NAME(...)` they precede (brg9). Mirrors `collectYardParamTypes`'
- * comment-block attachment, but produces a `functionName → returnTypeName`
- * map matching `FileExtraction.functionReturnTypes` (the same channel the Go
- * walker fills) so a resolver can bind `x = obj.foo` to `foo`'s return type.
- *
- * Only a SINGLE bare constant return is recorded — `[Array<User>]` and other
- * collection containers are skipped (a collection isn't a single instance the
- * caller's `x.method` dispatches on), matching the Go walker's "single concrete
- * return only" discipline. `parseYardBracketType` would unwrap the element type
- * for a param, but a `@return` of a collection genuinely IS a collection, so we
- * reject containers here rather than unwrap them.
- */
-export function collectYardReturnTypes(code: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  let pendingReturn: string | null = null;
-  const returnRegex = /^\s*#\s*@return\s+\[([^\]]+)\]/;
-  const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
-  for (const raw of code.split(/\r?\n/)) {
-    const m = returnRegex.exec(raw);
-    if (m) {
-      const inner = (m[1] ?? "").trim();
-      // Single bare constant only — a collection `[Array<T>]` return is a
-      // collection, not a dispatch target, so it is NOT recorded.
-      pendingReturn = YARD_CONST.test(inner) ? inner : null;
-      continue;
-    }
-    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
-    const defMatch = defRegex.exec(raw);
-    // defMatch[1] is the method name (\w+) when the line is a `def`.
-    if (pendingReturn && defMatch?.[1]) {
-      out[defMatch[1]] = pendingReturn;
-    }
-    pendingReturn = null;
-  }
-  return out;
 }

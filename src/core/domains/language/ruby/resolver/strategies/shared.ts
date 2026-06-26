@@ -90,14 +90,7 @@ export function receiverIsIndexAccess(receiver: string): boolean {
  * define) are EXCLUDED (deferred — they need a root-segment vocab gate). bd
  * Increment B / B-suppress.
  */
-const EXTERNAL_CHAIN_TAILS = [
-  ".headers",
-  ".backtrace",
-  ".constantize",
-  ".deconstantize",
-  ".to_param",
-  ".class_name",
-];
+const EXTERNAL_CHAIN_TAILS = [".headers", ".backtrace", ".constantize", ".deconstantize", ".to_param", ".class_name"];
 
 /**
  * True when a chain receiver ends in a provably-external core/runtime method —
@@ -334,25 +327,33 @@ function resolveTypeMethodInternal(
   if (visited.has(typeName)) return null;
   visited.add(typeName);
   const targetFile = resolveConstant(typeName, ctx);
-  if (!targetFile) return null;
 
-  const prepended = ctx.classPrependedAncestors?.[typeName];
-  if (prepended) {
-    for (let i = prepended.length - 1; i >= 0; i--) {
-      const inherited = resolveTypeMethodInternal(prepended[i], member, ctx, mode, visited, symbolIdFilter);
-      if (inherited && inherited.targetSymbolId !== null) return inherited;
+  // When the class's own file cannot be resolved (e.g. reopened across N>1
+  // files so resolveConstant returns null) but classAncestors is present,
+  // skip own-file and prepend lookups and fall through to the ancestor walk.
+  // Without ancestors there is nothing to resolve — return null so the caller
+  // can DROP. (RC-2 fix: tea-rags-mcp-nts2b)
+  if (!targetFile && !ctx.classAncestors?.[typeName]) return null;
+
+  if (targetFile !== null) {
+    const prepended = ctx.classPrependedAncestors?.[typeName];
+    if (prepended) {
+      for (let i = prepended.length - 1; i >= 0; i--) {
+        const inherited = resolveTypeMethodInternal(prepended[i], member, ctx, mode, visited, symbolIdFilter);
+        if (inherited && inherited.targetSymbolId !== null) return inherited;
+      }
     }
-  }
 
-  const bareType = lastConstantSegment(typeName);
-  const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
-    if (def.relPath !== targetFile) return false;
-    const tail = def.scope[def.scope.length - 1];
-    if (tail !== typeName && tail !== bareType) return false;
-    return symbolIdFilter === null || symbolIdFilter(def.symbolId, member);
-  });
-  const target = pickSingleCandidate(candidates, mode);
-  if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+    const bareType = lastConstantSegment(typeName);
+    const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
+      if (def.relPath !== targetFile) return false;
+      const tail = def.scope[def.scope.length - 1];
+      if (tail !== typeName && tail !== bareType) return false;
+      return symbolIdFilter === null || symbolIdFilter(def.symbolId, member);
+    });
+    const target = pickSingleCandidate(candidates, mode);
+    if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+  }
 
   const ancestors = ctx.classAncestors?.[typeName];
   if (ancestors) {
@@ -362,7 +363,11 @@ function resolveTypeMethodInternal(
     }
   }
 
-  return { targetRelPath: targetFile, targetSymbolId: null };
+  // File-only fallback is only possible when the class's own file is known.
+  // If targetFile is null (reopened class), the ancestor walk is the only
+  // resolution path; returning null here lets the caller treat it as unresolved.
+  if (targetFile !== null) return { targetRelPath: targetFile, targetSymbolId: null };
+  return null;
 }
 
 /**
@@ -371,7 +376,7 @@ function resolveTypeMethodInternal(
  * method resolution path shared by `resolveTypeStaticMethod` and
  * `RubyConstantSymbolResolutionStrategy`.
  */
-function symbolIdIsClassMethod(symbolId: string, member: string): boolean {
+export function symbolIdIsClassMethod(symbolId: string, member: string): boolean {
   if (symbolId === member) return true; // top-level function
   return symbolId.endsWith(`.${member}`);
 }
@@ -381,6 +386,6 @@ function symbolIdIsClassMethod(symbolId: string, member: string): boolean {
  * separator). Used by `resolveTypeInstanceMethod` to exclude class methods when
  * both `Type.method` and `Type#method` exist in the symbol table.
  */
-function symbolIdIsInstanceMethod(symbolId: string, member: string): boolean {
+export function symbolIdIsInstanceMethod(symbolId: string, member: string): boolean {
   return symbolId.endsWith(`#${member}`);
 }

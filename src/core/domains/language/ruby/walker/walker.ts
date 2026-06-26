@@ -42,19 +42,20 @@ import type {
   FileExtraction,
   ImportRef,
   InheritanceEdgeDecl,
+  LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { RUBY_DSL, singularizeAssociation } from "../dsl/index.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
 import {
-  collectLocalBindingsForChunk,
+  bindCompoundReceiverChains,
   collectRubyBodyReturnTypes,
   collectRubyIvarFieldTypes,
   collectRubyLocalCallBindingsForChunk,
-  collectYardParamTypes,
-  collectYardReturnTypes,
   localTypeTrackingEnabled,
-  YARD_CONST,
 } from "./local-bindings.js";
+import { RubyTypeFactStore } from "./type-fact-store.js";
+import { INLINE_TYPE_SOURCES } from "./type-sources/index.js";
+import { YARD_CONST } from "./type-sources/yard.js";
 
 export interface RubyExtractInput {
   tree: MaterializedTree;
@@ -87,8 +88,11 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const calls = collectRubyCalls(input.tree.rootNode, dispatchTableNames);
   const imports: ImportRef[] = [...explicitImports, ...constantRefs];
   const trackTypes = localTypeTrackingEnabled();
-  const yardByLine = trackTypes ? collectYardParamTypes(input.code) : new Map<number, Record<string, string>>();
-  const yardReturnTypes = trackTypes ? collectYardReturnTypes(input.code) : {};
+  // Gather all inline type facts (YARD + AST) through the source registry and
+  // build the store once per file. When tracking is off, an empty store is used
+  // so localBindingsForChunk / returnTypeByMethod return empty maps cheaply.
+  const facts = trackTypes ? INLINE_TYPE_SOURCES.flatMap((s) => s.extract(input)) : [];
+  const store = RubyTypeFactStore.fromFacts(facts);
   // Per-class Rails association map (B1): `class → accessor → modelType`. Drives
   // compound-receiver chain typing (`event.user.agents`) in the binding pass and
   // is surfaced on the FileExtraction so resolvers can read it run-global.
@@ -108,14 +112,19 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
       calls: callOwnership.get(chunkIndex) ?? [],
     };
     if (trackTypes) {
-      const bindings = collectLocalBindingsForChunk(
-        input.tree.rootNode,
-        c.startLine,
-        c.endLine,
-        yardByLine,
-        associationTypes,
-      );
-      if (Object.keys(bindings).length > 0) base.localBindings = bindings;
+      // Store provides YARD + AST param/local bindings (position-filtered to chunk).
+      const localBindings = store.localBindingsForChunk(c.startLine, c.endLine);
+      // Compound-receiver association-chain pass (B1): binds prefixes of dotted
+      // chain receivers (`event.user → User`, `event.user.agents → Agent`) using
+      // the per-class association map. Runs after the store pass so root-segment
+      // types are already established in localBindings before chain resolution.
+      if (Object.keys(associationTypes).length > 0) {
+        const push = (name: string, type: string, line: number): void => {
+          (localBindings[name] ??= []).push({ line, type } as LocalBinding);
+        };
+        bindCompoundReceiverChains(input.tree.rootNode, c.startLine, c.endLine, associationTypes, localBindings, push);
+      }
+      if (Object.keys(localBindings).length > 0) base.localBindings = localBindings;
       // `localCallBindings` (var → called method) pairs with the run-global
       // `functionReturnTypes` so the resolver binds `x = recv.meth(); x.member`
       // to `<meth's return type>#member` (cai0 a71lj, same channel as Go).
@@ -151,14 +160,12 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // for the hierarchy graph. The legacy Records stay (resolver-forward path).
   const inheritanceEdges = collectRubyInheritanceEdges(input.tree.rootNode);
   if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
-  // YARD `@return [T]` return types (brg9) — same channel the Go walker fills
-  // (`FileExtraction.functionReturnTypes`). Emitted only when at least one
-  // single-constant return annotation was found.
-  // Return types feed the `returnTypeBinding` pass (cai0 a71lj). Body inference
-  // (last-expression constructor) covers un-annotated Rails code; YARD `@return`
-  // wins on conflict (explicit annotation beats inferred).
+  // `functionReturnTypes` — same channel the Go walker fills. Two sources merged
+  // (last-write wins → YARD explicit annotation beats body inference):
+  //   1. Body inference: last-expression constructor (`def build; Widget.new; end`).
+  //   2. YARD `@return [T]` via the store's return facts (brg9).
   const bodyReturnTypes = trackTypes ? collectRubyBodyReturnTypes(input.tree.rootNode) : {};
-  const returnTypes = { ...bodyReturnTypes, ...yardReturnTypes };
+  const returnTypes = { ...bodyReturnTypes, ...store.returnTypeByMethod() };
   if (Object.keys(returnTypes).length > 0) out.functionReturnTypes = returnTypes;
   if (Object.keys(dispatchTables).length > 0) out.dispatchTables = dispatchTables;
   // `@ivar` receiver types via the universal `classFieldTypes` channel (cai0
@@ -222,8 +229,28 @@ function collectRubyInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
       const ordinals: Record<"include" | "extend" | "prepend", number> = { include: 0, extend: 0, prepend: 0 };
       for (const stmt of stmtSource) {
         const mixin = mixinTargetFromStatement(stmt);
-        if (!mixin) continue;
-        edges.push({ source: fq, ancestor: mixin.name, kind: mixin.kind, ordinal: ordinals[mixin.kind]++ });
+        if (mixin) {
+          edges.push({ source: fq, ancestor: mixin.name, kind: mixin.kind, ordinal: ordinals[mixin.kind]++ });
+          continue;
+        }
+        // `class << self` (singleton_class) — descend its body and attribute
+        // any include/extend/prepend inside it to the enclosing class/module.
+        // Pattern: `module M; class << self; include Configurable; end; end`
+        // emits an ancestor edge `M → Configurable` (bd tea-rags-mcp-08tss).
+        if (stmt.type === "singleton_class") {
+          const singBody = stmt.childForFieldName("body");
+          const singStmts = singBody ? singBody.children : stmt.children;
+          for (const singStmt of singStmts) {
+            const singMixin = mixinTargetFromStatement(singStmt);
+            if (!singMixin) continue;
+            edges.push({
+              source: fq,
+              ancestor: singMixin.name,
+              kind: singMixin.kind,
+              ordinal: ordinals[singMixin.kind]++,
+            });
+          }
+        }
       }
       const recurseChildren = body ? body.children : node.children;
       for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
@@ -286,13 +313,29 @@ function collectRubyClassAncestors(root: AstNode): {
       // `prepend Mod` is collected separately (bd tea-rags-mcp-3jvn) because
       // it inserts BEFORE the class itself in Ruby's MRO — the resolver
       // checks prepended modules first, then the class, then includes/super.
+      // `class << self` (singleton_class) bodies are also descended —
+      // include/extend/prepend inside them contribute to the enclosing class
+      // ancestor chain so `module M; class << self; include C; end; end`
+      // populates classAncestors["M"] (bd tea-rags-mcp-08tss).
       const body = node.childForFieldName("body");
       const stmtSource = body ? body.children : node.children;
       for (const stmt of stmtSource) {
         const mixin = mixinTargetFromStatement(stmt);
-        if (!mixin) continue;
-        if (mixin.kind === "prepend") prepended.push(mixin.name);
-        else ancestors.push(mixin.name);
+        if (mixin) {
+          if (mixin.kind === "prepend") prepended.push(mixin.name);
+          else ancestors.push(mixin.name);
+          continue;
+        }
+        if (stmt.type === "singleton_class") {
+          const singBody = stmt.childForFieldName("body");
+          const singStmts = singBody ? singBody.children : stmt.children;
+          for (const singStmt of singStmts) {
+            const singMixin = mixinTargetFromStatement(singStmt);
+            if (!singMixin) continue;
+            if (singMixin.kind === "prepend") prepended.push(singMixin.name);
+            else ancestors.push(singMixin.name);
+          }
+        }
       }
       if (ancestors.length > 0) out.set(fq, ancestors);
       if (prepended.length > 0) prependedOut.set(fq, prepended);

@@ -10,6 +10,8 @@
  * Spec: `docs/superpowers/specs/2026-04-25-codegraph-symbols-vertical-slice.md`
  */
 
+import type { RubyTypeRef } from "./language.js";
+
 // `common.ts` does not yet exist in this codebase. The two path/symbol
 // aliases are introduced here as nominal string aliases (no runtime impact)
 // and may be moved to `common.ts` in a later cleanup once another contract
@@ -349,6 +351,18 @@ export interface FileExtraction {
    * Plain array for NDJSON-spill round-trip.
    */
   inheritanceEdges?: InheritanceEdgeDecl[];
+  /**
+   * Optional per-class instance-variable type map: `fqClassName → ivarName →
+   * typeName`. Populated by the Ruby type-source propagation engine (Increment 1,
+   * Task 1.1) from YARD / Sorbet / RBS annotations and AST inference. The ivar
+   * name is recorded with the leading `@` (`"@account"`, `"@user"`). Lets the
+   * resolver bind `@ivar.method()` calls to `<typeName>#method` for annotated
+   * Ruby code. Mirror of `CallContext.ivarTypes`; persisted via the NDJSON spill.
+   *
+   * Plain Record (NOT Map) for NDJSON-spill round-trip. Undefined for languages
+   * without ivar annotations.
+   */
+  ivarTypes?: Record<string, Record<string, string>>;
 }
 
 export interface ImportRef {
@@ -393,6 +407,14 @@ export interface LocalBinding {
    * binding and every other language is unaffected (bd Increment B / var=CONST).
    */
   valueKind?: "instance" | "class";
+  /**
+   * Richer receiver type when the bare `type` string can't represent it (union /
+   * container); engine prefers `typeRef` when present. Added by INFRA-A so
+   * union (`[A,B]`) and container (`Array<Post>`) receiver types ride the
+   * EXISTING localBindings channel to the propagation engine at resolve time.
+   * Absent for plain class/instance bindings (the string `type` is sufficient).
+   */
+  typeRef?: RubyTypeRef;
 }
 
 /**
@@ -781,6 +803,32 @@ export interface CallContext {
    * forward Records onto `getAncestors`. Sync — no DB access on the resolve path.
    */
   hierarchy?: HierarchyView;
+  // ── Ruby type-source propagation engine (Increment 1, Task 1.1) ────────────
+  /**
+   * Optional per-class instance-variable type map: `fqClassName → ivarName →
+   * typeName`. Merged run-global from `FileExtraction.ivarTypes` by the
+   * codegraph provider (pass-1 barrier, mirrors `functionReturnTypes`). The
+   * ivar name is recorded with the leading `@` (`"@account"`, `"@user"`). The
+   * resolver binds `@ivar.method()` calls to `<typeName>#method` for
+   * annotated Ruby code. Undefined for languages without ivar annotations and
+   * for Ruby files not covered by a type source.
+   *
+   * Plain Record (NOT Map) for NDJSON-spill round-trip.
+   */
+  ivarTypes?: Record<string, Record<string, string>>;
+  /**
+   * Run-global `fqMethodKey → RubyTypeRef` map populated by the Ruby
+   * type-source propagation engine. The engine writes the RICHER structured
+   * return reference here (`{ form: "union", members: […] }`, container types,
+   * class vs instance form) while the EXISTING flat `functionReturnTypes` map
+   * (a bare type-name string) remains UNTOUCHED for backward compatibility.
+   * Resolvers that support `RubyTypeRef` read this map; resolvers that don't
+   * fall through to `functionReturnTypes`. The key format is
+   * `"ClassName#method"` for instance methods and `"ClassName.method"` for
+   * class methods. Undefined when the engine has not run or no annotations
+   * were found for this file.
+   */
+  structuredReturnTypes?: Record<string, RubyTypeRef>;
 }
 
 export interface SymbolResolutionTarget {

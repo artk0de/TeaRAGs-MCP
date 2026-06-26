@@ -7,7 +7,9 @@ import {
   receiverChainTailIsExternal,
   receiverIsIndexAccess,
   resolveConstant,
+  RUBY_RUNTIME_HOOKS,
 } from "./strategies/index.js";
+import { typeOfReceiver } from "./type-propagation.js";
 
 /**
  * Ruby implementation of `ExternalVocabulary`, bridging the `dsl/` framework
@@ -29,16 +31,20 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
     return isExternalQualifiedMember(member);
   }
 
-  isQualifiedReceiverExternal(receiver: string, ctx: CallContext): boolean {
+  isQualifiedReceiverExternal(receiver: string, ctx: CallContext, atLine?: number, member?: string): boolean {
     // Index-access receiver (`opts[k]`): element type untrackable → external.
     // Paired with the dynamic-dispatch suppression (mktkk increment A) so the
     // suppressed call leaves the inProjectEdgeRecall denominator as
     // callsExternalSkipped instead of becoming a recall hole.
     if (receiverIsIndexAccess(receiver)) return true;
     if (receiverChainTailIsExternal(receiver)) return true; // provably-external chain tail (B-suppress)
-    if (receiver === SUPER_RECEIVER_SENTINEL) return superTargetsExternal(ctx);
+    if (receiver === SUPER_RECEIVER_SENTINEL) return superTargetsExternal(ctx, member);
     if (IVAR_RECEIVER.test(receiver)) return ivarTargetsExternal(receiver, ctx);
-    return /^[A-Z]/.test(receiver) && resolveConstant(receiver, ctx) === null;
+    if (/^[A-Z]/.test(receiver)) return resolveConstant(receiver, ctx) === null;
+    // Lowercase receiver: check if it's a locally-typed core/gem variable (dnd9s).
+    // Only when atLine is provided (threaded from CallRef.startLine by ExternalCallClassifier).
+    if (atLine !== undefined) return localBindingTypedReceiverIsExternal(receiver, atLine, ctx);
+    return false;
   }
 }
 
@@ -61,20 +67,84 @@ function ivarTargetsExternal(receiver: string, ctx: CallContext): boolean {
 }
 
 /**
- * A `super` call (receiver `<super>`) whose enclosing class's FULL ancestor chain
- * resolves to ZERO in-project files targets a gem / runtime ancestor method
- * (`class Agent < ActiveRecord::Base` → `super` is `ActiveRecord::Base#…`, bd
- * cai0). The super pass correctly DROPs it (no in-project file to pin), so it
- * reaches this hook unresolved; it is honestly EXTERNAL, not an internal resolver
- * miss, and must be excluded from the resolveSuccessRate denominator like any gem
- * call. Conservative: a class with no declared ancestor chain is NOT flagged —
- * `every` over an empty chain would be vacuously true, so guard `length > 0`. A
- * super with even ONE in-project ancestor resolves (file-only) and never reaches
- * here.
+ * A `super` call (receiver `<super>`) is classified EXTERNAL in two cases:
+ *
+ * 1. `callerScope` is empty — `super` is inside an anonymous `Module.new { }`
+ *    block. The enclosing class is unknown so the target is always a Ruby
+ *    runtime ancestor (BasicObject / Module) — honestly external
+ *    (bd tea-rags-mcp-08tss Part 3).
+ *
+ * 2. The enclosing class's FULL ancestor chain resolves to ZERO in-project files
+ *    — targets a gem / runtime ancestor method (`class Agent < ActiveRecord::Base`
+ *    → `super` is `ActiveRecord::Base#…`, bd cai0). The super pass correctly
+ *    DROPs it (no in-project file to pin), so it reaches this hook unresolved;
+ *    it is honestly EXTERNAL. Conservative: a class with no declared ancestor
+ *    chain is NOT flagged — `every` over an empty chain would be vacuously true,
+ *    so guard `length > 0`. A super with even ONE in-project ancestor resolves
+ *    (file-only) and never reaches here.
+ *
+ * 3. `member` is a Ruby runtime hook (`method_missing`, `respond_to_missing?`,
+ *    `inherited`, …) — its `super` targets BasicObject / Module in the runtime.
+ *    Reaching this classifier means the super pass already DROPPED it: a
+ *    METHOD-LEVEL ancestor match would have resolved earlier, so no in-project
+ *    ancestor DEFINES the hook (the file-only fallback is suppressed by
+ *    RUBY_RUNTIME_HOOKS). Honestly EXTERNAL even when the enclosing class has
+ *    in-project ancestors (`module Octokit; class << self; include Configurable;
+ *    def method_missing(...); super`, octokit.rb:61 — bd 08tss follow-up).
  */
-function superTargetsExternal(ctx: CallContext): boolean {
-  if (ctx.callerScope.length === 0) return false;
+function superTargetsExternal(ctx: CallContext, member?: string): boolean {
+  if (member !== undefined && RUBY_RUNTIME_HOOKS.has(member)) return true;
+  if (ctx.callerScope.length === 0) return true;
   const enclosingClass = ctx.callerScope.join("::");
   const chain = collectAncestorChain(enclosingClass, ctx);
   return chain.length > 0 && chain.every((ancestor) => resolveConstant(ancestor, ctx) === null);
+}
+
+/**
+ * A LOWERCASE receiver (local variable / method parameter) is external when its
+ * static type is KNOWN via the type-propagation engine AND that type does NOT
+ * resolve to any in-project file (Ruby core `Hash`/`String`/`Integer` or a gem
+ * type like `Sawyer::Resource`). This gate fires ONLY when the resolver already
+ * DROPs the call (strategies exhausted with no edge); it re-classifies the drop
+ * from "in-project miss" to "external skip" so `inProjectEdgeRecall` is honest.
+ *
+ * PRECISION gate — over-classification is the real risk:
+ * - Unknown receiver (`typeOfReceiver → undefined`) → FALSE: we don't know it's
+ *   external, so we don't shrink the miss denominator.
+ * - Known type resolveConstant → non-null → FALSE: in-project class; a drop
+ *   there IS a real miss and must remain in the denominator.
+ * - Known type resolveConstant → null → TRUE: external class (core/gem); the
+ *   drop is a CORRECT external skip. (bd tea-rags-mcp-dnd9s)
+ *
+ * Union form: a union with ALL members resolveConstant→null is external (all
+ * branches are external). A single in-project member → false (drop is real miss).
+ * Container: the container itself (Array/Hash) is always external; the element
+ * type does not affect classification of the container's own methods.
+ */
+function localBindingTypedReceiverIsExternal(receiver: string, atLine: number, ctx: CallContext): boolean {
+  const typeRef = typeOfReceiver(receiver, atLine, ctx);
+  if (typeRef === undefined) return false;
+
+  if (typeRef.form === "class" || typeRef.form === "instance") {
+    return resolveConstant(typeRef.name, ctx) === null;
+  }
+
+  if (typeRef.form === "union") {
+    // External only when EVERY member of the union is external.
+    // A single in-project member means there is a possible in-project target.
+    return (
+      typeRef.members.length > 0 &&
+      typeRef.members.every(
+        (m) => (m.form === "class" || m.form === "instance") && resolveConstant(m.name, ctx) === null,
+      )
+    );
+  }
+
+  // container form: the container itself (Array, Hash, Relation…) is external — its
+  // own structural methods (size, count, each…) are not in-project. Calls that DO
+  // reach a typed element are handled by the chain strategy before hitting this
+  // classifier, so a container receiver arriving here is genuinely an external drop.
+  if (typeRef.form === "container") return true;
+
+  return false;
 }

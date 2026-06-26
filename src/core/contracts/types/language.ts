@@ -119,8 +119,26 @@ export interface ConeTypeLocator {
 export interface ExternalVocabulary {
   /** Is this no-receiver member a framework/runtime/builtin name (zero project defs)? */
   isBareCallExternal: (member: string) => boolean;
-  /** Does this qualified receiver name a gem/stdlib symbol (no in-project target)? */
-  isQualifiedReceiverExternal: (receiver: string, ctx: CallContext) => boolean;
+  /**
+   * Does this qualified receiver name a gem/stdlib symbol (no in-project target)?
+   *
+   * `atLine` (optional, 1-based) enables position-aware local-binding type lookup:
+   * when a lowercase receiver resolves to a LOCAL VARIABLE whose inferred type is a
+   * KNOWN non-in-project class (Ruby core `Hash`/`String`/`Integer`, or a gem type
+   * like `Sawyer::Resource`), the call is correctly classified as external rather
+   * than counted as an in-project miss (bd tea-rags-mcp-dnd9s). When `atLine` is
+   * absent the implementation falls back to the pre-dnd9s behaviour so callers that
+   * don't thread the call's `startLine` are unaffected.
+   *
+   * `member` (optional) is the call's member name — for a `super` CallRef it is
+   * the ENCLOSING method's name. It lets a `super` to a Ruby runtime hook
+   * (`method_missing`, `respond_to_missing?`, …) be classified external even
+   * when the enclosing class has in-project ancestors: such a hook's `super`
+   * always targets BasicObject / Module in the runtime when no ancestor DEFINES
+   * the hook (the super pass suppresses the file-only fallback and drops it).
+   * Absent `member` preserves the pre-existing behaviour (bd 08tss follow-up).
+   */
+  isQualifiedReceiverExternal: (receiver: string, ctx: CallContext, atLine?: number, member?: string) => boolean;
   /**
    * Is this MEMBER, on an untyped qualified receiver, an external base-class
    * instance method (e.g. `agent.update` → ActiveRecord::Base#update)? Optional:
@@ -423,3 +441,15 @@ export interface LanguageFactoryDescriptor {
   /** The languages this factory can `create`. */
   supported: () => string[];
 }
+
+/**
+ * Normalized receiver-type reference emitted by a Ruby type source (YARD /
+ * Sorbet / RBS). `class` vs `instance` mirrors {@link LocalBinding.valueKind};
+ * `union` fans out to a CHA cone; `container` carries an element type for
+ * `Array<Post>` / `Relation<X>` element flow. Lives in contracts because
+ * `CallContext.structuredReturnTypes` (Task 1.1) references it.
+ */
+export type RubyTypeRef =
+  | { form: "class" | "instance"; name: string }
+  | { form: "union"; members: RubyTypeRef[] }
+  | { form: "container"; element: RubyTypeRef };

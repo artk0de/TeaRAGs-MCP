@@ -26,9 +26,10 @@
  *   5. returnTypeBinding (x.X via localCallBindings + functionReturnTypes — additive)
  *   6. constant (Zeitwerk-style Constant.X via resolveConstant)
  *   7. explicitRequire (receiver names a require / require_relative import)
- *   8. arRelationGuard (AR::Relation chain receiver — terminal guard)
- *   9. receiverSetDrop (any remaining receiver-set call — terminal guard)
- *  10. bareCall (bare-call global short-name fallback — last pass)
+ *   8. chainType (multi-hop dotted chain via propagation engine — terminal guard)
+ *   9. arRelationGuard (AR::Relation chain receiver — terminal guard)
+ *  10. receiverSetDrop (any remaining receiver-set call — terminal guard)
+ *  11. bareCall (bare-call global short-name fallback — last pass)
  */
 
 import {
@@ -52,6 +53,7 @@ import {
   resolveConstant,
   RubyArRelationGuardSymbolResolutionStrategy,
   RubyBareCallSymbolResolutionStrategy,
+  RubyChainTypeSymbolResolutionStrategy,
   RubyConeDispatchResolver,
   RubyConstantSymbolResolutionStrategy,
   RubyDynamicDispatchResolver,
@@ -63,6 +65,7 @@ import {
   RubySelfMemberSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
   RubyTableDispatchResolver,
+  RubyUnionDispatchResolver,
   type ResolverConfig,
 } from "./strategies/index.js";
 
@@ -83,6 +86,7 @@ export class RubyCallResolver implements CallResolver {
   readonly language = "ruby";
   private readonly strategies: SymbolResolutionStrategy[];
   private readonly table: RubyTableDispatchResolver;
+  private readonly union: RubyUnionDispatchResolver;
   private readonly cone: RubyConeDispatchResolver;
   private readonly dynamic: RubyDynamicDispatchResolver;
   private readonly dispatchComponents: readonly DispatchResolverComponent[];
@@ -102,14 +106,20 @@ export class RubyCallResolver implements CallResolver {
       new RubyReturnTypeBindingSymbolResolutionStrategy(cfg),
       new RubyConstantSymbolResolutionStrategy(cfg),
       new RubyExplicitRequireSymbolResolutionStrategy(cfg),
+      new RubyChainTypeSymbolResolutionStrategy(cfg),
       new RubyArRelationGuardSymbolResolutionStrategy(cfg),
       new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
       new RubyBareCallSymbolResolutionStrategy(cfg),
     ];
     this.table = new RubyTableDispatchResolver(cfg);
+    this.union = new RubyUnionDispatchResolver(cfg);
     this.cone = new RubyConeDispatchResolver(cfg);
     this.dynamic = new RubyDynamicDispatchResolver(cfg);
-    this.dispatchComponents = [this.table, this.cone, this.dynamic];
+    // union: before cone — union receiver types have static evidence (YARD [A, B]),
+    // which is stronger than the cone's CHA subtype inference. Placing union before
+    // cone ensures typed union receivers resolve to their declared members without
+    // being superseded by cone's generic subtype fan-out. Dynamic is last as always.
+    this.dispatchComponents = [this.table, this.union, this.cone, this.dynamic];
     this.externalClassifier = new ExternalCallClassifier(new RubyExternalVocabulary());
   }
 
@@ -136,6 +146,10 @@ export class RubyCallResolver implements CallResolver {
    *      class's `#m` (`registry`/`1/N`, or `exact`/`1.0` for a static key).
    *      Most specific: the call carries a concrete `CONST` + a statically
    *      complete value set. Returns `[]` for every call without `call.dispatch`.
+   *   1.5. Union receiver fan-out (Task 1.7) — a YARD-annotated union receiver
+   *        `[A, B]` fans out to all in-project members defining the method as
+   *        `cone` edges (confidence = 1/N). Precedes CHA cone: typed evidence >
+   *        inferred subtype hierarchy.
    *   2. CHA cone (bd tea-rags-mcp-2jet) — a polymorphic TYPED receiver whose
    *      static type has subtypes overriding the member fans out to N `cone`
    *      edges (or one `poly-base`). Returns `[]` for every non-polymorphic
