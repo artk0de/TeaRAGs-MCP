@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { rubyYardTypeSource } from "../../../../../../../src/core/domains/language/ruby/walker/type-sources/yard.js";
+import {
+  collectYardReturnTypes,
+  rubyYardTypeSource,
+} from "../../../../../../../src/core/domains/language/ruby/walker/type-sources/yard.js";
 import type { RubyExtractInput } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
 
 /** Minimal stub for RubyExtractInput — adapter only uses `code`. */
@@ -111,5 +114,92 @@ describe("rubyYardTypeSource", () => {
   it("returns empty array for code with no YARD annotations", () => {
     const code = "def hello\n  puts 'hi'\nend";
     expect(rubyYardTypeSource.extract(makeInput(code))).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectYardReturnTypes — exported twin (dead path in extract(), tested directly)
+// ---------------------------------------------------------------------------
+// This exported function mirrors the @return scanning logic of collectYardReturnFacts
+// but produces a plain `{ methodName → typeName }` map. The new @!attribute guard
+// (`seenAttrName` / `pendingAttrOwner`) was added here in the same commit that added
+// it to collectYardReturnFacts, so these tests cover both the guard code AND the
+// basic function body that no other test exercised.
+describe("collectYardReturnTypes", () => {
+  it("maps @return [Type] to the following def name", () => {
+    const code = ["# @return [User]", "def current_user", "  @user", "end"].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({ current_user: "User" });
+  });
+
+  it("ignores collection @return types (Array<T> is not a dispatch target)", () => {
+    const code = ["# @return [Array<User>]", "def all_users", "end"].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({});
+  });
+
+  it("ignores lowercase @return types", () => {
+    const code = ["# @return [void]", "def setup", "end"].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({});
+  });
+
+  it("maps multiple @return annotations to their respective def names", () => {
+    const code = ["# @return [User]", "def current_user", "end", "# @return [Post]", "def latest_post", "end"].join(
+      "\n",
+    );
+    expect(collectYardReturnTypes(code)).toEqual({ current_user: "User", latest_post: "Post" });
+  });
+
+  it("@!attribute [r] name + @return [Type] + matching def binds the return (attr reader)", () => {
+    // The @!attribute guard: a @return nested under @!attribute attaches only to
+    // the same-named reader def. This covers seenAttrName / pendingAttrOwner branches.
+    const code = [
+      "# @!attribute [r] title",
+      "# @return [String]",
+      "def title", // pendingAttrOwner === "title" === defMatch[1] → binds
+      "end",
+    ].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({ title: "String" });
+  });
+
+  it("@!attribute [r] name + @return [Type] + non-matching def does NOT bind", () => {
+    // The attr guard blocks the return from attaching to a def with a different name.
+    const code = [
+      "# @!attribute [r] email",
+      "# @return [String]",
+      "def build_url", // pendingAttrOwner === "email" !== "build_url" → skipped
+      "end",
+    ].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({});
+  });
+
+  it("after @!attribute + matching def, subsequent plain @return is unguarded", () => {
+    const code = [
+      "# @!attribute [r] name",
+      "# @return [String]",
+      "def name", // attr reader — binds
+      "end",
+      "# @return [Integer]",
+      "def count", // no @!attribute guard → plain bind
+      "end",
+    ].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({ name: "String", count: "Integer" });
+  });
+
+  it("@!attribute with rw mode is also recognized", () => {
+    const code = ["# @!attribute [rw] status", "# @return [Symbol]", "def status", "end"].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({ status: "Symbol" });
+  });
+
+  it("qualified constant @return type (Acme::Post) is recorded", () => {
+    const code = ["# @return [Acme::Post]", "def find_post", "end"].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({ find_post: "Acme::Post" });
+  });
+
+  it("blank lines and non-YARD comments between @return and def are tolerated", () => {
+    const code = ["# @return [Order]", "", "# Plain comment — not a YARD tag.", "def current_order", "end"].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({ current_order: "Order" });
+  });
+
+  it("returns empty map for code with no annotations", () => {
+    expect(collectYardReturnTypes("def hello; end")).toEqual({});
   });
 });

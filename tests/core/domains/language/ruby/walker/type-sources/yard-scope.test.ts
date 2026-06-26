@@ -117,4 +117,23 @@ describe("rubyYardTypeSource — @return symbolScope (bd 9bliu YARD-scope follow
     expect(map["Foo#shared"]).toEqual({ form: "instance", name: "Alpha" });
     expect(map["Bar#shared"]).toEqual({ form: "instance", name: "Beta" });
   });
+
+  it("scope_resolution class header (class A::B) threads scope [A, B] into @return facts", () => {
+    // buildDefScopeMap handles `nameNode.type === "scope_resolution"` by calling
+    // readScopeResolution() — this branch is the only uncovered path in buildDefScopeMap.
+    // `class Acme::Widget` produces a scope_resolution nameNode; tree-sitter yields
+    // the full `Acme::Widget` string which is then split on `::` to produce the scope.
+    const code = ["class Acme::Widget", "  # @return [Gadget]", "  def build; end", "end"].join("\n");
+    const facts = rubyYardTypeSource.extract(makeInput(code));
+    const ret = facts.find((f) => f.kind === "return" && f.methodName === "build");
+    expect(ret).toBeDefined();
+    expect(ret?.symbolScope).toEqual(["Acme", "Widget"]);
+  });
+
+  it("scope_resolution class header produces correct structuredReturnTypesMap key", () => {
+    const code = ["class Acme::Api::Client", "  # @return [Response]", "  def call; end", "end"].join("\n");
+    const facts = rubyYardTypeSource.extract(makeInput(code));
+    const map = RubyTypeFactStore.fromFacts(facts).structuredReturnTypesMap();
+    expect(map["Acme::Api::Client#call"]).toEqual({ form: "instance", name: "Response" });
+  });
 });
