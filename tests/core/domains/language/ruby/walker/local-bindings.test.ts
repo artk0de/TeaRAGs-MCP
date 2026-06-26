@@ -1,12 +1,8 @@
 /**
- * Direct behavioral tests for collectLocalBindingsForChunk and related
- * exported functions in local-bindings.ts.
- *
- * These functions were decoupled from extractFromRubyFile in the
- * INLINE_TYPE_SOURCES refactor — the walker no longer calls
- * collectLocalBindingsForChunk directly, so the end-to-end tests in
- * ruby-walker.test.ts no longer exercise it. This file restores coverage
- * by driving the function directly with real parsed ASTs.
+ * Direct behavioral tests for the live exported helpers in local-bindings.ts:
+ * bindCompoundReceiverChains, collectRubyIvarFieldTypes,
+ * collectRubyBodyReturnTypes, collectRubyLocalCallBindingsForChunk, and
+ * localTypeTrackingEnabled. Each is driven directly with real parsed ASTs.
  */
 
 import Parser from "tree-sitter";
@@ -16,7 +12,6 @@ import { describe, expect, it } from "vitest";
 import type { LocalBinding } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   bindCompoundReceiverChains,
-  collectLocalBindingsForChunk,
   collectRubyBodyReturnTypes,
   collectRubyIvarFieldTypes,
   collectRubyLocalCallBindingsForChunk,
@@ -64,167 +59,6 @@ describe("localTypeTrackingEnabled", () => {
     } finally {
       delete process.env.CODEGRAPH_RB_LOCAL_TYPE_TRACKING;
     }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// collectLocalBindingsForChunk — constructor/factory assignments
-// ---------------------------------------------------------------------------
-
-describe("collectLocalBindingsForChunk — constructor assignment", () => {
-  it("binds `var = ClassName.new` to instance type within chunk range", () => {
-    const root = parse("def m\n  user = User.new\nend\n");
-    const bindings = collectLocalBindingsForChunk(root, 1, 3, new Map());
-    expect(bindings["user"]).toEqual([{ line: 2, type: "User" }]);
-  });
-
-  it("binds `var = Model.find(id)` to instance type", () => {
-    const root = parse("post = Post.find(1)\n");
-    const bindings = collectLocalBindingsForChunk(root, 1, 1, new Map());
-    expect(bindings["post"]).toEqual([{ line: 1, type: "Post" }]);
-  });
-
-  it("skips assignments outside the line range", () => {
-    const src = "a = A.new\nb = B.new\nc = C.new\n";
-    const root = parse(src);
-    // Only line 2 is in range
-    const bindings = collectLocalBindingsForChunk(root, 2, 2, new Map());
-    expect(bindings["a"]).toBeUndefined();
-    expect(bindings["b"]).toEqual([{ line: 2, type: "B" }]);
-    expect(bindings["c"]).toBeUndefined();
-  });
-
-  it("binds copy-propagation: `b = a` inherits a's most-recent type", () => {
-    const src = "a = User.new\nb = a\n";
-    const root = parse(src);
-    const bindings = collectLocalBindingsForChunk(root, 1, 2, new Map());
-    expect(bindings["a"]).toEqual([{ line: 1, type: "User" }]);
-    expect(bindings["b"]).toEqual([{ line: 2, type: "User" }]);
-  });
-
-  it("does NOT copy-propagate from an unbound variable", () => {
-    const root = parse("b = a\n");
-    const bindings = collectLocalBindingsForChunk(root, 1, 1, new Map());
-    expect(bindings["b"]).toBeUndefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// collectLocalBindingsForChunk — YARD @param bindings via yardByLine
-// ---------------------------------------------------------------------------
-
-describe("collectLocalBindingsForChunk — YARD @param bindings", () => {
-  it("injects YARD @param binding from yardByLine at the def line", () => {
-    const root = parse("def process(user)\n  user.save\nend\n");
-    // yardByLine: line 1 (the `def` line) → { user: "User" }
-    const yardByLine = new Map([[1, { user: "User" }]]);
-    const bindings = collectLocalBindingsForChunk(root, 1, 3, yardByLine);
-    expect(bindings["user"]).toEqual([{ line: 1, type: "User" }]);
-  });
-
-  it("skips YARD entries whose def line is outside the chunk range", () => {
-    const root = parse("x = 1\n");
-    // def line 99 is outside range [1..5]
-    const yardByLine = new Map([[99, { user: "User" }]]);
-    const bindings = collectLocalBindingsForChunk(root, 1, 5, yardByLine);
-    expect(bindings["user"]).toBeUndefined();
-  });
-
-  it("injects multiple YARD params for a single def", () => {
-    const root = parse("def ship(order, user)\n  order.ship(user)\nend\n");
-    const yardByLine = new Map([[1, { order: "Order", user: "User" }]]);
-    const bindings = collectLocalBindingsForChunk(root, 1, 3, yardByLine);
-    expect(bindings["order"]).toEqual([{ line: 1, type: "Order" }]);
-    expect(bindings["user"]).toEqual([{ line: 1, type: "User" }]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// collectLocalBindingsForChunk — param-default inference
-// ---------------------------------------------------------------------------
-
-describe("collectLocalBindingsForChunk — param-default inference", () => {
-  it("binds `def f(x = User.new)` at the def line", () => {
-    const src = "def process(user = User.new)\n  user.save\nend\n";
-    const root = parse(src);
-    const bindings = collectLocalBindingsForChunk(root, 1, 3, new Map());
-    expect(bindings["user"]).toEqual([{ line: 1, type: "User" }]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// collectLocalBindingsForChunk — multiple assignment
-// ---------------------------------------------------------------------------
-
-describe("collectLocalBindingsForChunk — multiple assignment", () => {
-  it("pairs `a, b = X.new, Y.new` positionally", () => {
-    const root = parse("a, b = Foo.new, Bar.new\n");
-    const bindings = collectLocalBindingsForChunk(root, 1, 1, new Map());
-    expect(bindings["a"]).toEqual([{ line: 1, type: "Foo" }]);
-    expect(bindings["b"]).toEqual([{ line: 1, type: "Bar" }]);
-  });
-
-  it("skips multi-assign when LHS and RHS counts differ", () => {
-    const root = parse("a, b = Foo.new\n");
-    const bindings = collectLocalBindingsForChunk(root, 1, 1, new Map());
-    expect(bindings["a"]).toBeUndefined();
-    expect(bindings["b"]).toBeUndefined();
-  });
-
-  it("propagates copy-binding in multi-assign RHS: `a, b = X.new, a`", () => {
-    const src = "x = Order.new\na, b = Foo.new, x\n";
-    const root = parse(src);
-    const bindings = collectLocalBindingsForChunk(root, 1, 2, new Map());
-    expect(bindings["a"]).toEqual([{ line: 2, type: "Foo" }]);
-    expect(bindings["b"]).toEqual([{ line: 2, type: "Order" }]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// collectLocalBindingsForChunk — class-valued binding (var = CONST)
-// ---------------------------------------------------------------------------
-
-describe("collectLocalBindingsForChunk — class-valued binding", () => {
-  it("binds `klass = User` as a class-valued binding with valueKind: 'class'", () => {
-    const root = parse("klass = User\n");
-    const bindings = collectLocalBindingsForChunk(root, 1, 1, new Map());
-    expect(bindings["klass"]).toEqual([{ line: 1, type: "User", valueKind: "class" }]);
-  });
-
-  it("binds `klass = Acme::Auth` (qualified constant) as class-valued", () => {
-    const root = parse("klass = Acme::Auth\n");
-    const bindings = collectLocalBindingsForChunk(root, 1, 1, new Map());
-    expect(bindings["klass"]).toEqual([{ line: 1, type: "Acme::Auth", valueKind: "class" }]);
-  });
-
-  it("does NOT bind lowercase identifier RHS as class-valued", () => {
-    const root = parse("klass = something\n");
-    const bindings = collectLocalBindingsForChunk(root, 1, 1, new Map());
-    expect(bindings["klass"]).toBeUndefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// collectLocalBindingsForChunk — block-parameter element typing
-// ---------------------------------------------------------------------------
-
-describe("collectLocalBindingsForChunk — block-parameter element typing", () => {
-  it("binds block param `|p|` to element type when receiver is YARD-typed via yardByLine", () => {
-    const src = ["# @param posts [Array<Post>]", "def run(posts)", "  posts.each { |p| p.publish }", "end"].join("\n");
-    const root = parse(`${src}\n`);
-    // YARD param: posts → "Post" (element type already unwrapped by collectYardParamTypes)
-    const yardByLine = new Map([[2, { posts: "Post" }]]);
-    const bindings = collectLocalBindingsForChunk(root, 2, 4, yardByLine);
-    expect(bindings["p"]).toBeDefined();
-    expect(bindings["p"][0].type).toBe("Post");
-  });
-
-  it("does NOT bind block param when receiver is untyped", () => {
-    const src = ["def run(items)", "  items.each { |e| e.do_it }", "end"].join("\n");
-    const root = parse(`${src}\n`);
-    const bindings = collectLocalBindingsForChunk(root, 1, 3, new Map());
-    // items has no binding → e must not be bound
-    expect(bindings["e"]).toBeUndefined();
   });
 });
 
