@@ -136,7 +136,7 @@ Each chunk point stores:
 - **Dense vector** — embedding of `content`, dimension depends on provider (ONNX default 768, OpenAI `text-embedding-3-small` 1536, etc.). Used for semantic similarity.
 - **Sparse vector** (optional) — BM25-style term frequencies. Enabled when `enableHybrid=true` (default). Powers `hybrid_search`.
 
-Collections created before hybrid became the default still work dense-only — use `reindex_changes` to migrate (it auto-enables hybrid).
+Collections created before hybrid became the default still work dense-only — re-run `index_codebase` to migrate (it auto-enables hybrid).
 
 ## Labels and Percentile Stats
 

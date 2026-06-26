@@ -11,7 +11,7 @@ Procedures for recovering from bad state and choosing the right reindex strategy
 
 | Mode | Tool call | Downtime | When to use |
 |------|-----------|----------|-------------|
-| **Incremental** | `reindex_changes` | None | Default after code changes. Processes only added/modified/deleted files via snapshot diff. |
+| **Incremental** | `index_codebase` (no flags) | None | Default after code changes. `index_codebase` auto-detects an existing collection and processes only added/modified/deleted files via snapshot diff — no separate tool needed. |
 | **Force (zero-downtime)** | `index_codebase` with `forceReindex: true` | None | Model change, schema drift, suspected index corruption. New collection built alongside the old one; alias swaps on success. |
 | **Destructive** | `clear_index` then `index_codebase` | **Yes** — search unavailable during rebuild | Only when force reindex isn't enough (e.g. embedding provider unreachable and you want to start clean). **Requires explicit user confirmation**. |
 
@@ -24,7 +24,7 @@ For the plugin-first workflow, the equivalents are:
 
 ```
 Symptom: stale results / missing new files
-  → reindex_changes
+  → index_codebase  (incremental by default — diffs the snapshot)
 
 Symptom: wrong embedding model / schema drift detected
   → index_codebase forceReindex=true
@@ -143,4 +143,4 @@ All TeaRAGs state lives under `~/.tea-rags/`:
 
 - [Failure Model](/operations/failure-model) — philosophy behind error surfaces
 - [Performance Diagnostics](/operations/performance-diagnostics) — is the index healthy?
-- [Indexing Pipeline](/architecture/indexing-pipeline) — what `reindex_changes` does under the hood
+- [Indexing Pipeline](/architecture/indexing-pipeline) — what `index_codebase` does under the hood (incremental snapshot diff)

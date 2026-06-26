@@ -25,9 +25,8 @@ sidebar_position: 1
 
 | Tool               | Description                                                                |
 | ------------------ | -------------------------------------------------------------------------- |
-| `index_codebase`   | Index a codebase for semantic code search with AST-aware chunking          |
+| `index_codebase`   | Index a codebase for semantic code search with AST-aware chunking. **Incremental by default** — re-running it diffs the file-hash snapshot and processes only added/modified/deleted files; `forceReindex: true` rebuilds from scratch |
 | `search_code`      | Search indexed codebase using natural language queries                     |
-| `reindex_changes`  | Incrementally re-index only changed files (detects added/modified/deleted) |
 | `get_index_status` | Get indexing status and statistics for a codebase                          |
 | `clear_index`      | Delete all indexed data for a codebase                                     |
 

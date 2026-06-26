@@ -49,7 +49,7 @@ Transient failures are retried in place (or surface as a typed error) — they a
 
 - **Recorded immediately** — the moment a file fails, so an interrupted pass
   still remembers it.
-- **Retried every pass** — `index_codebase` and `reindex_changes` re-attempt
+- **Retried every pass** — every `index_codebase` run re-attempts
   every quarantined file that still exists, even when its content has not
   changed (a TeaRAGs fix, a permission change, or a larger-context model may
   have made it indexable since).

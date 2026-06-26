@@ -105,7 +105,7 @@ TeaRAGs is the central orchestrator with six internal subsystems:
 | **Search Engine** | Converts queries to vectors, applies filters, executes search | Qdrant filters (language, path, git metadata). Semantic search and hybrid search (BM25 + RRF) |
 | **Reranker** | Re-scores results using trajectory signals | Composable presets: `hotspots`, `ownership`, `techDebt`, `stable`, etc. Custom weight configs supported |
 | **Embedding Pipeline** | Batches chunks for efficient embedding generation | Manages concurrency, retry logic, backpressure. Supports Ollama, OpenAI, Cohere, Voyage AI |
-| **MCP Tools Handler** | Exposes MCP tools, handles invocation and validation | Tools: `index_codebase`, `search_code`, `semantic_search`, `reindex_changes` |
+| **MCP Tools Handler** | Exposes MCP tools, handles invocation and validation | Tools: `index_codebase`, `search_code`, `semantic_search`, `hybrid_search` |
 
 ### 3. External Services
 

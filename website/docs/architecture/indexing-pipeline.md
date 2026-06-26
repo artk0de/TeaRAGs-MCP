@@ -88,7 +88,7 @@ Once all chunks are upserted, `finalizeAlias` atomically switches the public ali
 
 ### 5. Snapshot
 
-A compact snapshot of file hashes is persisted to `~/.tea-rags/snapshots/{collection}.json` (sharded for large repos). Subsequent `reindex_changes` calls diff the snapshot against the current working tree to find only-changed files.
+A compact snapshot of file hashes is persisted to `~/.tea-rags/snapshots/{collection}.json` (sharded for large repos). Subsequent `index_codebase` calls diff the snapshot against the current working tree to find only-changed files.
 
 ## Incremental Reindex
 
@@ -108,7 +108,7 @@ The enrichment pipeline is structurally separate from indexing:
 
 | Aspect | Indexing | Enrichment |
 |--------|----------|------------|
-| Trigger | `index_codebase` / `reindex_changes` | `onChunksStored` hook (after each batch) |
+| Trigger | `index_codebase` (full or incremental) | `onChunksStored` hook (after each batch) |
 | Blocks return? | Yes — must finish before alias switch | No — async, continues after |
 | Writes to | Base payload (content, structure) | `git.*` payload via `batchSetPayload` |
 | Failure mode | Aborts the index | Logged, chunk keeps base payload |

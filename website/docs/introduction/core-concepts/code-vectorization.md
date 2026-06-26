@@ -67,7 +67,7 @@ search.
 
 ### 5. Incremental Indexing
 
-After initial indexing, `reindex_changes` detects:
+After initial indexing, re-running `index_codebase` detects:
 
 - **Added files** — new files since last index
 - **Modified files** — changed content (content-hash based detection)
