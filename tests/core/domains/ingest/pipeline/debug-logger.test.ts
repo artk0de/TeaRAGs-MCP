@@ -670,6 +670,37 @@ describe("Stage Profiling", () => {
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("PHASE: COMPLETE"));
   });
+
+  // csyve — setup-stage attribution: the four pre-first-file stages must be
+  // accepted by addStageTime and flow into the stage summary + rendered table.
+  it("should track the csyve setup stages with addStageTime", () => {
+    pipelineLog.addStageTime("embed-warmup", 120);
+    pipelineLog.addStageTime("qdrant-setup", 450);
+    pipelineLog.addStageTime("codegraph-init", 800);
+    pipelineLog.addStageTime("codegraph-init", 200);
+
+    const summary = pipelineLog.getStageSummary();
+
+    expect(summary["embed-warmup"].totalMs).toBe(120);
+    expect(summary["embed-warmup"].count).toBe(1);
+    expect(summary["qdrant-setup"].totalMs).toBe(450);
+    expect(summary["codegraph-init"].totalMs).toBe(1000);
+    expect(summary["codegraph-init"].count).toBe(2);
+  });
+
+  it("should render the csyve setup stages in the summary output", () => {
+    pipelineLog.addStageTime("embed-warmup", 100);
+    pipelineLog.addStageTime("qdrant-setup", 200);
+    pipelineLog.addStageTime("codegraph-init", 300);
+    pipelineLog.addStageTime("embed", 1000);
+
+    const ctx: LogContext = { component: "IndexPipeline" };
+    pipelineLog.summary(ctx, { uptimeMs: 5000 });
+
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("embed-warmup"));
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("qdrant-setup"));
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("codegraph-init"));
+  });
 });
 
 describe("DebugLogger - initLogFile branches", () => {

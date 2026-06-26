@@ -160,9 +160,12 @@ export abstract class BaseIndexingPipeline {
   }
 
   protected async scanFiles(absolutePath: string, scanner: FileScanner): Promise<string[]> {
-    await scanner.loadIgnorePatterns(absolutePath);
-    pipelineLog.resetProfiler();
+    // "scan" stage = full project scan: ignore-pattern load + directory walk
+    // (csyve). resetProfiler now runs once at the session start in IndexingOps,
+    // not here — recording it here would wipe the pre-scan setup stages
+    // (embed-warmup, qdrant-setup on the reindex path) that ran earlier.
     pipelineLog.stageStart("scan");
+    await scanner.loadIgnorePatterns(absolutePath);
     const files = await scanner.scanDirectory(absolutePath);
     pipelineLog.stageEnd("scan");
     return files;
@@ -180,6 +183,11 @@ export abstract class BaseIndexingPipeline {
   ): ProcessingContext {
     const chunkerPool = this.createChunkerPool(chunkSizeOverride);
     const chunkPipeline = this.createChunkPipeline(collectionName);
+    // "codegraph-init" stage (csyve) = enrichment beginRun: per-provider context
+    // build + (cross-pass) codegraph beginExtractionRun spill reset + phase init.
+    // The DuckDB daemon connect is fire-and-forget inside beginRun and overlaps
+    // file processing, so it is intentionally not folded into this measurement.
+    const codegraphInitStart = Date.now();
     this.setupEnrichmentHooks(
       chunkPipeline,
       absolutePath,
@@ -188,6 +196,7 @@ export abstract class BaseIndexingPipeline {
       changedPaths,
       fileCount,
     );
+    pipelineLog.addStageTime("codegraph-init", Date.now() - codegraphInitStart);
     chunkPipeline.start();
     return { chunkerPool, chunkPipeline };
   }

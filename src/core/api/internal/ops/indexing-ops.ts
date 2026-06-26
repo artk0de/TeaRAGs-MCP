@@ -21,6 +21,7 @@ import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { parseMarkerPayload } from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
+import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
@@ -132,6 +133,12 @@ export class IndexingOps {
     progressCallback?: ProgressCallback,
     enrichmentProgress?: EnrichmentProgressCallback,
   ): Promise<IndexStats> {
+    // Reset the stage profiler at the true start of an indexing session (csyve)
+    // — before the embedding health probe records "embed-warmup" and before the
+    // reindex path's "qdrant-setup" migration sweep. Previously reset lived in
+    // BaseIndexingPipeline.scanFiles, which ran AFTER those pre-scan stages and
+    // wiped their measurements.
+    pipelineLog.resetProfiler();
     this.enrichment.setEnrichmentProgress(enrichmentProgress);
     if (!options?.forceReindex) {
       const incremental = await this.tryIncrementalIndex(path, progressCallback);
@@ -165,6 +172,9 @@ export class IndexingOps {
    * which forwards here.
    */
   async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {
+    // Session start for the deprecated explicit-reindex entry — reset the
+    // profiler here too so "embed-warmup" survives to the stage summary (csyve).
+    pipelineLog.resetProfiler();
     await this.checkEmbeddingHealth();
     const result = await this.reindex.reindexChanges(path, progressCallback);
     await this.refreshStats(path);
@@ -398,20 +408,29 @@ export class IndexingOps {
    * propagates to abort indexing exactly as before.
    */
   private async checkEmbeddingHealth(): Promise<void> {
-    const attempts = Math.max(1, this.healthCheckRetryAttempts);
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      try {
-        await this.embeddings.embed("health");
-        return;
-      } catch (error) {
-        lastError = error;
-        if (attempt < attempts) {
-          await new Promise((resolve) => setTimeout(resolve, this.healthCheckRetryDelayMs));
+    // "embed-warmup" stage (csyve) — time the whole probe (incl. retries) on
+    // both the success and failure exit so the stage summary can confirm or
+    // rule out a cold-model warmup as the source of the setup-window swing.
+    // finally only records the measurement; control flow is unchanged.
+    const warmupStart = Date.now();
+    try {
+      const attempts = Math.max(1, this.healthCheckRetryAttempts);
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+          await this.embeddings.embed("health");
+          return;
+        } catch (error) {
+          lastError = error;
+          if (attempt < attempts) {
+            await new Promise((resolve) => setTimeout(resolve, this.healthCheckRetryDelayMs));
+          }
         }
       }
+      throw lastError;
+    } finally {
+      pipelineLog.addStageTime("embed-warmup", Date.now() - warmupStart);
     }
-    throw lastError;
   }
 
   private async resolveModelInfo(): Promise<ModelInfo | undefined> {
