@@ -105,6 +105,58 @@ describe("rubyYardTypeSource — exotic tags", () => {
     });
   });
 
+  describe("@!attribute @return ownership — no leak into unrelated def", () => {
+    // A @!attribute directive's nested @return documents the (virtual) attribute
+    // accessor, NOT the method that happens to follow it. The flat @return →
+    // next-def attachment must NOT fabricate a return type for an unrelated def.
+    it("does NOT leak @!attribute's @return into a following def of a DIFFERENT name", () => {
+      const code = [
+        "class Account",
+        "  # @!attribute [r] balance",
+        "  #   @return [Money]",
+        "  def compute_total",
+        "    0",
+        "  end",
+        "end",
+      ].join("\n");
+      const facts = rubyYardTypeSource.extract(makeInput(code));
+      const leaked = facts.find((f) => f.kind === "return" && f.methodName === "compute_total");
+      expect(leaked).toBeUndefined();
+    });
+
+    it("does NOT leak @!attribute's @return when an attr_accessor would otherwise be skipped past", () => {
+      // No intervening non-comment line between the attribute block and the def:
+      // the attribute name (owner) differs from the def name → must suppress.
+      const code = ["# @!attribute [rw] owner", "#   @return [User]", "def unrelated_helper", "end"].join("\n");
+      const facts = rubyYardTypeSource.extract(makeInput(code));
+      expect(facts.find((f) => f.kind === "return" && f.methodName === "unrelated_helper")).toBeUndefined();
+    });
+
+    it("STILL keys the @return on a reader def of the SAME name as the attribute", () => {
+      // `def full_name` IS the attribute reader — its @return is genuinely correct.
+      const code = [
+        "class Account",
+        "  # @!attribute [r] full_name",
+        "  #   @return [String]",
+        "  def full_name",
+        "    'x'",
+        "  end",
+        "end",
+      ].join("\n");
+      const facts = rubyYardTypeSource.extract(makeInput(code));
+      const reader = facts.find((f) => f.kind === "return" && f.methodName === "full_name");
+      expect(reader).toBeDefined();
+      expect(reader?.type).toEqual({ form: "instance", name: "String" });
+    });
+
+    it("a bare @return (no @!attribute) still attaches to the next def — unchanged", () => {
+      const code = ["# @return [Bar]", "def baz", "end"].join("\n");
+      const facts = rubyYardTypeSource.extract(makeInput(code));
+      const ret = facts.find((f) => f.kind === "return" && f.methodName === "baz");
+      expect(ret?.type).toEqual({ form: "instance", name: "Bar" });
+    });
+  });
+
   describe("@option tag (hash option annotation)", () => {
     it("emits param fact for @option with typed key", () => {
       const code = ["# @param opts [Hash]", "# @option opts [Integer] :page", "def search(opts = {})", "end"].join(

@@ -125,24 +125,40 @@ export function collectYardParamTypes(code: string): Map<number, Record<string, 
 export function collectYardReturnTypes(code: string): Record<string, string> {
   const out: Record<string, string> = {};
   let pendingReturn: string | null = null;
+  // Mirror of collectYardReturnFacts' `@!attribute` ownership guard: a `@return`
+  // nested under a `@!attribute` documents the attribute accessor, so it binds
+  // to a following def ONLY when the def IS the same-named reader.
+  let pendingAttrOwner: string | null = null;
+  let seenAttrName: string | null = null;
   const returnRegex = /^\s*#\s*@return\s+\[([^\]]+)\]/;
+  const attrRegex = /^\s*#\s*@!attribute\s+\[(?:r|w|rw)\]\s+(\w+)/;
   const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
   for (const raw of code.split(/\r?\n/)) {
+    const attrMatch = attrRegex.exec(raw);
+    if (attrMatch) {
+      seenAttrName = attrMatch[1] ?? null;
+      continue;
+    }
     const m = returnRegex.exec(raw);
     if (m) {
       const inner = (m[1] ?? "").trim();
       // Single bare constant only — a collection `[Array<T>]` return is a
       // collection, not a dispatch target, so it is NOT recorded.
       pendingReturn = YARD_CONST.test(inner) ? inner : null;
+      pendingAttrOwner = seenAttrName;
+      seenAttrName = null;
       continue;
     }
     if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
     const defMatch = defRegex.exec(raw);
-    // defMatch[1] is the method name (\w+) when the line is a `def`.
-    if (pendingReturn && defMatch?.[1]) {
+    // defMatch[1] is the method name (\w+) when the line is a `def`. An
+    // attribute-owned return binds only to the same-named reader def.
+    if (pendingReturn && defMatch?.[1] && (pendingAttrOwner === null || pendingAttrOwner === defMatch[1])) {
       out[defMatch[1]] = pendingReturn;
     }
     pendingReturn = null;
+    pendingAttrOwner = null;
+    seenAttrName = null;
   }
   return out;
 }
@@ -199,22 +215,41 @@ function collectYardReturnFacts(input: RubyExtractInput): RubyTypeFact[] {
   const scopeByDefLine = buildDefScopeMap(input.tree?.rootNode);
   const facts: RubyTypeFact[] = [];
   const returnRegex = /^\s*#\s*@return\s+\[([^\]]+)\]/;
+  const attrRegex = /^\s*#\s*@!attribute\s+\[(?:r|w|rw)\]\s+(\w+)/;
   const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
   const lines = input.code.split(/\r?\n/);
   let pendingReturn: string | null = null;
+  // Name of the `@!attribute` that OWNS `pendingReturn` (the nested `@return`
+  // under a `@!attribute` directive documents the attribute accessor, not the
+  // next unrelated `def`). `null` → a normal def-bound `@return`.
+  let pendingAttrOwner: string | null = null;
+  // Most recent `@!attribute` name awaiting its nested `@return`.
+  let seenAttrName: string | null = null;
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i] ?? "";
+    const attrMatch = attrRegex.exec(raw);
+    if (attrMatch) {
+      seenAttrName = attrMatch[1] ?? null;
+      continue;
+    }
     const m = returnRegex.exec(raw);
     if (m) {
       const inner = (m[1] ?? "").trim();
       // Single bare constant only — a collection `[Array<T>]` return is a
       // collection, not a dispatch target (matches collectYardReturnTypes).
       pendingReturn = YARD_CONST.test(inner) ? inner : null;
+      // Claim this `@return` for the pending attribute (if any). It will attach
+      // to a following `def` ONLY when that def IS the attribute reader (same
+      // name); `seenAttrName` resets so a later bare `@return` stays def-bound.
+      pendingAttrOwner = seenAttrName;
+      seenAttrName = null;
       continue;
     }
     if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
     const defMatch = defRegex.exec(raw);
-    if (pendingReturn && defMatch?.[1]) {
+    // An attribute-owned `@return` attaches only to the same-named reader def;
+    // a plain (`pendingAttrOwner === null`) `@return` attaches to any next def.
+    if (pendingReturn && defMatch?.[1] && (pendingAttrOwner === null || pendingAttrOwner === defMatch[1])) {
       const type = yardBracketToRef(pendingReturn);
       if (type) {
         const symbolScope = scopeByDefLine.get(i + 1) ?? [];
@@ -222,6 +257,8 @@ function collectYardReturnFacts(input: RubyExtractInput): RubyTypeFact[] {
       }
     }
     pendingReturn = null;
+    pendingAttrOwner = null;
+    seenAttrName = null;
   }
   return facts;
 }
