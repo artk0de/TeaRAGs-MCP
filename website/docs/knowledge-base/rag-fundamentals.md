@@ -75,7 +75,7 @@ For code search, relevance is usually determined by human labelling (is this fun
 
 - **Hallucinated relevance** — embedding model finds something semantically close that isn't actually useful. Mitigated by hybrid search (BM25 floor) and trajectory reranking (promote stable, not just similar).
 - **Chunk fragmentation** — query needs information split across several chunks. Mitigated by keeping `navigation` links (TeaRAGs stores `prevSymbolId`/`nextSymbolId` so agents can walk adjacent chunks) and by AST-aware chunking (function-level atomicity).
-- **Stale index** — corpus changed but index didn't. Mitigated by incremental reindex (`reindex_changes`) and content-hash snapshots.
+- **Stale index** — corpus changed but index didn't. Mitigated by incremental reindex (re-running `index_codebase`) and content-hash snapshots.
 - **Out-of-distribution queries** — user phrases the question in a way no indexed document matches. Mitigated by hybrid search and by multi-turn expansion on the agent side.
 
 ## How TeaRAGs Maps to These Concepts

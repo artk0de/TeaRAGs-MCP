@@ -246,6 +246,25 @@ tea-rags projects list
 Add `--json` for a machine-readable dump of the full registry entries. `tea-rags
 projects` (no subcommand) is an alias for `tea-rags projects list`.
 
+### `tea-rags project exist`
+
+A **scriptable membership check** — answers "is this path or alias a registered
+project?" via the exit code, with no human-formatted output by default. Note the
+**singular** `project` (this query command) versus the plural `projects` command
+group above.
+
+```bash
+tea-rags project exist --path /path/to/repo     # exit 0 = registered, 1 = not
+tea-rags project exist --name shop-backend       # check by alias instead
+tea-rags project exist --path /path/to/repo --print-name   # also print the alias on match
+tea-rags project exist --path /path/to/repo --json         # {"exists":true,"name":"shop-backend"}
+```
+
+Exactly one of `--path` or `--name` is required. The command is built for hooks
+and CI: the [auto-reindex hook](/agent-integration/index-freshness) uses
+`tea-rags project exist --path <dir> --print-name` to resolve a commit directory
+to its collection (and to skip directories that are not registered projects).
+
 ### `tea-rags projects info`
 
 ```bash

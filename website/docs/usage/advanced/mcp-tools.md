@@ -117,11 +117,6 @@ scratch.
 
 See [Indexing Repositories](/usage/indexing-repositories) for full workflow.
 
-### `reindex_changes`
-
-**Deprecated.** `index_codebase` auto-detects changes. Kept for backward
-compatibility.
-
 ### `get_index_status`
 
 Returns current state: `not_indexed` / `indexing` / `stale_indexing` /

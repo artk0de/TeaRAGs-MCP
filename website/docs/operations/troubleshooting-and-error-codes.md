@@ -45,7 +45,7 @@ sidebar_position: 3
 | ----------------------------------- | ------------------------------- | ------------------------------------------------------------------------- |
 | **Collection not found**            | `EXPLORE_COLLECTION_NOT_FOUND`  | Index the codebase first with `index_codebase`                            |
 | **Collection or path not provided** | `INPUT_COLLECTION_NOT_PROVIDED` | Provide a `collection` name or a `path` to the codebase                   |
-| **Hybrid search not enabled**       | `EXPLORE_HYBRID_NOT_ENABLED`    | Run `reindex_changes` — hybrid is enabled by default and auto-migrates    |
+| **Hybrid search not enabled**       | `EXPLORE_HYBRID_NOT_ENABLED`    | Re-run `index_codebase` — hybrid is enabled by default and auto-migrates  |
 | **Invalid query**                   | `EXPLORE_INVALID_QUERY`         | Fix query parameters                                                      |
 | **Search returns no results**       | —                               | Try broader queries, check if codebase is indexed with `get_index_status` |
 | **Filter errors**                   | —                               | Ensure Qdrant filter format, check field names match metadata             |
@@ -131,7 +131,7 @@ Full table of all structured error codes returned by the MCP server.
 | `INGEST_CHUNK_OVERSIZED`               | `ChunkOversizedError`        | 400  | Chunk in "`{path}`" oversized: `{detail}`                      | Lower `INGEST_CHUNK_SIZE` - see [Quarantine](/operations/quarantine)   |
 | `INGEST_EMBEDDING_REJECTED`            | `EmbeddingRejectedError`     | 400  | Embedding rejected for "`{path}`": `{detail}`                  | Quarantined + auto-retried - see [Quarantine](/operations/quarantine)  |
 | `EXPLORE_COLLECTION_NOT_FOUND`         | `CollectionNotFoundError`    | 404  | Collection "`{collectionName}`" does not exist                 | Index the codebase first                                               |
-| `EXPLORE_HYBRID_NOT_ENABLED`           | `HybridNotEnabledError`      | 400  | Collection "`{collectionName}`" does not support hybrid search | Run `reindex_changes` — hybrid is enabled by default and auto-migrates |
+| `EXPLORE_HYBRID_NOT_ENABLED`           | `HybridNotEnabledError`      | 400  | Collection "`{collectionName}`" does not support hybrid search | Re-run `index_codebase` — hybrid is enabled by default and auto-migrates |
 | `EXPLORE_INVALID_QUERY`                | `InvalidQueryError`          | 400  | Invalid query: `{reason}`                                      | Fix query parameters                                                   |
 | `TRAJECTORY_GIT_BLAME_FAILED`          | `GitBlameFailedError`        | 500  | Git blame failed for "`{file}`"                                | Ensure file is tracked by git                                          |
 | `TRAJECTORY_GIT_LOG_TIMEOUT`           | `GitLogTimeoutError`         | 504  | Git log timed out after `{timeoutMs}`ms                        | Reduce scope or increase timeout                                       |

@@ -171,6 +171,28 @@ The indexer will:
 5. Upsert chunks into a Qdrant collection
 6. Save a file-hash snapshot for future incremental updates
 
+### Register and Index in One Step
+
+From the CLI, `index-codebase --name <alias>` **registers a new project alias and
+then indexes it** in a single command — the first-index shortcut for a project
+that has never been indexed:
+
+```bash
+tea-rags index-codebase --name my-project /path/to/repo
+tea-rags index-codebase --name my-project --force /path/to/repo   # full rebuild while registering
+```
+
+`--name` writes the alias into the registry **before** forking the indexer, so a
+registration error (e.g. the alias already exists) is reported and the command
+exits **before** any indexing work starts — text by default, or a parseable
+`{ error: { code, message } }` under `--json`.
+
+`--name` (write mode — register a new alias) **conflicts with** `--project`
+(read mode — use an existing alias). To index an already-registered project, use
+`--project`; to seed a [worktree clone](/usage/advanced/worktree-indexes) from an
+already-indexed source, use `tea-rags worktree create` instead — it registers the
+alias with worktree provenance.
+
 ### Incremental Reindex
 
 After the initial index, `/tea-rags:index` auto-detects and runs an incremental

@@ -38,7 +38,7 @@ A snapshot is a JSON (or sharded JSON for large repos) of `{ filePath: contentHa
 **Lifecycle:**
 
 1. Written **after** successful indexing (never before — crashed runs don't poison it).
-2. Read on next `reindex_changes` to diff against current working tree → `{added, modified, deleted}`.
+2. Read on next `index_codebase` run to diff against current working tree → `{added, modified, deleted}`.
 3. Re-written at the end of that reindex.
 
 **Safe to delete.** The next run becomes a full reindex instead of incremental — no data loss, just time cost.
