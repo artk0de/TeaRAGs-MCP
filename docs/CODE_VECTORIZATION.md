@@ -1,10 +1,12 @@
 # Code Vectorization
 
-Comprehensive guide to indexing and searching codebases with semantic code search.
+Comprehensive guide to indexing and searching codebases with semantic code
+search.
 
 ## Overview
 
-Code vectorization transforms your source code into searchable vector embeddings, enabling:
+Code vectorization transforms your source code into searchable vector
+embeddings, enabling:
 
 - **Natural language search** - ask questions about your code in plain English
 - **Semantic understanding** - find code by intent, not just keywords
@@ -29,6 +31,7 @@ Code vectorization transforms your source code into searchable vector embeddings
 ### 1. File Discovery
 
 The indexer scans your project respecting:
+
 - `.gitignore` patterns
 - `.contextignore` patterns (project-specific overrides)
 - Built-in exclusions (node_modules, vendor, etc.)
@@ -37,17 +40,18 @@ The indexer scans your project respecting:
 
 Code is intelligently split using language-aware parsers:
 
-| Language | Parser | Features |
-|----------|--------|----------|
-| TypeScript/JavaScript | tree-sitter | Classes, functions, imports |
-| Python | tree-sitter | Classes, functions, decorators |
-| Ruby | tree-sitter | Classes, modules, methods |
-| Go | tree-sitter | Structs, functions, interfaces |
-| Java/C#/C++ | tree-sitter | Classes, methods, namespaces |
-| Markdown | remark | Headers, sections, code blocks |
-| Others | Line-based | Fallback chunking |
+| Language              | Parser      | Features                       |
+| --------------------- | ----------- | ------------------------------ |
+| TypeScript/JavaScript | tree-sitter | Classes, functions, imports    |
+| Python                | tree-sitter | Classes, functions, decorators |
+| Ruby                  | tree-sitter | Classes, modules, methods      |
+| Go                    | tree-sitter | Structs, functions, interfaces |
+| Java/C#/C++           | tree-sitter | Classes, methods, namespaces   |
+| Markdown              | remark      | Headers, sections, code blocks |
+| Others                | Line-based  | Fallback chunking              |
 
 Each chunk preserves:
+
 - **Semantic boundaries** - functions, classes, methods
 - **Parent context** - `parentName`, `parentType` for nested code
 - **Location info** - file path, line numbers
@@ -71,6 +75,7 @@ When `CODE_ENABLE_GIT_METADATA=true`:
 ```
 
 **Task ID patterns detected:**
+
 - JIRA: `PROJ-123`, `ABC-1`
 - GitHub: `#123`, `GH-123`
 - Azure DevOps: `AB#123`
@@ -88,6 +93,7 @@ Chunks are converted to vectors using your configured embedding provider:
 ### 5. Incremental Indexing
 
 After initial indexing, `reindex_changes` detects:
+
 - **Added files** - new files since last index
 - **Modified files** - changed content (hash-based detection)
 - **Deleted files** - removed files
@@ -98,16 +104,16 @@ Only affected chunks are updated, making re-indexing fast.
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CODE_CHUNK_SIZE` | Maximum chunk size in characters | 2500 |
-| `CODE_CHUNK_OVERLAP` | Overlap between chunks | 300 |
-| `CODE_ENABLE_AST` | Use AST-aware chunking | true |
-| `CODE_BATCH_SIZE` | Chunks per embedding batch | 100 |
-| `CODE_CUSTOM_EXTENSIONS` | Additional file extensions | - |
-| `CODE_CUSTOM_IGNORE` | Additional ignore patterns | - |
-| `CODE_DEFAULT_LIMIT` | Default search result count | 5 |
-| `CODE_ENABLE_GIT_METADATA` | Enable git blame enrichment | false |
+| Variable                   | Description                      | Default |
+| -------------------------- | -------------------------------- | ------- |
+| `CODE_CHUNK_SIZE`          | Maximum chunk size in characters | 2500    |
+| `CODE_CHUNK_OVERLAP`       | Overlap between chunks           | 300     |
+| `CODE_ENABLE_AST`          | Use AST-aware chunking           | true    |
+| `CODE_BATCH_SIZE`          | Chunks per embedding batch       | 100     |
+| `CODE_CUSTOM_EXTENSIONS`   | Additional file extensions       | -       |
+| `CODE_CUSTOM_IGNORE`       | Additional ignore patterns       | -       |
+| `CODE_DEFAULT_LIMIT`       | Default search result count      | 5       |
+| `CODE_ENABLE_GIT_METADATA` | Enable git blame enrichment      | false   |
 
 ### File Filtering
 
@@ -129,6 +135,27 @@ Create a `.contextignore` file in your project root:
 **/fixtures/**
 **/mocks/**
 ```
+
+#### Data formats (json / yaml) are ignored by default
+
+tea-rags indexes **code**, not data. `*.json`, `*.yaml`, and `*.yml` are ignored
+by the built-in baseline so fixtures, VCR cassettes, and config blobs do not
+pollute search results or inflate the index. Signal-bearing **JSON manifests**
+are kept automatically: `package.json`, `tsconfig.json`, `tsconfig.*.json`,
+`*.config.json`, `composer.json`, `deno.json`.
+
+To change this for a project, use `.contextignore` (later rules win):
+
+```gitignore
+# re-include yaml you DO want indexed
+!openapi.yaml
+!**/*.yml
+
+# drop a manifest you DON'T want indexed
+package.json
+```
+
+Changes take effect on the next (re)index.
 
 #### Custom Extensions
 
@@ -170,6 +197,7 @@ Combines semantic understanding with keyword matching:
 ```
 
 Best for:
+
 - Function/variable names
 - Error messages
 - Technical terms
@@ -178,33 +206,34 @@ Best for:
 
 ### Full AST Support
 
-| Language | Extensions | Features |
-|----------|------------|----------|
-| TypeScript | `.ts`, `.tsx` | Classes, functions, interfaces, types |
-| JavaScript | `.js`, `.jsx`, `.mjs` | Classes, functions, exports |
-| Python | `.py` | Classes, functions, decorators, async |
-| Ruby | `.rb` | Classes, modules, methods, blocks |
-| Go | `.go` | Structs, functions, interfaces |
-| Java | `.java` | Classes, methods, interfaces |
-| C# | `.cs` | Classes, methods, namespaces |
-| C/C++ | `.c`, `.cpp`, `.h` | Functions, structs, classes |
-| Rust | `.rs` | Structs, impl blocks, traits |
-| PHP | `.php` | Classes, functions, traits |
-| Markdown | `.md` | Sections, code blocks |
+| Language   | Extensions            | Features                              |
+| ---------- | --------------------- | ------------------------------------- |
+| TypeScript | `.ts`, `.tsx`         | Classes, functions, interfaces, types |
+| JavaScript | `.js`, `.jsx`, `.mjs` | Classes, functions, exports           |
+| Python     | `.py`                 | Classes, functions, decorators, async |
+| Ruby       | `.rb`                 | Classes, modules, methods, blocks     |
+| Go         | `.go`                 | Structs, functions, interfaces        |
+| Java       | `.java`               | Classes, methods, interfaces          |
+| C#         | `.cs`                 | Classes, methods, namespaces          |
+| C/C++      | `.c`, `.cpp`, `.h`    | Functions, structs, classes           |
+| Rust       | `.rs`                 | Structs, impl blocks, traits          |
+| PHP        | `.php`                | Classes, functions, traits            |
+| Markdown   | `.md`                 | Sections, code blocks                 |
 
 ### Line-Based Fallback
 
-All other text files use intelligent line-based chunking with configurable size and overlap.
+All other text files use intelligent line-based chunking with configurable size
+and overlap.
 
 ## Best Practices
 
 ### 1. Optimize Chunk Size
 
-| Codebase Type | Recommended Size | Overlap |
-|---------------|-----------------|---------|
-| Small functions | 1500-2000 | 200 |
-| Large classes | 3000-4000 | 400 |
-| Documentation | 2000-2500 | 300 |
+| Codebase Type   | Recommended Size | Overlap |
+| --------------- | ---------------- | ------- |
+| Small functions | 1500-2000        | 200     |
+| Large classes   | 3000-4000        | 400     |
+| Documentation   | 2000-2500        | 300     |
 
 ### 2. Use Incremental Updates
 
@@ -234,12 +263,12 @@ Exclude noise from indexing:
 
 ### 4. Choose the Right Embedding Model
 
-| Use Case | Recommended Model |
-|----------|-------------------|
-| General code search | `nomic-embed-text` |
-| Code-specialized | `jina-embeddings-v2-base-code` |
-| Multilingual code | `jina-embeddings-v2-base-code` |
-| Maximum accuracy | `voyage-code-2` |
+| Use Case            | Recommended Model              |
+| ------------------- | ------------------------------ |
+| General code search | `nomic-embed-text`             |
+| Code-specialized    | `jina-embeddings-v2-base-code` |
+| Multilingual code   | `jina-embeddings-v2-base-code` |
+| Maximum accuracy    | `voyage-code-2`                |
 
 ### 5. Monitor Index Status
 
