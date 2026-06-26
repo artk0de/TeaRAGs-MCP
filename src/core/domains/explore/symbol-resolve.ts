@@ -91,11 +91,29 @@ export function resolveSymbols(chunks: ScrollChunk[], query?: string, metaOnly?:
   return sorted;
 }
 
-/** Group chunks by (symbolId, relativePath) composite key. */
+/**
+ * If `payload` is an oversized-method split fragment (`${parent}#partN`), return
+ * its base method symbolId (the `parentSymbolId`); otherwise undefined. The
+ * chunker emits parts as `${originalSymbolId}#part${i + 1}` with
+ * `parentSymbolId = originalSymbolId` (see chunker `splitOversizedChunk`), so a
+ * fragment is identified by `symbolId === parentSymbolId + "#part" + <digits>`.
+ */
+function splitFragmentBase(payload: Record<string, unknown>): string | undefined {
+  const symbolId = payload.symbolId as string | undefined;
+  const parentSymbolId = payload.parentSymbolId as string | undefined;
+  if (!symbolId || !parentSymbolId) return undefined;
+  const prefix = `${parentSymbolId}#part`;
+  if (!symbolId.startsWith(prefix)) return undefined;
+  return /^\d+$/.test(symbolId.slice(prefix.length)) ? parentSymbolId : undefined;
+}
+
+/** Group chunks by (symbolId, relativePath) composite key. Split fragments
+ * (`#partN`) are keyed under their base method symbolId so all fragments of one
+ * oversized method collapse into a single group. */
 function groupChunks(chunks: ScrollChunk[]): Map<string, ScrollChunk[]> {
   const groups = new Map<string, ScrollChunk[]>();
   for (const chunk of chunks) {
-    const symbolId = (chunk.payload.symbolId as string | undefined) ?? "";
+    const symbolId = splitFragmentBase(chunk.payload) ?? (chunk.payload.symbolId as string | undefined) ?? "";
     const path = (chunk.payload.relativePath as string | undefined) ?? "";
     const key = `${symbolId}::${path}`;
     const group = groups.get(key);
@@ -114,21 +132,40 @@ function mergeChunks(chunks: ScrollChunk[]): SearchResult {
 
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
-  const content = sorted.map((c) => (c.payload.content as string | undefined) ?? "").join("\n");
+
+  // An oversized method is re-chunked into the base `#resolve` window(s) AND
+  // `#partN` hard-cap fragments, which OVERLAP — concatenating them duplicates
+  // the body. When any split fragment is present, present the head fragment
+  // (smallest startLine — it begins at the method signature) as the single
+  // canonical view. Genuinely disjoint same-symbol chunks (no `#partN`) still
+  // concatenate, so a method split into sequential pieces stays whole.
+  const hasSplitFragment = sorted.some((c) => splitFragmentBase(c.payload) !== undefined);
+  const content = hasSplitFragment
+    ? ((first.payload.content as string | undefined) ?? "")
+    : sorted.map((c) => (c.payload.content as string | undefined) ?? "").join("\n");
+
+  // When the group mixes the base method window with `#partN` fragments, the
+  // base window carries the canonical identity (symbolId/name). Fall back to the
+  // parent symbolId when only `#partN` fragments survived the scroll.
+  const identity = sorted.find((c) => splitFragmentBase(c.payload) === undefined) ?? first;
+  const baseSymbolId = splitFragmentBase(identity.payload) ?? (identity.payload.symbolId as string | undefined);
+  const name = (identity.payload.name as string | undefined)?.replace(/ \(part \d+\/\d+\)$/, "");
 
   const payload: Record<string, unknown> = {
-    ...first.payload,
+    ...identity.payload,
+    symbolId: baseSymbolId,
+    name,
     content,
     startLine: first.payload.startLine,
     endLine: last.payload.endLine,
-    git: first.payload.git ? { file: (first.payload.git as Record<string, unknown>).file } : undefined,
+    git: identity.payload.git ? { file: (identity.payload.git as Record<string, unknown>).file } : undefined,
   };
 
   if (sorted.length > 1) {
     payload.mergedChunkIds = sorted.map((c) => c.id);
   }
 
-  return { id: first.id, score: 1.0, payload };
+  return { id: identity.id, score: 1.0, payload };
 }
 
 /** Sort: exact symbolId match first, then alphabetical by path. */
