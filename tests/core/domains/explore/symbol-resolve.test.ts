@@ -369,6 +369,106 @@ describe("resolveSymbols", () => {
     });
   });
 
+  describe("split-method fragment collapse (tea-rags-mcp-lyv7k)", () => {
+    // Real chunk shapes from graphql-ruby @ 28ea3ec — an oversized method whose
+    // hard-cap split produced `#part1`/`#part2` fragments alongside the base
+    // `#resolve` window. find_symbol must collapse all fragments of one method
+    // into ONE result instead of leaking three.
+    const baseSymbolId = "GraphQL::Schema::Field#resolve";
+    const path = "lib/graphql/schema/field.rb";
+    const splitFragments = [
+      {
+        id: "base-window",
+        payload: {
+          symbolId: baseSymbolId,
+          parentSymbolId: "GraphQL::Schema::Field",
+          chunkType: "function",
+          relativePath: path,
+          name: "resolve",
+          // Base window is the most-complete single view (mirrors real
+          // graphql-ruby where the base window's body is the longest fragment).
+          content:
+            "def resolve(object, args, query_ctx)\n  application_object = object.object\n  # ... full method body window ...\nrescue GraphQL::ExecutionError => err\n  err\nend",
+          startLine: 760,
+          endLine: 928,
+          methodLines: 104,
+          language: "ruby",
+        },
+      },
+      {
+        id: "part-2",
+        payload: {
+          symbolId: `${baseSymbolId}#part2`,
+          parentSymbolId: baseSymbolId,
+          chunkType: "function",
+          relativePath: path,
+          name: "resolve (part 2/2)",
+          content: "rescue GraphQL::ExecutionError => err\n  err\nend",
+          startLine: 869,
+          endLine: 872,
+          methodLines: 104,
+          language: "ruby",
+        },
+      },
+      {
+        id: "part-1",
+        payload: {
+          symbolId: `${baseSymbolId}#part1`,
+          parentSymbolId: baseSymbolId,
+          chunkType: "function",
+          relativePath: path,
+          name: "resolve (part 1/2)",
+          content: "def resolve(object, args, query_ctx)\n  application_object = object.object",
+          startLine: 722,
+          endLine: 869,
+          methodLines: 104,
+          language: "ruby",
+        },
+      },
+    ];
+
+    it("collapses #partN fragments and the base window into a single result", () => {
+      const results = resolveSymbols(splitFragments, baseSymbolId);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.symbolId).toBe(baseSymbolId);
+    });
+
+    it("merged result carries the base name without the (part N/M) suffix", () => {
+      const results = resolveSymbols(splitFragments, baseSymbolId);
+
+      expect(results[0].payload?.name).toBe("resolve");
+    });
+
+    it("merged result lists every fragment id in mergedChunkIds", () => {
+      const results = resolveSymbols(splitFragments, baseSymbolId);
+
+      expect(results[0].payload?.mergedChunkIds).toEqual(expect.arrayContaining(["base-window", "part-1", "part-2"]));
+    });
+
+    it("uses the head fragment as content (begins at the signature, no duplicated overlap)", () => {
+      const results = resolveSymbols(splitFragments, baseSymbolId);
+
+      const content = results[0].payload?.content as string;
+      // part-1 has the smallest startLine (722) — the method head, beginning at
+      // `def resolve`. Exact equality proves the overlapping fragments were NOT
+      // concatenated (which would duplicate the body).
+      const head = splitFragments.find((c) => c.id === "part-1")!.payload.content;
+      expect(content).toBe(head);
+      expect(content.startsWith("def resolve")).toBe(true);
+    });
+
+    it("keeps a part fragment alone as a single result when the base window is absent", () => {
+      // Only the parts survive the scroll (no separate `#resolve` window).
+      const partsOnly = splitFragments.filter((c) => c.id !== "base-window");
+
+      const results = resolveSymbols(partsOnly, baseSymbolId);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.symbolId).toBe(baseSymbolId);
+    });
+  });
+
   describe("mixed results", () => {
     it("handles functions from different files separately", () => {
       const chunks = [
