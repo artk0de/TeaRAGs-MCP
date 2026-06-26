@@ -1,0 +1,36 @@
+# tea-rags .contextignore — Mastodon benchmark corpus.
+# Copied to the corpus root at setup. Goal: index Ruby production source only.
+#
+# Already excluded by tea-rags builtin defaults + the repo's own .gitignore
+# (node_modules/, vendor/bundle/, .bundle/, log/, tmp/, coverage/, public/,
+# *.min.js) — do NOT repeat those here.
+
+# --- Non-Ruby frontend (this is a Ruby-navigation benchmark) ---
+/app/javascript/
+/app/assets/
+*.js
+*.jsx
+*.ts
+*.tsx
+*.css
+*.scss
+
+# --- View templates (ERB/HAML — not Ruby method-level nav targets) ---
+/app/views/
+*.erb
+*.haml
+
+# --- i18n + config data (no code) ---
+/config/locales/
+*.yml
+*.yaml
+
+# --- DB schema + migrations (generated / data, not nav targets) ---
+/db/
+
+# --- Docs / markdown ---
+*.md
+/docs/
+
+# --- Test suite (production-source benchmark — see navigation-benchmark.md) ---
+/spec/
