@@ -1,18 +1,22 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { StatsCache } from "../../../../src/core/infra/stats-cache.js";
-import { ShardedSnapshotManager } from "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
-import { QuarantineStore } from "../../../../src/core/domains/ingest/sync/quarantine-store.js";
+
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
+import { QuarantineStore } from "../../../../src/core/domains/ingest/sync/quarantine-store.js";
+import { ShardedSnapshotManager } from "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
+import { StatsCache } from "../../../../src/core/infra/stats-cache.js";
 
 describe("owner clone methods", () => {
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "own-"));
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   // --- StatsCache ---
   it("StatsCache.clone copies the per-collection stats file", () => {
@@ -24,7 +28,9 @@ describe("owner clone methods", () => {
 
   it("StatsCache.clone is a no-op when the source file is absent", () => {
     const cache = new StatsCache(dir);
-    expect(() => cache.clone("code_missing", "code_dst")).not.toThrow();
+    expect(() => {
+      cache.clone("code_missing", "code_dst");
+    }).not.toThrow();
     expect(existsSync(join(dir, "code_dst.stats.json"))).toBe(false);
   });
 
@@ -65,7 +71,7 @@ describe("owner clone methods", () => {
   it("GraphDbClientPool.cloneDatabase copies the duckdb file to target", async () => {
     const pool = new GraphDbClientPool({
       rootDir: dir,
-      symbolTableFactory: () => ({ symbols: new Map(), methods: new Map() } as never),
+      symbolTableFactory: () => ({ symbols: new Map(), methods: new Map() }) as never,
     });
     const srcPath = pool.pathFor("code_src");
     mkdirSync(join(dir, "codegraph"), { recursive: true });
@@ -77,7 +83,7 @@ describe("owner clone methods", () => {
   it("GraphDbClientPool.cloneDatabase is a no-op when source file is absent", async () => {
     const pool = new GraphDbClientPool({
       rootDir: dir,
-      symbolTableFactory: () => ({ symbols: new Map(), methods: new Map() } as never),
+      symbolTableFactory: () => ({ symbols: new Map(), methods: new Map() }) as never,
     });
     await expect(pool.cloneDatabase("code_missing", "code_dst")).resolves.not.toThrow();
     expect(existsSync(pool.pathFor("code_dst"))).toBe(false);

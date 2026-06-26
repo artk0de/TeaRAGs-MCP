@@ -52,8 +52,7 @@ export function buildBugFixShaSet(commits: CommitInfo[]): Set<string> {
     const queue = [branchTip];
     const visited = new Set<string>();
 
-    while (queue.length > 0) {
-      const sha = queue.shift()!;
+    for (let sha = queue.shift(); sha !== undefined; sha = queue.shift()) {
       if (sha === mainlineParent || visited.has(sha)) continue;
       visited.add(sha);
 

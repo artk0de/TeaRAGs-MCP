@@ -1,2 +1,2 @@
-export * from "./artifact.js";
+export type * from "./artifact.js";
 export * from "./factory.js";
