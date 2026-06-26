@@ -197,15 +197,16 @@ describe("RubyTypeFactStore.ivarTypesMap", () => {
 });
 
 describe("extractFromRubyFile — forwards the precise type-source maps", () => {
-  it("sets structuredReturnTypes from YARD @return facts (engine `#method` key form)", () => {
-    // YARD inline return facts carry an empty symbolScope today (flat-keyed),
-    // so the structured map keys the member as `#build`; scoped sources
-    // (Sorbet / RBS) will fill `Class#method` keys as they land. The wiring
-    // (walker → FileExtraction.structuredReturnTypes) is what this asserts.
+  it("sets structuredReturnTypes from YARD @return facts (engine `Class#method` key form)", () => {
+    // bd 9bliu YARD-scope follow-up: YARD inline return facts now carry the
+    // enclosing class/module scope, so the structured map keys the member as
+    // `Repo#build` (the precise engine `recv.name#member` path) instead of the
+    // old flat `#build`. The wiring (walker → FileExtraction.structuredReturnTypes)
+    // is what this asserts.
     const src = "class Repo\n  # @return [Post]\n  def build\n    Post.new\n  end\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "app/repo.rb", language: "ruby", chunks: [] });
-    expect(r.structuredReturnTypes?.["#build"]).toEqual({ form: "instance", name: "Post" });
+    expect(r.structuredReturnTypes?.["Repo#build"]).toEqual({ form: "instance", name: "Post" });
   });
 
   it("omits structuredReturnTypes / ivarTypes when there are no facts", () => {
