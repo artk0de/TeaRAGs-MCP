@@ -722,12 +722,38 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
-    const rows = await this.queryAll<{ rel_path: string; chunk_id: string | null }>(
+    // Tier 1 — exact symbol_id match (the canonical fast path, indexed).
+    const exact = await this.queryAll<{ rel_path: string; chunk_id: string | null }>(
       "SELECT rel_path, chunk_id FROM cg_symbols WHERE symbol_id = ? AND chunk_id IS NOT NULL LIMIT 1",
       [symbolId],
     );
-    if (rows.length === 0) return null;
-    return { relPath: rows[0].rel_path, chunkId: rows[0].chunk_id as string };
+    if (exact.length > 0) return { relPath: exact[0].rel_path, chunkId: exact[0].chunk_id as string };
+
+    // Tier 2 — last-name-segment fallback. Rails DSL-defined symbols
+    // (`scope`/`has_many`/`delegate`) are minted in cg_symbols under their
+    // concern/module FQN (e.g. `Account::Suspensions.suspended`), but the
+    // covering body chunk's payload symbolId is the parent module — so the
+    // Qdrant scroll AND the exact tier above both miss a bare ("suspended") or
+    // host-class ("Account.suspended") query. Resolve by the query's trailing
+    // name segment so the symbol's already-joined chunk (and its edges) surface
+    // via the symbol-API. Mirrors the bare-name last-segment match the Qdrant
+    // SymbolSearchStrategy applies for `def` methods. See bd tea-rags-mcp-mtlhd.
+    const tail = lastNameSegment(symbolId);
+    if (tail.length === 0) return null;
+    const likeTail = escapeLikeLiteral(tail);
+    const bySegment = await this.queryAll<{ rel_path: string; chunk_id: string | null }>(
+      `SELECT rel_path, chunk_id FROM cg_symbols
+         WHERE chunk_id IS NOT NULL
+           AND ( symbol_id = ?
+              OR symbol_id LIKE ? ESCAPE '\\'
+              OR symbol_id LIKE ? ESCAPE '\\'
+              OR symbol_id LIKE ? ESCAPE '\\' )
+         ORDER BY symbol_id
+         LIMIT 1`,
+      [tail, `%.${likeTail}`, `%#${likeTail}`, `%::${likeTail}`],
+    );
+    if (bySegment.length === 0) return null;
+    return { relPath: bySegment[0].rel_path, chunkId: bySegment[0].chunk_id as string };
   }
 
   async getFanIn(relPath: RelPath): Promise<number> {
@@ -1126,4 +1152,26 @@ function dedupeCallerEdges(edges: CallerEdge[]): CallerEdge[] {
     out.push(e);
   }
   return out;
+}
+
+/**
+ * Trailing name segment of a symbolId — the part after the final structural
+ * separator (`#` instance, `.` static, `::` namespace; see
+ * `.claude/rules/symbolid-convention.md`). Ruby method-name suffixes (`?!=`) are
+ * preserved (`Foo#valid?` → `valid?`). A bare name with no separator is returned
+ * unchanged. Used by the `findSymbolChunk` last-segment fallback (mtlhd).
+ */
+function lastNameSegment(symbol: string): string {
+  const parts = symbol.split(/[#.]|::/);
+  return parts[parts.length - 1] ?? symbol;
+}
+
+/**
+ * Escape SQL `LIKE` metacharacters (`%`, `_`) and the escape char itself so a
+ * literal symbol-name segment (identifiers routinely contain `_`) matches
+ * verbatim under `LIKE … ESCAPE '\'`. Without this, `status_scope` would match
+ * `statusXscope`.
+ */
+function escapeLikeLiteral(literal: string): string {
+  return literal.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
