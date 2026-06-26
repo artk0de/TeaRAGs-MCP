@@ -182,7 +182,11 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       throw new NotIndexedError(absolutePath);
     }
 
+    // "qdrant-setup" stage (csyve) — the reindex path's pre-ingest Qdrant work
+    // is the snapshot/schema/sparse migration sweep (no fresh collection create).
+    const qdrantSetupStart = Date.now();
     await this.runMigrations(collectionName, absolutePath);
+    pipelineLog.addStageTime("qdrant-setup", Date.now() - qdrantSetupStart);
 
     const synchronizer = this.deps.createSynchronizer(absolutePath, collectionName);
     const hasSnapshot = await synchronizer.initialize();

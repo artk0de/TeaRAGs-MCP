@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../../../../src/core/domains/ingest/errors.js";
 import type { ChunkPipeline } from "../../../../../src/core/domains/ingest/pipeline/chunk-pipeline.js";
 import type { ChunkerPool } from "../../../../../src/core/domains/ingest/pipeline/chunker/infra/pool.js";
 import { processFiles } from "../../../../../src/core/domains/ingest/pipeline/file-processor.js";
@@ -31,6 +32,36 @@ describe("processFiles — quarantine integration", () => {
     } catch {
       // Ignore cleanup errors
     }
+  });
+
+  it("quarantines an AST-not-processed parse failure with the distinct reason surfaced in the entry", async () => {
+    const file = join(baseDir, "weird.ts");
+    await fs.writeFile(file, "export const weird = 1;\n", "utf-8");
+
+    // Simulate the FileParseError the chunker throws when the AST failed and the
+    // character fallback also threw — it must pass through classifyQuarantinable
+    // unchanged and be recorded with skipReason "quarantined".
+    const throwingPool = {
+      processFile: () => {
+        throw new FileParseError(
+          "weird.ts",
+          `${AST_NOT_PROCESSED_REASON}: Simulated parse failure (character fallback also failed: fallback boom)`,
+        );
+      },
+    } as unknown as ChunkerPool;
+
+    const result = await processFiles([file], baseDir, throwingPool, chunkPipeline, {
+      enableGitMetadata: false,
+      quarantineStore: store,
+    });
+
+    const loaded = await store.load();
+    const entry = loaded.get("weird.ts");
+
+    expect(result.filesProcessed).toBe(0);
+    expect(entry?.errorCode).toBe("INGEST_FILE_PARSE_FAILED");
+    expect(entry?.phase).toBe("parse");
+    expect(entry?.errorMessage).toContain("AST not processed");
   });
 
   it("quarantines a file that fails to read instead of dropping it silently", async () => {

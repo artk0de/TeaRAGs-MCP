@@ -167,6 +167,10 @@ export async function runQuarantineDoctor(args: { path: string; json?: boolean }
   for (const f of files) {
     process.stdout.write(`  ${f.path}\n`);
     process.stdout.write(`    ${f.errorCode} · phase=${f.phase} · attempts=${f.attempts} · last=${f.lastFailedAt}\n`);
+    // The error message carries the human-readable reason (e.g. "AST not
+    // processed") — the only field that distinguishes two same-code/same-phase
+    // quarantines (a degraded-AST parse failure vs a generic parse throw).
+    process.stdout.write(`    ${f.errorMessage}\n`);
   }
   process.stdout.write(
     `\nThese files are retried automatically on the next index. Re-run 'tea-rags doctor --quarantine --json' to capture the full list (e.g. to file a GitHub issue).\n`,

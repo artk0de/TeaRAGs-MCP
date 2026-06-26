@@ -23,7 +23,8 @@ export type IngestErrorCode =
   | "INGEST_EMBEDDING_REJECTED"
   | "INGEST_PAYLOAD_TOO_LARGE"
   | "INGEST_FILE_PARSE_FAILED"
-  | "INGEST_FILE_READ_FAILED";
+  | "INGEST_FILE_READ_FAILED"
+  | "INGEST_WORKER_TIMEOUT";
 
 /**
  * Phase of the indexing pipeline in which a file failed. Carried by
@@ -191,6 +192,20 @@ export class QdrantPayloadTooLargeError extends QuarantinableIngestError {
   }
 }
 
+/**
+ * Stable, recognizable prefix for the graceful-degradation ladder's distinct
+ * quarantine reason: a supported-language file whose AST parse genuinely failed
+ * (parse threw OR `rootNode.hasError`) AND whose character fallback ALSO threw.
+ * The composed `FileParseError` detail reads
+ * `AST not processed: <parse cause> (character fallback also failed: <detail>)`,
+ * surfacing BOTH what prevented parsing (the prominent root cause) and the
+ * fallback failure. Carried in `QuarantineEntry.errorMessage` so the
+ * `tea-rags doctor --quarantine` output distinguishes it from a generic parse
+ * throw. A clean parse of a valid structureless file that merely yields zero
+ * chunks is NOT this case (the AST was fine) and stays a generic FileParseError.
+ */
+export const AST_NOT_PROCESSED_REASON = "AST not processed";
+
 /** tree-sitter or chunker threw while parsing the file. */
 export class FileParseError extends QuarantinableIngestError {
   readonly phase = "parse";
@@ -215,6 +230,25 @@ export class FileReadError extends QuarantinableIngestError {
       message: `Failed to read "${relativePath}": ${detail}`,
       hint: "File quarantined; it will be retried automatically on the next index pass.",
       cause,
+    });
+  }
+}
+
+/**
+ * A dispatched worker task exceeded the pool's per-dispatch liveness timeout —
+ * the worker accepted the task and never responded (silent hang, e.g. a
+ * tree-sitter NAPI native crash/deadlock under load, yl9tv). `WorkerDispatchPool`
+ * recycles the hung worker so the pool recovers capacity, then rejects the
+ * originating dispatch with this error so the caller fails the file fast instead
+ * of hanging the whole pool forever.
+ */
+export class WorkerTimeoutError extends IngestError {
+  constructor(poolName: string, requestLabel: string, timeoutMs: number) {
+    super({
+      code: "INGEST_WORKER_TIMEOUT",
+      message: `${poolName} worker did not respond for "${requestLabel}" within ${timeoutMs}ms`,
+      hint: "The hung worker was recycled and the pool recovered capacity. A genuinely large file may need a higher CHUNKER_WORKER_TIMEOUT_MS; otherwise this is a worker crash/deadlock worth reporting.",
+      httpStatus: 504,
     });
   }
 }

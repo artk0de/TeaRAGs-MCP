@@ -10,6 +10,7 @@ import { promises as fs } from "node:fs";
 import { join, relative } from "node:path";
 
 import type { FileExtraction } from "../../../contracts/types/codegraph.js";
+import { isCompiledJsContent, isJsFamilyPath } from "../../../infra/file-classification/index.js";
 import { isTestPath } from "../../../infra/scope-detection.js";
 import type { ChunkLookupEntry, CodeChunk } from "../../../types.js";
 import type { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
@@ -184,6 +185,28 @@ export async function processFiles(
               parseMs: 0,
               skipped: true,
               skipReason: "secrets",
+            },
+          );
+          return;
+        }
+
+        // 9oq5e Layer 2 — CONTENT net for a compiled JS bundle that slipped past
+        // the scanner's path-based ignore (e.g. committed under src/). Such a
+        // bundle is readable-but-compiled: it blows the tree-sitter parse budget
+        // (~51s for a 268KB d3.js) and pollutes a code RAG. Skip parse/chunk/
+        // embed entirely. JS-family only — gated on extension so .mjs/.cjs (which
+        // detectLanguage reports as "unknown") are still covered.
+        if (isJsFamilyPath(filePath) && isCompiledJsContent(code)) {
+          pipelineLog.fileIngested(
+            { component: "FileProcessor" },
+            {
+              path: relativePath,
+              language,
+              bytes,
+              chunks: 0,
+              parseMs: 0,
+              skipped: true,
+              skipReason: "compiled",
             },
           );
           return;

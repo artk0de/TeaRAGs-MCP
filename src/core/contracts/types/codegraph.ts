@@ -363,6 +363,20 @@ export interface FileExtraction {
    * without ivar annotations.
    */
   ivarTypes?: Record<string, Record<string, string>>;
+  /**
+   * Optional `"<fqClass>#<method>" → RubyTypeRef` map of structured method return
+   * types. Populated by the Ruby type-source propagation engine (Increment 1,
+   * Task 1.1) from YARD / Sorbet / RBS annotations and AST inference. The key
+   * format is `"ClassName#method"` for instance methods and `"ClassName.method"`
+   * for class methods (the codegraph fqMethodKey convention). Lets the resolver
+   * thread `recv.method().member` chains to the precise structured return ref
+   * (union / container preserved) for annotated Ruby code. Mirror of
+   * `CallContext.structuredReturnTypes`; persisted via the NDJSON spill.
+   *
+   * Plain Record (NOT Map) for NDJSON-spill round-trip. Undefined for languages
+   * without structured return annotations.
+   */
+  structuredReturnTypes?: Record<string, RubyTypeRef>;
 }
 
 export interface ImportRef {

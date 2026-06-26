@@ -328,6 +328,35 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     expect(routingKeyFor(affinityDescriptor, collectionName)).toBe(routingKeyFor(affinityDescriptor, collectionName));
   });
 
+  it("falls back to inline for runFileSignals when provider has no workerDescriptor", async () => {
+    const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
+    const provider = fakeInlineProvider();
+    // runFileSignals inline path calls buildFileSignals directly (no streamFileBatch preference).
+    const out = await exec.runFileSignals(provider, "/repo", ["x.ts"], {});
+    expect(out.get("inline.ts")).toMatchObject({ via: "inline-build" });
+    expect(provider.buildFileSignals).toHaveBeenCalled();
+    await exec.shutdown();
+  });
+
+  it("falls back to inline for runChunkBatch when provider has no workerDescriptor", async () => {
+    const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
+    const provider = fakeInlineProvider();
+    const chunkMap = new Map([["x.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]]]);
+    const out = await exec.runChunkBatch(provider, "/repo", chunkMap, {});
+    expect(out.get("inline.ts")?.get("c1")).toMatchObject({ via: "inline-chunk" });
+    expect(provider.buildChunkSignals).toHaveBeenCalled();
+    await exec.shutdown();
+  });
+
+  it("falls back to inline for runFinalize when provider has no workerDescriptor (no finalizeSignals → empty map)", async () => {
+    const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
+    const provider = fakeInlineProvider(); // no finalizeSignals → InlineEnrichmentExecutor returns new Map()
+    const out = await exec.runFinalize(provider, "/repo", {});
+    expect(out).toBeInstanceOf(Map);
+    expect(out.size).toBe(0);
+    await exec.shutdown();
+  });
+
   it("propagates worker errors as thrown exceptions", async () => {
     // Fixture that always throws inside buildFileSignals.
     const brokenPath = join(tmp, "broken-provider.mjs");

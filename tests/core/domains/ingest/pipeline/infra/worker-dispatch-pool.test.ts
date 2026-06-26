@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { WorkerTimeoutError } from "../../../../../../src/core/domains/ingest/errors.js";
 import { WorkerDispatchPool } from "../../../../../../src/core/domains/ingest/pipeline/infra/worker-dispatch-pool.js";
 /**
  * Custom WorkerTransport that supports HANG (never replies) semantics needed by
@@ -21,6 +22,8 @@ import { FakeWorkerTransport } from "./__helpers__/fake-worker-transport.js";
  */
 interface EchoReq {
   value: string;
+  /** Optional file label — exercises WorkerTimeoutError's actionable request name. */
+  filePath?: string;
 }
 interface EchoRes {
   index: number;
@@ -230,6 +233,159 @@ describe("WorkerDispatchPool", () => {
     expect(results.map((x) => x.r)).toEqual([2, 3]);
     expect(transport.handles).toHaveLength(2);
     expect(transport.handles[0].init).toEqual({ base: 1 });
+    await pool.shutdown();
+  });
+});
+
+// u0z1 — per-dispatch liveness timeout + worker recycle. A worker that accepts a
+// task and then never responds (silent hang — e.g. the tree-sitter NAPI native
+// crash/deadlock under load, yl9tv) must NOT strand its dispatch promise forever
+// and lose the pool slot. Fake timers drive the setTimeout-based liveness clock
+// so the tests bound a "never replies" worker without real waits.
+describe("WorkerDispatchPool liveness timeout (u0z1)", () => {
+  it("rejects a hung dispatch with WorkerTimeoutError and recycles the worker", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = makeTransport();
+      const pool = new WorkerDispatchPool<EchoReq, EchoRes>(1, transport, {}, "ChunkerPool", 5_000);
+      const hung = pool.dispatch({ value: "HANG", filePath: "big.rb" });
+      const settled = hung.catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(5_000);
+      const err = await settled;
+      expect(err).toBeInstanceOf(WorkerTimeoutError);
+      // Actionable message: names the file and the timeout.
+      expect((err as Error).message).toMatch(/big\.rb/);
+      expect((err as Error).message).toMatch(/5000/);
+      // Recycled: a replacement handle was spawned onto the slot (2 total).
+      expect(transport.handles.length).toBe(2);
+      await pool.shutdown();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("recovers capacity after a hang: a subsequent dispatch succeeds on the replacement worker", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = makeTransport();
+      const pool = new WorkerDispatchPool<EchoReq, EchoRes>(1, transport, {}, "ChunkerPool", 5_000);
+      const hung = pool.dispatch({ value: "HANG", filePath: "big.rb" });
+      void hung.catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(5_000); // fire the timeout → recycle the single worker
+      // The poisoned worker was replaced, not abandoned — the pool must still serve work.
+      const next = pool.dispatch({ value: "after" });
+      await expect(next).resolves.toMatchObject({ value: "after" });
+      await pool.shutdown();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the liveness timer on normal completion (no leaked timer, no recycle)", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = makeTransport();
+      const pool = new WorkerDispatchPool<EchoReq, EchoRes>(1, transport, {}, "ChunkerPool", 5_000);
+      const res = await pool.dispatch({ value: "fast" });
+      expect(res).toMatchObject({ value: "fast" });
+      // Timer cleared on the resolve path → nothing left pending.
+      expect(vi.getTimerCount()).toBe(0);
+      // Worker not recycled → still the original single handle.
+      expect(transport.handles.length).toBe(1);
+      await pool.shutdown();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("treats a non-positive timeout as disabled (no timer armed, unbounded)", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = makeTransport();
+      const pool = new WorkerDispatchPool<EchoReq, EchoRes>(1, transport, {}, "EnrichmentPool", 0);
+      const hung = pool.dispatch({ value: "HANG", filePath: "big.rb" });
+      void hung.catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(600_000);
+      // No liveness timer armed and the worker is never recycled (legacy unbounded behavior).
+      expect(vi.getTimerCount()).toBe(0);
+      expect(transport.handles.length).toBe(1);
+      await pool.shutdown();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("WorkerTimeoutError message uses generic 'request' label when request carries no filePath", async () => {
+    // describeRequest fallback: a request with no filePath property must not crash
+    // and the error message must contain the generic "request" token instead of
+    // a concrete path (which would be misleading in the user-facing error).
+    vi.useFakeTimers();
+    try {
+      const transport = makeTransport();
+      const pool = new WorkerDispatchPool<EchoReq, EchoRes>(1, transport, {}, "ChunkerPool", 5_000);
+      // Dispatch without a filePath — triggers describeRequest's fallback path.
+      const hung = pool.dispatch({ value: "HANG" });
+      const settled = hung.catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(5_000);
+      const err = await settled;
+      expect(err).toBeInstanceOf(WorkerTimeoutError);
+      // Generic label: no path information available → "request" appears in the message.
+      expect((err as Error).message).toContain("request");
+      await pool.shutdown();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// Transport-level onError path: when the underlying WorkerHandle fires its
+// onError callback (e.g. an uncaught exception in the worker process / thread
+// that propagates through the transport layer rather than as a protocol message),
+// the pool must reject the in-flight pending promise and free the slot so
+// subsequent work can still be dispatched.
+describe("WorkerDispatchPool transport-level onError", () => {
+  class ErrorFireHandle implements WorkerHandle<EchoReq, EchoRes> {
+    private errorCb?: (e: Error) => void;
+    private exitCb?: () => void;
+    constructor(readonly index: number) {}
+    post(_req: EchoReq): void {
+      // Emit the transport-level error asynchronously (via microtask), matching
+      // how real transports surface worker-thread uncaughtException events.
+      queueMicrotask(() => this.errorCb?.(new Error("transport failure")));
+    }
+    onMessage(_cb: (m: EchoRes | { error: string }) => void): void {
+      /* this transport only emits errors, never messages */
+    }
+    onError(cb: (e: Error) => void): void {
+      this.errorCb = cb;
+    }
+    onExit(cb: () => void): void {
+      this.exitCb = cb;
+    }
+    shutdown(): void {
+      queueMicrotask(() => this.exitCb?.());
+    }
+    async terminate(): Promise<void> {
+      this.exitCb?.();
+    }
+  }
+
+  class ErrorFireTransport implements WorkerTransport<EchoReq, EchoRes> {
+    readonly handles: ErrorFireHandle[] = [];
+    spawn(_init: unknown): WorkerHandle<EchoReq, EchoRes> {
+      const h = new ErrorFireHandle(this.handles.length);
+      this.handles.push(h);
+      return h;
+    }
+  }
+
+  it("rejects the in-flight dispatch with the transport error and frees the worker slot", async () => {
+    const transport = new ErrorFireTransport();
+    const pool = new WorkerDispatchPool<EchoReq, EchoRes>(1, transport, {});
+    // First dispatch: transport fires onError → promise rejects with the transport error.
+    await expect(pool.dispatch({ value: "first" })).rejects.toThrow(/transport failure/);
+    // Slot freed: a second dispatch also goes through (same transport → same error, but NOT deadlock).
+    await expect(pool.dispatch({ value: "second" })).rejects.toThrow(/transport failure/);
     await pool.shutdown();
   });
 });

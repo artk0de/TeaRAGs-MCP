@@ -1,4 +1,6 @@
+import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+import { readScopeResolution } from "../ast-utils.js";
 import type { RubyExtractInput } from "../walker.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 
@@ -123,26 +125,142 @@ export function collectYardParamTypes(code: string): Map<number, Record<string, 
 export function collectYardReturnTypes(code: string): Record<string, string> {
   const out: Record<string, string> = {};
   let pendingReturn: string | null = null;
+  // Mirror of collectYardReturnFacts' `@!attribute` ownership guard: a `@return`
+  // nested under a `@!attribute` documents the attribute accessor, so it binds
+  // to a following def ONLY when the def IS the same-named reader.
+  let pendingAttrOwner: string | null = null;
+  let seenAttrName: string | null = null;
   const returnRegex = /^\s*#\s*@return\s+\[([^\]]+)\]/;
+  const attrRegex = /^\s*#\s*@!attribute\s+\[(?:r|w|rw)\]\s+(\w+)/;
   const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
   for (const raw of code.split(/\r?\n/)) {
+    const attrMatch = attrRegex.exec(raw);
+    if (attrMatch) {
+      seenAttrName = attrMatch[1] ?? null;
+      continue;
+    }
     const m = returnRegex.exec(raw);
     if (m) {
       const inner = (m[1] ?? "").trim();
       // Single bare constant only — a collection `[Array<T>]` return is a
       // collection, not a dispatch target, so it is NOT recorded.
       pendingReturn = YARD_CONST.test(inner) ? inner : null;
+      pendingAttrOwner = seenAttrName;
+      seenAttrName = null;
       continue;
     }
     if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
     const defMatch = defRegex.exec(raw);
-    // defMatch[1] is the method name (\w+) when the line is a `def`.
-    if (pendingReturn && defMatch?.[1]) {
+    // defMatch[1] is the method name (\w+) when the line is a `def`. An
+    // attribute-owned return binds only to the same-named reader def.
+    if (pendingReturn && defMatch?.[1] && (pendingAttrOwner === null || pendingAttrOwner === defMatch[1])) {
       out[defMatch[1]] = pendingReturn;
     }
     pendingReturn = null;
+    pendingAttrOwner = null;
+    seenAttrName = null;
   }
   return out;
+}
+
+/**
+ * Map each method `def` line (1-based) to its enclosing class/module FQ scope as
+ * a `::`-split array (`["Acme","Widget"]`), mirroring the scope-stack walk in
+ * `collectRubyDefinedConstants` / `collectRubyIvarFieldTypes` (extend the scope
+ * by `[...scope, ...localName.split("::")]`, resolve `class A::B` headers via
+ * `readScopeResolution`). The array is the same shape `structuredReturnTypesMap`
+ * joins with `::` and the resolver forms `recv.name` from, so a `@return` fact
+ * keyed by its def line resolves to the codegraph fq class. A missing `rootNode`
+ * (stub trees in unit tests) yields an empty map → callers fall back to `[]`
+ * (the prior flat-key behaviour, preserved for top-level annotations).
+ */
+function buildDefScopeMap(root: AstNode | undefined): Map<number, string[]> {
+  const out = new Map<number, string[]>();
+  if (!root) return out;
+  const walkScope = (node: AstNode, scope: string[]): void => {
+    if (node.type === "class" || node.type === "module") {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) {
+        for (const child of node.children) walkScope(child, scope);
+        return;
+      }
+      const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+      const body = node.childForFieldName("body");
+      const recurseChildren = body ? body.children : node.children;
+      for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
+      return;
+    }
+    // `def NAME` / `def self.NAME` — the def line carries the enclosing scope.
+    // Keep descending so nested classes/defs inside a method body still map.
+    if (node.type === "method" || node.type === "singleton_method") {
+      out.set(node.startPosition.row + 1, scope);
+    }
+    for (const child of node.children) walkScope(child, scope);
+  };
+  walkScope(root, []);
+  return out;
+}
+
+/**
+ * Scope-aware sibling of {@link collectYardReturnTypes} producing `kind:"return"`
+ * facts whose `symbolScope` is the enclosing class/module (bd 9bliu YARD-scope
+ * follow-up). Same comment-block attachment + single-bare-constant discipline as
+ * `collectYardReturnTypes`, but the def line is carried so {@link buildDefScopeMap}
+ * resolves the fq scope. Populating `symbolScope` makes
+ * `RubyTypeFactStore.structuredReturnTypesMap()` emit real `"Class#method"` keys
+ * (the precise engine path) instead of flat `"#method"`; `returnTypeByMethod()`
+ * (keyed by bare method name) is unaffected — scope is additive there.
+ */
+function collectYardReturnFacts(input: RubyExtractInput): RubyTypeFact[] {
+  const scopeByDefLine = buildDefScopeMap(input.tree?.rootNode);
+  const facts: RubyTypeFact[] = [];
+  const returnRegex = /^\s*#\s*@return\s+\[([^\]]+)\]/;
+  const attrRegex = /^\s*#\s*@!attribute\s+\[(?:r|w|rw)\]\s+(\w+)/;
+  const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
+  const lines = input.code.split(/\r?\n/);
+  let pendingReturn: string | null = null;
+  // Name of the `@!attribute` that OWNS `pendingReturn` (the nested `@return`
+  // under a `@!attribute` directive documents the attribute accessor, not the
+  // next unrelated `def`). `null` → a normal def-bound `@return`.
+  let pendingAttrOwner: string | null = null;
+  // Most recent `@!attribute` name awaiting its nested `@return`.
+  let seenAttrName: string | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i] ?? "";
+    const attrMatch = attrRegex.exec(raw);
+    if (attrMatch) {
+      seenAttrName = attrMatch[1] ?? null;
+      continue;
+    }
+    const m = returnRegex.exec(raw);
+    if (m) {
+      const inner = (m[1] ?? "").trim();
+      // Single bare constant only — a collection `[Array<T>]` return is a
+      // collection, not a dispatch target (matches collectYardReturnTypes).
+      pendingReturn = YARD_CONST.test(inner) ? inner : null;
+      // Claim this `@return` for the pending attribute (if any). It will attach
+      // to a following `def` ONLY when that def IS the attribute reader (same
+      // name); `seenAttrName` resets so a later bare `@return` stays def-bound.
+      pendingAttrOwner = seenAttrName;
+      seenAttrName = null;
+      continue;
+    }
+    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
+    const defMatch = defRegex.exec(raw);
+    // An attribute-owned `@return` attaches only to the same-named reader def;
+    // a plain (`pendingAttrOwner === null`) `@return` attaches to any next def.
+    if (pendingReturn && defMatch?.[1] && (pendingAttrOwner === null || pendingAttrOwner === defMatch[1])) {
+      const type = yardBracketToRef(pendingReturn);
+      if (type) {
+        const symbolScope = scopeByDefLine.get(i + 1) ?? [];
+        facts.push({ kind: "return", source: "yard", symbolScope, methodName: defMatch[1], type });
+      }
+    }
+    pendingReturn = null;
+    pendingAttrOwner = null;
+    seenAttrName = null;
+  }
+  return facts;
 }
 
 /**
@@ -323,13 +441,11 @@ export const rubyYardTypeSource: RubyInlineTypeSource = {
         }
       }
     }
-    // @return: collectYardReturnTypes(input.code) -> Record<methodName, bracketStr>
-    for (const [methodName, raw] of Object.entries(collectYardReturnTypes(input.code))) {
-      const type = yardBracketToRef(raw);
-      if (type) {
-        facts.push({ kind: "return", source: "yard", symbolScope: [], methodName, type });
-      }
-    }
+    // @return: scope-aware facts carrying the enclosing class/module scope
+    // (bd 9bliu YARD-scope follow-up) so structuredReturnTypesMap emits real
+    // `"Class#method"` keys. collectYardReturnTypes stays as the flat,
+    // code-only sidecar reader (barrel-exported); this is its scoped sibling.
+    facts.push(...collectYardReturnFacts(input));
     // @type [TYPE] name → local var facts
     facts.push(...collectYardLocalTypeFacts(input.code));
     // @!attribute [r|w|rw] name + @return [TYPE] → attr facts

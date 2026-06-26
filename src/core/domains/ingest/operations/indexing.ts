@@ -18,6 +18,7 @@ import { OptimizerLifecycle } from "../infra/optimizer-lifecycle.js";
 import { BaseIndexingPipeline, type ProcessingContext } from "../pipeline/base.js";
 import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
+import { pipelineLog } from "../pipeline/infra/debug-logger.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import { QuarantineStore } from "../sync/index.js";
@@ -71,7 +72,11 @@ export class IndexPipeline extends BaseIndexingPipeline {
         return stats;
       }
 
+      // "qdrant-setup" stage (csyve) = collection exists-check / version bump /
+      // create / schema init / alias bookkeeping before any chunk is ingested.
+      const qdrantSetupStart = Date.now();
       const setup = await this.setupCollection(collectionName, absolutePath, options, overrides?.modelInfo?.dimensions);
+      pipelineLog.addStageTime("qdrant-setup", Date.now() - qdrantSetupStart);
       /* v8 ignore next 7 -- defensive guard: facade handles exists-without-force via reindexChanges */
       if (!setup.ready) {
         stats.status = "failed";

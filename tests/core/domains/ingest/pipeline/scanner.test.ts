@@ -211,6 +211,141 @@ describe("FileScanner", () => {
       const files = await localScanner.scanDirectory(tmpDir);
       expect(files.some((f) => f.endsWith("main.ts"))).toBe(true);
     });
+
+    // Data formats (json/yaml) are not code — VCR cassettes / fixtures / config
+    // blobs pollute a code index (octokit full-index: 714 json -> 2x chunks +
+    // volume crash). Default-ignore them, but keep signal-bearing JSON manifests.
+    it("default-ignores json/yaml data while keeping JSON manifests and descending data dirs", async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-dataformat-"));
+      // signal-bearing manifests — must be KEPT via allowlist negations
+      writeFileSync(join(tmpDir, "package.json"), "{}");
+      writeFileSync(join(tmpDir, "tsconfig.json"), "{}");
+      writeFileSync(join(tmpDir, "tsconfig.build.json"), "{}");
+      writeFileSync(join(tmpDir, "vitest.config.json"), "{}");
+      writeFileSync(join(tmpDir, "composer.json"), "{}");
+      writeFileSync(join(tmpDir, "deno.json"), "{}");
+      // nested manifest — negation must match at any depth
+      mkdirSync(join(tmpDir, "packages", "foo"), { recursive: true });
+      writeFileSync(join(tmpDir, "packages", "foo", "package.json"), "{}");
+      // data / fixtures / config — must be IGNORED
+      mkdirSync(join(tmpDir, "spec", "cassettes"), { recursive: true });
+      writeFileSync(join(tmpDir, "spec", "cassettes", "x.json"), "{}");
+      writeFileSync(join(tmpDir, "fixtures.json"), "{}");
+      writeFileSync(join(tmpDir, "config.yml"), "a: 1");
+      writeFileSync(join(tmpDir, "settings.yaml"), "a: 1");
+      // a source file INSIDE the data dir — proves traversal is NOT blocked
+      writeFileSync(join(tmpDir, "spec", "cassettes", "helper.ts"), "export const h = 1;");
+      // a plain source file at root — must survive
+      writeFileSync(join(tmpDir, "main.ts"), "export const main = 1;");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".ts", ".json", ".yaml", ".yml"],
+        ignorePatterns: [],
+      });
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const files = await localScanner.scanDirectory(tmpDir);
+
+      // manifests kept
+      expect(files.some((f) => f.endsWith("package.json"))).toBe(true);
+      expect(files.some((f) => f.endsWith("tsconfig.json"))).toBe(true);
+      expect(files.some((f) => f.endsWith("tsconfig.build.json"))).toBe(true);
+      expect(files.some((f) => f.endsWith("vitest.config.json"))).toBe(true);
+      expect(files.some((f) => f.endsWith("composer.json"))).toBe(true);
+      expect(files.some((f) => f.endsWith("deno.json"))).toBe(true);
+      expect(files.some((f) => f.includes("packages/foo/package.json"))).toBe(true);
+      // source kept (root + inside an all-data dir → traversal not blocked)
+      expect(files.some((f) => f.endsWith("main.ts"))).toBe(true);
+      expect(files.some((f) => f.endsWith("helper.ts"))).toBe(true);
+      // data ignored
+      expect(files.some((f) => f.endsWith("x.json"))).toBe(false);
+      expect(files.some((f) => f.endsWith("fixtures.json"))).toBe(false);
+      expect(files.some((f) => f.endsWith("config.yml"))).toBe(false);
+      expect(files.some((f) => f.endsWith("settings.yaml"))).toBe(false);
+    });
+
+    // Escape hatch: a project that genuinely wants its yaml/json indexed (or
+    // wants a manifest dropped) overrides via .contextignore — later add wins.
+    it("lets .contextignore re-include yaml and drop a manifest", async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-dataoverride-"));
+      writeFileSync(join(tmpDir, "openapi.yaml"), "a: 1");
+      writeFileSync(join(tmpDir, "package.json"), "{}");
+      writeFileSync(join(tmpDir, "main.ts"), "export const main = 1;");
+      // user re-includes openapi.yaml AND drops the package.json manifest
+      writeFileSync(join(tmpDir, ".contextignore"), "!openapi.yaml\npackage.json\n");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".ts", ".json", ".yaml"],
+        ignorePatterns: [],
+      });
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const files = await localScanner.scanDirectory(tmpDir);
+
+      expect(files.some((f) => f.endsWith("main.ts"))).toBe(true);
+      expect(files.some((f) => f.endsWith("openapi.yaml"))).toBe(true); // re-included
+      expect(files.some((f) => f.endsWith("package.json"))).toBe(false); // dropped
+    });
+
+    // Compiled / vendored JS assets (Rails vendored libs, sprockets/webpacker
+    // output, JS build dirs) are NOT code a RAG wants and were the ~51s
+    // tree-sitter hotspot (huginn vendor/assets/javascripts/d3.js, 268KB
+    // compiled d3 v3). Drop those asset DIRS by path with a NARROW
+    // `vendor/assets` glob — NOT a bare `**/vendor/**` — so ordinary vendored
+    // sources elsewhere under vendor/ still descend (9oq5e Layer 1).
+    it("excludes compiled/vendored JS asset dirs (vendor/assets, public/packs, dist) while keeping sources and descending vendor/", async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-compiledjs-"));
+      // compiled / vendored JS asset locations — must be IGNORED
+      mkdirSync(join(tmpDir, "vendor", "assets", "javascripts"), { recursive: true });
+      writeFileSync(join(tmpDir, "vendor", "assets", "javascripts", "d3.js"), "var d3 = 1;");
+      mkdirSync(join(tmpDir, "public", "packs"), { recursive: true });
+      writeFileSync(join(tmpDir, "public", "packs", "app.js"), "var a = 1;");
+      mkdirSync(join(tmpDir, "dist"), { recursive: true });
+      writeFileSync(join(tmpDir, "dist", "bundle.js"), "var b = 1;");
+      // narrow-glob proof: vendor/ is NOT blanket-ignored — a source under
+      // vendor/ but OUTSIDE vendor/assets/ must survive (traversal descends).
+      mkdirSync(join(tmpDir, "vendor", "lib"), { recursive: true });
+      writeFileSync(join(tmpDir, "vendor", "lib", "helper.ts"), "export const h = 1;");
+      // ordinary app sources — must be KEPT
+      mkdirSync(join(tmpDir, "src"), { recursive: true });
+      writeFileSync(join(tmpDir, "src", "app.js"), "export const app = 1;");
+      mkdirSync(join(tmpDir, "app", "models"), { recursive: true });
+      writeFileSync(join(tmpDir, "app", "models", "x.rb"), "class X; end");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".ts", ".js", ".rb"],
+        ignorePatterns: [],
+      });
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const files = await localScanner.scanDirectory(tmpDir);
+
+      // compiled/vendored asset dirs excluded
+      expect(files.some((f) => f.endsWith("d3.js"))).toBe(false);
+      expect(files.some((f) => f.includes("/public/packs/"))).toBe(false);
+      expect(files.some((f) => f.includes("/dist/"))).toBe(false);
+      // ordinary sources kept
+      expect(files.some((f) => f.endsWith("src/app.js"))).toBe(true);
+      expect(files.some((f) => f.endsWith("x.rb"))).toBe(true);
+      // narrow glob: vendor/ descends; only vendor/assets/ is dropped
+      expect(files.some((f) => f.endsWith("vendor/lib/helper.ts"))).toBe(true);
+    });
+
+    // YAML has NO manifest allowlist — every yaml/yml is ignored by default.
+    it("ignores yaml manifests too (no yaml allowlist)", async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-yaml-"));
+      writeFileSync(join(tmpDir, "docker-compose.yml"), "a: 1");
+      writeFileSync(join(tmpDir, "config.yaml"), "a: 1");
+      writeFileSync(join(tmpDir, "main.ts"), "export const main = 1;");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".ts", ".yaml", ".yml"],
+        ignorePatterns: [],
+      });
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const files = await localScanner.scanDirectory(tmpDir);
+
+      expect(files.some((f) => f.endsWith("main.ts"))).toBe(true);
+      expect(files.some((f) => f.endsWith("docker-compose.yml"))).toBe(false);
+      expect(files.some((f) => f.endsWith("config.yaml"))).toBe(false);
+    });
   });
 
   describe("getSupportedExtensions", () => {

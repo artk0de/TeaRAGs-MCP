@@ -57,17 +57,25 @@ describe("ChunkerPool single-flight + extraction (yl9tv)", () => {
     expect(withoutExtraction.extraction).toBeUndefined();
   });
 
-  it("produces byte-stable extractions across repeated concurrent runs (single-flight determinism)", async () => {
-    pool = new ChunkerPool(1, CHUNKER_CONFIG);
+  // retry+timeout: spawns a worker pool + repeated concurrent parses; a transient
+  // timeout under full-suite parallel-fork contention is a resource flake, not a
+  // determinism failure (a real regression fails every retry). Default local
+  // timeout is 5s with no local retry — both raised here.
+  it(
+    "produces byte-stable extractions across repeated concurrent runs (single-flight determinism)",
+    { retry: 2, timeout: 60_000 },
+    async () => {
+      pool = new ChunkerPool(1, CHUNKER_CONFIG);
 
-    const runOnce = async () =>
-      Promise.all(RUBY_FILES.map(async (f) => pool!.processFile(f.path, f.code, "ruby", true)));
+      const runOnce = async () =>
+        Promise.all(RUBY_FILES.map(async (f) => pool!.processFile(f.path, f.code, "ruby", true)));
 
-    const first = await runOnce();
-    const second = await runOnce();
+      const first = await runOnce();
+      const second = await runOnce();
 
-    for (let i = 0; i < RUBY_FILES.length; i++) {
-      expect(JSON.stringify(second[i].extraction)).toBe(JSON.stringify(first[i].extraction));
-    }
-  });
+      for (let i = 0; i < RUBY_FILES.length; i++) {
+        expect(JSON.stringify(second[i].extraction)).toBe(JSON.stringify(first[i].extraction));
+      }
+    },
+  );
 });

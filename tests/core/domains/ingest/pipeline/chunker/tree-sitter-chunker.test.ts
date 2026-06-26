@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../../../../../src/core/domains/ingest/errors.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
 import { generateChunkId } from "../../../../../../src/core/domains/ingest/pipeline/chunker/utils/chunk-id.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
@@ -3568,6 +3569,127 @@ function broken() {
 
       // Restore original parse
       tsConfig.parser.parse = originalParse;
+    });
+  });
+
+  describe("AST-not-processed graceful degradation (quarantine reason)", () => {
+    it("throws a FileParseError naming BOTH the underlying parse cause and 'AST not processed' when parse() threw AND the character fallback also throws", async () => {
+      const fresh = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
+      // Warm the parser cache, then make parse() throw to simulate a broken AST.
+      await fresh.chunk("function ok() {\n  return 1;\n}\n", "ok.ts", "typescript");
+      const tsConfig = (fresh as any).parserCache.get("typescript");
+      tsConfig.parser.parse = () => {
+        throw new Error("Simulated parse failure");
+      };
+      // Character fallback ALSO fails.
+      (fresh as any).fallbackChunker = {
+        chunk: () => {
+          throw new Error("fallback boom");
+        },
+      };
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const err = await fresh.chunk("function broken() {\n  return 0;\n}\n", "broken.ts", "typescript").catch((e) => e);
+
+      expect(err).toBeInstanceOf(FileParseError);
+      expect((err as FileParseError).code).toBe("INGEST_FILE_PARSE_FAILED");
+      expect((err as FileParseError).phase).toBe("parse");
+      expect((err as Error).message).toContain(AST_NOT_PROCESSED_REASON);
+      expect((err as Error).message).toContain("AST not processed");
+      // The underlying parse-stage failure ("what prevented parsing") is surfaced...
+      expect((err as Error).message).toContain("Simulated parse failure");
+      // ...alongside the fallback failure.
+      expect((err as Error).message).toContain("fallback boom");
+      // The parse exception is the more useful root cause, so it is the cause.
+      expect((err as FileParseError).cause).toBeInstanceOf(Error);
+      expect(((err as FileParseError).cause as Error).message).toBe("Simulated parse failure");
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("names the syntax-error cause AND 'AST not processed' when rootNode.hasError is true (no exception) and the fallback throws", async () => {
+      const fresh = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
+      await fresh.chunk("function ok() {\n  return 1;\n}\n", "ok.ts", "typescript");
+      // Force zero chunkable nodes so we reach the degenerate fallback site on a
+      // real (error-recovered) parse where rootNode.hasError === true.
+      (fresh as any).findChunkableNodes = () => [];
+      (fresh as any).fallbackChunker = {
+        chunk: () => {
+          throw new Error("fallback boom");
+        },
+      };
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      // Broken TypeScript: tree-sitter error-recovers (parse does NOT throw) but
+      // sets rootNode.hasError. Padded to exceed the 100-char fallback gate.
+      const code = `function broken(( {\n  const = ;\n  return\n}\n${"/* pad */\n".repeat(15)}`;
+      const err = await fresh.chunk(code, "broken.ts", "typescript").catch((e) => e);
+
+      // Reaching FileParseError at all proves astBroken via rootNode.hasError
+      // (a clean parse would propagate the raw fallback error instead).
+      expect(err).toBeInstanceOf(FileParseError);
+      expect((err as FileParseError).phase).toBe("parse");
+      expect((err as Error).message).toContain("AST not processed");
+      // The syntax-error descriptor names what prevented parsing...
+      expect((err as Error).message).toContain("tree-sitter reported");
+      // ...and the fallback failure is still surfaced.
+      expect((err as Error).message).toContain("fallback boom");
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("falls back to character chunking (file stays indexed, no quarantine) when the AST fails but the character fallback succeeds", async () => {
+      const fresh = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
+      await fresh.chunk("function ok() {\n  return 1;\n}\n", "ok.ts", "typescript");
+      const tsConfig = (fresh as any).parserCache.get("typescript");
+      tsConfig.parser.parse = () => {
+        throw new Error("Simulated parse failure");
+      };
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const code = `function broken() {\n  return 0;\n}\n${"// padding line\n".repeat(20)}`;
+      const chunks = await fresh.chunk(code, "broken.ts", "typescript");
+
+      expect(chunks.length).toBeGreaterThan(0);
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("does NOT use the 'AST not processed' reason when a clean parse merely yields zero chunks and the fallback throws", async () => {
+      const fresh = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
+      await fresh.chunk("function ok() {\n  return 1;\n}\n", "ok.ts", "typescript");
+      // Clean parse (rootNode.hasError === false) but force zero chunkable nodes
+      // so we hit the degenerate-zero-chunks fallback site, NOT the catch block.
+      (fresh as any).findChunkableNodes = () => [];
+      (fresh as any).fallbackChunker = {
+        chunk: () => {
+          throw new Error("fallback boom");
+        },
+      };
+
+      const code = `const x = 1;\n${" ".repeat(150)}`;
+      const err = await fresh.chunk(code, "structureless.ts", "typescript").catch((e) => e);
+
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(FileParseError);
+      expect((err as Error).message).toBe("fallback boom");
+      expect((err as Error).message).not.toContain("AST not processed");
+    });
+
+    it("never touches the character fallback on a clean parse that yields chunks", async () => {
+      const fresh = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
+      const fallbackChunk = vi.fn(() => {
+        throw new Error("fallback must not run");
+      });
+      (fresh as any).fallbackChunker = { chunk: fallbackChunk };
+
+      const chunks = await fresh.chunk(
+        "function add(a: number, b: number): number {\n  return a + b;\n}\nfunction multiply(a: number, b: number): number {\n  return a * b;\n}\n",
+        "ok.ts",
+        "typescript",
+      );
+
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(fallbackChunk).not.toHaveBeenCalled();
     });
   });
 

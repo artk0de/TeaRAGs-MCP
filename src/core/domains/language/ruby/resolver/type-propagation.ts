@@ -8,15 +8,17 @@
  *
  * **Scope of this module:**
  * - Local variable → `LocalBinding` via `resolveLocalBinding` → `RubyTypeRef`.
- * - `@ivar` → `ctx.ivarTypes` (wins, Task 1.5 wires population) or
- *   `ctx.classFieldTypes` (fallback — already populated by the walker today).
+ * - `@ivar` → `ctx.ivarTypes` (wins; populated run-global by the codegraph
+ *   provider, bd 9bliu) or `ctx.classFieldTypes` (fallback — walker-populated).
  * - Dotted chain receiver (`a.b.c`) → multi-hop threading via {@link returnTypeOf}
  *   seeded from the head segment and walked left-to-right. Capped at
  *   `CODEGRAPH_RB_CHAIN_MAX_HOPS` (default 4).
- * - Constants / `self` / `super` / index-access → `undefined`.
+ * - Constants / `self` / `super` → `undefined`. Index-access on a TYPED
+ *   container yields the element type (Task 1.6); untyped index → `undefined`.
  *
- * **Not wired.** No resolver/strategy/walker imports this module yet — that is
- * Task 1.5. The full ruby resolver suite stays GREEN unchanged.
+ * **Wired.** Consumed by the ruby dynamic-dispatch, chain-type, and
+ * union-dispatch strategies; `ctx.structuredReturnTypes` / `ctx.ivarTypes` are
+ * populated run-global by the codegraph provider (bd 9bliu).
  */
 
 import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
@@ -114,7 +116,7 @@ function chainMaxHops(): number {
  *                   `classAncestors`, and `callerScope`.
  * @returns A {@link RubyTypeRef} when the receiver's static type is known;
  *          `undefined` for unknowable receivers (constants, self, super,
- *          index-access, unbound variables, or chains with an unknown hop).
+ *          untyped index-access, unbound variables, or chains with an unknown hop).
  */
 export function typeOfReceiver(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined {
   // ── Dotted chain: multi-hop threading (Task 1.4) ─────────────────────────
@@ -217,7 +219,8 @@ function resolveChain(receiver: string, atLine: number, ctx: CallContext): RubyT
  *    fallback (YARD @return map, already populated today). Applied LAST so the
  *    more-precise paths win when available.
  *
- * Union / container forms are NOT threaded here (Task 1.6/1.7) — returns `undefined`.
+ * Container element-returning methods unwrap to the element type (Task 1.6);
+ * union forms are not threaded here (deferred, Task 1.7) — returns `undefined`.
  */
 function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): RubyTypeRef | undefined {
   // Container form: element-returning methods unwrap to the element type (Task 1.6).

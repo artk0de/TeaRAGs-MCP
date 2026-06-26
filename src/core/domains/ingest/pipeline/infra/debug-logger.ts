@@ -58,7 +58,7 @@ export interface FileIngestRecord {
   /** Parse duration in ms. 0 if skipped before parsing. */
   parseMs: number;
   skipped?: boolean;
-  skipReason?: "secrets" | "chunk-limit" | "error" | "delete-failed" | "quarantined";
+  skipReason?: "secrets" | "chunk-limit" | "error" | "delete-failed" | "quarantined" | "compiled";
 }
 
 /**
@@ -95,7 +95,15 @@ export class SlowFileTracker {
 }
 
 export type PipelineStage =
+  // Setup stages — run before the first file is processed (csyve attribution).
+  // Each is a one-shot measurement around an existing setup sub-step so the
+  // un-instrumented "process start → first FILE_INGESTED" window can be split
+  // into embedding warmup, project scan, qdrant collection setup, and codegraph
+  // init. Ordered first so they read top-of-table in the STAGE PROFILING block.
+  | "embed-warmup"
   | "scan"
+  | "qdrant-setup"
+  | "codegraph-init"
   | "parse"
   | "git"
   | "embed"
@@ -179,7 +187,10 @@ class StageProfiler {
     const result = {} as Record<PipelineStage, { totalMs: number; wallMs: number; count: number; percentage: number }>;
 
     for (const stage of [
+      "embed-warmup",
       "scan",
+      "qdrant-setup",
+      "codegraph-init",
       "parse",
       "git",
       "embed",
@@ -523,7 +534,10 @@ DERIVED:
         // Config not available — use defaults
       }
       const concurrency: Record<PipelineStage, number> = {
+        "embed-warmup": 1, // Serial one-shot embedding health probe
         scan: 1, // Serial file scanning
+        "qdrant-setup": 1, // Serial collection setup / schema migration
+        "codegraph-init": 1, // Serial enrichment beginRun / extraction-run init
         parse: chunkerPoolSize,
         git: gitChunkConcurrency,
         embed: pipelineConcurrency,
@@ -543,7 +557,10 @@ DERIVED:
 
       let totalAddedMs = 0;
       for (const stage of [
+        "embed-warmup",
         "scan",
+        "qdrant-setup",
+        "codegraph-init",
         "parse",
         "git",
         "embed",
