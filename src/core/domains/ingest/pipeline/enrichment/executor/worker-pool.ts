@@ -98,6 +98,13 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
       new ThreadTransport<EnrichmentWorkerRequest, EnrichmentWorkerResponse>(workerPath),
       {},
       "EnrichmentPool",
+      // Liveness timeout DISABLED (0 = unbounded) for enrichment. A single
+      // collection-affinity finalize (codegraph streaming SCC + PageRank) can
+      // legitimately run for minutes on a large repo, and recycling that worker
+      // mid-build would discard the per-thread symbolTable and corrupt the graph.
+      // The per-dispatch hang-guard targets the CHUNKER's tree-sitter NAPI crash
+      // (yl9tv), not enrichment, so the enrichment pool opts out explicitly.
+      0,
     );
   }
 

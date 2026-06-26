@@ -23,7 +23,8 @@ export type IngestErrorCode =
   | "INGEST_EMBEDDING_REJECTED"
   | "INGEST_PAYLOAD_TOO_LARGE"
   | "INGEST_FILE_PARSE_FAILED"
-  | "INGEST_FILE_READ_FAILED";
+  | "INGEST_FILE_READ_FAILED"
+  | "INGEST_WORKER_TIMEOUT";
 
 /**
  * Phase of the indexing pipeline in which a file failed. Carried by
@@ -229,6 +230,25 @@ export class FileReadError extends QuarantinableIngestError {
       message: `Failed to read "${relativePath}": ${detail}`,
       hint: "File quarantined; it will be retried automatically on the next index pass.",
       cause,
+    });
+  }
+}
+
+/**
+ * A dispatched worker task exceeded the pool's per-dispatch liveness timeout —
+ * the worker accepted the task and never responded (silent hang, e.g. a
+ * tree-sitter NAPI native crash/deadlock under load, yl9tv). `WorkerDispatchPool`
+ * recycles the hung worker so the pool recovers capacity, then rejects the
+ * originating dispatch with this error so the caller fails the file fast instead
+ * of hanging the whole pool forever.
+ */
+export class WorkerTimeoutError extends IngestError {
+  constructor(poolName: string, requestLabel: string, timeoutMs: number) {
+    super({
+      code: "INGEST_WORKER_TIMEOUT",
+      message: `${poolName} worker did not respond for "${requestLabel}" within ${timeoutMs}ms`,
+      hint: "The hung worker was recycled and the pool recovered capacity. A genuinely large file may need a higher CHUNKER_WORKER_TIMEOUT_MS; otherwise this is a worker crash/deadlock worth reporting.",
+      httpStatus: 504,
     });
   }
 }
