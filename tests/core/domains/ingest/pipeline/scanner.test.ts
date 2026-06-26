@@ -285,6 +285,49 @@ describe("FileScanner", () => {
       expect(files.some((f) => f.endsWith("package.json"))).toBe(false); // dropped
     });
 
+    // Compiled / vendored JS assets (Rails vendored libs, sprockets/webpacker
+    // output, JS build dirs) are NOT code a RAG wants and were the ~51s
+    // tree-sitter hotspot (huginn vendor/assets/javascripts/d3.js, 268KB
+    // compiled d3 v3). Drop those asset DIRS by path with a NARROW
+    // `vendor/assets` glob — NOT a bare `**/vendor/**` — so ordinary vendored
+    // sources elsewhere under vendor/ still descend (9oq5e Layer 1).
+    it("excludes compiled/vendored JS asset dirs (vendor/assets, public/packs, dist) while keeping sources and descending vendor/", async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-compiledjs-"));
+      // compiled / vendored JS asset locations — must be IGNORED
+      mkdirSync(join(tmpDir, "vendor", "assets", "javascripts"), { recursive: true });
+      writeFileSync(join(tmpDir, "vendor", "assets", "javascripts", "d3.js"), "var d3 = 1;");
+      mkdirSync(join(tmpDir, "public", "packs"), { recursive: true });
+      writeFileSync(join(tmpDir, "public", "packs", "app.js"), "var a = 1;");
+      mkdirSync(join(tmpDir, "dist"), { recursive: true });
+      writeFileSync(join(tmpDir, "dist", "bundle.js"), "var b = 1;");
+      // narrow-glob proof: vendor/ is NOT blanket-ignored — a source under
+      // vendor/ but OUTSIDE vendor/assets/ must survive (traversal descends).
+      mkdirSync(join(tmpDir, "vendor", "lib"), { recursive: true });
+      writeFileSync(join(tmpDir, "vendor", "lib", "helper.ts"), "export const h = 1;");
+      // ordinary app sources — must be KEPT
+      mkdirSync(join(tmpDir, "src"), { recursive: true });
+      writeFileSync(join(tmpDir, "src", "app.js"), "export const app = 1;");
+      mkdirSync(join(tmpDir, "app", "models"), { recursive: true });
+      writeFileSync(join(tmpDir, "app", "models", "x.rb"), "class X; end");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".ts", ".js", ".rb"],
+        ignorePatterns: [],
+      });
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const files = await localScanner.scanDirectory(tmpDir);
+
+      // compiled/vendored asset dirs excluded
+      expect(files.some((f) => f.endsWith("d3.js"))).toBe(false);
+      expect(files.some((f) => f.includes("/public/packs/"))).toBe(false);
+      expect(files.some((f) => f.includes("/dist/"))).toBe(false);
+      // ordinary sources kept
+      expect(files.some((f) => f.endsWith("src/app.js"))).toBe(true);
+      expect(files.some((f) => f.endsWith("x.rb"))).toBe(true);
+      // narrow glob: vendor/ descends; only vendor/assets/ is dropped
+      expect(files.some((f) => f.endsWith("vendor/lib/helper.ts"))).toBe(true);
+    });
+
     // YAML has NO manifest allowlist — every yaml/yml is ignored by default.
     it("ignores yaml manifests too (no yaml allowlist)", async () => {
       const tmpDir = mkdtempSync(join(tmpdir(), "scanner-yaml-"));
