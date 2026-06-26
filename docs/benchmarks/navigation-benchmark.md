@@ -405,6 +405,64 @@ Six groups by **unit of bounded scope**. Format per case: task / why / tea-rags
 - **Quality.** Precision + recall (should ≈ tie); the point is parity, surfacing
   honest no-advantage zones.
 
+### Group G — negative / honesty (anchor = a query with an empty answer)
+
+#### G1 — Correct empty result (no fabrication)
+
+- **Task.** Answer a navigation query whose correct answer is **empty / "not
+  found"**: definition of a symbol that does not exist; usages of a method that
+  is never called; subclasses of a class that has none.
+- **Why.** Efficiency only counts if the answer is _correct_, and a confidently
+  **fabricated** answer is the worst outcome — it costs the downstream task a
+  wrong edit. This measures whether each arm returns an honest "none" instead of
+  inventing one, and how cheaply it reaches that verdict.
+- **tea-rags.** Resolves to the empty set / "unresolved" without fabricating a
+  plausible-but-wrong target (codegraph honest-miss classification).
+- **grep.** Zero matches for a nonexistent literal — but for a _plausible_ query
+  (a method that looks like it should exist) the risk is the agent
+  over-searching and guessing. The failure mode is the agent's inference, not
+  grep's output.
+- **Anchors.** Nonexistent symbol (e.g. `Account#nonexistent_method_xyz`); a
+  defined-but-never-called private method; a class with zero subclasses
+  (graphql-ruby `GraphQL::Schema::Field` — 0 lib subclasses, verified).
+- **Quality.** **Fabrication rate** (any invented `file:line`/symbol = fail) +
+  tokens-to-honest-"none". Cross-cutting: every other case also fails an answer
+  that fabricates.
+
+## Metaprogramming corner anchors
+
+A1/A2/B1 sample these Ruby/Rails constructs where resolution actually breaks
+(verified instances at the pinned Mastodon SHA). Each is an **additional anchor,
+not a new case** — the developer question is identical ("find the definition /
+the usages / the relations"); the construct is what makes it hard.
+
+- **`scope` (DSL class method)** — feeds A1/A2. Anchors:
+  `concerns/account/suspensions.rb:7` `scope :suspended`, `account.rb:146`
+  `scope :without_internal`. Hard: `Account.suspended` has no `def` — generated
+  by the `scope` macro, often inside a concern's `included do`.
+- **`delegate`** — feeds A1/A2. Anchors: `status.rb:186`
+  `delegate :domain, :indexable?, to: :account`, `poll.rb:67`
+  `delegate :local?, :remote?, to: :account`. Hard: `status.indexable?` resolves
+  onto `Account`, not `Status`.
+- **polymorphic association** — feeds A1/B1. Anchors: `notification.rb:124`
+  `belongs_to :activity, polymorphic: true`, `admin/action_log.rb:21`
+  `belongs_to :target, polymorphic: true`. Hard: `notification.activity` is a
+  heterogeneous type set — no single class.
+- **concern-injected (`included do`)** — feeds A1/A2/B1. Anchor:
+  `concerns/account/suspensions.rb` (`suspended?` at :11, `scope :suspended` at
+  :7). Hard: the method/scope is defined in a module and mixed into `Account` —
+  not in `account.rb`.
+- **multi-file class definition** — feeds A1/B1. Anchor: `Account` =
+  `account.rb` + 21 `include`d concerns. Hard: "where is `Account` defined" has
+  22 answers, spread across files.
+- **`method_missing` (computed)** — feeds A1/A2/G1. Anchor: `setting.rb:55`
+  `def method_missing(method, *args)`. Hard: `Setting.foo` dispatches
+  dynamically → expected **honest-unresolved**, not a fabricated target.
+
+Note: `alias_method`/`alias` and STI are rare/non-idiomatic in Mastodon — not
+anchored here (no fabrication); add from another corpus if those constructs need
+coverage.
+
 ## Coverage map
 
 | Case | Bounded task                        | tea-rags capability                            | Axis                       |
@@ -421,6 +479,7 @@ Six groups by **unit of bounded scope**. Format per case: task / why / tea-rags
 | E1   | rerank candidates                   | candidate-set rerank                           | tea-vs-grep                |
 | E2   | composite multi-hop                 | chained navigation, bounded context            | tea-vs-grep (end-to-end)   |
 | F1   | literal markers                     | exact search (control)                         | parity                     |
+| G1   | correct empty result (honesty)      | honest-miss / no fabrication                   | gate (cross-cutting)       |
 
 ## Out of scope
 
@@ -516,3 +575,156 @@ For each (case, corpus):
 Headline report: per axis (tea-vs-grep, ruby-vs-yard) aggregate speed ratio,
 token ratio, quality delta across cases; plus the C1 path-recall-vs-hop-count
 plot, the A2/A4 ruby-vs-yard recall deltas, and the B1 relation-kind breakdown.
+
+## Scenario specs
+
+All anchors verified at the pinned SHAs (Mastodon `70d39d36`/v4.6.2,
+graphql-ruby `28ea3ec`). The **prompt** is the developer question given verbatim
+to both subagents; **pass/fail** is the correctness gate (tokens + wall-clock
+are recorded regardless). Only the primary anchor is shown — **sample ≥3 per
+case** at fixture-build to get a difficulty distribution, not a point estimate.
+Fixtures live at `bench/fixtures/<case>.<corpus>.json`. Any fabricated
+`file:line`/symbol fails the answer in **every** case (the G1 honesty gate is
+cross-cutting).
+
+### A1 — find definition
+
+Prompt: _"Locate the definition of `<SYMBOL>`. Return
+`{file, line_start, line_end, symbol_fqn}`."_ Pass = file ∧ line ∈ def-range ∧
+correct fqn.
+
+- Mastodon: (a) `PostStatusService#call` →
+  `app/services/post_status_service.rb:42` [97 `def call`]; (b) `Status` →
+  `app/models/status.rb:34` [~403 `\bStatus\b` lines]; (c) `account.statuses` →
+  `has_many :statuses` `app/models/concerns/account/associations.rb:40`; (d)
+  `Account#suspended?` → `app/models/concerns/account/suspensions.rb:11`
+  (mixed-in, not account.rb).
+- graphql-ruby: (a) `GraphQL::Schema::Field#resolve` →
+  `lib/graphql/schema/field.rb:722` [13 `def resolve`]; (b)
+  `GraphQL::Query#result` → `lib/graphql/query.rb:288` [2370 `result` lines];
+  (c) generated accessor → `define_accessor_method`
+  `lib/graphql/schema/input_object.rb:304` (define_method); (d) `field` via
+  `Member::HasFields#field` `lib/graphql/schema/member/has_fields.rb:58`
+  (inherited by `Introspection::TypeType`, type_type.rb:14).
+- Corner anchors fold in here (see Metaprogramming corner anchors): scope /
+  delegate / polymorphic / included-do / multi-file / method_missing.
+
+### A2 — find usages of a method (+ is-used?)
+
+Prompt: _"List every call site that invokes `<Class>#<method>` (receiver of that
+type). Also state whether it is used anywhere in-project. Return
+`{usages:[{file,line}], used:bool}`."_ Pass = usage set matches fixture
+(precision+recall) ∧ correct `used` ∧ no fabricated site.
+
+- Mastodon: `Account#suspended?` → 47 call sites across 31 files (verified at
+  fixture-build); `used=true`.
+- graphql-ruby: `GraphQL::Query#result` → `.result` call sites in lib.
+
+### A3 — find usages of a class/constant
+
+Prompt: _"Find all references to `<Const>` (instantiation, subclassing,
+namespacing, type reference); exclude strings/comments. Return
+`{references:[{file,line}]}`."_
+
+- Mastodon: `Status` / `Account`. graphql-ruby: `GraphQL::Query`.
+
+### A4 — what a method uses (callees)
+
+Prompt: _"List the methods invoked by `<Class>#<method>`, each resolved to its
+definition `{file,line}`."_
+
+- Mastodon: `PostStatusService#call` (post_status_service.rb:42). graphql-ruby:
+  `GraphQL::Schema::Field#resolve` (field.rb:722).
+
+### B1 — all relations of a class
+
+Prompt: _"Enumerate everything `<Class>` is wired to — associations,
+included/extended modules, superclass, subclasses, inbound references, outbound
+calls — grouped by kind."_ Pass = precision+recall per relation kind.
+
+- Mastodon `Account`: associations in `concerns/account/associations.rb` (40
+  has_many, 6 has_one, 1 belongs_to); 21 `include`s (account.rb:91–112);
+  superclass `ApplicationRecord`; 0 subclasses.
+- graphql-ruby `GraphQL::Schema::Field` (field.rb:7): superclass = Ruby `Object`
+  (no GraphQL parent); 9 `include` + 1 `extend` (lines 8–17); 0 lib subclasses.
+
+### B2 — subclasses / implementers
+
+Prompt: _"List all subclasses of `<Class>` (transitive) and all classes
+implementing `#<method>`."_
+
+- Mastodon: subclasses of `BaseService` (base_service.rb) = 82; of
+  `ApplicationRecord` = 111.
+- graphql-ruby: subclasses of `GraphQL::Schema::Object` = 3 in lib
+  (relay/page_info.rb:6, relay/base_edge.rb:24, introspection/base_object.rb:4);
+  `#resolve` implementers = 9 in lib.
+
+### C1 — trace a flow
+
+Prompt: _"Find a call path from `<A>` to `<B>` with `{file,line}` per hop."_
+Pass = every hop is a real call (fabricated hop = fail).
+
+- Mastodon (verified, 0 fabricated hops): `Api::V1::StatusesController#create`
+  (statuses_controller.rb:30) → `PostStatusService#call`
+  (post_status_service.rb:42) → `postprocess_status!` (:162) →
+  `DistributionWorker.perform_async` (:166) → `DistributionWorker#perform`
+  (workers/distribution_worker.rb:8) → `FanOutOnWriteService#call`
+  (services/fan_out_on_write_service.rb:12).
+- graphql-ruby: `GraphQL::Schema#execute` (schema.rb:1586) → … (Execution::
+  Interpreter) … → `GraphQL::Schema::Field#resolve` (field.rb:722). Endpoints
+  verified; intermediate hops confirmed at fixture-build.
+
+### D1 — where a behavior lives
+
+Prompt = an intent paraphrase with **zero lexical overlap** with the target.
+
+- Mastodon: _"where is the rate of incoming client requests capped"_ →
+  `config/initializers/rack_attack.rb` (32 `throttle`).
+- graphql-ruby: _"where is an abusive deeply-nested query rejected"_ →
+  `lib/graphql/analysis/max_query_depth.rb:4` / `max_complexity`
+  (schema.rb:896).
+- Pass = target file in top-k.
+
+### D2 — find similar implementations
+
+Prompt: _"Given `<reference>`, find all implementations with the same shape."_
+
+- Mastodon: reference `PostStatusService` → siblings (BaseService + `#call`
+  shape): FollowService (follow_service.rb:18), FavouriteService, ReblogService,
+  FanOutOnWriteService, NotifyService, ProcessMentionsService (97 services
+  total).
+- graphql-ruby: reference one resolver → sibling resolvers (`#resolve`
+  implementers, 9 in lib).
+
+### E1 — rerank candidates
+
+Prompt: _"Given these N files and this task, order them by relevance (most
+relevant first)."_ Inputs: a curated N-file candidate set + a task query per
+corpus; ideal order hand-verified. Pass = rank correlation (NDCG / top-1).
+
+### E2 — composite multi-hop
+
+- Mastodon: _"A locally-posted status is not federating to remote followers.
+  Find the method responsible for fan-out, its entry caller, and where
+  distribution is enqueued."_ End-artifact (from the C1 chain):
+  `PostStatusService#postprocess_status!`, `DistributionWorker`,
+  `FanOutOnWriteService`. Metric = correct artifact (binary) + turns + tokens.
+
+### F1 — literal markers (control)
+
+Prompt: _"List all whole-word `TODO`/`FIXME`/`HACK` markers. Return
+`{markers:[{file,line,text}]}`."_
+
+- Mastodon: 21 in Ruby (app 19 / lib 2) — **whole-word `\b`** (naive count
+  inflated because `MASTODON` contains the substring `TODO`).
+- graphql-ruby: 39 in `lib/` (+15 in generator templates).
+- Pass = precision+recall ≈ tie (this is the no-advantage control).
+
+### G1 — correct empty result
+
+Prompt = the A1 / A2 / B2 shapes, applied to empty-answer anchors.
+
+- Nonexistent symbol: `Account#nonexistent_method_xyz` → expect "not found".
+- Zero subclasses: `GraphQL::Schema::Field` → expect empty subclass set
+  (verified 0 in lib).
+- Pass = honest "none"; any invented `file:line`/symbol = fail.
