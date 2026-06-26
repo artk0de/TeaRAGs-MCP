@@ -3,6 +3,130 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.33.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.32.0...v1.33.0) (2026-06-26)
+
+### ⚠ BREAKING CHANGES
+
+* **ingest:** compiled/vendored JS under vendor/assets, public/assets,
+public/packs, dist - and JS files carrying a sourcemap comment or minified lines
+- are no longer indexed by default. Re-include specific paths via .contextignore
+`!pattern`. Takes effect on next reindex.
+
+bead tea-rags-mcp-9oq5e
+
+Co-Authored-By: Claude Opus 4.8 &lt;noreply@anthropic.com&gt;
+* **ingest:** the default indexing surface shrinks — json/yaml are no longer
+indexed by default. Projects that want them indexed must re-include via
+.contextignore (e.g. `!**/*.yml`, `!openapi.yaml`). Takes effect on next reindex.
+
+Co-Authored-By: Claude Opus 4.8 &lt;noreply@anthropic.com&gt;
+* **mcp:** the reindex_changes MCP tool is removed. Use index_codebase
+instead — it auto-detects changed files and performs the incremental update.
+
+Co-Authored-By: Claude Opus 4.8 &lt;noreply@anthropic.com&gt;
+
+### Features
+
+* **api:** add index-codebase --name to register alias before indexing ([28d142f](https://github.com/artk0de/TeaRAGs-MCP/commit/28d142f04c82a645bed1d9f3caef91c3d99f5d7d))
+* **api:** expose worktree create/list/remove/info on App ([c7a0125](https://github.com/artk0de/TeaRAGs-MCP/commit/c7a0125a927aa747f9e7f93b4a15e7aeaf5b52c7))
+* **api:** render index-codebase --name register errors (text/JSON), abort before fork ([51e7cfb](https://github.com/artk0de/TeaRAGs-MCP/commit/51e7cfb4f90ba3803f96330ab92502495659db1f))
+* **cli:** add 'project exist' guard command for registry membership ([7dcc41f](https://github.com/artk0de/TeaRAGs-MCP/commit/7dcc41f46b93c6c8a3b27f72ab9e480b25f9f355))
+* **cli:** add tea-rags worktree create/list/remove/info command ([2239d32](https://github.com/artk0de/TeaRAGs-MCP/commit/2239d32ee48760249945ee11083d7ca3e4f15d59))
+* **contracts:** additive ivarTypes + structuredReturnTypes on CallContext ([4c373ba](https://github.com/artk0de/TeaRAGs-MCP/commit/4c373ba89a3933e8a7c8a4d509190b15e1da9d6c))
+* **contracts:** member-aware external classification for AR-core members (increment D / i9id8) ([41a6703](https://github.com/artk0de/TeaRAGs-MCP/commit/41a670310ea52db44026d18a42f2694ea3f5719c))
+* **contracts:** RubyTypeRef + ruby type-source interfaces (domain) ([3a5abcf](https://github.com/artk0de/TeaRAGs-MCP/commit/3a5abcf1c54b8fd0db104f9fc421f15ae7c33ff3))
+* **dinopowers:** finishing-branch post-merge cleanup — worktree remove + hook-reindex (v0.18.2) ([89e156d](https://github.com/artk0de/TeaRAGs-MCP/commit/89e156db7a84f6bab0c396730a2068a2dd05575c))
+* **factory:** wire footprint factory + WorktreeOps into App ([3be7169](https://github.com/artk0de/TeaRAGs-MCP/commit/3be7169b1dca3bb8eca53f556f689abd0b01455b))
+* **maintenance:** add clone methods to footprint artifact owners ([02607b2](https://github.com/artk0de/TeaRAGs-MCP/commit/02607b26e51b3c9980ce517f38f817b15d0323c5))
+* **maintenance:** add footprint kernel (artifact strategy + factory) ([6cc22ec](https://github.com/artk0de/TeaRAGs-MCP/commit/6cc22ec4c7d2203ba4da5c79e67a7b93bcfbcb5a))
+* **maintenance:** add worktree provenance fields + registry queries ([252900d](https://github.com/artk0de/TeaRAGs-MCP/commit/252900d623a5cb66d0d0a1da9cab0eb25fbdad60))
+* **maintenance:** add WorktreeOps create-saga + provenance-guarded remove ([6fec406](https://github.com/artk0de/TeaRAGs-MCP/commit/6fec4067d1a14f01482d91d9c34435408c5cfb47))
+* **mcp:** remove deprecated reindex_changes tool ([961af5a](https://github.com/artk0de/TeaRAGs-MCP/commit/961af5a78b5233fcd401f1b06aed9c1988f7a4ef))
+* **qdrant:** add createSnapshot/recoverFromSnapshot/deleteSnapshot to QdrantManager ([db4b6e2](https://github.com/artk0de/TeaRAGs-MCP/commit/db4b6e222be44dc655558b1e862bb9f2a6a5565a))
+* **tea-rags:** post-commit/merge auto-reindex hook script ([dfc4a48](https://github.com/artk0de/TeaRAGs-MCP/commit/dfc4a485ce78572f804b937e7a00ee08474418d4))
+* **tea-rags:** register post-commit auto-reindex hook (PostToolUse:Bash) ([48b1061](https://github.com/artk0de/TeaRAGs-MCP/commit/48b10618dd83c8634202d206562fbcc72283a6d5))
+* **trajectory:** AR-core instance-member vocab + isExternalQualifiedMember (increment D / i9id8) ([2a3ae9f](https://github.com/artk0de/TeaRAGs-MCP/commit/2a3ae9f785a527760277dceb611b5b955d85ac9d))
+* **trajectory:** container element + block-param receiver types ([8d48950](https://github.com/artk0de/TeaRAGs-MCP/commit/8d4895014bfbbdd365986e27182dcbd05c46566a))
+* **trajectory:** exotic YARD tags (@type/@!attribute/[@option](https://github.com/option)) ([d4cff93](https://github.com/artk0de/TeaRAGs-MCP/commit/d4cff933ce18ef7ce4afc50138c65a4710734847))
+* **trajectory:** LocalBinding.typeRef carries union/container receiver types ([72adc4d](https://github.com/artk0de/TeaRAGs-MCP/commit/72adc4d4b580044967a309edae954d406f7793d6))
+* **trajectory:** multi-hop chain-call receiver type threading ([39c9d7e](https://github.com/artk0de/TeaRAGs-MCP/commit/39c9d7ea468cd00dbe0771f9be2f076ee8e84918))
+* **trajectory:** receiver type-propagation engine (single-hop parity) ([9d03b86](https://github.com/artk0de/TeaRAGs-MCP/commit/9d03b8603a7c8a2af00781f4db613498eba9334d))
+* **trajectory:** RubyChainTypeSymbolResolutionStrategy via propagation engine ([d14795a](https://github.com/artk0de/TeaRAGs-MCP/commit/d14795a97359e67bd0a060390f3420e4151a7a92))
+* **trajectory:** RubyTypeFactStore parity orchestrator (Incr 0) ([20d6d31](https://github.com/artk0de/TeaRAGs-MCP/commit/20d6d315ab417408822b5c072fbaaaa2187ad0ae))
+* **trajectory:** suppress dynamic fan-out for AR-core members (increment D / i9id8) ([66c57b4](https://github.com/artk0de/TeaRAGs-MCP/commit/66c57b4f8b17d7efbaa58ea83da52db593fa48fe))
+* **trajectory:** TypeFactStore precedence + union/container normalization ([e4b476f](https://github.com/artk0de/TeaRAGs-MCP/commit/e4b476f0b59c55a8204a17d9aefb2555513ba0de))
+* **trajectory:** union receiver type cone fan-out ([176dff6](https://github.com/artk0de/TeaRAGs-MCP/commit/176dff6743f95e2ae942f5c329de73d24e0e130b))
+
+### Improvements
+
+* **dx:** tea-rags:index registers alias inline via index-codebase --name ([6dfbd13](https://github.com/artk0de/TeaRAGs-MCP/commit/6dfbd1343d5071c3e16946da0dddc10007fb9c5f))
+* **dx:** test-self-reindex uses single index-codebase --name command ([801966b](https://github.com/artk0de/TeaRAGs-MCP/commit/801966b378f26e417be23ed425fdbea3f0a24989))
+* **ingest:** default-ignore json/yaml data formats with JSON manifest allowlist ([03bde15](https://github.com/artk0de/TeaRAGs-MCP/commit/03bde156961fcaed267ab19259b0e7766279bb1c))
+* **ingest:** distinct "AST not processed" quarantine reason with parse cause ([3096348](https://github.com/artk0de/TeaRAGs-MCP/commit/3096348bf82711b5b96f42ccd5048159f931176f))
+* **ingest:** exclude compiled/vendored JS from indexing (path + content) ([75ffce9](https://github.com/artk0de/TeaRAGs-MCP/commit/75ffce9d33b7bcf25318c17f600b83de180c74b4))
+
+### Bug Fixes
+
+* **ingest:** probe directories with trailing slash so gitignore whitelists descend ([90d8bd8](https://github.com/artk0de/TeaRAGs-MCP/commit/90d8bd8a7a03d2519403caf8ac972bc7bdc0a794))
+* **ingest:** scanner whitelist directory descent (kgjzq) ([d831c8a](https://github.com/artk0de/TeaRAGs-MCP/commit/d831c8a9aa4f07c81005e03e1bb144099b08eeaa))
+* **maintenance:** clone codegraph by physical version + resolve active physical on remove + CLI exit ([ccdf57d](https://github.com/artk0de/TeaRAGs-MCP/commit/ccdf57d82151a73c8a502cd1552be12d978947bb))
+* **maintenance:** enforce target-collection collision guard in WorktreeOps.create ([17f90ff](https://github.com/artk0de/TeaRAGs-MCP/commit/17f90fff9018a3a792440cadeb87b4ab97b8e36f))
+* **maintenance:** guard cloneDatabase target dir + absent-source test + dedupe import ([38a0dbd](https://github.com/artk0de/TeaRAGs-MCP/commit/38a0dbd0463f69246ec1c64e86b2d062d0a44987))
+* **maintenance:** roll back git worktree + failing artifact on saga failure; typed errors ([e22b2ec](https://github.com/artk0de/TeaRAGs-MCP/commit/e22b2ecc5ec9a6e04a25b6ea6791896838fd0958))
+* **pipeline:** bound WorkerDispatchPool.dispatch with a worker liveness timeout ([103a7ea](https://github.com/artk0de/TeaRAGs-MCP/commit/103a7ea471c911d7458d5d1c19251003624a3754))
+* **qdrant:** use typed InfraError for snapshot create/recover failures ([10310d3](https://github.com/artk0de/TeaRAGs-MCP/commit/10310d3ef9ec302170402051c2a966b6b1eb850b))
+* **tea-rags:** hook reads canonical .tool_response payload key (v0.28.2) ([111fb11](https://github.com/artk0de/TeaRAGs-MCP/commit/111fb114b9114c90ee1325838ef2e799f7f1d3f9))
+* **trajectory:** bare-call prefers instance form over class form on ambiguity ([d601b6f](https://github.com/artk0de/TeaRAGs-MCP/commit/d601b6f8c0960d76f4c34608ca5c6b42f1a129a8))
+* **trajectory:** classify core/gem-typed receivers as external (honest inProjectEdgeRecall) ([29f7359](https://github.com/artk0de/TeaRAGs-MCP/commit/29f73597cfe2b0dac5acf74d6f51fd1ed16ca15b))
+* **trajectory:** defer typeable chain receivers from dynamic fan-out to chainType ([ec6fcfa](https://github.com/artk0de/TeaRAGs-MCP/commit/ec6fcfa4ba13672aea731f08c2a613068761f3ba))
+* **trajectory:** runtime-hook super classified external, not in-project miss ([d3b0623](https://github.com/artk0de/TeaRAGs-MCP/commit/d3b0623c1a59c69bfa3b3c5d492811f95ac929e2))
+* **trajectory:** singleton-class mixin ancestors + runtime-hook super no-fabricate ([5706cab](https://github.com/artk0de/TeaRAGs-MCP/commit/5706cab22e975cc435eceb01d980348bddd08495))
+* **trajectory:** stop YARD @!attribute [@return](https://github.com/return) leaking into the next unrelated def ([a913793](https://github.com/artk0de/TeaRAGs-MCP/commit/a9137934749e192c30033242bced3de97569bd55)), closes [Account#compute_total](https://github.com/artk0de/Account/issues/compute_total)
+* **trajectory:** thread enclosing class scope into YARD [@return](https://github.com/return) facts ([a400d8f](https://github.com/artk0de/TeaRAGs-MCP/commit/a400d8f70c35eb4cffa4fc5d9f260324cd9bb580))
+* **trajectory:** walk ancestors for inherited method when class file unresolved ([7803390](https://github.com/artk0de/TeaRAGs-MCP/commit/7803390b8c64bb44866d1ec303ac2f184323f1c0))
+* **trajectory:** wire structuredReturnTypes + ivarTypes into resolve-time CallContext ([b796f89](https://github.com/artk0de/TeaRAGs-MCP/commit/b796f890bd1a282a78593aacc48d16474b84bf17)), closes [fqClass#method](https://github.com/artk0de/fqClass/issues/method) [Class#method](https://github.com/artk0de/Class/issues/method)
+
+### Performance Improvements
+
+* **logs:** instrument index setup stage for the run1-vs-steady swing (csyve) ([ac5b7b3](https://github.com/artk0de/TeaRAGs-MCP/commit/ac5b7b3df25b082249764da64e049454e70c03cd))
+
+### Documentation
+
+* **api:** design for index-codebase --name register-then-index flag ([46d46a5](https://github.com/artk0de/TeaRAGs-MCP/commit/46d46a50dd3dbbf0d0564df294173938ac010a11))
+* **api:** implementation plan for index-codebase --name flag ([1073d5c](https://github.com/artk0de/TeaRAGs-MCP/commit/1073d5c509b4d34ec0445571dcd507a1d4062c1e))
+* **benchmark:** add corner anchors, honesty case, and scenario specs ([a53b803](https://github.com/artk0de/TeaRAGs-MCP/commit/a53b80319026e10c977847222158c81edaa4a619))
+* **benchmark:** add tea-rags navigation benchmark spec ([1eb3378](https://github.com/artk0de/TeaRAGs-MCP/commit/1eb337820af58ed3d6d685b59bda7c681207c26f))
+* **cli:** note worktree-create hint uses --project (not --name) by design ([7dbd22c](https://github.com/artk0de/TeaRAGs-MCP/commit/7dbd22cc8af77cf219e341faccf1682dddcf24ba))
+* **dinopowers:** hook-driven FRESHNESS; purge deprecated reindex_changes (v0.18.1) ([cba831f](https://github.com/artk0de/TeaRAGs-MCP/commit/cba831fa4be0ab2826c590906f641c2dab651165))
+* document json/yaml default-ignore and .contextignore override ([7c0b240](https://github.com/artk0de/TeaRAGs-MCP/commit/7c0b24058159e88b4aaa1e10cd2bfa9d98fe0adc))
+* **maintenance:** add tea-rags worktree design spec ([abdcf88](https://github.com/artk0de/TeaRAGs-MCP/commit/abdcf88ea2bf854dad4d97471cb28fd550cebf34))
+* **maintenance:** add tea-rags worktree implementation plan ([3be7afe](https://github.com/artk0de/TeaRAGs-MCP/commit/3be7afe8cb9de518b89cc54d253d87f64be70139))
+* **maintenance:** implementation plan for worktree-aware auto-reindex ([fdf4e47](https://github.com/artk0de/TeaRAGs-MCP/commit/fdf4e47816f451cae92f6700a2fb3ab73471294f))
+* **maintenance:** record /optimize-skill method for SKILL.md edits in auto-reindex spec ([334e102](https://github.com/artk0de/TeaRAGs-MCP/commit/334e102cef7c54bd31284249924b15aa20fc7019))
+* **maintenance:** record live-validation amendments + fix create help text ([81075b7](https://github.com/artk0de/TeaRAGs-MCP/commit/81075b7d6a92746a776ad2e5f8bb957e3373a817))
+* **maintenance:** spec worktree-aware auto-reindex (deliverable A) ([1473e70](https://github.com/artk0de/TeaRAGs-MCP/commit/1473e703d0dff7606ad01183a44c9e7e891012d0))
+* **tea-rags:** add git-workflow auto-reindex trigger taxonomy (v0.28.1) ([872da17](https://github.com/artk0de/TeaRAGs-MCP/commit/872da1774349e201df926971a79f9601dde734c9))
+* **trajectory:** correct stale JSDoc in ruby type-propagation (post-9bliu) ([d342b43](https://github.com/artk0de/TeaRAGs-MCP/commit/d342b43d1effed9aa6485cfc57da3e588d0ba5c8))
+* **trajectory:** fix Task 0.3 yard.ts import layering (walker + types.js) ([b1c667a](https://github.com/artk0de/TeaRAGs-MCP/commit/b1c667a08bc2d012f436e0fb9ed63e8726906e9f))
+* **trajectory:** fix type-source layering (RubyTypeRef in contracts, sources in domain) ([6f863b7](https://github.com/artk0de/TeaRAGs-MCP/commit/6f863b7cf6f401a2c5275ca12f2bf0ec63f5bd7b))
+* **trajectory:** impl plan for ruby external-member suppression (increment D / i9id8) ([edd01c1](https://github.com/artk0de/TeaRAGs-MCP/commit/edd01c185962f122f59403a624344722b1591e8d))
+* **trajectory:** ruby type-source Incr 0+1 implementation plan ([2d07450](https://github.com/artk0de/TeaRAGs-MCP/commit/2d07450c2641a0a75a0672e9e4e376ef00617e56))
+* **trajectory:** ruby type-source mechanism (YARD/Sorbet/RBS) design ([d914752](https://github.com/artk0de/TeaRAGs-MCP/commit/d9147529b2ee316d6028b0cfb2511526b8a04675))
+* **trajectory:** spec for ruby external-member suppression (increment D / i9id8) ([0868d17](https://github.com/artk0de/TeaRAGs-MCP/commit/0868d177a937435249d93627dff38696ecc8b19e))
+* **website:** document worktree CLI, auto-reindex hook, --name; drop reindex_changes refs ([52c2f68](https://github.com/artk0de/TeaRAGs-MCP/commit/52c2f68a0d13dd66991baf4613dbd5c320e04878))
+* **website:** merge docs-sync worktree CLI, auto-reindex hook, --name, reindex_changes sweep ([a9ca702](https://github.com/artk0de/TeaRAGs-MCP/commit/a9ca7024975572a35897463fb9dd7f22c64fad6d))
+* worktree build is always paired with npm link (never bare build) ([852ebb8](https://github.com/artk0de/TeaRAGs-MCP/commit/852ebb84d80f4773f4131400a1c8dc7127830323))
+
+### Code Refactoring
+
+* **cli:** tidy worktree command import order + typed create adapter ([8eb2b3b](https://github.com/artk0de/TeaRAGs-MCP/commit/8eb2b3bb6dbb804e399f153f536bb7d26aed2627))
+* **maintenance:** align setWorktreeProvenance with spread-copy convention + guard test ([296ee4d](https://github.com/artk0de/TeaRAGs-MCP/commit/296ee4d1b08e54a0bf5f490ab5458e48cd4a1fc2))
+* **maintenance:** document remove() best-effort contract + add artifact delegation tests ([d7bbe26](https://github.com/artk0de/TeaRAGs-MCP/commit/d7bbe26d06e125dd806c36ac6e5c41856680400e))
+* **trajectory:** drive extractFromRubyFile via INLINE_TYPE_SOURCES + store ([3d29902](https://github.com/artk0de/TeaRAGs-MCP/commit/3d29902ce267c8f740d206486188ce2f54ca11d9))
+* **trajectory:** relocate AST type inference behind RubyAstInferenceTypeSource ([9d94154](https://github.com/artk0de/TeaRAGs-MCP/commit/9d94154298f7e03a7a0935121399b84013d73563))
+* **trajectory:** relocate YARD parsers behind RubyYardTypeSource ([5bfe797](https://github.com/artk0de/TeaRAGs-MCP/commit/5bfe797f95520f6f80bf99d22ae203b6bfe9e4f9))
+* **trajectory:** remove dead ruby collectLocalBindingsForChunk + its coverage-gaming tests ([90d0502](https://github.com/artk0de/TeaRAGs-MCP/commit/90d05022791fbf43150e6bcffb8c79b7b4460999))
+
 ## [1.32.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.31.1...v1.32.0) (2026-06-24)
 
 ### trajectory
