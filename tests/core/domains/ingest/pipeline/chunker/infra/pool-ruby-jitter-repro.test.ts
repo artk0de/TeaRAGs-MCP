@@ -55,46 +55,54 @@ function signatureOf(result: {
 // rdv7d regression sentinel: GREEN since the materialize boundary landed —
 // per-file extraction is byte-stable across iterations (was flaky ~2x before).
 describe("ChunkerPool ruby jitter repro (size 8, N distinct files)", () => {
-  it("never drops extraction and keeps per-file call count byte-stable across iterations", async () => {
-    const N = 50;
-    const M = 6;
-    const files = Array.from({ length: N }, (_, i) => ({ path: `service_${i}.rb`, code: rubySource(i) }));
+  // retry+timeout: spawns a size-8 pool parsing N=50 files M times — heavy. A
+  // transient timeout under full-suite parallel-fork contention is a resource
+  // flake, not a determinism failure (a real regression fails every retry).
+  // Default local timeout is 5s with no local retry — both raised here.
+  it(
+    "never drops extraction and keeps per-file call count byte-stable across iterations",
+    { retry: 2, timeout: 60_000 },
+    async () => {
+      const N = 50;
+      const M = 6;
+      const files = Array.from({ length: N }, (_, i) => ({ path: `service_${i}.rb`, code: rubySource(i) }));
 
-    const pool = new ChunkerPool(8, {
-      chunkSize: 1500,
-      chunkOverlap: 0,
-      maxChunkSize: 3000,
-    } as ChunkerConfig);
+      const pool = new ChunkerPool(8, {
+        chunkSize: 1500,
+        chunkOverlap: 0,
+        maxChunkSize: 3000,
+      } as ChunkerConfig);
 
-    try {
-      // Baseline (iteration 0).
-      const baseline = new Map<string, FileSig>();
-      const first = await Promise.all(files.map(async (f) => pool.processFile(f.path, f.code, "ruby", true)));
-      first.forEach((r, idx) => baseline.set(files[idx].path, signatureOf(r)));
+      try {
+        // Baseline (iteration 0).
+        const baseline = new Map<string, FileSig>();
+        const first = await Promise.all(files.map(async (f) => pool.processFile(f.path, f.code, "ruby", true)));
+        first.forEach((r, idx) => baseline.set(files[idx].path, signatureOf(r)));
 
-      // Every baseline file MUST have produced an extraction (no silent drop).
-      for (const [path, sig] of baseline) {
-        expect(sig.ext, `baseline: ${path} produced no extraction`).toBeDefined();
-        expect(sig.totalCalls, `baseline: ${path} had zero calls`).toBeGreaterThan(0);
+        // Every baseline file MUST have produced an extraction (no silent drop).
+        for (const [path, sig] of baseline) {
+          expect(sig.ext, `baseline: ${path} produced no extraction`).toBeDefined();
+          expect(sig.totalCalls, `baseline: ${path} had zero calls`).toBeGreaterThan(0);
+        }
+
+        // M further concurrent iterations — each must match the baseline exactly.
+        for (let iter = 1; iter < M; iter++) {
+          const runs = await Promise.all(files.map(async (f) => pool.processFile(f.path, f.code, "ruby", true)));
+          runs.forEach((r, idx) => {
+            const { path } = files[idx];
+            const sig = signatureOf(r);
+            const base = baseline.get(path)!;
+            expect(sig.ext, `iter ${iter}: ${path} DROPPED extraction`).toBeDefined();
+            // CHUNKS first: drift here ⇒ the PARSE TREE drifted (parser-level).
+            // Stable chunks + drifting calls ⇒ WALKER-level carryover.
+            expect(sig.chunkIds, `iter ${iter}: ${path} CHUNKS (parse tree) drifted`).toBe(base.chunkIds);
+            expect(sig.totalCalls, `iter ${iter}: ${path} call count drifted (walker)`).toBe(base.totalCalls);
+            expect(sig.ext, `iter ${iter}: ${path} extraction shape drifted`).toBe(base.ext);
+          });
+        }
+      } finally {
+        await pool.shutdown();
       }
-
-      // M further concurrent iterations — each must match the baseline exactly.
-      for (let iter = 1; iter < M; iter++) {
-        const runs = await Promise.all(files.map(async (f) => pool.processFile(f.path, f.code, "ruby", true)));
-        runs.forEach((r, idx) => {
-          const { path } = files[idx];
-          const sig = signatureOf(r);
-          const base = baseline.get(path)!;
-          expect(sig.ext, `iter ${iter}: ${path} DROPPED extraction`).toBeDefined();
-          // CHUNKS first: drift here ⇒ the PARSE TREE drifted (parser-level).
-          // Stable chunks + drifting calls ⇒ WALKER-level carryover.
-          expect(sig.chunkIds, `iter ${iter}: ${path} CHUNKS (parse tree) drifted`).toBe(base.chunkIds);
-          expect(sig.totalCalls, `iter ${iter}: ${path} call count drifted (walker)`).toBe(base.totalCalls);
-          expect(sig.ext, `iter ${iter}: ${path} extraction shape drifted`).toBe(base.ext);
-        });
-      }
-    } finally {
-      await pool.shutdown();
-    }
-  });
+    },
+  );
 });

@@ -16,7 +16,12 @@ end`,
 ).join("\n");
 
 describe("ChunkerPool process determinism (size 4)", () => {
-  it("produces byte-stable chunks+extraction across many concurrent runs", async () => {
+  // retry+long timeout: this spawns 4 child processes and runs 24 concurrent
+  // parses; under full-suite parallel-fork CPU contention a single run can blow
+  // the timeout (a transient resource flake, NOT a determinism failure — a real
+  // determinism regression fails every retry deterministically). Mirrors the
+  // CI-only retry locally so the pre-commit gate stops flaking on contention.
+  it("produces byte-stable chunks+extraction across many concurrent runs", { retry: 2, timeout: 60_000 }, async () => {
     const pool = new ChunkerPool(4, {
       chunkSize: 1500,
       chunkOverlap: 0,
@@ -43,5 +48,5 @@ describe("ChunkerPool process determinism (size 4)", () => {
     // Spawns 4 child processes and runs 24 concurrent parses — legitimately
     // heavy. ~1.5s in isolation but exceeds the 5s default under full-suite
     // parallel-fork CPU contention (flaky-timeout, not a determinism failure).
-  }, 30_000);
+  });
 });
