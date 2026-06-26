@@ -1,0 +1,18 @@
+# tea-rags .contextignore — graphql-ruby benchmark corpus.
+# Copied to the corpus root at setup. Goal: index lib/ Ruby source only.
+#
+# Builtin defaults already drop build artefacts / caches — do NOT repeat.
+
+# --- Docs / site / guides ---
+/guides/
+/website/
+*.md
+
+# --- Benchmarks + non-lib helper scripts ---
+/benchmark/
+/javascript/
+*.js
+*.ts
+
+# --- Test suite (production-source benchmark — see navigation-benchmark.md) ---
+/spec/
