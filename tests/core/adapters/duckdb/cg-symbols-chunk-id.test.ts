@@ -88,3 +88,139 @@ describe("DuckDbGraphClient — chunk_id read/write", () => {
     await client.close();
   });
 });
+
+describe("DuckDbGraphClient — findSymbolChunk last-segment fallback (DSL symbols)", () => {
+  let dir: string;
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function seed(): Promise<DuckDbGraphClient> {
+    dir = mkdtempSync(join(tmpdir(), "cg-lastseg-"));
+    const client = new DuckDbGraphClient({ path: join(dir, "graph.duckdb") });
+    await client.init();
+    await runMigrations(client, DATABASE_MIGRATIONS);
+
+    // A Rails `scope :suspended` defined inside the `Account::Suspensions`
+    // concern: codegraph mints `Account::Suspensions.suspended`, but the
+    // covering body chunk's payload symbolId is the parent module, so the
+    // Qdrant scroll and the exact-match tier both miss the host/bare query.
+    const concern = "app/models/concerns/account/suspensions.rb" as RelPath;
+    await client.upsertSymbols(concern, [
+      {
+        symbolId: "Account::Suspensions" as SymbolId,
+        fqName: "Account::Suspensions",
+        shortName: "Suspensions",
+        relPath: concern,
+        scope: ["Account"],
+      },
+      {
+        symbolId: "Account::Suspensions.suspended" as SymbolId,
+        fqName: "Account::Suspensions.suspended",
+        shortName: "suspended",
+        relPath: concern,
+        scope: ["Account", "Suspensions"],
+      },
+    ]);
+    await client.updateSymbolChunkIds(
+      concern,
+      new Map([["Account::Suspensions.suspended" as SymbolId, "chunk_scope_suspended"]]),
+    );
+    return client;
+  }
+
+  it("resolves a bare last-segment query to the DSL symbol's covering chunk", async () => {
+    const client = await seed();
+
+    expect(await client.findSymbolChunk("suspended" as SymbolId)).toEqual({
+      relPath: "app/models/concerns/account/suspensions.rb",
+      chunkId: "chunk_scope_suspended",
+    });
+
+    await client.close();
+  });
+
+  it("resolves a host-class form (`Account.suspended`) by last name segment", async () => {
+    const client = await seed();
+
+    // The benchmark form — the scope is USED as `Account.suspended` though it
+    // lives in the concern `Account::Suspensions`.
+    expect(await client.findSymbolChunk("Account.suspended" as SymbolId)).toEqual({
+      relPath: "app/models/concerns/account/suspensions.rb",
+      chunkId: "chunk_scope_suspended",
+    });
+
+    await client.close();
+  });
+
+  it("still resolves the canonical exact FQN via the exact tier", async () => {
+    const client = await seed();
+
+    expect(await client.findSymbolChunk("Account::Suspensions.suspended" as SymbolId)).toEqual({
+      relPath: "app/models/concerns/account/suspensions.rb",
+      chunkId: "chunk_scope_suspended",
+    });
+
+    await client.close();
+  });
+
+  it("prefers an exact match over a last-segment match", async () => {
+    const client = await seed();
+    const other = "app/models/other.rb" as RelPath;
+    await client.upsertSymbols(other, [
+      {
+        symbolId: "Other#suspended" as SymbolId,
+        fqName: "Other#suspended",
+        shortName: "suspended",
+        relPath: other,
+        scope: ["Other"],
+      },
+    ]);
+    await client.updateSymbolChunkIds(other, new Map([["Other#suspended" as SymbolId, "chunk_other_suspended"]]));
+
+    // Exact query must hit its own chunk, never the same-tail neighbour.
+    expect(await client.findSymbolChunk("Other#suspended" as SymbolId)).toEqual({
+      relPath: "app/models/other.rb",
+      chunkId: "chunk_other_suspended",
+    });
+
+    await client.close();
+  });
+
+  it("treats `_` in the last segment literally (no LIKE wildcard leak)", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cg-underscore-"));
+    const client = new DuckDbGraphClient({ path: join(dir, "graph.duckdb") });
+    await client.init();
+    await runMigrations(client, DATABASE_MIGRATIONS);
+
+    const rel = "app/models/account_filter.rb" as RelPath;
+    await client.upsertSymbols(rel, [
+      {
+        symbolId: "AccountFilter#status_scope" as SymbolId,
+        fqName: "AccountFilter#status_scope",
+        shortName: "status_scope",
+        relPath: rel,
+        scope: ["AccountFilter"],
+      },
+    ]);
+    await client.updateSymbolChunkIds(rel, new Map([["AccountFilter#status_scope" as SymbolId, "chunk_status_scope"]]));
+
+    // `_` must match a literal underscore only — `statusXscope` must NOT hit.
+    expect(await client.findSymbolChunk("statusXscope" as SymbolId)).toBeNull();
+    // The literal underscore form resolves.
+    expect(await client.findSymbolChunk("status_scope" as SymbolId)).toEqual({
+      relPath: "app/models/account_filter.rb",
+      chunkId: "chunk_status_scope",
+    });
+
+    await client.close();
+  });
+
+  it("returns null when no symbol shares the query's last segment", async () => {
+    const client = await seed();
+
+    expect(await client.findSymbolChunk("nonexistent_member" as SymbolId)).toBeNull();
+
+    await client.close();
+  });
+});
