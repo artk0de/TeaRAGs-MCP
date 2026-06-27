@@ -91,7 +91,8 @@ const FindCyclesInputShape = {
  * `tools[]`), NOT a free string — a bad preset is rejected at the MCP boundary
  * instead of silently degrading to similarity-only inside the reranker.
  * `schemaBuilder.buildPresetSchema("trace_path")` is the single source of truth;
- * `.optional()` keeps the field omittable (handler defaults to bugHunt).
+ * `.optional()` keeps the field omittable — there is no default. Omitting it
+ * yields a lean trace (no danger ranking); pass a preset to opt into the overlay.
  */
 function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
   return {
@@ -101,7 +102,9 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
     rerank: schemaBuilder
       .buildPresetSchema("trace_path")
       .optional()
-      .describe("Rerank preset defining 'danger' for the step overlay (default bugHunt)"),
+      .describe(
+        "Rerank preset that scores per-step danger for the overlay (optional — omit for a lean path enumeration, no danger ranking)",
+      ),
     maxDepth: z
       .number()
       .int()
@@ -111,7 +114,13 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
       .describe(
         "Max hops on a path (default 8). Capped at 20 — deep traces on dense graphs can be expensive; prefer the default.",
       ),
-    maxPaths: z.number().int().positive().max(50).optional().describe("Max paths returned, danger-sorted (default 10)"),
+    maxPaths: z
+      .number()
+      .int()
+      .positive()
+      .max(50)
+      .optional()
+      .describe("Max paths returned (default 10; danger-sorted only when rerank is passed)"),
   };
 }
 
@@ -181,9 +190,9 @@ export function registerCodegraphTools(
     {
       title: "Trace Path",
       description:
-        "Trace all simple call paths from one symbol to another, in execution order, " +
-        "each step annotated with a git/churn danger overlay. Paths are sorted most-dangerous " +
-        "first so you jump straight to the riskiest step. Backed by the codegraph DuckDB.",
+        "Trace all simple call paths from one symbol to another, in execution order. " +
+        "Lean path enumeration by default. Pass a `rerank` danger preset to annotate each step " +
+        "with a git/churn overlay and sort paths most-dangerous first. Backed by the codegraph DuckDB.",
       inputSchema: buildTracePathInputShape(schemaBuilder),
       annotations: { readOnlyHint: true, idempotentHint: true },
     },

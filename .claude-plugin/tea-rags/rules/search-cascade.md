@@ -162,22 +162,24 @@ escalate only if needed:
 1. **`get_callers` / `get_callees`** — ONE hop ("who calls X" / "what X calls").
    Default for impact & dependency questions; instant, no traversal.
 2. **`find_cycles`** — detect circular dependency chains.
-3. **`trace_path`** — ALL paths A→B with per-step danger ranking. Escalate here
-   ONLY when the full chain matters ("how does control reach B from A?", "which
-   step on the A→B chain is riskiest?"), never for a single hop.
+3. **`trace_path`** — ALL paths A→B. Lean by default (path enumeration only);
+   pass `rerank="bugHunt"` (or `dangerous`/`hotspots`/`blastRadius`) to attach
+   per-step danger ranking. Escalate here ONLY when the full chain matters ("how
+   does control reach B from A?", "which step on the A→B chain is riskiest?"),
+   never for a single hop.
 
 **When codegraph is off** (no `codegraph.symbols` in prime), route by intent to
 a non-graph substitute — and never read an absent/empty graph tool as a positive
 fact (no "it's a DAG", no "the path is structurally impossible", no "this is the
 architectural centre"):
 
-| Graph intent          | Non-codegraph fallback                                                                   |
-| --------------------- | ---------------------------------------------------------------------------------------- |
-| who calls / X calls   | `hybrid_search` (exact-name recall) + `find_symbol` — name-match, NOT edge truth          |
-| call path A→B         | `semantic_search` / `hybrid_search` + manual reading; say plainly "no static path tool"   |
-| cycles                | none — cycle detection NEEDS codegraph; say so, do NOT claim "no cycles / it's a DAG"      |
-| architectural hubs    | git imports/churn rerank or relevance; say fan-in centrality is unavailable                |
-| entry points          | relevance + `chunkSize` heuristic; flag results as content-inferred, not graph-confirmed   |
+| Graph intent        | Non-codegraph fallback                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| who calls / X calls | `hybrid_search` (exact-name recall) + `find_symbol` — name-match, NOT edge truth         |
+| call path A→B       | `semantic_search` / `hybrid_search` + manual reading; say plainly "no static path tool"  |
+| cycles              | none — cycle detection NEEDS codegraph; say so, do NOT claim "no cycles / it's a DAG"    |
+| architectural hubs  | git imports/churn rerank or relevance; say fan-in centrality is unavailable              |
+| entry points        | relevance + `chunkSize` heuristic; flag results as content-inferred, not graph-confirmed |
 
 ### Optimal routes (navigate, don't re-search)
 
@@ -320,16 +322,16 @@ harmless for non-search tasks.
 
 ## Fallback Chains
 
-| Task                 | Primary                           | Fallback                             |
-| -------------------- | --------------------------------- | ------------------------------------ |
-| Symbol definition    | find_symbol(symbol:)              | hybrid_search → ripgrep              |
-| File structure       | find_symbol(relativePath:)        | Read (whole file)                    |
-| Doc TOC              | find_symbol(relativePath:)        | find_symbol(symbol: parentSymbolId)  |
-| All usages           | hybrid_search + offset pagination | ripgrep (only if hybrid unavailable) |
-| Behavioral discovery | semantic_search                   | hybrid_search                        |
-| Cross-layer          | semantic_search × per language    | same                                 |
-| Exact text           | ripgrep MCP                       | built-in Grep                        |
-| Call path A→B (codegraph on)  | trace_path               | get_callees breadth-first (manual)   |
+| Task                          | Primary                           | Fallback                                          |
+| ----------------------------- | --------------------------------- | ------------------------------------------------- |
+| Symbol definition             | find_symbol(symbol:)              | hybrid_search → ripgrep                           |
+| File structure                | find_symbol(relativePath:)        | Read (whole file)                                 |
+| Doc TOC                       | find_symbol(relativePath:)        | find_symbol(symbol: parentSymbolId)               |
+| All usages                    | hybrid_search + offset pagination | ripgrep (only if hybrid unavailable)              |
+| Behavioral discovery          | semantic_search                   | hybrid_search                                     |
+| Cross-layer                   | semantic_search × per language    | same                                              |
+| Exact text                    | ripgrep MCP                       | built-in Grep                                     |
+| Call path A→B (codegraph on)  | trace_path                        | get_callees breadth-first (manual)                |
 | Call path A→B (codegraph off) | semantic_search / hybrid + manual | — (graph tools unavailable; see Graph navigation) |
 
 ## pathPattern Rules

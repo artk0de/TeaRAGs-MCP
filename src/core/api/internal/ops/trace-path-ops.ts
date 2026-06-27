@@ -8,11 +8,12 @@
  *      `getCalleeEdges`, building a PARTIAL adjacency map (never the full graph).
  *   2. Pure `enumeratePaths` — finds simple `from`->`to` paths over that map.
  *   3. Qdrant hydration — one scroll for the union of step symbols.
- *   4. Annotate-only rerank (`reorder:false`) — attaches a danger overlay per
- *      step WITHOUT reordering; `steps` stays execution-ordered.
- *   5. Assemble — `dangerRanking` indexes the riskiest steps; `aggregateDanger`
- *      is the max per-step danger (riskiest step defines the path), and the
- *      path list sorts by it descending.
+ *   4. Annotate-only rerank (`reorder:false`) — when `rerank` is supplied,
+ *      attaches a danger overlay per step WITHOUT reordering; `steps` stays
+ *      execution-ordered. Skipped when `rerank` is omitted (lean default).
+ *   5. Assemble — when `rerank` is supplied, `dangerRanking` indexes the
+ *      riskiest steps; `aggregateDanger` is the max per-step danger, and the
+ *      path list sorts by it descending. Omitted in lean mode.
  */
 
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
