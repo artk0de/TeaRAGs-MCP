@@ -309,6 +309,46 @@ describe("GraphFacade", () => {
   });
 });
 
+// Guard: getCallers / getCallees must NEVER attach overlay fields.
+// CallerResult = { sourceSymbolId, sourceRelPath, callExpression }
+// CalleeResult = { targetSymbolId, targetRelPath, callExpression }
+// Neither carries dangerOverlay / rankingOverlay — the facade returns edges
+// verbatim (edges.slice(0, limit)) without any reranker enrichment.
+// This test locks that invariant so future changes can't silently leak an overlay.
+describe("GraphFacade overlay-absence invariant", () => {
+  it("getCallers never attaches an overlay field", async () => {
+    const graphDb = {
+      getCallers: vi
+        .fn()
+        .mockResolvedValue([{ sourceSymbolId: "Caller#m", sourceRelPath: "caller.ts", callExpression: "target()" }]),
+      getCallees: vi.fn(),
+    };
+    const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
+    const res = await facade.getCallers({ path: "/proj", symbolId: "target" });
+    for (const caller of res.callers) {
+      expect(Object.keys(caller).sort()).toEqual(["callExpression", "sourceRelPath", "sourceSymbolId"]);
+      expect((caller as Record<string, unknown>).dangerOverlay).toBeUndefined();
+      expect((caller as Record<string, unknown>).rankingOverlay).toBeUndefined();
+    }
+  });
+
+  it("getCallees never attaches an overlay field", async () => {
+    const graphDb = {
+      getCallers: vi.fn(),
+      getCallees: vi
+        .fn()
+        .mockResolvedValue([{ targetSymbolId: "Callee#m", targetRelPath: "callee.ts", callExpression: "callee()" }]),
+    };
+    const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
+    const res = await facade.getCallees({ path: "/proj", symbolId: "source" });
+    for (const callee of res.callees) {
+      expect(Object.keys(callee).sort()).toEqual(["callExpression", "targetRelPath", "targetSymbolId"]);
+      expect((callee as Record<string, unknown>).dangerOverlay).toBeUndefined();
+      expect((callee as Record<string, unknown>).rankingOverlay).toBeUndefined();
+    }
+  });
+});
+
 describe("GraphFacade#resolveSymbolChunk", () => {
   it("resolves via the read handle and returns the location", async () => {
     const graphDb = {

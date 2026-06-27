@@ -75,10 +75,11 @@ When rank_chunks returns overlay labels:
 - file.bugFixRate "healthy" → **SKIP**
 
 **High bugFixRate + high `imports`/`fanIn` (fan-in):** suspect may be a coupling
-point propagating bugs from upstream, not the origin. Check callers before fixing
-here — when codegraph is on, `get_callers` (see Codegraph fault-chain navigation
-below) names the exact upstream origins. See `signal-interpretation.md` (bug
-attractor vs coupling; codegraph `fanIn` supersedes the `imports` proxy).
+point propagating bugs from upstream, not the origin. Check callers before
+fixing here — when codegraph is on, `get_callers` (see Codegraph fault-chain
+navigation below) names the exact upstream origins. See
+`signal-interpretation.md` (bug attractor vs coupling; codegraph `fanIn`
+supersedes the `imports` proxy).
 
 ## Trace the chain between suspects
 
@@ -114,30 +115,32 @@ relativeChurn) for every hop on the path. Read the response top-down:
 path by recency, surfacing the step that changed most recently — the likely
 regression on a route that worked before.
 
-Curated danger presets for `trace_path`: `bugHunt` (default), `dangerous`,
+Curated danger presets for `trace_path` (pass explicitly — there is no default;
+without `rerank` the trace is lean, no danger ranking): `bugHunt`, `dangerous`,
 `hotspots`, `recent`, `ownership`, `blastRadius`, `securityAudit`, `techDebt`,
-`codeReview`. Bound the search with `maxDepth` / `maxPaths`.
+`codeReview`. Use `bugHunt` for general fault-tracing. Bound the search with
+`maxDepth` / `maxPaths`.
 
 ## Codegraph fault-chain navigation
 
 **Requires codegraph** (prime shows `codegraph.symbols`). When codegraph is off
-these tools are not registered — skip this section and stay with the flat suspect
-list + manual reasoning; never read an absent tool as a fact.
+these tools are not registered — skip this section and stay with the flat
+suspect list + manual reasoning; never read an absent tool as a fact.
 
 - **Upstream origin (`get_callers`).** When a suspect looks like a victim (bad
-  input/state arrives from elsewhere), `get_callers symbolId=<suspect>` names who
-  feeds it — the bug may originate one hop up. Resolve the exact id with
+  input/state arrives from elsewhere), `get_callers symbolId=<suspect>` names
+  who feeds it — the bug may originate one hop up. Resolve the exact id with
   `find_symbol` first (`Class#method` vs `Class.method`).
 - **Downstream blast (`get_callees`).** What the suspect calls — where corrupted
   state propagates next, to pick the next checkpoint.
 - **Find the entry point (`entryPoint`).** When you have a suspect but no `from`
   for `trace_path`, `semantic_search rerank="entryPoint" pathPattern=<scope>`
-  surfaces flow entries (high fan-out / low fan-in drivers) — pick the entry that
-  reaches the suspect, then trace from it.
+  surfaces flow entries (high fan-out / low fan-in drivers) — pick the entry
+  that reaches the suspect, then trace from it.
 - **State-loop / re-entrancy smell (`find_cycles`).** When the symptom is an
-  infinite loop, runaway recursion, or repeated re-entry, `find_cycles
-  scope=method pathPattern=<scope>` surfaces circular call paths — a cycle
-  through the suspect is the structural form of that hypothesis.
+  infinite loop, runaway recursion, or repeated re-entry,
+  `find_cycles scope=method pathPattern=<scope>` surfaces circular call paths —
+  a cycle through the suspect is the structural form of that hypothesis.
 
 These are ONE-hop / structural lookups; `trace_path` is the full danger-ranked
 chain. Start with `get_callers`/`get_callees` (cheap), escalate to `trace_path`
