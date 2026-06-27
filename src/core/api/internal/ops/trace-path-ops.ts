@@ -27,7 +27,6 @@ import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "..
 
 const DEFAULT_MAX_DEPTH = 8;
 const DEFAULT_MAX_PATHS = 10;
-const DEFAULT_PRESET = "bugHunt";
 
 export interface TracePathOpsDeps {
   pool: GraphDbClientPool;
@@ -45,7 +44,7 @@ export class TracePathOps {
   async tracePath(req: TracePathRequest): Promise<PathTraceResult> {
     const maxDepth = req.maxDepth ?? DEFAULT_MAX_DEPTH;
     const maxPaths = req.maxPaths ?? DEFAULT_MAX_PATHS;
-    const preset = req.rerank ?? DEFAULT_PRESET;
+    const preset = req.rerank; // no default — danger overlay is opt-in (tea-rags-mcp-prqsj)
 
     const { collectionName } = resolveCollection(this.deps.collectionRegistry, req);
     const active = this.deps.resolveActiveCollection
@@ -80,19 +79,15 @@ export class TracePathOps {
     // the last one — a path step is a symbol-level overview, not chunk-precise.
     const byId = new Map(chunks.map((c) => [c.payload.symbolId as string, c]));
 
-    // 4. Annotate-only rerank over the hydrated chunks -> danger score + overlay.
-    const rerankInput = chunks.map((c) => ({ id: c.id, score: 0, payload: c.payload }));
-    const annotated = await this.deps.reranker.rerank(rerankInput, preset, "trace_path", { reorder: false });
-    const dangerById = new Map<string, { score: number; overlay?: RankingOverlay }>();
-    for (const r of annotated) {
-      const sid = r.payload?.symbolId as string | undefined;
-      if (!sid) continue;
-      dangerById.set(sid, { score: r.score, overlay: r.rankingOverlay });
-    }
+    // 4. Annotate-only rerank — ONLY when a rerank preset was requested.
+    //    Without it, trace_path is lean path enumeration (no danger overlay,
+    //    no danger sort). bugHunt is no longer an implicit default.
+    const dangerById = preset ? await this.computeDanger(chunks, preset) : undefined;
 
-    // 5. Assemble TracedPath per enumerated path; sort the list by aggregateDanger desc.
+    // 5. Assemble TracedPath per enumerated path. With danger, sort by
+    //    aggregateDanger desc; without, keep enumeration order.
     const traced: TracedPath[] = paths.map((p) => this.assemble(p, byId, dangerById));
-    traced.sort((a, b) => b.aggregateDanger - a.aggregateDanger);
+    if (dangerById) traced.sort((a, b) => (b.aggregateDanger ?? 0) - (a.aggregateDanger ?? 0));
     return { paths: traced, truncated };
   }
 
@@ -127,22 +122,40 @@ export class TracePathOps {
     return adjacency;
   }
 
+  /** Annotate-only rerank over hydrated chunks → per-symbol danger score + overlay. */
+  private async computeDanger(
+    chunks: { id: string | number; payload: Record<string, unknown> }[],
+    preset: string,
+  ): Promise<Map<string, { score: number; overlay?: RankingOverlay }>> {
+    const rerankInput = chunks.map((c) => ({ id: c.id, score: 0, payload: c.payload }));
+    const annotated = await this.deps.reranker.rerank(rerankInput, preset, "trace_path", { reorder: false });
+    const dangerById = new Map<string, { score: number; overlay?: RankingOverlay }>();
+    for (const r of annotated) {
+      const sid = r.payload?.symbolId as string | undefined;
+      if (!sid) continue;
+      dangerById.set(sid, { score: r.score, overlay: r.rankingOverlay });
+    }
+    return dangerById;
+  }
+
   private assemble(
     path: SymbolId[],
     byId: Map<string, { id: string | number; payload: Record<string, unknown> }>,
-    dangerById: Map<string, { score: number; overlay?: RankingOverlay }>,
+    dangerById?: Map<string, { score: number; overlay?: RankingOverlay }>,
   ): TracedPath {
     const steps: PathStep[] = path.map((symbolId) => {
       const payload = byId.get(symbolId)?.payload ?? {};
-      const danger = dangerById.get(symbolId);
-      return {
+      const step: PathStep = {
         symbolId,
         relativePath: (payload.relativePath as string) ?? "",
         startLine: (payload.startLine as number) ?? 0,
         endLine: (payload.endLine as number) ?? 0,
-        dangerOverlay: danger?.overlay,
       };
+      const overlay = dangerById?.get(symbolId)?.overlay;
+      if (overlay) step.dangerOverlay = overlay;
+      return step;
     });
+    if (!dangerById) return { steps }; // lean — no dangerRanking / aggregateDanger
     const dangers = path.map((id) => dangerById.get(id)?.score ?? 0);
     const dangerRanking = steps.map((_, i) => i).sort((a, b) => dangers[b] - dangers[a]);
     const aggregateDanger = dangers.length > 0 ? Math.max(...dangers) : 0;

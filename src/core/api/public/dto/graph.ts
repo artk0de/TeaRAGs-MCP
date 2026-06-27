@@ -101,10 +101,13 @@ export interface TracePathRequest {
   /** End symbol of the path (callee end). */
   to: SymbolId;
   /**
-   * Rerank preset that defines "danger" for the overlay. Default: bugHunt.
-   * Use a per-step danger preset (bugHunt / dangerous / hotspots / blastRadius);
-   * presets that group results (e.g. refactoring) are not meaningful here —
-   * danger is scored per path step, not per group.
+   * Optional rerank preset that scores per-step "danger" for the overlay.
+   * When omitted, trace_path returns a LEAN path enumeration — steps carry
+   * only {symbolId, relativePath, startLine, endLine}, paths stay in
+   * enumeration order, and dangerRanking/aggregateDanger are absent. Pass a
+   * per-step danger preset (bugHunt / dangerous / hotspots / blastRadius) to
+   * attach the overlay and danger-sort the path list; group presets (e.g.
+   * refactoring) are not meaningful here — danger is scored per step.
    */
   rerank?: string;
   /** Max hops on a path (edge count). Default 8. */
@@ -126,10 +129,17 @@ export interface PathStep {
 export interface TracedPath {
   /** ORDERED — execution order, never reordered. */
   steps: PathStep[];
-  /** Indices into `steps`, sorted by per-step danger desc (where to look first). */
-  dangerRanking: number[];
-  /** Path-level score = max per-step danger; used to sort the path list. */
-  aggregateDanger: number;
+  /**
+   * Indices into `steps`, sorted by per-step danger desc (where to look
+   * first). Present ONLY when a `rerank` preset was supplied; absent for a
+   * lean (no-rerank) trace.
+   */
+  dangerRanking?: number[];
+  /**
+   * Path-level score = max per-step danger; sorts the path list. Present
+   * ONLY when a `rerank` preset was supplied; absent for a lean trace.
+   */
+  aggregateDanger?: number;
 }
 
 export interface PathTraceResult {
