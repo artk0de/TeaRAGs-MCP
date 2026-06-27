@@ -126,6 +126,31 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
     expect(entry!.codegraphEnabled).toBe(false);
   });
 
+  it("records qdrantEmbedded=true when indexed against the embedded daemon", async () => {
+    // The embedded daemon binds an ephemeral port that can change on restart.
+    // The entry must remember it was embedded (not the frozen port) so a later
+    // re-index re-resolves the daemon instead of pinning a stale URL.
+    Object.defineProperty(qdrant, "isEmbedded", { value: true, configurable: true });
+    await createTestFile(codebaseDir, "emb.ts", "export const x = 1;");
+    await ingest.indexCodebase(codebaseDir);
+    const status = await ingest.getIndexStatus(codebaseDir);
+
+    const entry = registry.get(status.collectionName!);
+    expect(entry).not.toBeNull();
+    expect(entry!.qdrantEmbedded).toBe(true);
+  });
+
+  it("records qdrantEmbedded=false when indexed against an external Qdrant", async () => {
+    Object.defineProperty(qdrant, "isEmbedded", { value: false, configurable: true });
+    await createTestFile(codebaseDir, "ext.ts", "export const x = 1;");
+    await ingest.indexCodebase(codebaseDir);
+    const status = await ingest.getIndexStatus(codebaseDir);
+
+    const entry = registry.get(status.collectionName!);
+    expect(entry).not.toBeNull();
+    expect(entry!.qdrantEmbedded).toBe(false);
+  });
+
   it("preserves sticky name on reindex of same collection", async () => {
     await createTestFile(codebaseDir, "a.ts", "export const x = 1;");
     await ingest.indexCodebase(codebaseDir);

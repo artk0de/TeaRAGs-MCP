@@ -116,6 +116,10 @@ export class WorktreeOps {
       embeddingModel: source.embeddingModel,
       embeddingDimensions: source.embeddingDimensions,
       qdrantUrl: source.qdrantUrl,
+      // The clone fronts the same Qdrant backend as its source, so inherit the
+      // embedded flag — keeps a worktree reindex on the daemon marker, not the
+      // source's frozen ephemeral port. Mirrors qdrantUrl propagation above.
+      qdrantEmbedded: sourceEntry.qdrantEmbedded,
       codegraphEnabled: source.codegraphEnabled,
       indexedAt: sourceEntry.indexedAt,
       teaRagsVersion: sourceEntry.teaRagsVersion,

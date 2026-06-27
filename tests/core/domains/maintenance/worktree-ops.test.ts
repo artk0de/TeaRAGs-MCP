@@ -28,6 +28,7 @@ function makeDeps(over: Partial<Record<string, unknown>> = {}, calls: string[] =
     embeddingModel: "j",
     embeddingDimensions: 768,
     qdrantUrl: "http://h",
+    qdrantEmbedded: true,
     codegraphEnabled: true,
     indexedAt: "t",
     teaRagsVersion: "1",
@@ -82,6 +83,16 @@ describe("WorktreeOps.create saga", () => {
     expect(recorded).toHaveLength(1);
     expect(deps.registry.setWorktreeProvenance).toHaveBeenCalled();
     expect(res.alias).toContain("worktree-x");
+  });
+
+  it("propagates qdrantEmbedded from the source entry to the worktree clone entry", async () => {
+    // The clone points at the same Qdrant backend as its source, so an embedded
+    // source yields an embedded clone — otherwise a bare-shell reindex of the
+    // worktree would pin the source's frozen port instead of re-resolving.
+    const { deps, recorded } = makeDeps();
+    const ops = new WorktreeOps(deps);
+    await ops.create({ name: "x", createGit: false });
+    expect(recorded[0].qdrantEmbedded).toBe(true);
   });
 
   it("rolls back ALL artifacts including the failing one in reverse on failure", async () => {

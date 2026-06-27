@@ -94,7 +94,7 @@ export type { IngestCodeConfig } from "../../contracts/types/ingest-config.js";
 // the public facade rather than importing core/adapters directly.
 export type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 export { QdrantManager } from "../../adapters/qdrant/client.js";
-export { resolveQdrantUrl } from "../../adapters/qdrant/embedded/daemon.js";
+export { resolveQdrantUrl, EMBEDDED_MARKER } from "../../adapters/qdrant/embedded/daemon.js";
 
 // ── Payload signal descriptor (used by mcp schema-emitting code) ──────
 export type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";

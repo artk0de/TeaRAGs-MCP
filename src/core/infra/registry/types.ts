@@ -12,6 +12,16 @@ export interface CollectionEntry {
   embeddingDimensions: number;
   qdrantUrl: string;
   /**
+   * Whether `qdrantUrl` was the embedded Qdrant daemon at index time. The daemon
+   * binds an ephemeral free port and may rebind on restart, so the stored
+   * `qdrantUrl` is a point-in-time value. Consumers that re-launch indexing seed
+   * the embedded marker (not the frozen port) when this is true, so the worker
+   * re-resolves the daemon (fresh port + reconnect) instead of pinning a stale
+   * URL in external mode. Optional for backward compatibility with pre-existing
+   * registry entries (treated as non-embedded / external).
+   */
+  qdrantEmbedded?: boolean;
+  /**
    * Embedding endpoint the project was last indexed against. Symmetric with
    * `qdrantUrl` — prime CLI / run-prime register-first lookups read it so
    * the digest reflects the actual endpoint, not the current shell's env.

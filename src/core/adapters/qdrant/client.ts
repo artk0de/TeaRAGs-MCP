@@ -132,6 +132,16 @@ export class QdrantManager {
     return this.qdrantUrl;
   }
 
+  /**
+   * True when this manager fronts the embedded Qdrant daemon (a daemon probe was
+   * injected at construction). `url` then holds the daemon's ephemeral port,
+   * which can change on restart — callers that persist connection intent should
+   * record this flag rather than freezing the port. See CollectionEntry.qdrantEmbedded.
+   */
+  get isEmbedded(): boolean {
+    return this.daemon !== undefined;
+  }
+
   get aliases(): QdrantAliasManager {
     return (this._aliases ??= new QdrantAliasManager(this.client));
   }
@@ -353,7 +363,8 @@ export class QdrantManager {
 
   async createSnapshot(name: string): Promise<string> {
     const desc = await this.call(async () => this.client.createSnapshot(name));
-    if (!desc?.name) throw new QdrantOperationError("createSnapshot", `Snapshot creation returned no name for collection ${name}`);
+    if (!desc?.name)
+      throw new QdrantOperationError("createSnapshot", `Snapshot creation returned no name for collection ${name}`);
     return desc.name;
   }
 
@@ -365,7 +376,11 @@ export class QdrantManager {
     const ok = await this.call(async () =>
       this.client.recoverSnapshot(targetCollection, { location, priority: "snapshot" }),
     );
-    if (!ok) throw new QdrantOperationError("recoverFromSnapshot", `Snapshot recovery failed for collection ${targetCollection}`);
+    if (!ok)
+      throw new QdrantOperationError(
+        "recoverFromSnapshot",
+        `Snapshot recovery failed for collection ${targetCollection}`,
+      );
   }
 
   async deleteSnapshot(collection: string, snapshotName: string): Promise<void> {
