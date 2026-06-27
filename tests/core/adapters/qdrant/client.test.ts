@@ -2510,6 +2510,20 @@ describe("QdrantManager", () => {
 
       await expect(externalManager.listCollections()).rejects.toThrow(QdrantUnavailableError);
     });
+
+    it("isEmbedded is true when constructed with an embedded daemon probe", () => {
+      const mgr = new QdrantManager("http://127.0.0.1:57331", undefined, undefined, {
+        startupPhase: () => "ready",
+        pid: 99999,
+        storagePath: "/tmp/qdrant-test",
+      });
+      expect(mgr.isEmbedded).toBe(true);
+    });
+
+    it("isEmbedded is false when constructed without a daemon probe (external Qdrant)", () => {
+      const mgr = new QdrantManager("http://127.0.0.1:6333");
+      expect(mgr.isEmbedded).toBe(false);
+    });
   });
 
   describe("countPoints", () => {

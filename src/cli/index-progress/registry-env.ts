@@ -11,7 +11,7 @@
  * merges process.env over these), preserving explicit overrides.
  */
 
-import type { CollectionEntry } from "../../core/api/public/index.js";
+import { EMBEDDED_MARKER, type CollectionEntry } from "../../core/api/public/index.js";
 
 /** Structural subset of CollectionRegistry used here — keeps tests fake-friendly. */
 export interface RegistryLookup {
@@ -41,13 +41,32 @@ export function pickRegistryEntry(
   return all.reduce((latest, e) => (e.indexedAt > latest.indexedAt ? e : latest));
 }
 
-/** Map a registry entry's stored config to worker env-var overrides. */
+/**
+ * Map a registry entry's stored config to worker env-var overrides.
+ *
+ * QDRANT_URL is seeded too: a brand-new `--name` index from a bare shell would
+ * otherwise leave QDRANT_URL unset, so the worker probes localhost:6333 and then
+ * spawns / attaches the embedded daemon — racing its RocksDB lock (SIGSEGV).
+ *
+ * For an EMBEDDED entry (`qdrantEmbedded`), seed the embedded marker rather than
+ * the stored port: the daemon rebinds an ephemeral port on restart, so the
+ * frozen `qdrantUrl` can be stale, and pinning it would force external mode —
+ * losing the embedded reconnect path. The marker keeps the worker in embedded
+ * mode (`resolveQdrantUrl` → `ensureDaemon`), re-resolving the daemon fresh.
+ *
+ * For an EXTERNAL entry, seed the stored `qdrantUrl` so the worker connects
+ * directly (external mode) to the same backend the operator last indexed
+ * against. Empty-string values (recovered registry stubs) are skipped so they
+ * don't poison the env.
+ */
 export function resolveRegistryEnv(entry: CollectionEntry | null): Record<string, string> {
   if (!entry) return {};
   const env: Record<string, string> = {};
   if (entry.embeddingModel) env.EMBEDDING_MODEL = entry.embeddingModel;
   if (entry.embeddingBaseUrl) env.EMBEDDING_BASE_URL = entry.embeddingBaseUrl;
   if (entry.embeddingFallbackUrl) env.EMBEDDING_FALLBACK_URL = entry.embeddingFallbackUrl;
+  if (entry.qdrantEmbedded) env.QDRANT_URL = EMBEDDED_MARKER;
+  else if (entry.qdrantUrl) env.QDRANT_URL = entry.qdrantUrl;
   if (entry.codegraphEnabled) env.CODEGRAPH_ENABLED = "true";
   return env;
 }

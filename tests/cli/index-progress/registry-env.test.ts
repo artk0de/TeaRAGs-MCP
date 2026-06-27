@@ -38,18 +38,39 @@ describe("resolveRegistryEnv", () => {
       EMBEDDING_MODEL: "m1",
       EMBEDDING_BASE_URL: "http://host:11434",
       EMBEDDING_FALLBACK_URL: "http://localhost:11434",
+      QDRANT_URL: "http://127.0.0.1:6333",
       CODEGRAPH_ENABLED: "true",
     });
   });
 
   it("omits keys the entry does not carry", () => {
     const env = resolveRegistryEnv(entry({ embeddingBaseUrl: undefined, embeddingFallbackUrl: undefined }));
-    expect(env).toEqual({ EMBEDDING_MODEL: "jina-v2" });
+    expect(env).toEqual({ EMBEDDING_MODEL: "jina-v2", QDRANT_URL: "http://127.0.0.1:6333" });
     expect("CODEGRAPH_ENABLED" in env).toBe(false);
   });
 
   it("returns an empty object for a null entry (empty registry)", () => {
     expect(resolveRegistryEnv(null)).toEqual({});
+  });
+
+  it("maps qdrantUrl to a QDRANT_URL env var so the worker reuses the last backend", () => {
+    const env = resolveRegistryEnv(entry({ qdrantUrl: "http://192.168.1.71:6333" }));
+    expect(env.QDRANT_URL).toBe("http://192.168.1.71:6333");
+  });
+
+  it("omits QDRANT_URL when qdrantUrl is an empty string (recovered stub)", () => {
+    const env = resolveRegistryEnv(entry({ qdrantUrl: "" }));
+    expect("QDRANT_URL" in env).toBe(false);
+  });
+
+  it("seeds the embedded marker (not the frozen port) for an embedded entry so the worker re-resolves the daemon", () => {
+    const env = resolveRegistryEnv(entry({ qdrantUrl: "http://127.0.0.1:57331", qdrantEmbedded: true }));
+    expect(env.QDRANT_URL).toBe("embedded");
+  });
+
+  it("seeds the literal qdrantUrl for an external (non-embedded) entry", () => {
+    const env = resolveRegistryEnv(entry({ qdrantUrl: "http://remote-host:6333", qdrantEmbedded: false }));
+    expect(env.QDRANT_URL).toBe("http://remote-host:6333");
   });
 });
 

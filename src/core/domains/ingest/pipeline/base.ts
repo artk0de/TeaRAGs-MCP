@@ -240,6 +240,12 @@ export abstract class BaseIndexingPipeline {
         embeddingModel: this.embeddings.getModel(),
         embeddingDimensions: this.embeddings.getDimensions(),
         qdrantUrl: this.qdrant.url,
+        // Remember WHETHER this was the embedded daemon, not just its current
+        // port — the daemon rebinds an ephemeral port on restart, so a frozen
+        // URL goes stale. Consumers re-seed the embedded marker (fresh resolve +
+        // reconnect) when this is true. Same "what was wired up" principle as
+        // the embedding URLs above.
+        qdrantEmbedded: this.qdrant.isEmbedded,
         ...(embeddingBaseUrl !== undefined ? { embeddingBaseUrl } : {}),
         ...(embeddingFallbackUrl !== undefined ? { embeddingFallbackUrl } : {}),
         // Codegraph is enabled iff the facade wired its deps (remover omitted
