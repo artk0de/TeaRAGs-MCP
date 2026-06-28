@@ -235,6 +235,19 @@ function formatInfraSection(infra: InfraHealth): string[] {
       ? ` · fallback ${e.fallbackUrl} (${e.fallbackAvailable === undefined ? "unknown" : badge(e.fallbackAvailable)})`
       : "";
     lines.push(`embedding: ${e.provider}${primary}${fallback}`);
+
+    // When both endpoints report down the snapshot may be lying: prime probes
+    // health once at session start, so an embedding that recovered since reads
+    // as "unavailable" here. Nudge the agent to confirm live before concluding
+    // search is dead. `fallbackAvailable === false` already implies a fallback
+    // exists and was probed (undefined = unknown → no nudge).
+    const bothEndpointsDown = (e.primaryAvailable ?? e.available) === false && e.fallbackAvailable === false;
+    if (bothEndpointsDown) {
+      lines.push(
+        "[hint] both embedding endpoints report unavailable — prime is a point-in-time snapshot; " +
+          "call `get_index_status` for live infra health before assuming search is down.",
+      );
+    }
   } else {
     // Providers without a url (e.g. onnx): keep the legacy headline form.
     lines.push(`embedding: ${badge(e.available)} · ${e.provider}`);

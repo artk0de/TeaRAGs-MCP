@@ -124,3 +124,62 @@ describe("formatPrime — Infra section (embedding endpoints)", () => {
     expect(out).not.toContain(" at undefined");
   });
 });
+
+describe("formatPrime — Infra section (both-endpoints-down hint)", () => {
+  it("appends a get_index_status hint when both primary and fallback ollama are unavailable", () => {
+    const out = formatPrime(
+      primeWith({
+        available: false,
+        provider: "ollama",
+        url: "http://gpu-server:11434",
+        primaryAvailable: false,
+        fallbackUrl: "http://127.0.0.1:11434",
+        fallbackAvailable: false,
+      }),
+      at,
+    );
+    expect(out).toContain("[hint]");
+    expect(out).toContain("get_index_status");
+    expect(out).toContain("point-in-time snapshot");
+  });
+
+  it("omits the hint when the fallback is still available under failover", () => {
+    const out = formatPrime(
+      primeWith({
+        available: true,
+        provider: "ollama",
+        url: "http://gpu-server:11434",
+        primaryAvailable: false,
+        fallbackUrl: "http://127.0.0.1:11434",
+        fallbackAvailable: true,
+      }),
+      at,
+    );
+    expect(out).not.toContain("get_index_status");
+  });
+
+  it("omits the hint when the fallback health is unknown (not probed)", () => {
+    const out = formatPrime(
+      primeWith({
+        available: false,
+        provider: "ollama",
+        url: "http://gpu-server:11434",
+        primaryAvailable: false,
+        fallbackUrl: "http://127.0.0.1:11434",
+      }),
+      at,
+    );
+    expect(out).not.toContain("get_index_status");
+  });
+
+  it("omits the hint for url-less providers (e.g. onnx) even when unavailable", () => {
+    const out = formatPrime(
+      primeWith({
+        available: false,
+        provider: "onnx",
+      }),
+      at,
+    );
+    expect(out).not.toContain("get_index_status");
+  });
+});
