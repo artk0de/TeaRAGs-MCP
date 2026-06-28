@@ -87,6 +87,65 @@ export function expandClassBodyMacros(node: AstNode): DeclaredMethod[] {
     return out;
   }
 
+  // enum :status, { active: 0 } / enum status: { active: 0 } / enum status: [:active]
+  // — the VALUE keys (not the leading symbol) drive synthesis: the attribute
+  // accessor (`status`/`status=`) plus a predicate (`active?`) and bang
+  // (`active!`) per value. Scopes (`Model.active`) are intentionally omitted —
+  // they are conditional (`scopes: false`) and class-level, so synthesising them
+  // risks fabricating an edge target the model may not define.
+  if (macroName === "enum") {
+    if (!args) return [];
+    const first = args.namedChildren[0];
+    let enumName: string | null = null;
+    let valuesNode: AstNode | null = null;
+    if (first?.type === "simple_symbol") {
+      enumName = stripSymbolColon(first.text);
+      valuesNode = args.namedChildren[1] ?? null;
+    } else if (first?.type === "pair") {
+      const key = first.childForFieldName("key") ?? first.namedChildren[0];
+      enumName = key ? enumKeyName(key) : null;
+      valuesNode = first.childForFieldName("value") ?? first.namedChildren[1] ?? null;
+    }
+    const values = valuesNode ? enumValueNames(valuesNode) : [];
+    if (!enumName || values.length === 0) return [];
+    const out: DeclaredMethod[] = [mk(enumName, "instance", "enum"), mk(`${enumName}=`, "instance", "enum")];
+    for (const value of values) {
+      out.push(mk(`${value}?`, "instance", "enum"), mk(`${value}!`, "instance", "enum"));
+    }
+    return out;
+  }
+
+  // aasm do; state :sleeping; event :run; end — AASM state machine. Synthesise a
+  // predicate (`sleeping?`) per state and the event method + bang (`run`/`run!`)
+  // per event. Gated on the `aasm` macro name AND on the inner `state`/`event`
+  // keywords inside ITS block, so a stray `state`/`event` elsewhere is never
+  // expanded. Scopes (`Model.sleeping`) are omitted — conditional on
+  // `create_scopes` and class-level; the predicate/event methods are always made.
+  if (macroName === "aasm") {
+    const block =
+      node.childForFieldName("block") ?? node.children.find((c) => c.type === "do_block" || c.type === "block");
+    if (!block) return [];
+    const body = block.childForFieldName("body") ?? block;
+    const out: DeclaredMethod[] = [];
+    for (const stmt of body.namedChildren) {
+      if (stmt.type !== "call" && stmt.type !== "method_call") continue;
+      const inner = stmt.childForFieldName("method") ?? stmt.children.find((c) => c.type === "identifier");
+      const innerName = inner?.text;
+      if (innerName !== "state" && innerName !== "event") continue;
+      const innerArgs = stmt.childForFieldName("arguments") ?? stmt.children.find((c) => c.type === "argument_list");
+      const firstSym = innerArgs?.namedChildren[0];
+      if (firstSym?.type !== "simple_symbol") continue;
+      const base = stripSymbolColon(firstSym.text);
+      if (base.length === 0) continue;
+      if (innerName === "state") {
+        out.push(mk(`${base}?`, "instance", "state-machine"));
+      } else {
+        out.push(mk(base, "instance", "state-machine"), mk(`${base}!`, "instance", "state-machine"));
+      }
+    }
+    return out;
+  }
+
   // Generic: project each leading symbol arg through the catalogue `declares`.
   const entry = RUBY_DSL[macroName];
   if (!entry?.declares || !args) return [];
@@ -143,4 +202,32 @@ function literalNameFromArg(arg: AstNode): string | null {
     return text.length > 0 ? text : null;
   }
   return null;
+}
+
+/** Value names of an enum's values container — `hash` keys or `array` symbols. */
+function enumValueNames(node: AstNode): string[] {
+  const out: string[] = [];
+  if (node.type === "hash") {
+    for (const pair of node.namedChildren) {
+      if (pair.type !== "pair") continue;
+      const key = pair.childForFieldName("key") ?? pair.namedChildren[0];
+      const name = key ? enumKeyName(key) : null;
+      if (name) out.push(name);
+    }
+  } else if (node.type === "array") {
+    for (const el of node.namedChildren) {
+      const name = enumKeyName(el);
+      if (name) out.push(name);
+    }
+  }
+  return out;
+}
+
+/** A single enum key/value name from a `hash_key_symbol` / `simple_symbol` / string node. */
+function enumKeyName(node: AstNode): string | null {
+  if (node.type === "hash_key_symbol") {
+    const text = node.text.replace(/:$/, "");
+    return text.length > 0 ? text : null;
+  }
+  return literalNameFromArg(node);
 }

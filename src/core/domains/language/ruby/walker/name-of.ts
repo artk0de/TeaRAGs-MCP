@@ -69,6 +69,15 @@ export function rbNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
     const id = node.childForFieldName("name");
     if (id) {
       const kind = methodKindFromClassify(node) ?? "instance";
+      // bd tea-rags-mcp-82o24 — ActiveSupport::Concern `class_methods do ... end`:
+      // a plain `def` inside the block becomes a CLASS method of the including
+      // class. Collect it static-form (`Module.foo`) so a `C.foo` call on the
+      // includer resolves through the include-MRO to the module definition
+      // instead of a file-only edge. Instance defs in `included do` / the module
+      // body stay instance — `C.track` must NOT resolve to an instance `#track`.
+      if (node.type === "method" && kind === "instance" && rubyMethodInsideClassMethodsBlock(node)) {
+        return { name: id.text, descendsInto: false, methodKind: "static" };
+      }
       // bd tea-rags-mcp-08v2 — `extend self` in a module body promotes every
       // instance method to ALSO be callable as a module-level method (`M.foo`
       // alongside `M#foo`). The chunker still emits a single symbolId per def
@@ -118,6 +127,29 @@ export function rbNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
     }
   }
   return null;
+}
+
+/**
+ * Whether a `method` def is lexically inside an ActiveSupport::Concern
+ * `class_methods do ... end` (or `class_methods { ... }`) block — the
+ * receiverless `class_methods` DSL whose body methods become class methods of
+ * the including class. Stops at the first enclosing `class`/`module` so a `def`
+ * inside a nested class within the block is NOT misattributed.
+ */
+function rubyMethodInsideClassMethodsBlock(methodNode: AstNode): boolean {
+  let p: AstNode | null = methodNode.parent;
+  while (p) {
+    if (p.type === "class" || p.type === "module") return false;
+    if (p.type === "do_block" || p.type === "block") {
+      const call = p.parent;
+      if (call && (call.type === "call" || call.type === "method_call") && !call.childForFieldName("receiver")) {
+        const m = call.childForFieldName("method") ?? call.children.find((c) => c.type === "identifier");
+        if (m?.text === "class_methods") return true;
+      }
+    }
+    p = p.parent;
+  }
+  return false;
 }
 
 function rubyMethodInsideExtendSelfModule(methodNode: AstNode): boolean {

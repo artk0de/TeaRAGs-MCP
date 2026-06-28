@@ -333,3 +333,80 @@ describe("rbNameOf — scopeResolutionText with deep nesting (A::B::C)", () => {
     expect(rbNameOf(node)).toEqual({ name: "A::B::C", descendsInto: true });
   });
 });
+
+/**
+ * Grammar-compat synthetic AstNode tests.
+ * These cover the `children.find(...)` fallback paths in `macroNameOf` and
+ * `expandClassBodyMacros` that fire when the grammar does not expose explicit
+ * field names — i.e. when `childForFieldName("method")` / `childForFieldName("arguments")`
+ * return null (older grammar versions, or non-standard node shapes). We construct
+ * a minimal fake node where `childForFieldName` always returns null so the
+ * `?? node.children.find(...)` arm is forced.
+ */
+describe("rbNameOf — grammar-compat children.find fallback paths", () => {
+  function fakeNode(
+    type: string,
+    text: string,
+    children: ReturnType<typeof fakeNode>[] = [],
+    namedChildren: ReturnType<typeof fakeNode>[] = [],
+  ) {
+    return {
+      type,
+      text,
+      children: children as unknown as readonly ReturnType<typeof fakeNode>[],
+      namedChildren: namedChildren as unknown as readonly ReturnType<typeof fakeNode>[],
+      startPosition: { row: 0, column: 0 },
+      endPosition: { row: 0, column: text.length },
+      parent: null,
+      previousNamedSibling: null,
+      // childForFieldName always returns null to force the children.find fallback.
+      childForFieldName: (_field: string) => null,
+      child: (_i: number) => null,
+      namedChild: (_i: number) => null,
+    };
+  }
+
+  it("macroNameOf uses children.find for method identifier when childForFieldName returns null", () => {
+    // Synthetic `define_method(:dynamic) { }` call node where ALL field lookups
+    // return null, so expandClassBodyMacros and macroNameOf fall back to
+    // `node.children.find(c => c.type === "identifier")` and
+    // `node.children.find(c => c.type === "argument_list")` respectively.
+    const identNode = fakeNode("identifier", "define_method");
+    const symArg = fakeNode("simple_symbol", ":dynamic");
+    const argList = fakeNode("argument_list", "(:dynamic)", [], [symArg]);
+    const callNode = fakeNode("call", "define_method(:dynamic) { }", [identNode, argList], []);
+
+    // rbNameOf → expandClassBodyMacros uses children.find for method (fallback line 70)
+    // and for arguments (fallback line 82); macroNameOf uses children.find for method.
+    const result = rbNameOf(callNode as never);
+    expect(result).toMatchObject({ name: "dynamic", descendsInto: false, methodKind: "instance" });
+  });
+
+  it("rbNameOf returns null for a call node with only non-identifier children (no method found)", () => {
+    // children has no `identifier` node → macroNameOf returns undefined → expandClassBodyMacros
+    // finds macroName="" → entry not in RUBY_DSL → returns []. rbNameOf emits null.
+    const nonIdentChild = fakeNode("integer", "42");
+    const callNode = fakeNode("call", "42", [nonIdentChild], []);
+    expect(rbNameOf(callNode as never)).toBeNull();
+  });
+});
+
+describe("rbNameOf — ActiveSupport::Concern class_methods block (bd tea-rags-mcp-82o24)", () => {
+  it("`class_methods do; def find_tracked; end; end` → STATIC (class method of the includer)", () => {
+    const tree = parse("module Trackable\n  class_methods do\n    def find_tracked; end\n  end\nend\n");
+    const def = findFirst(tree, "method");
+    expect(rbNameOf(def)).toEqual({ name: "find_tracked", descendsInto: false, methodKind: "static" });
+  });
+
+  it("`class_methods { def x; end }` brace-block form → STATIC", () => {
+    const tree = parse("module M\n  class_methods { def x; end }\nend\n");
+    const def = findFirst(tree, "method");
+    expect(rbNameOf(def)).toEqual({ name: "x", descendsInto: false, methodKind: "static" });
+  });
+
+  it("`included do; def track; end; end` → INSTANCE (regular instance method, NOT static)", () => {
+    const tree = parse("module Trackable\n  included do\n    def track; end\n  end\nend\n");
+    const def = findFirst(tree, "method");
+    expect(rbNameOf(def)).toEqual({ name: "track", descendsInto: false, methodKind: "instance" });
+  });
+});
