@@ -6,6 +6,10 @@ import {
   spliceVersionSection,
 } from "../../scripts/lib/render-changelog.js";
 
+// Themes are intentionally NOT in canonical order (workflow, search, fixes,
+// codeIntel) so the rendering-order tests prove the renderer re-sorts by the
+// fixed taxonomy rather than echoing array order. `indexing` and `language` are
+// absent so the empty-theme-omission tests have something to assert against.
 const DATA = {
   version: "1.30.0",
   date: "2026-06-06",
@@ -13,16 +17,23 @@ const DATA = {
   repoUrl: "https://github.com/artk0de/TeaRAGs-MCP",
   groups: [
     {
-      domain: "explore",
+      theme: "workflow",
+      items: [{ description: "manage git worktrees from the CLI and MCP", commits: ["c7a0125", "2239d32"] }],
+    },
+    {
+      theme: "search",
+      items: [{ description: "rerank presets resolve adaptive bounds per query", commits: ["abc1234", "def5678"] }],
+    },
+    {
+      theme: "fixes",
+      items: [{ description: "gitignore whitelists descend into subdirectories", commits: ["90d8bd8"] }],
+    },
+    {
+      theme: "codeIntel",
       items: [
         {
-          description: "rerank presets resolve adaptive bounds per query",
-          commits: ["abc1234", "def5678"],
-        },
-        {
-          kind: "fix",
-          description: "preserve codegraph section in find_symbol outline",
-          commits: ["ae55b29"],
+          description: "Ruby call-graph navigation returns complete results through chained calls",
+          commits: ["20d6d31", "a913793"],
         },
       ],
     },
@@ -30,7 +41,7 @@ const DATA = {
   // allCommits carries everything (incl. refactor) — only the spoiler shows them.
   allCommits: [
     { hash: "abc1234", subject: "feat(explore): adaptive bounds per query" },
-    { hash: "ae55b29", subject: "fix(explore): preserve codegraph section" },
+    { hash: "90d8bd8", subject: "fix(ingest): gitignore whitelist subdirs" },
     { hash: "aaa1111", subject: "refactor(explore): move helper" },
   ],
 };
@@ -42,16 +53,36 @@ describe("renderChangelogSection", () => {
     );
   });
 
-  it("renders feat items without a prefix", () => {
-    expect(renderChangelogSection(DATA)).toContain(
-      "* rerank presets resolve adaptive bounds per query ([abc1234](https://github.com/artk0de/TeaRAGs-MCP/commit/abc1234), [def5678](https://github.com/artk0de/TeaRAGs-MCP/commit/def5678))",
-    );
+  it("renders product theme headings with emoji and label", () => {
+    const out = renderChangelogSection(DATA);
+    expect(out).toContain("### 🔎 Search & ranking");
+    expect(out).toContain("### 🧠 Code intelligence");
+    expect(out).toContain("### 🛠 CLI & workflow");
+    expect(out).toContain("### 🩹 Fixes");
   });
 
-  it("marks fix items with a `fix:` prefix", () => {
-    expect(renderChangelogSection(DATA)).toContain(
-      "* fix: preserve codegraph section in find_symbol outline ([ae55b29](https://github.com/artk0de/TeaRAGs-MCP/commit/ae55b29))",
-    );
+  it("orders themes by the fixed taxonomy, not by array order", () => {
+    const out = renderChangelogSection(DATA);
+    expect(out.indexOf("🔎 Search & ranking")).toBeLessThan(out.indexOf("🧠 Code intelligence"));
+    expect(out.indexOf("🧠 Code intelligence")).toBeLessThan(out.indexOf("🛠 CLI & workflow"));
+    expect(out.indexOf("🛠 CLI & workflow")).toBeLessThan(out.indexOf("🩹 Fixes"));
+  });
+
+  it("omits themes that have no items", () => {
+    const out = renderChangelogSection(DATA);
+    expect(out).not.toContain("Indexing & performance");
+    expect(out).not.toContain("Language support");
+  });
+
+  it("renders items as plain benefit bullets without inline hash links", () => {
+    const out = renderChangelogSection(DATA);
+    expect(out).toContain("* rerank presets resolve adaptive bounds per query");
+    expect(out).not.toContain("/commit/");
+    expect(out).not.toContain("([abc1234]");
+  });
+
+  it("does not prefix fix items (Fixes is its own section)", () => {
+    expect(renderChangelogSection(DATA)).not.toContain("* fix:");
   });
 
   it("never renders the full commit list nor refactor commits in the changelog", () => {
@@ -68,10 +99,16 @@ describe("renderReleaseNotes", () => {
     );
   });
 
-  it("renders the same declarative groups as the changelog, fix marked", () => {
+  it("renders the same product theme headings as the changelog", () => {
     const out = renderReleaseNotes(DATA);
-    expect(out).toContain("### explore");
-    expect(out).toContain("* fix: preserve codegraph section in find_symbol outline");
+    expect(out).toContain("### 🔎 Search & ranking");
+    expect(out).toContain("### 🩹 Fixes");
+  });
+
+  it("renders clean benefit bullets without a fix prefix", () => {
+    const out = renderReleaseNotes(DATA);
+    expect(out).not.toContain("* fix:");
+    expect(out).toContain("* gitignore whitelists descend into subdirectories");
   });
 
   it("wraps the full commit list (incl. refactor) in a Full Commits spoiler", () => {

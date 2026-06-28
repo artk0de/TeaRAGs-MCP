@@ -2,23 +2,37 @@
 // Pure renderers consumed by build-changelog-artifacts.js and retro-changelog.js.
 // One JSON source (release-notes.json) → two divergent markdown artifacts.
 
-function hashLinks(commits, repoUrl) {
-  return commits.map((h) => `[${h}](${repoUrl}/commit/${h})`).join(", ");
+// Fixed product-theme taxonomy. The order here IS the render order; a theme with
+// no items in a release is skipped. Keys match release-notes.json
+// `groups[].theme`. The agent groups commits by user-facing capability (not by
+// internal module), so headings read as product surfaces, not code domains.
+const THEMES = [
+  { key: "search", label: "🔎 Search & ranking" },
+  { key: "codeIntel", label: "🧠 Code intelligence" },
+  { key: "indexing", label: "⚡ Indexing & performance" },
+  { key: "language", label: "🗣 Language support" },
+  { key: "workflow", label: "🛠 CLI & workflow" },
+  { key: "fixes", label: "🩹 Fixes" },
+];
+
+// Product bullets are benefit-framed prose with no inline hash links — full
+// per-commit traceability lives in the Full Commits spoiler (GitHub release) and
+// the compareUrl version header (CHANGELOG). Fixes are their own theme, so no
+// per-item `fix:` prefix.
+function renderItem(it) {
+  return `* ${it.description}`;
 }
 
-// Declarative groups carry only feat + fix items (the agent excludes refactor /
-// perf / docs / chore — those live only in the Full Commits spoiler). Fix items
-// are marked with a `fix:` prefix; feat items carry no prefix.
-function renderItem(it, repoUrl) {
-  const prefix = it.kind === "fix" ? "fix: " : "";
-  return `* ${prefix}${it.description} (${hashLinks(it.commits, repoUrl)})`;
-}
-
+// Render only the themes present in this release, always in taxonomy order.
 function renderGroups(data) {
-  return data.groups
-    .map((g) => {
-      const lines = g.items.map((it) => renderItem(it, data.repoUrl)).join("\n");
-      return `### ${g.domain}\n\n${lines}`;
+  const byTheme = new Map(data.groups.map((g) => [g.theme, g]));
+  return THEMES.filter((t) => byTheme.has(t.key))
+    .map((t) => {
+      const lines = byTheme
+        .get(t.key)
+        .items.map((it) => renderItem(it))
+        .join("\n");
+      return `### ${t.label}\n\n${lines}`;
     })
     .join("\n\n");
 }
@@ -28,12 +42,13 @@ function versionHeader(data) {
   return `## [${data.version}](${data.compareUrl}) (${data.date})`;
 }
 
-// CHANGELOG.md / website: header + declarative only + inline hash links, no full list.
+// CHANGELOG.md / website: header + product themes only. No inline hash links, no
+// full commit list — release-level traceability via the compareUrl in the header.
 export function renderChangelogSection(data) {
   return `${versionHeader(data)}\n\n${renderGroups(data)}\n`;
 }
 
-// GitHub release notes: header (with date) + declarative groups + full commits spoiler.
+// GitHub release notes: header (with date) + product themes + full commits spoiler.
 export function renderReleaseNotes(data) {
   const body = renderGroups(data);
   const commits = data.allCommits.map((c) => `- ${c.hash} ${c.subject}`).join("\n");
