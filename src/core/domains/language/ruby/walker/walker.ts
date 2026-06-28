@@ -864,11 +864,38 @@ function extractCallbackSymbols(callNode: AstNode): string[] {
   if (!args) return [];
   const out: string[] = [];
   for (const arg of args.namedChildren) {
-    if (arg.type !== "simple_symbol") break;
-    const base = arg.text.startsWith(":") ? arg.text.slice(1) : arg.text;
-    if (base.length > 0) out.push(base);
+    const direct = callbackNameFromArg(arg);
+    if (direct !== null) {
+      out.push(direct);
+      continue;
+    }
+    // `before_action [:a, :b]` — an array literal names one callback per element.
+    if (arg.type === "array") {
+      for (const el of arg.namedChildren) {
+        const name = callbackNameFromArg(el);
+        if (name !== null) out.push(name);
+      }
+      continue;
+    }
+    // A guard kwarg pair (`only:` / `if:`), proc/lambda, or any other arg ends
+    // the leading run of callback-method names.
+    break;
   }
   return out;
+}
+
+/** Method name a callback positional arg names: `:sym` or `"str"`; `null` otherwise. */
+function callbackNameFromArg(arg: AstNode): string | null {
+  if (arg.type === "simple_symbol") {
+    const base = arg.text.startsWith(":") ? arg.text.slice(1) : arg.text;
+    return base.length > 0 ? base : null;
+  }
+  if (arg.type === "string" || arg.type === "string_literal") {
+    const inner = arg.namedChildren.find((c) => c.type === "string_content");
+    const text = inner ? inner.text : arg.text.replace(/^["']|["']$/g, "");
+    return text.length > 0 ? text : null;
+  }
+  return null;
 }
 
 function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>): CallRef[] {

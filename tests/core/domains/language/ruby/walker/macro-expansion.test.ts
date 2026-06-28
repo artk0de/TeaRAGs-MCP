@@ -328,3 +328,156 @@ describe("expandClassBodyMacros — children.find fallback paths (grammar-compat
     expect(Array.isArray(result)).toBe(true);
   });
 });
+
+describe("expandClassBodyMacros — enum value methods (bd tea-rags-mcp-82o24)", () => {
+  const sig = (out: { name: string; kind: string; category: string }[]) => out.map((m) => `${m.name}:${m.kind}`);
+  const EXPECTED = [
+    "status:instance",
+    "status=:instance",
+    "active?:instance",
+    "active!:instance",
+    "archived?:instance",
+    "archived!:instance",
+  ];
+
+  it("Rails 7 positional+hash `enum :status, { active: 0, archived: 1 }` → accessor + per-value ?/! ", () => {
+    const out = expandClassBodyMacros(firstStmt("class M\n  enum :status, { active: 0, archived: 1 }\nend\n"));
+    expect(sig(out)).toEqual(EXPECTED);
+    expect(out.every((m) => m.category === "enum")).toBe(true);
+  });
+
+  it("Rails 6 kwarg-hash `enum status: { active: 0, archived: 1 }` → same set", () => {
+    const out = expandClassBodyMacros(firstStmt("class M\n  enum status: { active: 0, archived: 1 }\nend\n"));
+    expect(sig(out)).toEqual(EXPECTED);
+  });
+
+  it("Rails 6 kwarg-array `enum status: [:active, :archived]` → same set", () => {
+    const out = expandClassBodyMacros(firstStmt("class M\n  enum status: [:active, :archived]\nend\n"));
+    expect(sig(out)).toEqual(EXPECTED);
+  });
+
+  it("enum with no parseable values yields nothing (defensive)", () => {
+    expect(expandClassBodyMacros(firstStmt("class M\n  enum :status\nend\n"))).toEqual([]);
+  });
+});
+
+describe("expandClassBodyMacros — aasm state machine (bd tea-rags-mcp-82o24)", () => {
+  it("aasm do; state :x; event :y; end → predicate per state + method/bang per event", () => {
+    const src =
+      "class Job\n  aasm do\n    state :sleeping, initial: true\n    state :running\n    event :run do\n    end\n    event :stop\n  end\nend\n";
+    const out = expandClassBodyMacros(firstStmt(src));
+    expect(out.map((m) => `${m.name}:${m.kind}`)).toEqual([
+      "sleeping?:instance",
+      "running?:instance",
+      "run:instance",
+      "run!:instance",
+      "stop:instance",
+      "stop!:instance",
+    ]);
+    expect(out.every((m) => m.category === "state-machine")).toBe(true);
+  });
+
+  it("aasm brace-block form `aasm { state :a }` → a?", () => {
+    const out = expandClassBodyMacros(firstStmt("class J\n  aasm { state :a }\nend\n"));
+    expect(out.map((m) => m.name)).toEqual(["a?"]);
+  });
+
+  it("empty aasm block yields nothing (defensive)", () => {
+    expect(expandClassBodyMacros(firstStmt("class J\n  aasm do\n  end\nend\n"))).toEqual([]);
+  });
+
+  it("aasm with only events (no states) → event method + bang per event, no predicates", () => {
+    const src = "class Task\n  aasm do\n    event :start\n    event :finish\n  end\nend\n";
+    const out = expandClassBodyMacros(firstStmt(src));
+    expect(out.map((m) => `${m.name}:${m.kind}`)).toEqual([
+      "start:instance",
+      "start!:instance",
+      "finish:instance",
+      "finish!:instance",
+    ]);
+    expect(out.every((m) => m.category === "state-machine")).toBe(true);
+  });
+
+  it("aasm with only states (no events) → one predicate per state, no event methods", () => {
+    const src = "class Doc\n  aasm do\n    state :draft\n    state :published\n  end\nend\n";
+    const out = expandClassBodyMacros(firstStmt(src));
+    expect(out.map((m) => `${m.name}:${m.kind}`)).toEqual(["draft?:instance", "published?:instance"]);
+  });
+});
+
+/**
+ * Synthetic AstNode tests for grammar-compat fallback paths INSIDE the `aasm`
+ * branch of expandClassBodyMacros. These paths fire when the inner statements
+ * of an aasm block do not expose explicit `method` / `arguments` field names
+ * (e.g. tree-sitter grammars that lack these fields for bare identifier calls).
+ * We reuse the same `fakeNode` builder pattern used above.
+ */
+describe("expandClassBodyMacros — aasm inner-loop children.find fallback paths (grammar-compat)", () => {
+  function fakeAsmNode(
+    type: string,
+    text: string,
+    children: ReturnType<typeof fakeAsmNode>[] = [],
+    namedChildren: ReturnType<typeof fakeAsmNode>[] = [],
+  ) {
+    return {
+      type,
+      text,
+      children: children as unknown as readonly ReturnType<typeof fakeAsmNode>[],
+      namedChildren: namedChildren as unknown as readonly ReturnType<typeof fakeAsmNode>[],
+      startPosition: { row: 0, column: 0 },
+      endPosition: { row: 0, column: text.length },
+      parent: null,
+      previousNamedSibling: null,
+      childForFieldName: (_field: string) => null,
+      child: (_i: number) => null,
+      namedChild: (_i: number) => null,
+    };
+  }
+
+  it("aasm block with inner `state :sleeping` where childForFieldName returns null → falls back to children.find for method + args", () => {
+    // Simulates an `aasm do; state :sleeping; end` node tree where ALL
+    // field lookups return null, forcing:
+    //   1. `node.children.find(c => c.type === "identifier")` for the outer method name
+    //   2. `node.children.find(c => c.type === "do_block" || c.type === "block")` for the block
+    //   3. `stmt.children.find(c => c.type === "identifier")` for inner stmt method
+    //   4. `stmt.children.find(c => c.type === "argument_list")` for inner stmt args
+    const aasmIdent = fakeAsmNode("identifier", "aasm");
+    const stateIdent = fakeAsmNode("identifier", "state");
+    const symArg = fakeAsmNode("simple_symbol", ":sleeping");
+    const innerArgList = fakeAsmNode("argument_list", "(:sleeping)", [], [symArg]);
+    // inner stmt `state :sleeping` — children holds the identifier + arg list for fallback
+    const innerStmt = fakeAsmNode("call", "state :sleeping", [stateIdent, innerArgList], []);
+    // do_block — namedChildren holds inner statements (body fallback: block.childForFieldName("body") → null → block itself)
+    const doBlock = fakeAsmNode("do_block", "do\n  state :sleeping\nend", [], [innerStmt]);
+    // outer aasm call — children holds identifier + do_block for fallback
+    const aasmCall = fakeAsmNode("call", "aasm do\n  state :sleeping\nend", [aasmIdent, doBlock], []);
+
+    const out = expandClassBodyMacros(aasmCall as never);
+    // Should synthesise one predicate for the single state
+    expect(out).toEqual([expect.objectContaining({ name: "sleeping?", kind: "instance", category: "state-machine" })]);
+  });
+});
+
+describe("expandClassBodyMacros — enum string / hash-rocket key forms", () => {
+  it('enum status: { "active" => 0 } (string key) → accessor + per-value ?/!', () => {
+    // Exercises enumKeyName → literalNameFromArg for string-type hash keys
+    // (the `"active" => 0` form uses a string node as the pair key, not hash_key_symbol).
+    const out = expandClassBodyMacros(firstStmt('class M\n  enum status: { "active" => 0, "archived" => 1 }\nend\n'));
+    const names = out.map((m) => m.name);
+    expect(names).toContain("active?");
+    expect(names).toContain("active!");
+    expect(names).toContain("archived?");
+    expect(names).toContain("archived!");
+    expect(out[0]).toMatchObject({ name: "status", kind: "instance", category: "enum" });
+  });
+
+  it("enum :status, { :active => 0 } (hash-rocket simple_symbol key) → accessor + per-value ?/!", () => {
+    // Exercises enumKeyName → literalNameFromArg for simple_symbol-type hash keys
+    // (the `:active => 0` form uses a simple_symbol node as the pair key, not hash_key_symbol).
+    const out = expandClassBodyMacros(firstStmt("class M\n  enum :status, { :active => 0, :archived => 1 }\nend\n"));
+    const names = out.map((m) => m.name);
+    expect(names).toContain("active?");
+    expect(names).toContain("archived!");
+    expect(out[0]).toMatchObject({ name: "status", category: "enum" });
+  });
+});

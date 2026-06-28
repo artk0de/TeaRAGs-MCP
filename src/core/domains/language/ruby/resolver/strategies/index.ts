@@ -4,6 +4,7 @@ export { RubyLocalTypeSymbolResolutionStrategy } from "./ruby-local-type.js";
 export { RubyIvarFieldSymbolResolutionStrategy } from "./ruby-ivar-field.js";
 export { RubyReturnTypeBindingSymbolResolutionStrategy } from "./ruby-return-type-binding.js";
 export { RubyConstantSymbolResolutionStrategy } from "./ruby-constant.js";
+export { RubyEnqueueDispatchSymbolResolutionStrategy } from "./ruby-enqueue-dispatch.js";
 export { RubyExplicitRequireSymbolResolutionStrategy } from "./ruby-explicit-require.js";
 export { RubyArRelationGuardSymbolResolutionStrategy } from "./ruby-ar-relation-guard.js";
 export { RubyChainTypeSymbolResolutionStrategy } from "./ruby-chain-type.js";

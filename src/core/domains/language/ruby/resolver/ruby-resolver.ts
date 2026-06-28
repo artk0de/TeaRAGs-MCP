@@ -24,12 +24,13 @@
  *   3. localType (receiver.X via walker-bound local type — terminal guard)
  *   4. ivarField (@ivar.X via walker-inferred classFieldTypes — terminal guard)
  *   5. returnTypeBinding (x.X via localCallBindings + functionReturnTypes — additive)
- *   6. constant (Zeitwerk-style Constant.X via resolveConstant)
- *   7. explicitRequire (receiver names a require / require_relative import)
- *   8. chainType (multi-hop dotted chain via propagation engine — terminal guard)
- *   9. arRelationGuard (AR::Relation chain receiver — terminal guard)
- *  10. receiverSetDrop (any remaining receiver-set call — terminal guard)
- *  11. bareCall (bare-call global short-name fallback — last pass)
+ *   6. enqueueDispatch (Worker.perform_async / Job.perform_later → Worker#perform — additive)
+ *   7. constant (Zeitwerk-style Constant.X via resolveConstant)
+ *   8. explicitRequire (receiver names a require / require_relative import)
+ *   9. chainType (multi-hop dotted chain via propagation engine — terminal guard)
+ *  10. arRelationGuard (AR::Relation chain receiver — terminal guard)
+ *  11. receiverSetDrop (any remaining receiver-set call — terminal guard)
+ *  12. bareCall (bare-call global short-name fallback — last pass)
  */
 
 import {
@@ -57,6 +58,7 @@ import {
   RubyConeDispatchResolver,
   RubyConstantSymbolResolutionStrategy,
   RubyDynamicDispatchResolver,
+  RubyEnqueueDispatchSymbolResolutionStrategy,
   RubyExplicitRequireSymbolResolutionStrategy,
   RubyIvarFieldSymbolResolutionStrategy,
   RubyLocalTypeSymbolResolutionStrategy,
@@ -104,6 +106,7 @@ export class RubyCallResolver implements CallResolver {
       new RubyLocalTypeSymbolResolutionStrategy(cfg),
       new RubyIvarFieldSymbolResolutionStrategy(cfg),
       new RubyReturnTypeBindingSymbolResolutionStrategy(cfg),
+      new RubyEnqueueDispatchSymbolResolutionStrategy(cfg),
       new RubyConstantSymbolResolutionStrategy(cfg),
       new RubyExplicitRequireSymbolResolutionStrategy(cfg),
       new RubyChainTypeSymbolResolutionStrategy(cfg),

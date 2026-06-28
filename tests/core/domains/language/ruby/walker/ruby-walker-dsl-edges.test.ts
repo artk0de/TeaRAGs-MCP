@@ -71,6 +71,28 @@ describe("ruby-walker duzy — callback macro edges", () => {
     // bare-receiver edge to `x` may be emitted.
     expect(calls.filter((c) => c.receiver === null).map((c) => c.member)).not.toContain("x");
   });
+
+  it("`before_action [:a, :b]` array form emits one callback CallRef per element", () => {
+    const src = "class C\n  before_action [:a, :b]\nend\n";
+    const calls = callsOf(src, [{ symbolId: "C", scope: ["C"], startLine: 1, endLine: 3 }]);
+    const members = calls.filter((c) => c.receiver === null).map((c) => c.member);
+    expect(members).toContain("a");
+    expect(members).toContain("b");
+  });
+
+  it('`before_action "authenticate"` string form emits a callback CallRef', () => {
+    const src = 'class C\n  before_action "authenticate"\nend\n';
+    const calls = callsOf(src, [{ symbolId: "C", scope: ["C"], startLine: 1, endLine: 3 }]);
+    expect(calls.filter((c) => c.receiver === null).map((c) => c.member)).toContain("authenticate");
+  });
+
+  it("`before_action [:a], only: :show` array + guard kwarg keeps only the leading symbols", () => {
+    const src = "class C\n  before_action [:a], only: :show\nend\n";
+    const calls = callsOf(src, [{ symbolId: "C", scope: ["C"], startLine: 1, endLine: 3 }]);
+    const members = calls.filter((c) => c.receiver === null).map((c) => c.member);
+    expect(members).toContain("a");
+    expect(members).not.toContain("show");
+  });
 });
 
 describe("ruby-walker duzy — association model edges", () => {
@@ -450,5 +472,42 @@ describe("ruby-walker — class_name: with constant node (scope_resolution / con
     });
     const calls = r.chunks.flatMap((c) => c.calls);
     expect(calls).toContainEqual(expect.objectContaining({ receiver: "Author", member: "Author" }));
+  });
+});
+
+describe("ruby-walker — explicit require / require_relative imports (collectRubyRequires)", () => {
+  it("`require 'active_support'` emits a bare ImportRef with the literal name", () => {
+    const src = "require 'active_support'\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.imports).toContainEqual(expect.objectContaining({ importText: "active_support" }));
+  });
+
+  it("`require_relative './concerns/trackable'` emits a relative ImportRef (`./ prefix`)", () => {
+    const src = "require_relative './concerns/trackable'\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.imports).toContainEqual(expect.objectContaining({ importText: "./concerns/trackable" }));
+  });
+
+  it("`require_relative 'concerns/trackable'` (no leading ./) normalises to `./` prefix", () => {
+    const src = "require_relative 'concerns/trackable'\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.imports).toContainEqual(expect.objectContaining({ importText: "./concerns/trackable" }));
+  });
+});
+
+describe("ruby-walker — dynamic send dispatch (extractLiteralSymbolOrString string branch)", () => {
+  it('`obj.send("save")` unwraps string first-arg to member=save with original receiver', () => {
+    const src = 'class C\n  def m\n    obj.send("save")\n  end\nend\n';
+    const calls = callsOf(src, [{ symbolId: "C#m", scope: ["C", "m"], startLine: 2, endLine: 4 }]);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "obj", member: "save" }));
+  });
+
+  it('bare `send("notify")` (no receiver) unwraps to receiver=null member=notify', () => {
+    const src = 'class C\n  def m\n    send("notify")\n  end\nend\n';
+    const calls = callsOf(src, [{ symbolId: "C#m", scope: ["C", "m"], startLine: 2, endLine: 4 }]);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: null, member: "notify" }));
   });
 });
