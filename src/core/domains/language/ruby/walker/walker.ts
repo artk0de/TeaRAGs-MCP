@@ -955,6 +955,162 @@ function emitDslEdges(node: AstNode, emits: RubyDslEmits, startLine: number, out
   }
 }
 
+/**
+ * `alias new old` keyword form (bd tea-rags-mcp-y2z5). The new alias method
+ * delegates to the old one — emit a synthetic CallRef from the alias chunk to
+ * the old method so the call graph traces the redirect. Receiver is null
+ * because both methods live on the same class; the resolver's bare-call
+ * same-class fallback uses callerScope (= the enclosing class) to pin the
+ * target. No-ops for any non-`alias` node.
+ */
+function emitAliasKeywordEdge(node: AstNode, out: CallRef[]): void {
+  if (node.type !== "alias" || RUBY_DSL.alias?.redirectTarget !== "alias-keyword-old") return;
+  const idents = node.children.filter((c) => c.type === "identifier");
+  const oldName = idents[1]?.text;
+  if (oldName) {
+    out.push({ callText: node.text, receiver: null, member: oldName, startLine: node.startPosition.row + 1 });
+  }
+}
+
+/**
+ * Registry constant-reference edges (bd tea-rags-mcp-ki9v). A constant
+ * assignment whose RHS is a collection literal — `CONST = { k => Klass }` or
+ * `CONST = [Klass, ...]`, optionally `.freeze`d — hard-references each value
+ * class. Those references are `constant`/`scope_resolution` nodes, not `call`
+ * nodes, so without this branch the registry chunk gets chunk fanOut=0 despite
+ * coupling to every value class. Emit a synthetic reference CallRef per literal
+ * constant; receiver === member === the fully-qualified constant so the
+ * `constant` resolver pins it to the declaring file as a file-only edge.
+ * Constants nested in a lambda / proc / block body (STI-style `-> { Klass }`
+ * registries) are deliberately skipped (bd tea-rags-mcp-jw9n). No-ops for any
+ * non-`assignment` node.
+ */
+function emitRegistryConstantRefs(node: AstNode, out: CallRef[]): void {
+  if (node.type !== "assignment") return;
+  const left = node.childForFieldName("left");
+  if (left && (left.type === "constant" || left.type === "scope_resolution")) {
+    const literal = unwrapTrailingCalls(node.childForFieldName("right"));
+    if (literal && (literal.type === "array" || literal.type === "hash")) {
+      collectRegistryConstantValueRefs(literal, out);
+    }
+  }
+}
+
+/**
+ * Bare-identifier method calls (bd tea-rags-mcp-hbie). Ruby allows `foo` as
+ * shorthand for `foo()` when `foo` is a method, so the walker emits a CallRef
+ * for `identifier` nodes in a call-position role. Gated on: a call-position
+ * parent (not a binding-introducing field — `isBareIdentifierCallSite`), the
+ * name NOT being a local binding of the enclosing method, and being inside a
+ * method body (`enclosingMethod !== null`). The resolver's existing safeguards
+ * (jsa0 + lttd + t5iw + pl7k) filter residual ambiguity at edge-resolution time.
+ */
+function emitBareIdentifierCall(
+  node: AstNode,
+  enclosingMethod: string | null,
+  localBindings: Set<string>,
+  out: CallRef[],
+): void {
+  if (
+    node.type === "identifier" &&
+    enclosingMethod !== null &&
+    isBareIdentifierCallSite(node) &&
+    !localBindings.has(node.text)
+  ) {
+    out.push({ callText: node.text, receiver: null, member: node.text, startLine: node.startPosition.row + 1 });
+  }
+}
+
+/**
+ * Bare `super` (no args) parses as a leaf `super` node. The wrapped form
+ * `super(...)` / `super(...) { ... }` parses as a `call` whose `method` field
+ * is the `super` leaf — that case is handled in the call branch. Both shapes
+ * emit identical CallRefs except for `callText` (literal source). No-ops unless
+ * this is a bare `super` leaf inside a method body.
+ */
+function emitBareSuperEdge(node: AstNode, enclosingMethod: string | null, out: CallRef[]): void {
+  if (node.type === "super" && node.parent?.type !== "call" && enclosingMethod !== null) {
+    out.push({
+      callText: node.text,
+      receiver: SUPER_RECEIVER_SENTINEL,
+      member: enclosingMethod,
+      startLine: node.startPosition.row + 1,
+    });
+  }
+}
+
+/**
+ * Dynamic-dispatch unwrap classification (bd tea-rags-mcp-8ss5 / cai0). For a
+ * `send` / `public_send` call whose first arg is a literal symbol/string, push
+ * the unwrapped direct-call CallRef — receiver normalised to null for a bare or
+ * `self` receiver so the resolver's same-class fallback takes over — and return
+ * `"unwrapped"`; the caller then DROPS the literal `send` edge and recurses (so
+ * fan-out is not double-counted). A non-literal first arg returns `"dynamic"`
+ * (the literal `send` edge is kept but tagged `dynamicSend`, bd cai0). A
+ * non-dispatch method returns `"plain"`. The recurse-into-children + early
+ * return stay in the caller so the walk control flow is unchanged.
+ */
+function emitDynamicSendUnwrap(
+  node: AstNode,
+  receiver: AstNode | null,
+  receiverText: string | null,
+  method: AstNode,
+  startLine: number,
+  out: CallRef[],
+): "unwrapped" | "dynamic" | "plain" {
+  if (!RUBY_DYNAMIC_DISPATCH.has(method.text)) return "plain";
+  const unwrapped = extractLiteralSymbolOrString(node);
+  if (unwrapped !== null) {
+    const unwrappedReceiver = receiverText === null || receiver?.type === "self" ? null : receiverText;
+    out.push({ callText: node.text, receiver: unwrappedReceiver, member: unwrapped, startLine });
+    return "unwrapped";
+  }
+  return "dynamic";
+}
+
+/**
+ * Emit the macro/method's own literal CallRef (the call edge the source line
+ * actually writes). Tags `dynamicSend` for an unresolvable `send(var)` (bd
+ * cai0) and attaches a registry-literal `dispatch` when the OUTER `.member`
+ * call of a `CONST[k].new.m` chain carries a resolved `field` (bd
+ * tea-rags-mcp-pq02v; the inner `.new` returns `field: null` and is skipped, no
+ * double tag). Lifted verbatim from the inline call-branch tail.
+ */
+function emitMethodCallRef(
+  node: AstNode,
+  receiverText: string | null,
+  method: AstNode,
+  dynamicSend: boolean,
+  dispatchTableNames: ReadonlySet<string>,
+  out: CallRef[],
+): void {
+  const startLine = node.startPosition.row + 1;
+  const callRef: CallRef = { callText: node.text, receiver: receiverText, member: method.text, startLine };
+  if (dynamicSend) callRef.dynamicSend = true;
+  const dispatch = exprToRubyDispatchRef(node, dispatchTableNames);
+  if (dispatch?.field) callRef.dispatch = dispatch;
+  out.push(callRef);
+}
+
+/**
+ * Block-pass shorthand: `users.each(&:save)` — `&:save` desugars to
+ * `{ |u| u.save }`. The block-passed method is an additional call edge with no
+ * static receiver (the iterator's element type is out of scope here; the
+ * resolver falls back to short-name lookup). No-ops when the call carries no
+ * symbol-to-proc block argument.
+ */
+function emitBlockPassEdge(node: AstNode, out: CallRef[]): void {
+  const blockMember = extractBlockPassMethod(node);
+  if (blockMember !== null) {
+    out.push({
+      callText: `&:${blockMember}`,
+      receiver: null,
+      member: blockMember,
+      startLine: node.startPosition.row + 1,
+    });
+  }
+}
+
 function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>): CallRef[] {
   const out: CallRef[] = [];
 
@@ -982,86 +1138,15 @@ function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>
       nextBindings = collectMethodLocalBindings(node);
     }
 
-    // `alias new old` keyword form (bd tea-rags-mcp-y2z5). The new alias
-    // method delegates to the old one — emit a synthetic CallRef from the
-    // alias chunk to the old method so the call graph traces the
-    // redirect. Receiver is null because both methods live on the same
-    // class; the resolver's bare-call same-class fallback uses
-    // callerScope (= the enclosing class) to pin the target.
-    if (node.type === "alias" && RUBY_DSL.alias?.redirectTarget === "alias-keyword-old") {
-      const idents = node.children.filter((c) => c.type === "identifier");
-      const oldName = idents[1]?.text;
-      if (oldName) {
-        out.push({
-          callText: node.text,
-          receiver: null,
-          member: oldName,
-          startLine: node.startPosition.row + 1,
-        });
-      }
-    }
-
-    // Registry constant-reference edges (bd tea-rags-mcp-ki9v). A constant
-    // assignment whose RHS is a collection literal — `CONST = { k => Klass }`
-    // or `CONST = [Klass, ...]`, optionally `.freeze`d — hard-references each
-    // value class. Those references are `constant`/`scope_resolution` nodes,
-    // not `call` nodes, so without this branch the registry chunk gets
-    // chunk fanOut=0 despite coupling to every value class. Emit a synthetic
-    // reference CallRef per literal constant; receiver === member === the
-    // fully-qualified constant so the `constant` resolver pins it to the
-    // declaring file as a file-only edge (the method-edge fan-out counts it).
-    // Constants nested in a lambda / proc / block body (STI-style
-    // `-> { Klass }` registries) are deliberately skipped — those resolve at
-    // call time, a separate type-aware concern (bd tea-rags-mcp-jw9n).
-    if (node.type === "assignment") {
-      const left = node.childForFieldName("left");
-      if (left && (left.type === "constant" || left.type === "scope_resolution")) {
-        const literal = unwrapTrailingCalls(node.childForFieldName("right"));
-        if (literal && (literal.type === "array" || literal.type === "hash")) {
-          collectRegistryConstantValueRefs(literal, out);
-        }
-      }
-    }
-
-    // Bare-identifier method calls (bd tea-rags-mcp-hbie). Ruby allows
-    // `foo` as shorthand for `foo()` when `foo` is a method, so the
-    // walker must emit a CallRef for `identifier` nodes that sit in a
-    // call-position role. We gate on:
-    //   - parent is NOT one of the binding-introducing fields (def name,
-    //     parameters, assignment.left, element_reference receiver, etc.)
-    //   - identifier name is NOT in the enclosing method's local-binding
-    //     set (parameter / assignment LHS / block var / rescue var / for var)
-    //   - we are inside a method body (enclosingMethod !== null) — top-
-    //     level identifiers don't carry a method scope for attribution
-    // The resolver's existing safeguards (jsa0 + lttd + t5iw + pl7k)
-    // filter the residual ambiguity at edge-resolution time.
-    if (
-      node.type === "identifier" &&
-      enclosingMethod !== null &&
-      isBareIdentifierCallSite(node) &&
-      !localBindings.has(node.text)
-    ) {
-      out.push({
-        callText: node.text,
-        receiver: null,
-        member: node.text,
-        startLine: node.startPosition.row + 1,
-      });
-    }
-
-    // Bare `super` (no args) parses as a leaf `super` node. The wrapped
-    // form `super(...)` / `super(...) { ... }` parses as a `call` whose
-    // first child is the `super` leaf and whose `method` field is null;
-    // that case is handled in the `call` branch below. Both shapes emit
-    // identical CallRefs except for `callText` (literal source).
-    if (node.type === "super" && node.parent?.type !== "call" && enclosingMethod !== null) {
-      out.push({
-        callText: node.text,
-        receiver: SUPER_RECEIVER_SENTINEL,
-        member: enclosingMethod,
-        startLine: node.startPosition.row + 1,
-      });
-    }
+    // Synthetic non-call edges this node may carry, independent of the
+    // call/method_call branch below. Each helper no-ops unless the node matches
+    // its shape — alias-keyword redirect (y2z5), registry constant literal
+    // (ki9v), bare-identifier call (hbie), bare `super` leaf (brp1). Lifted
+    // verbatim from the former inline blocks; emit order is unchanged.
+    emitAliasKeywordEdge(node, out);
+    emitRegistryConstantRefs(node, out);
+    emitBareIdentifierCall(node, enclosingMethod, localBindings, out);
+    emitBareSuperEdge(node, enclosingMethod, out);
 
     if (node.type === "call" || node.type === "method_call") {
       const receiver = node.childForFieldName("receiver");
@@ -1100,38 +1185,18 @@ function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>
           : receiver.text
         : null;
 
-      // Dynamic dispatch unwrap: `obj.send(:save)` / `obj.public_send("save")`
-      // / bare `send(:save)` / `self.send(:save)` — when the first arg is a
-      // literal symbol/string, the call is semantically a direct method
-      // call. Emit it as such; the resolver doesn't need to know send was
-      // involved.
-      //
-      // Receiver normalisation (bd tea-rags-mcp-8ss5):
-      //   - `obj.send(:foo)`    → receiver="obj",  member="foo"
-      //   - `self.send(:foo)`   → receiver=null,    member="foo"
-      //   - bare `send(:foo)`   → receiver=null,    member="foo"
-      // Both bare-receiver and `self`-receiver normalise to null so the
-      // resolver's same-class bare-call fallback (callerScope-aware
-      // pickSingleCandidate filter) takes over. The receiver-set
-      // unknown-type drop guard would otherwise refuse to emit an edge.
-      let dynamicSend = false;
-      if (RUBY_DYNAMIC_DISPATCH.has(method.text)) {
-        const unwrapped = extractLiteralSymbolOrString(node);
-        if (unwrapped !== null) {
-          const unwrappedReceiver = receiverText === null || receiver?.type === "self" ? null : receiverText;
-          out.push({ callText: node.text, receiver: unwrappedReceiver, member: unwrapped, startLine });
-          // Recurse into children so nested calls in the args still emit;
-          // we deliberately DROP the literal `send` edge — emitting both
-          // would double-count fan-out for the same logical call.
-          for (const child of node.children) visit(child, nextEnclosing, nextBindings);
-          return;
-        }
-        // Non-literal first arg — `send(var)` / `public_send(expr)`. The target
-        // is statically undeterminable; keep the literal `send` CallRef but tag
-        // it so an UNRESOLVED dispatch counts as `callsUnresolvable`, not a
-        // resolver miss (bd cai0).
-        dynamicSend = true;
+      // Dynamic dispatch unwrap (bd tea-rags-mcp-8ss5 / cai0): `obj.send(:save)`
+      // / `public_send("save")` / bare or `self.send(:save)`.
+      // emitDynamicSendUnwrap pushes the unwrapped direct-call edge (receiver
+      // normalised to null for bare / `self`) and classifies the call. The
+      // recurse-into-args + early return for the unwrapped case stay HERE so the
+      // literal `send` edge is dropped (no double fan-out for one logical call).
+      const sendKind = emitDynamicSendUnwrap(node, receiver, receiverText, method, startLine, out);
+      if (sendKind === "unwrapped") {
+        for (const child of node.children) visit(child, nextEnclosing, nextBindings);
+        return;
       }
+      const dynamicSend = sendKind === "dynamic";
 
       // Synthetic class-body macro edges (bd tea-rags-mcp-y2z5 alias_method /
       // mx9z delegate / duzy callbacks + associations). Each class-body macro
@@ -1149,24 +1214,10 @@ function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>
         if (emits) emitDslEdges(node, emits, startLine, out);
       }
 
-      const callRef: CallRef = { callText: node.text, receiver: receiverText, member: method.text, startLine };
-      if (dynamicSend) callRef.dynamicSend = true;
-      // Registry-literal dispatch tagging (bd tea-rags-mcp-pq02v). Only the
-      // OUTER `.member` call of a `CONST[k].new.m` chain yields a ref with
-      // `field` set; the inner `.new` node returns `field: null` and is skipped
-      // (no double tag). The `element_reference` node is not a call → never here.
-      const dispatch = exprToRubyDispatchRef(node, dispatchTableNames);
-      if (dispatch?.field) callRef.dispatch = dispatch;
-      out.push(callRef);
-
-      // Block-pass shorthand: `users.each(&:save)` — &:save desugars to
-      // `{ |u| u.save }`. The block-passed method is an additional call
-      // edge with no static receiver (the iterator's element type is
-      // out of scope here; the resolver falls back to short-name lookup).
-      const blockMember = extractBlockPassMethod(node);
-      if (blockMember !== null) {
-        out.push({ callText: `&:${blockMember}`, receiver: null, member: blockMember, startLine });
-      }
+      // The macro/method's own literal call edge, plus the block-pass `&:sym`
+      // edge if present. Both lifted verbatim into emit helpers.
+      emitMethodCallRef(node, receiverText, method, dynamicSend, dispatchTableNames, out);
+      emitBlockPassEdge(node, out);
     }
 
     for (const child of node.children) visit(child, nextEnclosing, nextBindings);
