@@ -24,7 +24,11 @@ const ACTIVESUPPORT_ENTRIES: Record<string, RubyDslEntry> = {
   mattr_reader: { category: "accessor", declares: (b) => [{ name: b, kind: "static" }] },
   mattr_writer: { category: "accessor", declares: (b) => [{ name: `${b}=`, kind: "static" }] },
   // delegation
-  delegate: { category: "delegation", declares: (b) => [{ name: b, kind: "instance" }] },
+  delegate: {
+    category: "delegation",
+    declares: (b) => [{ name: b, kind: "instance" }],
+    operands: { kind: "leading-symbols", stopAtKwarg: true },
+  },
   delegate_missing_to: { category: "delegation" },
   // `class_attribute :foo` → instance reader/writer + predicate (`foo`/`foo=`/`foo?`);
   // also class-level, but bare calls inside instance methods hit the instance form.

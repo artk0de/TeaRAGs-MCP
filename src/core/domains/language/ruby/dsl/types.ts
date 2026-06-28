@@ -6,6 +6,30 @@
 
 export type MethodKind = "instance" | "static";
 
+/**
+ * Declarative descriptor for `walker/macro-expansion.ts::extractOperands` —
+ * names how the walker pulls base symbol names from a macro call's argument
+ * list without the walker needing to know the macro's name.
+ *
+ *  - `'literal-name'`     — first arg, **symbol OR string** literal (define_method)
+ *  - `'first-symbol'`     — first namedChild if `simple_symbol`, else `[]`
+ *                           (alias_method, scope, attribute)
+ *  - `'skip-first'`       — collect all `simple_symbol` args, drop the first
+ *                           (store_accessor: first arg is the JSON store column)
+ *  - `'leading-symbols'`  — collect all `simple_symbol` args, CONTINUE past
+ *                           non-symbols (generic default: attr_*, associations, …)
+ *  - object `{ kind: 'leading-symbols', stopAtKwarg: true }` — same as
+ *                           `'leading-symbols'` but BREAK at the first non-symbol
+ *                           (delegate: the `to:`/`prefix:` pair is a receiver, not
+ *                           a name, and everything after it must be ignored)
+ */
+export type DslOperandsShape =
+  | "literal-name"
+  | "first-symbol"
+  | "skip-first"
+  | "leading-symbols"
+  | { readonly kind: "leading-symbols"; readonly stopAtKwarg: true };
+
 export type DslCategory =
   // method-declaring macros (carry `declares`; alias also `redirectTarget`)
   | "accessor"
@@ -40,6 +64,12 @@ export interface RubyDslEntry {
    * `walker/macro-expansion.ts`, not here.
    */
   declares?: (base: string) => DeclaredMethodSpec[];
+  /**
+   * Declarative descriptor for `walker/macro-expansion.ts::extractOperands`.
+   * Absent → defaults to `'leading-symbols'` (collect all `simple_symbol` args,
+   * skip non-symbols). Only set when the macro needs non-default extraction.
+   */
+  operands?: DslOperandsShape;
   /**
    * Only for `alias` / `alias_method`: how the walker locates the redirect
    * target (the OLD method name) to emit a new→old call edge.

@@ -58,9 +58,9 @@ const RAILS_ENTRIES: Record<string, RubyDslEntry> = {
   },
 
   // accessor-family — reader/writer per field. `attribute` is first-symbol-only
-  // (the engine drops its 2nd positional cast-type arg); the attachments take
-  // each symbol independently.
-  attribute: { category: "accessor", declares: (b) => attrPair(b) },
+  // (the engine takes only the first symbol; the 2nd positional arg is the cast
+  // type, not another attribute name). The attachments take each symbol independently.
+  attribute: { category: "accessor", declares: (b) => attrPair(b), operands: "first-symbol" },
   has_one_attached: { category: "accessor", declares: (b) => attrPair(b) },
   has_many_attached: { category: "accessor", declares: (b) => attrPair(b) },
 
@@ -81,8 +81,9 @@ const RAILS_ENTRIES: Record<string, RubyDslEntry> = {
   validates_uniqueness_of: { category: "validation" },
 
   // scopes — `scope :active, -> { ... }` adds a class method named by the
-  // first symbol arg (the engine takes only the first arg for scope).
-  scope: { category: "scope", declares: (b) => [{ name: b, kind: "static" }] },
+  // first symbol arg (the lambda is not a name; `operands: 'first-symbol'` takes
+  // only the first simple_symbol arg).
+  scope: { category: "scope", declares: (b) => [{ name: b, kind: "static" }], operands: "first-symbol" },
 
   // callbacks
   before_validation: { category: "callback" },
@@ -124,10 +125,11 @@ const RAILS_ENTRIES: Record<string, RubyDslEntry> = {
   enum: { category: "enum" },
   aasm: { category: "state-machine" },
   serialize: { category: "other" },
-  // store_accessor synthesises the key accessors via a dedicated skip-store-name
-  // handler in macro-expansion (the first symbol is the JSON column), not a
-  // per-symbol `declares` builder.
-  store_accessor: { category: "accessor" },
+  // store_accessor — the FIRST symbol is the JSON store column; remaining symbols
+  // are the accessor keys (each gets a reader/writer pair via `attrPair`).
+  // `operands: 'skip-first'` drives the walker to drop that first symbol before
+  // projecting through `declares`.
+  store_accessor: { category: "accessor", declares: (b) => attrPair(b), operands: "skip-first" },
 };
 
 /** Rails declaring macros + the controller/ActiveSupport runtime helpers (params/render/…). */

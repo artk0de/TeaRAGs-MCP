@@ -20,10 +20,15 @@ const RUBY_CORE_ENTRIES: Record<string, RubyDslEntry> = {
   attr_accessor: { category: "accessor", declares: (b) => accessorPair(b, "instance") },
   attr_reader: { category: "accessor", declares: (b) => [{ name: b, kind: "instance" }] },
   attr_writer: { category: "accessor", declares: (b) => [{ name: `${b}=`, kind: "instance" }] },
-  define_method: { category: "dynamic-method", declares: (b) => [{ name: b, kind: "instance" }] },
+  define_method: {
+    category: "dynamic-method",
+    declares: (b) => [{ name: b, kind: "instance" }],
+    operands: "literal-name",
+  },
   alias_method: {
     category: "alias",
     declares: (b) => [{ name: b, kind: "instance" }],
+    operands: "first-symbol",
     redirectTarget: "second-symbol",
   },
   alias: {

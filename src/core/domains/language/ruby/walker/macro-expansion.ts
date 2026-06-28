@@ -11,7 +11,7 @@
  * catalogue hands an already-parsed `base` via `RubyDslEntry.declares`.
  */
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import { RUBY_DSL, type DslCategory, type MethodKind } from "../dsl/index.js";
+import { RUBY_DSL, type DslCategory, type DslOperandsShape, type MethodKind } from "../dsl/index.js";
 
 /** A synthetic method a class-body macro declares, with provenance category + span. */
 export interface DeclaredMethod {
@@ -43,49 +43,6 @@ export function expandClassBodyMacros(node: AstNode): DeclaredMethod[] {
     endLine,
   });
   const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
-
-  // define_method(:foo) / define_method("foo") — literal symbol/string arg only.
-  if (macroName === "define_method") {
-    const first = args?.namedChildren[0];
-    const name = first ? literalNameFromArg(first) : null;
-    return name ? [mk(name, "instance", "dynamic-method")] : [];
-  }
-  // alias_method :new, :old — only the NEW name (first symbol) is declared.
-  if (macroName === "alias_method") {
-    const first = args?.namedChildren[0];
-    if (first?.type !== "simple_symbol") return [];
-    const name = stripSymbolColon(first.text);
-    return name.length > 0 ? [mk(name, "instance", "alias")] : [];
-  }
-  // delegate :a, :b, to: :other — leading symbols, STOP at the first non-symbol
-  // (the `to:` / `prefix:` kwarg pair), which is a receiver/option, not a name.
-  if (macroName === "delegate") {
-    if (!args) return [];
-    const out: DeclaredMethod[] = [];
-    for (const arg of args.namedChildren) {
-      if (arg.type !== "simple_symbol") break;
-      const base = stripSymbolColon(arg.text);
-      if (base.length > 0) out.push(mk(base, "instance", "delegation"));
-    }
-    return out;
-  }
-
-  // store_accessor :store, :a, :b — the FIRST symbol is the JSON store column;
-  // the rest are the accessor keys (`a`/`a=`/`b`/`b=`).
-  if (macroName === "store_accessor") {
-    if (!args) return [];
-    const syms: string[] = [];
-    for (const arg of args.namedChildren) {
-      if (arg.type !== "simple_symbol") continue;
-      const base = stripSymbolColon(arg.text);
-      if (base.length > 0) syms.push(base);
-    }
-    const out: DeclaredMethod[] = [];
-    for (const key of syms.slice(1)) {
-      out.push(mk(key, "instance", "accessor"), mk(`${key}=`, "instance", "accessor"));
-    }
-    return out;
-  }
 
   // enum :status, { active: 0 } / enum status: { active: 0 } / enum status: [:active]
   // — the VALUE keys (not the leading symbol) drive synthesis: the attribute
@@ -146,29 +103,15 @@ export function expandClassBodyMacros(node: AstNode): DeclaredMethod[] {
     return out;
   }
 
-  // Generic: project each leading symbol arg through the catalogue `declares`.
+  // Generic declarative dispatch: look up the operands shape from the catalogue
+  // entry and project each extracted base through `declares`.
   const entry = RUBY_DSL[macroName];
-  if (!entry?.declares || !args) return [];
-  const builder = entry.declares;
-  const { category } = entry;
-  const bases: string[] = [];
-  for (const arg of args.namedChildren) {
-    if (arg.type !== "simple_symbol") continue;
-    const base = stripSymbolColon(arg.text);
-    if (base.length > 0) bases.push(base);
-  }
-  if (bases.length === 0) return [];
-  // First-symbol-only macros: `scope :active, -> { ... }` (rest is the lambda)
-  // and `attribute :name, :string` (2nd positional symbol is the cast type, not
-  // a second attribute name).
-  if (macroName === "scope" || macroName === "attribute") {
-    return builder(bases[0]).map((m) => mk(m.name, m.kind, category));
-  }
-  const out: DeclaredMethod[] = [];
-  for (const base of bases) {
-    for (const m of builder(base)) out.push(mk(m.name, m.kind, category));
-  }
-  return out;
+  if (!entry) return [];
+  const { declares, category, operands } = entry;
+  if (!declares || !args) return [];
+  const shape = operands ?? "leading-symbols";
+  const bases = extractOperands(args, shape);
+  return bases.flatMap((b) => declares(b)).map((m) => mk(m.name, m.kind, category));
 }
 
 /**
@@ -188,6 +131,56 @@ export function expandAliasKeyword(node: AstNode): DeclaredMethod[] {
       endLine: node.endPosition.row + 1,
     },
   ];
+}
+
+/**
+ * Extract base symbol names from a macro call's argument list according to the
+ * declarative `shape` descriptor attached to the catalogue `RubyDslEntry`.
+ *
+ * | Shape                                          | Semantics                                          |
+ * |------------------------------------------------|----------------------------------------------------|
+ * | `'literal-name'`                               | First arg: `simple_symbol` OR string literal       |
+ * | `'first-symbol'`                               | First namedChild if `simple_symbol`, else `[]`     |
+ * | `'skip-first'`                                 | All `simple_symbol`s, skipping the first           |
+ * | `'leading-symbols'`                            | All `simple_symbol`s, CONTINUE past non-symbols    |
+ * | `{ kind: 'leading-symbols', stopAtKwarg: true }` | All `simple_symbol`s, BREAK at first non-symbol  |
+ *
+ * Returns `[]` when `args` is `null`.
+ */
+export function extractOperands(args: AstNode | null, shape: DslOperandsShape): string[] {
+  if (!args) return [];
+  if (shape === "literal-name") {
+    const first = args.namedChildren[0];
+    const name = first ? literalNameFromArg(first) : null;
+    return name ? [name] : [];
+  }
+  if (shape === "first-symbol") {
+    const first = args.namedChildren[0];
+    if (first?.type !== "simple_symbol") return [];
+    const name = stripSymbolColon(first.text);
+    return name.length > 0 ? [name] : [];
+  }
+  if (shape === "skip-first") {
+    const syms: string[] = [];
+    for (const arg of args.namedChildren) {
+      if (arg.type !== "simple_symbol") continue;
+      const base = stripSymbolColon(arg.text);
+      if (base.length > 0) syms.push(base);
+    }
+    return syms.slice(1);
+  }
+  // 'leading-symbols' (string) or { kind: 'leading-symbols', stopAtKwarg: true }
+  const stopAtKwarg = typeof shape === "object" && shape.stopAtKwarg;
+  const out: string[] = [];
+  for (const arg of args.namedChildren) {
+    if (arg.type !== "simple_symbol") {
+      if (stopAtKwarg) break;
+      continue;
+    }
+    const base = stripSymbolColon(arg.text);
+    if (base.length > 0) out.push(base);
+  }
+  return out;
 }
 
 function stripSymbolColon(text: string): string {
