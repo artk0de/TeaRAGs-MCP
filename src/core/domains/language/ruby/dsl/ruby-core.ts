@@ -30,6 +30,7 @@ const RUBY_CORE_ENTRIES: Record<string, RubyDslEntry> = {
     declares: (b) => [{ name: b, kind: "instance" }],
     operands: "first-symbol",
     redirectTarget: "second-symbol",
+    emits: "alias-redirect",
   },
   alias: {
     category: "alias",

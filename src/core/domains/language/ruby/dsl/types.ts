@@ -51,6 +51,19 @@ export type DslCategory =
 /** A method a macro declares, given an already-parsed base symbol name. */
 export type DeclaredMethodSpec = { name: string; kind: MethodKind };
 
+/**
+ * Which synthetic call-graph edge(s) a class-body macro emits at walk time,
+ * consumed by `walker/walker.ts::emitDslEdges` to pick the edge shape —
+ * replacing the four former per-category `if` branches in `collectRubyCalls`.
+ * The AST-walking emit loop lives in the WALKER layer; `dsl/` (pure data) only
+ * names which shape applies. Each value's shape (built from the call's args):
+ *   - `'self-instance'`      — per leading symbol → `{receiver:null, member:sym}`  (before_action :auth)
+ *   - `'model-constant-ref'` — associated model  → `{receiver:C, member:C}`        (has_many :posts)
+ *   - `'delegate-target'`    — per delegated sym  → `{receiver:to, member:sym}`     (delegate :a, to: :x)
+ *   - `'alias-redirect'`     — old method name    → `{receiver:null, member:old}`   (alias_method :new, :old)
+ */
+export type RubyDslEmits = "self-instance" | "model-constant-ref" | "delegate-target" | "alias-redirect";
+
 export interface RubyDslEntry {
   /** Intrinsic category. Drives the chunker's class-body group (`CATEGORY_TO_GROUP`). */
   category: DslCategory;
@@ -77,6 +90,12 @@ export interface RubyDslEntry {
    *   - `"alias-keyword-old"` → `alias new old` (second identifier child)
    */
   redirectTarget?: "second-symbol" | "alias-keyword-old";
+  /**
+   * Which synthetic call-graph edge(s) this class-body macro emits at walk time
+   * (see {@link RubyDslEmits}). Absent → the macro emits no synthetic edge. The
+   * walker routes edge dispatch through this descriptor (`emitDslEdges`).
+   */
+  emits?: RubyDslEmits;
 }
 
 /**

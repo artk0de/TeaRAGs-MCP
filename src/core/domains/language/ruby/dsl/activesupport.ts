@@ -28,6 +28,7 @@ const ACTIVESUPPORT_ENTRIES: Record<string, RubyDslEntry> = {
     category: "delegation",
     declares: (b) => [{ name: b, kind: "instance" }],
     operands: { kind: "leading-symbols", stopAtKwarg: true },
+    emits: "delegate-target",
   },
   delegate_missing_to: { category: "delegation" },
   // `class_attribute :foo` → instance reader/writer + predicate (`foo`/`foo=`/`foo?`);

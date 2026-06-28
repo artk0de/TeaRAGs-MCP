@@ -44,7 +44,7 @@ import type {
   InheritanceEdgeDecl,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
-import { RUBY_DSL, singularizeAssociation } from "../dsl/index.js";
+import { RUBY_DSL, singularizeAssociation, type RubyDslEmits } from "../dsl/index.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
 import {
   bindCompoundReceiverChains,
@@ -712,7 +712,7 @@ const RUBY_DYNAMIC_DISPATCH = new Set(["send", "public_send", "__send__"]);
  * registry-constant-ref discipline). Method-accessor synthesis for these
  * (`User#posts` etc.) lives in `name-of.ts` `AR_ASSOCIATION_MACROS`.
  */
-const RUBY_ASSOCIATION_MACROS = new Set(["has_many", "has_one", "belongs_to", "has_and_belongs_to_many"]);
+export const RUBY_ASSOCIATION_MACROS = new Set(["has_many", "has_one", "belongs_to", "has_and_belongs_to_many"]);
 
 /**
  * Whether a DSL macro name is a callback registration (duzy). A
@@ -721,8 +721,10 @@ const RUBY_ASSOCIATION_MACROS = new Set(["has_many", "has_one", "belongs_to", "h
  * resolver's same-class fallback pins `#auth`. Sourced from the single
  * `ruby/dsl` catalogue by `category === "callback"` — adding a callback
  * keyword there automatically enrols it here, no second list to maintain.
+ * Exported as the callback-membership oracle for the `emits` parity test —
+ * `emits === "self-instance"` ⟺ `isRubyCallbackMacro` (walker-emits.test.ts).
  */
-function isRubyCallbackMacro(name: string): boolean {
+export function isRubyCallbackMacro(name: string): boolean {
   return RUBY_DSL[name]?.category === "callback";
 }
 
@@ -896,6 +898,61 @@ function callbackNameFromArg(arg: AstNode): string | null {
     return text.length > 0 ? text : null;
   }
   return null;
+}
+
+/**
+ * Emit the synthetic class-body macro edge(s) for a `receiverText === null`
+ * class-body macro call, selected by the macro entry's declarative `emits`
+ * descriptor (dsl/types.ts). Replaces the four former per-category `if`
+ * branches in {@link collectRubyCalls} — each arm is lifted VERBATIM from the
+ * branch it supersedes (reusing the same `extract*` / `associationModelConstant`
+ * helpers), so the pushed `{receiver, member}` shapes, the per-shape skip
+ * guards, and the push order are byte-identical. `node` is the `call` /
+ * `method_call` AST node; `out` accumulates the file's CallRefs.
+ *
+ * Membership parity (proven in walker-emits.test.ts): a macro entry carries
+ *   - `"alias-redirect"`     iff `redirectTarget === "second-symbol"` (alias_method)
+ *   - `"delegate-target"`    iff the keyword is `delegate`
+ *   - `"self-instance"`      iff `category === "callback"` (isRubyCallbackMacro)
+ *   - `"model-constant-ref"` iff the keyword is in RUBY_ASSOCIATION_MACROS
+ * so routing dispatch through `emits` fires for the exact same name set as the
+ * four predicates did.
+ */
+function emitDslEdges(node: AstNode, emits: RubyDslEmits, startLine: number, out: CallRef[]): void {
+  switch (emits) {
+    // `alias_method :new, :old` — old name → {receiver:null, member:old} (bd tea-rags-mcp-y2z5).
+    case "alias-redirect": {
+      const oldName = extractSecondLiteralSymbol(node);
+      if (oldName !== null) {
+        out.push({ callText: node.text, receiver: null, member: oldName, startLine });
+      }
+      return;
+    }
+    // `delegate :a, :b, to: :recv` — per delegated sym → {receiver:to, member:sym} (bd tea-rags-mcp-mx9z).
+    case "delegate-target": {
+      const recv = extractDelegateTarget(node);
+      if (recv !== null) {
+        for (const sym of extractDelegateSymbols(node)) {
+          out.push({ callText: node.text, receiver: recv, member: sym, startLine });
+        }
+      }
+      return;
+    }
+    // `before_action :auth` callbacks — per leading symbol → {receiver:null, member:sym} (duzy).
+    case "self-instance": {
+      for (const sym of extractCallbackSymbols(node)) {
+        out.push({ callText: node.text, receiver: null, member: sym, startLine });
+      }
+      return;
+    }
+    // `has_many :posts` associations — model constant → {receiver:C, member:C} (duzy).
+    case "model-constant-ref": {
+      const model = associationModelConstant(node);
+      if (model !== null) {
+        out.push({ callText: node.text, receiver: model, member: model, startLine });
+      }
+    }
+  }
 }
 
 function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>): CallRef[] {
@@ -1076,63 +1133,20 @@ function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>
         dynamicSend = true;
       }
 
-      // `alias_method :new, :old` synthetic call edge (bd tea-rags-mcp-y2z5).
-      // Only the class-body form fires — `obj.alias_method` is a normal
-      // method call and must not synthesise a redirect.
-      if (receiverText === null && RUBY_DSL[method.text]?.redirectTarget === "second-symbol") {
-        const oldName = extractSecondLiteralSymbol(node);
-        if (oldName !== null) {
-          out.push({ callText: node.text, receiver: null, member: oldName, startLine });
-          // Continue recursion so nested expressions inside the macro
-          // call (rare but possible) still emit; do NOT return early —
-          // we still want the literal `alias_method` edge below as the
-          // primary call (matches `attr_accessor` / `delegate` pattern).
-        }
-      }
-
-      // `delegate :a, :b, to: :recv` synthetic call edges (bd tea-rags-mcp-mx9z).
-      // ActiveSupport / Forwardable generate forwarder methods whose body calls
-      // `recv.sym`. The macro-symbol synthesiser (macros.ts) already emits the
-      // forwarder method symbols (#a, #b), but their codegraph chunk had
-      // fanOut=0 — the delegation TARGET was unlinked. Emit one CallRef per
-      // delegated symbol: receiver = the `to:` value (leading `:` stripped for a
-      // symbol literal; a constant stays as-is), member = the delegated symbol.
-      // Only the class-body form fires — `obj.delegate` is a normal method call.
-      // Syntactic-only: the resolver's same-class bare-call fallback pins a
-      // method/attr `to:`, the constant strategy pins a constant `to:`.
-      if (receiverText === null && method.text === "delegate") {
-        const recv = extractDelegateTarget(node);
-        if (recv !== null) {
-          for (const sym of extractDelegateSymbols(node)) {
-            out.push({ callText: node.text, receiver: recv, member: sym, startLine });
-          }
-        }
-      }
-
-      // `before_action :auth` / callback macros synthetic edges (duzy). A
-      // callback registers an instance method by symbol; emit a bare-receiver
-      // CallRef per symbol so the resolver's same-class fallback (callerScope =
-      // the enclosing controller / model) pins `#auth`. Only the class-body
-      // form fires — `obj.before_action` is a normal method call. Leading
-      // symbols only: `only:` / `if:` guard kwargs never become edges.
-      if (receiverText === null && isRubyCallbackMacro(method.text)) {
-        for (const sym of extractCallbackSymbols(node)) {
-          out.push({ callText: node.text, receiver: null, member: sym, startLine });
-        }
-      }
-
-      // `has_many :posts` / `belongs_to :y` association model edge (duzy). The
-      // association references the associated MODEL class; emit a constant-ref
-      // CallRef (receiver === member === the FQ constant) so the constant
-      // resolver pins it to the model's declaring file as a file→file edge —
-      // identical discipline to `collectRegistryConstantValueRefs`. The
-      // accessor methods (`User#posts` etc.) are synthesised separately in
-      // name-of.ts. Only the class-body form fires.
-      if (receiverText === null && RUBY_ASSOCIATION_MACROS.has(method.text)) {
-        const model = associationModelConstant(node);
-        if (model !== null) {
-          out.push({ callText: node.text, receiver: model, member: model, startLine });
-        }
+      // Synthetic class-body macro edges (bd tea-rags-mcp-y2z5 alias_method /
+      // mx9z delegate / duzy callbacks + associations). Each class-body macro
+      // family — alias_method redirect, delegate target, callback self-instance,
+      // association model-constant — declares which synthetic edge shape it
+      // emits via its `emits` descriptor (dsl/types.ts); emitDslEdges builds the
+      // shape. This replaces four `if (receiverText === null && <predicate>)`
+      // branches with one descriptor-driven dispatch (membership parity proven
+      // in walker-emits.test.ts). Only the class-body form fires —
+      // `obj.before_action` is a normal method call with a non-null receiver.
+      // NO early return: falls through to the literal `callRef` push below, so
+      // the synthetic edge(s) precede the macro's own call edge (as before).
+      if (receiverText === null) {
+        const emits = RUBY_DSL[method.text]?.emits;
+        if (emits) emitDslEdges(node, emits, startLine, out);
       }
 
       const callRef: CallRef = { callText: node.text, receiver: receiverText, member: method.text, startLine };

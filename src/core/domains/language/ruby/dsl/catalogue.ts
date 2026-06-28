@@ -15,8 +15,10 @@
  *     intrinsic fact, so it lives there not here).
  *   - `ruby/walker/macro-expansion.ts` — `declares(base)` → synthetic methods
  *     (shared by chunker `macros.ts` and codegraph `name-of.ts`).
- *   - `ruby/walker/walker.ts` — `redirectTarget` → alias redirect `CallRef`,
- *     `category === "callback"` → callback symbol emission.
+ *   - `ruby/walker/walker.ts` — `emits` → synthetic class-body macro edges
+ *     (alias_method redirect, delegate target, callback self-instance,
+ *     association model-constant, via `emitDslEdges`); `redirectTarget` → the
+ *     `alias`-keyword redirect `CallRef`.
  *
  * RSpec / FactoryBot testing-DSL keywords are deliberately ABSENT — they are
  * chunked by the separate `rspec-scope-chunker` and must not enter this Rails

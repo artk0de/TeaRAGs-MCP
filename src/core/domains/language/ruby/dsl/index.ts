@@ -13,6 +13,7 @@ export type {
   DslCategory,
   DslOperandsShape,
   MethodKind,
+  RubyDslEmits,
   RubyDslEntry,
   RubyFrameworkVocabulary,
 } from "./types.js";
