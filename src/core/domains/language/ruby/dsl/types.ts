@@ -64,4 +64,12 @@ export interface RubyFrameworkVocabulary {
   readonly runtimeBuiltins?: ReadonlySet<string>;
   /** Is `member` part of this framework's external-callable surface? */
   hasExternalMember: (member: string) => boolean;
+  /** Methods that, on a class-CONSTANT receiver, return an INSTANCE of that
+   *  constant (constructor + factory + finder). ruby-core: {new}; rails(AR):
+   *  find/create!/build/finders. Consumed by ast-inference constInstanceType. */
+  readonly instanceReturning?: ReadonlySet<string>;
+  /** AR::Relation-returning query methods (where/order/…) — chaining preserves
+   *  element type; a terminal instanceReturning on a relation yields one
+   *  instance. Consumed by ast-inference relationRootConst. */
+  readonly relationReturning?: ReadonlySet<string>;
 }

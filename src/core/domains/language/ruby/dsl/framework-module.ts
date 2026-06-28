@@ -11,11 +11,13 @@ export function defineFrameworkVocabulary(
   framework: string,
   entries: Record<string, RubyDslEntry>,
   runtimeBuiltins?: ReadonlySet<string>,
+  methodSemantics?: Pick<RubyFrameworkVocabulary, "instanceReturning" | "relationReturning">,
 ): RubyFrameworkVocabulary {
   return {
     framework,
     entries,
     runtimeBuiltins,
     hasExternalMember: (member) => member in entries || (runtimeBuiltins?.has(member) ?? false),
+    ...methodSemantics,
   };
 }

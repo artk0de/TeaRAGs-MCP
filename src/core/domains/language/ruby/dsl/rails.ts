@@ -131,4 +131,40 @@ const RAILS_ENTRIES: Record<string, RubyDslEntry> = {
 };
 
 /** Rails declaring macros + the controller/ActiveSupport runtime helpers (params/render/…). */
-export const RAILS_VOCABULARY = defineFrameworkVocabulary("rails", RAILS_ENTRIES, RAILS_RUNTIME_BUILTINS);
+export const RAILS_VOCABULARY = defineFrameworkVocabulary("rails", RAILS_ENTRIES, RAILS_RUNTIME_BUILTINS, {
+  instanceReturning: new Set([
+    "find",
+    "find!",
+    "find_by",
+    "find_by!",
+    "create",
+    "create!",
+    "build",
+    "first",
+    "last",
+    "take",
+  ]),
+  relationReturning: new Set([
+    "where",
+    "not",
+    "order",
+    "joins",
+    "includes",
+    "eager_load",
+    "preload",
+    "references",
+    "group",
+    "having",
+    "limit",
+    "offset",
+    "distinct",
+    "select",
+    "reorder",
+    "unscope",
+    "except",
+    "all",
+    "readonly",
+    "lock",
+    "none",
+  ]),
+});

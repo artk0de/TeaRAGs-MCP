@@ -38,4 +38,6 @@ const RUBY_CORE_ENTRIES: Record<string, RubyDslEntry> = {
 };
 
 /** Ruby-core declaring macros + the Kernel/Object runtime builtins (puts/raise/require/…). */
-export const RUBY_CORE_VOCABULARY = defineFrameworkVocabulary("ruby-core", RUBY_CORE_ENTRIES, RUBY_KERNEL_BUILTINS);
+export const RUBY_CORE_VOCABULARY = defineFrameworkVocabulary("ruby-core", RUBY_CORE_ENTRIES, RUBY_KERNEL_BUILTINS, {
+  instanceReturning: new Set(["new"]),
+});

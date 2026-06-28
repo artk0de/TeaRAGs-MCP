@@ -55,6 +55,18 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);
 
+function composeMethodSet(
+  modules: readonly RubyFrameworkVocabulary[],
+  facet: "instanceReturning" | "relationReturning",
+): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const mod of modules) for (const m of mod[facet] ?? []) out.add(m);
+  return out;
+}
+
+export const RUBY_INSTANCE_RETURNING = composeMethodSet(FRAMEWORKS, "instanceReturning");
+export const RUBY_RELATION_RETURNING = composeMethodSet(FRAMEWORKS, "relationReturning");
+
 /**
  * Is `member` an external bare-call name in ANY registered framework — a
  * declaring macro (`entries`) OR a runtime/kernel helper (`runtimeBuiltins`)?
