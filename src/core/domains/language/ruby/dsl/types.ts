@@ -72,4 +72,8 @@ export interface RubyFrameworkVocabulary {
    *  element type; a terminal instanceReturning on a relation yields one
    *  instance. Consumed by ast-inference relationRootConst. */
   readonly relationReturning?: ReadonlySet<string>;
+  /** Background-job CLASS-method enqueue verbs and the INSTANCE entrypoint each
+   *  routes to. sidekiq: perform_async/_in/_at/_bulk → "perform"; rails(ActiveJob):
+   *  perform_later/_now → "perform". Consumed by enqueueEntrypoint. */
+  readonly enqueueDispatch?: Readonly<Record<string, string>>;
 }

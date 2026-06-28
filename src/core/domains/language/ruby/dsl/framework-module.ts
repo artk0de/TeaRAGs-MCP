@@ -11,7 +11,7 @@ export function defineFrameworkVocabulary(
   framework: string,
   entries: Record<string, RubyDslEntry>,
   runtimeBuiltins?: ReadonlySet<string>,
-  methodSemantics?: Pick<RubyFrameworkVocabulary, "instanceReturning" | "relationReturning">,
+  methodSemantics?: Pick<RubyFrameworkVocabulary, "instanceReturning" | "relationReturning" | "enqueueDispatch">,
 ): RubyFrameworkVocabulary {
   return {
     framework,

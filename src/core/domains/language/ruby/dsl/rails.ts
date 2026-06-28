@@ -167,4 +167,5 @@ export const RAILS_VOCABULARY = defineFrameworkVocabulary("rails", RAILS_ENTRIES
     "lock",
     "none",
   ]),
+  enqueueDispatch: { perform_later: "perform", perform_now: "perform" },
 });

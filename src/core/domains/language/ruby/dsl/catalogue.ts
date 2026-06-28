@@ -27,6 +27,7 @@ import { ACTIVESUPPORT_VOCABULARY } from "./activesupport.js";
 import { ACTIVE_RECORD_INSTANCE_BUILTINS } from "./rails-runtime.js";
 import { RAILS_VOCABULARY } from "./rails.js";
 import { RUBY_CORE_VOCABULARY } from "./ruby-core.js";
+import { SIDEKIQ_VOCABULARY } from "./sidekiq.js";
 import type { RubyDslEntry, RubyFrameworkVocabulary } from "./types.js";
 
 /**
@@ -51,6 +52,7 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   RUBY_CORE_VOCABULARY,
   ACTIVESUPPORT_VOCABULARY,
   RAILS_VOCABULARY,
+  SIDEKIQ_VOCABULARY,
 ];
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);
@@ -66,6 +68,15 @@ function composeMethodSet(
 
 export const RUBY_INSTANCE_RETURNING = composeMethodSet(FRAMEWORKS, "instanceReturning");
 export const RUBY_RELATION_RETURNING = composeMethodSet(FRAMEWORKS, "relationReturning");
+
+function composeEnqueueDispatch(modules: readonly RubyFrameworkVocabulary[]): Readonly<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const mod of modules) for (const [k, v] of Object.entries(mod.enqueueDispatch ?? {})) out[k] = v;
+  return out;
+}
+
+export const RUBY_ENQUEUE_DISPATCH = composeEnqueueDispatch(FRAMEWORKS);
+export const enqueueEntrypoint = (member: string): string | undefined => RUBY_ENQUEUE_DISPATCH[member];
 
 /**
  * Is `member` an external bare-call name in ANY registered framework — a
