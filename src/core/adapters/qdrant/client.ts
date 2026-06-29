@@ -563,6 +563,10 @@ export class QdrantManager {
         optimizers_config: {
           indexing_threshold: 0,
           deleted_threshold: 0.99,
+          // Qdrant 1.18: defer optimization during the bulk phase so segments are
+          // not repacked mid-index; resumeOptimizer clears it so one pass runs at
+          // finalize (2-3× faster than incremental optimization on large repos).
+          prevent_unoptimized: true,
         },
       }),
     );
@@ -586,6 +590,9 @@ export class QdrantManager {
         optimizers_config: {
           indexing_threshold: indexingThreshold,
           deleted_threshold: deletedThreshold,
+          // Clear the bulk-phase defer set by pauseOptimizer: reverting it lets
+          // the optimizer run its single post-index pass over the new segments.
+          prevent_unoptimized: false,
         },
       }),
     );

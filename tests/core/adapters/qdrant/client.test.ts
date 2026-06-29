@@ -671,10 +671,13 @@ describe("QdrantManager", () => {
 
       // deleted_threshold: 0.99 is the key — without it, bulk deletes trigger
       // vacuum mid-reindex which blocks upserts for minutes.
+      // prevent_unoptimized: true defers optimization so a single pass runs at
+      // finalize instead of mid-bulk (Qdrant 1.18).
       expect(mockClient.updateCollection).toHaveBeenCalledWith("test-collection", {
         optimizers_config: {
           indexing_threshold: 0,
           deleted_threshold: 0.99,
+          prevent_unoptimized: true,
         },
       });
     });
@@ -686,6 +689,7 @@ describe("QdrantManager", () => {
         optimizers_config: {
           indexing_threshold: 20000,
           deleted_threshold: 0.2,
+          prevent_unoptimized: false,
         },
       });
     });
@@ -700,6 +704,7 @@ describe("QdrantManager", () => {
         optimizers_config: {
           indexing_threshold: 50000,
           deleted_threshold: 0.3,
+          prevent_unoptimized: false,
         },
       });
     });
