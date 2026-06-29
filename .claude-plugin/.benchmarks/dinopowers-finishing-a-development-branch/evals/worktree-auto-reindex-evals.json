@@ -3,6 +3,9 @@
   "feature": "worktree-aware-auto-reindex",
   "date": "2026-06-25",
   "kind": "feature-driven-update",
+  "superseded": true,
+  "supersededBy": "explicit-worktree-lifecycle-evals.json",
+  "supersededReason": "The PostToolUse commit-reindex hook this eval assumes was REMOVED 2026-06-29. Its expectation 'after merge do NOT reindex main — the hook did it' is now WRONG; main must be reindexed EXPLICITLY on merge. See explicit-worktree-lifecycle-evals.json.",
   "outcome": "Skill EDITED — added post-merge index cleanup guidance (Step 5 + a 'Second Iron Rule' callout + a Do-NOT-substitute table + Red Flags): after a local merge to main, do NOT manually reindex main (the post-commit hook did it), tear down the per-worktree clone with `tea-rags worktree remove <name>` (NOT delete_collection, which leaks DuckDB+snapshots+registry), and never use the deprecated reindex_changes. The edit is correct and prominent. HOWEVER the describe-only eval did not reach 100% with-rule — see modelPriorResistance below.",
   "scenario": "Finishing a feature developed in a git worktree that had its own tea-rags index clone; completion path = local merge to main. Non-leaky context (the eval prompt does NOT name `tea-rags worktree remove`, `delete_collection`, the hook, or `reindex_changes` — the agent must supply them).",
   "metrics": {

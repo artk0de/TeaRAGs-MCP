@@ -3,6 +3,9 @@
   "feature": "worktree-aware-auto-reindex",
   "date": "2026-06-25",
   "kind": "feature-driven-update",
+  "superseded": true,
+  "supersededBy": "explicit-worktree-lifecycle-evals.json",
+  "supersededReason": "The PostToolUse commit-reindex hook this eval assumes was REMOVED 2026-06-29. Its expectation 'the post-commit hook reindexed the RED/GREEN commit' is now WRONG; freshness is the explicit per-task reindex from executing-plans. See explicit-worktree-lifecycle-evals.json.",
   "outcome": "NO skill-body edit applied. Phase 2 baseline measured the skill AS-IS after the Task-5 FRESHNESS sweep. With-rule scored 8/8 on the freshness behavior, so per optimize-skill triage the proposed TDD-specific reindex guidance was DROPPED as dead weight — the generic swept Index-freshness line already drives correct behavior. This eval complements (does not replace) the primary tests-as-context suite in ../evals.json.",
   "scenario": "TDD in a git worktree; tea-rags MCP available; a PostToolUse:Bash hook auto-reindexes the resolved collection after a successful git commit/merge.",
   "metrics": {

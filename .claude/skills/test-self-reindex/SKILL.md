@@ -92,6 +92,16 @@ enrichment settles — no log polling needed. (Bound it with a hard wall-clock
 limit of ~5 minutes via the Bash `timeout` parameter so a hung enrichment
 doesn't lock the session.)
 
+**`index-codebase --name` vs `tea-rags worktree create`.** This skill uses
+`index-codebase --name` — a FULL `--force` rebuild that re-exercises the whole
+pipeline (the point of the smoke test). It is NOT the same as
+`tea-rags worktree create`, which CLONES an existing index for plan-execution
+freshness (fast, no pipeline run — see `tea-rags/rules/index-freshness.md`). If
+you reach for `worktree create` instead, its source resolves via
+`registry.findByPath(cwd)`: run it from the registered project root OR pass
+`--from <alias>`; give `--path <abs-worktree>` and `--no-git` to attach to an
+existing worktree dir.
+
 ### Step 3 — Verify all four enrichment levels reach `healthy`
 
 ```
@@ -161,3 +171,8 @@ user can decide whether to fix-forward or revert.
   if anything reads non-`healthy`.
 - **Mutating the worktree source between Step 2 and Step 4.** That invalidates
   the index you just built. If you need to edit source, re-run from Step 2.
+- **`tea-rags worktree create` from an unregistered cwd.** It resolves the
+  source project via `registry.findByPath(cwd)`; a cwd outside any registered
+  project fails with `Source project not found (from=cwd)`. Pass
+  `--from <alias>` (with `--path <abs>` and `--no-git`), or run from the
+  registered project root.

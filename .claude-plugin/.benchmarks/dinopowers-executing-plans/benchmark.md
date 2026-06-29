@@ -147,6 +147,10 @@ No iteration needed.
 
 ## Appendix — worktree-aware auto-reindex (feature-driven update, 2026-06-25)
 
+> **SUPERSEDED 2026-06-29** — this appendix describes the now-removed
+> commit-reindex hook as current. See the "2026-06-29 — Explicit worktree-index
+> lifecycle" section below: the hook was removed; freshness is now explicit.
+
 Eval set: `evals/worktree-auto-reindex-evals.json` (8 cases — 5 freshness, 2
 controls, 1 edge; 2 subagent-context). Tests whether the agent, while executing
 a plan, handles index freshness correctly now that a `PostToolUse:Bash` hook
@@ -176,3 +180,32 @@ freshness cases and over-triggered the guard on the new-file control, despite
 the scenario explicitly mentioning the hook — confirming the swept line, not
 general competence, drives the correct behavior. This eval is retained as a
 regression test guarding that the freshness behavior survives future edits.
+
+## 2026-06-29 — Explicit worktree-index lifecycle (feature update)
+
+The commit-reindex hook the 2026-06-25 freshness sweep relied on was REMOVED and
+replaced by a cleanup-only teardown hook. `executing-plans` gained an explicit
+**Step 0** (worktree-clone CREATE at plan start via `tea-rags worktree create`)
+and **Mandatory-Step-Order item 5** (explicit per-Task REINDEX of the clone
+after each commit via `mcp__tea-rags__index_codebase`); the "Index freshness"
+pointer now states there is no background reindex hook.
+
+| Metric                | Value      |
+| --------------------- | ---------- |
+| With-rule pass rate   | 100% (8/8) |
+| Without-rule baseline | 50% (4/8)  |
+| Delta                 | +50pp      |
+| Iterations            | 0 (no fix) |
+
+Eval: `evals/explicit-worktree-lifecycle-evals.json` (8 cases — 4 new-behavior,
+2 gate controls, 1 over-trigger control, 1 pre-touch-guard regression). The
+baseline made the per-task reindex CONDITIONAL (E1/E2), refused to reindex
+`main` on merge (E5), and substituted `find_symbol`+`get_callers` for the
+blastRadius pre-touch guard (E8) — confirming the explicit-lifecycle guidance,
+not general competence, drives the mandatory per-task reindex +
+main-reindex-on-merge. The prior `worktree-auto-reindex-evals.json` is marked
+SUPERSEDED (its hook premise is now false). Done 2026-06-29: the same stale
+"post-commit hook" expectations were regenerated in the
+`dinopowers-finishing-a-development-branch` and
+`dinopowers-test-driven-development` benchmarks — see their "2026-06-29"
+sections.

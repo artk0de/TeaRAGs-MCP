@@ -120,6 +120,10 @@ No iteration needed.
 
 ## Appendix — worktree-aware auto-reindex (feature-driven update, 2026-06-25)
 
+> **SUPERSEDED 2026-06-29** — this appendix describes the now-removed
+> commit-reindex hook as current. See the "2026-06-29 — Explicit worktree-index
+> lifecycle" section below: the hook was removed; freshness is now explicit.
+
 Eval set: `evals/worktree-auto-reindex-evals.json` (8 cases — 4 freshness, 2
 controls, 1 deprecation, 1 edge; 2 subagent-context).
 
@@ -144,3 +148,25 @@ even an unguided agent answers "no reindex". The skill's value concentrates on
 the cases the baseline reliably fails — picking the deprecated `reindex_changes`
 (cases 4, 5, 8) where the swept line steers to `index_codebase` and
 hook-awareness. Eval retained as a regression test.
+
+## 2026-06-29 — Explicit worktree-index lifecycle (feature update)
+
+The commit-reindex hook was REMOVED. The Index-freshness pointer was updated
+from "a post-commit hook auto-reindexes after commits/merges" to the
+explicit-lifecycle pointer (no hook; freshness is the per-task reindex from
+`executing-plans`; manual `index_codebase` for uncommitted WIP). The TDD body
+(search existing tests for conventions) is unchanged.
+
+| Metric                | Value      |
+| --------------------- | ---------- |
+| With-rule pass rate   | 100% (5/5) |
+| Without-rule baseline | 80% (4/5)  |
+| Delta                 | +20pp      |
+| Iterations            | 0          |
+
+Eval: `evals/explicit-worktree-lifecycle-evals.json`. Value is removing the
+WRONG "the hook reindexed the commit" claim that would have made the agent
+believe the index is auto-fresh after a commit. T2 (the only baseline FAIL)
+shows the baseline, lacking the skill, thinks the index just lags after GREEN —
+unaware of the explicit per-task reindex mechanism. The prior
+`worktree-auto-reindex-evals.json` is SUPERSEDED.

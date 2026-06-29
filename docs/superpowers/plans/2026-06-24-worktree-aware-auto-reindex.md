@@ -1,5 +1,9 @@
 # Worktree-aware auto-reindex Implementation Plan
 
+> **SUPERSEDED (2026-06-29)** — the reindex-on-commit hook this plan builds was
+> removed; freshness is now explicit. See
+> `docs/superpowers/specs/2026-06-29-explicit-worktree-index-lifecycle-design.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use dinopowers:executing-plans
 > (or dinopowers:subagent-driven-development) to implement this plan
 > task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Chaining rule:

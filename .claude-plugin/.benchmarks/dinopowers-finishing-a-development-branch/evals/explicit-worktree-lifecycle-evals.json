@@ -1,0 +1,102 @@
+{
+  "skill": "dinopowers:finishing-a-development-branch",
+  "feature": "explicit-worktree-index-lifecycle",
+  "date": "2026-06-29",
+  "kind": "feature-driven-update",
+  "outcome": "Skill EDITED — the PostToolUse commit-reindex hook was removed; Step 5 + the Second Iron Rule were INVERTED from the now-false 'do NOT reindex main (the hook did it)' to 'reindex `main` EXPLICITLY after merge via mcp__tea-rags__index_codebase (no hook)'. Teardown (`tea-rags worktree remove <name>`) is now MANDATORY on EVERY finish — merge AND abandon/delete — and a cleanup-only PostToolUse hook is the teardown backstop for raw `git worktree remove`/`git branch -D`. With-rule 6/6 (100%), baseline 5/6 (83%), delta +17pp. The low delta vs a no-skill baseline UNDERSTATES the value: the PRIOR skill text actively MISDIRECTED the agent ('do not reindex main, the hook did it'), so the regeneration fixes a wrong-steer, not merely adds guidance — a no-skill agent gets it right precisely because it has no wrong instruction to follow. Supersedes worktree-auto-reindex-evals.json.",
+  "scenario": "Finishing a worktree dev branch; tea-rags MCP available. NO commit-reindex hook — main is refreshed by an EXPLICIT index_codebase on the main alias after a merge; the per-worktree clone is torn down with `tea-rags worktree remove` on every finish; a cleanup-only hook is the teardown backstop.",
+  "metrics": {
+    "withRulePassRate": "6/6 (100%)",
+    "withoutRulePassRate": "5/6 (83%)",
+    "deltaPP": 17,
+    "iterations": 0
+  },
+  "method": "Phase 2 lightweight tool-selection eval. Two parallel general-purpose subagents (with the new Step-5/Second-Iron-Rule guidance injected vs. tool-list-only baseline) described their tool plan for 6 cases (describe-only).",
+  "valueNote": "Delta is small because the merge→reindex-main + worktree-remove + reject-delete_collection behaviors are largely derivable by a competent agent. The skill's UNIQUE contribution is (a) reversing the OLD wrong instruction and (b) the cleanup-hook backstop awareness (F6, the only baseline FAIL).",
+  "cases": [
+    {
+      "id": "F1",
+      "context": "merge — explicit main reindex",
+      "prompt": "Just merged my worktree branch to main. Do I reindex main, and how?",
+      "expected": "YES — explicit `mcp__tea-rags__index_codebase` on the main alias (incremental). No hook does it. Never `reindex_changes`.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "Explicit index_codebase on main alias; cites 'no hook'."
+      },
+      "baseline": {
+        "grade": "PASS",
+        "note": "Incremental index_codebase on main; reasons the merge changed main's files."
+      }
+    },
+    {
+      "id": "F2",
+      "context": "merge — teardown tool",
+      "prompt": "After merging, what about the worktree index clone?",
+      "expected": "`tea-rags worktree remove <name>` (full footprint). NOT `delete_collection`.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "worktree remove, not delete_collection."
+      },
+      "baseline": {
+        "grade": "PASS",
+        "note": "worktree remove; reasons it deregisters + drops cohesively."
+      }
+    },
+    {
+      "id": "F3",
+      "context": "abandon — teardown on every finish",
+      "prompt": "Abandoning this branch WITHOUT merging — anything to clean up for tea-rags?",
+      "expected": "`tea-rags worktree remove <name>` (mandatory on abandon too); no main reindex (nothing merged).",
+      "withRule": {
+        "grade": "PASS",
+        "note": "worktree remove only; skips main reindex on abandon."
+      },
+      "baseline": {
+        "grade": "PASS",
+        "note": "worktree remove, not reindex; reasons the clone is orphaned regardless of merge/abandon."
+      }
+    },
+    {
+      "id": "F4",
+      "context": "hook misconception",
+      "prompt": "Does the merge commit auto-reindex main via a hook?",
+      "expected": "NO — no commit/merge hook; reindex main explicitly.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "No hook (only cleanup-only backstop remains); reindex explicit."
+      },
+      "baseline": {
+        "grade": "PASS",
+        "note": "No hook; reindex is explicit/user-gated."
+      }
+    },
+    {
+      "id": "F5",
+      "context": "wrong-tool control",
+      "prompt": "Can I just `delete_collection` the worktree clone to clean up?",
+      "expected": "NO — `delete_collection` leaks DuckDB + snapshot + registry; use `tea-rags worktree remove`.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "Rejects delete_collection; cites the leaked footprint."
+      },
+      "baseline": {
+        "grade": "PASS",
+        "note": "Rejects delete_collection as a partial op that desyncs registry."
+      }
+    },
+    {
+      "id": "F6",
+      "context": "raw git — cleanup-hook backstop",
+      "prompt": "I ran `git worktree remove` directly without going through the finishing skill — is the clone leaked?",
+      "expected": "The cleanup-only PostToolUse hook (`cleanup-worktree-clone.sh`) drops the orphaned clone automatically; still run `tea-rags worktree remove` explicitly when you can.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "Cites the cleanup-only hook backstop + idempotent explicit remove."
+      },
+      "baseline": {
+        "grade": "FAIL",
+        "note": "Says leaked; proposes manual worktree list/remove and `delete_collection` as last resort — unaware of the cleanup hook backstop, and reaches for the forbidden delete_collection."
+      }
+    }
+  ]
+}

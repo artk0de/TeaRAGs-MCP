@@ -43,6 +43,11 @@ discipline (7), critical-first gating (8).
 
 ## Appendix — worktree-aware auto-reindex (feature-driven update, 2026-06-25)
 
+> **SUPERSEDED 2026-06-29** — this appendix describes the now-removed
+> commit-reindex hook as current (e.g. "do NOT reindex main — the hook did it").
+> See the "2026-06-29 — Explicit worktree-index lifecycle" section below: the
+> hook was removed; main is reindexed EXPLICITLY on merge.
+
 Eval set: `evals/worktree-auto-reindex-evals.json` (7 cases — non-leaky
 context). **Skill EDITED**: added post-merge index-cleanup guidance — a "Second
 Iron Rule" callout + Step 5 + a Do-NOT-substitute table + Red Flags. After a
@@ -80,3 +85,25 @@ describe-only eval).
 remove or hard-alias the deprecated `reindex_changes` MCP tool so the prior
 cannot fire; consider surfacing `tea-rags worktree remove` at the tool-schema
 layer. File against the maintenance follow-up epic.
+
+## 2026-06-29 — Explicit worktree-index lifecycle (feature update)
+
+The commit-reindex hook was REMOVED. Step 5 + the Second Iron Rule were INVERTED
+from "do NOT reindex main (the hook did it)" to "reindex `main` EXPLICITLY after
+merge via `mcp__tea-rags__index_codebase`"; teardown
+(`tea-rags worktree remove`) is now MANDATORY on merge AND abandon/delete, with
+a cleanup-only `PostToolUse` hook as the backstop.
+
+| Metric                | Value      |
+| --------------------- | ---------- |
+| With-rule pass rate   | 100% (6/6) |
+| Without-rule baseline | 83% (5/6)  |
+| Delta                 | +17pp      |
+| Iterations            | 0          |
+
+Eval: `evals/explicit-worktree-lifecycle-evals.json`. The +17pp UNDERSTATES the
+value: the prior skill text actively MISDIRECTED ("don't reindex main, the hook
+did it"), so the no-skill baseline scores high precisely because it has no wrong
+instruction to follow — the regeneration fixes a wrong-steer. The skill's unique
+contribution is the cleanup-hook backstop awareness (F6, the only baseline
+FAIL). The prior `worktree-auto-reindex-evals.json` is SUPERSEDED.

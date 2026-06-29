@@ -3,6 +3,9 @@
   "feature": "worktree-aware-auto-reindex",
   "date": "2026-06-25",
   "kind": "feature-driven-update",
+  "superseded": true,
+  "supersededBy": "explicit-worktree-lifecycle-evals.json",
+  "supersededReason": "The PostToolUse commit-reindex hook this eval assumes (auto-reindex after a successful git commit/merge) was REMOVED 2026-06-29; freshness is now an explicit per-task reindex. The hook-based expectations here ('no manual reindex; the hook reindexed') are no longer correct. See explicit-worktree-lifecycle-evals.json.",
   "outcome": "NO skill-body edit applied. Phase 2 baseline measured the skill AS-IS after the Task-5 FRESHNESS sweep (which gave every dinopowers wrapper a hook-aware 'Index freshness' line). The with-rule run scored 8/8 on the freshness behavior, so per optimize-skill triage the proposed executing-plans-specific between-tasks guidance was DROPPED as dead weight — the generic swept line already drives correct behavior. This eval is retained as a regression test for the freshness behavior; it complements (does not replace) the primary pre-touch-guard suite in ../evals.json.",
   "scenario": "Executing a multi-task plan in a git worktree; tea-rags MCP available; a PostToolUse:Bash hook auto-reindexes the resolved collection after a successful git commit/merge.",
   "metrics": {

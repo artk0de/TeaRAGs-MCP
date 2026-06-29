@@ -1,0 +1,88 @@
+{
+  "skill": "dinopowers:test-driven-development",
+  "feature": "explicit-worktree-index-lifecycle",
+  "date": "2026-06-29",
+  "kind": "feature-driven-update",
+  "outcome": "Skill EDITED (Index-freshness pointer only) — replaced the now-false 'a post-commit hook auto-reindexes after commits/merges' line with the explicit-lifecycle pointer: there is NO background reindex hook; worktree-plan freshness is explicit (clone + per-task reindex owned by dinopowers:executing-plans); run index_codebase manually for uncommitted WIP. With-rule 5/5 (100%), baseline 4/5 (80%), delta +20pp. Value is removing the WRONG 'the hook reindexed the RED/GREEN commit' claim that would have made the agent believe the index is auto-fresh after a commit. The TDD skill body (search existing tests for conventions) is unchanged. Supersedes worktree-auto-reindex-evals.json.",
+  "scenario": "TDD inside a worktree multi-task plan; tea-rags MCP available. NO commit-reindex hook — RED/GREEN commits do not auto-reindex; freshness is the explicit per-task reindex run by executing-plans, plus a manual index_codebase for uncommitted WIP.",
+  "metrics": {
+    "withRulePassRate": "5/5 (100%)",
+    "withoutRulePassRate": "4/5 (80%)",
+    "deltaPP": 20,
+    "iterations": 0
+  },
+  "method": "Phase 2 lightweight tool-selection eval. Two parallel general-purpose subagents (with the new Index-freshness pointer injected vs. tool-list-only baseline) described their tool plan for 5 cases (describe-only).",
+  "valueNote": "Delta is small because 'commit != reindex' is derivable. The skill's contribution is removing the OLD wrong claim (hook reindexed the commit) and pointing freshness at the explicit per-task reindex from executing-plans (T2, the only baseline FAIL — baseline thought the index just lags after GREEN, unaware of the per-task reindex mechanism).",
+  "cases": [
+    {
+      "id": "T1",
+      "context": "RED commit",
+      "prompt": "I committed a failing RED test in my worktree plan. Is the index fresh for the next search, or do I reindex?",
+      "expected": "NOT auto-fresh (no hook). A RED commit is intra-task; the per-task reindex runs after task completion. Reindex explicitly if the next search must see the new test.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "RED is intra-task; reindex manually before the next search; no hook."
+      },
+      "baseline": {
+        "grade": "PASS",
+        "note": "commit != reindex; index not auto-updated (declines to reindex, but states the fact)."
+      }
+    },
+    {
+      "id": "T2",
+      "context": "GREEN commit — freshness mechanism",
+      "prompt": "Committed the GREEN implementation. Was it auto-reindexed?",
+      "expected": "No hook. The per-task reindex from executing-plans runs after the task-completion (GREEN) commit — an explicit skill step, not a git hook.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "Attributes freshness to the explicit per-task index_codebase from executing-plans (skill step, not hook)."
+      },
+      "baseline": {
+        "grade": "FAIL",
+        "note": "Says 'no, GREEN not reindexed; index lags' — unaware of the explicit per-task reindex mechanism that makes it fresh."
+      }
+    },
+    {
+      "id": "T3",
+      "context": "uncommitted WIP",
+      "prompt": "I want to search code I edited but have NOT committed during TDD. What first?",
+      "expected": "Run `mcp__tea-rags__index_codebase` (incremental) manually first, then search.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "Manual incremental index_codebase, then search."
+      },
+      "baseline": {
+        "grade": "PASS",
+        "note": "get_index_status then incremental index_codebase, then search."
+      }
+    },
+    {
+      "id": "T4",
+      "context": "hook misconception",
+      "prompt": "Does a post-commit hook reindex after my RED/GREEN commits?",
+      "expected": "NO — there is no commit-reindex hook; freshness is explicit.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "No background hook; explicit only."
+      },
+      "baseline": {
+        "grade": "PASS",
+        "note": "Inspects .husky; confirms no post-commit reindex hook."
+      }
+    },
+    {
+      "id": "T5",
+      "context": "conventions control",
+      "prompt": "Writing a failing test for a new reranker preset — how do I match project test conventions?",
+      "expected": "Search existing preset test files (`mcp__tea-rags__semantic_search` / `find_symbol`) for mocks/assertion style/fixtures before writing the RED test.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "semantic_search + find_symbol on existing preset tests."
+      },
+      "baseline": {
+        "grade": "PASS",
+        "note": "semantic_search + find_symbol; same conventions-matching approach."
+      }
+    }
+  ]
+}

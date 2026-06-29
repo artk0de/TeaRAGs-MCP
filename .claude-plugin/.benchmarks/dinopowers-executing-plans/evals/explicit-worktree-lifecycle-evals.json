@@ -1,0 +1,126 @@
+{
+  "skill": "dinopowers:executing-plans",
+  "feature": "explicit-worktree-index-lifecycle",
+  "date": "2026-06-29",
+  "kind": "feature-driven-update",
+  "outcome": "Skill EDITED — added Step 0 (explicit worktree-clone CREATE at plan start via `tea-rags worktree create`) + Mandatory-Step-Order item 5 (explicit per-Task REINDEX of the clone after each commit via `mcp__tea-rags__index_codebase`), and rewrote the 'Index freshness' pointer to state there is NO background reindex hook. The PostToolUse commit-reindex hook was REMOVED this session and replaced by a cleanup-only teardown backstop. Phase 2 baseline measured the NEW behavior: with-rule 8/8 (100%), without-rule 4/8 (50%), delta +50pp. With-rule reached 100% on first measure — no FIX/ITERATE needed. SUPERSEDES worktree-auto-reindex-evals.json, whose hook-based premise is now false.",
+  "scenario": "Executing a multi-task plan in a git worktree (inline OR subagent-driven); tea-rags MCP available. There is NO commit-reindex hook — freshness is explicit: clone CREATE at plan start, incremental REINDEX after each task commit, teardown on branch finish (a cleanup-only hook is the teardown backstop).",
+  "metrics": {
+    "withRulePassRate": "8/8 (100%)",
+    "withoutRulePassRate": "4/8 (50%)",
+    "deltaPP": 50,
+    "iterations": 0
+  },
+  "method": "Phase 2 lightweight tool-selection eval. Two parallel general-purpose subagents (with full skill text injected vs. tool-list-only baseline) described their tool plan for 8 cases (describe-only, no execution). Cases: 4 new-behavior (E1,E2,E5,E7), 2 gate controls (E3,E4), 1 over-trigger control (E6), 1 regression control (E8).",
+  "cases": [
+    {
+      "id": "E1",
+      "context": "worktree, multi-task, inline",
+      "prompt": "I'm in git worktree .claude/worktrees/feat-x executing a 4-task plan inline. What do I do about the tea-rags index before Task 1, and after each task?",
+      "expected": "CREATE clone ONCE before Task 1 (`tea-rags worktree create <name> --from <src> --path \"$PWD\" --no-git`); REINDEX the clone after EACH task's commit (`mcp__tea-rags__index_codebase project: <clone>`), unconditionally. NOT a background hook.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "Create once + reindex after every commit; explicitly states no background hook."
+      },
+      "baseline": {
+        "grade": "FAIL",
+        "note": "Creates clone, but makes per-task reindex CONDITIONAL ('only if next task needs prior symbols') — not the mandatory per-task reindex."
+      }
+    },
+    {
+      "id": "E2",
+      "context": "subagent: plan-executor",
+      "prompt": "Executing plan Task 2 of 5 in worktree .claude/worktrees/feat-x; I just committed Task 1. Is the worktree index fresh for Task 2's searches, or do I do something?",
+      "expected": "NOT auto-fresh; the PARENT runs an explicit incremental reindex of the clone for Task 1's commit before Task 2 searches.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "Parent reindexes then runs Task 2 guard; subagent inherits clone via worktree path."
+      },
+      "baseline": {
+        "grade": "FAIL",
+        "note": "Conditional reindex 'only if Task 2 must resolve Task 1 symbols' — would often skip the per-task reindex."
+      }
+    },
+    {
+      "id": "E3",
+      "context": "main checkout, multi-task (gate control)",
+      "prompt": "Executing a 3-task plan on the MAIN checkout (not a worktree). Do I create a worktree index clone?",
+      "expected": "NO clone — main-checkout work searches the main collection directly (Step 0 gate excludes it).",
+      "withRule": { "grade": "PASS", "note": "No clone; main alias." },
+      "baseline": {
+        "grade": "PASS",
+        "note": "No clone; reasons a clone is only for divergent worktree source."
+      }
+    },
+    {
+      "id": "E4",
+      "context": "worktree, single-task (gate control)",
+      "prompt": "A SINGLE-task plan in worktree .claude/worktrees/fix-y. Do I create a clone?",
+      "expected": "NO clone — Step 0 gate is multi-task only.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "Gate explicitly excludes single-task plans even in a worktree."
+      },
+      "baseline": {
+        "grade": "PASS",
+        "note": "Skips clone; reasons single-task divergence doesn't justify clone overhead."
+      }
+    },
+    {
+      "id": "E5",
+      "context": "worktree, merge",
+      "prompt": "Plan complete in the worktree, merging to main. What about the index and the clone?",
+      "expected": "On merge: EXPLICIT `mcp__tea-rags__index_codebase` on the main alias + `tea-rags worktree remove <name>` teardown (via finishing-a-development-branch).",
+      "withRule": {
+        "grade": "PASS",
+        "note": "Reindex main alias + remove clone."
+      },
+      "baseline": {
+        "grade": "FAIL",
+        "note": "Says do NOT reindex main on merge ('only on explicit request') — misses the mandatory explicit main reindex that replaced the hook."
+      }
+    },
+    {
+      "id": "E6",
+      "context": "subagent: explore (over-trigger control)",
+      "prompt": "Find where the reranker resolves composite presets in src/core.",
+      "expected": "Discovery search (find_symbol / hybrid_search); NO clone create, NO executing-plans (explore-only is excluded from Step 0).",
+      "withRule": {
+        "grade": "PASS",
+        "note": "Routes to explore; no clone, no guard."
+      },
+      "baseline": {
+        "grade": "PASS",
+        "note": "hybrid_search + find_symbol; no clone."
+      }
+    },
+    {
+      "id": "E7",
+      "context": "worktree, removed-hook misconception",
+      "prompt": "I'm executing a plan in a worktree. Does committing each task automatically reindex my worktree index clone?",
+      "expected": "NO — committing does not reindex; you must explicitly run `mcp__tea-rags__index_codebase` after each task. The commit-reindex hook was removed.",
+      "withRule": {
+        "grade": "PASS",
+        "note": "No auto-reindex; explicit required; notes the hook was removed."
+      },
+      "baseline": {
+        "grade": "PASS",
+        "note": "Correct from first principles (git commit and Qdrant index are independent)."
+      }
+    },
+    {
+      "id": "E8",
+      "context": "plan task (regression control)",
+      "prompt": "Task 3 of my plan edits api/public/dto/metrics.ts and infra/stats-cache.ts. What's the first tea-rags step before editing?",
+      "expected": "ONE `mcp__tea-rags__semantic_search rerank: blastRadius metaOnly: true` with brace-expanded pathPattern over both files, then the SAFE/CAUTION/UNSAFE verdict gate (pre-touch guard unchanged).",
+      "withRule": {
+        "grade": "PASS",
+        "note": "Single brace-expanded blastRadius guard + verdict gate."
+      },
+      "baseline": {
+        "grade": "FAIL",
+        "note": "Uses find_symbol + get_callers instead of the blastRadius pre-touch guard idiom."
+      }
+    }
+  ]
+}

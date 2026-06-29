@@ -1,7 +1,7 @@
 {
   "name": "tea-rags",
   "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
-  "version": "0.29.0",
+  "version": "0.30.0",
   "author": { "name": "artk0de" },
   "keywords": ["code-generation", "git-signals", "strategies", "search"],
   "hooks": {
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reindex-on-git-commit.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/cleanup-worktree-clone.sh",
             "timeout": 120
           }
         ]

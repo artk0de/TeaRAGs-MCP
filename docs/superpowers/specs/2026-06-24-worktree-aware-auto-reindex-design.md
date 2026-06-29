@@ -1,5 +1,13 @@
 # Worktree-aware auto-reindex — design
 
+> **SUPERSEDED (2026-06-29)** — the freshness mechanism here (the implicit
+> `reindex-on-git-commit.sh` PostToolUse commit hook) was replaced by an
+> EXPLICIT worktree-clone lifecycle. See
+> `2026-06-29-explicit-worktree-index-lifecycle-design.md`. The worktree-clone
+> CLI and teardown concepts below still hold; the per-commit reindex hook does
+> not — freshness is now an explicit skill step, and the only hook left is a
+> cleanup-only teardown backstop.
+
 Date: 2026-06-24 Status: approved (design) Scope: Claude Code integration
 (plugins `tea-rags` + `dinopowers`), no `src/core` changes Relates to:
 `2026-06-24-tea-rags-worktree-design.md` (the `tea-rags worktree` CLI this

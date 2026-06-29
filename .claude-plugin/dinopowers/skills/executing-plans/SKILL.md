@@ -36,22 +36,32 @@ justify a guard call.
 
 ## Mandatory Step Order (DO NOT SKIP)
 
+0. **Step 0** — Worktree index clone (ONCE, at plan start): if executing a
+   multi-task plan in a git worktree, CREATE the clone before Task 1 (see Step 0
+   below). Skip for single-task plans, explore-only, or main-checkout work.
 1. Step 2 — git-signal SAFE/CAUTION/UNSAFE verdict per Task before any edit
 2. Step 4 — verdict-gating: STOP and ask user if any UNSAFE
 3. **MUST** Step 5 — Code-Gen Cascade for code-generation Tasks (invoke
    `tea-rags:data-driven-generation`)
 4. Step 6 — chain into `superpowers:executing-plans`
+5. **After each Task's commit** — REINDEX the worktree clone explicitly
+   (`mcp__tea-rags__index_codebase`, incremental) so the next Task reads fresh
+   code. There is no background hook; skipping this leaves later Tasks on stale
+   payloads.
 
 ⚠️ Skipping Step 5 produces ungrounded code. Skipping Step 6 means the parent
-workflow never runs.
+workflow never runs. Skipping the per-Task REINDEX silently degrades every later
+Task's tea-rags results.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — a post-commit hook
-auto-reindexes after commits/merges; run `mcp__tea-rags__index_codebase`
-manually only to search code edited but not yet committed, BEFORE the first
-tea-rags call.
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and the
+worktree-clone lifecycle in `tea-rags/rules/index-freshness.md`. There is **NO
+background reindex hook**: for a multi-task plan in a worktree, CREATE the clone
+at plan start (Step 0) and REINDEX it explicitly after EACH Task's commit so the
+next Task reads fresh code. Run `mcp__tea-rags__index_codebase` manually to
+search uncommitted WIP.
 
 Plus the cross-plugin chain for code generation:
 
@@ -59,6 +69,39 @@ Plus the cross-plugin chain for code generation:
   that GENERATES code (new files, new functions, new classes, rewrites). Pulls
   strategy, template, and silo-author style. Not a `superpowers:Y` redirect —
   it's an additional MANDATORY step the wrapper inserts.
+
+## Step 0 — Worktree index clone (worktree multi-task plans, once)
+
+Before Task 1, if you are executing a **multi-task plan inside a git worktree**
+(inline-driven OR subagent-driven), give the worktree its own index clone so
+per-Task searches see this branch's code, not main's. Run it **explicitly — the
+user sees it**:
+
+```bash
+tea-rags worktree create <name> --from <src-alias> --path "$PWD" --no-git
+```
+
+- `<name>` — short worktree label; the clone registers as
+  `<src-alias>-worktree-<name>`. `--from` names the source project (the registry
+  alias the worktree was branched from); `--path "$PWD"` is the worktree root;
+  `--no-git` attaches to the existing worktree dir instead of creating one.
+- **Gate:** only for a multi-task plan in a worktree. Single-task plans,
+  explore-only sessions, and main-checkout work search the main collection
+  directly — no clone. If the source index is very large, state its size and
+  confirm before cloning.
+- **Subagent-driven:** the parent runs this ONCE; dispatched subagents inherit
+  the clone via the worktree path.
+
+Then after EACH Task's commit (Mandatory Step Order item 5), REINDEX the clone
+so the next Task reads fresh code:
+
+```
+mcp__tea-rags__index_codebase  project: "<src-alias>-worktree-<name>"
+```
+
+Full lifecycle (create → reindex → teardown) and the cleanup-hook backstop:
+`tea-rags/rules/index-freshness.md`. Teardown runs in
+`dinopowers:finishing-a-development-branch`.
 
 ## Step 1 — Extract Task's file list
 
