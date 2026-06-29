@@ -133,8 +133,7 @@ describe("CodegraphEnrichmentProvider — CHA cone dispatch end-to-end (bd tea-r
     }
   });
 
-  // unskipped in pffv Task 4
-  it.skip("RTA: cone prunes to the program-wide instantiation set", async () => {
+  it("RTA: cone prunes to the program-wide instantiation set", async () => {
     // Two-file fixture: file A instantiates only Dog (not Cat).
     // The dispatch site (ZooKeeper#make_noise) calls animal.speak against the
     // Animal cone. With RTA pruning (Task 4), only Dog#speak should be persisted
