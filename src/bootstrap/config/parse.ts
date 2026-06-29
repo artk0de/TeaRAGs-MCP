@@ -148,6 +148,7 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     deleteConcurrency: env("QDRANT_TUNE_DELETE_CONCURRENCY", "QDRANT_DELETE_CONCURRENCY", "DELETE_CONCURRENCY"),
     deleteFlushTimeoutMs: env("QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS", "DELETE_FLUSH_TIMEOUT_MS"),
     quantizationScalar: env("QDRANT_QUANTIZATION_SCALAR"),
+    turboQuant: env("QDRANT_TURBO_QUANT"),
   };
 
   const userSetChunkSize = ingest.chunkSize;

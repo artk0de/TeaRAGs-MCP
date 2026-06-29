@@ -46,4 +46,6 @@ export interface QdrantTuneConfig {
   deleteConcurrency: number;
   deleteFlushTimeoutMs: number;
   quantizationScalar: boolean;
+  /** Enable Qdrant 1.18 TurboQuant 8x dense quantization (default true). */
+  turboQuant: boolean;
 }

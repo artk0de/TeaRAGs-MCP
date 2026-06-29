@@ -30,6 +30,8 @@ const ENV_VARS = [
   "DELETE_FLUSH_TIMEOUT_MS",
   // Scalar quantization
   "QDRANT_QUANTIZATION_SCALAR",
+  // Turbo quantization
+  "QDRANT_TURBO_QUANT",
 ] as const;
 
 function cleanEnv() {
@@ -267,6 +269,32 @@ describe("QDRANT_TUNE_* env var rename (backwards compat)", () => {
       const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
       const config = parseAppConfigZod();
       expect(config.qdrantTune.quantizationScalar).toBe(false);
+      cleanEnv();
+    });
+
+    it("QDRANT_TURBO_QUANT defaults to true when unset", async () => {
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.turboQuant).toBe(true);
+      cleanEnv();
+    });
+
+    it("QDRANT_TURBO_QUANT=false disables turbo", async () => {
+      process.env.QDRANT_TURBO_QUANT = "false";
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.turboQuant).toBe(false);
+      cleanEnv();
+    });
+
+    it("QDRANT_TURBO_QUANT=true enables turbo", async () => {
+      process.env.QDRANT_TURBO_QUANT = "true";
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.turboQuant).toBe(true);
       cleanEnv();
     });
   });
