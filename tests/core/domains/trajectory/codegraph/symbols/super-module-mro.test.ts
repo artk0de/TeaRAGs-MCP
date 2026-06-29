@@ -57,10 +57,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
 import { runMigrations } from "../../../../../../src/core/infra/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const MIG_DIR = resolvePath(
-  __dirname,
-  "../../../../../../src/core/infra/migration/database/migrations",
-);
+const MIG_DIR = resolvePath(__dirname, "../../../../../../src/core/infra/migration/database/migrations");
 
 describe("CodegraphEnrichmentProvider — super module-method MRO (cai0/2oky5)", () => {
   let tmp: string;
@@ -111,6 +108,35 @@ describe("CodegraphEnrichmentProvider — super module-method MRO (cai0/2oky5)",
     expect(superRow, "expected a 'super' receiverKind row for ruby").toBeDefined();
     expect(superRow!.attempted).toBeGreaterThanOrEqual(1);
     // Consensus across A and B both pointing to Base#m → resolved >= 1.
-    expect(superRow!.resolved, "Tracer#m super must resolve to Base#m via module-MRO consensus").toBeGreaterThanOrEqual(1);
+    expect(superRow!.resolved, "Tracer#m super must resolve to Base#m via module-MRO consensus").toBeGreaterThanOrEqual(
+      1,
+    );
+  });
+
+  it("resolves module-method super in the dominant class<Super;include M graphql pattern (cai0/2oky5 Task 5)", async () => {
+    // Real graphql shape: class A < Base; include Tracer
+    // Walker stores classAncestors["A"] = ["Base", "Tracer"] (superclass first).
+    // classExtends["A"] = "Base" identifies the superclass.
+    // Ruby MRO reorder puts Base last: [Tracer, Base].
+    // firstDefinerAfter("Tracer", "m", "A") → Base#m.
+    // Consensus across A and B both agree → resolved >= 1.
+    writeFileSync(join(root, "base.rb"), "class Base\n  def m; end\nend\n");
+    writeFileSync(join(root, "tracer.rb"), "module Tracer\n  def m; super; end\nend\n");
+    writeFileSync(join(root, "a.rb"), "class A < Base\n  include Tracer\nend\n");
+    writeFileSync(join(root, "b.rb"), "class B < Base\n  include Tracer\nend\n");
+
+    await provider.streamFileBatch(root, ["base.rb", "tracer.rb", "a.rb", "b.rb"]);
+    await provider.finalizeSignals(root);
+
+    const rows = await client.getRunStats();
+    const rubyRows = rows.filter((r) => r.language === "ruby");
+
+    const superRow = rubyRows.find((r) => r.receiverKind === "super");
+    expect(superRow, "expected a 'super' receiverKind row for ruby").toBeDefined();
+    expect(superRow!.attempted).toBeGreaterThanOrEqual(1);
+    expect(
+      superRow!.resolved,
+      "Tracer#m super must resolve to Base#m via MRO-reordered include-into-subclass consensus",
+    ).toBeGreaterThanOrEqual(1);
   });
 });

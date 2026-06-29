@@ -83,7 +83,11 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const explicitImports = collectRubyRequires(input.tree.rootNode);
   const constantRefs = collectRubyConstantRefs(input.tree.rootNode);
   const fileScope = collectRubyDefinedConstants(input.tree.rootNode);
-  const { ancestors: ancestorMap, prepended: prependedMap } = collectRubyClassAncestors(input.tree.rootNode);
+  const {
+    ancestors: ancestorMap,
+    prepended: prependedMap,
+    extends: extendsMap,
+  } = collectRubyClassAncestors(input.tree.rootNode);
   const dispatchTables = collectRubyDispatchTables(input.tree.rootNode);
   const dispatchTableNames = new Set(Object.keys(dispatchTables));
   const calls = collectRubyCalls(input.tree.rootNode, dispatchTableNames);
@@ -153,6 +157,11 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     const prependedRecord: Record<string, readonly string[]> = {};
     for (const [k, v] of prependedMap) prependedRecord[k] = v;
     out.classPrependedAncestors = prependedRecord;
+  }
+  if (extendsMap.size > 0) {
+    const extendsRecord: Record<string, string> = {};
+    for (const [k, v] of extendsMap) extendsRecord[k] = v;
+    out.classExtends = extendsRecord;
   }
   // Unified hierarchy edges with precise kinds (bd tea-rags-mcp-lz8t). Parity
   // with the TS walker's `collectInheritanceEdges`: where the legacy
@@ -299,9 +308,11 @@ function collectRubyInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
 function collectRubyClassAncestors(root: AstNode): {
   ancestors: Map<string, string[]>;
   prepended: Map<string, string[]>;
+  extends: Map<string, string>;
 } {
   const out = new Map<string, string[]>();
   const prependedOut = new Map<string, string[]>();
+  const extendsOut = new Map<string, string>();
   const walkScope = (node: AstNode, scope: string[]): void => {
     if (node.type === "class" || node.type === "module") {
       const nameNode = node.childForFieldName("name");
@@ -323,6 +334,7 @@ function collectRubyClassAncestors(root: AstNode): {
               const supText = child.type === "scope_resolution" ? readScopeResolution(child) : child.text;
               if (supText && /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(supText)) {
                 ancestors.push(supText);
+                extendsOut.set(fq, supText);
               }
               break;
             }
@@ -371,7 +383,7 @@ function collectRubyClassAncestors(root: AstNode): {
     for (const child of node.children) walkScope(child, scope);
   };
   walkScope(root, []);
-  return { ancestors: out, prepended: prependedOut };
+  return { ancestors: out, prepended: prependedOut, extends: extendsOut };
 }
 
 const RUBY_MIXIN_METHODS = new Set(["include", "extend", "prepend"]);

@@ -78,4 +78,27 @@ describe("firstDefinerAfter — MRO after X (cai0/2oky5)", () => {
       ),
     ).toBeNull();
   });
+
+  it("reorders walker-stored [superclass, include] to Ruby MRO [include, superclass] via classExtends (cai0/2oky5 Task 5)", () => {
+    // Walker stores classAncestors["Sub"] = ["Base", "M"] (superclass FIRST).
+    // Ruby MRO is [M, Base] — includes before the superclass.
+    // classExtends["Sub"] = "Base" identifies the superclass so mroOrderedChain
+    // can move it last, making firstDefinerAfter("M","m","Sub") find Base#m.
+    const symbolTable = tableWith([
+      "base.rb",
+      [sym("Base", "Base", "base.rb", []), sym("Base#m", "m", "base.rb", ["Base"])],
+    ]);
+    const t = firstDefinerAfter(
+      "M",
+      "m",
+      "Sub",
+      ctx({
+        symbolTable,
+        classAncestors: { Sub: ["Base", "M"] }, // walker order: superclass first
+        classExtends: { Sub: "Base" },
+      }),
+      DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    );
+    expect(t).toEqual({ targetRelPath: "base.rb", targetSymbolId: "Base#m" });
+  });
 });
