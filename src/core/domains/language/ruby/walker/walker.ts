@@ -54,6 +54,7 @@ import {
   localTypeTrackingEnabled,
 } from "./local-bindings.js";
 import { RubyTypeFactStore } from "./type-fact-store.js";
+import { collectRubyInstantiatedTypes } from "./type-sources/ast-inference.js";
 import { INLINE_TYPE_SOURCES } from "./type-sources/index.js";
 import { YARD_CONST } from "./type-sources/yard.js";
 
@@ -167,6 +168,13 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const bodyReturnTypes = trackTypes ? collectRubyBodyReturnTypes(input.tree.rootNode) : {};
   const returnTypes = { ...bodyReturnTypes, ...store.returnTypeByMethod() };
   if (Object.keys(returnTypes).length > 0) out.functionReturnTypes = returnTypes;
+  // RTA instantiation set (bd tea-rags-mcp-pffv): fq consts this file
+  // instantiates (`Klass.new` / factory / finder). Gated on the same
+  // type-tracking env as the other inference channels — without local-type
+  // tracking the cone engine has no localBindings to fan out anyway. The
+  // provider unions these run-global to prune CHA cones to live subtypes.
+  const instantiatedTypes = trackTypes ? collectRubyInstantiatedTypes(input.tree.rootNode) : [];
+  if (instantiatedTypes.length > 0) out.instantiatedTypes = instantiatedTypes;
   if (Object.keys(dispatchTables).length > 0) out.dispatchTables = dispatchTables;
   // `@ivar` receiver types via the universal `classFieldTypes` channel (cai0
   // imass) — same env gate as the other type-inference paths. Ruby is the 5th

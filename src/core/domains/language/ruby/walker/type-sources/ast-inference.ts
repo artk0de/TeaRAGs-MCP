@@ -58,6 +58,24 @@ export function constInstanceType(node: AstNode): string | null {
 }
 
 /**
+ * Collect the program's instantiation set for one Ruby file (bd
+ * tea-rags-mcp-pffv): every fully-qualified constant instantiated via
+ * `Klass.new` or a factory/finder in `RUBY_INSTANCE_RETURNING` — exactly the
+ * sites {@link constInstanceType} already classifies. Deduped. The provider
+ * unions these across files into the run-global RTA set used to prune CHA
+ * cones. Pure AST walk; no symbol-table access (walker discipline).
+ */
+export function collectRubyInstantiatedTypes(root: AstNode): string[] {
+  const seen = new Set<string>();
+  walk(root, (node) => {
+    if (node.type !== "call" && node.type !== "method_call") return;
+    const fqConst = constInstanceType(node);
+    if (fqConst) seen.add(fqConst);
+  });
+  return [...seen];
+}
+
+/**
  * `rubyAstInferenceTypeSource` — walks the AST for a single Ruby file and
  * emits `kind: "local"` {@link RubyTypeFact} entries: one per inferred
  * local-variable binding produced by:
