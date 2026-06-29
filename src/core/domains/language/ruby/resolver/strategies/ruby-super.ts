@@ -82,7 +82,17 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
     // become `Outer::Inner` via scope-stack join with `::`.
     const enclosingClass = ctx.callerScope.join("::");
     const ancestors = ctx.classAncestors?.[enclosingClass];
-    if (!ancestors) return null;
+    if (!ancestors) {
+      // Module with no own ancestors (e.g. `module Tracer` with no `include`):
+      // the class-keyed walk has nothing to iterate, but the reverse-include
+      // consensus path can still resolve if every including class agrees on the
+      // same definer after the module in their MRO (bd cai0/2oky5).
+      if (!RUBY_RUNTIME_HOOKS.has(member)) {
+        const consensus = this.resolveViaIncludingClasses(enclosingClass, member, ctx);
+        if (consensus) return consensus;
+      }
+      return null;
+    }
     // `super` dispatches to the PARENT, never the enclosing class itself, so
     // start the MRO walk AT the ancestors with the enclosing class pre-seeded
     // into `visited`. Each ancestor reuses the shared class-chain walk (the same

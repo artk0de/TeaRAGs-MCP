@@ -1877,6 +1877,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       Object.keys(this.runPrependedAncestors).length > 0
         ? this.runPrependedAncestors
         : extraction.classPrependedAncestors;
+    // Reverse include-by index (bd cai0/2oky5 Task 4): derived from the
+    // run-global ancestor maps so `resolveViaIncludingClasses` in ruby-super.ts
+    // can find which classes include a given module. No new reset site needed —
+    // it is computed fresh from `ancestorsForResolver`/`prependedAncestorsForResolver`
+    // which are already reset at every existing reset site.
+    const includedByForResolver = buildIncludedBy(
+      ancestorsForResolver ?? {},
+      prependedAncestorsForResolver ?? {},
+    );
     const extendsForResolver = Object.keys(this.runExtends).length > 0 ? this.runExtends : extraction.classExtends;
     const returnTypesForResolver =
       Object.keys(this.runReturnTypes).length > 0 ? this.runReturnTypes : extraction.functionReturnTypes;
@@ -1907,6 +1916,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       associationTypes: extraction.associationTypes,
       classAncestors: ancestorsForResolver,
       classPrependedAncestors: prependedAncestorsForResolver,
+      includedBy: includedByForResolver,
       classExtends: extendsForResolver,
       ivarTypes: ivarTypesForResolver,
       structuredReturnTypes: structuredReturnTypesForResolver,
@@ -1945,6 +1955,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           structuredReturnTypes: structuredReturnTypesForResolver,
           classAncestors: ancestorsForResolver,
           classPrependedAncestors: prependedAncestorsForResolver,
+          includedBy: includedByForResolver,
           classExtends: extendsForResolver,
           // bd tea-rags-mcp-n0zj — run-global dispatch tables + callback
           // params drive the resolver's fan-out / inter-proc join.
