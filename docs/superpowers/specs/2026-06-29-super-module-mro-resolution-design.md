@@ -44,8 +44,12 @@ runs.
    existing run-global `runAncestors` AND `runPrependedAncestors` (prepend
    relationships included). Built once per run at the pass-1→pass-2 barrier —
    mirrors the pffv `runInstantiatedTypes` merge — and injected into
-   `CallContext` as `ctx.includedBy`. The WALKER is NOT changed; no
-   payload-schema change (derived from data the walker already emits).
+   `CallContext` as `ctx.includedBy`. The reverse-index derivation is
+   walker-free and adds no payload-schema change. **(REVISED — see the Task-5
+   addendum: the Ruby walker additionally fills the pre-existing, non-persisted
+   `classExtends` field to enable the Ruby-MRO ancestor reorder. That is the one
+   walker change in the delivered feature; the "no walker change" framing held
+   only under the original assumption that `classAncestors` was MRO-ordered.)**
 
 2. **`resolveSuper` reverse-consensus fallback (`ruby-super.ts`).** For
    `X = enclosingClass` on a class-keyed miss:
@@ -128,5 +132,40 @@ corpora (no precision regression).
   widen scope here.
 - Fan-out / confidence-weighted super (Option B) — rejected (breaks GUARD
   discipline, precision regression).
-- New walker emissions / a module-set payload field — avoided by the universal
-  derived fallback.
+- A module-set payload field — avoided by the universal derived fallback. (A
+  Ruby `classExtends` walker emission WAS added in Task 5 — see the addendum; it
+  is non-persisted resolve-time data, not a payload/schema field.)
+
+## Addendum — Task 5: Ruby-MRO ancestor reorder (2026-06-29)
+
+The plan's `firstDefinerAfter` (Task 2) linearized the including class's MRO via
+`collectAncestorChain`, which reads `classAncestors` in the walker's stored
+order `[superclass, ...includes]`. The Task-4 e2e revealed this is the REVERSE
+of Ruby's true MRO `[...includes, superclass]`: for the DOMINANT graphql shape
+`class Sub < Base; include M`, the module `M` lands LAST, so `firstDefinerAfter`
+finds nothing after it and DROPs — the ~280–310 graphql tracing edges (the main
+payoff) were not recovered. The original "no walker change" assumption rested on
+`classAncestors` being usable as the MRO; it is not.
+
+Fix (Task 5, additive):
+
+- The **Ruby walker now fills `classExtends`** (`fqClass → superclass`). The
+  field is PRE-EXISTING (`FileExtraction.classExtends`, populated by TS/JS) and
+  NON-PERSISTED (resolve-time data, not a Qdrant payload — no migration). The
+  walker already extracted the superclass; it now also records it here. No Ruby
+  resolver path read `classExtends` before, so this changes no existing Ruby
+  resolution (verified: existing super/self/bareCall read `classAncestors`).
+- `firstDefinerAfter` uses a new additive `mroOrderedChain` helper that moves
+  the superclass (from `ctx.classExtends`) LAST per Ruby MRO (includes first).
+  The isHub backbone (`collectAncestorChain` /
+  `resolveInstanceMethodInClassChain`) is NOT mutated. The reorder is gated on
+  `classExtends` presence, so non-superclass fixtures are unchanged.
+
+Residual (Minor, matches the pre-existing class-direct backbone, not a
+regression): the reorder is applied per-level via `mroOrderedChain`, but the
+per-element resolution still delegates to `resolveInstanceMethodInClassChain`,
+whose own recursion walks raw `[superclass, ...includes]` order. For a DEEP
+hierarchy where a nested ancestor's superclass AND a nested include BOTH define
+the member, the picked target can be the nested superclass rather than the
+strict-MRO-first nested include. Single-level shapes (the dominant case) are
+exact; the "precision 1.0 by construction" claim narrows to the first-level MRO.
