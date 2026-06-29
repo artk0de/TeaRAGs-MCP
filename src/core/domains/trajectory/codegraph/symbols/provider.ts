@@ -352,6 +352,31 @@ export interface CodegraphProviderDeps {
   exclusion?: CodegraphExclusionOptions;
 }
 
+/**
+ * Reverse include-by index (bd cai0/2oky5): invert the run-global ancestor maps
+ * so `out[X]` lists every class that has X as a direct ancestor (via superclass,
+ * include, or prepend). Language-agnostic — pure data inversion. Consumed by the
+ * Ruby `super` module-method fallback to find the classes whose MRO a super call
+ * inside module X dispatches through.
+ */
+export function buildIncludedBy(
+  ancestors: Record<string, readonly string[]>,
+  prepended: Record<string, readonly string[]>,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  const add = (child: string, ancestor: string): void => {
+    const list = (out[ancestor] ??= []);
+    if (!list.includes(child)) list.push(child);
+  };
+  for (const [child, list] of Object.entries(ancestors)) {
+    for (const a of list) add(child, a);
+  }
+  for (const [child, list] of Object.entries(prepended)) {
+    for (const a of list) add(child, a);
+  }
+  return out;
+}
+
 export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   readonly key = "codegraph.symbols";
   readonly signals = [...CODEGRAPH_SYMBOLS_FILE_SIGNALS, ...CODEGRAPH_SYMBOLS_CHUNK_SIGNALS];
