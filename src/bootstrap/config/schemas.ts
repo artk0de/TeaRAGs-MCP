@@ -194,6 +194,8 @@ export const qdrantTuneSchema = z.object({
     .pipe(z.number().int().min(1).max(100).optional()),
   // Cap batch-search query size. Unset = no cap.
   searchMaxBatchsize: optionalPositiveInt,
+  // Force the embedded daemon to keep storage on disk to minimize RAM (default false).
+  lowMemory: booleanFromEnvWithDefault(false),
 });
 
 export type CoreConfig = z.infer<typeof coreSchema>;

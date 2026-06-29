@@ -113,7 +113,7 @@ async function resolveInfrastructure(
   config: AppConfig,
   zodConfig: ReturnType<typeof getZodConfig>,
 ): Promise<InfraContext> {
-  const resolution = await resolveQdrantUrl(config.qdrantUrl, config.paths.appData);
+  const resolution = await resolveQdrantUrl(config.qdrantUrl, config.paths.appData, zodConfig.qdrantTune.lowMemory);
   if (resolution.mode === "external") {
     await checkExternalQdrantVersion(resolution.url, config.qdrantApiKey);
   }

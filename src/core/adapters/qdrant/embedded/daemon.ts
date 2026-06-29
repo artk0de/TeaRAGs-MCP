@@ -76,19 +76,47 @@ const MULTI_CORE_DEFAULTS: Readonly<Record<string, string>> = {
   QDRANT__STORAGE__PERFORMANCE__ASYNC_SCORING_ENABLED: "true",
 };
 
+/**
+ * On-disk storage flags applied when low-memory mode is on. These force the
+ * daemon to keep payload, vectors, and the HNSW index on disk instead of RAM —
+ * the documented Qdrant levers for surviving large-repo indexing on a
+ * RAM-constrained host (slower, OOM-safe). All three are confirmed config keys
+ * (`storage.on_disk_payload`, `storage.collection.vectors.on_disk`,
+ * `storage.hnsw_index.on_disk`). Applied as defaults only when the user has not
+ * already set the key, so explicit `QDRANT__*` overrides still win.
+ *
+ * NOTE: the Qdrant 1.18 `low_memory_mode` enum (no-resident / no-populate) is a
+ * separate startup lever; its exact env path / value is not yet confirmed, so it
+ * is intentionally left as a follow-up rather than guessed here.
+ */
+const LOW_MEMORY_ON_DISK_DEFAULTS: Readonly<Record<string, string>> = {
+  QDRANT__STORAGE__ON_DISK_PAYLOAD: "true",
+  QDRANT__STORAGE__COLLECTION__VECTORS__ON_DISK: "true",
+  QDRANT__STORAGE__HNSW_INDEX__ON_DISK: "true",
+};
+
 export function buildDaemonEnv(
   storagePath: string,
   port: number,
   parentEnv: NodeJS.ProcessEnv = process.env,
+  lowMemory = false,
 ): NodeJS.ProcessEnv {
   const performanceDefaults: Record<string, string> = {};
   for (const [key, value] of Object.entries(MULTI_CORE_DEFAULTS)) {
     if (parentEnv[key] === undefined) performanceDefaults[key] = value;
   }
 
+  const lowMemoryDefaults: Record<string, string> = {};
+  if (lowMemory) {
+    for (const [key, value] of Object.entries(LOW_MEMORY_ON_DISK_DEFAULTS)) {
+      if (parentEnv[key] === undefined) lowMemoryDefaults[key] = value;
+    }
+  }
+
   return {
     ...parentEnv,
     ...performanceDefaults,
+    ...lowMemoryDefaults,
     QDRANT__STORAGE__STORAGE_PATH: storagePath,
     QDRANT__SERVICE__HTTP_PORT: String(port),
     QDRANT__SERVICE__GRPC_PORT: "0",
@@ -240,7 +268,11 @@ export async function findFreePort(): Promise<number> {
   });
 }
 
-export async function resolveQdrantUrl(qdrantUrl?: string, appDataPath?: string): Promise<QdrantResolution> {
+export async function resolveQdrantUrl(
+  qdrantUrl?: string,
+  appDataPath?: string,
+  lowMemory = false,
+): Promise<QdrantResolution> {
   if (qdrantUrl && qdrantUrl !== EMBEDDED_MARKER) {
     return { mode: "external", url: qdrantUrl };
   }
@@ -252,7 +284,7 @@ export async function resolveQdrantUrl(qdrantUrl?: string, appDataPath?: string)
     }
   }
 
-  const handle = await ensureDaemon(appDataPath);
+  const handle = await ensureDaemon(appDataPath, lowMemory);
   return {
     mode: "embedded",
     url: handle.url,
@@ -328,6 +360,7 @@ function makeDaemonHandle(
   url: string,
   pid: number,
   appDataPath?: string,
+  lowMemory = false,
 ): DaemonHandle {
   return {
     url,
@@ -337,12 +370,12 @@ function makeDaemonHandle(
       const remaining = decrementRefs(paths);
       console.error(`[tea-rags] Released Qdrant ref (remaining=${remaining})`);
     },
-    reconnect: makeReconnect(paths, port, async () => (await ensureDaemon(appDataPath)).url),
+    reconnect: makeReconnect(paths, port, async () => (await ensureDaemon(appDataPath, lowMemory)).url),
     startupPhase: () => computeStartupPhase(paths),
   };
 }
 
-async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
+async function ensureDaemon(appDataPath?: string, lowMemory = false): Promise<DaemonHandle> {
   const storagePath = getStoragePath(appDataPath);
   mkdirSync(storagePath, { recursive: true });
   const paths = getDaemonPaths(storagePath);
@@ -358,7 +391,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
     const refs = incrementRefs(paths);
     console.error(`[tea-rags] Attached to Qdrant daemon (pid=${pid}, port=${port}, refs=${refs})`);
     warnIfStaleBinary(appDataPath);
-    return makeDaemonHandle(paths, port, url, pid, appDataPath);
+    return makeDaemonHandle(paths, port, url, pid, appDataPath, lowMemory);
   }
 
   // Slow path: acquire lock for daemon spawn
@@ -367,7 +400,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
     // Another process is starting the daemon — wait and retry
     console.error("[tea-rags] Daemon lock held by another process, waiting...");
     await waitForDaemon(paths);
-    return ensureDaemon(appDataPath);
+    return ensureDaemon(appDataPath, lowMemory);
   }
 
   try {
@@ -379,7 +412,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
       const pid = readPidFromFile(paths);
       const refs = incrementRefs(paths);
       console.error(`[tea-rags] Attached to Qdrant daemon (pid=${pid}, port=${port}, refs=${refs})`);
-      return makeDaemonHandle(paths, port, url, pid, appDataPath);
+      return makeDaemonHandle(paths, port, url, pid, appDataPath, lowMemory);
     }
 
     cleanupDaemonFiles(paths);
@@ -397,7 +430,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
       cwd: dirname(binaryPath),
       detached: true,
       stdio: "ignore",
-      env: buildDaemonEnv(storagePath, port),
+      env: buildDaemonEnv(storagePath, port, process.env, lowMemory),
     });
     child.unref();
 
@@ -429,7 +462,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
 
     console.error(`[tea-rags] Qdrant daemon spawned (pid=${pid}, port=${port}, recovery may be in progress)`);
     scheduleIdleWatcher(paths, pid);
-    return makeDaemonHandle(paths, port, url, pid, appDataPath);
+    return makeDaemonHandle(paths, port, url, pid, appDataPath, lowMemory);
   } finally {
     daemonLock.release(lock.fd);
   }

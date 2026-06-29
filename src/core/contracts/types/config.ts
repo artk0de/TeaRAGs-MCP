@@ -52,4 +52,6 @@ export interface QdrantTuneConfig {
   maxResidentMemoryPercent?: number;
   /** Cap batch-search query size. Unset = no cap. */
   searchMaxBatchsize?: number;
+  /** Force the embedded daemon to keep storage on disk to minimize RAM (default false). */
+  lowMemory: boolean;
 }

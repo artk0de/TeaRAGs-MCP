@@ -151,6 +151,7 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     turboQuant: env("QDRANT_TURBO_QUANT"),
     maxResidentMemoryPercent: env("QDRANT_MAX_RESIDENT_MEMORY_PERCENT"),
     searchMaxBatchsize: env("QDRANT_SEARCH_MAX_BATCHSIZE"),
+    lowMemory: env("QDRANT_LOW_MEMORY"),
   };
 
   const userSetChunkSize = ingest.chunkSize;

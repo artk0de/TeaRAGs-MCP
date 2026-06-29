@@ -196,6 +196,25 @@ describe("buildDaemonEnv", () => {
     expect(env.PATH).toBe("/usr/bin");
     expect(env.FOO).toBe("bar");
   });
+
+  it("low-memory mode forces on-disk storage env flags", () => {
+    const env = buildDaemonEnv("/tmp/q", 6333, {}, true);
+    expect(env.QDRANT__STORAGE__ON_DISK_PAYLOAD).toBe("true");
+    expect(env.QDRANT__STORAGE__COLLECTION__VECTORS__ON_DISK).toBe("true");
+    expect(env.QDRANT__STORAGE__HNSW_INDEX__ON_DISK).toBe("true");
+  });
+
+  it("normal mode does not set on-disk overrides", () => {
+    const env = buildDaemonEnv("/tmp/q", 6333, {}, false);
+    expect(env.QDRANT__STORAGE__ON_DISK_PAYLOAD).toBeUndefined();
+    expect(env.QDRANT__STORAGE__COLLECTION__VECTORS__ON_DISK).toBeUndefined();
+    expect(env.QDRANT__STORAGE__HNSW_INDEX__ON_DISK).toBeUndefined();
+  });
+
+  it("low-memory on-disk defaults yield to user-provided overrides", () => {
+    const env = buildDaemonEnv("/tmp/q", 6333, { QDRANT__STORAGE__ON_DISK_PAYLOAD: "false" }, true);
+    expect(env.QDRANT__STORAGE__ON_DISK_PAYLOAD).toBe("false");
+  });
 });
 
 describe("isPidAlive", () => {

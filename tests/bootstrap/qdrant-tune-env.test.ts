@@ -336,6 +336,23 @@ describe("QDRANT_TUNE_* env var rename (backwards compat)", () => {
       expect(config.qdrantTune.searchMaxBatchsize).toBe(256);
       cleanEnv();
     });
+
+    it("QDRANT_LOW_MEMORY defaults to false when unset", async () => {
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.lowMemory).toBe(false);
+      cleanEnv();
+    });
+
+    it("QDRANT_LOW_MEMORY=true enables low memory", async () => {
+      process.env.QDRANT_LOW_MEMORY = "true";
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.lowMemory).toBe(true);
+      cleanEnv();
+    });
   });
 
   describe("accumulator.ts integration", () => {
