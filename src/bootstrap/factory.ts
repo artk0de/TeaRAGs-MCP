@@ -25,6 +25,7 @@ import {
 import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
 import { TracePathOps } from "../core/api/internal/ops/trace-path-ops.js";
+import { WorktreeOps } from "../core/api/internal/ops/worktree-ops.js";
 import type { SymbolChunkResolver } from "../core/contracts/types/codegraph.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
@@ -32,9 +33,11 @@ import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/en
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
+import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
+import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
 import { collectSymbols, DefaultSymbolIdComposer } from "../core/domains/language/index.js";
 import { CollectionFootprintFactory } from "../core/domains/maintenance/footprint/index.js";
-import { WorktreeOps } from "../core/domains/maintenance/worktree/index.js";
+import { WorktreeProvisioner } from "../core/domains/maintenance/worktree/index.js";
 import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
@@ -81,6 +84,8 @@ const LANGUAGE_MODULE_PATH = join(__dirname, "../core/domains/language/index.js"
 
 export interface AppContext {
   app: App;
+  /** CLI-only worktree maintenance facade — wired here, off the App/MCP contract. */
+  worktreeOps: WorktreeOps;
   schemaBuilder: SchemaBuilder;
   healthProbes?: HealthProbes;
   embeddedRelease?: () => void;
@@ -621,13 +626,18 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
       }),
     statsCache,
     snapshotBaseDir: config.paths.snapshots,
+    // Wire the ingest-owned per-collection stores into the footprint via DIP —
+    // the footprint domain depends only on the contracts interfaces, never ingest.
+    snapshotStoreFactory: (baseDir, logicalName) => new ShardedSnapshotManager(baseDir, logicalName),
+    quarantineStoreFactory: (baseDir, logicalName) => new QuarantineStore(baseDir, logicalName),
   });
-  const worktreeOps = new WorktreeOps({
+  const worktreeProvisioner = new WorktreeProvisioner({
     registry: collectionRegistry,
     qdrant: infra.qdrant,
     footprintFactory,
     dataDir: config.paths.appData,
   });
+  const worktreeOps = new WorktreeOps(worktreeProvisioner);
   const explore = new ExploreFacade({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -649,7 +659,6 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     reranker: composition.reranker,
     schemaDriftMonitor,
     projectRegistryOps,
-    worktreeOps,
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
     modelGuard: infra.modelGuard,
     graphFacade: codegraphContext?.graphFacade,
@@ -676,6 +685,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
 
   return {
     app,
+    worktreeOps,
     schemaBuilder: composition.schemaBuilder,
     healthProbes: {
       checkQdrant: async () => infra.qdrant.checkHealth(),

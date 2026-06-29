@@ -12,4 +12,6 @@ export type * from "./types/chunker.js";
 export type * from "./types/language.js";
 export type * from "./types/enrichment.js";
 export type * from "./types/ingest-config.js";
+export type * from "./types/worktree.js";
+export type * from "./types/footprint.js";
 export * from "./signal-utils.js";
