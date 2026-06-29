@@ -173,6 +173,38 @@ See the
 [Codegraph Enrichments docs](https://artk0de.github.io/TeaRAGs-MCP/usage/advanced/codegraph-enrichments)
 for signals, presets, supported languages, and configuration.
 
+<!-- BEGIN lang-compat -->
+
+## Languages Compatibilities
+
+<!-- markdownlint-disable MD033 -->
+<details>
+<summary>Supported languages and support levels</summary>
+
+What tea-rags supports per language and at what level. `AST chunking` is how
+source is split into searchable chunks; `Test chunking` is how faithfully test
+structure is preserved; `Codegraph` is the call-graph resolution ceiling (the
+realized per-project number lives in the `tea-rags prime` digest, not here).
+
+| Language   | AST chunking                                                                     | Test chunking                                      | Codegraph                                                                                                                        |
+| ---------- | -------------------------------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| TypeScript | full · tree-sitter (commentCapture, bodyChunker, testScopeChunker)               | high · testScopeChunker (describe/it scopes)       | high — 8-strategy chain + ConeDispatch                                                                                           |
+| JavaScript | full · tree-sitter (jsAssignmentFilter, JsChunkClassifier)                       | high · testScopeChunker (describe/it scopes)       | high — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)                                                                |
+| Python     | full · tree-sitter                                                               | medium · generic AST                               | moderate — 6-strategy + ConeDispatch CHA; type hints where present                                                               |
+| Go         | full · tree-sitter (GoChunkClassifier)                                           | medium · generic AST                               | moderate — 6-strategy; explicit interfaces (no poly dispatch)                                                                    |
+| Java       | full · tree-sitter                                                               | medium · generic AST                               | moderate — 6-strategy + java.lang stdlib whitelist + overload disambiguation                                                     |
+| Rust       | full · tree-sitter (nameExtractor)                                               | medium · generic AST (#[test] attrs not preserved) | moderate — 6-strategy; trait-based dispatch                                                                                      |
+| Ruby       | full · tree-sitter (rspecFilter, commentCapture, rspecScopeChunker, bodyChunker) | high · RSpec scope chunker (parent setup injected) | untyped high · YARD maximum · RBS/Sorbet TBD — 11-strategy + 4 dispatch components (table/union/cone/dynamic) + YARD type-source |
+| Bash       | full · tree-sitter                                                               | low · generic AST (bats/shunit not recognized)     | minimal — function-call extraction only, no dispatch                                                                             |
+| Markdown   | partial · MarkdownChunker (remark)                                               | N/A · doc-only                                     | none — no call graph                                                                                                             |
+| sql        | none · CharacterChunker                                                          | none                                               | none                                                                                                                             |
+| jsonc      | none · CharacterChunker                                                          | none                                               | none                                                                                                                             |
+| json       | none · CharacterChunker                                                          | none                                               | none                                                                                                                             |
+
+</details>
+<!-- markdownlint-enable MD033 -->
+<!-- END lang-compat -->
+
 ## Who It's For
 
 - **Developers in large monorepos** — where "find similar code" returns a dozen

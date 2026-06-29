@@ -1,14 +1,27 @@
 import { DEFAULT_AMBIGUOUS_RESOLVE_MODE, type AmbiguousResolveMode } from "../../contracts/types/codegraph.js";
-import type { LanguageFactoryDescriptor, LanguageProvider } from "../../contracts/types/language.js";
+import type {
+  LanguageCapability,
+  LanguageFactoryDescriptor,
+  LanguageProvider,
+} from "../../contracts/types/language.js";
+import { capability as bashCapability } from "./bash/capability.js";
 import { BashLanguage } from "./bash/index.js";
 import { UnsupportedLanguageError } from "./errors.js";
+import { capability as goCapability } from "./go/capability.js";
 import { GoLanguage } from "./go/index.js";
+import { capability as javaCapability } from "./java/capability.js";
 import { JavaLanguage } from "./java/index.js";
+import { capability as javascriptCapability } from "./javascript/capability.js";
 import { JavaScriptLanguage } from "./javascript/index.js";
+import { capability as markdownCapability } from "./markdown/capability.js";
 import { MarkdownLanguage } from "./markdown/index.js";
+import { capability as pythonCapability } from "./python/capability.js";
 import { PythonLanguage } from "./python/index.js";
+import { capability as rubyCapability } from "./ruby/capability.js";
 import { RubyLanguage } from "./ruby/index.js";
+import { capability as rustCapability } from "./rust/capability.js";
 import { RustLanguage } from "./rust/index.js";
+import { capability as typescriptCapability } from "./typescript/capability.js";
 import { TypeScriptLanguage } from "./typescript/index.js";
 
 /**
@@ -88,5 +101,26 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
 
   supported(): string[] {
     return [...NATIVE_LANGUAGES];
+  }
+
+  /**
+   * Static per-language capability descriptors, keyed by language. Mirrors
+   * `supported()` (same native set) but LIGHTWEIGHT — imports only each
+   * `capability.ts` const, never constructs a runtime provider (no grammar /
+   * Parser load). Single source of truth for the language-compatibility
+   * generator (rule + README renderers) and prime's per-index highlight.
+   */
+  capabilities(): Map<string, LanguageCapability> {
+    return new Map<string, LanguageCapability>([
+      ["ruby", rubyCapability],
+      ["typescript", typescriptCapability],
+      ["javascript", javascriptCapability],
+      ["python", pythonCapability],
+      ["go", goCapability],
+      ["java", javaCapability],
+      ["rust", rustCapability],
+      ["bash", bashCapability],
+      ["markdown", markdownCapability],
+    ]);
   }
 }
