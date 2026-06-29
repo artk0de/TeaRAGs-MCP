@@ -52,7 +52,7 @@ import { registerAllTools } from "../mcp/tools/index.js";
 import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
 import { getConfigDump, getZodConfig, type AppConfig } from "./config/index.js";
 import { checkExternalQdrantVersion } from "./config/qdrant-compat.js";
-import { reconcileTurbo } from "./config/turbo-reconcile.js";
+import { reconcileStrictMode, reconcileTurbo } from "./config/turbo-reconcile.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8")) as {
@@ -192,6 +192,21 @@ async function resolveInfrastructure(
       await reconcileTurbo(qdrant);
     } catch (err) {
       process.stderr.write(`[tea-rags] TurboQuant reconcile failed: ${(err as Error).message}\n`);
+    }
+  }
+
+  // Reconcile existing collections to the strict-mode guardrails (OOM guard +
+  // search batch cap). Skipped when both fields are unset. Same log-and-continue
+  // policy as TurboQuant — a reconcile failure must never crash startup.
+  const strictDesired = {
+    maxResidentMemoryPercent: zodConfig.qdrantTune.maxResidentMemoryPercent,
+    searchMaxBatchsize: zodConfig.qdrantTune.searchMaxBatchsize,
+  };
+  if (strictDesired.maxResidentMemoryPercent != null || strictDesired.searchMaxBatchsize != null) {
+    try {
+      await reconcileStrictMode(qdrant, strictDesired);
+    } catch (err) {
+      process.stderr.write(`[tea-rags] strict-mode reconcile failed: ${(err as Error).message}\n`);
     }
   }
 

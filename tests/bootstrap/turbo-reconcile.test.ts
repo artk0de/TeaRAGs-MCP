@@ -5,7 +5,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { isTurboBits4, reconcileTurbo } from "../../src/bootstrap/config/turbo-reconcile.js";
+import {
+  isStrictModeApplied,
+  isTurboBits4,
+  reconcileStrictMode,
+  reconcileTurbo,
+} from "../../src/bootstrap/config/turbo-reconcile.js";
 
 const TURBO_CONFIG = { turbo: { bits: "bits4", always_ram: true } } as const;
 
@@ -66,5 +71,77 @@ describe("reconcileTurbo", () => {
     expect(manager.listCollections).toHaveBeenCalledTimes(1);
     expect(manager.updateCollectionQuantization).toHaveBeenCalledWith("a");
     expect(manager.updateCollectionQuantization).toHaveBeenCalledWith("b");
+  });
+});
+
+describe("isStrictModeApplied", () => {
+  it("returns true when the live percent matches desired", () => {
+    expect(
+      isStrictModeApplied({ enabled: true, max_resident_memory_percent: 90 }, { maxResidentMemoryPercent: 90 }),
+    ).toBe(true);
+  });
+
+  it("returns false when the live percent differs from desired", () => {
+    expect(
+      isStrictModeApplied({ enabled: true, max_resident_memory_percent: 80 }, { maxResidentMemoryPercent: 90 }),
+    ).toBe(false);
+  });
+
+  it("returns false for undefined / null live config when a field is desired", () => {
+    expect(isStrictModeApplied(undefined, { maxResidentMemoryPercent: 90 })).toBe(false);
+    expect(isStrictModeApplied(null, { searchMaxBatchsize: 256 })).toBe(false);
+  });
+
+  it("matches on the search batch cap", () => {
+    expect(isStrictModeApplied({ enabled: true, search_max_batchsize: 256 }, { searchMaxBatchsize: 256 })).toBe(true);
+    expect(isStrictModeApplied({ enabled: true, search_max_batchsize: 128 }, { searchMaxBatchsize: 256 })).toBe(false);
+  });
+});
+
+describe("reconcileStrictMode", () => {
+  function makeStrictManager(overrides: Record<string, unknown> = {}) {
+    return {
+      listCollections: vi.fn().mockResolvedValue(["col"]),
+      getStrictModeConfig: vi.fn().mockResolvedValue(undefined),
+      updateCollectionStrictMode: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    };
+  }
+
+  it("updates a collection whose live strict config differs from desired", async () => {
+    const manager = makeStrictManager();
+
+    await reconcileStrictMode(manager as never, { maxResidentMemoryPercent: 90 }, ["col"]);
+
+    expect(manager.updateCollectionStrictMode).toHaveBeenCalledWith("col", { maxResidentMemoryPercent: 90 });
+  });
+
+  it("is a no-op when the collection already matches desired", async () => {
+    const manager = makeStrictManager({
+      getStrictModeConfig: vi.fn().mockResolvedValue({ enabled: true, max_resident_memory_percent: 90 }),
+    });
+
+    await reconcileStrictMode(manager as never, { maxResidentMemoryPercent: 90 }, ["col"]);
+
+    expect(manager.updateCollectionStrictMode).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op when desired is empty (both fields unset)", async () => {
+    const manager = makeStrictManager();
+
+    await reconcileStrictMode(manager as never, {}, ["col"]);
+
+    expect(manager.getStrictModeConfig).not.toHaveBeenCalled();
+    expect(manager.updateCollectionStrictMode).not.toHaveBeenCalled();
+  });
+
+  it("lists collections itself when no explicit list is passed", async () => {
+    const manager = makeStrictManager({ listCollections: vi.fn().mockResolvedValue(["a", "b"]) });
+
+    await reconcileStrictMode(manager as never, { maxResidentMemoryPercent: 70 });
+
+    expect(manager.listCollections).toHaveBeenCalledTimes(1);
+    expect(manager.updateCollectionStrictMode).toHaveBeenCalledWith("a", { maxResidentMemoryPercent: 70 });
+    expect(manager.updateCollectionStrictMode).toHaveBeenCalledWith("b", { maxResidentMemoryPercent: 70 });
   });
 });

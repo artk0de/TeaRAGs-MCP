@@ -84,6 +84,7 @@ class MockQdrantManager implements Partial<QdrantManager> {
     enableHybrid?: boolean,
     _quantizationScalar?: boolean,
     _turboQuant?: boolean,
+    _strictMode?: { maxResidentMemoryPercent?: number; searchMaxBatchsize?: number },
   ): Promise<void> {
     this.collections.set(name, {
       vectorSize,

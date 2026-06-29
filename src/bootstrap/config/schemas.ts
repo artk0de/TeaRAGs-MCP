@@ -185,6 +185,15 @@ export const qdrantTuneSchema = z.object({
   deleteFlushTimeoutMs: intWithDefault(1000),
   quantizationScalar: booleanFromEnv,
   turboQuant: booleanFromEnvWithDefault(true),
+  // Strict-mode OOM guard: reject memory-consuming writes above N% resident RAM.
+  // Unset = off. Mirrors `optionalPositiveInt` but bounded to the 1-100 percent range.
+  maxResidentMemoryPercent: z
+    .string()
+    .optional()
+    .transform((v) => (v !== undefined && v !== "" ? parseInt(v, 10) : undefined))
+    .pipe(z.number().int().min(1).max(100).optional()),
+  // Cap batch-search query size. Unset = no cap.
+  searchMaxBatchsize: optionalPositiveInt,
 });
 
 export type CoreConfig = z.infer<typeof coreSchema>;

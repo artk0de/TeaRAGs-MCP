@@ -735,6 +735,59 @@ describe("QdrantManager", () => {
     });
   });
 
+  describe("updateCollectionStrictMode", () => {
+    it("PATCHes the memory percent via update_collection", async () => {
+      await manager.updateCollectionStrictMode("col", { maxResidentMemoryPercent: 90 });
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("col", {
+        strict_mode_config: { enabled: true, max_resident_memory_percent: 90 },
+      });
+    });
+
+    it("PATCHes the search batch cap via update_collection", async () => {
+      await manager.updateCollectionStrictMode("col", { searchMaxBatchsize: 256 });
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("col", {
+        strict_mode_config: { enabled: true, search_max_batchsize: 256 },
+      });
+    });
+
+    it("PATCHes both strict-mode fields together", async () => {
+      await manager.updateCollectionStrictMode("col", {
+        maxResidentMemoryPercent: 80,
+        searchMaxBatchsize: 128,
+      });
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("col", {
+        strict_mode_config: {
+          enabled: true,
+          max_resident_memory_percent: 80,
+          search_max_batchsize: 128,
+        },
+      });
+    });
+  });
+
+  describe("getStrictModeConfig", () => {
+    it("returns the live strict_mode_config from getCollection", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        config: { strict_mode_config: { enabled: true, max_resident_memory_percent: 90 } },
+      });
+
+      const config = await manager.getStrictModeConfig("col");
+
+      expect(config).toEqual({ enabled: true, max_resident_memory_percent: 90 });
+    });
+
+    it("returns undefined when the collection has no strict_mode_config", async () => {
+      mockClient.getCollection.mockResolvedValue({ config: {} });
+
+      const config = await manager.getStrictModeConfig("col");
+
+      expect(config).toBeUndefined();
+    });
+  });
+
   describe("quantization rescore params (all dense paths)", () => {
     beforeEach(() => {
       // query/queryGroups/search read collection info first — give them a valid

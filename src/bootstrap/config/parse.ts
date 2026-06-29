@@ -149,6 +149,8 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     deleteFlushTimeoutMs: env("QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS", "DELETE_FLUSH_TIMEOUT_MS"),
     quantizationScalar: env("QDRANT_QUANTIZATION_SCALAR"),
     turboQuant: env("QDRANT_TURBO_QUANT"),
+    maxResidentMemoryPercent: env("QDRANT_MAX_RESIDENT_MEMORY_PERCENT"),
+    searchMaxBatchsize: env("QDRANT_SEARCH_MAX_BATCHSIZE"),
   };
 
   const userSetChunkSize = ingest.chunkSize;

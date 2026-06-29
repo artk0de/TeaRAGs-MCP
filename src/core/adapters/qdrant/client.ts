@@ -194,6 +194,7 @@ export class QdrantManager {
     enableSparse = false,
     quantizationScalar = false,
     turboQuant = false,
+    strictMode?: { maxResidentMemoryPercent?: number; searchMaxBatchsize?: number },
   ): Promise<void> {
     type DistanceType = "Cosine" | "Euclid" | "Dot" | "Manhattan";
     type VectorConfig =
@@ -218,6 +219,11 @@ export class QdrantManager {
       quantization_config?:
         | { scalar: { type: "int8"; always_ram: boolean } }
         | { turbo: { bits: "bits4"; always_ram: boolean } };
+      strict_mode_config?: {
+        enabled: boolean;
+        max_resident_memory_percent?: number;
+        search_max_batchsize?: number;
+      };
     }
 
     const config: CollectionConfig = enableSparse
@@ -245,6 +251,16 @@ export class QdrantManager {
       config.quantization_config = { turbo: { bits: "bits4", always_ram: true } };
     } else if (quantizationScalar) {
       config.quantization_config = { scalar: { type: "int8", always_ram: true } };
+    }
+
+    if (strictMode && (strictMode.maxResidentMemoryPercent != null || strictMode.searchMaxBatchsize != null)) {
+      config.strict_mode_config = {
+        enabled: true,
+        ...(strictMode.maxResidentMemoryPercent != null && {
+          max_resident_memory_percent: strictMode.maxResidentMemoryPercent,
+        }),
+        ...(strictMode.searchMaxBatchsize != null && { search_max_batchsize: strictMode.searchMaxBatchsize }),
+      };
     }
 
     try {
@@ -1211,6 +1227,40 @@ export class QdrantManager {
         quantization_config: { turbo: { bits: "bits4", always_ram: true } },
       }),
     );
+  }
+
+  /**
+   * Applies Qdrant 1.18 strict-mode guardrails to an existing collection — the
+   * `max_resident_memory_percent` OOM guard and/or the `search_max_batchsize`
+   * cap. Server-side config only, no reindex. Idempotent at the call site (the
+   * startup reconcile only calls this when the live config differs).
+   */
+  async updateCollectionStrictMode(
+    collectionName: string,
+    strictMode: { maxResidentMemoryPercent?: number; searchMaxBatchsize?: number },
+  ): Promise<void> {
+    await this.call(async () =>
+      this.client.updateCollection(collectionName, {
+        strict_mode_config: {
+          enabled: true,
+          ...(strictMode.maxResidentMemoryPercent != null && {
+            max_resident_memory_percent: strictMode.maxResidentMemoryPercent,
+          }),
+          ...(strictMode.searchMaxBatchsize != null && { search_max_batchsize: strictMode.searchMaxBatchsize }),
+        },
+      }),
+    );
+  }
+
+  /**
+   * Reads the live strict-mode config of a collection (e.g.
+   * `{ enabled: true, max_resident_memory_percent: 90 }`) or `undefined` when
+   * strict mode is not configured. Used by the startup strict-mode reconcile to
+   * decide whether a PATCH is needed.
+   */
+  async getStrictModeConfig(name: string): Promise<unknown> {
+    const info = await this.call(async () => this.client.getCollection(name));
+    return (info.config as { strict_mode_config?: unknown } | undefined)?.strict_mode_config;
   }
 
   /**

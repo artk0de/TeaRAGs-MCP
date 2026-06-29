@@ -35,3 +35,54 @@ export async function reconcileTurbo(qdrant: TurboReconcileTarget, collectionNam
     }
   }
 }
+
+/** Desired strict-mode guardrails — either field may be unset (then it is not enforced). */
+export interface StrictModeDesired {
+  maxResidentMemoryPercent?: number;
+  searchMaxBatchsize?: number;
+}
+
+/** Minimal QdrantManager surface the strict-mode reconcile depends on (ISP — keeps it unit-testable). */
+export interface StrictModeReconcileTarget {
+  listCollections(): Promise<string[]>;
+  getStrictModeConfig(name: string): Promise<unknown>;
+  updateCollectionStrictMode(name: string, strictMode: StrictModeDesired): Promise<void>;
+}
+
+/**
+ * Pure predicate: true iff the live strict-mode config already satisfies every
+ * field the `desired` config sets. A live config missing a desired field (or an
+ * absent config entirely) is not applied, so the reconcile will PATCH it.
+ */
+export function isStrictModeApplied(strictModeConfig: unknown, desired: StrictModeDesired): boolean {
+  if (typeof strictModeConfig !== "object" || strictModeConfig === null) return false;
+  const live = strictModeConfig as { max_resident_memory_percent?: unknown; search_max_batchsize?: unknown };
+  if (desired.maxResidentMemoryPercent != null && live.max_resident_memory_percent !== desired.maxResidentMemoryPercent) {
+    return false;
+  }
+  if (desired.searchMaxBatchsize != null && live.search_max_batchsize !== desired.searchMaxBatchsize) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Reconciles every collection to the desired strict-mode guardrails. Skips
+ * entirely when `desired` is empty (both fields unset). Only collections whose
+ * live config does not already satisfy `desired` are PATCHed (server-side
+ * config, no reindex), so repeated startups are no-ops.
+ */
+export async function reconcileStrictMode(
+  qdrant: StrictModeReconcileTarget,
+  desired: StrictModeDesired,
+  collectionNames?: string[],
+): Promise<void> {
+  if (desired.maxResidentMemoryPercent == null && desired.searchMaxBatchsize == null) return;
+  const names = collectionNames ?? (await qdrant.listCollections());
+  for (const name of names) {
+    const config = await qdrant.getStrictModeConfig(name);
+    if (!isStrictModeApplied(config, desired)) {
+      await qdrant.updateCollectionStrictMode(name, desired);
+    }
+  }
+}

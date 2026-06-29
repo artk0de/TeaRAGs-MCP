@@ -48,4 +48,8 @@ export interface QdrantTuneConfig {
   quantizationScalar: boolean;
   /** Enable Qdrant 1.18 TurboQuant 8x dense quantization (default true). */
   turboQuant: boolean;
+  /** Reject memory-consuming writes above N% resident RAM (1-100). Unset = off. */
+  maxResidentMemoryPercent?: number;
+  /** Cap batch-search query size. Unset = no cap. */
+  searchMaxBatchsize?: number;
 }
