@@ -316,6 +316,10 @@ export class MockQdrantManager implements Partial<QdrantManager> {
   async checkHealth(): Promise<boolean> {
     return true;
   }
+
+  async getServerVersion(): Promise<string | undefined> {
+    return undefined;
+  }
 }
 
 /** Mock EmbeddingProvider — returns fixed 384-dim vectors */

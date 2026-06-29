@@ -356,6 +356,7 @@ describe("IndexPipeline", () => {
         "Cosine",
         true,
         undefined,
+        undefined,
       );
     });
 
@@ -637,7 +638,14 @@ function third() {
       expect(stats.status).toBe("completed");
 
       // Should create _v2 (migration starts at v2)
-      expect(createCollectionSpy).toHaveBeenCalledWith(expect.stringMatching(/_v2$/), 384, "Cosine", false, undefined);
+      expect(createCollectionSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/_v2$/),
+        384,
+        "Cosine",
+        false,
+        undefined,
+        undefined,
+      );
 
       // Should delete real collection and create alias
       expect(deleteCollectionSpy).toHaveBeenCalledWith(collName);
