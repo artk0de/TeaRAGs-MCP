@@ -122,6 +122,44 @@ describe("renderReleaseNotes", () => {
   });
 });
 
+describe("renderEnvChanges / envChanges section", () => {
+  it("renders an Environment Variables section when envChanges present", () => {
+    const data = {
+      version: "1.40.0",
+      date: "2026-06-29",
+      compareUrl: "https://example/compare",
+      groups: [],
+      allCommits: [],
+      envChanges: [{ name: "QDRANT_TURBO_QUANT", description: "Enable TurboQuant 8x", default: "true", change: "new" }],
+    };
+    const section = renderChangelogSection(data);
+    expect(section).toContain("Environment Variables");
+    expect(section).toContain("`QDRANT_TURBO_QUANT`");
+    expect(section).toContain("Enable TurboQuant 8x");
+    expect(section).toContain("`true`");
+    expect(section).toContain("new");
+  });
+
+  it("omits the Environment Variables section when envChanges absent or empty", () => {
+    const data = { version: "1.40.0", date: "2026-06-29", compareUrl: "u", groups: [], allCommits: [] };
+    expect(renderChangelogSection(data)).not.toContain("Environment Variables");
+  });
+
+  it("renders envChanges in renderReleaseNotes too, before the Full Commits spoiler", () => {
+    const data = {
+      version: "1.40.0",
+      date: "2026-06-29",
+      compareUrl: "u",
+      groups: [],
+      allCommits: [],
+      envChanges: [{ name: "QDRANT_LOW_MEMORY", description: "Force on-disk", default: "false", change: "new" }],
+    };
+    const notes = renderReleaseNotes(data, []);
+    expect(notes).toContain("Environment Variables");
+    expect(notes.indexOf("Environment Variables")).toBeLessThan(notes.indexOf("Full Commits"));
+  });
+});
+
 describe("spliceVersionSection", () => {
   const CHANGELOG = [
     "## [1.30.0](url-c) (2026-06-06)",
