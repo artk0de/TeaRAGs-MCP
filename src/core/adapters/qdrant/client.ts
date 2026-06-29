@@ -278,13 +278,13 @@ export class QdrantManager {
       config.quantization_config = { scalar: { type: "int8", always_ram: true } };
     }
 
-    if (strictMode && (strictMode.maxResidentMemoryPercent != null || strictMode.searchMaxBatchsize != null)) {
+    if (strictMode && (strictMode.maxResidentMemoryPercent !== undefined || strictMode.searchMaxBatchsize !== undefined)) {
       config.strict_mode_config = {
         enabled: true,
-        ...(strictMode.maxResidentMemoryPercent != null && {
+        ...(strictMode.maxResidentMemoryPercent !== undefined && {
           max_resident_memory_percent: strictMode.maxResidentMemoryPercent,
         }),
-        ...(strictMode.searchMaxBatchsize != null && { search_max_batchsize: strictMode.searchMaxBatchsize }),
+        ...(strictMode.searchMaxBatchsize !== undefined && { search_max_batchsize: strictMode.searchMaxBatchsize }),
       };
     }
 
@@ -1275,10 +1275,10 @@ export class QdrantManager {
       this.client.updateCollection(collectionName, {
         strict_mode_config: {
           enabled: true,
-          ...(strictMode.maxResidentMemoryPercent != null && {
+          ...(strictMode.maxResidentMemoryPercent !== undefined && {
             max_resident_memory_percent: strictMode.maxResidentMemoryPercent,
           }),
-          ...(strictMode.searchMaxBatchsize != null && { search_max_batchsize: strictMode.searchMaxBatchsize }),
+          ...(strictMode.searchMaxBatchsize !== undefined && { search_max_batchsize: strictMode.searchMaxBatchsize }),
         },
       }),
     );

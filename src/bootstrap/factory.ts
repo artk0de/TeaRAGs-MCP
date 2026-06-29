@@ -202,7 +202,7 @@ async function resolveInfrastructure(
     maxResidentMemoryPercent: zodConfig.qdrantTune.maxResidentMemoryPercent,
     searchMaxBatchsize: zodConfig.qdrantTune.searchMaxBatchsize,
   };
-  if (strictDesired.maxResidentMemoryPercent != null || strictDesired.searchMaxBatchsize != null) {
+  if (strictDesired.maxResidentMemoryPercent !== undefined || strictDesired.searchMaxBatchsize !== undefined) {
     try {
       await reconcileStrictMode(qdrant, strictDesired);
     } catch (err) {

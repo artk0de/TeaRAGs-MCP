@@ -9,9 +9,9 @@
 
 /** Minimal QdrantManager surface the reconcile depends on (ISP — keeps it unit-testable). */
 export interface TurboReconcileTarget {
-  listCollections(): Promise<string[]>;
-  getQuantizationConfig(name: string): Promise<unknown>;
-  updateCollectionQuantization(name: string): Promise<void>;
+  listCollections: () => Promise<string[]>;
+  getQuantizationConfig: (name: string) => Promise<unknown>;
+  updateCollectionQuantization: (name: string) => Promise<void>;
 }
 
 /** Pure predicate: true iff the live quantization config is TurboQuant bits4. */
@@ -44,9 +44,9 @@ export interface StrictModeDesired {
 
 /** Minimal QdrantManager surface the strict-mode reconcile depends on (ISP — keeps it unit-testable). */
 export interface StrictModeReconcileTarget {
-  listCollections(): Promise<string[]>;
-  getStrictModeConfig(name: string): Promise<unknown>;
-  updateCollectionStrictMode(name: string, strictMode: StrictModeDesired): Promise<void>;
+  listCollections: () => Promise<string[]>;
+  getStrictModeConfig: (name: string) => Promise<unknown>;
+  updateCollectionStrictMode: (name: string, strictMode: StrictModeDesired) => Promise<void>;
 }
 
 /**
@@ -57,10 +57,10 @@ export interface StrictModeReconcileTarget {
 export function isStrictModeApplied(strictModeConfig: unknown, desired: StrictModeDesired): boolean {
   if (typeof strictModeConfig !== "object" || strictModeConfig === null) return false;
   const live = strictModeConfig as { max_resident_memory_percent?: unknown; search_max_batchsize?: unknown };
-  if (desired.maxResidentMemoryPercent != null && live.max_resident_memory_percent !== desired.maxResidentMemoryPercent) {
+  if (desired.maxResidentMemoryPercent !== undefined && live.max_resident_memory_percent !== desired.maxResidentMemoryPercent) {
     return false;
   }
-  if (desired.searchMaxBatchsize != null && live.search_max_batchsize !== desired.searchMaxBatchsize) {
+  if (desired.searchMaxBatchsize !== undefined && live.search_max_batchsize !== desired.searchMaxBatchsize) {
     return false;
   }
   return true;
@@ -77,7 +77,7 @@ export async function reconcileStrictMode(
   desired: StrictModeDesired,
   collectionNames?: string[],
 ): Promise<void> {
-  if (desired.maxResidentMemoryPercent == null && desired.searchMaxBatchsize == null) return;
+  if (desired.maxResidentMemoryPercent === undefined && desired.searchMaxBatchsize === undefined) return;
   const names = collectionNames ?? (await qdrant.listCollections());
   for (const name of names) {
     const config = await qdrant.getStrictModeConfig(name);
