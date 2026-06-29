@@ -197,23 +197,19 @@ describe("buildDaemonEnv", () => {
     expect(env.FOO).toBe("bar");
   });
 
-  it("low-memory mode forces on-disk storage env flags", () => {
+  it("low-memory mode sets the single low_memory_mode flag to no_populate", () => {
     const env = buildDaemonEnv("/tmp/q", 6333, {}, true);
-    expect(env.QDRANT__STORAGE__ON_DISK_PAYLOAD).toBe("true");
-    expect(env.QDRANT__STORAGE__COLLECTION__VECTORS__ON_DISK).toBe("true");
-    expect(env.QDRANT__STORAGE__HNSW_INDEX__ON_DISK).toBe("true");
+    expect(env.QDRANT__STORAGE__LOW_MEMORY_MODE).toBe("no_populate");
   });
 
-  it("normal mode does not set on-disk overrides", () => {
+  it("normal mode does not set the low_memory_mode flag", () => {
     const env = buildDaemonEnv("/tmp/q", 6333, {}, false);
-    expect(env.QDRANT__STORAGE__ON_DISK_PAYLOAD).toBeUndefined();
-    expect(env.QDRANT__STORAGE__COLLECTION__VECTORS__ON_DISK).toBeUndefined();
-    expect(env.QDRANT__STORAGE__HNSW_INDEX__ON_DISK).toBeUndefined();
+    expect(env.QDRANT__STORAGE__LOW_MEMORY_MODE).toBeUndefined();
   });
 
-  it("low-memory on-disk defaults yield to user-provided overrides", () => {
-    const env = buildDaemonEnv("/tmp/q", 6333, { QDRANT__STORAGE__ON_DISK_PAYLOAD: "false" }, true);
-    expect(env.QDRANT__STORAGE__ON_DISK_PAYLOAD).toBe("false");
+  it("low-memory default yields to a user-provided low_memory_mode override", () => {
+    const env = buildDaemonEnv("/tmp/q", 6333, { QDRANT__STORAGE__LOW_MEMORY_MODE: "no_resident" }, true);
+    expect(env.QDRANT__STORAGE__LOW_MEMORY_MODE).toBe("no_resident");
   });
 });
 

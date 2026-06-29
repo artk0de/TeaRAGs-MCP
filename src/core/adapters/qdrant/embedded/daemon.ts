@@ -77,22 +77,16 @@ const MULTI_CORE_DEFAULTS: Readonly<Record<string, string>> = {
 };
 
 /**
- * On-disk storage flags applied when low-memory mode is on. These force the
- * daemon to keep payload, vectors, and the HNSW index on disk instead of RAM —
- * the documented Qdrant levers for surviving large-repo indexing on a
- * RAM-constrained host (slower, OOM-safe). All three are confirmed config keys
- * (`storage.on_disk_payload`, `storage.collection.vectors.on_disk`,
- * `storage.hnsw_index.on_disk`). Applied as defaults only when the user has not
- * already set the key, so explicit `QDRANT__*` overrides still win.
- *
- * NOTE: the Qdrant 1.18 `low_memory_mode` enum (no-resident / no-populate) is a
- * separate startup lever; its exact env path / value is not yet confirmed, so it
- * is intentionally left as a follow-up rather than guessed here.
+ * Low-memory defaults applied when low-memory mode is on. Qdrant 1.18 exposes a
+ * single runtime lever — `storage.low_memory_mode` — that supersedes the prior
+ * per-key on-disk overrides. `no_populate` means "no resident vectors + skip the
+ * mmap prefetch for vectors / HNSW / payload": OOM-safe on a RAM-constrained
+ * host (slower) without mutating any persisted collection settings. Applied as a
+ * default only when the user has not already set the key, so explicit `QDRANT__*`
+ * overrides still win.
  */
-const LOW_MEMORY_ON_DISK_DEFAULTS: Readonly<Record<string, string>> = {
-  QDRANT__STORAGE__ON_DISK_PAYLOAD: "true",
-  QDRANT__STORAGE__COLLECTION__VECTORS__ON_DISK: "true",
-  QDRANT__STORAGE__HNSW_INDEX__ON_DISK: "true",
+const LOW_MEMORY_DEFAULTS: Readonly<Record<string, string>> = {
+  QDRANT__STORAGE__LOW_MEMORY_MODE: "no_populate",
 };
 
 export function buildDaemonEnv(
@@ -108,7 +102,7 @@ export function buildDaemonEnv(
 
   const lowMemoryDefaults: Record<string, string> = {};
   if (lowMemory) {
-    for (const [key, value] of Object.entries(LOW_MEMORY_ON_DISK_DEFAULTS)) {
+    for (const [key, value] of Object.entries(LOW_MEMORY_DEFAULTS)) {
       if (parentEnv[key] === undefined) lowMemoryDefaults[key] = value;
     }
   }
