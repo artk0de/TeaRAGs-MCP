@@ -10,6 +10,9 @@ import {
   isTurboBits4,
   reconcileStrictMode,
   reconcileTurbo,
+  reportTurboMigration,
+  waitForQuantization,
+  type TurboMigrationEvent,
 } from "../../src/bootstrap/config/turbo-reconcile.js";
 
 const TURBO_CONFIG = { turbo: { bits: "bits4", always_ram: true } } as const;
@@ -71,6 +74,82 @@ describe("reconcileTurbo", () => {
     expect(manager.listCollections).toHaveBeenCalledTimes(1);
     expect(manager.updateCollectionQuantization).toHaveBeenCalledWith("a");
     expect(manager.updateCollectionQuantization).toHaveBeenCalledWith("b");
+  });
+
+  it("returns the names of the collections it migrated", async () => {
+    manager.listCollections.mockResolvedValue(["a", "b"]);
+    manager.getQuantizationConfig.mockImplementation(async (name: string) => (name === "b" ? TURBO_CONFIG : undefined));
+
+    await expect(reconcileTurbo(manager as never)).resolves.toEqual(["a"]);
+  });
+
+  it("returns an empty array when every collection is already turbo", async () => {
+    manager.getQuantizationConfig.mockResolvedValue(TURBO_CONFIG);
+
+    await expect(reconcileTurbo(manager as never, ["col"])).resolves.toEqual([]);
+  });
+});
+
+describe("waitForQuantization", () => {
+  const noSleep = async (): Promise<void> => {};
+
+  it("resolves 'settled' as soon as the collection status reaches green", async () => {
+    const getCollectionStatus = vi
+      .fn()
+      .mockResolvedValueOnce("yellow")
+      .mockResolvedValueOnce("yellow")
+      .mockResolvedValueOnce("green");
+
+    await expect(
+      waitForQuantization({ getCollectionStatus }, "col", { maxPolls: 10, intervalMs: 1, sleep: noSleep }),
+    ).resolves.toBe("settled");
+    expect(getCollectionStatus).toHaveBeenCalledTimes(3);
+  });
+
+  it("resolves 'background' when still optimizing at the poll cap", async () => {
+    const getCollectionStatus = vi.fn().mockResolvedValue("yellow");
+
+    await expect(
+      waitForQuantization({ getCollectionStatus }, "col", { maxPolls: 3, intervalMs: 1, sleep: noSleep }),
+    ).resolves.toBe("background");
+    expect(getCollectionStatus).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("reportTurboMigration", () => {
+  const noSleep = async (): Promise<void> => {};
+
+  it("emits a start then a terminal 'done' event per migrated collection", async () => {
+    const events: TurboMigrationEvent[] = [];
+    const getCollectionStatus = vi.fn().mockResolvedValue("green");
+
+    await reportTurboMigration(
+      { getCollectionStatus },
+      ["a"],
+      (e) => events.push(e),
+      { maxPolls: 5, intervalMs: 1, sleep: noSleep },
+      () => 0,
+    );
+
+    expect(events).toEqual([
+      { collection: "a", stage: "start" },
+      { collection: "a", stage: "done", elapsedMs: 0 },
+    ]);
+  });
+
+  it("emits a 'background' terminal event when the poll cap is hit", async () => {
+    const events: TurboMigrationEvent[] = [];
+    const getCollectionStatus = vi.fn().mockResolvedValue("yellow");
+
+    await reportTurboMigration(
+      { getCollectionStatus },
+      ["a"],
+      (e) => events.push(e),
+      { maxPolls: 2, intervalMs: 1, sleep: noSleep },
+      () => 0,
+    );
+
+    expect(events.at(-1)).toEqual({ collection: "a", stage: "background", elapsedMs: 0 });
   });
 });
 

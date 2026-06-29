@@ -22,7 +22,16 @@ export type WorkerMessage =
   | { type: "status"; status: IndexStatus }
   | { type: "done"; result: EnrichmentOutcome }
   | { type: "error"; message: string }
-  | { type: "phase-done"; phase: string; elapsedMs: number };
+  | { type: "phase-done"; phase: string; elapsedMs: number }
+  | {
+      type: "turbo-migration";
+      /** Collection whose quantized vectors the background optimizer is rebuilding. */
+      collection: string;
+      /** start = optimizer pass began; done = settled to green; background = still optimizing at the poll cap. */
+      stage: "start" | "done" | "background";
+      /** Migration wall-clock so far — set on the terminal done/background events. */
+      elapsedMs?: number;
+    };
 
 /** Final enrichment outcome reported by the worker (drives exit code in --wait). */
 export interface EnrichmentOutcome {
@@ -58,6 +67,10 @@ export function isWorkerMessage(value: unknown): value is WorkerMessage {
       return typeof m.message === "string";
     case "phase-done":
       return typeof m.phase === "string" && typeof m.elapsedMs === "number";
+    case "turbo-migration":
+      return (
+        typeof m.collection === "string" && (m.stage === "start" || m.stage === "done" || m.stage === "background")
+      );
     default:
       return false;
   }

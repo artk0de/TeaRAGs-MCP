@@ -301,7 +301,20 @@ export async function main(): Promise<void> {
   const { migrateHomeDir } = await import("../../bootstrap/migrate.js");
 
   migrateHomeDir();
-  const ctx = await createAppContext(parseAppConfig());
+  // Surface a one-time "Migrating to TurboQuant" phase: the startup reconcile in
+  // createAppContext migrates any pre-turbo collection and polls the optimizer
+  // pass, forwarding each progress event to the supervisor over the same IPC
+  // channel as embedding/enrichment progress.
+  const ctx = await createAppContext(parseAppConfig(), {
+    onTurboMigration: (event) => {
+      send({
+        type: "turbo-migration",
+        collection: event.collection,
+        stage: event.stage,
+        ...(event.elapsedMs !== undefined ? { elapsedMs: event.elapsedMs } : {}),
+      });
+    },
+  });
   try {
     const outcome = await runIndexWorker(ctx.app, path, options, send);
     ctx.cleanup?.();

@@ -25,14 +25,97 @@ export function isTurboBits4(quantizationConfig: unknown): boolean {
  * Reconciles every collection to TurboQuant bits4. When `collectionNames` is
  * omitted the list is read from the manager. Only collections whose live config
  * is not already turbo-bits4 are PATCHed, so repeated startups are no-ops.
+ * Returns the names of the collections it migrated (the ones it PATCHed) so the
+ * caller can surface a one-time migration progress phase; an empty array means
+ * everything was already turbo (the steady state after the first migration).
  */
-export async function reconcileTurbo(qdrant: TurboReconcileTarget, collectionNames?: string[]): Promise<void> {
+export async function reconcileTurbo(qdrant: TurboReconcileTarget, collectionNames?: string[]): Promise<string[]> {
   const names = collectionNames ?? (await qdrant.listCollections());
+  const migrated: string[] = [];
   for (const name of names) {
     const config = await qdrant.getQuantizationConfig(name);
     if (!isTurboBits4(config)) {
       await qdrant.updateCollectionQuantization(name);
+      migrated.push(name);
     }
+  }
+  return migrated;
+}
+
+/** Collection health status read by the TurboQuant migration progress poll. */
+export type QuantizationCollectionStatus = "green" | "yellow" | "red" | "unknown";
+
+/** Minimal QdrantManager surface the migration poll reads — just collection health. */
+export interface QuantizationMigrationTarget {
+  getCollectionStatus: (name: string) => Promise<QuantizationCollectionStatus>;
+}
+
+/** Terminal result of the migration poll: settled to green, or still optimizing at the cap. */
+export type QuantizationMigrationResult = "settled" | "background";
+
+export interface WaitForQuantizationOptions {
+  /** Max number of polls before giving up and letting the optimizer finish in the background. */
+  maxPolls: number;
+  /** Delay between polls (ms). */
+  intervalMs: number;
+  /** Injected sleep (DI for tests — defaults to a real `setTimeout`). */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Polls a migrating collection's health status until it returns to "green"
+ * (the optimizer pass that rebuilds the quantized vectors finished) or the poll
+ * cap is hit. The cap keeps this non-blocking: a long optimizer pass resolves
+ * "background" and the caller proceeds — search keeps working on the stored
+ * float vectors meanwhile. Never throws: `getCollectionStatus` swallows its own
+ * errors (it returns "unknown", which is simply not green, so the poll retries).
+ */
+export async function waitForQuantization(
+  target: QuantizationMigrationTarget,
+  name: string,
+  options: WaitForQuantizationOptions,
+): Promise<QuantizationMigrationResult> {
+  const sleep = options.sleep ?? (async (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  for (let poll = 0; poll < options.maxPolls; poll++) {
+    if ((await target.getCollectionStatus(name)) === "green") return "settled";
+    await sleep(options.intervalMs);
+  }
+  return "background";
+}
+
+/** Stage of a TurboQuant migration surfaced to the CLI progress renderer. */
+export type TurboMigrationStage = "start" | "done" | "background";
+
+/** One progress event emitted while a collection's TurboQuant optimizer pass runs. */
+export interface TurboMigrationEvent {
+  collection: string;
+  stage: TurboMigrationStage;
+  /** Wall-clock of the migration so far — set on the terminal done/background events. */
+  elapsedMs?: number;
+}
+
+/** Sink the migration poll pushes progress events to (wired to the CLI IPC channel). */
+export type TurboMigrationListener = (event: TurboMigrationEvent) => void;
+
+/**
+ * Drives the TurboQuant migration progress: for each freshly-migrated collection
+ * emits a "start" event, polls until its optimizer pass settles to green (or the
+ * cap is hit), then emits a terminal "done"/"background" event with the elapsed
+ * time. Non-blocking by construction — each per-collection poll is capped, so a
+ * long optimizer pass yields "background" and the caller proceeds to indexing.
+ */
+export async function reportTurboMigration(
+  target: QuantizationMigrationTarget,
+  migrated: string[],
+  listener: TurboMigrationListener,
+  options: WaitForQuantizationOptions,
+  now: () => number = Date.now,
+): Promise<void> {
+  for (const collection of migrated) {
+    const startedAt = now();
+    listener({ collection, stage: "start" });
+    const result = await waitForQuantization(target, collection, options);
+    listener({ collection, stage: result === "settled" ? "done" : "background", elapsedMs: now() - startedAt });
   }
 }
 

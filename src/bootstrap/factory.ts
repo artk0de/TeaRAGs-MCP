@@ -52,7 +52,20 @@ import { registerAllTools } from "../mcp/tools/index.js";
 import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
 import { getConfigDump, getZodConfig, type AppConfig } from "./config/index.js";
 import { checkExternalQdrantVersion } from "./config/qdrant-compat.js";
-import { reconcileStrictMode, reconcileTurbo } from "./config/turbo-reconcile.js";
+import {
+  reconcileStrictMode,
+  reconcileTurbo,
+  reportTurboMigration,
+  type TurboMigrationListener,
+} from "./config/turbo-reconcile.js";
+
+/**
+ * TurboQuant migration progress poll cap. Bounded so a long background optimizer
+ * pass never blocks the index run: 20 polls × 250 ms ≈ a 5 s ceiling, after which
+ * the migration is reported as continuing in the background and indexing proceeds.
+ */
+const TURBO_MIGRATION_MAX_POLLS = 20;
+const TURBO_MIGRATION_POLL_INTERVAL_MS = 250;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8")) as {
@@ -112,6 +125,7 @@ interface CompositionContext {
 async function resolveInfrastructure(
   config: AppConfig,
   zodConfig: ReturnType<typeof getZodConfig>,
+  onTurboMigration?: TurboMigrationListener,
 ): Promise<InfraContext> {
   const resolution = await resolveQdrantUrl(config.qdrantUrl, config.paths.appData, zodConfig.qdrantTune.lowMemory);
   if (resolution.mode === "external") {
@@ -186,10 +200,21 @@ async function resolveInfrastructure(
   const modelGuard = new EmbeddingModelGuard(qdrant, embeddings.getModel(), embeddings.getDimensions());
 
   // Reconcile existing collections to TurboQuant (idempotent, no reindex). A
-  // reconcile failure must never crash startup — log and continue.
+  // reconcile failure must never crash startup — log and continue. When the
+  // reconcile actually migrates a collection AND a progress listener is wired
+  // (the CLI index worker), poll the optimizer pass and surface a one-time
+  // "Migrating to TurboQuant" progress phase. The poll is capped, so a long
+  // optimizer pass never blocks the run — search works on the float vectors
+  // meanwhile. No listener (MCP server startup) → fire-and-forget as before.
   if (zodConfig.qdrantTune.turboQuant) {
     try {
-      await reconcileTurbo(qdrant);
+      const migrated = await reconcileTurbo(qdrant);
+      if (migrated.length > 0 && onTurboMigration) {
+        await reportTurboMigration(qdrant, migrated, onTurboMigration, {
+          maxPolls: TURBO_MIGRATION_MAX_POLLS,
+          intervalMs: TURBO_MIGRATION_POLL_INTERVAL_MS,
+        });
+      }
     } catch (err) {
       process.stderr.write(`[tea-rags] TurboQuant reconcile failed: ${(err as Error).message}\n`);
     }
@@ -529,11 +554,17 @@ export function wireCodegraph(
   return { deps, graphFacade, pool, indexRunDaemonGuard };
 }
 
-export async function createAppContext(config: AppConfig): Promise<AppContext> {
+/** Optional bootstrap hooks the CLI wires to surface startup progress over IPC. */
+export interface AppContextHooks {
+  /** Notified while a startup TurboQuant collection migration's optimizer pass runs. */
+  onTurboMigration?: TurboMigrationListener;
+}
+
+export async function createAppContext(config: AppConfig, hooks?: AppContextHooks): Promise<AppContext> {
   const zodConfig = getZodConfig();
   setDebug(zodConfig.core.debug);
 
-  const infra = await resolveInfrastructure(config, zodConfig);
+  const infra = await resolveInfrastructure(config, zodConfig, hooks?.onTurboMigration);
   // Registry must exist before wireCodegraph because GraphFacade resolves
   // the `{ collection, project, path }` triad through it. startWatching()
   // is deferred until later — registry construction alone is side-effect

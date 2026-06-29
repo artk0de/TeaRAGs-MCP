@@ -12,6 +12,10 @@ describe("isWorkerMessage", () => {
     // totalFinal is an optional flag — present or absent, the message is valid
     { type: "embedding", phase: "embedding", percentage: 38, current: 1024, total: 2687, totalFinal: false },
     { type: "enrichment", providerKey: "git", level: "chunk", applied: 1005, total: 2687, totalFinal: true },
+    // turbo-migration: each stage is valid; elapsedMs is an optional terminal field
+    { type: "turbo-migration", collection: "code_abc", stage: "start" },
+    { type: "turbo-migration", collection: "code_abc", stage: "done", elapsedMs: 4200 },
+    { type: "turbo-migration", collection: "code_abc", stage: "background", elapsedMs: 5000 },
   ])("accepts valid $type message", (msg) => {
     expect(isWorkerMessage(msg)).toBe(true);
   });
@@ -24,6 +28,8 @@ describe("isWorkerMessage", () => {
     {},
     { type: "unknown" },
     { type: "enrichment", level: "file" }, // missing providerKey
+    { type: "turbo-migration", stage: "start" }, // missing collection
+    { type: "turbo-migration", collection: "code_abc", stage: "bogus" }, // invalid stage
   ])("rejects invalid payload %o", (bad) => {
     expect(isWorkerMessage(bad)).toBe(false);
   });

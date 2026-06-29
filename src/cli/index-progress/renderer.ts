@@ -159,6 +159,14 @@ export function formatProgressLine(message: WorkerMessage): string | null {
     }
     case "phase-done":
       return `${message.phase} done in ${fmtDuration(message.elapsedMs)}`;
+    case "turbo-migration": {
+      const label = `turbo migration ${message.collection}`.padEnd(LABEL_WIDTH);
+      if (message.stage === "start") return `${label}optimizing quantized vectors…`;
+      if (message.stage === "done") {
+        return message.elapsedMs !== undefined ? `${label}done in ${fmtDuration(message.elapsedMs)}` : `${label}done`;
+      }
+      return `${label}continues in background`;
+    }
     case "error":
       return `error: ${message.message}`;
     case "status":
@@ -284,6 +292,58 @@ export class TtyProgressRenderer implements ProgressRenderer {
   }
 
   handle(message: WorkerMessage): void {
+    if (message.type === "turbo-migration") {
+      // One-time TurboQuant collection migration. The optimizer rebuilds the
+      // quantized vectors with no clean percentage, so the bar is INDETERMINATE
+      // (totalFinal=false, no numerator) — a spinner-style glyph row that ticks
+      // elapsed until the terminal stage freezes it.
+      const key = `turbo:${message.collection}`;
+      const label = this.colors.brand("turbo migration".padEnd(LABEL_WIDTH));
+      if (message.stage === "start") {
+        if (!this.barStates.has(key)) {
+          const bar = this.multibar.create(0, 0, {
+            label,
+            rate: this.colors.dim("optimizing…"),
+            eta: "",
+            elapsed: "",
+            totalFinal: false,
+          });
+          this.barStates.set(key, {
+            bar,
+            startMs: this.now(),
+            value: 0,
+            total: 0,
+            label,
+            rate: this.colors.dim("optimizing…"),
+            done: false,
+            etaBaseSeconds: null,
+            etaBaseAtMs: this.now(),
+            totalFinal: false,
+          });
+          this.startTickIfNeeded();
+        }
+        return;
+      }
+      // Terminal stage (done | background): freeze the bar so the tick loop stops.
+      const state = this.barStates.get(key);
+      if (!state) return;
+      state.done = true;
+      const elapsed = fmtDuration(message.elapsedMs ?? this.now() - state.startMs);
+      if (message.stage === "done") {
+        state.bar.update(state.value, { label: state.label, rate: "", elapsed: "", eta: "", done: { elapsed } });
+      } else {
+        // Hit the poll cap still optimizing — keep the indeterminate glyph row but
+        // stop ticking; the hint tells the user the optimizer continues unattended.
+        state.bar.update(state.value, {
+          label: state.label,
+          rate: this.colors.dim("continues in background"),
+          elapsed,
+          eta: "",
+          totalFinal: false,
+        });
+      }
+      return;
+    }
     if (message.type === "embedding") {
       const label = this.colors.brand("embeddings".padEnd(LABEL_WIDTH));
       // The worker forwards EVERY ProgressUpdate (scanning/chunking/storing/embedding)
@@ -449,6 +509,7 @@ export class JsonProgressRenderer implements ProgressRenderer {
         break;
       case "embedding":
       case "enrichment":
+      case "turbo-migration":
         // no-op in JSON mode — progress bars suppressed
         break;
     }

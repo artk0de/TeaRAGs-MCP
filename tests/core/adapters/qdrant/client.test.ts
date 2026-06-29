@@ -458,6 +458,25 @@ describe("QdrantManager", () => {
     });
   });
 
+  describe("getCollectionStatus", () => {
+    it("returns the live collection health status", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "migrating",
+        points_count: 10,
+        status: "yellow",
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+      });
+
+      await expect(manager.getCollectionStatus("migrating")).resolves.toBe("yellow");
+    });
+
+    it("returns 'unknown' on any failure (status poll must never throw)", async () => {
+      mockClient.getCollection.mockRejectedValue(new Error("collection gone"));
+
+      await expect(manager.getCollectionStatus("missing")).resolves.toBe("unknown");
+    });
+  });
+
   describe("deleteCollection", () => {
     it("should delete a collection", async () => {
       await manager.deleteCollection("test-collection");

@@ -408,6 +408,21 @@ export class QdrantManager {
   }
 
   /**
+   * Best-effort read of a collection's health status for the TurboQuant
+   * migration progress poll. Returns the live status, or "unknown" on ANY
+   * failure — a migration poll runs alongside (not gating) the index run and
+   * MUST NOT throw. Mirrors the swallow-error contract of
+   * {@link getServerVersion}.
+   */
+  async getCollectionStatus(name: string): Promise<"green" | "yellow" | "red" | "unknown"> {
+    try {
+      return (await this.getCollectionInfo(name)).status;
+    } catch {
+      return "unknown";
+    }
+  }
+
+  /**
    * Reads the live quantization config of a collection (e.g.
    * `{ turbo: { bits: "bits4", always_ram: true } }`) or `undefined` when the
    * collection is unquantized. Used by the startup TurboQuant reconcile to

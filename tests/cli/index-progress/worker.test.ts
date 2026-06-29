@@ -460,4 +460,20 @@ describe("main — bootstrap happy path", () => {
     expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "error", message: "index boom" }));
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
+
+  it("wires an onTurboMigration hook that forwards a turbo-migration IPC message", async () => {
+    const { createAppContext } = await import("../../../src/bootstrap/factory.js");
+    const { main } = await import("../../../src/cli/index-progress/worker.js");
+    await main();
+
+    const hooks = vi.mocked(createAppContext).mock.calls.at(-1)?.[1];
+    expect(hooks?.onTurboMigration).toBeTypeOf("function");
+    hooks?.onTurboMigration?.({ collection: "code_abc", stage: "done", elapsedMs: 4200 });
+    expect(sendSpy).toHaveBeenCalledWith({
+      type: "turbo-migration",
+      collection: "code_abc",
+      stage: "done",
+      elapsedMs: 4200,
+    });
+  });
 });
