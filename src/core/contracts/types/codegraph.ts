@@ -806,6 +806,15 @@ export interface CallContext {
    */
   classPrependedAncestors?: Record<string, readonly string[]>;
   /**
+   * Optional reverse include-by index (bd cai0/2oky5): `fqName → classes that
+   * have it as a direct ancestor` (superclass/include/prepend). Derived by the
+   * provider from the run-global ancestor maps and injected for pass-2. The Ruby
+   * `super` strategy reads `includedBy[M]` to resolve a `super` inside module
+   * M's method against each including class's MRO-after-M (consensus). Plain
+   * Record for NDJSON-spill parity with the other ancestor maps.
+   */
+  includedBy?: Record<string, readonly string[]>;
+  /**
    * Run-global `tableName → DispatchTableDef[]` map propagated from every
    * file's `FileExtraction.dispatchTables` (bd tea-rags-mcp-n0zj). Keyed
    * by table NAME; the value is a LIST because the same name may be
