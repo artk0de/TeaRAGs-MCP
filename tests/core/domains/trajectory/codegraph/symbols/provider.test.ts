@@ -166,8 +166,11 @@ describe("CodegraphEnrichmentProvider", () => {
       fileEdgeCount: 1, // src/main.ts imports ./foo → src/foo.ts
       methodEdgeCount: 1, // only Foo.bar() resolves
     });
-    // 1 resolved / 2 attempted = 0.5
-    expect((m as { resolveSuccessRate: number }).resolveSuccessRate).toBeCloseTo(0.5, 5);
+    // cai0.2 Option A: Mystery.nope() has no in-project def → excluded from the
+    // resolveSuccessRate denominator, so 1 resolved / (2 attempted − 1 noInProjectDef)
+    // = 1.0. (The raw per-bucket `.rate` below stays resolved/attempted = 0.5 — a
+    // distinct j431 diagnostic, not the excluded metric.)
+    expect((m as { resolveSuccessRate: number }).resolveSuccessRate).toBeCloseTo(1, 5);
 
     // Per-idiom breakdown (bd tea-rags-mcp-j431): both calls are constant
     // receivers (Foo, Mystery), one resolves → constant bucket 1/2.

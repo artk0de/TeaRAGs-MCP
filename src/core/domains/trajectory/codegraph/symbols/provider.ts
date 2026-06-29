@@ -1095,10 +1095,18 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.hierarchyView = undefined;
       return undefined;
     }
-    // tea-rags-mcp-ykj7 — denominator excludes external-library calls so the
-    // rate measures the resolver's capability on PROJECT-INTERNAL calls.
-    // `max(1, …)` guards a divide-by-zero when every attempted call was external.
-    const internalAttempted = Math.max(1, callsAttempted - callsExternalSkipped - callsUnresolvable);
+    // tea-rags-mcp-ykj7 + cai0.2 (Option A) — the denominator excludes
+    // external-library calls (ykj7), dynamic-undeterminable calls, AND calls
+    // whose member has no in-project def (`callsNoInProjectDef`): a member with
+    // zero in-project definitions can never resolve to an in-project symbol, so
+    // it is not a resolver failure (the same exclusion inProjectEdgeRecall
+    // applies). With the four terms excluded the rate equals inProjectEdgeRecall
+    // by construction. `max(1, …)` guards a divide-by-zero when every attempted
+    // call was external / no-in-project-def.
+    const internalAttempted = Math.max(
+      1,
+      callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef,
+    );
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / internalAttempted;
     // inProjectEdgeRecall — graph completeness. A genuine miss whose member has
     // no in-project definition (callsNoInProjectDef) can never yield an edge, so

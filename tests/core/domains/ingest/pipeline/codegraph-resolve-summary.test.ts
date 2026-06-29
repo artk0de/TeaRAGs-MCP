@@ -203,8 +203,9 @@ describe("summarizeCodegraphResolve byReceiverKind DEBUG gate (7m5xz)", () => {
 });
 
 // Variant B — inProjectEdgeRecall is the always-on graph-completeness metric;
-// resolveSuccessRate (raw resolver capability, denominator-polluted by
-// no-in-project-def calls) drops to DEBUG-only since it misleads a casual reader.
+// resolveSuccessRate stays DEBUG-only as the explicit-rate view. Under cai0.2
+// (Option A) its denominator also excludes no-in-project-def calls, so it now
+// equals inProjectEdgeRecall (the former denominator pollution is gone).
 const rowN = (
   language: string,
   receiverKind: string,
@@ -236,7 +237,9 @@ describe("summarizeCodegraphResolve inProjectEdgeRecall (Variant B)", () => {
 
     setDebug(true);
     const on = summarizeCodegraphResolve([rowN("typescript", "constant", 100, 80, 0, 15)]);
-    expect(on?.resolveSuccessRate).toBeCloseTo(80 / 100, 6); // surfaced under DEBUG
+    // cai0.2 Option A: the denominator now also excludes noInProjectDef (15), so
+    // the debug-only resolveSuccessRate equals inProjectEdgeRecall = 80/85.
+    expect(on?.resolveSuccessRate).toBeCloseTo(80 / 85, 6); // surfaced under DEBUG, == recall
     expect(on?.inProjectEdgeRecall).toBeCloseTo(80 / 85, 6);
   });
 
