@@ -1,5 +1,5 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { QdrantAliasManager } from "../../../../src/core/adapters/qdrant/aliases.js";
 import { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
@@ -2817,6 +2817,39 @@ describe("QdrantManager", () => {
       const result = await manager.checkHealth();
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe("getServerVersion", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("returns the daemon's reported version from GET /", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({ ok: true, json: async () => ({ title: "qdrant", version: "1.18.2" }) }),
+      );
+
+      await expect(manager.getServerVersion()).resolves.toBe("1.18.2");
+    });
+
+    it("returns undefined when the root probe rejects", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+
+      await expect(manager.getServerVersion()).resolves.toBeUndefined();
+    });
+
+    it("returns undefined on a non-ok response", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) }));
+
+      await expect(manager.getServerVersion()).resolves.toBeUndefined();
+    });
+
+    it("returns undefined when the version field is absent", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ title: "qdrant" }) }));
+
+      await expect(manager.getServerVersion()).resolves.toBeUndefined();
     });
   });
 });

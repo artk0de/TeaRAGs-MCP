@@ -125,6 +125,23 @@ describe("formatPrime — Infra section (embedding endpoints)", () => {
   });
 });
 
+describe("formatPrime — Infra section (Qdrant version)", () => {
+  const onnx = { available: true, provider: "onnx" };
+
+  it("appends the running server version to the qdrant line when set", () => {
+    const data = primeWith(onnx);
+    data.status.infraHealth!.qdrant = { ...baseQdrant, version: "1.18.2" };
+    const out = formatPrime(data, at);
+    expect(out).toContain("qdrant: green (optimizer ok) at http://127.0.0.1:6333 · v1.18.2");
+  });
+
+  it("omits the version segment when unset", () => {
+    const out = formatPrime(primeWith(onnx), at);
+    expect(out).toContain("qdrant: green (optimizer ok) at http://127.0.0.1:6333");
+    expect(out).not.toContain("· v");
+  });
+});
+
 describe("formatPrime — Infra section (both-endpoints-down hint)", () => {
   it("appends a get_index_status hint when both primary and fallback ollama are unavailable", () => {
     const out = formatPrime(

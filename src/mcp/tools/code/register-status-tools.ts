@@ -107,6 +107,7 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
 
 export function formatInfraHealth(h: NonNullable<IndexStatus["infraHealth"]>): string {
   const qdrantStatus = h.qdrant.available ? "available" : "unavailable";
+  const versionSuffix = h.qdrant.version ? ` · v${h.qdrant.version}` : "";
   const collectionHealth =
     h.qdrant.status && h.qdrant.status !== "green"
       ? ` [collection status: ${h.qdrant.status}${
@@ -117,7 +118,7 @@ export function formatInfraHealth(h: NonNullable<IndexStatus["infraHealth"]>): s
       : "";
   return (
     `Infrastructure:\n` +
-    `  Qdrant: ${qdrantStatus} (${h.qdrant.url})${collectionHealth}\n` +
+    `  Qdrant: ${qdrantStatus}${versionSuffix} (${h.qdrant.url})${collectionHealth}\n` +
     `  Embedding (${h.embedding.provider}): ${formatEmbeddingEndpoints(h.embedding)}`
   );
 }

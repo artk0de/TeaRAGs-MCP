@@ -222,8 +222,15 @@ export class IndexingOps {
     // would otherwise lose the primary's true status under failover. Only when
     // a primary url is known and the provider exposes the probe.
     const primaryAvailable = primaryUrl !== undefined ? await this.embeddings.checkPrimaryHealth?.() : undefined;
+    // Best-effort probe of the RUNNING daemon's reported version. getServerVersion
+    // swallows all errors → undefined, so this never blocks or fails get_index_status.
+    const qdrantVersion = await this.qdrant.getServerVersion();
     const infraHealth: IndexStatus["infraHealth"] = {
-      qdrant: { available: true, url: this.qdrant.url },
+      qdrant: {
+        available: true,
+        url: this.qdrant.url,
+        ...(qdrantVersion !== undefined ? { version: qdrantVersion } : {}),
+      },
       embedding: {
         available: embeddingHealthy,
         provider: this.embeddings.getProviderName(),

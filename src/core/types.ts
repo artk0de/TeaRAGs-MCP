@@ -338,6 +338,8 @@ export interface IndexStatus {
       status?: "green" | "yellow" | "red";
       /** Optimizer state (`"ok"` or `"unknown"`). */
       optimizerStatus?: string;
+      /** Running daemon's reported server version (raw GET `/`). Omitted when unreachable. */
+      version?: string;
     };
     embedding: {
       available: boolean;

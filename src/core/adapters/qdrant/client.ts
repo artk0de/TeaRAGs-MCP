@@ -168,6 +168,31 @@ export class QdrantManager {
   }
 
   /**
+   * Best-effort probe of the RUNNING daemon's reported version via a raw GET on
+   * the root endpoint (the typed SDK exposes no version method). Mirrors the
+   * fetch shape of `checkExternalQdrantVersion`. For embedded mode this is the
+   * actual running binary; for external it is the user's server. Returns the
+   * reported version string, or `undefined` on ANY failure — this is a status
+   * probe and MUST NOT throw, so it can never break `get_index_status`.
+   */
+  async getServerVersion(): Promise<string | undefined> {
+    try {
+      const headers: Record<string, string> = {};
+      if (this.apiKey) headers["api-key"] = this.apiKey;
+      const res = await fetch(`${this.qdrantUrl}/`, {
+        headers,
+        signal: AbortSignal.timeout(3000),
+      });
+      if (!res.ok) return undefined;
+      const body = (await res.json()) as { version?: unknown } | null;
+      const raw = body?.version;
+      return typeof raw === "string" ? raw : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Converts a string ID to UUID format if it's not already a UUID.
    * Qdrant requires string IDs to be in UUID format.
    */

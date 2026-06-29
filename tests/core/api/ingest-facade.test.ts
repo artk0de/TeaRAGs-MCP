@@ -97,6 +97,7 @@ describe("IngestFacade", () => {
         listAliases: vi.fn().mockResolvedValue([]),
       },
       url: "http://localhost:6333",
+      getServerVersion: vi.fn().mockResolvedValue(undefined),
     };
 
     const facade = new IngestFacade({
@@ -211,6 +212,19 @@ describe("IngestFacade", () => {
     });
   });
 
+  it("surfaces the running Qdrant server version through infraHealth.qdrant.version", async () => {
+    const { facade, qdrant } = makeFacade();
+    qdrant.getServerVersion.mockResolvedValue("1.18.2");
+    const status = await facade.getIndexStatus("/tmp/test-project");
+    expect(status.infraHealth?.qdrant.version).toBe("1.18.2");
+  });
+
+  it("omits infraHealth.qdrant.version when the daemon version is unreachable", async () => {
+    const { facade } = makeFacade();
+    const status = await facade.getIndexStatus("/tmp/test-project");
+    expect(status.infraHealth?.qdrant).not.toHaveProperty("version");
+  });
+
   it("surfaces yellow collection status through infraHealth.qdrant", async () => {
     const { facade, qdrant } = makeFacade();
     qdrant.collectionExists.mockResolvedValue(true);
@@ -247,6 +261,7 @@ describe("IngestFacade", () => {
       getCollectionInfo: vi.fn(),
       aliases: { listAliases: vi.fn().mockResolvedValue([]) },
       url: "http://localhost:6333",
+      getServerVersion: vi.fn().mockResolvedValue(undefined),
     };
     const facade = new IngestFacade({
       qdrant: qdrant as any,
@@ -282,6 +297,7 @@ describe("IngestFacade", () => {
       getCollectionInfo: vi.fn(),
       aliases: { listAliases: vi.fn().mockResolvedValue([]) },
       url: "http://localhost:6333",
+      getServerVersion: vi.fn().mockResolvedValue(undefined),
     };
     const facade = new IngestFacade({
       qdrant: qdrant as any,

@@ -60,3 +60,18 @@ describe("formatInfraHealth — embedding endpoints", () => {
     expect(out).not.toContain("primary");
   });
 });
+
+describe("formatInfraHealth — Qdrant version", () => {
+  const embedding: InfraHealth["embedding"] = { available: true, provider: "onnx" };
+
+  it("renders the running server version next to the qdrant line when set", () => {
+    const out = formatInfraHealth({ qdrant: { ...qdrant, version: "1.18.2" }, embedding });
+    expect(out).toContain("Qdrant: available · v1.18.2 (http://127.0.0.1:6333)");
+  });
+
+  it("omits the version segment when unset", () => {
+    const out = formatInfraHealth({ qdrant, embedding });
+    expect(out).toContain("Qdrant: available (http://127.0.0.1:6333)");
+    expect(out).not.toContain("· v");
+  });
+});

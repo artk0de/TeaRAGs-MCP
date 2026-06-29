@@ -216,6 +216,9 @@ function formatInfraSection(infra: InfraHealth): string[] {
   const lines = ["## Infra"];
   const q = infra.qdrant;
   let qLine = `qdrant: ${q.status ?? "unknown"} (optimizer ${q.optimizerStatus ?? "unknown"}) at ${q.url}`;
+  if (q.version) {
+    qLine += ` · v${q.version}`;
+  }
   if (q.status === "yellow") {
     qLine += " — background optimization in progress";
   } else if (q.status === "red") {
