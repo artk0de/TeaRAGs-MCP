@@ -5,3 +5,5 @@ PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
 cat "$PLUGIN_ROOT/rules/search-cascade.md"
 echo
 cat "$PLUGIN_ROOT/rules/index-freshness.md"
+echo
+cat "$PLUGIN_ROOT/rules/language-compatibility.md"

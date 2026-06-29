@@ -12,11 +12,11 @@ function scratch(): { rulePath: string; readmePath: string } {
 }
 
 describe("writeArtifacts", () => {
-  it("writes the rule file and replaces only the README marker block, idempotently", () => {
+  it("writes the rule file and replaces only the README marker block, idempotently", async () => {
     const { rulePath, readmePath } = scratch();
     writeFileSync(readmePath, "# Top\n\n<!-- BEGIN lang-compat -->\nOLD\n<!-- END lang-compat -->\n\n# Bottom\n");
 
-    writeArtifacts({ rulePath, readmePath });
+    await writeArtifacts({ rulePath, readmePath });
     const first = readFileSync(readmePath, "utf8");
 
     expect(readFileSync(rulePath, "utf8")).toContain("# Language Compatibility");
@@ -24,19 +24,16 @@ describe("writeArtifacts", () => {
     expect(first).toContain("# Bottom");
     expect(first).not.toContain("OLD");
     expect(first).toContain("## Languages Compatibilities");
-    // markers survive
     expect(first).toContain("<!-- BEGIN lang-compat -->");
     expect(first).toContain("<!-- END lang-compat -->");
 
-    writeArtifacts({ rulePath, readmePath });
+    await writeArtifacts({ rulePath, readmePath });
     expect(readFileSync(readmePath, "utf8")).toBe(first); // idempotent
   });
 
-  it("throws when the README markers are missing", () => {
+  it("throws when the README markers are missing", async () => {
     const { rulePath, readmePath } = scratch();
     writeFileSync(readmePath, "# No markers here\n");
-    expect(() => {
-      writeArtifacts({ rulePath, readmePath });
-    }).toThrow(/marker/i);
+    await expect(writeArtifacts({ rulePath, readmePath })).rejects.toThrow(/marker/i);
   });
 });

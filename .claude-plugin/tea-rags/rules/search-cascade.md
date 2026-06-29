@@ -10,10 +10,16 @@ names) are SYMBOL searches — use hybrid_search (BM25 gives exact-name match,
 score up to 1.0) or find_symbol, NEVER ripgrep, even if your query contains `|`
 alternation. Built-in Grep/Glob — never for code discovery.
 
-**Chunk is the source of truth.** Search results contain code, metadata, and git
-signals. Do not re-read files to "verify" or "understand" results. Read only
-when: modifying code, or need context beyond chunk boundaries. find_symbol
-returns the full method/class definition — no Read needed.
+**Chunk is the source of truth — for languages with full AST chunking.** Search
+results contain code, metadata, and git signals. Do not re-read files to
+"verify" or "understand" results; `find_symbol` returns the full method/class
+definition — no `Read` needed. This holds where `language-compatibility.md`
+rates the language **AST = full** (the native languages:
+ts/js/python/go/java/rust/ruby/ bash). For **AST = none** (sql/jsonc/json and
+any non-native language on CharacterChunker) a chunk may split a symbol mid-body
+— there `Read` is a legitimate fallback for exact code; markdown is **partial**
+(section-level, fine for docs). `Read` is always allowed to MODIFY — it is never
+_needed_ merely to gather code for a full-AST language.
 
 **MANDATORY:** ALWAYS prefer tea-rags and ripgrep MCP over built-in Search/Grep.
 
@@ -84,17 +90,18 @@ sections?_ If yes — your next call is `find_symbol`, NOT another search and NO
 `Read`. `find_symbol` is instant (no embedding) and returns merged definitions,
 file outlines, or doc TOCs from the same index.
 
-| After search returns…                       | If you need…                           | Next call                                                              |
-| ------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------- |
-| Chunk with method body truncated            | Full method body                       | `find_symbol(symbol: result.symbolId)`                                 |
-| Chunk from one file                         | File structure / other methods in file | `find_symbol(relativePath: result.relativePath)` → synthetic outline   |
-| Chunk with `navigation.{prev,next}SymbolId` | The neighbor method                    | `find_symbol(symbol: navigation.prevSymbolId or nextSymbolId)`         |
-| Chunk that calls a helper / class           | The helper / class definition          | `find_symbol(symbol: "HelperClass#method")` — symbol is in chunk text  |
-| Chunk from a `.md` doc                      | All sections of that doc (TOC)         | `find_symbol(symbol: result.parentSymbolId)` — parent is `doc:<hash>`  |
-| Just a doc path (no search yet)             | Table of contents of that doc          | `find_symbol(relativePath: "docs/file.md")` — heading TOC with hashes  |
-| Class chunk (constructor or one method)     | All methods / public API of the class  | `find_symbol(symbol: "ClassName")` → full class outline + bodies       |
-| Chunk from production src + diff context    | Tests describing affected scenarios    | `Skill(tea-rags:tests-as-context)` recipe `tests-at-risk`              |
-| Describe-it scope name from a stacktrace    | Leaf scope chunk with inherited setup  | `find_symbol(symbol: "<Parent>.<scope>")` + filter `chunkType: "test"` |
+| After search returns…                       | If you need…                            | Next call                                                                                                                                 |
+| ------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Chunk with method body truncated            | Full method body                        | `find_symbol(symbol: result.symbolId)`                                                                                                    |
+| Chunk whose `symbolId` ends in `#partN`     | The whole oversized symbol, reassembled | `find_symbol(symbol: result.parentSymbolId)` — collapses every `#partN` + base window into one (do NOT treat one part as the full symbol) |
+| Chunk from one file                         | File structure / other methods in file  | `find_symbol(relativePath: result.relativePath)` → synthetic outline                                                                      |
+| Chunk with `navigation.{prev,next}SymbolId` | The neighbor method                     | `find_symbol(symbol: navigation.prevSymbolId or nextSymbolId)`                                                                            |
+| Chunk that calls a helper / class           | The helper / class definition           | `find_symbol(symbol: "HelperClass#method")` — symbol is in chunk text                                                                     |
+| Chunk from a `.md` doc                      | All sections of that doc (TOC)          | `find_symbol(symbol: result.parentSymbolId)` — parent is `doc:<hash>`                                                                     |
+| Just a doc path (no search yet)             | Table of contents of that doc           | `find_symbol(relativePath: "docs/file.md")` — heading TOC with hashes                                                                     |
+| Class chunk (constructor or one method)     | All methods / public API of the class   | `find_symbol(symbol: "ClassName")` → full class outline + bodies                                                                          |
+| Chunk from production src + diff context    | Tests describing affected scenarios     | `Skill(tea-rags:tests-as-context)` recipe `tests-at-risk`                                                                                 |
+| Describe-it scope name from a stacktrace    | Leaf scope chunk with inherited setup   | `find_symbol(symbol: "<Parent>.<scope>")` + filter `chunkType: "test"`                                                                    |
 
 `find_symbol` accepts a `rerank` preset for single-call diagnostic (definition +
 rankingOverlay in one call). `offset` pagination works on every search tool;
