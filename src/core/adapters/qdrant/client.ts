@@ -47,6 +47,17 @@ export interface SparseVector {
   values: number[];
 }
 
+/**
+ * Search-time quantization params applied to every dense/quantized query so
+ * TurboQuant candidates are re-scored on the stored float vectors. Without
+ * rescore, 8x quantization drops recall ~2–3 pp; oversampling widens the
+ * quantized candidate pool before the float-vector rescore. Sparse legs are not
+ * quantized, so this is injected only on dense paths.
+ */
+const QUANTIZATION_SEARCH_PARAMS = {
+  quantization: { rescore: true, oversampling: 2.0 },
+} as const;
+
 export class QdrantManager {
   /** Page size for scroll pagination when collecting point IDs by filter. */
   private static readonly SCROLL_PAGE_SIZE = 1000;
@@ -599,6 +610,7 @@ export class QdrantManager {
         limit,
         filter: qdrantFilter,
         with_payload: true, // Explicitly request payloads
+        params: QUANTIZATION_SEARCH_PARAMS,
       }),
     );
 
@@ -668,6 +680,7 @@ export class QdrantManager {
     if (options.offset !== undefined) queryParams.offset = options.offset;
     if (options.filter) queryParams.filter = options.filter;
     if (collectionInfo.hybridEnabled) queryParams.using = "dense";
+    queryParams.params = QUANTIZATION_SEARCH_PARAMS;
 
     let response;
     try {
@@ -717,6 +730,7 @@ export class QdrantManager {
 
     if (options.filter) params.filter = options.filter;
     if (collectionInfo.hybridEnabled) params.using = "dense";
+    params.params = QUANTIZATION_SEARCH_PARAMS;
 
     const response = await this.call(async () =>
       this.client.queryGroups(collectionName, params as Parameters<QdrantClient["queryGroups"]>[1]),
@@ -1038,7 +1052,13 @@ export class QdrantManager {
       const response = await this.call(async () =>
         this.client.query(collectionName, {
           prefetch: [
-            { query: denseVector, using: "dense", limit: fetchLimit, filter: qdrantFilter },
+            {
+              query: denseVector,
+              using: "dense",
+              limit: fetchLimit,
+              filter: qdrantFilter,
+              params: QUANTIZATION_SEARCH_PARAMS,
+            },
             { query: sparseVector, using: "text", limit: fetchLimit, filter: qdrantFilter },
           ],
           query: fusionQuery,

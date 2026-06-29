@@ -10,6 +10,10 @@ import {
 } from "../../../../src/core/adapters/qdrant/errors.js";
 import { InvalidQueryError } from "../../../../src/core/domains/explore/errors.js";
 
+// TurboQuant rescore params injected into every dense search path so quantized
+// candidates are re-scored on the stored float vectors (keeps baseline recall).
+const RESCORE_PARAMS = { quantization: { rescore: true, oversampling: 2.0 } };
+
 const mockClient = {
   createCollection: vi.fn().mockResolvedValue({}),
   getCollection: vi.fn().mockResolvedValue({}),
@@ -731,6 +735,44 @@ describe("QdrantManager", () => {
     });
   });
 
+  describe("quantization rescore params (all dense paths)", () => {
+    beforeEach(() => {
+      // query/queryGroups/search read collection info first — give them a valid
+      // standard (non-hybrid) collection config so the dense path is exercised.
+      mockClient.getCollection.mockResolvedValue({
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+      });
+    });
+
+    it("query injects quantization rescore params", async () => {
+      await manager.query("col", { positive: ["id1"], limit: 5 });
+
+      expect(mockClient.query.mock.calls.at(-1)[1]).toMatchObject({ params: RESCORE_PARAMS });
+    });
+
+    it("queryGroups injects quantization rescore params", async () => {
+      await manager.queryGroups("col", [0.1, 0.2, 0.3], { groupBy: "relativePath", limit: 5 });
+
+      expect(mockClient.queryGroups.mock.calls.at(-1)[1]).toMatchObject({ params: RESCORE_PARAMS });
+    });
+
+    it("search injects quantization rescore params", async () => {
+      await manager.search("col", [0.1, 0.2, 0.3], 5);
+
+      expect(mockClient.search.mock.calls.at(-1)[1]).toMatchObject({ params: RESCORE_PARAMS });
+    });
+
+    it("hybridSearch injects rescore params on the dense prefetch leg only", async () => {
+      mockClient.query.mockResolvedValue({ points: [] });
+
+      await manager.hybridSearch("col", [0.1, 0.2, 0.3], { indices: [1], values: [0.5] }, 10);
+
+      const body = mockClient.query.mock.calls.at(-1)[1];
+      expect(body.prefetch[0]).toMatchObject({ using: "dense", params: RESCORE_PARAMS });
+      expect(body.prefetch[1].params).toBeUndefined();
+    });
+  });
+
   describe("search", () => {
     beforeEach(() => {
       // Mock getCollection for standard collection by default
@@ -765,6 +807,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter: undefined,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -778,6 +821,7 @@ describe("QdrantManager", () => {
         limit: 10,
         filter: undefined,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -792,6 +836,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -811,6 +856,7 @@ describe("QdrantManager", () => {
           ],
         },
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -824,6 +870,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter: undefined,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -840,6 +887,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -856,6 +904,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -899,6 +948,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter: undefined,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -927,6 +977,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter: undefined,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -947,6 +998,7 @@ describe("QdrantManager", () => {
           must: [{ key: "category", match: { value: "test" } }],
         },
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
   });
