@@ -251,6 +251,38 @@ export function resolveInstanceMethodInClassChain(
 }
 
 /**
+ * The first ancestor AFTER `startAfter` in `klass`'s prepend-aware MRO that
+ * defines `member` (bd cai0/2oky5). Linearizes `klass` as
+ * `[reverse(prepended), klass, ...collectAncestorChain(klass)]`, finds
+ * `startAfter`, and walks the remainder via `resolveInstanceMethodInClassChain`
+ * with a `visited` set pre-seeded up to and including `startAfter` so nothing at
+ * or before it is re-walked. Method-level pin wins; file-only is the fallback.
+ * Returns `null` when `startAfter` is not in the MRO or nothing after it defines
+ * `member`. Backbone-additive — reuses the existing chain walk, does not mutate it.
+ */
+export function firstDefinerAfter(
+  startAfter: string,
+  member: string,
+  klass: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  const prepended = [...(ctx.classPrependedAncestors?.[klass] ?? [])].reverse();
+  const mro = [...prepended, klass, ...collectAncestorChain(klass, ctx)];
+  const idx = mro.indexOf(startAfter);
+  if (idx === -1) return null;
+  const visited = new Set<string>(mro.slice(0, idx + 1));
+  let fileOnlyFallback: SymbolResolutionTarget | null = null;
+  for (let i = idx + 1; i < mro.length; i++) {
+    const t = resolveInstanceMethodInClassChain(mro[i], member, ctx, mode, visited);
+    if (t === null) continue;
+    if (t.targetSymbolId !== null) return t;
+    if (fileOnlyFallback === null) fileOnlyFallback = t;
+  }
+  return fileOnlyFallback;
+}
+
+/**
  * Resolve `<typeName>#<member>` for a receiver whose static type is KNOWN
  * (walker-inferred local binding `var = ClassName.new`, or `@ivar` field type
  * from `classFieldTypes`):
