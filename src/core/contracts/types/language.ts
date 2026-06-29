@@ -453,3 +453,30 @@ export type RubyTypeRef =
   | { form: "class" | "instance"; name: string }
   | { form: "union"; members: RubyTypeRef[] }
   | { form: "container"; element: RubyTypeRef };
+
+export type CodegraphTier = "maximum" | "high" | "moderate" | "minimal" | "none";
+
+/**
+ * Ruby's codegraph capability is not a single tier — it depends on the
+ * annotation tier present in the project (untyped vs YARD vs RBS/Sorbet).
+ */
+export interface TypingTieredCodegraph {
+  untyped: CodegraphTier;
+  yard: CodegraphTier;
+  "rbs/sorbet": CodegraphTier | "tbd";
+}
+
+/**
+ * Static, per-language capability ceiling for the language-compatibility
+ * matrix. The MEASURED `resolveSuccessRate` is NOT part of this — it is
+ * per-index state owned by prime. Aggregated by `LanguageFactory.capabilities()`
+ * and rendered by `domains/language/capability/{rule,readme}.ts`.
+ */
+export interface LanguageCapability {
+  language: string;
+  ast: { tier: "full" | "partial" | "none"; engine: string; hooks?: string[] };
+  tests: { tier: "high" | "medium" | "low" | "na"; detection: string; tech: string };
+  codegraph: { tier: CodegraphTier | TypingTieredCodegraph; tech: string };
+  /** README prose extras (humans only). */
+  notes?: string;
+}
