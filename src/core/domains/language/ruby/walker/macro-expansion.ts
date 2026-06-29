@@ -11,16 +11,11 @@
  * catalogue hands an already-parsed `base` via `RubyDslEntry.declares`.
  */
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import { RUBY_DSL, type DslCategory, type MethodKind } from "../dsl/index.js";
+import { RUBY_DSL, type DslCategory, type DslOperandsShape, type MethodKind } from "../dsl/index.js";
+import { STRUCTURED_MACROS } from "./structured/index.js";
+import { literalNameFromArg, stripSymbolColon, type DeclaredMethod } from "./structured/types.js";
 
-/** A synthetic method a class-body macro declares, with provenance category + span. */
-export interface DeclaredMethod {
-  name: string;
-  kind: MethodKind;
-  category: DslCategory;
-  startLine: number;
-  endLine: number;
-}
+export type { DeclaredMethod } from "./structured/types.js";
 
 /**
  * Expand a class-body macro `call` / `method_call` node into the methods it
@@ -44,131 +39,19 @@ export function expandClassBodyMacros(node: AstNode): DeclaredMethod[] {
   });
   const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
 
-  // define_method(:foo) / define_method("foo") — literal symbol/string arg only.
-  if (macroName === "define_method") {
-    const first = args?.namedChildren[0];
-    const name = first ? literalNameFromArg(first) : null;
-    return name ? [mk(name, "instance", "dynamic-method")] : [];
-  }
-  // alias_method :new, :old — only the NEW name (first symbol) is declared.
-  if (macroName === "alias_method") {
-    const first = args?.namedChildren[0];
-    if (first?.type !== "simple_symbol") return [];
-    const name = stripSymbolColon(first.text);
-    return name.length > 0 ? [mk(name, "instance", "alias")] : [];
-  }
-  // delegate :a, :b, to: :other — leading symbols, STOP at the first non-symbol
-  // (the `to:` / `prefix:` kwarg pair), which is a receiver/option, not a name.
-  if (macroName === "delegate") {
-    if (!args) return [];
-    const out: DeclaredMethod[] = [];
-    for (const arg of args.namedChildren) {
-      if (arg.type !== "simple_symbol") break;
-      const base = stripSymbolColon(arg.text);
-      if (base.length > 0) out.push(mk(base, "instance", "delegation"));
-    }
-    return out;
-  }
+  // Structural macros (enum, aasm) — walk the AST for their inner declarations.
+  const structured = STRUCTURED_MACROS.find((e) => e.macroName === macroName);
+  if (structured) return structured.expand(node, startLine, endLine);
 
-  // store_accessor :store, :a, :b — the FIRST symbol is the JSON store column;
-  // the rest are the accessor keys (`a`/`a=`/`b`/`b=`).
-  if (macroName === "store_accessor") {
-    if (!args) return [];
-    const syms: string[] = [];
-    for (const arg of args.namedChildren) {
-      if (arg.type !== "simple_symbol") continue;
-      const base = stripSymbolColon(arg.text);
-      if (base.length > 0) syms.push(base);
-    }
-    const out: DeclaredMethod[] = [];
-    for (const key of syms.slice(1)) {
-      out.push(mk(key, "instance", "accessor"), mk(`${key}=`, "instance", "accessor"));
-    }
-    return out;
-  }
-
-  // enum :status, { active: 0 } / enum status: { active: 0 } / enum status: [:active]
-  // — the VALUE keys (not the leading symbol) drive synthesis: the attribute
-  // accessor (`status`/`status=`) plus a predicate (`active?`) and bang
-  // (`active!`) per value. Scopes (`Model.active`) are intentionally omitted —
-  // they are conditional (`scopes: false`) and class-level, so synthesising them
-  // risks fabricating an edge target the model may not define.
-  if (macroName === "enum") {
-    if (!args) return [];
-    const first = args.namedChildren[0];
-    let enumName: string | null = null;
-    let valuesNode: AstNode | null = null;
-    if (first?.type === "simple_symbol") {
-      enumName = stripSymbolColon(first.text);
-      valuesNode = args.namedChildren[1] ?? null;
-    } else if (first?.type === "pair") {
-      const key = first.childForFieldName("key") ?? first.namedChildren[0];
-      enumName = key ? enumKeyName(key) : null;
-      valuesNode = first.childForFieldName("value") ?? first.namedChildren[1] ?? null;
-    }
-    const values = valuesNode ? enumValueNames(valuesNode) : [];
-    if (!enumName || values.length === 0) return [];
-    const out: DeclaredMethod[] = [mk(enumName, "instance", "enum"), mk(`${enumName}=`, "instance", "enum")];
-    for (const value of values) {
-      out.push(mk(`${value}?`, "instance", "enum"), mk(`${value}!`, "instance", "enum"));
-    }
-    return out;
-  }
-
-  // aasm do; state :sleeping; event :run; end — AASM state machine. Synthesise a
-  // predicate (`sleeping?`) per state and the event method + bang (`run`/`run!`)
-  // per event. Gated on the `aasm` macro name AND on the inner `state`/`event`
-  // keywords inside ITS block, so a stray `state`/`event` elsewhere is never
-  // expanded. Scopes (`Model.sleeping`) are omitted — conditional on
-  // `create_scopes` and class-level; the predicate/event methods are always made.
-  if (macroName === "aasm") {
-    const block =
-      node.childForFieldName("block") ?? node.children.find((c) => c.type === "do_block" || c.type === "block");
-    if (!block) return [];
-    const body = block.childForFieldName("body") ?? block;
-    const out: DeclaredMethod[] = [];
-    for (const stmt of body.namedChildren) {
-      if (stmt.type !== "call" && stmt.type !== "method_call") continue;
-      const inner = stmt.childForFieldName("method") ?? stmt.children.find((c) => c.type === "identifier");
-      const innerName = inner?.text;
-      if (innerName !== "state" && innerName !== "event") continue;
-      const innerArgs = stmt.childForFieldName("arguments") ?? stmt.children.find((c) => c.type === "argument_list");
-      const firstSym = innerArgs?.namedChildren[0];
-      if (firstSym?.type !== "simple_symbol") continue;
-      const base = stripSymbolColon(firstSym.text);
-      if (base.length === 0) continue;
-      if (innerName === "state") {
-        out.push(mk(`${base}?`, "instance", "state-machine"));
-      } else {
-        out.push(mk(base, "instance", "state-machine"), mk(`${base}!`, "instance", "state-machine"));
-      }
-    }
-    return out;
-  }
-
-  // Generic: project each leading symbol arg through the catalogue `declares`.
+  // Generic declarative dispatch: look up the operands shape from the catalogue
+  // entry and project each extracted base through `declares`.
   const entry = RUBY_DSL[macroName];
-  if (!entry?.declares || !args) return [];
-  const builder = entry.declares;
-  const { category } = entry;
-  const bases: string[] = [];
-  for (const arg of args.namedChildren) {
-    if (arg.type !== "simple_symbol") continue;
-    const base = stripSymbolColon(arg.text);
-    if (base.length > 0) bases.push(base);
-  }
-  if (bases.length === 0) return [];
-  // First-symbol-only macros: `scope :active, -> { ... }` (rest is the lambda)
-  // and `attribute :name, :string` (2nd positional symbol is the cast type, not
-  // a second attribute name).
-  if (macroName === "scope" || macroName === "attribute") {
-    return builder(bases[0]).map((m) => mk(m.name, m.kind, category));
-  }
-  const out: DeclaredMethod[] = [];
-  for (const base of bases) {
-    for (const m of builder(base)) out.push(mk(m.name, m.kind, category));
-  }
-  return out;
+  if (!entry) return [];
+  const { declares, category, operands } = entry;
+  if (!declares || !args) return [];
+  const shape = operands ?? "leading-symbols";
+  const bases = extractOperands(args, shape);
+  return bases.flatMap((b) => declares(b)).map((m) => mk(m.name, m.kind, category));
 }
 
 /**
@@ -190,44 +73,52 @@ export function expandAliasKeyword(node: AstNode): DeclaredMethod[] {
   ];
 }
 
-function stripSymbolColon(text: string): string {
-  return text.startsWith(":") ? text.slice(1) : text;
-}
-
-function literalNameFromArg(arg: AstNode): string | null {
-  if (arg.type === "simple_symbol") return stripSymbolColon(arg.text);
-  if (arg.type === "string" || arg.type === "string_literal") {
-    const inner = arg.namedChildren.find((c) => c.type === "string_content");
-    const text = inner ? inner.text : arg.text.replace(/^["']|["']$/g, "");
-    return text.length > 0 ? text : null;
+/**
+ * Extract base symbol names from a macro call's argument list according to the
+ * declarative `shape` descriptor attached to the catalogue `RubyDslEntry`.
+ *
+ * | Shape                                          | Semantics                                          |
+ * |------------------------------------------------|----------------------------------------------------|
+ * | `'literal-name'`                               | First arg: `simple_symbol` OR string literal       |
+ * | `'first-symbol'`                               | First namedChild if `simple_symbol`, else `[]`     |
+ * | `'skip-first'`                                 | All `simple_symbol`s, skipping the first           |
+ * | `'leading-symbols'`                            | All `simple_symbol`s, CONTINUE past non-symbols    |
+ * | `{ kind: 'leading-symbols', stopAtKwarg: true }` | All `simple_symbol`s, BREAK at first non-symbol  |
+ *
+ * Returns `[]` when `args` is `null`.
+ */
+export function extractOperands(args: AstNode | null, shape: DslOperandsShape): string[] {
+  if (!args) return [];
+  if (shape === "literal-name") {
+    const first = args.namedChildren[0];
+    const name = first ? literalNameFromArg(first) : null;
+    return name ? [name] : [];
   }
-  return null;
-}
-
-/** Value names of an enum's values container — `hash` keys or `array` symbols. */
-function enumValueNames(node: AstNode): string[] {
+  if (shape === "first-symbol") {
+    const first = args.namedChildren[0];
+    if (first?.type !== "simple_symbol") return [];
+    const name = stripSymbolColon(first.text);
+    return name.length > 0 ? [name] : [];
+  }
+  if (shape === "skip-first") {
+    const syms: string[] = [];
+    for (const arg of args.namedChildren) {
+      if (arg.type !== "simple_symbol") continue;
+      const base = stripSymbolColon(arg.text);
+      if (base.length > 0) syms.push(base);
+    }
+    return syms.slice(1);
+  }
+  // 'leading-symbols' (string) or { kind: 'leading-symbols', stopAtKwarg: true }
+  const stopAtKwarg = typeof shape === "object" && shape.stopAtKwarg;
   const out: string[] = [];
-  if (node.type === "hash") {
-    for (const pair of node.namedChildren) {
-      if (pair.type !== "pair") continue;
-      const key = pair.childForFieldName("key") ?? pair.namedChildren[0];
-      const name = key ? enumKeyName(key) : null;
-      if (name) out.push(name);
+  for (const arg of args.namedChildren) {
+    if (arg.type !== "simple_symbol") {
+      if (stopAtKwarg) break;
+      continue;
     }
-  } else if (node.type === "array") {
-    for (const el of node.namedChildren) {
-      const name = enumKeyName(el);
-      if (name) out.push(name);
-    }
+    const base = stripSymbolColon(arg.text);
+    if (base.length > 0) out.push(base);
   }
   return out;
-}
-
-/** A single enum key/value name from a `hash_key_symbol` / `simple_symbol` / string node. */
-function enumKeyName(node: AstNode): string | null {
-  if (node.type === "hash_key_symbol") {
-    const text = node.text.replace(/:$/, "");
-    return text.length > 0 ? text : null;
-  }
-  return literalNameFromArg(node);
 }

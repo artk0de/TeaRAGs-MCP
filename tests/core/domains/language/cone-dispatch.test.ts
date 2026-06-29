@@ -4,12 +4,15 @@ import type {
   CallContext,
   CallRef,
   DispatchEdge,
+  HierarchySnapshot,
   HierarchyView,
   InheritanceEdge,
+  InheritanceEdgeRow,
   SymbolResolutionTarget,
 } from "../../../../src/core/contracts/types/codegraph.js";
 import type { ConeTypeLocator } from "../../../../src/core/contracts/types/language.js";
 import { ConeDispatchResolver } from "../../../../src/core/domains/language/cone-dispatch.js";
+import { MapHierarchyView } from "../../../../src/core/infra/graph/hierarchy-view.js";
 
 /**
  * Fake `ConeTypeLocator` — the engine is language-neutral, so the Ruby /
@@ -82,7 +85,10 @@ describe("ConeDispatchResolver", () => {
     const resolver = new ConeDispatchResolver(locatorWith({ "WebsiteAgent#check": websiteTarget }), 8);
     const out = resolver.resolveDispatch(
       { callText: "check", receiver: null, member: "check", startLine: 1 },
-      ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }),
+      ctx({
+        localBindings: { agent: [{ line: 1, type: "Agent" }] },
+        hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }),
+      }),
     );
     expect(out).toEqual([]);
   });
@@ -113,7 +119,10 @@ describe("ConeDispatchResolver", () => {
     const resolver = new ConeDispatchResolver(locatorWith({}), 8);
     const out = resolver.resolveDispatch(
       call,
-      ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }),
+      ctx({
+        localBindings: { agent: [{ line: 1, type: "Agent" }] },
+        hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }),
+      }),
     );
     expect(out).toEqual([]);
   });
@@ -162,7 +171,10 @@ describe("ConeDispatchResolver", () => {
     );
     const out = resolver.resolveDispatch(
       call,
-      ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }) }),
+      ctx({
+        localBindings: { agent: [{ line: 1, type: "Agent" }] },
+        hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
+      }),
     );
     expect(out).toEqual([
       {
@@ -187,7 +199,10 @@ describe("ConeDispatchResolver", () => {
     );
     const out = resolver.resolveDispatch(
       call,
-      ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }) }),
+      ctx({
+        localBindings: { agent: [{ line: 1, type: "Agent" }] },
+        hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
+      }),
     );
     expect(out).toEqual([
       {
@@ -207,8 +222,92 @@ describe("ConeDispatchResolver", () => {
     );
     const out = resolver.resolveDispatch(
       call,
-      ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }) }),
+      ctx({
+        localBindings: { agent: [{ line: 1, type: "Agent" }] },
+        hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
+      }),
     );
     expect(out).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RTA prune tests (bd tea-rags-mcp-pffv Task 4)
+// ---------------------------------------------------------------------------
+
+// Hierarchy: A, B, C all extend Base; each subtype `t` overrides `m` iff
+// overriders.has(t). Base also defines `m` (the inherited fallback).
+function buildRtaCtx(opts: { overriders: Set<string>; instantiated?: Set<string> }): {
+  ctx: CallContext;
+  locator: ConeTypeLocator;
+} {
+  const rows: InheritanceEdgeRow[] = ["A", "B", "C"].map((s, i) => ({
+    sourceFqName: s,
+    ancestorFqName: "Base",
+    ancestorSymbolId: null,
+    kind: "super",
+    ordinal: i,
+  }));
+  const snapshot: HierarchySnapshot = {
+    ancestorsBySource: { A: [rows[0]], B: [rows[1]], C: [rows[2]] },
+    descendantsByAncestor: { Base: rows },
+  };
+  const rtaLocator: ConeTypeLocator = {
+    resolveTypeFile: (t) => `${t.toLowerCase()}.rb`,
+    findDirectMethod: (t, member): SymbolResolutionTarget | null =>
+      member === "m" && (opts.overriders.has(t) || t === "Base")
+        ? { targetRelPath: `${t.toLowerCase()}.rb`, targetSymbolId: `${t}#m` }
+        : null,
+  };
+  const rtaCtx = {
+    callerFile: "caller.rb",
+    callerScope: [],
+    imports: [],
+    symbolTable: {} as never,
+    localBindings: { obj: [{ line: 1, type: "Base" }] },
+    hierarchy: new MapHierarchyView(snapshot),
+    instantiatedTypes: opts.instantiated,
+  } as unknown as CallContext;
+  return { ctx: rtaCtx, locator: rtaLocator };
+}
+
+const rtaCall: CallRef = { receiver: "obj", member: "m", startLine: 1 } as CallRef;
+
+describe("ConeDispatchResolver — RTA prune (bd pffv)", () => {
+  it("prunes the cone to instantiated subtypes only", () => {
+    const { ctx: rtaCtx, locator } = buildRtaCtx({
+      overriders: new Set(["A", "B", "C"]),
+      instantiated: new Set(["A"]),
+    });
+    const edges = new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, rtaCtx);
+    expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["A#m"]);
+  });
+
+  it("soundness floor: zero instantiation evidence keeps the full cone", () => {
+    const { ctx: rtaCtx, locator } = buildRtaCtx({
+      overriders: new Set(["A", "B", "C"]),
+      instantiated: new Set(["Unrelated"]),
+    });
+    const edges = new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, rtaCtx);
+    expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["A#m", "B#m", "C#m"]);
+  });
+
+  it("gate: absent instantiatedTypes is byte-identical pre-pffv (full cone)", () => {
+    const { ctx: rtaCtx, locator } = buildRtaCtx({ overriders: new Set(["A", "B", "C"]) });
+    const edges = new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, rtaCtx);
+    expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["A#m", "B#m", "C#m"]);
+  });
+
+  it("drops a sibling whose nearest definer is the uninstantiated base", () => {
+    // Only A overrides m; B,C inherit Base#m. Instantiate A and B.
+    // A is live (definer A); B's nearest definer is Base (not in cone) ⇒ B's
+    // cone slot does not exist (B doesn't override). Cone = {A} pre-prune,
+    // stays {A}.
+    const { ctx: rtaCtx, locator } = buildRtaCtx({
+      overriders: new Set(["A"]),
+      instantiated: new Set(["A", "B"]),
+    });
+    const edges = new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, rtaCtx);
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#m"]);
   });
 });

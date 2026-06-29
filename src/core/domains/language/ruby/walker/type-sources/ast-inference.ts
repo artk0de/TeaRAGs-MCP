@@ -1,7 +1,8 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+import { RUBY_INSTANCE_RETURNING, RUBY_RELATION_RETURNING } from "../../dsl/index.js";
 import { CONTAINER_BLOCK_ITERATION_METHODS } from "../../resolver/type-propagation.js";
-import { readScopeResolution, walk } from "../ast-utils.js";
+import { lexicalScopeFqName, readScopeResolution, walk } from "../ast-utils.js";
 import type { RubyExtractInput } from "../walker.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 import { collectYardParamTypes, YARD_CONST } from "./yard.js";
@@ -17,64 +18,9 @@ import { collectYardParamTypes, YARD_CONST } from "./yard.js";
 export const RUBY_BLOCK_ITERATOR_METHODS = CONTAINER_BLOCK_ITERATION_METHODS;
 
 /**
- * Instance-returning methods on a class constant that bind a local to the
- * receiver's INSTANCE type. `new` is the universal constructor; the rest are
- * Rails/ActiveRecord factories and finders that return a single model instance
- * (not a Relation). Methods like `where` / `order` / `joins` return a Relation,
- * so chained `.first` / `.last` need separate Relation-aware tracking (not done
- * here). This is the single source of truth for the instance-returning set
- * (bd tea-rags-mcp-va9ng will later wire it onto ResolverConfig); the walker's
- * binding inference consumes it directly. Note `new` is handled separately as
- * the universal constructor and is NOT listed here.
- */
-export const INSTANCE_RETURNING_METHODS = new Set([
-  "find",
-  "find!",
-  "find_by",
-  "find_by!",
-  "create",
-  "create!",
-  "build",
-  "first",
-  "last",
-  "take",
-]);
-
-/**
- * AR::Relation-returning query methods: `Const.where(...)` is a
- * `Relation<Const>`, and chaining another of these stays `Relation<Const>`
- * (same element type). A terminal instance-returning method
- * ({@link INSTANCE_RETURNING_METHODS}) on such a relation yields ONE `Const`
- * instance — so `Const.where(...).first` is typed `Const` (bd Increment B / B2).
- */
-export const RELATION_RETURNING_METHODS = new Set([
-  "where",
-  "not",
-  "order",
-  "joins",
-  "includes",
-  "eager_load",
-  "preload",
-  "references",
-  "group",
-  "having",
-  "limit",
-  "offset",
-  "distinct",
-  "select",
-  "reorder",
-  "unscope",
-  "except",
-  "all",
-  "readonly",
-  "lock",
-  "none",
-]);
-
-/**
  * Walk a relation chain `Const.<rel>(...)[.<rel>(...)]*` down to its root
  * constant. Returns the fully-qualified const when the chain bottoms out at a
- * `YARD_CONST` receiver through only {@link RELATION_RETURNING_METHODS}; null
+ * `YARD_CONST` receiver through only {@link RUBY_RELATION_RETURNING}; null
  * for any non-relation link (no guessing).
  */
 function relationRootConst(node: AstNode): string | null {
@@ -84,7 +30,7 @@ function relationRootConst(node: AstNode): string | null {
   if (node.type !== "call" && node.type !== "method_call") return null;
   const recv = node.childForFieldName("receiver");
   const method = node.childForFieldName("method");
-  if (!recv || !method || !RELATION_RETURNING_METHODS.has(method.text)) return null;
+  if (!recv || !method || !RUBY_RELATION_RETURNING.has(method.text)) return null;
   return relationRootConst(recv);
 }
 
@@ -93,7 +39,7 @@ function relationRootConst(node: AstNode): string | null {
  * (`ClassName.new(...)` / `Model.find(...)` / `Model.create!(...)` …) or a
  * relation-tail chain (`Const.where(...).first`). Returns the fully-qualified
  * constant name when the receiver is a constant (or a relation chain rooted at
- * one) and the method is `new` or in {@link INSTANCE_RETURNING_METHODS};
+ * one) and the method is in {@link RUBY_INSTANCE_RETURNING};
  * otherwise null (bare factory calls, bare Relation chains, non-constant
  * receivers — never guessed).
  */
@@ -103,12 +49,50 @@ export function constInstanceType(node: AstNode): string | null {
   const method = node.childForFieldName("method");
   if (!receiver || !method) return null;
   const methodName = method.text;
-  if (methodName !== "new" && !INSTANCE_RETURNING_METHODS.has(methodName)) return null;
+  if (!RUBY_INSTANCE_RETURNING.has(methodName)) return null;
   const receiverText = receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
   // Direct `ClassName.new` / `ClassName.find` — receiver is the constant itself.
   if (YARD_CONST.test(receiverText)) return receiverText;
   // B2 relation tail `Const.where(...).first` — receiver is a relation chain.
   return relationRootConst(receiver);
+}
+
+/**
+ * Collect the program's instantiation set for one Ruby file (bd
+ * tea-rags-mcp-pffv): every fully-qualified constant instantiated via
+ * `Klass.new` or a factory/finder in `RUBY_INSTANCE_RETURNING` — exactly the
+ * sites {@link constInstanceType} already classifies. Deduped. The provider
+ * unions these across files into the run-global RTA set used to prune CHA
+ * cones. Pure AST walk; no symbol-table access (walker discipline).
+ *
+ * Keys are scope-aware lexical-fq via {@link lexicalScopeFqName}: `Cat.new`
+ * inside `module Zoo` emits `"Zoo::Cat"`, matching the `sourceFqName` the
+ * inheritance edge builder writes for the same nesting (pffv Task 5). Top-level
+ * sites are unchanged (`"Cat"` at top level → `"Cat"`).
+ */
+export function collectRubyInstantiatedTypes(root: AstNode): string[] {
+  const seen = new Set<string>();
+  const walkScope = (node: AstNode, scope: string[]): void => {
+    if (node.type === "class" || node.type === "module") {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) {
+        for (const child of node.children) walkScope(child, scope);
+        return;
+      }
+      const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+      const body = node.childForFieldName("body");
+      const recurseChildren = body ? body.children : node.children;
+      for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
+      return;
+    }
+    if (node.type === "call" || node.type === "method_call") {
+      const constText = constInstanceType(node);
+      if (constText) seen.add(lexicalScopeFqName(scope, constText));
+    }
+    for (const child of node.children) walkScope(child, scope);
+  };
+  walkScope(root, []);
+  return [...seen];
 }
 
 /**

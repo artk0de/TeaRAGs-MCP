@@ -117,6 +117,70 @@ describe("CodegraphEnrichmentProvider — inProjectEdgeRecall", () => {
     expect(m.inProjectEdgeRecall).toBeCloseTo(0.5, 5);
   });
 
+  // cai0 Option A (bd tea-rags-mcp-cai0.2) — a call whose member has NO
+  // in-project def (callsNoInProjectDef) can never resolve to an in-project
+  // symbol, so it is not a resolver failure. resolveSuccessRate must exclude it
+  // from the denominator exactly as inProjectEdgeRecall does → the two metrics
+  // are equal by construction. This drops uncaught-external gem bareCalls
+  // (Devise/Paperclip/…) from the denominator without per-gem grammar.
+  it("resolveSuccessRate excludes noInProjectDef and equals inProjectEdgeRecall (cai0 Option A)", async () => {
+    const sink = provider.asExtractionSink();
+    // SAME fixture as the recall test: 1 resolved (Foo.bar), 1 recall-hole
+    // (ambiguous helper()), 1 noInProjectDef (Mystery.nope()).
+    await sink.write({
+      relPath: "src/a.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "helper", scope: [], calls: [], startLine: 1, endLine: 3 }],
+      fileScope: ["helper"],
+    });
+    await sink.write({
+      relPath: "src/b.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "helper", scope: [], calls: [], startLine: 1, endLine: 3 }],
+      fileScope: ["helper"],
+    });
+    await sink.write({
+      relPath: "src/foo.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "Foo.bar", scope: ["Foo"], calls: [], startLine: 1, endLine: 3 }],
+      fileScope: [],
+    });
+    await sink.write({
+      relPath: "src/main.ts",
+      language: "typescript",
+      imports: [{ importText: "./foo", startLine: 1 }],
+      chunks: [
+        {
+          symbolId: "main",
+          scope: [],
+          calls: [
+            { callText: "Foo.bar()", receiver: "Foo", member: "bar", startLine: 4 },
+            { callText: "helper()", receiver: null, member: "helper", startLine: 5 },
+            { callText: "Mystery.nope()", receiver: "Mystery", member: "nope", startLine: 6 },
+          ],
+        },
+      ],
+      fileScope: [],
+    });
+    await sink.finish();
+
+    const m = provider.getRunMetrics() as {
+      resolveSuccessRate: number;
+      inProjectEdgeRecall: number;
+      callsNoInProjectDef: number;
+    };
+    expect(m).toBeDefined();
+    expect(m.callsNoInProjectDef).toBe(1);
+    // Mystery.nope() (no in-project def) is excluded from the success denominator
+    // too → successRate = 1 resolved / (1 resolved + 1 recall-hole) = 0.5.
+    expect(m.resolveSuccessRate).toBeCloseTo(0.5, 5);
+    // …and equals recall by construction (same four terms excluded).
+    expect(m.resolveSuccessRate).toBeCloseTo(m.inProjectEdgeRecall, 5);
+  });
+
   it("persists noInProjectDef to cg_run_stats and it round-trips through getRunStats", async () => {
     const root = mkdtempSync(join(tmpdir(), "cg-recall-fixture-"));
     try {

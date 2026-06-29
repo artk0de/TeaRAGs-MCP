@@ -34,9 +34,21 @@ import { parseMarkerPayload } from "./indexing-marker-codec.js";
 /** If indexing marker says "in progress" for longer than this, report as stale */
 const STALE_INDEXING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
-/** `callsResolved / max(1, callsAttempted − callsExternalSkipped − callsUnresolvable)`; 0 when nothing attempted. */
-function resolveRate(attempted: number, resolved: number, externalSkipped: number, unresolvable: number): number {
-  return attempted === 0 ? 0 : resolved / Math.max(1, attempted - externalSkipped - unresolvable);
+/**
+ * `callsResolved / max(1, attempted − externalSkipped − unresolvable − noInProjectDef)`;
+ * 0 when nothing attempted. cai0.2 (Option A): the denominator also excludes
+ * calls whose member has no in-project def — they can never resolve to an
+ * in-project symbol, so they are not resolver failures — making this rate equal
+ * to {@link edgeRecall} (inProjectEdgeRecall) by construction.
+ */
+function resolveRate(
+  attempted: number,
+  resolved: number,
+  externalSkipped: number,
+  unresolvable: number,
+  noInProjectDef: number,
+): number {
+  return attempted === 0 ? 0 : resolved / Math.max(1, attempted - externalSkipped - unresolvable - noInProjectDef);
 }
 
 /**
@@ -105,7 +117,7 @@ function buildByReceiverKind(kinds: Map<string, ResolveTally>): CodegraphResolve
       externalSkipped: t.externalSkipped,
       unresolvable: t.unresolvable,
       callsNoInProjectDef: t.noInProjectDef,
-      resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped, t.unresolvable),
+      resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped, t.unresolvable, t.noInProjectDef),
     }))
     .sort((a, b) => b.attempted - a.attempted);
 }
@@ -175,15 +187,20 @@ export function summarizeCodegraphResolve(
     byLangKind.set(r.language, kinds);
   }
   const summary: CodegraphResolveSummary = {
-    // Variant B — recall is the always-on graph-completeness number; raw
-    // resolveSuccessRate is DEBUG-only (denominator-polluted, misleads casuals).
+    // Recall is the always-on graph-completeness number. resolveSuccessRate is
+    // kept DEBUG-only as the explicit-rate view; under cai0.2 (Option A) its
+    // denominator also excludes noInProjectDef, so it now EQUALS
+    // inProjectEdgeRecall (the former "denominator-polluted" gap is closed —
+    // collapsing the two fields into one is a separate DTO decision).
     inProjectEdgeRecall: edgeRecall(attempted, resolved, externalSkipped, unresolvable, noInProjectDef),
     callsAttempted: attempted,
     callsResolved: resolved,
     callsExternalSkipped: externalSkipped,
     callsUnresolvable: unresolvable,
     callsNoInProjectDef: noInProjectDef,
-    ...(debug ? { resolveSuccessRate: resolveRate(attempted, resolved, externalSkipped, unresolvable) } : {}),
+    ...(debug
+      ? { resolveSuccessRate: resolveRate(attempted, resolved, externalSkipped, unresolvable, noInProjectDef) }
+      : {}),
   };
   const byLanguage: CodegraphResolveLanguageRow[] = [...byLang.entries()]
     .filter(([, t]) => attempted > 0 && t.attempted / attempted >= MIN_LANGUAGE_SHARE)
@@ -195,7 +212,17 @@ export function summarizeCodegraphResolve(
       callsExternalSkipped: t.externalSkipped,
       callsUnresolvable: t.unresolvable,
       callsNoInProjectDef: t.noInProjectDef,
-      ...(debug ? { resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped, t.unresolvable) } : {}),
+      ...(debug
+        ? {
+            resolveSuccessRate: resolveRate(
+              t.attempted,
+              t.resolved,
+              t.externalSkipped,
+              t.unresolvable,
+              t.noInProjectDef,
+            ),
+          }
+        : {}),
       // Absent unless DEBUG built the tally above.
       ...(debug
         ? { byReceiverKind: buildByReceiverKind(byLangKind.get(language) ?? new Map<string, ResolveTally>()) }

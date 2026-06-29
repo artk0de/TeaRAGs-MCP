@@ -15,8 +15,10 @@
  *     intrinsic fact, so it lives there not here).
  *   - `ruby/walker/macro-expansion.ts` — `declares(base)` → synthetic methods
  *     (shared by chunker `macros.ts` and codegraph `name-of.ts`).
- *   - `ruby/walker/walker.ts` — `redirectTarget` → alias redirect `CallRef`,
- *     `category === "callback"` → callback symbol emission.
+ *   - `ruby/walker/walker.ts` — `emits` → synthetic class-body macro edges
+ *     (alias_method redirect, delegate target, callback self-instance,
+ *     association model-constant, via `emitDslEdges`); `redirectTarget` → the
+ *     `alias`-keyword redirect `CallRef`.
  *
  * RSpec / FactoryBot testing-DSL keywords are deliberately ABSENT — they are
  * chunked by the separate `rspec-scope-chunker` and must not enter this Rails
@@ -27,6 +29,7 @@ import { ACTIVESUPPORT_VOCABULARY } from "./activesupport.js";
 import { ACTIVE_RECORD_INSTANCE_BUILTINS } from "./rails-runtime.js";
 import { RAILS_VOCABULARY } from "./rails.js";
 import { RUBY_CORE_VOCABULARY } from "./ruby-core.js";
+import { SIDEKIQ_VOCABULARY } from "./sidekiq.js";
 import type { RubyDslEntry, RubyFrameworkVocabulary } from "./types.js";
 
 /**
@@ -51,9 +54,31 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   RUBY_CORE_VOCABULARY,
   ACTIVESUPPORT_VOCABULARY,
   RAILS_VOCABULARY,
+  SIDEKIQ_VOCABULARY,
 ];
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);
+
+function composeMethodSet(
+  modules: readonly RubyFrameworkVocabulary[],
+  facet: "instanceReturning" | "relationReturning",
+): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const mod of modules) for (const m of mod[facet] ?? []) out.add(m);
+  return out;
+}
+
+export const RUBY_INSTANCE_RETURNING = composeMethodSet(FRAMEWORKS, "instanceReturning");
+export const RUBY_RELATION_RETURNING = composeMethodSet(FRAMEWORKS, "relationReturning");
+
+function composeEnqueueDispatch(modules: readonly RubyFrameworkVocabulary[]): Readonly<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const mod of modules) for (const [k, v] of Object.entries(mod.enqueueDispatch ?? {})) out[k] = v;
+  return out;
+}
+
+export const RUBY_ENQUEUE_DISPATCH = composeEnqueueDispatch(FRAMEWORKS);
+export const enqueueEntrypoint = (member: string): string | undefined => RUBY_ENQUEUE_DISPATCH[member];
 
 /**
  * Is `member` an external bare-call name in ANY registered framework — a

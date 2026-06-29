@@ -132,4 +132,104 @@ describe("CodegraphEnrichmentProvider — CHA cone dispatch end-to-end (bd tea-r
       else process.env.CODEGRAPH_RB_CONE_MAX = prev;
     }
   });
+
+  it("RTA recall (pffv Task 5): namespaced Zoo::Cat + top-level Dog both kept when keys are lexical-fq", async () => {
+    // Fixture: Animal base, Zoo::Cat (namespaced) + Dog (top-level) both extend Animal#speak.
+    // instantiatedTypes carries lexical-fq keys ["Zoo::Cat", "Dog"] — what
+    // collectRubyInstantiatedTypes emits after the scope-aware fix. Pre-fix it would
+    // emit ["Cat", "Dog"], causing Zoo::Cat#speak to be dropped (key mismatch).
+    const zooCat: FileExtraction = {
+      relPath: "app/zoo/cat.rb",
+      language: "ruby",
+      imports: [],
+      fileScope: ["Zoo::Cat"],
+      inheritanceEdges: [{ source: "Zoo::Cat", ancestor: "Animal", kind: "super", ordinal: 0 }],
+      chunks: [
+        { symbolId: "Zoo::Cat", scope: [], calls: [] },
+        { symbolId: "Zoo::Cat#speak", scope: ["Zoo::Cat"], calls: [] },
+      ],
+    };
+    const sink = provider.asExtractionSink();
+    await sink.write(rubyClass("Animal", "speak"));
+    await sink.write(zooCat);
+    await sink.write(rubyClass("Dog", "speak", "Animal"));
+    // File A: scope-aware parser emits lexical-fq keys — Zoo::Cat (not bare Cat).
+    await sink.write({
+      relPath: "app/zoo/factory.rb",
+      language: "ruby",
+      imports: [],
+      fileScope: ["Zoo::Factory"],
+      instantiatedTypes: ["Zoo::Cat", "Dog"],
+      chunks: [{ symbolId: "Zoo::Factory#build", scope: ["Zoo::Factory"], calls: [] }],
+    });
+    // Dispatch site: Animal-typed receiver → cone = [Zoo::Cat, Dog]; RTA prune
+    // must keep both because both are in the instantiation set.
+    await sink.write({
+      relPath: "app/zoo_keeper.rb",
+      language: "ruby",
+      imports: [],
+      fileScope: ["ZooKeeper"],
+      chunks: [
+        {
+          symbolId: "ZooKeeper#make_noise",
+          scope: ["ZooKeeper"],
+          localBindings: { animal: [{ line: 1, type: "Animal" }] },
+          calls: [{ callText: "animal.speak", receiver: "animal", member: "speak", startLine: 1 }],
+        },
+      ],
+    });
+    await sink.finish();
+
+    const callees = await client.getCallees("ZooKeeper#make_noise");
+    // Both Zoo::Cat#speak and Dog#speak must survive — recall preserved.
+    expect(callees.map((c) => c.targetSymbolId).sort()).toEqual(["Dog#speak", "Zoo::Cat#speak"]);
+  });
+
+  it("RTA: cone prunes to the program-wide instantiation set", async () => {
+    // Two-file fixture: file A instantiates only Dog (not Cat).
+    // The dispatch site (ZooKeeper#make_noise) calls animal.speak against the
+    // Animal cone. With RTA pruning (Task 4), only Dog#speak should be persisted
+    // because Cat was never instantiated. Without Task 4 the cone still fans out
+    // to both Dog#speak and Cat#speak — that is the expected RED state here.
+    const sink = provider.asExtractionSink();
+    await sink.write(rubyClass("Animal", "speak"));
+    await sink.write(rubyClass("Dog", "speak", "Animal"));
+    await sink.write(rubyClass("Cat", "speak", "Animal"));
+    // File A: instantiates only Dog — `Cat.new` is absent.
+    await sink.write({
+      relPath: "app/dog_factory.rb",
+      language: "ruby",
+      imports: [],
+      fileScope: ["DogFactory"],
+      instantiatedTypes: ["Dog"],
+      chunks: [
+        {
+          symbolId: "DogFactory#build",
+          scope: ["DogFactory"],
+          calls: [],
+        },
+      ],
+    });
+    // The dispatch site: localBinding pins receiver to Animal; only Dog is in
+    // the program-wide instantiation set so the cone should prune to Dog#speak.
+    await sink.write({
+      relPath: "app/zoo_keeper.rb",
+      language: "ruby",
+      imports: [],
+      fileScope: ["ZooKeeper"],
+      chunks: [
+        {
+          symbolId: "ZooKeeper#make_noise",
+          scope: ["ZooKeeper"],
+          localBindings: { animal: [{ line: 1, type: "Animal" }] },
+          calls: [{ callText: "animal.speak", receiver: "animal", member: "speak", startLine: 1 }],
+        },
+      ],
+    });
+    await sink.finish();
+
+    const callees = await client.getCallees("ZooKeeper#make_noise");
+    // After Task 4 pruning: only Dog#speak — Cat was never instantiated.
+    expect(callees.map((c) => c.targetSymbolId).sort()).toEqual(["Dog#speak"]);
+  });
 });

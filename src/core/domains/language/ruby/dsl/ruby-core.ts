@@ -20,11 +20,17 @@ const RUBY_CORE_ENTRIES: Record<string, RubyDslEntry> = {
   attr_accessor: { category: "accessor", declares: (b) => accessorPair(b, "instance") },
   attr_reader: { category: "accessor", declares: (b) => [{ name: b, kind: "instance" }] },
   attr_writer: { category: "accessor", declares: (b) => [{ name: `${b}=`, kind: "instance" }] },
-  define_method: { category: "dynamic-method", declares: (b) => [{ name: b, kind: "instance" }] },
+  define_method: {
+    category: "dynamic-method",
+    declares: (b) => [{ name: b, kind: "instance" }],
+    operands: "literal-name",
+  },
   alias_method: {
     category: "alias",
     declares: (b) => [{ name: b, kind: "instance" }],
+    operands: "first-symbol",
     redirectTarget: "second-symbol",
+    emits: "alias-redirect",
   },
   alias: {
     category: "alias",
@@ -38,4 +44,6 @@ const RUBY_CORE_ENTRIES: Record<string, RubyDslEntry> = {
 };
 
 /** Ruby-core declaring macros + the Kernel/Object runtime builtins (puts/raise/require/…). */
-export const RUBY_CORE_VOCABULARY = defineFrameworkVocabulary("ruby-core", RUBY_CORE_ENTRIES, RUBY_KERNEL_BUILTINS);
+export const RUBY_CORE_VOCABULARY = defineFrameworkVocabulary("ruby-core", RUBY_CORE_ENTRIES, RUBY_KERNEL_BUILTINS, {
+  instanceReturning: new Set(["new"]),
+});

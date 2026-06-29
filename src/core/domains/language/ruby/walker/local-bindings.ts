@@ -4,11 +4,7 @@ import { readScopeResolution, walk } from "./ast-utils.js";
 import { constInstanceType } from "./type-sources/ast-inference.js";
 
 export { collectYardParamTypes, collectYardReturnTypes, YARD_CONST } from "./type-sources/yard.js";
-export {
-  INSTANCE_RETURNING_METHODS,
-  RELATION_RETURNING_METHODS,
-  RUBY_BLOCK_ITERATOR_METHODS,
-} from "./type-sources/ast-inference.js";
+export { RUBY_BLOCK_ITERATOR_METHODS } from "./type-sources/ast-inference.js";
 
 /**
  * Env-gate for the Ruby local variable type inference path. When `false`,

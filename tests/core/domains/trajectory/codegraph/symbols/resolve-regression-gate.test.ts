@@ -213,14 +213,17 @@ describe("CodegraphEnrichmentProvider — resolve regression gate (6x6e)", () =>
       expect(byKind[kind], `receiverKind ${kind}`).toMatchObject(want);
     }
 
-    // Overall rate: 9 resolved / 10 internal-attempted (11 total − 1 external-
-    // skipped). Any resolver/walker regression that loses a resolution or mis-
-    // buckets a receiver shifts these counts and flips the gate.
+    // Overall rate (cai0.2 Option A): 9 resolved / 9 internal-attempted (11 total
+    // − 1 external-skipped − 1 no-in-project-def: tbl[k]() has no nameable in-
+    // project target, so its member has no in-project def and is excluded from the
+    // denominator) = 1.0. Any resolver/walker regression that loses a resolution or
+    // mis-buckets a receiver shifts the per-kind {attempted, resolved} pins above —
+    // those are the regression net, not the aggregate rate.
     const totalAttempted = Object.values(expected).reduce((s, t) => s + t.attempted, 0);
     const totalResolved = Object.values(expected).reduce((s, t) => s + t.resolved, 0);
     expect(totalAttempted).toBe(11);
     expect(totalResolved).toBe(9);
     expect(metrics!.callsExternalSkipped).toBe(1);
-    expect(metrics!.resolveSuccessRate).toBeCloseTo(0.9, 10);
+    expect(metrics!.resolveSuccessRate).toBeCloseTo(1, 10);
   });
 });

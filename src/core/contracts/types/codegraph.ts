@@ -377,6 +377,19 @@ export interface FileExtraction {
    * without structured return annotations.
    */
   structuredReturnTypes?: Record<string, RubyTypeRef>;
+  /**
+   * Optional program-wide instantiation set for RTA cone pruning (bd
+   * tea-rags-mcp-pffv): the fully-qualified constants this file instantiates
+   * via `Klass.new` or a factory/finder in `RUBY_INSTANCE_RETURNING`
+   * (`User.find`, `Account.create!`, `Const.where(...).first`). The provider
+   * merges these run-global (pass-1 barrier, mirroring `functionReturnTypes`)
+   * so `ConeDispatchResolver` can prune a CHA cone to the subtypes that are the
+   * nearest definer of `m` for some INSTANTIATED type — cutting false fan-out.
+   *
+   * Plain array (NOT Set) so the value round-trips through the NDJSON spill.
+   * Undefined for languages whose walkers don't collect instantiation sites.
+   */
+  instantiatedTypes?: string[];
 }
 
 export interface ImportRef {
@@ -843,6 +856,16 @@ export interface CallContext {
    * were found for this file.
    */
   structuredReturnTypes?: Record<string, RubyTypeRef>;
+  /**
+   * Run-global instantiation set merged from every file's
+   * `FileExtraction.instantiatedTypes` (bd tea-rags-mcp-pffv). Built by the
+   * provider at the pass-1→pass-2 barrier, mirroring `functionReturnTypes`.
+   * `ConeDispatchResolver` reads it to prune the CHA cone via RTA: a cone
+   * member survives only when it is `nearestDefiner(U, m)` for some
+   * instantiated `U <: T`. Absent / empty ⇒ the cone engine keeps its full
+   * pre-pffv fan-out (the gate). Key form matches `HierarchyView` fq names.
+   */
+  instantiatedTypes?: ReadonlySet<string>;
 }
 
 export interface SymbolResolutionTarget {
