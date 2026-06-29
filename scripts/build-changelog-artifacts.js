@@ -5,12 +5,20 @@
 // thin orchestration only.
 import { readFileSync, writeFileSync } from "node:fs";
 
-import { renderChangelogSection, renderReleaseNotes, spliceVersionSection } from "./lib/render-changelog.js";
+import {
+  collectContributors,
+  renderChangelogSection,
+  renderReleaseNotes,
+  spliceVersionSection,
+} from "./lib/render-changelog.js";
 
 const data = JSON.parse(readFileSync("release-notes.json", "utf8"));
+// Contributors come from git (commits.json), NOT the agent — a deterministic
+// fact, never an LLM guess. Built by the same workflow step before the agent.
+const contributors = collectContributors(JSON.parse(readFileSync("commits.json", "utf8")));
 
 const section = renderChangelogSection(data);
-writeFileSync("release-notes.md", renderReleaseNotes(data));
+writeFileSync("release-notes.md", renderReleaseNotes(data, contributors));
 
 const changelog = readFileSync("CHANGELOG.md", "utf8");
 writeFileSync("CHANGELOG.md", spliceVersionSection(changelog, data.version, section));

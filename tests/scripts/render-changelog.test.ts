@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  collectContributors,
+  escapeMentions,
   renderChangelogSection,
   renderReleaseNotes,
   spliceVersionSection,
@@ -156,5 +158,97 @@ describe("spliceVersionSection", () => {
     const out = spliceVersionSection(CHANGELOG, "1.29.5", newSection);
     expect(out.indexOf("## [1.30.0]")).toBeLessThan(out.indexOf("## [1.29.5]"));
     expect(out.indexOf("## [1.29.5]")).toBeLessThan(out.indexOf("## [1.29.0]"));
+  });
+});
+
+describe("escapeMentions", () => {
+  it("wraps bare @-tokens in backticks so GitHub does not autolink them", () => {
+    const out = escapeMentions("exotic YARD tags (@type/@option/@return)");
+    expect(out).toContain("`@type`");
+    expect(out).toContain("`@option`");
+    expect(out).toContain("`@return`");
+    // the raw, autolinkable form is gone
+    expect(out).not.toContain("(@type/@option/@return)");
+  });
+
+  it("escapes YARD @!attribute tags", () => {
+    expect(escapeMentions("@!attribute owner")).toContain("`@!attribute`");
+  });
+
+  it("leaves email addresses untouched (lookbehind guard)", () => {
+    const out = escapeMentions("reach me at a@b.com today");
+    expect(out).toContain("a@b.com");
+    expect(out).not.toContain("`@b`");
+  });
+});
+
+describe("collectContributors", () => {
+  it("dedupes authors by email and renders the mapped handle", () => {
+    const commits = [
+      { hash: "aaa", subject: "feat: x", author: { name: "artk0de", email: "art2rik.desperado@gmail.com" }, body: "" },
+      {
+        hash: "bbb",
+        subject: "fix: y",
+        author: { name: "Arthur Korochansky", email: "art2rik.desperado@gmail.com" },
+        body: "",
+      },
+    ];
+    expect(collectContributors(commits)).toEqual(["@artk0de"]);
+  });
+
+  it("excludes CI bots and AI co-authors", () => {
+    const commits = [
+      {
+        hash: "aaa",
+        subject: "feat: x",
+        author: { name: "artk0de", email: "art2rik.desperado@gmail.com" },
+        body: "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>",
+      },
+      {
+        hash: "rel",
+        subject: "chore(release): v1",
+        author: { name: "semantic-release-bot", email: "semantic-release-bot@martynus.net" },
+        body: "",
+      },
+      { hash: "bot", subject: "chore: changelog", author: { name: "tea-rags-bot", email: "bot@tea-rags" }, body: "" },
+    ];
+    expect(collectContributors(commits)).toEqual(["@artk0de"]);
+  });
+
+  it("includes human co-authors, mapping known emails and falling back to plain name", () => {
+    const commits = [
+      {
+        hash: "aaa",
+        subject: "feat: x",
+        author: { name: "artk0de", email: "art2rik.desperado@gmail.com" },
+        body: "Co-Authored-By: Jane Doe <jane@example.com>",
+      },
+    ];
+    expect(collectContributors(commits)).toEqual(["@artk0de", "Jane Doe"]);
+  });
+});
+
+describe("renderReleaseNotes — contributors", () => {
+  it("renders a Contributors section when contributors are provided", () => {
+    const out = renderReleaseNotes(DATA, ["@artk0de"]);
+    expect(out).toContain("### 👥 Contributors");
+    expect(out).toContain("@artk0de");
+    // a real mention, not escaped into code
+    expect(out).not.toContain("`@artk0de`");
+  });
+
+  it("omits the Contributors section when none are provided", () => {
+    expect(renderReleaseNotes(DATA)).not.toContain("Contributors");
+  });
+
+  it("escapes @-tokens in Full Commits subjects so they are not autolinked", () => {
+    const data = {
+      ...DATA,
+      allCommits: [{ hash: "ddd4444", subject: "feat(trajectory): exotic YARD tags (@type/@option)" }],
+    };
+    const out = renderReleaseNotes(data);
+    expect(out).toContain("`@type`");
+    expect(out).toContain("`@option`");
+    expect(out).not.toContain("(@type/@option)");
   });
 });
