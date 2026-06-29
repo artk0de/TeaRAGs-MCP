@@ -43,6 +43,11 @@ discipline (7), critical-first gating (8).
 
 ## Appendix — worktree-aware auto-reindex (feature-driven update, 2026-06-25)
 
+> **SUPERSEDED 2026-06-29** — this appendix describes the now-removed
+> commit-reindex hook as current (e.g. "do NOT reindex main — the hook did it").
+> See the "2026-06-29 — Explicit worktree-index lifecycle" section below: the
+> hook was removed; main is reindexed EXPLICITLY on merge.
+
 Eval set: `evals/worktree-auto-reindex-evals.json` (7 cases — non-leaky
 context). **Skill EDITED**: added post-merge index-cleanup guidance — a "Second
 Iron Rule" callout + Step 5 + a Do-NOT-substitute table + Red Flags. After a

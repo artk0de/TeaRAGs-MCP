@@ -147,6 +147,10 @@ No iteration needed.
 
 ## Appendix — worktree-aware auto-reindex (feature-driven update, 2026-06-25)
 
+> **SUPERSEDED 2026-06-29** — this appendix describes the now-removed
+> commit-reindex hook as current. See the "2026-06-29 — Explicit worktree-index
+> lifecycle" section below: the hook was removed; freshness is now explicit.
+
 Eval set: `evals/worktree-auto-reindex-evals.json` (8 cases — 5 freshness, 2
 controls, 1 edge; 2 subagent-context). Tests whether the agent, while executing
 a plan, handles index freshness correctly now that a `PostToolUse:Bash` hook
@@ -200,7 +204,8 @@ baseline made the per-task reindex CONDITIONAL (E1/E2), refused to reindex
 blastRadius pre-touch guard (E8) — confirming the explicit-lifecycle guidance,
 not general competence, drives the mandatory per-task reindex +
 main-reindex-on-merge. The prior `worktree-auto-reindex-evals.json` is marked
-SUPERSEDED (its hook premise is now false). Follow-up: regenerate the same stale
-"post-commit hook" expectations in the
+SUPERSEDED (its hook premise is now false). Done 2026-06-29: the same stale
+"post-commit hook" expectations were regenerated in the
 `dinopowers-finishing-a-development-branch` and
-`dinopowers-test-driven-development` benchmarks.
+`dinopowers-test-driven-development` benchmarks — see their "2026-06-29"
+sections.

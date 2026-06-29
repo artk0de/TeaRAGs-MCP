@@ -120,6 +120,10 @@ No iteration needed.
 
 ## Appendix — worktree-aware auto-reindex (feature-driven update, 2026-06-25)
 
+> **SUPERSEDED 2026-06-29** — this appendix describes the now-removed
+> commit-reindex hook as current. See the "2026-06-29 — Explicit worktree-index
+> lifecycle" section below: the hook was removed; freshness is now explicit.
+
 Eval set: `evals/worktree-auto-reindex-evals.json` (8 cases — 4 freshness, 2
 controls, 1 deprecation, 1 edge; 2 subagent-context).
 
