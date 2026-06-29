@@ -460,6 +460,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runReturnTypes: Record<string, string> = {};
   /**
+   * Per-run aggregation of `FileExtraction.instantiatedTypes` (bd
+   * tea-rags-mcp-pffv). The union of every instantiated fq const across pass-1
+   * files, so `ConeDispatchResolver` can RTA-prune a CHA cone regardless of
+   * which file does the `Klass.new`. Same lifecycle as `runReturnTypes` — reset
+   * on finish / empty-run / release.
+   */
+  private readonly runInstantiatedTypes = new Set<string>();
+  /**
    * Per-run aggregation of `FileExtraction.ivarTypes` (Ruby type-source engine,
    * Increment 1, Task 1.5). `fqClassName → "@ivar" → typeName` merged across
    * pass-1 files so the resolver's PRECISE `@ivar.method()` path
@@ -763,6 +771,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         if (extraction.structuredReturnTypes) {
           for (const [k, v] of Object.entries(extraction.structuredReturnTypes)) {
             this.runStructuredReturnTypes[k] = v;
+          }
+        }
+        // Union this file's instantiation set into the run-global RTA set so
+        // the cone resolver in pass-2 prunes by program-wide instantiation
+        // regardless of which file instantiates the type. bd tea-rags-mcp-pffv.
+        if (extraction.instantiatedTypes) {
+          for (const t of extraction.instantiatedTypes) {
+            this.runInstantiatedTypes.add(t);
           }
         }
         // Accumulate this file's inheritance edges run-global (bd tea-rags-mcp-o17v2)
@@ -1070,6 +1086,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runPrependedAncestors = {};
       this.runExtends = {};
       this.runReturnTypes = {};
+      this.runInstantiatedTypes.clear();
       this.runIvarTypes = {};
       this.runStructuredReturnTypes = {};
       this.runDispatchTables = {};
@@ -1588,6 +1605,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runPrependedAncestors = {};
     this.runExtends = {};
     this.runReturnTypes = {};
+    this.runInstantiatedTypes.clear();
     this.runIvarTypes = {};
     this.runStructuredReturnTypes = {};
     this.runDispatchTables = {};
@@ -1626,6 +1644,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runPrependedAncestors = {};
     this.runExtends = {};
     this.runReturnTypes = {};
+    this.runInstantiatedTypes.clear();
     this.runIvarTypes = {};
     this.runStructuredReturnTypes = {};
     this.runDispatchTables = {};
@@ -1828,6 +1847,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const extendsForResolver = Object.keys(this.runExtends).length > 0 ? this.runExtends : extraction.classExtends;
     const returnTypesForResolver =
       Object.keys(this.runReturnTypes).length > 0 ? this.runReturnTypes : extraction.functionReturnTypes;
+    // Run-global instantiation set if any file contributed, else this file's
+    // own (mirrors the returnTypes "run-global if present else extraction"
+    // pattern). bd tea-rags-mcp-pffv.
+    const instantiatedForResolver =
+      this.runInstantiatedTypes.size > 0 ? this.runInstantiatedTypes : new Set(extraction.instantiatedTypes ?? []);
     // Ruby type-source PRECISE maps (Increment 1, Task 1.5): run-global if any
     // file contributed, else this file's own — same "run-global if present else
     // extraction" pattern as ancestors / return types.
@@ -1897,6 +1921,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // devirtualization of a polymorphic typed receiver. Built at the
           // pass-1→pass-2 barrier; undefined ⇒ cone resolver no-ops.
           hierarchy: this.hierarchyView,
+          // bd tea-rags-mcp-pffv — run-global instantiation set drives RTA
+          // pruning of the CHA cone. Empty ⇒ cone keeps full fan-out (gate).
+          instantiatedTypes: instantiatedForResolver,
         };
         let resolved = false;
         if (call.dispatch) {
