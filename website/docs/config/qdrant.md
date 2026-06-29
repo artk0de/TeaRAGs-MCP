@@ -261,6 +261,19 @@ QDRANT_API_KEY=your-api-key
 
 ---
 
+## Quantization
+
+TeaRAGs enables **Qdrant 1.18 TurboQuant** by default — 8x dense-vector
+compression with a search-time rescore that keeps recall at baseline. Set
+`QDRANT_TURBO_QUANT=false` to disable it.
+
+Turbo applies to **new and existing** collections: new collections are created
+with turbo quantization, and existing collections are auto-reconciled at
+startup. No reindex or re-embedding is required — Qdrant rebuilds the quantized
+vectors from the stored float vectors in the background.
+
+---
+
 ## Environment Variables Reference
 
 | Variable | Description | Default |
@@ -268,6 +281,7 @@ QDRANT_API_KEY=your-api-key
 | `QDRANT_URL` | Connection mode: unset = autodetect, `embedded` = force embedded, `http://...` = external | Autodetect |
 | `QDRANT_API_KEY` | API key for Qdrant authentication | — |
 | `QDRANT_EMBEDDED_STORAGE_PATH` | Override embedded Qdrant storage location | `~/.tea-rags/qdrant/storage` |
+| `QDRANT_TURBO_QUANT` | Enable TurboQuant 8x dense quantization (rescored at search time, ~baseline recall) | `true` |
 
 ## Troubleshooting
 

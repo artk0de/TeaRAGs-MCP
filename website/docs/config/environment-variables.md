@@ -24,6 +24,7 @@ variables are optional unless specified otherwise.
 | `QDRANT_URL`                   | Qdrant connection mode. **Unset** = autodetect (probe `localhost:6333` for external Qdrant, fallback to embedded). `"embedded"` = always use embedded Qdrant. `"http://..."` = use external Qdrant at that URL. | Autodetect                   |
 | `QDRANT_API_KEY`               | API key for Qdrant authentication                                                                                                                                                                               | -                            |
 | `QDRANT_EMBEDDED_STORAGE_PATH` | Override embedded Qdrant storage location                                                                                                                                                                       | `~/.tea-rags/qdrant/storage` |
+| `QDRANT_TURBO_QUANT`           | Enable Qdrant 1.18 TurboQuant 8x dense quantization (rescored at search time, ~baseline recall). Applied to new and existing collections at startup — no reindex.                                                | `true`                       |
 
 ## Embedding
 
