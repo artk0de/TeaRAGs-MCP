@@ -186,8 +186,7 @@ export default tseslint.config(
                 "**/core/api/index.js",
                 "**/mcp/**",
               ],
-              message:
-                "cli may import only bootstrap/ and core/api/public. See .claude/rules/domain-boundaries.md.",
+              message: "cli may import only bootstrap/ and core/api/public. See .claude/rules/domain-boundaries.md.",
             },
           ],
         },
@@ -287,8 +286,7 @@ export default tseslint.config(
                 "**/mcp/**",
                 "**/cli/**",
               ],
-              message:
-                "explore may import only core/{contracts,adapters,infra}; domains are mutually isolated.",
+              message: "explore may import only core/{contracts,adapters,infra}; domains are mutually isolated.",
             },
           ],
         },
@@ -355,15 +353,37 @@ export default tseslint.config(
         {
           patterns: [
             {
+              group: ["**/ingest/**", "**/trajectory/**", "**/explore/**", "**/core/api/**", "**/bootstrap/**"],
+              message: "domains/language is a leaf domain — import only contracts/, infra/, tree-sitter.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/core/domains/maintenance/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              // Bare segment globs (matching the domains/language block) so the
+              // guard catches relative sibling/parent specifiers like
+              // `../../explore/...` and `../../../api/...`, not only fully
+              // qualified `**/domains/explore/**` paths.
               group: [
-                "**/ingest/**",
-                "**/trajectory/**",
                 "**/explore/**",
-                "**/core/api/**",
+                "**/trajectory/**",
+                "**/ingest/**",
+                "**/language/**",
+                "**/api/**",
                 "**/bootstrap/**",
+                "**/mcp/**",
+                "**/cli/**",
               ],
-              message:
-                "domains/language is a leaf domain — import only contracts/, infra/, tree-sitter.",
+              message: "maintenance may import only core/{contracts,adapters,infra}; domains are mutually isolated.",
             },
           ],
         },

@@ -1,16 +1,18 @@
-import { ShardedSnapshotManager } from "../../ingest/sync/snapshot/sharded-snapshot.js";
+import type { SnapshotArtifactStoreFactory } from "../../../contracts/index.js";
 import type { CollectionArtifact, FootprintContext } from "./artifact.js";
 
 export class SnapshotArtifact implements CollectionArtifact {
   readonly id = "snapshot" as const;
-  constructor(private readonly baseDir: string) {}
+  constructor(
+    private readonly baseDir: string,
+    private readonly makeStore: SnapshotArtifactStoreFactory,
+  ) {}
 
   async clone(ctx: FootprintContext): Promise<void> {
-    const src = new ShardedSnapshotManager(this.baseDir, ctx.source.logicalName);
-    await src.cloneTo(ctx.target.logicalName, ctx.target.path);
+    await this.makeStore(this.baseDir, ctx.source.logicalName).cloneTo(ctx.target.logicalName, ctx.target.path);
   }
 
   async remove(ctx: FootprintContext): Promise<void> {
-    await new ShardedSnapshotManager(this.baseDir, ctx.target.logicalName).delete();
+    await this.makeStore(this.baseDir, ctx.target.logicalName).delete();
   }
 }

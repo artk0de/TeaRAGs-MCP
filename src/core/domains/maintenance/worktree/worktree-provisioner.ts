@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { WorktreeCreateInput, WorktreeCreateResult, WorktreeRemoveInput } from "../../../contracts/index.js";
 import { resolveCollectionName } from "../../../infra/collection-name.js";
 import type { CollectionRegistry } from "../../../infra/registry/index.js";
 import { WorktreeCollectionExistsError, WorktreeNotFoundError, WorktreeSourceNotFoundError } from "../errors.js";
@@ -10,7 +11,7 @@ import {
   removeGitWorktree as defaultRemoveGitWorktree,
 } from "./git-worktree.js";
 
-export interface WorktreeOpsDeps {
+export interface WorktreeProvisionerDeps {
   registry: CollectionRegistry;
   qdrant: QdrantManager;
   footprintFactory: CollectionFootprintFactory;
@@ -21,38 +22,23 @@ export interface WorktreeOpsDeps {
   removeGitWorktree?: (repoRoot: string, targetPath: string, force: boolean) => void;
 }
 
-export interface WorktreeCreateResult {
-  collectionName: string;
-  alias: string;
-  sourceProject: string;
-  worktreePath: string;
-}
+/**
+ * WorktreeProvisioner — the maintenance-domain command service for per-worktree
+ * index clones. Owns the two state-mutating operations (clone with rollback /
+ * teardown); read queries (list / info) live in the api layer over the registry
+ * (CQS). Reached by the CLI exclusively through the `WorktreeOps` facade in
+ * `api/internal/ops` — never directly (domain boundary).
+ */
+export class WorktreeProvisioner {
+  private readonly ensureGitWorktree: NonNullable<WorktreeProvisionerDeps["ensureGitWorktree"]>;
+  private readonly removeGitWorktree: NonNullable<WorktreeProvisionerDeps["removeGitWorktree"]>;
 
-export interface WorktreeInfo {
-  isWorktree: boolean;
-  collectionName?: string;
-  alias?: string;
-  worktreeOf?: string;
-  worktreeName?: string;
-  chunksCount?: number;
-}
-
-export class WorktreeOps {
-  private readonly ensureGitWorktree: NonNullable<WorktreeOpsDeps["ensureGitWorktree"]>;
-  private readonly removeGitWorktree: NonNullable<WorktreeOpsDeps["removeGitWorktree"]>;
-
-  constructor(private readonly deps: WorktreeOpsDeps) {
+  constructor(private readonly deps: WorktreeProvisionerDeps) {
     this.ensureGitWorktree = deps.ensureGitWorktree ?? defaultEnsureGitWorktree;
     this.removeGitWorktree = deps.removeGitWorktree ?? defaultRemoveGitWorktree;
   }
 
-  async create(input: {
-    name: string;
-    from?: string;
-    path?: string;
-    createGit: boolean;
-    branch?: string;
-  }): Promise<WorktreeCreateResult> {
+  async create(input: WorktreeCreateInput): Promise<WorktreeCreateResult> {
     const { registry, qdrant, footprintFactory } = this.deps;
 
     const sourceEntry = input.from ? registry.findByName(input.from) : registry.findByPath(process.cwd());
@@ -136,7 +122,7 @@ export class WorktreeOps {
     };
   }
 
-  async remove(input: { name: string; force: boolean; keepGit: boolean }): Promise<{ removed: boolean }> {
+  async remove(input: WorktreeRemoveInput): Promise<{ removed: boolean }> {
     const { registry, qdrant, footprintFactory } = this.deps;
 
     const entry = registry.findWorktree(input.name);
@@ -181,29 +167,5 @@ export class WorktreeOps {
     }
 
     return { removed: true };
-  }
-
-  list(): WorktreeInfo[] {
-    return this.deps.registry.listWorktrees().map((e) => ({
-      isWorktree: true,
-      collectionName: e.collectionName,
-      alias: e.name ?? undefined,
-      worktreeOf: e.worktreeOf,
-      worktreeName: e.worktreeName,
-      chunksCount: e.chunksCount,
-    }));
-  }
-
-  info(cwd: string): WorktreeInfo {
-    const entry = this.deps.registry.findByPath(resolve(cwd));
-    if (entry?.worktreeOf === undefined) return { isWorktree: false };
-    return {
-      isWorktree: true,
-      collectionName: entry.collectionName,
-      alias: entry.name ?? undefined,
-      worktreeOf: entry.worktreeOf,
-      worktreeName: entry.worktreeName,
-      chunksCount: entry.chunksCount,
-    };
   }
 }

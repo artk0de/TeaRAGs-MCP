@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
-import { CollectionRegistry } from "../../core/api/public/index.js";
+import { CollectionRegistry, listWorktreeInfos, worktreeInfoForPath } from "../../core/api/public/index.js";
 
 function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
@@ -11,7 +11,7 @@ function resolveDataDir(): string {
 
 export function runWorktreeList(args: { json: boolean; dataDir?: string }): void {
   const registry = new CollectionRegistry(args.dataDir ?? resolveDataDir());
-  const rows = registry.listWorktrees();
+  const rows = listWorktreeInfos(registry);
   if (args.json) {
     process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
     return;
@@ -20,26 +20,16 @@ export function runWorktreeList(args: { json: boolean; dataDir?: string }): void
     process.stdout.write("No worktree indexes.\n");
     return;
   }
-  for (const e of rows) {
+  for (const info of rows) {
     process.stdout.write(
-      `${e.worktreeName ?? "(no name)"}\t${e.name ?? e.collectionName}\t<- ${e.worktreeOf}\t${e.chunksCount} chunks\n`,
+      `${info.worktreeName ?? "(no name)"}\t${info.alias ?? info.collectionName}\t<- ${info.worktreeOf}\t${info.chunksCount} chunks\n`,
     );
   }
 }
 
 export function runWorktreeInfo(args: { json: boolean; dataDir?: string }): void {
   const registry = new CollectionRegistry(args.dataDir ?? resolveDataDir());
-  const entry = registry.findByPath(process.cwd());
-  const info =
-    entry?.worktreeOf === undefined
-      ? { isWorktree: false }
-      : {
-          isWorktree: true,
-          collectionName: entry.collectionName,
-          alias: entry.name,
-          worktreeOf: entry.worktreeOf,
-          worktreeName: entry.worktreeName,
-        };
+  const info = worktreeInfoForPath(registry, process.cwd());
   process.stdout.write(args.json ? `${JSON.stringify(info, null, 2)}\n` : `${JSON.stringify(info)}\n`);
 }
 
@@ -56,7 +46,7 @@ async function runWorktreeCreate(argv: {
   const { createAppContext } = await import("../../bootstrap/factory.js");
   const ctx = await createAppContext(parseAppConfig());
   try {
-    const res = await ctx.app.createWorktree({
+    const res = await ctx.worktreeOps.create({
       name: argv.name,
       from: argv.from,
       path: argv.path,
@@ -104,7 +94,7 @@ async function runWorktreeRemove(argv: {
   const { createAppContext } = await import("../../bootstrap/factory.js");
   const ctx = await createAppContext(parseAppConfig());
   try {
-    const res = await ctx.app.removeWorktree({
+    const res = await ctx.worktreeOps.remove({
       name: argv.name,
       force: Boolean(argv.force),
       keepGit: Boolean(argv.keepGit),

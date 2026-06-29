@@ -17,14 +17,14 @@ vi.mock("../../../src/bootstrap/config/index.js", () => ({
 
 vi.mock("../../../src/bootstrap/factory.js", () => ({
   createAppContext: vi.fn(async () => ({
-    app: {
-      createWorktree: vi.fn(async () => ({
+    worktreeOps: {
+      create: vi.fn(async () => ({
         collectionName: "code_wt_new",
         alias: "proj-worktree-feat",
         sourceProject: "proj",
         worktreePath: "/wt/feat",
       })),
-      removeWorktree: vi.fn(async () => ({ removed: true })),
+      remove: vi.fn(async () => ({ removed: true })),
     },
     cleanup: vi.fn(),
   })),
@@ -292,14 +292,14 @@ describe("runWorktreeCreate (via yargs builder)", () => {
   it("writes result to stdout and exits 0 on success", async () => {
     const { createAppContext } = await import("../../../src/bootstrap/factory.js");
     vi.mocked(createAppContext).mockResolvedValueOnce({
-      app: {
-        createWorktree: vi.fn(async () => ({
+      worktreeOps: {
+        create: vi.fn(async () => ({
           collectionName: "code_new",
           alias: "proj-worktree-test",
           sourceProject: "proj",
           worktreePath: "/wt/test",
         })),
-        removeWorktree: vi.fn(),
+        remove: vi.fn(),
       } as never,
       cleanup: vi.fn(),
     } as never);
@@ -327,11 +327,11 @@ describe("runWorktreeCreate (via yargs builder)", () => {
   it("writes to stderr and exits 1 when createWorktree throws", async () => {
     const { createAppContext } = await import("../../../src/bootstrap/factory.js");
     vi.mocked(createAppContext).mockResolvedValueOnce({
-      app: {
-        createWorktree: vi.fn(async () => {
+      worktreeOps: {
+        create: vi.fn(async () => {
           throw new Error("source not found");
         }),
-        removeWorktree: vi.fn(),
+        remove: vi.fn(),
       } as never,
       cleanup: vi.fn(),
     } as never);
@@ -358,14 +358,14 @@ describe("runWorktreeCreate (via yargs builder)", () => {
   it("writes JSON result with nextStep when --json flag is set", async () => {
     const { createAppContext } = await import("../../../src/bootstrap/factory.js");
     vi.mocked(createAppContext).mockResolvedValueOnce({
-      app: {
-        createWorktree: vi.fn(async () => ({
+      worktreeOps: {
+        create: vi.fn(async () => ({
           collectionName: "code_json",
           alias: "proj-worktree-json",
           sourceProject: "proj",
           worktreePath: "/wt/json",
         })),
-        removeWorktree: vi.fn(),
+        remove: vi.fn(),
       } as never,
       cleanup: vi.fn(),
     } as never);
@@ -396,9 +396,9 @@ describe("runWorktreeRemove (via yargs builder)", () => {
   it("writes removed message and exits 0 on success", async () => {
     const { createAppContext } = await import("../../../src/bootstrap/factory.js");
     vi.mocked(createAppContext).mockResolvedValueOnce({
-      app: {
-        createWorktree: vi.fn(),
-        removeWorktree: vi.fn(async () => ({ removed: true })),
+      worktreeOps: {
+        create: vi.fn(),
+        remove: vi.fn(async () => ({ removed: true })),
       } as never,
       cleanup: vi.fn(),
     } as never);
@@ -425,9 +425,9 @@ describe("runWorktreeRemove (via yargs builder)", () => {
   it("writes to stderr and exits 1 when removeWorktree throws", async () => {
     const { createAppContext } = await import("../../../src/bootstrap/factory.js");
     vi.mocked(createAppContext).mockResolvedValueOnce({
-      app: {
-        createWorktree: vi.fn(),
-        removeWorktree: vi.fn(async () => {
+      worktreeOps: {
+        create: vi.fn(),
+        remove: vi.fn(async () => {
           throw new Error("not a worktree");
         }),
       } as never,
@@ -456,9 +456,9 @@ describe("runWorktreeRemove (via yargs builder)", () => {
   it("writes JSON result when --json flag is set", async () => {
     const { createAppContext } = await import("../../../src/bootstrap/factory.js");
     vi.mocked(createAppContext).mockResolvedValueOnce({
-      app: {
-        createWorktree: vi.fn(),
-        removeWorktree: vi.fn(async () => ({ removed: true })),
+      worktreeOps: {
+        create: vi.fn(),
+        remove: vi.fn(async () => ({ removed: true })),
       } as never,
       cleanup: vi.fn(),
     } as never);

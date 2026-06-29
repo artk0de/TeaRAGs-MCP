@@ -88,6 +88,12 @@ export type {
   EnrichmentLevelHealth,
 } from "../../contracts/types/enrichment.js";
 export type { IngestCodeConfig } from "../../contracts/types/ingest-config.js";
+export type {
+  WorktreeCreateInput,
+  WorktreeRemoveInput,
+  WorktreeCreateResult,
+  WorktreeInfo,
+} from "../../contracts/types/worktree.js";
 
 // ── Adapter-owned types/runtime consumed by cli ────────────────────
 // Interfaces/classes stay in adapters; we re-export so cli reaches them via
@@ -104,6 +110,12 @@ export type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.j
 // `ProjectRegistryOps` from `api/public`, which re-exports the implementation
 // from `api/internal/ops/project-registry-ops.js`.
 export { ProjectRegistryOps } from "../internal/ops/project-registry-ops.js";
+
+// ── Worktree maintenance facade (cli/worktree, CLI-only — NOT on App/MCP) ──
+// Same pattern as ProjectRegistryOps: the CLI instantiates `WorktreeOps` for
+// commands and uses the registry-backed query helpers for list/info, all via
+// `api/public` so cli stays out of api/internal and domains/maintenance.
+export { WorktreeOps, toWorktreeInfo, listWorktreeInfos, worktreeInfoForPath } from "../internal/ops/worktree-ops.js";
 
 // ── SchemaBuilder (used by mcp tool registration) ─────────────────────
 // Concrete class lives in api/internal/infra; re-exporting through public

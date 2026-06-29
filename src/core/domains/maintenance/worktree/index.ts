@@ -1,2 +1,2 @@
-export * from "./worktree-ops.js";
+export * from "./worktree-provisioner.js";
 export * from "./git-worktree.js";

@@ -363,8 +363,9 @@ export class QdrantManager {
 
   async createSnapshot(name: string): Promise<string> {
     const desc = await this.call(async () => this.client.createSnapshot(name));
-    if (!desc?.name)
+    if (!desc?.name) {
       throw new QdrantOperationError("createSnapshot", `Snapshot creation returned no name for collection ${name}`);
+    }
     return desc.name;
   }
 
@@ -376,11 +377,12 @@ export class QdrantManager {
     const ok = await this.call(async () =>
       this.client.recoverSnapshot(targetCollection, { location, priority: "snapshot" }),
     );
-    if (!ok)
+    if (!ok) {
       throw new QdrantOperationError(
         "recoverFromSnapshot",
         `Snapshot recovery failed for collection ${targetCollection}`,
       );
+    }
   }
 
   async deleteSnapshot(collection: string, snapshotName: string): Promise<void> {

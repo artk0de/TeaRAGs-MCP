@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { QuarantineStore } from "../../../../src/core/domains/ingest/sync/quarantine-store.js";
+import { ShardedSnapshotManager } from "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
 import { CodegraphArtifact } from "../../../../src/core/domains/maintenance/footprint/codegraph-artifact.js";
 import { CollectionFootprintFactory } from "../../../../src/core/domains/maintenance/footprint/factory.js";
 import { QdrantArtifact } from "../../../../src/core/domains/maintenance/footprint/qdrant-artifact.js";
@@ -30,6 +32,8 @@ describe("CollectionFootprintFactory", () => {
     pool: {} as never,
     statsCache: { clone: vi.fn(), invalidate: vi.fn() } as never,
     snapshotBaseDir: "/snap",
+    snapshotStoreFactory: (b: string, l: string) => new ShardedSnapshotManager(b, l),
+    quarantineStoreFactory: (b: string, l: string) => new QuarantineStore(b, l),
   };
 
   it("builds artifacts in clone order and exposes a context", () => {
@@ -181,12 +185,10 @@ describe("SnapshotArtifact", () => {
 
   it("clone: delegates to ShardedSnapshotManager.cloneTo and target snapshot exists", async () => {
     // seed source snapshot via the real manager so cloneTo has something to copy
-    const { ShardedSnapshotManager } =
-      await import("../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js");
     const src = new ShardedSnapshotManager(dir, "code_src");
     await src.save("/old/path", new Map([["a.ts", { hash: "h", mtime: 1, size: 2 }]]));
 
-    const artifact = new SnapshotArtifact(dir);
+    const artifact = new SnapshotArtifact(dir, (b, l) => new ShardedSnapshotManager(b, l));
     const ctx = {
       source: { ...resolved(), logicalName: "code_src" },
       target: { ...resolved(), logicalName: "code_dst", path: "/new/path" },
@@ -198,7 +200,7 @@ describe("SnapshotArtifact", () => {
   });
 
   it("clone: is a no-op when source snapshot is absent", async () => {
-    const artifact = new SnapshotArtifact(dir);
+    const artifact = new SnapshotArtifact(dir, (b, l) => new ShardedSnapshotManager(b, l));
     const ctx = {
       source: { ...resolved(), logicalName: "code_missing" },
       target: { ...resolved(), logicalName: "code_dst", path: "/new/path" },
@@ -207,13 +209,11 @@ describe("SnapshotArtifact", () => {
   });
 
   it("remove: deletes the target snapshot directory", async () => {
-    const { ShardedSnapshotManager } =
-      await import("../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js");
     const mgr = new ShardedSnapshotManager(dir, "code_dst");
     await mgr.save("/some/path", new Map([["a.ts", { hash: "h", mtime: 1, size: 2 }]]));
     expect(await mgr.exists()).toBe(true);
 
-    const artifact = new SnapshotArtifact(dir);
+    const artifact = new SnapshotArtifact(dir, (b, l) => new ShardedSnapshotManager(b, l));
     const ctx = {
       source: resolved(),
       target: { ...resolved(), logicalName: "code_dst", path: "/some/path" },
@@ -236,7 +236,7 @@ describe("QuarantineArtifact", () => {
     // seed source quarantine file so cloneTo has something to copy
     writeFileSync(join(dir, "code_src.quarantine.json"), '{"version":1,"updatedAt":"2026-01-01","files":{}}');
 
-    const artifact = new QuarantineArtifact(dir);
+    const artifact = new QuarantineArtifact(dir, (b, l) => new QuarantineStore(b, l));
     const ctx = {
       source: { ...resolved(), logicalName: "code_src" },
       target: { ...resolved(), logicalName: "code_dst" },
@@ -247,7 +247,7 @@ describe("QuarantineArtifact", () => {
   });
 
   it("clone: is a no-op when source quarantine is absent", async () => {
-    const artifact = new QuarantineArtifact(dir);
+    const artifact = new QuarantineArtifact(dir, (b, l) => new QuarantineStore(b, l));
     const ctx = {
       source: { ...resolved(), logicalName: "code_missing" },
       target: { ...resolved(), logicalName: "code_dst" },
@@ -260,7 +260,7 @@ describe("QuarantineArtifact", () => {
     writeFileSync(join(dir, "code_dst.quarantine.json"), '{"version":1,"updatedAt":"2026-01-01","files":{}}');
     expect(existsSync(join(dir, "code_dst.quarantine.json"))).toBe(true);
 
-    const artifact = new QuarantineArtifact(dir);
+    const artifact = new QuarantineArtifact(dir, (b, l) => new QuarantineStore(b, l));
     const ctx = {
       source: resolved(),
       target: { ...resolved(), logicalName: "code_dst" },
