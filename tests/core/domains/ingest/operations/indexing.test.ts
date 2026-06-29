@@ -131,6 +131,7 @@ describe("IndexPipeline", () => {
         "Cosine",
         false,
         undefined,
+        undefined,
       );
     });
 
@@ -154,6 +155,7 @@ describe("IndexPipeline", () => {
         "Cosine",
         false,
         undefined,
+        undefined,
       );
     });
 
@@ -171,7 +173,38 @@ describe("IndexPipeline", () => {
       const createCollectionSpy = vi.spyOn(qdrant, "createCollection");
       await ingest.indexCodebase(codebaseDir);
 
-      expect(createCollectionSpy).toHaveBeenCalledWith(expect.stringContaining("code_"), 384, "Cosine", false, true);
+      expect(createCollectionSpy).toHaveBeenCalledWith(
+        expect.stringContaining("code_"),
+        384,
+        "Cosine",
+        false,
+        true,
+        undefined,
+      );
+    });
+
+    it("should pass turboQuant as the 6th createCollection arg", async () => {
+      config = { ...defaultTestConfig(), turboQuant: true };
+      ingest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config,
+        trajectoryConfig: defaultTrajectoryConfig(),
+      });
+
+      await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
+
+      const createCollectionSpy = vi.spyOn(qdrant, "createCollection");
+      await ingest.indexCodebase(codebaseDir);
+
+      expect(createCollectionSpy).toHaveBeenCalledWith(
+        expect.stringContaining("code_"),
+        384,
+        "Cosine",
+        false,
+        undefined,
+        true,
+      );
     });
 
     it("should force re-index when option is set", async () => {

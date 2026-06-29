@@ -32,6 +32,7 @@ function makeDeps(registeredKeys: Iterable<string> = []): AppDeps {
     schemaDriftMonitor: {} as SchemaDriftMonitor,
     projectRegistryOps: {} as ProjectRegistryOps,
     quantizationScalar: true,
+    turboQuant: true,
     registeredProviderKeys: new Set(registeredKeys),
   };
 }

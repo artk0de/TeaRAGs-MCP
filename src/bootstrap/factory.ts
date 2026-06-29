@@ -717,6 +717,7 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     schemaDriftMonitor,
     projectRegistryOps,
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
+    turboQuant: zodConfig.qdrantTune.turboQuant,
     modelGuard: infra.modelGuard,
     graphFacade: codegraphContext?.graphFacade,
     tracePathOps,

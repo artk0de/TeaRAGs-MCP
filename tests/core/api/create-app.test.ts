@@ -110,6 +110,7 @@ function createMockDeps(): AppDeps {
     schemaDriftMonitor: createMockDriftMonitor(),
     projectRegistryOps: createMockProjectRegistryOps(),
     quantizationScalar: true,
+    turboQuant: true,
   };
 }
 

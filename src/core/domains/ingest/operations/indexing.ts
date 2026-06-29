@@ -299,6 +299,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       "Cosine",
       this.config.enableHybridSearch,
       this.config.quantizationScalar,
+      this.config.turboQuant,
     );
 
     const schemaManager = this.deps.createSchemaManager(versionedName);
