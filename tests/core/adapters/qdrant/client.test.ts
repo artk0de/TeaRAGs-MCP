@@ -701,6 +701,36 @@ describe("QdrantManager", () => {
     });
   });
 
+  describe("updateCollectionQuantization", () => {
+    it("PATCHes turbo config via update_collection", async () => {
+      await manager.updateCollectionQuantization("col");
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("col", {
+        quantization_config: { turbo: { bits: "bits4", always_ram: true } },
+      });
+    });
+  });
+
+  describe("getQuantizationConfig", () => {
+    it("returns the live quantization_config from getCollection", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        config: { quantization_config: { turbo: { bits: "bits4", always_ram: true } } },
+      });
+
+      const config = await manager.getQuantizationConfig("col");
+
+      expect(config).toEqual({ turbo: { bits: "bits4", always_ram: true } });
+    });
+
+    it("returns undefined when the collection has no quantization_config", async () => {
+      mockClient.getCollection.mockResolvedValue({ config: {} });
+
+      const config = await manager.getQuantizationConfig("col");
+
+      expect(config).toBeUndefined();
+    });
+  });
+
   describe("search", () => {
     beforeEach(() => {
       // Mock getCollection for standard collection by default

@@ -52,6 +52,7 @@ import { registerAllTools } from "../mcp/tools/index.js";
 import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
 import { getConfigDump, getZodConfig, type AppConfig } from "./config/index.js";
 import { checkExternalQdrantVersion } from "./config/qdrant-compat.js";
+import { reconcileTurbo } from "./config/turbo-reconcile.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8")) as {
@@ -183,6 +184,16 @@ async function resolveInfrastructure(
   );
 
   const modelGuard = new EmbeddingModelGuard(qdrant, embeddings.getModel(), embeddings.getDimensions());
+
+  // Reconcile existing collections to TurboQuant (idempotent, no reindex). A
+  // reconcile failure must never crash startup — log and continue.
+  if (zodConfig.qdrantTune.turboQuant) {
+    try {
+      await reconcileTurbo(qdrant);
+    } catch (err) {
+      process.stderr.write(`[tea-rags] TurboQuant reconcile failed: ${(err as Error).message}\n`);
+    }
+  }
 
   return { qdrant, embeddings, modelGuard, embeddedRelease };
 }

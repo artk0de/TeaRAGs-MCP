@@ -355,6 +355,17 @@ export class QdrantManager {
     };
   }
 
+  /**
+   * Reads the live quantization config of a collection (e.g.
+   * `{ turbo: { bits: "bits4", always_ram: true } }`) or `undefined` when the
+   * collection is unquantized. Used by the startup TurboQuant reconcile to
+   * decide whether a PATCH is needed.
+   */
+  async getQuantizationConfig(name: string): Promise<unknown> {
+    const info = await this.call(async () => this.client.getCollection(name));
+    return (info.config as { quantization_config?: unknown } | undefined)?.quantization_config;
+  }
+
   async deleteCollection(name: string): Promise<void> {
     await this.call(async () => this.client.deleteCollection(name));
   }
@@ -1164,6 +1175,20 @@ export class QdrantManager {
     await this.call(async () =>
       this.client.updateCollection(collectionName, {
         sparse_vectors: { text: { modifier: "idf" } },
+      }),
+    );
+  }
+
+  /**
+   * Enables TurboQuant 8x quantization on an existing collection. Qdrant's
+   * optimizer rebuilds quantized vectors from the stored float vectors in the
+   * background — no re-embedding / reindex. Idempotent at the call site (the
+   * startup reconcile only calls this when the live config differs).
+   */
+  async updateCollectionQuantization(collectionName: string): Promise<void> {
+    await this.call(async () =>
+      this.client.updateCollection(collectionName, {
+        quantization_config: { turbo: { bits: "bits4", always_ram: true } },
       }),
     );
   }
