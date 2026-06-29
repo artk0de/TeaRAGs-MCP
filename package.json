@@ -64,7 +64,7 @@
   "dependencies": {
     "@duckdb/node-api": "^1.5.3-r.1",
     "@modelcontextprotocol/sdk": "^1.28.0",
-    "@qdrant/js-client-rest": "1.17.0",
+    "@qdrant/js-client-rest": "1.18.0",
     "bottleneck": "^2.19.5",
     "cli-progress": "^3.12.0",
     "cohere-ai": "^7.21.0",

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { checkExternalQdrantVersion } from "../../src/bootstrap/config/qdrant-compat.js";
 import { QdrantVersionTooOldError } from "../../src/core/adapters/qdrant/errors.js";
+import { QDRANT_VERSION } from "../../src/core/infra/qdrant-version.js";
 
 const URL = "http://qdrant.example.test:6333";
 
@@ -29,7 +30,7 @@ describe("checkExternalQdrantVersion", () => {
   });
 
   it("passes when server version equals minimum", async () => {
-    mockFetchJson({ title: "qdrant", version: "1.17.0" });
+    mockFetchJson({ title: "qdrant", version: QDRANT_VERSION });
     await expect(checkExternalQdrantVersion(URL)).resolves.toBeUndefined();
   });
 
@@ -52,7 +53,7 @@ describe("checkExternalQdrantVersion", () => {
       message: expect.stringContaining("1.9.5"),
     });
     await expect(checkExternalQdrantVersion(URL)).rejects.toMatchObject({
-      message: expect.stringContaining("1.17.0"),
+      message: expect.stringContaining(QDRANT_VERSION),
     });
   });
 
@@ -77,7 +78,7 @@ describe("checkExternalQdrantVersion", () => {
   });
 
   it("accepts version string with leading 'v' prefix", async () => {
-    mockFetchJson({ title: "qdrant", version: "v1.17.0" });
+    mockFetchJson({ title: "qdrant", version: `v${QDRANT_VERSION}` });
     await expect(checkExternalQdrantVersion(URL)).resolves.toBeUndefined();
   });
 
@@ -85,7 +86,7 @@ describe("checkExternalQdrantVersion", () => {
     const spy = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ version: "1.17.0" }),
+      json: async () => ({ version: QDRANT_VERSION }),
     });
     vi.stubGlobal("fetch", spy);
     await checkExternalQdrantVersion(URL, "secret-key");

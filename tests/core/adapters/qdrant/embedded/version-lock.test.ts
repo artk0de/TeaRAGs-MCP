@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
+import { QDRANT_VERSION } from "../../../../../src/core/adapters/qdrant/embedded/download.js";
+
 /**
  * Tests the version lock mechanism by simulating the file layout
  * that downloadQdrant creates: binary + qdrant.version file.
@@ -48,7 +50,7 @@ describe("version lock file logic", () => {
   it("binary + version file with wrong version → not up to date", () => {
     writeFileSync(binaryFile, "fake-binary");
     writeFileSync(versionFile, "0.0.1");
-    expect(readFileSync(versionFile, "utf-8").trim()).not.toBe("1.17.0");
+    expect(readFileSync(versionFile, "utf-8").trim()).not.toBe(QDRANT_VERSION);
   });
 
   it("binary + version file with correct version → up to date", async () => {
