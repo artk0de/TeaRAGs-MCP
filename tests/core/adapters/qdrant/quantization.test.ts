@@ -59,4 +59,22 @@ describe("QdrantManager.createCollection — quantization", () => {
     const config = callArgs[1];
     expect(config).not.toHaveProperty("quantization_config");
   });
+
+  it("emits turbo quantization_config when turboQuant=true", async () => {
+    await manager.createCollection("test-col", 384, "Cosine", false, false, true);
+
+    const config = mockClient.createCollection.mock.calls.at(-1)[1];
+    expect(config.quantization_config).toEqual({
+      turbo: { bits: "bits4", always_ram: true },
+    });
+  });
+
+  it("turboQuant takes precedence over quantizationScalar", async () => {
+    await manager.createCollection("test-col", 384, "Cosine", false, true, true);
+
+    const config = mockClient.createCollection.mock.calls.at(-1)[1];
+    expect(config.quantization_config).toEqual({
+      turbo: { bits: "bits4", always_ram: true },
+    });
+  });
 });

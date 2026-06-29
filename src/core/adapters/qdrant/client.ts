@@ -182,6 +182,7 @@ export class QdrantManager {
     distance: "Cosine" | "Euclid" | "Dot" = "Cosine",
     enableSparse = false,
     quantizationScalar = false,
+    turboQuant = false,
   ): Promise<void> {
     type DistanceType = "Cosine" | "Euclid" | "Dot" | "Manhattan";
     type VectorConfig =
@@ -203,12 +204,9 @@ export class QdrantManager {
           modifier: "idf" | "none";
         };
       };
-      quantization_config?: {
-        scalar: {
-          type: "int8";
-          always_ram: boolean;
-        };
-      };
+      quantization_config?:
+        | { scalar: { type: "int8"; always_ram: boolean } }
+        | { turbo: { bits: "bits4"; always_ram: boolean } };
     }
 
     const config: CollectionConfig = enableSparse
@@ -232,10 +230,10 @@ export class QdrantManager {
           },
         };
 
-    if (quantizationScalar) {
-      config.quantization_config = {
-        scalar: { type: "int8", always_ram: true },
-      };
+    if (turboQuant) {
+      config.quantization_config = { turbo: { bits: "bits4", always_ram: true } };
+    } else if (quantizationScalar) {
+      config.quantization_config = { scalar: { type: "int8", always_ram: true } };
     }
 
     try {
