@@ -12,7 +12,12 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
-import { renderChangelogSection, renderReleaseNotes, spliceVersionSection } from "./lib/render-changelog.js";
+import {
+  collectContributors,
+  renderChangelogSection,
+  renderReleaseNotes,
+  spliceVersionSection,
+} from "./lib/render-changelog.js";
 
 const sinceIdx = process.argv.indexOf("--since");
 const since = sinceIdx > -1 ? process.argv[sinceIdx + 1] : null;
@@ -35,7 +40,9 @@ for (let i = Math.max(start, 1); i < tags.length; i++) {
   const range = `${prev}..${curr}`;
   console.error(`retro ${curr} (${range})`);
 
-  const log = execFileSync("git", ["log", "--no-merges", "--format=%H%x1f%s%x1f%b%x1e", range], { encoding: "utf8" });
+  const log = execFileSync("git", ["log", "--no-merges", "--format=%H%x1f%s%x1f%an%x1f%ae%x1f%b%x1e", range], {
+    encoding: "utf8",
+  });
   writeFileSync("commits.json", execFileSync("node", ["scripts/git-log-to-json.js"], { input: log, encoding: "utf8" }));
 
   execFileSync(
@@ -50,9 +57,10 @@ for (let i = Math.max(start, 1); i < tags.length; i++) {
   );
 
   const data = JSON.parse(readFileSync("release-notes.json", "utf8"));
+  const contributors = collectContributors(JSON.parse(readFileSync("commits.json", "utf8")));
   const changelog = readFileSync("CHANGELOG.md", "utf8");
   writeFileSync("CHANGELOG.md", spliceVersionSection(changelog, data.version, renderChangelogSection(data)));
-  writeFileSync("release-notes.md", renderReleaseNotes(data));
+  writeFileSync("release-notes.md", renderReleaseNotes(data, contributors));
   if (dryRun) {
     console.error(`  [dry-run] skipped gh release edit ${curr}`);
   } else {
