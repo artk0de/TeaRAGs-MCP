@@ -45,7 +45,7 @@ import type {
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { RUBY_DSL, singularizeAssociation, type RubyDslEmits } from "../dsl/index.js";
-import { readScopeResolution, walk } from "./ast-utils.js";
+import { lexicalScopeFqName, readScopeResolution, walk } from "./ast-utils.js";
 import {
   bindCompoundReceiverChains,
   collectRubyBodyReturnTypes,
@@ -228,7 +228,7 @@ function collectRubyInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
         return;
       }
       const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
-      const fq = scope.length === 0 ? localName : `${scope.join("::")}::${localName}`;
+      const fq = lexicalScopeFqName(scope, localName);
       // Superclass — only `class` carries a `< Bar` clause; `module` never does.
       if (node.type === "class") {
         const sup = node.childForFieldName("superclass");

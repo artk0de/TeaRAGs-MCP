@@ -2,7 +2,7 @@ import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import { RUBY_INSTANCE_RETURNING, RUBY_RELATION_RETURNING } from "../../dsl/index.js";
 import { CONTAINER_BLOCK_ITERATION_METHODS } from "../../resolver/type-propagation.js";
-import { readScopeResolution, walk } from "../ast-utils.js";
+import { lexicalScopeFqName, readScopeResolution, walk } from "../ast-utils.js";
 import type { RubyExtractInput } from "../walker.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 import { collectYardParamTypes, YARD_CONST } from "./yard.js";
@@ -64,14 +64,34 @@ export function constInstanceType(node: AstNode): string | null {
  * sites {@link constInstanceType} already classifies. Deduped. The provider
  * unions these across files into the run-global RTA set used to prune CHA
  * cones. Pure AST walk; no symbol-table access (walker discipline).
+ *
+ * Keys are scope-aware lexical-fq via {@link lexicalScopeFqName}: `Cat.new`
+ * inside `module Zoo` emits `"Zoo::Cat"`, matching the `sourceFqName` the
+ * inheritance edge builder writes for the same nesting (pffv Task 5). Top-level
+ * sites are unchanged (`"Cat"` at top level → `"Cat"`).
  */
 export function collectRubyInstantiatedTypes(root: AstNode): string[] {
   const seen = new Set<string>();
-  walk(root, (node) => {
-    if (node.type !== "call" && node.type !== "method_call") return;
-    const fqConst = constInstanceType(node);
-    if (fqConst) seen.add(fqConst);
-  });
+  const walkScope = (node: AstNode, scope: string[]): void => {
+    if (node.type === "class" || node.type === "module") {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) {
+        for (const child of node.children) walkScope(child, scope);
+        return;
+      }
+      const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+      const body = node.childForFieldName("body");
+      const recurseChildren = body ? body.children : node.children;
+      for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
+      return;
+    }
+    if (node.type === "call" || node.type === "method_call") {
+      const constText = constInstanceType(node);
+      if (constText) seen.add(lexicalScopeFqName(scope, constText));
+    }
+    for (const child of node.children) walkScope(child, scope);
+  };
+  walkScope(root, []);
   return [...seen];
 }
 

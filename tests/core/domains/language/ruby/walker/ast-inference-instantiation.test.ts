@@ -33,6 +33,30 @@ describe("collectRubyInstantiatedTypes", () => {
   });
 });
 
+describe("collectRubyInstantiatedTypes — scope-aware lexical-fq (pffv Task 5)", () => {
+  it("Cat.new inside module Zoo → Zoo::Cat", () => {
+    const tree = parse(["module Zoo", "  cat = Cat.new", "end"].join("\n"));
+    const got = collectRubyInstantiatedTypes(tree.rootNode);
+    expect(got).toEqual(["Zoo::Cat"]);
+  });
+
+  it("top-level Dog.new → Dog (top-level unchanged)", () => {
+    const tree = parse("dog = Dog.new");
+    expect(collectRubyInstantiatedTypes(tree.rootNode)).toEqual(["Dog"]);
+  });
+
+  it("Zoo::Cat.new written qualified at top level → Zoo::Cat", () => {
+    const tree = parse("cat = Zoo::Cat.new");
+    expect(collectRubyInstantiatedTypes(tree.rootNode)).toEqual(["Zoo::Cat"]);
+  });
+
+  it("two nested modules push scope correctly: module Outer; module Inner; Leaf.new; end; end → Outer::Inner::Leaf", () => {
+    const tree = parse(["module Outer", "  module Inner", "    leaf = Leaf.new", "  end", "end"].join("\n"));
+    const got = collectRubyInstantiatedTypes(tree.rootNode);
+    expect(got).toEqual(["Outer::Inner::Leaf"]);
+  });
+});
+
 describe("extractFromRubyFile — instantiatedTypes wiring (pffv)", () => {
   it("populates out.instantiatedTypes when trackTypes is on (default)", () => {
     const src = ["user = User.new", "post = Post.find(1)", "n = compute(2)"].join("\n");

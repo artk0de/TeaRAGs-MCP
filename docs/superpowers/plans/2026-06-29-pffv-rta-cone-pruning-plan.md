@@ -40,11 +40,15 @@ vitest.
   never zero it out. Empty prune ⇒ keep the original cone.
 - **TDD mandatory** (net-new behaviour): failing test FIRST (red) → minimal impl
   (green) → commit. Use dinopowers:test-driven-development.
-- **Name-key form** = the fq form `HierarchyView` uses (`sourceFqName` /
-  `ancestorFqName`). `constInstanceType` already returns Zeitwerk-resolved fq
-  consts; a key that does not match a hierarchy node simply finds no
-  instantiated `U` and the floor keeps the cone — safe degradation, never a
-  crash.
+- **Name-key form** = the lexical-fq form `collectRubyInheritanceEdges` writes
+  into `sourceFqName`, derived by the shared `lexicalScopeFqName` helper
+  (`ast-utils.ts`). `collectRubyInstantiatedTypes` uses the SAME helper so cone
+  subtype keys and instantiation keys are identical by construction (pffv Task
+  5). Namespaced models defined and instantiated in the same lexical nesting
+  (`class Cat` / `Cat.new` inside `module Zoo`) match and are recall-safe.
+  Residual: a bare const referenced from a DIFFERENT nesting than its definition
+  (Ruby outer-scope lookup) is bounded by the hierarchy's own lexical-only
+  derivation; a whole-cone mismatch keeps the floor (floor-safe, never a crash).
 - **Each task = own commit**, conventional commits
   (`feat(contracts|trajectory|...)`), body lines ≤100 chars.
 - **Regression net** between tasks:
