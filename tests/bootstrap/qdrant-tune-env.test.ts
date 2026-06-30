@@ -30,6 +30,13 @@ const ENV_VARS = [
   "DELETE_FLUSH_TIMEOUT_MS",
   // Scalar quantization
   "QDRANT_QUANTIZATION_SCALAR",
+  // Turbo quantization
+  "QDRANT_TURBO_QUANT",
+  // Strict-mode OOM guard + search batch cap
+  "QDRANT_MAX_RESIDENT_MEMORY_PERCENT",
+  "QDRANT_SEARCH_MAX_BATCHSIZE",
+  // Low-memory daemon mode
+  "QDRANT_LOW_MEMORY",
 ] as const;
 
 function cleanEnv() {
@@ -267,6 +274,83 @@ describe("QDRANT_TUNE_* env var rename (backwards compat)", () => {
       const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
       const config = parseAppConfigZod();
       expect(config.qdrantTune.quantizationScalar).toBe(false);
+      cleanEnv();
+    });
+
+    it("QDRANT_TURBO_QUANT defaults to true when unset", async () => {
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.turboQuant).toBe(true);
+      cleanEnv();
+    });
+
+    it("QDRANT_TURBO_QUANT=false disables turbo", async () => {
+      process.env.QDRANT_TURBO_QUANT = "false";
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.turboQuant).toBe(false);
+      cleanEnv();
+    });
+
+    it("QDRANT_TURBO_QUANT=true enables turbo", async () => {
+      process.env.QDRANT_TURBO_QUANT = "true";
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.turboQuant).toBe(true);
+      cleanEnv();
+    });
+
+    it("QDRANT_MAX_RESIDENT_MEMORY_PERCENT unset → undefined (guard off)", async () => {
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.maxResidentMemoryPercent).toBeUndefined();
+      cleanEnv();
+    });
+
+    it("QDRANT_MAX_RESIDENT_MEMORY_PERCENT=90 parses to 90", async () => {
+      process.env.QDRANT_MAX_RESIDENT_MEMORY_PERCENT = "90";
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.maxResidentMemoryPercent).toBe(90);
+      cleanEnv();
+    });
+
+    it("QDRANT_SEARCH_MAX_BATCHSIZE unset → undefined (no cap)", async () => {
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.searchMaxBatchsize).toBeUndefined();
+      cleanEnv();
+    });
+
+    it("QDRANT_SEARCH_MAX_BATCHSIZE=256 parses to 256", async () => {
+      process.env.QDRANT_SEARCH_MAX_BATCHSIZE = "256";
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.searchMaxBatchsize).toBe(256);
+      cleanEnv();
+    });
+
+    it("QDRANT_LOW_MEMORY defaults to false when unset", async () => {
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.lowMemory).toBe(false);
+      cleanEnv();
+    });
+
+    it("QDRANT_LOW_MEMORY=true enables low memory", async () => {
+      process.env.QDRANT_LOW_MEMORY = "true";
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.lowMemory).toBe(true);
       cleanEnv();
     });
   });

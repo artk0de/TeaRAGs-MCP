@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { compareSemver, isSemver } from "../../../infra/qdrant-version.js";
 import { QdrantOperationError, QdrantUnavailableError } from "../errors.js";
 import { DaemonLock } from "./daemon-lock.js";
 import {
@@ -76,19 +77,41 @@ const MULTI_CORE_DEFAULTS: Readonly<Record<string, string>> = {
   QDRANT__STORAGE__PERFORMANCE__ASYNC_SCORING_ENABLED: "true",
 };
 
+/**
+ * Low-memory defaults applied when low-memory mode is on. Qdrant 1.18 exposes a
+ * single runtime lever — `storage.low_memory_mode` — that supersedes the prior
+ * per-key on-disk overrides. `no_populate` means "no resident vectors + skip the
+ * mmap prefetch for vectors / HNSW / payload": OOM-safe on a RAM-constrained
+ * host (slower) without mutating any persisted collection settings. Applied as a
+ * default only when the user has not already set the key, so explicit `QDRANT__*`
+ * overrides still win.
+ */
+const LOW_MEMORY_DEFAULTS: Readonly<Record<string, string>> = {
+  QDRANT__STORAGE__LOW_MEMORY_MODE: "no_populate",
+};
+
 export function buildDaemonEnv(
   storagePath: string,
   port: number,
   parentEnv: NodeJS.ProcessEnv = process.env,
+  lowMemory = false,
 ): NodeJS.ProcessEnv {
   const performanceDefaults: Record<string, string> = {};
   for (const [key, value] of Object.entries(MULTI_CORE_DEFAULTS)) {
     if (parentEnv[key] === undefined) performanceDefaults[key] = value;
   }
 
+  const lowMemoryDefaults: Record<string, string> = {};
+  if (lowMemory) {
+    for (const [key, value] of Object.entries(LOW_MEMORY_DEFAULTS)) {
+      if (parentEnv[key] === undefined) lowMemoryDefaults[key] = value;
+    }
+  }
+
   return {
     ...parentEnv,
     ...performanceDefaults,
+    ...lowMemoryDefaults,
     QDRANT__STORAGE__STORAGE_PATH: storagePath,
     QDRANT__SERVICE__HTTP_PORT: String(port),
     QDRANT__SERVICE__GRPC_PORT: "0",
@@ -154,6 +177,30 @@ async function probeHealth(url: string): Promise<boolean> {
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Best-effort probe of the RUNNING daemon's reported version via a raw GET on
+ * the root endpoint (Qdrant returns `{version}` there). Mirrors the swallow-all
+ * shape of `QdrantManager.getServerVersion`, but stays local to the embedded
+ * adapter — daemon.ts must not reach up into the REST client. Returns the
+ * reported version string, or `undefined` on ANY failure: this is a staleness
+ * probe and MUST NOT throw, so it can never break daemon attach. `fetchImpl` is
+ * injected for tests; production uses the global `fetch`.
+ */
+export async function probeDaemonVersion(
+  url: string,
+  fetchImpl: (input: string, init?: RequestInit) => Promise<Response> = fetch,
+): Promise<string | undefined> {
+  try {
+    const res = await fetchImpl(`${url}/`, { signal: AbortSignal.timeout(2000) });
+    if (!res.ok) return undefined;
+    const body = (await res.json()) as { version?: unknown } | null;
+    const raw = body?.version;
+    return typeof raw === "string" ? raw : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -227,6 +274,107 @@ export async function gracefulKill(pid: number, timeoutMs = GRACEFUL_KILL_TIMEOU
   }
 }
 
+const DAEMON_EXIT_POLL_INTERVAL_MS = 150;
+// ~10s graceful window: the single-process WAL lock must release before the
+// upgraded binary can cold-spawn, else it crashes with `Wal error ... WouldBlock`.
+const DAEMON_EXIT_MAX_POLLS = 67;
+const DAEMON_EXIT_SIGKILL_MAX_POLLS = 20;
+
+/**
+ * Dependencies for {@link evictStaleDaemon}, injected so the stale-restart path
+ * is unit-testable without a real network probe, OS signals, or wall-clock
+ * sleeps. Production wires the real `fetch` probe, `process.kill`, and timers.
+ */
+export interface EvictStaleDaemonDeps {
+  probeVersion: (url: string) => Promise<string | undefined>;
+  killPid: (pid: number, signal: NodeJS.Signals) => void;
+  isAlive: (pid: number) => boolean;
+  sleep: (ms: number) => Promise<void>;
+  binaryUpToDate: (appDataPath?: string) => boolean;
+}
+
+const defaultEvictStaleDaemonDeps: EvictStaleDaemonDeps = {
+  probeVersion: probeDaemonVersion,
+  killPid: (pid, signal) => {
+    process.kill(pid, signal);
+  },
+  isAlive: isPidAlive,
+  sleep,
+  binaryUpToDate: isBinaryUpToDate,
+};
+
+/** Poll until the pid is gone (or the cap is hit). Returns whether it exited. */
+async function waitForDaemonExit(pid: number, deps: EvictStaleDaemonDeps, maxPolls: number): Promise<boolean> {
+  for (let poll = 0; poll < maxPolls; poll++) {
+    if (!deps.isAlive(pid)) return true;
+    await deps.sleep(DAEMON_EXIT_POLL_INTERVAL_MS);
+  }
+  return !deps.isAlive(pid);
+}
+
+/** SIGTERM, wait for a graceful exit, then SIGKILL + wait if it won't die. */
+async function terminateAndWait(pid: number, deps: EvictStaleDaemonDeps): Promise<void> {
+  try {
+    deps.killPid(pid, "SIGTERM");
+  } catch {
+    return; // already dead — nothing holds the WAL lock
+  }
+  if (await waitForDaemonExit(pid, deps, DAEMON_EXIT_MAX_POLLS)) return;
+
+  // Still holding the exclusive WAL lock past the graceful window — force it
+  // down so the cold-spawn doesn't crash with `Wal error ... WouldBlock`.
+  try {
+    deps.killPid(pid, "SIGKILL");
+  } catch {
+    return; // exited between checks
+  }
+  await waitForDaemonExit(pid, deps, DAEMON_EXIT_SIGKILL_MAX_POLLS);
+}
+
+/**
+ * Evict the running daemon when it is stale relative to the pinned version.
+ *
+ * A binary auto-upgrade refreshes the on-disk binary + version file, but the
+ * running daemon only adopts it at the next cold spawn. Under sustained MCP use
+ * the daemon never goes idle, so that cold spawn never fires and the OLD process
+ * keeps serving the OLD version — invisible to `warnIfStaleBinary`, which
+ * compares files, never the live process. When the on-disk binary IS current
+ * but the RUNNING daemon reports an older version, terminate it (SIGTERM, then
+ * SIGKILL if it ignores the term) and remove its daemon files so the caller
+ * cold-spawns the upgraded binary.
+ *
+ * Conservative by construction: returns false (attach as-is) when the binary is
+ * not yet current, when the probe fails (cannot confirm staleness), or when the
+ * daemon reports a version >= pinned (never downgrade — that is
+ * `assertNoDowngrade`'s job). Returns true only after the stale process has
+ * exited and its files are cleaned; the caller must then fall through to the
+ * cold-spawn path.
+ */
+export async function evictStaleDaemon(
+  paths: DaemonPaths,
+  pid: number,
+  url: string,
+  appDataPath?: string,
+  deps: EvictStaleDaemonDeps = defaultEvictStaleDaemonDeps,
+): Promise<boolean> {
+  // A live daemon can only be upgraded once the on-disk binary is current; until
+  // then the deferred-to-idle path (warnIfStaleBinary) owns the notice.
+  if (!deps.binaryUpToDate(appDataPath)) return false;
+
+  const running = await deps.probeVersion(url);
+  if (running === undefined || !isSemver(running)) return false;
+  if (compareSemver(running, QDRANT_VERSION) >= 0) return false;
+
+  console.error(
+    `[tea-rags] Running Qdrant daemon is stale (running=${running}, pinned=${QDRANT_VERSION}); ` +
+      `restarting to load the upgraded binary.`,
+  );
+
+  await terminateAndWait(pid, deps);
+  cleanupDaemonFiles(paths);
+  return true;
+}
+
 export async function findFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
@@ -240,7 +388,11 @@ export async function findFreePort(): Promise<number> {
   });
 }
 
-export async function resolveQdrantUrl(qdrantUrl?: string, appDataPath?: string): Promise<QdrantResolution> {
+export async function resolveQdrantUrl(
+  qdrantUrl?: string,
+  appDataPath?: string,
+  lowMemory = false,
+): Promise<QdrantResolution> {
   if (qdrantUrl && qdrantUrl !== EMBEDDED_MARKER) {
     return { mode: "external", url: qdrantUrl };
   }
@@ -252,7 +404,7 @@ export async function resolveQdrantUrl(qdrantUrl?: string, appDataPath?: string)
     }
   }
 
-  const handle = await ensureDaemon(appDataPath);
+  const handle = await ensureDaemon(appDataPath, lowMemory);
   return {
     mode: "embedded",
     url: handle.url,
@@ -328,6 +480,7 @@ function makeDaemonHandle(
   url: string,
   pid: number,
   appDataPath?: string,
+  lowMemory = false,
 ): DaemonHandle {
   return {
     url,
@@ -337,12 +490,12 @@ function makeDaemonHandle(
       const remaining = decrementRefs(paths);
       console.error(`[tea-rags] Released Qdrant ref (remaining=${remaining})`);
     },
-    reconnect: makeReconnect(paths, port, async () => (await ensureDaemon(appDataPath)).url),
+    reconnect: makeReconnect(paths, port, async () => (await ensureDaemon(appDataPath, lowMemory)).url),
     startupPhase: () => computeStartupPhase(paths),
   };
 }
 
-async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
+async function ensureDaemon(appDataPath?: string, lowMemory = false): Promise<DaemonHandle> {
   const storagePath = getStoragePath(appDataPath);
   mkdirSync(storagePath, { recursive: true });
   const paths = getDaemonPaths(storagePath);
@@ -355,10 +508,19 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
     const port = parseInt(readFileSync(paths.portFile, "utf-8").trim(), 10);
     const url = `http://127.0.0.1:${port}`;
     const pid = readPidFromFile(paths);
-    const refs = incrementRefs(paths);
-    console.error(`[tea-rags] Attached to Qdrant daemon (pid=${pid}, port=${port}, refs=${refs})`);
-    warnIfStaleBinary(appDataPath);
-    return makeDaemonHandle(paths, port, url, pid, appDataPath);
+
+    // A binary auto-upgrade refreshes the on-disk binary, but a daemon under
+    // sustained MCP use never goes idle, so the deferred-to-idle cold-spawn
+    // upgrade never fires and the OLD process serves the OLD version forever —
+    // invisible to warnIfStaleBinary (file-based). If the binary is current but
+    // the running daemon is older than pinned, evict it and cold-spawn below.
+    if (!(await evictStaleDaemon(paths, pid, url, appDataPath))) {
+      const refs = incrementRefs(paths);
+      console.error(`[tea-rags] Attached to Qdrant daemon (pid=${pid}, port=${port}, refs=${refs})`);
+      warnIfStaleBinary(appDataPath);
+      return makeDaemonHandle(paths, port, url, pid, appDataPath, lowMemory);
+    }
+    // Stale daemon evicted — fall through to the slow-path cold spawn.
   }
 
   // Slow path: acquire lock for daemon spawn
@@ -367,7 +529,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
     // Another process is starting the daemon — wait and retry
     console.error("[tea-rags] Daemon lock held by another process, waiting...");
     await waitForDaemon(paths);
-    return ensureDaemon(appDataPath);
+    return ensureDaemon(appDataPath, lowMemory);
   }
 
   try {
@@ -379,7 +541,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
       const pid = readPidFromFile(paths);
       const refs = incrementRefs(paths);
       console.error(`[tea-rags] Attached to Qdrant daemon (pid=${pid}, port=${port}, refs=${refs})`);
-      return makeDaemonHandle(paths, port, url, pid, appDataPath);
+      return makeDaemonHandle(paths, port, url, pid, appDataPath, lowMemory);
     }
 
     cleanupDaemonFiles(paths);
@@ -397,7 +559,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
       cwd: dirname(binaryPath),
       detached: true,
       stdio: "ignore",
-      env: buildDaemonEnv(storagePath, port),
+      env: buildDaemonEnv(storagePath, port, process.env, lowMemory),
     });
     child.unref();
 
@@ -429,7 +591,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
 
     console.error(`[tea-rags] Qdrant daemon spawned (pid=${pid}, port=${port}, recovery may be in progress)`);
     scheduleIdleWatcher(paths, pid);
-    return makeDaemonHandle(paths, port, url, pid, appDataPath);
+    return makeDaemonHandle(paths, port, url, pid, appDataPath, lowMemory);
   } finally {
     daemonLock.release(lock.fd);
   }

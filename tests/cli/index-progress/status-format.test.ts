@@ -62,9 +62,8 @@ describe("formatIndexStatus", () => {
   it("renders project name, qdrant health, counts, size and enrichment metrics", () => {
     const status: IndexStatus = {
       ...baseStatus,
-      indexSizeBytes: 1048576,
       infraHealth: {
-        qdrant: { available: true, url: "http://localhost:6333", status: "green" },
+        qdrant: { available: true, url: "http://localhost:6333", status: "green", indexSizeBytes: 1048576 },
         embedding: { available: true, provider: "jina" },
       },
       enrichmentMetrics: {
@@ -121,12 +120,30 @@ describe("formatIndexStatus", () => {
   });
 
   it("renders size in KB for small sizes", () => {
-    const out = formatIndexStatus({ ...baseStatus, indexSizeBytes: 2048 }, plain);
+    const out = formatIndexStatus(
+      {
+        ...baseStatus,
+        infraHealth: {
+          qdrant: { available: true, url: "http://localhost:6333", indexSizeBytes: 2048 },
+          embedding: { available: true, provider: "jina" },
+        },
+      },
+      plain,
+    );
     expect(out).toContain("KB");
   });
 
   it("renders size in GB for very large sizes", () => {
-    const out = formatIndexStatus({ ...baseStatus, indexSizeBytes: 2 * 1024 * 1024 * 1024 }, plain);
+    const out = formatIndexStatus(
+      {
+        ...baseStatus,
+        infraHealth: {
+          qdrant: { available: true, url: "http://localhost:6333", indexSizeBytes: 2 * 1024 * 1024 * 1024 },
+          embedding: { available: true, provider: "jina" },
+        },
+      },
+      plain,
+    );
     expect(out).toContain("GB");
   });
 
@@ -171,7 +188,10 @@ describe("formatIndexStatusJson", () => {
   it("includes indexSizeBytes and enrichmentMetrics when present", () => {
     const status: IndexStatus = {
       ...baseStatus,
-      indexSizeBytes: 512,
+      infraHealth: {
+        qdrant: { available: true, url: "http://localhost:6333", indexSizeBytes: 512 },
+        embedding: { available: true, provider: "jina" },
+      },
       enrichmentMetrics: {
         prefetchDurationMs: 10,
         streamingApplies: 1,
@@ -184,7 +204,7 @@ describe("formatIndexStatusJson", () => {
       },
     };
     const o = formatIndexStatusJson(status, { path: "/p" }) as Record<string, unknown>;
-    expect(o.indexSizeBytes).toBe(512);
+    expect((o.infraHealth as { qdrant: { indexSizeBytes?: number } }).qdrant.indexSizeBytes).toBe(512);
     expect(o.enrichmentMetrics).toBeDefined();
   });
 

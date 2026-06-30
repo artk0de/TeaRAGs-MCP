@@ -24,6 +24,10 @@ variables are optional unless specified otherwise.
 | `QDRANT_URL`                   | Qdrant connection mode. **Unset** = autodetect (probe `localhost:6333` for external Qdrant, fallback to embedded). `"embedded"` = always use embedded Qdrant. `"http://..."` = use external Qdrant at that URL. | Autodetect                   |
 | `QDRANT_API_KEY`               | API key for Qdrant authentication                                                                                                                                                                               | -                            |
 | `QDRANT_EMBEDDED_STORAGE_PATH` | Override embedded Qdrant storage location                                                                                                                                                                       | `~/.tea-rags/qdrant/storage` |
+| `QDRANT_TURBO_QUANT`           | Enable Qdrant 1.18 TurboQuant 8x dense quantization (rescored at search time, ~baseline recall). Applied to new and existing collections at startup — no reindex.                                                | `true`                       |
+| `QDRANT_MAX_RESIDENT_MEMORY_PERCENT` | Reject memory-consuming writes when resident RAM exceeds N% (1-100). Strict-mode OOM guard applied to new and existing collections at startup — no reindex. Unset = off.                                    | unset                        |
+| `QDRANT_SEARCH_MAX_BATCHSIZE`  | Cap batch-search query size (strict mode). Unset = no cap.                                                                                                                                                      | unset                        |
+| `QDRANT_LOW_MEMORY`            | Force the embedded daemon to keep storage on disk to minimize RAM (slower, OOM-safe). Takes effect on the next daemon start.                                                                                     | `false`                      |
 
 ## Embedding
 

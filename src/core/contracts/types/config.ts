@@ -46,4 +46,12 @@ export interface QdrantTuneConfig {
   deleteConcurrency: number;
   deleteFlushTimeoutMs: number;
   quantizationScalar: boolean;
+  /** Enable Qdrant 1.18 TurboQuant 8x dense quantization (default true). */
+  turboQuant: boolean;
+  /** Reject memory-consuming writes above N% resident RAM (1-100). Unset = off. */
+  maxResidentMemoryPercent?: number;
+  /** Cap batch-search query size. Unset = no cap. */
+  searchMaxBatchsize?: number;
+  /** Force the embedded daemon to keep storage on disk to minimize RAM (default false). */
+  lowMemory: boolean;
 }

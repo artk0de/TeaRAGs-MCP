@@ -51,8 +51,9 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
   if (status.filesCount !== undefined) lines.push(`  files:      ${status.filesCount}`);
 
   // On-disk size (only when populated — embedded Qdrant path).
-  if (status.indexSizeBytes !== undefined) {
-    lines.push(`  size:       ${humanBytes(status.indexSizeBytes)}`);
+  const qdrant = status.infraHealth?.qdrant;
+  if (qdrant?.indexSizeBytes !== undefined) {
+    lines.push(`  size:       ${humanBytes(qdrant.indexSizeBytes)}`);
   }
   if (status.codegraphSizeBytes !== undefined) {
     lines.push(`  codegraph:  ${humanBytes(status.codegraphSizeBytes)}`);
@@ -61,12 +62,12 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
   if (status.languages?.length) lines.push(`  languages:  ${status.languages.join(", ")}`);
   if (status.embeddingModel) lines.push(`  embedding:  ${status.embeddingModel}`);
 
-  // Qdrant infrastructure health.
-  if (status.infraHealth?.qdrant) {
-    const q = status.infraHealth.qdrant;
-    const colorFn = qdrantStatusColor(q.status, colors);
-    const label = q.status ?? (q.available ? "available" : "unavailable");
-    lines.push(`  qdrant:     ${colorFn(label)}`);
+  // Qdrant infrastructure health (with quantization mode when known).
+  if (qdrant) {
+    const colorFn = qdrantStatusColor(qdrant.status, colors);
+    const label = qdrant.status ?? (qdrant.available ? "available" : "unavailable");
+    const quant = qdrant.quantization !== undefined ? ` · ${qdrant.quantization}` : "";
+    lines.push(`  qdrant:     ${colorFn(label)}${quant}`);
   }
 
   if (status.enrichment && Object.keys(status.enrichment).length > 0) {
@@ -111,10 +112,6 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
     chunksCount: status.chunksCount ?? null,
   };
 
-  if (status.indexSizeBytes !== undefined) {
-    base.indexSizeBytes = status.indexSizeBytes;
-  }
-
   if (status.codegraphSizeBytes !== undefined) {
     base.codegraphSizeBytes = status.codegraphSizeBytes;
   }
@@ -132,11 +129,14 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
   }
 
   if (status.infraHealth) {
+    const q = status.infraHealth.qdrant;
     base.infraHealth = {
       qdrant: {
-        available: status.infraHealth.qdrant.available,
-        url: status.infraHealth.qdrant.url,
-        status: status.infraHealth.qdrant.status ?? null,
+        available: q.available,
+        url: q.url,
+        status: q.status ?? null,
+        ...(q.indexSizeBytes !== undefined ? { indexSizeBytes: q.indexSizeBytes } : {}),
+        ...(q.quantization !== undefined ? { quantization: q.quantization } : {}),
       },
       embedding: {
         available: status.infraHealth.embedding.available,

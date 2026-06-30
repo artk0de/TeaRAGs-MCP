@@ -82,6 +82,9 @@ class MockQdrantManager implements Partial<QdrantManager> {
     vectorSize: number,
     distance: "Cosine" | "Euclid" | "Dot" = "Cosine",
     enableHybrid?: boolean,
+    _quantizationScalar?: boolean,
+    _turboQuant?: boolean,
+    _strictMode?: { maxResidentMemoryPercent?: number; searchMaxBatchsize?: number },
   ): Promise<void> {
     this.collections.set(name, {
       vectorSize,

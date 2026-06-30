@@ -50,6 +50,14 @@ Write a file `release-notes.json` matching this schema exactly:
       "subject": "fix(ingest): gitignore whitelist subdir descent"
     },
     { "hash": "9344854", "subject": "refactor(infra): relocate ConfigError" }
+  ],
+  "envChanges": [
+    {
+      "name": "QDRANT_TURBO_QUANT",
+      "description": "Enable TurboQuant 8x dense quantization",
+      "default": "true",
+      "change": "new"
+    }
   ]
 }
 ```
@@ -116,6 +124,13 @@ the user-facing benefit.
 
 8. **Always set `date`** to the release date (YYYY-MM-DD) — it appears in both
    the changelog and the GitHub release header.
+
+9. **Environment variables — always surface env changes.** Scan commit
+   subjects/bodies for env-var additions or changes (BREAKING-CHANGE footers
+   mentioning env vars, and `config`/`bootstrap`-scope commits that add or
+   change an env var). For each, emit an entry in `envChanges[]`:
+   `{ "name": ENV_NAME, "description": "<what it does>", "default": "<value>", "change": "new" | "changed" }`.
+   Omit the field entirely if no env changed.
 
 Do not emit anything to stdout. The only output is the `release-notes.json`
 file.

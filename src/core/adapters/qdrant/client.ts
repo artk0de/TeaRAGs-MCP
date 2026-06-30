@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
 
 import { QdrantClient } from "@qdrant/js-client-rest";
 
@@ -34,6 +36,12 @@ export interface CollectionInfo {
   status: "green" | "yellow" | "red";
   /** Optimizer state string from Qdrant (`"ok"` or `"unknown"` when absent). */
   optimizerStatus: string;
+  /**
+   * Vector quantization mode derived from `config.quantization_config`:
+   * `turbo` (TurboQuant 8x), `scalar` (int8), or `none` (unquantized or an
+   * unrecognized quantization variant).
+   */
+  quantization: "turbo" | "scalar" | "none";
 }
 
 export interface SearchResult {
@@ -46,6 +54,17 @@ export interface SparseVector {
   indices: number[];
   values: number[];
 }
+
+/**
+ * Search-time quantization params applied to every dense/quantized query so
+ * TurboQuant candidates are re-scored on the stored float vectors. Without
+ * rescore, 8x quantization drops recall ~2–3 pp; oversampling widens the
+ * quantized candidate pool before the float-vector rescore. Sparse legs are not
+ * quantized, so this is injected only on dense paths.
+ */
+const QUANTIZATION_SEARCH_PARAMS = {
+  quantization: { rescore: true, oversampling: 2.0 },
+} as const;
 
 export class QdrantManager {
   /** Page size for scroll pagination when collecting point IDs by filter. */
@@ -157,6 +176,55 @@ export class QdrantManager {
   }
 
   /**
+   * Best-effort probe of the RUNNING daemon's reported version via a raw GET on
+   * the root endpoint (the typed SDK exposes no version method). Mirrors the
+   * fetch shape of `checkExternalQdrantVersion`. For embedded mode this is the
+   * actual running binary; for external it is the user's server. Returns the
+   * reported version string, or `undefined` on ANY failure — this is a status
+   * probe and MUST NOT throw, so it can never break `get_index_status`.
+   */
+  async getServerVersion(): Promise<string | undefined> {
+    try {
+      const headers: Record<string, string> = {};
+      if (this.apiKey) headers["api-key"] = this.apiKey;
+      const res = await fetch(`${this.qdrantUrl}/`, {
+        headers,
+        signal: AbortSignal.timeout(3000),
+      });
+      if (!res.ok) return undefined;
+      const body = (await res.json()) as { version?: unknown } | null;
+      const raw = body?.version;
+      return typeof raw === "string" ? raw : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Best-effort on-disk byte size of a collection's storage directory.
+   *
+   * EMBEDDED only: recursively sums file sizes under
+   * `<storagePath>/collections/<name>` (Qdrant stores each collection at that
+   * path). EXTERNAL Qdrant returns `undefined` — no filesystem access to the
+   * remote server. Swallows ALL errors (missing dir, permission, race) →
+   * `undefined`, so this status probe can never break `get_index_status`.
+   * Mirrors the swallow-error contract of {@link getServerVersion}.
+   */
+  async getCollectionDiskBytes(collectionName: string): Promise<number | undefined> {
+    const storagePath = this.daemon?.storagePath;
+    if (storagePath === undefined) return undefined;
+    try {
+      // The status reports the alias (e.g. `code_<hash>`); the on-disk directory
+      // is the active PHYSICAL collection it points at (`code_<hash>_vN`). Resolve
+      // the alias before stat-ing, or we'd read a non-existent dir → undefined.
+      const physical = await this.aliases.resolveActive(collectionName);
+      return await sumDirBytes(join(storagePath, "collections", physical));
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Converts a string ID to UUID format if it's not already a UUID.
    * Qdrant requires string IDs to be in UUID format.
    */
@@ -182,6 +250,8 @@ export class QdrantManager {
     distance: "Cosine" | "Euclid" | "Dot" = "Cosine",
     enableSparse = false,
     quantizationScalar = false,
+    turboQuant = false,
+    strictMode?: { maxResidentMemoryPercent?: number; searchMaxBatchsize?: number },
   ): Promise<void> {
     type DistanceType = "Cosine" | "Euclid" | "Dot" | "Manhattan";
     type VectorConfig =
@@ -203,11 +273,13 @@ export class QdrantManager {
           modifier: "idf" | "none";
         };
       };
-      quantization_config?: {
-        scalar: {
-          type: "int8";
-          always_ram: boolean;
-        };
+      quantization_config?:
+        | { scalar: { type: "int8"; always_ram: boolean } }
+        | { turbo: { bits: "bits4"; always_ram: boolean } };
+      strict_mode_config?: {
+        enabled: boolean;
+        max_resident_memory_percent?: number;
+        search_max_batchsize?: number;
       };
     }
 
@@ -232,9 +304,19 @@ export class QdrantManager {
           },
         };
 
-    if (quantizationScalar) {
-      config.quantization_config = {
-        scalar: { type: "int8", always_ram: true },
+    if (turboQuant) {
+      config.quantization_config = { turbo: { bits: "bits4", always_ram: true } };
+    } else if (quantizationScalar) {
+      config.quantization_config = { scalar: { type: "int8", always_ram: true } };
+    }
+
+    if (strictMode && (strictMode.maxResidentMemoryPercent !== undefined || strictMode.searchMaxBatchsize !== undefined)) {
+      config.strict_mode_config = {
+        enabled: true,
+        ...(strictMode.maxResidentMemoryPercent !== undefined && {
+          max_resident_memory_percent: strictMode.maxResidentMemoryPercent,
+        }),
+        ...(strictMode.searchMaxBatchsize !== undefined && { search_max_batchsize: strictMode.searchMaxBatchsize }),
       };
     }
 
@@ -354,7 +436,34 @@ export class QdrantManager {
       hybridEnabled,
       status: (info.status ?? "green") as "green" | "yellow" | "red",
       optimizerStatus: typeof info.optimizer_status === "string" ? info.optimizer_status : "unknown",
+      quantization: mapQuantization((info.config as { quantization_config?: unknown }).quantization_config),
     };
+  }
+
+  /**
+   * Best-effort read of a collection's health status for the TurboQuant
+   * migration progress poll. Returns the live status, or "unknown" on ANY
+   * failure — a migration poll runs alongside (not gating) the index run and
+   * MUST NOT throw. Mirrors the swallow-error contract of
+   * {@link getServerVersion}.
+   */
+  async getCollectionStatus(name: string): Promise<"green" | "yellow" | "red" | "unknown"> {
+    try {
+      return (await this.getCollectionInfo(name)).status;
+    } catch {
+      return "unknown";
+    }
+  }
+
+  /**
+   * Reads the live quantization config of a collection (e.g.
+   * `{ turbo: { bits: "bits4", always_ram: true } }`) or `undefined` when the
+   * collection is unquantized. Used by the startup TurboQuant reconcile to
+   * decide whether a PATCH is needed.
+   */
+  async getQuantizationConfig(name: string): Promise<unknown> {
+    const info = await this.call(async () => this.client.getCollection(name));
+    return (info.config as { quantization_config?: unknown } | undefined)?.quantization_config;
   }
 
   async deleteCollection(name: string): Promise<void> {
@@ -527,6 +636,10 @@ export class QdrantManager {
         optimizers_config: {
           indexing_threshold: 0,
           deleted_threshold: 0.99,
+          // Qdrant 1.18: defer optimization during the bulk phase so segments are
+          // not repacked mid-index; resumeOptimizer clears it so one pass runs at
+          // finalize (2-3× faster than incremental optimization on large repos).
+          prevent_unoptimized: true,
         },
       }),
     );
@@ -550,6 +663,9 @@ export class QdrantManager {
         optimizers_config: {
           indexing_threshold: indexingThreshold,
           deleted_threshold: deletedThreshold,
+          // Clear the bulk-phase defer set by pauseOptimizer: reverting it lets
+          // the optimizer run its single post-index pass over the new segments.
+          prevent_unoptimized: false,
         },
       }),
     );
@@ -590,6 +706,7 @@ export class QdrantManager {
         limit,
         filter: qdrantFilter,
         with_payload: true, // Explicitly request payloads
+        params: QUANTIZATION_SEARCH_PARAMS,
       }),
     );
 
@@ -659,6 +776,7 @@ export class QdrantManager {
     if (options.offset !== undefined) queryParams.offset = options.offset;
     if (options.filter) queryParams.filter = options.filter;
     if (collectionInfo.hybridEnabled) queryParams.using = "dense";
+    queryParams.params = QUANTIZATION_SEARCH_PARAMS;
 
     let response;
     try {
@@ -708,6 +826,7 @@ export class QdrantManager {
 
     if (options.filter) params.filter = options.filter;
     if (collectionInfo.hybridEnabled) params.using = "dense";
+    params.params = QUANTIZATION_SEARCH_PARAMS;
 
     const response = await this.call(async () =>
       this.client.queryGroups(collectionName, params as Parameters<QdrantClient["queryGroups"]>[1]),
@@ -1029,7 +1148,13 @@ export class QdrantManager {
       const response = await this.call(async () =>
         this.client.query(collectionName, {
           prefetch: [
-            { query: denseVector, using: "dense", limit: fetchLimit, filter: qdrantFilter },
+            {
+              query: denseVector,
+              using: "dense",
+              limit: fetchLimit,
+              filter: qdrantFilter,
+              params: QUANTIZATION_SEARCH_PARAMS,
+            },
             { query: sparseVector, using: "text", limit: fetchLimit, filter: qdrantFilter },
           ],
           query: fusionQuery,
@@ -1168,6 +1293,54 @@ export class QdrantManager {
         sparse_vectors: { text: { modifier: "idf" } },
       }),
     );
+  }
+
+  /**
+   * Enables TurboQuant 8x quantization on an existing collection. Qdrant's
+   * optimizer rebuilds quantized vectors from the stored float vectors in the
+   * background — no re-embedding / reindex. Idempotent at the call site (the
+   * startup reconcile only calls this when the live config differs).
+   */
+  async updateCollectionQuantization(collectionName: string): Promise<void> {
+    await this.call(async () =>
+      this.client.updateCollection(collectionName, {
+        quantization_config: { turbo: { bits: "bits4", always_ram: true } },
+      }),
+    );
+  }
+
+  /**
+   * Applies Qdrant 1.18 strict-mode guardrails to an existing collection — the
+   * `max_resident_memory_percent` OOM guard and/or the `search_max_batchsize`
+   * cap. Server-side config only, no reindex. Idempotent at the call site (the
+   * startup reconcile only calls this when the live config differs).
+   */
+  async updateCollectionStrictMode(
+    collectionName: string,
+    strictMode: { maxResidentMemoryPercent?: number; searchMaxBatchsize?: number },
+  ): Promise<void> {
+    await this.call(async () =>
+      this.client.updateCollection(collectionName, {
+        strict_mode_config: {
+          enabled: true,
+          ...(strictMode.maxResidentMemoryPercent !== undefined && {
+            max_resident_memory_percent: strictMode.maxResidentMemoryPercent,
+          }),
+          ...(strictMode.searchMaxBatchsize !== undefined && { search_max_batchsize: strictMode.searchMaxBatchsize }),
+        },
+      }),
+    );
+  }
+
+  /**
+   * Reads the live strict-mode config of a collection (e.g.
+   * `{ enabled: true, max_resident_memory_percent: 90 }`) or `undefined` when
+   * strict mode is not configured. Used by the startup strict-mode reconcile to
+   * decide whether a PATCH is needed.
+   */
+  async getStrictModeConfig(name: string): Promise<unknown> {
+    const info = await this.call(async () => this.client.getCollection(name));
+    return (info.config as { strict_mode_config?: unknown } | undefined)?.strict_mode_config;
   }
 
   /**
@@ -1335,6 +1508,45 @@ export class QdrantManager {
     };
     return this.scrollFiltered(collectionName, filter, limit);
   }
+}
+
+/**
+ * Recursively sum the ACTUAL on-disk size of every regular file under `dir`
+ * (allocated blocks × 512), matching `du`. Qdrant preallocates sparse files, so
+ * `stat.size` (logical length) wildly overstates real usage — ~1.5 GB apparent
+ * vs ~382 MB allocated observed live. We therefore account allocated blocks, not
+ * logical size; on exotic platforms where `blocks` is undefined we round the
+ * logical size up to the next 512-byte sector. Directories are descended;
+ * symlinks and special files are skipped (best-effort). Propagates fs errors
+ * (e.g. ENOENT for a missing collection dir) to the caller, which swallows them
+ * — see {@link QdrantManager.getCollectionDiskBytes}.
+ */
+async function sumDirBytes(dir: string): Promise<number> {
+  let total = 0;
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      total += await sumDirBytes(full);
+    } else if (entry.isFile()) {
+      const st = await stat(full);
+      total += st.blocks !== undefined ? st.blocks * 512 : Math.ceil(st.size / 512) * 512;
+    }
+  }
+  return total;
+}
+
+/**
+ * Classify a Qdrant `quantization_config` block into a coarse mode. `turbo`
+ * (TurboQuant 8x) and `scalar` (int8) are the modes tea-rags creates; any other
+ * shape — including a missing config or an unrecognized variant — is `none`.
+ */
+function mapQuantization(config: unknown): "turbo" | "scalar" | "none" {
+  if (typeof config === "object" && config !== null) {
+    if ("turbo" in config) return "turbo";
+    if ("scalar" in config) return "scalar";
+  }
+  return "none";
 }
 
 /** Detect Qdrant 409 Conflict (collection already exists). */

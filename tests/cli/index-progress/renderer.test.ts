@@ -96,6 +96,68 @@ describe("formatProgressLine", () => {
     expect(formatProgressLine({ type: "done", result: { failed: [], degraded: [] } })).toBeNull();
     expect(formatProgressLine({ type: "status", status: { isIndexed: true, status: "indexed" } })).toBeNull();
   });
+
+  it("formats a turbo-migration start as an optimizing line with the collection", () => {
+    const line = formatProgressLine({ type: "turbo-migration", collection: "code_abc", stage: "start" });
+    expect(line).toContain("turbo migration");
+    expect(line).toContain("code_abc");
+    expect(line).toContain("optimizing");
+  });
+
+  it("formats a turbo-migration done with the elapsed duration", () => {
+    const line = formatProgressLine({
+      type: "turbo-migration",
+      collection: "code_abc",
+      stage: "done",
+      elapsedMs: 4200,
+    });
+    expect(line).toContain("done");
+    expect(line).toContain("4.2s");
+  });
+
+  it("formats a turbo-migration background as a continues-in-background line", () => {
+    const line = formatProgressLine({
+      type: "turbo-migration",
+      collection: "code_abc",
+      stage: "background",
+      elapsedMs: 5000,
+    });
+    expect(line).toContain("background");
+  });
+});
+
+describe("TtyProgressRenderer — turbo-migration phase", () => {
+  const colors = createColorizer({ env: {}, isTTY: false });
+
+  beforeEach(() => {
+    mockMultibar.create.mockClear();
+    mockMultibar.stop.mockClear();
+    mockMultibar.log.mockClear();
+    mockSingleBar.update.mockClear();
+    mockSingleBar.setTotal.mockClear();
+    mockMultibar.create.mockReturnValue(mockSingleBar);
+  });
+
+  it("creates an indeterminate bar on the start stage", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({ type: "turbo-migration", collection: "code_abc", stage: "start" });
+    expect(mockMultibar.create).toHaveBeenCalledWith(
+      0,
+      0,
+      expect.objectContaining({ totalFinal: false, label: expect.stringContaining("turbo migration") }),
+    );
+  });
+
+  it("marks the migration bar done (Done ✓ payload) on the done stage", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({ type: "turbo-migration", collection: "code_abc", stage: "start" });
+    mockSingleBar.update.mockClear();
+    r.handle({ type: "turbo-migration", collection: "code_abc", stage: "done", elapsedMs: 4200 });
+    const { barStates } = r as unknown as { barStates: Map<string, { done: boolean }> };
+    expect(barStates.get("turbo:code_abc")?.done).toBe(true);
+    const updateCalls = mockSingleBar.update.mock.calls;
+    expect(updateCalls.some((c) => (c[1] as Record<string, unknown>)["done"] !== undefined)).toBe(true);
+  });
 });
 
 describe("LineProgressRenderer", () => {

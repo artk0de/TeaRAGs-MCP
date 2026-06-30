@@ -222,8 +222,15 @@ export class IndexingOps {
     // would otherwise lose the primary's true status under failover. Only when
     // a primary url is known and the provider exposes the probe.
     const primaryAvailable = primaryUrl !== undefined ? await this.embeddings.checkPrimaryHealth?.() : undefined;
+    // Best-effort probe of the RUNNING daemon's reported version. getServerVersion
+    // swallows all errors → undefined, so this never blocks or fails get_index_status.
+    const qdrantVersion = await this.qdrant.getServerVersion();
     const infraHealth: IndexStatus["infraHealth"] = {
-      qdrant: { available: true, url: this.qdrant.url },
+      qdrant: {
+        available: true,
+        url: this.qdrant.url,
+        ...(qdrantVersion !== undefined ? { version: qdrantVersion } : {}),
+      },
       embedding: {
         available: embeddingHealthy,
         provider: this.embeddings.getProviderName(),
@@ -234,10 +241,17 @@ export class IndexingOps {
       },
     };
 
+    // Collection size + quantization — embedded only, best-effort, grouped into
+    // the Qdrant infra-health block. getCollectionDiskBytes returns undefined for
+    // external Qdrant or on any fs error; quantization comes from the same
+    // getCollectionInfo round-trip that yields status / optimizerStatus.
     if (exists) {
       const info = await this.qdrant.getCollectionInfo(collectionName);
       infraHealth.qdrant.status = info.status;
       infraHealth.qdrant.optimizerStatus = info.optimizerStatus;
+      infraHealth.qdrant.quantization = info.quantization;
+      const indexSizeBytes = await this.qdrant.getCollectionDiskBytes(collectionName);
+      if (indexSizeBytes !== undefined) infraHealth.qdrant.indexSizeBytes = indexSizeBytes;
     }
 
     const status = await this.status.getIndexStatus(path);

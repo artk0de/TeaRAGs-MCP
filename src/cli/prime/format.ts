@@ -180,6 +180,18 @@ function roundTwo(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// Local to the prime digest layer: the MCP tool layer (register-status-tools)
+// owns its own formatBytes. They cannot share one helper without exporting a
+// presentation util through core/api/public (cli reaches core only via that
+// barrel, mcp likewise) — over-placing a UI helper into the domain core. Two
+// small renderers in two bounded presentation contexts is the layer-correct call.
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
 function formatStatusLine(status: IndexStatus, now: Date): string {
   switch (status.status) {
     case "not_indexed":
@@ -197,7 +209,14 @@ function formatStatusLine(status: IndexStatus, now: Date): string {
         status.filesCount !== undefined
           ? `${status.filesCount} files / ${status.chunksCount ?? 0} chunks`
           : `${status.chunksCount ?? 0} chunks`;
-      const base = `indexed · collection ${collection} · ${counts}`;
+      const qdrant = status.infraHealth?.qdrant;
+      const size =
+        qdrant?.indexSizeBytes !== undefined ? ` · ${formatBytes(qdrant.indexSizeBytes)} on disk` : "";
+      const quant =
+        qdrant?.quantization !== undefined
+          ? ` · ${qdrant.quantization === "turbo" ? "turbo (8x)" : qdrant.quantization} quant`
+          : "";
+      const base = `indexed · collection ${collection} · ${counts}${size}${quant}`;
       const staleness = computeStaleness(status.lastUpdated, now);
       return staleness ? `${base} · last indexed: ${staleness.ago} ago` : base;
     }
@@ -216,6 +235,9 @@ function formatInfraSection(infra: InfraHealth): string[] {
   const lines = ["## Infra"];
   const q = infra.qdrant;
   let qLine = `qdrant: ${q.status ?? "unknown"} (optimizer ${q.optimizerStatus ?? "unknown"}) at ${q.url}`;
+  if (q.version) {
+    qLine += ` · v${q.version}`;
+  }
   if (q.status === "yellow") {
     qLine += " — background optimization in progress";
   } else if (q.status === "red") {

@@ -139,6 +139,7 @@ export interface AppDeps {
   schemaDriftMonitor: SchemaDriftMonitor;
   projectRegistryOps: ProjectRegistryOps;
   quantizationScalar: boolean;
+  turboQuant: boolean;
   modelGuard?: EmbeddingModelGuard;
   /** Optional — present when CODEGRAPH_DISABLED is unset and DuckDB is wired. */
   graphFacade?: GraphFacade;
@@ -203,6 +204,7 @@ function wireOps(deps: AppDeps): {
       deps.qdrant,
       deps.embeddings,
       deps.quantizationScalar,
+      deps.turboQuant,
       deps.modelGuard,
       deps.codegraphPool,
     ),

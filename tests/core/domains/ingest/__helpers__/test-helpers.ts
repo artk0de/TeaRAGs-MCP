@@ -94,6 +94,8 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     distance: "Cosine" | "Euclid" | "Dot" = "Cosine",
     enableHybrid?: boolean,
     _quantizationScalar?: boolean,
+    _turboQuant?: boolean,
+    _strictMode?: { maxResidentMemoryPercent?: number; searchMaxBatchsize?: number },
   ): Promise<void> {
     this.collections.set(name, {
       vectorSize,
@@ -313,6 +315,14 @@ export class MockQdrantManager implements Partial<QdrantManager> {
 
   async checkHealth(): Promise<boolean> {
     return true;
+  }
+
+  async getServerVersion(): Promise<string | undefined> {
+    return undefined;
+  }
+
+  async getCollectionDiskBytes(_collectionName: string): Promise<number | undefined> {
+    return undefined;
   }
 }
 

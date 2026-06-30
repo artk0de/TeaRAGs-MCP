@@ -67,6 +67,7 @@ export function parseAppConfig(): AppConfig {
       ignorePatterns: DEFAULT_IGNORE_PATTERNS,
       enableHybridSearch: zodConfig.ingest.enableHybrid,
       quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
+      turboQuant: zodConfig.qdrantTune.turboQuant,
       enableGitMetadata: zodConfig.trajectoryGit.enabled,
       userSetChunkSize: zodConfig.flags.userSetChunkSize,
       maxChunksPerFile: undefined,

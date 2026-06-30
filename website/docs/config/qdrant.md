@@ -261,6 +261,41 @@ QDRANT_API_KEY=your-api-key
 
 ---
 
+## Quantization
+
+TeaRAGs enables **Qdrant 1.18 TurboQuant** by default — 8x dense-vector
+compression with a search-time rescore that keeps recall at baseline. Set
+`QDRANT_TURBO_QUANT=false` to disable it.
+
+Turbo applies to **new and existing** collections: new collections are created
+with turbo quantization, and existing collections are auto-reconciled at
+startup. No reindex or re-embedding is required — Qdrant rebuilds the quantized
+vectors from the stored float vectors in the background.
+
+---
+
+## Memory & OOM safety
+
+On a RAM-constrained host, indexing a large repo can exhaust memory before the
+write completes and crash the process. Qdrant 1.18 adds two levers for this, both
+opt-in.
+
+**Strict-mode OOM guard.** Set `QDRANT_MAX_RESIDENT_MEMORY_PERCENT` (1-100) to
+make Qdrant **reject** a memory-consuming write once resident RAM crosses that
+percentage — you get a typed rejection instead of an OOM crash. Pair it with
+`QDRANT_SEARCH_MAX_BATCHSIZE` to cap batch-search query size. Like TurboQuant,
+strict mode applies to **new and existing** collections — new collections are
+created with it and existing collections are auto-reconciled at startup, with no
+reindex. Both are unset by default (guard off / no cap).
+
+**Low-memory mode.** Set `QDRANT_LOW_MEMORY=true` to force the embedded daemon to
+keep storage (payload, vectors, HNSW index) **on disk** instead of RAM. This
+trades search latency for a much smaller memory footprint, letting a weak machine
+bring the node up and index without OOM. It takes effect on the next daemon
+start. Default false.
+
+---
+
 ## Environment Variables Reference
 
 | Variable | Description | Default |
@@ -268,6 +303,10 @@ QDRANT_API_KEY=your-api-key
 | `QDRANT_URL` | Connection mode: unset = autodetect, `embedded` = force embedded, `http://...` = external | Autodetect |
 | `QDRANT_API_KEY` | API key for Qdrant authentication | — |
 | `QDRANT_EMBEDDED_STORAGE_PATH` | Override embedded Qdrant storage location | `~/.tea-rags/qdrant/storage` |
+| `QDRANT_TURBO_QUANT` | Enable TurboQuant 8x dense quantization (rescored at search time, ~baseline recall) | `true` |
+| `QDRANT_MAX_RESIDENT_MEMORY_PERCENT` | Strict-mode OOM guard: reject memory-consuming writes above N% resident RAM (1-100). Auto-reconciled on existing collections at startup, no reindex | unset |
+| `QDRANT_SEARCH_MAX_BATCHSIZE` | Strict-mode cap on batch-search query size | unset |
+| `QDRANT_LOW_MEMORY` | Force the embedded daemon to keep storage on disk to minimize RAM (slower, OOM-safe); effective on next daemon start | `false` |
 
 ## Troubleshooting
 

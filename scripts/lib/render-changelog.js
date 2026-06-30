@@ -90,6 +90,18 @@ function renderGroups(data) {
     .join("\n\n");
 }
 
+// Environment-variable additions/changes for this release. Surfaced on BOTH
+// artifacts so a user upgrading sees every new/changed knob with its default.
+// `change` is "new" | "changed". Empty/absent → no section.
+function renderEnvChanges(data) {
+  const envs = data.envChanges || [];
+  if (envs.length === 0) return "";
+  const rows = envs
+    .map((e) => `* \`${e.name}\` · ${escapeMentions(e.description)} · default: \`${e.default}\` (${e.change})`)
+    .join("\n");
+  return `### 🔧 Environment Variables\n\n${rows}`;
+}
+
 // Version header carries the release date — required on BOTH artifacts.
 function versionHeader(data) {
   return `## [${data.version}](${data.compareUrl}) (${data.date})`;
@@ -98,7 +110,9 @@ function versionHeader(data) {
 // CHANGELOG.md / website: header + product themes only. No inline hash links, no
 // full commit list — release-level traceability via the compareUrl in the header.
 export function renderChangelogSection(data) {
-  return `${versionHeader(data)}\n\n${renderGroups(data)}\n`;
+  const env = renderEnvChanges(data);
+  const envBlock = env ? `\n\n${env}` : "";
+  return `${versionHeader(data)}\n\n${renderGroups(data)}${envBlock}\n`;
 }
 
 // GitHub release notes: header (with date) + product themes + full commits
@@ -108,10 +122,12 @@ export function renderChangelogSection(data) {
 // are mention-escaped so raw YARD tags don't autolink phantom accounts.
 export function renderReleaseNotes(data, contributors = []) {
   const body = renderGroups(data);
+  const env = renderEnvChanges(data);
+  const envBlock = env ? `\n\n${env}` : "";
   const commits = data.allCommits.map((c) => `- ${c.hash} ${escapeMentions(c.subject)}`).join("\n");
   const spoiler = `<details>\n<summary>Full Commits</summary>\n\n${commits}\n\n</details>`;
   const credits = contributors.length ? `\n\n### 👥 Contributors\n\n${contributors.join(", ")}` : "";
-  return `${versionHeader(data)}\n\n${body}\n\n${spoiler}${credits}\n`;
+  return `${versionHeader(data)}\n\n${body}${envBlock}\n\n${spoiler}${credits}\n`;
 }
 
 // Replace the `## [version]...` block in CHANGELOG.md with a freshly rendered

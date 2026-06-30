@@ -74,6 +74,9 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
         }
       }
 
+      const details = formatCollectionDetails(infraHealth?.qdrant);
+      if (details) text += `\n\n${details}`;
+
       if (infraHealth) text += `\n\n${formatInfraHealth(infraHealth)}`;
 
       const driftWarning = await app.checkSchemaDrift({ path });
@@ -105,8 +108,37 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
   );
 }
 
+/**
+ * Human-readable Qdrant collection details rendered below the status JSON.
+ * Returns an empty string when no detail field is set (caller skips the block).
+ */
+export function formatCollectionDetails(
+  qdrant: Pick<NonNullable<IndexStatus["infraHealth"]>["qdrant"], "indexSizeBytes" | "quantization"> | undefined,
+): string {
+  const lines: string[] = [];
+  if (qdrant?.indexSizeBytes !== undefined) lines.push(`Index size: ${formatBytes(qdrant.indexSizeBytes)}`);
+  if (qdrant?.quantization !== undefined) lines.push(`Quantization: ${formatQuantization(qdrant.quantization)}`);
+  return lines.join("\n");
+}
+
+/** Render a quantization mode for display — turbo carries its 8x compression hint. */
+function formatQuantization(
+  quantization: NonNullable<NonNullable<IndexStatus["infraHealth"]>["qdrant"]["quantization"]>,
+): string {
+  return quantization === "turbo" ? "turbo (8x)" : quantization;
+}
+
+/** Format a byte count as B/KB/MB/GB — MB under 1 GB, GB at/above, one decimal. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
 export function formatInfraHealth(h: NonNullable<IndexStatus["infraHealth"]>): string {
   const qdrantStatus = h.qdrant.available ? "available" : "unavailable";
+  const versionSuffix = h.qdrant.version ? ` · v${h.qdrant.version}` : "";
   const collectionHealth =
     h.qdrant.status && h.qdrant.status !== "green"
       ? ` [collection status: ${h.qdrant.status}${
@@ -117,7 +149,7 @@ export function formatInfraHealth(h: NonNullable<IndexStatus["infraHealth"]>): s
       : "";
   return (
     `Infrastructure:\n` +
-    `  Qdrant: ${qdrantStatus} (${h.qdrant.url})${collectionHealth}\n` +
+    `  Qdrant: ${qdrantStatus}${versionSuffix} (${h.qdrant.url})${collectionHealth}\n` +
     `  Embedding (${h.embedding.provider}): ${formatEmbeddingEndpoints(h.embedding)}`
   );
 }

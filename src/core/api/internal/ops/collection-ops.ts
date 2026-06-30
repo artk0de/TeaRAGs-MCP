@@ -13,6 +13,7 @@ export class CollectionOps {
     private readonly qdrant: QdrantManager,
     private readonly embeddings: EmbeddingProvider,
     private readonly quantizationScalar: boolean,
+    private readonly turboQuant: boolean,
     private readonly modelGuard?: EmbeddingModelGuard,
     private readonly codegraphPool?: GraphDbClientPool,
   ) {}
@@ -27,6 +28,7 @@ export class CollectionOps {
       request.distance,
       enableHybrid,
       this.quantizationScalar,
+      this.turboQuant,
     );
 
     this.modelGuard?.recordModel(request.name);

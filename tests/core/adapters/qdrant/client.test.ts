@@ -1,5 +1,9 @@
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { QdrantClient } from "@qdrant/js-client-rest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { QdrantAliasManager } from "../../../../src/core/adapters/qdrant/aliases.js";
 import { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
@@ -10,10 +14,15 @@ import {
 } from "../../../../src/core/adapters/qdrant/errors.js";
 import { InvalidQueryError } from "../../../../src/core/domains/explore/errors.js";
 
+// TurboQuant rescore params injected into every dense search path so quantized
+// candidates are re-scored on the stored float vectors (keeps baseline recall).
+const RESCORE_PARAMS = { quantization: { rescore: true, oversampling: 2.0 } };
+
 const mockClient = {
   createCollection: vi.fn().mockResolvedValue({}),
   getCollection: vi.fn().mockResolvedValue({}),
   getCollections: vi.fn().mockResolvedValue({ collections: [] }),
+  getAliases: vi.fn().mockResolvedValue({ aliases: [] }),
   deleteCollection: vi.fn().mockResolvedValue({}),
   upsert: vi.fn().mockResolvedValue({}),
   search: vi.fn().mockResolvedValue([]),
@@ -259,6 +268,7 @@ describe("QdrantManager", () => {
         hybridEnabled: false,
         status: "green",
         optimizerStatus: "unknown",
+        quantization: "none",
       });
     });
 
@@ -311,6 +321,7 @@ describe("QdrantManager", () => {
         hybridEnabled: true,
         status: "green",
         optimizerStatus: "unknown",
+        quantization: "none",
       });
     });
 
@@ -335,6 +346,7 @@ describe("QdrantManager", () => {
         hybridEnabled: false,
         status: "green",
         optimizerStatus: "unknown",
+        quantization: "none",
       });
     });
 
@@ -364,6 +376,7 @@ describe("QdrantManager", () => {
         hybridEnabled: false,
         status: "green",
         optimizerStatus: "unknown",
+        quantization: "none",
       });
     });
 
@@ -391,6 +404,7 @@ describe("QdrantManager", () => {
         hybridEnabled: false,
         status: "green",
         optimizerStatus: "unknown",
+        quantization: "none",
       });
     });
 
@@ -417,6 +431,7 @@ describe("QdrantManager", () => {
         hybridEnabled: false,
         status: "green",
         optimizerStatus: "unknown",
+        quantization: "none",
       });
     });
 
@@ -451,6 +466,67 @@ describe("QdrantManager", () => {
 
       expect(info.status).toBe("green");
       expect(info.optimizerStatus).toBe("unknown");
+    });
+
+    it("maps quantization to 'turbo' when the config carries a turbo block", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "turbo-col",
+        points_count: 10,
+        config: {
+          params: { vectors: { size: 384, distance: "Cosine" } },
+          quantization_config: { turbo: { bits: "bits4", always_ram: true } },
+        },
+      });
+
+      const info = await manager.getCollectionInfo("turbo-col");
+
+      expect(info.quantization).toBe("turbo");
+    });
+
+    it("maps quantization to 'scalar' when the config carries a scalar block", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "scalar-col",
+        points_count: 10,
+        config: {
+          params: { vectors: { size: 384, distance: "Cosine" } },
+          quantization_config: { scalar: { type: "int8", always_ram: true } },
+        },
+      });
+
+      const info = await manager.getCollectionInfo("scalar-col");
+
+      expect(info.quantization).toBe("scalar");
+    });
+
+    it("maps quantization to 'none' when no quantization_config is present", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "plain-col",
+        points_count: 10,
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+      });
+
+      const info = await manager.getCollectionInfo("plain-col");
+
+      expect(info.quantization).toBe("none");
+    });
+  });
+
+  describe("getCollectionStatus", () => {
+    it("returns the live collection health status", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "migrating",
+        points_count: 10,
+        status: "yellow",
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+      });
+
+      await expect(manager.getCollectionStatus("migrating")).resolves.toBe("yellow");
+    });
+
+    it("returns 'unknown' on any failure (status poll must never throw)", async () => {
+      mockClient.getCollection.mockRejectedValue(new Error("collection gone"));
+
+      await expect(manager.getCollectionStatus("missing")).resolves.toBe("unknown");
     });
   });
 
@@ -667,10 +743,13 @@ describe("QdrantManager", () => {
 
       // deleted_threshold: 0.99 is the key — without it, bulk deletes trigger
       // vacuum mid-reindex which blocks upserts for minutes.
+      // prevent_unoptimized: true defers optimization so a single pass runs at
+      // finalize instead of mid-bulk (Qdrant 1.18).
       expect(mockClient.updateCollection).toHaveBeenCalledWith("test-collection", {
         optimizers_config: {
           indexing_threshold: 0,
           deleted_threshold: 0.99,
+          prevent_unoptimized: true,
         },
       });
     });
@@ -682,6 +761,7 @@ describe("QdrantManager", () => {
         optimizers_config: {
           indexing_threshold: 20000,
           deleted_threshold: 0.2,
+          prevent_unoptimized: false,
         },
       });
     });
@@ -696,8 +776,130 @@ describe("QdrantManager", () => {
         optimizers_config: {
           indexing_threshold: 50000,
           deleted_threshold: 0.3,
+          prevent_unoptimized: false,
         },
       });
+    });
+  });
+
+  describe("updateCollectionQuantization", () => {
+    it("PATCHes turbo config via update_collection", async () => {
+      await manager.updateCollectionQuantization("col");
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("col", {
+        quantization_config: { turbo: { bits: "bits4", always_ram: true } },
+      });
+    });
+  });
+
+  describe("getQuantizationConfig", () => {
+    it("returns the live quantization_config from getCollection", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        config: { quantization_config: { turbo: { bits: "bits4", always_ram: true } } },
+      });
+
+      const config = await manager.getQuantizationConfig("col");
+
+      expect(config).toEqual({ turbo: { bits: "bits4", always_ram: true } });
+    });
+
+    it("returns undefined when the collection has no quantization_config", async () => {
+      mockClient.getCollection.mockResolvedValue({ config: {} });
+
+      const config = await manager.getQuantizationConfig("col");
+
+      expect(config).toBeUndefined();
+    });
+  });
+
+  describe("updateCollectionStrictMode", () => {
+    it("PATCHes the memory percent via update_collection", async () => {
+      await manager.updateCollectionStrictMode("col", { maxResidentMemoryPercent: 90 });
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("col", {
+        strict_mode_config: { enabled: true, max_resident_memory_percent: 90 },
+      });
+    });
+
+    it("PATCHes the search batch cap via update_collection", async () => {
+      await manager.updateCollectionStrictMode("col", { searchMaxBatchsize: 256 });
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("col", {
+        strict_mode_config: { enabled: true, search_max_batchsize: 256 },
+      });
+    });
+
+    it("PATCHes both strict-mode fields together", async () => {
+      await manager.updateCollectionStrictMode("col", {
+        maxResidentMemoryPercent: 80,
+        searchMaxBatchsize: 128,
+      });
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("col", {
+        strict_mode_config: {
+          enabled: true,
+          max_resident_memory_percent: 80,
+          search_max_batchsize: 128,
+        },
+      });
+    });
+  });
+
+  describe("getStrictModeConfig", () => {
+    it("returns the live strict_mode_config from getCollection", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        config: { strict_mode_config: { enabled: true, max_resident_memory_percent: 90 } },
+      });
+
+      const config = await manager.getStrictModeConfig("col");
+
+      expect(config).toEqual({ enabled: true, max_resident_memory_percent: 90 });
+    });
+
+    it("returns undefined when the collection has no strict_mode_config", async () => {
+      mockClient.getCollection.mockResolvedValue({ config: {} });
+
+      const config = await manager.getStrictModeConfig("col");
+
+      expect(config).toBeUndefined();
+    });
+  });
+
+  describe("quantization rescore params (all dense paths)", () => {
+    beforeEach(() => {
+      // query/queryGroups/search read collection info first — give them a valid
+      // standard (non-hybrid) collection config so the dense path is exercised.
+      mockClient.getCollection.mockResolvedValue({
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+      });
+    });
+
+    it("query injects quantization rescore params", async () => {
+      await manager.query("col", { positive: ["id1"], limit: 5 });
+
+      expect(mockClient.query.mock.calls.at(-1)[1]).toMatchObject({ params: RESCORE_PARAMS });
+    });
+
+    it("queryGroups injects quantization rescore params", async () => {
+      await manager.queryGroups("col", [0.1, 0.2, 0.3], { groupBy: "relativePath", limit: 5 });
+
+      expect(mockClient.queryGroups.mock.calls.at(-1)[1]).toMatchObject({ params: RESCORE_PARAMS });
+    });
+
+    it("search injects quantization rescore params", async () => {
+      await manager.search("col", [0.1, 0.2, 0.3], 5);
+
+      expect(mockClient.search.mock.calls.at(-1)[1]).toMatchObject({ params: RESCORE_PARAMS });
+    });
+
+    it("hybridSearch injects rescore params on the dense prefetch leg only", async () => {
+      mockClient.query.mockResolvedValue({ points: [] });
+
+      await manager.hybridSearch("col", [0.1, 0.2, 0.3], { indices: [1], values: [0.5] }, 10);
+
+      const body = mockClient.query.mock.calls.at(-1)[1];
+      expect(body.prefetch[0]).toMatchObject({ using: "dense", params: RESCORE_PARAMS });
+      expect(body.prefetch[1].params).toBeUndefined();
     });
   });
 
@@ -735,6 +937,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter: undefined,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -748,6 +951,7 @@ describe("QdrantManager", () => {
         limit: 10,
         filter: undefined,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -762,6 +966,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -781,6 +986,7 @@ describe("QdrantManager", () => {
           ],
         },
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -794,6 +1000,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter: undefined,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -810,6 +1017,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -826,6 +1034,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -869,6 +1078,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter: undefined,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -897,6 +1107,7 @@ describe("QdrantManager", () => {
         limit: 5,
         filter: undefined,
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
 
@@ -917,6 +1128,7 @@ describe("QdrantManager", () => {
           must: [{ key: "category", match: { value: "test" } }],
         },
         with_payload: true,
+        params: RESCORE_PARAMS,
       });
     });
   });
@@ -2678,5 +2890,101 @@ describe("QdrantManager", () => {
 
       expect(result).toBe(false);
     });
+  });
+
+  describe("getServerVersion", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("returns the daemon's reported version from GET /", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({ ok: true, json: async () => ({ title: "qdrant", version: "1.18.2" }) }),
+      );
+
+      await expect(manager.getServerVersion()).resolves.toBe("1.18.2");
+    });
+
+    it("returns undefined when the root probe rejects", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+
+      await expect(manager.getServerVersion()).resolves.toBeUndefined();
+    });
+
+    it("returns undefined on a non-ok response", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) }));
+
+      await expect(manager.getServerVersion()).resolves.toBeUndefined();
+    });
+
+    it("returns undefined when the version field is absent", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ title: "qdrant" }) }));
+
+      await expect(manager.getServerVersion()).resolves.toBeUndefined();
+    });
+  });
+});
+
+describe("QdrantManager.getCollectionDiskBytes", () => {
+  let storageRoot: string | undefined;
+
+  afterEach(() => {
+    if (storageRoot) rmSync(storageRoot, { recursive: true, force: true });
+    storageRoot = undefined;
+  });
+
+  function embeddedManager(storagePath: string): QdrantManager {
+    const daemon = { startupPhase: () => null, pid: 4321, storagePath };
+    return new QdrantManager("http://localhost:6333", undefined, undefined, daemon);
+  }
+
+  it("sums actual on-disk size (allocated blocks) recursively under <storagePath>/collections/<name>", async () => {
+    storageRoot = mkdtempSync(join(tmpdir(), "tea-rags-disk-"));
+    const collectionDir = join(storageRoot, "collections", "code_abc");
+    mkdirSync(join(collectionDir, "0", "segments"), { recursive: true });
+    const metaPath = join(collectionDir, "meta.json");
+    const vecPath = join(collectionDir, "0", "segments", "vectors.bin");
+    writeFileSync(metaPath, "x".repeat(100));
+    writeFileSync(vecPath, Buffer.alloc(400));
+    // Qdrant preallocates sparse files: getCollectionDiskBytes accounts allocated
+    // blocks (× 512), not logical size — compute the expected sum the same way.
+    const expected = statSync(metaPath).blocks * 512 + statSync(vecPath).blocks * 512;
+
+    const manager = embeddedManager(storageRoot);
+
+    await expect(manager.getCollectionDiskBytes("code_abc")).resolves.toBe(expected);
+  });
+
+  it("resolves an alias to the active physical collection dir before sizing", async () => {
+    storageRoot = mkdtempSync(join(tmpdir(), "tea-rags-disk-"));
+    // On disk the data lives under the PHYSICAL name (`code_8b243ffe_v30`); the
+    // caller passes the ALIAS (`code_8b243ffe`). Sizing the alias path directly
+    // would miss the dir entirely → undefined. resolveActive must redirect it.
+    const physicalDir = join(storageRoot, "collections", "code_8b243ffe_v30");
+    mkdirSync(physicalDir, { recursive: true });
+    const metaPath = join(physicalDir, "meta.json");
+    writeFileSync(metaPath, Buffer.alloc(250));
+    const expected = statSync(metaPath).blocks * 512;
+    mockClient.getAliases.mockResolvedValueOnce({
+      aliases: [{ alias_name: "code_8b243ffe", collection_name: "code_8b243ffe_v30" }],
+    });
+
+    const manager = embeddedManager(storageRoot);
+
+    await expect(manager.getCollectionDiskBytes("code_8b243ffe")).resolves.toBe(expected);
+  });
+
+  it("returns undefined for external Qdrant (no daemon probe, no filesystem access)", async () => {
+    const manager = new QdrantManager("http://localhost:6333");
+
+    await expect(manager.getCollectionDiskBytes("code_abc")).resolves.toBeUndefined();
+  });
+
+  it("returns undefined when the collection directory is missing (error swallowed)", async () => {
+    storageRoot = mkdtempSync(join(tmpdir(), "tea-rags-disk-"));
+    const manager = embeddedManager(storageRoot);
+
+    await expect(manager.getCollectionDiskBytes("never_indexed")).resolves.toBeUndefined();
   });
 });
