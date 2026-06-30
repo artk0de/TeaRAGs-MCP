@@ -241,14 +241,21 @@ export class IndexingOps {
       },
     };
 
+    // On-disk collection size — embedded only, best-effort (undefined for
+    // external Qdrant or on any fs error). Probed alongside getCollectionInfo
+    // so the size reflects the same physical collection the status reports.
+    let diskBytes: number | undefined;
     if (exists) {
       const info = await this.qdrant.getCollectionInfo(collectionName);
       infraHealth.qdrant.status = info.status;
       infraHealth.qdrant.optimizerStatus = info.optimizerStatus;
+      diskBytes = await this.qdrant.getCollectionDiskBytes(collectionName);
     }
 
     const status = await this.status.getIndexStatus(path);
-    return { ...status, infraHealth };
+    // Conditional-spread the optional disk size so an undefined probe omits the
+    // key entirely — keeps existing get_index_status assertions green.
+    return { ...status, infraHealth, ...(diskBytes !== undefined ? { diskBytes } : {}) };
   }
 
   /** Drop all indexed data for a codebase and invalidate the model-guard cache. */

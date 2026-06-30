@@ -129,6 +129,14 @@ export interface IndexStatus {
    */
   indexSizeBytes?: number;
   /**
+   * Actual on-disk size in bytes of the embedded collection's storage directory
+   * (`<storagePath>/collections/<name>`), summed at status-read time. Embedded
+   * Qdrant only — omitted for external Qdrant (no filesystem access) and on any
+   * fs error (best-effort probe). Distinct from {@link indexSizeBytes}, which
+   * the Qdrant REST API never exposes and so is never populated.
+   */
+  diskBytes?: number;
+  /**
    * On-disk size of the codegraph database in bytes, when CODEGRAPH_ENABLED.
    * Reported separately from indexSizeBytes (Qdrant). Omitted when codegraph
    * disabled or absent.

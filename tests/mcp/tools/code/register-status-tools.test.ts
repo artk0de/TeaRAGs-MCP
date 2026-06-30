@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { IndexStatus } from "../../../../src/core/api/public/index.js";
-import { formatInfraHealth } from "../../../../src/mcp/tools/code/register-status-tools.js";
+import {
+  formatBytes,
+  formatCollectionDetails,
+  formatInfraHealth,
+} from "../../../../src/mcp/tools/code/register-status-tools.js";
 
 type InfraHealth = NonNullable<IndexStatus["infraHealth"]>;
 
@@ -73,5 +77,24 @@ describe("formatInfraHealth — Qdrant version", () => {
     const out = formatInfraHealth({ qdrant, embedding });
     expect(out).toContain("Qdrant: available (http://127.0.0.1:6333)");
     expect(out).not.toContain("· v");
+  });
+});
+
+describe("formatBytes", () => {
+  it("formats B/KB/MB/GB with one decimal (bytes as integer)", () => {
+    expect(formatBytes(500)).toBe("500 B");
+    expect(formatBytes(1536)).toBe("1.5 KB");
+    expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
+    expect(formatBytes(1_288_490_188)).toBe("1.2 GB");
+  });
+});
+
+describe("formatCollectionDetails — index size", () => {
+  it("renders a human-readable index size line when diskBytes is set", () => {
+    expect(formatCollectionDetails({ diskBytes: 1_288_490_188 })).toBe("Index size: 1.2 GB");
+  });
+
+  it("returns an empty string when diskBytes is undefined", () => {
+    expect(formatCollectionDetails({})).toBe("");
   });
 });

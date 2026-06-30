@@ -180,6 +180,23 @@ function roundTwo(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// Local to the prime digest layer: the MCP tool layer (register-status-tools)
+// owns its own formatBytes. They cannot share one helper without exporting a
+// presentation util through core/api/public (cli reaches core only via that
+// barrel, mcp likewise) — over-placing a UI helper into the domain core. Two
+// small renderers in two bounded presentation contexts is the layer-correct call.
+function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  const formatted = unit === 0 ? String(Math.round(value)) : value.toFixed(1);
+  return `${formatted} ${units[unit]}`;
+}
+
 function formatStatusLine(status: IndexStatus, now: Date): string {
   switch (status.status) {
     case "not_indexed":
@@ -197,7 +214,8 @@ function formatStatusLine(status: IndexStatus, now: Date): string {
         status.filesCount !== undefined
           ? `${status.filesCount} files / ${status.chunksCount ?? 0} chunks`
           : `${status.chunksCount ?? 0} chunks`;
-      const base = `indexed · collection ${collection} · ${counts}`;
+      const size = status.diskBytes !== undefined ? ` · ${formatBytes(status.diskBytes)} on disk` : "";
+      const base = `indexed · collection ${collection} · ${counts}${size}`;
       const staleness = computeStaleness(status.lastUpdated, now);
       return staleness ? `${base} · last indexed: ${staleness.ago} ago` : base;
     }

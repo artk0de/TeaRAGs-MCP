@@ -98,6 +98,7 @@ describe("IngestFacade", () => {
       },
       url: "http://localhost:6333",
       getServerVersion: vi.fn().mockResolvedValue(undefined),
+      getCollectionDiskBytes: vi.fn().mockResolvedValue(undefined),
     };
 
     const facade = new IngestFacade({
@@ -262,6 +263,7 @@ describe("IngestFacade", () => {
       aliases: { listAliases: vi.fn().mockResolvedValue([]) },
       url: "http://localhost:6333",
       getServerVersion: vi.fn().mockResolvedValue(undefined),
+      getCollectionDiskBytes: vi.fn().mockResolvedValue(undefined),
     };
     const facade = new IngestFacade({
       qdrant: qdrant as any,
@@ -298,6 +300,7 @@ describe("IngestFacade", () => {
       aliases: { listAliases: vi.fn().mockResolvedValue([]) },
       url: "http://localhost:6333",
       getServerVersion: vi.fn().mockResolvedValue(undefined),
+      getCollectionDiskBytes: vi.fn().mockResolvedValue(undefined),
     };
     const facade = new IngestFacade({
       qdrant: qdrant as any,

@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
 
 import { QdrantClient } from "@qdrant/js-client-rest";
 
@@ -187,6 +189,26 @@ export class QdrantManager {
       const body = (await res.json()) as { version?: unknown } | null;
       const raw = body?.version;
       return typeof raw === "string" ? raw : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Best-effort on-disk byte size of a collection's storage directory.
+   *
+   * EMBEDDED only: recursively sums file sizes under
+   * `<storagePath>/collections/<name>` (Qdrant stores each collection at that
+   * path). EXTERNAL Qdrant returns `undefined` — no filesystem access to the
+   * remote server. Swallows ALL errors (missing dir, permission, race) →
+   * `undefined`, so this status probe can never break `get_index_status`.
+   * Mirrors the swallow-error contract of {@link getServerVersion}.
+   */
+  async getCollectionDiskBytes(collectionName: string): Promise<number | undefined> {
+    const storagePath = this.daemon?.storagePath;
+    if (storagePath === undefined) return undefined;
+    try {
+      return await sumDirBytes(join(storagePath, "collections", collectionName));
     } catch {
       return undefined;
     }
@@ -1475,6 +1497,26 @@ export class QdrantManager {
     };
     return this.scrollFiltered(collectionName, filter, limit);
   }
+}
+
+/**
+ * Recursively sum the byte size of every regular file under `dir`. Directories
+ * are descended; symlinks and special files are skipped (best-effort disk
+ * accounting). Propagates fs errors (e.g. ENOENT for a missing collection dir)
+ * to the caller, which swallows them — see {@link QdrantManager.getCollectionDiskBytes}.
+ */
+async function sumDirBytes(dir: string): Promise<number> {
+  let total = 0;
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      total += await sumDirBytes(full);
+    } else if (entry.isFile()) {
+      total += (await stat(full)).size;
+    }
+  }
+  return total;
 }
 
 /** Detect Qdrant 409 Conflict (collection already exists). */

@@ -74,6 +74,9 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
         }
       }
 
+      const details = formatCollectionDetails(rest);
+      if (details) text += `\n\n${details}`;
+
       if (infraHealth) text += `\n\n${formatInfraHealth(infraHealth)}`;
 
       const driftWarning = await app.checkSchemaDrift({ path });
@@ -103,6 +106,29 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
       };
     },
   );
+}
+
+/**
+ * Human-readable Qdrant collection details rendered below the status JSON.
+ * Returns an empty string when no detail field is set (caller skips the block).
+ */
+export function formatCollectionDetails(status: Pick<IndexStatus, "diskBytes">): string {
+  const lines: string[] = [];
+  if (status.diskBytes !== undefined) lines.push(`Index size: ${formatBytes(status.diskBytes)}`);
+  return lines.join("\n");
+}
+
+/** Format a byte count as B/KB/MB/GB/TB — bytes as integer, larger units to one decimal. */
+export function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  const formatted = unit === 0 ? String(Math.round(value)) : value.toFixed(1);
+  return `${formatted} ${units[unit]}`;
 }
 
 export function formatInfraHealth(h: NonNullable<IndexStatus["infraHealth"]>): string {

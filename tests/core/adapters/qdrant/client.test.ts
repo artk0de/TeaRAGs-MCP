@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -2870,5 +2874,44 @@ describe("QdrantManager", () => {
 
       await expect(manager.getServerVersion()).resolves.toBeUndefined();
     });
+  });
+});
+
+describe("QdrantManager.getCollectionDiskBytes", () => {
+  let storageRoot: string | undefined;
+
+  afterEach(() => {
+    if (storageRoot) rmSync(storageRoot, { recursive: true, force: true });
+    storageRoot = undefined;
+  });
+
+  function embeddedManager(storagePath: string): QdrantManager {
+    const daemon = { startupPhase: () => null, pid: 4321, storagePath };
+    return new QdrantManager("http://localhost:6333", undefined, undefined, daemon);
+  }
+
+  it("sums file sizes recursively under <storagePath>/collections/<name> for an embedded daemon", async () => {
+    storageRoot = mkdtempSync(join(tmpdir(), "tea-rags-disk-"));
+    const collectionDir = join(storageRoot, "collections", "code_abc");
+    mkdirSync(join(collectionDir, "0", "segments"), { recursive: true });
+    writeFileSync(join(collectionDir, "meta.json"), "x".repeat(100));
+    writeFileSync(join(collectionDir, "0", "segments", "vectors.bin"), Buffer.alloc(400));
+
+    const manager = embeddedManager(storageRoot);
+
+    await expect(manager.getCollectionDiskBytes("code_abc")).resolves.toBe(500);
+  });
+
+  it("returns undefined for external Qdrant (no daemon probe, no filesystem access)", async () => {
+    const manager = new QdrantManager("http://localhost:6333");
+
+    await expect(manager.getCollectionDiskBytes("code_abc")).resolves.toBeUndefined();
+  });
+
+  it("returns undefined when the collection directory is missing (error swallowed)", async () => {
+    storageRoot = mkdtempSync(join(tmpdir(), "tea-rags-disk-"));
+    const manager = embeddedManager(storageRoot);
+
+    await expect(manager.getCollectionDiskBytes("never_indexed")).resolves.toBeUndefined();
   });
 });

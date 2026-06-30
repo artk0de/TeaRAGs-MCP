@@ -320,6 +320,10 @@ export class MockQdrantManager implements Partial<QdrantManager> {
   async getServerVersion(): Promise<string | undefined> {
     return undefined;
   }
+
+  async getCollectionDiskBytes(_collectionName: string): Promise<number | undefined> {
+    return undefined;
+  }
 }
 
 /** Mock EmbeddingProvider — returns fixed 384-dim vectors */
