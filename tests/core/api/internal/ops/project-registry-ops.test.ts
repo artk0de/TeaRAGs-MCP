@@ -268,6 +268,66 @@ describe("ProjectRegistryOps", () => {
         rmSync(recDir, { recursive: true, force: true });
       }
     });
+
+    it("records qdrantEmbedded=true from the live Qdrant manager (embedded daemon)", async () => {
+      // Symmetric with recordRegistryEntry: recover must remember WHETHER the
+      // collection lives on the embedded daemon, not just its (ephemeral) URL —
+      // otherwise the recovered entry has no flag and a later index-codebase
+      // run pins the daemon's stale port. See tea-rags-mcp-jo5yj.
+      const recDir = mkdtempSync(join(tmpdir(), "rec-emb-"));
+      try {
+        const registry = new CollectionRegistry(recDir);
+        const qdrant = {
+          url: "http://127.0.0.1:57331",
+          isEmbedded: true,
+          listCollections: async () => ["code_emb"],
+          getCollectionInfo: async () => ({
+            name: "code_emb",
+            vectorSize: 384,
+            pointsCount: 0,
+            distance: "Cosine" as const,
+            hybridEnabled: false,
+            status: "green" as const,
+            optimizerStatus: "ok",
+          }),
+          scrollFiltered: async () => [{ id: "x", payload: { embeddingModel: "m" } }],
+          countPoints: async () => 1,
+        };
+        const recOps = new ProjectRegistryOps({ registry, qdrant: qdrant as never });
+        await recOps.recoverFromQdrant();
+        expect(registry.get("code_emb")?.qdrantEmbedded).toBe(true);
+      } finally {
+        rmSync(recDir, { recursive: true, force: true });
+      }
+    });
+
+    it("records qdrantEmbedded=false from an external Qdrant manager", async () => {
+      const recDir = mkdtempSync(join(tmpdir(), "rec-ext-"));
+      try {
+        const registry = new CollectionRegistry(recDir);
+        const qdrant = {
+          url: "http://localhost:6333",
+          isEmbedded: false,
+          listCollections: async () => ["code_ext"],
+          getCollectionInfo: async () => ({
+            name: "code_ext",
+            vectorSize: 384,
+            pointsCount: 0,
+            distance: "Cosine" as const,
+            hybridEnabled: false,
+            status: "green" as const,
+            optimizerStatus: "ok",
+          }),
+          scrollFiltered: async () => [{ id: "x", payload: { embeddingModel: "m" } }],
+          countPoints: async () => 1,
+        };
+        const recOps = new ProjectRegistryOps({ registry, qdrant: qdrant as never });
+        await recOps.recoverFromQdrant();
+        expect(registry.get("code_ext")?.qdrantEmbedded).toBe(false);
+      } finally {
+        rmSync(recDir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe("tryEnrichFromQdrant honesty (audit #14)", () => {
