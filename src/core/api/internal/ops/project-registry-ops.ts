@@ -279,6 +279,11 @@ export class ProjectRegistryOps {
         embeddingModel,
         embeddingDimensions: dimensions,
         qdrantUrl: qdrant.url,
+        // Remember WHETHER this is the embedded daemon, symmetric with
+        // recordRegistryEntry — the daemon's qdrantUrl is an ephemeral port
+        // that goes stale on restart. Without the flag, a recovered embedded
+        // entry would pin the dead port on the next index run (tea-rags-mcp-jo5yj).
+        qdrantEmbedded: qdrant.isEmbedded,
         indexedAt,
         teaRagsVersion,
         chunksCount,

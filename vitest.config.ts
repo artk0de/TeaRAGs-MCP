@@ -1,17 +1,25 @@
 import { defineConfig } from "vitest/config";
 
 const isCI = !!process.env.CI;
+// The pre-commit hook and CI both run with --coverage; v8 instrumentation slows
+// worker_threads spawn (ChunkerPool, enrichment pool, codegraph factory) and
+// fs.watch event delivery (collection-registry) enough to blow the 5s default
+// and flake intermittently. Apply CI-grade resilience whenever coverage is on so
+// the local pre-commit gate matches CI; plain `npx vitest` dev runs stay fast
+// and retry-free.
+const coverageRun = process.argv.some((arg) => arg.includes("coverage"));
+const resilient = isCI || coverageRun;
 
 export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    // CI: retry flaky tests up to 2 times, increase timeout for slow runners
-    ...(isCI && { retry: 2, testTimeout: 30_000 }),
+    // Retry flaky timing tests + widen timeout under coverage / CI (slow runners)
+    ...(resilient && { retry: 2, testTimeout: 30_000 }),
     // Local: use all CPU cores for faster runs
     ...(!isCI && { pool: "forks" }),
     // Give worker_threads (ChunkerPool) time to terminate before fork exits
-    teardownTimeout: isCI ? 10_000 : 5_000,
+    teardownTimeout: resilient ? 10_000 : 5_000,
     // Detect hanging async operations (timers, promises, connections)
     reporters: isCI ? ["default", "hanging-process"] : ["default"],
     // Setup file mocks tree-sitter native modules to prevent crashes

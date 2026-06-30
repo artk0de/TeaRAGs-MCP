@@ -41,6 +41,30 @@ export function pickRegistryEntry(
   return all.reduce((latest, e) => (e.indexedAt > latest.indexedAt ? e : latest));
 }
 
+/** External Qdrant's conventional port; the embedded daemon never binds it. */
+const EXTERNAL_QDRANT_DEFAULT_PORT = "6333";
+
+/**
+ * Backward-compat shim for registry entries written BEFORE the `qdrantEmbedded`
+ * flag existed (the field is absent → `undefined`). The embedded daemon always
+ * binds `127.0.0.1` on an OS-assigned free port — never 6333, the external
+ * default — so a flagless entry whose `qdrantUrl` matches that exact shape was
+ * the embedded daemon. Its frozen port is stale after a daemon restart, so the
+ * worker must re-resolve via the marker rather than pin the dead port. Scoped to
+ * the daemon's exact host so a user's external `localhost` / `127.0.0.1:6333`
+ * Qdrant is never misread as embedded. Consulted ONLY when `qdrantEmbedded` is
+ * absent — an explicit flag (true or false) always wins over this heuristic.
+ */
+function isLegacyEmbeddedLoopback(qdrantUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(qdrantUrl);
+  } catch {
+    return false;
+  }
+  return parsed.hostname === "127.0.0.1" && parsed.port !== "" && parsed.port !== EXTERNAL_QDRANT_DEFAULT_PORT;
+}
+
 /**
  * Map a registry entry's stored config to worker env-var overrides.
  *
@@ -53,6 +77,8 @@ export function pickRegistryEntry(
  * frozen `qdrantUrl` can be stale, and pinning it would force external mode —
  * losing the embedded reconnect path. The marker keeps the worker in embedded
  * mode (`resolveQdrantUrl` → `ensureDaemon`), re-resolving the daemon fresh.
+ * Legacy entries written before the flag existed (field absent) are caught by
+ * the daemon's URL shape via `isLegacyEmbeddedLoopback` — same marker path.
  *
  * For an EXTERNAL entry, seed the stored `qdrantUrl` so the worker connects
  * directly (external mode) to the same backend the operator last indexed
@@ -65,8 +91,14 @@ export function resolveRegistryEnv(entry: CollectionEntry | null): Record<string
   if (entry.embeddingModel) env.EMBEDDING_MODEL = entry.embeddingModel;
   if (entry.embeddingBaseUrl) env.EMBEDDING_BASE_URL = entry.embeddingBaseUrl;
   if (entry.embeddingFallbackUrl) env.EMBEDDING_FALLBACK_URL = entry.embeddingFallbackUrl;
-  if (entry.qdrantEmbedded) env.QDRANT_URL = EMBEDDED_MARKER;
-  else if (entry.qdrantUrl) env.QDRANT_URL = entry.qdrantUrl;
+  if (
+    entry.qdrantEmbedded === true ||
+    (entry.qdrantEmbedded === undefined && isLegacyEmbeddedLoopback(entry.qdrantUrl))
+  ) {
+    env.QDRANT_URL = EMBEDDED_MARKER;
+  } else if (entry.qdrantUrl) {
+    env.QDRANT_URL = entry.qdrantUrl;
+  }
   if (entry.codegraphEnabled) env.CODEGRAPH_ENABLED = "true";
   return env;
 }

@@ -72,6 +72,29 @@ describe("resolveRegistryEnv", () => {
     const env = resolveRegistryEnv(entry({ qdrantUrl: "http://remote-host:6333", qdrantEmbedded: false }));
     expect(env.QDRANT_URL).toBe("http://remote-host:6333");
   });
+
+  it("seeds the embedded marker for a legacy entry (no qdrantEmbedded flag) on a 127.0.0.1 ephemeral port", () => {
+    // Pre-flag registry entry: qdrantEmbedded absent, qdrantUrl frozen at the
+    // embedded daemon's old ephemeral port. The daemon rebinds on restart, so
+    // pinning the frozen port fails with "not reachable". Re-seed the marker.
+    const env = resolveRegistryEnv(entry({ qdrantUrl: "http://127.0.0.1:57331", qdrantEmbedded: undefined }));
+    expect(env.QDRANT_URL).toBe("embedded");
+  });
+
+  it("keeps 127.0.0.1:6333 literal for a legacy entry (external Docker default, not the embedded daemon)", () => {
+    const env = resolveRegistryEnv(entry({ qdrantUrl: "http://127.0.0.1:6333", qdrantEmbedded: undefined }));
+    expect(env.QDRANT_URL).toBe("http://127.0.0.1:6333");
+  });
+
+  it("keeps a loopback ephemeral port literal when qdrantEmbedded is explicitly false (flag wins over heuristic)", () => {
+    const env = resolveRegistryEnv(entry({ qdrantUrl: "http://127.0.0.1:6334", qdrantEmbedded: false }));
+    expect(env.QDRANT_URL).toBe("http://127.0.0.1:6334");
+  });
+
+  it("keeps localhost (non-127.0.0.1) literal for a legacy entry — shim is scoped to the daemon's 127.0.0.1 shape", () => {
+    const env = resolveRegistryEnv(entry({ qdrantUrl: "http://localhost:6334", qdrantEmbedded: undefined }));
+    expect(env.QDRANT_URL).toBe("http://localhost:6334");
+  });
 });
 
 describe("pickRegistryEntry", () => {
