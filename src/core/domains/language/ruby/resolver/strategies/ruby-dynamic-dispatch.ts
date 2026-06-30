@@ -5,10 +5,17 @@ import {
   type DispatchEdge,
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
+import {
+  ArityNarrower,
+  DuckVocabularyNarrower,
+  resolveNarrowedFanout,
+  VisibilityNarrower,
+} from "../../../kernel/dispatch-narrowing.js";
 import { isExternalQualifiedMember } from "../../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
 import { typeOfReceiver } from "../type-propagation.js";
 import { receiverLooksLikeArRelationChain } from "./ruby-ar-relation-guard.js";
+import { RUBY_DUCK_VOCAB } from "./ruby-duck-vocabulary.js";
 import {
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
   isRubyPath,
@@ -52,6 +59,12 @@ const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
  * (bug pl7k: `arr.map` → vendored `d3.js#map`).
  */
 export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
+  private readonly narrowers = [
+    new DuckVocabularyNarrower(RUBY_DUCK_VOCAB),
+    new ArityNarrower(),
+    new VisibilityNarrower(),
+  ];
+
   constructor(private readonly cfg: ResolverConfig) {}
 
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
@@ -106,17 +119,8 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
 
     // Truly dynamic receiver: short-name lookup, ruby-files only.
     const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => isRubyPath(def.relPath));
-    const n = candidates.length;
-    if (n === 0) return [];
-
+    if (candidates.length === 0) return [];
     const discount = this.cfg.dynamicReceiverConfidence ?? DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT;
-    const confidence = discount / n;
-    return candidates.map((def) => ({
-      sourceSymbolId: null,
-      targetRelPath: def.relPath,
-      targetSymbolId: def.symbolId,
-      edgeKind: "dynamic",
-      confidence,
-    }));
+    return resolveNarrowedFanout(call, candidates, ctx, this.narrowers, discount);
   }
 }
