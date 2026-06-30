@@ -186,15 +186,7 @@ function roundTwo(n: number): number {
 // barrel, mcp likewise) — over-placing a UI helper into the domain core. Two
 // small renderers in two bounded presentation contexts is the layer-correct call.
 function formatBytes(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
-  const formatted = unit === 0 ? String(Math.round(value)) : value.toFixed(1);
-  return `${formatted} ${units[unit]}`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatStatusLine(status: IndexStatus, now: Date): string {

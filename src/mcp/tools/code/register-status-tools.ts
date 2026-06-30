@@ -124,17 +124,9 @@ function formatQuantization(quantization: NonNullable<IndexStatus["quantization"
   return quantization === "turbo" ? "turbo (8x)" : quantization;
 }
 
-/** Format a byte count as B/KB/MB/GB/TB — bytes as integer, larger units to one decimal. */
+/** Format a byte count as megabytes to one decimal (e.g. `412.5 MB`). */
 export function formatBytes(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
-  const formatted = unit === 0 ? String(Math.round(value)) : value.toFixed(1);
-  return `${formatted} ${units[unit]}`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function formatInfraHealth(h: NonNullable<IndexStatus["infraHealth"]>): string {
