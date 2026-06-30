@@ -72,10 +72,13 @@ ignores `keyword_parameter`/`hash_splat_parameter`/`block_parameter`),
 ### 1. Persistence first (tfepp) — one migration carries the full def-shape set
 
 Doing persistence first means each narrower's walker capture auto-persists as it
-lands; one migration, no follow-up `009`.
+lands; one migration, no follow-up.
 
-- **Migration `008-cg-symbols-arity-visibility`** (database pipeline,
-  `infra/migration/database/migrations/`): add four nullable columns to
+- **Migration `012-cg-symbols-arity-visibility`** (database pipeline,
+  `infra/migration/database/migrations/` — `008`-`011` are already taken by
+  `cg-run-stats-*`; these are SQL-string entries in `DATABASE_MIGRATIONS`, a
+  `.ts` export + mirrored `.sql`, NOT the Qdrant `Migration`-class pipeline):
+  add four nullable columns to
   `cg_symbols` — `arity_json VARCHAR`, `visibility VARCHAR`,
   `kwargs_json VARCHAR`, `accepts_block BOOLEAN`. Nullable covers existing rows
   and non-method symbols. `ALTER TABLE … ADD COLUMN IF NOT EXISTS` per column,
@@ -238,6 +241,7 @@ Every narrower keeps a candidate on missing evidence (`undefined` field).
   — cascade wiring (add 3 narrowers).
 - `src/core/adapters/duckdb/client.ts` — `upsertSymbolsImpl` / `listAllSymbols`
   4-column extension.
-- `src/core/infra/migration/database/migrations/008-cg-symbols-arity-visibility.ts`
-  — new migration + registration in the database migration runner.
+- `src/core/infra/migration/database/migrations/012-cg-symbols-arity-visibility.ts`
+  (+ mirrored `.sql`) — new migration + registration in `migrations/index.ts`
+  `DATABASE_MIGRATIONS`.
 - Test mirrors under `tests/core/…`.
