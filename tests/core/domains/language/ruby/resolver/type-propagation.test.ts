@@ -57,6 +57,37 @@ describe("typeOfReceiver — local var instance binding", () => {
   });
 });
 
+// ── Const.new-chain head seed (rvw34 gap b) ──────────────────────────────────
+
+describe("typeOfReceiver — Const.new-chain head seed (rvw34 gap b)", () => {
+  it("seeds Const.new as an instance of Const", () => {
+    expect(typeOfReceiver("PostStatusService.new", 1, emptyCtx())).toEqual({
+      form: "instance",
+      name: "PostStatusService",
+    });
+  });
+
+  it("seeds Const.new(args) (strips trailing arg list)", () => {
+    expect(typeOfReceiver("PostStatusService.new(post)", 1, emptyCtx())).toEqual({
+      form: "instance",
+      name: "PostStatusService",
+    });
+  });
+
+  it("threads a member after the new-seed via structuredReturnTypes", () => {
+    const ctx = emptyCtx({ structuredReturnTypes: { "PostStatusService#call": { form: "instance", name: "Status" } } });
+    expect(typeOfReceiver("PostStatusService.new.call", 1, ctx)).toEqual({ form: "instance", name: "Status" });
+  });
+
+  it("does NOT type a bare-const head with a non-instance-returning first link", () => {
+    expect(typeOfReceiver("Config.value", 1, emptyCtx())).toBeUndefined();
+  });
+
+  it("seeds a scoped const head (A::B.new) as instance of A::B", () => {
+    expect(typeOfReceiver("Mod::Svc.new", 1, emptyCtx())).toEqual({ form: "instance", name: "Mod::Svc" });
+  });
+});
+
 // ── @ivar resolution ─────────────────────────────────────────────────────────
 
 describe("typeOfReceiver — @ivar via classFieldTypes", () => {

@@ -23,6 +23,7 @@
 
 import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+import { RUBY_INSTANCE_RETURNING } from "../dsl/index.js";
 
 /**
  * Array/Enumerable methods that return a SINGLE ELEMENT from a typed container.
@@ -82,6 +83,15 @@ export const CONTAINER_BLOCK_ITERATION_METHODS = new Set([
 
 /** `@ivar` — a single leading `@` followed by word characters only. */
 const IVAR_RECEIVER = /^@\w+$/;
+
+/** A bare constant chain head: `Foo`, `Mod::Svc`. Capitalized, optional `::` scope. */
+const CONST_HEAD = /^[A-Z]\w*(?:::[A-Z]\w*)*$/;
+
+/** Strip a trailing call argument list from a chain segment (`new(post)` → `new`). */
+function stripArgs(segment: string): string {
+  const paren = segment.indexOf("(");
+  return paren === -1 ? segment : segment.slice(0, paren);
+}
 
 /**
  * Default maximum chain hops when `CODEGRAPH_RB_CHAIN_MAX_HOPS` is unset.
@@ -193,13 +203,26 @@ function resolveChain(receiver: string, atLine: number, ctx: CallContext): RubyT
   // Hop cap: links.length is the number of hops (each `.link` = one hop).
   if (links.length > chainMaxHops()) return undefined;
 
-  // Seed: resolve head via single-hop (no dot in head → no recursion risk).
-  let current: RubyTypeRef | undefined = typeOfReceiver(head, atLine, ctx);
+  let current: RubyTypeRef | undefined;
+  let startLink = 0;
+  // Const.new-chain (rvw34 gap b): a bare-constant head whose first link is
+  // instance-returning (`new`/`find`/`create!`…) IS an instance of that constant
+  // — `PostStatusService.new` is definitionally a PostStatusService. Zero
+  // fabrication. A bare-const head with a non-instance-returning first link
+  // (`Config.value`) is NOT typed.
+  const firstLink = links[0];
+  if (firstLink !== undefined && CONST_HEAD.test(head) && RUBY_INSTANCE_RETURNING.has(stripArgs(firstLink))) {
+    current = { form: "instance", name: head };
+    startLink = 1;
+  } else {
+    // Seed: resolve head via single-hop (no dot in head → no recursion risk).
+    current = typeOfReceiver(head, atLine, ctx);
+  }
   if (current === undefined) return undefined;
 
-  // Walk left-to-right, threading type through each hop.
-  for (const link of links) {
-    current = returnTypeOf(current, link, ctx);
+  // Walk remaining links left-to-right, threading type through each hop.
+  for (let i = startLink; i < links.length; i++) {
+    current = returnTypeOf(current, stripArgs(links[i]), ctx);
     if (current === undefined) return undefined; // STOP-at-unknown-hop
   }
 
