@@ -1,0 +1,109 @@
+import { describe, expect, it } from "vitest";
+
+import type { CallRef, SymbolDefinition } from "../../../../../src/core/contracts/types/codegraph.js";
+import {
+  ArityNarrower,
+  DuckVocabularyNarrower,
+  resolveNarrowedFanout,
+  VisibilityNarrower,
+} from "../../../../../src/core/domains/language/kernel/dispatch-narrowing.js";
+
+const def = (
+  id: string,
+  arity?: SymbolDefinition["arity"],
+  visibility?: SymbolDefinition["visibility"],
+): SymbolDefinition => ({
+  symbolId: id,
+  fqName: id,
+  shortName: id.split("#")[1] ?? id,
+  relPath: `${id}.rb`,
+  scope: [],
+  arity,
+  visibility,
+});
+const call = (member: string, argCount?: number): CallRef => ({
+  callText: `x.${member}`,
+  receiver: "x",
+  member,
+  startLine: 1,
+  argCount,
+});
+const ctx = {} as never;
+
+describe("ArityNarrower", () => {
+  it("drops a candidate whose minRequired exceeds argCount", () => {
+    const cands = [
+      def("A#m", { minRequired: 2, maxPositional: 2, hasSplat: false }),
+      def("B#m", { minRequired: 0, maxPositional: 1, hasSplat: false }),
+    ];
+    expect(new ArityNarrower().narrow(call("m", 1), cands, ctx).map((c) => c.symbolId)).toEqual(["B#m"]);
+  });
+  it("drops a candidate whose argCount exceeds maxPositional without splat", () => {
+    const cands = [
+      def("A#m", { minRequired: 0, maxPositional: 1, hasSplat: false }),
+      def("B#m", { minRequired: 0, maxPositional: 0, hasSplat: true }),
+    ];
+    expect(new ArityNarrower().narrow(call("m", 3), cands, ctx).map((c) => c.symbolId)).toEqual(["B#m"]);
+  });
+  it("keeps candidates with no recorded arity OR a call with no argCount", () => {
+    const cands = [def("A#m"), def("B#m", { minRequired: 5, maxPositional: 5, hasSplat: false })];
+    expect(new ArityNarrower().narrow(call("m", undefined), cands, ctx).length).toBe(2); // no argCount → keep all
+    expect(new ArityNarrower().narrow(call("m", 0), [def("A#m")], ctx).length).toBe(1); // no arity → keep
+  });
+});
+
+describe("VisibilityNarrower", () => {
+  it("drops private candidates under explicit receiver, keeps protected/public/unknown", () => {
+    const cands = [
+      def("A#m", undefined, "private"),
+      def("B#m", undefined, "protected"),
+      def("C#m", undefined, "public"),
+      def("D#m"),
+    ];
+    expect(new VisibilityNarrower().narrow(call("m"), cands, ctx).map((c) => c.symbolId)).toEqual([
+      "B#m",
+      "C#m",
+      "D#m",
+    ]);
+  });
+});
+
+describe("DuckVocabularyNarrower", () => {
+  it("empties the set when member is in the vocabulary", () => {
+    const n = new DuckVocabularyNarrower(new Set(["to_s", "each"]));
+    expect(n.narrow(call("to_s"), [def("A#to_s")], ctx)).toEqual([]);
+    expect(n.narrow(call("perform"), [def("A#perform")], ctx).length).toBe(1);
+  });
+});
+
+describe("resolveNarrowedFanout terminal", () => {
+  const arity0 = { minRequired: 0, maxPositional: 0, hasSplat: false };
+  it("1 survivor → one edge confidence 1.0", () => {
+    const edges = resolveNarrowedFanout(
+      call("m", 1),
+      [def("A#m", { minRequired: 1, maxPositional: 1, hasSplat: false }), def("B#m", arity0)],
+      ctx,
+      [new ArityNarrower()],
+      0.3,
+    );
+    expect(edges).toEqual([
+      {
+        sourceSymbolId: null,
+        targetRelPath: "A#m.rb",
+        targetSymbolId: "A#m",
+        edgeKind: "dynamic",
+        confidence: 1.0,
+      },
+    ]);
+  });
+  it("m>1 survivors → m edges confidence discount/m", () => {
+    const edges = resolveNarrowedFanout(call("m"), [def("A#m"), def("B#m")], ctx, [], 0.3);
+    expect(edges.map((e) => e.confidence)).toEqual([0.15, 0.15]);
+    expect(edges.every((e) => e.edgeKind === "dynamic")).toBe(true);
+  });
+  it("0 survivors → []", () => {
+    expect(
+      resolveNarrowedFanout(call("to_s"), [def("A#to_s")], ctx, [new DuckVocabularyNarrower(new Set(["to_s"]))], 0.3),
+    ).toEqual([]);
+  });
+});
