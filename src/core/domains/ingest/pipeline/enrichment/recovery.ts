@@ -197,7 +197,11 @@ export class EnrichmentRecovery {
    * Count chunks missing enrichedAt for the given provider key and level.
    * Uses Qdrant count API — lightweight, no payload transfer.
    */
-  async countUnenriched(collectionName: string, provider: EnrichmentProvider, level: "file" | "chunk"): Promise<number> {
+  async countUnenriched(
+    collectionName: string,
+    provider: EnrichmentProvider,
+    level: "file" | "chunk",
+  ): Promise<number> {
     // Fast path: a provider with no per-file policy can't intentionally skip
     // anything, so the server-side count is exact — no payload transfer.
     if (!provider.shouldEnrich) {
@@ -237,8 +241,16 @@ export class EnrichmentRecovery {
         continue;
       }
 
+      // Stamp the recovery marker with the ACTIVE run pointer, not the
+      // per-provider runId. A provider that crashed before any terminal write
+      // has no per-provider runId (`baselineRunId` is undefined), so a "" stamp
+      // would never match `_run.runId` and the health mapper would re-derive
+      // "crashed" forever. `_run.runId` is the identity the mapper compares
+      // against, so stamping it makes the recovered terminal status render.
+      const activeRunId = await markerStore.getActiveRunId(coll);
+
       await markerStore.markRecoveryResult(coll, ctx.key, {
-        runId: baselineRunId ?? "",
+        runId: activeRunId ?? baselineRunId ?? "",
         fileStatus: fileResult.remainingUnenriched === 0 ? "completed" : "failed",
         fileUnenriched: fileResult.remainingUnenriched,
         chunkStatus: chunkResult.remainingUnenriched === 0 ? "completed" : "degraded",

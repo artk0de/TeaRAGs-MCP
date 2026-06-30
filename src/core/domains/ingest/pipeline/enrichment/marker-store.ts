@@ -153,6 +153,21 @@ export class EnrichmentMarkerStore {
   }
 
   /**
+   * Read the active run pointer's runId (`enrichment._run.runId`). This is the
+   * identity the health mapper compares every per-kind terminal marker against
+   * (`marker.runId === _run.runId` → render terminal). Recovery stamps its
+   * terminal markers with THIS, because a provider that crashed before writing
+   * any terminal marker has its runId ONLY here — `getRunId` returns undefined
+   * for it, and a "" stamp would never match `_run.runId`, leaving the health
+   * mapper to re-derive "crashed" forever.
+   */
+  async getActiveRunId(coll: string): Promise<string | undefined> {
+    const marker = await this.read(coll);
+    const run = marker?._run as { runId?: unknown } | undefined;
+    return typeof run?.runId === "string" ? run.runId : undefined;
+  }
+
+  /**
    * Read runId for a specific provider. Markers are stored NESTED, so a dotted
    * provider key (`codegraph.symbols`) navigates `enrichment.codegraph.symbols`.
    * Reads from either level, then the legacy literal-property top-level shape.
