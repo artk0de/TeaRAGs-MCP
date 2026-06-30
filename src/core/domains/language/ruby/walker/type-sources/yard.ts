@@ -41,13 +41,18 @@ function collectYardRawParamBrackets(code: string): Map<number, Record<string, s
   const lines = code.split(/\r?\n/);
   const out = new Map<number, Record<string, string>>();
   let pending: Record<string, string> | null = null;
-  const yardRegex = /^\s*#\s*@param\s+(\w+)\s+\[([^\]]+)\]/;
+  // YARD accepts BOTH orders: `@param name [Type]` (name-first) and
+  // `@param [Type] name` (bracket-first, the form mastodon/most Rails use).
+  const yardNameFirst = /^\s*#\s*@param\s+(\w+)\s+\[([^\]]+)\]/;
+  const yardBracketFirst = /^\s*#\s*@param\s+\[([^\]]+)\]\s+(\w+)/;
   const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i] ?? "";
-    const yardMatch = yardRegex.exec(raw);
-    if (yardMatch) {
-      const [, name, bracket] = yardMatch;
+    const nameFirst = yardNameFirst.exec(raw);
+    const bracketFirst = nameFirst ? null : yardBracketFirst.exec(raw);
+    const name = nameFirst?.[1] ?? bracketFirst?.[2];
+    const bracket = nameFirst?.[2] ?? bracketFirst?.[1];
+    if (name || bracket) {
       // Keep the RAW bracket string; yardBracketToRef will validate it.
       if (name && bracket) {
         if (!pending) pending = {};

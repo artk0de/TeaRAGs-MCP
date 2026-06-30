@@ -71,6 +71,22 @@ describe("rubyYardTypeSource", () => {
         ],
       });
     });
+
+    it("emits param fact for bracket-first `@param [Type] name` (mastodon/Rails style) — b4rb5", () => {
+      const code = ["# @param [Account] account from which to post", "def call(account)", "end"].join("\n");
+      const facts = rubyYardTypeSource.extract(makeInput(code));
+      expect(facts).toHaveLength(1);
+      expect(facts[0]?.name).toBe("account");
+      expect(facts[0]?.type).toEqual({ form: "instance", name: "Account" });
+      expect(facts[0]?.line).toBe(2);
+    });
+
+    it("emits container typeRef for bracket-first `@param [Array<Post>] posts` — b4rb5", () => {
+      const code = ["# @param [Array<Post>] posts", "def publish(posts)", "end"].join("\n");
+      const facts = rubyYardTypeSource.extract(makeInput(code));
+      expect(facts).toHaveLength(1);
+      expect(facts[0]?.type).toEqual({ form: "container", element: { form: "instance", name: "Post" } });
+    });
   });
 
   describe("@return facts", () => {
