@@ -122,30 +122,10 @@ export interface IndexStatus {
   /** Codegraph resolve-quality from the persisted cg_run_stats table (tea-rags-mcp-ykj7 / cnqrg / 7m5xz). */
   codegraphResolve?: CodegraphResolveSummary;
   /**
-   * On-disk / reported index size in bytes.
-   * Omitted: Qdrant REST API exposes no disk/memory size field (only points_count /
-   * segments_count / indexed_vectors_count). Cannot be populated without fabrication.
-   * Task 7 (CLI rendering) uses chunksCount as a proxy instead.
-   */
-  indexSizeBytes?: number;
-  /**
-   * Actual on-disk size in bytes of the embedded collection's storage directory
-   * (`<storagePath>/collections/<name>`), summed at status-read time. Embedded
-   * Qdrant only — omitted for external Qdrant (no filesystem access) and on any
-   * fs error (best-effort probe). Distinct from {@link indexSizeBytes}, which
-   * the Qdrant REST API never exposes and so is never populated.
-   */
-  diskBytes?: number;
-  /**
-   * Vector quantization mode of the collection (`turbo` 8x / `scalar` int8 /
-   * `none`), read from the live Qdrant collection config. Omitted when the
-   * collection does not yet exist or the info probe is unavailable.
-   */
-  quantization?: "turbo" | "scalar" | "none";
-  /**
    * On-disk size of the codegraph database in bytes, when CODEGRAPH_ENABLED.
-   * Reported separately from indexSizeBytes (Qdrant). Omitted when codegraph
-   * disabled or absent.
+   * Reported separately from the Qdrant collection size
+   * (`infraHealth.qdrant.indexSizeBytes`). Omitted when codegraph disabled or
+   * absent.
    */
   codegraphSizeBytes?: number;
   /**
@@ -173,6 +153,18 @@ export interface IndexStatus {
       optimizerStatus?: string;
       /** Running daemon's reported server version (raw GET `/`). Omitted when unreachable. */
       version?: string;
+      /**
+       * Actual on-disk size in bytes of the embedded collection's storage
+       * directory, summed at status-read time. Embedded Qdrant only — omitted
+       * for external Qdrant (no filesystem access) and on any fs error.
+       */
+      indexSizeBytes?: number;
+      /**
+       * Vector quantization mode (`turbo` 8x / `scalar` int8 / `none`), read
+       * from the live collection config. Omitted when the collection does not
+       * yet exist or the info probe is unavailable.
+       */
+      quantization?: "turbo" | "scalar" | "none";
     };
     embedding: {
       available: boolean;

@@ -186,7 +186,10 @@ function roundTwo(n: number): number {
 // barrel, mcp likewise) — over-placing a UI helper into the domain core. Two
 // small renderers in two bounded presentation contexts is the layer-correct call.
 function formatBytes(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 function formatStatusLine(status: IndexStatus, now: Date): string {
@@ -206,10 +209,12 @@ function formatStatusLine(status: IndexStatus, now: Date): string {
         status.filesCount !== undefined
           ? `${status.filesCount} files / ${status.chunksCount ?? 0} chunks`
           : `${status.chunksCount ?? 0} chunks`;
-      const size = status.diskBytes !== undefined ? ` · ${formatBytes(status.diskBytes)} on disk` : "";
+      const qdrant = status.infraHealth?.qdrant;
+      const size =
+        qdrant?.indexSizeBytes !== undefined ? ` · ${formatBytes(qdrant.indexSizeBytes)} on disk` : "";
       const quant =
-        status.quantization !== undefined
-          ? ` · ${status.quantization === "turbo" ? "turbo (8x)" : status.quantization} quant`
+        qdrant?.quantization !== undefined
+          ? ` · ${qdrant.quantization === "turbo" ? "turbo (8x)" : qdrant.quantization} quant`
           : "";
       const base = `indexed · collection ${collection} · ${counts}${size}${quant}`;
       const staleness = computeStaleness(status.lastUpdated, now);

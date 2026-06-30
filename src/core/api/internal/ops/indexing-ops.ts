@@ -241,29 +241,21 @@ export class IndexingOps {
       },
     };
 
-    // On-disk collection size — embedded only, best-effort (undefined for
-    // external Qdrant or on any fs error). Probed alongside getCollectionInfo
-    // so the size reflects the same physical collection the status reports.
-    // Quantization mode is read from the same getCollectionInfo round-trip.
-    let diskBytes: number | undefined;
-    let quantization: "turbo" | "scalar" | "none" | undefined;
+    // Collection size + quantization — embedded only, best-effort, grouped into
+    // the Qdrant infra-health block. getCollectionDiskBytes returns undefined for
+    // external Qdrant or on any fs error; quantization comes from the same
+    // getCollectionInfo round-trip that yields status / optimizerStatus.
     if (exists) {
       const info = await this.qdrant.getCollectionInfo(collectionName);
       infraHealth.qdrant.status = info.status;
       infraHealth.qdrant.optimizerStatus = info.optimizerStatus;
-      ({ quantization } = info);
-      diskBytes = await this.qdrant.getCollectionDiskBytes(collectionName);
+      infraHealth.qdrant.quantization = info.quantization;
+      const indexSizeBytes = await this.qdrant.getCollectionDiskBytes(collectionName);
+      if (indexSizeBytes !== undefined) infraHealth.qdrant.indexSizeBytes = indexSizeBytes;
     }
 
     const status = await this.status.getIndexStatus(path);
-    // Conditional-spread the optional fields so an unset value omits the key
-    // entirely — keeps existing get_index_status assertions green.
-    return {
-      ...status,
-      infraHealth,
-      ...(diskBytes !== undefined ? { diskBytes } : {}),
-      ...(quantization !== undefined ? { quantization } : {}),
-    };
+    return { ...status, infraHealth };
   }
 
   /** Drop all indexed data for a codebase and invalidate the model-guard cache. */

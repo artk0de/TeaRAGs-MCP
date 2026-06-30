@@ -6,10 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WorkerMessage } from "../../../src/cli/index-progress/ipc-protocol.js";
 import {
-  computeDirSize,
   deriveEnrichmentOutcome,
   resolveCodegraphSizeBytes,
-  resolveIndexSizeBytes,
   runIndexWorker,
 } from "../../../src/cli/index-progress/worker.js";
 import type { IndexStatus } from "../../../src/core/api/public/index.js";
@@ -40,122 +38,6 @@ const healthy: IndexStatus = {
   status: "indexed",
   enrichment: { git: { file: { status: "healthy" }, chunk: { status: "healthy" } } },
 };
-
-describe("computeDirSize", () => {
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "worker-test-"));
-  });
-
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it("returns 0 for a non-existent directory", () => {
-    expect(computeDirSize("/definitely/does/not/exist/abc123")).toBe(0);
-  });
-
-  it("uses allocated blocks (stat.blocks * 512), not logical file size", () => {
-    // A real file: stat.blocks * 512 reflects actual on-disk allocation.
-    // On macOS/Linux this is always >= logical size due to block granularity.
-    // This test locks the block-based semantics — the old .size-based code
-    // would return stat.size (e.g. 100), not stat.blocks * 512 (e.g. 4096).
-    const filePath = join(tmpDir, "probe.bin");
-    writeFileSync(filePath, Buffer.alloc(100));
-    const st = statSync(filePath);
-    const expectedBlocks = st.blocks * 512;
-    const result = computeDirSize(tmpDir);
-    // Must equal blocks * 512 (real allocation), not logical size (100).
-    expect(result).toBe(expectedBlocks);
-    // Guard: if the platform happens to give blocks=0 for tiny files, the
-    // test would trivially pass for both old and new code — assert they differ.
-    if (expectedBlocks !== st.size) {
-      expect(result).not.toBe(st.size);
-    }
-  });
-
-  it("sums file sizes in a flat directory", () => {
-    writeFileSync(join(tmpDir, "a.bin"), Buffer.alloc(100));
-    writeFileSync(join(tmpDir, "b.bin"), Buffer.alloc(200));
-    const expected = statSync(join(tmpDir, "a.bin")).blocks * 512 + statSync(join(tmpDir, "b.bin")).blocks * 512;
-    expect(computeDirSize(tmpDir)).toBe(expected);
-  });
-
-  it("recurses into subdirectories", () => {
-    const sub = join(tmpDir, "sub");
-    mkdirSync(sub);
-    writeFileSync(join(tmpDir, "top.bin"), Buffer.alloc(50));
-    writeFileSync(join(sub, "nested.bin"), Buffer.alloc(150));
-    const expected = statSync(join(tmpDir, "top.bin")).blocks * 512 + statSync(join(sub, "nested.bin")).blocks * 512;
-    expect(computeDirSize(tmpDir)).toBe(expected);
-  });
-});
-
-describe("resolveIndexSizeBytes", () => {
-  const originalQdrantUrl = process.env.QDRANT_URL;
-  const originalStoragePath = process.env.QDRANT_EMBEDDED_STORAGE_PATH;
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "worker-resolve-test-"));
-  });
-
-  afterEach(() => {
-    if (originalQdrantUrl !== undefined) process.env.QDRANT_URL = originalQdrantUrl;
-    else delete process.env.QDRANT_URL;
-    if (originalStoragePath !== undefined) process.env.QDRANT_EMBEDDED_STORAGE_PATH = originalStoragePath;
-    else delete process.env.QDRANT_EMBEDDED_STORAGE_PATH;
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it("returns undefined when QDRANT_URL is a non-localhost remote", () => {
-    process.env.QDRANT_URL = "http://my-remote-qdrant.example.com:6333";
-    expect(resolveIndexSizeBytes("my_collection")).toBeUndefined();
-  });
-
-  it("does NOT skip when QDRANT_URL points at localhost (embedded daemon)", () => {
-    process.env.QDRANT_URL = "http://127.0.0.1:57331";
-    process.env.QDRANT_EMBEDDED_STORAGE_PATH = tmpDir;
-    const collectionDir = join(tmpDir, "collections", "code_x_v1");
-    mkdirSync(collectionDir, { recursive: true });
-    writeFileSync(join(collectionDir, "segment.bin"), Buffer.alloc(256));
-    const result = resolveIndexSizeBytes("code_x");
-    expect(result).toBeGreaterThan(0);
-  });
-
-  it("returns undefined when collectionName is undefined", () => {
-    delete process.env.QDRANT_URL;
-    expect(resolveIndexSizeBytes(undefined)).toBeUndefined();
-  });
-
-  it("returns undefined when no versioned dir exists for the collection", () => {
-    delete process.env.QDRANT_URL;
-    process.env.QDRANT_EMBEDDED_STORAGE_PATH = join(tmpDir, "no-qdrant");
-    expect(resolveIndexSizeBytes("code_abc")).toBeUndefined();
-  });
-
-  it("resolves the highest versioned dir (code_x_v3 over code_x_v2)", () => {
-    delete process.env.QDRANT_URL;
-    process.env.QDRANT_EMBEDDED_STORAGE_PATH = tmpDir;
-    const v2Dir = join(tmpDir, "collections", "code_x_v2");
-    const v3Dir = join(tmpDir, "collections", "code_x_v3");
-    mkdirSync(v2Dir, { recursive: true });
-    mkdirSync(v3Dir, { recursive: true });
-    writeFileSync(join(v2Dir, "old.bin"), Buffer.alloc(100));
-    writeFileSync(join(v3Dir, "current.bin"), Buffer.alloc(400));
-    const result = resolveIndexSizeBytes("code_x");
-    const expectedBlocks = statSync(join(v3Dir, "current.bin")).blocks * 512;
-    expect(result).toBe(expectedBlocks);
-  });
-
-  it("returns undefined when collections dir does not exist", () => {
-    delete process.env.QDRANT_URL;
-    process.env.QDRANT_EMBEDDED_STORAGE_PATH = tmpDir;
-    // no collections/ subdir created
-    expect(resolveIndexSizeBytes("code_missing")).toBeUndefined();
-  });
-});
 
 describe("resolveCodegraphSizeBytes", () => {
   const originalCodegraphEnabled = process.env.CODEGRAPH_ENABLED;

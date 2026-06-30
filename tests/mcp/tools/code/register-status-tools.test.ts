@@ -81,19 +81,22 @@ describe("formatInfraHealth — Qdrant version", () => {
 });
 
 describe("formatBytes", () => {
-  it("formats bytes as megabytes to one decimal", () => {
-    expect(formatBytes(512 * 1024)).toBe("0.5 MB");
-    expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
-    expect(formatBytes(1_288_490_188)).toBe("1228.8 MB");
+  it.each([
+    [512, "512 B"],
+    [512 * 1024, "512.0 KB"],
+    [5 * 1024 * 1024, "5.0 MB"],
+    [1_288_490_188, "1.2 GB"],
+  ])("formats %i bytes as %s (MB under 1 GB, GB at/above)", (bytes, expected) => {
+    expect(formatBytes(bytes)).toBe(expected);
   });
 });
 
 describe("formatCollectionDetails — index size", () => {
-  it("renders a human-readable index size line when diskBytes is set", () => {
-    expect(formatCollectionDetails({ diskBytes: 1_288_490_188 })).toBe("Index size: 1228.8 MB");
+  it("renders a human-readable index size line when indexSizeBytes is set", () => {
+    expect(formatCollectionDetails({ indexSizeBytes: 1_288_490_188 })).toBe("Index size: 1.2 GB");
   });
 
-  it("returns an empty string when diskBytes is undefined", () => {
+  it("returns an empty string when indexSizeBytes is undefined", () => {
     expect(formatCollectionDetails({})).toBe("");
   });
 });
@@ -112,8 +115,8 @@ describe("formatCollectionDetails — quantization", () => {
   });
 
   it("renders both size and quantization on separate lines", () => {
-    expect(formatCollectionDetails({ diskBytes: 1_288_490_188, quantization: "turbo" })).toBe(
-      "Index size: 1228.8 MB\nQuantization: turbo (8x)",
+    expect(formatCollectionDetails({ indexSizeBytes: 1_288_490_188, quantization: "turbo" })).toBe(
+      "Index size: 1.2 GB\nQuantization: turbo (8x)",
     );
   });
 });
