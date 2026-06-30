@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  type AritySignature,
   type CallContext,
-  type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
@@ -16,15 +17,24 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains
 
 const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
-const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
+const sym = (
+  symbolId: string,
+  shortName: string,
+  relPath: string,
+  scope: string[],
+  arity?: AritySignature,
+  visibility?: "public" | "private" | "protected",
+): SymbolDefinition => ({
   symbolId,
   fqName: symbolId,
   shortName,
   relPath,
   scope,
+  ...(arity !== undefined ? { arity } : {}),
+  ...(visibility !== undefined ? { visibility } : {}),
 });
 
-const tableWith = (...files: [string, NamedSymbol[]][]): InMemoryGlobalSymbolTable => {
+const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of files) t.upsertFile(relPath, defs);
   return t;
@@ -120,7 +130,8 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
     expect(edges).toEqual([]);
   });
 
-  it("resolves a unique dynamic-receiver member to a single discounted `dynamic` edge", () => {
+  // RECONCILE :123 — xlnub: unique survivor → confidence 1.0 (was DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT)
+  it("narrows a unique dynamic-receiver member to a single edge with confidence 1.0", () => {
     const symbolTable = tableWith([
       "app/services/runner.rb",
       [sym("Runner#run", "run", "app/services/runner.rb", ["Runner"])],
@@ -135,18 +146,19 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
         targetRelPath: "app/services/runner.rb",
         targetSymbolId: "Runner#run",
         edgeKind: "dynamic",
-        confidence: DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
+        confidence: 1.0,
       },
     ]);
   });
 
+  // RECONCILE :143 — xlnub: `each` ∈ RUBY_DUCK_VOCAB → rename member to `recalc`
   it("fans a multi-candidate dynamic member out to N edges, confidence discount / N", () => {
     const symbolTable = tableWith(
-      ["app/a.rb", [sym("A#each", "each", "app/a.rb", ["A"])]],
-      ["app/b.rb", [sym("B#each", "each", "app/b.rb", ["B"])]],
+      ["app/a.rb", [sym("A#recalc", "recalc", "app/a.rb", ["A"])]],
+      ["app/b.rb", [sym("B#recalc", "recalc", "app/b.rb", ["B"])]],
     );
     const edges = resolver.resolveDispatch(
-      { callText: "items.each", receiver: "items", member: "each", startLine: 1 },
+      { callText: "items.recalc", receiver: "items", member: "recalc", startLine: 1 },
       ctx({ symbolTable }),
     );
     expect(edges).toHaveLength(2);
@@ -156,10 +168,11 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       expect(edge.confidence).toBeCloseTo(expectedConfidence, 10);
       expect(edge.sourceSymbolId).toBeNull();
     }
-    expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["A#each", "B#each"]);
+    expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["A#recalc", "B#recalc"]);
   });
 
-  it("honours a custom dynamicReceiverConfidence from config", () => {
+  // RECONCILE :162 — xlnub: unique survivor → 1.0 regardless of custom discount
+  it("honours a custom dynamicReceiverConfidence from config — unique survivor → 1.0", () => {
     const symbolTable = tableWith([
       "app/services/runner.rb",
       [sym("Runner#run", "run", "app/services/runner.rb", ["Runner"])],
@@ -173,7 +186,7 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       ctx({ symbolTable }),
     );
     expect(edges).toHaveLength(1);
-    expect(edges[0].confidence).toBeCloseTo(0.3, 10);
+    expect(edges[0].confidence).toBeCloseTo(1.0, 10);
   });
 
   it("suppresses fan-out for an index-access receiver (mktkk increment A)", () => {
@@ -239,16 +252,14 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       expect(resolver.resolveDispatch(call, ctx({ symbolTable })).length).toBeGreaterThan(0); // table seeds a def
     });
 
-    it("does NOT suppress an EXCLUDED member (save / class stay fan-out)", () => {
-      for (const member of ["save", "class"]) {
-        const call = {
-          callText: `agent.${member}`,
-          receiver: "agent",
-          member,
-          startLine: 1,
-        };
-        expect(resolver.resolveDispatch(call, ctx({ symbolTable })).length).toBeGreaterThan(0); // table seeds a def
-      }
+    // RECONCILE :242 — xlnub: `class` ∈ RUBY_DUCK_VOCAB → duck-killed; `save` stays
+    it("does NOT suppress `save` (non-duck) but kills `class` via duck-vocabulary narrower", () => {
+      // save is not in RUBY_DUCK_VOCAB → fans out (table seeds a def)
+      const saveCall = { callText: "agent.save", receiver: "agent", member: "save", startLine: 1 };
+      expect(resolver.resolveDispatch(saveCall, ctx({ symbolTable })).length).toBeGreaterThan(0);
+      // class IS in RUBY_DUCK_VOCAB → duck-vocabulary narrower kills the fan-out
+      const classCall = { callText: "agent.class", receiver: "agent", member: "class", startLine: 1 };
+      expect(resolver.resolveDispatch(classCall, ctx({ symbolTable }))).toEqual([]);
     });
   });
 
@@ -342,6 +353,159 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
         expect(outcome.target.targetSymbolId).toBe("Model#update");
         expect(outcome.target.targetRelPath).toBe("app/models/model.rb");
       }
+    });
+  });
+
+  describe("untyped fan-out narrowing (xlnub)", () => {
+    it("arity narrows to a single survivor → one edge confidence 1.0", () => {
+      // two `perform` defs: (min1,max1) and (min2,max2); call argCount=2 → only (2,2) survives
+      const symbolTable = tableWith(
+        [
+          "app/a.rb",
+          [sym("A#perform", "perform", "app/a.rb", ["A"], { minRequired: 1, maxPositional: 1, hasSplat: false })],
+        ],
+        [
+          "app/b.rb",
+          [sym("B#perform", "perform", "app/b.rb", ["B"], { minRequired: 2, maxPositional: 2, hasSplat: false })],
+        ],
+      );
+      const edges = resolver.resolveDispatch(
+        { callText: "x.perform(1, 2)", receiver: "x", member: "perform", startLine: 1, argCount: 2 },
+        ctx({ symbolTable }),
+      );
+      expect(edges).toHaveLength(1);
+      expect(edges[0].targetSymbolId).toBe("B#perform");
+      expect(edges[0].confidence).toBe(1.0);
+      expect(edges[0].edgeKind).toBe("dynamic");
+    });
+
+    it("duck-vocabulary member → no edges (each — regression guard for Ruby wiring)", () => {
+      // `each` ∈ RUBY_DUCK_VOCAB → DuckVocabularyNarrower kills the whole fan-out
+      const symbolTable = tableWith(
+        ["app/a.rb", [sym("A#each", "each", "app/a.rb", ["A"])]],
+        ["app/b.rb", [sym("B#each", "each", "app/b.rb", ["B"])]],
+      );
+      const edges = resolver.resolveDispatch(
+        { callText: "items.each", receiver: "items", member: "each", startLine: 1 },
+        ctx({ symbolTable }),
+      );
+      expect(edges).toEqual([]);
+    });
+
+    it("custom cfg discount applied to m>1 residual: 2 non-duck same-name defs → 2 edges confidence discount/2", () => {
+      // tuned cfg 0.3 + two non-duck `run` defs (no arity) → m=2 residual → 0.3/2 = 0.15 each
+      const symbolTable = tableWith(
+        ["app/a.rb", [sym("A#run", "run", "app/a.rb", ["A"])]],
+        ["app/b.rb", [sym("B#run", "run", "app/b.rb", ["B"])]],
+      );
+      const tuned = new RubyDynamicDispatchResolver({
+        mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+        dynamicReceiverConfidence: 0.3,
+      });
+      const edges = tuned.resolveDispatch(
+        { callText: "obj.run", receiver: "obj", member: "run", startLine: 1 },
+        ctx({ symbolTable }),
+      );
+      expect(edges).toHaveLength(2);
+      for (const edge of edges) {
+        expect(edge.confidence).toBeCloseTo(0.15, 10); // 0.3 / 2
+        expect(edge.edgeKind).toBe("dynamic");
+      }
+    });
+
+    it("irreducible residual (m>1) → m edges confidence discount/m", () => {
+      // 3 same-arity public `account` defs → 3 edges confidence DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT/3
+      const symbolTable = tableWith(
+        [
+          "app/a.rb",
+          [
+            sym(
+              "A#account",
+              "account",
+              "app/a.rb",
+              ["A"],
+              { minRequired: 0, maxPositional: 0, hasSplat: false },
+              "public",
+            ),
+          ],
+        ],
+        [
+          "app/b.rb",
+          [
+            sym(
+              "B#account",
+              "account",
+              "app/b.rb",
+              ["B"],
+              { minRequired: 0, maxPositional: 0, hasSplat: false },
+              "public",
+            ),
+          ],
+        ],
+        [
+          "app/c.rb",
+          [
+            sym(
+              "C#account",
+              "account",
+              "app/c.rb",
+              ["C"],
+              { minRequired: 0, maxPositional: 0, hasSplat: false },
+              "public",
+            ),
+          ],
+        ],
+      );
+      const edges = resolver.resolveDispatch(
+        { callText: "x.account", receiver: "x", member: "account", startLine: 1, argCount: 0 },
+        ctx({ symbolTable }),
+      );
+      expect(edges).toHaveLength(3);
+      const expectedConfidence = DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT / 3;
+      for (const edge of edges) {
+        expect(edge.confidence).toBeCloseTo(expectedConfidence, 10);
+        expect(edge.edgeKind).toBe("dynamic");
+      }
+    });
+
+    it("private candidates dropped under explicit receiver → unique survivor → confidence 1.0", () => {
+      // x.helper: one private, one public, same arity → only public survives → confidence 1.0
+      const symbolTable = tableWith(
+        [
+          "app/a.rb",
+          [
+            sym(
+              "A#helper",
+              "helper",
+              "app/a.rb",
+              ["A"],
+              { minRequired: 0, maxPositional: 0, hasSplat: false },
+              "private",
+            ),
+          ],
+        ],
+        [
+          "app/b.rb",
+          [
+            sym(
+              "B#helper",
+              "helper",
+              "app/b.rb",
+              ["B"],
+              { minRequired: 0, maxPositional: 0, hasSplat: false },
+              "public",
+            ),
+          ],
+        ],
+      );
+      const edges = resolver.resolveDispatch(
+        { callText: "x.helper", receiver: "x", member: "helper", startLine: 1, argCount: 0 },
+        ctx({ symbolTable }),
+      );
+      expect(edges).toHaveLength(1);
+      expect(edges[0].targetSymbolId).toBe("B#helper");
+      expect(edges[0].confidence).toBe(1.0);
+      expect(edges[0].edgeKind).toBe("dynamic");
     });
   });
 });

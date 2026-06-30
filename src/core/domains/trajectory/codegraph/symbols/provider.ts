@@ -352,6 +352,31 @@ export interface CodegraphProviderDeps {
   exclusion?: CodegraphExclusionOptions;
 }
 
+/**
+ * Reverse include-by index (bd cai0/2oky5): invert the run-global ancestor maps
+ * so `out[X]` lists every class that has X as a direct ancestor (via superclass,
+ * include, or prepend). Language-agnostic — pure data inversion. Consumed by the
+ * Ruby `super` module-method fallback to find the classes whose MRO a super call
+ * inside module X dispatches through.
+ */
+export function buildIncludedBy(
+  ancestors: Record<string, readonly string[]>,
+  prepended: Record<string, readonly string[]>,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  const add = (child: string, ancestor: string): void => {
+    const list = (out[ancestor] ??= []);
+    if (!list.includes(child)) list.push(child);
+  };
+  for (const [child, list] of Object.entries(ancestors)) {
+    for (const a of list) add(child, a);
+  }
+  for (const [child, list] of Object.entries(prepended)) {
+    for (const a of list) add(child, a);
+  }
+  return out;
+}
+
 export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   readonly key = "codegraph.symbols";
   readonly signals = [...CODEGRAPH_SYMBOLS_FILE_SIGNALS, ...CODEGRAPH_SYMBOLS_CHUNK_SIGNALS];
@@ -716,6 +741,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           shortName: lastSegment(c.symbolId),
           relPath: extraction.relPath,
           scope: c.scope,
+          // Thread walker-captured arity + visibility into SymbolDefinition (bd xlnub)
+          ...(c.arity !== undefined ? { arity: c.arity } : {}),
+          ...(c.visibility !== undefined ? { visibility: c.visibility } : {}),
         }));
         // Persist defs to both the in-memory table (for in-pass
         // resolver lookups) AND DuckDB (for cold-start hydration of a
@@ -1852,6 +1880,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       Object.keys(this.runPrependedAncestors).length > 0
         ? this.runPrependedAncestors
         : extraction.classPrependedAncestors;
+    // Reverse include-by index (bd cai0/2oky5 Task 4): derived from the
+    // run-global ancestor maps so `resolveViaIncludingClasses` in ruby-super.ts
+    // can find which classes include a given module. No new reset site needed —
+    // it is computed fresh from `ancestorsForResolver`/`prependedAncestorsForResolver`
+    // which are already reset at every existing reset site.
+    const includedByForResolver = buildIncludedBy(ancestorsForResolver ?? {}, prependedAncestorsForResolver ?? {});
     const extendsForResolver = Object.keys(this.runExtends).length > 0 ? this.runExtends : extraction.classExtends;
     const returnTypesForResolver =
       Object.keys(this.runReturnTypes).length > 0 ? this.runReturnTypes : extraction.functionReturnTypes;
@@ -1882,6 +1916,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       associationTypes: extraction.associationTypes,
       classAncestors: ancestorsForResolver,
       classPrependedAncestors: prependedAncestorsForResolver,
+      includedBy: includedByForResolver,
       classExtends: extendsForResolver,
       ivarTypes: ivarTypesForResolver,
       structuredReturnTypes: structuredReturnTypesForResolver,
@@ -1920,6 +1955,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           structuredReturnTypes: structuredReturnTypesForResolver,
           classAncestors: ancestorsForResolver,
           classPrependedAncestors: prependedAncestorsForResolver,
+          includedBy: includedByForResolver,
           classExtends: extendsForResolver,
           // bd tea-rags-mcp-n0zj — run-global dispatch tables + callback
           // params drive the resolver's fan-out / inter-proc join.

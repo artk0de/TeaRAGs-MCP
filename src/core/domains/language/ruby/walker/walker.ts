@@ -35,6 +35,7 @@
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
+  AritySignature,
   CallRef,
   ChunkExtraction,
   DispatchRef,
@@ -83,7 +84,11 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const explicitImports = collectRubyRequires(input.tree.rootNode);
   const constantRefs = collectRubyConstantRefs(input.tree.rootNode);
   const fileScope = collectRubyDefinedConstants(input.tree.rootNode);
-  const { ancestors: ancestorMap, prepended: prependedMap } = collectRubyClassAncestors(input.tree.rootNode);
+  const {
+    ancestors: ancestorMap,
+    prepended: prependedMap,
+    extends: extendsMap,
+  } = collectRubyClassAncestors(input.tree.rootNode);
   const dispatchTables = collectRubyDispatchTables(input.tree.rootNode);
   const dispatchTableNames = new Set(Object.keys(dispatchTables));
   const calls = collectRubyCalls(input.tree.rootNode, dispatchTableNames);
@@ -104,6 +109,9 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // lands on all four overlapping chunks (file/module/class/method) and
   // inflates caller-edge counts by the nesting depth (bd tea-rags-mcp-8fnu).
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  // Arity + visibility per method def (bd xlnub Task 2). Keyed by 1-based
+  // start line — the same line the chunker assigns to the method's chunk.
+  const methodSigs = collectRubyMethodSignatures(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -112,6 +120,11 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
       endLine: c.endLine,
       calls: callOwnership.get(chunkIndex) ?? [],
     };
+    const sig = c.startLine !== undefined ? methodSigs.get(c.startLine) : undefined;
+    if (sig !== undefined) {
+      base.arity = sig.arity;
+      base.visibility = sig.visibility;
+    }
     if (trackTypes) {
       // Store provides YARD + AST param/local bindings (position-filtered to chunk).
       const localBindings = store.localBindingsForChunk(c.startLine, c.endLine);
@@ -153,6 +166,11 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     const prependedRecord: Record<string, readonly string[]> = {};
     for (const [k, v] of prependedMap) prependedRecord[k] = v;
     out.classPrependedAncestors = prependedRecord;
+  }
+  if (extendsMap.size > 0) {
+    const extendsRecord: Record<string, string> = {};
+    for (const [k, v] of extendsMap) extendsRecord[k] = v;
+    out.classExtends = extendsRecord;
   }
   // Unified hierarchy edges with precise kinds (bd tea-rags-mcp-lz8t). Parity
   // with the TS walker's `collectInheritanceEdges`: where the legacy
@@ -299,9 +317,11 @@ function collectRubyInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
 function collectRubyClassAncestors(root: AstNode): {
   ancestors: Map<string, string[]>;
   prepended: Map<string, string[]>;
+  extends: Map<string, string>;
 } {
   const out = new Map<string, string[]>();
   const prependedOut = new Map<string, string[]>();
+  const extendsOut = new Map<string, string>();
   const walkScope = (node: AstNode, scope: string[]): void => {
     if (node.type === "class" || node.type === "module") {
       const nameNode = node.childForFieldName("name");
@@ -323,6 +343,7 @@ function collectRubyClassAncestors(root: AstNode): {
               const supText = child.type === "scope_resolution" ? readScopeResolution(child) : child.text;
               if (supText && /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(supText)) {
                 ancestors.push(supText);
+                extendsOut.set(fq, supText);
               }
               break;
             }
@@ -371,7 +392,7 @@ function collectRubyClassAncestors(root: AstNode): {
     for (const child of node.children) walkScope(child, scope);
   };
   walkScope(root, []);
-  return { ancestors: out, prepended: prependedOut };
+  return { ancestors: out, prepended: prependedOut, extends: extendsOut };
 }
 
 const RUBY_MIXIN_METHODS = new Set(["include", "extend", "prepend"]);
@@ -393,6 +414,185 @@ function mixinTargetFromStatement(node: AstNode): { name: string; kind: "include
         : null;
   if (!text || !/^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(text)) return null;
   return { name: text, kind: methodField.text as "include" | "extend" | "prepend" };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Arity + visibility capture (bd xlnub Task 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const VISIBILITY_KEYWORDS = new Set<string>(["private", "protected", "public"]);
+
+/**
+ * Compute the positional arity of a `method` or `singleton_method` node.
+ * Counts `identifier` (required positional) and `optional_parameter` children
+ * of `method_parameters`; sets `hasSplat` when a `splat_parameter` is present.
+ * Kwargs (`keyword_parameter`, `hash_splat_parameter`) and block params are
+ * ignored — they don't affect positional arity.
+ */
+function computeRubyArity(methodNode: AstNode): AritySignature {
+  const params = methodNode.childForFieldName("parameters");
+  if (!params) return { minRequired: 0, maxPositional: 0, hasSplat: false };
+  let minRequired = 0;
+  let maxPositional = 0;
+  let hasSplat = false;
+  for (const child of params.namedChildren) {
+    if (child.type === "identifier") {
+      minRequired++;
+      maxPositional++;
+    } else if (child.type === "optional_parameter") {
+      maxPositional++;
+    } else if (child.type === "splat_parameter") {
+      hasSplat = true;
+    }
+    // keyword_parameter, hash_splat_parameter, block_parameter → ignored
+  }
+  return { minRequired, maxPositional, hasSplat };
+}
+
+/**
+ * Walk the AST and collect arity + visibility for every `method` /
+ * `singleton_method` definition found inside a class or module body.
+ *
+ * The map is keyed by the method node's 1-based start line so the caller
+ * can look up by `ChunkExtraction.startLine` — the chunker assigns the
+ * same line to the method chunk it creates for that node.
+ *
+ * Visibility state machine per class body (source order):
+ *   - bare `private`/`protected`/`public` → switches default for subsequent defs
+ *   - `private def foo` (inline form) → marks that specific method only
+ *   - `private :foo, :bar` (symbol form) → marks those methods by name
+ * Default is `"public"` at the start of each class body.
+ */
+function collectRubyMethodSignatures(
+  root: AstNode,
+): Map<number, { arity: AritySignature; visibility: "public" | "private" | "protected" }> {
+  type VisMode = "public" | "private" | "protected";
+  const out = new Map<number, { arity: AritySignature; visibility: VisMode }>();
+
+  const processClassBody = (classNode: AstNode): void => {
+    const body = classNode.childForFieldName("body");
+    // namedChildren skips anonymous tokens (punctuation, `end`, `;`) — all
+    // type-guards below match only named node types, so behavior is identical
+    // while avoiding spurious iterations over anonymous tokens.
+    const stmts = body ? body.namedChildren : classNode.namedChildren;
+
+    // Shared helpers: defined once to avoid duplicating anonymous functions
+    // across pass-1 and pass-2 (duplicate arrow functions inflate the uncovered
+    // function count and would push global coverage below threshold).
+    const methodFieldOf = (node: AstNode) =>
+      node.childForFieldName("method") ?? node.children.find((c) => c.type === "identifier");
+    const argsOf = (node: AstNode) =>
+      node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
+
+    let currentVis: VisMode = "public";
+    // symbol-form overrides: method short-name → forced visibility.
+    // Pass 1 populates this for ALL symbol-form declarations at THIS body level
+    // before pass 2 emits any method defs. Resolves the backward `private :foo`
+    // pattern where `def foo` precedes `private :foo` in source order.
+    const symVis = new Map<string, VisMode>();
+
+    // Pass 1: collect symbol-form visibility declarations at THIS body level only.
+    // Nested class/module bodies are skipped — each gets its own recursive call
+    // with its own symVis. Bare switches and inline-def forms are pass-2 only.
+    for (const stmt of stmts) {
+      if (stmt.type === "class" || stmt.type === "module") continue;
+      if (stmt.type === "call" || stmt.type === "method_call") {
+        if (stmt.childForFieldName("receiver")) continue;
+        const methodField = methodFieldOf(stmt);
+        if (!methodField || !VISIBILITY_KEYWORDS.has(methodField.text)) continue;
+        const modifier = methodField.text as VisMode;
+        const args = argsOf(stmt);
+        if (!args || args.namedChildren.length === 0) continue; // bare switch — pass 2
+        const firstArg = args.namedChildren[0];
+        if (firstArg.type === "method" || firstArg.type === "singleton_method") continue; // inline — pass 2
+        // Symbol form: `private :foo, :bar`
+        for (const arg of args.namedChildren) {
+          if (arg.type === "simple_symbol" || arg.type === "symbol") {
+            symVis.set(arg.text.replace(/^:/, ""), modifier);
+          }
+        }
+      }
+    }
+
+    // Pass 2: walk in source order — recurse nested classes, apply bare switches,
+    // emit inline-def forms, emit method defs (symVis now fully populated).
+    for (const stmt of stmts) {
+      // Nested class/module — recurse with fresh public default
+      if (stmt.type === "class" || stmt.type === "module") {
+        processClassBody(stmt);
+        continue;
+      }
+
+      // Method definition — record arity + current visibility.
+      // Precedence: symVis (symbol-form) > currentVis (bare-switch).
+      // Inline-modifier form never reaches this branch (it is a child of its
+      // call node and emitted in the call handler below).
+      if (stmt.type === "method" || stmt.type === "singleton_method") {
+        const nameNode = stmt.childForFieldName("name");
+        const name = nameNode?.text ?? "";
+        out.set(stmt.startPosition.row + 1, {
+          arity: computeRubyArity(stmt),
+          visibility: symVis.get(name) ?? currentVis,
+        });
+        continue;
+      }
+
+      // Visibility modifier call: `private`, `private def foo`, `private :foo`
+      if (stmt.type === "call" || stmt.type === "method_call") {
+        if (stmt.childForFieldName("receiver")) continue; // not a bare class-body call
+        const methodField = methodFieldOf(stmt);
+        if (!methodField || !VISIBILITY_KEYWORDS.has(methodField.text)) continue;
+        const modifier = methodField.text as VisMode;
+        const args = argsOf(stmt);
+        if (!args || args.namedChildren.length === 0) {
+          // Bare visibility switch: `private` with no args
+          currentVis = modifier;
+        } else {
+          const firstArg = args.namedChildren[0];
+          if (firstArg.type === "method" || firstArg.type === "singleton_method") {
+            // Inline form: `private def foo; end`
+            out.set(firstArg.startPosition.row + 1, {
+              arity: computeRubyArity(firstArg),
+              visibility: modifier,
+            });
+          }
+          // Symbol form already resolved in pass 1 — nothing to do here.
+        }
+        continue;
+      }
+
+      // Bare `private` as identifier node (tree-sitter-ruby may produce this form)
+      if (stmt.type === "identifier" && VISIBILITY_KEYWORDS.has(stmt.text)) {
+        currentVis = stmt.text as VisMode;
+        continue;
+      }
+    }
+  };
+
+  // Top-level walk: descend into nodes looking for class/module declarations.
+  // When we find one, processClassBody handles it and its nested classes —
+  // so we do NOT recurse further into it from this outer walk (avoids double-visit).
+  const walkTopLevel = (node: AstNode): void => {
+    if (node.type === "class" || node.type === "module") {
+      processClassBody(node);
+      return; // processClassBody recurses into nested classes
+    }
+    for (const child of node.children) walkTopLevel(child);
+  };
+
+  walkTopLevel(root);
+  return out;
+}
+
+/**
+ * Count positional arguments at a call site, excluding block arguments
+ * (`block`, `do_block`) and keyword arguments (`pair`). No `argument_list`
+ * child → 0.
+ */
+function computeArgCount(callNode: AstNode): number {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return 0;
+  return args.namedChildren.filter((c) => c.type !== "block" && c.type !== "do_block" && c.type !== "pair").length;
 }
 
 /**
@@ -1097,6 +1297,8 @@ function emitMethodCallRef(
   if (dynamicSend) callRef.dynamicSend = true;
   const dispatch = exprToRubyDispatchRef(node, dispatchTableNames);
   if (dispatch?.field) callRef.dispatch = dispatch;
+  // Positional argCount (bd xlnub): excludes block and keyword args
+  callRef.argCount = computeArgCount(node);
   out.push(callRef);
 }
 

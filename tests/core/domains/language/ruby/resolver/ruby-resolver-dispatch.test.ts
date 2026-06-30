@@ -75,7 +75,8 @@ describe("RubyCallResolver.resolveDispatch — cone-first, then dynamic fan-out 
     for (const e of edges) expect(e.edgeKind).toBe("cone");
   });
 
-  it("DYNAMIC FALLBACK: an untyped dynamic receiver fans out to `dynamic` edges when the cone is empty", () => {
+  // xlnub reconcile: unique survivor → confidence 1.0 (was discounted < 1)
+  it("DYNAMIC FALLBACK: a unique untyped dynamic receiver fan-out narrows to one edge confidence 1.0", () => {
     const symbolTable = tableWith([
       "app/services/runner.rb",
       [sym("Runner#run", "run", "app/services/runner.rb", ["Runner"])],
@@ -85,8 +86,7 @@ describe("RubyCallResolver.resolveDispatch — cone-first, then dynamic fan-out 
     expect(edges).toHaveLength(1);
     expect(edges[0].edgeKind).toBe("dynamic");
     expect(edges[0].targetSymbolId).toBe("Runner#run");
-    expect(edges[0].confidence).toBeGreaterThan(0);
-    expect(edges[0].confidence).toBeLessThan(1);
+    expect(edges[0].confidence).toBe(1.0);
   });
 
   it("returns [] for a constant receiver so the exact constant chain stays the default", () => {

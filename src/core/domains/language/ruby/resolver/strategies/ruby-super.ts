@@ -2,7 +2,7 @@ import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js
 import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
-import { resolveInstanceMethodInClassChain, type ResolverConfig } from "./shared.js";
+import { firstDefinerAfter, resolveInstanceMethodInClassChain, type ResolverConfig } from "./shared.js";
 
 /**
  * Ruby runtime hook methods whose `super` MUST NOT produce a file-only fallback
@@ -82,7 +82,17 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
     // become `Outer::Inner` via scope-stack join with `::`.
     const enclosingClass = ctx.callerScope.join("::");
     const ancestors = ctx.classAncestors?.[enclosingClass];
-    if (!ancestors) return null;
+    if (!ancestors) {
+      // Module with no own ancestors (e.g. `module Tracer` with no `include`):
+      // the class-keyed walk has nothing to iterate, but the reverse-include
+      // consensus path can still resolve if every including class agrees on the
+      // same definer after the module in their MRO (bd cai0/2oky5).
+      if (!RUBY_RUNTIME_HOOKS.has(member)) {
+        const consensus = this.resolveViaIncludingClasses(enclosingClass, member, ctx);
+        if (consensus) return consensus;
+      }
+      return null;
+    }
     // `super` dispatches to the PARENT, never the enclosing class itself, so
     // start the MRO walk AT the ancestors with the enclosing class pre-seeded
     // into `visited`. Each ancestor reuses the shared class-chain walk (the same
@@ -99,11 +109,48 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
       if (resolvedTarget.targetSymbolId !== null) return resolvedTarget;
       if (fileOnlyFallback === null) fileOnlyFallback = resolvedTarget;
     }
-    // Runtime hooks (method_missing, respond_to_missing?, etc.) always chain to
-    // BasicObject/Module in the Ruby runtime. When no ancestor provides a
-    // METHOD-LEVEL edge, suppress the file-only fallback to prevent fabricating
-    // a false edge to the enclosing module (bd tea-rags-mcp-08tss Part 2).
+    // Class-keyed walk fully missed — the module-method case: `super` lives in a
+    // module M whose own ancestors don't define `member`. Resolve via the classes
+    // that include/prepend M (ctx.includedBy), taking the target that is INVARIANT
+    // across all of them (consensus → precision 1.0; disagreement → drop).
+    // bd cai0/2oky5.
+    if (fileOnlyFallback === null && !RUBY_RUNTIME_HOOKS.has(member)) {
+      const consensus = this.resolveViaIncludingClasses(enclosingClass, member, ctx);
+      if (consensus) return consensus;
+    }
     if (fileOnlyFallback !== null && RUBY_RUNTIME_HOOKS.has(member)) return null;
     return fileOnlyFallback;
+  }
+
+  /**
+   * Reverse-consensus resolution for `super` inside a MODULE method (bd cai0/2oky5).
+   * For each class C that includes/prepends `moduleName`, find the first definer
+   * of `member` AFTER `moduleName` in C's MRO. Emit an edge ONLY when every
+   * including class agrees on the same target (precision 1.0); disagreement or an
+   * empty set DROPs (returns null). Targets agree iff their `targetSymbolId` is
+   * equal, or both are file-only with the same `targetRelPath`.
+   */
+  private resolveViaIncludingClasses(
+    moduleName: string,
+    member: string,
+    ctx: CallContext,
+  ): SymbolResolutionTarget | null {
+    const including = ctx.includedBy?.[moduleName];
+    if (!including || including.length === 0) return null;
+    let agreed: SymbolResolutionTarget | null = null;
+    for (const klass of including) {
+      const t = firstDefinerAfter(moduleName, member, klass, ctx, this.cfg.mode);
+      if (t === null) continue;
+      if (agreed === null) {
+        agreed = t;
+        continue;
+      }
+      const same =
+        agreed.targetSymbolId !== null || t.targetSymbolId !== null
+          ? agreed.targetSymbolId === t.targetSymbolId
+          : agreed.targetRelPath === t.targetRelPath;
+      if (!same) return null; // including classes disagree → DROP (GUARD)
+    }
+    return agreed;
   }
 }

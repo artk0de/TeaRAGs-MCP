@@ -532,6 +532,20 @@ export interface ChunkExtraction {
    * Plain Record (NOT Map) for NDJSON-spill round-trip, same as localBindings.
    */
   localCallBindings?: Record<string, string>;
+  /**
+   * Positional-arity envelope of the method definition this chunk represents
+   * (bd xlnub). Populated by the Ruby walker for `method` / `singleton_method`
+   * nodes. Undefined for non-method chunks and for languages whose walkers
+   * don't compute arity.
+   */
+  arity?: AritySignature;
+  /**
+   * Visibility of the method definition this chunk represents (bd xlnub).
+   * Populated by the Ruby walker using the class-body visibility state machine
+   * (`private` / `protected` / `public` bare calls, inline `private def`,
+   * symbol form). Undefined for non-method chunks and non-Ruby languages.
+   */
+  visibility?: "public" | "private" | "protected";
 }
 
 export interface CallRef {
@@ -571,6 +585,8 @@ export interface CallRef {
    * (framework) and from a genuine internal miss (bd cai0).
    */
   dynamicSend?: boolean;
+  /** Positional argument count at the call site (bd xlnub). */
+  argCount?: number;
 }
 
 /**
@@ -606,12 +622,23 @@ export interface GlobalSymbolTable {
   hydrate: (definitions: SymbolDefinition[]) => void;
 }
 
+/** Positional-arity envelope of a method definition (bd xlnub). `maxPositional`
+ *  is required+optional positional params; `hasSplat` (a `*args` rest param)
+ *  makes the upper bound unbounded. Kwargs / block params do NOT affect it. */
+export interface AritySignature {
+  minRequired: number;
+  maxPositional: number;
+  hasSplat: boolean;
+}
+
 export interface SymbolDefinition {
   symbolId: SymbolId;
   fqName: string;
   shortName: string;
   relPath: RelPath;
   scope: string[];
+  arity?: AritySignature;
+  visibility?: "public" | "private" | "protected";
 }
 
 /**
@@ -805,6 +832,15 @@ export interface CallContext {
    * in MRO so the resolver walks the array in REVERSE order.
    */
   classPrependedAncestors?: Record<string, readonly string[]>;
+  /**
+   * Optional reverse include-by index (bd cai0/2oky5): `fqName → classes that
+   * have it as a direct ancestor` (superclass/include/prepend). Derived by the
+   * provider from the run-global ancestor maps and injected for pass-2. The Ruby
+   * `super` strategy reads `includedBy[M]` to resolve a `super` inside module
+   * M's method against each including class's MRO-after-M (consensus). Plain
+   * Record for NDJSON-spill parity with the other ancestor maps.
+   */
+  includedBy?: Record<string, readonly string[]>;
   /**
    * Run-global `tableName → DispatchTableDef[]` map propagated from every
    * file's `FileExtraction.dispatchTables` (bd tea-rags-mcp-n0zj). Keyed
@@ -1195,12 +1231,20 @@ export interface CallerEdge {
   sourceSymbolId: SymbolId;
   sourceRelPath: RelPath;
   callExpression: string;
+  /** Edge kind from `cg_symbols_edges_method.edge_kind` (xlnub Task 5). */
+  edgeKind?: MethodEdgeKind;
+  /** Dispatch confidence in (0,1] from `cg_symbols_edges_method.confidence` (xlnub Task 5). */
+  confidence?: number;
 }
 
 export interface CalleeEdge {
   targetSymbolId: SymbolId | null;
   targetRelPath: RelPath;
   callExpression: string;
+  /** Edge kind from `cg_symbols_edges_method.edge_kind` (xlnub Task 5). */
+  edgeKind?: MethodEdgeKind;
+  /** Dispatch confidence in (0,1] from `cg_symbols_edges_method.confidence` (xlnub Task 5). */
+  confidence?: number;
 }
 
 /** Minimal chunk preview returned by graph MCP tools (`get_callers`,

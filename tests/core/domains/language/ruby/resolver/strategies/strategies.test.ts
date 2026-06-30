@@ -836,6 +836,105 @@ describe("receiverIsIndexAccess (mktkk increment A)", () => {
   });
 });
 
+describe("RubySuperSymbolResolutionStrategy — module-method super (cai0/2oky5)", () => {
+  const strat = new RubySuperSymbolResolutionStrategy(cfg);
+
+  it("resolves module super to the consensus target when including classes agree", () => {
+    // Module M `def m; super; end` included by A and B; both have MRO [M, Base].
+    // Base defines m. classAncestors[M]=[] so the class-keyed walk misses;
+    // includedBy M:[A,B] supplies the reverse path. Both agree → Base#m.
+    const symbolTable = tableWith(
+      ["app/m.rb", [sym("M", "M", "app/m.rb", [])]],
+      ["app/a.rb", [sym("A", "A", "app/a.rb", [])]],
+      ["app/b.rb", [sym("B", "B", "app/b.rb", [])]],
+      ["app/base.rb", [sym("Base", "Base", "app/base.rb", []), sym("Base#m", "m", "app/base.rb", ["Base"])]],
+    );
+    const callRef: CallRef = { callText: "super", receiver: SUPER_RECEIVER_SENTINEL, member: "m", startLine: 1 };
+    const outcome = strat.attempt(
+      callRef,
+      ctx({
+        symbolTable,
+        callerScope: ["M"],
+        classAncestors: { M: [], A: ["M", "Base"], B: ["M", "Base"] },
+        includedBy: { M: ["A", "B"] },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/base.rb", targetSymbolId: "Base#m" },
+    });
+  });
+
+  it("drops module super when including classes disagree on the target", () => {
+    // A's next-after-M = Base1#m; B's next-after-M = Base2#m — divergent → DROP.
+    const symbolTable = tableWith(
+      ["app/m.rb", [sym("M", "M", "app/m.rb", [])]],
+      ["app/a.rb", [sym("A", "A", "app/a.rb", [])]],
+      ["app/b.rb", [sym("B", "B", "app/b.rb", [])]],
+      ["app/base1.rb", [sym("Base1", "Base1", "app/base1.rb", []), sym("Base1#m", "m", "app/base1.rb", ["Base1"])]],
+      ["app/base2.rb", [sym("Base2", "Base2", "app/base2.rb", []), sym("Base2#m", "m", "app/base2.rb", ["Base2"])]],
+    );
+    const callRef: CallRef = { callText: "super", receiver: SUPER_RECEIVER_SENTINEL, member: "m", startLine: 1 };
+    const outcome = strat.attempt(
+      callRef,
+      ctx({
+        symbolTable,
+        callerScope: ["M"],
+        classAncestors: { M: [], A: ["M", "Base1"], B: ["M", "Base2"] },
+        includedBy: { M: ["A", "B"] },
+      }),
+    );
+    expect(outcome.kind).toBe("drop");
+  });
+
+  it("drops module super when the module has no including class", () => {
+    // includedBy absent for M; classAncestors[M]=[] so walk also misses → DROP.
+    const symbolTable = tableWith(
+      ["app/m.rb", [sym("M", "M", "app/m.rb", [])]],
+      ["app/base.rb", [sym("Base", "Base", "app/base.rb", []), sym("Base#m", "m", "app/base.rb", ["Base"])]],
+    );
+    const callRef: CallRef = { callText: "super", receiver: SUPER_RECEIVER_SENTINEL, member: "m", startLine: 1 };
+    const outcome = strat.attempt(
+      callRef,
+      ctx({
+        symbolTable,
+        callerScope: ["M"],
+        classAncestors: { M: [] },
+        // includedBy absent
+      }),
+    );
+    expect(outcome.kind).toBe("drop");
+  });
+
+  it("resolves prepended-module super to the prepending class", () => {
+    // Wrapper prepended into Agent. super from Wrapper#save → Agent#save.
+    // classPrependedAncestors Agent:[Wrapper]; includedBy Wrapper:[Agent];
+    // classAncestors[Wrapper]=[] so class-keyed walk misses → reverse path.
+    const symbolTable = tableWith(
+      ["app/wrapper.rb", [sym("Wrapper", "Wrapper", "app/wrapper.rb", [])]],
+      [
+        "app/agent.rb",
+        [sym("Agent", "Agent", "app/agent.rb", []), sym("Agent#save", "save", "app/agent.rb", ["Agent"])],
+      ],
+    );
+    const callRef: CallRef = { callText: "super", receiver: SUPER_RECEIVER_SENTINEL, member: "save", startLine: 1 };
+    const outcome = strat.attempt(
+      callRef,
+      ctx({
+        symbolTable,
+        callerScope: ["Wrapper"],
+        classAncestors: { Wrapper: [] },
+        classPrependedAncestors: { Agent: ["Wrapper"] },
+        includedBy: { Wrapper: ["Agent"] },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/agent.rb", targetSymbolId: "Agent#save" },
+    });
+  });
+});
+
 describe("receiverChainTailIsExternal (increment B / B-suppress)", () => {
   it("is true when the receiver ends in a provably-external core/runtime tail", () => {
     expect(receiverChainTailIsExternal("req.headers")).toBe(true);
