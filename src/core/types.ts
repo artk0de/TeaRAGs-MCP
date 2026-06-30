@@ -318,6 +318,12 @@ export interface IndexStatus {
    */
   diskBytes?: number;
   /**
+   * Vector quantization mode of the collection (`turbo` 8x / `scalar` int8 /
+   * `none`), read from the live Qdrant collection config. Omitted when the
+   * collection does not yet exist or the info probe is unavailable.
+   */
+  quantization?: "turbo" | "scalar" | "none";
+  /**
    * On-disk size of the codegraph database in bytes, when CODEGRAPH_ENABLED.
    * Reported separately from indexSizeBytes (Qdrant). Omitted when codegraph
    * disabled or absent.

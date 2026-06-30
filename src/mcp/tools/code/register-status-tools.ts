@@ -112,10 +112,16 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
  * Human-readable Qdrant collection details rendered below the status JSON.
  * Returns an empty string when no detail field is set (caller skips the block).
  */
-export function formatCollectionDetails(status: Pick<IndexStatus, "diskBytes">): string {
+export function formatCollectionDetails(status: Pick<IndexStatus, "diskBytes" | "quantization">): string {
   const lines: string[] = [];
   if (status.diskBytes !== undefined) lines.push(`Index size: ${formatBytes(status.diskBytes)}`);
+  if (status.quantization !== undefined) lines.push(`Quantization: ${formatQuantization(status.quantization)}`);
   return lines.join("\n");
+}
+
+/** Render a quantization mode for display — turbo carries its 8x compression hint. */
+function formatQuantization(quantization: NonNullable<IndexStatus["quantization"]>): string {
+  return quantization === "turbo" ? "turbo (8x)" : quantization;
 }
 
 /** Format a byte count as B/KB/MB/GB/TB — bytes as integer, larger units to one decimal. */

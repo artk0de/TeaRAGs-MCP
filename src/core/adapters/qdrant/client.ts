@@ -36,6 +36,12 @@ export interface CollectionInfo {
   status: "green" | "yellow" | "red";
   /** Optimizer state string from Qdrant (`"ok"` or `"unknown"` when absent). */
   optimizerStatus: string;
+  /**
+   * Vector quantization mode derived from `config.quantization_config`:
+   * `turbo` (TurboQuant 8x), `scalar` (int8), or `none` (unquantized or an
+   * unrecognized quantization variant).
+   */
+  quantization: "turbo" | "scalar" | "none";
 }
 
 export interface SearchResult {
@@ -426,6 +432,7 @@ export class QdrantManager {
       hybridEnabled,
       status: (info.status ?? "green") as "green" | "yellow" | "red",
       optimizerStatus: typeof info.optimizer_status === "string" ? info.optimizer_status : "unknown",
+      quantization: mapQuantization((info.config as { quantization_config?: unknown }).quantization_config),
     };
   }
 
@@ -1517,6 +1524,19 @@ async function sumDirBytes(dir: string): Promise<number> {
     }
   }
   return total;
+}
+
+/**
+ * Classify a Qdrant `quantization_config` block into a coarse mode. `turbo`
+ * (TurboQuant 8x) and `scalar` (int8) are the modes tea-rags creates; any other
+ * shape — including a missing config or an unrecognized variant — is `none`.
+ */
+function mapQuantization(config: unknown): "turbo" | "scalar" | "none" {
+  if (typeof config === "object" && config !== null) {
+    if ("turbo" in config) return "turbo";
+    if ("scalar" in config) return "scalar";
+  }
+  return "none";
 }
 
 /** Detect Qdrant 409 Conflict (collection already exists). */

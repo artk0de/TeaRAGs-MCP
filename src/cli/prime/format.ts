@@ -215,7 +215,11 @@ function formatStatusLine(status: IndexStatus, now: Date): string {
           ? `${status.filesCount} files / ${status.chunksCount ?? 0} chunks`
           : `${status.chunksCount ?? 0} chunks`;
       const size = status.diskBytes !== undefined ? ` · ${formatBytes(status.diskBytes)} on disk` : "";
-      const base = `indexed · collection ${collection} · ${counts}${size}`;
+      const quant =
+        status.quantization !== undefined
+          ? ` · ${status.quantization === "turbo" ? "turbo (8x)" : status.quantization} quant`
+          : "";
+      const base = `indexed · collection ${collection} · ${counts}${size}${quant}`;
       const staleness = computeStaleness(status.lastUpdated, now);
       return staleness ? `${base} · last indexed: ${staleness.ago} ago` : base;
     }

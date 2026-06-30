@@ -98,3 +98,23 @@ describe("formatCollectionDetails — index size", () => {
     expect(formatCollectionDetails({})).toBe("");
   });
 });
+
+describe("formatCollectionDetails — quantization", () => {
+  it("renders turbo with the 8x annotation", () => {
+    expect(formatCollectionDetails({ quantization: "turbo" })).toBe("Quantization: turbo (8x)");
+  });
+
+  it("renders scalar without annotation", () => {
+    expect(formatCollectionDetails({ quantization: "scalar" })).toBe("Quantization: scalar");
+  });
+
+  it("renders none", () => {
+    expect(formatCollectionDetails({ quantization: "none" })).toBe("Quantization: none");
+  });
+
+  it("renders both size and quantization on separate lines", () => {
+    expect(formatCollectionDetails({ diskBytes: 1_288_490_188, quantization: "turbo" })).toBe(
+      "Index size: 1.2 GB\nQuantization: turbo (8x)",
+    );
+  });
+});

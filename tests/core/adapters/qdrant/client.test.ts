@@ -267,6 +267,7 @@ describe("QdrantManager", () => {
         hybridEnabled: false,
         status: "green",
         optimizerStatus: "unknown",
+        quantization: "none",
       });
     });
 
@@ -319,6 +320,7 @@ describe("QdrantManager", () => {
         hybridEnabled: true,
         status: "green",
         optimizerStatus: "unknown",
+        quantization: "none",
       });
     });
 
@@ -343,6 +345,7 @@ describe("QdrantManager", () => {
         hybridEnabled: false,
         status: "green",
         optimizerStatus: "unknown",
+        quantization: "none",
       });
     });
 
@@ -372,6 +375,7 @@ describe("QdrantManager", () => {
         hybridEnabled: false,
         status: "green",
         optimizerStatus: "unknown",
+        quantization: "none",
       });
     });
 
@@ -399,6 +403,7 @@ describe("QdrantManager", () => {
         hybridEnabled: false,
         status: "green",
         optimizerStatus: "unknown",
+        quantization: "none",
       });
     });
 
@@ -425,6 +430,7 @@ describe("QdrantManager", () => {
         hybridEnabled: false,
         status: "green",
         optimizerStatus: "unknown",
+        quantization: "none",
       });
     });
 
@@ -459,6 +465,48 @@ describe("QdrantManager", () => {
 
       expect(info.status).toBe("green");
       expect(info.optimizerStatus).toBe("unknown");
+    });
+
+    it("maps quantization to 'turbo' when the config carries a turbo block", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "turbo-col",
+        points_count: 10,
+        config: {
+          params: { vectors: { size: 384, distance: "Cosine" } },
+          quantization_config: { turbo: { bits: "bits4", always_ram: true } },
+        },
+      });
+
+      const info = await manager.getCollectionInfo("turbo-col");
+
+      expect(info.quantization).toBe("turbo");
+    });
+
+    it("maps quantization to 'scalar' when the config carries a scalar block", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "scalar-col",
+        points_count: 10,
+        config: {
+          params: { vectors: { size: 384, distance: "Cosine" } },
+          quantization_config: { scalar: { type: "int8", always_ram: true } },
+        },
+      });
+
+      const info = await manager.getCollectionInfo("scalar-col");
+
+      expect(info.quantization).toBe("scalar");
+    });
+
+    it("maps quantization to 'none' when no quantization_config is present", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "plain-col",
+        points_count: 10,
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+      });
+
+      const info = await manager.getCollectionInfo("plain-col");
+
+      expect(info.quantization).toBe("none");
     });
   });
 
