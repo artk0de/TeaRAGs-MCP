@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,13 +8,17 @@ import {
   buildDaemonEnv,
   computeStartupPhase,
   EMBEDDED_MARKER,
+  evictStaleDaemon,
   getDaemonPaths,
   gracefulKill,
   isDaemonAlive,
   isPidAlive,
   makeReconnect,
+  probeDaemonVersion,
   waitForDaemonReady,
+  type EvictStaleDaemonDeps,
 } from "../../../../../src/core/adapters/qdrant/embedded/daemon.js";
+import { QDRANT_VERSION } from "../../../../../src/core/infra/qdrant-version.js";
 
 describe("EMBEDDED_MARKER", () => {
   it("equals 'embedded'", () => {
@@ -260,5 +264,187 @@ describe("waitForDaemonReady", () => {
       waitForDaemonReady(process.pid, "http://unused", { probe, intervalMs: 10, timeoutMs: 1000 }),
     ).resolves.toBeUndefined();
     expect(calls).toBe(3);
+  });
+});
+
+describe("probeDaemonVersion", () => {
+  const okResponse = (version: unknown): Response =>
+    ({ ok: true, json: async () => ({ version }) }) as unknown as Response;
+
+  it("returns the reported version when the daemon responds with a version string", async () => {
+    const fetchImpl = vi.fn(async () => okResponse("1.18.2"));
+    await expect(probeDaemonVersion("http://127.0.0.1:6333", fetchImpl)).resolves.toBe("1.18.2");
+    expect(fetchImpl).toHaveBeenCalledWith("http://127.0.0.1:6333/", expect.anything());
+  });
+
+  it("returns undefined when the HTTP response is not ok", async () => {
+    const fetchImpl = async () => ({ ok: false, json: async () => ({}) }) as unknown as Response;
+    await expect(probeDaemonVersion("http://127.0.0.1:6333", fetchImpl)).resolves.toBeUndefined();
+  });
+
+  it("returns undefined when the body carries no string version", async () => {
+    const fetchImpl = async () => okResponse(42);
+    await expect(probeDaemonVersion("http://127.0.0.1:6333", fetchImpl)).resolves.toBeUndefined();
+  });
+
+  it("returns undefined when the fetch rejects (never throws)", async () => {
+    const fetchImpl = async () => {
+      throw new Error("ECONNREFUSED");
+    };
+    await expect(probeDaemonVersion("http://127.0.0.1:6333", fetchImpl)).resolves.toBeUndefined();
+  });
+});
+
+describe("evictStaleDaemon", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "qdrant-evict-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const URL = "http://127.0.0.1:6333";
+  const PID = 4242;
+
+  const makeDeps = (over: Partial<EvictStaleDaemonDeps> = {}): EvictStaleDaemonDeps => ({
+    probeVersion: async () => QDRANT_VERSION,
+    killPid: vi.fn(),
+    isAlive: () => false,
+    sleep: vi.fn(async () => {}),
+    binaryUpToDate: () => true,
+    ...over,
+  });
+
+  it("attaches (no eviction) when the running daemon reports the pinned version", async () => {
+    const killPid = vi.fn();
+    const result = await evictStaleDaemon(
+      getDaemonPaths(tempDir),
+      PID,
+      URL,
+      undefined,
+      makeDeps({ probeVersion: async () => QDRANT_VERSION, killPid }),
+    );
+    expect(result).toBe(false);
+    expect(killPid).not.toHaveBeenCalled();
+  });
+
+  it("attaches (no eviction) when the version probe fails (undefined)", async () => {
+    const killPid = vi.fn();
+    const result = await evictStaleDaemon(
+      getDaemonPaths(tempDir),
+      PID,
+      URL,
+      undefined,
+      makeDeps({ probeVersion: async () => undefined, killPid }),
+    );
+    expect(result).toBe(false);
+    expect(killPid).not.toHaveBeenCalled();
+  });
+
+  it("attaches (no eviction) when the running daemon is newer than pinned (no downgrade)", async () => {
+    const killPid = vi.fn();
+    const result = await evictStaleDaemon(
+      getDaemonPaths(tempDir),
+      PID,
+      URL,
+      undefined,
+      makeDeps({ probeVersion: async () => "99.0.0", killPid }),
+    );
+    expect(result).toBe(false);
+    expect(killPid).not.toHaveBeenCalled();
+  });
+
+  it("attaches (no eviction) without probing when the on-disk binary is not up to date", async () => {
+    const probeVersion = vi.fn(async () => "0.0.1");
+    const killPid = vi.fn();
+    const result = await evictStaleDaemon(
+      getDaemonPaths(tempDir),
+      PID,
+      URL,
+      undefined,
+      makeDeps({ binaryUpToDate: () => false, probeVersion, killPid }),
+    );
+    expect(result).toBe(false);
+    expect(probeVersion).not.toHaveBeenCalled();
+    expect(killPid).not.toHaveBeenCalled();
+  });
+
+  it("restarts (SIGTERM + wait-for-exit + cleanup) when binary is current but the daemon is stale", async () => {
+    const paths = getDaemonPaths(tempDir);
+    writeFileSync(paths.pidFile, String(PID), "utf-8");
+    writeFileSync(paths.portFile, "6333", "utf-8");
+    writeFileSync(paths.refsFile, "2", "utf-8");
+
+    const killPid = vi.fn();
+    let aliveCalls = 0;
+    const isAlive = vi.fn(() => {
+      aliveCalls += 1;
+      return aliveCalls <= 2; // alive twice, then exits
+    });
+    const sleep = vi.fn(async () => {});
+
+    const result = await evictStaleDaemon(
+      paths,
+      PID,
+      URL,
+      undefined,
+      makeDeps({ probeVersion: async () => "0.0.1", killPid, isAlive, sleep }),
+    );
+
+    expect(result).toBe(true);
+    expect(killPid).toHaveBeenCalledWith(PID, "SIGTERM");
+    expect(sleep).toHaveBeenCalled(); // waited for the old process to exit
+    expect(existsSync(paths.pidFile)).toBe(false);
+    expect(existsSync(paths.portFile)).toBe(false);
+    expect(existsSync(paths.refsFile)).toBe(false);
+  });
+
+  it("still evicts (cleanup, no wait) when SIGTERM throws because the process is already dead", async () => {
+    const paths = getDaemonPaths(tempDir);
+    writeFileSync(paths.pidFile, String(PID), "utf-8");
+
+    const killPid = vi.fn(() => {
+      throw new Error("ESRCH");
+    });
+    const sleep = vi.fn(async () => {});
+
+    const result = await evictStaleDaemon(
+      paths,
+      PID,
+      URL,
+      undefined,
+      makeDeps({ probeVersion: async () => "0.0.1", killPid, sleep }),
+    );
+
+    expect(result).toBe(true);
+    expect(killPid).toHaveBeenCalledWith(PID, "SIGTERM");
+    expect(sleep).not.toHaveBeenCalled();
+    expect(existsSync(paths.pidFile)).toBe(false);
+  });
+
+  it("escalates to SIGKILL when the stale daemon ignores SIGTERM", async () => {
+    const paths = getDaemonPaths(tempDir);
+    writeFileSync(paths.pidFile, String(PID), "utf-8");
+
+    let killed = false;
+    const killPid = vi.fn((_pid: number, signal: NodeJS.Signals) => {
+      if (signal === "SIGKILL") killed = true;
+    });
+    const isAlive = () => !killed; // stays alive until SIGKILL lands
+
+    const result = await evictStaleDaemon(
+      paths,
+      PID,
+      URL,
+      undefined,
+      makeDeps({ probeVersion: async () => "0.0.1", killPid, isAlive }),
+    );
+
+    expect(result).toBe(true);
+    expect(killPid).toHaveBeenCalledWith(PID, "SIGTERM");
+    expect(killPid).toHaveBeenCalledWith(PID, "SIGKILL");
   });
 });
