@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -22,6 +22,7 @@ const mockClient = {
   createCollection: vi.fn().mockResolvedValue({}),
   getCollection: vi.fn().mockResolvedValue({}),
   getCollections: vi.fn().mockResolvedValue({ collections: [] }),
+  getAliases: vi.fn().mockResolvedValue({ aliases: [] }),
   deleteCollection: vi.fn().mockResolvedValue({}),
   upsert: vi.fn().mockResolvedValue({}),
   search: vi.fn().mockResolvedValue([]),
@@ -2938,16 +2939,40 @@ describe("QdrantManager.getCollectionDiskBytes", () => {
     return new QdrantManager("http://localhost:6333", undefined, undefined, daemon);
   }
 
-  it("sums file sizes recursively under <storagePath>/collections/<name> for an embedded daemon", async () => {
+  it("sums actual on-disk size (allocated blocks) recursively under <storagePath>/collections/<name>", async () => {
     storageRoot = mkdtempSync(join(tmpdir(), "tea-rags-disk-"));
     const collectionDir = join(storageRoot, "collections", "code_abc");
     mkdirSync(join(collectionDir, "0", "segments"), { recursive: true });
-    writeFileSync(join(collectionDir, "meta.json"), "x".repeat(100));
-    writeFileSync(join(collectionDir, "0", "segments", "vectors.bin"), Buffer.alloc(400));
+    const metaPath = join(collectionDir, "meta.json");
+    const vecPath = join(collectionDir, "0", "segments", "vectors.bin");
+    writeFileSync(metaPath, "x".repeat(100));
+    writeFileSync(vecPath, Buffer.alloc(400));
+    // Qdrant preallocates sparse files: getCollectionDiskBytes accounts allocated
+    // blocks (× 512), not logical size — compute the expected sum the same way.
+    const expected = statSync(metaPath).blocks * 512 + statSync(vecPath).blocks * 512;
 
     const manager = embeddedManager(storageRoot);
 
-    await expect(manager.getCollectionDiskBytes("code_abc")).resolves.toBe(500);
+    await expect(manager.getCollectionDiskBytes("code_abc")).resolves.toBe(expected);
+  });
+
+  it("resolves an alias to the active physical collection dir before sizing", async () => {
+    storageRoot = mkdtempSync(join(tmpdir(), "tea-rags-disk-"));
+    // On disk the data lives under the PHYSICAL name (`code_8b243ffe_v30`); the
+    // caller passes the ALIAS (`code_8b243ffe`). Sizing the alias path directly
+    // would miss the dir entirely → undefined. resolveActive must redirect it.
+    const physicalDir = join(storageRoot, "collections", "code_8b243ffe_v30");
+    mkdirSync(physicalDir, { recursive: true });
+    const metaPath = join(physicalDir, "meta.json");
+    writeFileSync(metaPath, Buffer.alloc(250));
+    const expected = statSync(metaPath).blocks * 512;
+    mockClient.getAliases.mockResolvedValueOnce({
+      aliases: [{ alias_name: "code_8b243ffe", collection_name: "code_8b243ffe_v30" }],
+    });
+
+    const manager = embeddedManager(storageRoot);
+
+    await expect(manager.getCollectionDiskBytes("code_8b243ffe")).resolves.toBe(expected);
   });
 
   it("returns undefined for external Qdrant (no daemon probe, no filesystem access)", async () => {

@@ -214,7 +214,11 @@ export class QdrantManager {
     const storagePath = this.daemon?.storagePath;
     if (storagePath === undefined) return undefined;
     try {
-      return await sumDirBytes(join(storagePath, "collections", collectionName));
+      // The status reports the alias (e.g. `code_<hash>`); the on-disk directory
+      // is the active PHYSICAL collection it points at (`code_<hash>_vN`). Resolve
+      // the alias before stat-ing, or we'd read a non-existent dir → undefined.
+      const physical = await this.aliases.resolveActive(collectionName);
+      return await sumDirBytes(join(storagePath, "collections", physical));
     } catch {
       return undefined;
     }
@@ -1507,10 +1511,15 @@ export class QdrantManager {
 }
 
 /**
- * Recursively sum the byte size of every regular file under `dir`. Directories
- * are descended; symlinks and special files are skipped (best-effort disk
- * accounting). Propagates fs errors (e.g. ENOENT for a missing collection dir)
- * to the caller, which swallows them — see {@link QdrantManager.getCollectionDiskBytes}.
+ * Recursively sum the ACTUAL on-disk size of every regular file under `dir`
+ * (allocated blocks × 512), matching `du`. Qdrant preallocates sparse files, so
+ * `stat.size` (logical length) wildly overstates real usage — ~1.5 GB apparent
+ * vs ~382 MB allocated observed live. We therefore account allocated blocks, not
+ * logical size; on exotic platforms where `blocks` is undefined we round the
+ * logical size up to the next 512-byte sector. Directories are descended;
+ * symlinks and special files are skipped (best-effort). Propagates fs errors
+ * (e.g. ENOENT for a missing collection dir) to the caller, which swallows them
+ * — see {@link QdrantManager.getCollectionDiskBytes}.
  */
 async function sumDirBytes(dir: string): Promise<number> {
   let total = 0;
@@ -1520,7 +1529,8 @@ async function sumDirBytes(dir: string): Promise<number> {
     if (entry.isDirectory()) {
       total += await sumDirBytes(full);
     } else if (entry.isFile()) {
-      total += (await stat(full)).size;
+      const st = await stat(full);
+      total += st.blocks !== undefined ? st.blocks * 512 : Math.ceil(st.size / 512) * 512;
     }
   }
   return total;
