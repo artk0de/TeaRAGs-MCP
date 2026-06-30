@@ -1,7 +1,9 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { resolveLocalBindingType, type LocalBinding } from "../../../../contracts/types/codegraph.js";
+import { RUBY_INSTANCE_RETURNING } from "../dsl/index.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
 import { constInstanceType } from "./type-sources/ast-inference.js";
+import { collectYardParamTypes } from "./type-sources/yard.js";
 
 export { collectYardParamTypes, collectYardReturnTypes, YARD_CONST } from "./type-sources/yard.js";
 export { RUBY_BLOCK_ITERATOR_METHODS } from "./type-sources/ast-inference.js";
@@ -31,7 +33,12 @@ export function localTypeTrackingEnabled(): boolean {
  * non-constructor RHS records nothing (the uppercase-constant gate lives in
  * `constInstanceType`).
  */
-export function collectRubyIvarFieldTypes(root: AstNode): Record<string, Record<string, string>> {
+export function collectRubyIvarFieldTypes(
+  root: AstNode,
+  associationTypes: Record<string, Record<string, string>> = {},
+  code = "",
+): Record<string, Record<string, string>> {
+  const yardParamsByLine = code ? collectYardParamTypes(code) : new Map<number, Record<string, string>>();
   const out: Record<string, Record<string, string>> = {};
   const walkScope = (node: AstNode, scope: string[]): void => {
     if (node.type === "class" || node.type === "module") {
@@ -44,23 +51,24 @@ export function collectRubyIvarFieldTypes(root: AstNode): Record<string, Record<
       const fq = scope.length === 0 ? localName : `${scope.join("::")}::${localName}`;
       const body = node.childForFieldName("body");
 
-      // Collect `@ivar = Const.new` across THIS class's own bodies. Stop at any
+      // Collect typed `@ivar = …` across THIS class's own bodies. Stop at any
       // nested class/module — those are attributed to their own fq via the
-      // walkScope recursion below.
+      // walkScope recursion below. Method bodies get a method-scoped type env
+      // (YARD params + local `Const.new`/copy) so a param/local-copy or an
+      // association-chain RHS types the ivar, not just `@x = Const.new`.
       const fields: Record<string, string> = {};
-      const collectIvars = (n: AstNode): void => {
+      const collectInClass = (n: AstNode): void => {
         if (n.type === "class" || n.type === "module") return;
-        if (n.type === "assignment") {
-          const lhs = n.childForFieldName("left");
-          const rhs = n.childForFieldName("right");
-          if (lhs?.type === "instance_variable" && rhs) {
-            const type = constInstanceType(rhs);
-            if (type) fields[lhs.text] = type; // source-order DFS → last-write-wins
-          }
+        if (n.type === "method" || n.type === "singleton_method") {
+          const env = methodTypeEnv(n, yardParamsByLine);
+          collectIvarAssignmentsInMethod(n, env, fields, associationTypes);
+          return; // collectIvarAssignmentsInMethod walks the body
         }
-        for (const child of n.children) collectIvars(child);
+        // Class-body-level ivar assignment (rare) — no method env.
+        recordIvarAssignment(n, {}, fields, associationTypes);
+        for (const child of n.children) collectInClass(child);
       };
-      for (const child of (body ?? node).children) collectIvars(child);
+      for (const child of (body ?? node).children) collectInClass(child);
       if (Object.keys(fields).length > 0) out[fq] = { ...(out[fq] ?? {}), ...fields };
 
       const recurseChildren = body ? body.children : node.children;
@@ -71,6 +79,124 @@ export function collectRubyIvarFieldTypes(root: AstNode): Record<string, Record<
   };
   walkScope(root, []);
   return out;
+}
+
+/**
+ * Build a method-scoped `localName → typeName` env: YARD `@param` types at the
+ * def line, then a pass binding `local = Const.new`/finder (constInstanceType)
+ * and copy-propagation `local = otherTypedLocal`. Last-write-wins. Stops at a
+ * nested class / module / method (those have their own scope).
+ */
+function methodTypeEnv(method: AstNode, yardParamsByLine: Map<number, Record<string, string>>): Record<string, string> {
+  const env: Record<string, string> = { ...(yardParamsByLine.get(method.startPosition.row + 1) ?? {}) };
+  const scan = (n: AstNode): void => {
+    if (n.type === "class" || n.type === "module" || n.type === "method" || n.type === "singleton_method") return;
+    if (n.type === "assignment") {
+      const lhs = n.childForFieldName("left");
+      const rhs = n.childForFieldName("right");
+      if (lhs?.type === "identifier" && rhs) {
+        const direct = constInstanceType(rhs);
+        if (direct) {
+          env[lhs.text] = direct;
+        } else if (rhs.type === "identifier") {
+          const copied = env[rhs.text];
+          if (copied) env[lhs.text] = copied;
+        }
+      }
+    }
+    for (const child of n.children) scan(child);
+  };
+  const body = method.childForFieldName("body");
+  for (const child of (body ?? method).children) scan(child);
+  return env;
+}
+
+/** Walk a method body recording every `@ivar = <rhs>` against the method's type env. */
+function collectIvarAssignmentsInMethod(
+  method: AstNode,
+  env: Record<string, string>,
+  fields: Record<string, string>,
+  associationTypes: Record<string, Record<string, string>>,
+): void {
+  const walkBody = (n: AstNode): void => {
+    if (n.type === "class" || n.type === "module") return;
+    recordIvarAssignment(n, env, fields, associationTypes);
+    for (const child of n.children) walkBody(child);
+  };
+  const body = method.childForFieldName("body");
+  for (const child of (body ?? method).children) walkBody(child);
+}
+
+/**
+ * Record `@ivar = <rhs>` into `fields` using (in precedence order):
+ *  1. constInstanceType(rhs) — `@x = Const.new`/finder (preserves prior behaviour).
+ *  2. env[rhs] — typed-param / typed-local copy (`@x = account`).
+ *  3. chain-RHS threading — `@x = head.assoc[.assoc][.new]` (association walk).
+ * Last-write-wins. Mutates `fields`.
+ */
+function recordIvarAssignment(
+  n: AstNode,
+  env: Record<string, string>,
+  fields: Record<string, string>,
+  associationTypes: Record<string, Record<string, string>>,
+): void {
+  if (n.type !== "assignment") return;
+  const lhs = n.childForFieldName("left");
+  const rhs = n.childForFieldName("right");
+  if (lhs?.type !== "instance_variable" || !rhs) return;
+  const direct = constInstanceType(rhs);
+  if (direct) {
+    fields[lhs.text] = direct;
+    return;
+  }
+  if (rhs.type === "identifier") {
+    const copied = env[rhs.text];
+    if (copied) {
+      fields[lhs.text] = copied;
+      return;
+    }
+  }
+  const chained = threadChainRhsType(rhs.text, env, fields, associationTypes);
+  if (chained) fields[lhs.text] = chained;
+}
+
+/**
+ * Thread a dotted-chain assignment RHS (`@account.statuses.new`, `acct.posts.first`)
+ * to its element-model type. The head's type comes from `fields` (a prior `@ivar`)
+ * or `env` (a typed param/local). Each association hop walks `associationTypes`;
+ * an instance-returning tail link (`new`/`build`/`create!`/`first`/`find`…) on an
+ * association keeps the element model. Returns `undefined` at the first unknown
+ * hop (no fabrication) or for a non-chain / untyped-head RHS.
+ */
+function threadChainRhsType(
+  text: string,
+  env: Record<string, string>,
+  fields: Record<string, string>,
+  associationTypes: Record<string, Record<string, string>>,
+): string | undefined {
+  if (!text.includes(".")) return undefined;
+  const segments = text.split(".");
+  const head = segments[0];
+  if (head === undefined) return undefined;
+  let current: string | undefined = head.startsWith("@") ? fields[head] : env[head];
+  if (!current) return undefined;
+  const seen = new Set<string>([current]); // cycle guard (self-referential has_many)
+  for (let i = 1; i < segments.length; i++) {
+    const link = stripArgsLocal(segments[i]);
+    if (RUBY_INSTANCE_RETURNING.has(link)) continue; // `.new`/`.first` on a relation → keep element model
+    const next: string | undefined = associationTypes[current]?.[link];
+    if (!next) return undefined; // unknown hop STOPS (honest fan-out)
+    if (seen.has(next)) return next;
+    seen.add(next);
+    current = next;
+  }
+  return current;
+}
+
+/** Strip a trailing call argument list from a chain segment (`new(post)` → `new`). */
+function stripArgsLocal(segment: string): string {
+  const paren = segment.indexOf("(");
+  return paren === -1 ? segment : segment.slice(0, paren);
 }
 
 /**

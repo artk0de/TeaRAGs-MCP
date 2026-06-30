@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  collectYardParamTypes,
   collectYardReturnTypes,
   rubyYardTypeSource,
 } from "../../../../../../../src/core/domains/language/ruby/walker/type-sources/yard.js";
@@ -125,6 +126,23 @@ describe("rubyYardTypeSource", () => {
 // (`seenAttrName` / `pendingAttrOwner`) was added here in the same commit that added
 // it to collectYardReturnFacts, so these tests cover both the guard code AND the
 // basic function body that no other test exercised.
+describe("collectYardParamTypes — accepts both YARD param orders (rvw34)", () => {
+  it("parses name-first `@param name [Type]`", () => {
+    const code = ["# @param account [Account]", "def call(account)", "end"].join("\n");
+    expect(collectYardParamTypes(code).get(2)).toEqual({ account: "Account" });
+  });
+
+  it("parses bracket-first `@param [Type] name` (mastodon/Rails style)", () => {
+    const code = ["# @param [Account] account from which to post", "def call(account)", "end"].join("\n");
+    expect(collectYardParamTypes(code).get(2)).toEqual({ account: "Account" });
+  });
+
+  it("reduces a container bracket to its element type (`[Array<Status>] items`)", () => {
+    const code = ["# @param [Array<Status>] items", "def call(items)", "end"].join("\n");
+    expect(collectYardParamTypes(code).get(2)).toEqual({ items: "Status" });
+  });
+});
+
 describe("collectYardReturnTypes", () => {
   it("maps @return [Type] to the following def name", () => {
     const code = ["# @return [User]", "def current_user", "  @user", "end"].join("\n");

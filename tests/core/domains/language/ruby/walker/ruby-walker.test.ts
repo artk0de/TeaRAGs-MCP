@@ -977,13 +977,7 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
   });
 
   it("block param NEGATIVE: `untyped.each { |q| q.foo }` — untyped receiver produces no binding for `q`", () => {
-    const src = [
-      "class Worker",
-      "  def process",
-      "    untyped.each { |q| q.foo }",
-      "  end",
-      "end",
-    ].join("\n");
+    const src = ["class Worker", "  def process", "    untyped.each { |q| q.foo }", "  end", "end"].join("\n");
     const tree = parse(`${src}\n`);
     const r = extractFromRubyFile({
       tree,
@@ -998,14 +992,7 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
 
   // B-const — class-valued (var=CONST) bindings (Increment B / var=CONST)
   it("binds `klass = User` (bare constant RHS) as class-valued (valueKind: 'class')", () => {
-    const src = [
-      "class Registry",
-      "  def lookup",
-      "    klass = User",
-      "    klass.find(1)",
-      "  end",
-      "end",
-    ].join("\n");
+    const src = ["class Registry", "  def lookup", "    klass = User", "    klass.find(1)", "  end", "end"].join("\n");
     const tree = parse(`${src}\n`);
     const r = extractFromRubyFile({
       tree,
@@ -1018,12 +1005,7 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
   });
 
   it("binds `klass = Acme::Auth::Login` (qualified constant RHS) as class-valued", () => {
-    const src = [
-      "def resolve",
-      "  klass = Acme::Auth::Login",
-      "  klass.call(params)",
-      "end",
-    ].join("\n");
+    const src = ["def resolve", "  klass = Acme::Auth::Login", "  klass.call(params)", "end"].join("\n");
     const tree = parse(`${src}\n`);
     const r = extractFromRubyFile({
       tree,
@@ -1032,9 +1014,7 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
       language: "ruby",
       chunks: [{ symbolId: "resolve", scope: [], startLine: 1, endLine: 4 }],
     });
-    expect(r.chunks[0].localBindings?.["klass"]).toEqual([
-      { line: 2, type: "Acme::Auth::Login", valueKind: "class" },
-    ]);
+    expect(r.chunks[0].localBindings?.["klass"]).toEqual([{ line: 2, type: "Acme::Auth::Login", valueKind: "class" }]);
   });
 });
 
@@ -2437,6 +2417,74 @@ describe("collectRubyIvarFieldTypes (ivar → type, classFieldTypes channel)", (
     expect(collectRubyIvarFieldTypes(root)).toEqual({});
   });
 
+  it("types @ivar from a YARD-typed param copy (@account = account) — rvw34 C2", () => {
+    const code = `
+      class PostStatusService
+        # @param [Account] account
+        def call(account)
+          @account = account
+        end
+      end
+    `;
+    const root = parse(code).rootNode;
+    expect(collectRubyIvarFieldTypes(root, {}, code)).toEqual({ PostStatusService: { "@account": "Account" } });
+  });
+
+  it("types @ivar from a local typed by Const.new earlier in the method — rvw34 C2", () => {
+    const code = `
+      class Svc
+        def run
+          user = User.find(1)
+          @user = user
+        end
+      end
+    `;
+    const root = parse(code).rootNode;
+    expect(collectRubyIvarFieldTypes(root, {}, code)).toEqual({ Svc: { "@user": "User" } });
+  });
+
+  it("does NOT type @ivar from an untyped param (no YARD, no Const.new) — rvw34 C2", () => {
+    const code = `
+      class Svc
+        def run(thing)
+          @thing = thing
+        end
+      end
+    `;
+    const root = parse(code).rootNode;
+    expect(collectRubyIvarFieldTypes(root, {}, code)).toEqual({});
+  });
+
+  it("types @ivar from a chain RHS through associations + instance-returning tail — rvw34 C3", () => {
+    const code = `
+      class PostStatusService
+        # @param [Account] account
+        def call(account)
+          @account = account
+          @status = @account.statuses.new
+        end
+      end
+    `;
+    const assoc = { Account: { statuses: "Status" } };
+    const root = parse(code).rootNode;
+    expect(collectRubyIvarFieldTypes(root, assoc, code)).toEqual({
+      PostStatusService: { "@account": "Account", "@status": "Status" },
+    });
+  });
+
+  it("stops chain-RHS at an unknown association hop (no fabrication) — rvw34 C3", () => {
+    const code = `
+      class Svc
+        # @param [Account] account
+        def run(account)
+          @x = account.unknown_assoc.new
+        end
+      end
+    `;
+    const root = parse(code).rootNode;
+    expect(collectRubyIvarFieldTypes(root, { Account: {} }, code)).toEqual({});
+  });
+
   it("keys ivars of a nested-namespace class by its full scope name", () => {
     const root = parse(`
       module Agents
@@ -2626,7 +2674,7 @@ describe("collectRubyAssociationTypes (accessor → model, associationTypes chan
     expect(collectRubyAssociationTypes(root)).toEqual({ Event: { user: "User" } });
   });
 
-  it("honors class_name: override (belongs_to :author, class_name: \"User\" → User, NOT Author)", () => {
+  it('honors class_name: override (belongs_to :author, class_name: "User" → User, NOT Author)', () => {
     const root = parse(`
       class Event
         belongs_to :user

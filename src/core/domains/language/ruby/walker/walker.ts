@@ -198,7 +198,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // imass) — same env gate as the other type-inference paths. Ruby is the 5th
   // language to fill this channel (after TS/Java/Python/Rust).
   if (trackTypes) {
-    const ivarFieldTypes = collectRubyIvarFieldTypes(input.tree.rootNode);
+    const ivarFieldTypes = collectRubyIvarFieldTypes(input.tree.rootNode, associationTypes, input.code);
     if (Object.keys(ivarFieldTypes).length > 0) out.classFieldTypes = ivarFieldTypes;
   }
   // Precise type-source maps for the resolver's PRECISE propagation paths
