@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/domains/ingest/constants.js";
+import { mapMarkerToHealth } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 import { EnrichmentRecovery } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/recovery.js";
+import type { EnrichmentMarkerMap } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 
 describe("EnrichmentRecovery", () => {
   let mockQdrant: {
@@ -456,5 +458,65 @@ describe("EnrichmentRecovery.recoverAll race guard", () => {
     expect(m.file.runId).toBe("NEW_RUN");
     expect(m.chunk.runId).toBe("NEW_RUN");
     expect(m.file.unenrichedChunks).toBe(0);
+  });
+});
+
+describe("EnrichmentRecovery.recoverAll dangling _run self-heal", () => {
+  it("stamps the recovery marker with the active _run.runId so a crashed run renders healthy", async () => {
+    const qdrant = new MockQdrantManager();
+    await qdrant.createCollection("coll", 384);
+    await qdrant.addPoints("coll", [{ id: INDEXING_METADATA_ID, vector: new Array(384).fill(0), payload: {} }]);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+
+    // A run crashed BEFORE writing any terminal per-provider marker: only the
+    // `_run` pointer survives, stamped > 1h ago. getRunId(coll, "git") returns
+    // undefined (no enrichment.git.file/.chunk), so the old code stamped the
+    // recovery marker with "" — which never matches `_run.runId`, leaving the
+    // health mapper to re-derive "crashed (no progress >1h)" indefinitely.
+    const crashedStartedAt = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    await marker.markRunStart("coll", ["git"], "R_OLD", crashedStartedAt);
+
+    const applier = {
+      applyFileSignals: vi.fn().mockResolvedValue(undefined),
+      applyChunkSignals: vi.fn().mockResolvedValue(0),
+    };
+    const recovery = new EnrichmentRecovery(qdrant as any, applier as any);
+
+    // Incremental reindex with 0 changed files: every chunk already carries
+    // enrichedAt, so recovery finds nothing unenriched at either level.
+    vi.spyOn(recovery, "recoverFileLevel").mockResolvedValue({
+      recoveredFiles: 0,
+      recoveredChunks: 0,
+      remainingUnenriched: 0,
+    });
+    vi.spyOn(recovery, "recoverChunkLevel").mockResolvedValue({
+      recoveredFiles: 0,
+      recoveredChunks: 0,
+      remainingUnenriched: 0,
+    });
+
+    const provider = {
+      key: "git",
+      resolveRoot: (p: string) => p,
+      buildFileSignals: vi.fn(),
+      buildChunkSignals: vi.fn(),
+    } as any;
+    const ctx = new Map([["git", { key: "git", provider, effectiveRoot: "/repo", ignoreFilter: null }]]);
+
+    await recovery.recoverAll("coll", "/repo", ctx, marker);
+
+    const enrichment = (await marker.read("coll")) as EnrichmentMarkerMap;
+    const git = enrichment.git as any;
+    // Recovery stamps the marker with the active run pointer, not "".
+    expect(git.file.runId).toBe("R_OLD");
+    expect(git.chunk.runId).toBe("R_OLD");
+    expect(git.file.status).toBe("completed");
+    expect(git.chunk.status).toBe("completed");
+
+    // End-to-end: the health mapper now renders the recovered terminal status
+    // instead of the dangling-_run "crashed" derivation.
+    const health = mapMarkerToHealth(enrichment)!;
+    expect(health.git.file.status).toBe("healthy");
+    expect(health.git.chunk.status).toBe("healthy");
   });
 });
