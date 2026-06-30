@@ -532,6 +532,20 @@ export interface ChunkExtraction {
    * Plain Record (NOT Map) for NDJSON-spill round-trip, same as localBindings.
    */
   localCallBindings?: Record<string, string>;
+  /**
+   * Positional-arity envelope of the method definition this chunk represents
+   * (bd xlnub). Populated by the Ruby walker for `method` / `singleton_method`
+   * nodes. Undefined for non-method chunks and for languages whose walkers
+   * don't compute arity.
+   */
+  arity?: AritySignature;
+  /**
+   * Visibility of the method definition this chunk represents (bd xlnub).
+   * Populated by the Ruby walker using the class-body visibility state machine
+   * (`private` / `protected` / `public` bare calls, inline `private def`,
+   * symbol form). Undefined for non-method chunks and non-Ruby languages.
+   */
+  visibility?: "public" | "private" | "protected";
 }
 
 export interface CallRef {

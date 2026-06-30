@@ -741,6 +741,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           shortName: lastSegment(c.symbolId),
           relPath: extraction.relPath,
           scope: c.scope,
+          // Thread walker-captured arity + visibility into SymbolDefinition (bd xlnub)
+          ...(c.arity !== undefined ? { arity: c.arity } : {}),
+          ...(c.visibility !== undefined ? { visibility: c.visibility } : {}),
         }));
         // Persist defs to both the in-memory table (for in-pass
         // resolver lookups) AND DuckDB (for cold-start hydration of a
@@ -1882,10 +1885,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // can find which classes include a given module. No new reset site needed —
     // it is computed fresh from `ancestorsForResolver`/`prependedAncestorsForResolver`
     // which are already reset at every existing reset site.
-    const includedByForResolver = buildIncludedBy(
-      ancestorsForResolver ?? {},
-      prependedAncestorsForResolver ?? {},
-    );
+    const includedByForResolver = buildIncludedBy(ancestorsForResolver ?? {}, prependedAncestorsForResolver ?? {});
     const extendsForResolver = Object.keys(this.runExtends).length > 0 ? this.runExtends : extraction.classExtends;
     const returnTypesForResolver =
       Object.keys(this.runReturnTypes).length > 0 ? this.runReturnTypes : extraction.functionReturnTypes;

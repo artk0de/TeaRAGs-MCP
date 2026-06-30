@@ -35,6 +35,7 @@
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
+  AritySignature,
   CallRef,
   ChunkExtraction,
   DispatchRef,
@@ -108,6 +109,9 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // lands on all four overlapping chunks (file/module/class/method) and
   // inflates caller-edge counts by the nesting depth (bd tea-rags-mcp-8fnu).
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  // Arity + visibility per method def (bd xlnub Task 2). Keyed by 1-based
+  // start line — the same line the chunker assigns to the method's chunk.
+  const methodSigs = collectRubyMethodSignatures(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -116,6 +120,11 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
       endLine: c.endLine,
       calls: callOwnership.get(chunkIndex) ?? [],
     };
+    const sig = c.startLine !== undefined ? methodSigs.get(c.startLine) : undefined;
+    if (sig !== undefined) {
+      base.arity = sig.arity;
+      base.visibility = sig.visibility;
+    }
     if (trackTypes) {
       // Store provides YARD + AST param/local bindings (position-filtered to chunk).
       const localBindings = store.localBindingsForChunk(c.startLine, c.endLine);
@@ -405,6 +414,149 @@ function mixinTargetFromStatement(node: AstNode): { name: string; kind: "include
         : null;
   if (!text || !/^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(text)) return null;
   return { name: text, kind: methodField.text as "include" | "extend" | "prepend" };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Arity + visibility capture (bd xlnub Task 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const VISIBILITY_KEYWORDS = new Set<string>(["private", "protected", "public"]);
+
+/**
+ * Compute the positional arity of a `method` or `singleton_method` node.
+ * Counts `identifier` (required positional) and `optional_parameter` children
+ * of `method_parameters`; sets `hasSplat` when a `splat_parameter` is present.
+ * Kwargs (`keyword_parameter`, `hash_splat_parameter`) and block params are
+ * ignored — they don't affect positional arity.
+ */
+function computeRubyArity(methodNode: AstNode): AritySignature {
+  const params = methodNode.childForFieldName("parameters");
+  if (!params) return { minRequired: 0, maxPositional: 0, hasSplat: false };
+  let minRequired = 0;
+  let maxPositional = 0;
+  let hasSplat = false;
+  for (const child of params.namedChildren) {
+    if (child.type === "identifier") {
+      minRequired++;
+      maxPositional++;
+    } else if (child.type === "optional_parameter") {
+      maxPositional++;
+    } else if (child.type === "splat_parameter") {
+      hasSplat = true;
+    }
+    // keyword_parameter, hash_splat_parameter, block_parameter → ignored
+  }
+  return { minRequired, maxPositional, hasSplat };
+}
+
+/**
+ * Walk the AST and collect arity + visibility for every `method` /
+ * `singleton_method` definition found inside a class or module body.
+ *
+ * The map is keyed by the method node's 1-based start line so the caller
+ * can look up by `ChunkExtraction.startLine` — the chunker assigns the
+ * same line to the method chunk it creates for that node.
+ *
+ * Visibility state machine per class body (source order):
+ *   - bare `private`/`protected`/`public` → switches default for subsequent defs
+ *   - `private def foo` (inline form) → marks that specific method only
+ *   - `private :foo, :bar` (symbol form) → marks those methods by name
+ * Default is `"public"` at the start of each class body.
+ */
+function collectRubyMethodSignatures(
+  root: AstNode,
+): Map<number, { arity: AritySignature; visibility: "public" | "private" | "protected" }> {
+  type VisMode = "public" | "private" | "protected";
+  const out = new Map<number, { arity: AritySignature; visibility: VisMode }>();
+
+  const processClassBody = (classNode: AstNode): void => {
+    const body = classNode.childForFieldName("body");
+    const stmts = body ? body.children : classNode.children;
+
+    let currentVis: VisMode = "public";
+    // symbol-form overrides: method short-name → forced visibility
+    const symVis = new Map<string, VisMode>();
+
+    for (const stmt of stmts) {
+      // Nested class/module — recurse with fresh public default
+      if (stmt.type === "class" || stmt.type === "module") {
+        processClassBody(stmt);
+        continue;
+      }
+
+      // Method definition — record arity + current visibility
+      if (stmt.type === "method" || stmt.type === "singleton_method") {
+        const nameNode = stmt.childForFieldName("name");
+        const name = nameNode?.text ?? "";
+        out.set(stmt.startPosition.row + 1, {
+          arity: computeRubyArity(stmt),
+          visibility: symVis.get(name) ?? currentVis,
+        });
+        continue;
+      }
+
+      // Visibility modifier call: `private`, `private def foo`, `private :foo`
+      if (stmt.type === "call" || stmt.type === "method_call") {
+        if (stmt.childForFieldName("receiver")) continue; // not a bare class-body call
+        const methodField = stmt.childForFieldName("method") ?? stmt.children.find((c) => c.type === "identifier");
+        if (!methodField || !VISIBILITY_KEYWORDS.has(methodField.text)) continue;
+        const modifier = methodField.text as VisMode;
+        const args = stmt.childForFieldName("arguments") ?? stmt.children.find((c) => c.type === "argument_list");
+        if (!args || args.namedChildren.length === 0) {
+          // Bare visibility switch: `private` with no args
+          currentVis = modifier;
+        } else {
+          const firstArg = args.namedChildren[0];
+          if (firstArg.type === "method" || firstArg.type === "singleton_method") {
+            // Inline form: `private def foo; end`
+            out.set(firstArg.startPosition.row + 1, {
+              arity: computeRubyArity(firstArg),
+              visibility: modifier,
+            });
+          } else {
+            // Symbol form: `private :foo, :bar`
+            for (const arg of args.namedChildren) {
+              if (arg.type === "simple_symbol" || arg.type === "symbol") {
+                symVis.set(arg.text.replace(/^:/, ""), modifier);
+              }
+            }
+          }
+        }
+        continue;
+      }
+
+      // Bare `private` as identifier node (tree-sitter-ruby may produce this form)
+      if (stmt.type === "identifier" && VISIBILITY_KEYWORDS.has(stmt.text)) {
+        currentVis = stmt.text as VisMode;
+        continue;
+      }
+    }
+  };
+
+  // Top-level walk: descend into nodes looking for class/module declarations.
+  // When we find one, processClassBody handles it and its nested classes —
+  // so we do NOT recurse further into it from this outer walk (avoids double-visit).
+  const walkTopLevel = (node: AstNode): void => {
+    if (node.type === "class" || node.type === "module") {
+      processClassBody(node);
+      return; // processClassBody recurses into nested classes
+    }
+    for (const child of node.children) walkTopLevel(child);
+  };
+
+  walkTopLevel(root);
+  return out;
+}
+
+/**
+ * Count positional arguments at a call site, excluding block arguments
+ * (`block`, `do_block`) and keyword arguments (`pair`). No `argument_list`
+ * child → 0.
+ */
+function computeArgCount(callNode: AstNode): number {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return 0;
+  return args.namedChildren.filter((c) => c.type !== "block" && c.type !== "do_block" && c.type !== "pair").length;
 }
 
 /**
@@ -1109,6 +1261,8 @@ function emitMethodCallRef(
   if (dynamicSend) callRef.dynamicSend = true;
   const dispatch = exprToRubyDispatchRef(node, dispatchTableNames);
   if (dispatch?.field) callRef.dispatch = dispatch;
+  // Positional argCount (bd xlnub): excludes block and keyword args
+  callRef.argCount = computeArgCount(node);
   out.push(callRef);
 }
 
