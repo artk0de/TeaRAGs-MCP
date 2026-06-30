@@ -56,6 +56,16 @@ export interface GraphFacadeDeps {
 
 const DEFAULT_LIMIT = 50;
 
+/** Navigation hides the irreducible untyped-dispatch residual (bd xlnub):
+ *  a `dynamic` edge is shown only when uniquely narrowed (confidence 1.0).
+ *  Every other edge kind (cone/exact/poly-base/registry) and legacy edges with no
+ *  edgeKind are always shown. The SQL WHERE in getCalleeEdges encodes the identical
+ *  rule — the two MUST stay in sync. */
+export function isNavigationVisibleEdge(e: { edgeKind?: string; confidence?: number }): boolean {
+  if (e.edgeKind !== "dynamic") return true;
+  return (e.confidence ?? 1) >= 1;
+}
+
 interface GraphAddressing {
   collection?: string;
   project?: string;
@@ -110,7 +120,7 @@ export class GraphFacade {
       req,
       async (handle) => {
         const edges = await handle.graphDb.getCallers(req.symbolId);
-        return { callers: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
+        return { callers: edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT) };
       },
       { callers: [] },
     );
@@ -121,7 +131,7 @@ export class GraphFacade {
       req,
       async (handle) => {
         const edges = await handle.graphDb.getCallees(req.symbolId);
-        return { callees: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
+        return { callees: edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT) };
       },
       { callees: [] },
     );

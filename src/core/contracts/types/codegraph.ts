@@ -1231,12 +1231,20 @@ export interface CallerEdge {
   sourceSymbolId: SymbolId;
   sourceRelPath: RelPath;
   callExpression: string;
+  /** Edge kind from `cg_symbols_edges_method.edge_kind` (xlnub Task 5). */
+  edgeKind?: MethodEdgeKind;
+  /** Dispatch confidence in (0,1] from `cg_symbols_edges_method.confidence` (xlnub Task 5). */
+  confidence?: number;
 }
 
 export interface CalleeEdge {
   targetSymbolId: SymbolId | null;
   targetRelPath: RelPath;
   callExpression: string;
+  /** Edge kind from `cg_symbols_edges_method.edge_kind` (xlnub Task 5). */
+  edgeKind?: MethodEdgeKind;
+  /** Dispatch confidence in (0,1] from `cg_symbols_edges_method.confidence` (xlnub Task 5). */
+  confidence?: number;
 }
 
 /** Minimal chunk preview returned by graph MCP tools (`get_callers`,

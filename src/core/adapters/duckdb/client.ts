@@ -803,7 +803,7 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async getCallers(symbolId: SymbolId): Promise<CallerEdge[]> {
     const direct = await this.queryAll<CallerEdge>(
-      'SELECT source_symbol_id AS "sourceSymbolId", source_rel_path AS "sourceRelPath", call_expression AS "callExpression" FROM cg_symbols_edges_method WHERE target_symbol_id = ? ORDER BY source_rel_path, source_symbol_id',
+      'SELECT source_symbol_id AS "sourceSymbolId", source_rel_path AS "sourceRelPath", call_expression AS "callExpression", edge_kind AS "edgeKind", confidence FROM cg_symbols_edges_method WHERE target_symbol_id = ? ORDER BY source_rel_path, source_symbol_id',
       [symbolId],
     );
     // bd tea-rags-mcp-2jet-E — symmetric CHA cone expansion. A large cone was
@@ -814,7 +814,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     const split = splitMethodSymbol(symbolId);
     if (!split) return direct;
     const polyBaseCallers = await this.queryAll<CallerEdge>(
-      `SELECT m.source_symbol_id AS "sourceSymbolId", m.source_rel_path AS "sourceRelPath", m.call_expression AS "callExpression"
+      `SELECT m.source_symbol_id AS "sourceSymbolId", m.source_rel_path AS "sourceRelPath", m.call_expression AS "callExpression", m.edge_kind AS "edgeKind", m.confidence
          FROM cg_symbols_edges_method m
          JOIN cg_symbols_inheritance i ON i.source_fq_name = ?
         WHERE m.edge_kind = 'poly-base'
@@ -827,8 +827,8 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async getCallees(symbolId: SymbolId): Promise<CalleeEdge[]> {
-    const edges = await this.queryAll<CalleeEdge & { edgeKind: MethodEdgeKind }>(
-      `SELECT target_symbol_id AS "targetSymbolId", target_rel_path AS "targetRelPath", call_expression AS "callExpression", edge_kind AS "edgeKind"
+    const edges = await this.queryAll<CalleeEdge & { edgeKind: MethodEdgeKind | null; confidence: number | null }>(
+      `SELECT target_symbol_id AS "targetSymbolId", target_rel_path AS "targetRelPath", call_expression AS "callExpression", edge_kind AS "edgeKind", confidence
          FROM cg_symbols_edges_method WHERE source_symbol_id = ? ORDER BY target_rel_path`,
       [symbolId],
     );
@@ -838,6 +838,8 @@ export class DuckDbGraphClient implements GraphDbClient {
         targetSymbolId: e.targetSymbolId,
         targetRelPath: e.targetRelPath,
         callExpression: e.callExpression,
+        edgeKind: e.edgeKind ?? undefined,
+        confidence: e.confidence ?? undefined,
       };
       out.push(base);
       // bd tea-rags-mcp-2jet-E — expand a `poly-base` edge to the overriding
@@ -879,9 +881,13 @@ export class DuckDbGraphClient implements GraphDbClient {
     if (symbolIds.length === 0) return out;
     const placeholders = symbolIds.map(() => "?").join(", ");
     const rows = await this.queryAll<{ source: SymbolId; target: SymbolId }>(
+      // Navigation filter mirrors isNavigationVisibleEdge() in graph-facade.ts (xlnub Task 5):
+      // dynamic edges with confidence < 1 are hidden from BFS traversal; all other
+      // edge kinds (cone/exact/poly-base/registry) and legacy NULL-edgeKind edges are traversable.
       `SELECT source_symbol_id AS source, target_symbol_id AS target
        FROM cg_symbols_edges_method
        WHERE source_symbol_id IN (${placeholders}) AND target_symbol_id IS NOT NULL
+         AND NOT (edge_kind = 'dynamic' AND COALESCE(confidence, 1) < 1)
        ORDER BY source_symbol_id, target_symbol_id`,
       symbolIds,
     );
