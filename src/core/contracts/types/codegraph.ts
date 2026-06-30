@@ -571,6 +571,8 @@ export interface CallRef {
    * (framework) and from a genuine internal miss (bd cai0).
    */
   dynamicSend?: boolean;
+  /** Positional argument count at the call site (bd xlnub). */
+  argCount?: number;
 }
 
 /**
@@ -606,12 +608,23 @@ export interface GlobalSymbolTable {
   hydrate: (definitions: SymbolDefinition[]) => void;
 }
 
+/** Positional-arity envelope of a method definition (bd xlnub). `maxPositional`
+ *  is required+optional positional params; `hasSplat` (a `*args` rest param)
+ *  makes the upper bound unbounded. Kwargs / block params do NOT affect it. */
+export interface AritySignature {
+  minRequired: number;
+  maxPositional: number;
+  hasSplat: boolean;
+}
+
 export interface SymbolDefinition {
   symbolId: SymbolId;
   fqName: string;
   shortName: string;
   relPath: RelPath;
   scope: string[];
+  arity?: AritySignature;
+  visibility?: "public" | "private" | "protected";
 }
 
 /**
