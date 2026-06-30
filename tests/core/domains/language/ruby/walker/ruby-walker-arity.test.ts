@@ -100,4 +100,27 @@ describe("ruby walker arity/visibility/argCount capture (xlnub)", () => {
     expect(runCall).toBeDefined();
     expect(runCall?.argCount).toBe(0);
   });
+
+  it("private :foo AFTER def foo (backward form) marks method private", () => {
+    // Dominant Ruby idiom: def first, private :name at the bottom.
+    // Without two-pass, the method is emitted as "public" before symVis is populated.
+    // Line 1: class A
+    // Line 2: def secret; end
+    // Line 3: private :secret
+    // Line 4: end
+    const src = `class A\n  def secret; end\n  private :secret\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#secret", startLine: 2, endLine: 2, scope: ["A"] }]);
+    expect(chunkById(ex, "A#secret")?.visibility).toBe("private");
+  });
+
+  it("private :foo BEFORE def foo (forward form) marks method private", () => {
+    // Less common but valid: declare visibility before the def.
+    // Line 1: class A
+    // Line 2: private :secret
+    // Line 3: def secret; end
+    // Line 4: end
+    const src = `class A\n  private :secret\n  def secret; end\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#secret", startLine: 3, endLine: 3, scope: ["A"] }]);
+    expect(chunkById(ex, "A#secret")?.visibility).toBe("private");
+  });
 });

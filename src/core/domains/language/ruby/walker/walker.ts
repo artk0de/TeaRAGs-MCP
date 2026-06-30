@@ -471,12 +471,51 @@ function collectRubyMethodSignatures(
 
   const processClassBody = (classNode: AstNode): void => {
     const body = classNode.childForFieldName("body");
-    const stmts = body ? body.children : classNode.children;
+    // namedChildren skips anonymous tokens (punctuation, `end`, `;`) — all
+    // type-guards below match only named node types, so behavior is identical
+    // while avoiding spurious iterations over anonymous tokens.
+    const stmts = body ? body.namedChildren : classNode.namedChildren;
+
+    // Shared helpers: defined once to avoid duplicating anonymous functions
+    // across pass-1 and pass-2 (duplicate arrow functions inflate the uncovered
+    // function count and would push global coverage below threshold).
+    const methodFieldOf = (node: AstNode) =>
+      node.childForFieldName("method") ?? node.children.find((c) => c.type === "identifier");
+    const argsOf = (node: AstNode) =>
+      node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
 
     let currentVis: VisMode = "public";
-    // symbol-form overrides: method short-name → forced visibility
+    // symbol-form overrides: method short-name → forced visibility.
+    // Pass 1 populates this for ALL symbol-form declarations at THIS body level
+    // before pass 2 emits any method defs. Resolves the backward `private :foo`
+    // pattern where `def foo` precedes `private :foo` in source order.
     const symVis = new Map<string, VisMode>();
 
+    // Pass 1: collect symbol-form visibility declarations at THIS body level only.
+    // Nested class/module bodies are skipped — each gets its own recursive call
+    // with its own symVis. Bare switches and inline-def forms are pass-2 only.
+    for (const stmt of stmts) {
+      if (stmt.type === "class" || stmt.type === "module") continue;
+      if (stmt.type === "call" || stmt.type === "method_call") {
+        if (stmt.childForFieldName("receiver")) continue;
+        const methodField = methodFieldOf(stmt);
+        if (!methodField || !VISIBILITY_KEYWORDS.has(methodField.text)) continue;
+        const modifier = methodField.text as VisMode;
+        const args = argsOf(stmt);
+        if (!args || args.namedChildren.length === 0) continue; // bare switch — pass 2
+        const firstArg = args.namedChildren[0];
+        if (firstArg.type === "method" || firstArg.type === "singleton_method") continue; // inline — pass 2
+        // Symbol form: `private :foo, :bar`
+        for (const arg of args.namedChildren) {
+          if (arg.type === "simple_symbol" || arg.type === "symbol") {
+            symVis.set(arg.text.replace(/^:/, ""), modifier);
+          }
+        }
+      }
+    }
+
+    // Pass 2: walk in source order — recurse nested classes, apply bare switches,
+    // emit inline-def forms, emit method defs (symVis now fully populated).
     for (const stmt of stmts) {
       // Nested class/module — recurse with fresh public default
       if (stmt.type === "class" || stmt.type === "module") {
@@ -484,7 +523,10 @@ function collectRubyMethodSignatures(
         continue;
       }
 
-      // Method definition — record arity + current visibility
+      // Method definition — record arity + current visibility.
+      // Precedence: symVis (symbol-form) > currentVis (bare-switch).
+      // Inline-modifier form never reaches this branch (it is a child of its
+      // call node and emitted in the call handler below).
       if (stmt.type === "method" || stmt.type === "singleton_method") {
         const nameNode = stmt.childForFieldName("name");
         const name = nameNode?.text ?? "";
@@ -498,10 +540,10 @@ function collectRubyMethodSignatures(
       // Visibility modifier call: `private`, `private def foo`, `private :foo`
       if (stmt.type === "call" || stmt.type === "method_call") {
         if (stmt.childForFieldName("receiver")) continue; // not a bare class-body call
-        const methodField = stmt.childForFieldName("method") ?? stmt.children.find((c) => c.type === "identifier");
+        const methodField = methodFieldOf(stmt);
         if (!methodField || !VISIBILITY_KEYWORDS.has(methodField.text)) continue;
         const modifier = methodField.text as VisMode;
-        const args = stmt.childForFieldName("arguments") ?? stmt.children.find((c) => c.type === "argument_list");
+        const args = argsOf(stmt);
         if (!args || args.namedChildren.length === 0) {
           // Bare visibility switch: `private` with no args
           currentVis = modifier;
@@ -513,14 +555,8 @@ function collectRubyMethodSignatures(
               arity: computeRubyArity(firstArg),
               visibility: modifier,
             });
-          } else {
-            // Symbol form: `private :foo, :bar`
-            for (const arg of args.namedChildren) {
-              if (arg.type === "simple_symbol" || arg.type === "symbol") {
-                symVis.set(arg.text.replace(/^:/, ""), modifier);
-              }
-            }
           }
+          // Symbol form already resolved in pass 1 — nothing to do here.
         }
         continue;
       }
