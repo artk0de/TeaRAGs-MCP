@@ -21,6 +21,19 @@ export class ArityNarrower implements DispatchCandidateNarrower {
   }
 }
 
+/** Drop a candidate whose REQUIRED kwarg the call omits — a runtime
+ *  `ArgumentError: missing keyword`. A call `**`-splat (unknown runtime keys)
+ *  or no captured kwargKeys ⇒ keep (missing evidence). Candidates with no
+ *  recorded `kwargs` are kept. `kwargs.hasSplat` is reserved for the deferred
+ *  extra-unknown-key direction. */
+export class KwargNarrower implements DispatchCandidateNarrower {
+  narrow(call: CallRef, candidates: SymbolDefinition[]): SymbolDefinition[] {
+    if (call.kwargKeys === undefined || call.hasKwargSplat) return candidates;
+    const have = new Set(call.kwargKeys);
+    return candidates.filter((c) => !c.kwargs || c.kwargs.required.every((k) => have.has(k)));
+  }
+}
+
 /** Explicit-receiver call cannot reach a `private` method → drop those. */
 export class VisibilityNarrower implements DispatchCandidateNarrower {
   narrow(_call: CallRef, candidates: SymbolDefinition[]): SymbolDefinition[] {

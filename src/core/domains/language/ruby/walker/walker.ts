@@ -38,6 +38,7 @@ import type {
   AritySignature,
   CallRef,
   ChunkExtraction,
+  KwargSignature,
   DispatchRef,
   DispatchTable,
   FileExtraction,
@@ -124,6 +125,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     if (sig !== undefined) {
       base.arity = sig.arity;
       base.visibility = sig.visibility;
+      if (sig.kwargs !== undefined) base.kwargs = sig.kwargs;
     }
     if (trackTypes) {
       // Store provides YARD + AST param/local bindings (position-filtered to chunk).
@@ -450,6 +452,58 @@ function computeRubyArity(methodNode: AstNode): AritySignature {
 }
 
 /**
+ * Compute the keyword-arg signature of a `method` / `singleton_method` node
+ * (bd d9o7o). A `keyword_parameter` with NO `value` child (no default) is
+ * REQUIRED (`def m(b:)` → must supply `b:`); one WITH a default (`c: 1`) is
+ * optional and omitted from `required`. `hasSplat` is set by a
+ * `hash_splat_parameter` (`**opts`). Returns `undefined` when the method has no
+ * kwargs at all — keeps the payload lean and the narrower a no-op for it.
+ */
+function computeRubyKwargs(methodNode: AstNode): KwargSignature | undefined {
+  const params = methodNode.childForFieldName("parameters");
+  if (!params) return undefined;
+  const required: string[] = [];
+  let hasSplat = false;
+  for (const child of params.namedChildren) {
+    if (child.type === "keyword_parameter") {
+      // A default value is the `value` field; its absence ⇒ required kwarg.
+      if (child.childForFieldName("value") === null) {
+        const nameNode = child.childForFieldName("name") ?? child.namedChildren[0];
+        if (nameNode) required.push(nameNode.text.replace(/:$/, ""));
+      }
+    } else if (child.type === "hash_splat_parameter") {
+      hasSplat = true;
+    }
+  }
+  if (required.length === 0 && !hasSplat) return undefined;
+  return { required, hasSplat };
+}
+
+/**
+ * Collect the call-site keyword-arg key-set (bd d9o7o). `pair` children of the
+ * argument list are kwargs (`b: 2` → key `b`); a `hash_splat_argument`
+ * (`**opts`) means unknown runtime keys. Positional args / blocks are ignored.
+ */
+function computeCallKwargs(callNode: AstNode): { kwargKeys?: string[]; hasKwargSplat?: boolean } {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return {};
+  const kwargKeys: string[] = [];
+  let hasKwargSplat = false;
+  for (const child of args.namedChildren) {
+    if (child.type === "pair") {
+      const keyNode = child.childForFieldName("key") ?? child.namedChildren[0];
+      if (keyNode) kwargKeys.push(keyNode.text.replace(/:$/, "").replace(/^:/, ""));
+    } else if (child.type === "hash_splat_argument") {
+      hasKwargSplat = true;
+    }
+  }
+  const out: { kwargKeys?: string[]; hasKwargSplat?: boolean } = {};
+  if (kwargKeys.length > 0) out.kwargKeys = kwargKeys;
+  if (hasKwargSplat) out.hasKwargSplat = true;
+  return out;
+}
+
+/**
  * Walk the AST and collect arity + visibility for every `method` /
  * `singleton_method` definition found inside a class or module body.
  *
@@ -465,9 +519,9 @@ function computeRubyArity(methodNode: AstNode): AritySignature {
  */
 function collectRubyMethodSignatures(
   root: AstNode,
-): Map<number, { arity: AritySignature; visibility: "public" | "private" | "protected" }> {
+): Map<number, { arity: AritySignature; visibility: "public" | "private" | "protected"; kwargs?: KwargSignature }> {
   type VisMode = "public" | "private" | "protected";
-  const out = new Map<number, { arity: AritySignature; visibility: VisMode }>();
+  const out = new Map<number, { arity: AritySignature; visibility: VisMode; kwargs?: KwargSignature }>();
 
   const processClassBody = (classNode: AstNode): void => {
     const body = classNode.childForFieldName("body");
@@ -533,6 +587,7 @@ function collectRubyMethodSignatures(
         out.set(stmt.startPosition.row + 1, {
           arity: computeRubyArity(stmt),
           visibility: symVis.get(name) ?? currentVis,
+          kwargs: computeRubyKwargs(stmt),
         });
         continue;
       }
@@ -554,6 +609,7 @@ function collectRubyMethodSignatures(
             out.set(firstArg.startPosition.row + 1, {
               arity: computeRubyArity(firstArg),
               visibility: modifier,
+              kwargs: computeRubyKwargs(firstArg),
             });
           }
           // Symbol form already resolved in pass 1 — nothing to do here.
@@ -1315,6 +1371,10 @@ function emitMethodCallRef(
   if (dispatch?.field) callRef.dispatch = dispatch;
   // Positional argCount (bd xlnub): excludes block and keyword args
   callRef.argCount = computeArgCount(node);
+  // Keyword-arg key-set + double-splat (bd d9o7o).
+  const kw = computeCallKwargs(node);
+  if (kw.kwargKeys !== undefined) callRef.kwargKeys = kw.kwargKeys;
+  if (kw.hasKwargSplat !== undefined) callRef.hasKwargSplat = kw.hasKwargSplat;
   out.push(callRef);
 }
 

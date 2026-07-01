@@ -124,3 +124,35 @@ describe("ruby walker arity/visibility/argCount capture (xlnub)", () => {
     expect(chunkById(ex, "A#secret")?.visibility).toBe("private");
   });
 });
+
+describe("ruby walker kwarg capture (d9o7o)", () => {
+  it("captures required kwargs (no default) and hasSplat; defaulted kwargs are NOT required", () => {
+    // def m(a, b:, c: 1, **opts): required kwargs = [b] (c: has a default), hasSplat = true
+    const src = `class A\n  def m(a, b:, c: 1, **opts)\n  end\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#m", startLine: 2, endLine: 3, scope: ["A"] }]);
+    expect(chunkById(ex, "A#m")?.kwargs).toEqual({ required: ["b"], hasSplat: true });
+  });
+
+  it("no kwargs → kwargs undefined", () => {
+    const src = `class A\n  def m(a, b = 1)\n  end\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#m", startLine: 2, endLine: 3, scope: ["A"] }]);
+    expect(chunkById(ex, "A#m")?.kwargs).toBeUndefined();
+  });
+
+  it("captures call-site kwarg keys and detects ** double-splat", () => {
+    // x.m(1, b: 2, **h): kwargKeys = [b], hasKwargSplat = true
+    const src = `class A\n  def go(x, h)\n    x.m(1, b: 2, **h)\n  end\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#go", startLine: 2, endLine: 4, scope: ["A"] }]);
+    const mCall = chunkById(ex, "A#go")?.calls.find((c) => c.member === "m");
+    expect(mCall?.kwargKeys).toEqual(["b"]);
+    expect(mCall?.hasKwargSplat).toBe(true);
+  });
+
+  it("call with only positional args → kwargKeys undefined, hasKwargSplat undefined", () => {
+    const src = `class A\n  def go(x)\n    x.m(1, 2)\n  end\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#go", startLine: 2, endLine: 4, scope: ["A"] }]);
+    const mCall = chunkById(ex, "A#go")?.calls.find((c) => c.member === "m");
+    expect(mCall?.kwargKeys).toBeUndefined();
+    expect(mCall?.hasKwargSplat).toBeUndefined();
+  });
+});

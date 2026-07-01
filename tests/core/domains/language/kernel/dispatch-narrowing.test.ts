@@ -4,6 +4,7 @@ import type { CallRef, SymbolDefinition } from "../../../../../src/core/contract
 import {
   ArityNarrower,
   DuckVocabularyNarrower,
+  KwargNarrower,
   resolveNarrowedFanout,
   VisibilityNarrower,
 } from "../../../../../src/core/domains/language/kernel/dispatch-narrowing.js";
@@ -49,6 +50,40 @@ describe("ArityNarrower", () => {
     const cands = [def("A#m"), def("B#m", { minRequired: 5, maxPositional: 5, hasSplat: false })];
     expect(new ArityNarrower().narrow(call("m", undefined), cands, ctx).length).toBe(2); // no argCount → keep all
     expect(new ArityNarrower().narrow(call("m", 0), [def("A#m")], ctx).length).toBe(1); // no arity → keep
+  });
+});
+
+describe("KwargNarrower", () => {
+  const kdef = (id: string, required: string[], hasSplat = false): SymbolDefinition => ({
+    symbolId: id,
+    fqName: id,
+    shortName: id.split("#")[1] ?? id,
+    relPath: `${id}.rb`,
+    scope: [],
+    kwargs: { required, hasSplat },
+  });
+  const kcall = (kwargKeys?: string[], hasKwargSplat?: boolean): CallRef => ({
+    callText: "x.m",
+    receiver: "x",
+    member: "m",
+    startLine: 1,
+    kwargKeys,
+    hasKwargSplat,
+  });
+
+  it("drops a candidate whose required kwarg the call omits", () => {
+    const cands = [kdef("A#m", ["b", "c"]), kdef("B#m", ["b"])];
+    expect(new KwargNarrower().narrow(kcall(["b"]), cands, ctx).map((c) => c.symbolId)).toEqual(["B#m"]);
+  });
+  it("keeps all when the call passes a ** double-splat (unknown runtime keys)", () => {
+    const cands = [kdef("A#m", ["b", "c"])];
+    expect(new KwargNarrower().narrow(kcall(["b"], true), cands, ctx).length).toBe(1);
+  });
+  it("keeps a candidate with no recorded kwargs (missing data)", () => {
+    expect(new KwargNarrower().narrow(kcall(["z"]), [def("P#m")], ctx).length).toBe(1);
+  });
+  it("keeps all when the call has no captured kwargKeys", () => {
+    expect(new KwargNarrower().narrow(kcall(undefined), [kdef("A#m", ["b"])], ctx).length).toBe(1);
   });
 });
 

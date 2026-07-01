@@ -744,6 +744,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // Thread walker-captured arity + visibility into SymbolDefinition (bd xlnub)
           ...(c.arity !== undefined ? { arity: c.arity } : {}),
           ...(c.visibility !== undefined ? { visibility: c.visibility } : {}),
+          // Thread walker-captured kwarg signature (bd d9o7o)
+          ...(c.kwargs !== undefined ? { kwargs: c.kwargs } : {}),
         }));
         // Persist defs to both the in-memory table (for in-pass
         // resolver lookups) AND DuckDB (for cold-start hydration of a
