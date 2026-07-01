@@ -30,6 +30,17 @@ export const RAILS_RUNTIME_BUILTINS: ReadonlySet<string> = new Set<string>([
   "polymorphic_url",
   "send_data",
   "send_file",
+  // ActionController::ConditionalGet — cache-header runtime helpers. Leaf calls
+  // with NO in-project dispatch target, so there is no grammar to model (unlike
+  // routing/Pundit): a bare call in a controller targets ActionController, so it
+  // is a genuine external name (bd tea-rags-mcp-n2kpz #3). A unique in-project
+  // `expires_in` (e.g. a model including `Expireable`) still resolves first via
+  // the chain and never reaches this classifier (5os8y invariant).
+  "expires_in",
+  "expires_now",
+  "fresh_when",
+  "stale?",
+  "http_cache_forever",
   // ActionController class-config callable as instance (rare) + view helpers
   "helper_method",
   "layout",

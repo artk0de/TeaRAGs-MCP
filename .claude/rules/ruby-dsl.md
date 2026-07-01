@@ -79,10 +79,33 @@ macro.
 - **Add data, not branches.** If you find yourself writing
   `if (macroName === …)` in an interpreter, you are doing it wrong — add a facet
   entry instead.
+- **A DSL verb is GRAMMAR, not an exclusion list.** A framework/gem verb the
+  static graph misses is modelled by what it DOES, so codegraph reconstructs the
+  REAL edge — never by dumping the verb into an "external, skip it" set to
+  shrink the recall denominator. Before reaching for `runtimeBuiltins`, ask:
+  - does it **synthesise methods**? → `declares` (`attr_accessor` → `a`/`a=`,
+    `resources :posts` → `posts_path`/`post_path`/… route helpers).
+  - does it **emit an edge**? → `emits` (`before_action :auth`, `has_many`,
+    `resources :posts` → `PostsController`).
+  - does it **dispatch to an in-project target by convention**? → a dispatch
+    facet + resolver strategy (the `enqueueDispatch` precedent:
+    `Worker.perform_async` → `Worker#perform`; likewise `authorize @post` →
+    `<Record>Policy#<action>?`, `policy_scope(Post)` →
+    `PostPolicy::Scope#resolve`).
+
+  `entries`/`runtimeBuiltins`-as-external is the **LAST resort**, reserved for
+  verbs with genuinely ZERO in-project effect (`params`, `render`, `puts`,
+  `expires_in`). A module that is just a `Set<verb>` marked external — or a
+  `contextGate`/`callerFile` closure marking it external conditionally — is the
+  anti-pattern: it games the recall DENOMINATOR instead of building the GRAPH
+  (bd tea-rags-mcp-n2kpz L2 review). Model the grammar; add the edge.
+
 - **A gem is its own module.** Do not mix two libraries' verbs in one map (the
   deleted `dsl/enqueue.ts` did this; `sidekiq.ts` + `rails.ts` is the fix).
-- **`dsl/` stays tree-sitter-free.** Need the AST? The interpreter lives in
-  `walker/`.
+- **`dsl/` stays tree-sitter-free AND `CallContext`-free.** Need the AST? →
+  `walker/`. Need caller state (`CallContext`) to decide something? That is an
+  INTERPRETER — it lives in `walker/` or `resolver/`, never in `dsl/`. A `dsl/`
+  file that imports `CallContext` is wrong.
 - **Relocation is byte-identical.** Moving a convention between representations
   must not move `byReceiverKind` / `resolveSuccessRate`; the existing
   `macro-expansion.test.ts` / `ruby-walker.test.ts` cases are the oracle.
