@@ -21,6 +21,7 @@ import { DuckDBInstance, type DuckDBConnection, type DuckDBValue } from "@duckdb
 import picomatch from "picomatch";
 
 import type {
+  AritySignature,
   CalleeEdge,
   CallerEdge,
   CycleEntry,
@@ -33,6 +34,7 @@ import type {
   InheritanceEdge,
   InheritanceEdgeRow,
   InheritanceKind,
+  KwargSignature,
   MethodEdgeKind,
   RelPath,
   ResolveRunStatsRow,
@@ -408,8 +410,18 @@ export class DuckDbGraphClient implements GraphDbClient {
       await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
       for (const def of definitions) {
         await this.run(
-          "INSERT OR IGNORE INTO cg_symbols (rel_path, symbol_id, fq_name, short_name, scope_json) VALUES (?, ?, ?, ?, ?)",
-          [def.relPath, def.symbolId, def.fqName, def.shortName, JSON.stringify(def.scope ?? [])],
+          "INSERT OR IGNORE INTO cg_symbols (rel_path, symbol_id, fq_name, short_name, scope_json, arity_json, visibility, kwargs_json, accepts_block) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [
+            def.relPath,
+            def.symbolId,
+            def.fqName,
+            def.shortName,
+            JSON.stringify(def.scope ?? []),
+            def.arity ? JSON.stringify(def.arity) : null,
+            def.visibility ?? null,
+            def.kwargs ? JSON.stringify(def.kwargs) : null,
+            def.acceptsBlock ?? null,
+          ],
         );
       }
       await this.exec("COMMIT");
@@ -691,13 +703,23 @@ export class DuckDbGraphClient implements GraphDbClient {
       fq_name: string;
       short_name: string;
       scope_json: string;
-    }>("SELECT rel_path, symbol_id, fq_name, short_name, scope_json FROM cg_symbols");
+      arity_json: string | null;
+      visibility: string | null;
+      kwargs_json: string | null;
+      accepts_block: boolean | null;
+    }>(
+      "SELECT rel_path, symbol_id, fq_name, short_name, scope_json, arity_json, visibility, kwargs_json, accepts_block FROM cg_symbols",
+    );
     return rows.map((row) => ({
       relPath: row.rel_path,
       symbolId: row.symbol_id,
       fqName: row.fq_name,
       shortName: row.short_name,
       scope: parseScope(row.scope_json),
+      ...(row.arity_json ? { arity: JSON.parse(row.arity_json) as AritySignature } : {}),
+      ...(row.visibility ? { visibility: row.visibility as SymbolDefinition["visibility"] } : {}),
+      ...(row.kwargs_json ? { kwargs: JSON.parse(row.kwargs_json) as KwargSignature } : {}),
+      ...(row.accepts_block !== null && row.accepts_block !== undefined ? { acceptsBlock: row.accepts_block } : {}),
     }));
   }
 

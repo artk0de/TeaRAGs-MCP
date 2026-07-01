@@ -69,6 +69,44 @@ describe("DuckDbGraphClient — slice 2 streaming primitives", () => {
     expect(await client.hasData()).toBe(false);
   });
 
+  it("round-trips arity/visibility/kwargs/acceptsBlock through cg_symbols (bd tfepp/d9o7o)", async () => {
+    client = new DuckDbGraphClient({ path: dbPath });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    await client.upsertSymbols("a.rb", [
+      {
+        symbolId: "Foo#bar",
+        fqName: "Foo#bar",
+        shortName: "bar",
+        relPath: "a.rb",
+        scope: ["Foo"],
+        arity: { minRequired: 1, maxPositional: 2, hasSplat: false },
+        visibility: "private",
+        kwargs: { required: ["b"], hasSplat: false },
+        acceptsBlock: true,
+      },
+    ]);
+    const [def] = (await client.listAllSymbols()).filter((d) => d.symbolId === "Foo#bar");
+    expect(def.arity).toEqual({ minRequired: 1, maxPositional: 2, hasSplat: false });
+    expect(def.visibility).toBe("private");
+    expect(def.kwargs).toEqual({ required: ["b"], hasSplat: false });
+    expect(def.acceptsBlock).toBe(true);
+  });
+
+  it("round-trips a non-method symbol with all def-shape fields undefined", async () => {
+    client = new DuckDbGraphClient({ path: dbPath });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    await client.upsertSymbols("b.rb", [
+      { symbolId: "Bar", fqName: "Bar", shortName: "Bar", relPath: "b.rb", scope: [] },
+    ]);
+    const [def] = (await client.listAllSymbols()).filter((d) => d.symbolId === "Bar");
+    expect(def.arity).toBeUndefined();
+    expect(def.kwargs).toBeUndefined();
+    expect(def.acceptsBlock).toBeUndefined();
+    expect(def.visibility).toBeUndefined();
+  });
+
   it("init caps memory_limit on a write connection even when no resources are configured", async () => {
     // Regression (OOM): an unconfigured write connection used to SKIP
     // `SET memory_limit`, so DuckDB inherited its ~80%-of-system-RAM
