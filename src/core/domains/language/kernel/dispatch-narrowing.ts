@@ -41,6 +41,20 @@ export class VisibilityNarrower implements DispatchCandidateNarrower {
   }
 }
 
+/** Block presence is legal-but-unused in Ruby (an unused block is silently
+ *  ignored), so it DISCRIMINATES rather than proving incompatibility: when a
+ *  call passes a block, prefer definers that yield/take a block — UNLESS none
+ *  do, in which case keep all (the block is defensive, or yield-detection
+ *  missed it). Never empties the set. `acceptsBlock === undefined` (not
+ *  captured) is treated as a possible yielder → kept. */
+export class BlockNarrower implements DispatchCandidateNarrower {
+  narrow(call: CallRef, candidates: SymbolDefinition[]): SymbolDefinition[] {
+    if (!call.passesBlock) return candidates;
+    const yielders = candidates.filter((c) => c.acceptsBlock !== false);
+    return yielders.length > 0 ? yielders : candidates;
+  }
+}
+
 /** Members in the language duck/runtime vocabulary are never short-name
  *  resolvable to a meaningful in-project target → empty the whole fan-out. */
 export class DuckVocabularyNarrower implements DispatchCandidateNarrower {

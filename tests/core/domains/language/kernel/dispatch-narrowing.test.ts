@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { CallRef, SymbolDefinition } from "../../../../../src/core/contracts/types/codegraph.js";
 import {
   ArityNarrower,
+  BlockNarrower,
   DuckVocabularyNarrower,
   KwargNarrower,
   resolveNarrowedFanout,
@@ -100,6 +101,38 @@ describe("VisibilityNarrower", () => {
       "C#m",
       "D#m",
     ]);
+  });
+});
+
+describe("BlockNarrower", () => {
+  const bdef = (id: string, acceptsBlock?: boolean): SymbolDefinition => ({
+    symbolId: id,
+    fqName: id,
+    shortName: id.split("#")[1] ?? id,
+    relPath: `${id}.rb`,
+    scope: [],
+    acceptsBlock,
+  });
+  const bcall = (passesBlock?: boolean): CallRef => ({
+    callText: "x.m",
+    receiver: "x",
+    member: "m",
+    startLine: 1,
+    passesBlock,
+  });
+
+  it("keeps only yielders (true/undefined) when a block is passed and yielders exist", () => {
+    const cands = [bdef("A#m", true), bdef("B#m", false), bdef("C#m", undefined)];
+    expect(new BlockNarrower().narrow(bcall(true), cands, ctx).map((c) => c.symbolId)).toEqual(["A#m", "C#m"]);
+  });
+  it("keeps ALL when every candidate is a proven non-yielder (defensive block / missed detection)", () => {
+    const cands = [bdef("A#m", false), bdef("B#m", false)];
+    expect(new BlockNarrower().narrow(bcall(true), cands, ctx).length).toBe(2);
+  });
+  it("keeps all when the call passes no block", () => {
+    const cands = [bdef("A#m", false)];
+    expect(new BlockNarrower().narrow(bcall(false), cands, ctx).length).toBe(1);
+    expect(new BlockNarrower().narrow(bcall(undefined), cands, ctx).length).toBe(1);
   });
 });
 

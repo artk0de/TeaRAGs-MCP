@@ -126,6 +126,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
       base.arity = sig.arity;
       base.visibility = sig.visibility;
       if (sig.kwargs !== undefined) base.kwargs = sig.kwargs;
+      base.acceptsBlock = sig.acceptsBlock;
     }
     if (trackTypes) {
       // Store provides YARD + AST param/local bindings (position-filtered to chunk).
@@ -504,6 +505,34 @@ function computeCallKwargs(callNode: AstNode): { kwargKeys?: string[]; hasKwargS
 }
 
 /**
+ * Whether a `method` / `singleton_method` node accepts a block (bd d9o7o):
+ * TRUE if it declares a `block_parameter` (`&blk`) OR its body contains a
+ * `yield`. FALSE = proven non-yielder (the BlockNarrower only drops these, and
+ * only when other yielders remain). Over-detecting yield (e.g. a `yield` in a
+ * nested def) is the SAFE direction — it keeps the candidate.
+ */
+function computeRubyAcceptsBlock(methodNode: AstNode): boolean {
+  const params = methodNode.childForFieldName("parameters");
+  if (params && params.namedChildren.some((c) => c.type === "block_parameter")) return true;
+  const body = methodNode.childForFieldName("body");
+  if (!body) return false;
+  let yields = false;
+  walk(body, (n) => {
+    if (n.type === "yield") yields = true;
+  });
+  return yields;
+}
+
+/** Whether a call passes a block (`{ … }` / `do … end`) (bd d9o7o). The block
+ *  is a `block` / `do_block` node, either a direct child of the call or inside
+ *  its argument list. */
+function computeCallPassesBlock(callNode: AstNode): boolean {
+  if (callNode.children.some((c) => c.type === "block" || c.type === "do_block")) return true;
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  return args ? args.namedChildren.some((c) => c.type === "block" || c.type === "do_block") : false;
+}
+
+/**
  * Walk the AST and collect arity + visibility for every `method` /
  * `singleton_method` definition found inside a class or module body.
  *
@@ -519,9 +548,15 @@ function computeCallKwargs(callNode: AstNode): { kwargKeys?: string[]; hasKwargS
  */
 function collectRubyMethodSignatures(
   root: AstNode,
-): Map<number, { arity: AritySignature; visibility: "public" | "private" | "protected"; kwargs?: KwargSignature }> {
+): Map<
+  number,
+  { arity: AritySignature; visibility: "public" | "private" | "protected"; kwargs?: KwargSignature; acceptsBlock: boolean }
+> {
   type VisMode = "public" | "private" | "protected";
-  const out = new Map<number, { arity: AritySignature; visibility: VisMode; kwargs?: KwargSignature }>();
+  const out = new Map<
+    number,
+    { arity: AritySignature; visibility: VisMode; kwargs?: KwargSignature; acceptsBlock: boolean }
+  >();
 
   const processClassBody = (classNode: AstNode): void => {
     const body = classNode.childForFieldName("body");
@@ -588,6 +623,7 @@ function collectRubyMethodSignatures(
           arity: computeRubyArity(stmt),
           visibility: symVis.get(name) ?? currentVis,
           kwargs: computeRubyKwargs(stmt),
+          acceptsBlock: computeRubyAcceptsBlock(stmt),
         });
         continue;
       }
@@ -610,6 +646,7 @@ function collectRubyMethodSignatures(
               arity: computeRubyArity(firstArg),
               visibility: modifier,
               kwargs: computeRubyKwargs(firstArg),
+              acceptsBlock: computeRubyAcceptsBlock(firstArg),
             });
           }
           // Symbol form already resolved in pass 1 — nothing to do here.
@@ -1375,6 +1412,8 @@ function emitMethodCallRef(
   const kw = computeCallKwargs(node);
   if (kw.kwargKeys !== undefined) callRef.kwargKeys = kw.kwargKeys;
   if (kw.hasKwargSplat !== undefined) callRef.hasKwargSplat = kw.hasKwargSplat;
+  // Block presence (bd d9o7o) — only set when true (undefined = no block).
+  if (computeCallPassesBlock(node)) callRef.passesBlock = true;
   out.push(callRef);
 }
 

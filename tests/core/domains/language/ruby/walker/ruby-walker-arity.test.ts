@@ -156,3 +156,41 @@ describe("ruby walker kwarg capture (d9o7o)", () => {
     expect(mCall?.hasKwargSplat).toBeUndefined();
   });
 });
+
+describe("ruby walker block capture (d9o7o)", () => {
+  it("def with yield → acceptsBlock true", () => {
+    const src = `class A\n  def m\n    yield 1\n  end\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#m", startLine: 2, endLine: 4, scope: ["A"] }]);
+    expect(chunkById(ex, "A#m")?.acceptsBlock).toBe(true);
+  });
+
+  it("def with &block param → acceptsBlock true", () => {
+    const src = `class A\n  def m(&blk)\n    blk.call\n  end\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#m", startLine: 2, endLine: 4, scope: ["A"] }]);
+    expect(chunkById(ex, "A#m")?.acceptsBlock).toBe(true);
+  });
+
+  it("def with neither yield nor &block → acceptsBlock false (proven non-yielder)", () => {
+    const src = `class A\n  def m(a)\n    a + 1\n  end\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#m", startLine: 2, endLine: 4, scope: ["A"] }]);
+    expect(chunkById(ex, "A#m")?.acceptsBlock).toBe(false);
+  });
+
+  it("call with a brace block → passesBlock true", () => {
+    const src = `class A\n  def go(x)\n    x.each { |i| i }\n  end\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#go", startLine: 2, endLine: 4, scope: ["A"] }]);
+    expect(chunkById(ex, "A#go")?.calls.find((c) => c.member === "each")?.passesBlock).toBe(true);
+  });
+
+  it("call with a do..end block → passesBlock true", () => {
+    const src = `class A\n  def go(x)\n    x.each do |i|\n      i\n    end\n  end\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#go", startLine: 2, endLine: 6, scope: ["A"] }]);
+    expect(chunkById(ex, "A#go")?.calls.find((c) => c.member === "each")?.passesBlock).toBe(true);
+  });
+
+  it("call with no block → passesBlock undefined", () => {
+    const src = `class A\n  def go(x)\n    x.run\n  end\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#go", startLine: 2, endLine: 4, scope: ["A"] }]);
+    expect(chunkById(ex, "A#go")?.calls.find((c) => c.member === "run")?.passesBlock).toBeUndefined();
+  });
+});
