@@ -6,6 +6,7 @@ import {
   BlockNarrower,
   DuckVocabularyNarrower,
   KwargNarrower,
+  LiteralReceiverNarrower,
   resolveNarrowedFanout,
   VisibilityNarrower,
 } from "../../../../../src/core/domains/language/kernel/dispatch-narrowing.js";
@@ -141,6 +142,35 @@ describe("DuckVocabularyNarrower", () => {
     const n = new DuckVocabularyNarrower(new Set(["to_s", "each"]));
     expect(n.narrow(call("to_s"), [def("A#to_s")], ctx)).toEqual([]);
     expect(n.narrow(call("perform"), [def("A#perform")], ctx).length).toBe(1);
+  });
+});
+
+describe("LiteralReceiverNarrower", () => {
+  // Toy classifier: string literal → String, array literal → Array, else null.
+  const classify = (r: string | null): string | null =>
+    r === null ? null : r.startsWith('"') ? "String" : r.startsWith("[") ? "Array" : null;
+  const sdef = (id: string, scope: string[]): SymbolDefinition => ({
+    symbolId: id,
+    fqName: id,
+    shortName: id.split("#")[1] ?? id,
+    relPath: `${id}.rb`,
+    scope,
+  });
+  const litCall = (receiver: string): CallRef => ({ callText: `${receiver}.m`, receiver, member: "m", startLine: 1 });
+
+  it("keeps only in-project reopens of the literal's core type", () => {
+    const cands = [sdef("String#m", ["String"]), sdef("Foo#m", ["Foo"])];
+    expect(new LiteralReceiverNarrower(classify).narrow(litCall('"s"'), cands, ctx).map((c) => c.symbolId)).toEqual([
+      "String#m",
+    ]);
+  });
+  it("empties the fan-out when no candidate reopens the core type", () => {
+    const cands = [sdef("Foo#m", ["Foo"]), sdef("Bar#m", ["Bar"])];
+    expect(new LiteralReceiverNarrower(classify).narrow(litCall('"s"'), cands, ctx)).toEqual([]);
+  });
+  it("keeps all when the receiver is not a recognised literal", () => {
+    const cands = [sdef("Foo#m", ["Foo"])];
+    expect(new LiteralReceiverNarrower(classify).narrow(litCall("user"), cands, ctx).length).toBe(1);
   });
 });
 

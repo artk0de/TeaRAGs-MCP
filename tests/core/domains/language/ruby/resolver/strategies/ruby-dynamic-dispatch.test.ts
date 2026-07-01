@@ -14,6 +14,7 @@ import {
 } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { classifyRubyLiteralReceiver } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/ruby-dynamic-dispatch.js";
 
 const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
@@ -507,5 +508,50 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       expect(edges[0].confidence).toBe(1.0);
       expect(edges[0].edgeKind).toBe("dynamic");
     });
+  });
+});
+
+describe("classifyRubyLiteralReceiver (d9o7o)", () => {
+  it("maps literal receivers to their core type; non-literals → null", () => {
+    expect(classifyRubyLiteralReceiver('"s"')).toBe("String");
+    expect(classifyRubyLiteralReceiver("[1, 2]")).toBe("Array");
+    expect(classifyRubyLiteralReceiver("{ a: 1 }")).toBe("Hash");
+    expect(classifyRubyLiteralReceiver(":sym")).toBe("Symbol");
+    expect(classifyRubyLiteralReceiver("123")).toBe("Integer");
+    expect(classifyRubyLiteralReceiver("1.5")).toBe("Float");
+    expect(classifyRubyLiteralReceiver("user")).toBeNull();
+    expect(classifyRubyLiteralReceiver(null)).toBeNull();
+  });
+});
+
+describe("RubyDynamicDispatchResolver — Tier-2+3 cascade wiring (d9o7o)", () => {
+  const resolver = new RubyDynamicDispatchResolver(cfg);
+
+  it("BlockNarrower wired: a block-passing call prefers the yielding definer", () => {
+    const symbolTable = tableWith(
+      ["app/a.rb", [{ ...sym("A#process", "process", "app/a.rb", ["A"]), acceptsBlock: true }]],
+      ["app/b.rb", [{ ...sym("B#process", "process", "app/b.rb", ["B"]), acceptsBlock: false }]],
+    );
+    const edges = resolver.resolveDispatch(
+      { callText: "worker.process { }", receiver: "worker", member: "process", startLine: 1, passesBlock: true },
+      ctx({ symbolTable }),
+    );
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#process"]);
+    expect(edges[0].confidence).toBe(1.0);
+  });
+
+  it("KwargNarrower wired: drops a definer whose required kwarg the call omits", () => {
+    const symbolTable = tableWith(
+      ["app/a.rb", [{ ...sym("A#run", "run", "app/a.rb", ["A"]), kwargs: { required: ["mode"], hasSplat: false } }]],
+      [
+        "app/b.rb",
+        [{ ...sym("B#run", "run", "app/b.rb", ["B"]), kwargs: { required: ["mode", "flag"], hasSplat: false } }],
+      ],
+    );
+    const edges = resolver.resolveDispatch(
+      { callText: "worker.run(mode: 1)", receiver: "worker", member: "run", startLine: 1, kwargKeys: ["mode"] },
+      ctx({ symbolTable }),
+    );
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#run"]);
   });
 });

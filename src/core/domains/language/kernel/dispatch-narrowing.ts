@@ -55,6 +55,21 @@ export class BlockNarrower implements DispatchCandidateNarrower {
   }
 }
 
+/** A literal receiver (`"s".m`, `[].m`) has a statically-certain core type T.
+ *  Keep only candidates that reopen T in-project (enclosing class === T); none
+ *  ⇒ empty the fan-out (every match is a coincidental same-name method on an
+ *  unrelated class → wrong for a core-typed receiver). `classify` returns the
+ *  core type name or null (non-literal / unknown ⇒ keep all). The literal→type
+ *  map is language-specific and injected; the scope comparison is neutral. */
+export class LiteralReceiverNarrower implements DispatchCandidateNarrower {
+  constructor(private readonly classify: (receiver: string | null) => string | null) {}
+  narrow(call: CallRef, candidates: SymbolDefinition[]): SymbolDefinition[] {
+    const t = this.classify(call.receiver);
+    if (t === null) return candidates;
+    return candidates.filter((c) => c.scope[c.scope.length - 1] === t);
+  }
+}
+
 /** Members in the language duck/runtime vocabulary are never short-name
  *  resolvable to a meaningful in-project target → empty the whole fan-out. */
 export class DuckVocabularyNarrower implements DispatchCandidateNarrower {
