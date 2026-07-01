@@ -38,12 +38,12 @@ import type {
   AritySignature,
   CallRef,
   ChunkExtraction,
-  KwargSignature,
   DispatchRef,
   DispatchTable,
   FileExtraction,
   ImportRef,
   InheritanceEdgeDecl,
+  KwargSignature,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { RUBY_DSL, singularizeAssociation, type RubyDslEmits } from "../dsl/index.js";
@@ -464,20 +464,24 @@ function computeRubyKwargs(methodNode: AstNode): KwargSignature | undefined {
   const params = methodNode.childForFieldName("parameters");
   if (!params) return undefined;
   const required: string[] = [];
+  const optional: string[] = [];
   let hasSplat = false;
   for (const child of params.namedChildren) {
     if (child.type === "keyword_parameter") {
-      // A default value is the `value` field; its absence ⇒ required kwarg.
-      if (child.childForFieldName("value") === null) {
-        const nameNode = child.childForFieldName("name") ?? child.namedChildren[0];
-        if (nameNode) required.push(nameNode.text.replace(/:$/, ""));
-      }
+      const nameNode = child.childForFieldName("name") ?? child.namedChildren[0];
+      if (!nameNode) continue;
+      const name = nameNode.text.replace(/:$/, "");
+      // A default value is the `value` field; its absence ⇒ required kwarg,
+      // its presence ⇒ optional (defaulted) kwarg. Both go into the declared
+      // set the extra-unknown-key narrowing checks against (bd d9o7o).
+      if (child.childForFieldName("value") === null) required.push(name);
+      else optional.push(name);
     } else if (child.type === "hash_splat_parameter") {
       hasSplat = true;
     }
   }
-  if (required.length === 0 && !hasSplat) return undefined;
-  return { required, hasSplat };
+  if (required.length === 0 && optional.length === 0 && !hasSplat) return undefined;
+  return { required, optional, hasSplat };
 }
 
 /**
@@ -513,7 +517,7 @@ function computeCallKwargs(callNode: AstNode): { kwargKeys?: string[]; hasKwargS
  */
 function computeRubyAcceptsBlock(methodNode: AstNode): boolean {
   const params = methodNode.childForFieldName("parameters");
-  if (params && params.namedChildren.some((c) => c.type === "block_parameter")) return true;
+  if (params?.namedChildren.some((c) => c.type === "block_parameter")) return true;
   const body = methodNode.childForFieldName("body");
   if (!body) return false;
   let yields = false;
@@ -546,11 +550,14 @@ function computeCallPassesBlock(callNode: AstNode): boolean {
  *   - `private :foo, :bar` (symbol form) → marks those methods by name
  * Default is `"public"` at the start of each class body.
  */
-function collectRubyMethodSignatures(
-  root: AstNode,
-): Map<
+function collectRubyMethodSignatures(root: AstNode): Map<
   number,
-  { arity: AritySignature; visibility: "public" | "private" | "protected"; kwargs?: KwargSignature; acceptsBlock: boolean }
+  {
+    arity: AritySignature;
+    visibility: "public" | "private" | "protected";
+    kwargs?: KwargSignature;
+    acceptsBlock: boolean;
+  }
 > {
   type VisMode = "public" | "private" | "protected";
   const out = new Map<

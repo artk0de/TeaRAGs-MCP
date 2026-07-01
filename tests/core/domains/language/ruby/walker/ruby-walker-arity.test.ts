@@ -126,11 +126,17 @@ describe("ruby walker arity/visibility/argCount capture (xlnub)", () => {
 });
 
 describe("ruby walker kwarg capture (d9o7o)", () => {
-  it("captures required kwargs (no default) and hasSplat; defaulted kwargs are NOT required", () => {
-    // def m(a, b:, c: 1, **opts): required kwargs = [b] (c: has a default), hasSplat = true
+  it("captures required (no default) + optional (defaulted) kwarg names and hasSplat", () => {
+    // def m(a, b:, c: 1, **opts): required [b], optional [c] (c: has a default), hasSplat true
     const src = `class A\n  def m(a, b:, c: 1, **opts)\n  end\nend\n`;
     const ex = exWith(src, [{ symbolId: "A#m", startLine: 2, endLine: 3, scope: ["A"] }]);
-    expect(chunkById(ex, "A#m")?.kwargs).toEqual({ required: ["b"], hasSplat: true });
+    expect(chunkById(ex, "A#m")?.kwargs).toEqual({ required: ["b"], optional: ["c"], hasSplat: true });
+  });
+
+  it("captures a method with ONLY optional kwargs (full declared set for extra-unknown check)", () => {
+    const src = `class A\n  def m(c: 1)\n  end\nend\n`;
+    const ex = exWith(src, [{ symbolId: "A#m", startLine: 2, endLine: 3, scope: ["A"] }]);
+    expect(chunkById(ex, "A#m")?.kwargs).toEqual({ required: [], optional: ["c"], hasSplat: false });
   });
 
   it("no kwargs → kwargs undefined", () => {

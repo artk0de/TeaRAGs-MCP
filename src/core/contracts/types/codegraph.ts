@@ -649,6 +649,12 @@ export interface AritySignature {
  *  AritySignature — this is the keyword axis, kept separate. */
 export interface KwargSignature {
   required: string[];
+  /** Declared OPTIONAL (defaulted) kwarg names (bd d9o7o extra-unknown). Full
+   *  declared set = `required ∪ optional`. Optional field: when undefined the
+   *  full declared set is unknown and the extra-unknown-key narrowing is
+   *  skipped (conservative keep). The walker always populates it (possibly
+   *  `[]`) going forward. */
+  optional?: string[];
   hasSplat: boolean;
 }
 

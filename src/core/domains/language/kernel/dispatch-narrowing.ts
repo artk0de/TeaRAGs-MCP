@@ -28,9 +28,21 @@ export class ArityNarrower implements DispatchCandidateNarrower {
  *  extra-unknown-key direction. */
 export class KwargNarrower implements DispatchCandidateNarrower {
   narrow(call: CallRef, candidates: SymbolDefinition[]): SymbolDefinition[] {
-    if (call.kwargKeys === undefined || call.hasKwargSplat) return candidates;
-    const have = new Set(call.kwargKeys);
-    return candidates.filter((c) => !c.kwargs || c.kwargs.required.every((k) => have.has(k)));
+    const keys = call.kwargKeys;
+    if (keys === undefined || call.hasKwargSplat) return candidates;
+    const have = new Set(keys);
+    return candidates.filter((c) => {
+      const kw = c.kwargs;
+      if (!kw) return true;
+      // (1) omitted-required — every required kwarg must be supplied.
+      if (!kw.required.every((k) => have.has(k))) return false;
+      // (2) extra-unknown — every passed key must be declared, UNLESS the def
+      // has a `**` splat (accepts arbitrary keys) or `optional` was not captured
+      // (full declared set unknown → conservative keep).
+      if (kw.hasSplat || kw.optional === undefined) return true;
+      const declared = new Set([...kw.required, ...kw.optional]);
+      return keys.every((k) => declared.has(k));
+    });
   }
 }
 

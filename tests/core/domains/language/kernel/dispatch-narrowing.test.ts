@@ -87,6 +87,30 @@ describe("KwargNarrower", () => {
   it("keeps all when the call has no captured kwargKeys", () => {
     expect(new KwargNarrower().narrow(kcall(undefined), [kdef("A#m", ["b"])], ctx).length).toBe(1);
   });
+
+  // extra-unknown-kwarg direction (bd d9o7o Spec #2 B1): a passed key the def
+  // cannot accept (not declared, no ** splat) → ArgumentError → drop.
+  const withOpt = (id: string, required: string[], optional: string[], hasSplat = false): SymbolDefinition => ({
+    ...kdef(id, required, hasSplat),
+    kwargs: { required, optional, hasSplat },
+  });
+
+  it("drops a candidate when the call passes an undeclared kwarg key (no ** splat)", () => {
+    const cands = [withOpt("A#m", [], ["limit"]), withOpt("B#m", [], ["offset"])];
+    expect(new KwargNarrower().narrow(kcall(["limit"]), cands, ctx).map((c) => c.symbolId)).toEqual(["A#m"]);
+  });
+  it("keeps a def with ** splat even on an undeclared key", () => {
+    const cands = [withOpt("A#m", [], [], true)];
+    expect(new KwargNarrower().narrow(kcall(["whatever"]), cands, ctx).length).toBe(1);
+  });
+  it("keeps a def whose declared set (required ∪ optional) covers every passed key", () => {
+    const cands = [withOpt("A#m", ["mode"], ["limit"])];
+    expect(new KwargNarrower().narrow(kcall(["mode", "limit"]), cands, ctx).length).toBe(1);
+  });
+  it("skips the extra-unknown check when optional is not captured (conservative keep)", () => {
+    // kdef → kwargs.optional undefined ⇒ full declared set unknown ⇒ keep.
+    expect(new KwargNarrower().narrow(kcall(["anything"]), [kdef("A#m", [])], ctx).length).toBe(1);
+  });
 });
 
 describe("VisibilityNarrower", () => {
