@@ -671,6 +671,90 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
     );
     expect(outcome.kind).toBe("continue");
   });
+
+  it("resolves an ambiguous short-name to a NAMESPACED base-class method via the MRO chain (compact-FQ scope — cai0/n2kpz)", () => {
+    // The walker emits the enclosing class of `class Api::BaseController` as a
+    // COMPACT FQ scope segment — scope = ["Api::BaseController"], NOT
+    // ["Api","BaseController"]. The pre-fix narrowing compared def.scope[last]
+    // only against klass's LAST segment ("BaseController"), so the compact FQ
+    // tail "Api::BaseController" never matched and the inherited bare call
+    // dropped in strict mode despite a single valid in-project target. A decoy
+    // TagsController#limit_param collides on the short name.
+    const symbolTable = tableWith(
+      [
+        "app/controllers/api/base_controller.rb",
+        [
+          sym("Api::BaseController#limit_param", "limit_param", "app/controllers/api/base_controller.rb", [
+            "Api::BaseController",
+          ]),
+        ],
+      ],
+      [
+        "app/controllers/tags_controller.rb",
+        [sym("TagsController#limit_param", "limit_param", "app/controllers/tags_controller.rb", ["TagsController"])],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "limit_param", receiver: null, member: "limit_param", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerScope: ["Api", "V1", "Accounts", "EndorsementsController"],
+        classAncestors: { "Api::V1::Accounts::EndorsementsController": ["Api::BaseController"] },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "app/controllers/api/base_controller.rb",
+        targetSymbolId: "Api::BaseController#limit_param",
+      },
+    });
+  });
+
+  it("resolves an ambiguous short-name to a NAMESPACED included concern via the MRO chain (compact-FQ scope — cai0/n2kpz)", () => {
+    // Same compact-FQ scope bug for a concern reached via `include`: the
+    // enclosing controller includes Api::Pagination, whose scope is stored as
+    // ["Api::Pagination"]. Pre-fix, "Api::Pagination" only compared against the
+    // klass last-segment "Pagination" and missed; the bare pagination_params
+    // dropped even though the concern is the unique MRO owner (a sibling
+    // controller override collides on the short name).
+    const symbolTable = tableWith(
+      [
+        "app/controllers/concerns/api/pagination.rb",
+        [
+          sym("Api::Pagination#pagination_params", "pagination_params", "app/controllers/concerns/api/pagination.rb", [
+            "Api::Pagination",
+          ]),
+        ],
+      ],
+      [
+        "app/controllers/api/v1/notifications_controller.rb",
+        [
+          sym(
+            "Api::V1::NotificationsController#pagination_params",
+            "pagination_params",
+            "app/controllers/api/v1/notifications_controller.rb",
+            ["Api::V1::NotificationsController"],
+          ),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "pagination_params", receiver: null, member: "pagination_params", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerScope: ["Api", "V1", "Accounts", "FollowerAccountsController"],
+        classAncestors: { "Api::V1::Accounts::FollowerAccountsController": ["Api::Pagination"] },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "app/controllers/concerns/api/pagination.rb",
+        targetSymbolId: "Api::Pagination#pagination_params",
+      },
+    });
+  });
 });
 
 describe("RubyIvarFieldSymbolResolutionStrategy", () => {

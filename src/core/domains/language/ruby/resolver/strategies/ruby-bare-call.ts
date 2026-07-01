@@ -1,7 +1,13 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { collectAncestorChain, isRubyPath, symbolIdIsInstanceMethod, type ResolverConfig } from "./shared.js";
+import {
+  collectAncestorChain,
+  isRubyPath,
+  lastConstantSegment,
+  symbolIdIsInstanceMethod,
+  type ResolverConfig,
+} from "./shared.js";
 
 /**
  * Bare-call fallback: receiver is null, so global short-name lookup is the only
@@ -36,8 +42,19 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
       const enclosing = ctx.callerScope.join("::");
       const mro = [enclosing, ...collectAncestorChain(enclosing, ctx)];
       for (const klass of mro) {
-        const short = klass.split("::").pop();
-        const atLevel = fallback.filter((def) => def.scope[def.scope.length - 1] === short);
+        // Match a candidate's enclosing-scope tail against the MRO class in
+        // EITHER stored form: the compact FQ (`["Api::BaseController"]`) or the
+        // bare last segment (`["Admin","BaseController"]` → "BaseController").
+        // The walker emits both depending on how the class header was declared
+        // (`class Api::BaseController` vs nested `module Admin; class …`), so
+        // comparing only the last segment silently missed every namespaced base
+        // class / concern (cai0/n2kpz). Mirrors the scope-tail check in
+        // shared.ts `resolveTypeMethodInternal`.
+        const short = lastConstantSegment(klass);
+        const atLevel = fallback.filter((def) => {
+          const tail = def.scope[def.scope.length - 1];
+          return tail === klass || tail === short;
+        });
         if (atLevel.length === 1) {
           return resolved({ targetRelPath: atLevel[0].relPath, targetSymbolId: atLevel[0].symbolId });
         }

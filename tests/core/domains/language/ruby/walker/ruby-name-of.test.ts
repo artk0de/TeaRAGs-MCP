@@ -391,6 +391,101 @@ describe("rbNameOf — grammar-compat children.find fallback paths", () => {
   });
 });
 
+/**
+ * Grammar-compat synthetic AstNode tests for the two Ruby-only container
+ * detectors: `rubyMethodInsideClassMethodsBlock` and
+ * `rubyMethodInsideExtendSelfModule`. Both walk `methodNode.parent` and, for
+ * the enclosing `call` node, read the method identifier (and, for `extend
+ * self`, the argument list) via `childForFieldName(...) ?? children.find(...)`.
+ * Real tree-sitter-ruby always exposes the `method`/`arguments` fields, so the
+ * `children.find` arm is a forward-compat fallback that real-grammar parses
+ * never exercise — mirrors the `fakeNode` convention in the describe block
+ * above, scoped to a local builder that also wires `parent` + field lookups.
+ */
+describe("rbNameOf — grammar-compat children.find fallback paths (class_methods / extend self detectors)", () => {
+  type FakeRubyNode = {
+    type: string;
+    text: string;
+    children: readonly FakeRubyNode[];
+    namedChildren: readonly FakeRubyNode[];
+    startPosition: { row: number; column: number };
+    endPosition: { row: number; column: number };
+    parent: FakeRubyNode | null;
+    previousNamedSibling: FakeRubyNode | null;
+    childForFieldName: (field: string) => FakeRubyNode | null;
+    child: (i: number) => FakeRubyNode | null;
+    namedChild: (i: number) => FakeRubyNode | null;
+  };
+
+  function fakeRubyNode(
+    type: string,
+    text: string,
+    opts: {
+      children?: FakeRubyNode[];
+      namedChildren?: FakeRubyNode[];
+      fields?: Record<string, FakeRubyNode>;
+      parent?: FakeRubyNode | null;
+    } = {},
+  ): FakeRubyNode {
+    return {
+      type,
+      text,
+      children: opts.children ?? [],
+      namedChildren: opts.namedChildren ?? [],
+      startPosition: { row: 0, column: 0 },
+      endPosition: { row: 0, column: text.length },
+      parent: opts.parent ?? null,
+      previousNamedSibling: null,
+      // Only fields explicitly wired below resolve; everything else is null,
+      // forcing the `?? children.find(...)` fallback arm.
+      childForFieldName: (field: string) => opts.fields?.[field] ?? null,
+      child: () => null,
+      namedChild: () => null,
+    };
+  }
+
+  it("rubyMethodInsideClassMethodsBlock falls back to children.find for the class_methods call's method identifier", () => {
+    // Synthetic `class_methods do; def find_tracked; end; end` where the
+    // enclosing `call` node has NO "method" field wired — forces
+    // `call.children.find((c) => c.type === "identifier")`.
+    const methodName = fakeRubyNode("identifier", "find_tracked");
+    const methodNode = fakeRubyNode("method", "def find_tracked; end", { fields: { name: methodName } });
+    const classMethodsIdent = fakeRubyNode("identifier", "class_methods");
+    const doBlock = fakeRubyNode("do_block", "do\n  def find_tracked; end\nend", { children: [methodNode] });
+    const call = fakeRubyNode("call", "class_methods do ... end", { children: [classMethodsIdent, doBlock] });
+    methodNode.parent = doBlock;
+    doBlock.parent = call;
+
+    expect(rbNameOf(methodNode as never)).toEqual({
+      name: "find_tracked",
+      descendsInto: false,
+      methodKind: "static",
+    });
+  });
+
+  it("rubyMethodInsideExtendSelfModule falls back to children.find for the extend call's method identifier and argument_list", () => {
+    // Synthetic `module M; extend self; def helper; end; end` where the
+    // `extend self` call node has NO "method"/"arguments" fields wired —
+    // forces BOTH `children.find((c) => c.type === "identifier")` and
+    // `children.find((c) => c.type === "argument_list")`.
+    const extendIdent = fakeRubyNode("identifier", "extend");
+    const selfArg = fakeRubyNode("self", "self");
+    const argList = fakeRubyNode("argument_list", "(self)", { namedChildren: [selfArg] });
+    const extendCall = fakeRubyNode("call", "extend self", { children: [extendIdent, argList] });
+    const methodName = fakeRubyNode("identifier", "helper");
+    const methodNode = fakeRubyNode("method", "def helper; end", { fields: { name: methodName } });
+    const moduleNode = fakeRubyNode("module", "module M\n  extend self\n  def helper\n  end\nend", {
+      children: [extendCall],
+    });
+    methodNode.parent = moduleNode;
+
+    expect(rbNameOf(methodNode as never)).toEqual([
+      { name: "helper", descendsInto: false, methodKind: "instance" },
+      { name: "helper", descendsInto: false, methodKind: "static" },
+    ]);
+  });
+});
+
 describe("rbNameOf — ActiveSupport::Concern class_methods block (bd tea-rags-mcp-82o24)", () => {
   it("`class_methods do; def find_tracked; end; end` → STATIC (class method of the includer)", () => {
     const tree = parse("module Trackable\n  class_methods do\n    def find_tracked; end\n  end\nend\n");
