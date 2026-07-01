@@ -61,8 +61,16 @@ export type DeclaredMethodSpec = { name: string; kind: MethodKind };
  *   - `'model-constant-ref'` — associated model  → `{receiver:C, member:C}`        (has_many :posts)
  *   - `'delegate-target'`    — per delegated sym  → `{receiver:to, member:sym}`     (delegate :a, to: :x)
  *   - `'alias-redirect'`     — old method name    → `{receiver:null, member:old}`   (alias_method :new, :old)
+ *   - `'policy-dispatch'`    — Pundit policy method → `{receiver:<Record>Policy, member:<query>?}` (authorize :relay, :update?)
+ *   - `'route-action'`       — routed controller action → `{receiver:<Ns::>Controller, member:action}` (get "x", to: "posts#index")
  */
-export type RubyDslEmits = "self-instance" | "model-constant-ref" | "delegate-target" | "alias-redirect";
+export type RubyDslEmits =
+  | "self-instance"
+  | "model-constant-ref"
+  | "delegate-target"
+  | "alias-redirect"
+  | "policy-dispatch"
+  | "route-action";
 
 export interface RubyDslEntry {
   /** Intrinsic category. Drives the chunker's class-body group (`CATEGORY_TO_GROUP`). */

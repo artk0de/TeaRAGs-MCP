@@ -511,3 +511,97 @@ describe("ruby-walker — dynamic send dispatch (extractLiteralSymbolOrString st
     expect(calls).toContainEqual(expect.objectContaining({ receiver: null, member: "notify" }));
   });
 });
+
+describe("ruby-walker — Pundit authorize → policy dispatch (n2kpz)", () => {
+  const inUpdate = (body: string) =>
+    callsOf(`class Admin::RelaysController\n  def update\n    ${body}\n  end\nend\n`, [
+      {
+        symbolId: "Admin::RelaysController#update",
+        scope: ["Admin", "RelaysController", "update"],
+        startLine: 2,
+        endLine: 4,
+      },
+    ]);
+
+  it("`authorize :relay, :update?` emits an edge to RelayPolicy#update?", () => {
+    expect(inUpdate("authorize :relay, :update?")).toContainEqual(
+      expect.objectContaining({ receiver: "RelayPolicy", member: "update?" }),
+    );
+  });
+
+  it("camelizes a multi-word policy symbol: `authorize :username_block, :create?` → UsernameBlockPolicy#create?", () => {
+    expect(inUpdate("authorize :username_block, :create?")).toContainEqual(
+      expect.objectContaining({ receiver: "UsernameBlockPolicy", member: "create?" }),
+    );
+  });
+
+  it("normalizes a query symbol without `?`: `authorize :relay, :update` → RelayPolicy#update?", () => {
+    expect(inUpdate("authorize :relay, :update")).toContainEqual(
+      expect.objectContaining({ receiver: "RelayPolicy", member: "update?" }),
+    );
+  });
+
+  it("namespaces the array form: `authorize [:admin, :status], :index?` → Admin::StatusPolicy#index?", () => {
+    expect(inUpdate("authorize [:admin, :status], :index?")).toContainEqual(
+      expect.objectContaining({ receiver: "Admin::StatusPolicy", member: "index?" }),
+    );
+  });
+
+  it("emits nothing spurious for a non-authorize call in the same body", () => {
+    const calls = inUpdate("render :show");
+    expect(calls.map((c) => c.receiver)).not.toContain("RelayPolicy");
+  });
+
+  it("`authorize @account` (@ivar record, no explicit query) emits no policy edge — receiver-type inference deferred", () => {
+    const calls = inUpdate("authorize @account");
+    expect(calls.filter((c) => (c.receiver ?? "").endsWith("Policy"))).toHaveLength(0);
+  });
+
+  it("`authorize :relay` (symbol record, no query symbol) emits no policy edge — implicit query (action name) deferred", () => {
+    const calls = inUpdate("authorize :relay");
+    expect(calls.filter((c) => (c.receiver ?? "").endsWith("Policy"))).toHaveLength(0);
+  });
+});
+
+describe("ruby-walker — ActionDispatch routing → controller#action (n2kpz)", () => {
+  // A routes file is a top-level draw block; the routing verbs are bare calls.
+  // A covering chunk is required — the walker attributes calls to chunks by line range.
+  const inRoutes = (body: string) =>
+    callsOf(`Rails.application.routes.draw do\n  ${body}\nend\n`, [
+      { symbolId: "config/routes", scope: [], startLine: 1, endLine: 3 },
+    ]);
+
+  it('`get "/posts", to: "posts#index"` emits an edge to PostsController#index', () => {
+    expect(inRoutes('get "/posts", to: "posts#index"')).toContainEqual(
+      expect.objectContaining({ receiver: "PostsController", member: "index" }),
+    );
+  });
+
+  it('`root "home#index"` (string form) emits an edge to HomeController#index', () => {
+    expect(inRoutes('root "home#index"')).toContainEqual(
+      expect.objectContaining({ receiver: "HomeController", member: "index" }),
+    );
+  });
+
+  it('namespaced `to:` path self-encodes the module: `to: "admin/settings#show"` → Admin::SettingsController#show', () => {
+    expect(inRoutes('get "/s", to: "admin/settings#show"')).toContainEqual(
+      expect.objectContaining({ receiver: "Admin::SettingsController", member: "show" }),
+    );
+  });
+
+  it('camelizes a multi-word controller: `to: "custom_emojis#index"` → CustomEmojisController#index', () => {
+    expect(inRoutes('post "/e", to: "custom_emojis#index"')).toContainEqual(
+      expect.objectContaining({ receiver: "CustomEmojisController", member: "index" }),
+    );
+  });
+
+  it("a route with no `to:` target emits no controller edge", () => {
+    const calls = inRoutes('get "/health"');
+    expect(calls.filter((c) => c.member === "index" || (c.receiver ?? "").endsWith("Controller"))).toHaveLength(0);
+  });
+
+  it('a `to:` spec with an empty controller segment (`to: "#show"`) emits no controller edge', () => {
+    const calls = inRoutes('get "/s", to: "#show"');
+    expect(calls.filter((c) => (c.receiver ?? "").endsWith("Controller"))).toHaveLength(0);
+  });
+});

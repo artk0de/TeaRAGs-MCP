@@ -31,4 +31,16 @@ describe("isExternalBareCall (registry fold over FRAMEWORKS)", () => {
   it("is false for a project method name", () => {
     expect(isExternalBareCall("create_event")).toBe(false);
   });
+
+  it("classifies ActionController conditional-GET / caching verbs as external (n2kpz #3)", () => {
+    expect(isExternalBareCall("expires_in")).toBe(true);
+    expect(isExternalBareCall("fresh_when")).toBe(true);
+    expect(isExternalBareCall("stale?")).toBe(true);
+  });
+
+  it("classifies Pundit `authorize` and routing verbs as external (n2kpz #1/#2 — gem/framework macros)", () => {
+    expect(isExternalBareCall("authorize")).toBe(true); // pundit entry
+    expect(isExternalBareCall("get")).toBe(true); // routing entry
+    expect(isExternalBareCall("namespace")).toBe(true); // routing entry
+  });
 });

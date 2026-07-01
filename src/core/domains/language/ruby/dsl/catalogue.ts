@@ -25,7 +25,9 @@
  * catalogue. AST argument extraction stays in the consumer engine, never here.
  */
 
+import { ROUTING_VOCABULARY } from "./action-dispatch-routing.js";
 import { ACTIVESUPPORT_VOCABULARY } from "./activesupport.js";
+import { PUNDIT_VOCABULARY } from "./pundit.js";
 import { ACTIVE_RECORD_INSTANCE_BUILTINS } from "./rails-runtime.js";
 import { RAILS_VOCABULARY } from "./rails.js";
 import { RUBY_CORE_VOCABULARY } from "./ruby-core.js";
@@ -55,6 +57,8 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   ACTIVESUPPORT_VOCABULARY,
   RAILS_VOCABULARY,
   SIDEKIQ_VOCABULARY,
+  PUNDIT_VOCABULARY,
+  ROUTING_VOCABULARY,
 ];
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);

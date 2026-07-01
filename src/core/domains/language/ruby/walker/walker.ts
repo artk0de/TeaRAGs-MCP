@@ -1153,6 +1153,22 @@ function emitDslEdges(node: AstNode, emits: RubyDslEmits, startLine: number, out
       }
       return;
     }
+    // `authorize :relay, :update?` — Pundit policy dispatch → {receiver:<Record>Policy, member:<query>?} (n2kpz).
+    case "policy-dispatch": {
+      const target = punditPolicyTarget(node);
+      if (target !== null) {
+        out.push({ callText: node.text, receiver: target.policy, member: target.method, startLine });
+      }
+      return;
+    }
+    // `get "x", to: "posts#index"` — routed action → {receiver:<Ns::>Controller, member:action} (n2kpz).
+    case "route-action": {
+      const target = routeActionTarget(node);
+      if (target !== null) {
+        out.push({ callText: node.text, receiver: target.controller, member: target.action, startLine });
+      }
+      return;
+    }
     // `has_many :posts` associations — model constant → {receiver:C, member:C} (duzy).
     case "model-constant-ref": {
       const model = associationModelConstant(node);
@@ -1593,6 +1609,79 @@ function extractSecondLiteralSymbol(callNode: AstNode): string | null {
   const secondArg = args.namedChildren[1];
   if (secondArg?.type !== "simple_symbol") return null;
   return secondArg.text.startsWith(":") ? secondArg.text.slice(1) : secondArg.text;
+}
+
+/**
+ * Pundit `authorize(record, query?)` → the `<Policy>#<method>` its runtime
+ * dispatch targets (bd tea-rags-mcp-n2kpz). The policy constant comes from the
+ * FIRST arg — a symbol `:relay` → `RelayPolicy`, an array `[:admin, :status]` →
+ * `Admin::StatusPolicy` (leading symbols are the namespace, the last is the
+ * record). The method comes from the SECOND (query) symbol, normalised to end
+ * in `?` (`:update` / `:update?` → `update?`). Returns null for the `@ivar`
+ * record form (needs receiver-type inference) or an implicit query (needs the
+ * enclosing action name) — both deferred; a null emits no edge.
+ */
+function punditPolicyTarget(callNode: AstNode): { policy: string; method: string } | null {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  const first = args.namedChildren[0];
+  if (!first) return null;
+  const stripColon = (t: string): string => (t.startsWith(":") ? t.slice(1) : t);
+  let policy: string;
+  if (first.type === "simple_symbol") {
+    policy = `${camelizeModelName(stripColon(first.text))}Policy`;
+  } else if (first.type === "array") {
+    const syms = first.namedChildren.filter((c) => c.type === "simple_symbol").map((c) => stripColon(c.text));
+    if (syms.length === 0) return null;
+    const record = syms[syms.length - 1];
+    const namespace = syms.slice(0, -1).map(camelizeModelName);
+    policy = [...namespace, `${camelizeModelName(record)}Policy`].join("::");
+  } else {
+    return null; // @ivar / expression record — receiver-type inference deferred
+  }
+  const second = args.namedChildren[1];
+  if (second?.type !== "simple_symbol") return null; // implicit query (action name) deferred
+  const method = stripColon(second.text);
+  return { policy, method: method.endsWith("?") ? method : `${method}?` };
+}
+
+/** Literal text of a `string` / `string_literal` node with the quotes stripped. */
+function stringLiteralText(node: AstNode): string {
+  const inner = node.namedChildren.find((c) => c.type === "string_content");
+  return inner ? inner.text : node.text.replace(/^["']|["']$/g, "");
+}
+
+/**
+ * Rails routing `get "/x", to: "posts#index"` / `root "home#index"` → the
+ * `<Controller>#<action>` the route dispatches to (bd tea-rags-mcp-n2kpz). The
+ * target is the `"c#a"` spec: from the `to:` pair, or the first string arg for
+ * `root`. The controller path self-encodes the namespace as `/` segments
+ * (`admin/settings#show` → `Admin::SettingsController#show`), so each segment is
+ * camelized and joined with `::` before the `Controller` suffix. Returns null
+ * when there is no `"c#a"` string (a `to:`-less route, or a `to:` pointing at a
+ * rack app / lambda) — nothing to emit.
+ */
+function routeActionTarget(callNode: AstNode): { controller: string; action: string } | null {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  let spec: string | null = null;
+  for (const arg of args.namedChildren) {
+    if (arg.type === "pair" && arg.childForFieldName("key")?.text === "to") {
+      const value = arg.childForFieldName("value");
+      if (value && (value.type === "string" || value.type === "string_literal")) spec = stringLiteralText(value);
+    }
+  }
+  if (spec === null) {
+    const first = args.namedChildren[0];
+    if (first && (first.type === "string" || first.type === "string_literal")) spec = stringLiteralText(first);
+  }
+  if (!spec?.includes("#")) return null;
+  const hash = spec.indexOf("#");
+  const ctrlPath = spec.slice(0, hash);
+  const action = spec.slice(hash + 1);
+  if (ctrlPath.length === 0 || action.length === 0) return null;
+  const controller = `${ctrlPath.split("/").map(camelizeModelName).join("::")}Controller`;
+  return { controller, action };
 }
 
 /**

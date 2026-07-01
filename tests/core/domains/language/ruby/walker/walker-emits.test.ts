@@ -70,8 +70,15 @@ describe("emits descriptor — membership parity with the four former dispatch p
     }
   });
 
-  it("every populated `emits` is one of the four known shapes (no stray value)", () => {
-    const known = new Set(["self-instance", "model-constant-ref", "delegate-target", "alias-redirect"]);
+  it("every populated `emits` is one of the known shapes (no stray value)", () => {
+    const known = new Set([
+      "self-instance",
+      "model-constant-ref",
+      "delegate-target",
+      "alias-redirect",
+      "policy-dispatch",
+      "route-action",
+    ]);
     for (const name of NAMES) {
       const e = RUBY_DSL[name]?.emits;
       if (e !== undefined) expect(known.has(e)).toBe(true);
@@ -109,6 +116,25 @@ describe("emitDslEdges — per-emits edge shape via extractFromRubyFile", () => 
     const src = "class User\n  has_many :posts\nend\n";
     const calls = callsOf(src, [{ symbolId: "User", scope: ["User"], startLine: 1, endLine: 3 }]);
     expect(calls).toContainEqual(expect.objectContaining({ receiver: "Post", member: "Post", startLine: 2 }));
+  });
+
+  it("policy-dispatch: `authorize :relay, :update?` → {receiver:'RelayPolicy', member:'update?'}", () => {
+    const src = "class Admin::RelaysController\n  def update\n    authorize :relay, :update?\n  end\nend\n";
+    const calls = callsOf(src, [
+      {
+        symbolId: "Admin::RelaysController#update",
+        scope: ["Admin", "RelaysController", "update"],
+        startLine: 2,
+        endLine: 4,
+      },
+    ]);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "RelayPolicy", member: "update?" }));
+  });
+
+  it("route-action: `get \"/x\", to: \"posts#index\"` → {receiver:'PostsController', member:'index'}", () => {
+    const src = 'Rails.application.routes.draw do\n  get "/x", to: "posts#index"\nend\n';
+    const calls = callsOf(src, [{ symbolId: "config/routes", scope: [], startLine: 1, endLine: 3 }]);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "PostsController", member: "index" }));
   });
 
   it("class-body-only: a receiver-qualified `obj.before_action :x` emits NO synthetic edge", () => {
