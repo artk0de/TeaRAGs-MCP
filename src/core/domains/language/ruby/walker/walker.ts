@@ -1638,9 +1638,15 @@ function collectMethodLocalBindings(methodNode: AstNode): Set<string> {
     if (node.type === "assignment") {
       const lhs = node.childForFieldName("left");
       if (lhs?.type === "identifier") out.add(lhs.text);
+      // `a, b = x` — multiple assignment: the LHS is a `left_assignment_list`
+      // of targets. Only bare `identifier` children bind a fresh local; an
+      // `element_reference` (`h[k]`) or `call` (`obj.attr =`) target reuses an
+      // existing binding, so it is skipped (bd lawlq.3.1).
+      if (lhs?.type === "left_assignment_list") {
+        for (const target of lhs.namedChildren) if (target.type === "identifier") out.add(target.text);
+      }
       // `prs[:k] = v` — element_reference LHS doesn't bind a new local
-      // (prs was already bound earlier), so no add here. But `a, b = x`
-      // tuple assignment isn't handled — out of scope per spec.
+      // (prs was already bound earlier), so no add here.
     }
     if (node.type === "exception_variable") {
       const inner = node.namedChildren[0];
@@ -1668,6 +1674,13 @@ function collectMethodLocalBindings(methodNode: AstNode): Set<string> {
 function collectParamName(node: AstNode, out: Set<string>): void {
   if (node.type === "identifier") {
     out.add(node.text);
+    return;
+  }
+  // Destructured block param `|(a, b)|` — a `destructured_parameter` wraps the
+  // bound names (possibly nested `|(a, (b, c))|`). Each is a block-local, not a
+  // call site (bd lawlq.3.1).
+  if (node.type === "destructured_parameter") {
+    for (const child of node.namedChildren) collectParamName(child, out);
     return;
   }
   if (
