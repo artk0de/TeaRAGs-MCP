@@ -1,7 +1,10 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import { RUBY_INSTANCE_RETURNING, RUBY_RELATION_RETURNING } from "../../dsl/index.js";
-import { CONTAINER_BLOCK_ITERATION_METHODS } from "../../resolver/type-propagation.js";
+import {
+  CONTAINER_BLOCK_ITERATION_METHODS,
+  CONTAINER_ELEMENT_RETURNING_METHODS,
+} from "../../resolver/type-propagation.js";
 import { lexicalScopeFqName, readScopeResolution, walk } from "../ast-utils.js";
 import type { RubyExtractInput } from "../walker.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
@@ -34,6 +37,17 @@ function relationRootConst(node: AstNode): string | null {
   return relationRootConst(recv);
 }
 
+/** A call chain that is STILL a relation (no terminal instanceReturning verb):
+ *  `Post.where(...)`, `Post.where(...).order(...)`. Returns the root constant —
+ *  the relation's ELEMENT type — or null. Identifier-rooted chains return null
+ *  (no guessing; the root type is unknown at walk time). */
+export function relationElementConst(node: AstNode): string | null {
+  if (node.type !== "call" && node.type !== "method_call") return null;
+  const method = node.childForFieldName("method");
+  if (!method || !RUBY_RELATION_RETURNING.has(method.text)) return null;
+  return relationRootConst(node);
+}
+
 /**
  * Infer the INSTANCE type of an RHS expression that is a class-constant call
  * (`ClassName.new(...)` / `Model.find(...)` / `Model.create!(...)` …) or a
@@ -55,6 +69,13 @@ export function constInstanceType(node: AstNode): string | null {
   if (YARD_CONST.test(receiverText)) return receiverText;
   // B2 relation tail `Const.where(...).first` — receiver is a relation chain.
   return relationRootConst(receiver);
+}
+
+/** `lhs ||= rhs` is the only operator assignment that BINDS a type: the
+ *  memoization convention takes the RHS type for the happy-path receiver
+ *  (nil branch ignored). `+=`/`-=`/`&&=` mutate or preserve — never bind. */
+export function isOrAssignment(node: AstNode): boolean {
+  return node.type === "operator_assignment" && node.children.some((c) => c.text === "||=");
 }
 
 /**
@@ -96,6 +117,36 @@ export function collectRubyInstantiatedTypes(root: AstNode): string[] {
 }
 
 /**
+ * Element lift: `user = users.first` / `x = users[0]` on a container-bound
+ * local. When the RHS is an `element_reference` (`users[0]`) or a call/
+ * method_call whose method is in {@link CONTAINER_ELEMENT_RETURNING_METHODS}
+ * (`users.first`), and the base is an identifier already bound to a container
+ * in `bindings`, returns the lifted element type. Returns null otherwise (no
+ * guessing): non-identifier base, unbound/non-container base, or a
+ * non-element-returning method (`users.count`).
+ */
+function containerElementLift(
+  rhs: AstNode,
+  bindings: ReadonlyMap<string, { type: RubyTypeRef; line: number }>,
+  line: number,
+): RubyTypeRef | null {
+  const base =
+    rhs.type === "element_reference"
+      ? rhs.childForFieldName("object")
+      : rhs.type === "call" || rhs.type === "method_call"
+        ? rhs.childForFieldName("receiver")
+        : null;
+  if (base?.type !== "identifier") return null;
+  if (rhs.type !== "element_reference") {
+    const method = rhs.childForFieldName("method");
+    if (!method || !CONTAINER_ELEMENT_RETURNING_METHODS.has(method.text)) return null;
+  }
+  const binding = bindings.get(base.text);
+  if (!binding || binding.line > line || binding.type.form !== "container") return null;
+  return binding.type.element;
+}
+
+/**
  * `rubyAstInferenceTypeSource` — walks the AST for a single Ruby file and
  * emits `kind: "local"` {@link RubyTypeFact} entries: one per inferred
  * local-variable binding produced by:
@@ -126,17 +177,26 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
     // `collectLocalBindingsForChunk`'s behaviour where yardByLine is applied
     // before the AST walk. YARD @param uses the ELEMENT type for collection
     // params (Array<Post> → "Post"), so no unwrapping is needed here.
-    const latestBinding = new Map<string, { type: string; line: number }>();
+    const latestBinding = new Map<string, { type: RubyTypeRef; line: number }>();
     for (const [defLine, params] of collectYardParamTypes(input.code)) {
       for (const [name, type] of Object.entries(params)) {
-        latestBinding.set(name, { type, line: defLine });
+        latestBinding.set(name, {
+          type: { form: "instance", name: type },
+          line: defLine,
+        });
       }
     }
 
-    const emitFact = (name: string, typeName: string, line: number, form: "class" | "instance"): void => {
-      const typeRef: RubyTypeRef = { form, name: typeName };
-      facts.push({ kind: "local", source: "ast", symbolScope: [], name, line, type: typeRef });
-      latestBinding.set(name, { type: typeName, line });
+    const emitFact = (name: string, type: RubyTypeRef, line: number): void => {
+      facts.push({
+        kind: "local",
+        source: "ast",
+        symbolScope: [],
+        name,
+        line,
+        type,
+      });
+      latestBinding.set(name, { type, line });
     };
 
     walk(input.tree.rootNode, (node) => {
@@ -153,7 +213,7 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
             const valueNode = param.childForFieldName("value");
             if (nameNode?.type !== "identifier" || !valueNode) continue;
             const type = constInstanceType(valueNode);
-            if (type) emitFact(nameNode.text, type, line, "instance");
+            if (type) emitFact(nameNode.text, { form: "instance", name: type }, line);
           }
         }
         return;
@@ -178,13 +238,14 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
           if (recvBinding && recvBinding.line <= line) {
             const paramsNode = node.childForFieldName("parameters"); // block_parameters
             const firstParam = paramsNode?.namedChildren.find((p) => p.type === "identifier");
-            if (firstParam) emitFact(firstParam.text, recvBinding.type, line, "instance");
+            const bound = recvBinding.type.form === "container" ? recvBinding.type.element : recvBinding.type;
+            if (firstParam) emitFact(firstParam.text, bound, line);
           }
         }
         return;
       }
 
-      if (node.type !== "assignment") return;
+      if (node.type !== "assignment" && !isOrAssignment(node)) return;
       const lhs = node.childForFieldName("left");
       const rhs = node.childForFieldName("right");
       if (!lhs || !rhs) return;
@@ -202,10 +263,10 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
           if (target?.type !== "identifier" || !value) continue;
           const constType = constInstanceType(value);
           if (constType) {
-            emitFact(target.text, constType, line, "instance");
+            emitFact(target.text, { form: "instance", name: constType }, line);
           } else if (value.type === "identifier") {
             const prev = latestBinding.get(value.text);
-            if (prev && prev.line <= line) emitFact(target.text, prev.type, line, "instance");
+            if (prev && prev.line <= line) emitFact(target.text, prev.type, line);
           }
         }
         return;
@@ -219,21 +280,38 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
       const rhsConst =
         rhs.type === "scope_resolution" ? readScopeResolution(rhs) : rhs.type === "constant" ? rhs.text : null;
       if (rhsConst && YARD_CONST.test(rhsConst)) {
-        emitFact(varName, rhsConst, line, "class");
+        emitFact(varName, { form: "class", name: rhsConst }, line);
         return;
       }
 
       // Single assignment: class-constant instance call.
       const instType = constInstanceType(rhs);
       if (instType) {
-        emitFact(varName, instType, line, "instance");
+        emitFact(varName, { form: "instance", name: instType }, line);
+        return;
+      }
+
+      // Bare relation assignment: `posts = Post.where(...)` — RHS is STILL a
+      // relation (terminal verb is relation-returning, not instance-returning).
+      // Emits a container fact so a later `posts.each { |p| }` unwraps to the
+      // element type (F2).
+      const relElement = relationElementConst(rhs);
+      if (relElement) {
+        emitFact(varName, { form: "container", element: { form: "instance", name: relElement } }, line);
+        return;
+      }
+
+      // Element lift: `user = users.first` / `x = users[0]` on a container-bound local.
+      const lifted = containerElementLift(rhs, latestBinding, line);
+      if (lifted) {
+        emitFact(varName, lifted, line);
         return;
       }
 
       // Copy-propagation: `var = other_var` copies other_var's most-recent type.
       if (rhs.type === "identifier") {
         const prev = latestBinding.get(rhs.text);
-        if (prev && prev.line <= line) emitFact(varName, prev.type, line, "instance");
+        if (prev && prev.line <= line) emitFact(varName, prev.type, line);
       }
     });
 

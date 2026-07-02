@@ -180,4 +180,112 @@ describe("rubyAstInferenceTypeSource", () => {
       expect(usersFact?.type).toEqual({ form: "instance", name: "UserCollection" });
     });
   });
+
+  describe("||= memoized local bindings (F1a)", () => {
+    it("x ||= Const.find(id) emits an instance fact", () => {
+      const code = "def call\n  user ||= User.find(1)\n  user.save\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          kind: "local",
+          name: "user",
+          type: { form: "instance", name: "User" },
+        }),
+      );
+    });
+
+    it("x ||= CONST emits a class fact", () => {
+      const code = "def call\n  klass ||= User\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "klass",
+          type: { form: "class", name: "User" },
+        }),
+      );
+    });
+
+    it("+= / &&= emit NO facts", () => {
+      const code = "def call\n  n += 1\n  y &&= User.new\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.name === "n" || f.name === "y")).toEqual([]);
+    });
+  });
+
+  describe("bare relation assignment → container facts (F2)", () => {
+    it("posts = Post.where(...) emits a container fact with element Post", () => {
+      const code = "def call\n  posts = Post.where(active: true)\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "posts",
+          type: {
+            form: "container",
+            element: { form: "instance", name: "Post" },
+          },
+        }),
+      );
+    });
+
+    it("chained relation verbs keep the root element (Post.where(...).order(...))", () => {
+      const code = "def call\n  posts = Post.where(a: 1).order(:id)\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "posts",
+          type: {
+            form: "container",
+            element: { form: "instance", name: "Post" },
+          },
+        }),
+      );
+    });
+
+    it("identifier-rooted chains emit NO container fact (no guessing)", () => {
+      const code = "def call\n  rows = data.where(a: 1)\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.name === "rows")).toEqual([]);
+    });
+
+    it("posts.each { |p| } binds the block param to the ELEMENT type", () => {
+      const code = "def call\n  posts = Post.where(a: 1)\n  posts.each { |p| p.save }\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "p",
+          type: { form: "instance", name: "Post" },
+        }),
+      );
+    });
+  });
+
+  describe("identifier-rooted element lift (F3)", () => {
+    it("user = users.first lifts the element type", () => {
+      const code = "def call\n  users = User.where(a: 1)\n  user = users.first\n  user.save\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "user",
+          type: { form: "instance", name: "User" },
+        }),
+      );
+    });
+
+    it("x = users[0] lifts via element_reference", () => {
+      const code = "def call\n  users = User.where(a: 1)\n  x = users[0]\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "x",
+          type: { form: "instance", name: "User" },
+        }),
+      );
+    });
+
+    it("x = users.count does NOT lift (non-element method)", () => {
+      const code = "def call\n  users = User.where(a: 1)\n  x = users.count\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.name === "x")).toEqual([]);
+    });
+  });
 });
