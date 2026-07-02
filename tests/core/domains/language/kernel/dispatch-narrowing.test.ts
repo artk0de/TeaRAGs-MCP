@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import type { CallRef, SymbolDefinition } from "../../../../../src/core/contracts/types/codegraph.js";
 import {
   ArityNarrower,
+  BlockNarrower,
   DuckVocabularyNarrower,
+  KwargNarrower,
+  LiteralReceiverNarrower,
   resolveNarrowedFanout,
   VisibilityNarrower,
 } from "../../../../../src/core/domains/language/kernel/dispatch-narrowing.js";
@@ -52,6 +55,64 @@ describe("ArityNarrower", () => {
   });
 });
 
+describe("KwargNarrower", () => {
+  const kdef = (id: string, required: string[], hasSplat = false): SymbolDefinition => ({
+    symbolId: id,
+    fqName: id,
+    shortName: id.split("#")[1] ?? id,
+    relPath: `${id}.rb`,
+    scope: [],
+    kwargs: { required, hasSplat },
+  });
+  const kcall = (kwargKeys?: string[], hasKwargSplat?: boolean): CallRef => ({
+    callText: "x.m",
+    receiver: "x",
+    member: "m",
+    startLine: 1,
+    kwargKeys,
+    hasKwargSplat,
+  });
+
+  it("drops a candidate whose required kwarg the call omits", () => {
+    const cands = [kdef("A#m", ["b", "c"]), kdef("B#m", ["b"])];
+    expect(new KwargNarrower().narrow(kcall(["b"]), cands, ctx).map((c) => c.symbolId)).toEqual(["B#m"]);
+  });
+  it("keeps all when the call passes a ** double-splat (unknown runtime keys)", () => {
+    const cands = [kdef("A#m", ["b", "c"])];
+    expect(new KwargNarrower().narrow(kcall(["b"], true), cands, ctx).length).toBe(1);
+  });
+  it("keeps a candidate with no recorded kwargs (missing data)", () => {
+    expect(new KwargNarrower().narrow(kcall(["z"]), [def("P#m")], ctx).length).toBe(1);
+  });
+  it("keeps all when the call has no captured kwargKeys", () => {
+    expect(new KwargNarrower().narrow(kcall(undefined), [kdef("A#m", ["b"])], ctx).length).toBe(1);
+  });
+
+  // extra-unknown-kwarg direction (bd d9o7o Spec #2 B1): a passed key the def
+  // cannot accept (not declared, no ** splat) → ArgumentError → drop.
+  const withOpt = (id: string, required: string[], optional: string[], hasSplat = false): SymbolDefinition => ({
+    ...kdef(id, required, hasSplat),
+    kwargs: { required, optional, hasSplat },
+  });
+
+  it("drops a candidate when the call passes an undeclared kwarg key (no ** splat)", () => {
+    const cands = [withOpt("A#m", [], ["limit"]), withOpt("B#m", [], ["offset"])];
+    expect(new KwargNarrower().narrow(kcall(["limit"]), cands, ctx).map((c) => c.symbolId)).toEqual(["A#m"]);
+  });
+  it("keeps a def with ** splat even on an undeclared key", () => {
+    const cands = [withOpt("A#m", [], [], true)];
+    expect(new KwargNarrower().narrow(kcall(["whatever"]), cands, ctx).length).toBe(1);
+  });
+  it("keeps a def whose declared set (required ∪ optional) covers every passed key", () => {
+    const cands = [withOpt("A#m", ["mode"], ["limit"])];
+    expect(new KwargNarrower().narrow(kcall(["mode", "limit"]), cands, ctx).length).toBe(1);
+  });
+  it("skips the extra-unknown check when optional is not captured (conservative keep)", () => {
+    // kdef → kwargs.optional undefined ⇒ full declared set unknown ⇒ keep.
+    expect(new KwargNarrower().narrow(kcall(["anything"]), [kdef("A#m", [])], ctx).length).toBe(1);
+  });
+});
+
 describe("VisibilityNarrower", () => {
   it("drops private candidates under explicit receiver, keeps protected/public/unknown", () => {
     const cands = [
@@ -68,11 +129,72 @@ describe("VisibilityNarrower", () => {
   });
 });
 
+describe("BlockNarrower", () => {
+  const bdef = (id: string, acceptsBlock?: boolean): SymbolDefinition => ({
+    symbolId: id,
+    fqName: id,
+    shortName: id.split("#")[1] ?? id,
+    relPath: `${id}.rb`,
+    scope: [],
+    acceptsBlock,
+  });
+  const bcall = (passesBlock?: boolean): CallRef => ({
+    callText: "x.m",
+    receiver: "x",
+    member: "m",
+    startLine: 1,
+    passesBlock,
+  });
+
+  it("keeps only yielders (true/undefined) when a block is passed and yielders exist", () => {
+    const cands = [bdef("A#m", true), bdef("B#m", false), bdef("C#m", undefined)];
+    expect(new BlockNarrower().narrow(bcall(true), cands, ctx).map((c) => c.symbolId)).toEqual(["A#m", "C#m"]);
+  });
+  it("keeps ALL when every candidate is a proven non-yielder (defensive block / missed detection)", () => {
+    const cands = [bdef("A#m", false), bdef("B#m", false)];
+    expect(new BlockNarrower().narrow(bcall(true), cands, ctx).length).toBe(2);
+  });
+  it("keeps all when the call passes no block", () => {
+    const cands = [bdef("A#m", false)];
+    expect(new BlockNarrower().narrow(bcall(false), cands, ctx).length).toBe(1);
+    expect(new BlockNarrower().narrow(bcall(undefined), cands, ctx).length).toBe(1);
+  });
+});
+
 describe("DuckVocabularyNarrower", () => {
   it("empties the set when member is in the vocabulary", () => {
     const n = new DuckVocabularyNarrower(new Set(["to_s", "each"]));
     expect(n.narrow(call("to_s"), [def("A#to_s")], ctx)).toEqual([]);
     expect(n.narrow(call("perform"), [def("A#perform")], ctx).length).toBe(1);
+  });
+});
+
+describe("LiteralReceiverNarrower", () => {
+  // Toy classifier: string literal → String, array literal → Array, else null.
+  const classify = (r: string | null): string | null =>
+    r === null ? null : r.startsWith('"') ? "String" : r.startsWith("[") ? "Array" : null;
+  const sdef = (id: string, scope: string[]): SymbolDefinition => ({
+    symbolId: id,
+    fqName: id,
+    shortName: id.split("#")[1] ?? id,
+    relPath: `${id}.rb`,
+    scope,
+  });
+  const litCall = (receiver: string): CallRef => ({ callText: `${receiver}.m`, receiver, member: "m", startLine: 1 });
+
+  it("keeps only in-project reopens of the literal's core type", () => {
+    const cands = [sdef("String#m", ["String"]), sdef("Foo#m", ["Foo"])];
+    expect(new LiteralReceiverNarrower(classify).narrow(litCall('"s"'), cands, ctx).map((c) => c.symbolId)).toEqual([
+      "String#m",
+    ]);
+  });
+  it("empties the fan-out when no candidate reopens the core type", () => {
+    const cands = [sdef("Foo#m", ["Foo"]), sdef("Bar#m", ["Bar"])];
+    expect(new LiteralReceiverNarrower(classify).narrow(litCall('"s"'), cands, ctx)).toEqual([]);
+  });
+  it("keeps all when the receiver is not a recognised literal", () => {
+    const cands = [sdef("Foo#m", ["Foo"])];
+    expect(new LiteralReceiverNarrower(classify).narrow(litCall("user"), cands, ctx).length).toBe(1);
   });
 });
 

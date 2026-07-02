@@ -7,7 +7,10 @@ import {
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
 import {
   ArityNarrower,
+  BlockNarrower,
   DuckVocabularyNarrower,
+  KwargNarrower,
+  LiteralReceiverNarrower,
   resolveNarrowedFanout,
   VisibilityNarrower,
 } from "../../../kernel/dispatch-narrowing.js";
@@ -26,6 +29,25 @@ import {
 
 /** Ruby constants begin uppercase; `::`-joined segments form a scope chain. */
 const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
+
+/**
+ * Map a literal-receiver source text to its Ruby core type (bd d9o7o), or
+ * `null` when the receiver is not a recognised literal. Fed to the neutral
+ * `LiteralReceiverNarrower`: a literal receiver's type is statically certain,
+ * so a same-name in-project method on an UNRELATED class is wrong-type noise.
+ * `true`/`false`/`nil` are skipped (no useful in-project reopen target).
+ */
+export function classifyRubyLiteralReceiver(receiver: string | null): string | null {
+  if (receiver === null || receiver.length === 0) return null;
+  const c = receiver[0];
+  if (c === '"' || c === "'") return "String";
+  if (c === "[") return "Array";
+  if (c === "{") return "Hash";
+  if (c === ":") return "Symbol";
+  if (/^-?\d+$/.test(receiver)) return "Integer";
+  if (/^-?\d+\.\d+$/.test(receiver)) return "Float";
+  return null;
+}
 
 /**
  * Dynamic-receiver short-name fan-out (bd tea-rags-mcp-wbj3). A call `recv.m`
@@ -61,8 +83,11 @@ const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
 export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
   private readonly narrowers = [
     new DuckVocabularyNarrower(RUBY_DUCK_VOCAB),
+    new LiteralReceiverNarrower(classifyRubyLiteralReceiver),
     new ArityNarrower(),
+    new KwargNarrower(),
     new VisibilityNarrower(),
+    new BlockNarrower(),
   ];
 
   constructor(private readonly cfg: ResolverConfig) {}

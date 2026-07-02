@@ -43,6 +43,7 @@ import type {
   FileExtraction,
   ImportRef,
   InheritanceEdgeDecl,
+  KwargSignature,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { RUBY_DSL, singularizeAssociation, type RubyDslEmits } from "../dsl/index.js";
@@ -124,6 +125,8 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     if (sig !== undefined) {
       base.arity = sig.arity;
       base.visibility = sig.visibility;
+      if (sig.kwargs !== undefined) base.kwargs = sig.kwargs;
+      base.acceptsBlock = sig.acceptsBlock;
     }
     if (trackTypes) {
       // Store provides YARD + AST param/local bindings (position-filtered to chunk).
@@ -450,6 +453,90 @@ function computeRubyArity(methodNode: AstNode): AritySignature {
 }
 
 /**
+ * Compute the keyword-arg signature of a `method` / `singleton_method` node
+ * (bd d9o7o). A `keyword_parameter` with NO `value` child (no default) is
+ * REQUIRED (`def m(b:)` → must supply `b:`); one WITH a default (`c: 1`) is
+ * optional and omitted from `required`. `hasSplat` is set by a
+ * `hash_splat_parameter` (`**opts`). Returns `undefined` when the method has no
+ * kwargs at all — keeps the payload lean and the narrower a no-op for it.
+ */
+function computeRubyKwargs(methodNode: AstNode): KwargSignature | undefined {
+  const params = methodNode.childForFieldName("parameters");
+  if (!params) return undefined;
+  const required: string[] = [];
+  const optional: string[] = [];
+  let hasSplat = false;
+  for (const child of params.namedChildren) {
+    if (child.type === "keyword_parameter") {
+      const nameNode = child.childForFieldName("name") ?? child.namedChildren[0];
+      if (!nameNode) continue;
+      const name = nameNode.text.replace(/:$/, "");
+      // A default value is the `value` field; its absence ⇒ required kwarg,
+      // its presence ⇒ optional (defaulted) kwarg. Both go into the declared
+      // set the extra-unknown-key narrowing checks against (bd d9o7o).
+      if (child.childForFieldName("value") === null) required.push(name);
+      else optional.push(name);
+    } else if (child.type === "hash_splat_parameter") {
+      hasSplat = true;
+    }
+  }
+  if (required.length === 0 && optional.length === 0 && !hasSplat) return undefined;
+  return { required, optional, hasSplat };
+}
+
+/**
+ * Collect the call-site keyword-arg key-set (bd d9o7o). `pair` children of the
+ * argument list are kwargs (`b: 2` → key `b`); a `hash_splat_argument`
+ * (`**opts`) means unknown runtime keys. Positional args / blocks are ignored.
+ */
+function computeCallKwargs(callNode: AstNode): { kwargKeys?: string[]; hasKwargSplat?: boolean } {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return {};
+  const kwargKeys: string[] = [];
+  let hasKwargSplat = false;
+  for (const child of args.namedChildren) {
+    if (child.type === "pair") {
+      const keyNode = child.childForFieldName("key") ?? child.namedChildren[0];
+      if (keyNode) kwargKeys.push(keyNode.text.replace(/:$/, "").replace(/^:/, ""));
+    } else if (child.type === "hash_splat_argument") {
+      hasKwargSplat = true;
+    }
+  }
+  const out: { kwargKeys?: string[]; hasKwargSplat?: boolean } = {};
+  if (kwargKeys.length > 0) out.kwargKeys = kwargKeys;
+  if (hasKwargSplat) out.hasKwargSplat = true;
+  return out;
+}
+
+/**
+ * Whether a `method` / `singleton_method` node accepts a block (bd d9o7o):
+ * TRUE if it declares a `block_parameter` (`&blk`) OR its body contains a
+ * `yield`. FALSE = proven non-yielder (the BlockNarrower only drops these, and
+ * only when other yielders remain). Over-detecting yield (e.g. a `yield` in a
+ * nested def) is the SAFE direction — it keeps the candidate.
+ */
+function computeRubyAcceptsBlock(methodNode: AstNode): boolean {
+  const params = methodNode.childForFieldName("parameters");
+  if (params?.namedChildren.some((c) => c.type === "block_parameter")) return true;
+  const body = methodNode.childForFieldName("body");
+  if (!body) return false;
+  let yields = false;
+  walk(body, (n) => {
+    if (n.type === "yield") yields = true;
+  });
+  return yields;
+}
+
+/** Whether a call passes a block (`{ … }` / `do … end`) (bd d9o7o). The block
+ *  is a `block` / `do_block` node, either a direct child of the call or inside
+ *  its argument list. */
+function computeCallPassesBlock(callNode: AstNode): boolean {
+  if (callNode.children.some((c) => c.type === "block" || c.type === "do_block")) return true;
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  return args ? args.namedChildren.some((c) => c.type === "block" || c.type === "do_block") : false;
+}
+
+/**
  * Walk the AST and collect arity + visibility for every `method` /
  * `singleton_method` definition found inside a class or module body.
  *
@@ -463,11 +550,20 @@ function computeRubyArity(methodNode: AstNode): AritySignature {
  *   - `private :foo, :bar` (symbol form) → marks those methods by name
  * Default is `"public"` at the start of each class body.
  */
-function collectRubyMethodSignatures(
-  root: AstNode,
-): Map<number, { arity: AritySignature; visibility: "public" | "private" | "protected" }> {
+function collectRubyMethodSignatures(root: AstNode): Map<
+  number,
+  {
+    arity: AritySignature;
+    visibility: "public" | "private" | "protected";
+    kwargs?: KwargSignature;
+    acceptsBlock: boolean;
+  }
+> {
   type VisMode = "public" | "private" | "protected";
-  const out = new Map<number, { arity: AritySignature; visibility: VisMode }>();
+  const out = new Map<
+    number,
+    { arity: AritySignature; visibility: VisMode; kwargs?: KwargSignature; acceptsBlock: boolean }
+  >();
 
   const processClassBody = (classNode: AstNode): void => {
     const body = classNode.childForFieldName("body");
@@ -533,6 +629,8 @@ function collectRubyMethodSignatures(
         out.set(stmt.startPosition.row + 1, {
           arity: computeRubyArity(stmt),
           visibility: symVis.get(name) ?? currentVis,
+          kwargs: computeRubyKwargs(stmt),
+          acceptsBlock: computeRubyAcceptsBlock(stmt),
         });
         continue;
       }
@@ -554,6 +652,8 @@ function collectRubyMethodSignatures(
             out.set(firstArg.startPosition.row + 1, {
               arity: computeRubyArity(firstArg),
               visibility: modifier,
+              kwargs: computeRubyKwargs(firstArg),
+              acceptsBlock: computeRubyAcceptsBlock(firstArg),
             });
           }
           // Symbol form already resolved in pass 1 — nothing to do here.
@@ -1315,6 +1415,12 @@ function emitMethodCallRef(
   if (dispatch?.field) callRef.dispatch = dispatch;
   // Positional argCount (bd xlnub): excludes block and keyword args
   callRef.argCount = computeArgCount(node);
+  // Keyword-arg key-set + double-splat (bd d9o7o).
+  const kw = computeCallKwargs(node);
+  if (kw.kwargKeys !== undefined) callRef.kwargKeys = kw.kwargKeys;
+  if (kw.hasKwargSplat !== undefined) callRef.hasKwargSplat = kw.hasKwargSplat;
+  // Block presence (bd d9o7o) — only set when true (undefined = no block).
+  if (computeCallPassesBlock(node)) callRef.passesBlock = true;
   out.push(callRef);
 }
 

@@ -546,6 +546,12 @@ export interface ChunkExtraction {
    * symbol form). Undefined for non-method chunks and non-Ruby languages.
    */
   visibility?: "public" | "private" | "protected";
+  /** Keyword-arg signature of the method this chunk represents (bd d9o7o).
+   *  Populated by the Ruby walker; undefined for non-method chunks. */
+  kwargs?: KwargSignature;
+  /** Method yields or takes an `&block` param (bd d9o7o). `false` = proven
+   *  non-yielder; undefined for non-method chunks. */
+  acceptsBlock?: boolean;
 }
 
 export interface CallRef {
@@ -587,6 +593,12 @@ export interface CallRef {
   dynamicSend?: boolean;
   /** Positional argument count at the call site (bd xlnub). */
   argCount?: number;
+  /** Keyword-arg key names at the call site (bd d9o7o). */
+  kwargKeys?: string[];
+  /** Call passes a `**opts` double-splat — unknown runtime keys (bd d9o7o). */
+  hasKwargSplat?: boolean;
+  /** Call passes a block (`{ … }` / `do … end`) (bd d9o7o). */
+  passesBlock?: boolean;
 }
 
 /**
@@ -631,6 +643,21 @@ export interface AritySignature {
   hasSplat: boolean;
 }
 
+/** Keyword-arg envelope of a method definition (bd d9o7o). `required` = kwarg
+ *  names with NO default (must be supplied at the call site); `hasSplat` = a
+ *  `**opts` rest param (accepts arbitrary keys). Positional arity lives in
+ *  AritySignature — this is the keyword axis, kept separate. */
+export interface KwargSignature {
+  required: string[];
+  /** Declared OPTIONAL (defaulted) kwarg names (bd d9o7o extra-unknown). Full
+   *  declared set = `required ∪ optional`. Optional field: when undefined the
+   *  full declared set is unknown and the extra-unknown-key narrowing is
+   *  skipped (conservative keep). The walker always populates it (possibly
+   *  `[]`) going forward. */
+  optional?: string[];
+  hasSplat: boolean;
+}
+
 export interface SymbolDefinition {
   symbolId: SymbolId;
   fqName: string;
@@ -639,6 +666,12 @@ export interface SymbolDefinition {
   scope: string[];
   arity?: AritySignature;
   visibility?: "public" | "private" | "protected";
+  /** Keyword-arg signature of this method definition (bd d9o7o). Undefined for
+   *  non-method chunks / methods with no kwargs. */
+  kwargs?: KwargSignature;
+  /** Method yields or takes an `&block` param (statically visible). `false` =
+   *  PROVEN non-yielder; `undefined` = not captured / non-method (bd d9o7o). */
+  acceptsBlock?: boolean;
 }
 
 /**
