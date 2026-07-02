@@ -34,6 +34,17 @@ function relationRootConst(node: AstNode): string | null {
   return relationRootConst(recv);
 }
 
+/** A call chain that is STILL a relation (no terminal instanceReturning verb):
+ *  `Post.where(...)`, `Post.where(...).order(...)`. Returns the root constant —
+ *  the relation's ELEMENT type — or null. Identifier-rooted chains return null
+ *  (no guessing; the root type is unknown at walk time). */
+export function relationElementConst(node: AstNode): string | null {
+  if (node.type !== "call" && node.type !== "method_call") return null;
+  const method = node.childForFieldName("method");
+  if (!method || !RUBY_RELATION_RETURNING.has(method.text)) return null;
+  return relationRootConst(node);
+}
+
 /**
  * Infer the INSTANCE type of an RHS expression that is a class-constant call
  * (`ClassName.new(...)` / `Model.find(...)` / `Model.create!(...)` …) or a
@@ -194,7 +205,8 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
           if (recvBinding && recvBinding.line <= line) {
             const paramsNode = node.childForFieldName("parameters"); // block_parameters
             const firstParam = paramsNode?.namedChildren.find((p) => p.type === "identifier");
-            if (firstParam) emitFact(firstParam.text, recvBinding.type, line);
+            const bound = recvBinding.type.form === "container" ? recvBinding.type.element : recvBinding.type;
+            if (firstParam) emitFact(firstParam.text, bound, line);
           }
         }
         return;
@@ -243,6 +255,16 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
       const instType = constInstanceType(rhs);
       if (instType) {
         emitFact(varName, { form: "instance", name: instType }, line);
+        return;
+      }
+
+      // Bare relation assignment: `posts = Post.where(...)` — RHS is STILL a
+      // relation (terminal verb is relation-returning, not instance-returning).
+      // Emits a container fact so a later `posts.each { |p| }` unwraps to the
+      // element type (F2).
+      const relElement = relationElementConst(rhs);
+      if (relElement) {
+        emitFact(varName, { form: "container", element: { form: "instance", name: relElement } }, line);
         return;
       }
 

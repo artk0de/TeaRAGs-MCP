@@ -548,7 +548,7 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
     });
   });
 
-  it("does NOT bind `var = Model.where(...)` (returns Relation, not instance)", () => {
+  it("binds `var = Model.where(...)` as a container of the element type, not an instance (mn00t F2)", () => {
     const src = "def filter\n  rel = User.where(active: true)\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({
@@ -558,7 +558,10 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
       language: "ruby",
       chunks: [{ symbolId: "filter", scope: ["filter"], startLine: 1, endLine: 3 }],
     });
-    expect(r.chunks[0].localBindings).toBeUndefined();
+    // where() returns a Relation — binds as a container of User (element), not a User instance.
+    expect(r.chunks[0].localBindings).toEqual({
+      rel: [{ line: 2, type: "User", typeRef: { form: "container", element: { form: "instance", name: "User" } } }],
+    });
   });
 
   it("does NOT bind from bare factory call `var = make_user()`", () => {
@@ -937,7 +940,7 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
     expect(r.chunks[0].localBindings).toEqual({ post: [{ line: 3, type: "Post" }] });
   });
 
-  it("relation tail NEGATIVE: bare `rel = Post.where(...)` (no terminal instance method) does NOT bind to Post instance", () => {
+  it("relation tail: bare `rel = Post.where(...)` binds to a container of Post (element), not a Post instance (mn00t F2)", () => {
     const src = ["class PostsController", "  def index", "    rel = Post.where(published: true)", "  end", "end"].join(
       "\n",
     );
@@ -949,8 +952,10 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
       language: "ruby",
       chunks: [{ symbolId: "PostsController#index", scope: ["PostsController"], startLine: 2, endLine: 4 }],
     });
-    // where() returns a Relation — no instance binding expected.
-    expect(r.chunks[0].localBindings).toBeUndefined();
+    // where() returns a Relation — binds as a container of Post (element), not a Post instance.
+    expect(r.chunks[0].localBindings).toEqual({
+      rel: [{ line: 3, type: "Post", typeRef: { form: "container", element: { form: "instance", name: "Post" } } }],
+    });
   });
 
   // B-block — block-parameter element typing (Increment B / B-block)

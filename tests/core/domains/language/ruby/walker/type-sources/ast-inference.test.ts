@@ -211,4 +211,51 @@ describe("rubyAstInferenceTypeSource", () => {
       expect(facts.filter((f) => f.name === "n" || f.name === "y")).toEqual([]);
     });
   });
+
+  describe("bare relation assignment → container facts (F2)", () => {
+    it("posts = Post.where(...) emits a container fact with element Post", () => {
+      const code = "def call\n  posts = Post.where(active: true)\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "posts",
+          type: {
+            form: "container",
+            element: { form: "instance", name: "Post" },
+          },
+        }),
+      );
+    });
+
+    it("chained relation verbs keep the root element (Post.where(...).order(...))", () => {
+      const code = "def call\n  posts = Post.where(a: 1).order(:id)\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "posts",
+          type: {
+            form: "container",
+            element: { form: "instance", name: "Post" },
+          },
+        }),
+      );
+    });
+
+    it("identifier-rooted chains emit NO container fact (no guessing)", () => {
+      const code = "def call\n  rows = data.where(a: 1)\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.name === "rows")).toEqual([]);
+    });
+
+    it("posts.each { |p| } binds the block param to the ELEMENT type", () => {
+      const code = "def call\n  posts = Post.where(a: 1)\n  posts.each { |p| p.save }\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "p",
+          type: { form: "instance", name: "Post" },
+        }),
+      );
+    });
+  });
 });
