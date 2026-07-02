@@ -180,4 +180,35 @@ describe("rubyAstInferenceTypeSource", () => {
       expect(usersFact?.type).toEqual({ form: "instance", name: "UserCollection" });
     });
   });
+
+  describe("||= memoized local bindings (F1a)", () => {
+    it("x ||= Const.find(id) emits an instance fact", () => {
+      const code = "def call\n  user ||= User.find(1)\n  user.save\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          kind: "local",
+          name: "user",
+          type: { form: "instance", name: "User" },
+        }),
+      );
+    });
+
+    it("x ||= CONST emits a class fact", () => {
+      const code = "def call\n  klass ||= User\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "klass",
+          type: { form: "class", name: "User" },
+        }),
+      );
+    });
+
+    it("+= / &&= emit NO facts", () => {
+      const code = "def call\n  n += 1\n  y &&= User.new\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.name === "n" || f.name === "y")).toEqual([]);
+    });
+  });
 });

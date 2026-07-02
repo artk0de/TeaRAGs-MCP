@@ -57,6 +57,13 @@ export function constInstanceType(node: AstNode): string | null {
   return relationRootConst(receiver);
 }
 
+/** `lhs ||= rhs` is the only operator assignment that BINDS a type: the
+ *  memoization convention takes the RHS type for the happy-path receiver
+ *  (nil branch ignored). `+=`/`-=`/`&&=` mutate or preserve — never bind. */
+export function isOrAssignment(node: AstNode): boolean {
+  return node.type === "operator_assignment" && node.children.some((c) => c.text === "||=");
+}
+
 /**
  * Collect the program's instantiation set for one Ruby file (bd
  * tea-rags-mcp-pffv): every fully-qualified constant instantiated via
@@ -193,7 +200,7 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
         return;
       }
 
-      if (node.type !== "assignment") return;
+      if (node.type !== "assignment" && !isOrAssignment(node)) return;
       const lhs = node.childForFieldName("left");
       const rhs = node.childForFieldName("right");
       if (!lhs || !rhs) return;
