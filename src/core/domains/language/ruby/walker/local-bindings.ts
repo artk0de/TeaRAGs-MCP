@@ -2,7 +2,7 @@ import type { AstNode } from "../../../../contracts/types/ast.js";
 import { resolveLocalBindingType, type LocalBinding } from "../../../../contracts/types/codegraph.js";
 import { RUBY_INSTANCE_RETURNING } from "../dsl/index.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
-import { constInstanceType } from "./type-sources/ast-inference.js";
+import { constInstanceType, isOrAssignment } from "./type-sources/ast-inference.js";
 import { collectYardParamTypes } from "./type-sources/yard.js";
 
 export { collectYardParamTypes, collectYardReturnTypes, YARD_CONST } from "./type-sources/yard.js";
@@ -140,7 +140,7 @@ function recordIvarAssignment(
   fields: Record<string, string>,
   associationTypes: Record<string, Record<string, string>>,
 ): void {
-  if (n.type !== "assignment") return;
+  if (n.type !== "assignment" && !isOrAssignment(n)) return;
   const lhs = n.childForFieldName("left");
   const rhs = n.childForFieldName("right");
   if (lhs?.type !== "instance_variable" || !rhs) return;

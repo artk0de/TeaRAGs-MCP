@@ -180,6 +180,33 @@ describe("collectRubyIvarFieldTypes — edge cases", () => {
 });
 
 // ---------------------------------------------------------------------------
+// collectRubyIvarFieldTypes — ||= memoization (F1b)
+// ---------------------------------------------------------------------------
+
+describe("collectRubyIvarFieldTypes — ||= memoization (F1b)", () => {
+  it("@user ||= User.find(@id) types the ivar", () => {
+    const src = ["class Session", "  def user", "    @user ||= User.find(@id)", "  end", "end"].join("\n");
+    const root = parse(`${src}\n`);
+    const result = collectRubyIvarFieldTypes(root);
+    expect(result["Session"]).toMatchObject({ "@user": "User" });
+  });
+
+  it("@n += 1 does NOT type the ivar", () => {
+    const src = ["class Counter", "  def bump", "    @n += 1", "  end", "end"].join("\n");
+    const root = parse(`${src}\n`);
+    const result = collectRubyIvarFieldTypes(root);
+    expect(result["Counter"]?.["@n"]).toBeUndefined();
+  });
+
+  it("@posts ||= Post.where(a: 1) does NOT type the ivar (container defer, spec F2)", () => {
+    const src = ["class Feed", "  def posts", "    @posts ||= Post.where(a: 1)", "  end", "end"].join("\n");
+    const root = parse(`${src}\n`);
+    const result = collectRubyIvarFieldTypes(root);
+    expect(result["Feed"]?.["@posts"]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // collectRubyBodyReturnTypes — uncovered paths
 // ---------------------------------------------------------------------------
 
