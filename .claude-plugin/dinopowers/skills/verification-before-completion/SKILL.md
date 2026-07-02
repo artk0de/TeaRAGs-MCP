@@ -13,32 +13,31 @@ description:
 
 # dinopowers: verification-before-completion
 
-Wrapper over `superpowers:verification-before-completion`. Adds a
-**collateral-damage scan**: before claiming complete, queries tea-rags for
-blast-radius signals (imports count, churn, ownership) on just-edited files and
-surfaces which dependents should be verified too.
+Wrapper over `superpowers:verification-before-completion`. Adds
+**collateral-damage scan**: before claiming complete, query tea-rags
+blast-radius signals (imports count, churn, ownership) on just-edited files;
+surface which dependents to verify too.
 
 ## Iron Rule
 
 **tea-rags collateral-damage scan MUST run BEFORE claiming "done"** — whenever
-the session has edited ≥1 existing file.
+session edited ≥1 existing file.
 
 Correct tool (`semantic_search`), correct impact rerank (`"blastRadius"` when
-codegraph is on, the `{imports 0.5, churn 0.3, ownership 0.2}` fallback when
-off), correct parameters (brace-expanded `pathPattern` over
-`git diff --name-only`, `metaOnly: true`), correct verdict (surface
-high-`fanIn`/`imports` files with explicit "verify dependents" recommendation) =
-core value.
+codegraph on, `{imports 0.5, churn 0.3, ownership 0.2}` fallback when off),
+correct params (brace-expanded `pathPattern` over `git diff --name-only`,
+`metaOnly: true`), correct verdict (surface high-`fanIn`/`imports` files with
+explicit "verify dependents" rec) = core value.
 
-If only new files were created (no edits to existing files): skip scan with
-verdict `SAFE (no existing-file edits)`. Do not fabricate pathPattern.
+Only new files created (no edits to existing): skip scan, verdict
+`SAFE (no existing-file edits)`. Don't fabricate pathPattern.
 
 ## Verdict Ladder (PRESCRIPTIVE — apply before claiming done)
 
 🛑 STOP — read the ladder, then act.
 
-Read the blast signal from `fanIn` when codegraph is on (real dependents),
-otherwise from the `imports` proxy.
+Read blast signal from `fanIn` when codegraph on (real dependents), else
+`imports` proxy.
 
 | Verdict        | Triggers                                                              |
 | -------------- | --------------------------------------------------------------------- |
@@ -52,10 +51,10 @@ Block is prescriptive, not informational — DO NOT skip ladder evaluation.
 redirects superpowers:X. NEVER bypass the wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. There is no background reindex hook —
-worktree-plan freshness is explicit (clone + per-task reindex in
-`dinopowers:executing-plans`); run `mcp__tea-rags__index_codebase` manually to
-search code edited but not yet committed, BEFORE the first tea-rags call.
+`tea-rags/rules/index-freshness.md`. No background reindex hook — worktree-plan
+freshness explicit (clone + per-task reindex in `dinopowers:executing-plans`);
+run `mcp__tea-rags__index_codebase` manually to search code edited but not
+committed, BEFORE first tea-rags call.
 
 ## Step 1 — Collect edited file set
 
@@ -70,10 +69,10 @@ From `git status --short` or `git diff --name-only`, collect:
 Output:
 
 - `editedFiles`: relative paths with actual content changes (exclude pure
-  renames, exclude new-only files)
-- `intent`: one sentence describing what the session changed
+  renames, new-only files)
+- `intent`: one sentence — what session changed
 
-If `editedFiles` is empty (pure new-file session): skip to Step 4 with verdict
+`editedFiles` empty (pure new-file session): skip to Step 4, verdict
 `SAFE (no existing-file edits)`.
 
 ## Step 2 — Collateral-damage scan call
@@ -92,9 +91,8 @@ metaOnly:    true
 ```
 
 **Codegraph gating for `rerank`:** `"blastRadius"` (real `fanIn`) when prime
-`## Enrichment` lists `codegraph.symbols`; fall back to
-`{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy) when
-that line is absent.
+`## Enrichment` lists `codegraph.symbols`; else fall back
+`{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy).
 
 Do NOT substitute:
 
@@ -114,9 +112,9 @@ Do NOT pass:
   / `tea-rags:data-driven-generation` Step 6 for cross-skill comparability
 - `filter` narrowing — `pathPattern` already scopes
 
-If results are empty (files are brand-new committed this session, or not in git
-yet): skip to Step 4 with verdict `UNVERIFIABLE (edited files not indexed)`. Do
-NOT fabricate collateral-damage signals.
+Results empty (files brand-new committed this session, or not in git yet): skip
+to Step 4, verdict `UNVERIFIABLE (edited files not indexed)`. Don't fabricate
+collateral-damage signals.
 
 ## Step 3 — Compute collateral-damage verdict
 
@@ -125,8 +123,8 @@ overlay:
 
 - `imports` score — how many modules import this file (blast radius)
 - `commitCount` — churn indicator
-- `blameDominantAuthorPct` (with adaptive label) — live-line silo risk (use the
-  label, not a magic percentage — `silo` / `deep-silo` are codebase-relative)
+- `blameDominantAuthorPct` (with adaptive label) — live-line silo risk (use
+  label, not magic percentage — `silo` / `deep-silo` are codebase-relative)
 
 Verdict ladder per edited file: See Verdict Ladder near top.
 
@@ -148,8 +146,8 @@ Aggregate:
 ```
 
 Phrasing stays generic — never name specific runners (vitest, jest, pytest,
-rspec, etc.). The reading agent resolves the project's actual test command from
-project context (package.json scripts, Makefile, CI config).
+rspec, etc.). Reading agent resolves project's actual test command from project
+context (package.json scripts, Makefile, CI config).
 
 ## Step 3a — Tests-at-risk lookup (targeted verification)
 
@@ -161,9 +159,9 @@ affectedFiles: <editedFiles from Step 1>
 intent: <intent from Step 1>
 ```
 
-The recipe surfaces DSL leaf test chunks semantically bound to the change. For
-each HIGH-BLAST or MEDIUM-BLAST file whose result list is non-empty, augment the
-verdict block with a targeted recommendation:
+Recipe surfaces DSL leaf test chunks semantically bound to change. For each
+HIGH-BLAST/MEDIUM-BLAST file whose result list non-empty, augment verdict block
+with targeted rec:
 
 ```
 **Targeted scenarios for high-blast files:**
@@ -173,20 +171,20 @@ verdict block with a targeted recommendation:
 ```
 
 Output stays runner-agnostic. Phrasing: "run the tests for these files",
-"execute these scenarios via the project's standard test command". Never name a
+"execute these scenarios via the project's standard test command". Never name
 specific runner.
 
-If recipe returned SKIP (no DSL test chunks indexed): leave the verdict block
-as-is and add
+Recipe returned SKIP (no DSL test chunks indexed): leave verdict block as-is,
+add
 `**Targeted scenarios:** unavailable (no DSL test chunks indexed) — verification scope guided by blast-radius signals only`.
 
-If recipe returned empty list (preflight passed but no semantic match): add
+Recipe returned empty list (preflight passed, no semantic match): add
 `**Targeted scenarios:** no obvious test bindings — run general verification covering blast-radius dependents`.
 
 ## Step 4 — Invoke superpowers:verification-before-completion
 
-Invoke the `Skill` tool with `superpowers:verification-before-completion`.
-Prepend the collateral-damage block as context. Phrase handoff as:
+Invoke `Skill` tool with `superpowers:verification-before-completion`. Prepend
+collateral-damage block as context. Phrase handoff as:
 
 > "Before claiming done, the edited files have these blast-radius signals:
 > …<block>… Run verification commands that exercise HIGH-BLAST dependents, not
@@ -197,8 +195,8 @@ Prepend the collateral-damage block as context. Phrase handoff as:
 > invoke `dinopowers:Y` instead — see the Chaining rule section above."
 
 Let `superpowers:verification-before-completion` run its standard verification
-cycle (tests, type-check, lint, build). The wrapper does not replace it — it
-informs the scope of verification.
+cycle (tests, type-check, lint, build). Wrapper doesn't replace it — informs
+scope of verification.
 
 ## Red Flags — STOP and restart from Step 2
 

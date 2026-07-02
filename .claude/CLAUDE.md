@@ -2,8 +2,8 @@
 
 ## Rule File Convention (MANDATORY)
 
-Every file in `.claude/rules/*.md` MUST begin with a YAML frontmatter block
-declaring the source-tree paths the rule scopes to. Format:
+Every `.claude/rules/*.md` MUST start with YAML frontmatter declaring scoped
+source-tree paths. Format:
 
 ```yaml
 ---
@@ -13,24 +13,22 @@ paths:
 ---
 ```
 
-The `paths` list is glob patterns (picomatch) that pinpoint the code areas this
-rule constrains. Tools that surface rules by file location use the frontmatter
-to filter which rules apply to a given edit. A rule without frontmatter is
-invisible to those tools — treat the missing block as a broken rule. When the
-rule applies project-wide (no narrow scope), declare `paths: ["**/*"]`
-explicitly rather than omitting the block.
+`paths` = picomatch globs pinpointing code areas rule constrains. Tools
+surfacing rules by file location filter via frontmatter. No frontmatter =
+invisible = broken rule. Project-wide rule: declare `paths: ["**/*"]`
+explicitly, don't omit.
 
 ## Process Rules
 
-- `.claude/rules/silo-pairing.md` — process rule for commits touching deep-silo
-  files (must include `Why:` line).
+- `.claude/rules/silo-pairing.md` — commits touching deep-silo files must
+  include `Why:` line.
 - `.claude/rules/domains-language.md` — Factory-encapsulates-construction,
-  worker-thread DI via injected module-path, and the language-migration test
-  rule (preserve examples, validate counts). Scoped to `domains/language`,
-  chunker, codegraph, `api/internal`.
-- `.claude/rules/naming.md` — domain-specific naming principle: qualify generic
-  suffixes (`Outcome`/`Strategy`/`Metadata`/`Result`…) with domain context so
-  names are unambiguous at the point of use. Scoped project-wide (`**/*`).
+  worker-thread DI via injected module-path, language-migration test rule
+  (preserve examples, validate counts). Scoped `domains/language`, chunker,
+  codegraph, `api/internal`.
+- `.claude/rules/naming.md` — qualify generic suffixes
+  (`Outcome`/`Strategy`/`Metadata`/`Result`…) with domain context, unambiguous
+  at use. Scoped project-wide (`**/*`).
 
 ## Terminology (MANDATORY)
 
@@ -47,12 +45,11 @@ explicitly rather than omitting the block.
 | **Stats**                        | Low-level descriptive statistics over the collection: count/min/max/mean/stddev/percentiles. Internal compute artifact, not for direct user consumption. | `count`, `mean`, `percentiles[25..95]`                                                    | `SignalStats` in `contracts/types/trajectory.ts`, `StatsCache` in `infra/stats-cache.ts`, `domains/ingest/collection-stats.ts` |
 | **Metrics**                      | Consumer-facing aggregated frame built ON TOP of Stats — selects fields and attaches labels for the `get_index_metrics` MCP tool.                        | `{ min, max, mean, count, labelMap }`                                                     | `SignalMetrics` / `IndexMetrics` in `api/public/dto/metrics.ts`, built by `IndexMetricsQuery#buildSignalMetrics`               |
 
-**Stats vs Metrics rule.** Stats is the math of the distribution (compute /
-persist layer). Metrics is its polished view for the user (DTO layer). The
-builder runs in one direction only: `SignalStats` → `SignalMetrics` via
-`buildSignalMetrics`. Never merge them under one name — they are two layers with
-different responsibilities. New low-level aggregates (count, percentiles, mean,
-stddev, etc.) go to `Stats` types. New user-facing fields exposed via MCP go to
+**Stats vs Metrics rule.** Stats = distribution math (compute/persist layer).
+Metrics = polished user view (DTO layer). Builder one-directional: `SignalStats`
+→ `SignalMetrics` via `buildSignalMetrics`. Never merge under one name — two
+layers, different responsibilities. New low-level aggregates (count,
+percentiles, mean, stddev) → `Stats` types. New user-facing MCP-exposed fields →
 `Metrics` DTOs.
 
 ### Domain Terms
@@ -98,8 +95,8 @@ All paths relative to `src/core/`.
 
 ### Design Principle: Don't Generate — Interrogate
 
-The agent's instinct is to GENERATE variants fast and move on. The user's
-strength is to INTERROGATE each variant until it breaks or holds.
+Agent instinct = GENERATE variants fast, move on. User strength = INTERROGATE
+each until it breaks or holds.
 
 **The anti-pattern that wastes time:**
 
@@ -108,22 +105,20 @@ strength is to INTERROGATE each variant until it breaks or holds.
 3. Agent proposes "ChunkGroupView" → user says view doesn't reflect reality
 4. Agent proposes "ChunkGrouper" → user approves
 
-The agent went through 4 names because it generated instead of thinking. Each
-time the user had to explain WHY it was wrong. The agent should have asked
-itself: "what does this component DO?" → it groups chunks → ChunkGrouper. One
-step, not four.
+4 names because agent generated instead of thinking; user explained WHY each
+wrong. Should've asked: "what does component DO?" → groups chunks →
+ChunkGrouper. One step, not four.
 
-**Rule:** Before proposing a name or structure, answer three questions:
+**Rule:** Before proposing name/structure, answer three:
 
 1. What does it DO? (verb → noun)
 2. Who OWNS it? (domain)
 3. What's the INTERFACE? (inputs/outputs)
 
-If you can't answer all three — don't propose, investigate first.
+Can't answer all three — don't propose, investigate first.
 
-**Why:** The user's time is more valuable than the agent's compute. Every bad
-proposal the user has to reject is wasted human attention. Get it right in fewer
-rounds.
+**Why:** User time > agent compute. Every rejected proposal = wasted human
+attention. Get it right in fewer rounds.
 
 ### Naming Conventions
 
@@ -140,11 +135,10 @@ rounds.
 
 ### coverage-expander (MANDATORY when commit fails coverage threshold)
 
-When a pre-commit hook fails with
-`ERROR: Coverage for <metric> (X%) does not meet global threshold (Y%)`, you
-MUST delegate to the `coverage-expander` subagent rather than writing tests
-inline. The agent is defined at `.claude/agents/coverage-expander.md` and is
-optimized for this exact scenario:
+Pre-commit fails
+`ERROR: Coverage for <metric> (X%) does not meet global threshold (Y%)` → MUST
+delegate to `coverage-expander` subagent, not inline tests. Defined at
+`.claude/agents/coverage-expander.md`, optimized for this scenario:
 
 - parses `coverage/coverage-summary.json` instead of grepping vitest stdout
 - uses `mcp__tea-rags__find_symbol` / `hybrid_search` instead of `Read` for
@@ -154,31 +148,28 @@ optimized for this exact scenario:
 - never modifies production code, configs, or thresholds; never adds `v8 ignore`
   / `eslint-disable`; never rewrites passing tests
 
-Invoke it via the `Agent` tool with `subagent_type: "coverage-expander"`. Pass
-the failing pre-commit output and (if relevant) which files the commit
-introduced. The agent writes test files only — the parent session handles the
-follow-up commit.
+Invoke via `Agent` tool, `subagent_type: "coverage-expander"`. Pass failing
+pre-commit output + (if relevant) commit-introduced files. Agent writes test
+files only — parent session commits.
 
-Do NOT use `coverage-expander` for unrelated coverage exploration or test
-authoring outside a failing pre-commit hook — its early-exit clause stops it
-when thresholds are already met.
+Do NOT use for unrelated coverage exploration / test authoring outside failing
+pre-commit hook — early-exit stops it when thresholds met.
 
 ## MCP Integration Testing — `npm link` workflow
 
-The tea-rags MCP server registered in Claude Code uses the **globally-installed
-npm package** (`npm i -g tea-rags-mcp`), NOT the local `build/` artifact in this
-checkout. Local `npm run build` produces JS in `build/` but the running MCP
-server keeps pointing at the global install. Without re-linking, MCP-side
-integration tests via `mcp__tea-rags__*` tools cannot validate local changes —
-they exercise whatever was published last.
+tea-rags MCP server registered in Claude Code uses **globally-installed npm
+package** (`npm i -g tea-rags-mcp`), NOT local `build/`. Local `npm run build`
+produces `build/` JS but running server keeps pointing at global install.
+Without re-linking, MCP-side integration tests via `mcp__tea-rags__*` exercise
+last-published, not local changes.
 
 ### Sequence (worktree → merge)
 
-Point the global link at the **worktree** build for MCP-side testing. After the
-merge, do NOT relink main — parallel sessions may have their own worktree builds
-linked, and relinking main would clobber whichever build another session is
-testing against. The link is a per-session / per-worktree concern; main carries
-the canonical _source_ after merge, not necessarily the global link.
+Point global link at **worktree** build for MCP-side testing. After merge, do
+NOT relink main — parallel sessions may have own worktree builds linked;
+relinking main clobbers another session's test build. Link =
+per-session/per-worktree concern; main carries canonical _source_ after merge,
+not necessarily global link.
 
 ```bash
 # 1. Worktree: build the worktree branch + point global tea-rags at it
@@ -199,93 +190,82 @@ git merge worktree-<branch> --no-ff
 # a specific checkout only when YOU need the global link to point there.
 ```
 
-Why no automatic main relink after merge: the global `npm link` is a single
-machine-wide pointer, but multiple sessions test in parallel, each against its
-own worktree build. Forcing the link back to main after every merge would break
-whatever build a concurrent session is mid-test on. Treat the link as owned by
-whoever is actively testing — point it at the build you need and leave it there.
-Once a worktree's commits are merged, its source is preserved on main regardless
-of where the link points, so a later `npm link` from any checkout reproduces it.
+Why no auto main relink after merge: global `npm link` = single machine-wide
+pointer, but sessions test in parallel each against own worktree build. Forcing
+link back to main breaks concurrent session mid-test. Link owned by whoever's
+actively testing — point at build you need, leave it. Once merged, worktree
+source preserved on main regardless of link; later `npm link` from any checkout
+reproduces it.
 
 ### Why build AND link each time
 
-- `npm link` registers the current `package.json` path as the source for the
-  global symlink. It does NOT trigger a build — the consumer (MCP server) loads
-  whatever `build/` happens to contain when it next starts.
-- The `npm run build` step ensures `build/` reflects current source. Skipping it
-  leaves the link pointing at stale compiled output.
+- `npm link` registers current `package.json` path as global symlink source.
+  Does NOT trigger build — consumer (MCP server) loads whatever `build/`
+  contains at next start.
+- `npm run build` ensures `build/` reflects current source. Skipping = link
+  points at stale compiled output.
 
 ### Never auto-build / auto-reindex (MANDATORY)
 
 - **Do NOT `npm run build` a worktree automatically** when MORE than one
-  worktree is active (`git worktree list` shows >1 entry under
-  `.claude/worktrees/` — parallel sessions present). Wait for an explicit
-  "build"/"собери". A build + relink can collide with a concurrent session's
-  build/link.
-- **Single active worktree is the exception:** if `git worktree list` shows
-  exactly one worktree, you MAY build automatically to verify — there is no
-  parallel session to disturb.
-- **A worktree build is ALWAYS paired with `npm link` (MANDATORY).** Whenever a
-  build IS authorized for a worktree — the single-worktree auto-build case
-  above, OR an explicit "build"/"собери" — run `npm run build && npm link` as
-  **one unit**. Never `npm run build` a worktree without the
-  immediately-following `npm link`: a bare build leaves the global `tea-rags`
-  pointer on a stale checkout (or another worktree), so the freshly-built
-  `build/` is never the one the MCP server loads. The link is yours to own; a
-  parallel session re-links when it resumes. (This gates only _whether_ to build
-  — it does not loosen the ">1 worktree → ask first" rule above; once you build,
-  you link.)
+  worktree active (`git worktree list` shows >1 under `.claude/worktrees/` —
+  parallel sessions). Wait for explicit "build"/"собери". Build+relink can
+  collide with concurrent session's build/link.
+- **Single active worktree is the exception:** `git worktree list` shows exactly
+  one → MAY build automatically to verify — no parallel session to disturb.
+- **A worktree build is ALWAYS paired with `npm link` (MANDATORY).** When build
+  IS authorized (single-worktree auto-build OR explicit "build"/"собери") — run
+  `npm run build && npm link` as **one unit**. Never bare `npm run build` a
+  worktree: bare build leaves global `tea-rags` pointer on stale checkout (or
+  another worktree), so fresh `build/` never loaded by MCP server. Link is
+  yours; parallel session re-links on resume. (Gates only _whether_ to build —
+  doesn't loosen ">1 worktree → ask first"; once you build, you link.)
 - **Reindex / `index-codebase --force` is ALWAYS user-gated**, regardless of
-  worktree count — it rewrites the shared Qdrant index and depends on ollama
-  embeddings (which can flap mid-run). NEVER chain a reindex off a build; stop
-  at green tests and wait for an explicit "reindex"/"замер".
-- **Commit after successful live validation is auto-authorized.** Once a
-  user-triggered live validation SUCCEEDS (reindex clean + measured
-  resolveSuccessRate delta confirms the change), you MAY commit the change
-  immediately on the worktree branch without waiting for an explicit "commit" —
-  the successful validation is the authorization. Still worktree-only: never
-  merge to main or push without an explicit ask.
+  worktree count — rewrites shared Qdrant index, depends on ollama embeddings
+  (can flap mid-run). NEVER chain reindex off build; stop at green tests, wait
+  for explicit "reindex"/"замер".
+- **Commit after successful live validation is auto-authorized.** User-triggered
+  live validation SUCCEEDS (reindex clean + measured resolveSuccessRate delta
+  confirms change) → MAY commit on worktree branch without explicit "commit" —
+  successful validation is authorization. Still worktree-only: never merge to
+  main or push without explicit ask.
 
 ### When to skip the link-flip entirely
 
-- Pure docs / spec / plan changes that don't touch `src/` — no rebuild needed.
-- Type-only changes that don't alter runtime behavior — local `npm test` covers
-  the regression surface; MCP-side run gives the same result.
+- Pure docs/spec/plan changes not touching `src/` — no rebuild.
+- Type-only changes not altering runtime behavior — local `npm test` covers
+  regression; MCP-side run gives same result.
 
 ### Anti-patterns
 
-- **Linking without building.** Leaves stale `build/` content under the link.
-  Run `npm run build` first.
-- **Building without linking (for a worktree).** The mirror image: a bare
-  `npm run build` in a worktree, with no paired `npm link`, leaves the global
-  `tea-rags` pointer on another checkout — the new `build/` is compiled but
-  never loaded by the MCP server. A worktree build is
-  `npm run build && npm link`, always together.
-- **Building+linking main BEFORE merging.** Main's `build/` doesn't yet contain
-  the worktree's changes. The global link will point at main's pre-merge state
-  and MCP tests regress to the un-tested baseline.
-- **Relinking main after merge by reflex.** The global link is machine-wide and
-  shared across parallel sessions; yanking it back to main can break a
-  concurrent session mid-test. Relink a checkout only when your own session
-  needs the link there. Caveat: if you remove the worktree the link currently
-  points at, the link breaks — relink before `git worktree remove`.
-- **Publishing instead of linking** as a quick test path. `npm publish` is
-  permanent; the link is reversible (`npm unlink` or another `npm link` on a
-  different checkout).
+- **Linking without building.** Leaves stale `build/` under link. Run
+  `npm run build` first.
+- **Building without linking (for a worktree).** Mirror image: bare
+  `npm run build` in worktree, no paired `npm link`, leaves global `tea-rags`
+  pointer on another checkout — new `build/` compiled but never loaded. Worktree
+  build is `npm run build && npm link`, always together.
+- **Building+linking main BEFORE merging.** Main's `build/` doesn't yet have
+  worktree changes. Global link points at main's pre-merge state, MCP tests
+  regress to un-tested baseline.
+- **Relinking main after merge by reflex.** Global link machine-wide, shared
+  across parallel sessions; yanking back to main breaks concurrent session
+  mid-test. Relink checkout only when your session needs it. Caveat: removing
+  worktree the link points at breaks link — relink before `git worktree remove`.
+- **Publishing instead of linking** as quick test path. `npm publish` permanent;
+  link reversible (`npm unlink` or another `npm link` on different checkout).
 
 ### Re-index when testing new functionality
 
-`npm link` makes the MCP server load the new JS, but the **Qdrant index** is a
-separate concern. Queries read payloads that were written at index time, so any
-change that touches:
+`npm link` loads new JS, but **Qdrant index** is separate. Queries read
+index-time payloads, so any change touching:
 
 - payload signal descriptors (new `stats.confidence` block, new fields)
 - payload builder / enrichment provider (new keys, renamed keys, value shape)
 - migration pipelines (schema migration that hasn't run on current index)
 
-requires re-indexing the project being tested against. Otherwise the MCP server
-runs on new code but reads old payloads — the new code paths see undefined
-fields or stale shape and silently behave as before.
+requires re-indexing target project. Otherwise server runs new code but reads
+old payloads — new paths see undefined fields / stale shape, silently behave as
+before.
 
 ```bash
 # Standard: incremental reindex (added + modified files only)
@@ -294,33 +274,30 @@ mcp__tea-rags__index_codebase project=<alias>
 
 ### Prefer the CLI when testing enrichments with reindex
 
-When the change touches **enrichment** and validating it requires a reindex, use
-the CLI — NOT the MCP `index_codebase` tool:
+Change touches **enrichment** + validating needs reindex → use CLI, NOT MCP
+`index_codebase`:
 
 ```bash
 tea-rags index-codebase --project <alias> --wait-enrichments --force --json
 ```
 
-- `--wait-enrichments` stays attached until every enrichment provider finishes,
-  rendering per-provider progress bars + **durations** — you get enrichment
-  timing for free (perf-regression signal) and a precise "done" marker.
-- `--force` runs a full re-index from scratch; drop it for incremental.
-- `--json` emits the final result as machine-readable JSON (file counts,
-  per-provider enrichment durations, `codegraphResolve` byReceiverKind) instead
-  of human bars — parse it directly rather than scraping rendered output. Always
-  pass it when an agent consumes the result.
-- The MCP `mcp__tea-rags__index_codebase` tool returns once embeddings are
-  stored and **detaches** enrichment to the background — so MCP-side testing
-  forces you to poll `get_index_status` repeatedly and guess when enrichment
-  settled. The CLI's synchronous wait removes both the polling and the
-  guesswork.
+- `--wait-enrichments` stays attached until every provider finishes, renders
+  per-provider bars + **durations** — enrichment timing free (perf-regression
+  signal) + precise "done" marker.
+- `--force` full re-index from scratch; drop for incremental.
+- `--json` emits final result machine-readable (file counts, per-provider
+  enrichment durations, `codegraphResolve` byReceiverKind) instead of human bars
+  — parse directly. Always pass when agent consumes result.
+- MCP `mcp__tea-rags__index_codebase` returns once embeddings stored,
+  **detaches** enrichment to background — MCP-side testing forces polling
+  `get_index_status` + guessing when enrichment settled. CLI's synchronous wait
+  removes polling + guesswork.
 
 ### Schema drift — reindex from scratch (tea-rags self-test only)
 
-When testing **new payload schema** on the tea-rags project itself
-(`code_8b243ffe`), the existing index was built by the previous schema.
-Incremental reindex won't reset payloads of unchanged files — the schema-drift
-guard rejects the run. Force full re-index instead:
+Testing **new payload schema** on tea-rags project itself (`code_8b243ffe`):
+existing index built by previous schema. Incremental reindex won't reset
+unchanged-file payloads — schema-drift guard rejects run. Force full re-index:
 
 ```bash
 mcp__tea-rags__force_reindex project=tea-rags    # explicit user confirmation required
@@ -328,10 +305,9 @@ mcp__tea-rags__force_reindex project=tea-rags    # explicit user confirmation re
 
 Or via CLI: `tea-rags reindex --force /Users/artk0re/Dev/Tools/tea-rags-mcp`.
 
-Only do this on the tea-rags self-test index. For real user projects
-(`production-rails-app`, etc.) wait for the regular incremental migration path —
-force reindex on a large project is hours and is rarely the right tool for
-testing unreleased changes.
+Only on tea-rags self-test index. Real user projects (`production-rails-app`,
+etc.) wait for regular incremental migration — force reindex on large project =
+hours, rarely right tool for testing unreleased changes.
 
 ### Test sequence when new functionality affects payload
 

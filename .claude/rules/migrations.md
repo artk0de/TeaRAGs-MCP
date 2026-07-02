@@ -15,8 +15,8 @@ paths:
 
 ## When to Add a Migration
 
-Add a migration when changes affect **persisted state** that existing
-collections or snapshots already contain:
+Add migration when change affects **persisted state** existing
+collections/snapshots already contain:
 
 | Change type                             | Pipeline   | Example                            |
 | --------------------------------------- | ---------- | ---------------------------------- |
@@ -30,8 +30,8 @@ collections or snapshots already contain:
 
 **Do NOT add a migration when:**
 
-- Adding new payload fields to newly indexed documents (new fields appear
-  naturally at index time)
+- Adding new payload fields to newly indexed docs (new fields appear naturally
+  at index time)
 - Changing in-memory logic (reranking, derived signals, presets)
 - Changing MCP tool schemas or DTOs
 - Refactoring code without changing persisted data format
@@ -72,8 +72,7 @@ interface StepResult {
 
 ## Store Adapters (DIP)
 
-Migrations MUST NOT depend on concrete infrastructure classes. Use store
-interfaces:
+Migrations MUST NOT depend on concrete infra classes. Use store interfaces:
 
 | Store interface   | Provides                          | Adapter                  |
 | ----------------- | --------------------------------- | ------------------------ |
@@ -82,13 +81,13 @@ interfaces:
 | `SparseStore`     | Sparse vector rebuild, version    | `SparseStoreAdapter`     |
 | `EnrichmentStore` | Payload backfill operations       | `EnrichmentStoreAdapter` |
 
-If a new migration needs capabilities not in existing stores, extend the
-interface + adapter first — do NOT inject `QdrantManager` directly.
+New migration needs capability not in existing stores → extend interface+adapter
+first — do NOT inject `QdrantManager` directly.
 
 ## Forcing File Re-Indexation via Snapshot Invalidation
 
-When a migration needs files to be re-processed (e.g., chunker strategy
-changed), delete chunks from Qdrant AND invalidate snapshot entries:
+Migration needs files re-processed (e.g. chunker strategy changed) → delete
+chunks from Qdrant AND invalidate snapshot entries:
 
 1. **Delete chunks from Qdrant** —
    `store.deletePointsByFilter(collection, filter)`
@@ -99,23 +98,22 @@ Synchronizer's fast path skips files with matching mtime+size — zeroing mtime
 forces slow path → hash recomputed from disk → hash differs from snapshot → file
 treated as "modified" → re-chunked.
 
-**CRITICAL: Use `mtime = 0`, NOT `hash = ""`**. Zeroing hash has no effect
-because the fast path uses the cached hash from snapshot for comparison
-(`previousMeta.hash !== hash` where both are the same empty string).
+**CRITICAL: Use `mtime = 0`, NOT `hash = ""`**. Zeroing hash has no effect —
+fast path uses cached snapshot hash for comparison
+(`previousMeta.hash !== hash`, both same empty string).
 
 **Migration order:** Schema migrations run BEFORE synchronizer in
-`prepareReindexContext()`. This ensures snapshot is invalidated before change
-detection.
+`prepareReindexContext()`. Ensures snapshot invalidated before change detection.
 
-**Shard count:** Use `readShardCount()` from meta.json, not the default.
-Snapshots may have been created with a different shard count.
+**Shard count:** Use `readShardCount()` from meta.json, not default. Snapshots
+may have been created with different shard count.
 
 ## Writing Nested Payload Keys (MANDATORY)
 
 Qdrant's `setPayload` treats top-level keys verbatim. Passing
-`{"git.file.X": v}` produces a flat top-level key literally named `"git.file.X"`
-— NOT a nested write at `git → file → X`. Reranker reads nested paths, so the
-data is invisible.
+`{"git.file.X": v}` produces flat top-level key literally named `"git.file.X"` —
+NOT nested write at `git → file → X`. Reranker reads nested paths → data
+invisible.
 
 **Always build nested objects** when migrating dotted-path keys:
 
@@ -127,20 +125,19 @@ newPayload["git.file.recentDominantAuthor"] = oldVal;
 newPayload.git = { file: { recentDominantAuthor: oldVal } };
 ```
 
-For multiple leaves, use a `writeNested(target, path, value)` helper that splits
-on `.` and creates intermediate objects (see V13 migration). Top-level keys
-without dots (e.g. `parentSymbolId` in V11) can be written directly.
+Multiple leaves → use `writeNested(target, path, value)` helper splitting on `.`
+creating intermediate objects (see V13 migration). Top-level keys without dots
+(e.g. `parentSymbolId` in V11) written directly.
 
 ## Pre-Release Migrations: Edit, Don't Stack
 
-If a migration ships in code that has **not been published to npm**, fix the
-migration in place — do NOT add a follow-up migration to clean up its bugs.
-Developer indexes can be rebuilt with `forceReindex: true` or by deleting the
-collection. Stacking V14 to fix V13's bug pollutes history and makes the next
-release noisier than necessary.
+Migration ships in code **not yet published to npm** → fix migration in place —
+do NOT add follow-up migration to clean up its bugs. Dev indexes rebuilt with
+`forceReindex: true` or by deleting collection. Stacking V14 to fix V13's bug
+pollutes history, makes next release noisier.
 
-Add a follow-up migration only when buggy code has reached published users —
-their data is real and irreversible without code changes.
+Add follow-up migration only when buggy code reached published users — their
+data real, irreversible without code changes.
 
 ## Execution Guarantees
 
@@ -152,7 +149,7 @@ their data is real and irreversible without code changes.
 
 ## Conditional Migrations
 
-Some migrations are optional (feature flags, optional dependencies):
+Some migrations optional (feature flags, optional dependencies):
 
 ```typescript
 // In runner constructor — conditionally include:
@@ -168,13 +165,13 @@ if (!this.enableHybrid) {
 
 ## Registration Point
 
-Migrations are hardcoded in runner constructors — no auto-discovery:
+Migrations hardcoded in runner constructors — no auto-discovery:
 
 - Schema: `src/core/infra/migration/schema-migrator.ts`
 - Snapshot: `src/core/infra/migration/snapshot-migrator.ts`
 - Sparse: `src/core/infra/migration/sparse-migrator.ts`
 
-Runner instantiation happens in `src/core/domains/ingest/factory.ts` →
+Runner instantiation in `src/core/domains/ingest/factory.ts` →
 `createIngestDependencies()`.
 
 ## Testing
@@ -190,57 +187,55 @@ Required scenarios:
 
 ## End-to-End Migration Verification (MANDATORY before claiming "migration works")
 
-Unit tests prove the migration's logic, but they do **not** prove the migration
-actually runs against a real Qdrant collection at index time. Before claiming a
-migration is verified, you MUST execute the live path against an existing
-indexed collection. Skipping this caused real failures — production indexes
-silently kept stale schema versions because the MCP server was running pre-bump
-code.
+Unit tests prove migration logic but do **not** prove it actually runs against
+real Qdrant collection at index time. Before claiming verified, MUST execute
+live path against existing indexed collection. Skipping caused real failures —
+production indexes silently kept stale schema versions because MCP server ran
+pre-bump code.
 
 ### Pre-flight (eliminates the most common failure)
 
 1. `npm run build` — produce fresh `build/` from current source.
 2. **Reconnect the MCP server AFTER the build completes** (per
-   `.local/mcp-testing.md`). MCP server runs in a separate process; if you
-   reconnect before the build, the server runs old code and the new migration
-   class is not even registered in `SchemaMigrator`.
-3. Verify the new migration class appears in compiled output:
+   `.local/mcp-testing.md`). MCP server = separate process; reconnect before
+   build → server runs old code, new migration class not even registered in
+   `SchemaMigrator`.
+3. Verify new migration class in compiled output:
    `grep -l <MigrationClassName> build/core/infra/migration/schema_migrations/`.
 
 ### Live verification protocol
 
-4. **Roll back schema version** on an existing collection by writing
-   `schemaVersion: <N-1>` to the `__schema_metadata__` point (UUID = sha256 of
+4. **Roll back schema version** on existing collection by writing
+   `schemaVersion: <N-1>` to `__schema_metadata__` point (UUID = sha256 of
    `__schema_metadata__`, formatted 8-4-4-4-12). Use Qdrant REST
    `/collections/<c>/points/payload?wait=true`.
 5. **Inject pre-migration state** into a few real points — for rename/backfill
-   migrations, write the OLD payload keys with sentinel values via the same
+   migrations, write OLD payload keys with sentinel values via same
    `/points/payload` endpoint.
-6. **Trigger an incremental reindex** (`index_codebase` without `forceReindex`).
-   The schema migrator runs in `prepareReindexContext()` BEFORE the
-   synchronizer/enrichment, so a no-change incremental still exercises it.
-7. **Verify the migration ran** by reading `__schema_metadata__` directly:
-   `schemaVersion` must equal `latestVersion` and `migratedAt` must be after
+6. **Trigger incremental reindex** (`index_codebase` without `forceReindex`).
+   Schema migrator runs in `prepareReindexContext()` BEFORE
+   synchronizer/enrichment, so no-change incremental still exercises it.
+7. **Verify migration ran** by reading `__schema_metadata__` directly:
+   `schemaVersion` must equal `latestVersion`, `migratedAt` must be after
    step 6.
-8. **Verify the data effect** by reading affected points:
+8. **Verify data effect** by reading affected points:
    - For rename migrations: old keys absent, new keys present.
    - For backfill migrations: target keys populated.
-   - **Caveat:** if the trajectory's enrichment refreshes the same fields on
-     every reindex (file-level git enrichment does this), injected sentinel
-     values will be overwritten. Use the `__schema_metadata__` audit
-     (`migratedAt` timestamp) and the absence of legacy keys as proof of
-     migration; trust the unit test for value-preservation correctness.
+   - **Caveat:** if trajectory's enrichment refreshes same fields on every
+     reindex (file-level git enrichment does), injected sentinel values
+     overwritten. Use `__schema_metadata__` audit (`migratedAt` timestamp) +
+     absence of legacy keys as proof of migration; trust unit test for
+     value-preservation correctness.
 9. **Confirm idempotency** by running `index_codebase` again — `migratedAt`
-   should not change (migration skipped because version already current).
+   should not change (migration skipped, version already current).
 
 ### Anti-patterns observed in this project
 
-- Running `forceReindex: true` to "test the migration" — this rewrites payloads
-  from scratch and never exercises the migration's rename/backfill logic on real
-  legacy data.
-- Reading `get_index_metrics` to verify schema state — its `signals` map is
-  derived from descriptors, NOT from current payload keys; stale values there do
-  not indicate migration failure.
-- Trusting `npm test` alone — unit tests use a `MockQdrantManager`; they cannot
-  catch a missing registration in `schema-migrator.ts` or an MCP-server reload
-  gap.
+- Running `forceReindex: true` to "test the migration" — rewrites payloads from
+  scratch, never exercises migration's rename/backfill logic on real legacy
+  data.
+- Reading `get_index_metrics` to verify schema state — its `signals` map derived
+  from descriptors, NOT current payload keys; stale values there don't indicate
+  migration failure.
+- Trusting `npm test` alone — unit tests use `MockQdrantManager`; can't catch
+  missing registration in `schema-migrator.ts` or MCP-server reload gap.

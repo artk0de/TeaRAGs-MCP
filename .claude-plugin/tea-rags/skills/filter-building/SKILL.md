@@ -1,26 +1,25 @@
 ---
 name: filter-building
 description:
-  Construct a tea-rags filter beyond `pathPattern`. Invoke whenever the agent's
-  internal reasoning before a tea-rags search includes a SCOPE — a domain,
-  language, author, time window, ticket, prod-vs-test split, or directory
-  exclusion. The user almost never says "filter"; they name the scope ("in the
-  X domain", "Ruby code", "Alice's work", "modified this week", "for ticket
-  RAGS-142", "production code"). Translate every such scope into the correct
-  typed sugar field (`language`, `testFile`, `documentation`, `author`,
-  `taskId`, `minAgeDays` / `maxAgeDays`, `minCommitCount`, `modifiedAfter` /
-  `modifiedBefore`, `fileExtension`, `chunkType`, `symbolId`), the
-  `level: "file" | "chunk"` switch (mandatory for time-based fields),
-  picomatch negation in `pathPattern` (`!**/test/**`), or the raw `filter`
-  escape hatch (Qdrant `must`/`should`/`must_not`) for payload keys without
-  typed sugar. Cases the skill must handle: "tests of AuthService" → implicit
-  `testFile: "only"`; "Alice's recent code" → `author + modifiedAfter`; "old
-  payments code" → `minAgeDays + level=file`; "what's new this week" →
-  `modifiedAfter` + `level=file`; "production code, not tests" → `testFile:
-  "exclude"`; "code linked to JIRA-1234" → `taskId`; "exclude vendor dir" →
-  `pathPattern: "!**/vendor/**"`. NOT for picking a rerank preset — use
-  `tea-rags:analytics-rerank`. NOT for general project exploration — use
-  `tea-rags:explore`.
+  Construct tea-rags filter beyond `pathPattern`. Invoke whenever agent
+  reasoning before a tea-rags search includes a SCOPE — domain, language,
+  author, time window, ticket, prod-vs-test split, or directory exclusion.
+  User almost never says "filter"; names the scope ("in the X domain", "Ruby
+  code", "Alice's work", "modified this week", "for ticket RAGS-142",
+  "production code"). Translate every scope into correct typed sugar field
+  (`language`, `testFile`, `documentation`, `author`, `taskId`, `minAgeDays` /
+  `maxAgeDays`, `minCommitCount`, `modifiedAfter` / `modifiedBefore`,
+  `fileExtension`, `chunkType`, `symbolId`), the `level: "file" | "chunk"`
+  switch (mandatory for time-based fields), picomatch negation in `pathPattern`
+  (`!**/test/**`), or raw `filter` escape hatch (Qdrant
+  `must`/`should`/`must_not`) for payload keys without typed sugar. Cases:
+  "tests of AuthService" → implicit `testFile: "only"`; "Alice's recent code" →
+  `author + modifiedAfter`; "old payments code" → `minAgeDays + level=file`;
+  "what's new this week" → `modifiedAfter` + `level=file`; "production code, not
+  tests" → `testFile: "exclude"`; "code linked to JIRA-1234" → `taskId`;
+  "exclude vendor dir" → `pathPattern: "!**/vendor/**"`. NOT for picking a
+  rerank preset — use `tea-rags:analytics-rerank`. NOT for general project
+  exploration — use `tea-rags:explore`.
 user-invocable: false
 ---
 
@@ -31,9 +30,8 @@ right mechanism — they compose.
 
 ## Implicit signals — when a filter is needed but the user didn't say "filter"
 
-Triggers in the agent's reasoning chain. If you find yourself thinking any of
-these BEFORE composing a tea-rags search, this skill applies — translate the
-SCOPE into typed sugar:
+Triggers in agent reasoning chain. If thinking any of these BEFORE composing a
+tea-rags search, this skill applies — translate the SCOPE into typed sugar:
 
 | User said... (paraphrased)                         | Filter to add                                    |
 | -------------------------------------------------- | ------------------------------------------------ |
@@ -53,17 +51,17 @@ SCOPE into typed sugar:
 | "in /full/abs/path/" (subagent context)            | `pathPattern: "/full/abs/path/**"`               |
 | "exclude vendor / generated / migrations"          | `pathPattern: "!**/vendor/**"` (no typed sugar)  |
 
-**Rule of thumb:** the user almost never says "filter". They name a SCOPE —
-domain, language, author, time window, ticket, prod-vs-test. Translate the scope
-into the right typed sugar; never leave it ambient ("query alone will sort it
-out"). An unfiltered `semantic_search` over a broad project returns results
-dominated by the highest-churn domain — the rest is invisible.
+**Rule of thumb:** user almost never says "filter". They name a SCOPE — domain,
+language, author, time window, ticket, prod-vs-test. Translate the scope into
+the right typed sugar; never leave it ambient ("query alone will sort it out").
+An unfiltered `semantic_search` over a broad project returns results dominated
+by the highest-churn domain — the rest is invisible.
 
 ## Typed filters (fast path)
 
-Top-level params on every search request. Prefer these over raw `filter:`
-whenever a typed field expresses the constraint — intent-clear, schema-checked,
-and survives directory restructures.
+Top-level params on every search request. Prefer over raw `filter:` whenever a
+typed field expresses the constraint — intent-clear, schema-checked, survives
+directory restructures.
 
 | Field            | Values / type                          | When to use                             |
 | ---------------- | -------------------------------------- | --------------------------------------- |
@@ -102,12 +100,11 @@ Currently supported:
 | Ruby       | RSpec               | `src/core/domains/ingest/pipeline/chunker/hooks/ruby/rspec-scope-chunker.ts`      |
 
 For Python / Go / others, file-level `testFile: "only"` is the only option.
-Detect availability via the prime digest: DSL chunks are absent if no
-`git.chunk.*` signal shows a `test:` threshold row. For recipes that depend on
-DSL chunks, see `tea-rags:tests-as-context` (Step 0 preflight handles this
-automatically). When a new language is added, update this table in lock-step
-with the matching block in `tea-rags:tests-as-context` and
-`dinopowers:test-driven-development` — see
+Detect availability via prime digest: DSL chunks absent if no `git.chunk.*`
+signal shows a `test:` threshold row. Recipes depending on DSL chunks, see
+`tea-rags:tests-as-context` (Step 0 preflight handles this automatically). New
+language added → update this table in lock-step with the matching block in
+`tea-rags:tests-as-context` and `dinopowers:test-driven-development` — see
 `.claude/rules/test-spec-chunking.md`.
 
 ## Filter Level: file vs chunk
@@ -159,7 +156,7 @@ Concrete payload examples:
 ## pathPattern Rules
 
 `pathPattern` is for arbitrary directory globs where no typed filter applies.
-They compose with typed filters (e.g. `language: "ruby"` +
+Compose with typed filters (e.g. `language: "ruby"` +
 `pathPattern: "**/services/**"`).
 
 - GOOD: `**/enrichment/**` (directory prefix)
@@ -170,16 +167,15 @@ They compose with typed filters (e.g. `language: "ruby"` +
   picomatch)
 
 **When to prefer negation over typed sugar.** Use `testFile: "exclude"` for test
-exclusion — it's intent-clear and survives test-directory renames. Use
-`!**/dir/**` only for directories that have no typed sugar (`vendor`,
-`generated`, `migrations`).
+exclusion — intent-clear, survives test-directory renames. Use `!**/dir/**` only
+for directories that have no typed sugar (`vendor`, `generated`, `migrations`).
 
 ## Typed filter vs `pathPattern`
 
 For `language`, `documentation`, `testFile` — **use the typed filter, not a
-pathPattern**. The typed filter is intent-clear, schema-checked, and survives
-directory restructures. `pathPattern` is for arbitrary directory globs. They
-compose freely.
+pathPattern**. The typed filter is intent-clear, schema-checked, survives
+directory restructures. `pathPattern` is for arbitrary directory globs. Compose
+freely.
 
 ## Raw `filter` param (escape hatch)
 
@@ -206,8 +202,8 @@ invent syntax**:
 ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/filters")
 ```
 
-The resource is generated from the live registry; it always reflects what THIS
-build supports. Do NOT memorize the payload key list — read it on demand.
+Resource generated from the live registry; always reflects what THIS build
+supports. Do NOT memorize the payload key list — read it on demand.
 
 ### Codegraph filters (only when codegraph is active)
 
@@ -231,9 +227,9 @@ When codegraph is off, filter on `imports` instead and treat it as approximate.
 
 ## Stratified scanning (excluding a dominant domain)
 
-A common analytics pattern: an unfiltered scan of a broad project returns
-results dominated by the highest-churn domain. To surface the rest, run a SECOND
-scan with the dominant domain negated:
+Common analytics pattern: an unfiltered scan of a broad project returns results
+dominated by the highest-churn domain. To surface the rest, run a SECOND scan
+with the dominant domain negated:
 
 ```jsonc
 // Pass 1: full project, no pathPattern → identifies dominant domain (say "ingest")
@@ -241,9 +237,8 @@ scan with the dominant domain negated:
 //         → surfaces risk zones in the rest of the codebase
 ```
 
-This is the same mechanism `tea-rags:risk-assessment` uses for domain-
-stratified scanning, but you can apply it manually whenever a single scan is
-dominated by one directory.
+Same mechanism `tea-rags:risk-assessment` uses for domain-stratified scanning,
+but apply it manually whenever a single scan is dominated by one directory.
 
 ## Composition rules
 
@@ -253,9 +248,9 @@ dominated by one directory.
 - Typed filter + raw `filter`: AND across both — raw `filter` adds its
   must/should/must_not on top of the typed constraints.
 - `level: "file"` applies to typed time-based fields uniformly. If you mix a
-  file-level typed time filter with a chunk-level raw filter, you must
-  understand what scope each part lives in — payload paths differ (`git.file.*`
-  vs `git.chunk.*`).
+  file-level typed time filter with a chunk-level raw filter, understand what
+  scope each part lives in — payload paths differ (`git.file.*` vs
+  `git.chunk.*`).
 
 ## When this skill does NOT apply
 

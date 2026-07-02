@@ -4,8 +4,8 @@ user-invocable: false
 
 # Refactoring Scan
 
-Multi-preset breadth-first scan for refactoring candidates. Invoked by explore
-when antipattern/refactoring intent has broad scope (no specific entity).
+Multi-preset breadth-first scan for refactoring candidates. Explore invokes when
+antipattern/refactoring intent broad-scope (no specific entity).
 
 **Examples that trigger this skill:**
 
@@ -17,11 +17,12 @@ when antipattern/refactoring intent has broad scope (no specific entity).
 ## MANDATORY RULES
 
 1. **Execute YOURSELF** — no subagents.
-2. **Tool selection via search-cascade decision tree** — do not hard-code tool
-   choice. Pass query + rerank + pathPattern to search-cascade, it determines
-   the tool.
-3. **Stop conditions from search-cascade** — follow gradient drop / diminishing
-   returns / cross-preset rules. Do NOT use absolute score thresholds.
+2. **Tool selection via search-cascade decision tree** — don't hard-code tool
+   choice. Pass query + rerank + pathPattern to search-cascade; it determines
+   tool.
+3. **Stop conditions from search-cascade** — follow gradient-drop /
+   diminishing-returns / cross-preset rules. Do NOT use absolute score
+   thresholds.
 4. **No built-in Search/Grep for code discovery** — only TeaRAGs tools + ripgrep
    MCP fallback.
 
@@ -39,9 +40,9 @@ when antipattern/refactoring intent has broad scope (no specific entity).
 Run search-cascade **3 times** with different rerank presets. For each:
 
 - Pass query (from $ARGUMENTS) + pathPattern (from scope extraction) to
-  search-cascade — it determines the tool
+  search-cascade — it determines tool
 - limit=10, metaOnly=false (content needed for ENRICH classification; 3 × 10 =
-  30 chunks ≈ 30-60KB — fits comfortably in 1M context)
+  30 chunks ≈ 30-60KB — fits in 1M context)
 - Apply search-cascade stop conditions per-preset
 
 | Preset          | What it surfaces                                           |
@@ -52,7 +53,7 @@ Run search-cascade **3 times** with different rerank presets. For each:
 
 ### 2. MERGE
 
-Cross-reference results from all 3 presets by `symbolId` (or `relativePath` +
+Cross-reference all 3 presets' results by `symbolId` (or `relativePath` +
 `startLine` if symbolId missing).
 
 | Overlap | Tier   | Meaning                                    |
@@ -65,7 +66,7 @@ Cross-reference results from all 3 presets by `symbolId` (or `relativePath` +
 
 For **Tier 1 candidates only** (skip Tier 2/3 enrichment):
 
-- Code content is already in results (metaOnly=false). Use it directly.
+- Code content already in results (metaOnly=false). Use directly.
 - Classify refactoring type:
 
 | Type              | Indicator                                           |
@@ -100,4 +101,4 @@ Found: [N] candidates across [M] modules
 [count] candidates — omitted for brevity. Paginate with offset if needed.
 ```
 
-Tier 3 is listed as count only. If the user asks for details, paginate.
+Tier 3 listed as count only. User asks details → paginate.

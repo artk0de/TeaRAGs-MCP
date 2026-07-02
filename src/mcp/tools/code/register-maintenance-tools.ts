@@ -19,8 +19,7 @@ export function registerMaintenanceTools(server: McpServer, deps: { app: App; re
     "clear_index",
     {
       title: "Clear Index",
-      description:
-        "Delete all indexed data for a codebase. This is irreversible and will remove the entire collection.",
+      description: "Delete all indexed data for codebase. Irreversible — removes entire collection.",
       inputSchema: schemas.ClearIndexSchema,
       annotations: { destructiveHint: true },
     },

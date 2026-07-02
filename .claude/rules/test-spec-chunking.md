@@ -8,28 +8,26 @@ paths:
 
 # Test-Spec DSL Chunking (MANDATORY canonical structure)
 
-Applies to every chunker hook that produces chunks for test-spec files —
-currently the Ruby RSpec hooks (`hooks/ruby/rspec-filter.ts`,
-`hooks/ruby/rspec-scope-chunker.ts`) and the TypeScript Vitest/Jest hooks
-(`hooks/typescript/test-dsl-filter.ts`,
+Applies to every chunker hook chunking test-spec files — currently Ruby RSpec
+(`hooks/ruby/rspec-filter.ts`, `hooks/ruby/rspec-scope-chunker.ts`) + TS
+Vitest/Jest (`hooks/typescript/test-dsl-filter.ts`,
 `hooks/typescript/test-scope-chunker.ts`).
 
-When adding a new language (Python pytest, Kotlin spek, etc.), follow this
-canonical structure end-to-end. The shape is intentionally identical across
-languages so search results are interchangeable.
+New language (Python pytest, Kotlin spek, etc.): follow this canonical structure
+end-to-end. Shape intentionally identical across languages → search results
+interchangeable.
 
 ## Two-hook split (MANDATORY)
 
-A test-spec chunker is **two hooks**, not one:
+Test-spec chunker = **two hooks**, not one:
 
 | Hook file                                                    | Type                                  | Responsibility                                                                                                                       |
 | ------------------------------------------------------------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `<lang>/test-dsl-filter.ts` (or `rspec-filter.ts`)           | `filterNode` only, `process` is no-op | `isTestFile(path)` + `getCallName(node)` + DSL-vocabulary membership. Rejects non-DSL call nodes globally added to `chunkableTypes`. |
 | `<lang>/test-scope-chunker.ts` (or `rspec-scope-chunker.ts`) | `process` writer                      | Builds scope tree from a CONTAINER call, emits per-leaf chunks, sets `ctx.skipChildren = true`, claims via writing `ctx.bodyChunks`. |
 
-Splitting prevents the filter's hot-path checks from carrying scope-tree weight,
-and lets the scope chunker assume callers are already known to be DSL calls in
-test files.
+Split keeps scope-tree weight off filter hot-path, and lets scope chunker assume
+callers already known DSL calls in test files.
 
 ## DSL vocabulary (three sets per language)
 
@@ -50,8 +48,8 @@ const ALL_DSL_METHODS = new Set([
 ]);
 ```
 
-Filter accepts a call iff `getCallName(node) ∈ ALL_DSL_METHODS`. Scope chunker
-only runs when `getCallName(containerNode) ∈ CONTAINER_METHODS` (guarded via
+Filter accepts call iff `getCallName(node) ∈ ALL_DSL_METHODS`. Scope chunker
+runs only when `getCallName(containerNode) ∈ CONTAINER_METHODS` (guarded via
 `isDslContainerCall`).
 
 ## `Scope` shape (MANDATORY)
@@ -68,12 +66,12 @@ interface TestScope {
 }
 ```
 
-`SetupLine.sourceLine` and `ItBlock.startLine/endLine` are 1-based source line
-numbers used for chunk line-range computation.
+`SetupLine.sourceLine` + `ItBlock.startLine/endLine` = 1-based source line
+numbers for chunk line-range computation.
 
 ## Chunk emission rules (MANDATORY — identical across languages)
 
-For each scope encountered while walking the tree from root:
+Per scope encountered walking tree from root:
 
 | Scope kind                                                    | Output                                                                                                                                      |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -100,7 +98,7 @@ Always-applied filters:
 | `parentSymbolId` | `topLevelName` only — strip quotes/backticks from string args, use identifier text for `describe(User, …)`                       |
 | `parentType`     | `"call_expression"` (TS) / `"call"` (Ruby) — the AST node type of the top-level container                                        |
 
-`topLevelName` extraction priority on the root scope's first arg:
+`topLevelName` extraction priority on root scope's first arg:
 
 1. `string` / `template_string` → strip surrounding quotes (`'`, `"`, `` ` ``)
 2. `identifier` / `constant` → use text as-is
@@ -108,15 +106,15 @@ Always-applied filters:
 
 ## Line range rule (MANDATORY)
 
-`startLine` / `endLine` MUST be computed from the scope's **own** line sources
-only (own setupLines + own otherLines + own ownItBlocks). NEVER include ancestor
-setup line ranges, even though their content is spliced into chunk `content` for
-context. Otherwise `git blame` lookups and `Read` offsets drift onto the
-parent's setup file region.
+`startLine` / `endLine` MUST compute from scope's **own** line sources only (own
+setupLines + own otherLines + own ownItBlocks). NEVER include ancestor setup
+line ranges — even though ancestor content spliced into chunk `content` for
+context. Else `git blame` lookups + `Read` offsets drift onto parent's setup
+file region.
 
 ## Test-file detection (MANDATORY)
 
-`isTestFile(filePath)` is a path predicate. Recommended canonical form:
+`isTestFile(filePath)` = path predicate. Recommended canonical form:
 
 ```ts
 function isTestFile(filePath: string): boolean {
@@ -126,9 +124,9 @@ function isTestFile(filePath: string): boolean {
 }
 ```
 
-Adapt extensions per language but keep both branches (extension + directory
-convention). False positives on helper files inside `tests/` are safe — the
-filter's second pass (DSL-vocabulary check) rejects them.
+Adapt extensions per language, keep both branches (extension + directory
+convention). False positives on helper files inside `tests/` are safe — filter's
+second pass (DSL-vocabulary check) rejects them.
 
 ## AST adaptation table (per language)
 
@@ -143,16 +141,16 @@ filter's second pass (DSL-vocabulary check) rejects them.
 ## Per-container body boundary handling
 
 Generic body chunkers (e.g. `class_body`, Ruby `body_statement`) have AST nodes
-that **exclude** the wrapping braces / `do…end`. TypeScript's `statement_block`
-**includes** the `{` and `}` rows. When collecting `otherLines`, scope chunkers
-MUST skip those boundary rows for multi-line bodies. See `findCallbackBody`
-callers in TS for the canonical pattern.
+**excluding** wrapping braces / `do…end`. TS `statement_block` **includes** `{`
+and `}` rows. When collecting `otherLines`, scope chunkers MUST skip those
+boundary rows for multi-line bodies. See `findCallbackBody` callers in TS for
+canonical pattern.
 
 ## Hook chain ordering (cross-reference)
 
-Hook ordering and the claim-invariant orchestrator break are in
-[chunker-hooks.md](./chunker-hooks.md). Test-spec chunkers MUST be registered
-position 3 in the chain (after filter + comment-capture, before generic body
+Hook ordering + claim-invariant orchestrator break in
+[chunker-hooks.md](./chunker-hooks.md). Test-spec chunkers MUST register
+position 3 in chain (after filter + comment-capture, before generic body
 chunker).
 
 ## Reference implementations
@@ -168,11 +166,10 @@ chunker).
 
 ## Skill-list sync (MANDATORY when adding or removing a language)
 
-The list of languages that emit `chunkType: "test"` / `"test_setup"` is
-duplicated in three SKILL.md files that consumers read at query time. They MUST
-stay in lock-step with the actual `<lang>/test-*.ts` (or `rspec-*.ts`) hook
-chain. When you add a new language (or retire one), update ALL three in the same
-commit:
+List of languages emitting `chunkType: "test"` / `"test_setup"` is duplicated in
+three SKILL.md files consumers read at query time. MUST stay lock-step with
+actual `<lang>/test-*.ts` (or `rspec-*.ts`) hook chain. Adding/retiring a
+language → update ALL three in same commit:
 
 | File                                                                | What to update                                                          |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
@@ -180,19 +177,17 @@ commit:
 | `.claude-plugin/tea-rags/skills/tests-as-context/SKILL.md`          | Step 0 SKIP block — parenthesised list under "primary language has no…" |
 | `.claude-plugin/tea-rags/skills/filter-building/SKILL.md`           | chunkType section — supported-languages table                           |
 
-The hook headers (`<lang>/test-scope-chunker.ts`,
-`<lang>/rspec-scope-chunker.ts`) also carry the same pointer block in their
-JSDoc — keep them aligned. Treat the 3-skill update as part of the language-add
-work, not a follow-up: the language is not "supported" until consumers know
-about it.
+Hook headers (`<lang>/test-scope-chunker.ts`, `<lang>/rspec-scope-chunker.ts`)
+also carry same pointer block in JSDoc — keep aligned. 3-skill update = part of
+language-add work, not follow-up: language not "supported" until consumers know.
 
 ## Known limitations (do NOT work around silently)
 
 - **Dynamic-describe in loops** (`for (...) describe(name, ...)` /
-  `each do |x| describe ... end`): inner describes are NOT discovered as
-  separate scopes; they're absorbed into parent as `otherLines`. Tracked in
-  beads `tea-rags-mcp-l180`. Both Ruby and TS share this limitation by design
-  (`buildScopeTree` walks direct namedChildren only).
+  `each do |x| describe ... end`): inner describes NOT discovered as separate
+  scopes; absorbed into parent as `otherLines`. Tracked in beads
+  `tea-rags-mcp-l180`. Both Ruby + TS share this by design (`buildScopeTree`
+  walks direct namedChildren only).
 - **Chained-call DSL** (`test.each([...])('name', fn)`): outermost call's callee
-  is itself a `call_expression`, so `getCallName` returns null and the filter
+  is itself a `call_expression`, so `getCallName` returns null and filter
   rejects it. Not supported in v1.

@@ -9,8 +9,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import type { App } from "../../core/api/public/index.js";
-import { PROJECT_NAME_RE } from "../../core/api/public/index.js";
+import { PROJECT_NAME_RE, type App } from "../../core/api/public/index.js";
 import { formatMcpResponse } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 
@@ -19,7 +18,7 @@ const RegisterProjectSchema = {
   name: z
     .string()
     .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
-    .describe("Short alias to register for this project (lowercase, digits, '-', '_'; max 64 chars)"),
+    .describe("Short alias for this project (lowercase, digits, '-', '_'; max 64 chars)"),
 };
 
 export function registerRegisterProjectTool(server: McpServer, deps: { app: App; register: RegisterToolFn }): void {
@@ -31,10 +30,10 @@ export function registerRegisterProjectTool(server: McpServer, deps: { app: App;
     {
       title: "Register Project",
       description:
-        "Register a short alias for a project path. The alias is persisted in ~/.tea-rags/registry.json " +
-        "and can be passed as 'project' to any project-aware MCP tool (search, indexing, metrics) " +
-        "instead of 'path' or 'collection'. Returns the resolved collection name and whether the " +
-        "underlying collection already contains indexed chunks.",
+        "Register short alias for project path. Alias persisted in ~/.tea-rags/registry.json; " +
+        "pass as 'project' to any project-aware MCP tool (search, indexing, metrics) " +
+        "instead of 'path'/'collection'. Returns resolved collection name + whether " +
+        "underlying collection already holds indexed chunks.",
       inputSchema: RegisterProjectSchema,
       annotations: { idempotentHint: true },
     },

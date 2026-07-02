@@ -13,58 +13,57 @@ argument-hint: [--provider ollama|onnx] [--full]
 
 # TeaRAGs Performance Tuning
 
-Runs `tea-rags tune` to find optimal performance parameters for your hardware,
-then saves results to the setup progress file for use in MCP configuration.
+Runs `tea-rags tune` to find optimal hardware perf params, saves results to
+setup progress file for MCP config.
 
 ## Prerequisites
 
-- `tea-rags` must be installed (`tea-rags --version` works)
-- Qdrant must be running (embedded, Docker, or native)
-- Embedding provider must be available (Ollama running or ONNX built-in)
+- `tea-rags` installed (`tea-rags --version` works)
+- Qdrant running (embedded, Docker, or native)
+- Embedding provider available (Ollama running or ONNX built-in)
 
 ## Instructions
 
 ### 1. Determine parameters
 
-Check if arguments were provided. If not, check progress file for saved values.
+Check args provided. If not, check progress file for saved values.
 
-**Provider**: from argument `--provider`, or progress file `embeddingProvider`,
-or detect from current MCP config. Default: `ollama`.
+**Provider**: from arg `--provider`, or progress file `embeddingProvider`, or
+detect from current MCP config. Default: `ollama`.
 
-**Full mode**: from argument `--full`. Default: quick mode (~2-3 min).
+**Full mode**: from arg `--full`. Default: quick mode (~2-3 min).
 
-**Qdrant URL**: omit `--qdrant-url` whenever possible — see section 1a. Use the
-value from progress file `qdrantUrl` only when it is a real external URL.
+**Qdrant URL**: omit `--qdrant-url` when possible — see section 1a. Use progress
+file `qdrantUrl` only when real external URL.
 
 **Embedding URL**: from progress file or default `http://localhost:11434`.
 
 ### 1a. Embedded Qdrant: do NOT pass --qdrant-url (CRITICAL for the install wizard)
 
-**Why this matters.** The install wizard runs tune at step 6, BEFORE the MCP
-harness is configured at step 8. That means at tune time:
+**Why this matters.** Install wizard runs tune at step 6, BEFORE MCP harness
+configured at step 8. At tune time:
 
-- The MCP server is not in `~/.claude.json` yet, so `mcp__tea-rags__*` tools are
-  unavailable to you.
-- The embedded Qdrant daemon has not been started by anyone —
-  `setup-qdrant.sh embedded` only downloaded the binary.
-- The embedded daemon binds a RANDOM port, not 6333, so hard-coding
-  `--qdrant-url http://localhost:6333` will fail with a connection error.
+- MCP server not in `~/.claude.json` yet, so `mcp__tea-rags__*` tools
+  unavailable.
+- Embedded Qdrant daemon not started by anyone — `setup-qdrant.sh embedded` only
+  downloaded binary.
+- Embedded daemon binds RANDOM port, not 6333, so hard-coding
+  `--qdrant-url http://localhost:6333` fails with connection error.
 
-**What to do.** Just omit `--qdrant-url`. The `tea-rags tune` CLI handles the
-full cascade internally:
+**What to do.** Omit `--qdrant-url`. `tea-rags tune` CLI handles full cascade
+internally:
 
-1. Probes `http://localhost:6333` — uses it if a Docker/native Qdrant answers.
-2. Otherwise spawns the embedded daemon from `~/.tea-rags/qdrant/` (downloads
-   the binary first if needed), reads its random port from `daemon.port`, and
-   targets `http://127.0.0.1:<port>` for the benchmark.
-3. Releases the daemon ref on exit so the idle watcher can shut it down ~30 s
-   later if nothing else is using it.
+1. Probes `http://localhost:6333` — uses it if Docker/native Qdrant answers.
+2. Otherwise spawns embedded daemon from `~/.tea-rags/qdrant/` (downloads binary
+   first if needed), reads random port from `daemon.port`, targets
+   `http://127.0.0.1:<port>` for benchmark.
+3. Releases daemon ref on exit so idle watcher shuts it down ~30 s later if
+   nothing else using it.
 
 **When to pass `--qdrant-url` explicitly.** Only if `qdrantMode` is `docker` or
-`native` and the progress file's `qdrantUrl` is a real http URL (not the literal
-string `"embedded"`). For embedded mode the value in the progress file is
-`"embedded"` — that is a marker, not a URL, and must NOT be passed on the
-command line.
+`native` and progress file `qdrantUrl` is real http URL (not literal string
+`"embedded"`). For embedded mode progress file value is `"embedded"` — a marker,
+not a URL, must NOT be passed on command line.
 
 **Sanity check before invoking tune in embedded mode:**
 
@@ -75,7 +74,7 @@ test -x "$HOME/.tea-rags/qdrant/bin/qdrant" || echo "Embedded binary missing —
 
 ### 2. Run the benchmark
 
-Execute in background (this takes 2-3 minutes in quick mode, 10-15 in full):
+Execute in background (2-3 min quick mode, 10-15 full):
 
 ```bash
 tea-rags tune \
@@ -88,13 +87,13 @@ tea-rags tune \
 Show the user: "Running performance benchmark (~2-3 min). This tests embedding
 throughput, Qdrant storage speed, and pipeline concurrency."
 
-**Do NOT run in a background agent** — the output is useful for the user to see
-progress in real time. Run in foreground via Bash tool with a 600000ms timeout.
+**Do NOT run in a background agent** — output useful for user to see progress
+real time. Run foreground via Bash tool with 600000ms timeout.
 
 ### 3. Parse results
 
-After tune completes, read `tuned_environment_variables.env` from the project
-root (or current directory).
+After tune completes, read `tuned_environment_variables.env` from project root
+(or current directory).
 
 Extract these values:
 
@@ -115,7 +114,7 @@ Extract these values:
 | `EMBEDDING_TUNE_MIN_BATCH_SIZE`       | Optimal min batch size                     |
 | `TRAJECTORY_GIT_CHUNK_CONCURRENCY`    | Optimal git chunk concurrency              |
 
-Also extract performance metrics from comments:
+Also extract perf metrics from comments:
 
 - `Embedding rate: N chunks/s`
 - `Storage rate: N chunks/s`
@@ -123,7 +122,7 @@ Also extract performance metrics from comments:
 
 ### 4. Save to progress
 
-Use the progress script to save tuned values:
+Use progress script to save tuned values:
 
 ```bash
 SCRIPTS="${CLAUDE_PLUGIN_ROOT}/scripts/setup/unix"  # or windows/
@@ -131,7 +130,7 @@ $SCRIPTS/progress.sh set tuneValues '{"EMBEDDING_BATCH_SIZE":"256",...}'
 $SCRIPTS/progress.sh set steps.tune '{"status":"completed","at":"<now>"}'
 ```
 
-If progress file doesn't exist, create it first:
+If progress file missing, create it first:
 
 ```bash
 $SCRIPTS/progress.sh init
@@ -139,7 +138,7 @@ $SCRIPTS/progress.sh init
 
 ### 5. Show summary
 
-Display results to the user:
+Display results to user:
 
 ```
 Performance tuning complete!
@@ -164,27 +163,27 @@ Use /tea-rags-setup:install to apply these values to your MCP config.
 
 ### 6. Clean up
 
-Delete `tuned_environment_variables.env` after parsing — values are now in
-progress file.
+Delete `tuned_environment_variables.env` after parsing — values now in progress
+file.
 
 ## ONNX (beta)
 
-ONNX tune is not yet fully supported. When provider is `onnx`:
+ONNX tune not yet fully supported. When provider is `onnx`:
 
 - Run tune anyway — embedding calibration works for ONNX
 - Qdrant benchmarks work regardless of provider
 - Pipeline benchmarks work regardless of provider
-- If tune fails for ONNX, save default values and warn the user
+- If tune fails for ONNX, save default values and warn user
 
 ## Error Handling
 
 - **tea-rags not installed**: show error, suggest `/tea-rags-setup:install`
 - **Qdrant not running**: show error with specific fix (start Docker, brew
-  services start, etc.). For embedded mode this should never happen — tune
-  spawns the daemon itself. If it does, check the embedded binary at
+  services start, etc.). For embedded mode should never happen — tune spawns
+  daemon itself. If it does, check embedded binary at
   `~/.tea-rags/qdrant/bin/qdrant` and re-run `setup-qdrant.sh embedded`.
 - **`Cannot connect to Qdrant at http://localhost:6333` in embedded mode**: you
-  passed `--qdrant-url` explicitly with the literal string `"embedded"` or
+  passed `--qdrant-url` explicitly with literal string `"embedded"` or
   `http://localhost:6333`. Re-run tune WITHOUT `--qdrant-url` — see section 1a.
 - **Ollama not running**: show error, suggest starting Ollama
 - **Tune fails mid-run**: save partial results if env file exists, warn user
@@ -192,7 +191,7 @@ ONNX tune is not yet fully supported. When provider is `onnx`:
 
 ## Do NOT
 
-- Run tune in a background agent (user needs to see real-time progress)
+- Run tune in background agent (user needs real-time progress)
 - Skip saving results to progress file
 - Leave tuned_environment_variables.env on disk after parsing
 - Assume default values without running tune (always try to run first)

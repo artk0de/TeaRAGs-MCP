@@ -94,18 +94,19 @@ if [ -n "$RUN_TYPECHECK" ]; then
 fi
 
 if [ -n "$RUN_TESTS" ]; then
-  echo "📦 Running tests with coverage check..."
-  # File-backed capture: the verbose reporter emits ~2MB. Capturing that
-  # into $(...) under husky's `sh -e` wrapper breaks unreliably in the
-  # lint-staged context — the assignment exits non-zero silently. A tmp
-  # file is robust across shells and shell modes.
+  echo "📦 Running affected tests (fast, no coverage — full suite + coverage run on CI)..."
+  # Pre-commit runs ONLY the tests affected by the staged changes (--changed)
+  # WITHOUT coverage — a full --coverage run takes ~20min and blocks commits.
+  # The full suite AND the 90% coverage thresholds are enforced on CI (ci.yml).
+  # File-backed capture is robust across shells and shell modes (husky's
+  # `sh -e` wrapper + lint-staged context breaks $(...) capture unreliably).
   TEST_LOG=$(mktemp -t tea-rags-pre-commit.XXXXXX)
-  npm test -- --run --coverage --reporter=verbose >"$TEST_LOG" 2>&1
+  npm test -- --run --changed --reporter=dot >"$TEST_LOG" 2>&1
   TEST_EXIT=$?
   if [ $TEST_EXIT -ne 0 ]; then
-    grep -E "FAIL|×|Error|failed|threshold" "$TEST_LOG" | head -20
+    grep -E "FAIL|×|Error|failed" "$TEST_LOG" | head -20
     echo ""
-    echo "❌ Tests or coverage threshold failed. Run 'npx vitest run' for details."
+    echo "❌ Tests failed. Run 'npx vitest run' for details."
     echo "   Full log: $TEST_LOG"
     exit 1
   else

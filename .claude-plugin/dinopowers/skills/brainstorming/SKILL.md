@@ -1,44 +1,43 @@
 ---
 name: brainstorming
 description:
-  Brainstorm a code change while seeing risk, ownership, and tech-debt signals
-  from tea-rags first, so creative exploration is grounded in the actual state
-  of the affected area. Triggers on "brainstorm X", "design feature", "refactor
-  Y", "let's discuss", "давай обсудим", "как перестроить", "что может
-  сломаться". NOT for trivial edits or stylistic questions with no code area to
-  enrich. Wraps superpowers:brainstorming with a tea-rags risk-signal enrichment
-  step.
+  Brainstorm code change seeing risk, ownership, tech-debt signals from tea-rags
+  first — creative exploration grounded in actual state of affected area.
+  Triggers on "brainstorm X", "design feature", "refactor Y", "let's discuss",
+  "давай обсудим", "как перестроить", "что может сломаться". NOT for trivial
+  edits or stylistic questions with no code area to enrich. Wraps
+  superpowers:brainstorming with tea-rags risk-signal enrichment step.
 ---
 
 # dinopowers: brainstorming
 
 Wrapper over `superpowers:brainstorming`. Ensures creative exploration starts
-from real git signals (hotspots, owners, legacy debt) of the target area — not
-from assumptions about how the code looks today.
+from real git signals (hotspots, owners, legacy debt) of target area — not from
+assumptions about how code looks today.
 
 ## Iron Rule
 
 **tea-rags enrichment MUST be called BEFORE `Skill(superpowers:brainstorming)`**
-— whenever the target area is identifiable. Correct preset selection
-(`hotspots`, `ownership`, `techDebt`) + correct parameters + correct ordering is
-the core value of this wrapper.
+— whenever target area identifiable. Correct preset selection (`hotspots`,
+`ownership`, `techDebt`) + correct parameters + correct ordering = core value of
+this wrapper.
 
-If no code area is identifiable from the user request (pure conceptual
-brainstorming): skip enrichment and invoke `superpowers:brainstorming` directly.
-State that explicitly — do not fabricate an area.
+If no code area identifiable from user request (pure conceptual brainstorming):
+skip enrichment, invoke `superpowers:brainstorming` directly. State explicitly —
+do not fabricate an area.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
-redirects superpowers:X. NEVER bypass the wrapper.
+redirects superpowers:X. NEVER bypass wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. There is no background reindex hook —
-worktree-plan freshness is explicit (clone + per-task reindex in
-`dinopowers:executing-plans`); run `mcp__tea-rags__index_codebase` manually to
-search code edited but not yet committed, BEFORE the first tea-rags call.
+`tea-rags/rules/index-freshness.md`. No background reindex hook — worktree-plan
+freshness explicit (clone + per-task reindex in `dinopowers:executing-plans`);
+run `mcp__tea-rags__index_codebase` manually to search code edited but not yet
+committed, BEFORE first tea-rags call.
 
 ## Step 1 — Extract target area
 
-From the user request identify:
+From user request identify:
 
 | Element                                        | Example                                                 |
 | ---------------------------------------------- | ------------------------------------------------------- |
@@ -50,15 +49,15 @@ Compose:
 
 - `pathPattern` for Step 2 (e.g. `**/auth/**`,
   `src/core/domains/ingest/**/chunker/**`)
-- `query` — a single sentence describing the change intent
+- `query` — single sentence describing change intent
 
-If no area is mentioned or derivable: skip to Step 4 with empty enrichment.
-Report "no area identifiable — proceeding without tea-rags enrichment".
+If no area mentioned or derivable: skip to Step 4 with empty enrichment. Report
+"no area identifiable — proceeding without tea-rags enrichment".
 
 ## Step 2 — Three tea-rags enrichment calls (four with codegraph)
 
 Run these three `mcp__tea-rags__semantic_search` calls **in parallel** (same
-tool call block), each with `metaOnly: true` (we want signals, not content):
+tool call block), each with `metaOnly: true` (want signals, not content):
 
 | Call          | `rerank` preset      | Why                                                                                                                                 |
 | ------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -67,12 +66,12 @@ tool call block), each with `metaOnly: true` (we want signals, not content):
 | C — Tech debt | `"techDebt"`         | Legacy zones where "just refactor it" hides cost (age + churn + bugFix)                                                             |
 | D — Backbone  | `"architecturalHub"` | **Codegraph only** — structural hubs (high `fanIn` / `isHub`) the design must respect; a change to a backbone has wide blast radius |
 
-Call D runs ONLY when codegraph is active (prime `## Enrichment` lists
-`codegraph.symbols`). When that line is absent, omit Call D — run A/B/C only and
-note structural backbone was not assessed (do NOT substitute a similarity-ranked
-list as "the hubs"). See search-cascade "Graph navigation".
+Call D runs ONLY when codegraph active (prime `## Enrichment` lists
+`codegraph.symbols`). When that line absent, omit Call D — run A/B/C only, note
+structural backbone not assessed (do NOT substitute a similarity-ranked list as
+"the hubs"). See search-cascade "Graph navigation".
 
-Exact parameters for each call:
+Exact parameters per call:
 
 ```
 project:     <alias from list_projects — RECOMMENDED, omit path when set>
@@ -97,19 +96,19 @@ Do NOT substitute:
 
 Do NOT pass:
 
-- `metaOnly: false` — content is not needed; larger payloads slow the wrapper
-- Custom `rerank` weights instead of the three named presets — loses the
-  calibrated risk-assessment semantics
-- `filter` on `git.ageDays` / `git.commitCount` — the presets already encode
-  these signals; adding filters shrinks the result set and hides debt
+- `metaOnly: false` — content not needed; larger payloads slow wrapper
+- Custom `rerank` weights instead of three named presets — loses calibrated
+  risk-assessment semantics
+- `filter` on `git.ageDays` / `git.commitCount` — presets already encode these
+  signals; adding filters shrinks result set, hides debt
 
-If all three calls return 0 results (area is new, untouched by git): report "no
+If all three calls return 0 results (area new, untouched by git): report "no
 git-enriched results for pathPattern `<X>` — area is new or excluded from
 indexing" and skip to Step 4 without enrichment block. Do NOT fabricate signals.
 
 ## Step 3 — Build enrichment block
 
-From the three result sets, compose a compact block (max ~15 lines):
+From three result sets, compose compact block (max ~15 lines):
 
 ```
 ### tea-rags enrichment for <pathPattern>
@@ -127,14 +126,14 @@ From the three result sets, compose a compact block (max ~15 lines):
 - ... (top 3)
 ```
 
-Cap each section at 3 entries. If a file appears in multiple sections, note it
-explicitly (`→ also in Hotspots`) — overlap is a strong brainstorming signal. Do
+Cap each section at 3 entries. If a file appears in multiple sections, note
+explicitly (`→ also in Hotspots`) — overlap is strong brainstorming signal. Do
 NOT paste raw JSON. Extract readable `relativePath` + 2-3 key signals per entry.
 
 ## Step 4 — Invoke superpowers:brainstorming
 
-Invoke the `Skill` tool with `superpowers:brainstorming`. Prepend the enrichment
-block from Step 3 as context. Phrase the handoff as:
+Invoke `Skill` tool with `superpowers:brainstorming`. Prepend enrichment block
+from Step 3 as context. Phrase handoff as:
 
 > "Before exploring, note these risk signals in the target area: …<block>… Use
 > them to pressure-test ideas — especially around the hotspot files.
@@ -144,15 +143,15 @@ block from Step 3 as context. Phrase the handoff as:
 > `dinopowers:Y` wrapper instead when one exists — see the Chaining rule section
 > above."
 
-Let `superpowers:brainstorming` run its full exploration cycle — this wrapper
-does not replace it, only grounds it.
+Let `superpowers:brainstorming` run full exploration cycle — this wrapper does
+not replace it, only grounds it.
 
 ## Red Flags — STOP and restart from Step 2
 
-- "I already know which files are hotspots here" → run Step 2 anyway; memory is
+- "I already know which files are hotspots here" → run Step 2 anyway; memory
   stale
-- "tea-rags is slow for 3 calls, let me do one" → three presets are different
-  lenses; one call loses two of them
+- "tea-rags is slow for 3 calls, let me do one" → three presets = different
+  lenses; one call loses two
 - Substituted `hybrid_search` / `find_similar` / `find_symbol` → redo with
   `semantic_search` + preset
 - Ran the three calls sequentially → reissue as parallel (same tool block)
@@ -162,7 +161,7 @@ does not replace it, only grounds it.
   `metaOnly: true`
 - Let `superpowers:brainstorming` chain into a raw `superpowers:Y` (e.g.
   `superpowers:writing-plans`) without redirecting to `dinopowers:Y` → intercept
-  and invoke the wrapper instead (see Chaining rule)
+  and invoke wrapper instead (see Chaining rule)
 
 ## Common Mistakes
 

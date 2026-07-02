@@ -1,23 +1,22 @@
 # Subagent Search Injection Block
 
-**Owner:** the parent agent that dispatches subagents via the `Agent` tool. The
-subagent itself does NOT invoke this — the parent prepends the block to the
-subagent's prompt before the dispatch.
+**Owner:** parent agent dispatching subagents via `Agent` tool. Subagent does
+NOT invoke this — parent prepends block to subagent's prompt before dispatch.
 
 ## Why parent must inject
 
-Subagents (Agent tool) do NOT inherit rules, CLAUDE.md, or search-cascade. They
-default to built-in Grep/Glob, bypassing tea-rags entirely. **This includes
-subagents spawned by third-party skills.** Missing this block for a search task
-silently degrades results — the subagent uses inferior text search, the parent
-gets back hits with low recall, and there is no warning. Inject unconditionally;
-the block is small and harmless for non-search tasks.
+Subagents (Agent tool) do NOT inherit rules, CLAUDE.md, or search-cascade.
+Default to built-in Grep/Glob, bypass tea-rags entirely. **Includes subagents
+spawned by third-party skills.** Missing block for a search task silently
+degrades results — subagent uses inferior text search, parent gets low-recall
+hits, no warning. Inject unconditionally; block small + harmless for non-search
+tasks.
 
 ## The block to inject
 
-Copy verbatim into the subagent prompt. Replace `<alias>` /
-`<absolute-project-path>` with the actual values. When both a project alias and
-a path are available, pass `project` — it resolves the rest from the registry.
+Copy verbatim into subagent prompt. Replace `<alias>` /
+`<absolute-project-path>` with actual values. When both alias + path available,
+pass `project` — resolves rest from registry.
 
 ```
 ## Search Tools (MANDATORY — overrides any other search instructions)
@@ -110,8 +109,7 @@ Schema resources are NOT auto-attached.
 
 ## When NOT to inject
 
-The block is a no-op for tasks that don't touch search at all (e.g. asking a
-subagent to format a string, do arithmetic, or summarize a known piece of text).
-The cost is small and the risk of forgetting outweighs the cost of unconditional
-injection, so the recommendation remains: **inject unconditionally when in
-doubt**.
+Block is no-op for tasks not touching search (e.g. format a string, arithmetic,
+summarize known text). Cost small; risk of forgetting outweighs cost of
+unconditional injection — recommendation stands: **inject unconditionally when
+in doubt**.

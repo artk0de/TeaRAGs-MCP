@@ -23,7 +23,7 @@ export function registerCollectionTools(server: McpServer, deps: { app: App; reg
     {
       title: "Create Collection",
       description:
-        "Create a new vector collection in Qdrant. The collection will be configured with the embedding provider's dimensions automatically. Set enableHybrid to true to enable hybrid search combining semantic and keyword search.",
+        "Create new vector collection in Qdrant. Auto-configures embedding provider dimensions. enableHybrid=true enables hybrid search (semantic + keyword).",
       inputSchema: schemas.CreateCollectionSchema,
       annotations: { idempotentHint: true },
     },
@@ -43,7 +43,7 @@ export function registerCollectionTools(server: McpServer, deps: { app: App; reg
     "list_collections",
     {
       title: "List Collections",
-      description: "List all available collections in Qdrant.",
+      description: "List all collections in Qdrant.",
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
@@ -59,8 +59,7 @@ export function registerCollectionTools(server: McpServer, deps: { app: App; reg
     "get_collection_info",
     {
       title: "Get Collection Info",
-      description:
-        "Get detailed information about a collection including vector size, point count, and distance metric.",
+      description: "Get collection details: vector size, point count, distance metric.",
       inputSchema: schemas.GetCollectionInfoSchema,
       annotations: { readOnlyHint: true },
     },
@@ -76,7 +75,7 @@ export function registerCollectionTools(server: McpServer, deps: { app: App; reg
     "delete_collection",
     {
       title: "Delete Collection",
-      description: "Delete a collection and all its documents.",
+      description: "Delete collection and all its documents.",
       inputSchema: schemas.DeleteCollectionSchema,
       annotations: { destructiveHint: true },
     },

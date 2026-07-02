@@ -1,111 +1,105 @@
 ---
 name: executing-plans
 description:
-  Execute a written implementation plan whose Tasks edit code, with a per-Task
-  SAFE/CAUTION/UNSAFE git-signal verdict before any edit AND a code-style
-  cascade for code-generation Tasks (style from silo authors, strategy and
-  template from proven neighbors). Triggers on "execute the plan", "start Task
-  N", "выполни план", "начни задачу", "run the plan", "implement the plan
-  steps". NOT for one-off edits without a written plan. Wraps
-  superpowers:executing-plans with tea-rags git-signal verdicts and
-  tea-rags:data-driven-generation cascade.
+  Execute written implementation plan whose Tasks edit code, per-Task
+  SAFE/CAUTION/UNSAFE git-signal verdict before edit AND code-style cascade for
+  code-generation Tasks (style from silo authors, strategy+template from proven
+  neighbors). Triggers on "execute the plan", "start Task N", "выполни план",
+  "начни задачу", "run the plan", "implement the plan steps". NOT for one-off
+  edits without a written plan. Wraps superpowers:executing-plans with tea-rags
+  git-signal verdicts and tea-rags:data-driven-generation cascade.
 ---
 
 # dinopowers: executing-plans
 
-Wrapper over `superpowers:executing-plans`. Adds a **pre-touch modification
+Wrapper over `superpowers:executing-plans`. Adds **pre-touch modification
 guard** — before each Task's first Edit/Write, queries tea-rags impact signals
-for the files the Task will modify and produces a verdict. High-blast-radius /
-hotspot / silo-owned files get flagged before edits begin, not after a broken
-commit.
+for files Task will modify, produces verdict. High-blast-radius / hotspot /
+silo-owned files flagged before edits begin, not after broken commit.
 
 ## Iron Rule
 
 **For every plan Task that modifies files, the pre-touch guard MUST run BEFORE
 the first Edit/Write/MultiEdit of that Task.**
 
-Correct tool (`semantic_search`), correct impact rerank (`"blastRadius"` when
-codegraph is on, the `{imports 0.5, churn 0.3, ownership 0.2}` fallback when
-off), correct parameters (brace-expanded `pathPattern` over Task-local files,
-`metaOnly: true`), correct verdict ladder (SAFE / CAUTION / UNSAFE) + correct
-gating (CAUTION = confirm, UNSAFE = pause) is the core value.
+Core value: correct tool (`semantic_search`), correct impact rerank
+(`"blastRadius"` when codegraph on, `{imports 0.5, churn 0.3, ownership 0.2}`
+fallback when off), correct params (brace-expanded `pathPattern` over Task-local
+files, `metaOnly: true`), correct verdict ladder (SAFE / CAUTION / UNSAFE) +
+correct gating (CAUTION = confirm, UNSAFE = pause).
 
-If a Task is purely additive (creates new files, touches no existing ones): skip
-the guard for that Task — state it explicitly. Do not invent a pathPattern to
-justify a guard call.
+Task purely additive (creates new files, touches no existing ones): skip guard
+for that Task — state explicitly. Do not invent pathPattern to justify guard
+call.
 
 ## Mandatory Step Order (DO NOT SKIP)
 
-0. **Step 0** — Worktree index clone (ONCE, at plan start): if executing a
-   multi-task plan in a git worktree, CREATE the clone before Task 1 (see Step 0
-   below). Skip for single-task plans, explore-only, or main-checkout work.
+0. **Step 0** — Worktree index clone (ONCE, at plan start): executing multi-task
+   plan in git worktree → CREATE clone before Task 1 (see Step 0 below). Skip
+   for single-task plans, explore-only, main-checkout work.
 1. Step 2 — git-signal SAFE/CAUTION/UNSAFE verdict per Task before any edit
 2. Step 4 — verdict-gating: STOP and ask user if any UNSAFE
 3. **MUST** Step 5 — Code-Gen Cascade for code-generation Tasks (invoke
    `tea-rags:data-driven-generation`)
 4. Step 6 — chain into `superpowers:executing-plans`
-5. **After each Task's commit** — REINDEX the worktree clone explicitly
-   (`mcp__tea-rags__index_codebase`, incremental) so the next Task reads fresh
-   code. There is no background hook; skipping this leaves later Tasks on stale
-   payloads.
+5. **After each Task's commit** — REINDEX worktree clone explicitly
+   (`mcp__tea-rags__index_codebase`, incremental) so next Task reads fresh code.
+   No background hook; skipping leaves later Tasks on stale payloads.
 
-⚠️ Skipping Step 5 produces ungrounded code. Skipping Step 6 means the parent
-workflow never runs. Skipping the per-Task REINDEX silently degrades every later
-Task's tea-rags results.
+⚠️ Skipping Step 5 → ungrounded code. Skipping Step 6 → parent workflow never
+runs. Skipping per-Task REINDEX → silently degrades every later Task's tea-rags
+results.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and the
-worktree-clone lifecycle in `tea-rags/rules/index-freshness.md`. There is **NO
-background reindex hook**: for a multi-task plan in a worktree, CREATE the clone
-at plan start (Step 0) and REINDEX it explicitly after EACH Task's commit so the
-next Task reads fresh code. Run `mcp__tea-rags__index_codebase` manually to
-search uncommitted WIP.
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and worktree-clone
+lifecycle in `tea-rags/rules/index-freshness.md`. **NO background reindex
+hook**: multi-task plan in worktree → CREATE clone at plan start (Step 0),
+REINDEX explicitly after EACH Task's commit so next Task reads fresh code. Run
+`mcp__tea-rags__index_codebase` manually to search uncommitted WIP.
 
-Plus the cross-plugin chain for code generation:
+Plus cross-plugin chain for code generation:
 
 - `tea-rags:data-driven-generation` — invoked from Step 5 below for any Task
-  that GENERATES code (new files, new functions, new classes, rewrites). Pulls
-  strategy, template, and silo-author style. Not a `superpowers:Y` redirect —
-  it's an additional MANDATORY step the wrapper inserts.
+  that GENERATES code (new files, functions, classes, rewrites). Pulls strategy,
+  template, silo-author style. Not a `superpowers:Y` redirect — additional
+  MANDATORY step wrapper inserts.
 
 ## Step 0 — Worktree index clone (worktree multi-task plans, once)
 
-Before Task 1, if you are executing a **multi-task plan inside a git worktree**
-(inline-driven OR subagent-driven), give the worktree its own index clone so
-per-Task searches see this branch's code, not main's. Run it **explicitly — the
-user sees it**:
+Before Task 1, executing **multi-task plan inside git worktree** (inline-driven
+OR subagent-driven) → give worktree its own index clone so per-Task searches see
+this branch's code, not main's. Run **explicitly — user sees it**:
 
 ```bash
 tea-rags worktree create <name> --from <src-alias> --path "$PWD" --no-git
 ```
 
-- `<name>` — short worktree label; the clone registers as
-  `<src-alias>-worktree-<name>`. `--from` names the source project (the registry
-  alias the worktree was branched from); `--path "$PWD"` is the worktree root;
-  `--no-git` attaches to the existing worktree dir instead of creating one.
-- **Gate:** only for a multi-task plan in a worktree. Single-task plans,
-  explore-only sessions, and main-checkout work search the main collection
-  directly — no clone. If the source index is very large, state its size and
-  confirm before cloning.
-- **Subagent-driven:** the parent runs this ONCE; dispatched subagents inherit
-  the clone via the worktree path.
+- `<name>` — short worktree label; clone registers as
+  `<src-alias>-worktree-<name>`. `--from` names source project (registry alias
+  worktree branched from); `--path "$PWD"` is worktree root; `--no-git` attaches
+  to existing worktree dir instead of creating one.
+- **Gate:** only for multi-task plan in worktree. Single-task plans,
+  explore-only sessions, main-checkout work search main collection directly — no
+  clone. Source index very large → state size, confirm before cloning.
+- **Subagent-driven:** parent runs this ONCE; dispatched subagents inherit clone
+  via worktree path.
 
-Then after EACH Task's commit (Mandatory Step Order item 5), REINDEX the clone
-so the next Task reads fresh code:
+Then after EACH Task's commit (Mandatory Step Order item 5), REINDEX clone so
+next Task reads fresh code:
 
 ```
 mcp__tea-rags__index_codebase  project: "<src-alias>-worktree-<name>"
 ```
 
-Full lifecycle (create → reindex → teardown) and the cleanup-hook backstop:
+Full lifecycle (create → reindex → teardown) and cleanup-hook backstop:
 `tea-rags/rules/index-freshness.md`. Teardown runs in
 `dinopowers:finishing-a-development-branch`.
 
 ## Step 1 — Extract Task's file list
 
-From the current plan Task identify:
+From current plan Task identify:
 
 | Source                      | Example                                                                            |
 | --------------------------- | ---------------------------------------------------------------------------------- |
@@ -115,10 +109,10 @@ From the current plan Task identify:
 
 Output:
 
-- `taskFileList`: relative paths the Task will modify (typically 1-5)
-- `taskIntent`: one-sentence of what the Task does
+- `taskFileList`: relative paths Task will modify (typically 1-5)
+- `taskIntent`: one sentence what Task does
 
-If `taskFileList` is empty (pure new-file creation): skip to Step 4 with verdict
+If `taskFileList` empty (pure new-file creation): skip to Step 4 with verdict
 `SAFE (new files only)`.
 
 ## Step 2 — Pre-touch guard call
@@ -139,7 +133,7 @@ metaOnly:    true
 **Codegraph gating for `rerank`:** `"blastRadius"` (real `fanIn` + churn +
 bugFix) when prime `## Enrichment` lists `codegraph.symbols`; fall back to
 `{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy,
-approximate) when that line is absent.
+approximate) when that line absent.
 
 Do NOT substitute:
 
@@ -154,14 +148,14 @@ Do NOT substitute:
 Do NOT pass:
 
 - `metaOnly: false` — we want verdict inputs, not content
-- The wrong rerank for the codegraph state — `"blastRadius"` when on, the
+- Wrong rerank for codegraph state — `"blastRadius"` when on, the
   `{imports 0.5, churn 0.3, ownership 0.2}` fallback when off, matching
   `dinopowers:writing-plans` and `tea-rags:data-driven-generation` Step 6 for
   cross-skill comparability
-- `filter` narrowing the file set — the `pathPattern` already scopes; filters
-  hide signal
+- `filter` narrowing file set — `pathPattern` already scopes; filters hide
+  signal
 
-If results are empty (files are brand-new, not yet in git): verdict defaults to
+Results empty (files brand-new, not yet in git): verdict defaults to
 `SAFE (new files)`. Do NOT fabricate blast-radius signals for untracked files.
 
 ## Step 3 — Compute verdict per file, aggregate to Task verdict
@@ -175,8 +169,8 @@ For each unique `relativePath` in results, extract from `payload.git.file.*`:
 - `imports` score (from ranking overlay) — blast radius proxy
 
 Compute per-file verdict via this ladder. Use **adaptive labels**, not magic
-percentages — labels come from per-codebase percentile distributions returned in
-the payload signal `stats.labels` and surfaced through `get_index_metrics`.
+percentages — labels come from per-codebase percentile distributions in payload
+signal `stats.labels`, surfaced through `get_index_metrics`.
 
 | Verdict   | Any of these triggers                                                                                                                                                       |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -211,45 +205,44 @@ Task:
 | `CAUTION` | Surface the guard block to the user. Ask "Proceed with Task N?". Wait for explicit confirmation before invoking `superpowers:executing-plans`.                                                                                |
 | `UNSAFE`  | Pause — surface block + recommend one of: (a) split Task into smaller Tasks, (b) add owner as co-author/reviewer, (c) require tests-before-edit. Do NOT invoke `superpowers:executing-plans` until user explicitly overrides. |
 
-Never silently convert UNSAFE→CAUTION or CAUTION→SAFE to "keep momentum". The
-verdict is a circuit breaker.
+Never silently convert UNSAFE→CAUTION or CAUTION→SAFE to "keep momentum".
+Verdict is circuit breaker.
 
 **Chaining rule reminder:** when `superpowers:executing-plans` runs a Task, it
 may chain into `superpowers:test-driven-development`,
 `superpowers:verification-before-completion`,
 `superpowers:requesting-code-review` or
-`superpowers:finishing-a-development-branch`. Redirect each to the corresponding
-`dinopowers:Y` wrapper — see the Chaining rule section above.
+`superpowers:finishing-a-development-branch`. Redirect each to corresponding
+`dinopowers:Y` wrapper — see Chaining rule section above.
 
 ## Step 4.5 — Per-Task proven-template lookup (code-generation Tasks)
 
-For the Task you are about to execute, if it is classified as code-generation /
-code-modification (per the same heuristic as `dinopowers:writing-plans` Step
-3.5: keywords "implement", "add", "write", "extend", "refactor", "modify"
+For Task about to execute, if classified as code-generation / code-modification
+(same heuristic as `dinopowers:writing-plans` Step 3.5: keywords "implement",
+"add", "write", "extend", "refactor", "modify"
 
 - "function | method | class | helper | module"):
 
-1. If the plan document already carries a `**Proven templates**` subsection for
-   this Task (written by writing-plans Step 3.5), USE that. Skip the recipe
-   re-invocation — the writing-plans output is canonical for this Task.
-2. If the plan does NOT carry per-Task templates (older plan, or plan written
-   without the Step 3.5 enrichment), invoke `tea-rags:extract-project-patterns`
-   with:
-   - `pathPatternL1` = deepest common ancestor of the Task's Affected Files
+1. Plan document already carries `**Proven templates**` subsection for this Task
+   (written by writing-plans Step 3.5) → USE that. Skip recipe re-invocation —
+   writing-plans output canonical for this Task.
+2. Plan does NOT carry per-Task templates (older plan, or written without Step
+   3.5 enrichment) → invoke `tea-rags:extract-project-patterns` with:
+   - `pathPatternL1` = deepest common ancestor of Task's Affected Files
    - `behaviorQuery` = Task title
-   - `limit` = 5 Use the returned `templates[0]` and `locality` directly.
+   - `limit` = 5 Use returned `templates[0]` and `locality` directly.
 
-Load the chosen template into the session as `tea-rags:data-driven-generation`
-Step 2 (TEMPLATE) input — so the Code-Gen Cascade (Step 5) starts from the
-correct reference without re-invoking the recipe.
+Load chosen template into session as `tea-rags:data-driven-generation` Step 2
+(TEMPLATE) input — so Code-Gen Cascade (Step 5) starts from correct reference
+without re-invoking recipe.
 
-**Skip clause:** non-code Tasks (config, test, doc) bypass this step and proceed
+**Skip clause:** non-code Tasks (config, test, doc) bypass this step, proceed
 directly to Step 5.
 
 ## Step 5 — Code-Gen Cascade (MANDATORY for code-generation Tasks)
 
 After verdict gate clears (SAFE proceeds, CAUTION confirmed, UNSAFE overridden),
-classify the Task by intent BEFORE invoking `superpowers:executing-plans`.
+classify Task by intent BEFORE invoking `superpowers:executing-plans`.
 
 | Task intent                                                                                              | Action                                                                         |
 | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -259,72 +252,69 @@ classify the Task by intent BEFORE invoking `superpowers:executing-plans`.
 | **Deletion**: remove file, remove function, prune dead code                                              | Skip Step 5 — no generation                                                    |
 | **Trivial**: typo, comment update, single-token swap                                                     | Skip Step 5 AND skip wrapper entirely — direct Edit                            |
 
-Why MANDATORY for generation: without `tea-rags:data-driven-generation` the
-agent generates code disconnected from project conventions. It misses:
+Why MANDATORY for generation: without `tea-rags:data-driven-generation` agent
+generates code disconnected from project conventions. Misses:
 
 - **Strategy selection** — DEFENSIVE for buggy zones, STABILIZATION for
   high-churn, CONSERVATIVE for legacy, STANDARD elsewhere. Reading SKILL.md text
-  alone won't trigger this — only the data-driven skill encodes the
+  alone won't trigger this — only data-driven skill encodes the
   label-to-strategy ladder.
 - **Template via "proven" rerank** — battle-tested code (long-lived, low-churn,
   low-bug, multi-author) found via custom weights
   `{similarity 0.2, stability 0.3, age 0.3, bugFix -0.15, ownership -0.05}`.
-  Manual `Read` of one sibling file picks an arbitrary example, not a proven
-  one.
+  Manual `Read` of one sibling file picks arbitrary example, not proven one.
 - **Silo-author style copy** — when
-  `blameDominantAuthorPct.label === "deep-silo"` the data-driven skill instructs
-  exact pattern match AND flags the live-line owner for review. Manual style
-  copy via Read skips the silo signal entirely.
+  `blameDominantAuthorPct.label === "deep-silo"` data-driven skill instructs
+  exact pattern match AND flags live-line owner for review. Manual style copy
+  via Read skips silo signal entirely.
 
-How to invoke (one Skill call, no parameters needed — the skill reads area
-context from this conversation):
+How to invoke (one Skill call, no parameters needed — skill reads area context
+from this conversation):
 
 ```
 Skill(tea-rags:data-driven-generation)
 ```
 
 If `tea-rags:data-driven-generation` reports it lacks area context (no overlay
-labels in conversation), it will internally chain to `tea-rags:explore` for
-pre-generation gathering. Let it. Do NOT pre-fetch labels yourself — the skill
-owns that workflow.
+labels in conversation), it internally chains to `tea-rags:explore` for
+pre-generation gathering. Let it. Do NOT pre-fetch labels yourself — skill owns
+that workflow.
 
 After Step 5 returns (strategy + template + style decided), THEN invoke
 `Skill(superpowers:executing-plans)` (or its TDD onward chain via
-`Skill(dinopowers:test-driven-development)`) to actually write the code.
+`Skill(dinopowers:test-driven-development)`) to write the code.
 
 **Order matters:** guard (Step 2) → verdict gate (Step 4) → data-driven cascade
-(Step 5) → executing-plans chain. Skipping Step 5 for a generation Task is the
-same severity as skipping the guard for an existing-file Task.
+(Step 5) → executing-plans chain. Skipping Step 5 for generation Task = same
+severity as skipping guard for existing-file Task.
 
 ## Red Flags — STOP and restart from Step 2
 
 - "This Task is small, skip the guard" → if `taskFileList` has ≥1 existing file,
   run Step 2
 - Substituted `mcp__tree-sitter__modification_guard` → tree-sitter gives
-  structural safety, not git-signal blast radius; both are useful but this
-  wrapper is git-first. Run Step 2.
+  structural safety, not git-signal blast radius; both useful but this wrapper
+  git-first. Run Step 2.
 - Named preset instead of custom weights → redo with
   `{imports: 0.5, churn: 0.3, ownership: 0.2}`
-- Ran guard AFTER the first Edit → wrong order; revert uncommitted changes if
+- Ran guard AFTER first Edit → wrong order; revert uncommitted changes if
   possible, restart from Step 2 before next Edit
-- Silent downgrade of verdict → surface the true verdict; let user downgrade if
-  they want
+- Silent downgrade of verdict → surface true verdict; let user downgrade if they
+  want
 - `metaOnly: false` on guard call → restart with `metaOnly: true`
-- Let `superpowers:executing-plans` chain into a raw
+- Let `superpowers:executing-plans` chain into raw
   `superpowers:test-driven-development` /
   `superpowers:verification-before-completion` /
   `superpowers:requesting-code-review` /
-  `superpowers:finishing-a-development-branch` without redirecting to the
-  `dinopowers:Y` wrapper → intercept and invoke the wrapper instead (see
-  Chaining rule)
+  `superpowers:finishing-a-development-branch` without redirecting to
+  `dinopowers:Y` wrapper → intercept, invoke wrapper instead (see Chaining rule)
 - Generation Task ran straight to `Read sibling.ts` + `Write new.ts` without
   invoking `Skill(tea-rags:data-driven-generation)` → revert (or pause before
-  Edit), restart from Step 5. Manual sibling-Read is exactly what the
-  data-driven skill replaces with structured strategy + proven template + silo
-  style.
-- Invoked `tea-rags:data-driven-generation` for a pure refactor (rename, move,
-  extract) → over-trigger; it adds no value when no new code is being written.
-  Restart from Step 5 classification; refactor row says SKIP.
+  Edit), restart from Step 5. Manual sibling-Read is exactly what data-driven
+  skill replaces with structured strategy + proven template + silo style.
+- Invoked `tea-rags:data-driven-generation` for pure refactor (rename, move,
+  extract) → over-trigger; adds no value when no new code written. Restart from
+  Step 5 classification; refactor row says SKIP.
 
 ## Common Mistakes
 

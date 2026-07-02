@@ -2,9 +2,9 @@
 
 ## Pagination and Reformulation
 
-Two independent mechanisms with separate counters.
+Two independent mechanisms, separate counters.
 
-**Pagination** — results are relevant, need more:
+**Pagination** — results relevant, need more:
 
 ```
 offset=0 → offset=15 → offset=30 → ... (no iteration limit)
@@ -12,41 +12,40 @@ offset=0 → offset=15 → offset=30 → ... (no iteration limit)
 
 Same query, same filters, increasing offset.
 
-**Reformulation** — results are NOT relevant:
+**Reformulation** — results NOT relevant:
 
 ```
 Max 3 attempts: different query / different filters / different rerank
 After 3: report "could not find, here's the best match"
 ```
 
-Can paginate indefinitely. Can reformulate max 3 times.
+Paginate indefinitely. Reformulate max 3 times.
 
 ## Disambiguation (MANDATORY after every search)
 
-After EVERY search, scan result paths for domain clustering. If top-10 results
-split into 2+ unrelated directory groups (e.g., `services/qbo/` vs
-`services/crm/`) with no single group holding >70% of results — you MUST NOT
-silently pick one. Present clusters to the user: "Found results in two areas:
-[area A] and [area B]. Which context?" Then re-search with `pathPattern` for the
-chosen area.
+After EVERY search, scan result paths for domain clustering. If top-10 split
+into 2+ unrelated directory groups (e.g., `services/qbo/` vs `services/crm/`),
+no single group >70% — you MUST NOT silently pick one. Present clusters to user:
+"Found results in two areas: [area A] and [area B]. Which context?" Then
+re-search with `pathPattern` for chosen area.
 
 ## Stop Conditions
 
-Score is a ranking signal, not a cutoff threshold — absolute score values are
-meaningless across different presets, collections, and queries.
+Score = ranking signal, NOT cutoff threshold — absolute score values meaningless
+across different presets, collections, queries.
 
 **Score-driven (rank_chunks, rerank-driven analytics):**
 
-- **Gradient drop:** if gap between last result of current page and first result
-  of next page > 2x the average gap between adjacent results → stop
-- **Diminishing returns:** page contains < 3 new unique files not seen in
-  previous pages → stop
-- **Hard cap:** 3 pages max (offset 0, 15, 30 = 45 results) as safety net
+- **Gradient drop:** gap between last result of current page and first of next
+  page > 2x average gap between adjacent results → stop
+- **Diminishing returns:** page has < 3 new unique files not seen in previous
+  pages → stop
+- **Hard cap:** 3 pages max (offset 0, 15, 30 = 45 results), safety net
 
 **Query-driven (semantic_search, hybrid_search):**
 
-- **Relevance judgment:** evaluate result content against query intent — stop
-  when results are clearly unrelated (agent judgment, not score-based)
+- **Relevance judgment:** evaluate result content vs query intent — stop when
+  clearly unrelated (agent judgment, not score-based)
 - Reformulation rules apply (max 3 attempts)
 
 **Multi-preset scans:**
@@ -57,14 +56,14 @@ meaningless across different presets, collections, and queries.
 
 ## No-Match Detection
 
-Detect "no relevant results" using relative patterns within the result set:
+Detect "no relevant results" via relative patterns within result set:
 
 1. **Score spread:** `(max_score - min_score) / max_score`. If < 0.06 across
-   top-10 → flat distribution, query has no discriminative power → likely noise.
+   top-10 → flat distribution, no discriminative power → likely noise.
 2. **Lexical overlap:** Do any query terms appear in top-5 file paths, symbol
    names, or chunk content? Zero overlap → strong no-match signal.
-3. **Path clustering:** Do top-10 results cluster in ≤3 directories? If
-   scattered across >7 unrelated directories → noise.
+3. **Path clustering:** Do top-10 cluster in ≤3 directories? Scattered across >7
+   unrelated directories → noise.
 
 **Decision:**
 

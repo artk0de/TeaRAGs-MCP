@@ -1,25 +1,24 @@
 # Signal Interpretation
 
-How to read tea-rags ranking overlay architecturally. Single signals are
-ambiguous — combinations reveal meaning.
+Read tea-rags ranking overlay architecturally. Single signals ambiguous —
+combinations reveal meaning.
 
 ## Core thesis
 
 **A signal is a gradient, not a diagnosis.**
 
-One high signal tells you _something is happening_ — it never tells you _what_.
-Churn alone does not mean "active development". Age alone does not mean
-"legacy". Ownership alone does not mean "silo". Architectural meaning emerges
-only from pairs/triples.
+One high signal → _something happening_ — never _what_. Churn alone ≠ "active
+development". Age alone ≠ "legacy". Ownership alone ≠ "silo". Architectural
+meaning emerges only from pairs/triples.
 
-The reranker gives a ranking; this file gives an interpretation layer. Consult
-before concluding anything from overlay.
+Reranker gives ranking; this file gives interpretation layer. Consult before
+concluding anything from overlay.
 
 ## Signal reference
 
 ### Git signals (payload.git.file._ / payload.git.chunk._)
 
-Two ownership signal families coexist because they answer different questions:
+Two ownership signal families coexist — answer different questions:
 
 | Family    | Source                             | Question it answers                        |
 | --------- | ---------------------------------- | ------------------------------------------ |
@@ -49,41 +48,40 @@ Two ownership signal families coexist because they answer different questions:
 
 ### Structural signals (from static trajectory)
 
-| Signal          | What it measures                                   |
-| --------------- | -------------------------------------------------- |
+| Signal          | What it measures                                                  |
+| --------------- | ----------------------------------------------------------------- |
 | `imports`       | fan-in PROXY — how many files import this (raw import-line count) |
-| `pathRisk`      | path-based risk (e.g., `adapters/`, `legacy/`)     |
-| `chunkSize`     | chunk line count                                   |
-| `documentation` | doc density                                        |
+| `pathRisk`      | path-based risk (e.g., `adapters/`, `legacy/`)                    |
+| `chunkSize`     | chunk line count                                                  |
+| `documentation` | doc density                                                       |
 
-`imports` is the critical disambiguator for churn-based patterns. Without it,
-god module and bug attractor look identical.
+`imports` = critical disambiguator for churn-based patterns. Without it, god
+module and bug attractor look identical.
 
 #### Codegraph signals (only when codegraph is active)
 
 Present ONLY when prime `## Enrichment` lists `codegraph.symbols`; absent
-otherwise. These are real call/import-edge measures and **supersede the
-`imports` proxy** wherever both exist — `imports` counts import lines, `fanIn`
-counts actual graph edges.
+otherwise. Real call/import-edge measures, **supersede `imports` proxy** where
+both exist — `imports` counts import lines, `fanIn` counts actual graph edges.
 
-| Signal               | Scope | What it measures                                            |
-| -------------------- | ----- | ----------------------------------------------------------- |
-| `fanIn`              | file/chunk | incoming edges — who depends on this (true blast radius) |
-| `fanOut`             | file/chunk | outgoing edges — how much this drives                  |
-| `isHub`              | file  | high-fan-in backbone flag (the structural centre)           |
-| `instability`        | file  | `fanOut / (fanIn + fanOut)` — efferent coupling (Martin)    |
-| `connectionCount`    | file  | `fanIn + fanOut` — total coupling / confidence support      |
-| `transitiveImpact`   | file  | reachable dependents — systemic blast radius beyond 1 hop   |
-| `pageRank`           | chunk | global centrality of a method in the call graph             |
-| cycle membership     | file/chunk | member of an SCC (`find_cycles`) — circular coupling   |
+| Signal             | Scope      | What it measures                                          |
+| ------------------ | ---------- | --------------------------------------------------------- |
+| `fanIn`            | file/chunk | incoming edges — who depends on this (true blast radius)  |
+| `fanOut`           | file/chunk | outgoing edges — how much this drives                     |
+| `isHub`            | file       | high-fan-in backbone flag (the structural centre)         |
+| `instability`      | file       | `fanOut / (fanIn + fanOut)` — efferent coupling (Martin)  |
+| `connectionCount`  | file       | `fanIn + fanOut` — total coupling / confidence support    |
+| `transitiveImpact` | file       | reachable dependents — systemic blast radius beyond 1 hop |
+| `pageRank`         | chunk      | global centrality of a method in the call graph           |
+| cycle membership   | file/chunk | member of an SCC (`find_cycles`) — circular coupling      |
 
-When codegraph is off, fall back to the `imports` proxy and say structural
-centrality is approximate (see search-cascade "Graph navigation").
+Codegraph off → fall back to `imports` proxy, say structural centrality is
+approximate (see search-cascade "Graph navigation").
 
 ## When to use `recent*` vs `blame*` (ownership-pair selection)
 
-**Pick `blame*` when the question is about authority, knowledge, or risk
-introduced by changing code.** It tells you who currently owns the live lines.
+**Pick `blame*` for authority, knowledge, or risk from changing code.** Tells
+who currently owns live lines.
 
 - "Who must approve this change?" → `blameDominantAuthor` (live-line owner)
 - "Is this a knowledge silo?" → `blameContributorCount`,
@@ -92,9 +90,9 @@ introduced by changing code.** It tells you who currently owns the live lines.
 - Style copy when generating new code → match `blameDominantAuthor`'s style (the
   code currently there is theirs)
 
-**Pick `recent*` when the question is about activity, momentum, or fast review
-turnaround.** It tells you who's been committing lately, regardless of whether
-their lines survived rewrites.
+**Pick `recent*` for activity, momentum, or fast review turnaround.** Tells
+who's been committing lately, regardless of whether their lines survived
+rewrites.
 
 - "Who's loaded in for the fastest review?" → `recentDominantAuthor`
 - "Feature-in-progress detection" → `recentDominantAuthorPct ↑` + `ageDays ↓`
@@ -112,14 +110,14 @@ their lines survived rewrites.
 | Distributed                      | Distributed                  | Healthy multi-owner, both historically and currently                                        |
 | Alice = 95% (deep-silo)          | No recent commits at all     | Mature stable code with original author still nominally responsible — **dormant ownership** |
 
-The reranker presets `ownership` and `knowledgeSilo` consume `blame*`; the
-preset `recentActivityConcentration` consumes `recent*`. Custom rerank weights
-mirror this split — see "Custom rerank weights" below.
+Presets `ownership` and `knowledgeSilo` consume `blame*`; preset
+`recentActivityConcentration` consumes `recent*`. Custom weights mirror this
+split — see "Custom rerank weights" below.
 
 ## Pair diagnostics
 
-Pairs and triples of signals map to architectural patterns. Single signal →
-lookup is ambiguous; pair → likely classification; triple → confident.
+Pairs/triples map to architectural patterns. Single → ambiguous; pair → likely;
+triple → confident.
 
 ### Churn-driven patterns
 
@@ -132,14 +130,13 @@ lookup is ambiguous; pair → likely classification; triple → confident.
 | churn ↑ | `pathRisk=dto/schema/generated` + `bugFixRate`=healthy | **Boilerplate churn**           |
 | churn ↑ | `recentContributorCount` ↑ + `pathRisk`=shared         | **Shared infrastructure**       |
 
-**Disambiguation rule for high churn:** always check `imports` before deciding.
-High fan-in shifts meaning from "activity" to "coupling".
+**Disambiguation rule for high churn:** always check `imports` first. High
+fan-in shifts meaning from "activity" to "coupling".
 
 ### Ownership-driven patterns
 
-Ownership patterns read **`blame*`** (live-line ownership) by default, because
-the architectural meaning of "silo" is _one person owns the live code_ — not
-_one person committed last week_.
+Ownership patterns read **`blame*`** (live-line ownership) by default — "silo"
+means _one person owns the live code_, not _one person committed last week_.
 
 | Primary                                        | Companion(s)                                                  | Pattern                                                            |
 | ---------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------ |
@@ -150,15 +147,14 @@ _one person committed last week_.
 | `blameContributorCount` ↑ (diffuse)            | churn ↑ + `imports` ↑                                         | **God module**                                                     |
 | `blameContributorCount` ↑ (diffuse)            | churn ↓                                                       | **Dead utility**                                                   |
 
-**Disambiguation rule for mono ownership:** single author is NOT automatically a
-problem. It is a problem only when paired with instability (bugFixRate) or when
-paired with churn+age (nobody else can help maintain volatile code).
+**Disambiguation rule for mono ownership:** single author NOT automatically a
+problem. Problem only when paired with instability (bugFixRate) or with
+churn+age (nobody else can maintain volatile code).
 
 **Disambiguation rule for `recent*` mono activity:**
-`recentDominantAuthorPct silo+` does NOT mean the file is owned by one person —
-it means one person has been the dominant committer recently. Pair with
-`blameDominantAuthorPct` to decide: matching → reinforced silo; diverging →
-handoff or active rewrite.
+`recentDominantAuthorPct silo+` does NOT mean one person owns the file — means
+one person is dominant committer recently. Pair with `blameDominantAuthorPct`:
+matching → reinforced silo; diverging → handoff or active rewrite.
 
 ### Age-driven patterns
 
@@ -170,16 +166,14 @@ handoff or active rewrite.
 | age ↑   | churn ≈ 0 + imports ≈ 0              | **Dead / dormant code**    |
 | age ↓   | churn ↑ + `recentContributorCount` ↑ | **Emerging coupling zone** |
 
-**Disambiguation rule for high age:** age inverts meaning depending on churn.
-Old
+**Disambiguation rule for high age:** age inverts meaning on churn. Old
 
 - low churn = don't touch; old + high churn = must rewrite.
 
 ## Method-level (chunk) pair diagnostics
 
-File-level signals tell you _which file_ is a god module. Chunk-level signals
-tell you _which method inside the file_ is actually the problem. They are
-orthogonal — always combine both layers when available.
+File-level → _which file_ is a god module. Chunk-level → _which method inside_
+is the problem. Orthogonal — always combine both layers when available.
 
 Chunk-level signals that exist (no chunk-variant for `imports`,
 `*DominantAuthor*` strings, `*Authors[]` lists — those are file properties by
@@ -196,10 +190,9 @@ nature; chunk only carries scalar counts):
 - `chunk.recencyWeightedFreq` — method-level burst activity
 - `chunk.churnRatio` — this chunk's share of file churn
 
-Use `chunk.blameContributorCount = 1` to detect a method whose live lines all
-come from one author — the method-level silo. Use
-`chunk.recentContributorCount ↑` to detect a method that's currently a
-coordination point (many people are committing to it, regardless of whose lines
+`chunk.blameContributorCount = 1` → method whose live lines all come from one
+author (method-level silo). `chunk.recentContributorCount ↑` → method currently
+a coordination point (many people committing, regardless of whose lines
 survive).
 
 ### Chunk × file combinations
@@ -220,22 +213,22 @@ survive).
 
 ### Method-level classification refinements
 
-When file-level points to a pattern, chunk-level refines WHERE the work is:
+File-level → pattern; chunk-level refines WHERE work is:
 
-- **Coupling point** (file): find the specific method with high
-  `chunk.recentContributorCount` — that's the overloaded API entry point where
-  many recent committers meet.
-- **Legacy minefield** (file): find the method with highest `chunk.bugFixRate
-  - chunk.relativeChurn` — that's the actual minefield, the rest of the file may
-    be rewritable piecemeal.
-- **Toxic silo** (file): check `chunk.blameContributorCount` — if every method
-  has `= 1`, full silo; if one method has diffuse blame authorship (≥ 2
-  live-line owners) inside an otherwise siloed file, that method is the public
-  API and ownership transfer is partial.
-- **Bug attractor** (file): find the method with highest `chunk.bugFixRate` —
-  fix-the-abstraction effort should start there, not at file boundaries.
-- **Feature-in-progress** (file): `chunk.ageDays ↓` across most methods confirms
-  — if some methods are old, file mixes new and legacy code.
+- **Coupling point** (file): find method with high
+  `chunk.recentContributorCount` — overloaded API entry point where many recent
+  committers meet.
+- **Legacy minefield** (file): find method with highest `chunk.bugFixRate
+  - chunk.relativeChurn` — the actual minefield; rest of file may be rewritable
+    piecemeal.
+- **Toxic silo** (file): check `chunk.blameContributorCount` — every method
+  `= 1` → full silo; one method with diffuse blame authorship (≥ 2 live-line
+  owners) inside an otherwise siloed file → that method is public API, ownership
+  transfer partial.
+- **Bug attractor** (file): find method with highest `chunk.bugFixRate` —
+  fix-the-abstraction effort starts there, not at file boundaries.
+- **Feature-in-progress** (file): `chunk.ageDays ↓` across most methods
+  confirms; some old methods → file mixes new and legacy code.
 
 ### Useful chunk-only signatures (not derivable at file level)
 
@@ -255,40 +248,39 @@ When file-level points to a pattern, chunk-level refines WHERE the work is:
 **Signature:**
 `churn ↑ + fanIn ↑ / isHub (or imports ↑ proxy) + recentContributorCount ↑ + blameContributorCount ↑`
 **What it is:** Central file imported by many, edited by many (recent activity
-AND surviving authorship distributed), because any change passes through. Not a
-quality problem per se — an architectural coupling problem. Example:
+AND surviving authorship distributed) — any change passes through. Not a quality
+problem per se — architectural coupling problem. Example:
 `adapters/qdrant-client.ts` (65 commits over project life). **Codegraph:** real
-`fanIn` / `isHub` confirms the centre far more precisely than the `imports`
-proxy; high `instability` (fanOut-dominated) points to a coupling SOURCE, high
-fanIn to a coupling SINK. **Remediation:** decouple or stabilize interface;
-freeze signature.
+`fanIn` / `isHub` confirms centre far more precisely than `imports` proxy; high
+`instability` (fanOut-dominated) → coupling SOURCE, high fanIn → coupling SINK.
+**Remediation:** decouple or stabilize interface; freeze signature.
 
 ### Bug attractor
 
 **Signature:** `churn ↑ + bugFixRate ↑ + imports ↓` (codegraph: `fanIn ↓`)
-**What it is:** Broken abstraction. High fix-rate with low fan-in means bugs
-don't propagate from elsewhere — they originate here. Single file misbehaves.
-**Remediation:** redesign the abstraction, not patch another fix.
+**What it is:** Broken abstraction. High fix-rate + low fan-in → bugs originate
+here, don't propagate from elsewhere. Single file misbehaves. **Remediation:**
+redesign the abstraction, not patch another fix.
 
 ### Blast-radius hub (codegraph)
 
-**Signature:** `isHub / fanIn ↑ + transitiveImpact ↑ + (churn ↑ or bugFixRate ↑)`
-**What it is:** A high-fan-in backbone that ALSO carries git risk — the worst
-combination, because a fault or a change there propagates to every dependent
-(wide `transitiveImpact`). Distinct from a clean hub (high fanIn, healthy git
-signals = stable backbone, NOT risk). This is the escalation the risk-assessment
-structural amplifier surfaces. **Remediation:** harden + freeze the interface,
-add a regression net before touching; treat changes as high-blast.
+**Signature:**
+`isHub / fanIn ↑ + transitiveImpact ↑ + (churn ↑ or bugFixRate ↑)` **What it
+is:** High-fan-in backbone that ALSO carries git risk — worst combo,
+fault/change propagates to every dependent (wide `transitiveImpact`). Distinct
+from clean hub (high fanIn, healthy git = stable backbone, NOT risk). The
+escalation the risk-assessment structural amplifier surfaces. **Remediation:**
+harden + freeze interface, add regression net before touching; treat changes as
+high-blast.
 
 ### Cyclic coupling (codegraph)
 
 **Signature:** member of an SCC from `find_cycles` (file or method scope).
-**What it is:** Two or more units that mutually depend, directly or transitively
-— neither can be understood, tested, or replaced in isolation. Invisible to
-churn/ownership signals. Cross-boundary cycles (one member inside a domain, one
-outside) are the most damaging. **Remediation:** break the loop at its weakest
-edge (often found via `get_callers` on a cycle member); introduce an interface
-seam or invert one dependency.
+**What it is:** Two+ units mutually depend, directly or transitively — none
+understood/tested/replaced in isolation. Invisible to churn/ownership signals.
+Cross-boundary cycles (one member in a domain, one outside) most damaging.
+**Remediation:** break loop at weakest edge (often found via `get_callers` on a
+cycle member); introduce interface seam or invert one dependency.
 
 ### Toxic silo
 
@@ -296,23 +288,23 @@ _For low-churn silo with bug-history, see Fragile silo below._
 
 **Signature:**
 `blameDominantAuthorPct silo+ + bugFixRate ↑ + (churn ↑ or age ↑)` **What it
-is:** One author owns the live lines of volatile or fragile code. Bus factor +
-quality risk combined. Note: must be `blame*`, not `recent*` — a recent-only
-mono author may simply be a feature-in-progress, not a silo. **Remediation:**
-pair rotation, knowledge transfer, or splitting ownership.
+is:** One author owns live lines of volatile/fragile code. Bus factor + quality
+risk combined. Must be `blame*`, not `recent*` — recent-only mono author may be
+feature-in-progress, not silo. **Remediation:** pair rotation, knowledge
+transfer, or splitting ownership.
 
 ### Fragile silo
 
 **Signature:**
 `blameDominantAuthorPct silo+ + bugFixRate concerning+ + churn typical/low + ageDays typical/recent`
 
-**What it is:** Stable-looking, low-churn module owned by a single author whose
+**What it is:** Stable-looking, low-churn module owned by single author whose
 commit history is dominated by bug fixes. Distinct from Toxic silo (requires
-high churn or legacy age) and Fragile legacy (requires high age). The file does
-not look like a hotspot — it has not been touched recently — but every
-historical commit to it has been a regression fix. Often a domain-edge component
-(calculation, invariant enforcement, data conversion) where each defect is
-subtle and the silo owner is the only person who knows the invariants.
+high churn or legacy age) and Fragile legacy (requires high age). Doesn't look
+like a hotspot — not touched recently — but every historical commit was a
+regression fix. Often a domain-edge component (calculation, invariant
+enforcement, data conversion) where each defect is subtle and the silo owner
+alone knows the invariants.
 
 **Remediation:**
 
@@ -324,45 +316,44 @@ subtle and the silo owner is the only person who knows the invariants.
 **Disambiguators:**
 
 - **Confidence-clamped label suppresses small-N matches automatically.** When
-  the unified `stats.confidence` mechanism is active, `bugFixRate.label` for
-  files with `commitCount < 5` is clamped to `healthy` and `< 10` to
-  `concerning`. A noise-only file (e.g. 2 fix commits out of 3) does NOT satisfy
-  the `bugFixRate concerning+` floor of this signature — it gets `healthy` and
-  falls out of Fragile silo. Correct behavior; classification into a real risk
-  tier should require structural evidence, not small-N noise.
-- **Edge band `commitCount` 5..9.** Raw `bugFixRate` ≥ critical threshold gets
-  clamped to `concerning`, which DOES match the signature. Mark such
-  classifications as "moderate confidence" in risk reports.
-- **If reading raw values rather than labels:** apply anti-pattern #8
-  (class-level small-N rule). Don't conclude "Fragile silo" from raw
-  `value: 63%` alone if `commitCount < 5`.
+  unified `stats.confidence` mechanism active, `bugFixRate.label` for files with
+  `commitCount < 5` clamped to `healthy`, `< 10` to `concerning`. Noise-only
+  file (e.g. 2 fix commits of 3) does NOT satisfy the `bugFixRate concerning+`
+  floor — gets `healthy`, falls out of Fragile silo. Correct: real risk tier
+  requires structural evidence, not small-N noise.
+- **Edge band `commitCount` 5..9.** Raw `bugFixRate` ≥ critical threshold
+  clamped to `concerning`, which DOES match. Mark such classifications "moderate
+  confidence" in risk reports.
+- **If reading raw values not labels:** apply anti-pattern #8 (class-level
+  small-N rule). Don't conclude "Fragile silo" from raw `value: 63%` alone if
+  `commitCount < 5`.
 - **Upgrade paths:** if `bugFixRate concerning+` AND `commitCount high+` →
   upgrade to **Bug attractor** when `imports ↓`, or **Toxic silo** when churn
   rises with it.
 
-To discover Fragile silo files via search, see the `Fragile Silo discovery`
-recipe in `use-cases.md`.
+Discover Fragile silo files via search: `Fragile Silo discovery` recipe in
+`use-cases.md`.
 
 ### Healthy owner
 
 **Signature:**
 `blameDominantAuthorPct silo+ + churn ↓ + age ↑ + bugFixRate=healthy` **What it
-is:** Mature component with a maintainer who authored the live code. Low change
-rate + clean fix history means the owner got the design right and it's stable.
-NOT a risk. **Remediation:** none. Preserve as-is. (Even better signal:
-`recentContributorCount` low or zero — owner still nominally responsible but
-code is dormant.)
+is:** Mature component; maintainer authored the live code. Low change rate +
+clean fix history → owner got design right, it's stable. NOT a risk.
+**Remediation:** none. Preserve as-is. (Even better signal:
+`recentContributorCount` low or zero — owner nominally responsible but code
+dormant.)
 
 ### Legacy minefield
 
 **Signature:** `age ↑ + churn ↑ + bugFixRate ↑` **What it is:** Old code that
-won't stabilize. Every touch risks a regression. Different from tech debt —
-active instability, not static debt. **Remediation:** strangler-pattern rewrite.
+won't stabilize. Every touch risks regression. Different from tech debt — active
+instability, not static debt. **Remediation:** strangler-pattern rewrite.
 
 ### Fragile legacy
 
 **Signature:** `age ↑ + bugFixRate ↑ + churn ≈ typical` **What it is:** Old code
-that mostly works but breaks when touched. Knowledge has evaporated.
+that mostly works but breaks when touched. Knowledge evaporated.
 **Remediation:** defer changes; document invariants before touching.
 
 _For recent code with similar bug-history signature, see Fragile silo._
@@ -371,9 +362,9 @@ _For recent code with similar bug-history signature, see Fragile silo._
 
 **Signature:**
 `churn ↑ + recentDominantAuthorPct ↑ + age ↓ + bugFixRate=healthy + imports ↓`
-**What it is:** New feature under active build. Extreme churn is expected. NOT a
+**What it is:** New feature under active build. Extreme churn expected. NOT a
 risk. Usually one recent developer, low fan-in (not yet integrated). Read via
-`recent*` (commit activity), not `blame*` — for new code they coincide, but the
+`recent*` (commit activity), not `blame*` — for new code they coincide, but
 conceptual signal is "active solo work", not "silo ownership of mature code".
 **Remediation:** none; revisit after stabilization.
 
@@ -383,9 +374,8 @@ conceptual signal is "active solo work", not "silo ownership of mature code".
 `churn ↑ + bugFixRate=healthy + imports low + path ~ dto/schema/generated`
 **What it is:** DTO, schema, mapping, or generated-like file. Commits accumulate
 because every feature adds a field. High churn is cosmetic, not structural. No
-single git signal detects this directly — use path heuristic + healthy
-bugFixRate + low fan-in. **Remediation:** consider code generation; otherwise
-ignore.
+single git signal detects this — use path heuristic + healthy bugFixRate + low
+fan-in. **Remediation:** consider code generation; otherwise ignore.
 
 ### Emerging coupling zone
 
@@ -399,78 +389,74 @@ crystallizes.
 
 **Signature:**
 `age ↑ + churn ≈ 0 + blameContributorCount = 1 + recentContributorCount = 0 + imports ≈ 0`
-**What it is:** Code nobody touches, nobody imports. The original author still
-nominally owns the lines but no one has committed recently. Silo signal here is
-meaningless — nothing depends on this knowledge. **Remediation:** verify fan-in,
-then delete.
+**What it is:** Code nobody touches, nobody imports. Original author nominally
+owns lines but no recent commits. Silo signal here meaningless — nothing depends
+on this knowledge. **Remediation:** verify fan-in, then delete.
 
 ### Shared infrastructure
 
 **Signature:**
 `churn ↑ + recentContributorCount ↑ + blameContributorCount ↑ + imports ↑ + bugFixRate=typical + pathRisk=shared (e.g., adapters/, core/)`
 **What it is:** Infrastructure seam (HTTP client, DB adapter, config). Naturally
-high fan-in and cross-team churn (both historically and recently). Overlaps with
-god module but bugFixRate stays healthy because the code is mostly mechanical.
+high fan-in and cross-team churn (historically and recently). Overlaps god
+module but bugFixRate stays healthy — code is mostly mechanical.
 **Remediation:** review process and ownership rotation, not redesign.
 
 ## Interpretation anti-patterns
 
-Agents consistently make these mistakes when reading overlay:
+Agents consistently make these mistakes reading overlay:
 
 1. **"high churn = active development"** — wrong. Could be coupling, attractor,
    boilerplate, legacy thrash, or real development. Check `imports`, `ageDays`,
    `bugFixRate`, `blockPenalty` before deciding.
 2. **"mono ownership = problem"** — wrong. Healthy owner of stable mature code
-   is a strength. Only toxic when paired with instability. **Always read mono
+   is a strength. Toxic only when paired with instability. **Always read mono
    ownership via `blame*`** (live-line) — `recentDominantAuthorPct` mono is just
-   "active sole committer", which can be feature-in-progress, not silo.
+   "active sole committer", could be feature-in-progress, not silo.
 3. **"high age = legacy to rewrite"** — wrong. Old + low churn = proven. Old +
    high churn = minefield. Age inverts on churn.
-4. **"high fan-in = god module"** — incomplete. High `imports` on a stable
-   contract (types, errors) with low churn is a healthy foundation, not a god
-   module. Coupling problem requires `imports ↑ + churn ↑`.
-5. **"bugFixRate concerning = bug magnet"** — incomplete. With `imports ↓` it's
-   a bug attractor (local problem). With `imports ↑` it's coupling spreading
-   bugs downstream (different remediation).
+4. **"high fan-in = god module"** — incomplete. High `imports` on stable
+   contract (types, errors) with low churn = healthy foundation, not god module.
+   Coupling problem requires `imports ↑ + churn ↑`.
+5. **"bugFixRate concerning = bug magnet"** — incomplete. With `imports ↓` → bug
+   attractor (local problem). With `imports ↑` → coupling spreading bugs
+   downstream (different remediation).
 6. **Forcing a single classification.** Real code often shows hybrid patterns
-   (e.g., god module that is also emerging legacy). Report both when overlay
-   supports it.
-7. **Concluding from one signal.** If overlay has only one strong signal and the
-   rest are typical/missing → insufficient evidence. Say so instead of guessing
-   a class.
-8. **"label severity = signal severity"** — incomplete when the signal declares
-   a `stats.confidence` block. Any signal whose descriptor names a `support`
+   (e.g., god module also emerging legacy). Report both when overlay supports
+   it.
+7. **Concluding from one signal.** Only one strong signal, rest typical/missing
+   → insufficient evidence. Say so instead of guessing a class.
+8. **"label severity = signal severity"** — incomplete when signal declares a
+   `stats.confidence` block. Any signal whose descriptor names a `support`
    sibling (`bugFixRate → commitCount`,
-   `blameDominantAuthorPct → blameContributorCount`, etc.) is a ratio or
-   aggregate whose reliability depends on that sibling. When `support` is low,
-   the label and the raw value mean **less** than identical values with high
-   support — small-sample noise looks like structural signal.
+   `blameDominantAuthorPct → blameContributorCount`, etc.) is a ratio/aggregate
+   whose reliability depends on that sibling. When `support` is low, label and
+   raw value mean **less** than identical values with high support —
+   small-sample noise looks like structural signal.
 
-   Concrete: with `commitCount=3` and 2 fix commits, `bugFixRate = 67%` looks
-   identical to `200/300 = 67%`. The first is noise; the second is structural.
-   The overlay's label is auto-clamped to a less-severe bin when `support` is
-   below the descriptor's threshold (clamping happens in the reranker overlay
-   path), but if you read the raw `value` directly, you must apply this rule
-   yourself.
+   Concrete: `commitCount=3` with 2 fix commits → `bugFixRate = 67%`, looks
+   identical to `200/300 = 67%`. First is noise; second is structural. Overlay's
+   label is auto-clamped to less-severe bin when `support` is below descriptor's
+   threshold (clamping in reranker overlay path), but reading raw `value`
+   directly → apply this rule yourself.
 
    **How to read confidence-aware signals:**
    - **Always pair the signal's label with its `support` sibling's label.** If
-     `support` is `low` or below the signal's stated thresholds → treat the
-     signal's value/label as suggestive only. Use it to _ask_ "is this worth a
-     closer look?", not to conclude.
-   - **`support` typical+ → trust the label.** The structural fix has left the
-     label as-is because the sample is large enough.
-   - **Discoverability:** the per-signal `confidence` block is published via the
-     index-metrics resource — `support` field name and threshold rules are
+     `support` is `low` or below stated thresholds → treat value/label as
+     suggestive only. Use to _ask_ "worth a closer look?", not to conclude.
+   - **`support` typical+ → trust the label.** Structural fix left label as-is —
+     sample large enough.
+   - **Discoverability:** per-signal `confidence` block published via
+     index-metrics resource — `support` field name + threshold rules
      introspectable. Don't guess; look up.
 
-   Examples of confidence-aware signals (current set will grow): `bugFixRate`
-   (support `commitCount`). The full authoritative set is the union of raw
-   signal descriptors carrying `stats.confidence`.
+   Examples of confidence-aware signals (set will grow): `bugFixRate` (support
+   `commitCount`). Full authoritative set = union of raw signal descriptors
+   carrying `stats.confidence`.
 
 ## Custom rerank weights for architectural queries
 
-When no preset fits, build custom weights. Examples:
+No preset fits → build custom weights. Examples:
 
 **Available weight keys for ownership-axis queries:**
 
@@ -489,10 +475,9 @@ god-module detection).
 { "custom": { "imports": 0.5, "churn": 0.3, "ownership": -0.2 } }
 ```
 
-Prioritizes fan-in. Negative `ownership` surfaces files where ownership is
-diffuse — many live-line owners, classic god module. Pair
-`recentActivityConcentration` negated if you want "actively edited by many right
-now":
+Prioritizes fan-in. Negative `ownership` surfaces diffuse-ownership files — many
+live-line owners, classic god module. Pair `recentActivityConcentration` negated
+for "actively edited by many right now":
 
 ```json
 {
@@ -514,8 +499,8 @@ now":
 { "custom": { "ownership": 0.4, "stability": 0.3, "age": 0.3 } }
 ```
 
-Both queries lean on `ownership` (blame-based). For the active-sole-committer
-flavor of feature-in-progress, swap in `recentActivityConcentration`.
+Both lean on `ownership` (blame-based). For active-sole-committer flavor of
+feature-in-progress, swap in `recentActivityConcentration`.
 
 ### Bug attractor (excluding coupling)
 
@@ -531,7 +516,7 @@ Negative weight on imports suppresses coupling points.
 { "custom": { "imports": 0.4, "churn": 0.3, "recency": 0.3 } }
 ```
 
-Surfaces young files that are already widely imported.
+Surfaces young files already widely imported.
 
 ### Knowledge handoff in progress (blame ≠ recent)
 
@@ -545,41 +530,38 @@ Surfaces young files that are already widely imported.
 }
 ```
 
-High `ownership` (one person still owns the lines) + low recent concentration
-(many people committing now) + active churn → handoff zone where new
-contributors are taking over a previously-siloed module. Useful for routing
-mentorship/review pairings.
+High `ownership` (one person still owns lines) + low recent concentration (many
+committing now) + active churn → handoff zone where new contributors take over a
+previously-siloed module. Useful for routing mentorship/review pairings.
 
 ## Limitations
 
-1. **Line drift.** `bugFixRate` at chunk level is approximate because git blame
-   drifts across renames and reformats. Use file-level bugFixRate when exact
-   numbers matter; chunk-level for relative ranking.
+1. **Line drift.** `bugFixRate` at chunk level approximate — git blame drifts
+   across renames/reformats. Use file-level bugFixRate for exact numbers;
+   chunk-level for relative ranking.
 2. **Alpha-blending masks layers.** Derived signals blend file and chunk
-   (`effective = alpha*chunk + (1-alpha)*file`). For architectural analysis you
-   sometimes need raw `payload.git.file.*` WITHOUT blending — e.g., to see
-   fan-in as a file property, not chunk-mixed. Request `metaOnly=false` and read
-   the raw payload directly.
-3. **Overlay masking.** Each preset curates a subset of signals via its
-   `overlayMask`. If `imports` is absent from the overlay you see, the preset
-   chose not to surface it — not that the file has no imports. Either switch
-   preset or use custom rerank with explicit weight keys (signals with weights
-   appear in overlay automatically).
+   (`effective = alpha*chunk + (1-alpha)*file`). Architectural analysis
+   sometimes needs raw `payload.git.file.*` WITHOUT blending — e.g., fan-in as
+   file property, not chunk-mixed. Request `metaOnly=false`, read raw payload
+   directly.
+3. **Overlay masking.** Each preset curates a signal subset via `overlayMask`.
+   `imports` absent from overlay → preset chose not to surface it, NOT that file
+   has no imports. Switch preset or use custom rerank with explicit weight keys
+   (weighted signals appear in overlay automatically).
 4. **Single-snapshot bias.** All signals reflect a single index build. Rapidly
    evolving files (feature branches) may show churn from merged history, not
    live activity.
 
 ## Workflow
 
-When interpreting any multi-signal overlay:
+Interpreting any multi-signal overlay:
 
 1. **List strong signals** (level `high+` or `concerning+` in labelMap terms).
-2. **Look up the pair** in the tables above. Start with the signal that has the
-   highest level.
+2. **Look up the pair** in tables above. Start with highest-level signal.
 3. **Check the disambiguator** named in the relevant rule (usually `imports`,
    `bugFixRate`, or `ageDays`).
-4. **Pick one or two patterns** from the catalog. Hybrid is allowed.
-5. **If only one signal is strong** → report insufficient evidence, do not
+4. **Pick one or two patterns** from catalog. Hybrid allowed.
+5. **If only one signal strong** → report insufficient evidence, do not
    classify.
-6. **If overlay is missing a disambiguator** → switch preset or add custom
-   weight to surface it; do not guess.
+6. **If overlay missing a disambiguator** → switch preset or add custom weight
+   to surface it; do not guess.

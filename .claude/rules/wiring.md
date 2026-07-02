@@ -9,8 +9,8 @@ paths:
 
 # DI Wiring Chain
 
-The application assembles through a single chain. Know where to look when adding
-or modifying components.
+App assembles through single chain. Know where to look when adding/modifying
+components.
 
 ## Bootstrap → Composition → App → MCP
 
@@ -47,7 +47,7 @@ createAppContext(config)          // src/bootstrap/factory.ts
 
 ## Key contracts
 
-- `App` interface (`api/public/app.ts`) — the only thing MCP tools know about
+- `App` interface (`api/public/app.ts`) — only thing MCP tools know about
 - `TrajectoryRegistry` — source of truth for signals, presets, filters
 - `SchemaBuilder` — derives MCP schemas from Reranker metadata (DIP)
 - Facades orchestrate but don't contain business logic

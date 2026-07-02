@@ -6,8 +6,8 @@ paths:
 
 # Derived Signal Rules
 
-Applies to all trajectory providers — not just git. Any provider can define
-derived signals following these rules.
+Applies all trajectory providers — not just git. Any provider defines derived
+signals per these rules.
 
 ## Signal Types
 
@@ -23,16 +23,15 @@ derived signals following these rules.
 alpha = (chunk.commitCount / file.commitCount) × min(1, chunk.commitCount / MATURITY_THRESHOLD)
 ```
 
-- Most chunks have alpha < 0.2 → **file-level dominates**
-- Chunks with many commits → alpha → 1.0 → **chunk-level dominates**
+- Most chunks alpha < 0.2 → **file-level dominates**
+- Chunks many commits → alpha → 1.0 → **chunk-level dominates**
 - Low-commit chunks → maturity factor dampens alpha
 
-**Use blending when:** Signal has both file and chunk equivalents, and
-chunk-level adds discrimination. Alpha handles unreliable low-commit chunk
-statistics automatically.
+**Use blending when:** Signal has both file and chunk equivalents, chunk-level
+adds discrimination. Alpha auto-handles unreliable low-commit chunk stats.
 
-**Don't blend when:** Signal is inherently file-only (no chunk equivalent) or
-chunk data is meaningless.
+**Don't blend when:** Signal inherently file-only (no chunk equivalent) or chunk
+data meaningless.
 
 ## Sources Declaration (MANDATORY)
 
@@ -51,8 +50,8 @@ chunk data is meaningless.
 | **File-only**     | File only: `["file.<field>"]`                                      |
 | **Chunk-primary** | Primary chunk + alpha dep: `["chunk.<field>", "file.commitCount"]` |
 
-Each source gets its own p95 bound — `computeAdaptiveBounds()` iterates ALL
-sources across all descriptors.
+Each source gets own p95 bound — `computeAdaptiveBounds()` iterates ALL sources
+across all descriptors.
 
 ### Examples
 
@@ -69,7 +68,7 @@ readonly sources = ["chunk.commitCount", "file.commitCount"];
 
 ### Dampening ≠ Sources
 
-Dampening (`(n/k)^2`) is declared via `dampeningSource`, NOT in `sources`:
+Dampening (`(n/k)^2`) declared via `dampeningSource`, NOT `sources`:
 
 ```typescript
 readonly dampeningSource = { key: "provider.file.commitCount", percentile: 25 };
@@ -96,21 +95,20 @@ extract(rawSignals, ctx) {
 
 ## JSDoc Documentation (MANDATORY)
 
-Every derived signal class MUST have a JSDoc comment above the class
-declaration. This applies to new signals AND modifications to existing ones.
+Every derived signal class MUST have JSDoc above class declaration. Applies new
+signals AND modifications to existing ones.
 
 Required sections:
 
-- **Purpose**: what question this signal answers
+- **Purpose**: what question signal answers
 - **Detects**: what code patterns it surfaces
-- **Scoring**: how the score is computed, direction (higher = what?)
+- **Scoring**: how score computed, direction (higher = what?)
 - **Used in**: which presets reference this signal
-- **Compare**: how it differs from similar signals (if any exist)
+- **Compare**: how it differs from similar signals (if any)
 - **Inverse**: paired signal if applicable (e.g., age ↔ recency, churn ↔
   stability)
 
-When modifying a signal's behavior, update the JSDoc to reflect the new
-semantics.
+Modifying signal behavior → update JSDoc to new semantics.
 
 ## Adding a New Derived Signal
 
@@ -124,7 +122,7 @@ semantics.
 5. **Set `dampeningSource`** if signal needs confidence dampening
 6. **Register** in `derived-signals/index.ts` barrel export
 7. **Add to preset(s)** that should use this signal
-8. **Ensure payload signals exist** — every source must have a matching
+8. **Ensure payload signals exist** — every source must have matching
    `PayloadSignalDescriptor`
 9. **Add tests**
 

@@ -21,12 +21,11 @@ paths:
 | `style`    | Code style/formatting                   | none         |
 | `build`    | Build system changes                    | none         |
 
-**feat vs improve**: `feat` = new capability. `improve` = enhancement to
-existing.
+**feat vs improve**: `feat` = new capability. `improve` = enhance existing.
 
 ## Scope-Based Versioning (MANDATORY)
 
-Scope determines version bump. **Always use a scope.**
+Scope determines bump. **Always use scope.**
 
 **Public + Functional** (feat -> minor): `api`, `mcp`, `contracts`, `types`,
 `drift`, `explore`, `rerank`, `hybrid`, `trajectory`, `signals`, `presets`,
@@ -38,28 +37,27 @@ Scope determines version bump. **Always use a scope.**
 **Non-release** (always none): `test`, `beads`, `scripts`, `ci`, `website`,
 `deps`
 
-A PostToolUse hook (`check-release-scope.sh`) warns when a commit uses an
-unknown scope. When adding a new scope, update `.releaserc.json` and the scope
-tables in `CONTRIBUTING.md`.
+PostToolUse hook (`check-release-scope.sh`) warns on unknown scope. New scope →
+update `.releaserc.json` + scope tables in `CONTRIBUTING.md`.
 
 ## BREAKING CHANGE footer (MANDATORY)
 
-Add `BREAKING CHANGE:` footer to commit messages when:
+Add `BREAKING CHANGE:` footer when:
 
-- Environment variable names, defaults, or semantics change
-- Configuration file format or location changes
-- CLI flags or arguments change
+- Env var names, defaults, or semantics change
+- Config file format or location changes
+- CLI flags/arguments change
 - Package name changes
 - Data directory paths change
 - Any change that **requires user action** (update config, re-run setup, etc.)
 
 Do NOT use BREAKING CHANGE for:
 
-- Internal refactoring that doesn't affect user-facing behavior
-- New features that are additive (no existing behavior changes)
-- Bug fixes (unless the buggy behavior was documented/relied upon)
+- Internal refactoring not affecting user-facing behavior
+- New additive features (no existing behavior changes)
+- Bug fixes (unless buggy behavior was documented/relied upon)
 
-Two supported formats:
+Two formats:
 
 **Short form** — `!` after scope (preferred for simple breaks):
 
@@ -67,7 +65,7 @@ Two supported formats:
 feat(config)!: change QDRANT_URL default to autodetect
 ```
 
-**Long form** — `BREAKING CHANGE:` footer (for detailed explanation):
+**Long form** — `BREAKING CHANGE:` footer (detailed explanation):
 
 ```text
 feat(config): add embedded Qdrant support
@@ -76,5 +74,5 @@ BREAKING CHANGE: QDRANT_URL default changed from http://localhost:6333 to autode
 Users with Docker Qdrant should set QDRANT_URL=http://localhost:6333 explicitly.
 ```
 
-Both forms can be combined. The `!` goes after scope, before `:` —
-`type(scope)!: subject`, NOT `type!(scope): subject`.
+Both combinable. `!` after scope, before `:` — `type(scope)!: subject`, NOT
+`type!(scope): subject`.

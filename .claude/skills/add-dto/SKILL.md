@@ -1,19 +1,19 @@
 ---
 name: add-dto
 description:
-  Define a request or response shape exposed via the public API to MCP tools,
-  living in api/public/dto. Triggers on "add DTO", "new request type for X
-  tool", "add response shape", "новый DTO для tool'а". NOT for changing internal
-  types — those live in contracts/ and are not part of the public API surface.
+  Request/response shape exposed via public API to MCP tools, lives in
+  api/public/dto. Triggers on "add DTO", "new request type for X tool", "add
+  response shape", "новый DTO для tool'а". NOT for internal types — those live
+  in contracts/, not public API surface.
 ---
 
 # Add DTO to public/dto
 
-Add request/response types for a new or existing MCP endpoint.
+Add request/response types for new or existing MCP endpoint.
 
 ## Step 1: Determine the domain
 
-DTOs are grouped by domain in `src/core/api/public/dto/`:
+DTOs grouped by domain in `src/core/api/public/dto/`:
 
 | Domain file     | Contains                                                                     |
 | --------------- | ---------------------------------------------------------------------------- |
@@ -22,37 +22,37 @@ DTOs are grouped by domain in `src/core/api/public/dto/`:
 | `collection.ts` | Collection CRUD types (CreateCollectionRequest, CollectionInfo)              |
 | `document.ts`   | Document add/delete types (AddDocumentsRequest, DeleteDocumentsRequest)      |
 
-If the new DTO doesn't fit any existing domain, create a new file
-`dto/<domain>.ts` and add its re-export to `dto/index.ts`.
+New DTO fits no existing domain → create `dto/<domain>.ts`, add re-export to
+`dto/index.ts`.
 
 ## Step 2: Define the DTO
 
-Add the interface to the appropriate domain file. Rules:
+Add interface to appropriate domain file. Rules:
 
 - **Request types** end with `Request` (e.g., `SemanticSearchRequest`)
-- **Response types** are specific (e.g., `ExploreResponse`, `CollectionInfo`) —
-  no generic `Response` suffix
+- **Response types** specific (e.g., `ExploreResponse`, `CollectionInfo`) — no
+  generic `Response` suffix
 - **Extend shared types** when applicable:
-  - `CollectionRef` — for endpoints that accept `collection` or `path`
-  - `TypedFilterParams` — for endpoints with trajectory filters
-- **No logic** — DTOs are pure data shapes (interfaces only, no classes)
+  - `CollectionRef` — endpoints accepting `collection` or `path`
+  - `TypedFilterParams` — endpoints with trajectory filters
+- **No logic** — DTOs pure data shapes (interfaces only, no classes)
 - **Import only from** contracts/ or infra/ types if needed (e.g.,
   `RankingOverlay`)
 
 ## Step 3: Export from barrel
 
 1. Add `export type` to `src/core/api/public/dto/index.ts`
-2. Verify it's re-exported through `src/core/api/public/index.ts`
-3. Verify it's re-exported through `src/core/api/index.ts`
+2. Verify re-exported through `src/core/api/public/index.ts`
+3. Verify re-exported through `src/core/api/index.ts`
 
-If using existing barrel patterns, new types in existing domain files are
-automatically re-exported via `export type { ... } from "./explore.js"` etc.
-Only add new lines if creating a new domain file.
+Existing barrel patterns → new types in existing domain files auto re-exported
+via `export type { ... } from "./explore.js"` etc. Add new lines only when
+creating new domain file.
 
 ## Step 4: Backward compatibility
 
-If `contracts/types/app.ts` re-exports from this domain file, add the new type
-to its re-export list. Check:
+`contracts/types/app.ts` re-exports from this domain file → add new type to its
+re-export list. Check:
 
 ```typescript
 // src/core/contracts/types/app.ts
@@ -65,4 +65,4 @@ export type { ..., NewType } from "../../api/public/dto/<domain>.js";
 npx tsc --noEmit
 ```
 
-All imports of the new DTO should go through `core/api/index.js` barrel.
+All imports of new DTO go through `core/api/index.js` barrel.

@@ -1,10 +1,10 @@
 ---
 name: risk-assessment
 description:
-  Assess project or domain health by scanning for risk zones across multiple
-  dimensions (bugs, hotspots, tech debt). Use when asked to evaluate risks, find
-  problematic areas, assess code health, or identify zones that need attention —
-  NOT for specific bug symptoms (use bug-hunt instead)
+  Assess project/domain health — scan risk zones across dimensions (bugs,
+  hotspots, tech debt). Use when asked evaluate risks, find problematic areas,
+  assess code health, identify zones needing attention — NOT for specific bug
+  symptoms (use bug-hunt instead)
 argument-hint: "[scope — domain, subsystem, or 'whole project']"
 ---
 
@@ -29,19 +29,16 @@ argument-hint: "[scope — domain, subsystem, or 'whole project']"
   skill scans the risk surface.
 - **Single unfiltered scan for broad scope.** Dominant-churn domain takes 100%
   of slots. Always run stratified second scan with `!**/dominant/**`.
-- **Classifying from a single signal.** "High churn" alone does not imply any
-  class. Check companion signals (`imports`, `bugFixRate`, `ageDays`,
-  `blockPenalty`) before picking a label. See
-  `references/signal-interpretation.md`.
+- **Classifying from a single signal.** "High churn" alone implies no class.
+  Check companion signals (`imports`, `bugFixRate`, `ageDays`, `blockPenalty`)
+  before picking a label. See `references/signal-interpretation.md`.
 
-See [references/anti-patterns.md](./references/anti-patterns.md) for the full
-list.
+Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 
 ---
 
-Multi-dimensional risk scan using rank_chunks with 4 rerank presets,
-cross-referenced by overlap count. Semantic/hybrid search resolves intent-based
-scopes.
+Multi-dimensional risk scan via rank_chunks × 4 rerank presets, cross-referenced
+by overlap count. Semantic/hybrid search resolves intent-based scopes.
 
 ## Rules
 
@@ -53,9 +50,9 @@ scopes.
 5. **Partial reads only.**
    `Read(path, offset=startLine, limit=endLine-startLine)` using coordinates
    from search results. Never read full files.
-6. **Minimize tool calls.** Batch where possible: all rank_chunks in one
-   message, all Critical UUIDs in one find_similar, all symbol names in one
-   hybrid_search. Target: ≤12 calls for domain scope, ≤16 for broad scope.
+6. **Minimize tool calls.** Batch: all rank_chunks one message, all Critical
+   UUIDs one find_similar, all symbol names one hybrid_search. Target: ≤12 calls
+   domain scope, ≤16 broad scope.
 
 ## Flow
 
@@ -72,8 +69,8 @@ scopes.
 
 Translate $ARGUMENTS into `pathPattern` and `scopeType`.
 
-**Shortcut:** If `pathPattern` is provided directly as argument (e.g., delegated
-from explore PG-2) → use it as-is, `scopeType = "domain"`, skip resolution.
+**Shortcut:** `pathPattern` provided directly as argument (e.g., delegated from
+explore PG-2) → use as-is, `scopeType = "domain"`, skip resolution.
 
 ```
 $ARGUMENTS describes...
@@ -96,10 +93,10 @@ $ARGUMENTS describes...
     → scopeType = "intent"
 ```
 
-**pathPattern rules:** Never use braces with full file paths containing slashes
-— breaks picomatch. Always extract directory-level prefixes.
+**pathPattern rules:** Never brace full file paths with slashes — breaks
+picomatch. Always extract directory-level prefixes.
 
-**One call only.** Scope resolution is not exhaustive.
+**One call only.** Scope resolution not exhaustive.
 
 ## Phase 1: SCAN
 
@@ -112,11 +109,11 @@ Run `rank_chunks` × 4 presets. **All 4 calls in ONE message** (parallel).
 | `techDebt`  | Old + churny + bug-prone + dense code            |
 | `dangerous` | Bug-prone + volatile + single-owner (bus factor) |
 
-**Codegraph transparency:** when codegraph is active (prime `## Enrichment`
-lists `codegraph.symbols`), `techDebt` and `dangerous` already absorb structural
-signals via reranker override — no parameter change, the risk map sharpens
-automatically. The explicit structural axis (blast-radius hubs + cycles) is added
-in Phase 4, not here.
+**Codegraph transparency:** when codegraph active (prime `## Enrichment` lists
+`codegraph.symbols`), `techDebt` and `dangerous` already absorb structural
+signals via reranker override — no parameter change, risk map sharpens
+automatically. Explicit structural axis (blast-radius hubs + cycles) added in
+Phase 4, not here.
 
 Parameters per call:
 
@@ -130,13 +127,13 @@ rank_chunks:
   limit: 10
 ```
 
-**Polyglot:** If 2+ languages each >10% chunks → omit `language` filter. Group
-by language in OUTPUT.
+**Polyglot:** 2+ languages each >10% chunks → omit `language` filter. Group by
+language in OUTPUT.
 
 **Domain-stratified scanning (broad scope only):**
 
-Unfiltered `rank_chunks` returns results dominated by the highest-churn domain.
-Other domains are invisible regardless of their actual risk.
+Unfiltered `rank_chunks` returns results dominated by highest-churn domain.
+Other domains invisible regardless of actual risk.
 
 ```
 After first scan (4 presets × no pathPattern):
@@ -150,12 +147,12 @@ After first scan (4 presets × no pathPattern):
    Feed both scans into Phase 2 MERGE.
 ```
 
-This doubles the scan calls for broad scope (8 instead of 4), but guarantees
-every domain gets representation. The cost is acceptable: rank_chunks is a
-scroll operation, not vector search. No threshold — always run both scans.
+Doubles scan calls for broad scope (8 instead of 4), but guarantees every domain
+gets representation. Cost acceptable: rank_chunks is scroll operation, not
+vector search. No threshold — always run both scans.
 
-**Empty results:** If a preset returns 0 results, exclude from overlap count. N
-= number of presets with results (may be < 4).
+**Empty results:** preset returns 0 → exclude from overlap count. N = presets
+with results (may be < 4).
 
 **Pagination:** Stop conditions per-preset:
 
@@ -163,12 +160,12 @@ scroll operation, not vector search. No threshold — always run both scans.
 - < 3 new unique files on page → stop
 - Hard cap: 3 pages (offset 0, 10, 20)
 
-One page is usually sufficient.
+One page usually sufficient.
 
 ## Phase 2: MERGE
 
 Cross-reference by `relativePath` (primary key). Within same file, chunks
-overlap if `[startLine, endLine]` ranges intersect by >50%.
+overlap if `[startLine, endLine]` ranges intersect >50%.
 
 | Overlap | Tier     | Meaning                             |
 | ------- | -------- | ----------------------------------- |
@@ -181,9 +178,9 @@ overlap if `[startLine, endLine]` ranges intersect by >50%.
 `concerning/erratic/high` = 3, `typical` = 1, `healthy/low/stable` = 0. Sum
 across all overlay signals. Sort descending.
 
-**Healthy demotion:** If a candidate's bugFixRate is `healthy` across ALL
-presets that found it, demote by one tier (Critical → High, High → Medium). High
-overlap with healthy bugFixRate = active development churn, not risk.
+**Healthy demotion:** candidate's bugFixRate `healthy` across ALL presets that
+found it → demote one tier (Critical → High, High → Medium). High overlap +
+healthy bugFixRate = active development churn, not risk.
 
 **Zero Critical/High:** Skip EXPAND + ENRICH. Output Medium candidates + "No
 critical risks found. Codebase appears healthy by multi-signal analysis."
@@ -195,9 +192,9 @@ critical risks found. Codebase appears healthy by multi-signal analysis."
 **Negative contrast (healthy-demoted as negativeIds):**
 
 Phase 2 MERGE produces healthy-demoted candidates: high preset overlap but
-healthy bugFixRate. These are structurally similar to Critical candidates but
-well-maintained — the exact opposite of antipatterns. Use them as negative
-examples to sharpen find_similar toward risky code:
+healthy bugFixRate. Structurally similar to Critical candidates but
+well-maintained — exact opposite of antipatterns. Use as negative examples to
+sharpen find_similar toward risky code:
 
 ```
 find_similar vector direction:
@@ -207,7 +204,7 @@ find_similar vector direction:
 ```
 
 Collect negativeIds from ALL healthy-demoted candidates in Phase 2 (any tier).
-If no healthy-demoted candidates exist, skip negativeIds.
+No healthy-demoted candidates → skip negativeIds.
 
 **Batch expansion** — pass ALL Critical chunk UUIDs in one call:
 
@@ -230,7 +227,7 @@ Domain/intent scopes: Pass 1 only (same pathPattern as Phase 0). Total: 1 call.
 
 Label results as "Related risk" (pass 1) or "Cross-domain risk" (pass 2).
 
-Scope rules are embedded in the two-pass description above.
+Scope rules embedded in two-pass description above.
 
 **Filter by overlay:** Include only results with concerning+ signals (bugFixRate
 concerning+, OR churnVolatility erratic+, OR `blameContributorCount = 1` —
@@ -242,71 +239,67 @@ Add qualifying results as "Related risk" under parent Critical candidate.
 
 For **Critical and High** candidates (typically 5-10 chunks):
 
-**1. Code review** — Content is in results (metaOnly=false). Read only when
-additional surrounding context needed. Use chunk coordinates.
+**1. Code review** — Content in results (metaOnly=false). Read only when
+surrounding context needed. Use chunk coordinates.
 
-**2. Test coverage check** — ONE `hybrid_search` with all Critical/High symbol
-names joined as query, `pathPattern` targeting the project's test directory
+**2. Test coverage check** — ONE `hybrid_search`, all Critical/High symbol names
+joined as query, `pathPattern` targeting the project's test directory
 convention, `metaOnly=true`. BM25 catches exact symbol names in test files. One
 call covers all candidates.
 
 - Symbol absent from results → "untested risk zone"
 - Symbol present → note test path (do NOT read test content)
 
-**3. Decomposition check** — Run `rank_chunks` with `decomposition` preset,
-scoped to the same pathPattern. Cross-reference with Critical/High candidates by
-relativePath. If a risk candidate is also a decomposition candidate (methodLines
-label = high+ from labelMap) → add "Oversized" classification. This is NOT a 4th
-preset in MERGE — decomposition measures size, not risk. It's a post-filter on
-already-identified risk zones.
+**3. Decomposition check** — Run `rank_chunks` `decomposition` preset, scoped to
+same pathPattern. Cross-reference Critical/High candidates by relativePath. Risk
+candidate also decomposition candidate (methodLines label = high+ from labelMap)
+→ add "Oversized" classification. NOT a 4th MERGE preset — decomposition
+measures size, not risk. Post-filter on already-identified risk zones.
 
 **3b. Structural amplifier + cycles (codegraph axis).** ONLY when prime shows
-`codegraph.symbols` under `## Enrichment`. When that line is absent the graph
-tools are not registered — skip this step and note structural risk was not
-assessed (never claim "no cycles" / "no hubs"). See search-cascade "Graph
-navigation" for the off-routing.
+`codegraph.symbols` under `## Enrichment`. Line absent → graph tools not
+registered — skip, note structural risk not assessed (never claim "no cycles" /
+"no hubs"). See search-cascade "Graph navigation" for off-routing.
 
 - **Blast-radius amplifier (`architecturalHub`).** Run `rank_chunks`
-  `rerank="architecturalHub"` scoped to the same `pathPattern`. Cross-reference
-  the resulting `isHub=true` / high-`fanIn` files with the Critical/High
-  candidates by `relativePath`. A risk candidate that is ALSO a hub is a
-  **blast-radius hub** — escalate it (tag the Risk Type, sort it to the top of
-  its tier): a change there ripples across many dependents. This is an
-  amplifier on already-identified risk, NOT a 5th MERGE preset — a clean
-  high-fanIn hub with healthy git signals is backbone, not risk.
+  `rerank="architecturalHub"` scoped to same `pathPattern`. Cross-reference
+  resulting `isHub=true` / high-`fanIn` files with Critical/High candidates by
+  `relativePath`. Risk candidate ALSO a hub = **blast-radius hub** — escalate
+  (tag Risk Type, sort to top of its tier): change there ripples across many
+  dependents. Amplifier on already-identified risk, NOT a 5th MERGE preset —
+  clean high-fanIn hub with healthy git signals is backbone, not risk.
 - **Cycles (`find_cycles`).** Run `find_cycles scope=file pathPattern=<scope>`.
-  Circular dependencies are a structural risk the churn presets cannot see.
-  Noise guard: >20 cycles unscoped → narrow by subdomain. Empty result, with
-  codegraph ON, is a valid "no cycles (DAG)". Surface findings in the OUTPUT
-  Structural risks section.
+  Circular dependencies = structural risk churn presets cannot see. Noise guard:
+  > 20 cycles unscoped → narrow by subdomain. Empty result with codegraph ON =
+  > valid "no cycles (DAG)". Surface findings in OUTPUT Structural risks
+  > section.
 
 **4. Risk classification** — from overlay labels + tier + test coverage.
 
-**BEFORE picking a class, consult pair diagnostics.** Single overlay signals are
-ambiguous. `references/signal-interpretation.md` gives the pair/triple rules
-that disambiguate patterns (god module vs bug attractor, healthy owner vs toxic
-silo, active development vs coupling, legacy minefield vs proven stable). Read
-it whenever the overlay shows more than one strong signal.
+**BEFORE picking a class, consult pair diagnostics.** Single overlay signals
+ambiguous. `references/signal-interpretation.md` gives pair/triple rules that
+disambiguate patterns (god module vs bug attractor, healthy owner vs toxic silo,
+active development vs coupling, legacy minefield vs proven stable). Read
+whenever overlay shows more than one strong signal.
 
 **Key disambiguators** (always check before classifying):
 
 - `imports` (fan-in, file-level) separates coupling (high) from bug attractor
-  (low). **When codegraph is on, prefer the real `fanIn` / `isHub` /
-  `transitiveImpact` signals over the `imports` proxy** — they measure call/
-  import edges, not raw import-line count. See signal-interpretation
-  "Structural signals" + the blast-radius-hub / cyclic-coupling patterns.
+  (low). **Codegraph on → prefer real `fanIn` / `isHub` / `transitiveImpact`
+  signals over `imports` proxy** — they measure call/import edges, not raw
+  import-line count. See signal-interpretation "Structural signals" +
+  blast-radius-hub / cyclic-coupling patterns.
 - `bugFixRate` separates healthy (stable) from fragile (unstable)
 - `ageDays` inverts churn meaning (old+churn = minefield, young+churn = feature)
 - `blameDominantAuthorPct` alone does NOT mean silo; pair with bugFixRate or age
-- `recentDominantAuthorPct` is about activity concentration (who's been
-  committing lately), NOT about who currently owns the live code — only `blame*`
-  speaks to ownership
+- `recentDominantAuthorPct` = activity concentration (who's committing lately),
+  NOT who owns live code — only `blame*` speaks to ownership
 - path heuristic (`dto/`, `schema/`, `generated/`) flags boilerplate churn
 
 **File × chunk refinement.** File-level signals point to which file. Chunk-level
 signals (`chunk.bugFixRate`, `chunk.ageDays`, `chunk.relativeChurn`,
 `chunk.blameContributorCount`, `chunk.recentContributorCount`) point to which
-method inside. When overlay shows both, chunk-level locates the exact problem:
+method inside. Overlay shows both → chunk-level locates exact problem:
 
 - Coupling point → find chunk with highest `chunk.recentContributorCount`
   (recently-touched-by-many — overloaded API)

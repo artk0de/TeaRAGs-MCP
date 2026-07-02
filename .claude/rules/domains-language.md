@@ -9,53 +9,50 @@ paths:
 
 # `domains/language` Architecture Rules (MANDATORY)
 
-Hard-won during the per-language consolidation (spec
+Learned expensive way in per-language consolidation (spec
 `docs/superpowers/specs/2026-05-25-domains-language-consolidation-design.md`).
-Apply up front — these were learned the expensive way.
+Apply up front.
 
 ## 1. A Factory encapsulates construction
 
-`LanguageFactory.create(lang)` builds the `LanguageProvider` itself — the native
-switch (`new RubyLanguage(mode)`, …) lives in ONE place, inside `create()`. It
-MUST NOT accept a consumer-assembled, pre-built registry/`Map` of providers and
-merely look one up — that is a **container, not a factory**, and it forces the
-consumer to do the factory's job (assemble providers, import concretes). Legacy
-languages are supplied as deferred builder thunks (`() => LanguageProvider`)
-injected by the composition layer (`api/internal/`, the only layer allowed to
-bridge `ingest` + `trajectory` + `language`); the factory invokes the thunk
-lazily and caches the result per language.
+`LanguageFactory.create(lang)` builds `LanguageProvider` itself — native switch
+(`new RubyLanguage(mode)`, …) lives in ONE place, inside `create()`. MUST NOT
+accept consumer-assembled pre-built registry/`Map` and merely look up — that's a
+**container, not a factory**, forces consumer to do factory's job (assemble
+providers, import concretes). Legacy languages supplied as deferred builder
+thunks (`() => LanguageProvider`) injected by composition layer
+(`api/internal/`, only layer allowed to bridge `ingest` + `trajectory` +
+`language`); factory invokes thunk lazily, caches result per language.
 
 ## 2. worker_threads DI = inject a module PATH, not an instance
 
-A class instance cannot cross `postMessage` (structured-clone drops methods and
+Class instance can't cross `postMessage` (structured-clone drops methods +
 native handles). So:
 
-- The composition root injects a **serializable module-path string** via
-  `workerData` / `ChunkerConfig` (e.g. `languageModulePath`).
-- The worker does `await import(path)` **in-thread** and constructs the factory
-  / providers there (mirrors how the chunker always built tree-sitter `Parser`s
-  in-thread).
-- A dynamic `import(variable)` is invisible to `no-restricted-imports`, so the
-  worker entry stays in its **home domain** (`ingest`) with ZERO static
-  cross-domain import and **NO guard exemption**.
+- Composition root injects **serializable module-path string** via `workerData`
+  / `ChunkerConfig` (e.g. `languageModulePath`).
+- Worker does `await import(path)` **in-thread**, constructs factory/providers
+  there (mirrors how chunker always built tree-sitter `Parser`s in-thread).
+- Dynamic `import(variable)` invisible to `no-restricted-imports`, so worker
+  entry stays in **home domain** (`ingest`) with ZERO static cross-domain import
+  and **NO guard exemption**.
 
 NEVER relocate a domain's worker entry into `api/` (or anywhere) just to "reach"
-concretes — the worker is meaningless outside its home domain. NEVER add a guard
-exemption to let `ingest`/`trajectory` statically import `domains/language`.
+concretes — worker meaningless outside home domain. NEVER add guard exemption to
+let `ingest`/`trajectory` statically import `domains/language`.
 
 ## 3. Language-migration test rule
 
-When relocating per-language code into `domains/language/<lang>/`:
+Relocating per-language code into `domains/language/<lang>/`:
 
-- Adapting a test's **imports and setup** for the new location is allowed.
-- The **examples** — `describe`/`it` cases, their assertions, and fixtures (the
-  corner cases) — MUST be preserved.
+- Adapting a test's **imports and setup** for new location = allowed.
+- The **examples** — `describe`/`it` cases, assertions, fixtures (corner cases)
+  — MUST be preserved.
 - **Validate**: count `it` / `test` / `describe` per language-processing test
-  file vs the base branch; the branch count must be `>=` base, with NOTHING
-  dropped. Losing a corner case is a hard failure.
+  file vs base branch; branch count must be `>=` base, NOTHING dropped. Losing a
+  corner case = hard failure.
 - Tests of **new entities** (factory, composer, kernel, adapter) may be
-  rewritten/deleted freely to match the real design.
+  rewritten/deleted freely to match real design.
 
-See also `.claude/rules/test-patterns.md`,
-`.claude/rules/codegraph-walkers.md`, `.claude/rules/symbolid-convention.md`,
-`.claude/rules/domain-boundaries.md`.
+See also `.claude/rules/test-patterns.md`, `.claude/rules/codegraph-walkers.md`,
+`.claude/rules/symbolid-convention.md`, `.claude/rules/domain-boundaries.md`.

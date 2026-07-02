@@ -24,10 +24,10 @@ export function registerSearchTools(
     {
       title: "Search Code",
       description:
-        "Quick semantic search for user requests. Human-readable output with code snippets and line numbers. " +
-        "Supports file type, path pattern, and git metadata filters.\n\n" +
-        "For examples see tea-rags://schema/search-guide\n" +
-        "For parameter docs see tea-rags://schema/overview",
+        "Quick semantic search for user requests. Human-readable output, code snippets + line numbers. " +
+        "File-type, path-pattern, git-metadata filters.\n\n" +
+        "Examples: tea-rags://schema/search-guide\n" +
+        "Param docs: tea-rags://schema/overview",
       inputSchema: searchSchemas.SearchCodeSchema,
       annotations: { readOnlyHint: true },
     },

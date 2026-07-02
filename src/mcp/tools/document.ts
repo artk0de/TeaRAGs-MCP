@@ -22,8 +22,7 @@ export function registerDocumentTools(server: McpServer, deps: { app: App; regis
     "add_documents",
     {
       title: "Add Documents",
-      description:
-        "Add documents to a collection. Documents will be automatically embedded using the configured embedding provider.",
+      description: "Add documents to collection. Auto-embed via configured embedding provider.",
       inputSchema: schemas.AddDocumentsSchema,
       // Not read-only (writes points) and not idempotent: re-adding the same
       // documents re-embeds and appends rather than no-op'ing.
@@ -41,7 +40,7 @@ export function registerDocumentTools(server: McpServer, deps: { app: App; regis
     "delete_documents",
     {
       title: "Delete Documents",
-      description: "Delete specific documents from a collection by their IDs.",
+      description: "Delete documents from collection by IDs.",
       inputSchema: schemas.DeleteDocumentsSchema,
       annotations: { destructiveHint: true },
     },

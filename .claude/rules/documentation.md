@@ -7,8 +7,8 @@ paths:
 
 ## Mermaid Diagram Style
 
-When creating or modifying Mermaid diagrams in Docusaurus documentation
-(`website/docs/**/*.md`), ALWAYS follow the TeaRAGs style:
+Creating/modifying Mermaid diagrams in Docusaurus docs (`website/docs/**/*.md`)
+→ ALWAYS follow TeaRAGs style:
 
 ### Required Syntax
 
@@ -75,12 +75,12 @@ flowchart LR
 
 ### Reference
 
-See `website/docs/index.md` (main page) for the canonical TeaRAGs diagram style.
+Canonical TeaRAGs diagram style: `website/docs/index.md` (main page).
 
 ## AI Query Blocks
 
-When showing example prompts or queries that a user would ask an AI agent, use
-the `<AiQuery>` component — NOT plain markdown blockquotes (`>`).
+Showing example prompts/queries a user asks an AI agent → use `<AiQuery>`
+component, NOT plain markdown blockquotes (`>`).
 
 ### Required Syntax
 
@@ -89,7 +89,7 @@ the `<AiQuery>` component — NOT plain markdown blockquotes (`>`).
      `import AiQuery from '@site/src/components/AiQuery';`
    - One component per query
 2. **No quotes** around the text — the component handles styling
-3. Renders as a monospace-font blockquote with golden gradient border
+3. Renders as monospace-font blockquote with golden gradient border
 
 ### Canonical Example
 
@@ -121,17 +121,17 @@ import AiQuery from '@site/src/components/AiQuery';
 
 ### Reference
 
-See `website/docs/quickstart/first-query.md` for canonical usage.
+Canonical usage: `website/docs/quickstart/first-query.md`.
 
 ## Signal Naming Glossary
 
-TeaRAGs returns git signals at two levels. Documentation MUST use the correct
-level consistently.
+TeaRAGs returns git signals at two levels. Docs MUST use correct level
+consistently.
 
 ### Chunk-level signals (function/block granularity)
 
-Use these in threshold/decision tables, generation mode conditions, and any
-context where we evaluate a specific function or code block:
+Use in threshold/decision tables, generation-mode conditions, any context
+evaluating a specific function/code block:
 
 | Signal             | Description                                       |
 | ------------------ | ------------------------------------------------- |
@@ -143,7 +143,7 @@ context where we evaluate a specific function or code block:
 
 ### File-level signals
 
-Use these for ownership analysis, blast radius (imports), filters, and file-wide
+Use for ownership analysis, blast radius (imports), filters, file-wide
 assessments:
 
 | Signal                    | Description                                                   |
@@ -159,20 +159,19 @@ assessments:
 | `churnVolatility`         | Standard deviation of commit sizes                            |
 | `imports`                 | Number of file-level imports (blast radius)                   |
 
-The two ownership families answer different questions:
+Two ownership families answer different questions:
 
-- `recent*` — _who's been committing here lately?_ Use for review routing,
-  activity hotspots, feature-in-progress detection.
-- `blame*` — _who currently owns the live lines?_ Use for authority, knowledge
-  silos, bus factor.
+- `recent*` — _who's been committing here lately?_ Review routing, activity
+  hotspots, feature-in-progress detection.
+- `blame*` — _who currently owns the live lines?_ Authority, knowledge silos,
+  bus factor.
 
-When the long-time owner stops contributing, `blame*` keeps showing them (their
-lines remain), while `recent*` highlights newer committers.
+Long-time owner stops contributing → `blame*` keeps showing them (lines remain),
+`recent*` highlights newer committers.
 
 ### Rerank weight keys (API parameter names)
 
-These are literal keys for `rerank: { "custom": { ... } }`. They differ from
-signal names:
+Literal keys for `rerank: { "custom": { ... } }`. Differ from signal names:
 
 | Weight key                    | Maps to signal                                               |
 | ----------------------------- | ------------------------------------------------------------ |
@@ -192,29 +191,27 @@ signal names:
 
 ### Naming rules
 
-1. **Never mix levels** — don't use `bugFixRate` when discussing a function; use
-   `chunkBugFixRate`
-2. **Threshold tables** always use chunk-level signals (we evaluate individual
-   code blocks)
+1. **Never mix levels** — discussing a function → use `chunkBugFixRate`, not
+   `bugFixRate`
+2. **Threshold tables** always use chunk-level signals (evaluate individual code
+   blocks)
 3. **Ownership/blast radius** use file-level signals (`blameDominantAuthorPct`
-   for ownership, `recentDominantAuthorPct` for activity, `imports` for blast
-   radius)
+   ownership, `recentDominantAuthorPct` activity, `imports` blast radius)
 4. **Qdrant filter paths** use `git.` prefix: `git.ageDays`, `git.commitCount`,
    `git.file.blameDominantAuthor`, `git.file.recentDominantAuthor`
-5. **Threshold column headers** are always: **Safe / Caution / Stop** (not
+5. **Threshold column headers** always: **Safe / Caution / Stop** (not
    Warning/Critical, not Accept/Flag/Block)
-6. **Hardcoded percentile thresholds** (e.g. "dominantAuthorPct ≥ 95%") are
+6. **Hardcoded percentile thresholds** (e.g. "dominantAuthorPct ≥ 95%")
    forbidden in docs. Use adaptive labels: `shared` / `concentrated` / `silo` /
    `deep-silo` for `*DominantAuthorPct`; `solo` / `pair` / `team` / `crowd` for
-   `*ContributorCount`. Labels come from per-codebase percentiles via
+   `*ContributorCount`. Labels from per-codebase percentiles via
    `get_index_metrics`.
 
 ## Table Styling
 
-Table headers automatically get golden styling via CSS
-(`website/src/css/custom.css`).
+Table headers auto-get golden styling via CSS (`website/src/css/custom.css`).
 
-No need to add custom styles or HTML — just use standard Markdown tables:
+No custom styles / HTML — just standard Markdown tables:
 
 ```markdown
 | Column 1 | Column 2 |
@@ -222,7 +219,7 @@ No need to add custom styles or HTML — just use standard Markdown tables:
 | Data     | Data     |
 ```
 
-Headers will automatically render with:
+Headers auto-render with:
 
 - Golden gradient background
 - Golden text color (theme-aware)

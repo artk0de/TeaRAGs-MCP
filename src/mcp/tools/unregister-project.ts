@@ -14,7 +14,7 @@ import { formatMcpResponse } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 
 export const UnregisterProjectSchema = {
-  name: z.string().min(1).describe("Project name to remove from the registry"),
+  name: z.string().min(1).describe("Project name remove from registry"),
 };
 
 export function registerUnregisterProjectTool(server: McpServer, deps: { app: App; register: RegisterToolFn }): void {
@@ -26,7 +26,7 @@ export function registerUnregisterProjectTool(server: McpServer, deps: { app: Ap
     {
       title: "Unregister Project",
       description:
-        "Remove a project from the local registry by name. Idempotent: returns removed=false if the project was not registered. Does not delete the Qdrant collection.",
+        "Remove project from local registry by name. Idempotent: returns removed=false if project not registered. Does NOT delete Qdrant collection.",
       inputSchema: UnregisterProjectSchema,
       annotations: { destructiveHint: true },
     },

@@ -7,13 +7,14 @@ paths:
 
 # Payload Signal Descriptors
 
-Applies to all trajectory providers. Each provider defines its own `PayloadSignalDescriptor[]` array.
+Applies all trajectory providers. Each provider defines own
+`PayloadSignalDescriptor[]` array.
 
 ## Structure (MANDATORY)
 
-Payload signal descriptors are a **flat array** of `PayloadSignalDescriptor`.
+Payload signal descriptors = **flat array** of `PayloadSignalDescriptor`.
 
-Every signal is an explicit object — NO computed patterns, NO `.map()`, NO spread operators.
+Every signal explicit object — NO computed patterns, NO `.map()`, NO spread.
 
 ```typescript
 // CORRECT — explicit flat list
@@ -28,23 +29,29 @@ export const myPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
 
 ## Naming Convention
 
-| Level | Key format | Example (git provider) |
-|-------|-----------|------------------------|
-| File | `<provider>.file.<field>` | `git.file.commitCount` |
+| Level | Key format                 | Example (git provider)  |
+| ----- | -------------------------- | ----------------------- |
+| File  | `<provider>.file.<field>`  | `git.file.commitCount`  |
 | Chunk | `<provider>.chunk.<field>` | `git.chunk.commitCount` |
 
 ## Adding a New Payload Signal
 
 ### Checklist (ALL steps mandatory)
 
-1. **Add type field** to the provider's file/chunk signal interface in `types.ts`
-2. **Add computation** in the provider's `computeFileSignals()` or `computeChunkSignals()`
-3. **Add descriptor** to the payload signal descriptors array
-4. **Add `stats` field** if numeric and consumed by derived signals or adaptive bounds
-5. **Add/update filter** in the provider's `filters.ts` if the signal is user-filterable
-6. **Update CLAUDE.md** — add to `tea-rags API SELECTION` filter fields table and search examples
-7. **Update website docs** — `website/docs/usage/git-enrichments.md`, `website/docs/architecture/data-model.md`, `website/docs/usage/filters.md` as applicable
-8. **Add tests** — computation tests, descriptor tests (`signals.test.ts`), filter tests (`filters.test.ts`)
+1. **Add type field** to provider's file/chunk signal interface in `types.ts`
+2. **Add computation** in provider's `computeFileSignals()` or
+   `computeChunkSignals()`
+3. **Add descriptor** to payload signal descriptors array
+4. **Add `stats` field** if numeric and consumed by derived signals or adaptive
+   bounds
+5. **Add/update filter** in provider's `filters.ts` if signal user-filterable
+6. **Update CLAUDE.md** — add to `tea-rags API SELECTION` filter fields table
+   and search examples
+7. **Update website docs** — `website/docs/usage/git-enrichments.md`,
+   `website/docs/architecture/data-model.md`, `website/docs/usage/filters.md` as
+   applicable
+8. **Add tests** — computation tests, descriptor tests (`signals.test.ts`),
+   filter tests (`filters.test.ts`)
 
 ### Modifying an Existing Signal
 
@@ -61,14 +68,16 @@ export const myPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
 2. Remove computation
 3. Remove descriptor from payload signal descriptors array
 4. Remove related filter(s) from `filters.ts`
-5. Remove/update any derived signals that depend on it
+5. Remove/update any derived signals depending on it
 6. Update CLAUDE.md — remove from filter fields table and examples
-7. Update website docs — remove from `git-enrichments.md`, `data-model.md`, `filters.md`
+7. Update website docs — remove from `git-enrichments.md`, `data-model.md`,
+   `filters.md`
 8. Remove/update all affected tests
 
 ### Stats Declaration
 
-Numeric signals consumed by derived signals or adaptive bounds MUST declare `stats`:
+Numeric signals consumed by derived signals or adaptive bounds MUST declare
+`stats`:
 
 ```typescript
 // p25 needed for dampening threshold:
@@ -83,13 +92,16 @@ Numeric signals consumed by derived signals or adaptive bounds MUST declare `sta
 
 ## File/Chunk Signal Parity
 
-Some file-level signals have chunk-level equivalents. These are **independent descriptors** — not derived from file-level via computation.
+Some file-level signals have chunk-level equivalents. These = **independent
+descriptors** — not derived from file-level via computation.
 
-Each provider defines its own parity. Not all file signals need chunk equivalents — only those where chunk-level granularity adds meaningful discrimination.
+Each provider defines own parity. Not all file signals need chunk equivalents —
+only those where chunk-level granularity adds meaningful discrimination.
 
 ## Verification
 
 After any change to payload signals:
+
 ```bash
 npx tsc --noEmit && npx vitest run
 ```

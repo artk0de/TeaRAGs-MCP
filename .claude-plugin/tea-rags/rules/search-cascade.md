@@ -2,33 +2,32 @@
 
 ## Principles
 
-**Semantic First, Exact Second.** Any code search starts with tea-rags
+**Semantic First, Exact Second.** Code search starts with tea-rags
 (semantic_search, hybrid_search, find_symbol, find_similar). ripgrep only for
-literal text markers (TODO, FIXME, HACK, NOTE), import path strings, or as
-fallback when tea-rags is unavailable. Code identifiers (class/method/constant
-names) are SYMBOL searches — use hybrid_search (BM25 gives exact-name match,
-score up to 1.0) or find_symbol, NEVER ripgrep, even if your query contains `|`
-alternation. Built-in Grep/Glob — never for code discovery.
+literal text markers (TODO, FIXME, HACK, NOTE), import path strings, or fallback
+when tea-rags unavailable. Code identifiers (class/method/constant names) are
+SYMBOL searches — use hybrid_search (BM25 = exact-name match, score up to 1.0)
+or find_symbol, NEVER ripgrep, even if query has `|` alternation. Built-in
+Grep/Glob — never for code discovery.
 
-**Chunk is the source of truth — for languages with full AST chunking.** Search
-results contain code, metadata, and git signals. Do not re-read files to
-"verify" or "understand" results; `find_symbol` returns the full method/class
-definition — no `Read` needed. This holds where `language-compatibility.md`
-rates the language **AST = full** (the native languages:
-ts/js/python/go/java/rust/ruby/ bash). For **AST = none** (sql/jsonc/json and
-any non-native language on CharacterChunker) a chunk may split a symbol mid-body
-— there `Read` is a legitimate fallback for exact code; markdown is **partial**
-(section-level, fine for docs). `Read` is always allowed to MODIFY — it is never
-_needed_ merely to gather code for a full-AST language.
+**Chunk is the source of truth — for languages with full AST chunking.** Results
+carry code, metadata, git signals. Don't re-read files to "verify" or
+"understand"; `find_symbol` returns full method/class definition — no `Read`.
+Holds where `language-compatibility.md` rates **AST = full** (native:
+ts/js/python/go/java/rust/ruby/ bash). For **AST = none** (sql/jsonc/json + any
+non-native on CharacterChunker) a chunk may split a symbol mid-body — there
+`Read` is legit fallback for exact code; markdown is **partial** (section-level,
+fine for docs). `Read` always allowed to MODIFY — never _needed_ to gather code
+for a full-AST language.
 
 **MANDATORY:** ALWAYS prefer tea-rags and ripgrep MCP over built-in Search/Grep.
 
 ## Tool Invocation Under Deferred Loading
 
-Recent models load only tool **names** into context; the full schema is fetched
-on demand (`ToolSearch`) AFTER you pick a tool. So pick the EXACT tool from the
-decision tree below first, then fetch only that one — a wrong pick costs a
-wasted fetch. Fully-qualified names for the fetch:
+Recent models load tool **names** only; full schema fetched on demand
+(`ToolSearch`) AFTER you pick a tool. Pick EXACT tool from decision tree below
+first, then fetch only that one — wrong pick costs a wasted fetch.
+Fully-qualified fetch names:
 
 - Every tea-rags tool is **`mcp__tea-rags__<name>`** — e.g.
   `mcp__tea-rags__find_symbol`, `mcp__tea-rags__hybrid_search`,
@@ -41,54 +40,54 @@ Tool names appear bare below for readability — prepend the prefix when calling
 
 ## Embedding Unavailable (ollama / EMBEDDING_URL down)
 
-**The prime digest is a point-in-time SNAPSHOT, not live state.** Its
-`embedding: unavailable` line reflects infra health at session start and goes
-stale the moment ollama comes back. NEVER treat a stale digest as a licence to
-fall back to ripgrep/Grep for code discovery. Before acting on a suspected
-outage, confirm with a LIVE `get_index_status` call — its `Infrastructure:`
-footer reports the current `Embedding (ollama): available | unavailable`. Act on
-the live read, not the snapshot.
+**Prime digest is a point-in-time SNAPSHOT, not live state.** Its
+`embedding: unavailable` line reflects infra health at session start, goes stale
+the moment ollama returns. NEVER treat stale digest as licence to fall back to
+ripgrep/Grep for code discovery. Before acting on suspected outage, confirm with
+a LIVE `get_index_status` — its `Infrastructure:` footer reports current
+`Embedding (ollama): available | unavailable`. Act on the live read, not the
+snapshot.
 
-**Even when embedding is genuinely down, code-identifier search still works.**
-`find_symbol` uses Qdrant text match (zero embedding) and `hybrid_search`'s BM25
-component gives exact-name match (score up to 1.0) without the dense vector. A
-down embedding degrades behavioral/semantic recall (`semantic_search` intent
-queries) — it does NOT justify ripgrep for class/method/constant lookups.
+**Even with embedding genuinely down, code-identifier search still works.**
+`find_symbol` uses Qdrant text match (zero embedding); `hybrid_search`'s BM25
+gives exact-name match (score up to 1.0) without dense vector. Down embedding
+degrades behavioral/semantic recall (`semantic_search` intent queries) — does
+NOT justify ripgrep for class/method/constant lookups.
 
-If a LIVE `get_index_status` reports an embedding error, or any tea-rags
-semantic call fails with an embedding/connection error — STOP, ask the user (via
-`AskUserQuestion`) to start `ollama serve` or repoint `EMBEDDING_URL`, and WAIT
-for an explicit answer before doing anything else. Do NOT silently downgrade to
-ripgrep / Grep / Read for code discovery — text search loses recall the user did
-not agree to trade away. Skip the prompt ONLY for tasks that do not need
-semantic search at all (literal TODO/FIXME scan, reading a known file by exact
-path, exact import-string lookup) — and for code-identifier lookups, reach for
-`find_symbol` / `hybrid_search` BM25 first (they need no embedding), not
-ripgrep. See `references/runtime-introspection.md` for `infraHealth` diagnosis.
+If a LIVE `get_index_status` reports embedding error, or any tea-rags semantic
+call fails with embedding/connection error — STOP, ask the user (via
+`AskUserQuestion`) to start `ollama serve` or repoint `EMBEDDING_URL`, WAIT for
+explicit answer before anything else. Do NOT silently downgrade to ripgrep /
+Grep / Read for code discovery — text search loses recall the user didn't agree
+to trade. Skip the prompt ONLY for tasks needing no semantic search (literal
+TODO/FIXME scan, reading a known file by exact path, exact import-string lookup)
+— and for code-identifier lookups reach for `find_symbol` / `hybrid_search` BM25
+first (need no embedding), not ripgrep. See
+`references/runtime-introspection.md` for `infraHealth` diagnosis.
 
 ## Addressing the Codebase (every tea-rags call)
 
-Every tea-rags tool that touches a collection accepts THREE addressing
-parameters; pick the first one available in this priority:
+Every tea-rags tool touching a collection accepts THREE addressing params; pick
+the first available in this priority:
 
 1. **`project="<alias>"`** — preferred. Survives path moves, pulls registered
-   qdrantUrl + embeddingModel automatically. Aliases are listed in
-   `list_projects` and surfaced in the prime digest's `## Project` section.
+   qdrantUrl + embeddingModel automatically. Aliases listed in `list_projects`,
+   surfaced in prime digest's `## Project` section.
 2. **`collection="<qdrant-name>"`** — when you already have a Qdrant collection
-   name (e.g. from a previous `list_collections` call).
-3. **`path="<absolute-project-path>"`** — fallback when no alias is registered.
-   Path is hashed into a collection name on the fly.
+   name (e.g. from prior `list_collections`).
+3. **`path="<absolute-project-path>"`** — fallback when no alias registered.
+   Path hashed into a collection name on the fly.
 
-Resolution priority used by the resolver: `collection > project > path`.
+Resolution priority used by resolver: `collection > project > path`.
 
 ## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)
 
-**The first search rarely returns a complete answer.** A chunk shows where the
-symbol lives — not the whole picture. Before synthesizing an answer from a
-single chunk, ask: _do I need full body / file structure / a neighbor / doc
-sections?_ If yes — your next call is `find_symbol`, NOT another search and NOT
-`Read`. `find_symbol` is instant (no embedding) and returns merged definitions,
-file outlines, or doc TOCs from the same index.
+**First search rarely returns a complete answer.** A chunk shows where the
+symbol lives — not the whole picture. Before synthesizing from a single chunk,
+ask: _need full body / file structure / a neighbor / doc sections?_ If yes —
+next call is `find_symbol`, NOT another search, NOT `Read`. `find_symbol` is
+instant (no embedding), returns merged definitions, file outlines, or doc TOCs
+from the same index.
 
 | After search returns…                       | If you need…                            | Next call                                                                                                                                 |
 | ------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -108,7 +107,7 @@ rankingOverlay in one call). `offset` pagination works on every search tool;
 when a page is exhausted, retry with `offset: N` instead of inflating `limit`.
 
 **symbolId conventions (LANGUAGE-AGNOSTIC — same `#`/`.` rule for every
-language; this is the input contract for `find_symbol(symbol:)`):**
+language; input contract for `find_symbol(symbol:)`):**
 
 - Code instance methods: `Class#method` (e.g., `Reranker#rerank`) — bound to
   `this`/`self`. Constructors are instance-bound too (`Class#constructor`).
@@ -121,20 +120,20 @@ language; this is the input contract for `find_symbol(symbol:)`):**
 - Doc chunks: opaque hash `doc:a3f8b2c1e4d7` — do NOT guess, take from results
 
 The `#`/`.` separator is **load-bearing for `find_symbol` EXACT lookup only**:
-`find_symbol(symbol: "Class.method")` for an instance method returns EMPTY (and
-may surface a spurious drift warning) — an empty result is a WRONG-SEPARATOR
-signal, not a stale index. It is irrelevant for `hybrid_search`'s `symbolId`
-(partial, substring match — pass a bare name). When unsure instance vs static,
-pass a **partial match** to `find_symbol` (`Class` alone, or the bare `method`)
-and read the real separator off `result.symbolId`; never downgrade an empty
-`find_symbol` to ripgrep. Producer-side source of truth (how the separator is
-chosen per language at index time): `.claude/rules/symbolid-convention.md`
-(`INSTANCE_METHOD_SEPARATOR` in `infra/symbolid/classify.ts`).
+`find_symbol(symbol: "Class.method")` for an instance method returns EMPTY (may
+surface spurious drift warning) — empty result = WRONG-SEPARATOR signal, not a
+stale index. Irrelevant for `hybrid_search`'s `symbolId` (partial substring
+match — pass a bare name). When unsure instance vs static, pass a **partial
+match** to `find_symbol` (`Class` alone, or bare `method`) and read the real
+separator off `result.symbolId`; never downgrade an empty `find_symbol` to
+ripgrep. Producer-side source of truth (how separator chosen per language at
+index time): `.claude/rules/symbolid-convention.md` (`INSTANCE_METHOD_SEPARATOR`
+in `infra/symbolid/classify.ts`).
 
 ### find_symbol — the navigation workhorse (two addressing modes)
 
-`find_symbol` is instant (no embedding) and answers most "now show me X"
-follow-ups. Choose the mode by what you already hold:
+`find_symbol` is instant (no embedding), answers most "now show me X"
+follow-ups. Choose mode by what you hold:
 
 **Mode A — `symbol:` (you know the name)**
 
@@ -150,21 +149,20 @@ follow-ups. Choose the mode by what you already hold:
 symbol, just a path, find_symbol returns a synthetic outline of the whole file.
 Agents under-use it; it is the correct route, not `Read`, not `semantic_search`:
 
-- **`relativePath: "docs/file.md"` → the doc's heading TOC** (table of contents,
-  one hash per heading). THE way to map a markdown doc before reading it.
-  Whenever a task touches a `.md` doc and you lack a `doc:<hash>`, start here.
+- **`relativePath: "docs/file.md"` → the doc's heading TOC** (one hash per
+  heading). THE way to map a markdown doc before reading it. Whenever a task
+  touches a `.md` doc and you lack a `doc:<hash>`, start here.
 - **`relativePath: "src/foo.ts"` → file structure**: every class/method/function
   outline in that file. Use instead of `Read` to answer "what's in this file".
 
 ### Graph navigation — get_callers / get_callees / trace_path
 
-Requires codegraph. **Availability signal:** the prime digest's `## Enrichment`
-section lists `codegraph.symbols` when codegraph is active. When that line is
-absent the four graph tools (`get_callers`, `get_callees`, `find_cycles`,
-`trace_path`) are **not registered** — they never appear in the tool list. So
-the off-signal is an _absent tool_, not an empty result; check prime first
-rather than calling a tool to discover it is missing. Precedence — start cheap,
-escalate only if needed:
+Requires codegraph. **Availability signal:** prime digest's `## Enrichment`
+section lists `codegraph.symbols` when codegraph active. When that line absent
+the four graph tools (`get_callers`, `get_callees`, `find_cycles`, `trace_path`)
+are **not registered** — never appear in tool list. Off-signal is an _absent
+tool_, not an empty result; check prime first rather than calling a tool to
+discover it's missing. Precedence — start cheap, escalate only if needed:
 
 1. **`get_callers` / `get_callees`** — ONE hop ("who calls X" / "what X calls").
    Default for impact & dependency questions; instant, no traversal.
@@ -176,9 +174,8 @@ escalate only if needed:
    never for a single hop.
 
 **When codegraph is off** (no `codegraph.symbols` in prime), route by intent to
-a non-graph substitute — and never read an absent/empty graph tool as a positive
-fact (no "it's a DAG", no "the path is structurally impossible", no "this is the
-architectural centre"):
+a non-graph substitute — never read an absent/empty graph tool as positive fact
+(no "it's a DAG", no "path structurally impossible", no "architectural centre"):
 
 | Graph intent        | Non-codegraph fallback                                                                   |
 | ------------------- | ---------------------------------------------------------------------------------------- |
@@ -194,21 +191,21 @@ architectural centre"):
   `Read`. The chunk already names the symbol/path you need.
 - Doc structure → `find_symbol(relativePath: "docs/x.md")`, never `Read` the md.
 - A class's full API → `find_symbol(symbol: "ClassName")`, one call.
-- Who-uses-X repo-wide → `hybrid_search` (text recall) when codegraph is off;
-  `get_callers` (exact, graph) when codegraph is on.
+- Who-uses-X repo-wide → `hybrid_search` (text recall) when codegraph off;
+  `get_callers` (exact, graph) when codegraph on.
 
 ## Index Freshness → index-freshness.md
 
-Before searching, reindex when the index lags the working tree: prime banner
+Before searching, reindex when index lags working tree: prime banner
 `⚠ Index is stale` or files edited this session → `index_codebase` (incremental,
 no consent); prime `## Schema drift` ≠ `none` → `force_reindex` (full,
 **explicit consent**). Full triggers + rationale in `index-freshness.md`.
 
 ## Decision Tree
 
-Single point of tool selection. Follow top-to-bottom, take the first matching
+Single point of tool selection. Follow top-to-bottom, take first matching
 branch. **Prefer skills over direct tool calls** — skills encapsulate the right
-tool sequence, rerank presets, and output formatting.
+tool sequence, rerank presets, output formatting.
 
 ```
 Already have search results for this area?
@@ -262,7 +259,7 @@ Has query?
    └─ Describing behavior / intent (no exact name) → semantic_search
 ```
 
-All except find_similar accept a rerank preset. For preset choice and custom
+All except find_similar accept a rerank preset. For preset choice + custom
 weights → `/tea-rags:analytics-rerank`. For filter shape (typed sugar, level,
 raw filter) → `/tea-rags:filter-building`. Code-only filtering: add language
 filter or pathPattern to exclude non-code files.
@@ -299,9 +296,9 @@ ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/filters")
 
 Before dispatching a subagent via the `Agent` tool, prepend the search-tool
 injection block to the subagent's prompt — subagents do NOT inherit rules or
-search-cascade. The full block + owner / when-NOT-to-inject rules live in
-`references/subagent-injection.md`. Inject unconditionally; the block is
-harmless for non-search tasks.
+search-cascade. Full block + owner / when-NOT-to-inject rules live in
+`references/subagent-injection.md`. Inject unconditionally; harmless for
+non-search tasks.
 
 ## Prohibited Patterns
 
@@ -317,7 +314,7 @@ harmless for non-search tasks.
 - **ripgrep for class/method/constant usage** (e.g.
   `classAncestors|classExtends` consumers) — these are SYMBOL searches; use
   hybrid_search (BM25) or find_symbol
-- **ripgrep fallback justified by a stale prime digest** — the digest is a
+- **ripgrep fallback justified by a stale prime digest** — digest is a
   start-of-session SNAPSHOT. Confirm a suspected embedding/index outage with a
   LIVE get_index_status before downgrading; find_symbol + hybrid_search BM25
   work with embedding down anyway
@@ -371,19 +368,19 @@ For detailed guidance on specific topics, read these when needed:
   to subagent prompts before `Agent` tool dispatch
 
 **MCP Resources are the canonical source for presets, signal keys, and filter
-syntax.** They are generated from the live registry, so they reflect what THIS
-build supports. Read them via
+syntax.** Generated from the live registry, so they reflect what THIS build
+supports. Read them via
 `ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/<name>")`
 rather than guessing names from training data.
 
 ## Portability (non-Claude-Code clients)
 
 This document assumes the Claude Code harness: skill invocations
-(`/tea-rags:*`), the `Agent` tool, and `ReadMcpResourceTool`. MCP-only clients
-(Cursor, Roo, custom agents) have no skills — strip the skill directives and
-consume the same guidance from the portable MCP resources instead:
+(`/tea-rags:*`), the `Agent` tool, `ReadMcpResourceTool`. MCP-only clients
+(Cursor, Roo, custom agents) have no skills — strip skill directives, consume
+the same guidance from portable MCP resources instead:
 `tea-rags://schema/search-guide` (tool routing + examples),
 `tea-rags://schema/overview` (catalog), `tea-rags://schema/presets`,
-`tea-rags://schema/filters`, `tea-rags://schema/signals`. The decision tree,
-prohibited patterns, and fallback chains above are harness-agnostic and apply to
-any client.
+`tea-rags://schema/filters`, `tea-rags://schema/signals`. Decision tree,
+prohibited patterns, fallback chains above are harness-agnostic, apply to any
+client.

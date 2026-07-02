@@ -4,7 +4,6 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App, SchemaBuilder } from "../../core/api/public/index.js";
 import type {
   ExploreResponse,
   FindSimilarRequest,
@@ -13,6 +12,7 @@ import type {
   RankChunksRequest,
   SemanticSearchRequest,
 } from "../../core/api/public/dto/explore.js";
+import type { App, SchemaBuilder } from "../../core/api/public/index.js";
 import { sanitizeRerank, type McpToolResult } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import { SearchResultOutputSchema } from "./output-schemas.js";
@@ -47,10 +47,10 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     name: "semantic_search",
     title: "Semantic Search",
     description:
-      "Analytical search returning structured JSON with full metadata. " +
-      "For agentic workflows: analytics, reports, downstream processing.\n\n" +
-      "For examples see tea-rags://schema/search-guide\n" +
-      "For parameter docs see tea-rags://schema/overview",
+      "Analytical search. Return structured JSON, full metadata. " +
+      "Agentic workflows: analytics, reports, downstream processing.\n\n" +
+      "Examples: tea-rags://schema/search-guide\n" +
+      "Param docs: tea-rags://schema/overview",
     schemaKey: "SemanticSearchSchema",
     invoke: async (app, { rerank, ...rest }) =>
       app.semanticSearch({
@@ -62,10 +62,10 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     name: "hybrid_search",
     title: "Hybrid Search",
     description:
-      "Semantic + BM25 keyword search. Use when query contains exact symbols, identifiers, " +
-      "or markers (TODO, FIXME, specific names). Collection must be created with enableHybrid=true.\n\n" +
-      "For examples see tea-rags://schema/search-guide\n" +
-      "For parameter docs see tea-rags://schema/overview",
+      "Semantic + BM25 keyword search. Use when query has exact symbols, identifiers, " +
+      "or markers (TODO, FIXME, specific names). Collection must be created enableHybrid=true.\n\n" +
+      "Examples: tea-rags://schema/search-guide\n" +
+      "Param docs: tea-rags://schema/overview",
     schemaKey: "HybridSearchSchema",
     invoke: async (app, { rerank, ...rest }) =>
       app.hybridSearch({
@@ -77,12 +77,12 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     name: "rank_chunks",
     title: "Rank Chunks",
     description:
-      "Batch analytics: rank all chunks by rerank signals without a query. " +
-      "metaOnly defaults to true (unlike other search tools) — this endpoint is " +
+      "Batch analytics: rank all chunks by rerank signals, no query. " +
+      "metaOnly defaults true (unlike other search tools) — endpoint " +
       "for offline scoring (hotspot scan, ownership report, decomposition " +
-      "candidates), NOT online search. Pair with pathPattern to scope a domain.\n\n" +
-      "For examples see tea-rags://schema/search-guide\n" +
-      "For parameter docs see tea-rags://schema/overview",
+      "candidates), NOT online search. Pair with pathPattern to scope domain.\n\n" +
+      "Examples: tea-rags://schema/search-guide\n" +
+      "Param docs: tea-rags://schema/overview",
     schemaKey: "RankChunksSchema",
     invoke: async (app, { rerank, ...rest }) =>
       app.rankChunks({
@@ -94,15 +94,15 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     name: "find_similar",
     title: "Find Similar",
     description:
-      "Find code similar to a given code snippet or previously found chunks. " +
-      "Primary use case: paste a code block into positiveCode to discover similar patterns, " +
-      "duplicates, or related implementations across the indexed codebase. " +
-      "Also accepts chunk IDs from previous search results. " +
+      "Find code similar to given snippet or previously found chunks. " +
+      "Primary: paste code block into positiveCode to discover similar patterns, " +
+      "duplicates, related implementations across indexed codebase. " +
+      "Also accepts chunk IDs from previous results. " +
       "Supports negative examples to exclude unwanted patterns. " +
       "Anti-pattern mode: pass ONLY negativeCode / negativeIds with " +
-      'strategy="best_score" to find code maximally UNLIKE the negatives — ' +
+      'strategy="best_score" to find code maximally UNLIKE negatives — ' +
       "outlier / novelty / refactor-candidate detection.\n\n" +
-      "For parameter docs see tea-rags://schema/overview",
+      "Param docs: tea-rags://schema/overview",
     schemaKey: "FindSimilarSchema",
     invoke: async (app, { rerank, ...rest }) =>
       app.findSimilar({
@@ -118,11 +118,11 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "symbol mode: merged definition for functions, outline + members for classes. " +
       "relativePath mode: file-level outline (code symbols or doc TOC with doc:<hash> ids). " +
       "Uses Qdrant text match. Partial match supported: " +
-      "'Reranker' finds the class and all its methods. " +
+      "'Reranker' finds class and all its methods. " +
       "symbolId convention: Class#method (instance), Class.method (static). " +
-      'Single-call diagnostic: pass a `rerank` preset (e.g. "hotspots") to ' +
-      "attach a rankingOverlay with churn/ownership/bugFixRate labels alongside " +
-      "the definition — no second semantic_search needed. " +
+      'Single-call diagnostic: pass `rerank` preset (e.g. "hotspots") to ' +
+      "attach rankingOverlay with churn/ownership/bugFixRate labels alongside " +
+      "definition — no second semantic_search needed. " +
       'Supports `level: "file" | "chunk"` like other search tools.',
     schemaKey: "FindSymbolSchema",
     invoke: async (app, { rerank, ...rest }) =>

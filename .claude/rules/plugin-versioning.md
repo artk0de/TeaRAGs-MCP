@@ -5,10 +5,10 @@ paths:
 
 # Plugin Versioning (MANDATORY)
 
-**Every commit that modifies `.claude-plugin/` files MUST bump the version in
-the affected plugin's `plugin.json`.**
+**Every commit modifying `.claude-plugin/` files MUST bump the version in the
+affected plugin's `plugin.json`.**
 
-Three plugins exist:
+Three plugins:
 
 - **tea-rags**: `.claude-plugin/tea-rags/.claude-plugin/plugin.json`
 - **tea-rags-setup**: `.claude-plugin/tea-rags-setup/.claude-plugin/plugin.json`
@@ -27,5 +27,5 @@ git diff --cached --name-only | grep '^\.claude-plugin/tea-rags-setup/'
 git diff --cached --name-only | grep '^\.claude-plugin/dinopowers/'
 ```
 
-If files from a plugin are staged, bump that plugin's version BEFORE
-`git commit`. If multiple plugins are affected, bump each.
+Plugin files staged → bump that plugin's version BEFORE `git commit`. Multiple
+plugins affected → bump each.

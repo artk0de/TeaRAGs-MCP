@@ -7,22 +7,22 @@ paths:
 
 ## Golden Rule
 
-**Do NOT rewrite existing tests** unless the business logic they cover has
-changed or the test itself is failing. Existing passing tests are proven correct
-— touching them risks regressions and wastes review time.
+**Do NOT rewrite existing tests** unless business logic they cover changed or
+test itself failing. Passing tests = proven correct — touching risks
+regressions, wastes review time.
 
 ## Coverage Strategy
 
-When coverage threshold is not met, **never chase individual uncovered lines**.
-Instead, write useful high-level integration or behavioral tests that cover
-meaningful scenarios. A single well-designed test covering a real user flow is
-worth more than 10 one-liner tests targeting individual branches.
+Coverage threshold not met → **never chase individual uncovered lines**. Write
+useful high-level integration/behavioral tests covering meaningful scenarios.
+One well-designed test on a real user flow > 10 one-liner tests on individual
+branches.
 
-- Prefer tests that verify **end-to-end behavior** (e.g., "connection failure
-  propagates as typed error through the whole call chain")
+- Prefer tests verifying **end-to-end behavior** (e.g. "connection failure
+  propagates as typed error through whole call chain")
 - Cover **whole methods or features** in one test, not individual lines
 - Use `/* v8 ignore next */` only for truly unreachable defensive code (e.g.,
-  thrown primitives), never as a shortcut to skip testing
+  thrown primitives), never as shortcut to skip testing
 
 ## Setup
 
@@ -43,8 +43,8 @@ worth more than 10 one-liner tests targeting individual branches.
 
 ## Mocking conventions
 
-**Tree-sitter**: mock per-test-file (not globally) to avoid breaking chunker
-unit tests:
+**Tree-sitter**: mock per-test-file (not globally), avoid breaking chunker unit
+tests:
 
 ```typescript
 vi.mock("tree-sitter", () => ({
@@ -68,7 +68,7 @@ vi.mock("node:fs", async () => {
 });
 ```
 
-**Derived signals**: test with plain objects, no mocks needed:
+**Derived signals**: test with plain objects, no mocks:
 
 ```typescript
 const signal = new RecencySignal();

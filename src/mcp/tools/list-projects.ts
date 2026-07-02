@@ -21,7 +21,7 @@ export function registerProjectTools(server: McpServer, deps: { app: App; regist
     {
       title: "List Projects",
       description:
-        "List all registered projects with their collection metadata from $TEA_RAGS_DATA_DIR/registry.json. Returns collection name, indexed path, embedding model and dimensions, Qdrant URL, indexedAt timestamp, tea-rags version, and chunk count for each project.",
+        "List registered projects + collection metadata from $TEA_RAGS_DATA_DIR/registry.json. Per project returns: collection name, indexed path, embedding model + dimensions, Qdrant URL, indexedAt timestamp, tea-rags version, chunk count.",
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
