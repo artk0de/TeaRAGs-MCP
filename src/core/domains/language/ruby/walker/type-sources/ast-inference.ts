@@ -1,7 +1,10 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import { RUBY_INSTANCE_RETURNING, RUBY_RELATION_RETURNING } from "../../dsl/index.js";
-import { CONTAINER_BLOCK_ITERATION_METHODS } from "../../resolver/type-propagation.js";
+import {
+  CONTAINER_BLOCK_ITERATION_METHODS,
+  CONTAINER_ELEMENT_RETURNING_METHODS,
+} from "../../resolver/type-propagation.js";
 import { lexicalScopeFqName, readScopeResolution, walk } from "../ast-utils.js";
 import type { RubyExtractInput } from "../walker.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
@@ -111,6 +114,36 @@ export function collectRubyInstantiatedTypes(root: AstNode): string[] {
   };
   walkScope(root, []);
   return [...seen];
+}
+
+/**
+ * Element lift: `user = users.first` / `x = users[0]` on a container-bound
+ * local. When the RHS is an `element_reference` (`users[0]`) or a call/
+ * method_call whose method is in {@link CONTAINER_ELEMENT_RETURNING_METHODS}
+ * (`users.first`), and the base is an identifier already bound to a container
+ * in `bindings`, returns the lifted element type. Returns null otherwise (no
+ * guessing): non-identifier base, unbound/non-container base, or a
+ * non-element-returning method (`users.count`).
+ */
+function containerElementLift(
+  rhs: AstNode,
+  bindings: ReadonlyMap<string, { type: RubyTypeRef; line: number }>,
+  line: number,
+): RubyTypeRef | null {
+  const base =
+    rhs.type === "element_reference"
+      ? rhs.childForFieldName("object")
+      : rhs.type === "call" || rhs.type === "method_call"
+        ? rhs.childForFieldName("receiver")
+        : null;
+  if (base?.type !== "identifier") return null;
+  if (rhs.type !== "element_reference") {
+    const method = rhs.childForFieldName("method");
+    if (!method || !CONTAINER_ELEMENT_RETURNING_METHODS.has(method.text)) return null;
+  }
+  const binding = bindings.get(base.text);
+  if (!binding || binding.line > line || binding.type.form !== "container") return null;
+  return binding.type.element;
 }
 
 /**
@@ -265,6 +298,13 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
       const relElement = relationElementConst(rhs);
       if (relElement) {
         emitFact(varName, { form: "container", element: { form: "instance", name: relElement } }, line);
+        return;
+      }
+
+      // Element lift: `user = users.first` / `x = users[0]` on a container-bound local.
+      const lifted = containerElementLift(rhs, latestBinding, line);
+      if (lifted) {
+        emitFact(varName, lifted, line);
         return;
       }
 

@@ -258,4 +258,34 @@ describe("rubyAstInferenceTypeSource", () => {
       );
     });
   });
+
+  describe("identifier-rooted element lift (F3)", () => {
+    it("user = users.first lifts the element type", () => {
+      const code = "def call\n  users = User.where(a: 1)\n  user = users.first\n  user.save\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "user",
+          type: { form: "instance", name: "User" },
+        }),
+      );
+    });
+
+    it("x = users[0] lifts via element_reference", () => {
+      const code = "def call\n  users = User.where(a: 1)\n  x = users[0]\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "x",
+          type: { form: "instance", name: "User" },
+        }),
+      );
+    });
+
+    it("x = users.count does NOT lift (non-element method)", () => {
+      const code = "def call\n  users = User.where(a: 1)\n  x = users.count\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.name === "x")).toEqual([]);
+    });
+  });
 });
