@@ -741,6 +741,46 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
     );
   });
 
+  it("exact-FQ tier prefers a namespaced self-def over a same-last-segment top-level namesake (bd lawlq.3.5)", () => {
+    // `Admin::InvitesController#resource_params` and top-level
+    // `InvitesController#resource_params` share the last scope segment
+    // "InvitesController". The tail-only compare matched BOTH at the enclosing
+    // level → strict-continue. The exact-FQ tier (`scope.join("::") === klass`)
+    // picks the literal same-class def.
+    const symbolTable = tableWith(
+      [
+        "app/controllers/admin/invites_controller.rb",
+        [
+          sym(
+            "Admin::InvitesController#resource_params",
+            "resource_params",
+            "app/controllers/admin/invites_controller.rb",
+            ["Admin::InvitesController"],
+          ),
+        ],
+      ],
+      [
+        "app/controllers/invites_controller.rb",
+        [
+          sym("InvitesController#resource_params", "resource_params", "app/controllers/invites_controller.rb", [
+            "InvitesController",
+          ]),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "resource_params", receiver: null, member: "resource_params", startLine: 1 },
+      ctx({ symbolTable, callerScope: ["Admin", "InvitesController"] }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "app/controllers/admin/invites_controller.rb",
+        targetSymbolId: "Admin::InvitesController#resource_params",
+      },
+    });
+  });
+
   it("resolves an ambiguous short-name to the SUPERCLASS method via the MRO chain (brp1)", () => {
     // Child does NOT own `notify`; Parent (in classAncestors) does, and an
     // unrelated Other#notify collides on the short name. Before brp1 the

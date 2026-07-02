@@ -66,16 +66,28 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
         // class / concern (cai0/n2kpz). Mirrors the scope-tail check in
         // shared.ts `resolveTypeMethodInternal`.
         const short = lastConstantSegment(klass);
-        const atLevel = fallback.filter((def) => {
-          const tail = def.scope[def.scope.length - 1];
-          return tail === klass || tail === short;
-        });
-        if (atLevel.length === 1) {
-          return resolved({ targetRelPath: atLevel[0].relPath, targetSymbolId: atLevel[0].symbolId });
+        // Exact-FQ tier first (bd tea-rags-mcp-lawlq.3.5): a candidate whose FULL
+        // scope joins to `klass` is the literal same-class def. `scope.join("::")`
+        // normalizes both stored forms (compact-FQ `["Admin::InvitesController"]`
+        // and nested `["Admin","InvitesController"]`), so a namespaced self-def is
+        // no longer conflated with a same-last-segment top-level namesake
+        // (`Admin::InvitesController#resource_params` vs `InvitesController#…`),
+        // which the tail-only compare matched together → strict-continue.
+        const exactTier = fallback.filter(
+          (def) => def.scope.join("::") === klass || def.scope[def.scope.length - 1] === klass,
+        );
+        if (exactTier.length === 1) {
+          return resolved({ targetRelPath: exactTier[0].relPath, targetSymbolId: exactTier[0].symbolId });
         }
-        // Genuinely ambiguous within one class — do NOT guess; fall through to
-        // pickSingleCandidate (which CONTINUEs in strict mode).
-        if (atLevel.length > 1) break;
+        if (exactTier.length > 1) break; // ambiguous inside the exact class — do NOT guess
+        // Loose tier: nested-scope classes stored without the compact FQ match by
+        // last segment. Same nearest-level uniqueness rule (subsumes the former
+        // combined filter's tail===short branch).
+        const looseTier = fallback.filter((def) => def.scope[def.scope.length - 1] === short);
+        if (looseTier.length === 1) {
+          return resolved({ targetRelPath: looseTier[0].relPath, targetSymbolId: looseTier[0].symbolId });
+        }
+        if (looseTier.length > 1) break;
       }
     }
     // RC-1 (tea-rags-mcp-55xil): cross-FORM preference — before falling through
