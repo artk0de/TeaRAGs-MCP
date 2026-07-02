@@ -62,7 +62,7 @@ describe("RubyEnqueueDispatchSymbolResolutionStrategy", () => {
     });
   });
 
-  it.each(["perform_in", "perform_at", "perform_bulk", "perform_later", "perform_now"])(
+  it.each(["perform_in", "perform_at", "perform_bulk", "push_bulk", "perform_later", "perform_now"])(
     "enqueue member `%s` rewrites to #perform",
     (member) => {
       const call: CallRef = {
