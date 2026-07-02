@@ -1402,6 +1402,23 @@ describe("extractFromRubyFile — bare identifier method calls (bd hbie)", () =>
     expect(r.chunks[0].calls.find((c) => c.receiver === null && c.member === "count")).toBeUndefined();
   });
 
+  it("does NOT emit CallRefs for a splat multiple-assignment lvalue (`first, *rest = ...`)", () => {
+    // `*rest` is a `rest_assignment` node wrapping the identifier, NOT a bare
+    // identifier child of left_assignment_list — it is a fresh local binding and
+    // must be suppressed at the splat site AND at later reads (bd lawlq.3.7).
+    const src = "def f\n  first, *rest = args\n  rest\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: [], startLine: 1, endLine: 4 }],
+    });
+    expect(r.chunks[0].calls.find((c) => c.receiver === null && c.member === "first")).toBeUndefined();
+    expect(r.chunks[0].calls.find((c) => c.receiver === null && c.member === "rest")).toBeUndefined();
+  });
+
   it("does NOT emit a CallRef for keywords self / nil / true / false", () => {
     // tree-sitter-ruby parses these as distinct node types — they should
     // never surface as identifier-driven bare calls.

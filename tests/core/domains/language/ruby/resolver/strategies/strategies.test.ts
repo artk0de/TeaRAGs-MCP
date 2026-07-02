@@ -781,6 +781,108 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
     });
   });
 
+  it("does NOT prefix-walk a COMPACT-declared class's raw ancestor to a wrong in-project FQ (bd lawlq.3.7)", () => {
+    // `class Api::V2::UsersController < BaseController` (COMPACT) has Ruby nesting
+    // [Api::V2::UsersController] only — bare `BaseController` resolves at TOP level
+    // (an external gem here), NEVER `Api::BaseController`. Without the compact gate
+    // canonicalizeAncestorFq prefix-walks to the unique in-project `Api::BaseController`
+    // and fabricates an `authorize!` mixin edge.
+    const symbolTable = tableWith(
+      [
+        "app/controllers/api/base_controller.rb",
+        [
+          sym("Api::BaseController#authorize!", "authorize!", "app/controllers/api/base_controller.rb", [
+            "Api",
+            "BaseController",
+          ]),
+        ],
+      ],
+      ["app/models/widget.rb", [sym("Widget#authorize!", "authorize!", "app/models/widget.rb", ["Widget"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "authorize!", receiver: null, member: "authorize!", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerScope: [],
+        callerSymbolId: "Api::V2::UsersController",
+        classAncestors: { "Api::V2::UsersController": ["BaseController"] },
+        compactDeclaredClasses: new Set(["Api::V2::UsersController"]),
+      }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("does NOT fabricate a cross-namespace edge from a bare top-level class to a namespaced namesake (bd lawlq.3.7)", () => {
+    // Top-level `class NotificationsController` self-sends `set_notification`
+    // which it does NOT own. A namespaced namesake Api::NotificationsController
+    // (nested scope form) DOES define it. A bare top-level class must NEVER
+    // dispatch into Api::NotificationsController — the tail/last-segment match
+    // fabricated this edge (M1 feeds the bare FQ, M4 tail disjunct matched it).
+    const symbolTable = tableWith(
+      [
+        "app/controllers/api/notifications_controller.rb",
+        [
+          sym(
+            "Api::NotificationsController#set_notification",
+            "set_notification",
+            "app/controllers/api/notifications_controller.rb",
+            ["Api", "NotificationsController"],
+          ),
+        ],
+      ],
+      [
+        "app/models/audit_log.rb",
+        [sym("AuditLog#set_notification", "set_notification", "app/models/audit_log.rb", ["AuditLog"])],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "set_notification", receiver: null, member: "set_notification", startLine: 1 },
+      ctx({ symbolTable, callerScope: [], callerSymbolId: "NotificationsController" }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("resolves a bare top-level class self-send to its OWN def over a namespaced namesake (bd lawlq.3.7)", () => {
+    // Corollary: the namesake pollution must not SUPPRESS the correct own-class
+    // edge either. Top-level NotificationsController owns set_notification and a
+    // namespaced namesake also defines it → resolve to the OWN def.
+    const symbolTable = tableWith(
+      [
+        "app/controllers/notifications_controller.rb",
+        [
+          sym(
+            "NotificationsController#set_notification",
+            "set_notification",
+            "app/controllers/notifications_controller.rb",
+            ["NotificationsController"],
+          ),
+        ],
+      ],
+      [
+        "app/controllers/api/notifications_controller.rb",
+        [
+          sym(
+            "Api::NotificationsController#set_notification",
+            "set_notification",
+            "app/controllers/api/notifications_controller.rb",
+            ["Api", "NotificationsController"],
+          ),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "set_notification", receiver: null, member: "set_notification", startLine: 1 },
+      ctx({ symbolTable, callerScope: [], callerSymbolId: "NotificationsController" }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "app/controllers/notifications_controller.rb",
+        targetSymbolId: "NotificationsController#set_notification",
+      },
+    });
+  });
+
   it("resolves an ambiguous short-name to the SUPERCLASS method via the MRO chain (brp1)", () => {
     // Child does NOT own `notify`; Parent (in classAncestors) does, and an
     // unrelated Other#notify collides on the short name. Before brp1 the

@@ -462,6 +462,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runAncestors: Record<string, readonly string[]> = {};
   /**
+   * Per-run set of FQs declared COMPACT (`class A::B::C`), aggregated from
+   * `FileExtraction.compactDeclaredClasses`. Passed to the resolver ctx so
+   * `canonicalizeAncestorFq` skips the nesting prefix-walk for them (bd
+   * lawlq.3.7). Reset on finish() alongside runAncestors.
+   */
+  private runCompactClasses = new Set<string>();
+  /**
    * Per-run aggregation of `FileExtraction.classPrependedAncestors`
    * (bd tea-rags-mcp-3jvn). Same lifecycle as `runAncestors` — merged
    * across pass-1 files, consumed by pass-2 resolver. Walked BEFORE the
@@ -768,6 +775,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           for (const [k, v] of Object.entries(extraction.classAncestors)) {
             this.runAncestors[k] = v;
           }
+        }
+        if (extraction.compactDeclaredClasses) {
+          for (const fq of extraction.compactDeclaredClasses) this.runCompactClasses.add(fq);
         }
         if (extraction.classPrependedAncestors) {
           for (const [k, v] of Object.entries(extraction.classPrependedAncestors)) {
@@ -1114,6 +1124,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     if (extractedFiles === 0 && fileEdgeCount === 0 && methodEdgeCount === 0) {
       this.runStats = createEmptyRunStats();
       this.runAncestors = {};
+      this.runCompactClasses = new Set();
       this.runPrependedAncestors = {};
       this.runExtends = {};
       this.runReturnTypes = {};
@@ -1175,6 +1186,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
     this.runStats = createEmptyRunStats();
     this.runAncestors = {};
+    this.runCompactClasses = new Set();
     this.runPrependedAncestors = {};
     return {
       extractedFiles,
@@ -1641,6 +1653,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private clearRunState(_key: string): void {
     this.runAncestors = {};
+    this.runCompactClasses = new Set();
     this.runPrependedAncestors = {};
     this.runExtends = {};
     this.runReturnTypes = {};
@@ -1680,6 +1693,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runBatchChains.clear();
     this.xpassWritten.clear();
     this.runAncestors = {};
+    this.runCompactClasses = new Set();
     this.runPrependedAncestors = {};
     this.runExtends = {};
     this.runReturnTypes = {};
@@ -1958,6 +1972,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           ivarTypes: ivarTypesForResolver,
           structuredReturnTypes: structuredReturnTypesForResolver,
           classAncestors: ancestorsForResolver,
+          compactDeclaredClasses: this.runCompactClasses,
           classPrependedAncestors: prependedAncestorsForResolver,
           includedBy: includedByForResolver,
           classExtends: extendsForResolver,

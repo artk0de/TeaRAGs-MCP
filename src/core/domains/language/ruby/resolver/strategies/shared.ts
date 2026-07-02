@@ -199,6 +199,12 @@ function canonicalizeAncestorFq(raw: string, nestingKlass: string, ctx: CallCont
   const isKnown = (name: string): boolean =>
     ctx.classAncestors?.[name] !== undefined || ctx.symbolTable.lookup(name).length === 1;
   if (isKnown(raw)) return raw;
+  // A COMPACT class def (`class A::B::C`) does NOT open the intermediate
+  // namespaces A / A::B as lexical scopes — a bare `BaseController` superclass
+  // resolves at TOP level (`::BaseController`), never `Api::BaseController`. So
+  // the nesting prefix-walk would fabricate a wrong in-project FQ; skip it for
+  // compact-declared classes (bd lawlq.3.7). Nested defs keep the walk.
+  if (ctx.compactDeclaredClasses?.has(nestingKlass)) return null;
   const segs = nestingKlass.split("::");
   // Innermost nesting wins (Ruby constant lookup); try the widest prefix first.
   for (let i = segs.length - 1; i >= 1; i--) {

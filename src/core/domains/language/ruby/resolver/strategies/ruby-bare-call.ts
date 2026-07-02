@@ -73,17 +73,21 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
         // no longer conflated with a same-last-segment top-level namesake
         // (`Admin::InvitesController#resource_params` vs `InvitesController#…`),
         // which the tail-only compare matched together → strict-continue.
-        const exactTier = fallback.filter(
-          (def) => def.scope.join("::") === klass || def.scope[def.scope.length - 1] === klass,
-        );
+        // Exact-FQ tier: candidate's FULL scope equals klass. `join("::")`
+        // normalizes compact (`["Admin::X"]`) and nested (`["Admin","X"]`) forms.
+        // NO last-segment disjunct — a BARE klass "X" (which M1 now feeds for a
+        // top-level class-body chunk) must NOT pull a namespaced namesake
+        // `["Api","X"]` into the exact tier (bd lawlq.3.7 false-edge fix).
+        const exactTier = fallback.filter((def) => def.scope.join("::") === klass);
         if (exactTier.length === 1) {
           return resolved({ targetRelPath: exactTier[0].relPath, targetSymbolId: exactTier[0].symbolId });
         }
         if (exactTier.length > 1) break; // ambiguous inside the exact class — do NOT guess
-        // Loose tier: nested-scope classes stored without the compact FQ match by
-        // last segment. Same nearest-level uniqueness rule (subsumes the former
-        // combined filter's tail===short branch).
-        const looseTier = fallback.filter((def) => def.scope[def.scope.length - 1] === short);
+        // Loose tier — the walker stored the def's class WITHOUT its namespace
+        // (`["X"]` for `Agents::X`): the candidate's ENTIRE scope equals klass's
+        // last segment. `join("::") === short` (not `tail === short`) so a
+        // namespaced namesake (`["Api","X"]`, join `"Api::X"`) is excluded.
+        const looseTier = fallback.filter((def) => def.scope.join("::") === short);
         if (looseTier.length === 1) {
           return resolved({ targetRelPath: looseTier[0].relPath, targetSymbolId: looseTier[0].symbolId });
         }
