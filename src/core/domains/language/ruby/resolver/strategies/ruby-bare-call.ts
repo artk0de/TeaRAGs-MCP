@@ -2,7 +2,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import {
-  collectAncestorChain,
+  collectResolvedAncestorChain,
   isRubyPath,
   lastConstantSegment,
   symbolIdIsInstanceMethod,
@@ -52,7 +52,10 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
         : null;
     const enclosing = classBodyEnclosing ?? (ctx.callerScope.length > 0 ? ctx.callerScope.join("::") : null);
     if (fallback.length > 1 && enclosing !== null) {
-      const mro = [enclosing, ...collectAncestorChain(enclosing, ctx)];
+      // Per-hop FQ canonicalization (bd lawlq.3.4): `classAncestors` VALUES are
+      // raw source text, so a mixin chain whose hops are namespaced would
+      // dead-end under a raw-string walk before reaching the DSL-method owner.
+      const mro = [enclosing, ...collectResolvedAncestorChain(enclosing, ctx)];
       for (const klass of mro) {
         // Match a candidate's enclosing-scope tail against the MRO class in
         // EITHER stored form: the compact FQ (`["Api::BaseController"]`) or the

@@ -184,6 +184,60 @@ export function collectAncestorChain(klass: string, ctx: CallContext, visited: S
 }
 
 /**
+ * FQ-canonicalize a raw ancestor name to the key form used by `classAncestors`
+ * / the symbol table, applying Ruby lexical-nesting resolution relative to
+ * `nestingKlass`. `classAncestors` is keyed by each class's FQ but stores its
+ * ancestor VALUES as the raw source text (`class D < Introspection::BaseObject`
+ * stores `"Introspection::BaseObject"`), so a raw-string recursion dead-ends at
+ * the first hop whose real key is namespaced (`GraphQL::Introspection::BaseObject`).
+ * Returns the resolved FQ, or null when nothing matches (caller keeps the raw).
+ */
+function canonicalizeAncestorFq(raw: string, nestingKlass: string, ctx: CallContext): string | null {
+  // Precision guard (bd lawlq.3.4): a classAncestors key is inherently unique;
+  // a symbol-table match must be UNIQUE (=== 1) so an ambiguous namespace prefix
+  // never canonicalizes to the wrong FQ and fabricates a mixin edge.
+  const isKnown = (name: string): boolean =>
+    ctx.classAncestors?.[name] !== undefined || ctx.symbolTable.lookup(name).length === 1;
+  if (isKnown(raw)) return raw;
+  const segs = nestingKlass.split("::");
+  // Innermost nesting wins (Ruby constant lookup); try the widest prefix first.
+  for (let i = segs.length - 1; i >= 1; i--) {
+    const candidate = `${segs.slice(0, i).join("::")}::${raw}`;
+    if (isKnown(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Like {@link collectAncestorChain} but canonicalizes each ancestor hop to its
+ * FQ via {@link canonicalizeAncestorFq} before recursing, so a chain whose
+ * `classAncestors` VALUES are raw non-FQ text still reaches the mixin / base
+ * that actually owns an inherited DSL method (bd lawlq.3.4 — graphql-ruby
+ * `field`/`argument` on the HasFields/HasArguments mixins, 3 hops up an
+ * `extend`/superclass chain). Cycle-guarded via `visited`; `klass` itself is
+ * NOT included.
+ */
+export function collectResolvedAncestorChain(
+  klass: string,
+  ctx: CallContext,
+  visited: Set<string> = new Set(),
+): string[] {
+  if (visited.has(klass)) return [];
+  visited.add(klass);
+  const chain: string[] = [];
+  const ancestors = ctx.classAncestors?.[klass];
+  if (ancestors) {
+    for (const raw of ancestors) {
+      const fq = canonicalizeAncestorFq(raw, klass, ctx) ?? raw;
+      if (visited.has(fq)) continue;
+      chain.push(fq);
+      chain.push(...collectResolvedAncestorChain(fq, ctx, visited));
+    }
+  }
+  return chain;
+}
+
+/**
  * Resolve `<member>` as an instance method on `klass`, walking `classAncestors`
  * (superclass + `include`/`extend` mixins) in declaration order when the class
  * itself doesn't own it. Shared by the `super` walk (which starts at the

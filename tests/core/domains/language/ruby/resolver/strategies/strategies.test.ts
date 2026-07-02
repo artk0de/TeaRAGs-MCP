@@ -698,6 +698,49 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
     expect(outcome.kind).toBe("continue");
   });
 
+  it("FQ-canonicalizes each ancestor hop so a deep DSL-mixin chain resolves the method (bd lawlq.3.4)", () => {
+    // graphql-ruby `field` shape: classAncestors is keyed by FQ but stores RAW
+    // ancestor text (`class DirectiveType < Introspection::BaseObject`). The
+    // bareCall MRO must canonicalize each hop to its FQ via Ruby nesting, else
+    // the chain dead-ends after ONE hop and `field` (defined 3 hops up on the
+    // HasFields mixin) never resolves — the dominant graphql helperModule miss.
+    const HAS = "lib/graphql/schema/member/has_fields.rb";
+    const OBJ = "lib/graphql/schema/object.rb";
+    const BASE = "lib/graphql/introspection/base_object.rb";
+    const DIR = "lib/graphql/introspection/directive_type.rb";
+    const symbolTable = tableWith(
+      [
+        HAS,
+        [
+          sym("GraphQL::Schema::Member::HasFields", "HasFields", HAS, ["GraphQL", "Schema", "Member"]),
+          sym("GraphQL::Schema::Member::HasFields#field", "field", HAS, ["GraphQL", "Schema", "Member", "HasFields"]),
+        ],
+      ],
+      [OBJ, [sym("GraphQL::Schema::Object", "Object", OBJ, ["GraphQL", "Schema"])]],
+      [BASE, [sym("GraphQL::Introspection::BaseObject", "BaseObject", BASE, ["GraphQL", "Introspection"])]],
+      [DIR, [sym("GraphQL::Introspection::DirectiveType", "DirectiveType", DIR, ["GraphQL", "Introspection"])]],
+      // Unrelated same-name def forces ambiguity (else a unique `field` resolves trivially).
+      ["app/widgets/widget.rb", [sym("Widget#field", "field", "app/widgets/widget.rb", ["Widget"])]],
+    );
+    const classAncestors: Record<string, string[]> = {
+      "GraphQL::Introspection::DirectiveType": ["Introspection::BaseObject"], // raw, non-FQ superclass text
+      "GraphQL::Introspection::BaseObject": ["GraphQL::Schema::Object"],
+      "GraphQL::Schema::Object": ["GraphQL::Schema::Member::HasFields"], // extend
+    };
+    const outcome = strat.attempt(
+      { callText: "field", receiver: null, member: "field", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerScope: ["GraphQL", "Introspection"],
+        callerSymbolId: "GraphQL::Introspection::DirectiveType",
+        classAncestors,
+      }),
+    );
+    expect(outcome.kind === "resolved" && outcome.target.targetSymbolId).toBe(
+      "GraphQL::Schema::Member::HasFields#field",
+    );
+  });
+
   it("resolves an ambiguous short-name to the SUPERCLASS method via the MRO chain (brp1)", () => {
     // Child does NOT own `notify`; Parent (in classAncestors) does, and an
     // unrelated Other#notify collides on the short name. Before brp1 the
