@@ -126,17 +126,26 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
     // `collectLocalBindingsForChunk`'s behaviour where yardByLine is applied
     // before the AST walk. YARD @param uses the ELEMENT type for collection
     // params (Array<Post> → "Post"), so no unwrapping is needed here.
-    const latestBinding = new Map<string, { type: string; line: number }>();
+    const latestBinding = new Map<string, { type: RubyTypeRef; line: number }>();
     for (const [defLine, params] of collectYardParamTypes(input.code)) {
       for (const [name, type] of Object.entries(params)) {
-        latestBinding.set(name, { type, line: defLine });
+        latestBinding.set(name, {
+          type: { form: "instance", name: type },
+          line: defLine,
+        });
       }
     }
 
-    const emitFact = (name: string, typeName: string, line: number, form: "class" | "instance"): void => {
-      const typeRef: RubyTypeRef = { form, name: typeName };
-      facts.push({ kind: "local", source: "ast", symbolScope: [], name, line, type: typeRef });
-      latestBinding.set(name, { type: typeName, line });
+    const emitFact = (name: string, type: RubyTypeRef, line: number): void => {
+      facts.push({
+        kind: "local",
+        source: "ast",
+        symbolScope: [],
+        name,
+        line,
+        type,
+      });
+      latestBinding.set(name, { type, line });
     };
 
     walk(input.tree.rootNode, (node) => {
@@ -153,7 +162,7 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
             const valueNode = param.childForFieldName("value");
             if (nameNode?.type !== "identifier" || !valueNode) continue;
             const type = constInstanceType(valueNode);
-            if (type) emitFact(nameNode.text, type, line, "instance");
+            if (type) emitFact(nameNode.text, { form: "instance", name: type }, line);
           }
         }
         return;
@@ -178,7 +187,7 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
           if (recvBinding && recvBinding.line <= line) {
             const paramsNode = node.childForFieldName("parameters"); // block_parameters
             const firstParam = paramsNode?.namedChildren.find((p) => p.type === "identifier");
-            if (firstParam) emitFact(firstParam.text, recvBinding.type, line, "instance");
+            if (firstParam) emitFact(firstParam.text, recvBinding.type, line);
           }
         }
         return;
@@ -202,10 +211,10 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
           if (target?.type !== "identifier" || !value) continue;
           const constType = constInstanceType(value);
           if (constType) {
-            emitFact(target.text, constType, line, "instance");
+            emitFact(target.text, { form: "instance", name: constType }, line);
           } else if (value.type === "identifier") {
             const prev = latestBinding.get(value.text);
-            if (prev && prev.line <= line) emitFact(target.text, prev.type, line, "instance");
+            if (prev && prev.line <= line) emitFact(target.text, prev.type, line);
           }
         }
         return;
@@ -219,21 +228,21 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
       const rhsConst =
         rhs.type === "scope_resolution" ? readScopeResolution(rhs) : rhs.type === "constant" ? rhs.text : null;
       if (rhsConst && YARD_CONST.test(rhsConst)) {
-        emitFact(varName, rhsConst, line, "class");
+        emitFact(varName, { form: "class", name: rhsConst }, line);
         return;
       }
 
       // Single assignment: class-constant instance call.
       const instType = constInstanceType(rhs);
       if (instType) {
-        emitFact(varName, instType, line, "instance");
+        emitFact(varName, { form: "instance", name: instType }, line);
         return;
       }
 
       // Copy-propagation: `var = other_var` copies other_var's most-recent type.
       if (rhs.type === "identifier") {
         const prev = latestBinding.get(rhs.text);
-        if (prev && prev.line <= line) emitFact(varName, prev.type, line, "instance");
+        if (prev && prev.line <= line) emitFact(varName, prev.type, line);
       }
     });
 
