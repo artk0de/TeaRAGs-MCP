@@ -382,6 +382,40 @@ export function firstDefinerAfter(
 }
 
 /**
+ * Resolve a receiverless self-send whose enclosing scope is a MODULE (concern)
+ * via the classes that include it. For each includer in `ctx.includedBy[module]`
+ * take `firstDefinerAfter(module, member, includer)` (what the includer resolves
+ * `member` to past the module in its MRO) and return the target INVARIANT across
+ * all of them: consensus → precision 1.0; ANY disagreement → null (DROP, GUARD).
+ * Shared by the `super`-from-module walk (ruby-super) and the bareCall
+ * concern-scope fallback (bd tea-rags-mcp-lawlq.3.2 facet-2).
+ */
+export function resolveViaIncludingClasses(
+  moduleName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  const including = ctx.includedBy?.[moduleName];
+  if (!including || including.length === 0) return null;
+  let agreed: SymbolResolutionTarget | null = null;
+  for (const klass of including) {
+    const t = firstDefinerAfter(moduleName, member, klass, ctx, mode);
+    if (t === null) continue;
+    if (agreed === null) {
+      agreed = t;
+      continue;
+    }
+    const same =
+      agreed.targetSymbolId !== null || t.targetSymbolId !== null
+        ? agreed.targetSymbolId === t.targetSymbolId
+        : agreed.targetRelPath === t.targetRelPath;
+    if (!same) return null; // including classes disagree → DROP
+  }
+  return agreed;
+}
+
+/**
  * Resolve `<typeName>#<member>` for a receiver whose static type is KNOWN
  * (walker-inferred local binding `var = ClassName.new`, or `@ivar` field type
  * from `classFieldTypes`):

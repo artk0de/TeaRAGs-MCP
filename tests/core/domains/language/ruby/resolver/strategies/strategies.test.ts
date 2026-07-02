@@ -781,6 +781,36 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
     });
   });
 
+  it("resolves a concern-module self-send via includedBy consensus (bd lawlq.3.2 facet-2)", () => {
+    // `module AccountOwnedConcern; def check; not_found; end; end` — `not_found`
+    // is not on the module's own MRO; it is INHERITED by every including class
+    // from a shared ancestor. Resolve via the classes that include the module,
+    // taking the target invariant across them (consensus).
+    const APP = "app/controllers/application_controller.rb";
+    const symbolTable = tableWith(
+      [
+        APP,
+        [
+          sym("ApplicationController", "ApplicationController", APP, []),
+          sym("ApplicationController#not_found", "not_found", APP, ["ApplicationController"]),
+        ],
+      ],
+      // Unrelated namesake forces ambiguity so the class-MRO walk cannot pick it.
+      ["app/models/widget.rb", [sym("Widget#not_found", "not_found", "app/models/widget.rb", ["Widget"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "not_found", receiver: null, member: "not_found", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerScope: [],
+        callerSymbolId: "AccountOwnedConcern",
+        classAncestors: { FooController: ["AccountOwnedConcern", "ApplicationController"] },
+        includedBy: { AccountOwnedConcern: ["FooController"] },
+      }),
+    );
+    expect(outcome.kind === "resolved" && outcome.target.targetSymbolId).toBe("ApplicationController#not_found");
+  });
+
   it("does NOT prefix-walk a COMPACT-declared class's raw ancestor to a wrong in-project FQ (bd lawlq.3.7)", () => {
     // `class Api::V2::UsersController < BaseController` (COMPACT) has Ruby nesting
     // [Api::V2::UsersController] only — bare `BaseController` resolves at TOP level

@@ -5,6 +5,7 @@ import {
   collectResolvedAncestorChain,
   isRubyPath,
   lastConstantSegment,
+  resolveViaIncludingClasses,
   symbolIdIsInstanceMethod,
   type ResolverConfig,
 } from "./shared.js";
@@ -56,6 +57,7 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
       // raw source text, so a mixin chain whose hops are namespaced would
       // dead-end under a raw-string walk before reaching the DSL-method owner.
       const mro = [enclosing, ...collectResolvedAncestorChain(enclosing, ctx)];
+      let brokeAmbiguous = false;
       for (const klass of mro) {
         // Match a candidate's enclosing-scope tail against the MRO class in
         // EITHER stored form: the compact FQ (`["Api::BaseController"]`) or the
@@ -82,7 +84,10 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
         if (exactTier.length === 1) {
           return resolved({ targetRelPath: exactTier[0].relPath, targetSymbolId: exactTier[0].symbolId });
         }
-        if (exactTier.length > 1) break; // ambiguous inside the exact class — do NOT guess
+        if (exactTier.length > 1) {
+          brokeAmbiguous = true;
+          break; // ambiguous inside the exact class — do NOT guess
+        }
         // Loose tier — the walker stored the def's class WITHOUT its namespace
         // (`["X"]` for `Agents::X`): the candidate's ENTIRE scope equals klass's
         // last segment. `join("::") === short` (not `tail === short`) so a
@@ -91,7 +96,19 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
         if (looseTier.length === 1) {
           return resolved({ targetRelPath: looseTier[0].relPath, targetSymbolId: looseTier[0].symbolId });
         }
-        if (looseTier.length > 1) break;
+        if (looseTier.length > 1) {
+          brokeAmbiguous = true;
+          break;
+        }
+      }
+      // Concern-scope fallback (bd lawlq.3.2 facet-2): the class-MRO missed and the
+      // enclosing is a MODULE (concern) whose own MRO does not define `member`.
+      // Resolve via the classes that include the module, taking the target that is
+      // invariant across all of them (consensus → precision 1.0). Skipped after an
+      // ambiguous break — that is a genuine same-class collision, not a miss.
+      if (!brokeAmbiguous && ctx.includedBy?.[enclosing]?.length) {
+        const consensus = resolveViaIncludingClasses(enclosing, call.member, ctx, this.cfg.mode);
+        if (consensus) return resolved(consensus);
       }
     }
     // RC-1 (tea-rags-mcp-55xil): cross-FORM preference — before falling through
