@@ -1944,6 +1944,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         const ctx = {
           callerFile: extraction.relPath,
           callerScope: chunk.scope,
+          callerSymbolId: chunk.symbolId,
           imports: extraction.imports,
           symbolTable,
           classFieldTypes: extraction.classFieldTypes,

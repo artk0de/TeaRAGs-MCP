@@ -38,8 +38,20 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
     // methods on a superclass / mixin (brp1: an ambiguous bare call whose true
     // target is an INHERITED method was previously dropped). Mirrors the Java
     // scope-filtered fallback (java-resolver.ts:50-54), generalized to the MRO.
-    if (fallback.length > 1 && ctx.callerScope.length > 0) {
-      const enclosing = ctx.callerScope.join("::");
+    // Anchor the MRO walk on the enclosing class. For a CLASS/MODULE-body chunk
+    // (a callback / association edge assigned to the class chunk), `callerScope`
+    // OMITS the class's own name by convention — and is EMPTY for a top-level
+    // class — so it cannot pin the enclosing class, and every ambiguous class-body
+    // self-send silently strict-continues (bd lawlq.3.2, the dominant bareCall
+    // miss bucket). `callerSymbolId` carries the full FQ; a class/module chunk's
+    // id has no `#`/`.` (only `::` namespace), a method chunk's does — so a method
+    // body keeps `callerScope` (already the full class path, correct today).
+    const classBodyEnclosing =
+      ctx.callerSymbolId !== undefined && !ctx.callerSymbolId.includes("#") && !ctx.callerSymbolId.includes(".")
+        ? ctx.callerSymbolId
+        : null;
+    const enclosing = classBodyEnclosing ?? (ctx.callerScope.length > 0 ? ctx.callerScope.join("::") : null);
+    if (fallback.length > 1 && enclosing !== null) {
       const mro = [enclosing, ...collectAncestorChain(enclosing, ctx)];
       for (const klass of mro) {
         // Match a candidate's enclosing-scope tail against the MRO class in

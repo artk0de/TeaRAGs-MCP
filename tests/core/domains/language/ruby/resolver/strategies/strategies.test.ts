@@ -557,6 +557,132 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
     });
   });
 
+  it("class-body chunk: anchors the MRO on callerSymbolId when callerScope omits the class name (bd lawlq.3.2)", () => {
+    // A class-body callback edge (`before_action :set_items`) is assigned to the
+    // CLASS chunk, whose `scope` EXCLUDES its own name (convention) — so
+    // callerScope=[] for a top-level class. callerSymbolId carries the full FQ;
+    // anchor the MRO on it so the same-class def wins over a sibling namesake.
+    const symbolTable = tableWith(
+      [
+        "app/controllers/collections_controller.rb",
+        [
+          sym("CollectionsController#set_items", "set_items", "app/controllers/collections_controller.rb", [
+            "CollectionsController",
+          ]),
+        ],
+      ],
+      [
+        "app/controllers/contexts_controller.rb",
+        [
+          sym("ContextsController#set_items", "set_items", "app/controllers/contexts_controller.rb", [
+            "ContextsController",
+          ]),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "set_items", receiver: null, member: "set_items", startLine: 1 },
+      ctx({ symbolTable, callerScope: [], callerSymbolId: "CollectionsController" }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "app/controllers/collections_controller.rb",
+        targetSymbolId: "CollectionsController#set_items",
+      },
+    });
+  });
+
+  it("class-body chunk: climbs the MRO from callerSymbolId to an inherited method (bd lawlq.3.2)", () => {
+    const symbolTable = tableWith(
+      [
+        "app/controllers/application_controller.rb",
+        [
+          sym(
+            "ApplicationController#require_functional!",
+            "require_functional!",
+            "app/controllers/application_controller.rb",
+            ["ApplicationController"],
+          ),
+        ],
+      ],
+      [
+        "app/controllers/statuses_cleanup_controller.rb",
+        [
+          sym(
+            "StatusesCleanupController#require_functional!",
+            "require_functional!",
+            "app/controllers/statuses_cleanup_controller.rb",
+            ["StatusesCleanupController"],
+          ),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "require_functional!", receiver: null, member: "require_functional!", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerScope: [],
+        callerSymbolId: "AboutController",
+        classAncestors: { AboutController: ["ApplicationController"] },
+      }),
+    );
+    expect(outcome.kind === "resolved" && outcome.target.targetSymbolId).toBe(
+      "ApplicationController#require_functional!",
+    );
+  });
+
+  it("class-body chunk: MRO narrowing excludes unrelated same-name defs (precision, bd lawlq.3.2)", () => {
+    const symbolTable = tableWith(
+      [
+        "app/controllers/concerns/localized.rb",
+        [sym("Localized#set_locale", "set_locale", "app/controllers/concerns/localized.rb", ["Localized"])],
+      ],
+      [
+        "app/mailers/admin_mailer.rb",
+        [sym("AdminMailer#set_locale", "set_locale", "app/mailers/admin_mailer.rb", ["AdminMailer"])],
+      ],
+      [
+        "app/mailers/notification_mailer.rb",
+        [
+          sym("NotificationMailer#set_locale", "set_locale", "app/mailers/notification_mailer.rb", [
+            "NotificationMailer",
+          ]),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "set_locale", receiver: null, member: "set_locale", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerScope: [],
+        callerSymbolId: "AccountsController",
+        classAncestors: { AccountsController: ["ApplicationController"], ApplicationController: ["Localized"] },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/controllers/concerns/localized.rb", targetSymbolId: "Localized#set_locale" },
+    });
+  });
+
+  it("method-body chunk (symbolId has `#`) still anchors on callerScope, not callerSymbolId (no regression)", () => {
+    // A method chunk's symbolId is `Class#method`; its callerScope already
+    // carries the full class path. callerSymbolId MUST be ignored here (`#`).
+    const symbolTable = tableWith(
+      ["app/a.rb", [sym("A#helper", "helper", "app/a.rb", ["A"])]],
+      ["app/b.rb", [sym("B#helper", "helper", "app/b.rb", ["B"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "helper", receiver: null, member: "helper", startLine: 1 },
+      ctx({ symbolTable, callerScope: ["A"], callerSymbolId: "A#show" }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/a.rb", targetSymbolId: "A#helper" },
+    });
+  });
+
   it("continues (strict) when the short-name is ambiguous and not narrowable", () => {
     const symbolTable = tableWith(
       ["app/a.rb", [sym("A#helper", "helper", "app/a.rb", ["A"])]],

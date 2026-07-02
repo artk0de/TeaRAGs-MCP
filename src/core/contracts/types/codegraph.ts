@@ -783,6 +783,16 @@ export function pickSingleCandidate<T>(candidates: readonly T[], mode: Ambiguous
 export interface CallContext {
   callerFile: RelPath;
   callerScope: string[];
+  /**
+   * The caller chunk's own symbolId. For a CLASS/MODULE-body chunk this is the
+   * class FQ (`Ns::Klass` — `::` namespace only, no `#`/`.`), which `callerScope`
+   * OMITS by convention (a class chunk's scope excludes its own name, and is
+   * empty for a top-level class). bareCall MRO narrowing anchors on this for
+   * class-body edges (callbacks/associations) that `callerScope` cannot pin. A
+   * method chunk's symbolId carries `#`/`.` and is ignored — `callerScope` (the
+   * full class path) wins there. Set by the provider per-call from `chunk.symbolId`.
+   */
+  callerSymbolId?: string;
   /** May be empty for autoload-based languages (Ruby/Rails). */
   imports: ImportRef[];
   symbolTable: GlobalSymbolTable;
