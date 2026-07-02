@@ -6,12 +6,11 @@ paths:
 
 # symbolId Convention (MANDATORY)
 
-A single project-wide convention defines how chunks and graph rows label a
-method's identity. The chunker (writing Qdrant payload `symbolId`) and the
-codegraph provider (writing `cg_symbols.symbol_id` in DuckDB) MUST agree on the
-output for the same physical AST node. Mismatches produce silent ghost rows —
-`get_callers`/`get_callees` look up by the codegraph form but the user copies
-the chunker form from a search result, and vice versa.
+Single project-wide convention defines how chunks + graph rows label method
+identity. Chunker (writes Qdrant payload `symbolId`) + codegraph provider
+(writes `cg_symbols.symbol_id` in DuckDB) MUST agree on output for same physical
+AST node. Mismatch → silent ghost rows: `get_callers`/`get_callees` look up by
+codegraph form but user copies chunker form from search result, and vice versa.
 
 ## The rule (cross-language, no exceptions)
 
@@ -25,19 +24,19 @@ the chunker form from a search result, and vice versa.
 
 Reading the form:
 
-- `#` between class and member → instance method (binds to `this`/`self`).
+- `#` between class and member → instance method (binds `this`/`self`).
 - `.` between class and member → class-level (static / classmethod / abstract /
   associated function).
-- `::` only appears in languages whose namespace separator is `::` (Ruby
+- `::` only in languages whose namespace separator is `::` (Ruby
   modules/classes, Rust modules/types). Methods STILL use `#` / `.` —
-  `Acme::User#save` for an instance method on `Acme::User`.
+  `Acme::User#save` for instance method on `Acme::User`.
 
 ## Per-language detection
 
-The same detection logic powers BOTH the chunker
-(`chunker/tree-sitter.ts:isStaticMethod`) and the codegraph
+Same detection logic powers BOTH chunker
+(`chunker/tree-sitter.ts:isStaticMethod`) + codegraph
 (`codegraph/symbols/provider.ts:<lang>NameOf` returning `instanceMethod`). Keep
-them in lockstep when adding a language.
+lockstep when adding language.
 
 | Language       | Instance method                                       | Class / static method                                               |
 | -------------- | ----------------------------------------------------- | ------------------------------------------------------------------- |
@@ -50,8 +49,8 @@ them in lockstep when adding a language.
 | **Rust**       | `function_item` with a `self` / `&self` parameter     | `function_item` without `self` (associated function)                |
 | **Bash**       | n/a (no class concept — only top-level functions)     | n/a                                                                 |
 
-Constructors are instance-bound (`Class#constructor`) per convention — they
-initialize an instance even though they're invoked via `new Class()`.
+Constructors instance-bound (`Class#constructor`) per convention — initialize an
+instance even though invoked via `new Class()`.
 
 ## Where the convention is implemented
 
@@ -70,16 +69,16 @@ initialize an instance even though they're invoked via `new Class()`.
 
 ## When you add a new language
 
-1. Add `<lang>NameOf` in `provider.ts` that returns
+1. Add `<lang>NameOf` in `provider.ts` returning
    `{ name, descendsInto, instanceMethod }`. Set `instanceMethod: true` on the
-   AST node types that represent instance method declarations for the language.
-2. Extend `isStaticMethod(node)` in `chunker/tree-sitter.ts` with the matching
-   per-language branch — the chunker writes the Qdrant payload symbolId and MUST
-   agree with the codegraph DB.
-3. Update `<lang>-resolver.ts` to use the `#`/`.` forms when constructing
+   AST node types representing instance method declarations for the language.
+2. Extend `isStaticMethod(node)` in `chunker/tree-sitter.ts` with matching
+   per-language branch — chunker writes Qdrant payload symbolId, MUST agree with
+   codegraph DB.
+3. Update `<lang>-resolver.ts` to use `#`/`.` forms when constructing
    intra-class fqNames (mirror `ts-resolver.ts`).
-4. Add a row to the "Per-language detection" table above.
-5. Cover the convention in tests:
+4. Add row to "Per-language detection" table above.
+5. Cover convention in tests:
    - `tests/core/domains/ingest/pipeline/chunker/tree-sitter-chunker.test.ts` —
      instance + class method emit different separators
    - `tests/core/domains/trajectory/codegraph/symbols/provider.test.ts` — both
@@ -90,30 +89,29 @@ initialize an instance even though they're invoked via `new Class()`.
 
 ## Anti-patterns
 
-- **Don't use `.` as a catch-all separator.** Method calls between class and
-  member need the `#`/`.` distinction or `get_callers` returns the wrong row.
-- **Don't try to "fix" symbolIds at query time.** The chunker and codegraph both
-  PERSIST the symbolId — fixing it after the fact means rewriting both Qdrant
-  payload and cg_symbols rows. Get the persistence right.
-- **Don't introduce a third separator** (e.g. `::` for static methods to "make
-  it more readable"). One project, two separators between class and member: `#`
-  and `.`. Anything else is a bug.
+- **Don't use `.` as catch-all separator.** Method calls between class and
+  member need `#`/`.` distinction or `get_callers` returns wrong row.
+- **Don't "fix" symbolIds at query time.** Chunker + codegraph both PERSIST the
+  symbolId — fixing after the fact means rewriting both Qdrant payload +
+  cg_symbols rows. Get persistence right.
+- **Don't introduce third separator** (e.g. `::` for static methods to "make
+  more readable"). One project, two separators between class and member: `#` and
+  `.`. Anything else = bug.
 - **Don't hardcode per-language separator outside the two files listed above.**
-  If you find yourself writing `join("#")` or `join(".")` in a resolver, a
-  derived signal, an explore strategy, or a stats accumulator — back out and add
-  a helper that consults the canonical detection logic.
+  Writing `join("#")` or `join(".")` in a resolver, derived signal, explore
+  strategy, or stats accumulator — back out, add helper consulting canonical
+  detection logic.
 
 ## Verification checklist
 
-Before merging a change that touches symbolId composition:
+Before merging change touching symbolId composition:
 
 1. `npx vitest run tests/core/domains/ingest/pipeline/chunker` — chunker
-   produces the expected separator per language.
+   produces expected separator per language.
 2. `npx vitest run tests/core/domains/trajectory/codegraph` — codegraph produces
-   the same separator for the same physical AST node.
-3. Live MCP check on the tea-rags self-test (see
-   `.claude/skills/test-self-reindex/SKILL.md`): pick an instance method,
-   confirm it appears as `Class#method` in BOTH
-   `find_symbol(symbol: "Class#method")` payload AND
-   `get_callers(symbolId: "Class#method")` returns non-empty when called by at
-   least one other symbol in the same file.
+   same separator for same physical AST node.
+3. Live MCP check on tea-rags self-test (see
+   `.claude/skills/test-self-reindex/SKILL.md`): pick instance method, confirm
+   appears as `Class#method` in BOTH `find_symbol(symbol: "Class#method")`
+   payload AND `get_callers(symbolId: "Class#method")` returns non-empty when
+   called by at least one other symbol in same file.

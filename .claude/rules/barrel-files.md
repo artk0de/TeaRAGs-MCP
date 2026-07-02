@@ -5,8 +5,8 @@ paths:
 
 # Barrel Files (index.ts)
 
-Every domain boundary directory MUST have an `index.ts` barrel file that
-re-exports the public API of that domain.
+Every domain boundary directory MUST have `index.ts` barrel re-exporting that
+domain's public API.
 
 ## Domain boundaries with barrels
 
@@ -24,23 +24,21 @@ re-exports the public API of that domain.
 
 ## Rules
 
-1. **Import from barrels when crossing domain boundaries.** Instead of
+1. **Import from barrels when crossing domain boundaries.** Not
    `import { Reranker } from "../../domains/explore/reranker.js"`, use
    `import { Reranker } from "../../domains/explore/index.js"`.
 
-2. **Deep imports are OK within the same subdomain.** Files inside
-   `explore/strategies/` can import each other directly without going through
-   `strategies/index.ts`. But once you cross a subdomain boundary (e.g. from
-   `ingest/operations/` into `ingest/infra/`), Rule #3 applies — go through the
-   subdomain barrel.
+2. **Deep imports OK within same subdomain.** Files in `explore/strategies/`
+   import each other directly, no `strategies/index.ts`. But crossing a
+   subdomain boundary (e.g. `ingest/operations/` into `ingest/infra/`) → Rule #3
+   applies — go through subdomain barrel.
 
-3. **Every subdomain directory MUST have an `index.ts` barrel.** A "subdomain"
-   is a directory under a domain (`domains/<x>/`) that groups multiple files
-   with a shared public surface — examples: `ingest/operations/`,
-   `ingest/infra/`, `ingest/sync/`, `ingest/sync/snapshot/`,
-   `ingest/sync/deletion/`, `ingest/sync/infra/`. Single-file helper directories
-   (e.g. `__helpers__/`) do not need a barrel. Cross-subdomain imports MUST go
-   through the barrel, not the file directly.
+3. **Every subdomain directory MUST have `index.ts` barrel.** "Subdomain" =
+   directory under a domain (`domains/<x>/`) grouping multiple files with shared
+   public surface — e.g. `ingest/operations/`, `ingest/infra/`, `ingest/sync/`,
+   `ingest/sync/snapshot/`, `ingest/sync/deletion/`, `ingest/sync/infra/`.
+   Single-file helper dirs (e.g. `__helpers__/`) don't need barrel.
+   Cross-subdomain imports MUST go through barrel, not file directly.
 
-4. **When adding new public exports to a domain**, update the domain barrel. If
-   the export is internal to the domain, don't add it.
+4. **Adding new public exports to a domain** → update domain barrel. Export
+   internal to domain → don't add.

@@ -12,7 +12,7 @@ export function buildOverview(): string {
 
 ## Available Resources
 - tea-rags://schema/presets — rerank presets reference
-- tea-rags://schema/signals — custom weight signals reference (the canonical
+- tea-rags://schema/signals — custom weight signals reference (canonical
   catalog of weight keys — read BEFORE building a custom rerank)
 - tea-rags://schema/filters — Qdrant filter syntax and examples
 
@@ -29,11 +29,11 @@ export function buildOverview(): string {
 - get_index_status returns an \`infraHealth\` block: qdrant url/status/optimizer,
   embedding url/reachable, per-trajectory enrichment health. First debug-point
   when search fails or returns unexpected results.
-- Every search response can include \`driftWarning\` when the live schema added
-  payload fields that the current index has not been reindexed for. Surface it
-  to the user; do NOT auto-trigger force_reindex.
+- Every search response can include \`driftWarning\` when live schema added
+  payload fields the current index has not reindexed for. Surface it to the
+  user; do NOT auto-trigger force_reindex.
 - Every reranked result carries \`rankingOverlay.derived\` + \`rankingOverlay.raw.{file,chunk}\`
-  that explains the score (normalized derived signals + raw values with labels).
+  explaining the score (normalized derived signals + raw values with labels).
   Read tea-rags://schema/signal-labels for the label resolution algorithm.
 
 ## Project calibration
@@ -93,7 +93,7 @@ export function buildSearchGuide(): string {
   return `# Search Guide — Parameter Examples
 
 Tool routing is in the search-cascade rule. This resource has concrete
-parameter examples for each tool.
+parameter examples per tool.
 
 ## search_code Examples
 
@@ -131,8 +131,8 @@ parameter examples for each tool.
 ## rank_chunks Examples (batch analytics, not online search)
 
 rank_chunks scrolls and ranks ALL chunks by the chosen rerank — metaOnly is
-true by default. Use it for offline scoring across a domain, NOT for
-query-driven search.
+true by default. Use for offline scoring across a domain, NOT query-driven
+search.
 
 - Decomposition candidates → rerank="refactoring"
 - Hotspot detection → rerank="hotspots"
@@ -149,10 +149,9 @@ query-driven search.
 
 ## Pagination
 
-Every search tool accepts offset for cursor-style pagination. When a result
-page is exhausted but you need more, retry with offset=N instead of inflating
-limit. Don't paginate past the point where results stop matching the intent —
-reformulate the query instead.
+Every search tool accepts offset for cursor-style pagination. Page exhausted but
+need more → retry with offset=N instead of inflating limit. Don't paginate past
+the point where results stop matching the intent — reformulate the query instead.
 
 ## Single-call diagnostic recipes
 
@@ -194,7 +193,7 @@ Git enrichment runs in background after indexing. Check \`get_index_status\` for
 
 ## Index Workflow
 
-1. \`index_codebase\` — full initial index; on a re-run it auto-detects changed files and does an incremental update (no separate reindex tool)
+1. \`index_codebase\` — full initial index; on re-run auto-detects changed files and does an incremental update (no separate reindex tool)
 2. \`get_index_status\` — check status and enrichment progress
 3. \`clear_index\` — delete all indexed data (irreversible)
 `;
@@ -223,11 +222,11 @@ export function buildFiltersDoc(): string {
   md += "Chunk-level (`git.chunk.*`): ageDays, commitCount, bugFixRate, churnRatio, ";
   md += "contributorCount, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq, ";
   md += "blameDominantAuthor, blameDominantAuthorPct, blameAuthors[], blameContributorCount\n\n";
-  md += "**Ownership semantics:** `recentDominantAuthor*` reflects recent commit activity within the ";
-  md += "log window (TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS); `blameDominantAuthor*` reflects who owns ";
+  md += "**Ownership semantics:** `recentDominantAuthor*` = recent commit activity within the ";
+  md += "log window (TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS); `blameDominantAuthor*` = who owns ";
   md += "the live lines in HEAD via git blame. Use the latter for true ownership / silo detection.\n\n";
   md += '**⚠ Filter level:** Filters apply to `git.chunk.*` by default. Use `level: "file"` ';
-  md += "parameter for file-level filters. For time-based filters (maxAgeDays/minAgeDays), ";
+  md += "param for file-level filters. Time-based filters (maxAgeDays/minAgeDays): ";
   md += "prefer `level: \"file\"` — chunk-level ageDays=0 means 'no data', not 'recent'.\n\n";
   md += "**Imports:** imports[] — file-level imports\n\n";
   md += "**Codegraph metadata** (requires codegraph indexing — typed filter params, not raw Qdrant keys):\n\n";
@@ -235,12 +234,12 @@ export function buildFiltersDoc(): string {
   md += "`minConnectionCount`, `isHub` (boolean), `isLeaf` (boolean)\n\n";
   md += 'Chunk-level (pass `level: "chunk"` to enable for fanIn/fanOut): `minFanIn`, `minFanOut`, `minPageRank`\n\n';
   md +=
-    "Note: codegraph payload is stored under nested paths (`codegraph.symbols.{file,chunk}.codegraph.{file,chunk}.X`) ";
+    "Note: codegraph payload stored under nested paths (`codegraph.symbols.{file,chunk}.codegraph.{file,chunk}.X`) ";
   md += "to avoid colliding with similarly-named file-level signals. Raw Qdrant filter keys won't resolve — ";
-  md += "use the typed filter params above instead.\n\n";
+  md += "use the typed filter params above.\n\n";
   md += "## Filter Thresholds\n\n";
-  md += "Thresholds vary by codebase. Use `get_index_metrics` to get actual percentile-based ";
-  md += "label boundaries for your indexed collection. Signals are scoped by `source` and `test`:\n";
+  md += "Thresholds vary by codebase. Use `get_index_metrics` for actual percentile-based ";
+  md += "label boundaries for your indexed collection. Signals scoped by `source` and `test`:\n";
   md += "```\n";
   md += 'signals["typescript"]["git.file.commitCount"]["source"].labelMap\n';
   md += "→ { low: 1, typical: 3, high: 8, extreme: 20 }\n";
@@ -268,22 +267,22 @@ export function buildSignalLabelsGuide(payloadSignals: PayloadSignalDescriptor[]
 
   let md = `# Signal Labels
 
-Signal labels provide human-readable interpretation of numeric signal values
-relative to the current codebase distribution. Labels are computed from
-percentile thresholds via \`get_index_metrics\` and attached to ranking overlay
-results automatically.
+Signal labels give human-readable interpretation of numeric signal values
+relative to the current codebase distribution. Computed from percentile
+thresholds via \`get_index_metrics\`, attached to ranking overlay results
+automatically.
 
 ## How Labels Work
 
-Each numeric signal declares percentile-to-label mappings. When a search result
-has a ranking overlay, numeric values are enriched with labels:
+Each numeric signal declares percentile-to-label mappings. Search result with a
+ranking overlay → numeric values enriched with labels:
 
 \`\`\`json
 { "commitCount": { "value": 12, "label": "high" } }
 \`\`\`
 
-The label is determined by which percentile bucket the value falls into.
-Use \`get_index_metrics\` to see actual threshold values for your codebase.
+Label determined by which percentile bucket the value falls into.
+Use \`get_index_metrics\` for actual threshold values for your codebase.
 
 ## Scoped Thresholds
 
@@ -299,7 +298,7 @@ signals[language][signal][scope].labelMap
 Example: \`signals["ruby"]["git.file.commitCount"]["source"].labelMap\`
 → \`{ low: 2, typical: 5, high: 10, extreme: 25 }\`
 
-If a language has test chunks indexed, a \`"test"\` scope appears with separate
+Language with test chunks indexed → a \`"test"\` scope appears with separate
 thresholds. Reranker automatically uses the correct scope for label resolution.
 
 `;
@@ -324,7 +323,7 @@ thresholds. Reranker automatically uses the correct scope for label resolution.
 
   md += `## Label Resolution Algorithm
 
-1. Thresholds are walked in ascending percentile order
+1. Thresholds walked in ascending percentile order
 2. Each label covers [its threshold, next threshold)
 3. First label covers everything below its threshold
 4. Last label covers everything at or above its threshold

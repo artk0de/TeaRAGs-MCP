@@ -9,39 +9,36 @@ paths:
 
 # Facade Discipline (MANDATORY)
 
-`ExploreFacade` and `IngestFacade` are **thin orchestrators**, not containers
-for business logic. Every time a facade method grows past dispatching, the
-layered architecture collapses: strategies stop being the source of truth, tests
-have to mock facade internals instead of domain classes, and the next feature
-gets pasted in the same place by the same instinct.
+`ExploreFacade`/`IngestFacade` = **thin orchestrators**, not business-logic
+containers. Facade method growing past dispatching collapses layering:
+strategies stop being source of truth, tests mock facade internals not domain
+classes, next feature pasted same place by same instinct.
 
-This rule prevents that drift. It triggers whenever you edit a facade, add a
-method to `App`, or touch strategies/ops/queries.
+This rule prevents drift. Triggers on: edit facade, add `App` method, touch
+strategies/ops/queries.
 
 ## What a facade does — and only that
 
-**A facade method does two things: validate input and delegate.** Everything
-else — resolving the collection, guarding against a missing collection or wrong
-model, ensuring cached stats are loaded, embedding the query, merging filters,
-executing a strategy, attaching a drift warning, shaping the response — lives in
-the corresponding Ops / Query class.
+**Facade method does two things: validate input + delegate.** Everything else —
+resolve collection, guard missing-collection/wrong-model, ensure cached stats
+loaded, embed query, merge filters, execute strategy, attach drift warning,
+shape response — lives in corresponding Ops/Query class.
 
-**The facade class has zero private async pipeline methods.** If you find
-yourself writing `private async doX(...)` on a facade, stop: that helper is
-pipeline work, and pipeline work lives in Ops. A facade that hosts
-`executeExplore`, `embedAndDispatch`, `buildFilter`, `resolveAndGuard`,
-`ensureStats`, `checkDrift`, or any context-building helpers has failed the rule
-— regardless of how short each public method looks.
+**Facade has zero private async pipeline methods.** Writing
+`private async doX(...)` on facade → stop: that's pipeline work, lives in Ops.
+Facade hosting `executeExplore`, `embedAndDispatch`, `buildFilter`,
+`resolveAndGuard`, `ensureStats`, `checkDrift`, or any context-builders = failed
+rule — regardless how short each public method looks.
 
-The only private members allowed on the facade are:
+Only private members allowed on facade:
 
 1. Injected dependencies (`qdrant`, `ops`, `query`, `modelGuard`, etc.)
-2. Synchronous input validators (and even these move out once they exceed ~5
-   lines — see "Validation extraction").
+2. Synchronous input validators (move out once >~5 lines — see "Validation
+   extraction").
 
 ### The pipeline lives in Ops
 
-Ops classes run this pipeline, not the facade:
+Ops classes run this pipeline, not facade:
 
 ```
 1. resolve     — paths/collection names, embed query if needed
@@ -51,8 +48,8 @@ Ops classes run this pipeline, not the facade:
 5. finalize    — attach drift warning, strip internal fields, shape response
 ```
 
-If an Ops method does anything beyond these five steps, the extra work belongs
-in a strategy / query — not further up.
+Ops method doing anything beyond these five steps → extra work belongs in
+strategy/query, not further up.
 
 ### Responsibility table
 
@@ -76,20 +73,19 @@ in a strategy / query — not further up.
 | **Marker read/backfill**                   |        | ✅  |          |       |
 | **Collection/document CRUD**               |        | ✅  |          |       |
 
-Note: "Merging typed + raw filters" is Ops work — it calls
-`registry.buildMergedFilter()` and hands the merged filter to the strategy via
-`ExploreContext.filter`. Strategies only build filters when they need
-operation-specific shapes (e.g. `SymbolSearchStrategy` building its symbolId +
-parentSymbolId pair).
+Note: "Merging typed + raw filters" = Ops work — calls
+`registry.buildMergedFilter()`, hands merged filter to strategy via
+`ExploreContext.filter`. Strategies build filters only for operation-specific
+shapes (e.g. `SymbolSearchStrategy` symbolId + parentSymbolId pair).
 
 ## Decision: where does a new method go?
 
-**Every new facade method delegates to Ops.** That's not negotiable — Ops owns
-the pipeline (resolve → guard → ensureStats → dispatch → finalize). The facade
-just validates input and forwards the request.
+**Every new facade method delegates to Ops.** Non-negotiable — Ops owns pipeline
+(resolve → guard → ensureStats → dispatch → finalize). Facade validates input +
+forwards.
 
-What actually needs placement is the **inner work** the Ops method performs.
-Answer three questions, in order — the first "yes" wins:
+What needs placement = **inner work** the Ops method performs. Answer three
+questions in order — first "yes" wins:
 
 1. **Does it search, rank, or scroll chunks?** → new strategy in
    `domains/explore/strategies/` extending `BaseExploreStrategy`. Register in
@@ -103,38 +99,34 @@ Answer three questions, in order — the first "yes" wins:
    / `DocumentOps` / `IndexingOps` / `ExploreOps`, or a new method on an
    existing ops class if the responsibility matches.
 
-If none match, the Ops method is pure pipeline: `executeExplore` or equivalent
-forwards to an existing strategy / query / ops with different context. Still
-goes in Ops, not the facade.
+None match → Ops method is pure pipeline: `executeExplore` or equivalent
+forwards to existing strategy/query/ops with different context. Still Ops, not
+facade.
 
 ## Size budget
 
-Three checks in priority order:
+Three checks, priority order:
 
-1. **Facade has zero private async pipeline methods.** This is the structural
-   check — no `private async executeExplore`, no
-   `private async embedAndDispatch`, no `private async resolveAndGuard`, no
-   `private async ensureStats`. Those belong in Ops. If any exist on the facade
-   class, the facade has absorbed pipeline work and the extraction is
-   incomplete, regardless of how short each public method looks.
-2. **Facade public method body: ≤ 20 lines.** Dispatchers that only validate +
-   delegate are typically 1–5 lines. If a method exceeds 20, the facade is doing
-   work inline — extract it.
-3. **Facade file total: informational, not a hard gate.** A facade with 7
-   methods × 2 lines of delegation + imports + validators will land under 200
-   lines naturally. If the file is well over 200 lines but every public method
-   is 1–3 lines, look for synchronous helpers that could move to Ops (ctx
-   builders, filter merges disguised as validators).
+1. **Facade has zero private async pipeline methods.** Structural check — no
+   `private async executeExplore`, no `private async embedAndDispatch`, no
+   `private async resolveAndGuard`, no `private async ensureStats`. Belong in
+   Ops. Any on facade class → facade absorbed pipeline work, extraction
+   incomplete, regardless how short each public method.
+2. **Facade public method body: ≤ 20 lines.** Validate+delegate dispatchers
+   typically 1–5 lines. Method exceeding 20 → facade doing work inline, extract.
+3. **Facade file total: informational, not hard gate.** 7 methods × 2 lines
+   delegation + imports + validators lands under 200 lines naturally. Well over
+   200 lines but every public method 1–3 lines → look for synchronous helpers to
+   move to Ops (ctx builders, filter merges disguised as validators).
 
-Check 1 is the one the rule existed to prevent in the first place. Check 2
-catches inline bloat. Check 3 is a smoke alarm.
+Check 1 = the one rule existed to prevent. Check 2 catches inline bloat. Check 3
+= smoke alarm.
 
-These checks exist because `ExploreFacade` grew to 635 lines when three methods
-(`findSymbol`, `findSimilar`, `getIndexMetrics`) each added ~90 lines of
-business logic inline, and then — after a first-pass refactor — dropped to 478
-lines of "thin" public methods backed by ~10 private async helpers doing the
-exact same pipeline work. Both shapes fail the rule: the first on Check 2, the
-second on Check 1.
+Checks exist because `ExploreFacade` grew to 635 lines when three methods
+(`findSymbol`, `findSimilar`, `getIndexMetrics`) each added ~90 lines inline
+business logic, then — after first-pass refactor — dropped to 478 lines of
+"thin" public methods backed by ~10 private async helpers doing exact same
+pipeline work. Both shapes fail: first on Check 2, second on Check 1.
 
 ## Anti-patterns
 
@@ -213,10 +205,9 @@ class ExploreFacade {
 }
 ```
 
-Every public method is ≤ 10 lines, every method-body budget is satisfied, and
-yet the file has grown — because the pipeline got renamed from
-`public async method()` to `private async method()`. That's cosmetic, not
-structural.
+Every public method ≤ 10 lines, every method-body budget satisfied, yet file
+grew — pipeline got renamed `public async method()` → `private async method()`.
+Cosmetic, not structural.
 
 ### ✅ Facade is pure delegation; pipeline lives in Ops
 
@@ -254,10 +245,10 @@ class ExploreFacade {
 }
 ```
 
-The facade holds only the Ops reference and (synchronous) input validators.
-Every public method is 1–3 lines. The pipeline — `executeExplore`,
-`embedAndDispatch`, `buildFilter`, `resolveAndGuard`, `ensureStats`,
-`checkDrift`, ctx builders — all lives in `ExploreOps`.
+Facade holds only Ops reference + (synchronous) input validators. Every public
+method 1–3 lines. Pipeline — `executeExplore`, `embedAndDispatch`,
+`buildFilter`, `resolveAndGuard`, `ensureStats`, `checkDrift`, ctx builders —
+all in `ExploreOps`.
 
 ### ❌ Indexing branching in the facade
 
@@ -332,20 +323,20 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
 
 ### Multi-filter strategies — pass input via constructor
 
-`ExploreContext.filter` holds ONE filter. Strategies that need two or more
-filters (parallel scrolls, disjoint passes) take a typed **Input object via
-their constructor** — same pattern as `SimilarSearchStrategy`. Do not try to
-wedge extra filters into `ExploreContext`; do not build filters in the facade
-and thread them as ad-hoc context fields.
+`ExploreContext.filter` holds ONE filter. Strategies needing two+ filters
+(parallel scrolls, disjoint passes) take typed **Input object via constructor**
+— same as `SimilarSearchStrategy`. Do not wedge extra filters into
+`ExploreContext`; do not build filters in facade + thread as ad-hoc context
+fields.
 
-The strategy consumes `ctx.collectionName` / `ctx.limit` / `ctx.offset` /
-`ctx.metaOnly` / `ctx.rerank` from `ExploreContext` and everything else from its
-own `input`. Filter construction (including `registry.buildMergedFilter()` calls
-for `pathPattern` merging) happens inside the strategy.
+Strategy consumes `ctx.collectionName` / `ctx.limit` / `ctx.offset` /
+`ctx.metaOnly` / `ctx.rerank` from `ExploreContext`, everything else from own
+`input`. Filter construction (incl. `registry.buildMergedFilter()` for
+`pathPattern` merging) happens inside strategy.
 
 ### Adding a new strategy type — checklist
 
-When you add a new concrete strategy class:
+Adding new concrete strategy class:
 
 1. **Implement `BaseExploreStrategy`** — override `executeExplore` and, if
    needed, `applyDefaults` / `postProcess`.
@@ -353,8 +344,8 @@ When you add a new concrete strategy class:
    ```typescript
    readonly type: "vector" | "hybrid" | "scroll-rank" | "similar" | "symbol";
    ```
-   Do NOT cast (`as unknown as`) to sidestep the union — that's a silent
-   widening that hides the new type from the factory's exhaustiveness check.
+   Do NOT cast (`as unknown as`) to sidestep the union — silent widening hides
+   new type from factory's exhaustiveness check.
 3. **Register the strategy**: either extend `createExploreStrategy()` if the
    strategy is shared across calls (like `vector`/`hybrid`/`scroll-rank`), or
    keep it per-request and instantiate it in the facade dispatcher (like
@@ -384,8 +375,8 @@ export class IndexMetricsQuery {
 }
 ```
 
-Inject into the facade via `ExploreFacadeDeps`; do not reach into
-`domains/explore/` internals from the facade body.
+Inject into facade via `ExploreFacadeDeps`; do not reach into `domains/explore/`
+internals from facade body.
 
 ### Ops (for CRUD / orchestration branching)
 
@@ -405,18 +396,17 @@ export class IndexingOps {
 }
 ```
 
-Match the shape of existing `CollectionOps` / `DocumentOps`.
+Match shape of existing `CollectionOps` / `DocumentOps`.
 
 ## Validation extraction
 
-Input validation (shape, mutual exclusion, strategy-specific rules) counts as
-facade work — but only up to ~5 lines. Past that, extract into a named
-`validate<Name>Request` function **exported from the bottom of the same facade
-file**, below the class and alongside other per-endpoint helpers.
+Input validation (shape, mutual exclusion, strategy-specific rules) = facade
+work — but only up to ~5 lines. Past that, extract into named
+`validate<Name>Request` function **exported from bottom of same facade file**,
+below class, alongside other per-endpoint helpers.
 
-Don't put validators in `api/errors.ts` — that file holds error _classes_, not
-validation logic. Don't spin up a `validators/` subdirectory until there are 5+
-validators to group.
+Don't put validators in `api/errors.ts` — holds error _classes_, not validation
+logic. Don't spin up `validators/` subdirectory until 5+ validators to group.
 
 ```typescript
 // src/core/api/internal/facades/explore-facade.ts (bottom of file)
@@ -436,13 +426,13 @@ export function validateFindSimilarRequest(req: FindSimilarRequest): void {
 }
 ```
 
-Throw typed errors per `typed-errors.md`. Export the validator so its unit test
-imports it directly rather than reaching through the facade. The facade method
-calls it as its first line.
+Throw typed errors per `typed-errors.md`. Export validator so its unit test
+imports it directly rather than reaching through facade. Facade method calls it
+as first line.
 
 ## Adding a new explore or ingest API
 
-Before writing the method in the facade, run this checklist:
+Before writing method in facade, run checklist:
 
 1. **Classify** the method using the decision tree above (strategy / query / ops
    / pure dispatch).
@@ -460,34 +450,31 @@ Before writing the method in the facade, run this checklist:
 
 ## Tests that mutate facade internals after construction
 
-Legacy tests sometimes swap facade dependencies after construction, e.g.:
+Legacy tests sometimes swap facade deps after construction, e.g.:
 
 ```typescript
 const facade = new ExploreFacade({ ... });
 (facade as any).qdrant = { collectionExists: vi.fn().mockResolvedValue(true) };
 ```
 
-This works as long as facade methods read `this.qdrant` / `this.indexing` on
-every call. After extraction, the strategy / query / ops class **captures those
-deps at construction time** and the post-hoc swap has no effect. The test
-silently exercises the wrong code path.
+Works as long as facade methods read `this.qdrant` / `this.indexing` every call.
+After extraction, strategy/query/ops class **captures deps at construction
+time** and post-hoc swap has no effect. Test silently exercises wrong code path.
 
-**Prefer constructor-time DI.** Pass the mocked dependency via
-`ExploreFacadeDeps` / `IngestFacadeDeps` at `new Facade({...})`. If a test
-insists on post-construction swap (e.g. because it's replacing the concrete
-`IndexPipeline` for fire-and-forget assertions), redirect the swap to the
-extracted class: `(facade as any).indexingOps.indexing = ...` — and leave a
-comment pointing at this rule so future readers see why.
+**Prefer constructor-time DI.** Pass mocked dependency via `ExploreFacadeDeps` /
+`IngestFacadeDeps` at `new Facade({...})`. Test insisting on post-construction
+swap (e.g. replacing concrete `IndexPipeline` for fire-and-forget assertions) →
+redirect swap to extracted class: `(facade as any).indexingOps.indexing = ...` —
+leave comment pointing at this rule so future readers see why.
 
-When extraction breaks existing tests this way, fix the test by moving the mock
-to constructor time rather than weakening the encapsulation of the extracted
-class.
+Extraction breaking existing tests this way → fix test by moving mock to
+constructor time rather than weakening encapsulation of extracted class.
 
 ## When in doubt
 
-Ask: "If I delete this code from the facade, which file picks it up?" If the
-answer is "nothing, it only exists here" — the code doesn't belong in the
-facade. Find or create its real home before adding it.
+Ask: "If I delete this code from the facade, which file picks it up?" Answer
+"nothing, it only exists here" → code doesn't belong in facade. Find/create its
+real home before adding.
 
 ## Verification
 
@@ -495,6 +482,6 @@ facade. Find or create its real home before adding it.
 npx tsc --noEmit && npx vitest run tests/core/api/ tests/core/domains/explore/
 ```
 
-File sizes: see the Size budget section above. A PR may grow a facade past
-budget only if every public method fits ≤ 20 lines — otherwise the review must
-link a strategy / query / ops class absorbing the new work.
+File sizes: see Size budget section above. PR may grow facade past budget only
+if every public method fits ≤ 20 lines — otherwise review must link
+strategy/query/ops class absorbing new work.

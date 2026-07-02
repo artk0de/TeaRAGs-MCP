@@ -35,9 +35,8 @@ function collectionPathFields() {
       .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
       .optional()
       .describe(
-        "[RECOMMENDED] Project alias from registry — stable name that survives " +
-          "path moves. Use this when an alias exists; fall back to 'collection' or " +
-          "'path' only when no alias is registered. " +
+        "[RECOMMENDED] Project alias from registry — stable name survives path moves. " +
+          "Use when alias exists; fall back to 'collection'/'path' only when no alias registered. " +
           "Resolution priority: collection > project > path.",
       ),
     collection: z
@@ -45,14 +44,14 @@ function collectionPathFields() {
       .optional()
       .describe(
         "Internal Qdrant collection name (lowest-level handle). " +
-          "Prefer 'project' when an alias is registered; provide one of 'project', 'collection', or 'path'.",
+          "Prefer 'project' when alias registered; provide one of 'project', 'collection', 'path'.",
       ),
     path: z
       .string()
       .optional()
       .describe(
-        "Filesystem path to indexed codebase (auto-resolves to a collection). " +
-          "Prefer 'project' when an alias is registered; provide one of 'project', 'collection', or 'path'.",
+        "Filesystem path to indexed codebase (auto-resolves to collection). " +
+          "Prefer 'project' when alias registered; provide one of 'project', 'collection', 'path'.",
       ),
   };
 }
@@ -60,13 +59,13 @@ function collectionPathFields() {
 const GetCallersInputShape = {
   ...collectionPathFields(),
   symbolId: z.string().describe("Target symbol id (e.g. Foo.bar)"),
-  limit: z.number().int().positive().max(500).optional().describe("Maximum number of caller edges (default 50)"),
+  limit: z.number().int().positive().max(500).optional().describe("Max caller edges (default 50)"),
 };
 
 const GetCalleesInputShape = {
   ...collectionPathFields(),
   symbolId: z.string().describe("Source symbol id (e.g. main)"),
-  limit: z.number().int().positive().max(500).optional().describe("Maximum number of callee edges (default 50)"),
+  limit: z.number().int().positive().max(500).optional().describe("Max callee edges (default 50)"),
 };
 
 const FindCyclesInputShape = {
@@ -79,9 +78,9 @@ const FindCyclesInputShape = {
     .string()
     .optional()
     .describe(
-      "Picomatch glob scoping the result to a subdomain/module (e.g. '**/domains/ingest/**', " +
-        "'{src/core/api,src/mcp}/**'). A cycle is kept if AT LEAST ONE member resolves to a matching " +
-        "file path, so cross-boundary cycles are retained. Omit for no filter.",
+      "Picomatch glob scoping result to subdomain/module (e.g. '**/domains/ingest/**', " +
+        "'{src/core/api,src/mcp}/**'). Cycle kept if AT LEAST ONE member resolves to matching " +
+        "file path — cross-boundary cycles retained. Omit for no filter.",
     ),
 };
 
@@ -103,7 +102,7 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
       .buildPresetSchema("trace_path")
       .optional()
       .describe(
-        "Rerank preset that scores per-step danger for the overlay (optional — omit for a lean path enumeration, no danger ranking)",
+        "Rerank preset scoring per-step danger for overlay (optional — omit for lean path enumeration, no danger ranking)",
       ),
     maxDepth: z
       .number()
@@ -111,16 +110,14 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
       .positive()
       .max(20)
       .optional()
-      .describe(
-        "Max hops on a path (default 8). Capped at 20 — deep traces on dense graphs can be expensive; prefer the default.",
-      ),
+      .describe("Max hops per path (default 8). Capped at 20 — deep traces on dense graphs expensive; prefer default."),
     maxPaths: z
       .number()
       .int()
       .positive()
       .max(50)
       .optional()
-      .describe("Max paths returned (default 10; danger-sorted only when rerank is passed)"),
+      .describe("Max paths returned (default 10; danger-sorted only when rerank passed)"),
   };
 }
 
@@ -141,7 +138,7 @@ export function registerCodegraphTools(
     "get_callers",
     {
       title: "Get Callers",
-      description: "Return symbols that invoke the given symbolId. Backed by the codegraph DuckDB.",
+      description: "Return symbols that invoke given symbolId. Backed by codegraph DuckDB.",
       inputSchema: GetCallersInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
@@ -156,7 +153,7 @@ export function registerCodegraphTools(
     "get_callees",
     {
       title: "Get Callees",
-      description: "Return symbols invoked by the given symbolId. Backed by the codegraph DuckDB.",
+      description: "Return symbols invoked by given symbolId. Backed by codegraph DuckDB.",
       inputSchema: GetCalleesInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
@@ -172,8 +169,8 @@ export function registerCodegraphTools(
     {
       title: "Find Cycles",
       description:
-        "Return strongly-connected components (cycles) from the import or call graph. " +
-        "Cycles of length >= 2; single-node 'cycles' are excluded. Read from a pre-computed " +
+        "Return strongly-connected components (cycles) from import or call graph. " +
+        "Cycles length >= 2; single-node 'cycles' excluded. Read from pre-computed " +
         "table — sub-millisecond per call.",
       inputSchema: FindCyclesInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
@@ -191,8 +188,8 @@ export function registerCodegraphTools(
       title: "Trace Path",
       description:
         "Trace all simple call paths from one symbol to another, in execution order. " +
-        "Lean path enumeration by default. Pass a `rerank` danger preset to annotate each step " +
-        "with a git/churn overlay and sort paths most-dangerous first. Backed by the codegraph DuckDB.",
+        "Lean path enumeration by default. Pass `rerank` danger preset to annotate each step " +
+        "with git/churn overlay and sort paths most-dangerous first. Backed by codegraph DuckDB.",
       inputSchema: buildTracePathInputShape(schemaBuilder),
       annotations: { readOnlyHint: true, idempotentHint: true },
     },

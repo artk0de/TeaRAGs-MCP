@@ -24,40 +24,40 @@ paths:
 
 **Dependency rules:**
 
-| Layer                      | Imports from                                                  | Exports to                   |
-| -------------------------- | ------------------------------------------------------------- | ---------------------------- |
-| `cli/`                     | `bootstrap/`, `core/api/public/`                              | (process entry)              |
-| `mcp/`                     | `core/api/public/`                                            | tool surface                 |
-| `bootstrap/`               | `mcp/`, `core/api/`, `core/{contracts, adapters, infra}/`     | composition root             |
-| `src/index.ts`             | `bootstrap/`                                                  | process bootstrap            |
-| `core/api/`                | domain modules, `contracts/`, `adapters/`, `infra/`           | `cli/`, `mcp/`, `bootstrap/` |
-| `core/domains/explore/`    | `contracts/`, `adapters/`, `infra/`                           | `api/`                       |
-| `core/domains/trajectory/` | `contracts/`, `adapters/`, `infra/`                           | `api/`                       |
-| `core/domains/ingest/`     | `contracts/`, `adapters/`, `infra/`                           | `api/`                       |
-| `core/domains/language/`   | `contracts/`, `infra/` _(leaf)_                               | injected via factory         |
-| `core/contracts/`          | _(nothing — pure interfaces/types, zero `core/` deps)_        | domain modules, `api/`       |
-| `core/adapters/`           | `infra/`                                                      | domain modules, `api/`       |
-| `core/infra/`              | _(nothing)_                                                   | all `core/` layers           |
+| Layer                      | Imports from                                              | Exports to                   |
+| -------------------------- | --------------------------------------------------------- | ---------------------------- |
+| `cli/`                     | `bootstrap/`, `core/api/public/`                          | (process entry)              |
+| `mcp/`                     | `core/api/public/`                                        | tool surface                 |
+| `bootstrap/`               | `mcp/`, `core/api/`, `core/{contracts, adapters, infra}/` | composition root             |
+| `src/index.ts`             | `bootstrap/`                                              | process bootstrap            |
+| `core/api/`                | domain modules, `contracts/`, `adapters/`, `infra/`       | `cli/`, `mcp/`, `bootstrap/` |
+| `core/domains/explore/`    | `contracts/`, `adapters/`, `infra/`                       | `api/`                       |
+| `core/domains/trajectory/` | `contracts/`, `adapters/`, `infra/`                       | `api/`                       |
+| `core/domains/ingest/`     | `contracts/`, `adapters/`, `infra/`                       | `api/`                       |
+| `core/domains/language/`   | `contracts/`, `infra/` _(leaf)_                           | injected via factory         |
+| `core/contracts/`          | _(nothing — pure interfaces/types, zero `core/` deps)_    | domain modules, `api/`       |
+| `core/adapters/`           | `infra/`                                                  | domain modules, `api/`       |
+| `core/infra/`              | _(nothing)_                                               | all `core/` layers           |
 
 **Consumer surface rule (MANDATORY).** `cli`/`mcp` reach `core` ONLY through
-`core/api/public/`. They do NOT import `api/internal`, `contracts`, `adapters`,
-or `infra` directly. `api/public/index.ts` is the single curated re-export
-facade: consumer-facing runtime symbols and types (error classes, registry
-utilities, `EnrichmentHealthMap`, `IngestCodeConfig`) live in their internal
-layer of origin and are re-exported through this barrel.
+`core/api/public/`. NOT `api/internal`, `contracts`, `adapters`, `infra`
+directly. `api/public/index.ts` = single curated re-export facade:
+consumer-facing runtime symbols + types (error classes, registry utilities,
+`EnrichmentHealthMap`, `IngestCodeConfig`) live in their internal origin layer,
+re-exported through this barrel.
 
 **Composition roots.**
 
-- **`api/`** is the **core composition root** — assembles dependencies from
-  every layer below and wires them via DI.
-- **`bootstrap/`** is the **application composition root** above `api/`: parses
-  config, builds the AppContext, and hands the wired `App` plus the MCP server
-  registration to `cli` / `mcp`.
+- **`api/`** = **core composition root** — assembles deps from every layer
+  below, wires via DI.
+- **`bootstrap/`** = **application composition root** above `api/`: parses
+  config, builds AppContext, hands wired `App` + MCP server registration to
+  `cli` / `mcp`.
 
 **Strict import-direction model.** Forbidden edges apply equally to runtime
-imports AND `import type` declarations — no `allowTypeImports` escape hatch.
-Relocating a type to a layer-correct home is always preferred over a typed-only
-cross-layer reach. See spec
+imports AND `import type` — no `allowTypeImports` escape hatch. Relocating a
+type to layer-correct home always preferred over typed-only cross-layer reach.
+See spec
 `docs/superpowers/specs/2026-05-27-dependency-direction-guard-design.md`.
 
 **Prohibited dependencies (hard errors):**
@@ -75,7 +75,7 @@ cross-layer reach. See spec
 
 - **public/**: App interface, createApp() factory, DTOs by domain
   - App interface (public/app.ts): unified public contract for MCP/CLI
-  - createApp() + AppDeps: factory that wires internal classes into App
+  - createApp() + AppDeps: factory wiring internal classes into App
   - DTOs grouped by domain: explore, ingest, collection, document
 - **internal/**: orchestration + wiring (not exported to MCP consumers)
   - facades/: ExploreFacade, IngestFacade (search/indexing orchestration)
@@ -147,8 +147,8 @@ cross-layer reach. See spec
 
 ## New Code Placement Rule (MANDATORY)
 
-**All new code MUST be placed within the existing layer structure.** Never
-create top-level directories under `src/` — all code goes into `core/`.
+**All new code MUST go within existing layer structure.** Never create top-level
+dirs under `src/` — all code goes into `core/`.
 
 | New code type         | Correct location              | WRONG location       |
 | --------------------- | ----------------------------- | -------------------- |
@@ -162,13 +162,13 @@ Tests mirror source structure: `tests/core/adapters/qdrant/` for
 
 ## Dependency Inversion Principle
 
-Interfaces and registries live in `core/contracts/`. Implementations live in
-domain modules. api/ orchestrates domain modules through their public APIs —
-never touches foundation.
+Interfaces + registries live in `core/contracts/`. Implementations in domain
+modules. api/ orchestrates domain modules through their public APIs — never
+touches foundation.
 
 **Registries in contracts/:** registries work ONLY through interfaces. Domain
-modules use them internally. api/ interacts with registries through domain
-module facades, not by importing from contracts/ directly.
+modules use them internally. api/ interacts via domain module facades, not by
+importing from contracts/ directly.
 
 Example flow (enrichment provider):
 
@@ -200,5 +200,5 @@ Example flow (stats accumulator):
   `IngestFacadeDeps.statsAccumulators` → `IndexingOps.statsAccumulators` →
   `computeCollectionStats(points, signals, trajectoryAccumulators, ...)`
 - `computeCollectionStats` in `domains/ingest/collection-stats.ts` only
-  orchestrates — it derives a shared `PointContext` per point and calls `accept`
-  on each accumulator instance, then collects results by key
+  orchestrates — derives a shared `PointContext` per point, calls `accept` on
+  each accumulator instance, then collects results by key

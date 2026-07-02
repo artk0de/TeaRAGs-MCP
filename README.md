@@ -18,6 +18,7 @@
   <br>
   <a href="https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml"><img src="https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://codecov.io/gh/artk0de/TeaRAGs-MCP"><img src="https://codecov.io/gh/artk0de/TeaRAGs-MCP/graph/badge.svg?token=BU255N03YF" alt="codecov"></a>
+  <a href="https://github.com/JuliusBrussee/caveman"><img src="https://img.shields.io/badge/built%20with-caveman%20%F0%9F%AA%A8-8B4513" alt="Built with Caveman"></a>
 </p>
 
 ---

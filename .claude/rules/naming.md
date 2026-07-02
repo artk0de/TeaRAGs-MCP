@@ -5,21 +5,19 @@ paths:
 
 # Domain-Specific Naming (MANDATORY)
 
-Names must carry their domain context so they are unambiguous **in isolation** —
-readable without inspecting surrounding code to disambiguate. Prefer a longer,
-domain-qualified name over a short generic one whenever the generic name could
-mean something else elsewhere in the codebase.
+Names carry domain context — unambiguous **in isolation**, readable without
+surrounding code. Prefer longer domain-qualified name over short generic
+whenever generic could mean something else elsewhere in codebase.
 
 ## The Rule
 
-When naming a class, interface, type, or exported object, ask: _"If I saw this
-name alone — in an import line, a stack trace, or a search result — would it be
-unambiguous?"_ If a generic suffix (`Outcome`, `Strategy`, `Result`, `Context`,
-`Manager`, `Handler`, `Resolution`, `Metadata`, `Info`, `Data`) would force the
-reader to look at neighbours to know what it is — qualify it with the domain.
+Naming class/interface/type/exported object, ask: _"Seen alone — in import line,
+stack trace, search result — unambiguous?"_ If generic suffix (`Outcome`,
+`Strategy`, `Result`, `Context`, `Manager`, `Handler`, `Resolution`, `Metadata`,
+`Info`, `Data`) forces reader to check neighbours — qualify with domain.
 
-Generic names are disambiguated only by their neighbours; domain-qualified names
-are self-describing. Optimize for the reader who lands on the symbol cold.
+Generic names disambiguated only by neighbours; domain-qualified names
+self-describing. Optimize for reader landing on symbol cold.
 
 ## Before / After
 
@@ -34,16 +32,15 @@ are self-describing. Optimize for the reader who lands on the symbol cold.
 
 ## Boundaries (don't over-qualify)
 
-- Don't stack context the enclosing module already pins down —
-  `git/rerank/presets/TechDebtPreset` is fine, not
-  `GitRerankTechDebtRerankPreset`.
-- Local variables and private helpers inside one small function don't need
-  domain qualification — the rule targets exported / cross-module names.
-- The test is ambiguity at the point of **use** (import, stack trace, search
-  result), not at the point of definition.
+- Don't stack context enclosing module already pins down —
+  `git/rerank/presets/TechDebtPreset` fine, not `GitRerankTechDebtRerankPreset`.
+- Local vars + private helpers inside one small function don't need domain
+  qualification — rule targets exported / cross-module names.
+- Test = ambiguity at point of **use** (import, stack trace, search result), not
+  point of definition.
 
 ## Cross-reference
 
-Concrete name mappings already enforced live in `CLAUDE.md` → "Naming
-Conventions" (e.g. `buildFileSignals` not `buildFileMetadata`, `Signal` not
-`FieldDoc`). This rule is the general principle behind those specific cases.
+Concrete name mappings enforced live in `CLAUDE.md` → "Naming Conventions" (e.g.
+`buildFileSignals` not `buildFileMetadata`, `Signal` not `FieldDoc`). This rule
+= general principle behind those specific cases.

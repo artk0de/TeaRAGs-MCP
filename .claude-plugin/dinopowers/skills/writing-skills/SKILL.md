@@ -1,39 +1,37 @@
 ---
 name: writing-skills
 description:
-  Author or rewrite a SKILL.md inside .claude-plugin/dinopowers/, enforcing the
-  wrapper pattern (tea-rags enrichment step then chain into superpowers:*) and
-  the description style required to win against parent skills. Triggers on "add
-  dinopowers:X", "create a wrapper skill", "write a SKILL.md", "напиши скилл",
-  "новый wrapper", "новый dinopowers скилл", "edit dinopowers wrapper", "rewrite
-  dinopowers SKILL.md", "fix skill description", "improve a dinopowers skill",
-  "tweak SKILL.md frontmatter". NOT for SKILL.md files outside
-  .claude-plugin/dinopowers/. Wraps superpowers:writing-skills with the
-  dinopowers wrapper-pattern enforcement.
+  Author/rewrite SKILL.md inside .claude-plugin/dinopowers/, enforce wrapper
+  pattern (tea-rags enrichment step then chain into superpowers:*) + description
+  style to win against parent skills. Triggers on "add dinopowers:X", "create a
+  wrapper skill", "write a SKILL.md", "напиши скилл", "новый wrapper", "новый
+  dinopowers скилл", "edit dinopowers wrapper", "rewrite dinopowers SKILL.md",
+  "fix skill description", "improve a dinopowers skill", "tweak SKILL.md
+  frontmatter". NOT for SKILL.md files outside .claude-plugin/dinopowers/. Wraps
+  superpowers:writing-skills with dinopowers wrapper-pattern enforcement.
 ---
 
 # dinopowers: writing-skills
 
 Wrapper over `superpowers:writing-skills`. Ensures new dinopowers skills inherit
-structural conventions and **correct tea-rags invocation patterns** from the
-indexed SKILL.md corpus, instead of being invented from scratch.
+structural conventions + **correct tea-rags invocation patterns** from indexed
+SKILL.md corpus, not invented from scratch.
 
 ## Iron Rule
 
 **`mcp__tea-rags__semantic_search` MUST be called BEFORE
 `Skill(superpowers:writing-skills)`.**
 
-Correct tea-rags tool + correct parameters + correct ordering is the entire
-point of this wrapper. The core value of every dinopowers wrapper is correct
-tea-rags tool selection — this skill bootstraps that correctness for all future
-wrappers.
+Correct tea-rags tool + correct parameters + correct ordering = entire point of
+wrapper. Core value of every dinopowers wrapper = correct tea-rags tool
+selection — this skill bootstraps correctness for all future wrappers.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
 ## Step 1 — Extract intent
 
-From the user request identify three elements:
+From user request identify three elements:
 
 | Element                        | Example                          |
 | ------------------------------ | -------------------------------- |
@@ -41,7 +39,7 @@ From the user request identify three elements:
 | **Object** — what it acts on   | "brainstorming", "test patterns" |
 | **Trigger** — when it fires    | "before code modification"       |
 
-Compose a single-sentence intent. This becomes the `query` in Step 2.
+Compose single-sentence intent. Becomes `query` in Step 2.
 
 ## Step 2 — Search existing skill patterns (tea-rags)
 
@@ -66,19 +64,19 @@ Do NOT substitute:
 
 Do NOT pass:
 
-- `rerank` preset — pure semantic similarity is what we want; git bias
-  (techDebt, hotspots, ownership) is irrelevant for skill authoring
+- `rerank` preset — want pure semantic similarity; git bias (techDebt, hotspots,
+  ownership) irrelevant for skill authoring
 - `filter` with git signals — SKILL.md git history doesn't inform pattern
   matching
 - `testFile: "exclude"` or similar — SKILL.md files aren't tests
 
-If `semantic_search` returns 0 results or the index is empty: report
+If `semantic_search` returns 0 results or index empty: report
 `"no SKILL.md corpus indexed — falling back to direct superpowers:writing-skills"`
-and skip to Step 4 without a pattern block. Do NOT fabricate patterns.
+and skip to Step 4 without pattern block. Do NOT fabricate patterns.
 
 ## Step 3 — Extract pattern block
 
-From top-K results extract as 3-5 concise bullets:
+From top-K results extract 3-5 concise bullets:
 
 - Frontmatter `description` phrasing convention (e.g. "Use when…" prefix)
 - Main section order (Overview → Iron Rule → Steps → Red Flags → Mistakes)
@@ -86,21 +84,20 @@ From top-K results extract as 3-5 concise bullets:
 - Tool-invocation format (parameter tables vs inline code)
 - Presence/absence of Red-Flags / Common-Mistakes sections
 
-Do NOT paste raw search results into the next step. Extract the structural
-signal only.
+Do NOT paste raw search results into next step. Extract structural signal only.
 
 ## Step 4 — Invoke superpowers:writing-skills
 
-Invoke the `Skill` tool with `superpowers:writing-skills`. Prepend the pattern
-block from Step 3 as context. Phrase the handoff as:
+Invoke `Skill` tool with `superpowers:writing-skills`. Prepend pattern block
+from Step 3 as context. Phrase handoff as:
 
 > "Use the structural pattern block as template. When your cycle would next
 > invoke `superpowers:writing-plans` / `superpowers:test-driven-development` (or
 > any wrapped `superpowers:Y`), invoke the `dinopowers:Y` wrapper instead — see
 > the Chaining rule section above."
 
-Let `superpowers:writing-skills` run its RED-GREEN-REFACTOR cycle — this wrapper
-does not replace it, only enriches it.
+Let `superpowers:writing-skills` run its RED-GREEN-REFACTOR cycle — wrapper
+doesn't replace it, only enriches.
 
 ## Red Flags — STOP and restart from Step 2
 

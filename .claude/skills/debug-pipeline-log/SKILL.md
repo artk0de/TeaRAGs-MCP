@@ -1,33 +1,32 @@
 ---
 name: debug-pipeline-log
 description:
-  Analyze the latest pipeline debug log for performance bottlenecks, timing
-  issues, and anomalies. Use when indexing is slow, git blame takes too long, or
-  pipeline behavior is unexpected.
+  Analyze latest pipeline debug log for perf bottlenecks, timing issues,
+  anomalies. Use when indexing slow, git blame too long, or pipeline behavior
+  unexpected.
 argument-hint: [log-file-path]
 allowed-tools: Read, Grep, Glob, Bash(ls*), Bash(wc*)
 ---
 
 # Pipeline Log Debugger
 
-Analyze the pipeline debug log to identify performance bottlenecks and
-anomalies.
+Analyze pipeline debug log to identify perf bottlenecks and anomalies.
 
 ## Step 1: Find the log
 
-If `$ARGUMENTS` is provided, use that path. Otherwise find the latest log:
+`$ARGUMENTS` provided → use that path. Else find latest log:
 
 ```
 ~/.tea-rags/logs/pipeline-*.log
 ```
 
-Pick the most recent file by modification time.
+Pick most recent by modification time.
 
 ## Step 2: Read and parse the log
 
-Read the full log file. Extract these sections:
+Read full log file. Extract these sections:
 
-1. **ENV block** (lines between `===` markers) — configuration snapshot
+1. **ENV block** (lines between `===` markers) — config snapshot
 2. **Event timeline** — all `[+ Ns]` timestamped lines
 3. **SUMMARY block** — JSON stats after `SUMMARY for ChunkPipeline`
 4. **STAGE PROFILING table** — cumulative/wall/~added per stage
@@ -36,7 +35,7 @@ Read the full log file. Extract these sections:
 
 ## Step 3: Compute key metrics
 
-From the parsed data, calculate:
+From parsed data, calculate:
 
 ### Timing
 
@@ -56,7 +55,7 @@ From the parsed data, calculate:
 - **Chunks/sec**: chunksProcessed / uptimeMs \* 1000
 - **Embed calls**: count of EMBED_CALL events
 - **Avg embed latency**: mean of all EMBED_CALL durationMs values
-- **Embed latency trend**: are later batches slower? (GPU thermal throttling)
+- **Embed latency trend**: later batches slower? (GPU thermal throttling)
 
 ### Concurrency utilization
 
@@ -89,7 +88,7 @@ Apply these diagnostic rules:
 
 If `prefetch_duration > embedding_wall_time`:
 
-- **Diagnosis**: Git log is the bottleneck, not GPU
+- **Diagnosis**: Git log is bottleneck, not GPU
 - **Impact**: `prefetch_duration - embedding_wall_time` seconds wasted waiting
 - **Fix**: Check repo size, consider reducing `GIT_LOG_MAX_AGE_MONTHS`
 - **Note**: CLI runs `git log HEAD --numstat` — single-threaded, no concurrency
@@ -97,14 +96,14 @@ If `prefetch_duration > embedding_wall_time`:
 
 ### Rule 2: Embedding latency degradation
 
-If later EMBED_CALL durations are >50% higher than first calls:
+If later EMBED_CALL durations >50% higher than first calls:
 
 - **Diagnosis**: GPU thermal throttling or memory pressure
 - **Fix**: Reduce `EMBEDDING_CONCURRENCY` or add cooling pauses
 
 ### Rule 3: Excessive backpressure
 
-If backpressure is ON for >30% of pipeline time:
+If backpressure ON for >30% of pipeline time:
 
 - **Diagnosis**: GPU can't keep up with file processing
 - **Fix**: Reduce `FILE_PROCESSING_CONCURRENCY` or increase
@@ -114,7 +113,7 @@ If backpressure is ON for >30% of pipeline time:
 
 If parse wall% > 30%:
 
-- **Diagnosis**: Tree-sitter chunking is slow
+- **Diagnosis**: Tree-sitter chunking slow
 - **Fix**: Increase `CHUNKER_POOL_SIZE`
 
 ### Rule 5: Queue starvation
@@ -133,7 +132,7 @@ If `matchedFiles / (matchedFiles + missedFiles) < 0.8`:
 - **Impact**: 1 - matchRate fraction of files get no git metadata
 - **Check**: missedPathSamples in ALL_COMPLETE for pattern (leading slashes,
   wrong prefix, etc.)
-- **Fix**: Verify repo root detection, check if files are outside git tree
+- **Fix**: Verify repo root detection, check if files outside git tree
 
 ### Rule 7: No streaming applies during embedding
 
@@ -148,7 +147,7 @@ If `streamingApplies == 0` and `flushApplies > 0`:
 
 ### Rule 8: Chunk churn timeout
 
-If CHUNK_CHURN_FAILED appears or CHUNK_CHURN_COMPLETE is missing:
+If CHUNK_CHURN_FAILED appears or CHUNK_CHURN_COMPLETE missing:
 
 - **Diagnosis**: Chunk-level git analysis timed out or crashed
 - **Fix**: Increase `GIT_CHUNK_TIMEOUT_MS` (default 120s), reduce
@@ -161,11 +160,11 @@ If CHUNK_CHURN_FAILED appears or CHUNK_CHURN_COMPLETE is missing:
 If enrichApply wall time > 60s:
 
 - **Diagnosis**: Qdrant setPayload is bottleneck
-- **Fix**: Check Qdrant health, verify payloads are small
+- **Fix**: Check Qdrant health, verify payloads small
 
 ## Step 5: Output report
 
-Format the report as:
+Format report as:
 
 ```
 ## Pipeline Debug Report

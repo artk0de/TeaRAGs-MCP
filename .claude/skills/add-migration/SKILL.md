@@ -1,10 +1,10 @@
 ---
 name: add-migration
 description:
-  Upgrade persisted on-disk state by adding a migration to an existing pipeline
-  (schema, snapshot, or sparse). Triggers on "new Qdrant index", "backfill
-  payload field", "snapshot format change", "rebuild sparse vectors", "новая
-  миграция". NOT for code-only changes that don't touch persisted state on disk.
+  Add migration to existing pipeline (schema, snapshot, sparse) to upgrade
+  persisted on-disk state. Triggers on "new Qdrant index", "backfill payload
+  field", "snapshot format change", "rebuild sparse vectors", "новая миграция".
+  NOT for code-only changes that don't touch persisted state on disk.
 ---
 
 # Add Migration
@@ -23,12 +23,12 @@ description:
 
 ## Store Interface First (MUST do before any template)
 
-🛑 If your migration needs new store capability (interface method), STOP and add
-the interface FIRST. Migrations against missing interfaces silently no-op.
+🛑 Migration needs new store capability (interface method) → STOP, add interface
+FIRST. Migrations against missing interfaces silently no-op.
 
 ### Extend Store Interface (if needed)
 
-If the migration needs capabilities not in the existing store interface:
+Migration needs capabilities not in existing store interface:
 
 1. Add method to interface in `src/core/infra/migration/types.ts`
 2. Implement in adapter: `src/core/infra/migration/adapters/<store>-adapter.ts`
@@ -39,7 +39,7 @@ migrations.
 
 ### Update Factory (if needed)
 
-If the migration requires new constructor arguments, update
+Migration needs new constructor args → update
 `src/core/domains/ingest/factory.ts` → `createIngestDependencies()` to pass
 them.
 
@@ -57,7 +57,7 @@ Step-by-step process for adding a migration to one of three pipelines.
 
 ## Step 1: Determine Version Number
 
-Read the runner constructor to find the highest existing version:
+Read runner constructor to find highest existing version:
 
 | Pipeline   | Runner file                                     |
 | ---------- | ----------------------------------------------- |
@@ -201,7 +201,7 @@ export class SnapshotV<N><PascalDescription> implements Migration {
 
 ## Step 3: Register in Runner
 
-Add the new migration to the runner constructor's `this.migrations` array.
+Add new migration to runner constructor's `this.migrations` array.
 
 **Schema** (`schema-migrator.ts`):
 
@@ -241,13 +241,13 @@ this.migrations = [
 
 ## Step 4: Extend Store Interface (if needed)
 
-Hoisted to top of file under "Store Interface First" — if not yet handled, STOP
-and complete it before continuing.
+Hoisted to top under "Store Interface First" — not yet handled → STOP, complete
+before continuing.
 
 ## Step 5: Update Factory (if needed)
 
-Hoisted to top of file under "Store Interface First" — if not yet handled, STOP
-and complete it before continuing.
+Hoisted to top under "Store Interface First" — not yet handled → STOP, complete
+before continuing.
 
 ## Step 6: Write Tests
 
@@ -259,8 +259,7 @@ Add to existing test file or create new one for the specific migration.
 
 1. **Happy path** — migration applies and returns correct `StepResult`
 2. **Skip condition** — conditional migration returns skip message when disabled
-3. **Idempotency** — re-running after success is safe (or handled by version
-   check)
+3. **Idempotency** — re-run after success is safe (or handled by version check)
 4. **Integration** — runner only applies migration when version > current
 
 ### Test pattern

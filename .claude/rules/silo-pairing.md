@@ -14,9 +14,8 @@ paths:
 # Silo Pairing (MANDATORY for deep-silo files)
 
 Files with `git.file.blameDominantAuthorPct = 100` (deep-silo per tea-rags
-signal) carry bus-factor risk. To mitigate without forcing awkward
-co-authorship, every commit touching these files must include intent +
-trade-offs in the message.
+signal) = bus-factor risk. Mitigate without forcing awkward co-authorship: every
+commit touching these files must include intent + trade-offs in message.
 
 ## Files currently classified as deep-silo
 
@@ -34,8 +33,8 @@ trade-offs in the message.
 
 ## Rule
 
-Commits touching any deep-silo file MUST include a `Why:` line in the body
-stating intent and trade-offs. Example:
+Commits touching any deep-silo file MUST include `Why:` line in body stating
+intent + trade-offs. Example:
 
 ```text
 refactor(ingest): tighten recovery scrollUnenriched cursor lifetime
@@ -46,5 +45,5 @@ Trade-off: extra Qdrant call per cycle, acceptable given <50ms latency.
 
 ## Why no test-time enforcement
 
-This rule is process-only — automated enforcement (commitlint check) would catch
-false positives on non-deep-silo files. Reviewers verify on PR.
+Process-only rule — automated enforcement (commitlint check) would catch false
+positives on non-deep-silo files. Reviewers verify on PR.

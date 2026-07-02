@@ -1,27 +1,27 @@
 ---
 name: add-language-hook
 description:
-  Define how a programming language's source files are split into searchable
-  chunks (classes, functions, comments) by adding a hook to the ingest chunker.
-  Triggers on "add Kotlin support", "improve TypeScript class chunking", "fix
-  Ruby comment extraction", "add language X". NOT for tweaking generic chunker
-  behavior — edit the chunker base directly for language-agnostic changes.
+  Add chunker hook splitting a language's source files into searchable chunks
+  (classes, functions, comments) in ingest pipeline. Triggers on "add Kotlin
+  support", "improve TypeScript class chunking", "fix Ruby comment extraction",
+  "add language X". NOT for tweaking generic chunker behavior — edit chunker
+  base directly for language-agnostic changes.
 ---
 
 # Add Language Hook
 
-Add a chunking hook for a new or existing language in the ingest pipeline.
+Add chunking hook for new/existing language in ingest pipeline.
 
 Hooks live in `src/core/domains/ingest/pipeline/chunker/hooks/<language>/`.
 
 ## Step 1: Check if the language directory exists
 
-Look in `chunker/hooks/` for an existing `<language>/` directory.
+Look in `chunker/hooks/` for existing `<language>/` directory.
 
-- **Exists** — you're adding a new hook to an existing language. Read
-  `<language>/index.ts` to see the current hook chain.
-- **Doesn't exist** — you're adding hooks for a new language. Create
-  `<language>/` directory.
+- **Exists** — adding new hook to existing language. Read `<language>/index.ts`
+  for current hook chain.
+- **Doesn't exist** — adding hooks for new language. Create `<language>/`
+  directory.
 
 ## Step 2: Understand the hook interface
 
@@ -40,22 +40,22 @@ interface ChunkingHook {
 - **Mutable**: `excludedRows`, `methodPrefixes`, `methodStartLines`,
   `bodyChunks`
 
-Hooks mutate the context in order. Earlier hooks populate state that later hooks
-read (e.g., comment-capture populates `excludedRows`, body-chunker reads it).
+Hooks mutate context in order. Earlier hooks populate state later hooks read
+(e.g. comment-capture populates `excludedRows`, body-chunker reads it).
 
 ## Step 3: Create the hook file
 
 Create `hooks/<language>/<hook-name>.ts`. Follow existing patterns:
 
-- `comment-capture.ts` — extracts doc comments, marks rows as excluded
+- `comment-capture.ts` — extracts doc comments, marks rows excluded
 - `class-body-chunker.ts` — splits large class bodies into method-level chunks
 
-Name the exported hook: `<language><Purpose>Hook` (e.g.,
-`rubyCommentCaptureHook`, `typescriptBodyChunkingHook`).
+Name exported hook: `<language><Purpose>Hook` (e.g. `rubyCommentCaptureHook`,
+`typescriptBodyChunkingHook`).
 
 ## Step 4: Create or update the barrel
 
-`hooks/<language>/index.ts` exports the ordered hook array:
+`hooks/<language>/index.ts` exports ordered hook array:
 
 ```typescript
 import type { ChunkingHook } from "../types.js";
@@ -70,8 +70,8 @@ export const <language>Hooks: ChunkingHook[] = [
 
 ## Step 5: Register in language config
 
-Edit `chunker/config.ts`. Find the language entry in `LANGUAGE_DEFINITIONS` and
-add the `hooks` property:
+Edit `chunker/config.ts`. Find language entry in `LANGUAGE_DEFINITIONS`, add
+`hooks` property:
 
 ```typescript
 import { <language>Hooks } from "./hooks/<language>/index.js";
@@ -83,16 +83,16 @@ import { <language>Hooks } from "./hooks/<language>/index.js";
 },
 ```
 
-If the language doesn't exist in `LANGUAGE_DEFINITIONS`, add the full entry with
-`loadModule`, `extractLanguage`, `chunkableTypes`, and `hooks`.
+Language absent from `LANGUAGE_DEFINITIONS` → add full entry with `loadModule`,
+`extractLanguage`, `chunkableTypes`, `hooks`.
 
 ## Step 6: Write tests
 
 Tests go in `tests/core/domains/ingest/pipeline/chunker/hooks/<language>/`.
 Follow existing test patterns in `typescript/` or `ruby/` directories.
 
-Each hook should have its own test file testing the `process()` function with a
-real `HookContext` (use `createHookContext()` from `types.ts`).
+Each hook gets own test file testing `process()` with real `HookContext` (use
+`createHookContext()` from `types.ts`).
 
 ## Step 7: Verify
 

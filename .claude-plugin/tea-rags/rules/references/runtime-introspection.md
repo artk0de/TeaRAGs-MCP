@@ -1,19 +1,17 @@
 # Runtime Introspection
 
-Tea-rags exposes a live registry of presets, signals, filters, and infra state
-through MCP resources and tool responses. Agents do NOT need to guess preset
-names, signal keys, or filter syntax — fetch the truth at runtime.
+Tea-rags exposes live registry of presets, signals, filters, infra state via MCP
+resources + tool responses. Agents do NOT guess preset names, signal keys,
+filter syntax — fetch truth at runtime.
 
-When to read this file: a search returned `driftWarning`; you need to build a
-custom rerank but don't know available weight keys; embedding / qdrant is
-unreachable and you want a full health report; a result has a `rankingOverlay`
-you need to interpret.
+Read this file when: search returned `driftWarning`; building custom rerank but
+don't know weight keys; embedding/qdrant unreachable + want health report;
+result has `rankingOverlay` to interpret.
 
 ## MCP Resources Catalog
 
-Read with `ReadMcpResourceTool(server: "tea-rags", uri: "<uri>")`. These are
-generated from the live registry, so they always reflect what THIS build
-supports — no stale references.
+Read via `ReadMcpResourceTool(server: "tea-rags", uri: "<uri>")`. Generated from
+live registry — always reflect THIS build, no stale refs.
 
 | URI                                | When to read                                                                                        |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -25,13 +23,13 @@ supports — no stale references.
 | `tea-rags://schema/search-guide`   | Need concrete parameter examples per tool                                                           |
 | `tea-rags://schema/indexing-guide` | Indexing options, git metadata switches                                                             |
 
-Never invent a preset name, signal key, or filter operator. Read the resource —
-it is cheap and authoritative.
+Never invent preset name, signal key, filter operator. Read the resource —
+cheap + authoritative.
 
 ## get_index_status — Infra Health
 
-`get_index_status(project: "<alias>")` returns the standard index metadata PLUS
-an `infraHealth` block:
+`get_index_status(project: "<alias>")` returns standard index metadata PLUS
+`infraHealth` block:
 
 ```jsonc
 {
@@ -53,31 +51,31 @@ an `infraHealth` block:
 }
 ```
 
-Use this as the FIRST debug step when:
+FIRST debug step when:
 
-- A semantic call fails with a connection or timeout error
-- The prime digest shows `embedding: unavailable` or `qdrant: red`
-- An indexing run finished but searches return empty / stale results
-- A trajectory's enrichment looks incomplete
+- Semantic call fails with connection/timeout error
+- Prime digest shows `embedding: unavailable` or `qdrant: red`
+- Indexing run finished but searches return empty/stale results
+- Trajectory's enrichment looks incomplete
 
-Pair with the "Embedding Unavailable" rule in `search-cascade.md`: if
-`embedding.reachable === false`, ask the user to start the embedding backend via
-`AskUserQuestion` before downgrading the search strategy.
+Pair with "Embedding Unavailable" rule in `search-cascade.md`: if
+`embedding.reachable === false`, ask user to start embedding backend via
+`AskUserQuestion` before downgrading search strategy.
 
 ## get_index_metrics — Per-Project Calibration
 
 `get_index_metrics(project: "<alias>")` returns per-language × per-scope
-(`source` / `test`) percentile labelMaps for every numeric signal, plus the
-current distribution.
+(`source` / `test`) percentile labelMaps for every numeric signal, plus current
+distribution.
 
-Why this matters: a `commitCount` of 8 is "high" in one project and "typical" in
-another. The labelMap tells you THIS project's thresholds. Use it when:
+Why: `commitCount` of 8 is "high" in one project, "typical" in another. labelMap
+tells THIS project's thresholds. Use when:
 
-- The user asks "what counts as old / churn-heavy / silo'd in this codebase?" —
-  read the labelMap, do not guess
-- You're building a custom filter with `minCommitCount` / `maxAgeDays` and want
-  a meaningful threshold (e.g. `>= labelMap.high`)
-- A rerank result's `value/label` pair surprises you — verify which bucket the
+- User asks "what counts as old / churn-heavy / silo'd in this codebase?" — read
+  labelMap, don't guess
+- Building custom filter with `minCommitCount` / `maxAgeDays` + want meaningful
+  threshold (e.g. `>= labelMap.high`)
+- Rerank result's `value/label` pair surprises you — verify which bucket the
   value falls in for this language scope
 
 Returned shape (abbreviated):
@@ -101,22 +99,21 @@ Returned shape (abbreviated):
 
 ## driftWarning — Schema Drift Detection
 
-Every search response can include a top-level `driftWarning` field when the live
-code defines payload signals that are NOT yet present in the indexed payloads
-(or vice versa). Treat it as a hint, not an error:
+Every search response can include top-level `driftWarning` field when live code
+defines payload signals NOT yet present in indexed payloads (or vice versa).
+Treat as hint, not error:
 
-- Surface the warning to the user when it appears — they need to know some new
-  analytics fields will be missing from results until they reindex
-- Do NOT auto-trigger `force_reindex` — that decision is the user's (large
-  codebases = long reindex). See `tea-rags:force-reindex` skill
-- For tea-rags self-test only: full reset via `force_reindex` is the documented
-  path (see project CLAUDE.md MCP testing section)
-- For regular projects: incremental `index_codebase` handles most drift
-  scenarios
+- Surface warning to user when it appears — new analytics fields missing from
+  results until reindex
+- Do NOT auto-trigger `force_reindex` — user's decision (large codebases = long
+  reindex). See `tea-rags:force-reindex` skill
+- tea-rags self-test only: full reset via `force_reindex` is documented path
+  (see project CLAUDE.md MCP testing section)
+- Regular projects: incremental `index_codebase` handles most drift scenarios
 
 ## rankingOverlay — Why This Result Was Ranked Here
 
-Every reranked search result carries a `rankingOverlay` field that explains the
+Every reranked search result carries `rankingOverlay` field explaining the
 score:
 
 ```jsonc
@@ -135,18 +132,18 @@ score:
 }
 ```
 
-- `derived` — normalized 0-1 signals fed into the score. The keys come from the
-  chosen preset's weights or the overlay mask.
+- `derived` — normalized 0-1 signals fed into score. Keys come from chosen
+  preset's weights or overlay mask.
 - `raw.file` / `raw.chunk` — original payload values + labels (resolved via
   `signal-labels` resource).
 
-Use the overlay to:
+Use overlay to:
 
-- Answer "why this result?" without re-running the search
+- Answer "why this result?" without re-running search
 - Detect pattern combinations from `references/signal-interpretation.md` (god
   module vs bug attractor, healthy owner vs toxic silo, etc.)
 - Spot confidence-clamped labels (small-N) — see `signal-interpretation.md` →
   "Interpretation anti-patterns" #8
 
-Never re-rank a single result by Read'ing its file. The overlay is the
-explanation layer.
+Never re-rank single result by Read'ing its file. Overlay is the explanation
+layer.

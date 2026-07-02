@@ -10,49 +10,46 @@ paths:
 
 ## Rule
 
-Bulk git blob/object reads (the chunk-churn walk reads two blobs per changed
-file per commit — tens of thousands per index) go through the **persistent**
-`createCatFileBatch(repoRoot)` reader in `src/core/adapters/git/client.ts`. One
-long-lived `git cat-file --batch` process per walk by default; close it when the
-walk ends.
+Bulk git blob/object reads (chunk-churn walk = two blobs per changed file per
+commit — tens of thousands per index) go through **persistent**
+`createCatFileBatch(repoRoot)` in `src/core/adapters/git/client.ts`. One
+long-lived `git cat-file --batch` process per walk by default; close at walk
+end.
 
-**Run-scoped sharing (kc93).** During a streaming index run the git chunk walk
-runs once **per embedding batch** (`buildChunkSignals` is called per batch).
-Spawning a fresh reader per batch re-opens the pack each batch — on a large repo
-(taxdome) that per-batch pack-open dominated (~minutes of wall time). So
-`ChunkPhase` opens **one run-scoped reader** (via an injected
+**Run-scoped sharing (kc93).** Streaming index run: git chunk walk runs once
+**per embedding batch** (`buildChunkSignals` per batch). Fresh reader per batch
+re-opens pack each batch — on large repo (taxdome) per-batch pack-open dominated
+(~minutes wall). So `ChunkPhase` opens **one run-scoped reader** (injected
 `BlobReaderFactory` = `createCatFileBatch`, wired in `IngestFacade`), threads it
-through `ChunkSignalOptions.blobReader` → `buildChunkChurnMap` → `walkCommits`,
-and closes it **once at `drain()`** (end of the run's chunk work). When a reader
-is injected, `walkCommits` reuses it and does NOT close it — the **caller** owns
-the lifecycle. Absent an injected reader (recovery / one-off paths, tests),
-`walkCommits` spawns and closes its own per-call reader (the default above). The
-pack is opened **once per run** instead of once per batch, with the same
-cat-file memory-safety. The run-scoped reader still respects "no idle process":
-it is closed at `drain()`, never cached across runs.
+via `ChunkSignalOptions.blobReader` → `buildChunkChurnMap` → `walkCommits`,
+closes it **once at `drain()`** (end of run's chunk work). Injected reader →
+`walkCommits` reuses, does NOT close — **caller** owns lifecycle. No injected
+reader (recovery / one-off paths, tests) → `walkCommits` spawns+closes own
+per-call reader (default above). Pack opened **once per run** not per batch,
+same cat-file memory-safety. Run-scoped reader still respects "no idle process":
+closed at `drain()`, never cached across runs.
 
-**Never** do either of these for bulk reads:
+**Never** for bulk reads:
 
-- `git cat-file blob <oid>:<path>` **per call** (`execFile` per blob) — forks a
-  git process AND re-opens the pack `.idx` on every read.
-- `isomorphic-git` `readBlob`/`readCommit` — its pack reader loads the **entire
-  packfile into a JS `ArrayBuffer`** per cache object.
+- `git cat-file blob <oid>:<path>` **per call** (`execFile` per blob) — forks
+  git process AND re-opens pack `.idx` per read.
+- `isomorphic-git` `readBlob`/`readCommit` — pack reader loads **entire packfile
+  into a JS `ArrayBuffer`** per cache object.
 
 ## Why (measured, not theoretical)
 
-A monitored `force_reindex` of a ~24k-file repo (taxdome) drove the diagnosis:
+Monitored `force_reindex` of ~24k-file repo (taxdome) drove diagnosis:
 
-- **isomorphic-git `readBlob`** — loads the whole pack into a JS `ArrayBuffer`;
-  the heap profiler caught 3×1.4 GB `system / JSArrayBufferData` (× concurrency
-  → ~16 GB) → **OOM**. Fast (in-memory pack) but unbounded.
+- **isomorphic-git `readBlob`** — loads whole pack into JS `ArrayBuffer`; heap
+  profiler caught 3×1.4 GB `system / JSArrayBufferData` (× concurrency → ~16 GB)
+  → **OOM**. Fast (in-memory pack) but unbounded.
 - **per-call `git cat-file blob`** — bounded memory (one object at a time), but
-  **41 442 reads ≈ 24 min**: a process spawn + `.idx` reopen per read dominated.
+  **41 442 reads ≈ 24 min**: process spawn + `.idx` reopen per read dominated.
 - **`git cat-file --batch`** — bounded AND one persistent process (pack opened
-  once) → fast. The only approach that is both.
+  once) → fast. Only approach that is both.
 
-isomorphic-git was removed from the package entirely (no import, not in
-`package.json`); the e2e confirmed the `external` / `arrayBuffers` peak dropped
-from 16–40 GB to **~0.1 GB**.
+isomorphic-git removed from package entirely (no import, not in `package.json`);
+e2e confirmed `external` / `arrayBuffers` peak dropped 16–40 GB → **~0.1 GB**.
 
 ## How
 
@@ -70,24 +67,24 @@ try {
 }
 ```
 
-- **Lazy spawn:** the process starts on the first `read()`, so a walk that reads
-  no blobs (all files skipped, empty chunk map) never forks git.
-- **FIFO protocol:** requests are serialized; responses are framed by byte
-  length (blobs contain newlines / arbitrary bytes), decoded as UTF-8.
-- **Lifecycle:** one reader per walk (`walkCommits`), closed in a `finally` —
-  UNLESS a run-scoped reader is injected via `WalkCommitsOptions.blobReader`, in
-  which case `walkCommits` reuses it and the injector (`ChunkPhase`) closes it
-  at run end (`drain()`). Either way, do not cache a reader across runs — the
-  daemon must not hold an idle git process.
+- **Lazy spawn:** process starts on first `read()`, so a walk reading no blobs
+  (all files skipped, empty chunk map) never forks git.
+- **FIFO protocol:** requests serialized; responses framed by byte length (blobs
+  contain newlines / arbitrary bytes), decoded UTF-8.
+- **Lifecycle:** one reader per walk (`walkCommits`), closed in `finally` —
+  UNLESS run-scoped reader injected via `WalkCommitsOptions.blobReader`, then
+  `walkCommits` reuses it and injector (`ChunkPhase`) closes at run end
+  (`drain()`). Either way, don't cache reader across runs — daemon must not hold
+  idle git process.
 
-The stateless `readBlobAsString(repoRoot, oid, path)` (single
-`git cat-file blob`) remains for **one-off** reads only. Do not call it in a
-loop — reach for `createCatFileBatch`.
+Stateless `readBlobAsString(repoRoot, oid, path)` (single `git cat-file blob`)
+remains for **one-off** reads only. Don't call in a loop — reach for
+`createCatFileBatch`.
 
 ## Related
 
-- Blame parsing has a sibling V8 string-retention hazard: `parseBlameOutput`
-  must own-copy `sha`/`author`/`email` (they are `SlicedString`s of the multi-MB
-  porcelain otherwise). See the comment in `src/core/adapters/git/parsers.ts`.
+- Blame parsing has sibling V8 string-retention hazard: `parseBlameOutput` must
+  own-copy `sha`/`author`/`email` (else `SlicedString`s of multi-MB porcelain).
+  See comment in `src/core/adapters/git/parsers.ts`.
 - `git blame --porcelain` results held in `GitEnrichmentProvider.blameByRelPath`
-  are released after chunk enrichment (the last reader) — see `provider.ts`.
+  released after chunk enrichment (last reader) — see `provider.ts`.

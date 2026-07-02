@@ -1,16 +1,15 @@
 ---
 name: add-rerank-preset
 description:
-  Define a named ranking strategy that combines derived signals with weights and
-  an overlay mask, exposed as an enum option to MCP tools. Triggers on "new
-  tech-debt preset", "create hotspot detector", "security-audit ranking", "rank
-  by ownership and churn". NOT for adding a single signal — use
-  add-derived-signal for that.
+  Named ranking strategy combining derived signals with weights + overlay mask,
+  exposed as enum option to MCP tools. Triggers on "new tech-debt preset",
+  "create hotspot detector", "security-audit ranking", "rank by ownership and
+  churn". NOT for adding single signal — use add-derived-signal for that.
 ---
 
 # Add Rerank Preset
 
-Add a new rerank preset that defines scoring weights for search result ranking.
+New rerank preset defining scoring weights for search result ranking.
 
 ## Step 1: Choose trajectory
 
@@ -18,12 +17,12 @@ Add a new rerank preset that defines scoring weights for search result ranking.
   (techDebt, hotspots, codeReview, etc.)
 - **Static trajectory** (`domains/trajectory/static/rerank/presets/`): presets
   using structural signals (relevance, decomposition)
-- **Explore domain** (`explore-presets`): composite presets that combine signals
+- **Explore domain** (`explore-presets`): composite presets combining signals
   from multiple trajectories
 
 ## Step 2: Create the preset file
 
-Create `<preset-name>.ts` in the appropriate presets directory.
+Create `<preset-name>.ts` in appropriate presets directory.
 
 **Template:**
 
@@ -52,32 +51,32 @@ export class MyPreset implements RerankPreset {
 ## Step 3: Key design decisions
 
 - **`name`**: lowercase camelCase, unique across all presets
-- **`tools`**: which MCP tools support this preset. Usually all three, but
-  `rank_chunks` only makes sense if the preset doesn't rely on `similarity`
+- **`tools`**: which MCP tools support preset. Usually all three, but
+  `rank_chunks` only makes sense if preset doesn't rely on `similarity`
 - **`weights`**: keys must match `DerivedSignalDescriptor.name` values. Negative
   weights penalize (e.g., `blockPenalty: -0.05`). Weights don't need to sum to 1
-  — they're relative.
+  — relative.
 - **`overlayMask`**: curates which signals appear in ranking overlay results.
   `derived` = derived signal names, `file`/`chunk` = raw payload field names.
-- **`groupBy`**: optional, for `rank_chunks` only. Groups results by a payload
-  field (e.g., `"parentName"` to group by class).
+- **`groupBy`**: optional, `rank_chunks` only. Groups results by payload field
+  (e.g., `"parentName"` to group by class).
 
 ## Step 4: Register in barrel
 
-Edit `index.ts` in the same directory:
+Edit `index.ts` in same directory:
 
 1. Import: `import { MyPreset } from "./my-preset.js";`
 2. Export: `export { MyPreset } from "./my-preset.js";`
-3. Add instance to the array:
+3. Add instance to array:
    - Git: `GIT_PRESETS`
    - Static: `STATIC_PRESETS`
 
-No other registration needed — `TrajectoryRegistry.getAllPresets()` collects
-presets automatically. `SchemaBuilder` generates the enum for MCP tools.
+No other registration — `TrajectoryRegistry.getAllPresets()` collects presets
+automatically. `SchemaBuilder` generates enum for MCP tools.
 
 ## Step 5: Update documentation
 
-Update these locations with the new preset:
+Update with new preset:
 
 - `CLAUDE.md` global → tea-rags section → rerank presets tables
 - Project `CLAUDE.md` if it changes available rerank options
@@ -85,7 +84,7 @@ Update these locations with the new preset:
 ## Step 6: Write tests
 
 Create `tests/core/domains/trajectory/{domain}/rerank/presets/<name>.test.ts` or
-add to the existing presets test file.
+add to existing presets test file.
 
 Minimal test:
 

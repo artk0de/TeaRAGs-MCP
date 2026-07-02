@@ -1,45 +1,41 @@
 ---
 name: finishing-a-development-branch
 description:
-  Finalize a dev branch (merge, PR, or cleanup decision) with a
-  tea-rags:risk-assessment over the full branch diff so completion options are
-  weighed against the risk zones touched across the entire branch scope.
-  Triggers on "finish the branch", "ready to merge", "wrap up the feature",
-  "ветка готова", "доводим до merge", "branch ready", "PR time", "shipping the
-  branch", "merge ready". NOT for mid-branch interim commits. Wraps
-  superpowers:finishing-a-development-branch with tea-rags:risk-assessment over
-  the branch diff.
+  Finalize dev branch (merge/PR/cleanup) with tea-rags:risk-assessment over full
+  branch diff — completion options weighed against risk zones across entire
+  branch scope. Triggers on "finish the branch", "ready to merge", "wrap up the
+  feature", "ветка готова", "доводим до merge", "branch ready", "PR time",
+  "shipping the branch", "merge ready". NOT for mid-branch interim commits.
+  Wraps superpowers:finishing-a-development-branch with tea-rags:risk-assessment
+  over the branch diff.
 ---
 
 # dinopowers: finishing-a-development-branch
 
-Wrapper over `superpowers:finishing-a-development-branch`. Ensures the
-completion decision (merge/PR/cleanup) is informed by a branch-wide risk scan —
-across ALL files the branch touched, not just the last Task — so "ready to
-merge" claims are backed by multi-signal evidence.
+Wrapper over `superpowers:finishing-a-development-branch`. Completion decision
+(merge/PR/cleanup) informed by branch-wide risk scan — ALL files branch touched,
+not just last Task — so "ready to merge" claims backed by multi-signal evidence.
 
 ## Iron Rule
 
-**`Skill(tea-rags:risk-assessment)` MUST run on the branch diff BEFORE
-presenting completion options** — whenever the branch has ≥1 commit beyond base.
+**`Skill(tea-rags:risk-assessment)` MUST run on branch diff BEFORE presenting
+completion options** — whenever branch has ≥1 commit beyond base.
 
-Correct delegation (`tea-rags:risk-assessment` skill, not ad-hoc
+Core value: correct delegation (`tea-rags:risk-assessment` skill, not ad-hoc
 `semantic_search`) + correct scope (entire branch diff, not last commit) +
-ordering (risk-assessment BEFORE completion options) is the core value.
+ordering (risk-assessment BEFORE completion options).
 
-If branch has 0 commits ahead of base (nothing to finish): skip wrapper —
-there's nothing to complete. If branch has only trivial changes (docs-only,
-renames-only): risk-assessment may be skipped with note "trivial scope — no risk
-scan needed".
+Branch 0 commits ahead of base (nothing to finish): skip wrapper. Trivial
+changes (docs-only, renames-only): risk-assessment skippable with note "trivial
+scope — no risk scan needed".
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and the
-worktree-clone lifecycle in `tea-rags/rules/index-freshness.md`. There is no
-background reindex hook — after a merge to `main` you reindex `main` EXPLICITLY
-(Step 5); run `mcp__tea-rags__index_codebase` manually to search uncommitted
-WIP.
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and worktree-clone
+lifecycle in `tea-rags/rules/index-freshness.md`. No background reindex hook —
+after merge to `main` reindex `main` EXPLICITLY (Step 5); run
+`mcp__tea-rags__index_codebase` manually to search uncommitted WIP.
 
 **Second Iron Rule — branch-finish index lifecycle (MANDATORY).** On EVERY
 branch finish — local merge to `main` OR abandon/delete — you MUST tear down the
@@ -47,8 +43,8 @@ per-worktree index clone with **`tea-rags worktree remove <name>`** (NOT
 `delete_collection`, which drops only the Qdrant collection and leaks the DuckDB
 
 - snapshot + registry footprint). Additionally, on the MERGE path you MUST
-  reindex `main` EXPLICITLY with `mcp__tea-rags__index_codebase` — there is no
-  commit hook to do it for you. Full procedure: Step 5. Never use the deprecated
+  reindex `main` EXPLICITLY with `mcp__tea-rags__index_codebase` — no commit
+  hook does it for you. Full procedure: Step 5. Never use the deprecated
   `reindex_changes`.
 
 ## Step 1 — Determine branch scope
@@ -64,32 +60,31 @@ From git state, collect:
 
 Compose:
 
-- `branchDiffFiles`: full set of files touched across the branch (not just last
+- `branchDiffFiles`: full set of files touched across branch (not just last
   commit)
-- `branchIntent`: one-sentence summary of what the branch accomplishes
+- `branchIntent`: one-sentence summary of what branch accomplishes
 
-If `branchDiffFiles` is empty OR docs-only OR renames-only with no content
-changes: skip to Step 4 with verdict `TRIVIAL-SCOPE (no risk scan)`.
+`branchDiffFiles` empty OR docs-only OR renames-only (no content changes): skip
+to Step 4 with verdict `TRIVIAL-SCOPE (no risk scan)`.
 
 ## Step 2 — Invoke tea-rags:risk-assessment
 
-Invoke the `Skill` tool with `tea-rags:risk-assessment`. Pass as input:
+Invoke `Skill` tool with `tea-rags:risk-assessment`. Pass as input:
 
-- `pathPattern`: brace-expanded over `branchDiffFiles` (scoping to this branch's
+- `pathPattern`: brace-expanded over `branchDiffFiles` (scope to this branch's
   footprint)
-- `intent`: the branch summary
+- `intent`: branch summary
 
-Wait for its standard `PRESENT` output — tier-classified risk candidates
-(Critical / High / Medium) with multi-preset convergence (hotspots + ownership +
-techDebt).
+Wait for standard `PRESENT` output — tier-classified risk candidates (Critical /
+High / Medium) with multi-preset convergence (hotspots + ownership + techDebt).
 
-When codegraph is active, risk-assessment's structural axis runs automatically
-over the branch-diff scope: blast-radius hubs (`architecturalHub` amplifier) and
-**circular dependencies the branch introduces or touches** (`find_cycles`). A
-branch that adds a cross-module cycle is a merge-blocker even with clean git
-signals — read the risk-assessment "Structural risks" section before deciding
-merge/PR/cleanup. When codegraph is off, that section is absent (not "no
-cycles"); structural risk is simply unassessed.
+Codegraph active: risk-assessment's structural axis runs automatically over
+branch-diff scope — blast-radius hubs (`architecturalHub` amplifier) and
+**circular dependencies the branch introduces or touches** (`find_cycles`).
+Branch adding cross-module cycle is merge-blocker even with clean git signals —
+read risk-assessment "Structural risks" section before deciding
+merge/PR/cleanup. Codegraph off: that section absent (not "no cycles");
+structural risk simply unassessed.
 
 Do NOT substitute:
 
@@ -103,14 +98,13 @@ Do NOT substitute:
 
 Do NOT pass:
 
-- `pathPattern` that includes UNTOUCHED parts of the project — scope must equal
-  branch diff, not broader project
-- `pathPattern` that includes only last-commit files — Step 1 output is
-  BRANCH-wide, not commit-wide
+- `pathPattern` including UNTOUCHED parts of project — scope must equal branch
+  diff, not broader project
+- `pathPattern` including only last-commit files — Step 1 output is BRANCH-wide,
+  not commit-wide
 
-If branch diff files are unindexed (new module created on branch): note "branch
-scope unindexed — risk-assessment unavailable; relying on test suite + human
-review".
+Branch diff files unindexed (new module created on branch): note "branch scope
+unindexed — risk-assessment unavailable; relying on test suite + human review".
 
 ## Step 3 — Summarize risk into completion context
 
@@ -137,13 +131,13 @@ Compose completion block:
 **Recommendation:** <ready-to-merge | address-critical-first | needs-review-pairing>
 ```
 
-If risk-assessment returned "No critical risks found. Codebase appears healthy"
-— note `CLEAN-SCAN — ready to present completion options`.
+risk-assessment returned "No critical risks found. Codebase appears healthy" —
+note `CLEAN-SCAN — ready to present completion options`.
 
 ## Step 4 — Invoke superpowers:finishing-a-development-branch
 
-Invoke the `Skill` tool with `superpowers:finishing-a-development-branch`.
-Prepend the scan block as context. Phrase handoff as:
+Invoke `Skill` tool with `superpowers:finishing-a-development-branch`. Prepend
+scan block as context. Phrase handoff as:
 
 > "Before presenting completion options, note branch-wide risk scan: …<block>…
 > Completion options (merge / PR / cleanup) should factor in these risks — don't
@@ -155,34 +149,33 @@ Prepend the scan block as context. Phrase handoff as:
 > invoke `dinopowers:Y` instead — see the Chaining rule section above."
 
 Let `superpowers:finishing-a-development-branch` run its standard
-merge/PR/cleanup decision presentation. The wrapper informs the recommendation,
-does not force a specific outcome.
+merge/PR/cleanup decision presentation. Wrapper informs recommendation, does not
+force specific outcome.
 
 ## Step 5 — Post-merge index cleanup
 
-After a merge to `main` succeeds (the `superpowers` cycle performs it), close
-the index lifecycle:
+After merge to `main` succeeds (the `superpowers` cycle performs it), close
+index lifecycle:
 
-- **Reindex `main` EXPLICITLY after the merge.** There is no background commit
-  hook — run `mcp__tea-rags__index_codebase` (incremental) against the `main`
-  alias so `main` reflects the merged change. (`index_codebase` is the only
-  incremental entrypoint; never the deprecated `reindex_changes`.)
-  Abandon/delete paths skip this — nothing merged into `main`.
-- **Drop the per-worktree index clone (MANDATORY on EVERY finish).** If this
-  branch was developed in a worktree that had its own tea-rags index clone
-  (collection `<project>-worktree-<name>`, created by
-  `tea-rags worktree create`), remove it now: `tea-rags worktree remove <name>`
-  — on merge AND on abandon/delete. The clone is throwaway; leaving it leaks
-  Qdrant + DuckDB + snapshot footprint. Run this even if the git worktree
-  directory is already gone — the index clone is tracked separately and outlives
-  the directory. A cleanup-only `PostToolUse` hook is the backstop if you bypass
-  this with a raw `git worktree remove` / `git branch -D`, but do it explicitly
-  here anyway.
-- **No clone → no cleanup.** If the branch was developed on the main checkout
-  (no `tea-rags worktree` clone), there is nothing to remove.
+- **Reindex `main` EXPLICITLY after the merge.** No background commit hook — run
+  `mcp__tea-rags__index_codebase` (incremental) against the `main` alias so
+  `main` reflects the merged change. (`index_codebase` is the only incremental
+  entrypoint; never the deprecated `reindex_changes`.) Abandon/delete paths skip
+  this — nothing merged into `main`.
+- **Drop the per-worktree index clone (MANDATORY on EVERY finish).** Branch
+  developed in a worktree with its own tea-rags index clone (collection
+  `<project>-worktree-<name>`, created by `tea-rags worktree create`): remove
+  now: `tea-rags worktree remove <name>` — on merge AND on abandon/delete. Clone
+  is throwaway; leaving it leaks Qdrant + DuckDB + snapshot footprint. Run even
+  if the git worktree directory is already gone — index clone tracked
+  separately, outlives the directory. A cleanup-only `PostToolUse` hook is the
+  backstop if you bypass this with a raw `git worktree remove` /
+  `git branch -D`, but do it explicitly here anyway.
+- **No clone → no cleanup.** Branch developed on the main checkout (no
+  `tea-rags worktree` clone): nothing to remove.
 
-Skip this step only on a PR-only completion path (no local merge): the clone
-stays until the PR merges — note it for later cleanup.
+Skip this step only on a PR-only completion path (no local merge): clone stays
+until the PR merges — note it for later cleanup.
 
 Do NOT substitute:
 
@@ -205,10 +198,10 @@ Do NOT substitute:
 - Let `superpowers:finishing-a-development-branch` chain into a raw
   `superpowers:requesting-code-review` /
   `superpowers:verification-before-completion` without redirecting to the
-  `dinopowers:Y` wrapper → intercept and invoke the wrapper instead (see
-  Chaining rule)
-- Merged to `main` and did NOT reindex `main` → stale; there is no commit hook.
-  Run the explicit `mcp__tea-rags__index_codebase` on the `main` alias (Step 5).
+  `dinopowers:Y` wrapper → intercept, invoke the wrapper instead (see Chaining
+  rule)
+- Merged to `main` and did NOT reindex `main` → stale; no commit hook. Run the
+  explicit `mcp__tea-rags__index_codebase` on the `main` alias (Step 5).
 - Cleaned up a per-worktree clone with `delete_collection` (or by deleting the
   worktree directory) → incomplete; leaks DuckDB + snapshots + registry. Use
   `tea-rags worktree remove <name>` (Step 5).

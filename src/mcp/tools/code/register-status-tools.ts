@@ -20,8 +20,8 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
     {
       title: "Get Index Status",
       description:
-        "Get indexing status, statistics, and git enrichment progress for a codebase.\n\n" +
-        "For indexing workflow see tea-rags://schema/indexing-guide",
+        "Indexing status, statistics, git enrichment progress for codebase.\n\n" +
+        "Indexing workflow: tea-rags://schema/indexing-guide",
       inputSchema: schemas.GetIndexStatusSchema,
       annotations: { readOnlyHint: true },
     },
@@ -91,10 +91,10 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
     {
       title: "Get Index Metrics",
       description:
-        "Get collection statistics and signal distributions. Returns percentile-based thresholds for git signals " +
+        "Collection statistics, signal distributions. Returns percentile-based thresholds for git signals " +
         "scoped by source/test: signals[lang][signal][scope].labelMap. " +
-        "Use to discover appropriate filter values for your codebase. " +
-        "For signal label definitions see tea-rags://schema/signal-labels.",
+        "Discover filter values for codebase. " +
+        "Signal label definitions: tea-rags://schema/signal-labels.",
       inputSchema: schemas.GetIndexMetricsSchema,
       annotations: { readOnlyHint: true },
     },

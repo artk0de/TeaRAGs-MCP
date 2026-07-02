@@ -7,28 +7,28 @@ paths:
 
 # Typed Errors (MANDATORY)
 
-All runtime errors MUST use concrete error classes from the unified hierarchy. D
+All runtime errors MUST use concrete error classes from unified hierarchy.
 
 ## Rules
 
-1. **NEVER `throw new Error("message")`** — always use a concrete error class
-   from the hierarchy defined in `src/core/contracts/errors.ts`.
+1. **NEVER `throw new Error("message")`** — always concrete error class from
+   hierarchy in `src/core/contracts/errors.ts`.
 
-2. **Adapters catch raw errors and throw typed errors.** External API messages
-   go in `cause`, not in the typed error's `message`.
+2. **Adapters catch raw errors, throw typed errors.** External API messages go
+   in `cause`, not typed error's `message`.
 
-3. **Domains throw domain-specific errors.** Each domain has its own abstract
-   base class (`IngestError`, `ExploreError`, `TrajectoryError`).
+3. **Domains throw domain-specific errors.** Each domain has own abstract base
+   (`IngestError`, `ExploreError`, `TrajectoryError`).
 
 4. **Facades validate input** and throw `InputValidationError` subclasses before
    calling infrastructure code.
 
 5. **Programming errors are the only exception.** Invariant violations (e.g.
    "Pipeline not started", "Shard count must be at least 1") may use plain
-   `Error` — they indicate caller bugs, not user-facing issues.
+   `Error` — caller bugs, not user-facing.
 
-6. **MCP tool handlers NEVER contain try/catch.** All error handling is
-   centralized in `errorHandlerMiddleware` via `registerToolSafe`.
+6. **MCP tool handlers NEVER contain try/catch.** All error handling centralized
+   in `errorHandlerMiddleware` via `registerToolSafe`.
 
 ## Error Hierarchy
 

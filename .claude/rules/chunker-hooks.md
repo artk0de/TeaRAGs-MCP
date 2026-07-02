@@ -12,9 +12,8 @@ Applies to every `ChunkingHook` registered under
 
 ## Claim invariant (orchestrator-enforced)
 
-The hook chain stops the moment any hook populates `ctx.bodyChunks`. The
-orchestrator in `src/core/domains/ingest/pipeline/chunker/tree-sitter.ts`
-short-circuits the loop:
+Hook chain stops moment any hook populates `ctx.bodyChunks`. Orchestrator in
+`src/core/domains/ingest/pipeline/chunker/tree-sitter.ts` short-circuits loop:
 
 ```ts
 for (const hook of langConfig.hooks ?? []) {
@@ -25,41 +24,39 @@ for (const hook of langConfig.hooks ?? []) {
 
 Implication for hook authors:
 
-- **Writing `ctx.bodyChunks` claims the container.** Subsequent hooks will NOT
-  run on this `ctx`. Set the chunks once and don't expect post-passes on the
-  same container.
-- **Per-hook guards are unnecessary.** Don't write
-  `if (ctx.bodyChunks.length > 0) return;` inside `process` — the orchestrator
+- **Writing `ctx.bodyChunks` claims the container.** Subsequent hooks NOT run on
+  this `ctx`. Set chunks once, expect no post-passes on same container.
+- **Per-hook guards unnecessary.** Don't write
+  `if (ctx.bodyChunks.length > 0) return;` inside `process` — orchestrator
   already handled it.
-- **Set `ctx.skipChildren = true` whenever you claim**, so child emission is
-  also suppressed for the container.
+- **Set `ctx.skipChildren = true` whenever you claim**, so child emission also
+  suppressed for container.
 
 ## Hook ordering (MANDATORY)
 
-Order in `<language>/index.ts` is positional — the orchestrator runs hooks in
-registration order and stops at the first writer. Keep this canonical ordering
-for every language:
+Order in `<language>/index.ts` positional — orchestrator runs hooks in
+registration order, stops at first writer. Keep canonical ordering per language:
 
-1. **Filter hooks** — `filterNode` only, no `process` work. Narrow the candidate
+1. **Filter hooks** — `filterNode` only, no `process` work. Narrow candidate
    node set globally added to `chunkableTypes`.
 2. **Comment / metadata hooks** — populate `excludedRows`, `methodPrefixes`,
    etc. for downstream readers. Must NOT write `bodyChunks` (would short-circuit
-   the chain prematurely).
+   chain prematurely).
 3. **Specialised scope / DSL chunkers** — claim semantic containers
    (`describe`/`context`/`suite` for tests, RSpec blocks for Ruby). Write
    `ctx.bodyChunks` AND set `ctx.skipChildren = true`.
 4. **Generic body chunker (last)** — class/function body extraction for any
-   container the specialised chunkers didn't claim. Runs only when no prior hook
+   container specialised chunkers didn't claim. Runs only when no prior hook
    wrote `bodyChunks`.
 
-Reordering breaks the invariant. Don't reorder without revising this rule.
+Reordering breaks invariant. Don't reorder without revising this rule.
 
 ## What NOT to put in the chain
 
-- Hooks that read `ctx.bodyChunks` after another hook wrote them
-  (post-processing, enrichment of chunks). The orchestrator stops the chain, so
-  these would never run. If you need that, propose extending the contract (e.g.
-  a separate post-claim pass) before adding the hook.
+- Hooks reading `ctx.bodyChunks` after another hook wrote them (post-processing,
+  chunk enrichment). Orchestrator stops chain, so these never run. If you need
+  that, propose extending contract (e.g. separate post-claim pass) before adding
+  hook.
 
 ## Reference implementations
 
@@ -71,5 +68,5 @@ Reordering breaks the invariant. Don't reorder without revising this rule.
   (`chunkWithChildExtraction` + `processChildren`)
 - Coverage:
   `tests/core/domains/ingest/pipeline/chunker/tree-sitter-chunker.test.ts`
-  asserts the invariant end-to-end via `chunkType === "test"` on a real describe
+  asserts invariant end-to-end via `chunkType === "test"` on a real describe
   block.

@@ -1,11 +1,10 @@
 ---
 name: add-mcp-endpoint
 description:
-  Expose a new tool to LLM clients via the MCP protocol — schema, handler, App
-  method, and documentation in one coordinated change. Triggers on "add MCP
-  tool", "new endpoint that returns X", "expose Y as a tool", "новый MCP tool".
-  NOT for modifying an existing tool's schema — just edit the tool file
-  directly.
+  Expose new tool to LLM clients via MCP protocol — schema, handler, App method,
+  docs in one coordinated change. Triggers on "add MCP tool", "new endpoint that
+  returns X", "expose Y as a tool", "новый MCP tool". NOT for modifying an
+  existing tool's schema — just edit the tool file directly.
 ---
 
 # Add MCP Endpoint
@@ -15,33 +14,32 @@ description:
 - [ ] DTO created in `public/dto/<domain>.ts` (via add-dto skill)
 - [ ] DTO re-exported via barrel chain: `dto/<domain>.ts` → `dto/index.ts` →
       `public/index.ts` → `api/index.ts`
-- [ ] Work placed correctly per `facade-discipline.md` three-question tree:
-      strategy (`domains/explore/strategies/`), query
-      (`domains/explore/queries/`), ops (`api/internal/ops/`), or pure facade
-      dispatcher
-- [ ] Facade method is ≤ 20 lines (resolve → guard → [ensureStats] → dispatch →
+- [ ] Work placed per `facade-discipline.md` three-question tree: strategy
+      (`domains/explore/strategies/`), query (`domains/explore/queries/`), ops
+      (`api/internal/ops/`), or pure facade dispatcher
+- [ ] Facade method ≤ 20 lines (resolve → guard → [ensureStats] → dispatch →
       finalize); no inline filter construction, no `Map`/`reduce` aggregation,
       no indexing-mode branching
 - [ ] Filter building (if any) uses `registry.buildMergedFilter()` — not
       hand-built `{ must: [...] }` shapes in the facade
-- [ ] Validation >5 lines extracted to a named validator function
+- [ ] Validation >5 lines extracted to named validator function
 - [ ] App interface method added in `public/app.ts`
 - [ ] `createApp()` wiring added in `public/app.ts` (delegate to
       facade/ops/query/strategy)
-- [ ] `AppDeps` updated if a new internal class was introduced
+- [ ] `AppDeps` updated if new internal class introduced
 - [ ] Zod schema in `mcp/tools/schemas.ts`
 - [ ] Tool registered in `mcp/tools/<domain>.ts`
 - [ ] If reranking supported: tool name added to preset `tools[]` arrays and
       `getSchemaDescriptors` list
-- [ ] Tests written next to the implementation (strategy/query/ops test — not a
+- [ ] Tests written next to implementation (strategy/query/ops test — not a
       facade test) and passing
 - [ ] Docusaurus docs updated (`website/docs/api/tools.md` + relevant pages)
 - [ ] `CLAUDE.local.md` updated
 - [ ] Build + full test suite passing
 
-🛑 Each row is a gate — do NOT proceed to next without finishing the current.
+🛑 Each row = gate — do NOT proceed to next without finishing current.
 
-Two-phase process: define the endpoint in core, then expose it via MCP.
+Two-phase: define endpoint in core, then expose via MCP.
 
 ## Phase 1: Core API Layer
 
@@ -58,12 +56,12 @@ Add request/response types in `src/core/api/public/dto/<domain>.ts`.
 | `dto/collection.ts` | Collection CRUD types (CreateCollectionRequest, CollectionInfo)         |
 | `dto/document.ts`   | Document add/delete types (AddDocumentsRequest, DeleteDocumentsRequest) |
 
-If none fit, create `dto/<new-domain>.ts` and add re-export to `dto/index.ts`.
+None fit → create `dto/<new-domain>.ts` + add re-export to `dto/index.ts`.
 
 **DTO rules:**
 
 - Request types end with `Request` (e.g., `SemanticSearchRequest`)
-- Response types are specific — no generic `Response` suffix
+- Response types specific — no generic `Response` suffix
 - Extend `CollectionRef` for endpoints accepting `collection` or `path`
 - Extend `TypedFilterParams` for endpoints with trajectory filters
 - Pure interfaces only (no classes, no logic)
@@ -71,7 +69,7 @@ If none fit, create `dto/<new-domain>.ts` and add re-export to `dto/index.ts`.
 
 **Export chain (MANDATORY):**
 
-1. Type is defined in `dto/<domain>.ts`
+1. Type defined in `dto/<domain>.ts`
 2. Re-exported from `dto/index.ts` (automatic if using existing domain file)
 3. Re-exported through `public/index.ts` → `api/index.ts`
 4. If `contracts/types/app.ts` re-exports this domain — add to its re-export
@@ -81,10 +79,10 @@ If none fit, create `dto/<new-domain>.ts` and add re-export to `dto/index.ts`.
 
 In `src/core/api/public/app.ts`:
 
-1. Import the new DTO from `./dto/index.js`
+1. Import new DTO from `./dto/index.js`
 
-2. Add the method signature to the `App` interface in the matching category
-   group, with a comment pointing to the internal implementation:
+2. Add method signature to `App` interface in matching category group, with
+   comment pointing to internal implementation:
 
 ```typescript
 // -- <Category> (→ internal/<path>) --
@@ -92,28 +90,27 @@ newMethod: (request: NewRequest) => Promise<NewResponse>;
 ```
 
 Existing categories: Search, Indexing, Collections, Documents, Schema
-descriptors, Drift monitoring. Create a new category if none fit.
+descriptors, Drift monitoring. Create new category if none fit.
 
-3. Wire the method in `createApp()` in the same file — delegate to the
-   appropriate internal class:
+3. Wire method in `createApp()` in same file — delegate to appropriate internal
+   class:
 
 ```typescript
 // In createApp() return object:
 newMethod: async (req) => deps.<facade>.newMethod(req),
 ```
 
-If the method needs a new dependency (new facade/ops class), add it to `AppDeps`
-interface in the same file and instantiate it in `createApp()`.
+Method needs new dependency (new facade/ops class) → add to `AppDeps` interface
+in same file, instantiate in `createApp()`.
 
 ### 1.3 Implement in internal
 
-**MUST read `.claude/rules/facade-discipline.md` first.** Facades are thin
-dispatchers — they MUST NEVER contain business logic. The facade method is the
-last thing you write, not the first. Put the work in the correct class, then add
-a ≤20-line dispatcher to the facade.
+**MUST read `.claude/rules/facade-discipline.md` first.** Facades = thin
+dispatchers — MUST NEVER contain business logic. Facade method is last thing you
+write, not first. Put work in correct class, then add ≤20-line dispatcher to
+facade.
 
-**Where the actual work lives** (answer the three questions in order; first
-"yes" wins):
+**Where actual work lives** (answer three questions in order; first "yes" wins):
 
 | The method...                                  | → Work goes in                                    | Facade method                                        |
 | ---------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------- |
@@ -122,12 +119,11 @@ a ≤20-line dispatcher to the facade.
 | 3. Mutates / branches indexing or CRUD?        | new **ops** in `api/internal/ops/`                | resolve + guard + `this.<name>Ops.run(...)`          |
 | None of the above (pure forwarding 1-4 lines)  | stays in facade as dispatcher                     | the one-liner itself (e.g. `clearIndex`)             |
 
-**Existing ops** (`CollectionOps`, `DocumentOps`) — MUST extend them only if the
-new method belongs to the same responsibility. A new CRUD area MUST get a new
-ops class.
+**Existing ops** (`CollectionOps`, `DocumentOps`) — MUST extend only if new
+method belongs to same responsibility. New CRUD area MUST get new ops class.
 
-**MUST NEVER do in the facade** (these are the patterns `facade-discipline.md`
-explicitly forbids):
+**MUST NEVER do in the facade** (patterns `facade-discipline.md` explicitly
+forbids):
 
 - **MUST NEVER inline Qdrant filter construction** (`{ must: [...] }`) in the
   facade.
@@ -138,18 +134,17 @@ explicitly forbids):
 - **MUST NEVER resolve presets** in the facade.
 
 **Filter building (MUST):** use
-`registry.buildMergedFilter(typedParams, rawFilter, level)` from the facade,
-pass the result via `ExploreContext.filter` into the strategy. The facade MUST
-NEVER construct filter shapes itself.
+`registry.buildMergedFilter(typedParams, rawFilter, level)` from facade, pass
+result via `ExploreContext.filter` into strategy. Facade MUST NEVER construct
+filter shapes itself.
 
 **Validation (MUST):** request-shape validation (mutex params, cross-field
-rules) up to ~5 lines MAY live inline in the facade as the guard step. Past
-that, MUST extract a named validator function (e.g.
-`validateFindByTaskIdRequest`) into `api/errors.ts` or alongside, and MUST throw
-typed errors per `typed-errors.md`.
+rules) up to ~5 lines MAY live inline in facade as guard step. Past that, MUST
+extract named validator function (e.g. `validateFindByTaskIdRequest`) into
+`api/errors.ts` or alongside, and MUST throw typed errors per `typed-errors.md`.
 
-After placing the work, MUST update `AppDeps` in `public/app.ts` if a new
-internal class was created, and MUST wire it in `createApp()`.
+After placing work, MUST update `AppDeps` in `public/app.ts` if new internal
+class created, and MUST wire it in `createApp()`.
 
 ### 1.4 Verify core layer
 
@@ -166,9 +161,9 @@ In `src/mcp/tools/schemas.ts`:
 
 **For static schemas** (no dynamic content from SchemaBuilder):
 
-- Add a new exported const (e.g., `export const NewToolSchema = { ... }`)
+- Add new exported const (e.g., `export const NewToolSchema = { ... }`)
 - Use `z.string()`, `coerceNumber()`, `coerceBoolean()` for params
-- Every field needs `.describe()` with a clear description for LLM consumers
+- Every field needs `.describe()` with clear description for LLM consumers
 
 **For dynamic schemas** (need SchemaBuilder for rerank presets/signals):
 
@@ -192,8 +187,8 @@ export const NewToolSchema = {
 
 ### 2.2 Register the MCP tool
 
-In the appropriate `src/mcp/tools/<domain>.ts` file (explore, code, collection,
-document), or create a new file if needed:
+In appropriate `src/mcp/tools/<domain>.ts` file (explore, code, collection,
+document), or create new file if needed:
 
 ```typescript
 server.registerTool(
@@ -213,16 +208,16 @@ server.registerTool(
 );
 ```
 
-If creating a new tool file:
+Creating new tool file:
 
-1. Export a `registerNewTools(server, deps)` function
-2. Call it from `src/mcp/tools/index.ts` in `registerAllTools()`
+1. Export `registerNewTools(server, deps)` function
+2. Call from `src/mcp/tools/index.ts` in `registerAllTools()`
 
 ### 2.3 Tool naming rules
 
-- Tool names are `snake_case` (e.g., `semantic_search`, `index_codebase`)
-- Match the domain: search tools in explore.ts, index tools in code.ts
-- Descriptions are for AI agents — be explicit about when to use the tool
+- Tool names `snake_case` (e.g., `semantic_search`, `index_codebase`)
+- Match domain: search tools in explore.ts, index tools in code.ts
+- Descriptions for AI agents — explicit about when to use tool
 
 ### 2.4 Response formatting
 
@@ -238,19 +233,19 @@ Use existing formatters from `src/mcp/format.ts`:
 
 ### 2.5 Update Docusaurus documentation
 
-Update the tools reference page `website/docs/api/tools.md`:
+Update tools reference page `website/docs/api/tools.md`:
 
-1. Add tool to the appropriate section table (Collection Management, Document
-   Operations, Code Vectorization, or create a new section)
-2. If the tool has non-trivial parameters, add a parameters subsection under
-   `## Search Parameters` or a new `##` section
+1. Add tool to appropriate section table (Collection Management, Document
+   Operations, Code Vectorization, or create new section)
+2. Non-trivial parameters → add parameters subsection under
+   `## Search Parameters` or new `##` section
 
-If the tool introduces a new concept (new rerank preset, new filter type):
+Tool introduces new concept (new rerank preset, new filter type):
 
 - Update relevant pages in `website/docs/usage/` (filters.md, query-modes.md,
   git-enrichments.md)
-- Update `website/docs/agent-integration/search-strategies/` if it affects
-  search workflows
+- Update `website/docs/agent-integration/search-strategies/` if affects search
+  workflows
 
 Follow docusaurus rules from `.claude/rules/documentation.md`:
 

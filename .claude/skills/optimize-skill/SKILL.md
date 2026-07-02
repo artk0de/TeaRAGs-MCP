@@ -1,10 +1,10 @@
 ---
 name: optimize-skill
 description:
-  Eval-driven skill optimization. Use when a skill needs improvement — wrong
-  tool selection, missing use cases, verbose instructions, stale rules. Runs
-  structured eval cycles with parallel subagents to measure skill quality and
-  iterate until 100% pass rate.
+  Eval-driven skill optimization. Use when skill needs improvement — wrong tool
+  selection, missing use cases, verbose instructions, stale rules. Structured
+  eval cycles with parallel subagents measure skill quality, iterate until 100%
+  pass rate.
 argument-hint: [skill path or name to optimize]
 ---
 
@@ -13,40 +13,40 @@ argument-hint: [skill path or name to optimize]
 ## Non-Negotiables (MUST honor in every run)
 
 - **PERSIST results to .benchmarks/<skill-name>/** after Phase 4/5. Skipping =
-  work is unverifiable.
+  work unverifiable.
 - **MEASURE before fixing** — Phase 2 baseline eval confirms problems exist
-  before applying any change.
-- **DELTA is the metric** — a skill scoring 100% but baseline 90% adds little
-  value. Target +50pp minimum.
+  before any change.
+- **DELTA is the metric** — skill scoring 100% but baseline 90% adds little.
+  Target +50pp minimum.
 - **NEVER skip Phase 6** — benchmark.md and evals.json are committed artifacts;
-  without them the optimization is unrepeatable.
+  without them optimization unrepeatable.
 
 🛑 STOP — these survive over individual phase sequence. Cross-check every Phase
-4/5 completion against the Non-Negotiables.
+4/5 completion against Non-Negotiables.
 
 ## Top Anti-Patterns (DO NOT)
 
-- **Skipping PERSIST** — Phase 6 is not optional, execute inline immediately
-  after verify
-- **Fixing before measuring** — audit findings are hypotheses; eval-confirm them
+- **Skipping PERSIST** — Phase 6 not optional, execute inline immediately after
+  verify
+- **Fixing before measuring** — audit findings are hypotheses; eval-confirm
   first
-- **Skipping baseline** — without it, you cannot measure delta
+- **Skipping baseline** — without it, can't measure delta
 
 Structured eval-driven methodology for optimizing Claude Code skills. Measures
 actual agent behavior against expected tool selection, identifies gaps, fixes
-them, and verifies fixes.
+them, verifies fixes.
 
 ## Prerequisites
 
 1. **Load skill-creator toolkit** — invoke `/example-skills:skill-creator` via
-   the Skill tool BEFORE starting any phase. It provides scripts, agents, and
-   eval-viewer used in Phases 6-8. Keep it loaded throughout the session.
+   Skill tool BEFORE any phase. Provides scripts, agents, eval-viewer used in
+   Phases 6-8. Keep loaded throughout session.
 2. Skill file to optimize (SKILL.md path)
-3. Understanding of what the skill should do (read it first)
+3. Understanding what skill should do (read it first)
 
 ## Phase 1: AUDIT
 
-Read the skill. Identify problems by category:
+Read skill. Identify problems by category:
 
 | Category              | What to look for                                               |
 | --------------------- | -------------------------------------------------------------- |
@@ -62,15 +62,15 @@ style, one at a time, with recommended resolution).
 
 ## Phase 2: BASELINE EVAL (before fixing)
 
-**Measure first, fix second.** Audit findings are hypotheses — eval confirms
-them. Do NOT apply fixes until baseline proves the skill is actually broken.
+**Measure first, fix second.** Audit findings are hypotheses — eval confirms. Do
+NOT apply fixes until baseline proves skill actually broken.
 
 ### 2.1 Design eval cases
 
 Create eval cases targeting:
 
-1. **Each audit finding** — one case per identified problem. The case should
-   FAIL if the problem exists and PASS if the skill handles it correctly
+1. **Each audit finding** — one case per problem. Case FAILS if problem exists,
+   PASSES if skill handles correctly
 2. **Regression controls** — unchanged behaviors that must still work
 3. **Edge cases** — non-English input, code snippet input, ambiguous intent
 4. **Subagent routing (MANDATORY)** — ALWAYS include 2+ cases simulating skill
@@ -79,9 +79,9 @@ Create eval cases targeting:
    - `[subagent: task-agent]` — skill called during autonomous task execution
    - `[subagent: plan-executor]` — skill called as a plan step
    - `[subagent: other]` — any other agent type that might use the skill These
-     cases test whether skill instructions work when the calling agent has
-     limited context (no CLAUDE.md, no rules, no search-cascade). Frame prompts
-     as a subagent would phrase them — with explicit paths, not vague intents.
+     cases test whether skill instructions work when calling agent has limited
+     context (no CLAUDE.md, no rules, no search-cascade). Frame prompts as
+     subagent would phrase them — explicit paths, not vague intents.
 
 Each case has:
 
@@ -96,18 +96,18 @@ Audit finding: <N or "control">
 
 ### 2.2 Run with-rule eval
 
-Spawn ONE subagent with the **full skill text injected** into its prompt.
-Present ALL eval cases in a single prompt. Agent describes tool selection plan
-for each — does NOT execute tools.
+Spawn ONE subagent with **full skill text injected** into prompt. Present ALL
+eval cases in single prompt. Agent describes tool selection plan per case — does
+NOT execute tools.
 
 Grade each case: PASS / FAIL against expected behavior.
 
 ### 2.3 Run without-rule baseline
 
-Spawn ONE subagent with NO skill text — only the list of available MCP tools.
-Same eval cases. Agent describes its natural tool selection.
+Spawn ONE subagent with NO skill text — only list of available MCP tools. Same
+cases. Agent describes natural tool selection.
 
-This establishes the **delta** — how much the skill improves behavior.
+Establishes **delta** — how much skill improves behavior.
 
 ### 2.4 Grade and triage
 
@@ -122,7 +122,7 @@ Delta:        +Zpp
 - Finding FAILS in with-rule eval → **confirmed problem**, proceed to fix
 - Finding PASSES in with-rule eval → **not broken**, drop from fix list
 - Finding PASSES in both with-rule and without-rule → **skill adds no value
-  here**, consider if the instruction is dead weight
+  here**, consider if instruction is dead weight
 
 Present triage to user. Only confirmed problems proceed to Phase 3.
 
@@ -141,8 +141,8 @@ Re-run full eval suite against fixed skill.
 
 ### 4.1 Run with-rule eval (fixed skill)
 
-Same eval cases from Phase 2. All previously failing cases must now PASS.
-Previously passing cases must not regress.
+Same cases from Phase 2. All previously failing cases must now PASS. Previously
+passing cases must not regress.
 
 ### 4.2 Grade
 
@@ -153,34 +153,33 @@ Baseline:     N/M PASS (Y%)
 Delta:        +Zpp
 ```
 
-**Target: 100% with-rule pass rate.** If not met → iterate (Phase 5).
+**Target: 100% with-rule pass rate.** Not met → iterate (Phase 5).
 
 ## Phase 5: ITERATE (if needed)
 
 For each remaining FAIL:
 
-1. Identify **why** the agent chose wrong — ambiguous instruction? missing rule?
+1. Identify **why** agent chose wrong — ambiguous instruction? missing rule?
    conflicting guidance?
 2. Fix the specific instruction
 3. Re-run ONLY failed cases + 2 random controls (not full suite)
 4. Repeat until 100%
 
-**Max 3 iterations.** If still failing after 3 — the skill design needs
-rethinking, not tweaking. Report to user.
+**Max 3 iterations.** Still failing after 3 → skill design needs rethinking, not
+tweaking. Report to user.
 
 ## Phase 6: PERSIST (MANDATORY — execute inline, not deferred)
 
-**This phase is NOT optional.** Save results immediately after Phase 4/5
-completes. Do not wait for user to ask. Do not skip because "session is ending".
-Benchmark artifacts are the proof that optimization happened — without them, the
-work is unverifiable.
+**NOT optional.** Save results immediately after Phase 4/5. Don't wait for user
+to ask. Don't skip because "session is ending". Benchmark artifacts = proof
+optimization happened — without them, work unverifiable.
 
-**Applies to feature-driven updates too.** When a skill is updated as part of a
-feature implementation (not a standalone optimization session), eval cases and
-results MUST still be persisted. The eval may be smaller (only covering new
-functionality), but `evals/<feature>-evals.json` + benchmark.md appendix are
-required. Eval cases are reusable regression tests — skipping persistence means
-the next optimization has no baseline for the new functionality.
+**Applies to feature-driven updates too.** Skill updated as part of feature
+implementation (not standalone optimization) → eval cases and results MUST still
+persist. Eval may be smaller (only new functionality), but
+`evals/<feature>-evals.json` + benchmark.md appendix required. Eval cases =
+reusable regression tests — skipping persistence means next optimization has no
+baseline for new functionality.
 
 Save results to `.claude-plugin/.benchmarks/<skill-name>/`:
 
@@ -220,9 +219,9 @@ Benchmark: .claude-plugin/.benchmarks/[name]/benchmark.md
 
 ## Key Principles
 
-**Eval tests INSTRUCTION QUALITY, not tool correctness.** We verify that the
-skill text unambiguously guides the agent to the right tool. Whether the tool
-itself works is a separate concern (integration tests).
+**Eval tests INSTRUCTION QUALITY, not tool correctness.** Verify skill text
+unambiguously guides agent to right tool. Whether tool itself works = separate
+concern (integration tests).
 
 **Parallel subagents for with/without.** Always run both in parallel when
 establishing baseline. Re-runs (iterations) only need with-rule.
@@ -230,16 +229,16 @@ establishing baseline. Re-runs (iterations) only need with-rule.
 **One subagent per eval suite.** All cases in one prompt — cheaper and shows
 whether instructions scale when agent handles multiple intents in context.
 
-**Delta is the metric.** A skill that scores 100% but baseline also scores 90%
-adds little value. Target: +50pp minimum delta.
+**Delta is the metric.** Skill scoring 100% but baseline also 90% adds little
+value. Target: +50pp minimum delta.
 
 **Minimum viable eval.** Don't over-test. 8-15 cases covers most skills. Add
 cases only for discovered failure modes.
 
 ## Phase 7: DESCRIPTION OPTIMIZATION (optional)
 
-After skill body is stable, optimize the `description` field in frontmatter for
-better triggering accuracy. Follow the **Description Optimization** section from
+After skill body stable, optimize `description` field in frontmatter for better
+triggering accuracy. Follow **Description Optimization** section from
 `/example-skills:skill-creator` (loaded in Prerequisites step 1):
 
 1. Generate 20 trigger eval queries (10 should-trigger, 10 should-not-trigger)
@@ -255,14 +254,14 @@ better triggering accuracy. Follow the **Description Optimization** section from
    ```
 4. Apply `best_description` to SKILL.md frontmatter
 
-This is separate from body optimization — description controls **when** the
-skill triggers, body controls **what it does** once triggered.
+Separate from body optimization — description controls **when** skill triggers,
+body controls **what it does** once triggered.
 
 ## Phase 8: FULL INTEGRATION EVAL (optional)
 
-When lightweight tool-selection eval is not enough (complex multi-step skills,
-skills that produce files), follow the **Running and evaluating test cases**
-section from `/example-skills:skill-creator` (loaded in Prerequisites step 1):
+When lightweight tool-selection eval not enough (complex multi-step skills,
+skills producing files), follow **Running and evaluating test cases** section
+from `/example-skills:skill-creator` (loaded in Prerequisites step 1):
 
 1. Save eval cases to `evals/evals.json` (see skill-creator's
    `references/schemas.md` for schema)
@@ -283,20 +282,20 @@ section from `/example-skills:skill-creator` (loaded in Prerequisites step 1):
    ```
 
 Key difference from Phase 2: integration eval tests **end-to-end behavior**
-(tool calls, outputs, quality). Phase 2 tests **instruction clarity** (does the
-agent know which tool to pick). Use Phase 2 first — it's faster. Escalate to
-Phase 8 only when tool selection is correct but output quality is uncertain.
+(tool calls, outputs, quality). Phase 2 tests **instruction clarity** (does
+agent know which tool to pick). Use Phase 2 first — faster. Escalate to Phase 8
+only when tool selection correct but output quality uncertain.
 
 ## Anti-patterns
 
 Top 3 are duplicated near the top — read both.
 
 - **Skipping PERSIST** — benchmark artifacts are proof of work. Without
-  evals.json and benchmark.md, the optimization is unverifiable and
-  unrepeatable. Execute Phase 6 inline, immediately after verify passes
+  evals.json and benchmark.md, optimization unverifiable and unrepeatable.
+  Execute Phase 6 inline, immediately after verify passes
 - **Fixing before measuring** — audit findings are hypotheses. Run baseline eval
   (Phase 2) to confirm problems exist before applying fixes. A finding that
-  passes eval is not broken — drop it from the fix list
+  passes eval is not broken — drop from fix list
 - **Running real MCP calls in Phase 2 eval** — unnecessary, tests tool not skill
 - **One subagent per eval case** — wasteful, use one subagent for all cases
 - **Skipping baseline** — can't measure delta without it

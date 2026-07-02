@@ -28,11 +28,10 @@ This includes:
 ## What to do instead
 
 - **Fix the code** to satisfy the linter rule
-- If a rule produces false positives, **report it to the user** with evidence
-- If a rule is too strict for a specific case, **ask the user** before adding an
-  exception
+- Rule gives false positives → **report to user** with evidence
+- Rule too strict for a case → **ask user** before adding exception
 
 ## Rationale
 
-Linter rules are calibrated based on project bug history analysis. Weakening
-them silently reintroduces the exact bug patterns they were designed to prevent.
+Linter rules calibrated from project bug-history analysis. Weakening silently
+reintroduces the exact bug patterns they prevent.

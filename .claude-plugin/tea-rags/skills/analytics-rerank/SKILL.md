@@ -21,9 +21,8 @@ user-invocable: false
 
 # Analytics Rerank
 
-Rerank reorders search results by git and structural signals. This skill is the
-deep-dive for: picking the right preset, building a custom weight set, and
-applying a recipe for a specific analytics question.
+Rerank reorders search results by git + structural signals. Deep-dive: pick
+preset, build custom weight set, apply recipe for a specific analytics question.
 
 ## Rerank decision tree
 
@@ -53,8 +52,8 @@ Existing preset fits the analytics question?
 
 ## Catalogs — always read on demand
 
-These are the canonical sources, generated from the live registry of THIS build.
-Memorized lists from training data WILL drift.
+Canonical sources, generated from live registry of THIS build. Memorized
+training-data lists WILL drift.
 
 ```
 ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/presets")
@@ -62,48 +61,47 @@ ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/signals")
 ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/signal-labels")
 ```
 
-`schema/presets` gives the full preset list with weights and tools.
-`schema/signals` gives every weight key available for `{custom: {...}}` mode.
-`schema/signal-labels` explains how numeric overlay values map to labels
-(`healthy` / `concerning` / `critical`, etc.) per signal.
+`schema/presets` = full preset list with weights + tools. `schema/signals` =
+every weight key for `{custom: {...}}` mode. `schema/signal-labels` = how
+numeric overlay values map to labels (`healthy` / `concerning` / `critical`,
+etc.) per signal.
 
 ## Preset cheat sheet (when each is the right pick)
 
-The catalog has the full list; this is the routing tier.
+Catalog has full list; this is routing tier.
 
-| Question                                                 | Preset                                                |
-| -------------------------------------------------------- | ----------------------------------------------------- |
-| "Where are the bug-prone areas in domain X?"             | `hotspots`                                            |
-| "Old + churny + bug-fixed legacy in domain X?"           | `techDebt`                                            |
-| "Single-author silos / bus factor in domain X?"          | `ownership`                                           |
-| "Review the recent changes in this area"                 | `codeReview` (with `maxAgeDays: 7`)                   |
-| "Old code in security-sensitive paths"                   | `securityAudit` (with `pathPattern: "**/auth/**"`)    |
-| "Recently modified, sprint-review style"                 | `recent`                                              |
-| "Stable, low-bug template code"                          | `proven` / `stable`                                   |
-| "Refactor candidates by size+volatility+bug-fix history" | `refactoring`                                         |
-| "Bug-prone + volatile + high blast radius"               | `dangerous`                                           |
-| "Find candidates to decompose"                           | `decomposition`                                       |
+| Question                                                 | Preset                                                                                    |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| "Where are the bug-prone areas in domain X?"             | `hotspots`                                                                                |
+| "Old + churny + bug-fixed legacy in domain X?"           | `techDebt`                                                                                |
+| "Single-author silos / bus factor in domain X?"          | `ownership`                                                                               |
+| "Review the recent changes in this area"                 | `codeReview` (with `maxAgeDays: 7`)                                                       |
+| "Old code in security-sensitive paths"                   | `securityAudit` (with `pathPattern: "**/auth/**"`)                                        |
+| "Recently modified, sprint-review style"                 | `recent`                                                                                  |
+| "Stable, low-bug template code"                          | `proven` / `stable`                                                                       |
+| "Refactor candidates by size+volatility+bug-fix history" | `refactoring`                                                                             |
+| "Bug-prone + volatile + high blast radius"               | `dangerous`                                                                               |
+| "Find candidates to decompose"                           | `decomposition`                                                                           |
 | "Blast radius before a change (real call edges)"         | `blastRadius` (codegraph on) — else custom `{ imports: 0.5, churn: 0.3, ownership: 0.2 }` |
-| "Structural backbone — high-fan-in hubs"                 | `architecturalHub` (codegraph)                        |
-| "Entry points / flow drivers of a scope"                 | `entryPoint` (codegraph)                              |
+| "Structural backbone — high-fan-in hubs"                 | `architecturalHub` (codegraph)                                                            |
+| "Entry points / flow drivers of a scope"                 | `entryPoint` (codegraph)                                                                  |
 
 **Codegraph composites** (`blastRadius` / `architecturalHub` / `entryPoint`)
-rank on real call/import edges (`fanIn`, `isHub`, `fanOutPerLine`). They are
-meaningful only when prime `## Enrichment` lists `codegraph.symbols`; with
-codegraph off they degrade to similarity — fall back to the `imports`-proxy
-custom weights and say centrality is approximate. See search-cascade "Graph
-navigation".
+rank on real call/import edges (`fanIn`, `isHub`, `fanOutPerLine`). Meaningful
+only when prime `## Enrichment` lists `codegraph.symbols`; codegraph off → they
+degrade to similarity — fall back to `imports`-proxy custom weights, say
+centrality is approximate. See search-cascade "Graph navigation".
 
 ## Custom weight recipes
 
-When no preset fits the analytics question exactly, combine weight keys from
-`tea-rags://schema/signals`. Format:
+No preset fits exactly → combine weight keys from `tea-rags://schema/signals`.
+Format:
 
 ```jsonc
 { "rerank": { "custom": { "<weightKey>": <number>, ... } } }
 ```
 
-Negative weights penalize a signal. Magnitudes are not absolute — the reranker
+Negative weights penalize a signal. Magnitudes not absolute — reranker
 normalizes per-query. Keep total magnitude ≈ 1.0 for sane ranking.
 
 ### Fragile Silo (looks stable, breaks a lot, single-author)
@@ -122,13 +120,12 @@ normalizes per-query. Keep total magnitude ≈ 1.0 for sane ranking.
 }
 ```
 
-Surfaces files with `bugFixRate concerning+` and single live-line owner
+Surfaces files with `bugFixRate concerning+` + single live-line owner
 (`knowledgeSilo` ≈ 1.0), despite low commit count (`churn` negative weight
-penalizes high-churn files — we want the SILENT fragile, not the obvious
-churner). Files whose `commitCount` falls below confidence-clamp thresholds will
-have `bugFixRate.label` clamped to `healthy` — they do NOT classify as Fragile
-silo even if raw value is high. This is correct behavior of the unified
-confidence mechanism.
+penalizes high-churn files — want the SILENT fragile, not the obvious churner).
+Files whose `commitCount` falls below confidence-clamp thresholds get
+`bugFixRate.label` clamped to `healthy` — do NOT classify as Fragile silo even
+if raw value high. Correct behavior of the unified confidence mechanism.
 
 ### Impact analysis (blast radius before a change)
 
@@ -145,15 +142,15 @@ confidence mechanism.
 }
 ```
 
-High `imports` = many files import this one = wide blast radius. `churn` is
-included because high-churn high-import files are the genuine danger ("everyone
-depends on this AND it keeps changing"). `ownership` surfaces single-owner
-high-impact files — knowledge silo with reach.
+High `imports` = many files import this = wide blast radius. `churn` included:
+high-churn high-import files are the genuine danger ("everyone depends on this
+AND it keeps changing"). `ownership` surfaces single-owner high-impact files —
+knowledge silo with reach.
 
-**Prefer the `blastRadius` preset when codegraph is on:** it ranks on real
-`fanIn` (actual call/import edges) + churn + bugFix, not the raw `imports`-line
-proxy. Use this custom recipe only as the codegraph-off fallback (the result is
-then approximate — import-proxy, not edge truth).
+**Prefer the `blastRadius` preset when codegraph is on:** ranks on real `fanIn`
+(actual call/import edges) + churn + bugFix, not the raw `imports`-line proxy.
+Use this custom recipe only as the codegraph-off fallback (result then
+approximate — import-proxy, not edge truth).
 
 ### Active driver concentration (who's mentally loaded right now)
 
@@ -169,8 +166,8 @@ then approximate — import-proxy, not edge truth).
 }
 ```
 
-Different from `ownership`. `recentActivityConcentration` is commit-window based
-(recent committers), `ownership` is blame-based (live-line owners). Use this for
+Different from `ownership`. `recentActivityConcentration` = commit-window based
+(recent committers), `ownership` = blame-based (live-line owners). Use for
 review routing / "who's driving this area in the current sprint", not authority
 questions.
 
@@ -191,35 +188,35 @@ questions.
 }
 ```
 
-`pathRisk` is the structural signal that flags security-sensitive paths (auth,
-crypto, etc.). Combined with age and bug-fix history, surfaces "old code in a
-critical path that still gets bug-fixed" — prime audit target.
+`pathRisk` = structural signal flagging security-sensitive paths (auth, crypto,
+etc.). Combined with age + bug-fix history, surfaces "old code in a critical
+path that still gets bug-fixed" — prime audit target.
 
 ## Reading the overlay back
 
 Every reranked result carries `rankingOverlay.derived` (normalized 0-1 signal
-contributions) and `rankingOverlay.raw.{file,chunk}` (raw payload values with
-labels). Read `references/runtime-introspection.md` for the structure and
-`references/signal-interpretation.md` for pair diagnostics that disambiguate
+contributions) + `rankingOverlay.raw.{file,chunk}` (raw payload values with
+labels). Read `references/runtime-introspection.md` for the structure,
+`references/signal-interpretation.md` for pair diagnostics disambiguating
 single-signal ambiguity (god module vs bug attractor, healthy owner vs toxic
 silo, legacy minefield vs proven stable).
 
 ## Project calibration
 
-Thresholds vary by codebase. A `commitCount` of 8 is "high" in one project and
-"typical" in another. Call `get_index_metrics(project: "<alias>")` and read
+Thresholds vary by codebase. `commitCount` of 8 is "high" in one project,
+"typical" in another. Call `get_index_metrics(project: "<alias>")`, read
 `signals[language][signalKey][scope].labelMap` for THIS project's
 percentile-based thresholds before phrasing a filter or weight in absolute
 numbers. See `references/runtime-introspection.md` for the calibration recipe.
 
 ## When this skill does NOT apply
 
-- Multi-dimensional cross-preset risk scan (uses overlap across 4 presets to
-  classify tiers) → use `tea-rags:risk-assessment`. This skill is for picking a
-  single preset or building a single custom weight set.
+- Multi-dimensional cross-preset risk scan (overlap across 4 presets to classify
+  tiers) → use `tea-rags:risk-assessment`. This skill = single preset or single
+  custom weight set.
 - Root-cause investigation of a concrete bug symptom → use `tea-rags:bug-hunt`.
 - Picking filter shape (typed sugar vs raw filter, level=file vs chunk) → use
   `tea-rags:filter-building`.
 - Generic exploration of unfamiliar code → use `tea-rags:explore`.
 
-For rerank selection and custom weight composition, stay here.
+For rerank selection + custom weight composition, stay here.

@@ -1,7 +1,6 @@
 # Search Use Cases
 
-Organized by agent task. Each references a Decision Tree branch from
-`search-cascade.md`.
+By agent task. Each maps to Decision Tree branch in `search-cascade.md`.
 
 ## Discovery (don't know the naming)
 
@@ -25,11 +24,10 @@ Organized by agent task. Each references a Decision Tree branch from
 
 ### Recipe: Fragile Silo discovery
 
-Surfaces files that _look_ stable but have a track record of regressions
-concentrated under one author. Full recipe and signal-confidence semantics live
-in **`tea-rags:analytics-rerank`** (custom weights for Fragile Silo). Pair
-confirmed findings with the `Fragile silo` pattern entry in
-`signal-interpretation.md` for remediation steps.
+Surfaces files that _look_ stable but carry regression history under one author.
+Full recipe + signal-confidence semantics: **`tea-rags:analytics-rerank`**
+(custom weights for Fragile Silo). Pair confirmed findings with `Fragile silo`
+entry in `signal-interpretation.md` for remediation.
 
 ## Exhaustive usage (need ALL references)
 
@@ -60,10 +58,9 @@ confirmed findings with the `Fragile silo` pattern entry in
 
 ## Anti-pattern / outlier detection (find_similar with only negatives)
 
-`find_similar` accepts `negativeCode` / `negativeIds` WITHOUT any positive
-examples. Combined with `strategy: "best_score"`, this returns code MAXIMALLY
-UNLIKE the negatives — i.e. outliers in the codebase relative to a known bad
-pattern.
+`find_similar` accepts `negativeCode` / `negativeIds` WITHOUT positives. With
+`strategy: "best_score"`, returns code MAXIMALLY UNLIKE the negatives — outliers
+relative to a known bad pattern.
 
 | Task                                  | Inputs                                                            |
 | ------------------------------------- | ----------------------------------------------------------------- |
@@ -71,17 +68,15 @@ pattern.
 | Outlier detection vs a cluster        | `negativeIds: [<cluster chunk IDs>]`, `strategy: "best_score"`    |
 | Find code dissimilar to legacy module | `negativeCode: <legacy snippet>` + `pathPattern: "<modern area>"` |
 
-Different mental model from "find similar to X" — useful for novelty surfacing,
-refactor candidates that diverged from a deprecated pattern, or code that
-escaped a stylistic norm.
+Inverse of "find similar to X" — for novelty surfacing, refactor candidates
+diverged from a deprecated pattern, or code escaping a stylistic norm.
 
 ## Project calibration (per-project thresholds)
 
-When you need to pick a meaningful threshold for filters like `minCommitCount`,
-`minAgeDays`, or `maxAgeDays`, don't guess. Call
-`get_index_metrics(project: "<alias>")` and read
-`signals[language][signalKey][scope].labelMap` — those are the actual
-percentile-based label boundaries for THIS codebase.
+Picking a meaningful threshold for `minCommitCount`, `minAgeDays`, `maxAgeDays`?
+Don't guess. Call `get_index_metrics(project: "<alias>")`, read
+`signals[language][signalKey][scope].labelMap` — actual percentile-based label
+boundaries for THIS codebase.
 
 | Question                              | Field to read                                              |
 | ------------------------------------- | ---------------------------------------------------------- |
@@ -89,26 +84,25 @@ percentile-based label boundaries for THIS codebase.
 | What counts as `legacy` age here?     | `signals[lang]["git.file.ageDays"]["source"].labelMap`     |
 | Test scope vs source scope thresholds | Same key with `scope: "test"` instead of `"source"`        |
 
-Use this to phrase filters in terms of the codebase's own distribution rather
-than fixed numbers from a different project. Full schema +
-`get_index_status.infraHealth` health probe are described in
+Phrase filters in the codebase's own distribution, not fixed numbers from
+another project. Full schema + `get_index_status.infraHealth` health probe:
 `references/runtime-introspection.md`.
 
 ## Sugar filters
 
-Full typed-sugar field catalog and the `level: "file"` enforcement rule for
-time-based filters (`modifiedAfter`/`Before`, `minAgeDays`/`maxAgeDays`) live in
-**`tea-rags:filter-building`**. Invoke that skill whenever the search needs a
-SCOPE (language, time window, author, testFile, taskId, `minCommitCount`,
-doc/code split, etc.).
+Full typed-sugar field catalog + `level: "file"` enforcement rule for time
+filters (`modifiedAfter`/`Before`, `minAgeDays`/`maxAgeDays`):
+**`tea-rags:filter-building`**. Invoke that skill whenever search needs a SCOPE
+(language, time window, author, testFile, taskId, `minCommitCount`, doc/code
+split, etc.).
 
 ## Tests as context
 
 DSL test chunking emits two chunk types: `chunkType: "test"` (leaf-scope
-`it`/`test` scenarios with inherited `beforeEach`/`beforeAll` baked into
-content) and `chunkType: "test_setup"` (fixture / setup chunks). Use these
-filters for chunk-level granularity instead of the file-level `testFile: "only"`
-when DSL test chunks are indexed.
+`it`/`test` scenarios, inherited `beforeEach`/`beforeAll` baked into content)
+and `chunkType: "test_setup"` (fixture / setup chunks). Use these for
+chunk-level granularity instead of file-level `testFile: "only"` when DSL test
+chunks are indexed.
 
 | Task                                              | Tool + filter                                                                    | Skill / recipe                                         |
 | ------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------ |
@@ -120,11 +114,11 @@ when DSL test chunks are indexed.
 | Living spec / scenario TOC for a module           | `find_symbol(relativePath:)` + raw filter `chunkType: "test"`                    | `tea-rags:tests-as-context` / `spec-extraction`        |
 | Find the test for a specific symbol               | `find_symbol(symbol:)` + filter `chunkType: "test"`                              | direct call, no recipe                                 |
 
-Preflight: DSL test chunks are absent if no `git.chunk.*` signal in the prime
-digest shows a `test:` threshold row. In that case fall back to file-level
-`testFile: "only"` with explicit "DSL test chunks unavailable" note. Currently
-only TypeScript has a DSL test chunker — Ruby / Python / Go / others get
-file-level granularity only.
+Preflight: DSL test chunks absent if no `git.chunk.*` signal in prime digest
+shows a `test:` threshold row. Then fall back to file-level `testFile: "only"`
+with explicit "DSL test chunks unavailable" note. Currently only TypeScript has
+a DSL test chunker — Ruby / Python / Go / others get file-level granularity
+only.
 
 ## External tools (complement tea-rags)
 

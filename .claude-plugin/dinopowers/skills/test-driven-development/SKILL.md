@@ -1,27 +1,25 @@
 ---
 name: test-driven-development
 description:
-  Write a failing test BEFORE implementation, matching project conventions found
-  via tea-rags search of existing test files (mocks, helpers, assertion style,
-  fixture conventions) so the new test fits local norms. Triggers on "write a
-  test", "TDD", "напиши тест", "сначала тест", "failing test first", "RED
-  phase", "implement feature X", "add test for Y", "fix bug Z". NOT for projects
-  with no existing tests — fall back to superpowers:test-driven-development
-  directly. Wraps superpowers:test-driven-development with tea-rags test-pattern
-  search.
+  Write failing test BEFORE implementation, match project conventions from
+  tea-rags search of existing test files (mocks, helpers, assertion style,
+  fixture conventions) so new test fits local norms. Triggers on "write a test",
+  "TDD", "напиши тест", "сначала тест", "failing test first", "RED phase",
+  "implement feature X", "add test for Y", "fix bug Z". NOT for projects with no
+  existing tests — fall back to superpowers:test-driven-development directly.
+  Wraps superpowers:test-driven-development with tea-rags test-pattern search.
 ---
 
 # dinopowers: test-driven-development
 
-Wrapper over `superpowers:test-driven-development`. Ensures the RED-phase
-failing test follows this project's established test conventions (mock helpers,
-vi.mock setup, assertion style, fixture location) instead of being written from
-scratch.
+Wrapper over `superpowers:test-driven-development`. Ensures RED-phase failing
+test follows project's established test conventions (mock helpers, vi.mock
+setup, assertion style, fixture location), not written from scratch.
 
 ## Iron Rule
 
 **Two split queries on DSL test chunks MUST be made BEFORE writing the failing
-test** — whenever the project has DSL test chunks indexed:
+test** — whenever project has DSL test chunks indexed:
 
 - Step 2a — fixture conventions: `chunkType: "test_setup"` + `rerank: "proven"`
   (delegated to `Skill(tea-rags:tests-as-context)` recipe `fixture-lookup`)
@@ -29,38 +27,38 @@ test** — whenever the project has DSL test chunks indexed:
 
 Correct filter (`chunkType: "test"`/`"test_setup"`, NOT file-level
 `testFile: "only"`) + correct rerank (`"proven"` — battle-tested patterns) +
-correct parameters (`metaOnly: false` to see actual test content) + correct
-ordering (search BEFORE draft) is the core value.
+correct params (`metaOnly: false` to see actual test content) + correct ordering
+(search BEFORE draft) = core value.
 
 If `Skill(tea-rags:tests-as-context)` Step 0 preflight returns SKIP (DSL test
-chunks absent — happens when the primary language has no DSL test chunker;
-**currently supported: TypeScript (Vitest/Jest/Mocha) and Ruby (RSpec)** — see
+chunks absent — primary language has no DSL test chunker; **currently supported:
+TypeScript (Vitest/Jest/Mocha) and Ruby (RSpec)** — see
 `src/core/domains/ingest/pipeline/chunker/hooks/<lang>/test-scope-chunker.ts`
-and `rspec-scope-chunker.ts` for the canonical list), fall back to a single
+and `rspec-scope-chunker.ts` for canonical list), fall back to single
 `mcp__tea-rags__semantic_search` with `testFile: "only"` + `rerank: "proven"`
 and state "file-level fallback — DSL test chunks unavailable for this language".
 
-> **Maintainers:** when a new language gains a DSL test chunker, update the
+> **Maintainers:** when new language gains DSL test chunker, update the
 > supported-languages list above AND the same lists in
 > `tea-rags:tests-as-context` (Step 0 SKIP block) and `tea-rags:filter-building`
-> (chunkType section). The canonical checklist lives in
+> (chunkType section). Canonical checklist:
 > `.claude/rules/test-spec-chunking.md`.
 
-If this is the first test in the project (no existing tests): skip pattern
-search, invoke `superpowers:test-driven-development` directly. State it.
+If first test in project (no existing tests): skip pattern search, invoke
+`superpowers:test-driven-development` directly. State it.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. There is no background reindex hook —
-worktree-plan freshness is explicit (clone + per-task reindex in
-`dinopowers:executing-plans`); run `mcp__tea-rags__index_codebase` manually to
-search code edited but not yet committed, BEFORE the first tea-rags call.
+`tea-rags/rules/index-freshness.md`. No background reindex hook — worktree-plan
+freshness explicit (clone + per-task reindex in `dinopowers:executing-plans`);
+run `mcp__tea-rags__index_codebase` manually to search code edited but not yet
+committed, BEFORE first tea-rags call.
 
 ## Step 1 — Frame the test intent
 
-From the user request or in-progress feature, identify:
+From user request or in-progress feature, identify:
 
 | Element                                           | Example                                                     |
 | ------------------------------------------------- | ----------------------------------------------------------- |
@@ -73,8 +71,8 @@ Compose:
 
 - `intent`: concise sentence (e.g. "ChunkGrouper groups overlapping chunks by
   startLine")
-- `pathHint`: optional pathPattern scoping to the test area (derived from
-  implementation path)
+- `pathHint`: optional pathPattern scoping to test area (from implementation
+  path)
 
 ## Step 2 — Search proven test patterns (split queries)
 
@@ -87,11 +85,11 @@ recipe: "fixture-lookup"
 intent: <Step 1 intent, focused on the SETUP shape this test will need>
 ```
 
-The recipe internally issues `mcp__tea-rags__semantic_search` with
-`chunkType: "test_setup"` + `rerank: "proven"` + `metaOnly: false` (limit 6) and
+Recipe internally issues `mcp__tea-rags__semantic_search` with
+`chunkType: "test_setup"` + `rerank: "proven"` + `metaOnly: false` (limit 6),
 returns top-K setup chunks with file:line + content excerpt.
 
-If the recipe returns SKIP (DSL test chunks absent), fall back to ONE
+If recipe returns SKIP (DSL test chunks absent), fall back to ONE
 `mcp__tea-rags__semantic_search` call:
 
 ```
@@ -121,22 +119,22 @@ limit:       8
 metaOnly:    false
 ```
 
-Skip Step 2b if Step 2a took the file-level fallback path — file-level results
+Skip Step 2b if Step 2a took file-level fallback path — file-level results
 already cover both setup and scenarios mixed together.
 
 ### Why split queries
 
 DSL test chunking emits two distinct chunk types per
 `test-scope-chunker.ts:265,289` (leaf `it`/`test` blocks) and `:309,340,376`
-(`beforeAll`/`beforeEach` setup). Querying them separately:
+(`beforeAll`/`beforeEach` setup). Querying separately:
 
 - Returns setup conventions cleanly in 2a (no scenario noise)
 - Returns assertion idioms cleanly in 2b (no setup noise)
 - Allows different limits / scopes per dimension
 
-`"proven"` preset is calibrated for
+`"proven"` preset calibrated for
 `{stability: 0.3, age: 0.3, bugFix: -0.15, ownership: -0.05, similarity: 0.2}` —
-surfaces tests that survived long without breaking, the local convention.
+surfaces tests that survived long without breaking = local convention.
 
 Do NOT substitute:
 
@@ -153,19 +151,18 @@ Do NOT substitute:
 
 Do NOT pass:
 
-- `metaOnly: true` — we need actual test body to extract conventions (mock
-  setup, assertion style, helper calls); signal-only payload is useless for TDD
-- `filter` on test file paths — `chunkType` handles granularity; adding path
-  filters restricts too tight
+- `metaOnly: true` — need actual test body to extract conventions (mock setup,
+  assertion style, helper calls); signal-only payload useless for TDD
+- `filter` on test file paths — `chunkType` handles granularity; path filters
+  restrict too tight
 
-If both queries return 0 results (no existing tests at all, or none matching the
-area): report "no existing test patterns found — falling back to
+If both queries return 0 results (no existing tests, or none matching area):
+report "no existing test patterns found — falling back to
 `superpowers:test-driven-development` direct". Do NOT invent conventions.
 
 ## Step 3 — Extract pattern block
 
-From the top-K returned chunks, extract as 4-6 concise bullets (NOT raw
-content):
+From top-K returned chunks, extract 4-6 concise bullets (NOT raw content):
 
 - **Mock setup convention** (e.g.
   `vi.mock("node:fs", async () => { ...partial(), existsSync: vi.fn() })`)
@@ -179,7 +176,7 @@ content):
   helpers)
 - **Setup/teardown** (`beforeEach` vs `beforeAll`, cleanup patterns)
 
-Cap bullets at 6. Cite the proven test file each convention came from (e.g.
+Cap bullets at 6. Cite proven test file each convention came from (e.g.
 `tests/core/domains/ingest/chunker/hooks-composition.test.ts`).
 
 If tea-rags returned fewer than 3 proven tests (thin corpus): note "small test
@@ -187,8 +184,8 @@ corpus — conventions inferred from <N> files only, may not be representative".
 
 ## Step 4 — Invoke superpowers:test-driven-development
 
-Invoke the `Skill` tool with `superpowers:test-driven-development`. Prepend the
-pattern block from Step 3 as context. Phrase the handoff as:
+Invoke `Skill` tool with `superpowers:test-driven-development`. Prepend pattern
+block from Step 3 as context. Phrase handoff as:
 
 > "Before writing the failing test, match these established conventions from the
 > proven test corpus: …<block>… Deviate only if the new test genuinely needs a
@@ -199,26 +196,25 @@ pattern block from Step 3 as context. Phrase the handoff as:
 > invoke `dinopowers:Y` instead — see the Chaining rule section above."
 
 Let `superpowers:test-driven-development` run its RED → GREEN → REFACTOR cycle.
-This wrapper does not replace it — it grounds the RED draft in local
-conventions.
+This wrapper does not replace it — grounds RED draft in local conventions.
 
 ## Red Flags — STOP and restart from Step 2
 
-- "I know how tests look in this project" → run Step 2 anyway; memory is stale
+- "I know how tests look in this project" → run Step 2 anyway; memory stale
   across files
-- "First test of a new module, no patterns needed" → if the project has ANY
-  tests, search the broader corpus with no `pathPattern`
+- "First test of a new module, no patterns needed" → if project has ANY tests,
+  search broader corpus with no `pathPattern`
 - Used `semantic_search` without `chunkType: "test"`/`"test_setup"` (when DSL
   chunks indexed) → redo; bare `testFile: "only"` captures import / helper noise
-  that dilutes the pattern signal
-- Picked `rerank: "recent"` "to get latest conventions" → `proven` is calibrated
+  that dilutes pattern signal
+- Picked `rerank: "recent"` "to get latest conventions" → `proven` calibrated
   better; recent returns drafts
 - Passed raw test code to `superpowers:test-driven-development` → extract
   pattern block first (6 bullets, not raw content)
-- Started drafting the failing test before Step 2 → revert, restart from Step 2
-- Let `superpowers:test-driven-development` chain into a raw
+- Started drafting failing test before Step 2 → revert, restart from Step 2
+- Let `superpowers:test-driven-development` chain into raw
   `superpowers:verification-before-completion` without redirecting to
-  `dinopowers:verification-before-completion` → intercept and invoke the wrapper
+  `dinopowers:verification-before-completion` → intercept and invoke wrapper
   instead (see Chaining rule)
 
 ## Common Mistakes

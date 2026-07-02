@@ -9,10 +9,10 @@ paths:
 
 # Adding a Ruby DSL Grammar (MANDATORY)
 
-Ruby/Rails/gem conventions are described **declaratively**: a convention is a
-data entry on a framework module, never a new `if`-branch in an interpreter
-(`resolver-architecture.md` rule #2). This rule is the decision tree for adding
-one. Established by epic `pg5ya` (consolidation of the imperative remnants).
+Ruby/Rails/gem conventions described **declaratively**: convention = data entry
+on a framework module, never a new `if`-branch in an interpreter
+(`resolver-architecture.md` rule #2). This rule = decision tree for adding one.
+Established by epic `pg5ya` (consolidation of imperative remnants).
 
 ## The two layers
 
@@ -20,19 +20,19 @@ one. Established by epic `pg5ya` (consolidation of the imperative remnants).
   `RubyFrameworkVocabulary` module (`ruby-core.ts`, `activesupport.ts`,
   `rails.ts`); each **gem gets its OWN file** (`sidekiq.ts`, …). `catalogue.ts`
   composes them: `composeEntries` / `composeMethodSet` /
-  `composeEnqueueDispatch` fold over the `FRAMEWORKS` array. Adding a
-  framework/gem = one module file + one `FRAMEWORKS` line.
-- **`walker/` holds the INTERPRETERS** — they walk the AST and read the facets.
-  AST-walking code (structured-macro expanders, operand extraction, edge
-  emission) lives here, NOT in `dsl/`.
+  `composeEnqueueDispatch` fold over `FRAMEWORKS` array. Add framework/gem = one
+  module file + one `FRAMEWORKS` line.
+- **`walker/` holds the INTERPRETERS** — walk AST, read facets. AST-walking code
+  (structured-macro expanders, operand extraction, edge emission) lives here,
+  NOT in `dsl/`.
 
-A framework module is built by
+Framework module built by
 `defineFrameworkVocabulary(framework, entries, runtimeBuiltins?, methodSemantics?)`.
 
 ## Decision tree — "I want codegraph to understand convention X"
 
-Pick the facet by what X DOES. Most conventions need exactly one; some combine
-(e.g. `has_many` both **declares** accessor methods AND **emits** a model edge).
+Pick facet by what X DOES. Most need exactly one; some combine (e.g. `has_many`
+both **declares** accessor methods AND **emits** a model edge).
 
 | X is…                                                                                                                | Facet                                           | Where you add it                                                | Interpreter that reads it                                                                                                                    |
 | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -45,70 +45,66 @@ Pick the facet by what X DOES. Most conventions need exactly one; some combine
 
 ### `operands` shapes (declaring macros)
 
-The shape names HOW the walker pulls the base symbol name(s) fed to
-`declares(base)`:
+Shape names HOW walker pulls base symbol name(s) fed to `declares(base)`:
 
 - `"literal-name"` — first arg, symbol **or string** (`define_method`).
 - `"first-symbol"` — first `simple_symbol` only (`alias_method`, `scope`,
-  `attribute` — the rest is a lambda / cast type / the alias's new name).
-- `"skip-first"` — symbols **after** the first (`store_accessor` — the first is
-  the JSON store column).
-- `"leading-symbols"` — all leading symbols, **skipping** non-symbol args (the
-  generic default: `attr_*`, associations, validations).
-- `{ kind: "leading-symbols", stopAtKwarg: true }` — **break** at the first
-  non-symbol (`delegate :a, :b, to: :x` stops at the `to:` pair).
+  `attribute` — rest is lambda / cast type / alias's new name).
+- `"skip-first"` — symbols **after** the first (`store_accessor` — first is JSON
+  store column).
+- `"leading-symbols"` — all leading symbols, **skipping** non-symbol args
+  (generic default: `attr_*`, associations, validations).
+- `{ kind: "leading-symbols", stopAtKwarg: true }` — **break** at first
+  non-symbol (`delegate :a, :b, to: :x` stops at `to:` pair).
 
 ### `emits` shapes (class-body edge macros)
 
 - `"self-instance"` — per leading symbol → `{receiver:null, member:sym}`
-  (callbacks: the resolver's same-class fallback pins `#sym`).
+  (callbacks: resolver's same-class fallback pins `#sym`).
 - `"model-constant-ref"` — associated model constant → `{receiver:C, member:C}`
-  (associations: a file→file constant ref to the model's file).
+  (associations: file→file constant ref to model's file).
 - `"delegate-target"` — per delegated symbol → `{receiver:to, member:sym}`.
 - `"alias-redirect"` — old name → `{receiver:null, member:old}` (paired with
   `redirectTarget: "second-symbol"`).
 
-The `emits` membership MUST match the macro families exactly — a name that
-currently fires an edge but lacks an `emits` entry silently DROPS that edge. The
-parity test (`tests/.../walker/walker-emits.test.ts`) enforces the
-`emits ⟺ category/predicate` equivalences; extend it when you add an emitting
-macro.
+`emits` membership MUST match macro families exactly — a name firing an edge but
+lacking `emits` entry silently DROPS that edge. Parity test
+(`tests/.../walker/walker-emits.test.ts`) enforces `emits ⟺ category/predicate`
+equivalences; extend it when adding an emitting macro.
 
 ## Discipline
 
-- **Add data, not branches.** If you find yourself writing
-  `if (macroName === …)` in an interpreter, you are doing it wrong — add a facet
-  entry instead.
-- **A DSL verb is GRAMMAR, not an exclusion list.** A framework/gem verb the
-  static graph misses is modelled by what it DOES, so codegraph reconstructs the
-  REAL edge — never by dumping the verb into an "external, skip it" set to
-  shrink the recall denominator. Before reaching for `runtimeBuiltins`, ask:
-  - does it **synthesise methods**? → `declares` (`attr_accessor` → `a`/`a=`,
+- **Add data, not branches.** Writing `if (macroName === …)` in an interpreter =
+  wrong — add a facet entry instead.
+- **A DSL verb is GRAMMAR, not an exclusion list.** Framework/gem verb static
+  graph misses → model by what it DOES so codegraph reconstructs REAL edge —
+  never dump verb into "external, skip it" set to shrink recall denominator.
+  Before reaching for `runtimeBuiltins`, ask:
+  - **synthesise methods**? → `declares` (`attr_accessor` → `a`/`a=`,
     `resources :posts` → `posts_path`/`post_path`/… route helpers).
-  - does it **emit an edge**? → `emits` (`before_action :auth`, `has_many`,
+  - **emit an edge**? → `emits` (`before_action :auth`, `has_many`,
     `resources :posts` → `PostsController`).
-  - does it **dispatch to an in-project target by convention**? → a dispatch
-    facet + resolver strategy (the `enqueueDispatch` precedent:
-    `Worker.perform_async` → `Worker#perform`; likewise `authorize @post` →
-    `<Record>Policy#<action>?`, `policy_scope(Post)` →
-    `PostPolicy::Scope#resolve`).
+  - **dispatch to in-project target by convention**? → dispatch facet + resolver
+    strategy (`enqueueDispatch` precedent: `Worker.perform_async` →
+    `Worker#perform`; likewise `authorize @post` → `<Record>Policy#<action>?`,
+    `policy_scope(Post)` → `PostPolicy::Scope#resolve`).
 
-  `entries`/`runtimeBuiltins`-as-external is the **LAST resort**, reserved for
-  verbs with genuinely ZERO in-project effect (`params`, `render`, `puts`,
-  `expires_in`). A module that is just a `Set<verb>` marked external — or a
-  `contextGate`/`callerFile` closure marking it external conditionally — is the
-  anti-pattern: it games the recall DENOMINATOR instead of building the GRAPH
-  (bd tea-rags-mcp-n2kpz L2 review). Model the grammar; add the edge.
+  `entries`/`runtimeBuiltins`-as-external = **LAST resort**, reserved for verbs
+  with genuinely ZERO in-project effect (`params`, `render`, `puts`,
+  `expires_in`). A module that's just `Set<verb>` marked external — or a
+  `contextGate`/`callerFile` closure marking external conditionally — is the
+  anti-pattern: games recall DENOMINATOR instead of building GRAPH (bd
+  tea-rags-mcp-n2kpz L2 review). Model grammar; add edge.
 
-- **A gem is its own module.** Do not mix two libraries' verbs in one map (the
-  deleted `dsl/enqueue.ts` did this; `sidekiq.ts` + `rails.ts` is the fix).
-- **`dsl/` stays tree-sitter-free AND `CallContext`-free.** Need the AST? →
-  `walker/`. Need caller state (`CallContext`) to decide something? That is an
-  INTERPRETER — it lives in `walker/` or `resolver/`, never in `dsl/`. A `dsl/`
-  file that imports `CallContext` is wrong.
-- **Relocation is byte-identical.** Moving a convention between representations
-  must not move `byReceiverKind` / `resolveSuccessRate`; the existing
-  `macro-expansion.test.ts` / `ruby-walker.test.ts` cases are the oracle.
+- **A gem is its own module.** Don't mix two libraries' verbs in one map
+  (deleted `dsl/enqueue.ts` did this; `sidekiq.ts` + `rails.ts` = fix).
+- **`dsl/` stays tree-sitter-free AND `CallContext`-free.** Need AST? →
+  `walker/`. Need caller state (`CallContext`) to decide? That's an INTERPRETER
+  — lives in `walker/` or `resolver/`, never `dsl/`. A `dsl/` file importing
+  `CallContext` is wrong.
+- **Relocation is byte-identical.** Moving convention between representations
+  must not move `byReceiverKind` / `resolveSuccessRate`; existing
+  `macro-expansion.test.ts` / `ruby-walker.test.ts` cases = oracle.
 
 ## Reference
 
@@ -116,6 +112,5 @@ macro.
   `docs/superpowers/specs/2026-06-28-ruby-dsl-grammar-consolidation-design.md`
 - Plan:
   `docs/superpowers/plans/2026-06-28-ruby-dsl-grammar-consolidation-plan.md`
-- See also `.claude/rules/resolver-architecture.md` (the fold-over-registry
-  rule), `.claude/rules/domains-language.md`,
-  `.claude/rules/codegraph-walkers.md`.
+- See also `.claude/rules/resolver-architecture.md` (fold-over-registry rule),
+  `.claude/rules/domains-language.md`, `.claude/rules/codegraph-walkers.md`.
