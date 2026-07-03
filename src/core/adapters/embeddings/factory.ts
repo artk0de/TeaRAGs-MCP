@@ -5,8 +5,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { ConfigValueInvalidError, ConfigValueMissingError } from "../../infra/errors.js";
 import type { EmbeddingConfig } from "../../contracts/types/config.js";
+import { ConfigValueInvalidError, ConfigValueMissingError } from "../../infra/errors.js";
 import type { EmbeddingProvider } from "./base.js";
 import { CohereEmbeddings } from "./cohere.js";
 import { OllamaEmbeddings } from "./ollama.js";
@@ -41,6 +41,8 @@ export class EmbeddingProviderFactory {
       maxRequestsPerMinute: tune.maxRequestsPerMinute,
       retryAttempts: tune.retryAttempts,
       retryDelayMs: tune.retryDelayMs,
+      unavailableRetryMaxWaitMs: tune.unavailableRetryMaxWaitMs,
+      unavailableRetryBaseDelayMs: tune.unavailableRetryBaseDelayMs,
     };
 
     switch (provider) {

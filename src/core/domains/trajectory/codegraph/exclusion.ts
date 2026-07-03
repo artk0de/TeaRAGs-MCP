@@ -21,6 +21,7 @@
 
 import ignore, { type Ignore } from "ignore";
 
+import type { LanguageFactoryDescriptor } from "../../../contracts/types/language.js";
 import { GENERATED_PATTERNS, TEST_PATTERNS } from "../../../infra/file-classification/index.js";
 
 /**
@@ -67,13 +68,34 @@ export interface CodegraphExclusionOptions {
  * AND `customPatterns=[]` is a valid configuration — the resulting filter
  * matches nothing, so `ignores()` always returns false. The `ignore`
  * package tolerates an empty add gracefully.
+ *
+ * `languageFactory` (optional) contributes each registered language's OWN
+ * non-application-code globs (`LanguageProvider.codegraphExclusionGlobs` — e.g.
+ * Ruby's `db/migrate/**`). The aggregation is language-agnostic: the engine
+ * iterates `factory.supported()` and adds whatever each provider declares, with
+ * no per-language knowledge baked in here. Omitting the factory (tests /
+ * fixtures) yields the pre-existing behaviour — no language globs. bd
+ * tea-rags-mcp-biwbq.
  */
-export function buildCodegraphExclusionFilter(options: CodegraphExclusionOptions): Ignore {
+export function buildCodegraphExclusionFilter(
+  options: CodegraphExclusionOptions,
+  languageFactory?: LanguageFactoryDescriptor,
+): Ignore {
   const ig = ignore();
   // Generated files are always excluded — invariant, not configurable.
   ig.add(CODEGRAPH_GENERATED_PATTERNS as string[]);
   if (options.excludeTests) {
     ig.add(CODEGRAPH_TEST_PATTERNS as string[]);
+  }
+  // Per-language non-app-code globs, owned by each language provider. Aggregated
+  // here so no language-specific pattern leaks into this generic engine.
+  if (languageFactory) {
+    for (const lang of languageFactory.supported()) {
+      const globs = languageFactory.create(lang).codegraphExclusionGlobs;
+      if (globs && globs.length > 0) {
+        ig.add(globs as string[]);
+      }
+    }
   }
   if (options.customPatterns.length > 0) {
     ig.add(options.customPatterns as string[]);

@@ -190,6 +190,27 @@ describe("parseAppConfigZod", () => {
       delete process.env.EMBEDDING_TUNE_HEALTH_CHECK_RETRY_ATTEMPTS;
       delete process.env.EMBEDDING_TUNE_HEALTH_CHECK_RETRY_DELAY_MS;
     });
+
+    it("defaults connection-recovery wait to 4 minutes with 2s base backoff", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.tune.unavailableRetryMaxWaitMs).toBe(240_000);
+      expect(embedding.tune.unavailableRetryBaseDelayMs).toBe(2000);
+    });
+
+    it("reads connection-recovery overrides from env", async () => {
+      process.env.EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS = "120000";
+      process.env.EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS = "1500";
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.tune.unavailableRetryMaxWaitMs).toBe(120_000);
+      expect(embedding.tune.unavailableRetryBaseDelayMs).toBe(1500);
+
+      delete process.env.EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS;
+      delete process.env.EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS;
+    });
   });
 
   describe("provider-specific batch size defaults", () => {

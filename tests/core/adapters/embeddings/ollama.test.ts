@@ -571,6 +571,112 @@ describe("OllamaEmbeddings", () => {
     });
   });
 
+  describe("connection recovery (bounded wait)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    });
+
+    afterEach(async () => {
+      await vi.advanceTimersByTimeAsync(300_000);
+      vi.useRealTimers();
+    });
+
+    it("should retry a transient 'not reachable' failure and resolve once the host recovers", async () => {
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        {
+          retryAttempts: 3,
+          retryDelayMs: 100,
+          unavailableRetryMaxWaitMs: 60_000,
+          unavailableRetryBaseDelayMs: 100,
+        },
+        undefined,
+        true,
+      );
+      const mockEmbedding = Array(768).fill(0.5);
+
+      mockFetch
+        .mockRejectedValueOnce(new Error("ECONNREFUSED")) // host briefly down under load
+        .mockRejectedValueOnce(new Error("ECONNREFUSED")) // still recovering
+        .mockResolvedValue({
+          ok: true,
+          json: async () => ({ embedding: mockEmbedding }),
+        });
+
+      const promise = provider.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await promise;
+
+      expect(result.embedding).toEqual(mockEmbedding);
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+
+    it("should keep the whole batch alive across a transient flap (native batch API)", async () => {
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        {
+          retryAttempts: 3,
+          retryDelayMs: 100,
+          unavailableRetryMaxWaitMs: 60_000,
+          unavailableRetryBaseDelayMs: 100,
+        },
+        undefined,
+        false, // native batch API
+      );
+      const mockEmbeddings = [Array(768).fill(0.1), Array(768).fill(0.2)];
+
+      mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED")).mockResolvedValue({
+        ok: true,
+        json: async () => ({ model: "nomic-embed-text", embeddings: mockEmbeddings }),
+      });
+
+      const promise = provider.embedBatch(["text1", "text2"]);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const results = await promise;
+
+      expect(results).toHaveLength(2);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("should abort with OllamaUnavailableError only after the bounded wait is exhausted", async () => {
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        {
+          retryAttempts: 3,
+          retryDelayMs: 100,
+          unavailableRetryMaxWaitMs: 500,
+          unavailableRetryBaseDelayMs: 100,
+        },
+        undefined,
+        true,
+      );
+      mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+      const promise = provider.embed("test text");
+      promise.catch(() => {}); // prevent unhandled rejection detection
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(promise).rejects.toThrow(OllamaUnavailableError);
+      // Multiple attempts within the budget, not a single immediate abort.
+      expect(mockFetch.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    it("should abort immediately when recovery wait is disabled (default)", async () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, undefined, true);
+      mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+      const promise = provider.embed("test text");
+      promise.catch(() => {});
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(promise).rejects.toThrow(OllamaUnavailableError);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("native batch API (/api/embed)", () => {
     let batchEmbeddings: OllamaEmbeddings;
 

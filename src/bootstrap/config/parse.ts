@@ -84,6 +84,14 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
       "EMBEDDING_HEALTH_CHECK_RETRY_ATTEMPTS",
     ),
     healthCheckRetryDelayMs: env("EMBEDDING_TUNE_HEALTH_CHECK_RETRY_DELAY_MS", "EMBEDDING_HEALTH_CHECK_RETRY_DELAY_MS"),
+    unavailableRetryMaxWaitMs: env(
+      "EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS",
+      "EMBEDDING_UNAVAILABLE_RETRY_MAX_WAIT_MS",
+    ),
+    unavailableRetryBaseDelayMs: env(
+      "EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS",
+      "EMBEDDING_UNAVAILABLE_RETRY_BASE_DELAY_MS",
+    ),
   };
 
   const embedding = {

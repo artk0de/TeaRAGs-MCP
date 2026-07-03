@@ -6,6 +6,7 @@ import {
   isRubyPath,
   lastConstantSegment,
   resolveViaIncludingClasses,
+  resolveViaSuperclassChain,
   symbolIdIsInstanceMethod,
   type ResolverConfig,
 } from "./shared.js";
@@ -109,6 +110,19 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
       if (!brokeAmbiguous && ctx.includedBy?.[enclosing]?.length) {
         const consensus = resolveViaIncludingClasses(enclosing, call.member, ctx, this.cfg.mode);
         if (consensus) return resolved(consensus);
+      }
+      // Inherited class-body DSL narrowing (bd tea-rags-mcp-4skzl): the scope-based
+      // MRO match + the includedBy consensus both missed. A subclass-body macro
+      // (`column` in `class FooExporter < ApplicationCsvExporter`) resolves via the
+      // pure single-inheritance chain (`classExtends`) — a FILE-based lookup that
+      // catches a def whose stored scope-tail differs from the class name (the CSV
+      // exporter / concern `ClassMethods` shape the scope-tier tests above miss).
+      // Method-level only (see `resolveViaSuperclassChain`): an external-DSL base
+      // (`validates` on `< ApplicationRecord`) fabricates no edge → reaches external
+      // classification. Skipped after an ambiguous break (genuine same-class collision).
+      if (!brokeAmbiguous) {
+        const inherited = resolveViaSuperclassChain(enclosing, call.member, ctx, this.cfg.mode);
+        if (inherited) return resolved(inherited);
       }
     }
     // RC-1 (tea-rags-mcp-55xil): cross-FORM preference — before falling through

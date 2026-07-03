@@ -311,6 +311,60 @@ export function resolveInstanceMethodInClassChain(
 }
 
 /**
+ * Resolve a receiverless CLASS-BODY self-send via the single-inheritance chain
+ * (`ctx.classExtends`) — the concern-consensus analog over `<` rather than
+ * `include` (bd tea-rags-mcp-4skzl). A subclass-body DSL macro
+ * (`column :name` in `class FooExporter < ApplicationCsvExporter`) has no local
+ * def and its enclosing class cannot be pinned by `callerScope` (a class-body
+ * chunk's scope OMITS its own name), so the ambiguous global short-name lookup
+ * strict-continues and the edge is dropped.
+ *
+ * Walk `[enclosing, classExtends[enclosing], …]` NEAREST-FIRST (a leaf override
+ * shadows an ancestor's def). At each hop resolve the class to its declaring
+ * file and pin `member` to a def IN THAT FILE (short-name match filtered to the
+ * file — catches a def whose stored scope-tail differs from the class name,
+ * e.g. a concern's `ClassMethods`). Single parent per hop (Ruby single
+ * inheritance); mixins on the subclass itself are NOT walked — those are a
+ * different dispatch, covered by the include/self-send passes.
+ *
+ * **Method-level ONLY — never a file-only edge.** A class-body macro whose base
+ * declares nothing in-project (`validates` on `class User < ApplicationRecord`
+ * whose own super `ActiveRecord::Base` is external) MUST stay unresolved so the
+ * provider classifies it `externalSkipped` rather than fabricating an edge to
+ * the nearest in-project ancestor file. Returning `null` here is the precision
+ * gate: no in-project def in the `<` chain ⇒ no edge.
+ *
+ * Distinct from {@link resolveInstanceMethodInClassChain} (super / self-send
+ * passes): that walks the mixin-conflated `classAncestors`
+ * (`Record<string, string[]>`) and RETURNS a file-only fallback for
+ * out-of-project parents; this walks the pure single-inheritance `classExtends`
+ * (`Record<string, string>`) and is method-level only — a bare-call class-body
+ * DSL macro must not fabricate a file edge to an external-DSL base.
+ *
+ * Cycle-guarded via `visited` so `class A < B; class B < A` short-circuits.
+ */
+export function resolveViaSuperclassChain(
+  enclosing: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  const visited = new Set<string>();
+  let klass: string | undefined = enclosing;
+  while (klass !== undefined && !visited.has(klass)) {
+    visited.add(klass);
+    const file = resolveConstant(klass, ctx);
+    if (file !== null) {
+      const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => def.relPath === file);
+      const target = pickSingleCandidate(candidates, mode);
+      if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+    }
+    klass = ctx.classExtends?.[klass];
+  }
+  return null;
+}
+
+/**
  * Flatten a class's ancestor chain in RUBY MRO order — included modules come
  * BEFORE the superclass (mirrors Ruby's C3 MRO for the common single-inheritance
  * case). The Ruby walker stores `classAncestors[C]` as

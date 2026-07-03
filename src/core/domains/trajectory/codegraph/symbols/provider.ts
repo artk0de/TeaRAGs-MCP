@@ -564,9 +564,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   private hierarchyView: HierarchyView | undefined;
   /**
    * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
-   * Built once at construction from `deps.exclusion`. Empty filter
-   * (`excludeTests:false`, no custom patterns) is a valid no-op — every
-   * `ignores()` call returns false and the layer becomes transparent.
+   * Built once at construction from `deps.exclusion` PLUS each registered
+   * language's own non-app-code globs (`deps.languageFactory`, bd
+   * tea-rags-mcp-biwbq — e.g. Ruby's `db/migrate/**`). Empty filter
+   * (`excludeTests:false`, no custom patterns, no language globs) is a valid
+   * no-op — every `ignores()` call returns false and the layer becomes
+   * transparent.
    */
   private readonly codegraphExclusionFilter: Ignore;
 
@@ -587,6 +590,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.workerDescriptor = workerDescriptor;
     this.codegraphExclusionFilter = buildCodegraphExclusionFilter(
       deps.exclusion ?? { excludeTests: false, customPatterns: [] },
+      deps.languageFactory,
     );
     // Configuration invariant: exactly one routing mode must be picked
     // at construction. We accept either `pool` OR (`graphDb`+`symbolTable`),

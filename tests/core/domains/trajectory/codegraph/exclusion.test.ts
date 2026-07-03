@@ -1,10 +1,27 @@
 import { describe, expect, it } from "vitest";
 
+import type { LanguageFactoryDescriptor, LanguageProvider } from "../../../../../src/core/contracts/types/language.js";
 import {
   buildCodegraphExclusionFilter,
   CODEGRAPH_GENERATED_PATTERNS,
   CODEGRAPH_TEST_PATTERNS,
 } from "../../../../../src/core/domains/trajectory/codegraph/exclusion.js";
+import { languageFactory } from "./__helpers__/language-factory.js";
+
+/**
+ * Minimal `LanguageFactoryDescriptor` test double mapping a language name to the
+ * codegraph-exclusion globs its provider declares (`undefined` = declares none).
+ * Lets the ENGINE's language-agnostic aggregation be exercised without loading
+ * any real grammar — it proves `buildCodegraphExclusionFilter` hardcodes neither
+ * a language nor a `db/` rule of its own (bd tea-rags-mcp-biwbq).
+ */
+function fakeLanguageFactory(byLang: Record<string, readonly string[] | undefined>): LanguageFactoryDescriptor {
+  return {
+    supported: () => Object.keys(byLang),
+    create: (lang: string): LanguageProvider =>
+      ({ codegraphExclusionGlobs: byLang[lang] }) as unknown as LanguageProvider,
+  };
+}
 
 describe("buildCodegraphExclusionFilter", () => {
   it("matches conventional test paths across languages when excludeTests=true", () => {
@@ -127,5 +144,69 @@ describe("buildCodegraphExclusionFilter", () => {
     expect(joined).toMatch(/\*Test\.java/); // Java
     expect(joined).toMatch(/\*_test\.go/); // Go
     expect(joined).toMatch(/\*_test\.rs/); // Rust
+  });
+
+  // bd tea-rags-mcp-biwbq — per-language non-app-code exclusion globs. Each
+  // registered language provider carries its OWN codegraph-exclusion patterns
+  // (Ruby: db/migrate, db/data, …); the engine aggregates them via the injected
+  // factory and stays language-agnostic (no 'ruby' / 'db/' hardcoded here).
+  describe("per-language exclusion globs aggregated from the injected LanguageFactory", () => {
+    it("aggregates a provider's codegraphExclusionGlobs when a factory is injected", () => {
+      const factory = fakeLanguageFactory({ ruby: ["**/db/migrate/**", "**/db/data/**"] });
+      const ig = buildCodegraphExclusionFilter({ excludeTests: false, customPatterns: [] }, factory);
+      expect(ig.ignores("db/migrate/20260101_create_users.rb")).toBe(true);
+      expect(ig.ignores("backend/db/migrate/20260101_create_users.rb")).toBe(true);
+      expect(ig.ignores("db/data/20260101_backfill.rb")).toBe(true);
+      // Application code stays in the graph.
+      expect(ig.ignores("app/models/user.rb")).toBe(false);
+    });
+
+    it("contributes NOTHING when no factory is injected (backward-compatible)", () => {
+      const ig = buildCodegraphExclusionFilter({ excludeTests: false, customPatterns: [] });
+      // Without a factory the engine adds no language globs — migrations remain.
+      expect(ig.ignores("db/migrate/20260101_create_users.rb")).toBe(false);
+      expect(ig.ignores("db/data/20260101_backfill.rb")).toBe(false);
+    });
+
+    it("is language-agnostic — excludes ONLY the globs a provider declares, hardcoding neither a language nor db/", () => {
+      // An arbitrary language contributes its own globs; a provider that declares
+      // none (typescript → undefined) contributes nothing. The engine invents no
+      // db/ rule of its own.
+      const factory = fakeLanguageFactory({
+        elixir: ["**/priv/repo/migrations/**"],
+        typescript: undefined,
+      });
+      const ig = buildCodegraphExclusionFilter({ excludeTests: false, customPatterns: [] }, factory);
+      expect(ig.ignores("priv/repo/migrations/001_init.exs")).toBe(true);
+      expect(ig.ignores("db/migrate/001.rb")).toBe(false); // no self-invented db/ rule
+      expect(ig.ignores("src/service.ts")).toBe(false); // language with no globs excludes nothing
+    });
+
+    it("keeps one language's globs from affecting another language's files", () => {
+      const factory = fakeLanguageFactory({ ruby: ["**/db/migrate/**"], go: undefined });
+      const ig = buildCodegraphExclusionFilter({ excludeTests: false, customPatterns: [] }, factory);
+      expect(ig.ignores("db/migrate/001_init.rb")).toBe(true);
+      expect(ig.ignores("internal/repo.go")).toBe(false); // Go source untouched
+    });
+
+    it("layers language globs alongside test + custom patterns", () => {
+      const factory = fakeLanguageFactory({ ruby: ["**/db/migrate/**"] });
+      const ig = buildCodegraphExclusionFilter({ excludeTests: true, customPatterns: ["**/generated/**"] }, factory);
+      expect(ig.ignores("db/migrate/001.rb")).toBe(true); // language glob
+      expect(ig.ignores("src/foo.test.ts")).toBe(true); // test pattern
+      expect(ig.ignores("build/generated/x.ts")).toBe(true); // custom pattern
+      expect(ig.ignores("app/models/user.rb")).toBe(false); // app code
+    });
+
+    it("excludes Rails non-app db/ paths when wired with the real LanguageFactory (ruby owns the globs)", () => {
+      const ig = buildCodegraphExclusionFilter({ excludeTests: false, customPatterns: [] }, languageFactory());
+      expect(ig.ignores("db/migrate/20260101_create_users.rb")).toBe(true);
+      expect(ig.ignores("db/data/20260101_backfill.rb")).toBe(true);
+      expect(ig.ignores("db/schema.rb")).toBe(true);
+      expect(ig.ignores("db/data_schema.rb")).toBe(true);
+      // Application code + seeds stay in the graph.
+      expect(ig.ignores("app/models/user.rb")).toBe(false);
+      expect(ig.ignores("db/seeds.rb")).toBe(false);
+    });
   });
 });

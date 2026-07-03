@@ -42,6 +42,17 @@ export const embeddingTuneSchema = z.object({
   healthCheckRetryAttempts: intWithDefault(3),
   /** Pause between health-probe attempts (ms). The pause yields the event loop. Default 250. */
   healthCheckRetryDelayMs: intWithDefault(250),
+  /**
+   * Bounded wall-clock budget (ms) to keep retrying a connection-level "provider
+   * not reachable" failure while a flapping remote host recovers, before the
+   * index aborts. Under sustained embedding load a remote Ollama host can
+   * crash/restart → briefly unreachable → recover when idle; without this budget
+   * the whole (~20 min) index dies on the first flap. Default 240000 (4 min).
+   * Set 0 to abort on the first connection failure.
+   */
+  unavailableRetryMaxWaitMs: intWithDefault(240_000),
+  /** Base backoff between connection-recovery attempts (ms); exponential, capped at 30s. Default 2000. */
+  unavailableRetryBaseDelayMs: intWithDefault(2000),
 });
 
 export const embeddingSchema = z.object({
