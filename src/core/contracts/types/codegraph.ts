@@ -871,6 +871,17 @@ export interface CallContext {
    */
   compactDeclaredClasses?: ReadonlySet<string>;
   /**
+   * Raw contents of the project's `Gemfile` (Ruby dependency manifest), read once
+   * per run by the codegraph provider from the project root and attached to every
+   * call context. The Ruby resolver reads it via `catalogueForGemfile` (parse +
+   * compose, memoised by content) to gate DSL grammar to the gems THIS project
+   * declares. Raw string, not a parsed Set — the parse lives in `domains/language`
+   * where the catalogue lives, so the provider never imports it. Undefined when no
+   * Gemfile exists → the FULL catalogue (gating off, byte-identical to pre-gating).
+   * Only the Ruby resolver reads it today (bd tea-rags-mcp-adx5p.1).
+   */
+  gemfileContent?: string;
+  /**
    * Optional `className → parentClass` map propagated from
    * `FileExtraction.classExtends`. Resolvers walk this on `super()` /
    * `super.foo()` calls so the edge lands on the PARENT class's method

@@ -104,7 +104,7 @@ export interface RubyDslCatalogue {
   readonly instanceReturning: ReadonlySet<string>;
   readonly relationReturning: ReadonlySet<string>;
   readonly enqueueDispatch: Readonly<Record<string, string>>;
-  isExternalBareCall(member: string): boolean;
+  isExternalBareCall: (member: string) => boolean;
 }
 
 const setsIntersect = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean => {
@@ -140,6 +140,42 @@ export function composeRubyCatalogue(activeGems: ReadonlySet<string> | null): Ru
     enqueueDispatch,
     isExternalBareCall: (member) => active.some((f) => f.hasExternalMember(member)),
   };
+}
+
+/**
+ * The FULL catalogue (every framework, gating off) — the shared default every
+ * consumer falls back to when no gem set is threaded. Byte-identical to the
+ * pre-gating module consts (`RUBY_DSL` / `RUBY_ENQUEUE_DISPATCH` / …), so a
+ * consumer that passes no gems is behaviourally unchanged.
+ */
+const FULL_RUBY_CATALOGUE: RubyDslCatalogue = composeRubyCatalogue(null);
+
+/**
+ * Per-gem-set catalogue cache, keyed by the gem-set INSTANCE (weak → auto-evicts
+ * with the Set). One live entry per distinct gem-set instance held by a caller.
+ */
+const catalogueByGems = new WeakMap<ReadonlySet<string>, RubyDslCatalogue>();
+
+/**
+ * The Ruby DSL catalogue for a resolved gem set, MEMOISED by the gem-set
+ * instance. `null`/`undefined` (no Gemfile detected, gating off) returns the
+ * shared {@link FULL_RUBY_CATALOGUE} — identical to the pre-gating consts, so a
+ * caller that has no gem set is unchanged. A concrete gem set is composed once
+ * via {@link composeRubyCatalogue} and cached against that Set instance. The
+ * Set-keyed primitive; the resolver reaches it through the content-keyed
+ * `catalogueForGemfile` adapter (which parses the raw Gemfile once per run) —
+ * this function's `undefined` branch is the FULL fallback both share
+ * (bd tea-rags-mcp-adx5p.1).
+ */
+export function catalogueFor(activeGems: ReadonlySet<string> | null | undefined): RubyDslCatalogue {
+  // null / undefined → FULL (gating off). An empty Set is truthy → falls through
+  // to composeRubyCatalogue, which keeps the unconditional stack (correct).
+  if (!activeGems) return FULL_RUBY_CATALOGUE;
+  const cached = catalogueByGems.get(activeGems);
+  if (cached) return cached;
+  const built = composeRubyCatalogue(activeGems);
+  catalogueByGems.set(activeGems, built);
+  return built;
 }
 
 /**

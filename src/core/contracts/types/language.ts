@@ -117,8 +117,15 @@ export interface ConeTypeLocator {
  * Mirrors `ConeTypeLocator`.
  */
 export interface ExternalVocabulary {
-  /** Is this no-receiver member a framework/runtime/builtin name (zero project defs)? */
-  isBareCallExternal: (member: string) => boolean;
+  /**
+   * Is this no-receiver member a framework/runtime/builtin name (zero project
+   * defs)? `ctx` (optional) carries the caller's `gemfileContent` so a gem-gated
+   * vocabulary's bare-call names are recognised as external ONLY when the gem is
+   * declared (`catalogueForGemfile(ctx.gemfileContent)`); an implementation that
+   * does not gate its vocabulary, or a caller that threads no `ctx`, is unaffected
+   * (bd tea-rags-mcp-adx5p.1).
+   */
+  isBareCallExternal: (member: string, ctx?: CallContext) => boolean;
   /**
    * Does this qualified receiver name a gem/stdlib symbol (no in-project target)?
    *

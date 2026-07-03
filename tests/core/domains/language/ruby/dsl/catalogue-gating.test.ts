@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  catalogueFor,
   composeRubyCatalogue,
   filterActiveFrameworks,
 } from "../../../../../../src/core/domains/language/ruby/dsl/catalogue.js";
@@ -50,5 +51,33 @@ describe("composeRubyCatalogue — full-catalogue default", () => {
     // unconditional today → identical to full until a gated vocab is added.
     expect(gated.entries.has_many).toBeDefined();
     expect(gated.enqueueDispatch.perform_async).toBe("perform");
+  });
+});
+
+describe("catalogueFor — memoised per-project catalogue (the consumer entry point)", () => {
+  it("undefined gems → the shared full catalogue (gating off, identical to the module consts)", () => {
+    const full = catalogueFor(undefined);
+    expect(full.entries.has_many).toBeDefined(); // rails association macro
+    expect(full.enqueueDispatch.perform_async).toBe("perform"); // sidekiq
+    expect(full.isExternalBareCall("params")).toBe(true); // rails runtime builtin
+  });
+
+  it("null and undefined both return the SAME full-catalogue instance (referential identity)", () => {
+    expect(catalogueFor(null)).toBe(catalogueFor(undefined));
+  });
+
+  it("memoises by gem-set instance — same Set yields the same catalogue instance", () => {
+    const gems = new Set(["rails", "sidekiq"]);
+    expect(catalogueFor(gems)).toBe(catalogueFor(gems));
+  });
+
+  it("a concrete gem set still exposes the unconditional base stack (every vocab unconditional today)", () => {
+    // No vocab carries `activatedBy` yet, so a concrete gem set composes to the
+    // same surface as full — the threading is zero-behaviour-change until a
+    // gem-gated grammar lands (bd tea-rags-mcp-adx5p.9).
+    const gated = catalogueFor(new Set(["rails"]));
+    expect(gated.entries.has_many).toBeDefined();
+    expect(gated.enqueueDispatch.perform_async).toBe("perform");
+    expect(gated.isExternalBareCall("params")).toBe(true);
   });
 });

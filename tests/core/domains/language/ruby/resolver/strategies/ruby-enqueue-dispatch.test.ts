@@ -120,4 +120,23 @@ describe("RubyEnqueueDispatchSymbolResolutionStrategy", () => {
     };
     expect(strat.attempt(call, ctx({ symbolTable: workerTable() })).kind).toBe("continue");
   });
+
+  it("honours ctx.gemfileContent — enqueue dispatch composes off the project's Gemfile (adx5p.1)", () => {
+    // The strategy reads `catalogueForGemfile(ctx.gemfileContent)`. Sidekiq is an
+    // unconditional vocab today, so a Gemfile declaring it resolves identically to
+    // the full catalogue — this pins the wiring (the resolver reads the field,
+    // it does not ignore it) and is the byte-identical oracle until a gem-gated
+    // enqueue grammar lands (bd tea-rags-mcp-adx5p.9).
+    const call: CallRef = {
+      callText: "DistributionWorker.perform_async(id)",
+      receiver: "DistributionWorker",
+      member: "perform_async",
+      startLine: 5,
+    };
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable: workerTable(), gemfileContent: 'gem "rails"\ngem "sidekiq"\n' }),
+    );
+    expect(outcome.kind === "resolved" && outcome.target.targetSymbolId).toBe("DistributionWorker#perform");
+  });
 });
