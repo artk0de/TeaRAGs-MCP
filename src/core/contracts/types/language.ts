@@ -441,6 +441,17 @@ export interface LanguageProvider {
   chunkerHooks?: LanguageChunkerHooks;
   walker?: LanguageWalker;
   resolver?: LanguageSymbolResolver;
+  /**
+   * Optional codegraph-ONLY exclusion globs — path patterns for files that parse
+   * as this language but are NOT part of the application call graph (Rails
+   * `db/migrate/**` procedural schema ops, generated schema snapshots). The
+   * generic `buildCodegraphExclusionFilter` aggregates these across EVERY
+   * registered language so the codegraph engine carries no language-specific
+   * knowledge of its own. `.gitignore` glob syntax. Absent → the language
+   * contributes nothing (conservative). codegraph-only: semantic ingest still
+   * indexes the files; only the fan-graph drops them. bd tea-rags-mcp-biwbq.
+   */
+  codegraphExclusionGlobs?: readonly string[];
 }
 
 /**

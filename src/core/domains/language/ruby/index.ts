@@ -39,6 +39,7 @@ import type {
   LanguageWalker,
 } from "../../../contracts/types/language.js";
 import { rubyHooks } from "./chunking/index.js";
+import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
 import { rubyKernel } from "./kernel.js";
 import { RubyCallResolver } from "./resolver/ruby-resolver.js";
 import { rbNameOf } from "./walker/name-of.js";
@@ -99,6 +100,13 @@ export class RubyLanguage implements LanguageProvider {
     nameOf: (node) => rbNameOf(node),
   };
   readonly resolver: LanguageSymbolResolver;
+  /**
+   * Rails non-application-code path globs the codegraph exclusion engine
+   * aggregates for Ruby (`db/migrate/**`, `db/data/**`, generated schema
+   * snapshots). Single source lives in `./codegraph-exclusions.ts`; referenced
+   * verbatim so no per-instance copy is made. bd tea-rags-mcp-biwbq.
+   */
+  readonly codegraphExclusionGlobs = RUBY_CODEGRAPH_EXCLUSION_GLOBS;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const callResolver: CallResolver = new RubyCallResolver(mode);
