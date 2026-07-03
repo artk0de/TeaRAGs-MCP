@@ -121,13 +121,4 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
     if (fileOnlyFallback !== null && RUBY_RUNTIME_HOOKS.has(member)) return null;
     return fileOnlyFallback;
   }
-
-  /**
-   * Reverse-consensus resolution for `super` inside a MODULE method (bd cai0/2oky5).
-   * For each class C that includes/prepends `moduleName`, find the first definer
-   * of `member` AFTER `moduleName` in C's MRO. Emit an edge ONLY when every
-   * including class agrees on the same target (precision 1.0); disagreement or an
-   * empty set DROPs (returns null). Targets agree iff their `targetSymbolId` is
-   * equal, or both are file-only with the same `targetRelPath`.
-   */
 }
