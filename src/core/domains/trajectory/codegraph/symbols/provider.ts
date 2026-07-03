@@ -469,6 +469,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runCompactClasses = new Set<string>();
   /**
+   * Raw `Gemfile` contents for the CURRENT run, read ONCE from the project root
+   * by {@link loadGemfile} and attached to every resolver `CallContext` so the
+   * Ruby resolver gates DSL grammar to this project's gems (`catalogueForGemfile`).
+   * Single-valued (not per-collection), same as `runAncestors` — the provider
+   * processes one collection per instance at a time. `undefined` ⇒ no Gemfile ⇒
+   * FULL catalogue. `runGemfileLoaded` guards the one-per-run read. Both reset
+   * alongside `runCompactClasses` (bd tea-rags-mcp-adx5p.1).
+   */
+  private runGemfileContent: string | undefined = undefined;
+  private runGemfileLoaded = false;
+  /**
    * Per-run aggregation of `FileExtraction.classPrependedAncestors`
    * (bd tea-rags-mcp-3jvn). Same lifecycle as `runAncestors` — merged
    * across pass-1 files, consumed by pass-2 resolver. Walked BEFORE the
@@ -1125,6 +1136,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runStats = createEmptyRunStats();
       this.runAncestors = {};
       this.runCompactClasses = new Set();
+      this.runGemfileContent = undefined;
+      this.runGemfileLoaded = false;
       this.runPrependedAncestors = {};
       this.runExtends = {};
       this.runReturnTypes = {};
@@ -1187,6 +1200,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runStats = createEmptyRunStats();
     this.runAncestors = {};
     this.runCompactClasses = new Set();
+    this.runGemfileContent = undefined;
+    this.runGemfileLoaded = false;
     this.runPrependedAncestors = {};
     return {
       extractedFiles,
@@ -1258,7 +1273,28 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     return best?.sym;
   }
 
+  /**
+   * Read the project's `Gemfile` ONCE per run (guarded by `runGemfileLoaded`) so
+   * the Ruby resolver can gate DSL grammar to the declared gems. The provider is
+   * already a file-walking provider (see `extractOneFile`), so reading one root
+   * manifest is in-domain; it forwards the RAW string to every `CallContext` and
+   * the parse lives in the resolver (`catalogueForGemfile`). Absent / unreadable
+   * Gemfile ⇒ `undefined` ⇒ FULL catalogue (gating off). bd tea-rags-mcp-adx5p.1.
+   */
+  private loadGemfile(root: string): void {
+    if (this.runGemfileLoaded) return;
+    this.runGemfileLoaded = true;
+    try {
+      this.runGemfileContent = readFileSync(join(root, "Gemfile"), "utf8");
+    } catch {
+      this.runGemfileContent = undefined;
+    }
+  }
+
   async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
+    // Read the run's Gemfile for gem-gated DSL grammar (adx5p.1) before pass-2
+    // resolve reads it off each CallContext. One read per run (guarded).
+    this.loadGemfile(root);
     // Discover the file set to walk. Caller-supplied paths win
     // (incremental reindex); otherwise scan the repo for any
     // supported language extension. `ignoreFilter` is threaded from the
@@ -1382,6 +1418,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     options?: FileSignalOptions,
   ): Promise<Map<string, FileSignalOverlay>> {
     const key = this.collectionKey(options?.collectionName);
+    // Gem-gated DSL grammar (adx5p.1): read the run's Gemfile before the crossPass
+    // early-return so finalizeSignals resolves pass-2 off this state (one/run).
+    this.loadGemfile(root);
     // yl9tv Task 5b — cross-pass: the full-index chunk pass has fed this run's
     // extractions into the input spill (drained in finalizeSignals), so the
     // worker/main re-parse here is redundant AND would race the chunker pool's
@@ -1583,6 +1622,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   finalizeSignals = async (_root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> => {
     const key = this.collectionKey(options?.collectionName);
+    // Gem-gated DSL grammar (adx5p.1): the run's Gemfile was read in the preceding
+    // streamFileBatch pass (loadGemfile, guarded), so the pass-2 resolve below
+    // (sink.finish) sees `runGemfileContent` on each CallContext already.
     const file = new Map<string, FileSignalOverlay>();
     try {
       // yl9tv Task 5b — cross-pass: streamFileBatch no-opped (no parse), so
@@ -1654,6 +1696,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   private clearRunState(_key: string): void {
     this.runAncestors = {};
     this.runCompactClasses = new Set();
+    this.runGemfileContent = undefined;
+    this.runGemfileLoaded = false;
     this.runPrependedAncestors = {};
     this.runExtends = {};
     this.runReturnTypes = {};
@@ -1694,6 +1738,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.xpassWritten.clear();
     this.runAncestors = {};
     this.runCompactClasses = new Set();
+    this.runGemfileContent = undefined;
+    this.runGemfileLoaded = false;
     this.runPrependedAncestors = {};
     this.runExtends = {};
     this.runReturnTypes = {};
@@ -1818,6 +1864,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       relPath,
       language: langConfig.language,
       chunks,
+      // Gem-gated DSL grammar at extraction time (adx5p.1b): the run's Gemfile,
+      // read once in loadGemfile. undefined → FULL catalogue.
+      gemfileContent: this.runGemfileContent,
     });
   }
 
@@ -1937,6 +1986,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       classExtends: extendsForResolver,
       ivarTypes: ivarTypesForResolver,
       structuredReturnTypes: structuredReturnTypesForResolver,
+      gemfileContent: this.runGemfileContent,
     };
     const fileEdges: GraphEdges["fileEdges"] = resolver.resolveFileEdges
       ? resolver.resolveFileEdges(extraction, fileEdgeCtx)
@@ -1973,6 +2023,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           structuredReturnTypes: structuredReturnTypesForResolver,
           classAncestors: ancestorsForResolver,
           compactDeclaredClasses: this.runCompactClasses,
+          gemfileContent: this.runGemfileContent,
           classPrependedAncestors: prependedAncestorsForResolver,
           includedBy: includedByForResolver,
           classExtends: extendsForResolver,

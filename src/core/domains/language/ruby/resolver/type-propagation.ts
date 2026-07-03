@@ -23,7 +23,7 @@
 
 import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
-import { RUBY_INSTANCE_RETURNING } from "../dsl/index.js";
+import { catalogueForGemfile } from "../gemfile.js";
 
 /**
  * Array/Enumerable methods that return a SINGLE ELEMENT from a typed container.
@@ -211,7 +211,11 @@ function resolveChain(receiver: string, atLine: number, ctx: CallContext): RubyT
   // fabrication. A bare-const head with a non-instance-returning first link
   // (`Config.value`) is NOT typed.
   const firstLink = links[0];
-  if (firstLink !== undefined && CONST_HEAD.test(head) && RUBY_INSTANCE_RETURNING.has(stripArgs(firstLink))) {
+  if (
+    firstLink !== undefined &&
+    CONST_HEAD.test(head) &&
+    catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(stripArgs(firstLink))
+  ) {
     current = { form: "instance", name: head };
     startLink = 1;
   } else {

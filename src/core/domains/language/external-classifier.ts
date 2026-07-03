@@ -19,7 +19,7 @@ export class ExternalCallClassifier {
   constructor(private readonly vocab: ExternalVocabulary) {}
 
   targetsExternal(call: CallRef, ctx: CallContext): boolean {
-    if (call.receiver === null) return this.vocab.isBareCallExternal(call.member);
+    if (call.receiver === null) return this.vocab.isBareCallExternal(call.member, ctx);
     return (
       this.vocab.isQualifiedReceiverExternal(call.receiver, ctx, call.startLine, call.member) ||
       (this.vocab.isQualifiedMemberExternal?.(call.member) ?? false)

@@ -57,6 +57,16 @@ export interface ChunkerConfig {
    * receives a fully-built `LanguageFactoryDescriptor` via DI and ignores this.
    */
   languageModulePath?: string;
+  /**
+   * Raw contents of the project's `Gemfile`, read once per run by the ingest
+   * pipeline (`createChunkerPool`) and threaded to the chunker worker so the
+   * cross-pass codegraph `FileExtraction` — produced by the walker on the same
+   * worker parse (yl9tv) — gates DSL grammar to THIS project's gems. Raw string
+   * (not the parsed Set): the parse lives in `domains/language`, and a string
+   * survives the `workerData` / `__init` transport (JSON IPC drops a `Set`).
+   * Undefined → the FULL catalogue (gating off). bd tea-rags-mcp-adx5p.1b.
+   */
+  gemfileContent?: string;
 }
 
 export interface IndexOptions {

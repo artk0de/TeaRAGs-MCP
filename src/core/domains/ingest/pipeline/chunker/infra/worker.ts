@@ -68,6 +68,9 @@ interface ChunkerEngine {
   languageFactory: LanguageFactoryDescriptor;
   composer: SymbolIdComposer;
   collectSymbols: CollectSymbolsFn;
+  /** Raw Gemfile for the run (adx5p.1b) — passed to the walker so cross-pass
+   *  extraction gates DSL grammar to this project's gems. */
+  gemfileContent?: string;
 }
 
 /**
@@ -87,7 +90,13 @@ async function buildChunker(config: ChunkerConfig): Promise<ChunkerEngine> {
   const languageFactory = new lang.LanguageFactory();
   const composer = new lang.DefaultSymbolIdComposer();
   const chunker = new TreeSitterChunker(config, composer, languageFactory);
-  return { chunker, languageFactory, composer, collectSymbols: lang.collectSymbols };
+  return {
+    chunker,
+    languageFactory,
+    composer,
+    collectSymbols: lang.collectSymbols,
+    gemfileContent: config.gemfileContent,
+  };
 }
 
 const runtime = createWorkerRuntime<ChunkerConfig, WorkerRequest>();
@@ -126,6 +135,8 @@ runtime.onRequest((request) => {
             relPath: request.filePath,
             language: request.language,
             chunks: symbolRanges,
+            // Gem-gated DSL grammar at cross-pass extraction (adx5p.1b).
+            gemfileContent: engine.gemfileContent,
           });
         }
       }

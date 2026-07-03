@@ -1,6 +1,8 @@
 import Parser from "tree-sitter";
 import RbLang from "tree-sitter-ruby";
 
+import { catalogueFor, composeRubyCatalogue, type RubyDslCatalogue } from "./dsl/index.js";
+
 /**
  * Gemfile gem-name detector (bd tea-rags-mcp-adx5p.1). Parses a project's
  * `Gemfile` — the SOURCE OF TRUTH for DIRECT dependencies — into the set of gems
@@ -41,4 +43,31 @@ export function gemfileGemNames(content: string): Set<string> {
 
   visit(tree.rootNode);
   return gems;
+}
+
+/**
+ * Per-Gemfile-content catalogue cache. Keyed by the raw Gemfile STRING (the
+ * value the codegraph provider reads once per run and attaches to every
+ * `CallContext.gemfileContent`), so the tree-sitter parse + catalogue
+ * composition happen ONCE per distinct Gemfile and every subsequent call-site
+ * lookup is O(1). Bounded by the number of distinct projects a process indexes.
+ */
+const catalogueByGemfile = new Map<string, RubyDslCatalogue>();
+
+/**
+ * The Ruby DSL catalogue gated to a project's `Gemfile`. This is the entry point
+ * the resolver consumers read from `ctx.gemfileContent`: `undefined` (no Gemfile
+ * → gating off) returns the FULL catalogue, identical to the pre-gating module
+ * consts; a concrete Gemfile is parsed via {@link gemfileGemNames} and composed
+ * via `composeRubyCatalogue`, memoised by the content string so the parse is paid
+ * once per run. Lives here, not in `dsl/`, because it needs the tree-sitter
+ * parse — `dsl/` stays pure data (bd tea-rags-mcp-adx5p.1).
+ */
+export function catalogueForGemfile(content: string | undefined): RubyDslCatalogue {
+  if (content === undefined) return catalogueFor(undefined);
+  const cached = catalogueByGemfile.get(content);
+  if (cached !== undefined) return cached;
+  const built = composeRubyCatalogue(gemfileGemNames(content));
+  catalogueByGemfile.set(content, built);
+  return built;
 }

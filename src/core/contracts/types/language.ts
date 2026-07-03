@@ -117,8 +117,15 @@ export interface ConeTypeLocator {
  * Mirrors `ConeTypeLocator`.
  */
 export interface ExternalVocabulary {
-  /** Is this no-receiver member a framework/runtime/builtin name (zero project defs)? */
-  isBareCallExternal: (member: string) => boolean;
+  /**
+   * Is this no-receiver member a framework/runtime/builtin name (zero project
+   * defs)? `ctx` (optional) carries the caller's `gemfileContent` so a gem-gated
+   * vocabulary's bare-call names are recognised as external ONLY when the gem is
+   * declared (`catalogueForGemfile(ctx.gemfileContent)`); an implementation that
+   * does not gate its vocabulary, or a caller that threads no `ctx`, is unaffected
+   * (bd tea-rags-mcp-adx5p.1).
+   */
+  isBareCallExternal: (member: string, ctx?: CallContext) => boolean;
   /**
    * Does this qualified receiver name a gem/stdlib symbol (no in-project target)?
    *
@@ -359,6 +366,14 @@ export interface WalkInput {
   relPath: string;
   language: string;
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
+  /**
+   * Raw contents of the project's `Gemfile`, threaded per run so extraction-time
+   * DSL consumers (emit / declare / type-source) compose a gem-gated catalogue
+   * (`catalogueForGemfile`) for THIS project. Undefined → the FULL catalogue
+   * (gating off, byte-identical to pre-gating). Only the Ruby walker reads it
+   * today (bd tea-rags-mcp-adx5p.1b).
+   */
+  gemfileContent?: string;
 }
 
 /**

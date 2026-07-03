@@ -1,6 +1,7 @@
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { ExternalVocabulary } from "../../../../contracts/types/language.js";
-import { isExternalBareCall, isExternalQualifiedMember } from "../dsl/index.js";
+import { isExternalQualifiedMember } from "../dsl/index.js";
+import { catalogueForGemfile } from "../gemfile.js";
 import { SUPER_RECEIVER_SENTINEL } from "../walker/walker.js";
 import {
   collectAncestorChain,
@@ -23,8 +24,11 @@ import { typeOfReceiver } from "./type-propagation.js";
  * resolves first via the chain and never reaches this hook (tea-rags-mcp-5os8y).
  */
 export class RubyExternalVocabulary implements ExternalVocabulary {
-  isBareCallExternal(member: string): boolean {
-    return isExternalBareCall(member);
+  isBareCallExternal(member: string, ctx?: CallContext): boolean {
+    // Gem-gated: a framework/gem bare-call name counts as external only when the
+    // gem is declared for THIS project (`catalogueForGemfile(ctx.gemfileContent)`).
+    // No ctx (or no Gemfile) → the FULL catalogue, identical to the pre-gating check.
+    return catalogueForGemfile(ctx?.gemfileContent).isExternalBareCall(member);
   }
 
   isQualifiedMemberExternal(member: string): boolean {

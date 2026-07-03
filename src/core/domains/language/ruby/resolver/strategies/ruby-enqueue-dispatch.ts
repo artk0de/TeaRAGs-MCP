@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { enqueueEntrypoint } from "../../dsl/index.js";
+import { catalogueForGemfile } from "../../gemfile.js";
 import { resolveTypeInstanceMethod, type ResolverConfig } from "./shared.js";
 
 /**
@@ -13,8 +13,8 @@ import { resolveTypeInstanceMethod, type ResolverConfig } from "./shared.js";
  * follows can only land a file-edge (or drop); the real flow edge the caller
  * needs is `caller -> <Worker>#perform`.
  *
- * The member is rewritten to the {@link enqueueEntrypoint} (`perform`) and
- * resolved against the constant receiver's class via the shared
+ * The member is rewritten to the catalogue's `enqueueDispatch` entrypoint
+ * (`perform`) and resolved against the constant receiver's class via the shared
  * `resolveTypeInstanceMethod` MRO walk — so an INHERITED `#perform` (the common
  * `DistributionWorker < RawDistributionWorker` shape) still pins to the
  * ancestor's definition.
@@ -31,7 +31,8 @@ export class RubyEnqueueDispatchSymbolResolutionStrategy implements SymbolResolu
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver === null) return CONTINUE; // bare call — no worker class to route to
-    const entrypoint = enqueueEntrypoint(call.member);
+    // Gem-gated enqueue verb → `#perform` entrypoint, composed for this project.
+    const entrypoint = catalogueForGemfile(ctx.gemfileContent).enqueueDispatch[call.member];
     if (entrypoint === undefined) return CONTINUE; // not an enqueue verb
     const target = resolveTypeInstanceMethod(call.receiver, entrypoint, ctx, this.cfg.mode);
     return target ? resolved(target) : CONTINUE;
