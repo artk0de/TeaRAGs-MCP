@@ -294,3 +294,65 @@ describe("summarizeCodegraphResolve edgeKinds (Phase B1)", () => {
     expect(summary?.edgeKinds).toBeUndefined();
   });
 });
+
+// bd tea-rags-mcp-f2jsb / j0pki — over-cap dynamic fan-outs land in their own
+// `ambiguous_fanout` run-stats bucket. Dual recall reporting: the STRICT
+// `inProjectEdgeRecall` keeps counting them as misses (ambiguous ≠ resolved),
+// while `coveredRecall` = (resolved + ambiguousFanout) / SAME denominator shows
+// completeness when the aggregate is accepted as coverage.
+describe("summarizeCodegraphResolve — ambiguous fan-out dual recall (j0pki)", () => {
+  const rowAf = (
+    language: string,
+    receiverKind: string,
+    attempted: number,
+    resolved: number,
+    ambiguousFanout: number,
+    externalSkipped = 0,
+  ): ResolveRunStatsRow => ({ language, receiverKind, attempted, resolved, externalSkipped, ambiguousFanout });
+
+  it("sums ambiguousFanout into the aggregate, keeps strict recall, and adds coveredRecall", () => {
+    // dynamic: 10 attempted, 6 resolved, 2 ambiguous → missWithInProjectDef = 4
+    // (the 2 ambiguous stay INSIDE the strict-recall denominator as misses).
+    const summary = summarizeCodegraphResolve([rowAf("ruby", "dynamic", 10, 6, 2)]);
+    expect(summary?.ambiguousFanout).toBe(2);
+    // STRICT recall untouched: 6 / (6 + 4) = 0.6 — ambiguous is NOT resolved.
+    expect(summary?.inProjectEdgeRecall).toBeCloseTo(0.6, 6);
+    // Covered recall: (6 + 2) / 10 = 0.8 — same denominator, aggregate counted.
+    expect(summary?.coveredRecall).toBeCloseTo(0.8, 6);
+  });
+
+  it("defaults pre-013 rows (no ambiguousFanout) to 0 — coveredRecall collapses to strict recall", () => {
+    const summary = summarizeCodegraphResolve([row("typescript", "constant", 100, 80, 0)]);
+    expect(summary?.ambiguousFanout).toBe(0);
+    expect(summary?.coveredRecall).toBeCloseTo(summary?.inProjectEdgeRecall ?? -1, 10);
+  });
+
+  it("guards the empty denominator — coveredRecall is 0, not NaN", () => {
+    // Every attempted call is external → recall denominator collapses to 0.
+    const summary = summarizeCodegraphResolve([rowAf("ruby", "chain", 4, 0, 0, 4)]);
+    expect(summary?.inProjectEdgeRecall).toBe(0);
+    expect(summary?.coveredRecall).toBe(0);
+  });
+
+  it("carries ambiguousFanout + coveredRecall onto the per-receiver-kind rows (DEBUG, single language)", () => {
+    // vitest.setup runs with DEBUG=true, so byReceiverKind is built; single
+    // surviving language → the kinds surface at the top level.
+    const summary = summarizeCodegraphResolve([
+      // dynamic: strict 6/(6+4)=0.6, covered (6+2)/10=0.8
+      rowAf("ruby", "dynamic", 10, 6, 2),
+      // constant: 5 external → strict 15/(15+0)=1.0, covered identical (no ambiguous)
+      rowAf("ruby", "constant", 20, 15, 0, 5),
+    ]);
+    const kinds = summary?.byReceiverKind ?? [];
+    const dynamic = kinds.find((k) => k.receiverKind === "dynamic");
+    expect(dynamic).toMatchObject({ attempted: 10, resolved: 6, ambiguousFanout: 2 });
+    expect(dynamic?.inProjectEdgeRecall).toBeCloseTo(0.6, 6);
+    expect(dynamic?.coveredRecall).toBeCloseTo(0.8, 6);
+    const constant = kinds.find((k) => k.receiverKind === "constant");
+    expect(constant).toMatchObject({ ambiguousFanout: 0 });
+    expect(constant?.coveredRecall).toBeCloseTo(1.0, 6);
+    // Aggregate view stays consistent with the folded kinds.
+    expect(summary?.ambiguousFanout).toBe(2);
+    expect(summary?.coveredRecall).toBeCloseTo((6 + 15 + 2) / (10 + 15), 6);
+  });
+});

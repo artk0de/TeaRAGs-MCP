@@ -145,13 +145,16 @@ describe("StatusModule", () => {
         // attempted=120, resolved=60, externalSkipped=50 → denom=max(1,120-50)=70.
         // inProjectEdgeRecall: noInProjectDef=0 ⇒ missWithInProjectDef = 120−60−50 = 10;
         // recall = 60/(60+10) = 60/70. resolveSuccessRate present (tests run DEBUG=true).
+        // ambiguousFanout=0 ⇒ coveredRecall collapses to the strict recall (j0pki).
         expect(status.codegraphResolve).toEqual({
           inProjectEdgeRecall: 60 / 70,
+          coveredRecall: 60 / 70,
           callsAttempted: 120,
           callsResolved: 60,
           callsExternalSkipped: 50,
           callsUnresolvable: 0,
           callsNoInProjectDef: 0,
+          ambiguousFanout: 0,
           resolveSuccessRate: 60 / 70,
         });
       });

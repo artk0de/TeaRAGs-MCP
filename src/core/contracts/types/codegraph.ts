@@ -1312,6 +1312,15 @@ export interface ResolveRunStatsRow {
    * column was added (the recall then collapses to raw capability).
    */
   noInProjectDef?: number;
+  /**
+   * bd tea-rags-mcp-f2jsb / j0pki — of the `attempted − resolved` misses in
+   * this bucket, how many the dispatch kernel judged over-cap AMBIGUOUS
+   * (survivors > corpus-adaptive fan-out cap) and recorded as an aggregate
+   * instead of m edges. Its own bucket: NOT a genuine miss, NOT external.
+   * Strict recall keeps it in the denominator; coveredRecall counts it as
+   * coverage. Defaults to 0 for rows persisted before the column was added.
+   */
+  ambiguousFanout?: number;
 }
 
 export interface GraphEdges {
@@ -1330,6 +1339,18 @@ export interface GraphEdges {
    *  (bd tea-rags-mcp-f10y). Persisted to cg_symbols_inheritance via upsertFile;
    *  source_rel_path is taken from the accompanying GraphFileNode. */
   inheritance?: InheritanceEdgeRow[];
+  /** Over-cap ambiguous dispatch fan-outs for this file's call sites
+   *  (bd tea-rags-mcp-f2jsb / j0pki). One aggregate record per suppressed
+   *  fan-out — persisted to cg_ambiguous_fanout via upsertFile (per-file
+   *  DELETE+INSERT lifecycle, source_rel_path from the accompanying
+   *  GraphFileNode) INSTEAD of m noise edges. Present only when non-empty,
+   *  mirroring `inheritance`. */
+  ambiguousFanouts?: {
+    sourceSymbolId: SymbolId;
+    callExpression: string;
+    member: string;
+    candidateCount: number;
+  }[];
 }
 
 export interface CallerEdge {

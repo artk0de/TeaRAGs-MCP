@@ -1684,6 +1684,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           externalSkipped: t.externalSkipped,
           unresolvable: t.unresolvable,
           noInProjectDef: t.noInProjectDef,
+          ambiguousFanout: t.ambiguousFanout,
         });
       }
     }
@@ -1941,6 +1942,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       ? this.deps.languageFactory.create(extraction.language).resolver
       : undefined;
     const methodEdges: GraphEdges["methodEdges"] = [];
+    // Over-cap ambiguous dispatch fan-outs (bd f2jsb / j0pki) — one aggregate
+    // record per suppressed fan-out, persisted alongside this file's edges via
+    // upsertFile (INSTEAD of m noise edges).
+    const ambiguousFanouts: NonNullable<GraphEdges["ambiguousFanouts"]> = [];
     if (!resolver) return { fileEdges: [], methodEdges };
 
     // Resolver receives the run-global `classAncestors` so it can walk
@@ -2100,8 +2105,21 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           if (fanout?.kind === "ambiguous") {
             // Over-cap dynamic fan-out (bd f2jsb): NO edges, NO exact-chain
             // fallback — mirrors the pre-cap decisiveness of a non-empty
-            // fan-out. bd j0pki (Task 3) records the ambiguousFanout
-            // aggregate + run-stats bucket here.
+            // fan-out. bd j0pki (Task 3): record the aggregate + the
+            // run-stats bucket, then `continue` — the miss classifiers below
+            // (externalSkipped / unresolvable / noInProjectDef) must NOT
+            // count this call. Its own bucket: not a genuine miss, not
+            // external — strict recall keeps it in the denominator,
+            // coveredRecall counts the aggregate as coverage.
+            this.runStats.callsAmbiguousFanout += 1;
+            kindTally[receiverKind].ambiguousFanout += 1;
+            ambiguousFanouts.push({
+              sourceSymbolId: chunk.symbolId,
+              callExpression: call.callText,
+              member: fanout.member,
+              candidateCount: fanout.candidateCount,
+            });
+            continue;
           } else if (fanout !== undefined && fanout.edges.length > 0) {
             for (const edge of fanout.edges) {
               methodEdges.push({
@@ -2165,7 +2183,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // ancestors keep ancestorSymbolId=null. Sources every language: TS via the
     // unified inheritanceEdges field, others via the legacy class* Records.
     const inheritance = normalizeInheritanceEdges(extraction, (fq) => symbolTable.lookup(fq)[0]?.symbolId ?? null);
-    return inheritance.length > 0 ? { fileEdges, methodEdges, inheritance } : { fileEdges, methodEdges };
+    const edges: GraphEdges = { fileEdges, methodEdges };
+    if (inheritance.length > 0) edges.inheritance = inheritance;
+    if (ambiguousFanouts.length > 0) edges.ambiguousFanouts = ambiguousFanouts;
+    return edges;
   }
 }
 
@@ -2182,6 +2203,10 @@ interface ReceiverKindTally {
   // (gem/core/runtime-generated/dynamic). Excluded from the inProjectEdgeRecall
   // denominator. Persisted to cg_run_stats.no_in_project_def.
   noInProjectDef: number;
+  // bd f2jsb/j0pki — unresolved-but-over-cap-ambiguous dispatch fan-outs in
+  // this bucket (subset of attempted − resolved). Its own bucket: NOT a genuine
+  // miss, NOT external. Persisted to cg_run_stats.ambiguous_fanout.
+  ambiguousFanout: number;
 }
 
 interface RunStats {
@@ -2209,6 +2234,12 @@ interface RunStats {
   // bucket (callsAttempted − callsResolved − callsExternalSkipped −
   // callsUnresolvable).
   callsNoInProjectDef: number;
+  // bd f2jsb/j0pki — subset of (callsAttempted − callsResolved) that the
+  // dispatch kernel judged over-cap AMBIGUOUS (survivors > corpus-adaptive
+  // fan-out cap) and recorded as a cg_ambiguous_fanout aggregate instead of m
+  // edges. Its own bucket: NOT a genuine miss, NOT external — strict recall
+  // keeps it in the denominator, coveredRecall counts it as coverage.
+  callsAmbiguousFanout: number;
   // Per-(code language, receiver kind) resolve breakdown (bd tea-rags-mcp-cnqrg,
   // extends j431). Source of truth: the aggregate scalars above, the per-kind
   // summary (getRunMetrics, j431 view) and the per-language summary
@@ -2224,7 +2255,14 @@ interface RunStats {
 function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally> {
   const out = {} as Record<ReceiverKind, ReceiverKindTally>;
   for (const kind of RECEIVER_KINDS) {
-    out[kind] = { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0, noInProjectDef: 0 };
+    out[kind] = {
+      attempted: 0,
+      resolved: 0,
+      externalSkipped: 0,
+      unresolvable: 0,
+      noInProjectDef: 0,
+      ambiguousFanout: 0,
+    };
   }
   return out;
 }
@@ -2251,6 +2289,7 @@ function aggregateReceiverKinds(stats: RunStats): Record<ReceiverKind, ReceiverK
       out[kind].resolved += kinds[kind].resolved;
       out[kind].externalSkipped += kinds[kind].externalSkipped;
       out[kind].unresolvable += kinds[kind].unresolvable;
+      out[kind].ambiguousFanout += kinds[kind].ambiguousFanout;
     }
   }
   return out;
@@ -2266,6 +2305,7 @@ function createEmptyRunStats(): RunStats {
     callsExternalSkipped: 0,
     callsUnresolvable: 0,
     callsNoInProjectDef: 0,
+    callsAmbiguousFanout: 0,
     byLanguageKind: new Map(),
   };
 }

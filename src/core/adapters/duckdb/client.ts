@@ -354,6 +354,20 @@ export class DuckDbGraphClient implements GraphDbClient {
           [e.sourceFqName, node.relPath, e.sourceSymbolId, e.ancestorFqName, e.ancestorSymbolId, e.kind, e.ordinal],
         );
       }
+      // Ambiguous fan-out aggregates (bd tea-rags-mcp-f2jsb / j0pki). Same
+      // per-source-file DELETE+INSERT lifecycle as the edge tables: re-walking
+      // a file replaces its rows (a fan-out resolved away must not survive).
+      // INSERT OR IGNORE dedupes a repeated (source, call_expression) shape —
+      // aggregate-existence semantics, not occurrence count.
+      await this.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [node.relPath]);
+      for (const a of edges.ambiguousFanouts ?? []) {
+        await this.run(
+          `INSERT OR IGNORE INTO cg_ambiguous_fanout
+             (source_symbol_id, source_rel_path, call_expression, member, candidate_count)
+           VALUES (?, ?, ?, ?, ?)`,
+          [a.sourceSymbolId, node.relPath, a.callExpression, a.member, a.candidateCount],
+        );
+      }
       await this.exec("COMMIT");
     } catch (err) {
       await this.exec("ROLLBACK");
@@ -381,6 +395,7 @@ export class DuckDbGraphClient implements GraphDbClient {
         relPath,
       ]);
       await this.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [relPath]);
+      await this.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [relPath]);
       await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
       await this.run("DELETE FROM cg_symbols_files WHERE rel_path = ?", [relPath]);
       await this.exec("COMMIT");
@@ -951,7 +966,7 @@ export class DuckDbGraphClient implements GraphDbClient {
         await this.run("DELETE FROM cg_run_stats");
         for (const r of rows) {
           await this.run(
-            "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, ambiguous_fanout) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [
               r.language,
               r.receiverKind,
@@ -960,6 +975,7 @@ export class DuckDbGraphClient implements GraphDbClient {
               r.externalSkipped,
               r.unresolvable,
               r.noInProjectDef ?? 0,
+              r.ambiguousFanout ?? 0,
             ],
           );
         }
@@ -980,8 +996,9 @@ export class DuckDbGraphClient implements GraphDbClient {
       external_skipped: number | bigint;
       unresolvable: number | bigint;
       no_in_project_def: number | bigint;
+      ambiguous_fanout: number | bigint;
     }>(
-      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def FROM cg_run_stats ORDER BY language, receiver_kind",
+      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, ambiguous_fanout FROM cg_run_stats ORDER BY language, receiver_kind",
     );
     return rows.map((r) => ({
       language: r.language,
@@ -991,6 +1008,7 @@ export class DuckDbGraphClient implements GraphDbClient {
       externalSkipped: Number(r.external_skipped),
       unresolvable: Number(r.unresolvable),
       noInProjectDef: Number(r.no_in_project_def),
+      ambiguousFanout: Number(r.ambiguous_fanout),
     }));
   }
 

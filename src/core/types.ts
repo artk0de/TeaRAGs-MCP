@@ -177,6 +177,15 @@ export interface CodegraphResolveSummary {
    */
   inProjectEdgeRecall: number;
   /**
+   * bd tea-rags-mcp-f2jsb / j0pki — dual-recall companion to
+   * {@link inProjectEdgeRecall}: `(callsResolved + ambiguousFanout) / SAME
+   * denominator`. An over-cap ambiguous dispatch fan-out stays a miss for the
+   * strict recall (it produced no edge), but its persisted aggregate still
+   * covers the call site — this number reports completeness when that
+   * aggregate is accepted as coverage.
+   */
+  coveredRecall: number;
+  /**
    * Raw resolver capability over ALL internal-attempted calls (denominator
    * polluted by no-in-project-def calls, so it reads far lower than recall).
    * Surfaced ONLY under DEBUG — it misleads a casual reader who expects it to
@@ -194,6 +203,13 @@ export interface CodegraphResolveSummary {
    * the inProjectEdgeRecall denominator (they cannot become an in-project edge).
    */
   callsNoInProjectDef: number;
+  /**
+   * bd f2jsb / j0pki — unresolved calls the dispatch kernel judged over-cap
+   * AMBIGUOUS and recorded as a cg_ambiguous_fanout aggregate instead of m
+   * edges. Its own bucket (not a genuine miss, not external): strict recall
+   * keeps it in the denominator, {@link coveredRecall} counts it as coverage.
+   */
+  ambiguousFanout: number;
   /**
    * tea-rags-mcp-cnqrg — per-code-language breakdown of the same rate, so a
    * polyglot index reveals WHICH language's resolver carries the gap. Test
@@ -275,6 +291,9 @@ export interface CodegraphResolveKindRow {
    *  missWithInProjectDef)`, excluding no-in-project-def misses. Surfaces WHICH
    *  bucket holds the real recall holes so recall work is targeted, not estimated. */
   inProjectEdgeRecall: number;
+  /** bd f2jsb / j0pki — dual-recall companion for this bucket:
+   *  `(resolved + ambiguousFanout) / SAME denominator` as inProjectEdgeRecall. */
+  coveredRecall: number;
   attempted: number;
   resolved: number;
   externalSkipped: number;
@@ -282,6 +301,9 @@ export interface CodegraphResolveKindRow {
   unresolvable: number;
   /** Genuine-miss calls in this bucket whose member has no in-project def. */
   callsNoInProjectDef: number;
+  /** bd f2jsb / j0pki — over-cap ambiguous dispatch fan-outs in this bucket
+   *  (recorded as aggregates, not edges). */
+  ambiguousFanout: number;
   resolveSuccessRate: number;
 }
 
