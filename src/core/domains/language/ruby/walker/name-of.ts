@@ -21,6 +21,7 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
 import { classifyMethod, rubyInsideSingletonClass } from "../../../../infra/symbolid/index.js";
+import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { expandAliasKeyword, expandClassBodyMacros, type DeclaredMethod } from "./macro-expansion.js";
 
 function methodKindFromClassify(node: AstNode): "instance" | "static" | undefined {
@@ -59,7 +60,10 @@ function macroNameOf(node: AstNode): string | undefined {
   return m?.text;
 }
 
-export function rbNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
+export function rbNameOf(
+  node: AstNode,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): NamedSymbol | NamedSymbol[] | null {
   // Both `method` and `singleton_method` route through classifyMethod
   // (in core/infra/symbolid) so the chunker and codegraph agree on the
   // separator for the same physical AST node. classifyMethod also walks
@@ -108,7 +112,7 @@ export function rbNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
   // Expansion (precedence, arg shapes, AR associations) lives in the shared
   // engine. Inside a `class << self`, every emission becomes static.
   if (node.type === "call" || node.type === "method_call") {
-    const expanded = expandClassBodyMacros(node).map(toNamedSymbol);
+    const expanded = expandClassBodyMacros(node, catalogue).map(toNamedSymbol);
     if (expanded.length > 0) {
       // define_method / alias_method historically returned a scalar NamedSymbol.
       const emit = SINGLE_EMISSION_MACROS.has(macroNameOf(node) ?? "") ? expanded[0] : expanded;

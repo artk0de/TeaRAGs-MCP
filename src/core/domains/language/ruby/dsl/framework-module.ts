@@ -11,7 +11,10 @@ export function defineFrameworkVocabulary(
   framework: string,
   entries: Record<string, RubyDslEntry>,
   runtimeBuiltins?: ReadonlySet<string>,
-  extras?: Pick<RubyFrameworkVocabulary, "instanceReturning" | "relationReturning" | "enqueueDispatch" | "activatedBy">,
+  extras?: Pick<
+    RubyFrameworkVocabulary,
+    "instanceReturning" | "relationReturning" | "enqueueDispatch" | "activatedBy" | "structuredMacros"
+  >,
 ): RubyFrameworkVocabulary {
   return {
     framework,

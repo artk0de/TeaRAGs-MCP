@@ -1857,7 +1857,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const materializedTree = { rootNode: materializeTree(nativeTree.rootNode, code) };
     const chunks = this.deps.collectSymbols(
       materializedTree,
-      walker.nameOf,
+      // Gem-gated declares (bd tea-rags-mcp-o5kwh): bind the run's Gemfile so the
+      // Ruby nameOf gates class-body macro DECLARES to this project's gems.
+      // undefined runGemfileContent -> FULL catalogue (other languages ignore it).
+      (node) => walker.nameOf(node, this.runGemfileContent),
       langConfig.scopeSeparator,
       langConfig.disambiguateOverloads ?? false,
       this.deps.composer,

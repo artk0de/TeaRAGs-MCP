@@ -40,6 +40,7 @@ import type {
 } from "../../../contracts/types/language.js";
 import { rubyHooks } from "./chunking/index.js";
 import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
+import { catalogueForGemfile } from "./gemfile.js";
 import { rubyKernel } from "./kernel.js";
 import { RubyCallResolver } from "./resolver/ruby-resolver.js";
 import { rbNameOf } from "./walker/name-of.js";
@@ -97,7 +98,10 @@ export class RubyLanguage implements LanguageProvider {
   readonly chunkerHooks: LanguageChunkerHooks = rubyChunkerHooks;
   readonly walker: LanguageWalker = {
     walk: (input) => extractFromRubyFile(input),
-    nameOf: (node) => rbNameOf(node),
+    // Gem-gated declares/nameOf path (bd tea-rags-mcp-o5kwh): compose this
+    // project's catalogue from the run's Gemfile so class-body macro DECLARES
+    // are gated to the gems THIS project declares. undefined -> FULL catalogue.
+    nameOf: (node, gemfileContent) => rbNameOf(node, catalogueForGemfile(gemfileContent)),
   };
   readonly resolver: LanguageSymbolResolver;
   /**

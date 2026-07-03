@@ -384,7 +384,16 @@ export interface WalkInput {
  */
 export interface LanguageWalker {
   walk: (input: WalkInput) => FileExtraction;
-  nameOf: (node: AstNode) => NamedSymbol | NamedSymbol[] | null;
+  /**
+   * Map an AST node to its symbol descriptor(s). `gemfileContent` (optional) is
+   * the run's raw Gemfile, threaded so a language can gate gem-conditional
+   * class-body DSL grammar to the project's declared gems — only Ruby reads it
+   * (`catalogueForGemfile`); every other language ignores the arg. Undefined →
+   * the FULL catalogue (gating off, byte-identical to pre-gating). The kernel
+   * `collectSymbols` calls this per node with a call-site-bound `gemfileContent`
+   * (bd tea-rags-mcp-o5kwh).
+   */
+  nameOf: (node: AstNode, gemfileContent?: string) => NamedSymbol | NamedSymbol[] | null;
 }
 
 /**

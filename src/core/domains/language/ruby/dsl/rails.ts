@@ -124,7 +124,6 @@ const RAILS_ENTRIES: Record<string, RubyDslEntry> = {
 
   // enums / state machine / misc
   enum: { category: "enum" },
-  aasm: { category: "state-machine" },
   serialize: { category: "other" },
   // store_accessor — the FIRST symbol is the JSON store column; remaining symbols
   // are the accessor keys (each gets a reader/writer pair via `attrPair`).
@@ -199,4 +198,8 @@ export const RAILS_VOCABULARY = defineFrameworkVocabulary("rails", RAILS_ENTRIES
     "optimizer_hints",
   ]),
   enqueueDispatch: { perform_later: "perform", perform_now: "perform" },
+  // enum is an unconditional (always-active) ActiveRecord structured macro; its
+  // expander lives in walker/structured/enum.ts. aasm's structured macro is
+  // gem-gated (dsl/aasm.ts) so it moved out of this vocab (bd tea-rags-mcp-o5kwh).
+  structuredMacros: new Set(["enum"]),
 });

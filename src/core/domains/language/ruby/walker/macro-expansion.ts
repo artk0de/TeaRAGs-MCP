@@ -11,7 +11,13 @@
  * catalogue hands an already-parsed `base` via `RubyDslEntry.declares`.
  */
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import { RUBY_DSL, type DslCategory, type DslOperandsShape, type MethodKind } from "../dsl/index.js";
+import {
+  FULL_RUBY_CATALOGUE,
+  type DslCategory,
+  type DslOperandsShape,
+  type MethodKind,
+  type RubyDslCatalogue,
+} from "../dsl/index.js";
 import { STRUCTURED_MACROS } from "./structured/index.js";
 import { literalNameFromArg, stripSymbolColon, type DeclaredMethod } from "./structured/types.js";
 
@@ -20,8 +26,16 @@ export type { DeclaredMethod } from "./structured/types.js";
 /**
  * Expand a class-body macro `call` / `method_call` node into the methods it
  * declares. Returns `[]` for receiver-qualified calls and non-macro names.
+ *
+ * `catalogue` is the per-project gem-gated DSL catalogue (default
+ * FULL_RUBY_CATALOGUE — every grammar active, byte-identical to pre-gating). A
+ * gem-gated declaring macro (`mount_uploader`) or structured macro (`aasm`)
+ * expands ONLY when its gem is in the catalogue's active set (bd tea-rags-mcp-o5kwh).
  */
-export function expandClassBodyMacros(node: AstNode): DeclaredMethod[] {
+export function expandClassBodyMacros(
+  node: AstNode,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): DeclaredMethod[] {
   if (node.type !== "call" && node.type !== "method_call") return [];
   // Receiver-qualified (`obj.attr_accessor :x`) is a normal invocation, not DSL.
   if (node.childForFieldName("receiver")) return [];
@@ -39,13 +53,17 @@ export function expandClassBodyMacros(node: AstNode): DeclaredMethod[] {
   });
   const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
 
-  // Structural macros (enum, aasm) — walk the AST for their inner declarations.
+  // Structural macros (enum, aasm) — walk the AST for their inner declarations,
+  // but ONLY when the gem owning the structured macro is active in this project's
+  // catalogue (enum unconditional; aasm gem-gated). Gated off → [].
   const structured = STRUCTURED_MACROS.find((e) => e.macroName === macroName);
-  if (structured) return structured.expand(node, startLine, endLine);
+  if (structured) {
+    return catalogue.activeStructuredMacros.has(macroName) ? structured.expand(node, startLine, endLine) : [];
+  }
 
   // Generic declarative dispatch: look up the operands shape from the catalogue
   // entry and project each extracted base through `declares`.
-  const entry = RUBY_DSL[macroName];
+  const entry = catalogue.entries[macroName];
   if (!entry) return [];
   const { declares, category, operands } = entry;
   if (!declares || !args) return [];
