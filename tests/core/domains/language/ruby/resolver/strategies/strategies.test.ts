@@ -4,6 +4,8 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
+  type DispatchEdge,
+  type DispatchFanoutOutcome,
   type NamedSymbol,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
@@ -52,6 +54,14 @@ const ctx = (over: Partial<CallContext> & Pick<CallContext, "symbolTable">): Cal
   imports: [],
   ...over,
 });
+
+// bd f2jsb: resolveDispatch now returns DispatchFanoutOutcome; existing
+// assertions target the edges payload, so unwrap (throwing on `ambiguous`
+// keeps the assertion strict — these fixtures never exceed the fan-out cap).
+const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
+  if (outcome.kind !== "edges") throw new Error(`expected edges outcome, got ${outcome.kind}`);
+  return outcome.edges;
+};
 
 describe("RubySuperSymbolResolutionStrategy", () => {
   const strat = new RubySuperSymbolResolutionStrategy(cfg);
@@ -1535,7 +1545,7 @@ describe("RubyDynamicDispatchResolver — chain-tail suppression (increment B / 
       "app/lib/to_h.rb",
       [sym("SomeClass#to_h", "to_h", "app/lib/to_h.rb", ["SomeClass"])],
     ]);
-    const result = resolver.resolveDispatch(call, ctx({ symbolTable }));
+    const result = edgesOf(resolver.resolveDispatch(call, ctx({ symbolTable })));
     expect(result).toEqual([]);
   });
 
@@ -1543,7 +1553,7 @@ describe("RubyDynamicDispatchResolver — chain-tail suppression (increment B / 
     // `event.user` → `.user` is NOT in EXTERNAL_CHAIN_TAILS → fan-out proceeds
     const call: CallRef = { callText: "event.user.save", receiver: "event.user", member: "save", startLine: 1 };
     const symbolTable = tableWith(["app/models/user.rb", [sym("User#save", "save", "app/models/user.rb", ["User"])]]);
-    const result = resolver.resolveDispatch(call, ctx({ symbolTable }));
+    const result = edgesOf(resolver.resolveDispatch(call, ctx({ symbolTable })));
     expect(result.length).toBeGreaterThan(0);
   });
 });

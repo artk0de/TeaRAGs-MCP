@@ -1,4 +1,9 @@
-import type { CallContext, CallRef, DispatchEdge } from "../../../../../contracts/types/codegraph.js";
+import type {
+  CallContext,
+  CallRef,
+  DispatchEdge,
+  DispatchFanoutOutcome,
+} from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
 import { typeOfReceiver } from "../type-propagation.js";
 import {
@@ -35,7 +40,11 @@ import {
 export class RubyUnionDispatchResolver implements DispatchResolverComponent {
   constructor(private readonly cfg: ResolverConfig) {}
 
-  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
+    return { kind: "edges", edges: this.resolveDispatchEdges(call, ctx) };
+  }
+
+  private resolveDispatchEdges(call: CallRef, ctx: CallContext): DispatchEdge[] {
     if (!call.receiver) return [];
 
     const t = typeOfReceiver(call.receiver, call.startLine, ctx);

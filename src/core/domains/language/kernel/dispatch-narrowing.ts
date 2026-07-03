@@ -1,4 +1,11 @@
-import type { CallContext, CallRef, DispatchEdge, SymbolDefinition } from "../../../contracts/types/codegraph.js";
+import type {
+  CallContext,
+  CallRef,
+  DispatchEdge,
+  DispatchFanoutOutcome,
+  SymbolDefinition,
+} from "../../../contracts/types/codegraph.js";
+import { dispatchFanoutPolicyFor } from "./fanout-policy.js";
 
 /** A candidate filter in the untyped-dispatch narrowing cascade (bd xlnub).
  *  Drops a candidate ONLY on PROVEN incompatibility; missing evidence ⇒ keep. */
@@ -100,20 +107,27 @@ const edgeFor = (c: SymbolDefinition, confidence: number): DispatchEdge => ({
 });
 
 /** Run the cascade, then the consumer-split terminal: 1 survivor → one edge
- *  confidence 1.0; m>1 → m edges confidence discount/m; 0 → []. */
+ *  confidence 1.0; m>1 → m edges confidence discount/m; 0 → empty edges.
+ *  Survivors above the corpus-adaptive DispatchFanoutPolicy cap → `ambiguous`
+ *  outcome, NO edges (bd tea-rags-mcp-f2jsb: unbounded fan-out on ubiquitous
+ *  members — `#firm` in 240 multi-tenant models — flooded taxdome with 1.5M
+ *  noise edges and made codegraph enrichment non-terminating). */
 export function resolveNarrowedFanout(
   call: CallRef,
   candidates: SymbolDefinition[],
   ctx: CallContext,
   narrowers: DispatchCandidateNarrower[],
   discount: number,
-): DispatchEdge[] {
+): DispatchFanoutOutcome {
   let survivors = candidates;
   for (const narrower of narrowers) {
     survivors = narrower.narrow(call, survivors, ctx);
-    if (survivors.length === 0) return [];
+    if (survivors.length === 0) return { kind: "edges", edges: [] };
   }
-  if (survivors.length === 1) return [edgeFor(survivors[0], 1.0)];
+  if (survivors.length === 1) return { kind: "edges", edges: [edgeFor(survivors[0], 1.0)] };
+  if (survivors.length > dispatchFanoutPolicyFor(ctx.symbolTable).cap) {
+    return { kind: "ambiguous", member: call.member, candidateCount: survivors.length };
+  }
   const confidence = discount / survivors.length;
-  return survivors.map((c) => edgeFor(c, confidence));
+  return { kind: "edges", edges: survivors.map((c) => edgeFor(c, confidence)) };
 }

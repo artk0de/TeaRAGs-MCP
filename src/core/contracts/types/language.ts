@@ -16,7 +16,7 @@ import type { ChunkingHook, LanguageChunkClassifier } from "./chunker.js";
 import type {
   CallContext,
   CallRef,
-  DispatchEdge,
+  DispatchFanoutOutcome,
   FileExtraction,
   GraphEdges,
   NamedSymbol,
@@ -81,7 +81,7 @@ export interface SymbolResolutionStrategy {
  * than duplicated per language.
  */
 export interface DispatchResolverComponent {
-  resolveDispatch: (call: CallRef, ctx: CallContext) => DispatchEdge[];
+  resolveDispatch: (call: CallRef, ctx: CallContext) => DispatchFanoutOutcome;
 }
 
 /**
@@ -408,10 +408,13 @@ export interface LanguageSymbolResolver {
   resolve: (call: CallRef, ctx: CallContext) => SymbolResolutionTarget | null;
   /**
    * Fan-out resolution for lookup-table dispatch (bd tea-rags-mcp-n0zj): one
-   * dispatching call site expands to N `(caller, callee)` edges. Returns `[]`
-   * when the call does not dispatch through a table.
+   * dispatching call site expands to N `(caller, callee)` edges. Returns empty
+   * edges when the call does not dispatch through a table; returns an
+   * `ambiguous` outcome when the fan-out exceeded the corpus-adaptive
+   * DispatchFanoutPolicy cap (bd tea-rags-mcp-f2jsb) — the provider records it
+   * as an ambiguousFanout aggregate instead of materializing edges.
    */
-  resolveDispatch: (call: CallRef, ctx: CallContext) => DispatchEdge[];
+  resolveDispatch: (call: CallRef, ctx: CallContext) => DispatchFanoutOutcome;
   /**
    * Optional per-file edge resolution (tea-rags-mcp Ruby Zeitwerk +
    * inheritance). When present, the codegraph provider delegates ALL file→file

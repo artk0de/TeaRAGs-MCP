@@ -101,6 +101,39 @@ export interface DispatchEdge {
 }
 
 /**
+ * Corpus-adaptive bound on dispatch fan-out (bd tea-rags-mcp-f2jsb). Built once
+ * per GlobalSymbolTable from the defs-per-shortName distribution: `cap` is the
+ * p99 of that distribution floored at DISPATCH_FANOUT_CAP_FLOOR. A fan-out with
+ * more survivors than `cap` carries no per-target information (confidence
+ * `discount/m` is below noise) and is reported as an ambiguous outcome instead
+ * of materialized edges.
+ */
+export interface DispatchFanoutPolicy {
+  /** Max survivors a dispatch fan-out may materialize as edges. */
+  cap: number;
+  /** Diagnostic: the corpus p99 of defs-per-shortName the cap derives from. */
+  p99DefsPerMember: number;
+}
+
+/**
+ * Terminal outcome of a dispatch fan-out (bd tea-rags-mcp-f2jsb).
+ *
+ *   - `edges` — bounded fan-out, materialized as method edges (possibly empty:
+ *     vocabulary suppression / zero candidates keep their existing semantics).
+ *   - `ambiguous` — survivor count exceeded the corpus-adaptive
+ *     DispatchFanoutPolicy cap: NO edges are emitted; the provider records an
+ *     ambiguousFanout aggregate so recall reporting stays honest (strict vs
+ *     covered) without flooding the graph.
+ */
+export type DispatchFanoutOutcome =
+  | { kind: "edges"; edges: DispatchEdge[] }
+  | { kind: "ambiguous"; member: string; candidateCount: number };
+
+/** The neutral "no fan-out" outcome — a fresh object per call so consumers may
+ *  push into `edges` without aliasing. */
+export const emptyDispatchFanout = (): DispatchFanoutOutcome => ({ kind: "edges", edges: [] });
+
+/**
  * A symbol descriptor produced by a language walker's `nameOf(node)`. Names a
  * single declaration (function, method, class, namespace) the walker found at
  * the current AST node, plus the flags that drive symbolId composition and
@@ -640,6 +673,9 @@ export interface GlobalSymbolTable {
    *  cold start. Equivalent to calling `upsertFile` once per file —
    *  implementations may optimise the bulk path but are not required to. */
   hydrate: (definitions: SymbolDefinition[]) => void;
+  /** Definition count per shortName across the corpus — the distribution the
+   *  DispatchFanoutPolicy p99 cap derives from (bd tea-rags-mcp-f2jsb). */
+  shortNameDefCounts: () => ReadonlyMap<string, number>;
 }
 
 /** Positional-arity envelope of a method definition (bd xlnub). `maxPositional`
@@ -720,7 +756,7 @@ export interface CallResolver {
    * Resolvers that don't support dispatch tables omit this method; the
    * provider guards with `?.` so other-language resolvers are unaffected.
    */
-  resolveDispatch?: (call: CallRef, ctx: CallContext) => DispatchEdge[];
+  resolveDispatch?: (call: CallRef, ctx: CallContext) => DispatchFanoutOutcome;
   /**
    * Optional per-file edge resolution (tea-rags-mcp Ruby Zeitwerk +
    * inheritance). Returns file→file edges for `extraction`, owning the

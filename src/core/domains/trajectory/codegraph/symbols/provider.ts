@@ -2050,7 +2050,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         if (call.dispatch) {
           // Dispatch call: fan out to candidates instead of normal
           // resolution. `sourceSymbolId: null` ⇒ the caller chunk.
-          for (const edge of resolver.resolveDispatch?.(call, ctx) ?? []) {
+          const tableOutcome = resolver.resolveDispatch?.(call, ctx);
+          for (const edge of tableOutcome?.kind === "edges" ? tableOutcome.edges : []) {
             methodEdges.push({
               sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
               targetSymbolId: edge.targetSymbolId,
@@ -2075,7 +2076,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             });
             resolved = true;
           }
-          for (const edge of resolver.resolveDispatch?.(call, ctx) ?? []) {
+          const argsOutcome = resolver.resolveDispatch?.(call, ctx);
+          for (const edge of argsOutcome?.kind === "edges" ? argsOutcome.edges : []) {
             methodEdges.push({
               sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
               targetSymbolId: edge.targetSymbolId,
@@ -2094,9 +2096,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // for every non-polymorphic call (and every other language, whose
           // resolveDispatch keys off call.dispatch only), so the exact `resolve`
           // path stays the default — external receivers never cone.
-          const cone = resolver.resolveDispatch?.(call, ctx) ?? [];
-          if (cone.length > 0) {
-            for (const edge of cone) {
+          const fanout = resolver.resolveDispatch?.(call, ctx);
+          if (fanout?.kind === "ambiguous") {
+            // Over-cap dynamic fan-out (bd f2jsb): NO edges, NO exact-chain
+            // fallback — mirrors the pre-cap decisiveness of a non-empty
+            // fan-out. bd j0pki (Task 3) records the ambiguousFanout
+            // aggregate + run-stats bucket here.
+          } else if (fanout !== undefined && fanout.edges.length > 0) {
+            for (const edge of fanout.edges) {
               methodEdges.push({
                 sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
                 targetSymbolId: edge.targetSymbolId,

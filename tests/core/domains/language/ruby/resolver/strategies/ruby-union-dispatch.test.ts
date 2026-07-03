@@ -5,6 +5,7 @@ import {
   type CallContext,
   type CallRef,
   type DispatchEdge,
+  type DispatchFanoutOutcome,
   type NamedSymbol,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import type { ResolverConfig } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
@@ -37,6 +38,14 @@ const ctx = (over: Partial<CallContext> & Pick<CallContext, "symbolTable">): Cal
 const sortEdges = (edges: DispatchEdge[]): DispatchEdge[] =>
   [...edges].sort((a, b) => (a.targetSymbolId ?? "").localeCompare(b.targetSymbolId ?? ""));
 
+// bd f2jsb: resolveDispatch now returns DispatchFanoutOutcome; existing
+// assertions target the edges payload, so unwrap (throwing on `ambiguous`
+// keeps the assertion strict — these fixtures never exceed the fan-out cap).
+const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
+  if (outcome.kind !== "edges") throw new Error(`expected edges outcome, got ${outcome.kind}`);
+  return outcome.edges;
+};
+
 // Shared symbol fixtures
 const aFile: [string, NamedSymbol[]] = [
   "app/models/a.rb",
@@ -55,27 +64,31 @@ describe("RubyUnionDispatchResolver (Task 1.7 — union receiver cone fan-out)",
 
   it("returns [] when receiver is null (bare call — not union)", () => {
     const symbolTable = tableWith(aFile, bFile);
-    const out = resolver.resolveDispatch(
-      { callText: "process", receiver: null, member: "process", startLine: 1 },
-      ctx({ symbolTable }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "process", receiver: null, member: "process", startLine: 1 },
+        ctx({ symbolTable }),
+      ),
     );
     expect(out).toEqual([]);
   });
 
   it("returns [] when receiver has no local binding (untyped — union not available)", () => {
     const symbolTable = tableWith(aFile, bFile);
-    const out = resolver.resolveDispatch(call, ctx({ symbolTable }));
+    const out = edgesOf(resolver.resolveDispatch(call, ctx({ symbolTable })));
     expect(out).toEqual([]);
   });
 
   it("returns [] when bound type is a plain instance (not a union)", () => {
     const symbolTable = tableWith(aFile);
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({
-        symbolTable,
-        localBindings: { x: [{ line: 1, type: "A" }] },
-      }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          localBindings: { x: [{ line: 1, type: "A" }] },
+        }),
+      ),
     );
     expect(out).toEqual([]);
   });
@@ -83,26 +96,28 @@ describe("RubyUnionDispatchResolver (Task 1.7 — union receiver cone fan-out)",
   it("fans out to N in-project cone edges when both union members declare the method", () => {
     const symbolTable = tableWith(aFile, bFile);
     const out = sortEdges(
-      resolver.resolveDispatch(
-        call,
-        ctx({
-          symbolTable,
-          localBindings: {
-            x: [
-              {
-                line: 1,
-                type: "A",
-                typeRef: {
-                  form: "union",
-                  members: [
-                    { form: "instance", name: "A" },
-                    { form: "instance", name: "B" },
-                  ],
+      edgesOf(
+        resolver.resolveDispatch(
+          call,
+          ctx({
+            symbolTable,
+            localBindings: {
+              x: [
+                {
+                  line: 1,
+                  type: "A",
+                  typeRef: {
+                    form: "union",
+                    members: [
+                      { form: "instance", name: "A" },
+                      { form: "instance", name: "B" },
+                    ],
+                  },
                 },
-              },
-            ],
-          },
-        }),
+              ],
+            },
+          }),
+        ),
       ),
     );
     expect(out).toEqual([
@@ -132,26 +147,28 @@ describe("RubyUnionDispatchResolver (Task 1.7 — union receiver cone fan-out)",
       ],
     ];
     const symbolTable = tableWith(repoFile);
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({
-        symbolTable,
-        localBindings: {
-          x: [
-            {
-              line: 1,
-              type: "Integer",
-              typeRef: {
-                form: "union",
-                members: [
-                  { form: "instance", name: "Integer" }, // external — no file in symbol table
-                  { form: "instance", name: "Repository" }, // in-project
-                ],
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          localBindings: {
+            x: [
+              {
+                line: 1,
+                type: "Integer",
+                typeRef: {
+                  form: "union",
+                  members: [
+                    { form: "instance", name: "Integer" }, // external — no file in symbol table
+                    { form: "instance", name: "Repository" }, // in-project
+                  ],
+                },
               },
-            },
-          ],
-        },
-      }),
+            ],
+          },
+        }),
+      ),
     );
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({
@@ -164,78 +181,84 @@ describe("RubyUnionDispatchResolver (Task 1.7 — union receiver cone fan-out)",
 
   it("returns [] when no union member has the called method in-project", () => {
     const symbolTable = tableWith(aFile, bFile);
-    const out = resolver.resolveDispatch(
-      { callText: "x.unknown_method", receiver: "x", member: "unknown_method", startLine: 5 },
-      ctx({
-        symbolTable,
-        localBindings: {
-          x: [
-            {
-              line: 1,
-              type: "A",
-              typeRef: {
-                form: "union",
-                members: [
-                  { form: "instance", name: "A" },
-                  { form: "instance", name: "B" },
-                ],
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "x.unknown_method", receiver: "x", member: "unknown_method", startLine: 5 },
+        ctx({
+          symbolTable,
+          localBindings: {
+            x: [
+              {
+                line: 1,
+                type: "A",
+                typeRef: {
+                  form: "union",
+                  members: [
+                    { form: "instance", name: "A" },
+                    { form: "instance", name: "B" },
+                  ],
+                },
               },
-            },
-          ],
-        },
-      }),
+            ],
+          },
+        }),
+      ),
     );
     expect(out).toEqual([]);
   });
 
   it("collapses to [] when in-project targets exceed coneMax (no single base for a union)", () => {
     const symbolTable = tableWith(aFile, bFile);
-    const out = new RubyUnionDispatchResolver({ ...cfg, coneMax: 1 }).resolveDispatch(
-      call,
-      ctx({
-        symbolTable,
-        localBindings: {
-          x: [
-            {
-              line: 1,
-              type: "A",
-              typeRef: {
-                form: "union",
-                members: [
-                  { form: "instance", name: "A" },
-                  { form: "instance", name: "B" },
-                ],
+    const out = edgesOf(
+      new RubyUnionDispatchResolver({ ...cfg, coneMax: 1 }).resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          localBindings: {
+            x: [
+              {
+                line: 1,
+                type: "A",
+                typeRef: {
+                  form: "union",
+                  members: [
+                    { form: "instance", name: "A" },
+                    { form: "instance", name: "B" },
+                  ],
+                },
               },
-            },
-          ],
-        },
-      }),
+            ],
+          },
+        }),
+      ),
     );
     expect(out).toEqual([]);
   });
 
   it("deduplicates targets when the same symbolId appears via multiple union members", () => {
     const symbolTable = tableWith(aFile);
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({
-        symbolTable,
-        localBindings: {
-          x: [
-            {
-              line: 1,
-              type: "A",
-              typeRef: {
-                form: "union",
-                members: [
-                  { form: "instance", name: "A" },
-                  { form: "instance", name: "A" }, // duplicate
-                ],
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          localBindings: {
+            x: [
+              {
+                line: 1,
+                type: "A",
+                typeRef: {
+                  form: "union",
+                  members: [
+                    { form: "instance", name: "A" },
+                    { form: "instance", name: "A" }, // duplicate
+                  ],
+                },
               },
-            },
-          ],
-        },
-      }),
+            ],
+          },
+        }),
+      ),
     );
     expect(out).toHaveLength(1);
     expect(out[0].targetSymbolId).toBe("A#process");

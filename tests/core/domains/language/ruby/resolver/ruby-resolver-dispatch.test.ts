@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import type {
   CallContext,
   CallRef,
+  DispatchEdge,
+  DispatchFanoutOutcome,
   HierarchyView,
   InheritanceEdge,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
@@ -31,6 +33,14 @@ const ctx = (over: Partial<CallContext> & Pick<CallContext, "symbolTable">): Cal
   imports: [],
   ...over,
 });
+
+// bd f2jsb: resolveDispatch now returns DispatchFanoutOutcome; existing
+// assertions target the edges payload, so unwrap (throwing on `ambiguous`
+// keeps the assertion strict — these fixtures never exceed the fan-out cap).
+const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
+  if (outcome.kind !== "edges") throw new Error(`expected edges outcome, got ${outcome.kind}`);
+  return outcome.edges;
+};
 
 /** Minimal HierarchyView: a flat descendants map keyed by fqName. */
 function hierarchyOf(descendants: Record<string, string[]>): HierarchyView {
@@ -63,13 +73,15 @@ describe("RubyCallResolver.resolveDispatch — cone-first, then dynamic fan-out 
       ],
     );
     const call: CallRef = { callText: "agent.check", receiver: "agent", member: "check", startLine: 1 };
-    const edges = resolver.resolveDispatch(
-      call,
-      ctx({
-        symbolTable,
-        localBindings: { agent: [{ line: 1, type: "Agent" }] },
-        hierarchy: hierarchyOf({ Agent: ["ChildA", "ChildB"] }),
-      }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          localBindings: { agent: [{ line: 1, type: "Agent" }] },
+          hierarchy: hierarchyOf({ Agent: ["ChildA", "ChildB"] }),
+        }),
+      ),
     );
     expect(edges).toHaveLength(2);
     for (const e of edges) expect(e.edgeKind).toBe("cone");
@@ -82,7 +94,7 @@ describe("RubyCallResolver.resolveDispatch — cone-first, then dynamic fan-out 
       [sym("Runner#run", "run", "app/services/runner.rb", ["Runner"])],
     ]);
     const call: CallRef = { callText: "obj.run", receiver: "obj", member: "run", startLine: 1 };
-    const edges = resolver.resolveDispatch(call, ctx({ symbolTable }));
+    const edges = edgesOf(resolver.resolveDispatch(call, ctx({ symbolTable })));
     expect(edges).toHaveLength(1);
     expect(edges[0].edgeKind).toBe("dynamic");
     expect(edges[0].targetSymbolId).toBe("Runner#run");
@@ -92,6 +104,6 @@ describe("RubyCallResolver.resolveDispatch — cone-first, then dynamic fan-out 
   it("returns [] for a constant receiver so the exact constant chain stays the default", () => {
     const symbolTable = tableWith(["app/models/user.rb", [sym("User.find", "find", "app/models/user.rb", ["User"])]]);
     const call: CallRef = { callText: "User.find", receiver: "User", member: "find", startLine: 1 };
-    expect(resolver.resolveDispatch(call, ctx({ symbolTable }))).toEqual([]);
+    expect(edgesOf(resolver.resolveDispatch(call, ctx({ symbolTable })))).toEqual([]);
   });
 });

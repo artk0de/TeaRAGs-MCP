@@ -4,6 +4,7 @@ import type {
   CallContext,
   CallRef,
   DispatchEdge,
+  DispatchFanoutOutcome,
   HierarchyView,
   InheritanceEdge,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
@@ -55,6 +56,14 @@ function hierarchyOf(descendants: Record<string, string[]>): HierarchyView {
 const sortEdges = (edges: DispatchEdge[]): DispatchEdge[] =>
   [...edges].sort((a, b) => (a.targetSymbolId ?? "").localeCompare(b.targetSymbolId ?? ""));
 
+// bd f2jsb: resolveDispatch now returns DispatchFanoutOutcome; existing
+// assertions target the edges payload, so unwrap (throwing on `ambiguous`
+// keeps the assertion strict — these fixtures never exceed the fan-out cap).
+const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
+  if (outcome.kind !== "edges") throw new Error(`expected edges outcome, got ${outcome.kind}`);
+  return outcome.edges;
+};
+
 describe("TSCallResolver.resolveDispatch — CHA cone fan-out for interface-typed receivers (k4wpn)", () => {
   const resolver = new TSCallResolver(tsOptions);
 
@@ -82,13 +91,15 @@ describe("TSCallResolver.resolveDispatch — CHA cone fan-out for interface-type
       startLine: 1,
     };
     const edges = sortEdges(
-      resolver.resolveDispatch(
-        call,
-        ctx({
-          symbolTable,
-          localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
-          hierarchy: hierarchyOf({ EmbeddingProvider: ["OllamaProvider", "JinaProvider"] }),
-        }),
+      edgesOf(
+        resolver.resolveDispatch(
+          call,
+          ctx({
+            symbolTable,
+            localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
+            hierarchy: hierarchyOf({ EmbeddingProvider: ["OllamaProvider", "JinaProvider"] }),
+          }),
+        ),
       ),
     );
     expect(edges).toEqual([
@@ -120,13 +131,15 @@ describe("TSCallResolver.resolveDispatch — CHA cone fan-out for interface-type
       member: "checkHealth",
       startLine: 1,
     };
-    const edges = resolver.resolveDispatch(
-      call,
-      ctx({
-        symbolTable,
-        localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
-        hierarchy: hierarchyOf({}),
-      }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
+          hierarchy: hierarchyOf({}),
+        }),
+      ),
     );
     expect(edges).toEqual([]);
   });
@@ -148,13 +161,15 @@ describe("TSCallResolver.resolveDispatch — CHA cone fan-out for interface-type
       member: "checkHealth",
       startLine: 1,
     };
-    const edges = resolver.resolveDispatch(
-      call,
-      ctx({
-        symbolTable,
-        localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
-        hierarchy: hierarchyOf({ EmbeddingProvider: ["OllamaProvider", "GhostProvider"] }),
-      }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
+          hierarchy: hierarchyOf({ EmbeddingProvider: ["OllamaProvider", "GhostProvider"] }),
+        }),
+      ),
     );
     expect(edges).toEqual([
       {
@@ -192,15 +207,17 @@ describe("TSCallResolver.resolveDispatch — CHA cone fan-out for interface-type
       member: "checkHealth",
       startLine: 1,
     };
-    const edges = resolver.resolveDispatch(
-      call,
-      ctx({
-        symbolTable,
-        callerFile: "src/app.ts",
-        imports: [{ importText: "./embeddings/ollama", importedNames: ["OllamaProvider"] }],
-        localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
-        hierarchy: hierarchyOf({ EmbeddingProvider: ["OllamaProvider"] }),
-      }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          callerFile: "src/app.ts",
+          imports: [{ importText: "./embeddings/ollama", importedNames: ["OllamaProvider"] }],
+          localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
+          hierarchy: hierarchyOf({ EmbeddingProvider: ["OllamaProvider"] }),
+        }),
+      ),
     );
     expect(edges).toEqual([
       {
@@ -238,14 +255,16 @@ describe("TSCallResolver.resolveDispatch — CHA cone fan-out for interface-type
       member: "checkHealth",
       startLine: 1,
     };
-    const edges = resolver.resolveDispatch(
-      call,
-      ctx({
-        symbolTable,
-        callerFile: "src/app.ts",
-        localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
-        hierarchy: hierarchyOf({ EmbeddingProvider: ["OllamaProvider"] }),
-      }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          callerFile: "src/app.ts",
+          localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
+          hierarchy: hierarchyOf({ EmbeddingProvider: ["OllamaProvider"] }),
+        }),
+      ),
     );
     expect(edges).toEqual([]);
   });
@@ -276,13 +295,15 @@ describe("TSCallResolver.resolveDispatch — CHA cone fan-out for interface-type
         member: "checkHealth",
         startLine: 1,
       };
-      const edges = coneResolver.resolveDispatch(
-        call,
-        ctx({
-          symbolTable,
-          localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
-          hierarchy: hierarchyOf({ EmbeddingProvider: ["OllamaProvider", "JinaProvider"] }),
-        }),
+      const edges = edgesOf(
+        coneResolver.resolveDispatch(
+          call,
+          ctx({
+            symbolTable,
+            localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
+            hierarchy: hierarchyOf({ EmbeddingProvider: ["OllamaProvider", "JinaProvider"] }),
+          }),
+        ),
       );
       // Default cap (8) > 2 implementers → fans out, never poly-base.
       expect(edges).toHaveLength(2);
@@ -325,13 +346,15 @@ describe("TSCallResolver.resolveDispatch — CHA cone fan-out for interface-type
         member: "checkHealth",
         startLine: 1,
       };
-      const edges = coneResolver.resolveDispatch(
-        call,
-        ctx({
-          symbolTable,
-          localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
-          hierarchy: hierarchyOf({ EmbeddingProvider: ["OllamaProvider", "JinaProvider"] }),
-        }),
+      const edges = edgesOf(
+        coneResolver.resolveDispatch(
+          call,
+          ctx({
+            symbolTable,
+            localBindings: { embeddings: [{ line: 1, type: "EmbeddingProvider" }] },
+            hierarchy: hierarchyOf({ EmbeddingProvider: ["OllamaProvider", "JinaProvider"] }),
+          }),
+        ),
       );
       expect(edges).toEqual([
         {

@@ -34,6 +34,7 @@ import {
   type CallRef,
   type CallResolver,
   type DispatchEdge,
+  type DispatchFanoutOutcome,
   type DispatchRef,
   type DispatchTable,
   type DispatchTableDef,
@@ -186,7 +187,7 @@ export class TSCallResolver implements CallResolver {
    * undefined (external never cones). The lookup-table path takes precedence so
    * the existing dispatch-table behaviour is unchanged.
    */
-  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
     const edges: DispatchEdge[] = [];
     if (call.dispatch) {
       for (const target of this.expandCandidate(call.dispatch, ctx)) {
@@ -214,10 +215,10 @@ export class TSCallResolver implements CallResolver {
         }
       }
     }
-    if (edges.length > 0) return edges;
-    const cone = this.cone.resolveDispatch(call, ctx);
-    if (cone.length > 0) return cone;
-    return edges;
+    if (edges.length > 0) return { kind: "edges", edges };
+    // The lookup-table path found nothing — the cone outcome (bounded by
+    // design, always kind "edges") is the answer either way.
+    return this.cone.resolveDispatch(call, ctx);
   }
 
   /**

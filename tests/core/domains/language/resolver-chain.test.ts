@@ -4,6 +4,7 @@ import type {
   CallContext,
   CallRef,
   DispatchEdge,
+  DispatchFanoutOutcome,
   SymbolResolutionTarget,
 } from "../../../../src/core/contracts/types/codegraph.js";
 import type {
@@ -61,7 +62,17 @@ const edge = (rel: string): DispatchEdge =>
     edgeKind: "dynamic",
     confidence: 1,
   }) as DispatchEdge;
-const component = (edges: DispatchEdge[]): DispatchResolverComponent => ({ resolveDispatch: () => edges });
+const component = (edges: DispatchEdge[]): DispatchResolverComponent => ({
+  resolveDispatch: () => ({ kind: "edges", edges }),
+});
+
+// bd f2jsb: resolveDispatch now returns DispatchFanoutOutcome; existing
+// assertions target the edges payload, so unwrap (throwing on `ambiguous`
+// keeps the assertion strict — these fixtures never exceed the fan-out cap).
+const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
+  if (outcome.kind !== "edges") throw new Error(`expected edges outcome, got ${outcome.kind}`);
+  return outcome.edges;
+};
 
 describe("resolveDispatchViaComponents", () => {
   it("returns the first non-empty component result (precedence = array order)", () => {
@@ -70,10 +81,10 @@ describe("resolveDispatchViaComponents", () => {
       call,
       ctx,
     );
-    expect(result).toEqual([edge("a.rb")]);
+    expect(edgesOf(result)).toEqual([edge("a.rb")]);
   });
 
   it("returns [] when every component is empty", () => {
-    expect(resolveDispatchViaComponents([component([]), component([])], call, ctx)).toEqual([]);
+    expect(edgesOf(resolveDispatchViaComponents([component([]), component([])], call, ctx))).toEqual([]);
   });
 });

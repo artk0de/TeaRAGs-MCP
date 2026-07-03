@@ -4,6 +4,7 @@ import type {
   CallContext,
   CallRef,
   DispatchEdge,
+  DispatchFanoutOutcome,
   HierarchySnapshot,
   HierarchyView,
   InheritanceEdge,
@@ -55,6 +56,7 @@ const ctx = (over: Partial<CallContext>): CallContext => ({
     lookupByShortName: () => [],
     size: () => 0,
     hydrate: () => {},
+    shortNameDefCounts: () => new Map(),
   },
   ...over,
 });
@@ -80,36 +82,50 @@ const baseTarget: SymbolResolutionTarget = {
 const sortEdges = (edges: DispatchEdge[]): DispatchEdge[] =>
   [...edges].sort((a, b) => (a.targetSymbolId ?? "").localeCompare(b.targetSymbolId ?? ""));
 
+// bd f2jsb: resolveDispatch now returns DispatchFanoutOutcome; existing
+// assertions target the edges payload, so unwrap (throwing on `ambiguous`
+// keeps the assertion strict — these fixtures never exceed the fan-out cap).
+const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
+  if (outcome.kind !== "edges") throw new Error(`expected edges outcome, got ${outcome.kind}`);
+  return outcome.edges;
+};
+
 describe("ConeDispatchResolver", () => {
   it("returns [] when the receiver is null (bare call never cones)", () => {
     const resolver = new ConeDispatchResolver(locatorWith({ "WebsiteAgent#check": websiteTarget }), 8);
-    const out = resolver.resolveDispatch(
-      { callText: "check", receiver: null, member: "check", startLine: 1 },
-      ctx({
-        localBindings: { agent: [{ line: 1, type: "Agent" }] },
-        hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }),
-      }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "check", receiver: null, member: "check", startLine: 1 },
+        ctx({
+          localBindings: { agent: [{ line: 1, type: "Agent" }] },
+          hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }),
+        }),
+      ),
     );
     expect(out).toEqual([]);
   });
 
   it("returns [] when the receiver has no local binding (external never cones)", () => {
     const resolver = new ConeDispatchResolver(locatorWith({ "WebsiteAgent#check": websiteTarget }), 8);
-    const out = resolver.resolveDispatch(call, ctx({ hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }));
+    const out = edgesOf(resolver.resolveDispatch(call, ctx({ hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) })));
     expect(out).toEqual([]);
   });
 
   it("returns [] when no hierarchy view is wired", () => {
     const resolver = new ConeDispatchResolver(locatorWith({ "WebsiteAgent#check": websiteTarget }), 8);
-    const out = resolver.resolveDispatch(call, ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] } }));
+    const out = edgesOf(
+      resolver.resolveDispatch(call, ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] } })),
+    );
     expect(out).toEqual([]);
   });
 
   it("returns [] when the bound type has no descendants (not polymorphic)", () => {
     const resolver = new ConeDispatchResolver(locatorWith({}), 8);
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({}) }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({ localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({}) }),
+      ),
     );
     expect(out).toEqual([]);
   });
@@ -117,12 +133,14 @@ describe("ConeDispatchResolver", () => {
   it("returns [] when descendants exist but none override the member", () => {
     // WebsiteAgent is a descendant but the locator pins no direct method for it.
     const resolver = new ConeDispatchResolver(locatorWith({}), 8);
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({
-        localBindings: { agent: [{ line: 1, type: "Agent" }] },
-        hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }),
-      }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          localBindings: { agent: [{ line: 1, type: "Agent" }] },
+          hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }),
+        }),
+      ),
     );
     expect(out).toEqual([]);
   });
@@ -133,12 +151,14 @@ describe("ConeDispatchResolver", () => {
       8,
     );
     const out = sortEdges(
-      resolver.resolveDispatch(
-        call,
-        ctx({
-          localBindings: { agent: [{ line: 1, type: "Agent" }] },
-          hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
-        }),
+      edgesOf(
+        resolver.resolveDispatch(
+          call,
+          ctx({
+            localBindings: { agent: [{ line: 1, type: "Agent" }] },
+            hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
+          }),
+        ),
       ),
     );
     expect(out).toEqual([
@@ -169,12 +189,14 @@ describe("ConeDispatchResolver", () => {
       }),
       1,
     );
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({
-        localBindings: { agent: [{ line: 1, type: "Agent" }] },
-        hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
-      }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          localBindings: { agent: [{ line: 1, type: "Agent" }] },
+          hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
+        }),
+      ),
     );
     expect(out).toEqual([
       {
@@ -197,12 +219,14 @@ describe("ConeDispatchResolver", () => {
       ),
       1,
     );
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({
-        localBindings: { agent: [{ line: 1, type: "Agent" }] },
-        hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
-      }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          localBindings: { agent: [{ line: 1, type: "Agent" }] },
+          hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
+        }),
+      ),
     );
     expect(out).toEqual([
       {
@@ -220,12 +244,14 @@ describe("ConeDispatchResolver", () => {
       locatorWith({ "WebsiteAgent#check": websiteTarget, "TwitterAgent#check": twitterTarget }),
       1,
     );
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({
-        localBindings: { agent: [{ line: 1, type: "Agent" }] },
-        hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
-      }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          localBindings: { agent: [{ line: 1, type: "Agent" }] },
+          hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
+        }),
+      ),
     );
     expect(out).toEqual([]);
   });
@@ -279,7 +305,7 @@ describe("ConeDispatchResolver — RTA prune (bd pffv)", () => {
       overriders: new Set(["A", "B", "C"]),
       instantiated: new Set(["A"]),
     });
-    const edges = new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, rtaCtx);
+    const edges = edgesOf(new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, rtaCtx));
     expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["A#m"]);
   });
 
@@ -288,13 +314,13 @@ describe("ConeDispatchResolver — RTA prune (bd pffv)", () => {
       overriders: new Set(["A", "B", "C"]),
       instantiated: new Set(["Unrelated"]),
     });
-    const edges = new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, rtaCtx);
+    const edges = edgesOf(new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, rtaCtx));
     expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["A#m", "B#m", "C#m"]);
   });
 
   it("gate: absent instantiatedTypes is byte-identical pre-pffv (full cone)", () => {
     const { ctx: rtaCtx, locator } = buildRtaCtx({ overriders: new Set(["A", "B", "C"]) });
-    const edges = new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, rtaCtx);
+    const edges = edgesOf(new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, rtaCtx));
     expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["A#m", "B#m", "C#m"]);
   });
 
@@ -307,7 +333,7 @@ describe("ConeDispatchResolver — RTA prune (bd pffv)", () => {
       overriders: new Set(["A"]),
       instantiated: new Set(["A", "B"]),
     });
-    const edges = new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, rtaCtx);
+    const edges = edgesOf(new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, rtaCtx));
     expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#m"]);
   });
 });
