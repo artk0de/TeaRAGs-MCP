@@ -2,7 +2,7 @@ import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js
 import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
-import { firstDefinerAfter, resolveInstanceMethodInClassChain, type ResolverConfig } from "./shared.js";
+import { resolveInstanceMethodInClassChain, resolveViaIncludingClasses, type ResolverConfig } from "./shared.js";
 
 /**
  * Ruby runtime hook methods whose `super` MUST NOT produce a file-only fallback
@@ -88,7 +88,7 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
       // consensus path can still resolve if every including class agrees on the
       // same definer after the module in their MRO (bd cai0/2oky5).
       if (!RUBY_RUNTIME_HOOKS.has(member)) {
-        const consensus = this.resolveViaIncludingClasses(enclosingClass, member, ctx);
+        const consensus = resolveViaIncludingClasses(enclosingClass, member, ctx, this.cfg.mode);
         if (consensus) return consensus;
       }
       return null;
@@ -115,42 +115,10 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
     // across all of them (consensus → precision 1.0; disagreement → drop).
     // bd cai0/2oky5.
     if (fileOnlyFallback === null && !RUBY_RUNTIME_HOOKS.has(member)) {
-      const consensus = this.resolveViaIncludingClasses(enclosingClass, member, ctx);
+      const consensus = resolveViaIncludingClasses(enclosingClass, member, ctx, this.cfg.mode);
       if (consensus) return consensus;
     }
     if (fileOnlyFallback !== null && RUBY_RUNTIME_HOOKS.has(member)) return null;
     return fileOnlyFallback;
-  }
-
-  /**
-   * Reverse-consensus resolution for `super` inside a MODULE method (bd cai0/2oky5).
-   * For each class C that includes/prepends `moduleName`, find the first definer
-   * of `member` AFTER `moduleName` in C's MRO. Emit an edge ONLY when every
-   * including class agrees on the same target (precision 1.0); disagreement or an
-   * empty set DROPs (returns null). Targets agree iff their `targetSymbolId` is
-   * equal, or both are file-only with the same `targetRelPath`.
-   */
-  private resolveViaIncludingClasses(
-    moduleName: string,
-    member: string,
-    ctx: CallContext,
-  ): SymbolResolutionTarget | null {
-    const including = ctx.includedBy?.[moduleName];
-    if (!including || including.length === 0) return null;
-    let agreed: SymbolResolutionTarget | null = null;
-    for (const klass of including) {
-      const t = firstDefinerAfter(moduleName, member, klass, ctx, this.cfg.mode);
-      if (t === null) continue;
-      if (agreed === null) {
-        agreed = t;
-        continue;
-      }
-      const same =
-        agreed.targetSymbolId !== null || t.targetSymbolId !== null
-          ? agreed.targetSymbolId === t.targetSymbolId
-          : agreed.targetRelPath === t.targetRelPath;
-      if (!same) return null; // including classes disagree → DROP (GUARD)
-    }
-    return agreed;
   }
 }

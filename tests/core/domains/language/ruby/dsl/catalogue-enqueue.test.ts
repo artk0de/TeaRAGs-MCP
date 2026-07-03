@@ -4,7 +4,9 @@ import { enqueueEntrypoint } from "../../../../../../src/core/domains/language/r
 
 describe("composed enqueue dispatch", () => {
   it("routes Sidekiq verbs (gem-owned) to #perform", () => {
-    for (const v of ["perform_async", "perform_in", "perform_at", "perform_bulk"]) {
+    // `push_bulk` is the batch-enqueue class method (`Worker.push_bulk(coll) { … }`,
+    // 49 call-sites in bench-mastodon) — same entrypoint as perform_async (bd tea-rags-mcp-3jf9l).
+    for (const v of ["perform_async", "perform_in", "perform_at", "perform_bulk", "push_bulk"]) {
       expect(enqueueEntrypoint(v)).toBe("perform");
     }
   });

@@ -557,6 +557,132 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
     });
   });
 
+  it("class-body chunk: anchors the MRO on callerSymbolId when callerScope omits the class name (bd lawlq.3.2)", () => {
+    // A class-body callback edge (`before_action :set_items`) is assigned to the
+    // CLASS chunk, whose `scope` EXCLUDES its own name (convention) — so
+    // callerScope=[] for a top-level class. callerSymbolId carries the full FQ;
+    // anchor the MRO on it so the same-class def wins over a sibling namesake.
+    const symbolTable = tableWith(
+      [
+        "app/controllers/collections_controller.rb",
+        [
+          sym("CollectionsController#set_items", "set_items", "app/controllers/collections_controller.rb", [
+            "CollectionsController",
+          ]),
+        ],
+      ],
+      [
+        "app/controllers/contexts_controller.rb",
+        [
+          sym("ContextsController#set_items", "set_items", "app/controllers/contexts_controller.rb", [
+            "ContextsController",
+          ]),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "set_items", receiver: null, member: "set_items", startLine: 1 },
+      ctx({ symbolTable, callerScope: [], callerSymbolId: "CollectionsController" }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "app/controllers/collections_controller.rb",
+        targetSymbolId: "CollectionsController#set_items",
+      },
+    });
+  });
+
+  it("class-body chunk: climbs the MRO from callerSymbolId to an inherited method (bd lawlq.3.2)", () => {
+    const symbolTable = tableWith(
+      [
+        "app/controllers/application_controller.rb",
+        [
+          sym(
+            "ApplicationController#require_functional!",
+            "require_functional!",
+            "app/controllers/application_controller.rb",
+            ["ApplicationController"],
+          ),
+        ],
+      ],
+      [
+        "app/controllers/statuses_cleanup_controller.rb",
+        [
+          sym(
+            "StatusesCleanupController#require_functional!",
+            "require_functional!",
+            "app/controllers/statuses_cleanup_controller.rb",
+            ["StatusesCleanupController"],
+          ),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "require_functional!", receiver: null, member: "require_functional!", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerScope: [],
+        callerSymbolId: "AboutController",
+        classAncestors: { AboutController: ["ApplicationController"] },
+      }),
+    );
+    expect(outcome.kind === "resolved" && outcome.target.targetSymbolId).toBe(
+      "ApplicationController#require_functional!",
+    );
+  });
+
+  it("class-body chunk: MRO narrowing excludes unrelated same-name defs (precision, bd lawlq.3.2)", () => {
+    const symbolTable = tableWith(
+      [
+        "app/controllers/concerns/localized.rb",
+        [sym("Localized#set_locale", "set_locale", "app/controllers/concerns/localized.rb", ["Localized"])],
+      ],
+      [
+        "app/mailers/admin_mailer.rb",
+        [sym("AdminMailer#set_locale", "set_locale", "app/mailers/admin_mailer.rb", ["AdminMailer"])],
+      ],
+      [
+        "app/mailers/notification_mailer.rb",
+        [
+          sym("NotificationMailer#set_locale", "set_locale", "app/mailers/notification_mailer.rb", [
+            "NotificationMailer",
+          ]),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "set_locale", receiver: null, member: "set_locale", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerScope: [],
+        callerSymbolId: "AccountsController",
+        classAncestors: { AccountsController: ["ApplicationController"], ApplicationController: ["Localized"] },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/controllers/concerns/localized.rb", targetSymbolId: "Localized#set_locale" },
+    });
+  });
+
+  it("method-body chunk (symbolId has `#`) still anchors on callerScope, not callerSymbolId (no regression)", () => {
+    // A method chunk's symbolId is `Class#method`; its callerScope already
+    // carries the full class path. callerSymbolId MUST be ignored here (`#`).
+    const symbolTable = tableWith(
+      ["app/a.rb", [sym("A#helper", "helper", "app/a.rb", ["A"])]],
+      ["app/b.rb", [sym("B#helper", "helper", "app/b.rb", ["B"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "helper", receiver: null, member: "helper", startLine: 1 },
+      ctx({ symbolTable, callerScope: ["A"], callerSymbolId: "A#show" }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/a.rb", targetSymbolId: "A#helper" },
+    });
+  });
+
   it("continues (strict) when the short-name is ambiguous and not narrowable", () => {
     const symbolTable = tableWith(
       ["app/a.rb", [sym("A#helper", "helper", "app/a.rb", ["A"])]],
@@ -570,6 +696,221 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
     const symbolTable = tableWith(["lib/other.rb", [sym("other", "other", "lib/other.rb", [])]]);
     const outcome = strat.attempt(call, ctx({ symbolTable }));
     expect(outcome.kind).toBe("continue");
+  });
+
+  it("FQ-canonicalizes each ancestor hop so a deep DSL-mixin chain resolves the method (bd lawlq.3.4)", () => {
+    // graphql-ruby `field` shape: classAncestors is keyed by FQ but stores RAW
+    // ancestor text (`class DirectiveType < Introspection::BaseObject`). The
+    // bareCall MRO must canonicalize each hop to its FQ via Ruby nesting, else
+    // the chain dead-ends after ONE hop and `field` (defined 3 hops up on the
+    // HasFields mixin) never resolves — the dominant graphql helperModule miss.
+    const HAS = "lib/graphql/schema/member/has_fields.rb";
+    const OBJ = "lib/graphql/schema/object.rb";
+    const BASE = "lib/graphql/introspection/base_object.rb";
+    const DIR = "lib/graphql/introspection/directive_type.rb";
+    const symbolTable = tableWith(
+      [
+        HAS,
+        [
+          sym("GraphQL::Schema::Member::HasFields", "HasFields", HAS, ["GraphQL", "Schema", "Member"]),
+          sym("GraphQL::Schema::Member::HasFields#field", "field", HAS, ["GraphQL", "Schema", "Member", "HasFields"]),
+        ],
+      ],
+      [OBJ, [sym("GraphQL::Schema::Object", "Object", OBJ, ["GraphQL", "Schema"])]],
+      [BASE, [sym("GraphQL::Introspection::BaseObject", "BaseObject", BASE, ["GraphQL", "Introspection"])]],
+      [DIR, [sym("GraphQL::Introspection::DirectiveType", "DirectiveType", DIR, ["GraphQL", "Introspection"])]],
+      // Unrelated same-name def forces ambiguity (else a unique `field` resolves trivially).
+      ["app/widgets/widget.rb", [sym("Widget#field", "field", "app/widgets/widget.rb", ["Widget"])]],
+    );
+    const classAncestors: Record<string, string[]> = {
+      "GraphQL::Introspection::DirectiveType": ["Introspection::BaseObject"], // raw, non-FQ superclass text
+      "GraphQL::Introspection::BaseObject": ["GraphQL::Schema::Object"],
+      "GraphQL::Schema::Object": ["GraphQL::Schema::Member::HasFields"], // extend
+    };
+    const outcome = strat.attempt(
+      { callText: "field", receiver: null, member: "field", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerScope: ["GraphQL", "Introspection"],
+        callerSymbolId: "GraphQL::Introspection::DirectiveType",
+        classAncestors,
+      }),
+    );
+    expect(outcome.kind === "resolved" && outcome.target.targetSymbolId).toBe(
+      "GraphQL::Schema::Member::HasFields#field",
+    );
+  });
+
+  it("exact-FQ tier prefers a namespaced self-def over a same-last-segment top-level namesake (bd lawlq.3.5)", () => {
+    // `Admin::InvitesController#resource_params` and top-level
+    // `InvitesController#resource_params` share the last scope segment
+    // "InvitesController". The tail-only compare matched BOTH at the enclosing
+    // level → strict-continue. The exact-FQ tier (`scope.join("::") === klass`)
+    // picks the literal same-class def.
+    const symbolTable = tableWith(
+      [
+        "app/controllers/admin/invites_controller.rb",
+        [
+          sym(
+            "Admin::InvitesController#resource_params",
+            "resource_params",
+            "app/controllers/admin/invites_controller.rb",
+            ["Admin::InvitesController"],
+          ),
+        ],
+      ],
+      [
+        "app/controllers/invites_controller.rb",
+        [
+          sym("InvitesController#resource_params", "resource_params", "app/controllers/invites_controller.rb", [
+            "InvitesController",
+          ]),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "resource_params", receiver: null, member: "resource_params", startLine: 1 },
+      ctx({ symbolTable, callerScope: ["Admin", "InvitesController"] }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "app/controllers/admin/invites_controller.rb",
+        targetSymbolId: "Admin::InvitesController#resource_params",
+      },
+    });
+  });
+
+  it("resolves a concern-module self-send via includedBy consensus (bd lawlq.3.2 facet-2)", () => {
+    // `module AccountOwnedConcern; def check; not_found; end; end` — `not_found`
+    // is not on the module's own MRO; it is INHERITED by every including class
+    // from a shared ancestor. Resolve via the classes that include the module,
+    // taking the target invariant across them (consensus).
+    const APP = "app/controllers/application_controller.rb";
+    const symbolTable = tableWith(
+      [
+        APP,
+        [
+          sym("ApplicationController", "ApplicationController", APP, []),
+          sym("ApplicationController#not_found", "not_found", APP, ["ApplicationController"]),
+        ],
+      ],
+      // Unrelated namesake forces ambiguity so the class-MRO walk cannot pick it.
+      ["app/models/widget.rb", [sym("Widget#not_found", "not_found", "app/models/widget.rb", ["Widget"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "not_found", receiver: null, member: "not_found", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerScope: [],
+        callerSymbolId: "AccountOwnedConcern",
+        classAncestors: { FooController: ["AccountOwnedConcern", "ApplicationController"] },
+        includedBy: { AccountOwnedConcern: ["FooController"] },
+      }),
+    );
+    expect(outcome.kind === "resolved" && outcome.target.targetSymbolId).toBe("ApplicationController#not_found");
+  });
+
+  it("does NOT prefix-walk a COMPACT-declared class's raw ancestor to a wrong in-project FQ (bd lawlq.3.7)", () => {
+    // `class Api::V2::UsersController < BaseController` (COMPACT) has Ruby nesting
+    // [Api::V2::UsersController] only — bare `BaseController` resolves at TOP level
+    // (an external gem here), NEVER `Api::BaseController`. Without the compact gate
+    // canonicalizeAncestorFq prefix-walks to the unique in-project `Api::BaseController`
+    // and fabricates an `authorize!` mixin edge.
+    const symbolTable = tableWith(
+      [
+        "app/controllers/api/base_controller.rb",
+        [
+          sym("Api::BaseController#authorize!", "authorize!", "app/controllers/api/base_controller.rb", [
+            "Api",
+            "BaseController",
+          ]),
+        ],
+      ],
+      ["app/models/widget.rb", [sym("Widget#authorize!", "authorize!", "app/models/widget.rb", ["Widget"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "authorize!", receiver: null, member: "authorize!", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerScope: [],
+        callerSymbolId: "Api::V2::UsersController",
+        classAncestors: { "Api::V2::UsersController": ["BaseController"] },
+        compactDeclaredClasses: new Set(["Api::V2::UsersController"]),
+      }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("does NOT fabricate a cross-namespace edge from a bare top-level class to a namespaced namesake (bd lawlq.3.7)", () => {
+    // Top-level `class NotificationsController` self-sends `set_notification`
+    // which it does NOT own. A namespaced namesake Api::NotificationsController
+    // (nested scope form) DOES define it. A bare top-level class must NEVER
+    // dispatch into Api::NotificationsController — the tail/last-segment match
+    // fabricated this edge (M1 feeds the bare FQ, M4 tail disjunct matched it).
+    const symbolTable = tableWith(
+      [
+        "app/controllers/api/notifications_controller.rb",
+        [
+          sym(
+            "Api::NotificationsController#set_notification",
+            "set_notification",
+            "app/controllers/api/notifications_controller.rb",
+            ["Api", "NotificationsController"],
+          ),
+        ],
+      ],
+      [
+        "app/models/audit_log.rb",
+        [sym("AuditLog#set_notification", "set_notification", "app/models/audit_log.rb", ["AuditLog"])],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "set_notification", receiver: null, member: "set_notification", startLine: 1 },
+      ctx({ symbolTable, callerScope: [], callerSymbolId: "NotificationsController" }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("resolves a bare top-level class self-send to its OWN def over a namespaced namesake (bd lawlq.3.7)", () => {
+    // Corollary: the namesake pollution must not SUPPRESS the correct own-class
+    // edge either. Top-level NotificationsController owns set_notification and a
+    // namespaced namesake also defines it → resolve to the OWN def.
+    const symbolTable = tableWith(
+      [
+        "app/controllers/notifications_controller.rb",
+        [
+          sym(
+            "NotificationsController#set_notification",
+            "set_notification",
+            "app/controllers/notifications_controller.rb",
+            ["NotificationsController"],
+          ),
+        ],
+      ],
+      [
+        "app/controllers/api/notifications_controller.rb",
+        [
+          sym(
+            "Api::NotificationsController#set_notification",
+            "set_notification",
+            "app/controllers/api/notifications_controller.rb",
+            ["Api", "NotificationsController"],
+          ),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(
+      { callText: "set_notification", receiver: null, member: "set_notification", startLine: 1 },
+      ctx({ symbolTable, callerScope: [], callerSymbolId: "NotificationsController" }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "app/controllers/notifications_controller.rb",
+        targetSymbolId: "NotificationsController#set_notification",
+      },
+    });
   });
 
   it("resolves an ambiguous short-name to the SUPERCLASS method via the MRO chain (brp1)", () => {

@@ -267,6 +267,14 @@ export interface FileExtraction {
    */
   classAncestors?: Record<string, readonly string[]>;
   /**
+   * FQs declared in COMPACT form (`class A::B::C`), whose intermediate
+   * namespaces are NOT open lexical scopes. Consumed by the Ruby ancestor-FQ
+   * canonicalization so a compact class's raw ancestor is not prefix-walked
+   * through a namespace it never opened (bd lawlq.3.7). Array (not Set) for
+   * NDJSON-spill round-trip.
+   */
+  compactDeclaredClasses?: readonly string[];
+  /**
    * Optional per-class superclass map for languages with single inheritance
    * via an `extends` clause (TypeScript / JavaScript / Java). Keyed by the
    * fully-qualified class name (`Outer.Inner` for nested classes); value is
@@ -783,6 +791,16 @@ export function pickSingleCandidate<T>(candidates: readonly T[], mode: Ambiguous
 export interface CallContext {
   callerFile: RelPath;
   callerScope: string[];
+  /**
+   * The caller chunk's own symbolId. For a CLASS/MODULE-body chunk this is the
+   * class FQ (`Ns::Klass` — `::` namespace only, no `#`/`.`), which `callerScope`
+   * OMITS by convention (a class chunk's scope excludes its own name, and is
+   * empty for a top-level class). bareCall MRO narrowing anchors on this for
+   * class-body edges (callbacks/associations) that `callerScope` cannot pin. A
+   * method chunk's symbolId carries `#`/`.` and is ignored — `callerScope` (the
+   * full class path) wins there. Set by the provider per-call from `chunk.symbolId`.
+   */
+  callerSymbolId?: string;
   /** May be empty for autoload-based languages (Ruby/Rails). */
   imports: ImportRef[];
   symbolTable: GlobalSymbolTable;
@@ -845,6 +863,13 @@ export interface CallContext {
    * Plain Record (NOT Map) for NDJSON-spill round-trip.
    */
   classAncestors?: Record<string, readonly string[]>;
+  /**
+   * FQs declared in COMPACT form (`class A::B::C`) — the intermediate namespaces
+   * are not open lexical scopes. Read by `canonicalizeAncestorFq` to skip the
+   * nesting prefix-walk for these classes (bd lawlq.3.7). Set (fast membership),
+   * built by the provider from `FileExtraction.compactDeclaredClasses`.
+   */
+  compactDeclaredClasses?: ReadonlySet<string>;
   /**
    * Optional `className → parentClass` map propagated from
    * `FileExtraction.classExtends`. Resolvers walk this on `super()` /

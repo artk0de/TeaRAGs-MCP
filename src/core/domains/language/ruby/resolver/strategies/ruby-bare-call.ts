@@ -2,9 +2,10 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import {
-  collectAncestorChain,
+  collectResolvedAncestorChain,
   isRubyPath,
   lastConstantSegment,
+  resolveViaIncludingClasses,
   symbolIdIsInstanceMethod,
   type ResolverConfig,
 } from "./shared.js";
@@ -38,9 +39,25 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
     // methods on a superclass / mixin (brp1: an ambiguous bare call whose true
     // target is an INHERITED method was previously dropped). Mirrors the Java
     // scope-filtered fallback (java-resolver.ts:50-54), generalized to the MRO.
-    if (fallback.length > 1 && ctx.callerScope.length > 0) {
-      const enclosing = ctx.callerScope.join("::");
-      const mro = [enclosing, ...collectAncestorChain(enclosing, ctx)];
+    // Anchor the MRO walk on the enclosing class. For a CLASS/MODULE-body chunk
+    // (a callback / association edge assigned to the class chunk), `callerScope`
+    // OMITS the class's own name by convention — and is EMPTY for a top-level
+    // class — so it cannot pin the enclosing class, and every ambiguous class-body
+    // self-send silently strict-continues (bd lawlq.3.2, the dominant bareCall
+    // miss bucket). `callerSymbolId` carries the full FQ; a class/module chunk's
+    // id has no `#`/`.` (only `::` namespace), a method chunk's does — so a method
+    // body keeps `callerScope` (already the full class path, correct today).
+    const classBodyEnclosing =
+      ctx.callerSymbolId !== undefined && !ctx.callerSymbolId.includes("#") && !ctx.callerSymbolId.includes(".")
+        ? ctx.callerSymbolId
+        : null;
+    const enclosing = classBodyEnclosing ?? (ctx.callerScope.length > 0 ? ctx.callerScope.join("::") : null);
+    if (fallback.length > 1 && enclosing !== null) {
+      // Per-hop FQ canonicalization (bd lawlq.3.4): `classAncestors` VALUES are
+      // raw source text, so a mixin chain whose hops are namespaced would
+      // dead-end under a raw-string walk before reaching the DSL-method owner.
+      const mro = [enclosing, ...collectResolvedAncestorChain(enclosing, ctx)];
+      let brokeAmbiguous = false;
       for (const klass of mro) {
         // Match a candidate's enclosing-scope tail against the MRO class in
         // EITHER stored form: the compact FQ (`["Api::BaseController"]`) or the
@@ -51,16 +68,47 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
         // class / concern (cai0/n2kpz). Mirrors the scope-tail check in
         // shared.ts `resolveTypeMethodInternal`.
         const short = lastConstantSegment(klass);
-        const atLevel = fallback.filter((def) => {
-          const tail = def.scope[def.scope.length - 1];
-          return tail === klass || tail === short;
-        });
-        if (atLevel.length === 1) {
-          return resolved({ targetRelPath: atLevel[0].relPath, targetSymbolId: atLevel[0].symbolId });
+        // Exact-FQ tier first (bd tea-rags-mcp-lawlq.3.5): a candidate whose FULL
+        // scope joins to `klass` is the literal same-class def. `scope.join("::")`
+        // normalizes both stored forms (compact-FQ `["Admin::InvitesController"]`
+        // and nested `["Admin","InvitesController"]`), so a namespaced self-def is
+        // no longer conflated with a same-last-segment top-level namesake
+        // (`Admin::InvitesController#resource_params` vs `InvitesController#…`),
+        // which the tail-only compare matched together → strict-continue.
+        // Exact-FQ tier: candidate's FULL scope equals klass. `join("::")`
+        // normalizes compact (`["Admin::X"]`) and nested (`["Admin","X"]`) forms.
+        // NO last-segment disjunct — a BARE klass "X" (which M1 now feeds for a
+        // top-level class-body chunk) must NOT pull a namespaced namesake
+        // `["Api","X"]` into the exact tier (bd lawlq.3.7 false-edge fix).
+        const exactTier = fallback.filter((def) => def.scope.join("::") === klass);
+        if (exactTier.length === 1) {
+          return resolved({ targetRelPath: exactTier[0].relPath, targetSymbolId: exactTier[0].symbolId });
         }
-        // Genuinely ambiguous within one class — do NOT guess; fall through to
-        // pickSingleCandidate (which CONTINUEs in strict mode).
-        if (atLevel.length > 1) break;
+        if (exactTier.length > 1) {
+          brokeAmbiguous = true;
+          break; // ambiguous inside the exact class — do NOT guess
+        }
+        // Loose tier — the walker stored the def's class WITHOUT its namespace
+        // (`["X"]` for `Agents::X`): the candidate's ENTIRE scope equals klass's
+        // last segment. `join("::") === short` (not `tail === short`) so a
+        // namespaced namesake (`["Api","X"]`, join `"Api::X"`) is excluded.
+        const looseTier = fallback.filter((def) => def.scope.join("::") === short);
+        if (looseTier.length === 1) {
+          return resolved({ targetRelPath: looseTier[0].relPath, targetSymbolId: looseTier[0].symbolId });
+        }
+        if (looseTier.length > 1) {
+          brokeAmbiguous = true;
+          break;
+        }
+      }
+      // Concern-scope fallback (bd lawlq.3.2 facet-2): the class-MRO missed and the
+      // enclosing is a MODULE (concern) whose own MRO does not define `member`.
+      // Resolve via the classes that include the module, taking the target that is
+      // invariant across all of them (consensus → precision 1.0). Skipped after an
+      // ambiguous break — that is a genuine same-class collision, not a miss.
+      if (!brokeAmbiguous && ctx.includedBy?.[enclosing]?.length) {
+        const consensus = resolveViaIncludingClasses(enclosing, call.member, ctx, this.cfg.mode);
+        if (consensus) return resolved(consensus);
       }
     }
     // RC-1 (tea-rags-mcp-55xil): cross-FORM preference — before falling through

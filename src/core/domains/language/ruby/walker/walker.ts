@@ -89,6 +89,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     ancestors: ancestorMap,
     prepended: prependedMap,
     extends: extendsMap,
+    compact: compactClassSet,
   } = collectRubyClassAncestors(input.tree.rootNode);
   const dispatchTables = collectRubyDispatchTables(input.tree.rootNode);
   const dispatchTableNames = new Set(Object.keys(dispatchTables));
@@ -165,6 +166,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     for (const [k, v] of ancestorMap) ancestorRecord[k] = v;
     out.classAncestors = ancestorRecord;
   }
+  if (compactClassSet.size > 0) out.compactDeclaredClasses = [...compactClassSet];
   if (prependedMap.size > 0) {
     const prependedRecord: Record<string, readonly string[]> = {};
     for (const [k, v] of prependedMap) prependedRecord[k] = v;
@@ -321,10 +323,15 @@ function collectRubyClassAncestors(root: AstNode): {
   ancestors: Map<string, string[]>;
   prepended: Map<string, string[]>;
   extends: Map<string, string>;
+  compact: Set<string>;
 } {
   const out = new Map<string, string[]>();
   const prependedOut = new Map<string, string[]>();
   const extendsOut = new Map<string, string>();
+  // FQs declared in COMPACT form (`class A::B::C`): their intermediate namespaces
+  // (A, A::B) are NOT open lexical scopes, so a raw ancestor must NOT be
+  // prefix-walked through them (bd lawlq.3.7). Consumed by canonicalizeAncestorFq.
+  const compactOut = new Set<string>();
   const walkScope = (node: AstNode, scope: string[]): void => {
     if (node.type === "class" || node.type === "module") {
       const nameNode = node.childForFieldName("name");
@@ -334,6 +341,7 @@ function collectRubyClassAncestors(root: AstNode): {
       }
       const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
       const fq = scope.length === 0 ? localName : `${scope.join("::")}::${localName}`;
+      if (nameNode.type === "scope_resolution") compactOut.add(fq); // compact `class A::B::C`
       const ancestors: string[] = [];
       const prepended: string[] = [];
       // Direct superclass — tree-sitter-ruby wraps `< Bar` in a `superclass`
@@ -395,7 +403,7 @@ function collectRubyClassAncestors(root: AstNode): {
     for (const child of node.children) walkScope(child, scope);
   };
   walkScope(root, []);
-  return { ancestors: out, prepended: prependedOut, extends: extendsOut };
+  return { ancestors: out, prepended: prependedOut, extends: extendsOut, compact: compactOut };
 }
 
 const RUBY_MIXIN_METHODS = new Set(["include", "extend", "prepend"]);
@@ -1582,6 +1590,9 @@ function isBareIdentifierCallSite(id: AstNode): boolean {
   }
   // Assignment LHS introduces a local. RHS identifier IS a call site.
   if (parent.type === "assignment" && parent.childForFieldName("left") === id) return false;
+  // `*rest` splat target in a multiple-assignment LHS — the identifier sits under
+  // a `rest_assignment`; it is a binding, not a call (bd lawlq.3.7).
+  if (parent.type === "rest_assignment") return false;
   // `prs[:k]` — element_reference's "object" position is the bound local
   // being indexed, not a call. Skip regardless of fieldName (the grammar
   // sometimes omits an explicit object field on this node).
@@ -1638,9 +1649,23 @@ function collectMethodLocalBindings(methodNode: AstNode): Set<string> {
     if (node.type === "assignment") {
       const lhs = node.childForFieldName("left");
       if (lhs?.type === "identifier") out.add(lhs.text);
+      // `a, b = x` — multiple assignment: the LHS is a `left_assignment_list`
+      // of targets. Only bare `identifier` children bind a fresh local; an
+      // `element_reference` (`h[k]`) or `call` (`obj.attr =`) target reuses an
+      // existing binding, so it is skipped (bd lawlq.3.1).
+      if (lhs?.type === "left_assignment_list") {
+        for (const target of lhs.namedChildren) {
+          if (target.type === "identifier") out.add(target.text);
+          // `*rest` splat target — a `rest_assignment` wraps the bound identifier;
+          // it is a fresh local, not a call site (bd lawlq.3.7).
+          else if (target.type === "rest_assignment") {
+            const inner = target.namedChildren.find((c) => c.type === "identifier");
+            if (inner) out.add(inner.text);
+          }
+        }
+      }
       // `prs[:k] = v` — element_reference LHS doesn't bind a new local
-      // (prs was already bound earlier), so no add here. But `a, b = x`
-      // tuple assignment isn't handled — out of scope per spec.
+      // (prs was already bound earlier), so no add here.
     }
     if (node.type === "exception_variable") {
       const inner = node.namedChildren[0];
@@ -1668,6 +1693,13 @@ function collectMethodLocalBindings(methodNode: AstNode): Set<string> {
 function collectParamName(node: AstNode, out: Set<string>): void {
   if (node.type === "identifier") {
     out.add(node.text);
+    return;
+  }
+  // Destructured block param `|(a, b)|` — a `destructured_parameter` wraps the
+  // bound names (possibly nested `|(a, (b, c))|`). Each is a block-local, not a
+  // call site (bd lawlq.3.1).
+  if (node.type === "destructured_parameter") {
+    for (const child of node.namedChildren) collectParamName(child, out);
     return;
   }
   if (

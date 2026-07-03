@@ -1368,6 +1368,57 @@ describe("extractFromRubyFile — bare identifier method calls (bd hbie)", () =>
     expect(r.chunks[0].calls.find((c) => c.receiver === null && c.member === "x")).toBeUndefined();
   });
 
+  it("does NOT emit CallRefs for multiple-assignment lvalues (`a, b = expr`)", () => {
+    // `account_id, status_id = params[:id].split('-')` binds TWO locals via a
+    // `left_assignment_list`. Both are lvalue declarations, not call sites —
+    // the parser mis-emitted them as bareCalls (bd lawlq.3.1, ~53 mastodon FP).
+    const src = "def f\n  account_id, status_id = params[:id].split('-')\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].calls.find((c) => c.receiver === null && c.member === "account_id")).toBeUndefined();
+    expect(r.chunks[0].calls.find((c) => c.receiver === null && c.member === "status_id")).toBeUndefined();
+  });
+
+  it("does NOT emit CallRefs for destructured block params (`|(a, b)|`)", () => {
+    // `xs.map { |(name, count)| name }` — a `destructured_parameter` binds
+    // `name`/`count` as block locals; the bare `name` read in the body is a
+    // local, not a call (bd lawlq.3.1, ~19 mastodon FP).
+    const src = "def f\n  xs.map { |(name, count)| name }\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].calls.find((c) => c.receiver === null && c.member === "name")).toBeUndefined();
+    expect(r.chunks[0].calls.find((c) => c.receiver === null && c.member === "count")).toBeUndefined();
+  });
+
+  it("does NOT emit CallRefs for a splat multiple-assignment lvalue (`first, *rest = ...`)", () => {
+    // `*rest` is a `rest_assignment` node wrapping the identifier, NOT a bare
+    // identifier child of left_assignment_list — it is a fresh local binding and
+    // must be suppressed at the splat site AND at later reads (bd lawlq.3.7).
+    const src = "def f\n  first, *rest = args\n  rest\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: [], startLine: 1, endLine: 4 }],
+    });
+    expect(r.chunks[0].calls.find((c) => c.receiver === null && c.member === "first")).toBeUndefined();
+    expect(r.chunks[0].calls.find((c) => c.receiver === null && c.member === "rest")).toBeUndefined();
+  });
+
   it("does NOT emit a CallRef for keywords self / nil / true / false", () => {
     // tree-sitter-ruby parses these as distinct node types — they should
     // never surface as identifier-driven bare calls.
