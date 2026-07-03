@@ -1,6 +1,7 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
-import { RUBY_INSTANCE_RETURNING, RUBY_RELATION_RETURNING } from "../../dsl/index.js";
+import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../../dsl/index.js";
+import { catalogueForGemfile } from "../../gemfile.js";
 import {
   CONTAINER_BLOCK_ITERATION_METHODS,
   CONTAINER_ELEMENT_RETURNING_METHODS,
@@ -26,26 +27,26 @@ export const RUBY_BLOCK_ITERATOR_METHODS = CONTAINER_BLOCK_ITERATION_METHODS;
  * `YARD_CONST` receiver through only {@link RUBY_RELATION_RETURNING}; null
  * for any non-relation link (no guessing).
  */
-function relationRootConst(node: AstNode): string | null {
+function relationRootConst(node: AstNode, catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE): string | null {
   const asConst =
     node.type === "scope_resolution" ? readScopeResolution(node) : node.type === "constant" ? node.text : null;
   if (asConst && YARD_CONST.test(asConst)) return asConst;
   if (node.type !== "call" && node.type !== "method_call") return null;
   const recv = node.childForFieldName("receiver");
   const method = node.childForFieldName("method");
-  if (!recv || !method || !RUBY_RELATION_RETURNING.has(method.text)) return null;
-  return relationRootConst(recv);
+  if (!recv || !method || !catalogue.relationReturning.has(method.text)) return null;
+  return relationRootConst(recv, catalogue);
 }
 
 /** A call chain that is STILL a relation (no terminal instanceReturning verb):
  *  `Post.where(...)`, `Post.where(...).order(...)`. Returns the root constant —
  *  the relation's ELEMENT type — or null. Identifier-rooted chains return null
  *  (no guessing; the root type is unknown at walk time). */
-export function relationElementConst(node: AstNode): string | null {
+export function relationElementConst(node: AstNode, catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE): string | null {
   if (node.type !== "call" && node.type !== "method_call") return null;
   const method = node.childForFieldName("method");
-  if (!method || !RUBY_RELATION_RETURNING.has(method.text)) return null;
-  return relationRootConst(node);
+  if (!method || !catalogue.relationReturning.has(method.text)) return null;
+  return relationRootConst(node, catalogue);
 }
 
 /**
@@ -57,18 +58,18 @@ export function relationElementConst(node: AstNode): string | null {
  * otherwise null (bare factory calls, bare Relation chains, non-constant
  * receivers — never guessed).
  */
-export function constInstanceType(node: AstNode): string | null {
+export function constInstanceType(node: AstNode, catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE): string | null {
   if (node.type !== "call" && node.type !== "method_call") return null;
   const receiver = node.childForFieldName("receiver");
   const method = node.childForFieldName("method");
   if (!receiver || !method) return null;
   const methodName = method.text;
-  if (!RUBY_INSTANCE_RETURNING.has(methodName)) return null;
+  if (!catalogue.instanceReturning.has(methodName)) return null;
   const receiverText = receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
   // Direct `ClassName.new` / `ClassName.find` — receiver is the constant itself.
   if (YARD_CONST.test(receiverText)) return receiverText;
   // B2 relation tail `Const.where(...).first` — receiver is a relation chain.
-  return relationRootConst(receiver);
+  return relationRootConst(receiver, catalogue);
 }
 
 /** `lhs ||= rhs` is the only operator assignment that BINDS a type: the
@@ -91,7 +92,10 @@ export function isOrAssignment(node: AstNode): boolean {
  * inheritance edge builder writes for the same nesting (pffv Task 5). Top-level
  * sites are unchanged (`"Cat"` at top level → `"Cat"`).
  */
-export function collectRubyInstantiatedTypes(root: AstNode): string[] {
+export function collectRubyInstantiatedTypes(
+  root: AstNode,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): string[] {
   const seen = new Set<string>();
   const walkScope = (node: AstNode, scope: string[]): void => {
     if (node.type === "class" || node.type === "module") {
@@ -107,7 +111,7 @@ export function collectRubyInstantiatedTypes(root: AstNode): string[] {
       return;
     }
     if (node.type === "call" || node.type === "method_call") {
-      const constText = constInstanceType(node);
+      const constText = constInstanceType(node, catalogue);
       if (constText) seen.add(lexicalScopeFqName(scope, constText));
     }
     for (const child of node.children) walkScope(child, scope);
@@ -169,6 +173,10 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
   name: "ast",
   extract(input: RubyExtractInput): RubyTypeFact[] {
     const facts: RubyTypeFact[] = [];
+    // Gem-gated type-source grammar (adx5p.1b): compose the catalogue for this
+    // project's Gemfile once; `instanceReturning` / `relationReturning` facets
+    // gate `constInstanceType` / `relationElementConst`. undefined → FULL.
+    const catalogue = catalogueForGemfile(input.gemfileContent);
     // Track per-variable most-recent binding for copy-propagation and
     // block-parameter element typing. Maps varName → { type, line }.
     // Pre-seeded with YARD @param types so block-iteration over a
@@ -212,7 +220,7 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
             const nameNode = param.childForFieldName("name");
             const valueNode = param.childForFieldName("value");
             if (nameNode?.type !== "identifier" || !valueNode) continue;
-            const type = constInstanceType(valueNode);
+            const type = constInstanceType(valueNode, catalogue);
             if (type) emitFact(nameNode.text, { form: "instance", name: type }, line);
           }
         }
@@ -261,7 +269,7 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
           const target = targets[i];
           const value = values[i];
           if (target?.type !== "identifier" || !value) continue;
-          const constType = constInstanceType(value);
+          const constType = constInstanceType(value, catalogue);
           if (constType) {
             emitFact(target.text, { form: "instance", name: constType }, line);
           } else if (value.type === "identifier") {
@@ -285,7 +293,7 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
       }
 
       // Single assignment: class-constant instance call.
-      const instType = constInstanceType(rhs);
+      const instType = constInstanceType(rhs, catalogue);
       if (instType) {
         emitFact(varName, { form: "instance", name: instType }, line);
         return;
@@ -295,7 +303,7 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
       // relation (terminal verb is relation-returning, not instance-returning).
       // Emits a container fact so a later `posts.each { |p| }` unwraps to the
       // element type (F2).
-      const relElement = relationElementConst(rhs);
+      const relElement = relationElementConst(rhs, catalogue);
       if (relElement) {
         emitFact(varName, { form: "container", element: { form: "instance", name: relElement } }, line);
         return;

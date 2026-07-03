@@ -1,6 +1,6 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { resolveLocalBindingType, type LocalBinding } from "../../../../contracts/types/codegraph.js";
-import { RUBY_INSTANCE_RETURNING } from "../dsl/index.js";
+import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
 import { constInstanceType, isOrAssignment } from "./type-sources/ast-inference.js";
 import { collectYardParamTypes } from "./type-sources/yard.js";
@@ -37,6 +37,7 @@ export function collectRubyIvarFieldTypes(
   root: AstNode,
   associationTypes: Record<string, Record<string, string>> = {},
   code = "",
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): Record<string, Record<string, string>> {
   const yardParamsByLine = code ? collectYardParamTypes(code) : new Map<number, Record<string, string>>();
   const out: Record<string, Record<string, string>> = {};
@@ -60,12 +61,12 @@ export function collectRubyIvarFieldTypes(
       const collectInClass = (n: AstNode): void => {
         if (n.type === "class" || n.type === "module") return;
         if (n.type === "method" || n.type === "singleton_method") {
-          const env = methodTypeEnv(n, yardParamsByLine);
-          collectIvarAssignmentsInMethod(n, env, fields, associationTypes);
+          const env = methodTypeEnv(n, yardParamsByLine, catalogue);
+          collectIvarAssignmentsInMethod(n, env, fields, associationTypes, catalogue);
           return; // collectIvarAssignmentsInMethod walks the body
         }
         // Class-body-level ivar assignment (rare) — no method env.
-        recordIvarAssignment(n, {}, fields, associationTypes);
+        recordIvarAssignment(n, {}, fields, associationTypes, catalogue);
         for (const child of n.children) collectInClass(child);
       };
       for (const child of (body ?? node).children) collectInClass(child);
@@ -87,7 +88,11 @@ export function collectRubyIvarFieldTypes(
  * and copy-propagation `local = otherTypedLocal`. Last-write-wins. Stops at a
  * nested class / module / method (those have their own scope).
  */
-function methodTypeEnv(method: AstNode, yardParamsByLine: Map<number, Record<string, string>>): Record<string, string> {
+function methodTypeEnv(
+  method: AstNode,
+  yardParamsByLine: Map<number, Record<string, string>>,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): Record<string, string> {
   const env: Record<string, string> = { ...(yardParamsByLine.get(method.startPosition.row + 1) ?? {}) };
   const scan = (n: AstNode): void => {
     if (n.type === "class" || n.type === "module" || n.type === "method" || n.type === "singleton_method") return;
@@ -95,7 +100,7 @@ function methodTypeEnv(method: AstNode, yardParamsByLine: Map<number, Record<str
       const lhs = n.childForFieldName("left");
       const rhs = n.childForFieldName("right");
       if (lhs?.type === "identifier" && rhs) {
-        const direct = constInstanceType(rhs);
+        const direct = constInstanceType(rhs, catalogue);
         if (direct) {
           env[lhs.text] = direct;
         } else if (rhs.type === "identifier") {
@@ -117,10 +122,11 @@ function collectIvarAssignmentsInMethod(
   env: Record<string, string>,
   fields: Record<string, string>,
   associationTypes: Record<string, Record<string, string>>,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): void {
   const walkBody = (n: AstNode): void => {
     if (n.type === "class" || n.type === "module") return;
-    recordIvarAssignment(n, env, fields, associationTypes);
+    recordIvarAssignment(n, env, fields, associationTypes, catalogue);
     for (const child of n.children) walkBody(child);
   };
   const body = method.childForFieldName("body");
@@ -139,12 +145,13 @@ function recordIvarAssignment(
   env: Record<string, string>,
   fields: Record<string, string>,
   associationTypes: Record<string, Record<string, string>>,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): void {
   if (n.type !== "assignment" && !isOrAssignment(n)) return;
   const lhs = n.childForFieldName("left");
   const rhs = n.childForFieldName("right");
   if (lhs?.type !== "instance_variable" || !rhs) return;
-  const direct = constInstanceType(rhs);
+  const direct = constInstanceType(rhs, catalogue);
   if (direct) {
     fields[lhs.text] = direct;
     return;
@@ -156,7 +163,7 @@ function recordIvarAssignment(
       return;
     }
   }
-  const chained = threadChainRhsType(rhs.text, env, fields, associationTypes);
+  const chained = threadChainRhsType(rhs.text, env, fields, associationTypes, catalogue);
   if (chained) fields[lhs.text] = chained;
 }
 
@@ -173,6 +180,7 @@ function threadChainRhsType(
   env: Record<string, string>,
   fields: Record<string, string>,
   associationTypes: Record<string, Record<string, string>>,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): string | undefined {
   if (!text.includes(".")) return undefined;
   const segments = text.split(".");
@@ -183,7 +191,7 @@ function threadChainRhsType(
   const seen = new Set<string>([current]); // cycle guard (self-referential has_many)
   for (let i = 1; i < segments.length; i++) {
     const link = stripArgsLocal(segments[i]);
-    if (RUBY_INSTANCE_RETURNING.has(link)) continue; // `.new`/`.first` on a relation → keep element model
+    if (catalogue.instanceReturning.has(link)) continue; // `.new`/`.first` on a relation → keep element model
     const next: string | undefined = associationTypes[current]?.[link];
     if (!next) return undefined; // unknown hop STOPS (honest fan-out)
     if (seen.has(next)) return next;
@@ -212,7 +220,10 @@ function stripArgsLocal(segment: string): string {
  * `make`), matching how the resolver reads `localCallBindings` short names.
  * YARD annotations win over body inference at the merge site (the walker).
  */
-export function collectRubyBodyReturnTypes(root: AstNode): Record<string, string> {
+export function collectRubyBodyReturnTypes(
+  root: AstNode,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): Record<string, string> {
   const out: Record<string, string> = {};
   walk(root, (node) => {
     if (node.type !== "method" && node.type !== "singleton_method") return;
@@ -230,7 +241,7 @@ export function collectRubyBodyReturnTypes(root: AstNode): Record<string, string
       last = arg.type === "argument_list" ? arg.namedChildren[0] : arg;
       if (!last) return;
     }
-    const type = constInstanceType(last);
+    const type = constInstanceType(last, catalogue);
     if (type) out[nameNode.text] = type;
   });
   return out;
@@ -252,6 +263,7 @@ export function collectRubyLocalCallBindingsForChunk(
   root: AstNode,
   startLine: number,
   endLine: number,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   walk(root, (node) => {
@@ -262,7 +274,7 @@ export function collectRubyLocalCallBindingsForChunk(
     const rhs = node.childForFieldName("right");
     if (lhs?.type !== "identifier" || !rhs) return;
     if (rhs.type !== "call" && rhs.type !== "method_call") return;
-    if (constInstanceType(rhs) !== null) return; // directly typed → localBindings owns it
+    if (constInstanceType(rhs, catalogue) !== null) return; // directly typed → localBindings owns it
     const method = rhs.childForFieldName("method");
     if (method) out[lhs.text] = method.text; // last-write-wins
   });

@@ -2,6 +2,7 @@ export {
   catalogueFor,
   composeRubyCatalogue,
   enqueueEntrypoint,
+  FULL_RUBY_CATALOGUE,
   isExternalBareCall,
   isExternalQualifiedMember,
   type RubyDslCatalogue,

@@ -366,6 +366,14 @@ export interface WalkInput {
   relPath: string;
   language: string;
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
+  /**
+   * Raw contents of the project's `Gemfile`, threaded per run so extraction-time
+   * DSL consumers (emit / declare / type-source) compose a gem-gated catalogue
+   * (`catalogueForGemfile`) for THIS project. Undefined → the FULL catalogue
+   * (gating off, byte-identical to pre-gating). Only the Ruby walker reads it
+   * today (bd tea-rags-mcp-adx5p.1b).
+   */
+  gemfileContent?: string;
 }
 
 /**

@@ -146,9 +146,11 @@ export function composeRubyCatalogue(activeGems: ReadonlySet<string> | null): Ru
  * The FULL catalogue (every framework, gating off) — the shared default every
  * consumer falls back to when no gem set is threaded. Byte-identical to the
  * pre-gating module consts (`RUBY_DSL` / `RUBY_ENQUEUE_DISPATCH` / …), so a
- * consumer that passes no gems is behaviourally unchanged.
+ * consumer that passes no gems is behaviourally unchanged. Exported as the
+ * default parameter value for extraction-time consumers whose gated catalogue is
+ * threaded from the walk input (bd tea-rags-mcp-adx5p.1b).
  */
-const FULL_RUBY_CATALOGUE: RubyDslCatalogue = composeRubyCatalogue(null);
+export const FULL_RUBY_CATALOGUE: RubyDslCatalogue = composeRubyCatalogue(null);
 
 /**
  * Per-gem-set catalogue cache, keyed by the gem-set INSTANCE (weak → auto-evicts

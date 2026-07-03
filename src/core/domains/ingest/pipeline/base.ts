@@ -6,6 +6,9 @@
  * Subclasses compose these building blocks in their own orchestration flow.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import type { Ignore } from "ignore";
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
@@ -181,7 +184,7 @@ export abstract class BaseIndexingPipeline {
     chunkSizeOverride?: number,
     fileCount = 0,
   ): ProcessingContext {
-    const chunkerPool = this.createChunkerPool(chunkSizeOverride);
+    const chunkerPool = this.createChunkerPool(chunkSizeOverride, this.readGemfile(absolutePath));
     const chunkPipeline = this.createChunkPipeline(collectionName);
     // "codegraph-init" stage (csyve) = enrichment beginRun: per-provider context
     // build + (cross-pass) codegraph beginExtractionRun spill reset + phase init.
@@ -263,7 +266,7 @@ export abstract class BaseIndexingPipeline {
 
   // ── Processing components (private) ────────────────────
 
-  private createChunkerPool(chunkSizeOverride?: number): ChunkerPool {
+  private createChunkerPool(chunkSizeOverride?: number, gemfileContent?: string): ChunkerPool {
     const chunkSize = chunkSizeOverride ?? this.config.chunkSize;
     return new ChunkerPool(this.tuning.chunkerPoolSize, {
       chunkSize,
@@ -272,7 +275,24 @@ export abstract class BaseIndexingPipeline {
       // they fit inside the embedding model's context window. Anything wider
       // is split by enforceMaxChunkSize before reaching the pipeline.
       maxChunkSize: chunkSize,
+      // Gem-gated DSL grammar for cross-pass codegraph extraction (adx5p.1b) —
+      // the walker running on the worker parse composes the catalogue for this
+      // project's Gemfile. undefined → FULL catalogue.
+      gemfileContent,
     });
+  }
+
+  /**
+   * Read the project's `Gemfile` once per run for gem-gated Ruby DSL grammar
+   * (adx5p.1b). Raw string threaded to the chunker worker; the parse lives in
+   * `domains/language`. Absent / unreadable → undefined → the FULL catalogue.
+   */
+  private readGemfile(absolutePath: string): string | undefined {
+    try {
+      return readFileSync(join(absolutePath, "Gemfile"), "utf8");
+    } catch {
+      return undefined;
+    }
   }
 
   private createChunkPipeline(collectionName: string): ChunkPipeline {

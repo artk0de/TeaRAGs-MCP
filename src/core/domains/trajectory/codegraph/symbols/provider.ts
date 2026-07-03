@@ -1864,6 +1864,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       relPath,
       language: langConfig.language,
       chunks,
+      // Gem-gated DSL grammar at extraction time (adx5p.1b): the run's Gemfile,
+      // read once in loadGemfile. undefined → FULL catalogue.
+      gemfileContent: this.runGemfileContent,
     });
   }
 

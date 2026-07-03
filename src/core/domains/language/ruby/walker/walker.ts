@@ -46,7 +46,14 @@ import type {
   KwargSignature,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
-import { RUBY_DSL, singularizeAssociation, type RubyDslEmits } from "../dsl/index.js";
+import {
+  FULL_RUBY_CATALOGUE,
+  type RubyDslCatalogue,
+  RUBY_DSL,
+  singularizeAssociation,
+  type RubyDslEmits,
+} from "../dsl/index.js";
+import { catalogueForGemfile } from "../gemfile.js";
 import { lexicalScopeFqName, readScopeResolution, walk } from "./ast-utils.js";
 import {
   bindCompoundReceiverChains,
@@ -66,6 +73,12 @@ export interface RubyExtractInput {
   relPath: string;
   language: string;
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
+  /**
+   * Raw `Gemfile` contents for the run (mirrors `WalkInput.gemfileContent`).
+   * Extraction consumers gate DSL grammar on it via `catalogueForGemfile`;
+   * undefined → FULL catalogue (bd tea-rags-mcp-adx5p.1b).
+   */
+  gemfileContent?: string;
 }
 
 /** Prefix marker the resolver uses to recognise Zeitwerk constant refs. */
@@ -82,6 +95,10 @@ export const ZEITWERK_PREFIX = "zeitwerk:";
 export const SUPER_RECEIVER_SENTINEL = "<super>";
 
 export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
+  // Gem-gated DSL grammar at extraction time (adx5p.1b): compose the catalogue
+  // for this project's Gemfile once; the emit + type-source consumers below read
+  // its facets. undefined gemfileContent → the FULL catalogue (byte-identical).
+  const catalogue = catalogueForGemfile(input.gemfileContent);
   const explicitImports = collectRubyRequires(input.tree.rootNode);
   const constantRefs = collectRubyConstantRefs(input.tree.rootNode);
   const fileScope = collectRubyDefinedConstants(input.tree.rootNode);
@@ -93,7 +110,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   } = collectRubyClassAncestors(input.tree.rootNode);
   const dispatchTables = collectRubyDispatchTables(input.tree.rootNode);
   const dispatchTableNames = new Set(Object.keys(dispatchTables));
-  const calls = collectRubyCalls(input.tree.rootNode, dispatchTableNames);
+  const calls = collectRubyCalls(input.tree.rootNode, dispatchTableNames, catalogue);
   const imports: ImportRef[] = [...explicitImports, ...constantRefs];
   const trackTypes = localTypeTrackingEnabled();
   // Gather all inline type facts (YARD + AST) through the source registry and
@@ -146,7 +163,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
       // `localCallBindings` (var → called method) pairs with the run-global
       // `functionReturnTypes` so the resolver binds `x = recv.meth(); x.member`
       // to `<meth's return type>#member` (cai0 a71lj, same channel as Go).
-      const callBindings = collectRubyLocalCallBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
+      const callBindings = collectRubyLocalCallBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine, catalogue);
       if (Object.keys(callBindings).length > 0) base.localCallBindings = callBindings;
     }
     return base;
@@ -188,7 +205,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // (last-write wins → YARD explicit annotation beats body inference):
   //   1. Body inference: last-expression constructor (`def build; Widget.new; end`).
   //   2. YARD `@return [T]` via the store's return facts (brg9).
-  const bodyReturnTypes = trackTypes ? collectRubyBodyReturnTypes(input.tree.rootNode) : {};
+  const bodyReturnTypes = trackTypes ? collectRubyBodyReturnTypes(input.tree.rootNode, catalogue) : {};
   const returnTypes = { ...bodyReturnTypes, ...store.returnTypeByMethod() };
   if (Object.keys(returnTypes).length > 0) out.functionReturnTypes = returnTypes;
   // RTA instantiation set (bd tea-rags-mcp-pffv): fq consts this file
@@ -196,14 +213,14 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // type-tracking env as the other inference channels — without local-type
   // tracking the cone engine has no localBindings to fan out anyway. The
   // provider unions these run-global to prune CHA cones to live subtypes.
-  const instantiatedTypes = trackTypes ? collectRubyInstantiatedTypes(input.tree.rootNode) : [];
+  const instantiatedTypes = trackTypes ? collectRubyInstantiatedTypes(input.tree.rootNode, catalogue) : [];
   if (instantiatedTypes.length > 0) out.instantiatedTypes = instantiatedTypes;
   if (Object.keys(dispatchTables).length > 0) out.dispatchTables = dispatchTables;
   // `@ivar` receiver types via the universal `classFieldTypes` channel (cai0
   // imass) — same env gate as the other type-inference paths. Ruby is the 5th
   // language to fill this channel (after TS/Java/Python/Rust).
   if (trackTypes) {
-    const ivarFieldTypes = collectRubyIvarFieldTypes(input.tree.rootNode, associationTypes, input.code);
+    const ivarFieldTypes = collectRubyIvarFieldTypes(input.tree.rootNode, associationTypes, input.code, catalogue);
     if (Object.keys(ivarFieldTypes).length > 0) out.classFieldTypes = ivarFieldTypes;
   }
   // Precise type-source maps for the resolver's PRECISE propagation paths
@@ -1295,8 +1312,8 @@ function emitDslEdges(node: AstNode, emits: RubyDslEmits, startLine: number, out
  * same-class fallback uses callerScope (= the enclosing class) to pin the
  * target. No-ops for any non-`alias` node.
  */
-function emitAliasKeywordEdge(node: AstNode, out: CallRef[]): void {
-  if (node.type !== "alias" || RUBY_DSL.alias?.redirectTarget !== "alias-keyword-old") return;
+function emitAliasKeywordEdge(node: AstNode, out: CallRef[], catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE): void {
+  if (node.type !== "alias" || catalogue.entries.alias?.redirectTarget !== "alias-keyword-old") return;
   const idents = node.children.filter((c) => c.type === "identifier");
   const oldName = idents[1]?.text;
   if (oldName) {
@@ -1451,7 +1468,11 @@ function emitBlockPassEdge(node: AstNode, out: CallRef[]): void {
   }
 }
 
-function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>): CallRef[] {
+function collectRubyCalls(
+  root: AstNode,
+  dispatchTableNames: ReadonlySet<string>,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): CallRef[] {
   const out: CallRef[] = [];
 
   // Recursive walk that tracks the enclosing instance / singleton method
@@ -1483,7 +1504,7 @@ function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>
     // its shape — alias-keyword redirect (y2z5), registry constant literal
     // (ki9v), bare-identifier call (hbie), bare `super` leaf (brp1). Lifted
     // verbatim from the former inline blocks; emit order is unchanged.
-    emitAliasKeywordEdge(node, out);
+    emitAliasKeywordEdge(node, out, catalogue);
     emitRegistryConstantRefs(node, out);
     emitBareIdentifierCall(node, enclosingMethod, localBindings, out);
     emitBareSuperEdge(node, enclosingMethod, out);
@@ -1550,7 +1571,7 @@ function collectRubyCalls(root: AstNode, dispatchTableNames: ReadonlySet<string>
       // NO early return: falls through to the literal `callRef` push below, so
       // the synthetic edge(s) precede the macro's own call edge (as before).
       if (receiverText === null) {
-        const emits = RUBY_DSL[method.text]?.emits;
+        const emits = catalogue.entries[method.text]?.emits;
         if (emits) emitDslEdges(node, emits, startLine, out);
       }
 
