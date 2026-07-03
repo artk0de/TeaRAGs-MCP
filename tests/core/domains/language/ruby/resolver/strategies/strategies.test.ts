@@ -22,6 +22,7 @@ import {
 import {
   receiverChainTailIsExternal,
   receiverIsIndexAccess,
+  resolveViaSuperclassChain,
 } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/shared.js";
 import {
   SUPER_RECEIVER_SENTINEL,
@@ -1095,6 +1096,156 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
         targetSymbolId: "Api::Pagination#pagination_params",
       },
     });
+  });
+
+  // Inherited class-body DSL narrowing (bd tea-rags-mcp-4skzl). A CLASS-BODY
+  // self-send (`column :name` in `class FooExporter < ApplicationCsvExporter`)
+  // has no local def and cannot be pinned by `callerScope` — a class-body chunk's
+  // scope OMITS its own name (empty at top level). `callerSymbolId` names the
+  // enclosing class; the single-inheritance chain (`classExtends`) is walked to
+  // the ancestor that DEFINES the member. Concern-consensus analog over `<`.
+  it("resolves a subclass-body inherited class-body DSL member to the defining ancestor via classExtends (4skzl)", () => {
+    const symbolTable = tableWith(
+      [
+        "app/exporters/application_csv_exporter.rb",
+        [
+          sym("ApplicationCsvExporter", "ApplicationCsvExporter", "app/exporters/application_csv_exporter.rb", []),
+          sym("ApplicationCsvExporter.column", "column", "app/exporters/application_csv_exporter.rb", [
+            "ApplicationCsvExporter",
+          ]),
+        ],
+      ],
+      ["app/grids/user_grid.rb", [sym("UserGrid#column", "column", "app/grids/user_grid.rb", ["UserGrid"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "column :name", receiver: null, member: "column", startLine: 3 },
+      ctx({
+        symbolTable,
+        callerFile: "app/exporters/foo_exporter.rb",
+        callerScope: [],
+        callerSymbolId: "FooExporter",
+        classExtends: { FooExporter: "ApplicationCsvExporter" },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "app/exporters/application_csv_exporter.rb",
+        targetSymbolId: "ApplicationCsvExporter.column",
+      },
+    });
+  });
+
+  it("walks a multi-level classExtends chain (Sub < A < B) to the ancestor that defines the member (4skzl)", () => {
+    const symbolTable = tableWith(
+      ["app/b.rb", [sym("B", "B", "app/b.rb", []), sym("B.column", "column", "app/b.rb", ["B"])]],
+      ["app/a.rb", [sym("A", "A", "app/a.rb", [])]],
+      ["app/grid.rb", [sym("Grid#column", "column", "app/grid.rb", ["Grid"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "column :x", receiver: null, member: "column", startLine: 2 },
+      ctx({
+        symbolTable,
+        callerSymbolId: "Sub",
+        callerScope: [],
+        classExtends: { Sub: "A", A: "B" },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/b.rb", targetSymbolId: "B.column" },
+    });
+  });
+
+  it("does NOT false-resolve a subclass-body call to a namesake OUTSIDE the classExtends chain (4skzl precision)", () => {
+    const symbolTable = tableWith(
+      ["app/base.rb", [sym("Base", "Base", "app/base.rb", [])]],
+      ["app/grid_a.rb", [sym("GridA#column", "column", "app/grid_a.rb", ["GridA"])]],
+      ["app/grid_b.rb", [sym("GridB#column", "column", "app/grid_b.rb", ["GridB"])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "column :x", receiver: null, member: "column", startLine: 2 },
+      ctx({ symbolTable, callerSymbolId: "Sub", callerScope: [], classExtends: { Sub: "Base" } }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("does NOT fabricate an edge when the classExtends parent chain is external / out-of-project (4skzl precision)", () => {
+    const symbolTable = tableWith([
+      "app/models/application_record.rb",
+      [sym("ApplicationRecord", "ApplicationRecord", "app/models/application_record.rb", [])],
+    ]);
+    const outcome = strat.attempt(
+      { callText: "validates :name", receiver: null, member: "validates", startLine: 2 },
+      ctx({
+        symbolTable,
+        callerSymbolId: "User",
+        callerScope: [],
+        classExtends: { User: "ApplicationRecord", ApplicationRecord: "ActiveRecord::Base" },
+      }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+});
+
+describe("resolveViaSuperclassChain", () => {
+  it("pins a member to the nearest classExtends ancestor whose file defines it", () => {
+    const symbolTable = tableWith([
+      "app/base.rb",
+      [sym("Base", "Base", "app/base.rb", []), sym("Base.column", "column", "app/base.rb", ["Base"])],
+    ]);
+    const target = resolveViaSuperclassChain(
+      "Child",
+      "column",
+      ctx({ symbolTable, classExtends: { Child: "Base" } }),
+      DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    );
+    expect(target).toEqual({ targetRelPath: "app/base.rb", targetSymbolId: "Base.column" });
+  });
+
+  it("returns null (NO file-only fallback) when no ancestor file defines the member", () => {
+    const symbolTable = tableWith(["app/base.rb", [sym("Base", "Base", "app/base.rb", [])]]);
+    const target = resolveViaSuperclassChain(
+      "Child",
+      "column",
+      ctx({ symbolTable, classExtends: { Child: "Base" } }),
+      DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    );
+    expect(target).toBeNull();
+  });
+
+  it("prefers the enclosing class's own def over an ancestor's (nearest wins)", () => {
+    const symbolTable = tableWith(
+      [
+        "app/child.rb",
+        [sym("Child", "Child", "app/child.rb", []), sym("Child.column", "column", "app/child.rb", ["Child"])],
+      ],
+      ["app/base.rb", [sym("Base", "Base", "app/base.rb", []), sym("Base.column", "column", "app/base.rb", ["Base"])]],
+    );
+    const target = resolveViaSuperclassChain(
+      "Child",
+      "column",
+      ctx({ symbolTable, classExtends: { Child: "Base" } }),
+      DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    );
+    expect(target).toEqual({ targetRelPath: "app/child.rb", targetSymbolId: "Child.column" });
+  });
+
+  it("returns null when the class has no classExtends parent", () => {
+    const symbolTable = tableWith(["app/base.rb", [sym("Base.column", "column", "app/base.rb", ["Base"])]]);
+    const target = resolveViaSuperclassChain("Orphan", "column", ctx({ symbolTable }), DEFAULT_AMBIGUOUS_RESOLVE_MODE);
+    expect(target).toBeNull();
+  });
+
+  it("is cycle-guarded against a classExtends loop", () => {
+    const symbolTable = tableWith(["app/a.rb", [sym("A", "A", "app/a.rb", [])]]);
+    const target = resolveViaSuperclassChain(
+      "A",
+      "column",
+      ctx({ symbolTable, classExtends: { A: "B", B: "A" } }),
+      DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    );
+    expect(target).toBeNull();
   });
 });
 
