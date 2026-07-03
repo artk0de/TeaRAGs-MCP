@@ -11,6 +11,17 @@ export interface RateLimitConfig {
   maxRequestsPerMinute?: number;
   retryAttempts?: number;
   retryDelayMs?: number;
+  /**
+   * Bounded wall-clock budget (ms) to keep retrying a connection-level
+   * "provider not reachable" failure while the host recovers, before aborting.
+   * A remote embedding host under sustained load can flap (crash/restart →
+   * briefly unreachable → recover when idle); waiting rather than aborting on
+   * the first failure keeps a long index alive. 0 disables the wait (abort on
+   * first connection failure — the backward-compatible default). Ollama-only.
+   */
+  unavailableRetryMaxWaitMs?: number;
+  /** Base backoff (ms) between connection-recovery attempts; exponential, capped. Ollama-only. */
+  unavailableRetryBaseDelayMs?: number;
 }
 
 export interface EmbeddingProvider {

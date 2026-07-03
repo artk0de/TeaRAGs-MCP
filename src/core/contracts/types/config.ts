@@ -9,6 +9,15 @@ export interface EmbeddingTuneConfig {
   healthCheckRetryAttempts: number;
   /** Pause between health-probe attempts (ms) — yields the event loop. */
   healthCheckRetryDelayMs: number;
+  /**
+   * Bounded wall-clock budget (ms) to keep retrying a connection-level
+   * "provider not reachable" failure while the host recovers, before aborting
+   * the index. A remote embedding host under sustained load can flap; waiting
+   * rather than aborting on the first failure keeps a long index alive.
+   */
+  unavailableRetryMaxWaitMs: number;
+  /** Base backoff (ms) between connection-recovery attempts; exponential, capped. */
+  unavailableRetryBaseDelayMs: number;
 }
 
 export interface EmbeddingConfig {

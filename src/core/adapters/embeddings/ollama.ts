@@ -44,6 +44,16 @@ const HEALTH_CACHE_TTL_MS = 60_000;
 const BATCH_BASE_TIMEOUT_MS = 30_000; // 30s base (model loading, warmup)
 const BATCH_PER_ITEM_TIMEOUT_MS = 200; // 200ms per item (accounts for GPU queue with concurrent workers)
 
+/**
+ * Cap on a single connection-recovery backoff pause. Exponential backoff grows
+ * per attempt but is clamped here so the re-probe cadence stays bounded across
+ * a long recovery-wait budget (a host that recovers mid-wait is retried within
+ * ≤30s of coming back, not after a runaway 2^n delay).
+ */
+const UNAVAILABLE_RETRY_MAX_DELAY_MS = 30_000;
+/** Default base backoff between connection-recovery attempts when unset. */
+const UNAVAILABLE_RETRY_DEFAULT_BASE_DELAY_MS = 2_000;
+
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
@@ -99,6 +109,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private readonly limiter: Bottleneck;
   private readonly retryAttempts: number;
   private readonly retryDelayMs: number;
+  private readonly unavailableRetryMaxWaitMs: number;
+  private readonly unavailableRetryBaseDelayMs: number;
   private readonly baseUrl: string;
   private readonly fallbackBaseUrl?: string;
   private readonly numGpu: number;
@@ -138,6 +150,12 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     const maxRequestsPerMinute = rateLimitConfig?.maxRequestsPerMinute || 1000;
     this.retryAttempts = rateLimitConfig?.retryAttempts || 3;
     this.retryDelayMs = rateLimitConfig?.retryDelayMs || 500;
+    // Connection-recovery wait. Defaults to 0 (abort on first connection
+    // failure) so directly-constructed instances keep legacy behavior; the
+    // production path enables it via config → factory → rateLimitConfig.
+    this.unavailableRetryMaxWaitMs = rateLimitConfig?.unavailableRetryMaxWaitMs ?? 0;
+    this.unavailableRetryBaseDelayMs =
+      rateLimitConfig?.unavailableRetryBaseDelayMs || UNAVAILABLE_RETRY_DEFAULT_BASE_DELAY_MS;
 
     this.limiter = new Bottleneck({
       reservoir: maxRequestsPerMinute,
@@ -262,28 +280,58 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   private async retryWithBackoff<T>(fn: (url: string) => Promise<T>): Promise<T> {
-    const url = this.resolveActiveUrl();
-    try {
-      return await withRateLimitRetry(async () => fn(url), {
-        maxAttempts: this.retryAttempts,
-        baseDelayMs: this.retryDelayMs,
-        isRetryable: (error) => this.isRateLimit(error),
-      });
-    } catch (error) {
-      // Typed errors propagate directly — no fallback switching
-      if (error instanceof OllamaModelMissingError) throw error;
-      if (error instanceof OllamaTimeoutError) throw error;
-      if (error instanceof OllamaResponseError) throw error;
+    const recoveryDeadline = Date.now() + this.unavailableRetryMaxWaitMs;
+    let recoveryAttempt = 0;
 
-      // Connection/HTTP errors: propagate with cause, no fallback switch.
-      // Fallback is only decided at initial health check (constructor), not mid-operation.
-      const cause = error instanceof Error ? error : undefined;
+    for (;;) {
+      const url = this.resolveActiveUrl();
+      try {
+        return await withRateLimitRetry(async () => fn(url), {
+          maxAttempts: this.retryAttempts,
+          baseDelayMs: this.retryDelayMs,
+          isRetryable: (error) => this.isRateLimit(error),
+        });
+      } catch (error) {
+        // Typed errors propagate directly — the server IS reachable but rejected
+        // the request (missing model, timeout, HTTP error), so waiting for a
+        // reconnection is pointless. No fallback switch, no recovery wait.
+        if (error instanceof OllamaModelMissingError) throw error;
+        if (error instanceof OllamaTimeoutError) throw error;
+        if (error instanceof OllamaResponseError) throw error;
 
-      if (this.usingFallback && this.fallbackBaseUrl) {
-        throw OllamaUnavailableError.withFallback(this.baseUrl, this.fallbackBaseUrl, cause);
+        // Connection-level unavailability (both endpoints unreachable). A remote
+        // host under sustained embedding load can flap — crash/restart → briefly
+        // unreachable → recover when idle. Retry with exponential backoff until
+        // the bounded wall-clock budget is spent, instead of aborting the whole
+        // index on the first failure. Fallback URL is re-resolved each iteration,
+        // so a fallback that recovers first is picked up automatically.
+        const cause = error instanceof Error ? error : undefined;
+        const remainingMs = recoveryDeadline - Date.now();
+        if (remainingMs > 0) {
+          const delayMs = Math.min(
+            this.unavailableRetryBaseDelayMs * 2 ** recoveryAttempt,
+            UNAVAILABLE_RETRY_MAX_DELAY_MS,
+            remainingMs,
+          );
+          recoveryAttempt += 1;
+          if (isDebug()) {
+            console.error(
+              `[Ollama] Not reachable at ${url}. Waiting ${(delayMs / 1000).toFixed(1)}s for recovery ` +
+                `(~${Math.ceil(remainingMs / 1000)}s of budget left, attempt ${recoveryAttempt})...`,
+            );
+          }
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        // Recovery budget exhausted (or disabled) — abort. Fallback is only
+        // decided at initial health check (constructor), not mid-operation.
+        if (this.usingFallback && this.fallbackBaseUrl) {
+          throw OllamaUnavailableError.withFallback(this.baseUrl, this.fallbackBaseUrl, cause);
+        }
+
+        throw new OllamaUnavailableError(url, cause);
       }
-
-      throw new OllamaUnavailableError(url, cause);
     }
   }
 
