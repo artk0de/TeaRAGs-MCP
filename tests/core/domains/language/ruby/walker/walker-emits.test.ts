@@ -70,6 +70,12 @@ describe("emits descriptor — membership parity with the four former dispatch p
     }
   });
 
+  it("`emits === 'serialized-attribute'` ⟺ name === 'attributes' (AMS), for ALL names", () => {
+    for (const name of NAMES) {
+      expect(RUBY_DSL[name]?.emits === "serialized-attribute").toBe(name === "attributes");
+    }
+  });
+
   it("every populated `emits` is one of the known shapes (no stray value)", () => {
     const known = new Set([
       "self-instance",
@@ -78,6 +84,7 @@ describe("emits descriptor — membership parity with the four former dispatch p
       "alias-redirect",
       "policy-dispatch",
       "route-action",
+      "serialized-attribute",
     ]);
     for (const name of NAMES) {
       const e = RUBY_DSL[name]?.emits;
@@ -135,6 +142,13 @@ describe("emitDslEdges — per-emits edge shape via extractFromRubyFile", () => 
     const src = 'Rails.application.routes.draw do\n  get "/x", to: "posts#index"\nend\n';
     const calls = callsOf(src, [{ symbolId: "config/routes", scope: [], startLine: 1, endLine: 3 }]);
     expect(calls).toContainEqual(expect.objectContaining({ receiver: "PostsController", member: "index" }));
+  });
+
+  it("serialized-attribute: `attributes :id, :name` (AMS) → {receiver:null, member:'id'|'name'}", () => {
+    const src = "class UserSerializer\n  attributes :id, :name\nend\n";
+    const calls = callsOf(src, [{ symbolId: "UserSerializer", scope: ["UserSerializer"], startLine: 1, endLine: 3 }]);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: null, member: "id", startLine: 2 }));
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: null, member: "name", startLine: 2 }));
   });
 
   it("class-body-only: a receiver-qualified `obj.before_action :x` emits NO synthetic edge", () => {

@@ -48,9 +48,9 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import {
   FULL_RUBY_CATALOGUE,
-  type RubyDslCatalogue,
   RUBY_DSL,
   singularizeAssociation,
+  type RubyDslCatalogue,
   type RubyDslEmits,
 } from "../dsl/index.js";
 import { catalogueForGemfile } from "../gemfile.js";
@@ -1272,6 +1272,11 @@ function emitDslEdges(node: AstNode, emits: RubyDslEmits, startLine: number, out
       return;
     }
     // `before_action :auth` callbacks — per leading symbol → {receiver:null, member:sym} (duzy).
+    // `attributes :id, :name` (AMS serializer) — each attribute is READ off the
+    // serialized resource; identical bare-receiver shape to a callback self-send,
+    // so it resolves onto the serializer's custom attribute method when one is
+    // defined and is honestly unresolved for a pass-through attribute (adx5p.9).
+    case "serialized-attribute":
     case "self-instance": {
       for (const sym of extractCallbackSymbols(node)) {
         out.push({ callText: node.text, receiver: null, member: sym, startLine });

@@ -63,6 +63,7 @@ export type DeclaredMethodSpec = { name: string; kind: MethodKind };
  *   - `'alias-redirect'`     — old method name    → `{receiver:null, member:old}`   (alias_method :new, :old)
  *   - `'policy-dispatch'`    — Pundit policy method → `{receiver:<Record>Policy, member:<query>?}` (authorize :relay, :update?)
  *   - `'route-action'`       — routed controller action → `{receiver:<Ns::>Controller, member:action}` (get "x", to: "posts#index")
+ *   - `'serialized-attribute'` — AMS serializer read → `{receiver:null, member:sym}` per attribute (attributes :id, :name)
  */
 export type RubyDslEmits =
   | "self-instance"
@@ -70,7 +71,8 @@ export type RubyDslEmits =
   | "delegate-target"
   | "alias-redirect"
   | "policy-dispatch"
-  | "route-action";
+  | "route-action"
+  | "serialized-attribute";
 
 export interface RubyDslEntry {
   /** Intrinsic category. Drives the chunker's class-body group (`CATEGORY_TO_GROUP`). */
