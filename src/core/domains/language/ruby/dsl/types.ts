@@ -116,6 +116,15 @@ export interface RubyDslEntry {
  */
 export interface RubyFrameworkVocabulary {
   readonly framework: string; // "ruby-core" | "activesupport" | "rails"
+  /**
+   * Gem names whose presence in the project's Gemfile ACTIVATES this vocabulary
+   * (bd tea-rags-mcp-adx5p.1 gem-gating). A FAMILY set — any one present is
+   * enough (`dry` → {dry-struct, dry-initializer, dry-schema, …}; a project using
+   * dry-struct activates the whole dry grammar). Absent ⟺ UNCONDITIONAL: the
+   * vocabulary always loads (ruby-core / activesupport / rails — the base stack
+   * present in every project). `composeRubyCatalogue(activeGems)` filters on this.
+   */
+  readonly activatedBy?: ReadonlySet<string>;
   readonly entries: Record<string, RubyDslEntry>;
   /** Non-declaring framework/runtime/kernel helpers (params/render; puts/raise/require). */
   readonly runtimeBuiltins?: ReadonlySet<string>;

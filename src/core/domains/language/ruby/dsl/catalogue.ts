@@ -93,6 +93,56 @@ export const enqueueEntrypoint = (member: string): string | undefined => RUBY_EN
 export const isExternalBareCall = (member: string): boolean => FRAMEWORKS.some((f) => f.hasExternalMember(member));
 
 /**
+ * A composed, per-project Ruby DSL catalogue — the same surface as the full
+ * module-level `RUBY_*` consts, but built from only the ACTIVE frameworks. The
+ * default full catalogue (`composeRubyCatalogue(null)`) is what the `RUBY_*`
+ * consts above expose; a gem-gated project threads its Gemfile gem set through
+ * `composeRubyCatalogue(activeGems)` (bd tea-rags-mcp-adx5p.1).
+ */
+export interface RubyDslCatalogue {
+  readonly entries: Record<string, RubyDslEntry>;
+  readonly instanceReturning: ReadonlySet<string>;
+  readonly relationReturning: ReadonlySet<string>;
+  readonly enqueueDispatch: Readonly<Record<string, string>>;
+  isExternalBareCall(member: string): boolean;
+}
+
+const setsIntersect = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean => {
+  for (const x of a) if (b.has(x)) return true;
+  return false;
+};
+
+/**
+ * Compose the Ruby DSL catalogue for a project. `activeGems === null` → the FULL
+ * catalogue (no Gemfile / gating off — zero regression, identical to the module
+ * consts). A gem set → keep every UNCONDITIONAL vocabulary (`activatedBy`
+ * undefined — ruby-core/activesupport/rails) plus any gem-gated vocabulary whose
+ * `activatedBy` family intersects the project's gems. A gem's grammar never
+ * loads for a project that doesn't declare it (no misfire).
+ */
+export function filterActiveFrameworks(
+  frameworks: readonly RubyFrameworkVocabulary[],
+  activeGems: ReadonlySet<string> | null,
+): readonly RubyFrameworkVocabulary[] {
+  if (activeGems === null) return frameworks;
+  // Unconditional (`activatedBy` undefined) always loads; gem-gated loads iff its
+  // activation family intersects the project's declared gems.
+  return frameworks.filter((f) => f.activatedBy === undefined || setsIntersect(f.activatedBy, activeGems));
+}
+
+export function composeRubyCatalogue(activeGems: ReadonlySet<string> | null): RubyDslCatalogue {
+  const active = filterActiveFrameworks(FRAMEWORKS, activeGems);
+  const enqueueDispatch = composeEnqueueDispatch(active);
+  return {
+    entries: composeEntries(active),
+    instanceReturning: composeMethodSet(active, "instanceReturning"),
+    relationReturning: composeMethodSet(active, "relationReturning"),
+    enqueueDispatch,
+    isExternalBareCall: (member) => active.some((f) => f.hasExternalMember(member)),
+  };
+}
+
+/**
  * Is `member` an AR/core instance method that, on an UNTYPED qualified receiver
  * (`agent.update`), targets an external base class rather than any in-project
  * def of the same name? Direct membership in the curated set — single source,
