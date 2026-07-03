@@ -25,9 +25,11 @@
  * catalogue. AST argument extraction stays in the consumer engine, never here.
  */
 
+import { AASM_VOCABULARY } from "./aasm.js";
 import { ROUTING_VOCABULARY } from "./action-dispatch-routing.js";
 import { ACTIVESUPPORT_VOCABULARY } from "./activesupport.js";
 import { AMS_VOCABULARY } from "./ams.js";
+import { CARRIERWAVE_VOCABULARY } from "./carrierwave.js";
 import { CHEWY_VOCABULARY } from "./chewy.js";
 import { DRY_VOCABULARY } from "./dry.js";
 import { PUNDIT_VOCABULARY } from "./pundit.js";
@@ -67,6 +69,8 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   DRY_VOCABULARY,
   CHEWY_VOCABULARY,
   AMS_VOCABULARY,
+  CARRIERWAVE_VOCABULARY,
+  AASM_VOCABULARY,
 ];
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);
@@ -112,6 +116,9 @@ export interface RubyDslCatalogue {
   readonly instanceReturning: ReadonlySet<string>;
   readonly relationReturning: ReadonlySet<string>;
   readonly enqueueDispatch: Readonly<Record<string, string>>;
+  /** Active STRUCTURED-macro names (`enum`, `aasm`) — gates the walker's
+   *  structured-expander dispatch by gem, the structured analogue of `entries`. */
+  readonly activeStructuredMacros: ReadonlySet<string>;
   isExternalBareCall: (member: string) => boolean;
 }
 
@@ -138,6 +145,12 @@ export function filterActiveFrameworks(
   return frameworks.filter((f) => f.activatedBy === undefined || setsIntersect(f.activatedBy, activeGems));
 }
 
+function composeStructuredMacros(modules: readonly RubyFrameworkVocabulary[]): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const mod of modules) for (const m of mod.structuredMacros ?? []) out.add(m);
+  return out;
+}
+
 export function composeRubyCatalogue(activeGems: ReadonlySet<string> | null): RubyDslCatalogue {
   const active = filterActiveFrameworks(FRAMEWORKS, activeGems);
   const enqueueDispatch = composeEnqueueDispatch(active);
@@ -146,6 +159,7 @@ export function composeRubyCatalogue(activeGems: ReadonlySet<string> | null): Ru
     instanceReturning: composeMethodSet(active, "instanceReturning"),
     relationReturning: composeMethodSet(active, "relationReturning"),
     enqueueDispatch,
+    activeStructuredMacros: composeStructuredMacros(active),
     isExternalBareCall: (member) => active.some((f) => f.hasExternalMember(member)),
   };
 }

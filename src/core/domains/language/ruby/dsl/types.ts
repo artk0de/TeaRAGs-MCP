@@ -144,4 +144,14 @@ export interface RubyFrameworkVocabulary {
    *  routes to. sidekiq: perform_async/_in/_at/_bulk → "perform"; rails(ActiveJob):
    *  perform_later/_now → "perform". Consumed by enqueueEntrypoint. */
   readonly enqueueDispatch?: Readonly<Record<string, string>>;
+  /**
+   * Names of STRUCTURED class-body macros (`walker/structured/*`) this framework
+   * activates. A structured macro walks its own block for inner declarations
+   * (`aasm do; state; event; end`, `enum … do`) so it lives in the walker layer,
+   * not `entries` — but its ACTIVATION is pure data: `composeRubyCatalogue` folds
+   * these into `RubyDslCatalogue.activeStructuredMacros`, gating the expander's
+   * dispatch by gem exactly as `entries` gates flat declares. enum is
+   * unconditional (rails); aasm is gem-gated (bd tea-rags-mcp-o5kwh).
+   */
+  readonly structuredMacros?: ReadonlySet<string>;
 }

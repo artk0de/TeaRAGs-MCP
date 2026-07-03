@@ -124,7 +124,10 @@ runtime.onRequest((request) => {
         if (walker) {
           const symbolRanges = engine.collectSymbols(
             tree,
-            walker.nameOf,
+            // Gem-gated declares at cross-pass extraction (bd tea-rags-mcp-o5kwh):
+            // bind the run's Gemfile so the Ruby nameOf gates class-body macro
+            // DECLARES to this project's gems. undefined -> FULL catalogue.
+            (node) => walker.nameOf(node, engine.gemfileContent),
             kernel.scopeSeparator ?? ".",
             kernel.disambiguateOverloads ?? false,
             engine.composer,

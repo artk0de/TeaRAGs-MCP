@@ -137,3 +137,31 @@ describe("gem-gated grammars — dry / chewy / active_model_serializers (adx5p.9
     for (const v of ["field", "index", "filter"]) expect(withChewy.isExternalBareCall(v), v).toBe(false);
   });
 });
+
+describe("gem-gated DECLARES grammars — carrierwave / aasm (bd tea-rags-mcp-o5kwh)", () => {
+  it("carrierwave mount_uploader declaring entries are composed ONLY when carrierwave is declared", () => {
+    const withCw = composeRubyCatalogue(new Set(["carrierwave"]));
+    const withoutCw = composeRubyCatalogue(new Set(["rails"]));
+    expect(withCw.entries.mount_uploader?.declares).toBeDefined();
+    expect(withCw.entries.mount_uploaders?.declares).toBeDefined();
+    expect(withoutCw.entries.mount_uploader).toBeUndefined();
+    expect(withoutCw.entries.mount_uploaders).toBeUndefined();
+  });
+
+  it("aasm structured macro is active ONLY when the aasm gem is declared; enum is unconditional", () => {
+    const withAasm = composeRubyCatalogue(new Set(["aasm"]));
+    const withoutAasm = composeRubyCatalogue(new Set(["rails"]));
+    expect(withAasm.activeStructuredMacros.has("aasm")).toBe(true);
+    expect(withoutAasm.activeStructuredMacros.has("aasm")).toBe(false);
+    // enum is a Rails/AR built-in structured macro → always active.
+    expect(withAasm.activeStructuredMacros.has("enum")).toBe(true);
+    expect(withoutAasm.activeStructuredMacros.has("enum")).toBe(true);
+  });
+
+  it("null (no Gemfile / gating off) → every gated DECLARES grammar active (FULL default)", () => {
+    const full = composeRubyCatalogue(null);
+    expect(full.entries.mount_uploader?.declares).toBeDefined(); // carrierwave
+    expect(full.activeStructuredMacros.has("aasm")).toBe(true); // aasm
+    expect(full.activeStructuredMacros.has("enum")).toBe(true); // enum (unconditional)
+  });
+});
