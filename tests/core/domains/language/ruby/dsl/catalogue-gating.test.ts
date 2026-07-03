@@ -165,3 +165,42 @@ describe("gem-gated DECLARES grammars — carrierwave / aasm (bd tea-rags-mcp-o5
     expect(full.activeStructuredMacros.has("enum")).toBe(true); // enum (unconditional)
   });
 });
+
+describe("gem-gated declaresFixed grammars — paper_trail / geocoder (declaresFixed facet)", () => {
+  it("paper_trail has_paper_trail fixed-declare entry is composed ONLY when paper_trail is declared", () => {
+    const withPt = composeRubyCatalogue(new Set(["paper_trail"]));
+    const withoutPt = composeRubyCatalogue(new Set(["rails"]));
+    expect(withPt.entries.has_paper_trail?.declaresFixed).toBeDefined();
+    expect(withPt.entries.has_paper_trail?.declaresFixed?.map((m) => m.name)).toEqual([
+      "versions",
+      "version_at",
+      "paper_trail",
+    ]);
+    expect(withoutPt.entries.has_paper_trail).toBeUndefined();
+  });
+
+  it("geocoder geocoded_by / reverse_geocoded_by fixed-declare entries are composed ONLY when geocoder is declared", () => {
+    const withGeo = composeRubyCatalogue(new Set(["geocoder"]));
+    const withoutGeo = composeRubyCatalogue(new Set(["rails"]));
+    expect(withGeo.entries.geocoded_by?.declaresFixed?.map((m) => m.name)).toEqual(["geocode"]);
+    expect(withGeo.entries.reverse_geocoded_by?.declaresFixed?.map((m) => m.name)).toEqual(["reverse_geocode"]);
+    expect(withoutGeo.entries.geocoded_by).toBeUndefined();
+    expect(withoutGeo.entries.reverse_geocoded_by).toBeUndefined();
+  });
+
+  it("state_machines state_machine structured macro is active ONLY when a state_machines/state_machine gem is declared", () => {
+    const withSm = composeRubyCatalogue(new Set(["state_machines"]));
+    const withLegacy = composeRubyCatalogue(new Set(["state_machine"]));
+    const withoutSm = composeRubyCatalogue(new Set(["rails"]));
+    expect(withSm.activeStructuredMacros.has("state_machine")).toBe(true);
+    expect(withLegacy.activeStructuredMacros.has("state_machine")).toBe(true); // legacy gem name
+    expect(withoutSm.activeStructuredMacros.has("state_machine")).toBe(false);
+  });
+
+  it("null (no Gemfile / gating off) → paper_trail / geocoder / state_machines grammars all active (FULL default)", () => {
+    const full = composeRubyCatalogue(null);
+    expect(full.entries.has_paper_trail?.declaresFixed).toBeDefined(); // paper_trail
+    expect(full.entries.geocoded_by?.declaresFixed).toBeDefined(); // geocoder
+    expect(full.activeStructuredMacros.has("state_machine")).toBe(true); // state_machines
+  });
+});

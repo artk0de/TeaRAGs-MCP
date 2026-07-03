@@ -32,11 +32,14 @@ import { AMS_VOCABULARY } from "./ams.js";
 import { CARRIERWAVE_VOCABULARY } from "./carrierwave.js";
 import { CHEWY_VOCABULARY } from "./chewy.js";
 import { DRY_VOCABULARY } from "./dry.js";
+import { GEOCODER_VOCABULARY } from "./geocoder.js";
+import { PAPER_TRAIL_VOCABULARY } from "./paper_trail.js";
 import { PUNDIT_VOCABULARY } from "./pundit.js";
 import { ACTIVE_RECORD_INSTANCE_BUILTINS } from "./rails-runtime.js";
 import { RAILS_VOCABULARY } from "./rails.js";
 import { RUBY_CORE_VOCABULARY } from "./ruby-core.js";
 import { SIDEKIQ_VOCABULARY } from "./sidekiq.js";
+import { STATE_MACHINES_VOCABULARY } from "./state_machines.js";
 import type { RubyDslEntry, RubyFrameworkVocabulary } from "./types.js";
 
 /**
@@ -71,6 +74,9 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   AMS_VOCABULARY,
   CARRIERWAVE_VOCABULARY,
   AASM_VOCABULARY,
+  PAPER_TRAIL_VOCABULARY,
+  GEOCODER_VOCABULARY,
+  STATE_MACHINES_VOCABULARY,
 ];
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);

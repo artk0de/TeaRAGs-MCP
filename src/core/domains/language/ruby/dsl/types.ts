@@ -88,6 +88,19 @@ export interface RubyDslEntry {
    */
   declares?: (base: string) => DeclaredMethodSpec[];
   /**
+   * Methods this macro ALWAYS declares on the enclosing class, INDEPENDENT of any
+   * operand symbol — a FIXED name set (contrast {@link declares}, which projects
+   * names FROM a parsed operand). Some gem macros declare a constant method set
+   * regardless of their arguments (or with no args at all): `has_paper_trail` →
+   * `versions`/`version_at`/`paper_trail`; `geocoded_by :address` → `geocode`
+   * (the operand names the source column, but the declared method name is fixed).
+   * The interpreter emits these verbatim — no `operands` extraction — respecting
+   * the same gem-gating as `declares` (the entry is only in a project's catalogue
+   * when its gem is active). Mutually exclusive with `declares`: an entry projects
+   * from an operand OR declares a fixed set, not both.
+   */
+  declaresFixed?: readonly DeclaredMethodSpec[];
+  /**
    * Declarative descriptor for `walker/macro-expansion.ts::extractOperands`.
    * Absent → defaults to `'leading-symbols'` (collect all `simple_symbol` args,
    * skip non-symbols). Only set when the macro needs non-default extraction.

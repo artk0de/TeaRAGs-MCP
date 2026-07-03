@@ -119,6 +119,16 @@ export function rbNameOf(
       return rubyInsideSingletonClass(node) ? toStaticKind(emit) : emit;
     }
   }
+  // Bare receiver-less `declaresFixed` macro (`has_paper_trail` with no args)
+  // parses as a lone `identifier`, not a `call`. Route it through the same shared
+  // engine (which gates on the `body_statement` parent to avoid double-emitting
+  // the call form's method-name child). Static inside a `class << self`.
+  if (node.type === "identifier") {
+    const expanded = expandClassBodyMacros(node, catalogue).map(toNamedSymbol);
+    if (expanded.length > 0) {
+      return rubyInsideSingletonClass(node) ? toStaticKind(expanded) : expanded;
+    }
+  }
   // `alias new_name old_name` — Ruby keyword form is a distinct AST node
   // type (`alias`), not a `call`. Emit the new method name as an
   // instance method on the enclosing class so chunker and codegraph agree —

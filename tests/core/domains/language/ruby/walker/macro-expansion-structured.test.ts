@@ -4,7 +4,7 @@
  * These tests assert the REGISTRY shape and the dispatch contract introduced by
  * Task B of pg5ya — they do NOT duplicate the behaviour oracle cases already in
  * `macro-expansion.test.ts` (which remain the byte-identical golden source for
- * enum/aasm output correctness).
+ * enum/aasm/state_machine output correctness).
  */
 import Parser from "tree-sitter";
 import RbLang from "tree-sitter-ruby";
@@ -14,6 +14,7 @@ import { expandClassBodyMacros } from "../../../../../../src/core/domains/langua
 import { aasmExpander } from "../../../../../../src/core/domains/language/ruby/walker/structured/aasm.js";
 import { enumExpander } from "../../../../../../src/core/domains/language/ruby/walker/structured/enum.js";
 import { STRUCTURED_MACROS } from "../../../../../../src/core/domains/language/ruby/walker/structured/index.js";
+import { stateMachineExpander } from "../../../../../../src/core/domains/language/ruby/walker/structured/state_machine.js";
 
 // ---------------------------------------------------------------------------
 // Parse helpers (mirrors oracle helper pattern)
@@ -42,9 +43,9 @@ function firstStmt(src: string): Parser.SyntaxNode {
 // ---------------------------------------------------------------------------
 
 describe("STRUCTURED_MACROS registry", () => {
-  it("contains exactly two entries: enum and aasm", () => {
-    expect(STRUCTURED_MACROS).toHaveLength(2);
-    expect(STRUCTURED_MACROS.map((e) => e.macroName)).toEqual(["enum", "aasm"]);
+  it("contains exactly three entries: enum, aasm and state_machine", () => {
+    expect(STRUCTURED_MACROS).toHaveLength(3);
+    expect(STRUCTURED_MACROS.map((e) => e.macroName)).toEqual(["enum", "aasm", "state_machine"]);
   });
 
   it("enumExpander.macroName is 'enum'", () => {
@@ -55,12 +56,20 @@ describe("STRUCTURED_MACROS registry", () => {
     expect(aasmExpander.macroName).toBe("aasm");
   });
 
+  it("stateMachineExpander.macroName is 'state_machine'", () => {
+    expect(stateMachineExpander.macroName).toBe("state_machine");
+  });
+
   it("STRUCTURED_MACROS[0] is the enum expander", () => {
     expect(STRUCTURED_MACROS[0]).toBe(enumExpander);
   });
 
   it("STRUCTURED_MACROS[1] is the aasm expander", () => {
     expect(STRUCTURED_MACROS[1]).toBe(aasmExpander);
+  });
+
+  it("STRUCTURED_MACROS[2] is the state_machine expander", () => {
+    expect(STRUCTURED_MACROS[2]).toBe(stateMachineExpander);
   });
 
   it("an unknown macro name finds no expander in STRUCTURED_MACROS", () => {
@@ -86,6 +95,14 @@ describe("expandClassBodyMacros — structured dispatch integration", () => {
 
   it("aasm dispatches to aasmExpander (not generic operands path)", () => {
     const out = expandClassBodyMacros(firstStmt("class J\n  aasm do\n    state :sleeping\n  end\nend\n"));
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.every((m) => m.category === "state-machine")).toBe(true);
+  });
+
+  it("state_machine dispatches to stateMachineExpander (not generic operands path)", () => {
+    const out = expandClassBodyMacros(
+      firstStmt("class V\n  state_machine :status do\n    state :parked\n  end\nend\n"),
+    );
     expect(out.length).toBeGreaterThan(0);
     expect(out.every((m) => m.category === "state-machine")).toBe(true);
   });
@@ -120,6 +137,17 @@ describe("aasmExpander.expand — direct call", () => {
     const src = "class J\n  aasm do\n    state :idle\n    event :start\n  end\nend\n";
     const node = firstStmt(src);
     const out = aasmExpander.expand(node, node.startPosition.row + 1, node.endPosition.row + 1);
+    expect(out.map((m) => m.name)).toEqual(["idle?", "start", "start!"]);
+    expect(out.every((m) => m.category === "state-machine")).toBe(true);
+    expect(out.every((m) => m.kind === "instance")).toBe(true);
+  });
+});
+
+describe("stateMachineExpander.expand — direct call", () => {
+  it("synthesises predicate per state and method/bang per event (shared block-walk with aasm)", () => {
+    const src = "class V\n  state_machine :status do\n    state :idle\n    event :start\n  end\nend\n";
+    const node = firstStmt(src);
+    const out = stateMachineExpander.expand(node, node.startPosition.row + 1, node.endPosition.row + 1);
     expect(out.map((m) => m.name)).toEqual(["idle?", "start", "start!"]);
     expect(out.every((m) => m.category === "state-machine")).toBe(true);
     expect(out.every((m) => m.kind === "instance")).toBe(true);
