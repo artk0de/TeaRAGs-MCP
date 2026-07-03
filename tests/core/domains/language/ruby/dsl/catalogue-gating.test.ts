@@ -7,6 +7,13 @@ import {
 } from "../../../../../../src/core/domains/language/ruby/dsl/catalogue.js";
 import { defineFrameworkVocabulary } from "../../../../../../src/core/domains/language/ruby/dsl/framework-module.js";
 
+// Representative KEPT verbs of each gem-gated grammar's empirical safe-subset —
+// dry-/chewy-specific names that survived the collision sweep. Ubiquitous method
+// names (each/value/filter/field/index/…) were DROPPED to avoid stealing real
+// in-project edges, so they are deliberately NOT asserted as external here.
+const DRY_KEPT = ["filled", "maybe", "rule"] as const;
+const CHEWY_KEPT = ["crutch", "template", "agg", "update_index"] as const;
+
 const base = defineFrameworkVocabulary("rails", { has_many: { category: "association" } }); // unconditional
 const dry = defineFrameworkVocabulary("dry", { param: { category: "accessor" } }, undefined, {
   activatedBy: new Set(["dry-initializer", "dry-struct", "dry-schema"]),
@@ -79,5 +86,54 @@ describe("catalogueFor — memoised per-project catalogue (the consumer entry po
     expect(gated.entries.has_many).toBeDefined();
     expect(gated.enqueueDispatch.perform_async).toBe("perform");
     expect(gated.isExternalBareCall("params")).toBe(true);
+  });
+});
+
+describe("gem-gated grammars — dry / chewy / active_model_serializers (adx5p.9)", () => {
+  it("dry contract verbs are external ONLY when a dry gem is declared", () => {
+    const withDry = composeRubyCatalogue(new Set(["dry-schema"]));
+    const withoutDry = composeRubyCatalogue(new Set(["rails", "sidekiq"]));
+    for (const v of DRY_KEPT) {
+      expect(withDry.isExternalBareCall(v), v).toBe(true);
+      expect(withoutDry.isExternalBareCall(v), v).toBe(false); // dry absent → not classified
+    }
+  });
+
+  it("dry activates on ANY family member (dry-validation / dry-struct / dry-initializer)", () => {
+    for (const gem of ["dry-validation", "dry-struct", "dry-initializer"]) {
+      expect(composeRubyCatalogue(new Set([gem])).isExternalBareCall("filled"), gem).toBe(true);
+    }
+  });
+
+  it("chewy index-DSL verbs are external ONLY when chewy is declared", () => {
+    const withChewy = composeRubyCatalogue(new Set(["chewy"]));
+    const withoutChewy = composeRubyCatalogue(new Set(["rails"]));
+    for (const v of CHEWY_KEPT) {
+      expect(withChewy.isExternalBareCall(v), v).toBe(true);
+      expect(withoutChewy.isExternalBareCall(v), v).toBe(false);
+    }
+  });
+
+  it("AMS `attributes` emit entry is composed ONLY when active_model_serializers is declared", () => {
+    const withAms = composeRubyCatalogue(new Set(["active_model_serializers"]));
+    const withoutAms = composeRubyCatalogue(new Set(["rails"]));
+    expect(withAms.entries.attributes?.emits).toBe("serialized-attribute");
+    expect(withoutAms.entries.attributes).toBeUndefined(); // AMS absent → keyword not present
+  });
+
+  it("null (no Gemfile / gating off) → every gated grammar is active (FULL default)", () => {
+    const full = composeRubyCatalogue(null);
+    expect(full.isExternalBareCall("filled")).toBe(true); // dry
+    expect(full.isExternalBareCall("crutch")).toBe(true); // chewy
+    expect(full.entries.attributes?.emits).toBe("serialized-attribute"); // ams
+  });
+
+  it("safe-subset EXCLUDES ubiquitous colliders — a dropped verb stays non-external under the gem", () => {
+    const withDry = composeRubyCatalogue(new Set(["dry-schema"]));
+    const withChewy = composeRubyCatalogue(new Set(["chewy"]));
+    // dry-dropped Enumerable/Object/common names (params excluded — Rails owns it).
+    for (const v of ["value", "each", "key", "schema"]) expect(withDry.isExternalBareCall(v), v).toBe(false);
+    // chewy-dropped ubiquitous names (`def index` is on every Rails controller).
+    for (const v of ["field", "index", "filter"]) expect(withChewy.isExternalBareCall(v), v).toBe(false);
   });
 });

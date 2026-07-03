@@ -27,6 +27,9 @@
 
 import { ROUTING_VOCABULARY } from "./action-dispatch-routing.js";
 import { ACTIVESUPPORT_VOCABULARY } from "./activesupport.js";
+import { AMS_VOCABULARY } from "./ams.js";
+import { CHEWY_VOCABULARY } from "./chewy.js";
+import { DRY_VOCABULARY } from "./dry.js";
 import { PUNDIT_VOCABULARY } from "./pundit.js";
 import { ACTIVE_RECORD_INSTANCE_BUILTINS } from "./rails-runtime.js";
 import { RAILS_VOCABULARY } from "./rails.js";
@@ -59,6 +62,11 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   SIDEKIQ_VOCABULARY,
   PUNDIT_VOCABULARY,
   ROUTING_VOCABULARY,
+  // Gem-gated grammars (activatedBy) — composed into a project catalogue only
+  // when its Gemfile declares the gem (composeRubyCatalogue / catalogueForGemfile).
+  DRY_VOCABULARY,
+  CHEWY_VOCABULARY,
+  AMS_VOCABULARY,
 ];
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);
