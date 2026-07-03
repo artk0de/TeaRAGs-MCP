@@ -94,3 +94,68 @@ describe("expandClassBodyMacros — structured macro gating (aasm)", () => {
     expect(expandClassBodyMacros(firstStmt(src) as never).map((m) => m.name)).toEqual(["sleeping?", "run", "run!"]);
   });
 });
+
+/** First class/module body node as-is (any type — incl. bare `identifier`,
+ *  which the shared `firstStmt` helper skips). */
+function firstBodyNode(src: string): Parser.SyntaxNode {
+  const tree = parse(src);
+  const container = tree.rootNode.namedChildren.find((c) => c.type === "class" || c.type === "module");
+  if (!container) throw new Error("no class/module");
+  const body = container.childForFieldName("body");
+  const stmts = body ? body.namedChildren : container.namedChildren;
+  const stmt = stmts[0];
+  if (!stmt) throw new Error("no statement");
+  return stmt;
+}
+
+// ---------------------------------------------------------------------------
+// declaresFixed gating — paper_trail (bare identifier) / geocoder (call form)
+// ---------------------------------------------------------------------------
+
+describe("expandClassBodyMacros — declaresFixed gating (paper_trail / geocoder)", () => {
+  const ptSrc = "class Post\n  has_paper_trail\nend\n";
+  const geoSrc = "class Place\n  geocoded_by :full_address\nend\n";
+
+  it("synthesises the paper_trail fixed set ONLY when paper_trail is declared", () => {
+    expect(names(firstBodyNode(ptSrc), "gem 'paper_trail'")).toEqual(["versions", "version_at", "paper_trail"]);
+  });
+
+  it("synthesises NOTHING for bare has_paper_trail when the Gemfile lacks paper_trail", () => {
+    expect(names(firstBodyNode(ptSrc), "gem 'rails'")).toEqual([]);
+  });
+
+  it("synthesises geocoder `geocode` ONLY when geocoder is declared", () => {
+    expect(names(firstStmt(geoSrc), "gem 'geocoder'")).toEqual(["geocode"]);
+    expect(names(firstStmt(geoSrc), "gem 'rails'")).toEqual([]);
+  });
+
+  it("FULL catalogue keeps both fixed grammars active — byte-neutral", () => {
+    expect(expandClassBodyMacros(firstBodyNode(ptSrc) as never).map((m) => m.name)).toEqual([
+      "versions",
+      "version_at",
+      "paper_trail",
+    ]);
+    expect(expandClassBodyMacros(firstStmt(geoSrc) as never).map((m) => m.name)).toEqual(["geocode"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Structured macro gating — state_machines
+// ---------------------------------------------------------------------------
+
+describe("expandClassBodyMacros — structured macro gating (state_machine)", () => {
+  const src = "class Vehicle\n  state_machine :status do\n    state :parked\n    event :ignite\n  end\nend\n";
+
+  it("dispatches the state_machine expander ONLY when a state_machines/state_machine gem is declared", () => {
+    expect(names(firstStmt(src), "gem 'state_machines'")).toEqual(["parked?", "ignite", "ignite!"]);
+    expect(names(firstStmt(src), "gem 'state_machine'")).toEqual(["parked?", "ignite", "ignite!"]); // legacy gem
+  });
+
+  it("synthesises NOTHING for a state_machine block when the gem is absent", () => {
+    expect(names(firstStmt(src), "gem 'rails'")).toEqual([]);
+  });
+
+  it("FULL catalogue keeps state_machine active — byte-neutral", () => {
+    expect(expandClassBodyMacros(firstStmt(src) as never).map((m) => m.name)).toEqual(["parked?", "ignite", "ignite!"]);
+  });
+});

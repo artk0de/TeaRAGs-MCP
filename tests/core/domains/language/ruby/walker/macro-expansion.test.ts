@@ -481,3 +481,88 @@ describe("expandClassBodyMacros — enum string / hash-rocket key forms", () => 
     expect(out[0]).toMatchObject({ name: "status", category: "enum" });
   });
 });
+
+/** First body node of the class as-is (any type — INCLUDING a bare `identifier`,
+ *  which `firstStmt` skips). Used for argument-less fixed macros (`has_paper_trail`). */
+function firstBodyNode(src: string): Parser.SyntaxNode {
+  const tree = parse(src);
+  const container = tree.rootNode.namedChildren.find((c) => c.type === "class" || c.type === "module");
+  if (!container) throw new Error("no class/module");
+  const body = container.childForFieldName("body");
+  const stmts = body ? body.namedChildren : container.namedChildren;
+  const stmt = stmts[0];
+  if (!stmt) throw new Error("no statement");
+  return stmt;
+}
+
+describe("expandClassBodyMacros — declaresFixed (operand-less fixed-method macros)", () => {
+  it("bare has_paper_trail (identifier statement) → versions/version_at/paper_trail", () => {
+    const out = expandClassBodyMacros(firstBodyNode("class Post\n  has_paper_trail\nend\n"));
+    expect(out.map((m) => `${m.name}:${m.kind}`)).toEqual([
+      "versions:instance",
+      "version_at:instance",
+      "paper_trail:instance",
+    ]);
+    expect(out.every((m) => m.category === "dynamic-method")).toBe(true);
+  });
+
+  it("has_paper_trail with kwargs (call form) → same fixed set (options do not change names)", () => {
+    const out = expandClassBodyMacros(firstStmt("class Post\n  has_paper_trail on: [:update, :create]\nend\n"));
+    expect(out.map((m) => m.name)).toEqual(["versions", "version_at", "paper_trail"]);
+  });
+
+  it("geocoded_by :address → geocode (fixed name, operand IGNORED)", () => {
+    const out = expandClassBodyMacros(firstStmt("class Place\n  geocoded_by :full_address\nend\n"));
+    expect(out.map((m) => `${m.name}:${m.kind}`)).toEqual(["geocode:instance"]);
+    expect(out.every((m) => m.category === "dynamic-method")).toBe(true);
+  });
+
+  it("reverse_geocoded_by :lat, :lng → reverse_geocode (fixed name, operands IGNORED)", () => {
+    const out = expandClassBodyMacros(firstStmt("class Place\n  reverse_geocoded_by :latitude, :longitude\nend\n"));
+    expect(out.map((m) => m.name)).toEqual(["reverse_geocode"]);
+  });
+
+  it("attaches 1-based start/end lines to bare fixed-declared methods", () => {
+    const out = expandClassBodyMacros(firstBodyNode("class Post\n  has_paper_trail\nend\n"));
+    expect(out[0]).toMatchObject({ startLine: 2, endLine: 2 });
+  });
+
+  it("the call form's method-name identifier child does NOT re-expand (no double emission in the walk)", () => {
+    // In the full tree walk the call node emits the fixed set; its inner
+    // `has_paper_trail` identifier (parent `call`, not `body_statement`) must
+    // yield [] so the symbol is not emitted twice.
+    const call = firstStmt("class Post\n  has_paper_trail on: [:update]\nend\n");
+    const methodIdent = call.childForFieldName("method") ?? call.namedChildren[0];
+    expect(expandClassBodyMacros(methodIdent as never)).toEqual([]);
+  });
+
+  it("a bare identifier that is NOT a declaresFixed macro → [] (no over-firing)", () => {
+    expect(expandClassBodyMacros(firstBodyNode("class M\n  some_local_ref\nend\n"))).toEqual([]);
+  });
+});
+
+describe("expandClassBodyMacros — state_machines structured macro (parity with aasm)", () => {
+  it("state_machine :status do; state :x; event :y; end → predicate per state + method/bang per event", () => {
+    const src =
+      "class Vehicle\n  state_machine :status, initial: :parked do\n    state :parked\n    state :idling\n    event :ignite do\n      transition parked: :idling\n    end\n    event :stop\n  end\nend\n";
+    const out = expandClassBodyMacros(firstStmt(src));
+    expect(out.map((m) => `${m.name}:${m.kind}`)).toEqual([
+      "parked?:instance",
+      "idling?:instance",
+      "ignite:instance",
+      "ignite!:instance",
+      "stop:instance",
+      "stop!:instance",
+    ]);
+    expect(out.every((m) => m.category === "state-machine")).toBe(true);
+  });
+
+  it("state_machine brace-block form `state_machine(:s) { state :a }` → a?", () => {
+    const out = expandClassBodyMacros(firstStmt("class M\n  state_machine(:s) { state :a }\nend\n"));
+    expect(out.map((m) => m.name)).toEqual(["a?"]);
+  });
+
+  it("empty state_machine block yields nothing (defensive)", () => {
+    expect(expandClassBodyMacros(firstStmt("class M\n  state_machine :s do\n  end\nend\n"))).toEqual([]);
+  });
+});

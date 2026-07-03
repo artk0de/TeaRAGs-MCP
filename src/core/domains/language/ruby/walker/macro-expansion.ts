@@ -27,6 +27,10 @@ export type { DeclaredMethod } from "./structured/types.js";
  * Expand a class-body macro `call` / `method_call` node into the methods it
  * declares. Returns `[]` for receiver-qualified calls and non-macro names.
  *
+ * A `declaresFixed` macro invoked BARE (no args, e.g. `has_paper_trail`) parses
+ * as a lone `identifier`, not a `call` — handled by {@link expandBareFixedMacro}
+ * so the fixed method set is synthesised for the common argument-less form.
+ *
  * `catalogue` is the per-project gem-gated DSL catalogue (default
  * FULL_RUBY_CATALOGUE — every grammar active, byte-identical to pre-gating). A
  * gem-gated declaring macro (`mount_uploader`) or structured macro (`aasm`)
@@ -36,6 +40,9 @@ export function expandClassBodyMacros(
   node: AstNode,
   catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): DeclaredMethod[] {
+  // Bare receiver-less fixed-macro invocation (`has_paper_trail` with no args)
+  // parses as a lone `identifier`, not a `call`; it still declares its fixed set.
+  if (node.type === "identifier") return expandBareFixedMacro(node, catalogue);
   if (node.type !== "call" && node.type !== "method_call") return [];
   // Receiver-qualified (`obj.attr_accessor :x`) is a normal invocation, not DSL.
   if (node.childForFieldName("receiver")) return [];
@@ -65,11 +72,42 @@ export function expandClassBodyMacros(
   // entry and project each extracted base through `declares`.
   const entry = catalogue.entries[macroName];
   if (!entry) return [];
-  const { declares, category, operands } = entry;
+  const { declares, declaresFixed, category, operands } = entry;
+  // Operand-LESS fixed declaration: the macro declares a CONSTANT method set
+  // regardless of its arguments (`has_paper_trail` → versions/…; `geocoded_by
+  // :col` → geocode). Emit the fixed names verbatim — no operand extraction.
+  if (declaresFixed) {
+    return declaresFixed.map((m) => mk(m.name, m.kind, category));
+  }
   if (!declares || !args) return [];
   const shape = operands ?? "leading-symbols";
   const bases = extractOperands(args, shape);
   return bases.flatMap((b) => declares(b)).map((m) => mk(m.name, m.kind, category));
+}
+
+/**
+ * Expand a BARE (argument-less) `declaresFixed` macro that parses as a lone
+ * `identifier` statement (`has_paper_trail`). Fires ONLY when the identifier is a
+ * standalone class/module-body statement (parent `body_statement`) — NOT when it
+ * is a call's method-name child (parent `call`), which the call branch of
+ * {@link expandClassBodyMacros} already expanded, so double emission is avoided.
+ * Gated by the per-project catalogue exactly as the call form.
+ */
+function expandBareFixedMacro(node: AstNode, catalogue: RubyDslCatalogue): DeclaredMethod[] {
+  // A bare macro statement's identifier sits directly under a `body_statement`;
+  // an identifier that is a call's method name sits under the `call` node itself.
+  if (node.parent?.type !== "body_statement") return [];
+  const entry = catalogue.entries[node.text];
+  if (!entry?.declaresFixed) return [];
+  const startLine = node.startPosition.row + 1;
+  const endLine = node.endPosition.row + 1;
+  return entry.declaresFixed.map((m) => ({
+    name: m.name,
+    kind: m.kind,
+    category: entry.category,
+    startLine,
+    endLine,
+  }));
 }
 
 /**

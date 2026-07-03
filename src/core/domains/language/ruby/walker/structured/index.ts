@@ -1,5 +1,6 @@
 import { aasmExpander } from "./aasm.js";
 import { enumExpander } from "./enum.js";
+import { stateMachineExpander } from "./state_machine.js";
 import type { StructuredMacroExpander } from "./types.js";
 
 /**
@@ -15,6 +16,7 @@ import type { StructuredMacroExpander } from "./types.js";
 export type { StructuredMacroExpander } from "./types.js";
 export { aasmExpander } from "./aasm.js";
 export { enumExpander } from "./enum.js";
+export { stateMachineExpander } from "./state_machine.js";
 
 /** All structural macro expanders, in dispatch order. */
-export const STRUCTURED_MACROS: readonly StructuredMacroExpander[] = [enumExpander, aasmExpander];
+export const STRUCTURED_MACROS: readonly StructuredMacroExpander[] = [enumExpander, aasmExpander, stateMachineExpander];
