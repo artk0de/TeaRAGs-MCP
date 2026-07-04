@@ -5,69 +5,160 @@ sidebar_position: 99
 
 ## [1.34.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.34.0...v1.34.1) (2026-07-04)
 
-### Bug Fixes
+### 🩹 Fixes
 
-* **git:** swallow stdin pipe EPIPE in cat-file batch readers ([fe972a5](https://github.com/artk0de/TeaRAGs-MCP/commit/fe972a507738d9b195c58588f47e372974739b7e))
+* Indexing no longer crashes if the git process behind it exits unexpectedly mid-scan
 
 ## [1.34.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.33.0...v1.34.0) (2026-07-04)
 
 ### 🧠 Code intelligence
 
-* Ruby call-graph resolution now narrows ambiguous, duck-typed method calls using call-site evidence — argument count, keyword arguments, block usage, and literal receiver types — so calls that previously fanned out to dozens of unrelated methods now resolve to far fewer, more precise targets; navigation tools (get_callers/get_callees) also hide the low-confidence leftovers.
-* Ruby call-graph resolution now follows self-sends inside class bodies and callbacks, methods defined via included concerns/modules, `super` across module hierarchies, namespaced and inherited classes, and Sidekiq/ActiveJob-style enqueue dispatch — call sites that previously resolved to nothing (or to the wrong same-named method elsewhere) now resolve correctly.
-* An ambiguous method call reachable from hundreds of classes is now capped and tracked as its own category instead of flooding the call graph with hundreds of thousands of low-value edges, and fan-in/importance rankings are weighted by resolution confidence so ambiguous calls no longer manufacture fake 'most-connected' methods.
-* Ruby dynamic-dispatch resolution now also narrows candidates by which classes are actually instantiated elsewhere in the codebase, not just structurally reachable ones — another layer of precision for ambiguous method calls.
-* Rails framework conventions — Sidekiq/ActiveJob enqueueing, callbacks, `enum`, AASM state machines, `Concern` class methods, Pundit policies, routing, and caching — are now modeled as real call-graph edges instead of being invisible to code navigation.
-* The code-graph daemon now temporarily raises its own memory ceiling during large bulk-index writes to avoid running out of memory, and automatically restarts itself after tea-rags is upgraded instead of silently continuing to serve results from the old version.
-* get_callers can now optionally include ambiguous dynamic-dispatch call sites that might reach a target method, on request, without cluttering the default result set.
+- Ruby call-graph resolution now narrows ambiguous, duck-typed method calls
+  using call-site evidence — argument count, keyword arguments, block usage, and
+  literal receiver types — so calls that previously fanned out to dozens of
+  unrelated methods now resolve to far fewer, more precise targets; navigation
+  tools (get_callers/get_callees) also hide the low-confidence leftovers.
+- Ruby call-graph resolution now follows self-sends inside class bodies and
+  callbacks, methods defined via included concerns/modules, `super` across
+  module hierarchies, namespaced and inherited classes, and
+  Sidekiq/ActiveJob-style enqueue dispatch — call sites that previously resolved
+  to nothing (or to the wrong same-named method elsewhere) now resolve
+  correctly.
+- An ambiguous method call reachable from hundreds of classes is now capped and
+  tracked as its own category instead of flooding the call graph with hundreds
+  of thousands of low-value edges, and fan-in/importance rankings are weighted
+  by resolution confidence so ambiguous calls no longer manufacture fake
+  'most-connected' methods.
+- Ruby dynamic-dispatch resolution now also narrows candidates by which classes
+  are actually instantiated elsewhere in the codebase, not just structurally
+  reachable ones — another layer of precision for ambiguous method calls.
+- Rails framework conventions — Sidekiq/ActiveJob enqueueing, callbacks, `enum`,
+  AASM state machines, `Concern` class methods, Pundit policies, routing, and
+  caching — are now modeled as real call-graph edges instead of being invisible
+  to code navigation.
+- The code-graph daemon now temporarily raises its own memory ceiling during
+  large bulk-index writes to avoid running out of memory, and automatically
+  restarts itself after tea-rags is upgraded instead of silently continuing to
+  serve results from the old version.
+- get_callers can now optionally include ambiguous dynamic-dispatch call sites
+  that might reach a target method, on request, without cluttering the default
+  result set.
 
 ### ⚡ Indexing & performance
 
-* The vector index now uses 8x quantization (TurboQuant) by default for a smaller on-disk footprint — new collections are created with it, existing collections auto-migrate on startup, indexing shows migration progress, and search results are automatically rescored so accuracy is unaffected.
-* A new low-memory mode keeps the embedded Qdrant index on disk instead of in RAM for memory-constrained machines, plus an optional strict memory ceiling and search-batch-size cap to prevent Qdrant from running out of memory.
-* Indexing now marks a stalled enrichment stage as failed after 15 minutes of no progress instead of showing 'in progress' forever, so status reporting reflects reality and a fresh reindex can recover.
-* CLI reindexing and the session digest now automatically pick up the same performance-tuning settings the MCP server used when a project was first indexed, instead of silently falling back to defaults in a fresh shell.
+- The vector index now uses 8x quantization (TurboQuant) by default for a
+  smaller on-disk footprint — new collections are created with it, existing
+  collections auto-migrate on startup, indexing shows migration progress, and
+  search results are automatically rescored so accuracy is unaffected.
+- A new low-memory mode keeps the embedded Qdrant index on disk instead of in
+  RAM for memory-constrained machines, plus an optional strict memory ceiling
+  and search-batch-size cap to prevent Qdrant from running out of memory.
+- Indexing now marks a stalled enrichment stage as failed after 15 minutes of no
+  progress instead of showing 'in progress' forever, so status reporting
+  reflects reality and a fresh reindex can recover.
+- CLI reindexing and the session digest now automatically pick up the same
+  performance-tuning settings the MCP server used when a project was first
+  indexed, instead of silently falling back to defaults in a fresh shell.
 
 ### 🗣 Language support
 
-* Ruby/Rails DSL detection (Sidekiq, CarrierWave, AASM, state_machines, PaperTrail, Geocoder, dry-rb, Chewy, ActiveModelSerializers, and more) now activates per project based on the gems actually declared in its Gemfile, instead of applying every framework's rules to every Ruby project — fewer false call-graph edges from gems a project doesn't use.
-* Ruby type inference now follows memoized (`||=`) instance-variable and local-variable assignments, relation-to-collection conversions, element access on identifiers, and a fuller set of ActiveRecord finder/query methods — more accurate types mean more call-graph targets resolve correctly.
-* Ruby type inference now types instance variables assigned from a parameter, local variable, or association chain, and follows YARD ``@param`` documentation to seed `Const.new` call chains as typed instances.
-* Rails database migration and data scripts (db/migrate, db/data) are now excluded from Ruby call-graph analysis, so they no longer count as unresolved code and skew code-intelligence results for a project.
-* The README and docs now show a generated, always-accurate language support matrix — per-language code-intelligence and test-tooling capabilities — instead of a hand-maintained table that could drift from what's actually shipped.
+- Ruby/Rails DSL detection (Sidekiq, CarrierWave, AASM, state_machines,
+  PaperTrail, Geocoder, dry-rb, Chewy, ActiveModelSerializers, and more) now
+  activates per project based on the gems actually declared in its Gemfile,
+  instead of applying every framework's rules to every Ruby project — fewer
+  false call-graph edges from gems a project doesn't use.
+- Ruby type inference now follows memoized (`||=`) instance-variable and
+  local-variable assignments, relation-to-collection conversions, element access
+  on identifiers, and a fuller set of ActiveRecord finder/query methods — more
+  accurate types mean more call-graph targets resolve correctly.
+- Ruby type inference now types instance variables assigned from a parameter,
+  local variable, or association chain, and follows YARD `@param` documentation
+  to seed `Const.new` call chains as typed instances.
+- Rails database migration and data scripts (db/migrate, db/data) are now
+  excluded from Ruby call-graph analysis, so they no longer count as unresolved
+  code and skew code-intelligence results for a project.
+- The README and docs now show a generated, always-accurate language support
+  matrix — per-language code-intelligence and test-tooling capabilities —
+  instead of a hand-maintained table that could drift from what's actually
+  shipped.
 
 ### 🛠 CLI & workflow
 
-* get_index_status now reports the index's on-disk size, vector quantization mode, and the running Qdrant server version.
-* tea-rags now requires Qdrant 1.18.2 or newer; an older external Qdrant server is rejected at startup with a clear error instead of failing unpredictably, and the embedded daemon auto-updates to the required version.
-* Worktree index lifecycle is now explicit and visible: creating a worktree clones its index, each completed task step reindexes it, and merging or abandoning the branch automatically tears the clone down — replacing the previous implicit auto-reindex-on-commit behavior.
-* The session-start digest now shows a one-line summary of which embedding, Qdrant, and codegraph settings are actually active for a project.
+- get_index_status now reports the index's on-disk size, vector quantization
+  mode, and the running Qdrant server version.
+- tea-rags now requires Qdrant 1.18.2 or newer; an older external Qdrant server
+  is rejected at startup with a clear error instead of failing unpredictably,
+  and the embedded daemon auto-updates to the required version.
+- Worktree index lifecycle is now explicit and visible: creating a worktree
+  clones its index, each completed task step reindexes it, and merging or
+  abandoning the branch automatically tears the clone down — replacing the
+  previous implicit auto-reindex-on-commit behavior.
+- The session-start digest now shows a one-line summary of which embedding,
+  Qdrant, and codegraph settings are actually active for a project.
 
 ### 🩹 Fixes
 
-* Fixed several Ruby call-graph resolution bugs: namespaced base classes and included concerns weren't matched correctly (so self-sends inside them silently failed to resolve), a namespaced method could incorrectly match a same-named method in an unrelated class, a compact class declaration (`class A::B::C`) could fabricate a nonexistent external base class, destructured or multiple-assignment local variables were mistaken for method calls, and a method marked `private` via `private :name` after its definition was incorrectly treated as public.
-* Fixed find_symbol returning no results for Rails DSL-defined symbols (`scope`, `has_many`, `delegate`) even though they were reachable through code navigation.
-* Fixed find_symbol on a large method split into multiple chunks returning several conflicting results instead of one merged definition.
-* Fixed YARD ``@param`` type parsing to also support the bracket-first form (``@param` [Type] name`) used by Rails/mastodon-style docs, so more instance-variable types resolve correctly.
-* Fixed indexing aborting entirely on a brief Ollama outage mid-run — indexing now retries with backoff and survives transient unavailability instead of losing all progress.
-* Fixed the embedded Qdrant daemon continuing to serve the old version indefinitely after a binary auto-upgrade — the stale daemon is now restarted.
-* Fixed indexing failing with 'Qdrant is not reachable' for older projects after the embedded Qdrant daemon restarted on a new port.
-* Fixed indexing status getting stuck showing an enrichment stage as crashed even after it had already recovered on a later reindex.
-* Fixed reported index disk size being several times too large, or missing entirely, by counting actual disk usage instead of preallocated space.
-* Fixed indexing from a worktree clone, or from a fresh shell, sometimes crashing or connecting to the wrong Qdrant instance by correctly inheriting embedded-Qdrant connection settings.
+- Fixed several Ruby call-graph resolution bugs: namespaced base classes and
+  included concerns weren't matched correctly (so self-sends inside them
+  silently failed to resolve), a namespaced method could incorrectly match a
+  same-named method in an unrelated class, a compact class declaration
+  (`class A::B::C`) could fabricate a nonexistent external base class,
+  destructured or multiple-assignment local variables were mistaken for method
+  calls, and a method marked `private` via `private :name` after its definition
+  was incorrectly treated as public.
+- Fixed find_symbol returning no results for Rails DSL-defined symbols (`scope`,
+  `has_many`, `delegate`) even though they were reachable through code
+  navigation.
+- Fixed find_symbol on a large method split into multiple chunks returning
+  several conflicting results instead of one merged definition.
+- Fixed YARD `@param` type parsing to also support the bracket-first form
+  (``@param` [Type] name`) used by Rails/mastodon-style docs, so more
+  instance-variable types resolve correctly.
+- Fixed indexing aborting entirely on a brief Ollama outage mid-run — indexing
+  now retries with backoff and survives transient unavailability instead of
+  losing all progress.
+- Fixed the embedded Qdrant daemon continuing to serve the old version
+  indefinitely after a binary auto-upgrade — the stale daemon is now restarted.
+- Fixed indexing failing with 'Qdrant is not reachable' for older projects after
+  the embedded Qdrant daemon restarted on a new port.
+- Fixed indexing status getting stuck showing an enrichment stage as crashed
+  even after it had already recovered on a later reindex.
+- Fixed reported index disk size being several times too large, or missing
+  entirely, by counting actual disk usage instead of preallocated space.
+- Fixed indexing from a worktree clone, or from a fresh shell, sometimes
+  crashing or connecting to the wrong Qdrant instance by correctly inheriting
+  embedded-Qdrant connection settings.
 
 ### 🔧 Environment Variables
 
-* `QDRANT_TURBO_QUANT` · Enables 8x vector quantization (TurboQuant) to shrink the on-disk index while search results are automatically rescored to preserve accuracy · default: `true` (new)
-* `CODEGRAPH_DB_MEMORY_LIMIT_MAX` · Ceiling the code-graph daemon may temporarily raise its memory limit to during large bulk-index write bursts · default: `4GB` (new)
-* `QDRANT_LOW_MEMORY` · Forces the embedded Qdrant daemon to keep vectors and payloads on disk instead of in RAM, for memory-constrained machines · default: `false` (new)
-* `QDRANT_MAX_RESIDENT_MEMORY_PERCENT` · Optional strict-mode ceiling on Qdrant's resident memory usage, to guard against out-of-memory crashes · default: `unset (guard off)` (new)
-* `QDRANT_SEARCH_MAX_BATCHSIZE` · Optional cap on the number of vectors a single search batch may process · default: `unset (no cap)` (new)
-* `EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS` · Maximum time indexing keeps retrying embedding calls through a transient Ollama outage before giving up · default: `240000 (4 minutes)` (new)
-* `EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS` · Base backoff delay between embedding retry attempts during an Ollama outage · default: `2000` (new)
-* `ENRICHMENT_STALL_DEADLINE_MS` · How long an enrichment stage may report no progress before indexing status marks it failed (and eligible for recovery on the next reindex) · default: `900000 (15 minutes)` (new)
-* `TEA_RAGS_CODEGRAPH_BUILD_FINGERPRINT` · Overrides the build fingerprint the codegraph daemon and client exchange to detect a stale daemon after an upgrade · default: `derived automatically from module path, version, and mtime` (new)
-* `TRAJECTORY_GIT_CHUNK_CONCURRENCY` · Git chunk-churn walk concurrency; a configured value below the built-in default is now ignored, so this env var can only raise concurrency, never silently lower it · default: `10` (changed)
+- `QDRANT_TURBO_QUANT` · Enables 8x vector quantization (TurboQuant) to shrink
+  the on-disk index while search results are automatically rescored to preserve
+  accuracy · default: `true` (new)
+- `CODEGRAPH_DB_MEMORY_LIMIT_MAX` · Ceiling the code-graph daemon may
+  temporarily raise its memory limit to during large bulk-index write bursts ·
+  default: `4GB` (new)
+- `QDRANT_LOW_MEMORY` · Forces the embedded Qdrant daemon to keep vectors and
+  payloads on disk instead of in RAM, for memory-constrained machines · default:
+  `false` (new)
+- `QDRANT_MAX_RESIDENT_MEMORY_PERCENT` · Optional strict-mode ceiling on
+  Qdrant's resident memory usage, to guard against out-of-memory crashes ·
+  default: `unset (guard off)` (new)
+- `QDRANT_SEARCH_MAX_BATCHSIZE` · Optional cap on the number of vectors a single
+  search batch may process · default: `unset (no cap)` (new)
+- `EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS` · Maximum time indexing keeps
+  retrying embedding calls through a transient Ollama outage before giving up ·
+  default: `240000 (4 minutes)` (new)
+- `EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS` · Base backoff delay between
+  embedding retry attempts during an Ollama outage · default: `2000` (new)
+- `ENRICHMENT_STALL_DEADLINE_MS` · How long an enrichment stage may report no
+  progress before indexing status marks it failed (and eligible for recovery on
+  the next reindex) · default: `900000 (15 minutes)` (new)
+- `TEA_RAGS_CODEGRAPH_BUILD_FINGERPRINT` · Overrides the build fingerprint the
+  codegraph daemon and client exchange to detect a stale daemon after an upgrade
+  · default: `derived automatically from module path, version, and mtime` (new)
+- `TRAJECTORY_GIT_CHUNK_CONCURRENCY` · Git chunk-churn walk concurrency; a
+  configured value below the built-in default is now ignored, so this env var
+  can only raise concurrency, never silently lower it · default: `10` (changed)
 
 ## [1.33.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.32.0...v1.33.0) (2026-06-26)
 

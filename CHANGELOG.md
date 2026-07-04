@@ -1,9 +1,8 @@
 ## [1.34.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.34.0...v1.34.1) (2026-07-04)
 
-### Bug Fixes
+### 🩹 Fixes
 
-- **git:** swallow stdin pipe EPIPE in cat-file batch readers
-  ([fe972a5](https://github.com/artk0de/TeaRAGs-MCP/commit/fe972a507738d9b195c58588f47e372974739b7e))
+* Indexing no longer crashes if the git process behind it exits unexpectedly mid-scan
 
 ## [1.34.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.33.0...v1.34.0) (2026-07-04)
 
