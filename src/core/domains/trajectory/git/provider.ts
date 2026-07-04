@@ -9,7 +9,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { blameFile, resolveRepoRoot, type CatFileBatchReader } from "../../../adapters/git/client.js";
+import { blameFile, getHead, resolveRepoRoot, type CatFileBatchReader } from "../../../adapters/git/client.js";
 import type { BlameLine, CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
 import type { FileClassification } from "../../../contracts/types/file-classification.js";
@@ -29,7 +29,12 @@ import type { RerankPreset } from "../../../contracts/types/reranker.js";
 import { gitFilters } from "./filters.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
-import { buildFileSignalMap, buildFileSignalsForPaths } from "./infra/file-reader.js";
+import {
+  buildFileSignalDiscovery,
+  buildFileSignalMap,
+  buildFileSignalsForPaths,
+  sliceFileSignalsByPaths,
+} from "./infra/file-reader.js";
 import { buildBugFixShaSet } from "./infra/merge-branch-resolver.js";
 import type { SquashOptions } from "./infra/metrics.js";
 import { assembleFileSignals } from "./infra/metrics/file-assembler.js";
@@ -51,6 +56,20 @@ const DEFAULT_PROVIDER_CONFIG: GitProviderConfig = {
   chunkTimeoutMs: 120000,
   chunkMaxFileLines: 10000,
 };
+
+/**
+ * Run-scoped, repo-wide file churn discovery (bd tea-rags-mcp-j4lm9). ONE
+ * `git log HEAD --numstat` shared across every `streamFileBatch` call of a run,
+ * sliced per batch in memory — replacing the former per-batch full-history
+ * pathspec log (~one full history walk per file batch). Keyed by (root, HEAD)
+ * so it survives batches WITHIN a run and self-invalidates across runs (HEAD
+ * moves); dropped explicitly at the run-end finalize seam for memory hygiene.
+ */
+interface RunFileDiscovery {
+  readonly root: string;
+  readonly headSha: string;
+  readonly data: Map<string, FileChurnData>;
+}
 
 export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";
@@ -123,6 +142,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   private readonly enrichmentCache = new GitEnrichmentCache();
   private readonly isoGitCache: Record<string, unknown> = {};
   private lastFileResult: Map<string, FileChurnData> | null = null;
+  /** Run-scoped discovery — see RunFileDiscovery. Lazy on the first streaming
+   *  batch, reset by finalizeSignals (and re-keyed automatically when HEAD moves). */
+  private fileDiscovery: RunFileDiscovery | null = null;
 
   async buildFileSignals(root: string, options?: { paths?: string[] }): Promise<Map<string, FileSignalOverlay>> {
     // Fast check: skip if not a git repo
@@ -133,6 +155,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     let rawData: Map<string, FileChurnData>;
 
     if (options?.paths) {
+      // Whole-set path (backfill / recovery): a fresh per-path history walk.
+      // Kept separate from streamFileBatch so backfill/recovery semantics are
+      // unchanged — they do not share the run-scoped streaming discovery.
       rawData = await buildFileSignalsForPaths(root, options.paths, this.config.logTimeoutMs);
     } else {
       rawData = await buildFileSignalMap(
@@ -143,6 +168,66 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       );
     }
 
+    return this.buildSignalsFromRawData(root, rawData);
+  }
+
+  /** Per-batch streaming: same computation as buildFileSignals, scoped to the
+   *  batch's paths — but the batch's FileChurnData is SLICED from the ONE
+   *  run-scoped repo-wide discovery instead of a fresh per-batch full-history
+   *  pathspec log (bd tea-rags-mcp-j4lm9). Populates blameByRelPath/lastFileResult
+   *  for the batch so the matching buildChunkSignals call (same batch) sees
+   *  per-range ownership. Arrow-property so `this` survives being passed as a
+   *  coordinator callback. */
+  streamFileBatch = async (
+    root: string,
+    batchPaths: string[],
+    _options?: FileSignalOptions,
+  ): Promise<Map<string, FileSignalOverlay>> => {
+    // Fast check: skip if not a git repo (mirrors buildFileSignals).
+    if (!existsSync(join(root, ".git"))) {
+      return new Map();
+    }
+    const rawData = sliceFileSignalsByPaths(await this.getRunDiscovery(root), batchPaths);
+    return this.buildSignalsFromRawData(root, rawData);
+  };
+
+  /** git streams file+chunk signals per batch — nothing is deferred, so the
+   *  file finalize is an empty no-op (and defersChunkEnrichment stays unset).
+   *  It IS the once-per-run seam (CompletionRunner.runFinalize calls it for every
+   *  provider), so drop the run-scoped discovery here — its full-repo
+   *  FileChurnData map must not outlive the run. A fresh run rebuilds it lazily;
+   *  the (root, HEAD) key is the correctness guard, this is memory hygiene. */
+  finalizeSignals = async (): Promise<Map<string, FileSignalOverlay>> => {
+    this.fileDiscovery = null;
+    return new Map();
+  };
+
+  /**
+   * Lazily build (or reuse) the run-scoped repo-wide discovery keyed by
+   * (root, HEAD). Reused across every streaming batch of a run; a HEAD move
+   * (new run) rebuilds. Dropped at the finalize seam (finalizeSignals).
+   */
+  private async getRunDiscovery(root: string): Promise<Map<string, FileChurnData>> {
+    const headSha = await getHead(root).catch(() => "");
+    if (this.fileDiscovery?.root === root && this.fileDiscovery.headSha === headSha) {
+      return this.fileDiscovery.data;
+    }
+    const data = await buildFileSignalDiscovery(root, this.config.logTimeoutMs);
+    this.fileDiscovery = { root, headSha, data };
+    return data;
+  }
+
+  /**
+   * Shared file-signal assembly for both the whole-set (buildFileSignals) and
+   * streaming (streamFileBatch) paths: cache the raw result, resolve the
+   * bug-fix SHA set, run git blame per file, and return the raw FileChurnData
+   * as overlays. The only difference between the two callers is where rawData
+   * came from — the downstream computation is identical.
+   */
+  private async buildSignalsFromRawData(
+    root: string,
+    rawData: Map<string, FileChurnData>,
+  ): Promise<Map<string, FileSignalOverlay>> {
     this.lastFileResult = rawData;
 
     // Build bug-fix SHA set from merge branch prefixes (all commits across all files)
@@ -166,22 +251,6 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     }
     return result;
   }
-
-  /** Per-batch streaming: same computation as buildFileSignals, scoped to the
-   *  batch's paths. Populates blameByRelPath/lastFileResult for the batch so
-   *  the matching buildChunkSignals call (same batch) sees per-range ownership.
-   *  Arrow-property so `this` survives being passed as a coordinator callback. */
-  streamFileBatch = async (
-    root: string,
-    batchPaths: string[],
-    _options?: FileSignalOptions,
-  ): Promise<Map<string, FileSignalOverlay>> => {
-    return this.buildFileSignals(root, { paths: batchPaths });
-  };
-
-  /** git streams file+chunk signals per batch — nothing is deferred, so the
-   *  file finalize is an empty no-op (and defersChunkEnrichment stays unset). */
-  finalizeSignals = async (): Promise<Map<string, FileSignalOverlay>> => new Map();
 
   /** Run `git blame HEAD` per file in parallel batches and store results in
    *  the WeakMap for later transform-time lookup. Failures fall back to empty
