@@ -104,6 +104,9 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
         case "embedding":
           // Already forwarded to the renderer above; no supervisor-side state.
           break;
+        case "turbo-migration":
+          // Already forwarded to the renderer above; no supervisor-side state.
+          break;
         case "enrichment":
           eta.record(`${raw.providerKey}:${raw.level}`, raw.applied, raw.total, now());
           break;
