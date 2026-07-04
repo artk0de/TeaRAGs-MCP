@@ -424,11 +424,16 @@ export class EnrichmentCoordinator {
     // (cold, serialized-DuckDB) file extraction starved git chunk (wy5i). The
     // per-provider map keeps git.file→git.chunk and codegraph.file→codegraph.chunk
     // fully concurrent across providers.
+    //
+    // bd tea-rags-mcp-7gnre: hand the batch to the chunk dispatcher AT ARRIVAL
+    // with the provider's file work as the dispatch gate — ChunkPhase marks
+    // streaming coverage synchronously (so the post-flush snapshot excludes
+    // this batch) and defers only the walk until fileDone resolves. Deferring
+    // the whole onBatchProvider call behind fileDone left late batches
+    // unmarked at snapshot time → walked twice (mega-walk + own dispatch).
     const fileWorkByProvider = run.filePhase.onBatch(collectionName, absolutePath, items);
     for (const [providerKey, fileDone] of fileWorkByProvider) {
-      void fileDone.then(() => {
-        run.chunkPhase.onBatchProvider(providerKey, collectionName, absolutePath, items);
-      });
+      run.chunkPhase.onBatchProvider(providerKey, collectionName, absolutePath, items, fileDone);
     }
     // Advance the run-pointer heartbeat on real apply progress (throttled). A
     // hung run stops producing batches → lastProgressAt freezes → the health

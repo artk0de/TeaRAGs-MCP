@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
+import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 
@@ -477,5 +478,158 @@ describe("ChunkPhase", () => {
     expect(enrichedRel.has("app/models/user.rb")).toBe(true);
     expect(enrichedRel.has("db/schema.rb")).toBe(false);
     expect(enrichedRel.has("README.md")).toBe(false);
+  });
+
+  describe("streaming coverage at batch ARRIVAL (bd tea-rags-mcp-7gnre)", () => {
+    const batchOf = (rel: string, chunkId: string) =>
+      [{ chunkId, chunk: { metadata: { filePath: `/repo/${rel}` }, startLine: 1, endLine: 10 } }] as any[];
+    const entriesOf = (chunkId: string) => [{ chunkId, startLine: 1, endLine: 10 }];
+    const walkedFiles = (buildChunkSignals: ReturnType<typeof vi.fn>) =>
+      buildChunkSignals.mock.calls.flatMap((c) => [...(c[1] as Map<string, unknown>).keys()]);
+
+    it("marks coverage at batch arrival but defers dispatch until the file-work gate resolves", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
+      const ctx = buildCtx({ buildChunkSignals });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+
+      let releaseGate!: () => void;
+      const gate = new Promise<void>((r) => {
+        releaseGate = r;
+      });
+
+      // Batch ARRIVES while its file work is still in flight (pending gate).
+      phase.onBatchProvider("git", "coll", "/repo", batchOf("src/a.ts", "c1"), gate);
+      await new Promise((r) => setImmediate(r));
+
+      // Dispatch is file-work-gated: the walk must NOT have started yet.
+      expect(buildChunkSignals).not.toHaveBeenCalled();
+
+      // The post-flush snapshot must ALREADY exclude src/a.ts — its batch is
+      // queued and will be covered by its own gated dispatch.
+      phase.enrichRemaining(
+        "coll",
+        "/repo",
+        new Map([
+          ["src/a.ts", entriesOf("c1")],
+          ["src/b.ts", entriesOf("c2")],
+        ]),
+      );
+      await new Promise((r) => setImmediate(r));
+      expect(walkedFiles(buildChunkSignals)).toContain("src/b.ts");
+      expect(walkedFiles(buildChunkSignals)).not.toContain("src/a.ts");
+
+      releaseGate();
+      await phase.drain();
+
+      // After the gate resolves, src/a.ts is walked by its own batch — ONCE.
+      expect(walkedFiles(buildChunkSignals).filter((f) => f === "src/a.ts")).toHaveLength(1);
+      expect(walkedFiles(buildChunkSignals).filter((f) => f === "src/b.ts")).toHaveLength(1);
+    });
+
+    it("total files walked across multi-batch streaming + post-flush equals unique files (no 2x)", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      // Echo overlays for every input file/chunk so applied counts are real.
+      const buildChunkSignals = vi.fn().mockImplementation(async (_root: string, chunkMap: Map<string, any[]>) => {
+        const overlays = new Map<string, Map<string, unknown>>();
+        for (const [rel, entries] of chunkMap) {
+          overlays.set(rel, new Map(entries.map((e) => [e.chunkId, { commitCount: 1 }])));
+        }
+        return overlays;
+      });
+      const ctx = buildCtx({ buildChunkSignals });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+      const applySpy = vi.spyOn(applier, "applyChunkSignals");
+
+      let releaseA!: () => void;
+      let releaseB!: () => void;
+      const gateA = new Promise<void>((r) => {
+        releaseA = r;
+      });
+      const gateB = new Promise<void>((r) => {
+        releaseB = r;
+      });
+
+      // Two streaming batches arrive, both file-work-gated (in flight).
+      phase.onBatchProvider("git", "coll", "/repo", batchOf("src/a.ts", "c1"), gateA);
+      phase.onBatchProvider("git", "coll", "/repo", batchOf("src/b.ts", "c2"), gateB);
+
+      // Post-flush catch-up over the FULL chunk map (a, b in flight; c uncovered).
+      phase.enrichRemaining(
+        "coll",
+        "/repo",
+        new Map([
+          ["src/a.ts", entriesOf("c1")],
+          ["src/b.ts", entriesOf("c2")],
+          ["src/c.ts", entriesOf("c3")],
+        ]),
+      );
+
+      releaseA();
+      releaseB();
+      await phase.drain();
+      await new Promise((r) => setImmediate(r));
+
+      // Every file walked exactly once — 3 walks for 3 unique files.
+      const walked = walkedFiles(buildChunkSignals);
+      expect(walked.sort()).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
+
+      // Overlay-apply proof: total overlays applied == total chunks (3, not 2x).
+      let overlaysApplied = 0;
+      for (const call of applySpy.mock.calls) {
+        for (const inner of (call[2] as Map<string, Map<string, unknown>>).values()) overlaysApplied += inner.size;
+      }
+      expect(overlaysApplied).toBe(3);
+    });
+
+    it("a file marked at arrival whose streaming walk FAILS is still covered by backfill (safety net intact)", async () => {
+      const qdrant = new MockQdrantManager();
+      await qdrant.createCollection("coll", 384);
+      await qdrant.addPoints("coll", [{ id: "c1", vector: new Array(384).fill(0.1), payload: {} }]);
+      const applier = new EnrichmentApplier(qdrant as any);
+
+      // Streaming walk fails once (the gated batch), then succeeds (backfill).
+      const buildChunkSignals = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("walk failed"))
+        .mockResolvedValue(new Map([["src/a.ts", new Map([["c1", { churnRatio: 1 }]])]]));
+      const buildFileSignals = vi.fn().mockResolvedValue(new Map([["src/a.ts", { commitCount: 2 }]]));
+      const ctx = buildCtx({ buildChunkSignals, buildFileSignals });
+      const executor = new InlineEnrichmentExecutor();
+      const phase = new ChunkPhase(applier, executor);
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "t0");
+
+      let releaseGate!: () => void;
+      const gate = new Promise<void>((r) => {
+        releaseGate = r;
+      });
+      const items = batchOf("src/a.ts", "c1");
+      phase.onBatchProvider("git", "coll", "/repo", items, gate);
+
+      // src/a.ts is marked at arrival → excluded from the post-flush walk.
+      phase.enrichRemaining("coll", "/repo", new Map([["src/a.ts", entriesOf("c1")]]));
+      releaseGate();
+      await phase.drain();
+      await new Promise((r) => setImmediate(r));
+
+      // The streaming walk failed → the chunk got NO overlay from streaming.
+      expect(buildChunkSignals).toHaveBeenCalledTimes(1);
+
+      // File-phase miss (no file overlay landed for src/a.ts) feeds the tracker…
+      await applier.applyFileSignals("coll", "git", new Map(), "/repo", items, undefined, "t0");
+      expect(applier.getMissedFileChunks().has("src/a.ts")).toBe(true);
+
+      // …and backfill re-fetches file AND chunk overlays despite the arrival mark.
+      const backfiller = new EnrichmentBackfiller(applier, qdrant as any, executor);
+      await backfiller.runFor("coll", ctx as any, "t0");
+
+      const point = (await qdrant.getPoint("coll", "c1"))!;
+      expect((point.payload as any).git.file.commitCount).toBe(2);
+      expect((point.payload as any).git.chunk.churnRatio).toBe(1);
+    });
   });
 });
