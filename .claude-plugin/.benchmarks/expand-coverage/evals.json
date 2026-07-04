@@ -1,0 +1,170 @@
+{
+  "skill": "expand-coverage",
+  "date": "2026-07-04",
+  "note": "Cases 1-10 are the coverage-expander corpus verbatim (regression parity — the 'same corpus'). Cases 11-14 exercise the new capabilities (freshness reindex, corner-case discovery, dead-branch honesty) and are where the skill earns a positive delta over no-rule baseline. Grades: verbose_with_rule = new skill v1 injected; no_rule = natural baseline (no skill); caveman = compressed skill injected (verify).",
+  "summary": {
+    "verbose_with_rule": "14/14 (100%)",
+    "no_rule_baseline": "3/14 (21%)",
+    "caveman_verify": "14/14 (100%)",
+    "delta": "+79pp",
+    "original_10_subset": {
+      "with_rule": "10/10",
+      "no_rule": "3/10",
+      "delta": "+70pp"
+    },
+    "new_4_subset": { "with_rule": "4/4", "no_rule": "0/4", "delta": "+100pp" },
+    "eval_15_background": "Added after the background-agent requirement; validated on the final caveman+background skill = PASS (controls eval-1/eval-7 held). no_rule inferred FAIL (trap invites AskUserQuestion; no autonomy directive without the skill). Not part of the 14-case verbose-vs-caveman parity count."
+  },
+  "cases": [
+    {
+      "id": "eval-1",
+      "type": "audit",
+      "prompt": "Pre-commit hook failed: ERROR: Coverage for statements (96.83%) does not meet global threshold (96.9%)",
+      "expected": "npm run test:coverage, tea-rags for candidates, NOT npx vitest, NOT awk",
+      "findings": [1, 2],
+      "verbose_with_rule": "PASS",
+      "no_rule": "FAIL",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-2",
+      "type": "audit",
+      "prompt": "Coverage dropped after adding new file src/core/domains/explore/strategies/scroll-search.ts — need tests",
+      "expected": "find_symbol/hybrid_search to understand file, NOT Read",
+      "findings": [3],
+      "verbose_with_rule": "PASS",
+      "no_rule": "FAIL",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-3",
+      "type": "audit",
+      "prompt": "Coverage is 96.5%, threshold 96.9%. Find what needs tests.",
+      "expected": "Single npm run test:coverage command for measurement (test + coverage together), NOT a separate test run then coverage run",
+      "findings": [4],
+      "verbose_with_rule": "PASS",
+      "no_rule": "PASS",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-4",
+      "type": "audit",
+      "prompt": "Need to write tests for src/core/domains/ingest/pipeline/enrichment/coordinator.ts to raise coverage",
+      "expected": "hybrid_search with pathPattern tests/** for existing tests, NOT Read",
+      "findings": [5],
+      "verbose_with_rule": "PASS",
+      "no_rule": "FAIL",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-5",
+      "type": "audit",
+      "prompt": "Coverage threshold not met. The file src/core/adapters/embedding/onnx-provider.ts has 0% coverage.",
+      "expected": "tea-rags for understanding + patterns, single coverage command, zero Read of src/",
+      "findings": [2, 3, 4],
+      "verbose_with_rule": "PASS",
+      "no_rule": "FAIL",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-6",
+      "type": "control",
+      "prompt": "Pre-commit failed with coverage error. I only want you to write tests, not touch production code.",
+      "expected": "Only writes test files under tests/, never modifies src/, no v8-ignore",
+      "findings": [],
+      "verbose_with_rule": "PASS",
+      "no_rule": "PASS",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-7",
+      "type": "control",
+      "prompt": "Coverage is already at 97.1% and threshold is 96.9%. The pre-commit hook passed.",
+      "expected": "Early exit, no action needed",
+      "findings": [],
+      "verbose_with_rule": "PASS",
+      "no_rule": "PASS",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-8",
+      "type": "subagent",
+      "prompt": "Task: raise test coverage from 96.83% to 96.9%. Project path: /Users/artk0re/Dev/Tools/tea-rags-mcp. Use tea-rags MCP for code search.",
+      "expected": "npm run test:coverage, tea-rags for discovery, hybrid_search for patterns, single verification command",
+      "findings": [1, 2, 3, 4, 5],
+      "verbose_with_rule": "PASS",
+      "no_rule": "FAIL",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-9",
+      "type": "subagent",
+      "prompt": "Execute step: write tests to close coverage gap for trajectory domain files. Use tea-rags to find uncovered areas.",
+      "expected": "hybrid_search/find_symbol for discovery, single npm run test:coverage",
+      "findings": [2, 3, 5],
+      "verbose_with_rule": "PASS",
+      "no_rule": "FAIL",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-10",
+      "type": "edge",
+      "prompt": "Покрытие 96.83%, порог 96.9%. Напиши тесты.",
+      "expected": "Same as eval-1 — npm run test:coverage, tea-rags, behavioral tests",
+      "findings": [],
+      "verbose_with_rule": "PASS",
+      "no_rule": "FAIL",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-11",
+      "type": "new-freshness",
+      "prompt": "The commit that just failed coverage added src/core/domains/explore/strategies/scroll-search.ts, a brand-new file. Write tests to cover it.",
+      "expected": "BEFORE any tea-rags search, incremental index_codebase of the local-main project (freshness gate — new file not yet indexed), THEN find_symbol/hybrid_search, single npm run test:coverage. NOT searching a stale index directly.",
+      "findings": ["freshness"],
+      "verbose_with_rule": "PASS",
+      "no_rule": "FAIL",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-12",
+      "type": "new-cornercase",
+      "prompt": "coordinator.ts sits at 88% statements. Raise it. The uncovered code is error-handling and early-return branches.",
+      "expected": "Read coverage/coverage-final.json to get the EXACT uncovered statement/branch line ranges (hit count 0), find_symbol on the enclosing function to understand each branch, find_similar/get_callers for how neighbors test that shape, then ONE behavioral test per uncovered branch. NOT line-number-named tests, NOT reading the whole src file blindly.",
+      "findings": ["cornercase"],
+      "verbose_with_rule": "PASS",
+      "no_rule": "FAIL",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-13",
+      "type": "subagent-new",
+      "prompt": "Execute step: coverage gap on newly committed src/core/domains/trajectory/git/rerank/derived-signals/recency.ts. Close it.",
+      "expected": "From a bare subagent context: freshness gate (incremental reindex of local main) first, then coverage-final.json for uncovered branches + find_symbol, single npm run test:coverage. Freshness + corner-case steps must fire without CLAUDE.md context.",
+      "findings": ["freshness", "cornercase"],
+      "verbose_with_rule": "PASS",
+      "no_rule": "FAIL",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-14",
+      "type": "edge-deadcode",
+      "prompt": "The only uncovered lines in parser.ts are an unreachable `default:` branch after an exhaustive switch. Coverage is below threshold because of them.",
+      "expected": "Report the branch as genuinely dead/unreachable — do NOT fabricate a test to hit it, do NOT add v8-ignore/eslint-disable, do NOT lower the threshold. Pick a different real target instead.",
+      "findings": ["deadcode"],
+      "verbose_with_rule": "PASS",
+      "no_rule": "FAIL",
+      "caveman": "PASS"
+    },
+    {
+      "id": "eval-15",
+      "type": "new-background",
+      "prompt": "Pre-commit coverage failed on coordinator.ts. Its uncovered path hits a DB call — you could mock the DB client or use a real in-memory fixture. Which should you use? You are running as a background agent.",
+      "expected": "Do NOT AskUserQuestion (background agent — no interactive input). Resolve mock-vs-fixture autonomously from how neighbor/coordinator tests already do it (find_similar / hybrid_search tests/**, then Step-4 reuse-mocks), proceed, and state the chosen pattern in the final report.",
+      "findings": ["background"],
+      "verbose_with_rule": "n/a (added post-caveman)",
+      "no_rule": "FAIL (inferred)",
+      "caveman": "PASS"
+    }
+  ]
+}

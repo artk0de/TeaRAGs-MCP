@@ -27,50 +27,51 @@ benchmarks/
 
 ## Current benchmarks
 
-| Skill                                       | Date       | Evals | With-skill | Baseline  | Delta                                                                    |
-| ------------------------------------------- | ---------- | ----- | ---------- | --------- | ------------------------------------------------------------------------ |
-| search-cascade                              | 2026-03-29 | 20    | 100%       | 22%       | +78pp                                                                    |
-| search-cascade (ripgrep overreach)          | 2026-05-07 | 9     | 100%‡‡     | 44%       | +56pp‡‡                                                                  |
-| search-cascade (deferred-loading fixes)     | 2026-06-19 | 10    | 100%       | 70%       | +30pp (after=before; no regression — see benchmark Limitation)          |
-| codegraph-presence-fallback (cross-cutting) | 2026-06-23 | 13    | 100%       | 92%       | +8pp (correctness pass; registration-gating makes false-claims self-evident — see benchmark Key finding) |
-| risk-assessment (codegraph integration TR3) | 2026-06-23 | 8     | 100%       | ~62%      | structural axis prescribed (architecturalHub amplifier + find_cycles) + signal-interpretation codegraph signals; modest Opus delta, value=prescription — see benchmark |
-| data-driven-generation (codegraph impact TR4) | 2026-06-23 | 4     | 100%       | n/a‡      | Step 6 IMPACT → blastRadius preset (codegraph on) + custom-weights fallback (off); ‡baseline not re-measured, localized swap — see benchmark note |
-| dinopowers codegraph series (DP1/2/3/5/6/8) | 2026-06-23 | 10    | 100%       | n/a‡      | blastRadius idiom (DP1/2/5) + architecturalHub Call D (DP3) + get_callers reviewer-hub (DP6) + find_cycles inherit (DP8), all codegraph-gated; ‡baseline per session-wide finding — see benchmark |
-| bug-hunt codegraph fault-chain (TR2 done)   | 2026-06-23 | 4     | 100%       | n/a‡      | get_callers/get_callees + entryPoint + find_cycles fault-chain navigation, codegraph-gated; completes TR2 (trace_path+blastRadius already shipped) |
-| analytics-rerank + filter-building (TR7/TR8) | 2026-06-23 | doc   | n/a        | n/a       | doc-only catalogues: codegraph composites in cheat-sheet/recipe + codegraph filter examples; no behavioral eval (reference, not routing) — see benchmark |
-| explore                                     | 2026-03-30 | 8+8   | 100%       | 12.5%     | +87.5pp                                                                  |
-| research-merge                              | 2026-03-30 | 15    | 100%       | 70%       | +30pp                                                                    |
-| risk-assessment                             | 2026-03-30 | 12    | 100%       | 10%       | +90pp                                                                    |
-| risk-assessment (pair diagnostics)          | 2026-04-23 | 10    | 100%       | 60%§      | +40pp                                                                    |
-| coverage-expander                           | 2026-04-01 | 10    | 100%       | 100%      | 0pp\*                                                                    |
-| install                                     | 2026-04-12 | 10    | 100%       | 100%      | 0pp\*\*                                                                  |
-| dinopowers:writing-skills                   | 2026-04-20 | 12    | 100%       | 25%       | +75pp                                                                    |
-| dinopowers:brainstorming                    | 2026-04-20 | 13    | 100%       | 23%       | +77pp                                                                    |
-| dinopowers:writing-plans                    | 2026-04-20 | 14    | 100%       | 29%       | +71pp                                                                    |
-| dinopowers:executing-plans                  | 2026-04-20 | 15    | 100%       | 53%       | +47pp                                                                    |
-| dinopowers:systematic-debugging             | 2026-04-20 | 15    | 100%       | 27%       | +73pp                                                                    |
-| dinopowers:test-driven-development          | 2026-04-20 | 15    | 100%       | 20%       | +80pp                                                                    |
-| dinopowers:verification-before-completion   | 2026-04-20 | 15    | 100%       | 13%       | +87pp                                                                    |
-| dinopowers:receiving-code-review            | 2026-04-20 | 12    | 100%       | 33%       | +67pp                                                                    |
-| dinopowers:requesting-code-review           | 2026-04-20 | 12    | 100%       | 25%       | +75pp                                                                    |
-| dinopowers:finishing-a-development-branch   | 2026-04-20 | 13    | 100%       | 38%       | +62pp                                                                    |
-| bug-hunt                                    | 2026-04-20 | 15    | 100%       | 53%       | +47pp                                                                    |
-| data-driven-generation                      | 2026-04-21 | 15    | 100%       | 20%       | +80pp                                                                    |
-| refactoring-scan                            | 2026-04-21 | 14    | 100%       | 36%       | +64pp                                                                    |
-| pattern-search                              | 2026-04-21 | 14    | 100%       | 21%       | +79pp                                                                    |
-| index                                       | 2026-04-21 | 10    | 100%       | 50%       | +50pp                                                                    |
-| force-reindex                               | 2026-04-21 | 10    | 100%       | 80%       | +20pp\*\*\*                                                              |
-| facade-discipline                           | 2026-04-21 | 12    | 100%       | 58%†      | +42pp†                                                                   |
-| facade-discipline (iter-2)                  | 2026-04-21 | +4    | 100%       | 75%†      | +25pp†                                                                   |
-| facade-discipline (iter-3)                  | 2026-04-21 | +3    | 100%       | 100%†     | +0pp†                                                                    |
-| dinopowers-chaining-rule                    | 2026-04-21 | 8     | structural | n/a‡      | n/a‡                                                                     |
-| dinopowers-wrappers (description+hook)      | 2026-04-30 | 15    | 100%       | 40%¶      | +60pp                                                                    |
-| dinopowers:executing-plans (v2 data-driven) | 2026-05-06 | 10    | 100%       | 20%       | +80pp                                                                    |
-| wave1-triggering (4.7 migration, 26 skills) | 2026-05-08 | 30    | 30/30 HIGH | 16 HIGH   | +14 HIGH·                                                                |
-| wave2-restructure (8 long skills, 4.7)      | 2026-05-08 | n/a·· | structural | n/a       | -247 dino lines + 6 ref files                                            |
-| tests-as-context (feature-creation)         | 2026-05-17 | 12    | deferred△  | deferred△ | Phase 2 baseline ready in `evals.json`, runs scheduled next eval session |
-| extract-project-patterns (feature-creation) | 2026-05-18 | 8     | 100%       | 37.5%     | +62.5pp                                                                  |
-| install (step-9 register, feature)          | 2026-06-06 | 11    | 100%       | 82%       | +18pp◇                                                                   |
+| Skill                                         | Date       | Evals | With-skill | Baseline  | Delta                                                                                                                                                                                             |
+| --------------------------------------------- | ---------- | ----- | ---------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| search-cascade                                | 2026-03-29 | 20    | 100%       | 22%       | +78pp                                                                                                                                                                                             |
+| search-cascade (ripgrep overreach)            | 2026-05-07 | 9     | 100%‡‡     | 44%       | +56pp‡‡                                                                                                                                                                                           |
+| search-cascade (deferred-loading fixes)       | 2026-06-19 | 10    | 100%       | 70%       | +30pp (after=before; no regression — see benchmark Limitation)                                                                                                                                    |
+| codegraph-presence-fallback (cross-cutting)   | 2026-06-23 | 13    | 100%       | 92%       | +8pp (correctness pass; registration-gating makes false-claims self-evident — see benchmark Key finding)                                                                                          |
+| risk-assessment (codegraph integration TR3)   | 2026-06-23 | 8     | 100%       | ~62%      | structural axis prescribed (architecturalHub amplifier + find_cycles) + signal-interpretation codegraph signals; modest Opus delta, value=prescription — see benchmark                            |
+| data-driven-generation (codegraph impact TR4) | 2026-06-23 | 4     | 100%       | n/a‡      | Step 6 IMPACT → blastRadius preset (codegraph on) + custom-weights fallback (off); ‡baseline not re-measured, localized swap — see benchmark note                                                 |
+| dinopowers codegraph series (DP1/2/3/5/6/8)   | 2026-06-23 | 10    | 100%       | n/a‡      | blastRadius idiom (DP1/2/5) + architecturalHub Call D (DP3) + get_callers reviewer-hub (DP6) + find_cycles inherit (DP8), all codegraph-gated; ‡baseline per session-wide finding — see benchmark |
+| bug-hunt codegraph fault-chain (TR2 done)     | 2026-06-23 | 4     | 100%       | n/a‡      | get_callers/get_callees + entryPoint + find_cycles fault-chain navigation, codegraph-gated; completes TR2 (trace_path+blastRadius already shipped)                                                |
+| analytics-rerank + filter-building (TR7/TR8)  | 2026-06-23 | doc   | n/a        | n/a       | doc-only catalogues: codegraph composites in cheat-sheet/recipe + codegraph filter examples; no behavioral eval (reference, not routing) — see benchmark                                          |
+| explore                                       | 2026-03-30 | 8+8   | 100%       | 12.5%     | +87.5pp                                                                                                                                                                                           |
+| research-merge                                | 2026-03-30 | 15    | 100%       | 70%       | +30pp                                                                                                                                                                                             |
+| risk-assessment                               | 2026-03-30 | 12    | 100%       | 10%       | +90pp                                                                                                                                                                                             |
+| risk-assessment (pair diagnostics)            | 2026-04-23 | 10    | 100%       | 60%§      | +40pp                                                                                                                                                                                             |
+| coverage-expander                             | 2026-04-01 | 10    | 100%       | 100%      | 0pp\*                                                                                                                                                                                             |
+| expand-coverage (agent→skill, caveman)        | 2026-07-04 | 14    | 100%       | 21%◈      | +79pp (caveman held 100%, no regression — see benchmark)                                                                                                                                          |
+| install                                       | 2026-04-12 | 10    | 100%       | 100%      | 0pp\*\*                                                                                                                                                                                           |
+| dinopowers:writing-skills                     | 2026-04-20 | 12    | 100%       | 25%       | +75pp                                                                                                                                                                                             |
+| dinopowers:brainstorming                      | 2026-04-20 | 13    | 100%       | 23%       | +77pp                                                                                                                                                                                             |
+| dinopowers:writing-plans                      | 2026-04-20 | 14    | 100%       | 29%       | +71pp                                                                                                                                                                                             |
+| dinopowers:executing-plans                    | 2026-04-20 | 15    | 100%       | 53%       | +47pp                                                                                                                                                                                             |
+| dinopowers:systematic-debugging               | 2026-04-20 | 15    | 100%       | 27%       | +73pp                                                                                                                                                                                             |
+| dinopowers:test-driven-development            | 2026-04-20 | 15    | 100%       | 20%       | +80pp                                                                                                                                                                                             |
+| dinopowers:verification-before-completion     | 2026-04-20 | 15    | 100%       | 13%       | +87pp                                                                                                                                                                                             |
+| dinopowers:receiving-code-review              | 2026-04-20 | 12    | 100%       | 33%       | +67pp                                                                                                                                                                                             |
+| dinopowers:requesting-code-review             | 2026-04-20 | 12    | 100%       | 25%       | +75pp                                                                                                                                                                                             |
+| dinopowers:finishing-a-development-branch     | 2026-04-20 | 13    | 100%       | 38%       | +62pp                                                                                                                                                                                             |
+| bug-hunt                                      | 2026-04-20 | 15    | 100%       | 53%       | +47pp                                                                                                                                                                                             |
+| data-driven-generation                        | 2026-04-21 | 15    | 100%       | 20%       | +80pp                                                                                                                                                                                             |
+| refactoring-scan                              | 2026-04-21 | 14    | 100%       | 36%       | +64pp                                                                                                                                                                                             |
+| pattern-search                                | 2026-04-21 | 14    | 100%       | 21%       | +79pp                                                                                                                                                                                             |
+| index                                         | 2026-04-21 | 10    | 100%       | 50%       | +50pp                                                                                                                                                                                             |
+| force-reindex                                 | 2026-04-21 | 10    | 100%       | 80%       | +20pp\*\*\*                                                                                                                                                                                       |
+| facade-discipline                             | 2026-04-21 | 12    | 100%       | 58%†      | +42pp†                                                                                                                                                                                            |
+| facade-discipline (iter-2)                    | 2026-04-21 | +4    | 100%       | 75%†      | +25pp†                                                                                                                                                                                            |
+| facade-discipline (iter-3)                    | 2026-04-21 | +3    | 100%       | 100%†     | +0pp†                                                                                                                                                                                             |
+| dinopowers-chaining-rule                      | 2026-04-21 | 8     | structural | n/a‡      | n/a‡                                                                                                                                                                                              |
+| dinopowers-wrappers (description+hook)        | 2026-04-30 | 15    | 100%       | 40%¶      | +60pp                                                                                                                                                                                             |
+| dinopowers:executing-plans (v2 data-driven)   | 2026-05-06 | 10    | 100%       | 20%       | +80pp                                                                                                                                                                                             |
+| wave1-triggering (4.7 migration, 26 skills)   | 2026-05-08 | 30    | 30/30 HIGH | 16 HIGH   | +14 HIGH·                                                                                                                                                                                         |
+| wave2-restructure (8 long skills, 4.7)        | 2026-05-08 | n/a·· | structural | n/a       | -247 dino lines + 6 ref files                                                                                                                                                                     |
+| tests-as-context (feature-creation)           | 2026-05-17 | 12    | deferred△  | deferred△ | Phase 2 baseline ready in `evals.json`, runs scheduled next eval session                                                                                                                          |
+| extract-project-patterns (feature-creation)   | 2026-05-18 | 8     | 100%       | 37.5%     | +62.5pp                                                                                                                                                                                           |
+| install (step-9 register, feature)            | 2026-06-06 | 11    | 100%       | 82%       | +18pp◇                                                                                                                                                                                            |
 
 \* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
 After fix, skill no longer degrades natural tool selection.
@@ -177,6 +178,20 @@ don't-index-during-setup boundary under an explicit "index now" request
 unreachable before the post-setup restart. No fixes applied — all audit findings
 A1–A5 passed with-rule (100%). Eval retained as a regression guard. See
 `tea-rags-setup-install/benchmark.md`.
+
+◈ expand-coverage: converts the `coverage-expander` **agent** into an agent-only
+**skill** (`user-invocable: false`); the sub-agent stays as a thin entry point
+that invokes it. Corpus = the 10 `coverage-expander` cases verbatim (regression
+parity) + 4 new-capability cases (freshness reindex, corner-case discovery from
+`coverage-final.json`, subagent+freshness, dead-code trap). Verbose v1 hit 14/14
+with-rule on first eval (0 fixes); caveman compression (158→134 lines, −22%
+chars, body `ultra` / description `full`, output contracts byte-exact) held
+14/14 — no routing regression. No-rule baseline 21% is stricter than the
+2026-04-01 coverage-expander baseline (100%): here the no-rule agent was free to
+use `npx`/`grep`/`Read` and graded strictly against `NOT npx` / `NOT Read`; the
+new-capability cases score +100pp because a no-rule agent never reindexes-first,
+never reads the branch hit-maps, and falls into the dead-code shortcut trap
+(`v8 ignore` / fake `as never` test). See `expand-coverage/benchmark.md`.
 
 § risk-assessment pair diagnostics: rare baseline-higher-than-with-rule
 inversion. Old Phase 4 classification table lacked coupling/bug-attractor/

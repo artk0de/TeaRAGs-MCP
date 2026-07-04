@@ -137,20 +137,30 @@ attention. Get it right in fewer rounds.
 
 Pre-commit fails
 `ERROR: Coverage for <metric> (X%) does not meet global threshold (Y%)` → MUST
-delegate to `coverage-expander` subagent, not inline tests. Defined at
-`.claude/agents/coverage-expander.md`, optimized for this scenario:
+delegate to `coverage-expander` subagent, not inline tests. The subagent is a
+thin entry point at `.claude/agents/coverage-expander.md`; its methodology lives
+in the agent-only `expand-coverage` skill (`.claude/skills/expand-coverage/`,
+`user-invocable: false`). That skill:
 
+- **freshness gate** — incrementally reindexes local main before searching, so
+  corner-case discovery sees the just-committed source (never a stale index)
+- **corner-case discovery** — reads `coverage/coverage-final.json` hit maps for
+  the EXACT uncovered branches, then `find_symbol` / `hybrid_search` /
+  `find_similar` / `get_callers` to understand and pattern-match them (no `Read`
+  of `src/`)
 - parses `coverage/coverage-summary.json` instead of grepping vitest stdout
-- uses `mcp__tea-rags__find_symbol` / `hybrid_search` instead of `Read` for
-  source discovery
-- runs `vitest --coverage` at most 2× (3× with one retry) per invocation —
+- runs `npm run test:coverage` at most 2× (3× with one retry) per invocation —
   hard-capped to keep latency bounded
 - never modifies production code, configs, or thresholds; never adds `v8 ignore`
   / `eslint-disable`; never rewrites passing tests
 
-Invoke via `Agent` tool, `subagent_type: "coverage-expander"`. Pass failing
-pre-commit output + (if relevant) commit-introduced files. Agent writes test
-files only — parent session commits.
+Invoke via `Agent` tool, `subagent_type: "coverage-expander"`,
+`run_in_background: true` (MANDATORY — coverage runs are slow, 30–90s each; the
+sub-agent must run as a background job so the session isn't blocked, then act on
+its completion notification). Pass failing pre-commit output + (if relevant)
+commit-introduced files. Agent writes test files only — parent session commits.
+The skill is background-safe: fully autonomous, no interactive questions, its
+final report is the handoff.
 
 Do NOT use for unrelated coverage exploration / test authoring outside failing
 pre-commit hook — early-exit stops it when thresholds met.
