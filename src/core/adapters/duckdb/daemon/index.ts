@@ -19,4 +19,10 @@ export {
   readRefs,
   scheduleIdleWatcher,
 } from "./lifecycle.js";
-export { createConnectionHandler, runDaemon, type DaemonRuntimeOptions } from "./entry.js";
+export { createConnectionHandler, createIdleShutdown, runDaemon, type DaemonRuntimeOptions } from "./entry.js";
+export {
+  DaemonMemoryGovernor,
+  DEFAULT_MEMORY_LIMIT_BASE,
+  DEFAULT_MEMORY_LIMIT_MAX,
+  type DaemonMemoryGovernorOptions,
+} from "./memory-governor.js";

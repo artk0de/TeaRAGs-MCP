@@ -149,6 +149,18 @@ export const codegraphSchema = z.object({
    */
   dbMemoryLimit: z.string().default("2GB"),
   /**
+   * Ceiling the codegraph daemon's adaptive memory governor may raise the
+   * DuckDB memory_limit to during a bulk-ingest write burst (live
+   * `SET memory_limit` on the daemon's open RW connection). The base
+   * `dbMemoryLimit` is restored when the daemon's idle watcher fires, BEFORE
+   * the RW lock is released. Default 4GB. Must be >= `dbMemoryLimit` — a
+   * smaller value is a config error and is clamped to `dbMemoryLimit`
+   * (logged once). Daemon-only: the direct/in-process write path (tests,
+   * direct mode) always stays at `dbMemoryLimit`.
+   * Format: any DuckDB-accepted size string ("4GB", "512MB", "1.5GB").
+   */
+  dbMemoryLimitMax: z.string().default("4GB"),
+  /**
    * Number of DuckDB worker threads per collection. Default 2 — the
    * codegraph workload is bottlenecked on the writer transaction lock,
    * not parallel scan, so additional threads inflate memory without
