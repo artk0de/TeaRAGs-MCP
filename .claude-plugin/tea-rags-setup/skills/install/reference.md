@@ -133,5 +133,8 @@ Note: `n` only if node exists (`npm install -g n`) or direct
 | `TRAJECTORY_GIT_CHUNK_CONCURRENCY`     | tuneValues                |
 | `TRAJECTORY_GIT_ENABLED`               | step 7                    |
 | `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` | step 7 (if applicable)    |
+| `GIT_ADAPTER`                          | step 7 (always, explicit) |
 
-Omit any key that is null or missing.
+Omit any key that is null or missing — except `GIT_ADAPTER`, which is always
+written explicitly (the adapter choice is pinned per-project; ambient env must
+not silently flip it).
