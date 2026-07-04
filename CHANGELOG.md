@@ -1,416 +1,62 @@
 ## [1.34.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.33.0...v1.34.0) (2026-07-04)
 
-### ⚠ BREAKING CHANGES
+### 🧠 Code intelligence
 
-- **config:** external Qdrant servers below 1.18.2 are now rejected at startup
-  with QdrantVersionTooOldError. Embedded daemon downloads 1.18.2.
+* Ruby call-graph resolution now narrows ambiguous, duck-typed method calls using call-site evidence — argument count, keyword arguments, block usage, and literal receiver types — so calls that previously fanned out to dozens of unrelated methods now resolve to far fewer, more precise targets; navigation tools (get_callers/get_callees) also hide the low-confidence leftovers.
+* Ruby call-graph resolution now follows self-sends inside class bodies and callbacks, methods defined via included concerns/modules, `super` across module hierarchies, namespaced and inherited classes, and Sidekiq/ActiveJob-style enqueue dispatch — call sites that previously resolved to nothing (or to the wrong same-named method elsewhere) now resolve correctly.
+* An ambiguous method call reachable from hundreds of classes is now capped and tracked as its own category instead of flooding the call graph with hundreds of thousands of low-value edges, and fan-in/importance rankings are weighted by resolution confidence so ambiguous calls no longer manufacture fake 'most-connected' methods.
+* Ruby dynamic-dispatch resolution now also narrows candidates by which classes are actually instantiated elsewhere in the codebase, not just structurally reachable ones — another layer of precision for ambiguous method calls.
+* Rails framework conventions — Sidekiq/ActiveJob enqueueing, callbacks, `enum`, AASM state machines, `Concern` class methods, Pundit policies, routing, and caching — are now modeled as real call-graph edges instead of being invisible to code navigation.
+* The code-graph daemon now temporarily raises its own memory ceiling during large bulk-index writes to avoid running out of memory, and automatically restarts itself after tea-rags is upgraded instead of silently continuing to serve results from the old version.
+* get_callers can now optionally include ambiguous dynamic-dispatch call sites that might reach a target method, on request, without cluttering the default result set.
 
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+### ⚡ Indexing & performance
 
-### Features
+* The vector index now uses 8x quantization (TurboQuant) by default for a smaller on-disk footprint — new collections are created with it, existing collections auto-migrate on startup, indexing shows migration progress, and search results are automatically rescored so accuracy is unaffected.
+* A new low-memory mode keeps the embedded Qdrant index on disk instead of in RAM for memory-constrained machines, plus an optional strict memory ceiling and search-batch-size cap to prevent Qdrant from running out of memory.
+* Indexing now marks a stalled enrichment stage as failed after 15 minutes of no progress instead of showing 'in progress' forever, so status reporting reflects reality and a fresh reindex can recover.
+* CLI reindexing and the session digest now automatically pick up the same performance-tuning settings the MCP server used when a project was first indexed, instead of silently falling back to defaults in a fresh shell.
 
-- **adapters:** adaptive DuckDB memory governor in codegraph daemon (1ruih)
-  ([77671af](https://github.com/artk0de/TeaRAGs-MCP/commit/77671af719e4f4900b29fe37c68b9309e399f323))
-- **adapters:** daemon build-version handshake auto-restarts stale codegraph
-  daemon
-  ([11f16e5](https://github.com/artk0de/TeaRAGs-MCP/commit/11f16e5cf7c91df4c16ab2baa8571e2f18cca640))
-- **api:** edgeKind/confidence-aware navigation filter hides dispatch residual
-  (xlnub)
-  ([a6cd685](https://github.com/artk0de/TeaRAGs-MCP/commit/a6cd68510c116404e19e8078b4497671d1509ea0))
-- **api:** lazy ambiguousCallers expansion in get_callers (f2jsb A4)
-  ([8d455dc](https://github.com/artk0de/TeaRAGs-MCP/commit/8d455dc86d624596d619e9864cb25b601bbd98fc))
-- **api:** surface collection quantization mode in get_index_status
-  ([7a91c5a](https://github.com/artk0de/TeaRAGs-MCP/commit/7a91c5a31bd4f249841ce2c75b954a43215a9bb8))
-- **api:** surface index disk size in get_index_status
-  ([97b0b39](https://github.com/artk0de/TeaRAGs-MCP/commit/97b0b39f665c92519173120f06f6f2991abf94b5))
-- **api:** surface running Qdrant server version in get_index_status
-  ([fab199d](https://github.com/artk0de/TeaRAGs-MCP/commit/fab199d262c548ad5ee596be4de0019c4b0beeff))
-- **chunker:** ruby walker captures method arity/visibility + call argCount
-  (xlnub)
-  ([630465b](https://github.com/artk0de/TeaRAGs-MCP/commit/630465beb1123c3c546107624b01b5d3a9c8091e))
-- **cli:** show TurboQuant migration progress during indexing
-  ([e82d001](https://github.com/artk0de/TeaRAGs-MCP/commit/e82d001e79f24952edd3bc03c7aa72a9b9178849))
-- **config:** add QDRANT_TURBO_QUANT env (default on) to QdrantTuneConfig
-  ([3a8e2fa](https://github.com/artk0de/TeaRAGs-MCP/commit/3a8e2fae8c267da731477dd3c630232faf1ca15f))
-- **config:** bump Qdrant server to 1.18.2 + SDK 1.18.0
-  ([63b0932](https://github.com/artk0de/TeaRAGs-MCP/commit/63b0932cb92029b25995ec03acdbbd51df4797ff))
-- **config:** strict-mode OOM guard + search batch cap for Qdrant 1.18
-  ([d413e8e](https://github.com/artk0de/TeaRAGs-MCP/commit/d413e8e076ec1a132c5b6d8952bd301e6c7fe018))
-- **contracts:** additive arity/visibility/argCount substrate for dispatch
-  narrowing (xlnub)
-  ([de13863](https://github.com/artk0de/TeaRAGs-MCP/commit/de138631bcb55076e0a338e1159935134b622b73))
-- **contracts:** instantiatedTypes fields for RTA cone pruning (pffv Task 1)
-  ([995180f](https://github.com/artk0de/TeaRAGs-MCP/commit/995180f503309297c4a7719ab0bce8a011211ce3))
-- **contracts:** persist def-shape signature (arity/visibility/kwargs/block) to
-  cg_symbols
-  ([1c0ec95](https://github.com/artk0de/TeaRAGs-MCP/commit/1c0ec95f5ac799358458913620f5285f4a9b6b61))
-- **dx:** explicit worktree-index lifecycle, replace reindex hook with cleanup
-  hook
-  ([7f894e5](https://github.com/artk0de/TeaRAGs-MCP/commit/7f894e5d0dacdf4110e1935592a2c5479af16986))
-- **embedded:** QDRANT_LOW_MEMORY forces on-disk storage on the daemon
-  ([b0877bd](https://github.com/artk0de/TeaRAGs-MCP/commit/b0877bd6abe7d9b71795b15e1770db36ece0fc0a))
-- **embedded:** use Qdrant 1.18 low_memory_mode=no_populate flag
-  ([62eb738](https://github.com/artk0de/TeaRAGs-MCP/commit/62eb738a4462294ec7e8d4f046b583700b3d231b))
-- **factory:** colocated language capability descriptors + capabilities()
-  ([509944a](https://github.com/artk0de/TeaRAGs-MCP/commit/509944ae05e638208ec56df3b928592d38f8b5b5))
-- **factory:** renderReadme — human-facing compatibility spoiler
-  ([06479fb](https://github.com/artk0de/TeaRAGs-MCP/commit/06479fbf38ab53ca1e5eb849e324f727d2940363))
-- **factory:** renderRule — agent-facing compatibility matrix renderer
-  ([5c0cae3](https://github.com/artk0de/TeaRAGs-MCP/commit/5c0cae35c1158bbf2264b8283a398f6074178171))
-- **ingest:** create new collections turbo at index time (close T2 gap)
-  ([b89dde9](https://github.com/artk0de/TeaRAGs-MCP/commit/b89dde95a4ea462e48e68b47488d22e5168e7364))
-- **ingest:** enrichment stall deadline maps markers to failed (f2jsb C)
-  ([d8ca358](https://github.com/artk0de/TeaRAGs-MCP/commit/d8ca35878f558a81a5bf5b5f156fa5b592273a30))
-- **ingest:** persist tuning env in project registry, re-apply registry-first in
-  CLI/prime (b5kzp)
-  ([d90742e](https://github.com/artk0de/TeaRAGs-MCP/commit/d90742eebd1bff55a118bccdefe154b0f4051fb7))
-- **language:** ||= memoized ivar field types in ruby local-bindings (mn00t F1b)
-  ([028c070](https://github.com/artk0de/TeaRAGs-MCP/commit/028c070a7346ba987d1abbf462f03abc88846c37))
-- **language:** ||= memoized local bindings in ruby ast-inference (mn00t F1a)
-  ([ad32c3f](https://github.com/artk0de/TeaRAGs-MCP/commit/ad32c3f68753d02fd4764bdb67505984775ada29))
-- **language:** anchor bareCall MRO narrowing on callerSymbolId for class-body
-  self-sends
-  ([bc89de2](https://github.com/artk0de/TeaRAGs-MCP/commit/bc89de220020586d69405a95364d9fd43b31d715))
-- **language:** bare relation assignment emits container facts (mn00t F2)
-  ([4bff7a1](https://github.com/artk0de/TeaRAGs-MCP/commit/4bff7a1ed96004727cbafb6694ec468890198fc5))
-- **language:** complete AR finder/query verb audit in rails dsl (mn00t)
-  ([05b7dfe](https://github.com/artk0de/TeaRAGs-MCP/commit/05b7dfe8a728bc3f60350217fcf0ac9ada674803))
-- **language:** composeRubyCatalogue factory + activatedBy for gem-gated grammar
-  ([eb73466](https://github.com/artk0de/TeaRAGs-MCP/commit/eb73466994fb2a1e9d33d88f27b5220f8c5e65ba))
-- **language:** container element lift for identifier-rooted access (mn00t F3)
-  ([47689e3](https://github.com/artk0de/TeaRAGs-MCP/commit/47689e394178fb29657082aedb3867004295ee9a))
-- **language:** corpus-adaptive dispatch fan-out cap + ambiguous outcome (f2jsb)
-  ([9aa8390](https://github.com/artk0de/TeaRAGs-MCP/commit/9aa83900a05d320371da5670361c0169916dbd71)),
-  closes [#firm](https://github.com/artk0de/TeaRAGs-MCP/issues/firm)
-- **language:** declaresFixed facet + state_machines expander
-  (paper_trail/geocoder gem-gated)
-  ([8f5eb62](https://github.com/artk0de/TeaRAGs-MCP/commit/8f5eb622581fb3d6da79205ae09ae2c0145c29f2))
-- **language:** exact-FQ candidate tiering in bareCall MRO narrowing
-  ([8b5b892](https://github.com/artk0de/TeaRAGs-MCP/commit/8b5b89259e52ed61cd64f63e015b899840f7ca33))
-- **language:** FQ-canonicalize the bareCall MRO ancestor chain (DSL-mixin
-  resolution)
-  ([2932123](https://github.com/artk0de/TeaRAGs-MCP/commit/293212380d37ceafbd9e9de7b2ef1415ccb514c0))
-- **language:** gate Ruby class-body DECLARES path by Gemfile + carrierwave/aasm
-  gem grammars
-  ([9433a9f](https://github.com/artk0de/TeaRAGs-MCP/commit/9433a9f4e4716e29333503ebc67ad3947cbbed11))
-- **language:** gate Ruby DSL extraction grammar by Gemfile (walk-path,
-  adx5p.1b)
-  ([be4b89c](https://github.com/artk0de/TeaRAGs-MCP/commit/be4b89c7da52996a8ab8214b14b82610915b05ac))
-- **language:** gate Ruby DSL grammar by Gemfile (resolver-side, adx5p.1)
-  ([af968e0](https://github.com/artk0de/TeaRAGs-MCP/commit/af968e0de1d98094b6a595f9edd796c66080b5ed))
-- **language:** gem-gated dry/chewy/AMS Ruby DSL grammars (safe-subset)
-  ([45a0e01](https://github.com/artk0de/TeaRAGs-MCP/commit/45a0e01ebd213b25bf06146b497a53fd544db9a4))
-- **language:** Gemfile gem-name detector for gem-gated DSL grammar activation
-  ([396a1eb](https://github.com/artk0de/TeaRAGs-MCP/commit/396a1ebe687b14ec90948e8cb316a6a7ba353c2b))
-- **language:** generate language-compatibility (rule + README spoiler) + drift
-  guard
-  ([2fd1d48](https://github.com/artk0de/TeaRAGs-MCP/commit/2fd1d48ac6ec294c8d5fa6845bc3f6054c191c7c)),
-  closes [#partN](https://github.com/artk0de/TeaRAGs-MCP/issues/partN)
-- **language:** generated language-compatibility matrix — 9 colocated capability
-  ([a67dc69](https://github.com/artk0de/TeaRAGs-MCP/commit/a67dc69d49effa6082c04eb664f96598dd19f073)),
-  closes [#partN](https://github.com/artk0de/TeaRAGs-MCP/issues/partN)
-- **language:** literal-receiver narrowing + wire kwarg/block/literal into
-  dispatch cascade
-  ([193ea82](https://github.com/artk0de/TeaRAGs-MCP/commit/193ea82555c4babfcf29829582bcbab35b982990))
-- **language:** mn00t AST-inference type-source expansion (F1a/F1b/F2/F3 + verb
-  audit)
-  ([b721292](https://github.com/artk0de/TeaRAGs-MCP/commit/b7212921f602646b306e08351662d9120da9e0a2))
-- **language:** moon-badge capability README + ranked rows + structured hook
-  shorts
-  ([4f171b6](https://github.com/artk0de/TeaRAGs-MCP/commit/4f171b6264ca42e1c284642eff7d01e8c47844c9))
-- **language:** neutral dispatch-candidate narrowing kernel engine (xlnub)
-  ([53ad0fa](https://github.com/artk0de/TeaRAGs-MCP/commit/53ad0fa274aba4967eb51f973e488c1ffd35cc9d))
-- **language:** Rails DSL grammar edges (Pundit/routing/caching) — cai0/n2kpz L2
-  ([b50d799](https://github.com/artk0de/TeaRAGs-MCP/commit/b50d799fdbef62d3be64f954cb9bcbefe0231cb6))
-- **language:** resolve concern-module self-sends via includedBy consensus
-  (facet-2)
-  ([3aa8fd6](https://github.com/artk0de/TeaRAGs-MCP/commit/3aa8fd6b29cca2231b302ff7bbee9d31cadd8bd0))
-- **language:** resolve inherited class-body DSL self-sends via classExtends
-  (4skzl)
-  ([96fe0e7](https://github.com/artk0de/TeaRAGs-MCP/commit/96fe0e7d60ca995407d321938f5805b7de9b267a))
-- **language:** route Sidekiq push_bulk to
-  Worker[#perform](https://github.com/artk0de/TeaRAGs-MCP/issues/perform)
-  (enqueue dispatch)
-  ([f4e1555](https://github.com/artk0de/TeaRAGs-MCP/commit/f4e15557269861dedb683e448628cd0d6f2882b8))
-- **language:** ruby-domain codegraph-exclusion globs for Rails non-app code
-  ([d0e0d1d](https://github.com/artk0de/TeaRAGs-MCP/commit/d0e0d1d71e03c14bb842645f81d278a9f68be194))
-- **language:** seed Const.new-chain head as instance in resolveChain (rvw34 gap
-  b)
-  ([1b9f061](https://github.com/artk0de/TeaRAGs-MCP/commit/1b9f06173e3078fd8b7f48ac1ed85332cbb00726))
-- **language:** type [@ivar](https://github.com/ivar) via data-flow copy +
-  chain-RHS; both YARD param orders (rvw34)
-  ([544ac97](https://github.com/artk0de/TeaRAGs-MCP/commit/544ac970994b38a7475f3cf2cf26453eb800b0a5))
-- **prime:** render one-line effective registry params in the digest (32cnc)
-  ([21074bd](https://github.com/artk0de/TeaRAGs-MCP/commit/21074bdd7045ec2b7c605df41f52c3a5dee916c5))
-- **qdrant:** auto-reconcile existing collections to TurboQuant on startup
-  ([7f37cdb](https://github.com/artk0de/TeaRAGs-MCP/commit/7f37cdb0340bdd6c8a6f78dbb7fc7a3f5631ae75))
-- **qdrant:** emit TurboQuant bits4 quantization config on new collections
-  ([da87b4e](https://github.com/artk0de/TeaRAGs-MCP/commit/da87b4e006fbf2b17b9dfbc386eebf9c93422802))
-- **qdrant:** rescore quantized vectors on all dense search paths
-  ([925ba1a](https://github.com/artk0de/TeaRAGs-MCP/commit/925ba1a42b9ef09e0b26a91d4422a84f5a41a019))
-- **scripts:** language-compatibility regen script
-  ([6f20a8f](https://github.com/artk0de/TeaRAGs-MCP/commit/6f20a8fc16ca8b0963af24b105ee50da3041a4c6))
-- **scripts:** surface env-var changes in release notes
-  ([868b336](https://github.com/artk0de/TeaRAGs-MCP/commit/868b336270cdb95191b6db0e3236ff07c8c28e36))
-- **trajectory:** ambiguousFanout aggregate + run-stats bucket + dual recall
-  (f2jsb A2)
-  ([7604e99](https://github.com/artk0de/TeaRAGs-MCP/commit/7604e99b68ff42f3634121c4da80a7b88b02c65e))
-- **trajectory:** block-presence narrowing (discriminate-only) + walker block
-  capture
-  ([393b9f4](https://github.com/artk0de/TeaRAGs-MCP/commit/393b9f41def3a95ef1d6012e5c993089ff9bded4))
-- **trajectory:** buildIncludedBy reverse-ancestor inversion (cai0/2oky5 Task 1)
-  ([3a8f4e6](https://github.com/artk0de/TeaRAGs-MCP/commit/3a8f4e656e1208501ee641bd5a78c2662a4c1c18))
-- **trajectory:** collect ruby instantiation set into FileExtraction (pffv
-  Task 2)
-  ([0ca876f](https://github.com/artk0de/TeaRAGs-MCP/commit/0ca876f77df33bd6139b094a02ff229c8045df29))
-- **trajectory:** confidence-weighted chunk fanIn/fanOut + weighted PageRank
-  (f2jsb A3)
-  ([5d7d6a0](https://github.com/artk0de/TeaRAGs-MCP/commit/5d7d6a05f2c0436135f3c7342d64979dfd51a81d)),
-  closes [User#firm](https://github.com/artk0de/User/issues/firm)
-- **trajectory:** extra-unknown-kwarg narrowing direction (every passed key
-  declared)
-  ([f694576](https://github.com/artk0de/TeaRAGs-MCP/commit/f694576665956c1bd536dc9d42c39af98137a2dc))
-- **trajectory:** firstDefinerAfter MRO-after-X helper (cai0/2oky5 Task 2)
-  ([fa7d02d](https://github.com/artk0de/TeaRAGs-MCP/commit/fa7d02de82780f2f5639a759efc51895f07f6bcb))
-- **trajectory:** inject reverse include-by index into resolve context
-  (cai0/2oky5 Task 4)
-  ([27e1370](https://github.com/artk0de/TeaRAGs-MCP/commit/27e137048ee500e63757f4b0e19bf2ee26ecc7ce)),
-  closes [Base#m](https://github.com/artk0de/Base/issues/m)
-- **trajectory:** kwarg-name narrowing (omitted-required) + walker kwarg capture
-  ([35907b4](https://github.com/artk0de/TeaRAGs-MCP/commit/35907b42418f21a087f4dfbd1d88077045a67fe7))
-- **trajectory:** resolve Ruby framework-DSL edges (enqueue, callbacks, enum,
-  aasm, Concern)
-  ([6d1e027](https://github.com/artk0de/TeaRAGs-MCP/commit/6d1e027942af0b3a0cbd5e8973a06ebd7f89796c)),
-  closes [#perform](https://github.com/artk0de/TeaRAGs-MCP/issues/perform)
-- **trajectory:** reverse-consensus module-method super resolution (cai0/2oky5
-  Task 3)
-  ([be77986](https://github.com/artk0de/TeaRAGs-MCP/commit/be77986235cdd31b90172ec25a59f78ea588c84d))
-- **trajectory:** route ruby untyped fan-out through narrowing cascade (xlnub)
-  ([0ee44e1](https://github.com/artk0de/TeaRAGs-MCP/commit/0ee44e14aa313562d36cfbf016db3bbb80d61d9e))
-- **trajectory:** RTA prune CHA cone to instantiated nearest-definers (pffv
-  Task 4)
-  ([e133ecb](https://github.com/artk0de/TeaRAGs-MCP/commit/e133ecbbd6d6242cb31679e16ffd408bee383e00))
-- **trajectory:** Ruby-MRO ancestor reorder recovers include-into-subclass super
-  (cai0/2oky5 Task 5)
-  ([fa2cdf4](https://github.com/artk0de/TeaRAGs-MCP/commit/fa2cdf40ed72db830b9fca1739b7fac086a24ada))
-- **trajectory:** scope-aware lexical-fq instantiation keys for RTA cone match
-  (pffv Task 5)
-  ([5945a88](https://github.com/artk0de/TeaRAGs-MCP/commit/5945a88020b96de8daf4551712504cc9895040f5))
-- **trajectory:** thread run-global instantiation set into CallContext (pffv
-  Task 3)
-  ([42eeb03](https://github.com/artk0de/TeaRAGs-MCP/commit/42eeb03f9c529362086dd55c0a62ce6645202e37))
-- **types:** add LanguageCapability descriptor types
-  ([6e24f74](https://github.com/artk0de/TeaRAGs-MCP/commit/6e24f74541cc88c7d6b6e855f7eed127364b7d23))
+### 🗣 Language support
 
-### Improvements
+* Ruby/Rails DSL detection (Sidekiq, CarrierWave, AASM, state_machines, PaperTrail, Geocoder, dry-rb, Chewy, ActiveModelSerializers, and more) now activates per project based on the gems actually declared in its Gemfile, instead of applying every framework's rules to every Ruby project — fewer false call-graph edges from gems a project doesn't use.
+* Ruby type inference now follows memoized (`||=`) instance-variable and local-variable assignments, relation-to-collection conversions, element access on identifiers, and a fuller set of ActiveRecord finder/query methods — more accurate types mean more call-graph targets resolve correctly.
+* Ruby type inference now types instance variables assigned from a parameter, local variable, or association chain, and follows YARD ``@param`` documentation to seed `Const.new` call chains as typed instances.
+* Rails database migration and data scripts (db/migrate, db/data) are now excluded from Ruby call-graph analysis, so they no longer count as unresolved code and skew code-intelligence results for a project.
+* The README and docs now show a generated, always-accurate language support matrix — per-language code-intelligence and test-tooling capabilities — instead of a hand-maintained table that could drift from what's actually shipped.
 
-- **api:** trace_path lean by default, danger overlay opt-in via rerank
-  ([37c79d4](https://github.com/artk0de/TeaRAGs-MCP/commit/37c79d4100701f3da9d82450de60dfab90075901))
-- **config:** floor TRAJECTORY_GIT_CHUNK_CONCURRENCY at the default 10
-  ([2304135](https://github.com/artk0de/TeaRAGs-MCP/commit/2304135950575095388442f8917c5679ffdb23ce))
-- **embedding:** nudge get_index_status when both endpoints report down
-  ([63e7ad5](https://github.com/artk0de/TeaRAGs-MCP/commit/63e7ad5c6ada4e1af69cd314f2cdba9289bbe102))
-- **mcp:** consolidate Qdrant status fields into infraHealth.qdrant
-  ([4b66cd4](https://github.com/artk0de/TeaRAGs-MCP/commit/4b66cd454476b0bb72353bded2fd2b57a677b2c7))
-- **mcp:** render index size in MB in get_index_status + prime
-  ([cf20128](https://github.com/artk0de/TeaRAGs-MCP/commit/cf20128d216975a410a40242b52ff34135157131))
-- **scripts:** product-oriented release changelog output
-  ([20d325a](https://github.com/artk0de/TeaRAGs-MCP/commit/20d325a28a4c0fd8e0c7de8652473c86beb7302b))
+### 🛠 CLI & workflow
 
-### Bug Fixes
+* get_index_status now reports the index's on-disk size, vector quantization mode, and the running Qdrant server version.
+* tea-rags now requires Qdrant 1.18.2 or newer; an older external Qdrant server is rejected at startup with a clear error instead of failing unpredictably, and the embedded daemon auto-updates to the required version.
+* Worktree index lifecycle is now explicit and visible: creating a worktree clones its index, each completed task step reindexes it, and merging or abandoning the branch automatically tears the clone down — replacing the previous implicit auto-reindex-on-commit behavior.
+* The session-start digest now shows a one-line summary of which embedding, Qdrant, and codegraph settings are actually active for a project.
 
-- **adapters:** resolve DSL symbols via last-segment codegraph fallback
-  ([de277c5](https://github.com/artk0de/TeaRAGs-MCP/commit/de277c52e4161eff36b7edba720695f48f87eb87))
-- **adapters:** resolve DSL symbols via last-segment codegraph fallback (bd
-  tea-rags-mcp-mtlhd)
-  ([6aa32b9](https://github.com/artk0de/TeaRAGs-MCP/commit/6aa32b9d4b25d37a1d648eb5bb41b1f15f173264))
-- **chunker:** two-pass class-body scan resolves backward private :foo
-  visibility (xlnub)
-  ([33bdf26](https://github.com/artk0de/TeaRAGs-MCP/commit/33bdf2694165901700897d6d03b84d607f12a457))
-- **cli:** handle turbo-migration in supervisor message switch (exhaustiveness)
-  ([5c9c65a](https://github.com/artk0de/TeaRAGs-MCP/commit/5c9c65a7f42a0819762cc60523f0a778ed850e63))
-- **embedded:** evict stale running daemon after binary auto-upgrade
-  ([bd8e7b4](https://github.com/artk0de/TeaRAGs-MCP/commit/bd8e7b4354980eae2793ad102b23321788f565b5))
-- **embedded:** re-resolve stale embedded Qdrant port for flagless registry
-  entries
-  ([7db5e88](https://github.com/artk0de/TeaRAGs-MCP/commit/7db5e88dccde20427a3ade6e1dedd8407922325f))
-- **embedding:** survive transient ollama unreachability mid-index (bounded
-  retry)
-  ([173f52a](https://github.com/artk0de/TeaRAGs-MCP/commit/173f52a3b598e9370e40be4c1c14fc331ace828d))
-- **explore:** collapse split-method
-  [#part](https://github.com/artk0de/TeaRAGs-MCP/issues/part)N fragments into
-  one find_symbol result
-  ([ce206cc](https://github.com/artk0de/TeaRAGs-MCP/commit/ce206cc283a19b68966c00e05ab145b9cb7688d3)),
-  closes [#partN](https://github.com/artk0de/TeaRAGs-MCP/issues/partN)
-- **explore:** collapse split-method
-  [#part](https://github.com/artk0de/TeaRAGs-MCP/issues/part)N fragments into
-  one find_symbol result (tea-rags-mcp-lyv7k)
-  ([cf398a7](https://github.com/artk0de/TeaRAGs-MCP/commit/cf398a7d6ab26c7232a717d4f404a512861f1ae2)),
-  closes [#partN](https://github.com/artk0de/TeaRAGs-MCP/issues/partN)
-- **ingest:** inherit QDRANT_URL from last known-good project, embedded-aware
-  ([fff013b](https://github.com/artk0de/TeaRAGs-MCP/commit/fff013be7122fc93f88ec4ec3e4c81a9fba220e5))
-- **language:** eliminate M1/M4 namesake + M3 compact-def false edges (pre-merge
-  review)
-  ([5139b11](https://github.com/artk0de/TeaRAGs-MCP/commit/5139b1172bfb5c34394ab63268c1aab1af67052b))
-- **language:** parse bracket-first YARD [@param](https://github.com/param) in
-  collectYardRawParamBrackets (b4rb5)
-  ([2a5b658](https://github.com/artk0de/TeaRAGs-MCP/commit/2a5b65871ff6435f49239fa47f83f9a1e57f07f4))
-- **language:** resolve namespaced bareCall via FQ-aware MRO scope-tail match
-  (cai0/n2kpz)
-  ([0dd7a1b](https://github.com/artk0de/TeaRAGs-MCP/commit/0dd7a1bca1f3c18e450383f03b214f5133d99a02))
-- **language:** suppress multiple-assignment lvalues + destructured block params
-  as bareCall FPs
-  ([c278a90](https://github.com/artk0de/TeaRAGs-MCP/commit/c278a90dffe7517b240581fc065611a25be0e0ef))
-- **pipeline:** self-heal stuck enrichment marker via active \_run.runId
-  ([3494bbc](https://github.com/artk0de/TeaRAGs-MCP/commit/3494bbc89122f2cb276197af81419aebeb148ff1))
-- **pipeline:** self-heal stuck enrichment marker via active \_run.runId
-  (tea-rags-mcp-pb84c)
-  ([ae0b74c](https://github.com/artk0de/TeaRAGs-MCP/commit/ae0b74cd31da2a490e8f8f6e761d495d254497ed))
-- **qdrant:** propagate qdrantEmbedded to worktree clone registry entries
-  ([d47a3de](https://github.com/artk0de/TeaRAGs-MCP/commit/d47a3de83fcb735a83e2003b77ab3ac9758bacd4))
-- **qdrant:** resolve alias + account allocated blocks in getCollectionDiskBytes
-  ([9e85ed6](https://github.com/artk0de/TeaRAGs-MCP/commit/9e85ed69d173f5004b769ff963c617b80ee73058))
-- **scripts:** escape @-tokens and credit real contributors in release notes
-  ([28ab206](https://github.com/artk0de/TeaRAGs-MCP/commit/28ab206d52b75748b5a2f866943c93e1f1a95974))
-- **trajectory:** exclude noInProjectDef from resolveSuccessRate denominator
-  (cai0 Option A)
-  ([ac4432c](https://github.com/artk0de/TeaRAGs-MCP/commit/ac4432ce76d88179b8d1259b5f73bd5da3ddf0e4))
+### 🩹 Fixes
 
-### Performance Improvements
+* Fixed several Ruby call-graph resolution bugs: namespaced base classes and included concerns weren't matched correctly (so self-sends inside them silently failed to resolve), a namespaced method could incorrectly match a same-named method in an unrelated class, a compact class declaration (`class A::B::C`) could fabricate a nonexistent external base class, destructured or multiple-assignment local variables were mistaken for method calls, and a method marked `private` via `private :name` after its definition was incorrectly treated as public.
+* Fixed find_symbol returning no results for Rails DSL-defined symbols (`scope`, `has_many`, `delegate`) even though they were reachable through code navigation.
+* Fixed find_symbol on a large method split into multiple chunks returning several conflicting results instead of one merged definition.
+* Fixed YARD ``@param`` type parsing to also support the bracket-first form (``@param` [Type] name`) used by Rails/mastodon-style docs, so more instance-variable types resolve correctly.
+* Fixed indexing aborting entirely on a brief Ollama outage mid-run — indexing now retries with backoff and survives transient unavailability instead of losing all progress.
+* Fixed the embedded Qdrant daemon continuing to serve the old version indefinitely after a binary auto-upgrade — the stale daemon is now restarted.
+* Fixed indexing failing with 'Qdrant is not reachable' for older projects after the embedded Qdrant daemon restarted on a new port.
+* Fixed indexing status getting stuck showing an enrichment stage as crashed even after it had already recovered on a later reindex.
+* Fixed reported index disk size being several times too large, or missing entirely, by counting actual disk usage instead of preallocated space.
+* Fixed indexing from a worktree clone, or from a fresh shell, sometimes crashing or connecting to the wrong Qdrant instance by correctly inheriting embedded-Qdrant connection settings.
 
-- **adapters:** chunked multi-row edge INSERTs + source_rel_path index (f2jsb B)
-  ([b1b99f1](https://github.com/artk0de/TeaRAGs-MCP/commit/b1b99f1381b5d05ca5c8831c1611ec77e919828f))
-- **git:** run-scoped single file discovery replaces per-batch numstat log
-  ([98a97f3](https://github.com/artk0de/TeaRAGs-MCP/commit/98a97f3605c9607109eb599da9c7b482d825f604))
-- **ingest:** arrival-marked streaming chunk coverage + run-scoped commit-diff
-  memo (7gnre)
-  ([ceda683](https://github.com/artk0de/TeaRAGs-MCP/commit/ceda6831cb91124aaf70dc620488ae648e289f29))
-- **ingest:** defer optimization during bulk index via prevent_unoptimized
-  ([9f6d884](https://github.com/artk0de/TeaRAGs-MCP/commit/9f6d8840f73b1ce5b88b8dabd47a43f35607ec54))
-- **pipeline:** move git chunk-churn walk off the ingest main thread
-  ([d80cc49](https://github.com/artk0de/TeaRAGs-MCP/commit/d80cc49b967d925cab778a2f57fdddf73fb77605))
-- **trajectory:** OID-keyed persistent blame cache — blame only changed files
-  ([27793b6](https://github.com/artk0de/TeaRAGs-MCP/commit/27793b614945d644a0bc35e1ec71891381ab0077))
-- **trajectory:** run-scoped commit-discovery matrix + persistent git discovery
-  cache
-  ([e618f98](https://github.com/artk0de/TeaRAGs-MCP/commit/e618f98b70a3110ca6d254d539cf0b7c9773ef8c))
+### 🔧 Environment Variables
 
-### Documentation
-
-- **api:** spec for qdrantInfo status consolidation
-  ([4e12c68](https://github.com/artk0de/TeaRAGs-MCP/commit/4e12c6842838a514520d969efd80d0aaa3933244))
-- **api:** trace_path lean-default implementation plan
-  ([2c20e96](https://github.com/artk0de/TeaRAGs-MCP/commit/2c20e965a9123ccd019e1ff46de8e156992ab5a5))
-- **benchmarks:** mark 2026-06-25 hook-based benchmark appendices superseded
-  ([a8d4056](https://github.com/artk0de/TeaRAGs-MCP/commit/a8d4056149e1753daf31b2ecba792b560c043402))
-- consolidate plans into superpowers/plans, drop website-migrated duplicates
-  ([4a0cb9a](https://github.com/artk0de/TeaRAGs-MCP/commit/4a0cb9a04717519a374cba0e773a1bde70623f11))
-- **language:** rvw34 chain-HEAD typing spec + implementation plan
-  ([e69357a](https://github.com/artk0de/TeaRAGs-MCP/commit/e69357a46655620f4d8b2880367bc8ef6ab39a91))
-- **mcp:** caveman-compress descriptions, skill bodies, cascade rules + project
-  docs
-  ([b386161](https://github.com/artk0de/TeaRAGs-MCP/commit/b38616159ed5d651df0e4481f0596b08e832c063))
-- **mcp:** trace_path bugHunt is explicit, not a default
-  ([cf9845e](https://github.com/artk0de/TeaRAGs-MCP/commit/cf9845e66217e0c5a656c6a06089d78276e6a078))
-- **plan:** language-compatibility generator spec + plan (cmm1o)
-  ([668fb24](https://github.com/artk0de/TeaRAGs-MCP/commit/668fb24efa95289fbbda4d65059f0f898d0c2f50))
-- **plan:** track A implementation plan (cascade narrowing + persistence)
-  ([87c9a42](https://github.com/artk0de/TeaRAGs-MCP/commit/87c9a42105b48c75c591ed59fd3ffb5a76525e55))
-- **plan:** track B implementation plan (self/lexical residual + extra-kwarg)
-  ([58a20c7](https://github.com/artk0de/TeaRAGs-MCP/commit/58a20c77370b9d261021e52db6daf6d70a9d50f8))
-- **qdrant:** add Task 7 (surface Qdrant version in get_index_status) to plan
-  ([b91d82d](https://github.com/artk0de/TeaRAGs-MCP/commit/b91d82dea40d630489108c071f2a3a904a48c51d))
-- **qdrant:** add Task 8 (CLI TurboQuant migration progress bar) to plan
-  ([ff3d70e](https://github.com/artk0de/TeaRAGs-MCP/commit/ff3d70e782fca0b01f6e5a313d4ddcedbf546070))
-- **qdrant:** add Task 9 (T2-gap) + Task 10 (low_memory_mode) follow-ups to plan
-  ([894918b](https://github.com/artk0de/TeaRAGs-MCP/commit/894918bc68279992104686c56506bf1dd7b6fef4))
-- **qdrant:** document QDRANT_TURBO_QUANT env (default on)
-  ([b27250d](https://github.com/artk0de/TeaRAGs-MCP/commit/b27250da6777346d43a320ca5e60371742c10005))
-- **qdrant:** document strict-mode + low-memory env vars
-  ([0d96655](https://github.com/artk0de/TeaRAGs-MCP/commit/0d96655488c8b68dbf96ba6ccb915da1a508622c))
-- **qdrant:** Qdrant 1.18 bump foundation implementation plan
-  ([190e6cb](https://github.com/artk0de/TeaRAGs-MCP/commit/190e6cbab1fbf39a0e984a3b973f84cebc83afe6))
-- **qdrant:** Qdrant 1.18 migration design specs (bump, turbo-quant,
-  capabilities)
-  ([da87fee](https://github.com/artk0de/TeaRAGs-MCP/commit/da87fee6dbcd015566a7d5d2067c24d2f7ffacb9))
-- **qdrant:** Qdrant 1.18 remaining capabilities plan
-  ([a722705](https://github.com/artk0de/TeaRAGs-MCP/commit/a7227058173bcb218d5a63ce7a242fea60057c49))
-- **qdrant:** Qdrant 1.18 TurboQuant integration plan
-  ([a040fe5](https://github.com/artk0de/TeaRAGs-MCP/commit/a040fe5d3857fa6e77a06caaf2716cb1510ad816))
-- remove stray docs/website/ — website/docs is the canonical site
-  ([b7c0f11](https://github.com/artk0de/TeaRAGs-MCP/commit/b7c0f11c301a9e72a7a3553e985fd971ff40f222))
-- **rules:** enforce language capability descriptor sync
-  ([1ea25d0](https://github.com/artk0de/TeaRAGs-MCP/commit/1ea25d06dcf85cd5fd680582d00fc20482c4063f))
-- **scripts:** product-oriented release output design spec
-  ([d504a80](https://github.com/artk0de/TeaRAGs-MCP/commit/d504a806ad1d74019afb8ad273ae831b541dddaa))
-- **spec:** capability-table redesign design (ifrrn)
-  ([1e88356](https://github.com/artk0de/TeaRAGs-MCP/commit/1e883565ae115ff6dd981def5ad41d103ce08ee7))
-- **spec:** self/lexical measured-residual + extra-unknown-kwarg narrowing
-  ([a3b121e](https://github.com/artk0de/TeaRAGs-MCP/commit/a3b121eb3780e48467bde8511678d9b0138a407c))
-- **specs:** gem grammar pack + gem-gated catalogue design (adx5p)
-  ([f5195f8](https://github.com/artk0de/TeaRAGs-MCP/commit/f5195f869e790cfc71df57157b8beafc68b3794d))
-- **specs:** lawlq.1 scoped AST return-type inference design
-  ([b6aae47](https://github.com/artk0de/TeaRAGs-MCP/commit/b6aae47847df9e6db085790100bbb115a0c44289))
-- **specs:** mn00t AST-inference type-source expansion design
-  ([d8843bc](https://github.com/artk0de/TeaRAGs-MCP/commit/d8843bc055982d8641fc7cc7ee92bceb9bd275b5))
-- **specs:** mn00t implementation plan — 8 tasks, TDD per family
-  ([3ed494b](https://github.com/artk0de/TeaRAGs-MCP/commit/3ed494bb4b54f2aed68dcd753847446c121386ea))
-- **spec:** Tier-2+3 cascade narrowing (kwarg+block+literal) + cg_symbols
-  persistence
-  ([2593684](https://github.com/artk0de/TeaRAGs-MCP/commit/25936841fd1acf15bd86ddd5b2336881ea6d704e)),
-  closes [#1](https://github.com/artk0de/TeaRAGs-MCP/issues/1)
-- **superpowers:** read-side freshness precondition design (amends 2026-06-29)
-  ([7b7f490](https://github.com/artk0de/TeaRAGs-MCP/commit/7b7f490e639a6413d61595727905c375364fc370))
-- **trajectory:** pffv RTA cone-pruning implementation plan
-  ([9bd09c4](https://github.com/artk0de/TeaRAGs-MCP/commit/9bd09c4bddcf4b0f2ce8f7ac8ec4c4715a291c14))
-- **trajectory:** reconcile super design spec with Task-5 walker classExtends
-  emission
-  ([6bcf931](https://github.com/artk0de/TeaRAGs-MCP/commit/6bcf9319f2fa1cd546d4036a6173a48d1e7b5721))
-- **trajectory:** Ruby DSL grammar consolidation spec + plan (pg5ya)
-  ([95521e4](https://github.com/artk0de/TeaRAGs-MCP/commit/95521e401970212a49e19b7c6c2c3fe7adf73f42))
-- **trajectory:** rule for adding Ruby DSL grammars (pg5ya deliverable 2)
-  ([2c4b4ae](https://github.com/artk0de/TeaRAGs-MCP/commit/2c4b4ae8bd1fcc54025d78fd2657917b85852ff2))
-- **trajectory:** super module-MRO implementation plan (cai0/2oky5)
-  ([5cca6b0](https://github.com/artk0de/TeaRAGs-MCP/commit/5cca6b00f5a4b62bedcec1bfaa196269bb79860c))
-- **trajectory:** super module-MRO reverse-consensus resolution design
-  (cai0/2oky5)
-  ([2c941c7](https://github.com/artk0de/TeaRAGs-MCP/commit/2c941c71baca5e296cffb740152b81e128d5c539)),
-  closes [#1](https://github.com/artk0de/TeaRAGs-MCP/issues/1)
-- **trajectory:** xlnub dynamic-dispatch fan-out precision narrowing design
-  ([adf1790](https://github.com/artk0de/TeaRAGs-MCP/commit/adf1790e4f6e377432a7afbf61ede81c9297655c))
-- **trajectory:** xlnub implementation plan — 5-task dispatch fan-out narrowing
-  ([f899ff1](https://github.com/artk0de/TeaRAGs-MCP/commit/f899ff1571a25521878e607f9fc4944160c6d608))
-- **website:** document EDR/antivirus git-enrichment slowdown in operations
-  pages
-  ([c2029c8](https://github.com/artk0de/TeaRAGs-MCP/commit/c2029c83fd400e4c0e125e9e1502c9d2ea3ad783))
-
-### Code Refactoring
-
-- **api:** worktree -> CLI-only WorktreeOps facade; fix maintenance->ingest
-  isolation
-  ([74d8c61](https://github.com/artk0de/TeaRAGs-MCP/commit/74d8c61290f822b4cd5559c3d3656a517d50ec75))
-- **language:** drop orphan JSDoc for the extracted resolveViaIncludingClasses
-  ([d11fa19](https://github.com/artk0de/TeaRAGs-MCP/commit/d11fa197fa3e9107f656122404531f6b1f8060d2))
-- **language:** RubyTypeRef-valued latestBinding/emitFact in ast-inference
-  extract
-  ([cd96f7e](https://github.com/artk0de/TeaRAGs-MCP/commit/cd96f7e0961026b6575822b37449643017b5b7a3))
-- **trajectory:** declarative emits descriptor for class-body edge macros (pg5ya
-  C1)
-  ([4dccdf5](https://github.com/artk0de/TeaRAGs-MCP/commit/4dccdf55ca86633c8b8f8d310eccae193d9c467c))
-- **trajectory:** declarative operands shape replaces per-macro if-chain (pg5ya
-  A)
-  ([aa8cd75](https://github.com/artk0de/TeaRAGs-MCP/commit/aa8cd75a3a8ea67e80e0746ba09166755eb6e5c0))
-- **trajectory:** decompose collectRubyCalls god-function into emit helpers
-  (pg5ya C2)
-  ([38319fb](https://github.com/artk0de/TeaRAGs-MCP/commit/38319fb9a0a87414059174358ae8caecea232deb))
-- **trajectory:** own Ruby instance/relation method vocab in grammar (pg5ya D)
-  ([8fcddd2](https://github.com/artk0de/TeaRAGs-MCP/commit/8fcddd20a331cbeea1f59d9fc4d5b55456280275))
-- **trajectory:** split enqueue vocab into sidekiq gem + rails ActiveJob (pg5ya
-  E)
-  ([bf300be](https://github.com/artk0de/TeaRAGs-MCP/commit/bf300beb3f845cf10dfbf96c9b87344169c6274d))
-- **trajectory:** STRUCTURED_MACROS array replaces enum/aasm if-branches (pg5ya
-  B)
-  ([99bb147](https://github.com/artk0de/TeaRAGs-MCP/commit/99bb147126f6b3fee4a0b2ed5fc0b713ba4d772f))
+* `QDRANT_TURBO_QUANT` · Enables 8x vector quantization (TurboQuant) to shrink the on-disk index while search results are automatically rescored to preserve accuracy · default: `true` (new)
+* `CODEGRAPH_DB_MEMORY_LIMIT_MAX` · Ceiling the code-graph daemon may temporarily raise its memory limit to during large bulk-index write bursts · default: `4GB` (new)
+* `QDRANT_LOW_MEMORY` · Forces the embedded Qdrant daemon to keep vectors and payloads on disk instead of in RAM, for memory-constrained machines · default: `false` (new)
+* `QDRANT_MAX_RESIDENT_MEMORY_PERCENT` · Optional strict-mode ceiling on Qdrant's resident memory usage, to guard against out-of-memory crashes · default: `unset (guard off)` (new)
+* `QDRANT_SEARCH_MAX_BATCHSIZE` · Optional cap on the number of vectors a single search batch may process · default: `unset (no cap)` (new)
+* `EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS` · Maximum time indexing keeps retrying embedding calls through a transient Ollama outage before giving up · default: `240000 (4 minutes)` (new)
+* `EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS` · Base backoff delay between embedding retry attempts during an Ollama outage · default: `2000` (new)
+* `ENRICHMENT_STALL_DEADLINE_MS` · How long an enrichment stage may report no progress before indexing status marks it failed (and eligible for recovery on the next reindex) · default: `900000 (15 minutes)` (new)
+* `TEA_RAGS_CODEGRAPH_BUILD_FINGERPRINT` · Overrides the build fingerprint the codegraph daemon and client exchange to detect a stale daemon after an upgrade · default: `derived automatically from module path, version, and mtime` (new)
+* `TRAJECTORY_GIT_CHUNK_CONCURRENCY` · Git chunk-churn walk concurrency; a configured value below the built-in default is now ignored, so this env var can only raise concurrency, never silently lower it · default: `10` (changed)
 
 ## [1.33.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.32.0...v1.33.0) (2026-06-26)
 
