@@ -20,7 +20,7 @@
 
 import { parentPort } from "node:worker_threads";
 
-import { createCatFileBatch, type CatFileBatchReader } from "../../../../../adapters/git/client.js";
+import { createCatFileBatch, type CatFileBatchReader } from "../../../../../adapters/vcs/git/git-cli/client.js";
 import { CommitDiffMemo } from "../../../../../infra/commit-diff-memo.js";
 import { Semaphore } from "../../../../../infra/semaphore.js";
 import { buildChunkChurnMapUncached } from "../chunk-reader.js";

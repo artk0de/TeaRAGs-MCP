@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { BlameLine } from "../../../../../../src/core/adapters/git/types.js";
+import type { BlameLine } from "../../../../../../src/core/adapters/vcs/types.js";
 import {
   computeBlameOwnership,
   type BlameOwnership,

@@ -6,22 +6,22 @@
  *
  * Integration tests (real git) → __integration__/git-log-reader.integration.test.ts
  * Metric functions → metrics.test.ts
- * Parser functions → tests/core/adapters/git/parsers.test.ts
- * Client utilities → tests/core/adapters/git/client-utils.test.ts
+ * Parser functions → tests/core/adapters/vcs/git/git-cli/parsers.test.ts
+ * Client utilities → tests/core/adapters/vcs/git/git-cli/client-utils.test.ts
  * Chunk reader → chunk-reader.test.ts
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as gitClient from "../../../../../../src/core/adapters/git/client.js";
-import * as gitParsers from "../../../../../../src/core/adapters/git/parsers.js";
-import type { FileChurnData } from "../../../../../../src/core/adapters/git/types.js";
+import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import * as gitParsers from "../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js";
+import type { FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
 import * as chunkReader from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { GitLogReader } from "../../../../../../src/core/domains/trajectory/git/infra/git-log-reader.js";
 
 // Enable cross-module spy interception for adapter functions
-vi.mock("../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
-vi.mock("../../../../../../src/core/adapters/git/parsers.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js", async (importOriginal) => importOriginal());
 vi.mock("../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js", async (importOriginal) =>
   importOriginal(),
 );

@@ -16,7 +16,7 @@
  *   drives a single runDeferredChunk pass after the graph is finalized.
  */
 
-import type { CatFileBatchReader } from "../../../../adapters/git/client.js";
+import type { CatFileBatchReader } from "../../../../adapters/vcs/git/git-cli/client.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkSignalOptions, ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
 import { CommitDiffMemo } from "../../../../infra/commit-diff-memo.js";

@@ -9,13 +9,13 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as gitClient from "../../../../../../src/core/adapters/git/client.js";
-import type { CommitInfo } from "../../../../../../src/core/adapters/git/types.js";
+import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import type { WalkCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/walk-commits.js";
 
 // Enable cross-module spy interception for adapter functions.
-vi.mock("../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
 
 const COMMIT_SHA = "a".repeat(40);
 const PARENT_SHA = "p".repeat(40);

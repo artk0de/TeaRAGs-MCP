@@ -10,7 +10,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { CommitInfo } from "../../../../../../src/core/adapters/git/types.js";
+import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import type { WalkCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/walk-commits.js";
 

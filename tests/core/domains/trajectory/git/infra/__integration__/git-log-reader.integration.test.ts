@@ -10,14 +10,14 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import * as gitClient from "../../../../../../../src/core/adapters/git/client.js";
+import * as gitClient from "../../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import {
   computeFileSignals,
   GitLogReader,
 } from "../../../../../../../src/core/domains/trajectory/git/infra/git-log-reader.js";
 
 // Enable cross-module spy interception
-vi.mock("../../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
 
 async function resolveRepoRoot(): Promise<string> {
   const { execFile } = await import("node:child_process");

@@ -25,7 +25,7 @@ import { join, resolve, sep } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { blameFile } from "../../../../../../src/core/adapters/git/client.js";
+import { blameFile } from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import type { ChunkSignalOverlay } from "../../../../../../src/core/contracts/types/provider.js";
 import { GitBlameStore } from "../../../../../../src/core/domains/trajectory/git/infra/blame-store.js";
 import { GitCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";

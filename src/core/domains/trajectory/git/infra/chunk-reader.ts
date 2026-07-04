@@ -4,8 +4,8 @@
  * parent oids come from `CommitInfo.parents` (bd tea-rags-mcp-iqpuu).
  */
 
-import type { CatFileBatchReader } from "../../../../adapters/git/client.js";
-import type { BlameLine, FileChurnData } from "../../../../adapters/git/types.js";
+import type { CatFileBatchReader } from "../../../../adapters/vcs/git/git-cli/client.js";
+import type { BlameLine, FileChurnData } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";

@@ -12,7 +12,7 @@ import { join } from "node:path";
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
-import { createCatFileBatch } from "../../../adapters/git/client.js";
+import { createCatFileBatch } from "../../../adapters/vcs/git/git-cli/client.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";

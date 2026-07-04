@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { FileChurnData } from "../../../../../../../src/core/adapters/git/types.js";
+import type { FileChurnData } from "../../../../../../../src/core/adapters/vcs/types.js";
 import type { ChunkAccumulator } from "../../../../../../../src/core/domains/trajectory/git/infra/metrics.js";
 import { assembleChunkSignals } from "../../../../../../../src/core/domains/trajectory/git/infra/metrics/chunk-assembler.js";
 import { assembleFileSignals } from "../../../../../../../src/core/domains/trajectory/git/infra/metrics/file-assembler.js";

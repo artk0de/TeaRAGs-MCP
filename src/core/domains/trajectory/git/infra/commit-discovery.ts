@@ -14,8 +14,8 @@
  * `git log oldHead..newHead`; anything stale/corrupt/drifted rebuilds fully.
  */
 
-import { getCommitsInRange, getCommitsSince, getHead, isAncestor } from "../../../../adapters/git/client.js";
-import type { CommitInfo } from "../../../../adapters/git/types.js";
+import { getCommitsInRange, getCommitsSince, getHead, isAncestor } from "../../../../adapters/vcs/git/git-cli/client.js";
+import type { CommitInfo } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 

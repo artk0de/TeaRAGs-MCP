@@ -5,8 +5,8 @@
  * and delegates to file-reader, chunk-reader, and metrics modules.
  */
 
-import { getHead } from "../../../../adapters/git/client.js";
-import type { FileChurnData } from "../../../../adapters/git/types.js";
+import { getHead } from "../../../../adapters/vcs/git/git-cli/client.js";
+import type { FileChurnData } from "../../../../adapters/vcs/types.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import { GitEnrichmentCache } from "./cache.js";
@@ -38,7 +38,7 @@ export class GitLogReader {
     return buildFileSignalMapImpl(repoRoot, this.enrichmentCache, maxAgeMonths, timeoutMs);
   }
 
-  /** @deprecated Use getHead from adapters/git/client.js */
+  /** @deprecated Use getHead from adapters/vcs/git/git-cli/client.js */
   async getHead(repoRoot: string): Promise<string> {
     return getHead(repoRoot);
   }

@@ -8,8 +8,8 @@
 
 import { structuredPatch } from "diff";
 
-import { createCatFileBatch, getCommitsByPathspec, type CatFileBatchReader } from "../../../../adapters/git/client.js";
-import type { CommitInfo, FileChurnData } from "../../../../adapters/git/types.js";
+import { createCatFileBatch, getCommitsByPathspec, type CatFileBatchReader } from "../../../../adapters/vcs/git/git-cli/client.js";
+import type { CommitInfo, FileChurnData } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";

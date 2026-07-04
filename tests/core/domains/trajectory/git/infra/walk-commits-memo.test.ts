@@ -12,7 +12,7 @@
 import { structuredPatch } from "diff";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as gitClient from "../../../../../../src/core/adapters/git/client.js";
+import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { CommitDiffMemo } from "../../../../../../src/core/infra/commit-diff-memo.js";
 
@@ -22,7 +22,7 @@ vi.mock("diff", async (importOriginal) => {
   return { ...actual, structuredPatch: vi.fn(actual.structuredPatch) };
 });
 // Enable cross-module spy interception for adapter functions.
-vi.mock("../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
 
 const COMMIT_SHA = "a".repeat(40);
 const PARENT_SHA = "p".repeat(40);

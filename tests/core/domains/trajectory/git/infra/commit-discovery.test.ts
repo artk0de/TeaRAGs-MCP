@@ -10,8 +10,8 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as gitClient from "../../../../../../src/core/adapters/git/client.js";
-import type { CommitInfo } from "../../../../../../src/core/adapters/git/types.js";
+import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 import {
   GitCommitDiscovery,
   type GitCommitDiscoveryEntry,
@@ -20,7 +20,7 @@ import {
 } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
 
 // Enable cross-module spy interception for adapter functions.
-vi.mock("../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
 
 const HEAD = "h".repeat(40);
 const PRIOR_HEAD = "g".repeat(40);

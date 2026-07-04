@@ -2,7 +2,7 @@ import * as nodeFs from "node:fs";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { blameFile, createCatFileBatchCheck, getHead } from "../../../../../src/core/adapters/git/client.js";
+import { blameFile, createCatFileBatchCheck, getHead } from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import { buildChunkChurnMap } from "../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { ChunkChurnWalkThread } from "../../../../../src/core/domains/trajectory/git/infra/churn-walk/thread.js";
 import { GitCommitDiscovery } from "../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
@@ -18,7 +18,7 @@ vi.mock("node:fs", async () => {
   return { ...actual, existsSync: vi.fn() };
 });
 
-vi.mock("../../../../../src/core/adapters/git/client.js", () => ({
+vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/client.js", () => ({
   resolveRepoRoot: vi.fn((p: string) => p),
   blameFile: vi.fn().mockResolvedValue([]),
   getHead: vi.fn().mockResolvedValue("headsha"),

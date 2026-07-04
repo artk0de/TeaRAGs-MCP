@@ -12,7 +12,7 @@
  * numstat logs; with the discovery it spawns exactly ONE. Counted through a
  * real PATH shim wrapping the git binary — no child_process mocks here.
  *
- * Real-git fixture pattern follows tests/core/adapters/git/client-catfile.test.ts
+ * Real-git fixture pattern follows tests/core/adapters/vcs/git/git-cli/client-catfile.test.ts
  * (gitIn temp-dir guard; the worktree-head-guard globalSetup is the backstop).
  */
 import { execFileSync } from "node:child_process";
@@ -22,7 +22,7 @@ import { join, resolve, sep } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type { FileChurnData } from "../../../../../../src/core/adapters/git/types.js";
+import type { FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
 import {
   buildFileSignalDiscovery,
   buildFileSignalsForPaths,

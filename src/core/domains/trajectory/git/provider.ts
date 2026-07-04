@@ -16,8 +16,8 @@ import {
   resolveRepoRoot,
   type CatFileBatchCheckReader,
   type CatFileBatchReader,
-} from "../../../adapters/git/client.js";
-import type { BlameLine, CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
+} from "../../../adapters/vcs/git/git-cli/client.js";
+import type { BlameLine, CommitInfo, FileChurnData } from "../../../adapters/vcs/types.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
 import type { FileClassification } from "../../../contracts/types/file-classification.js";
 import type {

@@ -26,7 +26,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import type { BlameLine } from "../../../../adapters/git/types.js";
+import type { BlameLine } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 
 const DEFAULT_MAX_BYTES = 128 * 1024 * 1024;

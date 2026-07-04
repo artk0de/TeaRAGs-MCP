@@ -9,11 +9,11 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as gitClient from "../../../../../../src/core/adapters/git/client.js";
+import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import * as chunkReader from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 
 // Enable cross-module spy interception for adapter functions
-vi.mock("../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
 
 // walk-commits reads blobs via `createCatFileBatch(repoRoot).read(oid, path)`.
 // Mock the batch reader and drive returned blob content through the `read` fn —

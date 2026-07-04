@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { CommitInfo, FileChurnData } from "../../../../../../src/core/adapters/git/types.js";
+import type { CommitInfo, FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
 import {
   computeFileSignals,
   isBugFixCommit,

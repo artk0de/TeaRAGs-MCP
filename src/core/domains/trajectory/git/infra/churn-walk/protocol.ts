@@ -10,7 +10,7 @@
  * Map / Set / plain objects / numbers / strings / booleans.
  */
 
-import type { BlameLine, CommitInfo, FileChurnData } from "../../../../../adapters/git/types.js";
+import type { BlameLine, CommitInfo, FileChurnData } from "../../../../../adapters/vcs/types.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
 import type { ChunkChurnOverlay } from "../../types.js";
 import type { SquashOptions } from "../metrics.js";

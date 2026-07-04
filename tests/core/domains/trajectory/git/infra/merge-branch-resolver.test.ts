@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { CommitInfo } from "../../../../../../src/core/adapters/git/types.js";
+import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 import { buildBugFixShaSet } from "../../../../../../src/core/domains/trajectory/git/infra/merge-branch-resolver.js";
 
 function commit(sha: string, parents: string[], body: string): CommitInfo {
