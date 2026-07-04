@@ -22,6 +22,7 @@ import {
 } from "../__helpers__/test-helpers.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
 import { CollectionRegistry } from "../../../../../src/core/infra/registry/collection-registry.js";
+import { TUNING_ENV_ALLOWLIST } from "../../../../../src/core/infra/registry/tuning-env.js";
 import type { IngestCodeConfig } from "../../../../../src/core/types.js";
 
 vi.mock("tree-sitter", () => ({
@@ -149,6 +150,53 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
     const entry = registry.get(status.collectionName!);
     expect(entry).not.toBeNull();
     expect(entry!.qdrantEmbedded).toBe(false);
+  });
+
+  it("captures allowlisted tuning env vars SET in the indexing process into entry.tuning", async () => {
+    // The MCP server's env block carries tuning vars; the registry must
+    // remember them at index time so a CLI reindex in a fresh shell re-applies
+    // the same tuning registry-first instead of silently using code defaults.
+    process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY = "5";
+    process.env.INGEST_TUNE_FILE_CONCURRENCY = "25";
+    try {
+      await createTestFile(codebaseDir, "tune.ts", "export const x = 1;");
+      await ingest.indexCodebase(codebaseDir);
+      const status = await ingest.getIndexStatus(codebaseDir);
+
+      const entry = registry.get(status.collectionName!);
+      expect(entry).not.toBeNull();
+      expect(entry!.tuning).toMatchObject({
+        TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5",
+        INGEST_TUNE_FILE_CONCURRENCY: "25",
+      });
+    } finally {
+      delete process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY;
+      delete process.env.INGEST_TUNE_FILE_CONCURRENCY;
+    }
+  });
+
+  it("omits tuning when no allowlisted var is set (no defaults materialized)", async () => {
+    // Clear every allowlisted var (vitest.setup.ts sets CHUNKER_POOL_SIZE=1)
+    // so the entry reflects a genuinely untuned indexing process.
+    const saved = new Map<string, string | undefined>();
+    for (const key of TUNING_ENV_ALLOWLIST) {
+      saved.set(key, process.env[key]);
+      delete process.env[key];
+    }
+    try {
+      await createTestFile(codebaseDir, "untuned.ts", "export const x = 1;");
+      await ingest.indexCodebase(codebaseDir);
+      const status = await ingest.getIndexStatus(codebaseDir);
+
+      const entry = registry.get(status.collectionName!);
+      expect(entry).not.toBeNull();
+      expect(entry!.tuning).toBeUndefined();
+    } finally {
+      for (const [key, value] of saved) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 
   it("preserves sticky name on reindex of same collection", async () => {
