@@ -109,6 +109,17 @@ export class ChunkPhase {
    * infra/commit-diff-memo.ts for the bound rationale).
    */
   private runDiffMemo?: CommitDiffMemo;
+  /**
+   * bd tea-rags-mcp-82va1: ONE run-scoped commitSha → changedFiles matrix (+
+   * shared bugFixShaSet) for the whole run, shared by streaming batches AND
+   * the post-flush mega-walk so every per-batch walk slices the same single
+   * repo-wide discovery instead of paying its own pathspec log. Construction
+   * is delegated to the provider offering the `createCommitDiscovery` hook —
+   * the provider owns the window config. Lifecycle here mirrors the
+   * blobReader/diffMemo pair: lazy create at first chunk dispatch, dropped at
+   * `drain()`.
+   */
+  private runCommitDiscovery?: NonNullable<ChunkSignalOptions["commitDiscovery"]>;
 
   constructor(
     private readonly applier: EnrichmentApplier,
@@ -127,6 +138,7 @@ export class ChunkPhase {
     // drain() owns the close/drop.
     this.runBlobReader = undefined;
     this.runDiffMemo = undefined;
+    this.runCommitDiscovery = undefined;
   }
 
   setOnComplete(cb: (coll: string) => Promise<void>): void {
@@ -403,7 +415,10 @@ export class ChunkPhase {
       // first so a re-drain or a late batch lazily opens a fresh one. Close
       // errors are swallowed: the process is ending regardless.
       // 7gnre: drop the run-scoped diff memo with it — nothing outlives the run.
+      // 82va1: the commit-discovery matrix too — a later batch lazily creates
+      // a fresh one (persistence, if any, lives in the provider's store).
       this.runDiffMemo = undefined;
+      this.runCommitDiscovery = undefined;
       const reader = this.runBlobReader;
       if (reader) {
         this.runBlobReader = undefined;
@@ -478,6 +493,13 @@ export class ChunkPhase {
     // otherwise re-diffed per batch. LRU-capped inside CommitDiffMemo (~50k
     // entries); dropped in drain(). Unlike the blobReader it needs no factory.
     this.runDiffMemo ??= new CommitDiffMemo();
+    // 82va1: ONE run-scoped commit-discovery matrix shared by every batch walk
+    // — created synchronously here (before any await) so concurrent
+    // fire-and-forget batches never race to build two. The provider offering
+    // the hook owns the window config; dropped in drain().
+    if (!this.runCommitDiscovery && ctx.provider.createCommitDiscovery) {
+      this.runCommitDiscovery = ctx.provider.createCommitDiscovery(root);
+    }
 
     // Carry the active collection on every chunk-signal call so codegraph
     // routes per-collection DuckDB lookups correctly. `coll` is the
@@ -487,6 +509,11 @@ export class ChunkPhase {
       : { skipCache: true, collectionName: coll };
     if (this.runBlobReader) opts.blobReader = this.runBlobReader;
     opts.diffMemo = this.runDiffMemo;
+    // 82va1: attach ONLY for providers that declare the hook — a provider
+    // without it never sees another provider's discovery instance.
+    if (this.runCommitDiscovery && ctx.provider.createCommitDiscovery) {
+      opts.commitDiscovery = this.runCommitDiscovery;
+    }
 
     const work = this.executor
       .runChunkBatch(ctx.provider, root, chunkMap, opts)

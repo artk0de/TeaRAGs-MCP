@@ -198,6 +198,7 @@ describe("GitEnrichmentProvider", () => {
         expect.any(Map), // blameByPath populated by populateBlameMap
         undefined, // blobReader (kc93 — not passed when no options.blobReader)
         undefined, // diffMemo (7gnre — not passed when no options.diffMemo)
+        undefined, // commitDiscovery (82va1 — not passed when no options.commitDiscovery)
       );
     });
   });
@@ -316,9 +317,9 @@ describe("GitEnrichmentProvider", () => {
 
     it("fully enriches ordinary source, including tests", () => {
       expect(provider.shouldEnrich({ relPath: "app/models/user.rb", classification: base })).toBe("full");
-      expect(
-        provider.shouldEnrich({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } }),
-      ).toBe("full");
+      expect(provider.shouldEnrich({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } })).toBe(
+        "full",
+      );
     });
   });
 });

@@ -13,9 +13,14 @@ import { assembleOverlays } from "./assemble-overlays.js";
 import { buildAccumulators } from "./build-accumulators.js";
 import type { GitEnrichmentCache } from "./cache.js";
 import type { SquashOptions } from "./metrics.js";
-import { walkCommits, type ChunkConcurrencySemaphore, type WalkCommitDiffMemo } from "./walk-commits.js";
+import {
+  walkCommits,
+  type ChunkConcurrencySemaphore,
+  type WalkCommitDiffMemo,
+  type WalkCommitDiscovery,
+} from "./walk-commits.js";
 
-export type { ChunkConcurrencySemaphore, WalkCommitDiffMemo } from "./walk-commits.js";
+export type { ChunkConcurrencySemaphore, WalkCommitDiffMemo, WalkCommitDiscovery } from "./walk-commits.js";
 
 const MAX_FILE_LINES_DEFAULT = 10000;
 
@@ -45,6 +50,7 @@ export async function buildChunkChurnMap(
   blameByPath?: Map<string, BlameLine[]>,
   blobReader?: CatFileBatchReader,
   diffMemo?: WalkCommitDiffMemo,
+  commitDiscovery?: WalkCommitDiscovery,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   if (!skipCache) {
     const cached = await enrichmentCache.getChunkChurn(repoRoot);
@@ -65,6 +71,7 @@ export async function buildChunkChurnMap(
     blameByPath,
     blobReader,
     diffMemo,
+    commitDiscovery,
   );
 
   if (!skipCache) {
@@ -88,6 +95,7 @@ export async function buildChunkChurnMapUncached(
   blameByPath?: Map<string, BlameLine[]>,
   blobReader?: CatFileBatchReader,
   diffMemo?: WalkCommitDiffMemo,
+  commitDiscovery?: WalkCommitDiscovery,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   // Phase 1: initialize per-chunk accumulator state
   const { relativeChunkMap, accumulators } = buildAccumulators(repoRoot, chunkMap);
@@ -114,6 +122,7 @@ export async function buildChunkChurnMapUncached(
     fileChurnDataMap,
     blobReader,
     diffMemo,
+    commitDiscovery,
   });
 
   // Phase 3: assemble per-file overlay maps

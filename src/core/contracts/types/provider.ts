@@ -152,6 +152,36 @@ export interface ChunkSignalOptions {
       hunks: { oldStart: number; oldLines: number; newStart: number; newLines: number }[],
     ) => void;
   };
+  /**
+   * Run-scoped commitSha → changedFiles matrix + ONE shared bugFixShaSet
+   * (bd tea-rags-mcp-82va1). Structural shape of `GitCommitDiscovery`
+   * (`domains/trajectory/git/infra/commit-discovery.ts`) — declared by value
+   * here, not imported, because contracts is pure.
+   *
+   * ONE repo-wide `git log --since --numstat` per indexing run replaces the
+   * per-batch pathspec logs: each per-batch chunk walk slices the matrix
+   * in-memory via `commitsForFiles` and consumes the shared bug-fix set via
+   * `getBugFixShas`. The CALLER (ChunkPhase) owns the lifecycle — lazy create
+   * at first chunk dispatch, drop at drain. Providers that don't walk git
+   * history (codegraph) ignore it. Absent ⇒ per-batch pathspec discovery
+   * (recovery / backfill paths).
+   */
+  commitDiscovery?: {
+    commitsForFiles: (filePaths: string[]) => Promise<
+      {
+        commit: {
+          sha: string;
+          author: string;
+          authorEmail: string;
+          timestamp: number;
+          body: string;
+          parents: string[];
+        };
+        changedFiles: string[];
+      }[]
+    >;
+    getBugFixShas: () => Promise<Set<string>>;
+  };
 }
 
 /**
@@ -323,6 +353,15 @@ export interface EnrichmentProvider {
    * (git).
    */
   readonly defersChunkEnrichment?: boolean;
+  /**
+   * Factory for the run-scoped commit discovery (bd tea-rags-mcp-82va1) —
+   * the provider owns the window config (chunkMaxAgeMonths / timeout),
+   * ChunkPhase owns the instance lifecycle (lazy create at first chunk
+   * dispatch, dropped at drain). Construction is synchronous; the repo-wide
+   * git log inside is lazy (first `commitsForFiles` / `getBugFixShas` call).
+   * Providers whose chunk signals don't walk git history omit this.
+   */
+  createCommitDiscovery?: (repoRoot: string) => NonNullable<ChunkSignalOptions["commitDiscovery"]>;
   /**
    * Optional per-run counters surfaced via
    * `EnrichmentMetrics.byProvider[provider.key]`. Returned shape is
