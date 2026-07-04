@@ -139,7 +139,7 @@ describe("file-phase single-discovery equivalence (real git)", () => {
   beforeAll(() => {
     tmp = mkdtempSync(join(TMP_BASE, "git-fd-"));
     buildFixtureRepo(tmp);
-  });
+  }, 30000); // ~16 git spawns; 10s default hook timeout is too tight under CI contention (matches blame-cache/churn-walk fixtures)
   afterAll(() => {
     rmSync(tmp, { recursive: true, force: true });
   });
@@ -221,7 +221,7 @@ describe("file-phase single-discovery spawn counts (PATH shim)", () => {
 
     originalPath = process.env.PATH;
     process.env.PATH = `${join(shimDir, "bin")}:${originalPath ?? ""}`;
-  });
+  }, 30000); // ~16 git spawns + shim setup; 10s default hook timeout is too tight under CI contention
   afterAll(() => {
     process.env.PATH = originalPath;
     rmSync(tmp, { recursive: true, force: true });
