@@ -46,13 +46,15 @@ jobs:
         run: npm run build
 
       - name: Run tests with coverage (quality gate)
-        # DIAGNOSTIC (temp): --logHeapUsage prints file+heap after each file, so the
-        # LAST file logged before a hang names the culprit; --reporter=hanging-process
-        # names any leaked open handle; the exit-code echo distinguishes
-        # SIGKILL/OOM(137) vs SIGSEGV(139) vs SIGABRT(134) vs threshold/test-fail(1).
+        # DIAGNOSTIC (temp): the `default` reporter prints one line PER FILE as it
+        # finishes ("✓ tests/x.test.ts (N) …  MB heap used" with --logHeapUsage) —
+        # a hanging file never prints its line, so the set of missing files (or an
+        # all-files-done-then-silence gap = coverage-report / teardown hang) names
+        # the culprit. `dot` was suppressing this. --reporter=hanging-process names
+        # leaked handles; the exit-code echo proves whether vitest returned at all.
         run: |
           set +e
-          npm run test:coverage -- --reporter=dot --reporter=hanging-process --logHeapUsage
+          npm run test:coverage -- --reporter=default --reporter=hanging-process --logHeapUsage
           code=$?
           echo "===VITEST_EXIT_CODE=$code=== (137=SIGKILL/OOM 139=SIGSEGV 134=SIGABRT 1=threshold/fail 0=pass)"
           exit $code
