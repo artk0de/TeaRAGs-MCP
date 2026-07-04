@@ -95,6 +95,8 @@ Git enrichment runs asynchronously **after** indexing returns. Failures are deli
 
 Consequence: search works even on partially-enriched indexes. A file without `git.*` signals is filtered from ownership / techDebt / hotspots rerank but still ranks on similarity. Agents should check `get_index_status` to see enrichment progress before relying on trajectory signals.
 
+**Environmental slowdown (not a failure, but looks like a hang):** endpoint-security agents (SentinelOne, CrowdStrike, MS Defender) can throttle the fresh git processes blame/log spawn to ~10/s machine-wide, ballooning the enrichment tail without any error surfacing. See [Git enrichment slow](/operations/performance-diagnostics#provider-specific-indicators) in Performance Diagnostics for the diagnostic and fixes.
+
 ## Reading an Error
 
 Every error you'll see has three parts:
