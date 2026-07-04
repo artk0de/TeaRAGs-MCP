@@ -683,6 +683,15 @@ describe("parseAppConfigZod — trajectoryGit", () => {
     });
   });
 
+  it("TRAJECTORY_GIT_CHUNK_CONCURRENCY below the default is floored to 10 (env may only raise)", async () => {
+    // bd f2jsb: a stale env block tuned concurrency to 5 and silently halved
+    // git chunk walk parallelism vs the code default — sub-default env values
+    // are ignored so the env can only RAISE concurrency, never lower it.
+    process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY = "5";
+    const { parseAppConfigZod } = await freshImport();
+    expect(parseAppConfigZod().trajectoryGit.chunkConcurrency).toBe(10);
+  });
+
   it("new name takes priority over old name", async () => {
     process.env.TRAJECTORY_GIT_ENABLED = "true";
     process.env.CODE_ENABLE_GIT_METADATA = "false";
