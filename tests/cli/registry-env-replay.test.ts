@@ -1,36 +1,36 @@
 import { describe, expect, it } from "vitest";
 
-import { replayTuningEnv } from "../../src/cli/registry-env-replay.js";
+import { replayRegistryEnv } from "../../src/cli/registry-env-replay.js";
 
-describe("replayTuningEnv", () => {
+describe("replayRegistryEnv", () => {
   it("fills unset target keys from the tuning snapshot (registry fills the gaps)", () => {
     const target: Record<string, string> = {};
-    replayTuningEnv({ GIT_ADAPTER: "es-git", TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5" }, target);
+    replayRegistryEnv({ GIT_ADAPTER: "es-git", TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5" }, target);
     expect(target.GIT_ADAPTER).toBe("es-git");
     expect(target.TRAJECTORY_GIT_CHUNK_CONCURRENCY).toBe("5");
   });
 
   it("keeps an already-set non-empty target value (env > registry)", () => {
     const target: Record<string, string> = { GIT_ADAPTER: "git" };
-    replayTuningEnv({ GIT_ADAPTER: "es-git" }, target);
+    replayRegistryEnv({ GIT_ADAPTER: "es-git" }, target);
     expect(target.GIT_ADAPTER).toBe("git");
   });
 
   it("treats an empty-string target value as unset (matching envWithFallback)", () => {
     const target: Record<string, string> = { GIT_ADAPTER: "" };
-    replayTuningEnv({ GIT_ADAPTER: "es-git" }, target);
+    replayRegistryEnv({ GIT_ADAPTER: "es-git" }, target);
     expect(target.GIT_ADAPTER).toBe("es-git");
   });
 
   it("skips empty-string snapshot values (hand-edited registry) so they don't poison the env", () => {
     const target: Record<string, string> = {};
-    replayTuningEnv({ GIT_ADAPTER: "" }, target);
+    replayRegistryEnv({ GIT_ADAPTER: "" }, target);
     expect("GIT_ADAPTER" in target).toBe(false);
   });
 
   it("is a no-op for an undefined snapshot (legacy entry without tuning)", () => {
     const target: Record<string, string> = { GIT_ADAPTER: "git" };
-    replayTuningEnv(undefined, target);
+    replayRegistryEnv(undefined, target);
     expect(target).toEqual({ GIT_ADAPTER: "git" });
   });
 
@@ -44,14 +44,14 @@ describe("replayTuningEnv", () => {
     // alias group is already set in the ambient env.
     it("skips a canonical snapshot key when a deprecated alias is set in the ambient env", () => {
       const target: Record<string, string> = {};
-      replayTuningEnv({ INGEST_PIPELINE_CONCURRENCY: "8" }, target, { EMBEDDING_CONCURRENCY: "4" });
+      replayRegistryEnv({ INGEST_PIPELINE_CONCURRENCY: "8" }, target, { EMBEDDING_CONCURRENCY: "4" });
       expect("INGEST_PIPELINE_CONCURRENCY" in target).toBe(false);
     });
 
     it("skips a canonical snapshot key when a deprecated alias is set in the target itself", () => {
       // prime/tune replay directly into process.env: target IS the ambient env.
       const target: Record<string, string> = { GIT_CHUNK_CONCURRENCY: "3" };
-      replayTuningEnv({ TRAJECTORY_GIT_CHUNK_CONCURRENCY: "20" }, target);
+      replayRegistryEnv({ TRAJECTORY_GIT_CHUNK_CONCURRENCY: "20" }, target);
       expect("TRAJECTORY_GIT_CHUNK_CONCURRENCY" in target).toBe(false);
       expect(target.GIT_CHUNK_CONCURRENCY).toBe("3");
     });
@@ -60,13 +60,13 @@ describe("replayTuningEnv", () => {
       // Old registry entries may still carry alias keys; a canonical external
       // override must beat them the same way.
       const target: Record<string, string> = {};
-      replayTuningEnv({ EMBEDDING_CONCURRENCY: "4" }, target, { INGEST_PIPELINE_CONCURRENCY: "8" });
+      replayRegistryEnv({ EMBEDDING_CONCURRENCY: "4" }, target, { INGEST_PIPELINE_CONCURRENCY: "8" });
       expect("EMBEDDING_CONCURRENCY" in target).toBe(false);
     });
 
     it("a shared alias (CODE_BATCH_SIZE) set in the ambient env blocks BOTH of its groups", () => {
       const target: Record<string, string> = {};
-      replayTuningEnv({ EMBEDDING_TUNE_BATCH_SIZE: "512", QDRANT_TUNE_UPSERT_BATCH_SIZE: "200" }, target, {
+      replayRegistryEnv({ EMBEDDING_TUNE_BATCH_SIZE: "512", QDRANT_TUNE_UPSERT_BATCH_SIZE: "200" }, target, {
         CODE_BATCH_SIZE: "64",
       });
       expect("EMBEDDING_TUNE_BATCH_SIZE" in target).toBe(false);
@@ -75,22 +75,32 @@ describe("replayTuningEnv", () => {
 
     it("an empty-string alias in the ambient env does NOT block replay (unset semantics)", () => {
       const target: Record<string, string> = {};
-      replayTuningEnv({ INGEST_PIPELINE_CONCURRENCY: "8" }, target, { EMBEDDING_CONCURRENCY: "" });
+      replayRegistryEnv({ INGEST_PIPELINE_CONCURRENCY: "8" }, target, { EMBEDDING_CONCURRENCY: "" });
       expect(target.INGEST_PIPELINE_CONCURRENCY).toBe("8");
     });
 
     it("unrelated ambient keys never block replay", () => {
       const target: Record<string, string> = {};
-      replayTuningEnv({ GIT_ADAPTER: "es-git" }, target, { INGEST_PIPELINE_CONCURRENCY: "8", PATH: "/usr/bin" });
+      replayRegistryEnv({ GIT_ADAPTER: "es-git" }, target, { INGEST_PIPELINE_CONCURRENCY: "8", PATH: "/usr/bin" });
       expect(target.GIT_ADAPTER).toBe("es-git");
+    });
+
+    it("an external OLLAMA_URL beats the registry canonical EMBEDDING_BASE_URL (identity keys, same rule)", () => {
+      // Identity keys replay through the SAME group-aware path — the general
+      // rule (outer env > registry env > code default) holds uniformly.
+      const target: Record<string, string> = {};
+      replayRegistryEnv({ EMBEDDING_BASE_URL: "http://remote:11434" }, target, {
+        OLLAMA_URL: "http://laptop:11434",
+      });
+      expect("EMBEDDING_BASE_URL" in target).toBe(false);
     });
 
     it("a snapshot key outside every known group falls back to same-key checks only", () => {
       // Forward compat: a snapshot written by a NEWER tea-rags with a new
-      // tuning var must still replay verbatim on this version.
+      // env var must still replay verbatim on this version.
       const target: Record<string, string> = {};
-      replayTuningEnv({ FUTURE_TUNING_KNOB: "7" }, target, {});
-      expect(target.FUTURE_TUNING_KNOB).toBe("7");
+      replayRegistryEnv({ FUTURE_ENV_KNOB: "7" }, target, {});
+      expect(target.FUTURE_ENV_KNOB).toBe("7");
     });
   });
 });

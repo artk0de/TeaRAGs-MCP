@@ -7,7 +7,7 @@ import type { CommandModule } from "yargs";
 
 import { CollectionRegistry, InputValidationError } from "../../core/api/public/index.js";
 import { resolveTuneQdrantUrl } from "../qdrant-url-resolver.js";
-import { replayTuningEnv } from "../registry-env-replay.js";
+import { replayRegistryEnv } from "../registry-env-replay.js";
 import { applyProjectDefaults } from "../registry-resolver.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -113,13 +113,13 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
       }
       throw err;
     }
-    // Registry tuning replay (env > registry > code default): seed the tuning
-    // snapshot the project was indexed with (GIT_ADAPTER et al.) into
+    // Registry env replay (outer env > registry env > code default): seed the
+    // env snapshot the project was indexed with (GIT_ADAPTER et al.) into
     // process.env so the spawned benchmark inherits it via buildEnv. Explicit
-    // shell env wins — replayTuningEnv only fills unset keys.
+    // shell env wins — replayRegistryEnv only fills unset alias groups.
     if (resolved.project) {
       const entry = new CollectionRegistry(resolveDataDir()).findByName(resolved.project);
-      replayTuningEnv(entry?.tuning, process.env);
+      replayRegistryEnv(entry?.env ?? entry?.tuning, process.env);
     }
     const resolution = await resolveTuneQdrantUrl(resolved["qdrant-url"]);
     if (resolution.url) {

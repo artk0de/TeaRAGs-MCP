@@ -1,12 +1,14 @@
 /**
- * Replay a project registry `tuning` snapshot into an env map with
- * env > registry > code default precedence, ALIAS-GROUP aware: a snapshot key
- * is skipped when ANY spelling of its alias family (canonical or deprecated —
- * see TUNING_ENV_GROUPS) is already set to a non-empty value in the ambient
- * env or the target. Without the group check, a canonical registry key would
- * survive the later `{...registryEnv, ...process.env}` merge and SHADOW an
- * externally-passed deprecated alias (envWithFallback prefers the canonical
- * spelling) — the external override would silently lose.
+ * Replay a project registry env snapshot into an env map with the ONE general
+ * precedence rule — `outer env > project registry env > code default` —
+ * ALIAS-GROUP aware: a snapshot key is skipped when ANY spelling of its alias
+ * family (canonical or deprecated — see REGISTRY_ENV_GROUPS) is already set
+ * to a non-empty value in the ambient env or the target. Without the group
+ * check, a canonical registry key (INGEST_PIPELINE_CONCURRENCY,
+ * EMBEDDING_BASE_URL) would survive the later `{...registryEnv,
+ * ...process.env}` merge and SHADOW an externally-passed deprecated alias
+ * (EMBEDDING_CONCURRENCY, OLLAMA_URL) because envWithFallback prefers the
+ * canonical spelling — the external override would silently lose.
  *
  * Empty-string values count as unset on both sides (matching envWithFallback):
  * an empty target/ambient value does not block replay, and empty snapshot
@@ -19,7 +21,7 @@
  * `tune` (process.env before the benchmark script spawns).
  */
 
-import { TUNING_ENV_GROUPS } from "../core/api/public/index.js";
+import { REGISTRY_ENV_GROUPS } from "../core/api/public/index.js";
 
 /**
  * Every spelling that can shadow the given key: the UNION of all alias
@@ -30,7 +32,7 @@ import { TUNING_ENV_GROUPS } from "../core/api/public/index.js";
  */
 const GROUP_MEMBERS_BY_KEY: ReadonlyMap<string, readonly string[]> = (() => {
   const byKey = new Map<string, Set<string>>();
-  for (const group of TUNING_ENV_GROUPS) {
+  for (const group of REGISTRY_ENV_GROUPS) {
     const members = [group.canonical, ...group.aliases];
     for (const member of members) {
       const union = byKey.get(member) ?? new Set<string>();
@@ -46,12 +48,12 @@ const isSet = (env: NodeJS.ProcessEnv | Record<string, string>, key: string): bo
   return value !== undefined && value !== "";
 };
 
-export function replayTuningEnv(
-  tuning: Record<string, string> | undefined,
+export function replayRegistryEnv(
+  snapshot: Record<string, string> | undefined,
   target: NodeJS.ProcessEnv | Record<string, string>,
   ambient: NodeJS.ProcessEnv | Record<string, string> = target,
 ): void {
-  for (const [key, value] of Object.entries(tuning ?? {})) {
+  for (const [key, value] of Object.entries(snapshot ?? {})) {
     if (value === "") continue;
     const members = GROUP_MEMBERS_BY_KEY.get(key) ?? [key];
     const shadowed = members.some((member) => isSet(ambient, member) || isSet(target, member));

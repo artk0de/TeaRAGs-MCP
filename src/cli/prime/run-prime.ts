@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { parseAppConfig } from "../../bootstrap/config/index.js";
 import { createAppContext } from "../../bootstrap/factory.js";
 import { CollectionRegistry, resolveCollectionName, type CollectionEntry } from "../../core/api/public/index.js";
-import { replayTuningEnv } from "../registry-env-replay.js";
+import { replayRegistryEnv } from "../registry-env-replay.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
 import { UpdateCheckService } from "../update-check/check-service.js";
 import { NpmRegistryClient } from "../update-check/registry-client.js";
@@ -100,19 +100,29 @@ export async function runPrime(input: { path?: string; project?: string }): Prom
   if (registryEntry?.codegraphEnabled) {
     process.env.CODEGRAPH_ENABLED = "true";
   }
-  // Tuning env registry-first re-apply (same seam as CODEGRAPH_ENABLED above):
-  // the project was indexed with these tuning vars in the indexing process env
-  // (typically the MCP server's env block), but prime runs in a fresh shell
-  // without them. Unlike the embedding URL overrides, explicit shell env WINS
-  // over the stored value — only unset keys are seeded (env > registry > code
-  // default). Empty-string env values count as unset, matching envWithFallback.
-  replayTuningEnv(registryEntry?.tuning, process.env);
+  // Registry env re-apply (same seam as CODEGRAPH_ENABLED above): the project
+  // was indexed with this env set in the indexing process (typically the MCP
+  // server's env block), but prime runs in a fresh shell without it. Unlike
+  // the embedding URL overrides, explicit shell env WINS over the stored
+  // value — only unset alias groups are seeded (outer env > registry env >
+  // code default). Empty-string env values count as unset, matching
+  // envWithFallback. Legacy entries fall back to the deprecated `tuning` map.
+  replayRegistryEnv(registryEntry?.env ?? registryEntry?.tuning, process.env);
   const config = parseAppConfig();
   // Registry-first: prefer the registered qdrantUrl (the Qdrant the project was
-  // indexed against). Fall back to heuristic only when the registry entry has
-  // no qdrantUrl or no entry exists at all.
+  // indexed against). The "embedded" sentinel (2nfdm) is not a pingable URL —
+  // resolve it through discovery (daemon.port) like a missing entry; same for
+  // legacy embedded entries whose frozen ephemeral port is stale after a
+  // daemon restart (qdrantEmbedded flag without the sentinel).
   const registryQdrantUrl = registryEntry?.qdrantUrl;
-  const qdrantUrl = registryQdrantUrl && registryQdrantUrl.length > 0 ? registryQdrantUrl : discoverQdrantUrl(config);
+  const usableRegistryUrl =
+    registryQdrantUrl &&
+    registryQdrantUrl.length > 0 &&
+    registryQdrantUrl !== "embedded" &&
+    registryEntry?.qdrantEmbedded !== true
+      ? registryQdrantUrl
+      : undefined;
+  const qdrantUrl = usableRegistryUrl ?? discoverQdrantUrl(config);
   const reachable = await pingQdrant(qdrantUrl);
   if (!reachable) {
     process.stdout.write(formatPrime({ kind: "qdrant-cold", path }));

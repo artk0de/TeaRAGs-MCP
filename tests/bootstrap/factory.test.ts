@@ -133,6 +133,7 @@ vi.mock("../../src/bootstrap/config/index.js", async () => {
       },
       trajectoryGit: {},
       vcs: { adapter: "git" },
+      codegraph: {},
       qdrantTune: {
         deleteBatchSize: 500,
         deleteConcurrency: 8,

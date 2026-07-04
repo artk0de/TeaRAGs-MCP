@@ -126,10 +126,11 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
     expect(entry!.codegraphEnabled).toBe(false);
   });
 
-  it("records qdrantEmbedded=true when indexed against the embedded daemon", async () => {
-    // The embedded daemon binds an ephemeral port that can change on restart.
-    // The entry must remember it was embedded (not the frozen port) so a later
-    // re-index re-resolves the daemon instead of pinning a stale URL.
+  it("records the 'embedded' sentinel as qdrantUrl when indexed against the embedded daemon (2nfdm)", async () => {
+    // The embedded daemon binds an ephemeral port that can change on restart —
+    // persisting the concrete URL goes stale on every daemon restart. The
+    // entry must store the SENTINEL; consumers resolve it through daemon
+    // discovery (daemon.port / spawn) at every run.
     Object.defineProperty(qdrant, "isEmbedded", { value: true, configurable: true });
     await createTestFile(codebaseDir, "emb.ts", "export const x = 1;");
     await ingest.indexCodebase(codebaseDir);
@@ -137,6 +138,7 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
 
     const entry = registry.get(status.collectionName!);
     expect(entry).not.toBeNull();
+    expect(entry!.qdrantUrl).toBe("embedded");
     expect(entry!.qdrantEmbedded).toBe(true);
   });
 
@@ -151,12 +153,12 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
     expect(entry!.qdrantEmbedded).toBe(false);
   });
 
-  it("records the INJECTED tuning snapshot verbatim into entry.tuning (9vpnz: full effective set)", async () => {
-    // The bootstrap composition root builds the full effective tuning set from
+  it("records the INJECTED env snapshot verbatim into entry.env (9vpnz: full effective set)", async () => {
+    // The bootstrap composition root builds the full effective env set from
     // the parsed config (defaults materialized) and injects it — the pipeline
     // never reads process.env itself. A CLI reindex in a fresh shell re-applies
     // the map registry-first instead of silently using code defaults.
-    const tuningSnapshot = {
+    const envSnapshot = {
       GIT_ADAPTER: "es-git",
       TRAJECTORY_GIT_CHUNK_CONCURRENCY: "10",
       INGEST_TUNE_FILE_CONCURRENCY: "25",
@@ -167,7 +169,7 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
       config,
       trajectoryConfig: defaultTrajectoryConfig(),
       collectionRegistry: registry,
-      tuningSnapshot,
+      envSnapshot,
     });
     await createTestFile(codebaseDir, "tune.ts", "export const x = 1;");
     await tunedIngest.indexCodebase(codebaseDir);
@@ -175,10 +177,10 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
 
     const entry = registry.get(status.collectionName!);
     expect(entry).not.toBeNull();
-    expect(entry!.tuning).toEqual(tuningSnapshot);
+    expect(entry!.env).toEqual(envSnapshot);
   });
 
-  it("omits entry.tuning when no snapshot is injected (direct construction without bootstrap)", async () => {
+  it("omits entry.env when no snapshot is injected (direct construction without bootstrap)", async () => {
     // Production paths always compose through bootstrap/factory (snapshot
     // always present); a facade constructed without it must not fabricate one.
     await createTestFile(codebaseDir, "untuned.ts", "export const x = 1;");
@@ -187,7 +189,7 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
 
     const entry = registry.get(status.collectionName!);
     expect(entry).not.toBeNull();
-    expect(entry!.tuning).toBeUndefined();
+    expect(entry!.env).toBeUndefined();
   });
 
   it("preserves sticky name on reindex of same collection", async () => {

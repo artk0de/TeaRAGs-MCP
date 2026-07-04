@@ -12,7 +12,7 @@
  */
 
 import { EMBEDDED_MARKER, type CollectionEntry } from "../../core/api/public/index.js";
-import { replayTuningEnv } from "../registry-env-replay.js";
+import { replayRegistryEnv } from "../registry-env-replay.js";
 
 /** Structural subset of CollectionRegistry used here — keeps tests fake-friendly. */
 export interface RegistryLookup {
@@ -91,26 +91,29 @@ export function resolveRegistryEnv(
   ambient: NodeJS.ProcessEnv | Record<string, string> = process.env,
 ): Record<string, string> {
   if (!entry) return {};
-  const env: Record<string, string> = {};
-  if (entry.embeddingModel) env.EMBEDDING_MODEL = entry.embeddingModel;
-  if (entry.embeddingBaseUrl) env.EMBEDDING_BASE_URL = entry.embeddingBaseUrl;
-  if (entry.embeddingFallbackUrl) env.EMBEDDING_FALLBACK_URL = entry.embeddingFallbackUrl;
+  // ONE replay set, ONE rule (outer env > registry env > code default):
+  // identity keys from their dedicated CollectionEntry fields composed with
+  // the general env snapshot (`entry.env`; legacy entries stored it as
+  // `entry.tuning`), then applied through the single alias-group-aware
+  // replay — an externally-set deprecated spelling (OLLAMA_URL,
+  // EMBEDDING_CONCURRENCY) beats the stored canonical key instead of being
+  // shadowed after the later `{...env, ...process.env}` merge.
+  const replaySet: Record<string, string> = { ...(entry.env ?? entry.tuning) };
+  if (entry.embeddingModel) replaySet.EMBEDDING_MODEL = entry.embeddingModel;
+  if (entry.embeddingBaseUrl) replaySet.EMBEDDING_BASE_URL = entry.embeddingBaseUrl;
+  if (entry.embeddingFallbackUrl) replaySet.EMBEDDING_FALLBACK_URL = entry.embeddingFallbackUrl;
   if (
     entry.qdrantEmbedded === true ||
-    (entry.qdrantEmbedded === undefined && isLegacyEmbeddedLoopback(entry.qdrantUrl))
+    (entry.qdrantEmbedded === undefined && isLegacyEmbeddedLoopback(entry.qdrantUrl)) ||
+    entry.qdrantUrl === EMBEDDED_MARKER
   ) {
-    env.QDRANT_URL = EMBEDDED_MARKER;
+    replaySet.QDRANT_URL = EMBEDDED_MARKER;
   } else if (entry.qdrantUrl) {
-    env.QDRANT_URL = entry.qdrantUrl;
+    replaySet.QDRANT_URL = entry.qdrantUrl;
   }
-  if (entry.codegraphEnabled) env.CODEGRAPH_ENABLED = "true";
-  // Tuning snapshot re-apply: seed the worker with the exact tuning env the
-  // project was last indexed with, so a fresh-shell reindex keeps the same
-  // knobs instead of silently reverting to code defaults. Ambient process.env
-  // still wins — both via the later `{...env, ...process.env}` merge AND via
-  // the alias-group check here (an externally-set deprecated spelling must
-  // not be shadowed by the stored canonical key). Empty-string values
-  // (hand-edited registry) are skipped like the endpoint fields above.
-  replayTuningEnv(entry.tuning, env, ambient);
+  if (entry.codegraphEnabled) replaySet.CODEGRAPH_ENABLED = "true";
+
+  const env: Record<string, string> = {};
+  replayRegistryEnv(replaySet, env, ambient);
   return env;
 }

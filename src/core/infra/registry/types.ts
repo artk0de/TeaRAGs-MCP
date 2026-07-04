@@ -46,15 +46,19 @@ export interface CollectionEntry {
    */
   codegraphEnabled?: boolean;
   /**
-   * Tuning env vars (curated allowlist — see `tuning-env.ts`) that were SET
-   * in the indexing process env at index time, keyed by the exact env var
-   * name the operator exported. The MCP server's env block carries these, but
-   * CLI `index-codebase` and prime run in a fresh shell without them — so
-   * consumers re-apply this map registry-first before building config, with
-   * explicit process env winning over the stored value (env > registry >
-   * code default). Same registry-first lookup as `codegraphEnabled`. Absent
-   * when no tuning var was set at index time and for pre-existing registry
-   * entries (treated as untuned — code defaults apply).
+   * The FULL effective env set of the last indexing run (canonical keys,
+   * code defaults materialized — see `env-groups.ts` /
+   * `bootstrap/config/env-snapshot.ts`), excluding identity keys stored in
+   * the dedicated fields above, secrets, and server/process knobs. Consumers
+   * re-apply the map registry-first with the ONE general rule `outer env >
+   * registry env > code default` (alias-group aware). Absent only for
+   * pre-existing registry entries — those fall back to `tuning`.
+   */
+  env?: Record<string, string>;
+  /**
+   * DEPRECATED legacy field (pre-9vpnz "tuning snapshot"): only-when-set
+   * env keys of old runs. Read as a fallback when `env` is absent; never
+   * written anymore.
    */
   tuning?: Record<string, string>;
   /** Source collection logical name when this entry is a worktree clone. */

@@ -107,10 +107,13 @@ export class WorktreeProvisioner {
       // source's frozen ephemeral port. Mirrors qdrantUrl propagation above.
       qdrantEmbedded: sourceEntry.qdrantEmbedded,
       codegraphEnabled: source.codegraphEnabled,
-      // The tuning snapshot travels with the clone — a worktree reindex in a
-      // fresh shell re-applies the source project's index-time tuning
+      // The env snapshot travels with the clone — a worktree reindex in a
+      // fresh shell re-applies the source project's index-time env set
       // registry-first (mirrors qdrantEmbedded / codegraphEnabled above).
-      ...(sourceEntry.tuning !== undefined ? { tuning: sourceEntry.tuning } : {}),
+      // Legacy sources carry it in the deprecated `tuning` field.
+      ...(sourceEntry.env !== undefined || sourceEntry.tuning !== undefined
+        ? { env: sourceEntry.env ?? sourceEntry.tuning }
+        : {}),
       indexedAt: sourceEntry.indexedAt,
       teaRagsVersion: sourceEntry.teaRagsVersion,
       chunksCount: sourceEntry.chunksCount,
