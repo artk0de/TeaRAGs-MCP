@@ -128,6 +128,14 @@ Rough breakdown for a first-time index of ~100k chunks (Apple M3 Pro, Ollama loc
 - `rm ~/.tea-rags/qdrant/daemon.*` forces fresh spawn if daemon is unresponsive.
 - Storage over 50 GB on SSD is fine; on spinning disks, moving `QDRANT_EMBEDDED_STORAGE_PATH` to SSD helps.
 
+**Git enrichment slow (endpoint security / antivirus)?**
+
+Embedding is normal but the enrichment tail (chunk-churn + per-file blame) balloons — often the dominant share of a `--force` reindex.
+
+- **Cause:** EDR/antivirus agents (SentinelOne, CrowdStrike, Microsoft Defender for Endpoint) hook process launches and file opens in the kernel. `git blame` / per-file `git log` each spawn a fresh git process and open hundreds of repo files, so every op waits for a synchronous allow/deny verdict. An aggressive policy caps fresh-git-process throughput to ~10/s **machine-wide** with no parallel scaling — raising `TRAJECTORY_GIT_CHUNK_CONCURRENCY` does nothing. The slowdown is code-invisible: the same build is fast before a policy change and slow after.
+- **Diagnose:** flat scaling is the tell. `time for i in $(seq 50); do git blame HEAD -- <file> >/dev/null; done` — if 10-way parallel is no faster per-op than serial, an agent is gating spawns. `git --version` stays fast (spawn only), and a persistent `git cat-file --batch` is unaffected — only "fresh process + many file opens" is throttled.
+- **Fixes:** (1) ask IT for a **Path/Process exclusion in Interoperability (performance) mode** for the git binary tree (`/opt/homebrew/Cellar/git/**`, `/usr/bin/git`) and your dev directory — *not* "suppress alerts", which still scans; (2) the persistent blob-OID **blame cache** re-blames only changed files, so repeated `--force` runs skip the throttled path; (3) opt into the in-process git adapter (`TRAJECTORY_GIT_BACKEND=libgit2`, when available) to read git objects without spawning processes.
+
 ## Health Checks for Agents
 
 Before relying on trajectory signals, agents should run this check:
