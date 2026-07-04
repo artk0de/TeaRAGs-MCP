@@ -46,7 +46,16 @@ jobs:
         run: npm run build
 
       - name: Run tests with coverage (quality gate)
-        run: npm run test:coverage -- --reporter=dot
+        # DIAGNOSTIC (temp): --logHeapUsage prints file+heap after each file, so the
+        # LAST file logged before a hang names the culprit; --reporter=hanging-process
+        # names any leaked open handle; the exit-code echo distinguishes
+        # SIGKILL/OOM(137) vs SIGSEGV(139) vs SIGABRT(134) vs threshold/test-fail(1).
+        run: |
+          set +e
+          npm run test:coverage -- --reporter=dot --reporter=hanging-process --logHeapUsage
+          code=$?
+          echo "===VITEST_EXIT_CODE=$code=== (137=SIGKILL/OOM 139=SIGSEGV 134=SIGABRT 1=threshold/fail 0=pass)"
+          exit $code
         # Note: This step enforces 90% coverage thresholds via vitest.config.ts
         # If thresholds are not met, this step will fail with exit code 1
 
