@@ -83,7 +83,7 @@ beforeAll(() => {
   writeFileSync(join(repo, "f2.ts"), F2_V2);
   g(["add", "-A"]);
   g(["commit", "-q", "-m", "TD-123 update both"]);
-});
+}, 30000); // ~13 sync git spawns; 10s default hook timeout flakes under coverage/CI load (matches file-discovery)
 
 afterAll(() => {
   rmSync(repo, { recursive: true, force: true });

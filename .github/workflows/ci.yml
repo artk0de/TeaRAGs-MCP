@@ -46,19 +46,13 @@ jobs:
         run: npm run build
 
       - name: Run tests with coverage (quality gate)
-        # DIAGNOSTIC (temp): the `default` reporter prints one line PER FILE as it
-        # finishes ("✓ tests/x.test.ts (N) …  MB heap used" with --logHeapUsage) —
-        # a hanging file never prints its line, so the set of missing files (or an
-        # all-files-done-then-silence gap = coverage-report / teardown hang) names
-        # the culprit. `dot` was suppressing this. --reporter=hanging-process names
-        # leaked handles; the exit-code echo proves whether vitest returned at all.
-        run: |
-          set +e
-          npm run test:coverage -- --reporter=default --reporter=hanging-process --logHeapUsage
-          code=$?
-          echo "===VITEST_EXIT_CODE=$code=== (137=SIGKILL/OOM 139=SIGSEGV 134=SIGABRT 1=threshold/fail 0=pass)"
-          exit $code
-        # Note: This step enforces 90% coverage thresholds via vitest.config.ts
+        # `default` reporter (not `dot`): dot goes silent during the ~90s v8
+        # coverage-report generation on the runner, which reads as a hang and
+        # masks a plain threshold miss. default keeps printing per-file so the
+        # real exit reason (e.g. "ERROR: Coverage … does not meet threshold") is
+        # never buried. See bd tea-rags-mcp-rytq3.
+        run: npm run test:coverage -- --reporter=default
+        # Note: This step enforces coverage thresholds via vitest.config.ts
         # If thresholds are not met, this step will fail with exit code 1
 
       - name: Run provider verification tests
