@@ -154,12 +154,12 @@ function formatRegistryParamsLine(entry: PrimeRegistryEntry): string | null {
   if (entry.teaRagsVersion) {
     parts.push(`v${entry.teaRagsVersion}`);
   }
-  const tuning = Object.entries(entry.tuning ?? {})
+  const envSnapshot = Object.entries(entry.env ?? entry.tuning ?? {})
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
     .join(" ");
-  if (tuning) {
-    parts.push(tuning);
+  if (envSnapshot) {
+    parts.push(envSnapshot);
   }
   return parts.length > 0 ? `registry: ${parts.join(" · ")}` : null;
 }
