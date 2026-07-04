@@ -101,6 +101,39 @@ export interface DispatchEdge {
 }
 
 /**
+ * Corpus-adaptive bound on dispatch fan-out (bd tea-rags-mcp-f2jsb). Built once
+ * per GlobalSymbolTable from the defs-per-shortName distribution: `cap` is the
+ * p99 of that distribution floored at DISPATCH_FANOUT_CAP_FLOOR. A fan-out with
+ * more survivors than `cap` carries no per-target information (confidence
+ * `discount/m` is below noise) and is reported as an ambiguous outcome instead
+ * of materialized edges.
+ */
+export interface DispatchFanoutPolicy {
+  /** Max survivors a dispatch fan-out may materialize as edges. */
+  cap: number;
+  /** Diagnostic: the corpus p99 of defs-per-shortName the cap derives from. */
+  p99DefsPerMember: number;
+}
+
+/**
+ * Terminal outcome of a dispatch fan-out (bd tea-rags-mcp-f2jsb).
+ *
+ *   - `edges` — bounded fan-out, materialized as method edges (possibly empty:
+ *     vocabulary suppression / zero candidates keep their existing semantics).
+ *   - `ambiguous` — survivor count exceeded the corpus-adaptive
+ *     DispatchFanoutPolicy cap: NO edges are emitted; the provider records an
+ *     ambiguousFanout aggregate so recall reporting stays honest (strict vs
+ *     covered) without flooding the graph.
+ */
+export type DispatchFanoutOutcome =
+  | { kind: "edges"; edges: DispatchEdge[] }
+  | { kind: "ambiguous"; member: string; candidateCount: number };
+
+/** The neutral "no fan-out" outcome — a fresh object per call so consumers may
+ *  push into `edges` without aliasing. */
+export const emptyDispatchFanout = (): DispatchFanoutOutcome => ({ kind: "edges", edges: [] });
+
+/**
  * A symbol descriptor produced by a language walker's `nameOf(node)`. Names a
  * single declaration (function, method, class, namespace) the walker found at
  * the current AST node, plus the flags that drive symbolId composition and
@@ -640,6 +673,9 @@ export interface GlobalSymbolTable {
    *  cold start. Equivalent to calling `upsertFile` once per file —
    *  implementations may optimise the bulk path but are not required to. */
   hydrate: (definitions: SymbolDefinition[]) => void;
+  /** Definition count per shortName across the corpus — the distribution the
+   *  DispatchFanoutPolicy p99 cap derives from (bd tea-rags-mcp-f2jsb). */
+  shortNameDefCounts: () => ReadonlyMap<string, number>;
 }
 
 /** Positional-arity envelope of a method definition (bd xlnub). `maxPositional`
@@ -720,7 +756,7 @@ export interface CallResolver {
    * Resolvers that don't support dispatch tables omit this method; the
    * provider guards with `?.` so other-language resolvers are unaffected.
    */
-  resolveDispatch?: (call: CallRef, ctx: CallContext) => DispatchEdge[];
+  resolveDispatch?: (call: CallRef, ctx: CallContext) => DispatchFanoutOutcome;
   /**
    * Optional per-file edge resolution (tea-rags-mcp Ruby Zeitwerk +
    * inheritance). Returns file→file edges for `extraction`, owning the
@@ -1015,6 +1051,15 @@ export interface GraphDbClient {
   getCallers: (symbolId: SymbolId) => Promise<CallerEdge[]>;
   getCallees: (symbolId: SymbolId) => Promise<CalleeEdge[]>;
   /**
+   * Lazy ambiguous-group expansion (bd tea-rags-mcp-f2jsb A4). Reads the
+   * `cg_ambiguous_fanout` aggregates whose `member` matches the target's
+   * member segment — call sites whose over-cap candidate set plausibly
+   * contained the target — WITHOUT materializing the suppressed edges.
+   * Ordered by (sourceSymbolId, callExpression); `limit` defaults to 50.
+   * Empty `member` always returns [] (aggregates never record one).
+   */
+  getAmbiguousCallersByMember: (member: string, limit?: number) => Promise<AmbiguousCallerSite[]>;
+  /**
    * Batch adjacency: for each input source symbolId, the list of resolved
    * callee target symbolIds. Method edges whose callee could not be resolved
    * to a known symbol (null `target_symbol_id`) are excluded. Used by
@@ -1023,7 +1068,18 @@ export interface GraphDbClient {
    * are simply absent from the returned map.
    */
   getCalleeEdges: (symbolIds: SymbolId[]) => Promise<Map<SymbolId, SymbolId[]>>;
+  /**
+   * Confidence-weighted chunk fanIn (bd tea-rags-mcp-s5ato):
+   * SUM(confidence) over incoming method edges — an m-way dynamic/cone
+   * fan-out at confidence 1/m contributes ~1 in total, not m. May be
+   * FRACTIONAL (e.g. 1.25); rounded to 2 decimals at the adapter boundary.
+   */
   getCalledByCount: (symbolId: SymbolId) => Promise<number>;
+  /**
+   * Confidence-weighted chunk fanOut — SUM(confidence) over outgoing
+   * method edges (a whole m-way fan-out counts as ONE outgoing call).
+   * Same fractional/rounding semantics as `getCalledByCount`.
+   */
   getCallSiteCount: (symbolId: SymbolId) => Promise<number>;
 
   // ── Class hierarchy (bd tea-rags-mcp-f10y) ──
@@ -1138,8 +1194,14 @@ export interface GraphDbClient {
    * domain layer freedom to bucket into a compact id-keyed structure
    * (e.g. `Map<number, number[]>` with a separate id-table) instead of
    * paying the string-keyed `Map<string, string[]>` overhead twice.
+   *
+   * Method scope also yields the per-edge dispatch confidence as an
+   * optional third element (bd tea-rags-mcp-s5ato; legacy NULL rows
+   * coalesce to 1.0) so PageRank can weight dynamic/cone fan-out edges.
+   * File edges carry no confidence — consumers default a missing weight
+   * to 1.
    */
-  streamAdjacency: (scope: CycleScope) => AsyncIterableIterator<[string, string]>;
+  streamAdjacency: (scope: CycleScope) => AsyncIterableIterator<[source: string, target: string, weight?: number]>;
 
   /**
    * Flush the WAL to the main database file. Slice 2 streaming
@@ -1276,6 +1338,15 @@ export interface ResolveRunStatsRow {
    * column was added (the recall then collapses to raw capability).
    */
   noInProjectDef?: number;
+  /**
+   * bd tea-rags-mcp-f2jsb / j0pki — of the `attempted − resolved` misses in
+   * this bucket, how many the dispatch kernel judged over-cap AMBIGUOUS
+   * (survivors > corpus-adaptive fan-out cap) and recorded as an aggregate
+   * instead of m edges. Its own bucket: NOT a genuine miss, NOT external.
+   * Strict recall keeps it in the denominator; coveredRecall counts it as
+   * coverage. Defaults to 0 for rows persisted before the column was added.
+   */
+  ambiguousFanout?: number;
 }
 
 export interface GraphEdges {
@@ -1294,6 +1365,18 @@ export interface GraphEdges {
    *  (bd tea-rags-mcp-f10y). Persisted to cg_symbols_inheritance via upsertFile;
    *  source_rel_path is taken from the accompanying GraphFileNode. */
   inheritance?: InheritanceEdgeRow[];
+  /** Over-cap ambiguous dispatch fan-outs for this file's call sites
+   *  (bd tea-rags-mcp-f2jsb / j0pki). One aggregate record per suppressed
+   *  fan-out — persisted to cg_ambiguous_fanout via upsertFile (per-file
+   *  DELETE+INSERT lifecycle, source_rel_path from the accompanying
+   *  GraphFileNode) INSTEAD of m noise edges. Present only when non-empty,
+   *  mirroring `inheritance`. */
+  ambiguousFanouts?: {
+    sourceSymbolId: SymbolId;
+    callExpression: string;
+    member: string;
+    candidateCount: number;
+  }[];
 }
 
 export interface CallerEdge {
@@ -1304,6 +1387,21 @@ export interface CallerEdge {
   edgeKind?: MethodEdgeKind;
   /** Dispatch confidence in (0,1] from `cg_symbols_edges_method.confidence` (xlnub Task 5). */
   confidence?: number;
+}
+
+/**
+ * One `cg_ambiguous_fanout` aggregate row surfaced by
+ * `getAmbiguousCallersByMember` (bd tea-rags-mcp-f2jsb A4): an over-cap
+ * dispatch site whose member matches the queried target. The call MAY reach
+ * the target among `candidateCount` candidates — it is NOT a materialized
+ * edge (`CallerEdge`), so no edgeKind/confidence provenance applies.
+ */
+export interface AmbiguousCallerSite {
+  sourceSymbolId: SymbolId;
+  sourceRelPath: RelPath;
+  callExpression: string;
+  /** Size of the suppressed candidate set the target plausibly belongs to. */
+  candidateCount: number;
 }
 
 export interface CalleeEdge {

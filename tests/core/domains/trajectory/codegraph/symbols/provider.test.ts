@@ -58,6 +58,40 @@ describe("CodegraphEnrichmentProvider", () => {
     expect(provider.signals.map((s) => s.key)).toContain("codegraph.chunk.fanOut");
   });
 
+  // bd tea-rags-mcp-s5ato — the provider's direct-mode (non-daemon) metric
+  // recompute must mirror the daemon's confidence-weighted PageRank: the
+  // 0.9-confidence dynamic edge out-ranks its 0.1 sibling.
+  it("direct-mode metric recompute weights PageRank by per-edge confidence", async () => {
+    await client.upsertFile(
+      { relPath: "a.ts", language: "typescript" },
+      {
+        fileEdges: [],
+        methodEdges: [
+          {
+            sourceSymbolId: "A#run",
+            targetSymbolId: "B#hot",
+            targetRelPath: "b.ts",
+            callExpression: "x.hot()",
+            edgeKind: "dynamic",
+            confidence: 0.9,
+          },
+          {
+            sourceSymbolId: "A#run",
+            targetSymbolId: "C#cold",
+            targetRelPath: "c.ts",
+            callExpression: "x.cold()",
+            edgeKind: "dynamic",
+            confidence: 0.1,
+          },
+        ],
+      },
+    );
+    await (
+      provider as unknown as { recomputeGraphMetricsStreaming: (c?: string) => Promise<void> }
+    ).recomputeGraphMetricsStreaming();
+    expect(await client.getPageRank("B#hot")).toBeGreaterThan(await client.getPageRank("C#cold"));
+  });
+
   describe("streamFileBatch + finalizeSignals (deferred file enrichment)", () => {
     const makeRoot = (): string => {
       const root = mkdtempSync(join(tmpdir(), "cg-stream-"));

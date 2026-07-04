@@ -41,8 +41,10 @@ describe("006 cg edge_kind/confidence + cg_run_stats migration (bd 2jet/j431)", 
     // by migration 009 re-graining to per-(language, receiver_kind) (cnqrg);
     // unresolvable added by migration 010 (cai0).
     expect(runStatsCols.map((c) => c.column_name).sort()).toEqual(
-      // no_in_project_def added by migration 011 (inProjectEdgeRecall).
+      // no_in_project_def added by migration 011 (inProjectEdgeRecall);
+      // ambiguous_fanout added by migration 013 (f2jsb / j0pki dual recall).
       [
+        "ambiguous_fanout",
         "attempted",
         "external_skipped",
         "language",

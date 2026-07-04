@@ -349,6 +349,82 @@ describe("GraphFacade overlay-absence invariant", () => {
   });
 });
 
+// bd tea-rags-mcp-z3bcv (f2jsb A4) — lazy ambiguous-group expansion.
+// Over-cap dynamic fan-outs are persisted as cg_ambiguous_fanout aggregates,
+// NOT edges. getCallers optionally surfaces the member-matched aggregates
+// under `ambiguousCallers`; the DEFAULT response stays byte-identical.
+describe("GraphFacade getCallers — lazy ambiguous expansion (f2jsb A4)", () => {
+  const ambiguousSite = {
+    sourceSymbolId: "Runner#go",
+    sourceRelPath: "app/services/runner.rb",
+    callExpression: "x.firm",
+    candidateCount: 240,
+  };
+
+  it("includeAmbiguous:true attaches member-matched ambiguousCallers with candidateCount", async () => {
+    const graphDb = {
+      getCallers: vi
+        .fn()
+        .mockResolvedValue([{ sourceSymbolId: "A.f", sourceRelPath: "src/a.ts", callExpression: "b.firm" }]),
+      getAmbiguousCallersByMember: vi.fn().mockResolvedValue([ambiguousSite]),
+    };
+    const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
+
+    const res = await facade.getCallers({ path: "/proj", symbolId: "Account#firm", includeAmbiguous: true });
+
+    // Member = text after the last '#' (symbolid-convention).
+    expect(graphDb.getAmbiguousCallersByMember).toHaveBeenCalledWith("firm");
+    expect(res.callers).toHaveLength(1);
+    expect(res.ambiguousCallers).toEqual([ambiguousSite]);
+    // Row shape pinned — exactly the four documented fields, no overlay leak.
+    for (const site of res.ambiguousCallers ?? []) {
+      expect(Object.keys(site).sort()).toEqual(["callExpression", "candidateCount", "sourceRelPath", "sourceSymbolId"]);
+    }
+  });
+
+  it("extracts the member after the last '.' for static symbolIds", async () => {
+    const graphDb = {
+      getCallers: vi.fn().mockResolvedValue([]),
+      getAmbiguousCallersByMember: vi.fn().mockResolvedValue([]),
+    };
+    const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
+
+    const res = await facade.getCallers({ path: "/proj", symbolId: "Registry.build", includeAmbiguous: true });
+
+    expect(graphDb.getAmbiguousCallersByMember).toHaveBeenCalledWith("build");
+    // Flag + member present → block attached even when empty (honest "none found").
+    expect(res.ambiguousCallers).toEqual([]);
+  });
+
+  it("default request stays byte-identical: no ambiguousCallers key, no aggregate lookup", async () => {
+    const graphDb = {
+      getCallers: vi
+        .fn()
+        .mockResolvedValue([{ sourceSymbolId: "A.f", sourceRelPath: "src/a.ts", callExpression: "b.firm" }]),
+      getAmbiguousCallersByMember: vi.fn(),
+    };
+    const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
+
+    const res = await facade.getCallers({ path: "/proj", symbolId: "Account#firm" });
+
+    expect(graphDb.getAmbiguousCallersByMember).not.toHaveBeenCalled();
+    expect(Object.keys(res)).toEqual(["callers"]);
+  });
+
+  it("bare symbolId (no member segment) skips the lookup even with includeAmbiguous:true", async () => {
+    const graphDb = {
+      getCallers: vi.fn().mockResolvedValue([]),
+      getAmbiguousCallersByMember: vi.fn(),
+    };
+    const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: fakeRegistry({}) });
+
+    const res = await facade.getCallers({ path: "/proj", symbolId: "main", includeAmbiguous: true });
+
+    expect(graphDb.getAmbiguousCallersByMember).not.toHaveBeenCalled();
+    expect(Object.keys(res)).toEqual(["callers"]);
+  });
+});
+
 describe("GraphFacade#resolveSymbolChunk", () => {
   it("resolves via the read handle and returns the location", async () => {
     const graphDb = {

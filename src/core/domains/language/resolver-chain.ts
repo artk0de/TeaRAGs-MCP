@@ -1,4 +1,9 @@
-import type { CallContext, CallRef, DispatchEdge, SymbolResolutionTarget } from "../../contracts/types/codegraph.js";
+import type {
+  CallContext,
+  CallRef,
+  DispatchFanoutOutcome,
+  SymbolResolutionTarget,
+} from "../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../contracts/types/language.js";
 
 /**
@@ -35,9 +40,10 @@ export function resolveViaChain(
 }
 
 /**
- * Drive an ordered list of dispatch components, returning the first NON-EMPTY
- * fan-out. The order IS the precedence (a component earlier in the array wins).
- * This is the fan-out mirror of `resolveViaChain`: "decisive" = non-empty here.
+ * Drive an ordered list of dispatch components, returning the first DECISIVE
+ * outcome — a non-empty fan-out or an over-cap `ambiguous` verdict. The order
+ * IS the precedence (a component earlier in the array wins). This is the
+ * fan-out mirror of `resolveViaChain`.
  * A per-language resolver composes its `DispatchResolverComponent[]` (e.g. Ruby:
  * registry-table → CHA-cone → dynamic-receiver) through this engine instead of
  * an inline if-ladder, so the precedence-compose is shared across languages.
@@ -46,10 +52,13 @@ export function resolveDispatchViaComponents(
   components: readonly DispatchResolverComponent[],
   call: CallRef,
   ctx: CallContext,
-): DispatchEdge[] {
+): DispatchFanoutOutcome {
   for (const component of components) {
-    const edges = component.resolveDispatch(call, ctx);
-    if (edges.length > 0) return edges;
+    const outcome = component.resolveDispatch(call, ctx);
+    // Decisive: a non-empty fan-out OR an over-cap ambiguous verdict (bd
+    // f2jsb) — a later component must not re-fan a call an earlier one already
+    // judged too ambiguous to carry information.
+    if (outcome.kind === "ambiguous" || outcome.edges.length > 0) return outcome;
   }
-  return [];
+  return { kind: "edges", edges: [] };
 }

@@ -99,6 +99,97 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
     expect(r.git.chunk.message).toMatch(/stalled/i);
   });
 
+  describe("stall deadline (in_progress past deadline → failed)", () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("heartbeat older than the default 15-minute deadline (but <1h) → failed, message names duration + reindex recovery", () => {
+      const twentyMinAgo = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+      const map = {
+        _run: run({ lastProgressAt: twentyMinAgo }),
+        git: {},
+      } as unknown as EnrichmentMarkerMap;
+      const r = mapMarkerToHealth(map)!;
+      expect(r.git.file.status).toBe("failed");
+      expect(r.git.chunk.status).toBe("failed");
+      expect(r.git.file.message).toMatch(/no progress in 20 minutes/i);
+      expect(r.git.file.message).toMatch(/stall deadline/i);
+      expect(r.git.file.message).toMatch(/recover on next reindex/i);
+    });
+
+    it("heartbeat between the 2-minute warning and the deadline → in_progress with stalled warning (unchanged)", () => {
+      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const map = {
+        _run: run({ lastProgressAt: tenMinAgo }),
+        git: {},
+      } as unknown as EnrichmentMarkerMap;
+      const r = mapMarkerToHealth(map)!;
+      expect(r.git.chunk.status).toBe("in_progress");
+      expect(r.git.chunk.message).toBe("Enrichment appears stalled — no progress in 2 minutes. May need reindex.");
+    });
+
+    it("ENRICHMENT_STALL_DEADLINE_MS lowers the deadline (fails before the 2-minute warning would even apply)", () => {
+      vi.stubEnv("ENRICHMENT_STALL_DEADLINE_MS", "60000"); // 1 minute
+      const ninetySecAgo = new Date(Date.now() - 90 * 1000).toISOString();
+      const map = {
+        _run: run({ lastProgressAt: ninetySecAgo }),
+        git: {},
+      } as unknown as EnrichmentMarkerMap;
+      const r = mapMarkerToHealth(map)!;
+      expect(r.git.file.status).toBe("failed");
+      expect(r.git.file.message).toMatch(/stall deadline/i);
+    });
+
+    it("ENRICHMENT_STALL_DEADLINE_MS raises the deadline (20-minute-old heartbeat stays a stalled warning)", () => {
+      vi.stubEnv("ENRICHMENT_STALL_DEADLINE_MS", String(30 * 60 * 1000)); // 30 minutes
+      const twentyMinAgo = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+      const map = {
+        _run: run({ lastProgressAt: twentyMinAgo }),
+        git: {},
+      } as unknown as EnrichmentMarkerMap;
+      const r = mapMarkerToHealth(map)!;
+      expect(r.git.file.status).toBe("in_progress");
+      expect(r.git.file.message).toMatch(/stalled/i);
+    });
+
+    it("invalid ENRICHMENT_STALL_DEADLINE_MS falls back to the 15-minute default", () => {
+      vi.stubEnv("ENRICHMENT_STALL_DEADLINE_MS", "not-a-number");
+      const twentyMinAgo = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+      const map = {
+        _run: run({ lastProgressAt: twentyMinAgo }),
+        git: {},
+      } as unknown as EnrichmentMarkerMap;
+      const r = mapMarkerToHealth(map)!;
+      expect(r.git.file.status).toBe("failed");
+    });
+
+    it("legacy in_progress with lastProgressAt older than the deadline → failed", () => {
+      const twentyMinAgo = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+      const map = {
+        git: {
+          file: { status: "in_progress", unenrichedChunks: 4, startedAt: twentyMinAgo, lastProgressAt: twentyMinAgo },
+          chunk: { status: "pending", unenrichedChunks: 0 },
+        },
+      } as unknown as EnrichmentMarkerMap;
+      const r = mapMarkerToHealth(map)!;
+      expect(r.git.file.status).toBe("failed");
+      expect(r.git.file.message).toMatch(/stall deadline/i);
+      expect(r.git.file.message).toMatch(/recover on next reindex/i);
+    });
+
+    it("legacy in_progress with lastProgressAt within the deadline → in_progress stalled warning (unchanged)", () => {
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const map = {
+        git: {
+          file: { status: "in_progress", unenrichedChunks: 4, startedAt: fiveMinAgo, lastProgressAt: fiveMinAgo },
+          chunk: { status: "pending", unenrichedChunks: 0 },
+        },
+      } as unknown as EnrichmentMarkerMap;
+      const r = mapMarkerToHealth(map)!;
+      expect(r.git.file.status).toBe("in_progress");
+      expect(r.git.file.message).toMatch(/stalled/i);
+    });
+  });
+
   it("crashed: no progress in >1h → failed", () => {
     const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
     const map = {

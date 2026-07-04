@@ -4,6 +4,8 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type AritySignature,
   type CallContext,
+  type DispatchEdge,
+  type DispatchFanoutOutcome,
   type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
@@ -12,9 +14,9 @@ import {
   RubyLocalTypeSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
+import { classifyRubyLiteralReceiver } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/ruby-dynamic-dispatch.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { classifyRubyLiteralReceiver } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/ruby-dynamic-dispatch.js";
 
 const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
@@ -48,73 +50,95 @@ const ctx = (over: Partial<CallContext> & Pick<CallContext, "symbolTable">): Cal
   ...over,
 });
 
+// bd f2jsb: resolveDispatch now returns DispatchFanoutOutcome; existing
+// assertions target the edges payload, so unwrap (throwing on `ambiguous`
+// keeps the assertion strict — these fixtures never exceed the fan-out cap).
+const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
+  if (outcome.kind !== "edges") throw new Error(`expected edges outcome, got ${outcome.kind}`);
+  return outcome.edges;
+};
+
 describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
   const resolver = new RubyDynamicDispatchResolver(cfg);
 
   it("returns [] for a bare call (receiver null — exact bare-call path owns it)", () => {
     const symbolTable = tableWith(["lib/helpers.rb", [sym("helper", "helper", "lib/helpers.rb", [])]]);
-    const edges = resolver.resolveDispatch(
-      { callText: "helper()", receiver: null, member: "helper", startLine: 1 },
-      ctx({ symbolTable }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "helper()", receiver: null, member: "helper", startLine: 1 },
+        ctx({ symbolTable }),
+      ),
     );
     expect(edges).toEqual([]);
   });
 
   it("returns [] for a constant receiver (exact constant path owns it)", () => {
     const symbolTable = tableWith(["app/models/user.rb", [sym("User.find", "find", "app/models/user.rb", ["User"])]]);
-    const edges = resolver.resolveDispatch(
-      { callText: "User.find", receiver: "User", member: "find", startLine: 1 },
-      ctx({ symbolTable }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "User.find", receiver: "User", member: "find", startLine: 1 },
+        ctx({ symbolTable }),
+      ),
     );
     expect(edges).toEqual([]);
   });
 
   it("returns [] for the super sentinel (exact super path owns it)", () => {
     const symbolTable = tableWith();
-    const edges = resolver.resolveDispatch(
-      { callText: "super", receiver: SUPER_RECEIVER_SENTINEL, member: "save", startLine: 1 },
-      ctx({ symbolTable, callerScope: ["Child"] }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "super", receiver: SUPER_RECEIVER_SENTINEL, member: "save", startLine: 1 },
+        ctx({ symbolTable, callerScope: ["Child"] }),
+      ),
     );
     expect(edges).toEqual([]);
   });
 
   it("returns [] for a self receiver (exact self path owns it)", () => {
     const symbolTable = tableWith(["app/a.rb", [sym("A#helper", "helper", "app/a.rb", ["A"])]]);
-    const edges = resolver.resolveDispatch(
-      { callText: "self.helper", receiver: "self", member: "helper", startLine: 1 },
-      ctx({ symbolTable, callerScope: ["A"] }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "self.helper", receiver: "self", member: "helper", startLine: 1 },
+        ctx({ symbolTable, callerScope: ["A"] }),
+      ),
     );
     expect(edges).toEqual([]);
   });
 
   it("returns [] for a receiver with a local binding (exact localType path owns it — external never cones either)", () => {
     const symbolTable = tableWith(["app/models/user.rb", [sym("User#save", "save", "app/models/user.rb", ["User"])]]);
-    const edges = resolver.resolveDispatch(
-      { callText: "user.save", receiver: "user", member: "save", startLine: 1 },
-      ctx({ symbolTable, localBindings: { user: [{ line: 1, type: "User" }] } }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "user.save", receiver: "user", member: "save", startLine: 1 },
+        ctx({ symbolTable, localBindings: { user: [{ line: 1, type: "User" }] } }),
+      ),
     );
     expect(edges).toEqual([]);
   });
 
   it("returns [] for an AR::Relation chain receiver (exact AR-guard path owns it)", () => {
     const symbolTable = tableWith(["app/a.rb", [sym("A#result", "result", "app/a.rb", ["A"])]]);
-    const edges = resolver.resolveDispatch(
-      {
-        callText: "Product.where(active: true).result",
-        receiver: "Product.where(active: true)",
-        member: "result",
-        startLine: 1,
-      },
-      ctx({ symbolTable }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        {
+          callText: "Product.where(active: true).result",
+          receiver: "Product.where(active: true)",
+          member: "result",
+          startLine: 1,
+        },
+        ctx({ symbolTable }),
+      ),
     );
     expect(edges).toEqual([]);
   });
 
   it("returns [] when no ruby candidate matches the member short name (drop, not fabricate)", () => {
     const symbolTable = tableWith();
-    const edges = resolver.resolveDispatch(
-      { callText: "arr.frobnicate", receiver: "arr", member: "frobnicate", startLine: 1 },
-      ctx({ symbolTable }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "arr.frobnicate", receiver: "arr", member: "frobnicate", startLine: 1 },
+        ctx({ symbolTable }),
+      ),
     );
     expect(edges).toEqual([]);
   });
@@ -124,9 +148,11 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       "vendor/assets/javascripts/d3.js",
       [sym("map", "map", "vendor/assets/javascripts/d3.js", [])],
     ]);
-    const edges = resolver.resolveDispatch(
-      { callText: "arr.map", receiver: "arr", member: "map", startLine: 1 },
-      ctx({ symbolTable }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "arr.map", receiver: "arr", member: "map", startLine: 1 },
+        ctx({ symbolTable }),
+      ),
     );
     expect(edges).toEqual([]);
   });
@@ -137,9 +163,11 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       "app/services/runner.rb",
       [sym("Runner#run", "run", "app/services/runner.rb", ["Runner"])],
     ]);
-    const edges = resolver.resolveDispatch(
-      { callText: "obj.run", receiver: "obj", member: "run", startLine: 1 },
-      ctx({ symbolTable }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "obj.run", receiver: "obj", member: "run", startLine: 1 },
+        ctx({ symbolTable }),
+      ),
     );
     expect(edges).toEqual([
       {
@@ -158,9 +186,11 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       ["app/a.rb", [sym("A#recalc", "recalc", "app/a.rb", ["A"])]],
       ["app/b.rb", [sym("B#recalc", "recalc", "app/b.rb", ["B"])]],
     );
-    const edges = resolver.resolveDispatch(
-      { callText: "items.recalc", receiver: "items", member: "recalc", startLine: 1 },
-      ctx({ symbolTable }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "items.recalc", receiver: "items", member: "recalc", startLine: 1 },
+        ctx({ symbolTable }),
+      ),
     );
     expect(edges).toHaveLength(2);
     const expectedConfidence = DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT / 2;
@@ -182,9 +212,11 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE,
       dynamicReceiverConfidence: 0.3,
     });
-    const edges = tuned.resolveDispatch(
-      { callText: "obj.run", receiver: "obj", member: "run", startLine: 1 },
-      ctx({ symbolTable }),
+    const edges = edgesOf(
+      tuned.resolveDispatch(
+        { callText: "obj.run", receiver: "obj", member: "run", startLine: 1 },
+        ctx({ symbolTable }),
+      ),
     );
     expect(edges).toHaveLength(1);
     expect(edges[0].confidence).toBeCloseTo(1.0, 10);
@@ -198,9 +230,11 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       ["app/a.rb", [sym("A#fetch", "fetch", "app/a.rb", ["A"])]],
       ["app/b.rb", [sym("B#fetch", "fetch", "app/b.rb", ["B"])]],
     );
-    const edges = resolver.resolveDispatch(
-      { callText: "opts[k].fetch", receiver: "opts[k]", member: "fetch", startLine: 1 },
-      ctx({ symbolTable }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "opts[k].fetch", receiver: "opts[k]", member: "fetch", startLine: 1 },
+        ctx({ symbolTable }),
+      ),
     );
     expect(edges).toEqual([]);
   });
@@ -212,9 +246,11 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       ["app/a.rb", [sym("A#fetch", "fetch", "app/a.rb", ["A"])]],
       ["app/b.rb", [sym("B#fetch", "fetch", "app/b.rb", ["B"])]],
     );
-    const edges = resolver.resolveDispatch(
-      { callText: "obj.fetch", receiver: "obj", member: "fetch", startLine: 1 },
-      ctx({ symbolTable }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "obj.fetch", receiver: "obj", member: "fetch", startLine: 1 },
+        ctx({ symbolTable }),
+      ),
     );
     expect(edges.length).toBeGreaterThan(0);
   });
@@ -240,7 +276,7 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
         member: "update",
         startLine: 1,
       };
-      expect(resolver.resolveDispatch(call, ctx({ symbolTable }))).toEqual([]);
+      expect(edgesOf(resolver.resolveDispatch(call, ctx({ symbolTable })))).toEqual([]);
     });
 
     it("does NOT suppress a project member on an untyped receiver (control)", () => {
@@ -250,17 +286,18 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
         member: "handle_details_post",
         startLine: 1,
       };
-      expect(resolver.resolveDispatch(call, ctx({ symbolTable })).length).toBeGreaterThan(0); // table seeds a def
+      // table seeds a def
+      expect(edgesOf(resolver.resolveDispatch(call, ctx({ symbolTable }))).length).toBeGreaterThan(0);
     });
 
     // RECONCILE :242 — xlnub: `class` ∈ RUBY_DUCK_VOCAB → duck-killed; `save` stays
     it("does NOT suppress `save` (non-duck) but kills `class` via duck-vocabulary narrower", () => {
       // save is not in RUBY_DUCK_VOCAB → fans out (table seeds a def)
       const saveCall = { callText: "agent.save", receiver: "agent", member: "save", startLine: 1 };
-      expect(resolver.resolveDispatch(saveCall, ctx({ symbolTable })).length).toBeGreaterThan(0);
+      expect(edgesOf(resolver.resolveDispatch(saveCall, ctx({ symbolTable }))).length).toBeGreaterThan(0);
       // class IS in RUBY_DUCK_VOCAB → duck-vocabulary narrower kills the fan-out
       const classCall = { callText: "agent.class", receiver: "agent", member: "class", startLine: 1 };
-      expect(resolver.resolveDispatch(classCall, ctx({ symbolTable }))).toEqual([]);
+      expect(edgesOf(resolver.resolveDispatch(classCall, ctx({ symbolTable })))).toEqual([]);
     });
   });
 
@@ -287,7 +324,7 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
         localBindings: { user: [{ line: 1, type: "User" }] },
         structuredReturnTypes: { "User#account": { form: "instance", name: "Account" } },
       });
-      expect(resolver.resolveDispatch(call, typedChainCtx)).toEqual([]);
+      expect(edgesOf(resolver.resolveDispatch(call, typedChainCtx))).toEqual([]);
     });
 
     it("still fans out when chain receiver is untypeable (head has no binding — dynamic path unchanged)", () => {
@@ -303,7 +340,7 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
         symbolTable: accountSymbolTable,
         // No localBindings — head is unresolvable
       });
-      expect(resolver.resolveDispatch(call, untypedChainCtx).length).toBeGreaterThan(0);
+      expect(edgesOf(resolver.resolveDispatch(call, untypedChainCtx)).length).toBeGreaterThan(0);
     });
   });
 
@@ -341,7 +378,7 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
       // spurious dynamic edge for a typed receiver, regardless of AR-core membership.
       // The in-project-resolution-is-preserved proof is the sibling `Model#update` test below.
       const call = { callText: "model.update", receiver: "model", member: "update", startLine: 2 };
-      expect(resolver.resolveDispatch(call, typedCtx)).toEqual([]);
+      expect(edgesOf(resolver.resolveDispatch(call, typedCtx))).toEqual([]);
     });
 
     it("the localType chain strategy resolves model.update to the in-project Model#update target", () => {
@@ -370,9 +407,11 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
           [sym("B#perform", "perform", "app/b.rb", ["B"], { minRequired: 2, maxPositional: 2, hasSplat: false })],
         ],
       );
-      const edges = resolver.resolveDispatch(
-        { callText: "x.perform(1, 2)", receiver: "x", member: "perform", startLine: 1, argCount: 2 },
-        ctx({ symbolTable }),
+      const edges = edgesOf(
+        resolver.resolveDispatch(
+          { callText: "x.perform(1, 2)", receiver: "x", member: "perform", startLine: 1, argCount: 2 },
+          ctx({ symbolTable }),
+        ),
       );
       expect(edges).toHaveLength(1);
       expect(edges[0].targetSymbolId).toBe("B#perform");
@@ -386,9 +425,11 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
         ["app/a.rb", [sym("A#each", "each", "app/a.rb", ["A"])]],
         ["app/b.rb", [sym("B#each", "each", "app/b.rb", ["B"])]],
       );
-      const edges = resolver.resolveDispatch(
-        { callText: "items.each", receiver: "items", member: "each", startLine: 1 },
-        ctx({ symbolTable }),
+      const edges = edgesOf(
+        resolver.resolveDispatch(
+          { callText: "items.each", receiver: "items", member: "each", startLine: 1 },
+          ctx({ symbolTable }),
+        ),
       );
       expect(edges).toEqual([]);
     });
@@ -403,9 +444,11 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
         mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE,
         dynamicReceiverConfidence: 0.3,
       });
-      const edges = tuned.resolveDispatch(
-        { callText: "obj.run", receiver: "obj", member: "run", startLine: 1 },
-        ctx({ symbolTable }),
+      const edges = edgesOf(
+        tuned.resolveDispatch(
+          { callText: "obj.run", receiver: "obj", member: "run", startLine: 1 },
+          ctx({ symbolTable }),
+        ),
       );
       expect(edges).toHaveLength(2);
       for (const edge of edges) {
@@ -457,9 +500,11 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
           ],
         ],
       );
-      const edges = resolver.resolveDispatch(
-        { callText: "x.account", receiver: "x", member: "account", startLine: 1, argCount: 0 },
-        ctx({ symbolTable }),
+      const edges = edgesOf(
+        resolver.resolveDispatch(
+          { callText: "x.account", receiver: "x", member: "account", startLine: 1, argCount: 0 },
+          ctx({ symbolTable }),
+        ),
       );
       expect(edges).toHaveLength(3);
       const expectedConfidence = DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT / 3;
@@ -499,9 +544,11 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
           ],
         ],
       );
-      const edges = resolver.resolveDispatch(
-        { callText: "x.helper", receiver: "x", member: "helper", startLine: 1, argCount: 0 },
-        ctx({ symbolTable }),
+      const edges = edgesOf(
+        resolver.resolveDispatch(
+          { callText: "x.helper", receiver: "x", member: "helper", startLine: 1, argCount: 0 },
+          ctx({ symbolTable }),
+        ),
       );
       expect(edges).toHaveLength(1);
       expect(edges[0].targetSymbolId).toBe("B#helper");
@@ -532,9 +579,11 @@ describe("RubyDynamicDispatchResolver — Tier-2+3 cascade wiring (d9o7o)", () =
       ["app/a.rb", [{ ...sym("A#process", "process", "app/a.rb", ["A"]), acceptsBlock: true }]],
       ["app/b.rb", [{ ...sym("B#process", "process", "app/b.rb", ["B"]), acceptsBlock: false }]],
     );
-    const edges = resolver.resolveDispatch(
-      { callText: "worker.process { }", receiver: "worker", member: "process", startLine: 1, passesBlock: true },
-      ctx({ symbolTable }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "worker.process { }", receiver: "worker", member: "process", startLine: 1, passesBlock: true },
+        ctx({ symbolTable }),
+      ),
     );
     expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#process"]);
     expect(edges[0].confidence).toBe(1.0);
@@ -548,9 +597,11 @@ describe("RubyDynamicDispatchResolver — Tier-2+3 cascade wiring (d9o7o)", () =
         [{ ...sym("B#run", "run", "app/b.rb", ["B"]), kwargs: { required: ["mode", "flag"], hasSplat: false } }],
       ],
     );
-    const edges = resolver.resolveDispatch(
-      { callText: "worker.run(mode: 1)", receiver: "worker", member: "run", startLine: 1, kwargKeys: ["mode"] },
-      ctx({ symbolTable }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "worker.run(mode: 1)", receiver: "worker", member: "run", startLine: 1, kwargKeys: ["mode"] },
+        ctx({ symbolTable }),
+      ),
     );
     expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#run"]);
   });

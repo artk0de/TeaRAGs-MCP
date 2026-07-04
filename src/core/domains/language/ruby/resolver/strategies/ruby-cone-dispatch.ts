@@ -1,4 +1,4 @@
-import type { CallContext, CallRef, DispatchEdge } from "../../../../../contracts/types/codegraph.js";
+import type { CallContext, CallRef, DispatchFanoutOutcome } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
 import { ConeDispatchResolver } from "../../../cone-dispatch.js";
 import { RubyConeTypeLocator } from "./ruby-cone-type-locator.js";
@@ -24,7 +24,7 @@ export class RubyConeDispatchResolver implements DispatchResolverComponent {
     this.engine = new ConeDispatchResolver(new RubyConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
   }
 
-  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
     return this.engine.resolveDispatch(call, ctx);
   }
 }

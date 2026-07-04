@@ -1096,14 +1096,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
     try {
       const fileAdj = await collectAdjacency(graphDb, "file");
-      const fileSccs = tarjanScc(fileAdj);
+      const fileSccs = tarjanScc(fileAdj.adjacency);
       await graphDb.replaceCycles("file", fileSccs);
 
       const methodAdj = await collectAdjacency(graphDb, "method");
-      const methodSccs = tarjanScc(methodAdj);
+      const methodSccs = tarjanScc(methodAdj.adjacency);
       await graphDb.replaceCycles("method", methodSccs);
 
-      const rankResult = pageRank(methodAdj);
+      // Tarjan stays unweighted (cycles are structural); PageRank is
+      // confidence-weighted (bd tea-rags-mcp-s5ato) — mirrors the daemon's
+      // computeAndPersistCyclesAndSignals in adapters/duckdb/daemon/server.ts.
+      const rankResult = pageRank(methodAdj.adjacency, { weights: methodAdj.edgeWeights });
       await graphDb.replacePageRanks(rankResult.ranks);
     } catch (err) {
       // Non-fatal: data is consistent up to here, only metrics tables
@@ -1684,6 +1687,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           externalSkipped: t.externalSkipped,
           unresolvable: t.unresolvable,
           noInProjectDef: t.noInProjectDef,
+          ambiguousFanout: t.ambiguousFanout,
         });
       }
     }
@@ -1894,6 +1898,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // chunks from before codegraph wiring, or non-TS files), skip.
         const symbolId = this.resolveChunkSymbolId(options?.collectionName, relPath, entry.startLine, entry.endLine);
         if (!symbolId) continue;
+        // Confidence-weighted sums (bd tea-rags-mcp-s5ato) — may be
+        // fractional when dynamic/cone fan-out edges are involved; exact
+        // edges keep integer counts.
         const fanIn = await graphDb.getCalledByCount(symbolId);
         const fanOut = await graphDb.getCallSiteCount(symbolId);
         // Slice 2 / B3 — per-symbol PageRank from cg_symbols_metrics
@@ -1941,6 +1948,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       ? this.deps.languageFactory.create(extraction.language).resolver
       : undefined;
     const methodEdges: GraphEdges["methodEdges"] = [];
+    // Over-cap ambiguous dispatch fan-outs (bd f2jsb / j0pki) — one aggregate
+    // record per suppressed fan-out, persisted alongside this file's edges via
+    // upsertFile (INSTEAD of m noise edges).
+    const ambiguousFanouts: NonNullable<GraphEdges["ambiguousFanouts"]> = [];
     if (!resolver) return { fileEdges: [], methodEdges };
 
     // Resolver receives the run-global `classAncestors` so it can walk
@@ -2050,7 +2061,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         if (call.dispatch) {
           // Dispatch call: fan out to candidates instead of normal
           // resolution. `sourceSymbolId: null` ⇒ the caller chunk.
-          for (const edge of resolver.resolveDispatch?.(call, ctx) ?? []) {
+          const tableOutcome = resolver.resolveDispatch?.(call, ctx);
+          for (const edge of tableOutcome?.kind === "edges" ? tableOutcome.edges : []) {
             methodEdges.push({
               sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
               targetSymbolId: edge.targetSymbolId,
@@ -2075,7 +2087,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             });
             resolved = true;
           }
-          for (const edge of resolver.resolveDispatch?.(call, ctx) ?? []) {
+          const argsOutcome = resolver.resolveDispatch?.(call, ctx);
+          for (const edge of argsOutcome?.kind === "edges" ? argsOutcome.edges : []) {
             methodEdges.push({
               sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
               targetSymbolId: edge.targetSymbolId,
@@ -2094,9 +2107,27 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // for every non-polymorphic call (and every other language, whose
           // resolveDispatch keys off call.dispatch only), so the exact `resolve`
           // path stays the default — external receivers never cone.
-          const cone = resolver.resolveDispatch?.(call, ctx) ?? [];
-          if (cone.length > 0) {
-            for (const edge of cone) {
+          const fanout = resolver.resolveDispatch?.(call, ctx);
+          if (fanout?.kind === "ambiguous") {
+            // Over-cap dynamic fan-out (bd f2jsb): NO edges, NO exact-chain
+            // fallback — mirrors the pre-cap decisiveness of a non-empty
+            // fan-out. bd j0pki (Task 3): record the aggregate + the
+            // run-stats bucket, then `continue` — the miss classifiers below
+            // (externalSkipped / unresolvable / noInProjectDef) must NOT
+            // count this call. Its own bucket: not a genuine miss, not
+            // external — strict recall keeps it in the denominator,
+            // coveredRecall counts the aggregate as coverage.
+            this.runStats.callsAmbiguousFanout += 1;
+            kindTally[receiverKind].ambiguousFanout += 1;
+            ambiguousFanouts.push({
+              sourceSymbolId: chunk.symbolId,
+              callExpression: call.callText,
+              member: fanout.member,
+              candidateCount: fanout.candidateCount,
+            });
+            continue;
+          } else if (fanout !== undefined && fanout.edges.length > 0) {
+            for (const edge of fanout.edges) {
               methodEdges.push({
                 sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
                 targetSymbolId: edge.targetSymbolId,
@@ -2158,7 +2189,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // ancestors keep ancestorSymbolId=null. Sources every language: TS via the
     // unified inheritanceEdges field, others via the legacy class* Records.
     const inheritance = normalizeInheritanceEdges(extraction, (fq) => symbolTable.lookup(fq)[0]?.symbolId ?? null);
-    return inheritance.length > 0 ? { fileEdges, methodEdges, inheritance } : { fileEdges, methodEdges };
+    const edges: GraphEdges = { fileEdges, methodEdges };
+    if (inheritance.length > 0) edges.inheritance = inheritance;
+    if (ambiguousFanouts.length > 0) edges.ambiguousFanouts = ambiguousFanouts;
+    return edges;
   }
 }
 
@@ -2175,6 +2209,10 @@ interface ReceiverKindTally {
   // (gem/core/runtime-generated/dynamic). Excluded from the inProjectEdgeRecall
   // denominator. Persisted to cg_run_stats.no_in_project_def.
   noInProjectDef: number;
+  // bd f2jsb/j0pki — unresolved-but-over-cap-ambiguous dispatch fan-outs in
+  // this bucket (subset of attempted − resolved). Its own bucket: NOT a genuine
+  // miss, NOT external. Persisted to cg_run_stats.ambiguous_fanout.
+  ambiguousFanout: number;
 }
 
 interface RunStats {
@@ -2202,6 +2240,12 @@ interface RunStats {
   // bucket (callsAttempted − callsResolved − callsExternalSkipped −
   // callsUnresolvable).
   callsNoInProjectDef: number;
+  // bd f2jsb/j0pki — subset of (callsAttempted − callsResolved) that the
+  // dispatch kernel judged over-cap AMBIGUOUS (survivors > corpus-adaptive
+  // fan-out cap) and recorded as a cg_ambiguous_fanout aggregate instead of m
+  // edges. Its own bucket: NOT a genuine miss, NOT external — strict recall
+  // keeps it in the denominator, coveredRecall counts it as coverage.
+  callsAmbiguousFanout: number;
   // Per-(code language, receiver kind) resolve breakdown (bd tea-rags-mcp-cnqrg,
   // extends j431). Source of truth: the aggregate scalars above, the per-kind
   // summary (getRunMetrics, j431 view) and the per-language summary
@@ -2217,7 +2261,14 @@ interface RunStats {
 function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally> {
   const out = {} as Record<ReceiverKind, ReceiverKindTally>;
   for (const kind of RECEIVER_KINDS) {
-    out[kind] = { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0, noInProjectDef: 0 };
+    out[kind] = {
+      attempted: 0,
+      resolved: 0,
+      externalSkipped: 0,
+      unresolvable: 0,
+      noInProjectDef: 0,
+      ambiguousFanout: 0,
+    };
   }
   return out;
 }
@@ -2244,6 +2295,7 @@ function aggregateReceiverKinds(stats: RunStats): Record<ReceiverKind, ReceiverK
       out[kind].resolved += kinds[kind].resolved;
       out[kind].externalSkipped += kinds[kind].externalSkipped;
       out[kind].unresolvable += kinds[kind].unresolvable;
+      out[kind].ambiguousFanout += kinds[kind].ambiguousFanout;
     }
   }
   return out;
@@ -2259,6 +2311,7 @@ function createEmptyRunStats(): RunStats {
     callsExternalSkipped: 0,
     callsUnresolvable: 0,
     callsNoInProjectDef: 0,
+    callsAmbiguousFanout: 0,
     byLanguageKind: new Map(),
   };
 }
@@ -2343,16 +2396,30 @@ function extensionOf(path: string): string {
  * compact `Map<string, string[]>` shape that `tarjanScc` and
  * `pageRank` consume. Differs from the legacy `listAdjacency` only in
  * that the adapter no longer pre-bucketed the rows; we build the Map
- * exactly once here.
+ * exactly once here. The per-edge confidence (third stream element,
+ * method scope only — bd tea-rags-mcp-s5ato) is bucketed into an
+ * index-aligned weight map for the weighted PageRank pass; absent
+ * weights (file scope, legacy rows) default to 1. Mirrors the daemon
+ * copy in `adapters/duckdb/daemon/server.ts`.
  */
-async function collectAdjacency(graphDb: GraphDbClient, scope: "file" | "method"): Promise<Map<string, string[]>> {
-  const adj = new Map<string, string[]>();
-  for await (const [source, target] of graphDb.streamAdjacency(scope)) {
-    const list = adj.get(source);
-    if (list) list.push(target);
-    else adj.set(source, [target]);
+async function collectAdjacency(
+  graphDb: GraphDbClient,
+  scope: "file" | "method",
+): Promise<{ adjacency: Map<string, string[]>; edgeWeights: Map<string, number[]> }> {
+  const adjacency = new Map<string, string[]>();
+  const edgeWeights = new Map<string, number[]>();
+  for await (const [source, target, weight] of graphDb.streamAdjacency(scope)) {
+    const list = adjacency.get(source);
+    const wList = edgeWeights.get(source);
+    if (list && wList) {
+      list.push(target);
+      wList.push(weight ?? 1);
+    } else {
+      adjacency.set(source, [target]);
+      edgeWeights.set(source, [weight ?? 1]);
+    }
   }
-  return adj;
+  return { adjacency, edgeWeights };
 }
 
 /**

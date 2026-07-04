@@ -21,6 +21,7 @@ import { DuckDBInstance, type DuckDBConnection, type DuckDBValue } from "@duckdb
 import picomatch from "picomatch";
 
 import type {
+  AmbiguousCallerSite,
   AritySignature,
   CalleeEdge,
   CallerEdge,
@@ -59,6 +60,25 @@ import type {
  * whether the cap arrives via config wiring or this safety net.
  */
 const DEFAULT_DB_MEMORY_LIMIT = "2GB";
+
+/**
+ * Rows per multi-row `INSERT OR IGNORE ... VALUES` statement issued by
+ * `upsertFileImpl` (bd tea-rags-mcp-f2jsb). taxdome wrote 1.58M method edges
+ * through per-row prepared INSERTs at an effective ~97 rows/sec — the
+ * prepare/bind/destroy round-trip per EDGE dominated, and the per-row WAL
+ * churn even tripped the 2GB memory_limit inside one large transaction.
+ * Batching at 200 rows measured ~48x faster (probe: 10k rows, ~1.4k/s per-row
+ * vs ~66k/s batched on @duckdb/node-api 1.x).
+ *
+ * 200 rows x 7 params (widest table, cg_symbols_edges_method) = 1400
+ * positional params per statement — verified fine with the driver's
+ * positional `bindVarchar`. DuckDB's INSERT OR IGNORE keeps first-row-wins
+ * semantics for duplicate-PK rows WITHIN one multi-row statement (verified
+ * empirically), matching the previous sequential per-row behaviour exactly —
+ * no in-JS dedupe layer is needed, and OR IGNORE stays load-bearing for
+ * cross-file PK collisions (see `insertOrIgnoreBatched`).
+ */
+const EDGE_INSERT_CHUNK_ROWS = 200;
 
 export interface DuckDbGraphClientOptions {
   path: string;
@@ -299,38 +319,47 @@ export class DuckDbGraphClient implements GraphDbClient {
       ]);
       await this.run("DELETE FROM cg_symbols_edges_file WHERE source_rel_path = ?", [node.relPath]);
       await this.run("DELETE FROM cg_symbols_edges_method WHERE source_rel_path = ?", [node.relPath]);
-      for (const e of edges.fileEdges) {
-        // INSERT OR IGNORE: dedupe (source, target) — a file may
-        // re-import the same module on different lines, producing the
-        // same edge twice in one extraction batch.
-        await this.run(
-          "INSERT OR IGNORE INTO cg_symbols_edges_file (source_rel_path, target_rel_path, import_text) VALUES (?, ?, ?)",
-          [node.relPath, e.targetRelPath, e.importText],
-        );
-      }
-      for (const e of edges.methodEdges) {
-        // GraphEdges.methodEdges allows targetSymbolId=null (the
-        // resolver case where an import resolves to a file but the
-        // called member isn't in that file's exported symbol table).
-        // The cg_symbols_edges_method PK includes target_symbol_id —
-        // DuckDB enforces NOT NULL on PK columns, so we must skip
-        // null-target edges at the boundary. File-level reach is
-        // already captured by fileEdges; the method graph only carries
-        // edges with a known target symbol.
-        if (e.targetSymbolId === null) continue;
-        // INSERT OR IGNORE: same call shape may repeat — e.g.
-        // `this.cache.get(x)` invoked from multiple branches of the
-        // same method body. collectCalls walks every call_expression
-        // and emits one CallRef per occurrence; the PK
-        // (source_symbol_id, call_expression, target_symbol_id) is
-        // edge-existence semantics, not occurrence count.
-        // edge_kind/confidence (bd 2jet) default to exact/1.0 when the
-        // resolver did not mark the edge as CHA fan-out. INSERT OR IGNORE
-        // keeps the first edge's provenance when the same (source, call,
-        // target) tuple repeats — edge-existence semantics, not occurrence.
-        await this.run(
-          "INSERT OR IGNORE INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, edge_kind, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [
+      // INSERT OR IGNORE: dedupe (source, target) — a file may
+      // re-import the same module on different lines, producing the
+      // same edge twice in one extraction batch.
+      await this.insertOrIgnoreBatched(
+        "cg_symbols_edges_file",
+        ["source_rel_path", "target_rel_path", "import_text"],
+        edges.fileEdges.map((e) => [node.relPath, e.targetRelPath, e.importText]),
+      );
+      // GraphEdges.methodEdges allows targetSymbolId=null (the
+      // resolver case where an import resolves to a file but the
+      // called member isn't in that file's exported symbol table).
+      // The cg_symbols_edges_method PK includes target_symbol_id —
+      // DuckDB enforces NOT NULL on PK columns, so we must skip
+      // null-target edges at the boundary, BEFORE batching. File-level
+      // reach is already captured by fileEdges; the method graph only
+      // carries edges with a known target symbol.
+      //
+      // INSERT OR IGNORE: same call shape may repeat — e.g.
+      // `this.cache.get(x)` invoked from multiple branches of the
+      // same method body. collectCalls walks every call_expression
+      // and emits one CallRef per occurrence; the PK
+      // (source_symbol_id, call_expression, target_symbol_id) is
+      // edge-existence semantics, not occurrence count.
+      // edge_kind/confidence (bd 2jet) default to exact/1.0 when the
+      // resolver did not mark the edge as CHA fan-out. INSERT OR IGNORE
+      // keeps the first edge's provenance when the same (source, call,
+      // target) tuple repeats — edge-existence semantics, not occurrence.
+      await this.insertOrIgnoreBatched(
+        "cg_symbols_edges_method",
+        [
+          "source_symbol_id",
+          "source_rel_path",
+          "target_symbol_id",
+          "target_rel_path",
+          "call_expression",
+          "edge_kind",
+          "confidence",
+        ],
+        edges.methodEdges
+          .filter((e) => e.targetSymbolId !== null)
+          .map((e) => [
             e.sourceSymbolId,
             node.relPath,
             e.targetSymbolId,
@@ -338,26 +367,87 @@ export class DuckDbGraphClient implements GraphDbClient {
             e.callExpression,
             e.edgeKind ?? "exact",
             e.confidence ?? 1.0,
-          ],
-        );
-      }
+          ]),
+      );
       // Inheritance edges (bd tea-rags-mcp-f10y). Per-source-file delete+insert,
       // same lifecycle as the edge tables: re-walking a file replaces its rows.
       // INSERT OR IGNORE dedupes a (source, ancestor, kind) declared twice in
       // one extraction (e.g. duplicate include).
       await this.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [node.relPath]);
-      for (const e of edges.inheritance ?? []) {
-        await this.run(
-          `INSERT OR IGNORE INTO cg_symbols_inheritance
-             (source_fq_name, source_rel_path, source_symbol_id, ancestor_fq_name, ancestor_symbol_id, kind, ordinal)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [e.sourceFqName, node.relPath, e.sourceSymbolId, e.ancestorFqName, e.ancestorSymbolId, e.kind, e.ordinal],
-        );
-      }
+      await this.insertOrIgnoreBatched(
+        "cg_symbols_inheritance",
+        [
+          "source_fq_name",
+          "source_rel_path",
+          "source_symbol_id",
+          "ancestor_fq_name",
+          "ancestor_symbol_id",
+          "kind",
+          "ordinal",
+        ],
+        (edges.inheritance ?? []).map((e) => [
+          e.sourceFqName,
+          node.relPath,
+          e.sourceSymbolId,
+          e.ancestorFqName,
+          e.ancestorSymbolId,
+          e.kind,
+          e.ordinal,
+        ]),
+      );
+      // Ambiguous fan-out aggregates (bd tea-rags-mcp-f2jsb / j0pki). Same
+      // per-source-file DELETE+INSERT lifecycle as the edge tables: re-walking
+      // a file replaces its rows (a fan-out resolved away must not survive).
+      // INSERT OR IGNORE dedupes a repeated (source, call_expression) shape —
+      // aggregate-existence semantics, not occurrence count.
+      await this.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [node.relPath]);
+      await this.insertOrIgnoreBatched(
+        "cg_ambiguous_fanout",
+        ["source_symbol_id", "source_rel_path", "call_expression", "member", "candidate_count"],
+        (edges.ambiguousFanouts ?? []).map((a) => [
+          a.sourceSymbolId,
+          node.relPath,
+          a.callExpression,
+          a.member,
+          a.candidateCount,
+        ]),
+      );
       await this.exec("COMMIT");
     } catch (err) {
       await this.exec("ROLLBACK");
       throw err;
+    }
+  }
+
+  /**
+   * Issue `INSERT OR IGNORE INTO <table> (<cols>) VALUES (…), (…), …` in
+   * chunks of `EDGE_INSERT_CHUNK_ROWS` (bd tea-rags-mcp-f2jsb). Replaces the
+   * per-row INSERT loops in `upsertFileImpl` — one prepared statement per
+   * ~200 rows instead of one per row (see the constant's doc for measured
+   * rates). Callers run inside the per-file transaction; a chunk failure
+   * rolls the whole file back, same as the per-row path.
+   *
+   * OR IGNORE stays load-bearing even with batching: PK collisions can come
+   * from rows already persisted by ANOTHER file's upsert (e.g. a
+   * monkey-patched symbol defined in two files emits the same
+   * (source, call, target) tuple from both) — in-JS dedupe alone cannot see
+   * those. Duplicate-PK rows WITHIN one statement are also first-row-wins
+   * under DuckDB's OR IGNORE, preserving the old sequential semantics.
+   *
+   * `table`/`columns` are compile-time literals supplied by `upsertFileImpl`
+   * — never user input; all VALUES go through positional binds.
+   */
+  private async insertOrIgnoreBatched(
+    table: string,
+    columns: readonly string[],
+    rows: readonly (readonly unknown[])[],
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    const tuple = `(${columns.map(() => "?").join(", ")})`;
+    const prefix = `INSERT OR IGNORE INTO ${table} (${columns.join(", ")}) VALUES `;
+    for (let i = 0; i < rows.length; i += EDGE_INSERT_CHUNK_ROWS) {
+      const chunk = rows.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
+      await this.run(prefix + chunk.map(() => tuple).join(", "), chunk.flat());
     }
   }
 
@@ -381,6 +471,7 @@ export class DuckDbGraphClient implements GraphDbClient {
         relPath,
       ]);
       await this.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [relPath]);
+      await this.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [relPath]);
       await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
       await this.run("DELETE FROM cg_symbols_files WHERE rel_path = ?", [relPath]);
       await this.exec("COMMIT");
@@ -559,6 +650,13 @@ export class DuckDbGraphClient implements GraphDbClient {
    * Stream the adjacency for the requested scope as `[source, target]`
    * pairs, fetched from DuckDB one result chunk (~2048 rows) at a time.
    *
+   * Method scope additionally carries the per-edge dispatch confidence as a
+   * third tuple element (bd tea-rags-mcp-s5ato) — legacy NULL rows coalesce
+   * to 1.0 — so the SCC/PageRank consumers can weight dynamic/cone fan-out
+   * edges without a second table pass. File edges have no confidence column;
+   * the file scope keeps yielding plain `[source, target]` pairs (weight
+   * defaults to 1 downstream).
+   *
    * TRUE streaming via `connection.stream` + `DuckDBResult.fetchChunk`: only
    * one chunk's rows are resident in JS at any moment. The prior
    * implementation routed through `queryAll` →
@@ -568,18 +666,23 @@ export class DuckDbGraphClient implements GraphDbClient {
    * Tarjan/PageRank working sets) was a multi-GB peak and a contributor to the
    * codegraph OOM. Chunked fetch keeps the read half bounded.
    */
-  async *streamAdjacency(scope: CycleScope): AsyncIterableIterator<[string, string]> {
+  async *streamAdjacency(scope: CycleScope): AsyncIterableIterator<[source: string, target: string, weight?: number]> {
     const sql =
       scope === "file"
         ? "SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_file"
-        : "SELECT source_symbol_id, target_symbol_id FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL";
+        : "SELECT source_symbol_id, target_symbol_id, COALESCE(confidence, 1.0) FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL";
     for await (const row of this.streamRows(sql)) {
       const source = row[0];
       const target = row[1];
       // Defensive: WHERE already excludes null targets for method scope, but
       // keep the guard so a null can never become the string "null".
       if (source === null || source === undefined || target === null || target === undefined) continue;
-      yield [String(source), String(target)];
+      if (scope === "file") {
+        yield [String(source), String(target)];
+      } else {
+        const weight = row[2];
+        yield [String(source), String(target), weight === null || weight === undefined ? 1 : Number(weight)];
+      }
     }
   }
 
@@ -921,20 +1024,71 @@ export class DuckDbGraphClient implements GraphDbClient {
     return out;
   }
 
-  async getCalledByCount(symbolId: SymbolId): Promise<number> {
-    const rows = await this.queryAll<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM cg_symbols_edges_method WHERE target_symbol_id = ?",
-      [symbolId],
+  /**
+   * Lazy ambiguous-group expansion read (bd tea-rags-mcp-f2jsb A4). Selects
+   * the `cg_ambiguous_fanout` aggregates whose `member` equals the target's
+   * member segment — uses the migration-013 member index. The suppressed
+   * edges are NEVER materialized; consumers see the aggregate + its
+   * candidateCount. `limit` is INLINED (not bound) for the same reason as
+   * `getTransitiveImpact`'s depth: bindParams binds every value via
+   * bindVarchar and a varchar LIMIT misbehaves — the value is sanitised to a
+   * small positive integer first, so injection is structurally impossible.
+   * Empty member short-circuits to [] (the kernel always records a non-empty
+   * member, so nothing can match).
+   */
+  async getAmbiguousCallersByMember(member: string, limit = 50): Promise<AmbiguousCallerSite[]> {
+    if (member.length === 0) return [];
+    const safeLimit = Math.max(1, Math.floor(limit));
+    const rows = await this.queryAll<{
+      sourceSymbolId: string;
+      sourceRelPath: string;
+      callExpression: string;
+      candidateCount: number | bigint;
+    }>(
+      `SELECT source_symbol_id AS "sourceSymbolId", source_rel_path AS "sourceRelPath",
+              call_expression AS "callExpression", candidate_count AS "candidateCount"
+         FROM cg_ambiguous_fanout WHERE member = ?
+        ORDER BY source_symbol_id, call_expression
+        LIMIT ${safeLimit}`,
+      [member],
     );
-    return Number(rows[0]?.n ?? 0);
+    return rows.map((r) => ({
+      sourceSymbolId: r.sourceSymbolId,
+      sourceRelPath: r.sourceRelPath,
+      callExpression: r.callExpression,
+      candidateCount: Number(r.candidateCount),
+    }));
   }
 
-  async getCallSiteCount(symbolId: SymbolId): Promise<number> {
-    const rows = await this.queryAll<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM cg_symbols_edges_method WHERE source_symbol_id = ?",
+  /**
+   * Confidence-weighted chunk fanIn (bd tea-rags-mcp-s5ato): SUM(confidence)
+   * over incoming method edges instead of COUNT(*). A dynamic/cone dispatch
+   * site that fans out to m candidates at confidence 1/m contributes ~1 call
+   * site in total — COUNT(*) previously inflated every fan-out target into a
+   * fake hub (m× per fan). Exact edges and legacy NULL-confidence rows weigh
+   * 1.0, so purely-exact graphs keep integer counts. The result is a FLOAT,
+   * rounded to 2 decimals at this boundary (see `roundEdgeWeightSum`).
+   */
+  async getCalledByCount(symbolId: SymbolId): Promise<number> {
+    const rows = await this.queryAll<{ n: number | null }>(
+      "SELECT SUM(COALESCE(confidence, 1.0)) AS n FROM cg_symbols_edges_method WHERE target_symbol_id = ?",
       [symbolId],
     );
-    return Number(rows[0]?.n ?? 0);
+    return roundEdgeWeightSum(Number(rows[0]?.n ?? 0));
+  }
+
+  /**
+   * Confidence-weighted chunk fanOut — counterpart of `getCalledByCount`:
+   * SUM(confidence) over outgoing method edges, so a whole m-way fan-out
+   * (m edges at 1/m) counts as ONE outgoing call. Same NULL→1.0 legacy
+   * coalesce and 2-decimal boundary rounding.
+   */
+  async getCallSiteCount(symbolId: SymbolId): Promise<number> {
+    const rows = await this.queryAll<{ n: number | null }>(
+      "SELECT SUM(COALESCE(confidence, 1.0)) AS n FROM cg_symbols_edges_method WHERE source_symbol_id = ?",
+      [symbolId],
+    );
+    return roundEdgeWeightSum(Number(rows[0]?.n ?? 0));
   }
 
   async hasData(): Promise<boolean> {
@@ -951,7 +1105,7 @@ export class DuckDbGraphClient implements GraphDbClient {
         await this.run("DELETE FROM cg_run_stats");
         for (const r of rows) {
           await this.run(
-            "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, ambiguous_fanout) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [
               r.language,
               r.receiverKind,
@@ -960,6 +1114,7 @@ export class DuckDbGraphClient implements GraphDbClient {
               r.externalSkipped,
               r.unresolvable,
               r.noInProjectDef ?? 0,
+              r.ambiguousFanout ?? 0,
             ],
           );
         }
@@ -980,8 +1135,9 @@ export class DuckDbGraphClient implements GraphDbClient {
       external_skipped: number | bigint;
       unresolvable: number | bigint;
       no_in_project_def: number | bigint;
+      ambiguous_fanout: number | bigint;
     }>(
-      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def FROM cg_run_stats ORDER BY language, receiver_kind",
+      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, ambiguous_fanout FROM cg_run_stats ORDER BY language, receiver_kind",
     );
     return rows.map((r) => ({
       language: r.language,
@@ -991,6 +1147,7 @@ export class DuckDbGraphClient implements GraphDbClient {
       externalSkipped: Number(r.external_skipped),
       unresolvable: Number(r.unresolvable),
       noInProjectDef: Number(r.no_in_project_def),
+      ambiguousFanout: Number(r.ambiguous_fanout),
     }));
   }
 
@@ -1150,8 +1307,12 @@ function parseScope(json: string): string[] {
  * present (so `Acme::User#save` → base `Acme::User`, member `save`); otherwise
  * fall back to the last `.`. Returns `null` for a bare top-level symbol with no
  * member separator — nothing to expand.
+ *
+ * Exported for the GraphFacade's lazy ambiguous expansion (bd f2jsb A4): the
+ * `includeAmbiguous` read extracts the target's member segment with the same
+ * convention this adapter persists `cg_ambiguous_fanout.member` under.
  */
-function splitMethodSymbol(symbolId: SymbolId): { base: string; sep: "#" | "."; member: string } | null {
+export function splitMethodSymbol(symbolId: SymbolId): { base: string; sep: "#" | "."; member: string } | null {
   const hash = symbolId.lastIndexOf("#");
   if (hash > 0 && hash < symbolId.length - 1) {
     return { base: symbolId.slice(0, hash), sep: "#", member: symbolId.slice(hash + 1) };
@@ -1202,4 +1363,17 @@ function lastNameSegment(symbol: string): string {
  */
 function escapeLikeLiteral(literal: string): string {
   return literal.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+/**
+ * Boundary rounding for confidence-weighted edge sums (bd tea-rags-mcp-s5ato).
+ * The `confidence` column is REAL (float32) and SUM accumulates in DOUBLE, so
+ * three 1/3-confidence edges yield 1.0000000298… — round to 2 decimals so
+ * float noise never leaks into Qdrant payloads while fractional weights
+ * (e.g. fanIn 1.25) survive intact. Deliberately NOT Math.round to integer:
+ * consumers (chunk fanIn/fanOut payload signals, derived-signal normalization,
+ * range filters) all tolerate non-integers, and the fraction IS the signal.
+ */
+function roundEdgeWeightSum(sum: number): number {
+  return Math.round(sum * 100) / 100;
 }

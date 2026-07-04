@@ -60,6 +60,14 @@ const GetCallersInputShape = {
   ...collectionPathFields(),
   symbolId: z.string().describe("Target symbol id (e.g. Foo.bar)"),
   limit: z.number().int().positive().max(500).optional().describe("Max caller edges (default 50)"),
+  includeAmbiguous: z
+    .boolean()
+    .optional()
+    .describe(
+      "Also attach `ambiguousCallers`: ambiguous dispatch sites whose member matches target — " +
+        "call MAY reach target among candidateCount candidates; not materialized as edges (bd f2jsb). " +
+        "Default false — response unchanged.",
+    ),
 };
 
 const GetCalleesInputShape = {
@@ -138,12 +146,15 @@ export function registerCodegraphTools(
     "get_callers",
     {
       title: "Get Callers",
-      description: "Return symbols that invoke given symbolId. Backed by codegraph DuckDB.",
+      description:
+        "Return symbols that invoke given symbolId. Backed by codegraph DuckDB. " +
+        "Pass includeAmbiguous:true to also list ambiguous dispatch sites (member-matched, " +
+        "MAY reach target among candidateCount candidates; not materialized as edges).",
       inputSchema: GetCallersInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ project, collection, path, symbolId, limit }) => {
-      const response = await app.getCallers({ project, collection, path, symbolId, limit });
+    async ({ project, collection, path, symbolId, limit, includeAmbiguous }) => {
+      const response = await app.getCallers({ project, collection, path, symbolId, limit, includeAmbiguous });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );

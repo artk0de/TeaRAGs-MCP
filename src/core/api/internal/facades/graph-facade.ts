@@ -24,6 +24,7 @@
  * message rather than a silent empty list.
  */
 
+import { splitMethodSymbol } from "../../../adapters/duckdb/client.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { SymbolChunkLocation, SymbolId } from "../../../contracts/types/codegraph.js";
 import { resolveCollection } from "../../../infra/collection-name.js";
@@ -120,7 +121,25 @@ export class GraphFacade {
       req,
       async (handle) => {
         const edges = await handle.graphDb.getCallers(req.symbolId);
-        return { callers: edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT) };
+        const callers = edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
+        // Lazy ambiguous expansion (bd f2jsb A4) — opt-in only, and only when
+        // the target has a member segment (text after the last `#` or `.`,
+        // per symbolid-convention; splitMethodSymbol is the adapter's own
+        // parser, so the lookup key matches what cg_ambiguous_fanout.member
+        // was persisted under). Bare symbols skip the lookup; the DEFAULT
+        // (flag absent) response stays byte-identical to the pre-flag shape.
+        const member = req.includeAmbiguous ? splitMethodSymbol(req.symbolId)?.member : undefined;
+        if (member === undefined) return { callers };
+        const sites = await handle.graphDb.getAmbiguousCallersByMember(member);
+        return {
+          callers,
+          ambiguousCallers: sites.map((s) => ({
+            sourceSymbolId: s.sourceSymbolId,
+            sourceRelPath: s.sourceRelPath,
+            callExpression: s.callExpression,
+            candidateCount: s.candidateCount,
+          })),
+        };
       },
       { callers: [] },
     );

@@ -200,32 +200,66 @@ describe("LiteralReceiverNarrower", () => {
 
 describe("resolveNarrowedFanout terminal", () => {
   const arity0 = { minRequired: 0, maxPositional: 0, hasSplat: false };
+  // Flat 1-def-per-member corpus → adaptive cap sits at the floor (16).
+  const fanCtx = {
+    symbolTable: {
+      upsertFile: () => undefined,
+      removeFile: () => undefined,
+      lookup: () => [],
+      lookupByShortName: () => [],
+      size: () => 0,
+      hydrate: () => undefined,
+      shortNameDefCounts: () => new Map([["m", 1]]),
+    },
+  } as never;
   it("1 survivor → one edge confidence 1.0", () => {
-    const edges = resolveNarrowedFanout(
+    const outcome = resolveNarrowedFanout(
       call("m", 1),
       [def("A#m", { minRequired: 1, maxPositional: 1, hasSplat: false }), def("B#m", arity0)],
-      ctx,
+      fanCtx,
       [new ArityNarrower()],
       0.3,
     );
-    expect(edges).toEqual([
-      {
-        sourceSymbolId: null,
-        targetRelPath: "A#m.rb",
-        targetSymbolId: "A#m",
-        edgeKind: "dynamic",
-        confidence: 1.0,
-      },
-    ]);
+    expect(outcome).toEqual({
+      kind: "edges",
+      edges: [
+        {
+          sourceSymbolId: null,
+          targetRelPath: "A#m.rb",
+          targetSymbolId: "A#m",
+          edgeKind: "dynamic",
+          confidence: 1.0,
+        },
+      ],
+    });
   });
   it("m>1 survivors → m edges confidence discount/m", () => {
-    const edges = resolveNarrowedFanout(call("m"), [def("A#m"), def("B#m")], ctx, [], 0.3);
-    expect(edges.map((e) => e.confidence)).toEqual([0.15, 0.15]);
-    expect(edges.every((e) => e.edgeKind === "dynamic")).toBe(true);
+    const outcome = resolveNarrowedFanout(call("m"), [def("A#m"), def("B#m")], fanCtx, [], 0.3);
+    if (outcome.kind !== "edges") throw new Error("expected edges");
+    expect(outcome.edges.map((e) => e.confidence)).toEqual([0.15, 0.15]);
+    expect(outcome.edges.every((e) => e.edgeKind === "dynamic")).toBe(true);
   });
-  it("0 survivors → []", () => {
+  it("0 survivors → empty edges", () => {
     expect(
-      resolveNarrowedFanout(call("to_s"), [def("A#to_s")], ctx, [new DuckVocabularyNarrower(new Set(["to_s"]))], 0.3),
-    ).toEqual([]);
+      resolveNarrowedFanout(
+        call("to_s"),
+        [def("A#to_s")],
+        fanCtx,
+        [new DuckVocabularyNarrower(new Set(["to_s"]))],
+        0.3,
+      ),
+    ).toEqual({ kind: "edges", edges: [] });
+  });
+  it("survivors above the adaptive cap → ambiguous outcome, NO edges (bd f2jsb)", () => {
+    const candidates = Array.from({ length: 17 }, (_, i) => def(`C${i}#firm`)); // 17 > floor cap 16
+    const outcome = resolveNarrowedFanout(call("firm"), candidates, fanCtx, [], 0.3);
+    expect(outcome).toEqual({ kind: "ambiguous", member: "firm", candidateCount: 17 });
+  });
+  it("survivors exactly at the cap still materialize edges", () => {
+    const candidates = Array.from({ length: 16 }, (_, i) => def(`C${i}#firm`));
+    const outcome = resolveNarrowedFanout(call("firm"), candidates, fanCtx, [], 0.32);
+    if (outcome.kind !== "edges") throw new Error("expected edges");
+    expect(outcome.edges).toHaveLength(16);
+    expect(outcome.edges[0].confidence).toBeCloseTo(0.02);
   });
 });

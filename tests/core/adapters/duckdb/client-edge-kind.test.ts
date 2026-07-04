@@ -137,6 +137,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           externalSkipped: 0,
           unresolvable: 4,
           noInProjectDef: 0,
+          ambiguousFanout: 0,
         },
         {
           language: "typescript",
@@ -146,6 +147,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           externalSkipped: 7,
           unresolvable: 0,
           noInProjectDef: 0,
+          ambiguousFanout: 0,
         },
       ]);
     });
@@ -189,6 +191,7 @@ describe("DuckDbGraphClient — edge_kind/confidence + run-stats (bd 2jet/j431)"
           externalSkipped: 1,
           unresolvable: 0,
           noInProjectDef: 0,
+          ambiguousFanout: 0,
         },
       ]);
     });

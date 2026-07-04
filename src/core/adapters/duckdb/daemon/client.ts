@@ -1,6 +1,7 @@
 import { connect, type Socket } from "node:net";
 
 import type {
+  AmbiguousCallerSite,
   CalleeEdge,
   CallerEdge,
   CycleEntry,
@@ -260,6 +261,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("getCallees", { symbolId })) as CalleeEdge[];
   }
 
+  async getAmbiguousCallersByMember(member: string, limit?: number): Promise<AmbiguousCallerSite[]> {
+    return (await this.call("getAmbiguousCallersByMember", { member, limit })) as AmbiguousCallerSite[];
+  }
+
   async getCalleeEdges(symbolIds: SymbolId[]): Promise<Map<SymbolId, SymbolId[]>> {
     // The server serialises the `Map<SymbolId, SymbolId[]>` as `[key, value][]`
     // entries (a Map cannot JSON-serialise) — rebuild the Map here.
@@ -333,13 +338,13 @@ export class DaemonGraphDbClient implements GraphDbClient {
   // inside the daemon (computeAndPersistCyclesAndSignals), so streaming the
   // adjacency over IPC is never correct. Throws on first iteration.
 
-  streamAdjacency(_scope: CycleScope): AsyncIterableIterator<[string, string]> {
+  streamAdjacency(_scope: CycleScope): AsyncIterableIterator<[source: string, target: string, weight?: number]> {
     const error = new UnsupportedDaemonReadError("streamAdjacency");
     return {
       [Symbol.asyncIterator]() {
         return this;
       },
-      async next(): Promise<IteratorResult<[string, string]>> {
+      async next(): Promise<IteratorResult<[source: string, target: string, weight?: number]>> {
         throw error;
       },
     };

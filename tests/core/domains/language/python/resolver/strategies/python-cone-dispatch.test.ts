@@ -5,6 +5,7 @@ import {
   type CallContext,
   type CallRef,
   type DispatchEdge,
+  type DispatchFanoutOutcome,
   type HierarchyView,
   type InheritanceEdge,
   type NamedSymbol,
@@ -70,35 +71,51 @@ const cat: [string, NamedSymbol[]] = [
 const sortEdges = (edges: DispatchEdge[]): DispatchEdge[] =>
   [...edges].sort((a, b) => (a.targetSymbolId ?? "").localeCompare(b.targetSymbolId ?? ""));
 
+// bd f2jsb: resolveDispatch now returns DispatchFanoutOutcome; existing
+// assertions target the edges payload, so unwrap (throwing on `ambiguous`
+// keeps the assertion strict — these fixtures never exceed the fan-out cap).
+const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
+  if (outcome.kind !== "edges") throw new Error(`expected edges outcome, got ${outcome.kind}`);
+  return outcome.edges;
+};
+
 describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
   const resolver = new PythonCallResolver(DEFAULT_AMBIGUOUS_RESOLVE_MODE);
 
   it("returns [] when the receiver is null (bare call never cones)", () => {
     const symbolTable = tableWith(animalBase, dog);
-    const out = resolver.resolveDispatch(
-      { callText: "speak", receiver: null, member: "speak", startLine: 1 },
-      ctx({ symbolTable, hierarchy: hierarchyWith({ Animal: ["Dog"] }) }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "speak", receiver: null, member: "speak", startLine: 1 },
+        ctx({ symbolTable, hierarchy: hierarchyWith({ Animal: ["Dog"] }) }),
+      ),
     );
     expect(out).toEqual([]);
   });
 
   it("returns [] when the receiver has no local binding (external never cones)", () => {
     const symbolTable = tableWith(animalBase, dog);
-    const out = resolver.resolveDispatch(call, ctx({ symbolTable, hierarchy: hierarchyWith({ Animal: ["Dog"] }) }));
+    const out = edgesOf(
+      resolver.resolveDispatch(call, ctx({ symbolTable, hierarchy: hierarchyWith({ Animal: ["Dog"] }) })),
+    );
     expect(out).toEqual([]);
   });
 
   it("returns [] when no hierarchy view is wired", () => {
     const symbolTable = tableWith(animalBase, dog);
-    const out = resolver.resolveDispatch(call, ctx({ symbolTable, localBindings: { pet: [{ line: 1, type: "Animal" }] } }));
+    const out = edgesOf(
+      resolver.resolveDispatch(call, ctx({ symbolTable, localBindings: { pet: [{ line: 1, type: "Animal" }] } })),
+    );
     expect(out).toEqual([]);
   });
 
   it("returns [] when the bound type has no descendants (not polymorphic)", () => {
     const symbolTable = tableWith(animalBase);
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({ symbolTable, localBindings: { pet: [{ line: 1, type: "Animal" }] }, hierarchy: hierarchyWith({}) }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({ symbolTable, localBindings: { pet: [{ line: 1, type: "Animal" }] }, hierarchy: hierarchyWith({}) }),
+      ),
     );
     expect(out).toEqual([]);
   });
@@ -106,9 +123,15 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
   it("returns [] when descendants exist but none override the member", () => {
     // Dog declared but does NOT define `speak` → not in the cone.
     const symbolTable = tableWith(animalBase, ["app/animals/dog.py", [sym("Dog", "Dog", "app/animals/dog.py", [])]]);
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({ symbolTable, localBindings: { pet: [{ line: 1, type: "Animal" }] }, hierarchy: hierarchyWith({ Animal: ["Dog"] }) }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          localBindings: { pet: [{ line: 1, type: "Animal" }] },
+          hierarchy: hierarchyWith({ Animal: ["Dog"] }),
+        }),
+      ),
     );
     expect(out).toEqual([]);
   });
@@ -116,13 +139,15 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
   it("fans out to N overriding subtypes with confidence 1/N and edgeKind 'cone' (|cone| ≤ K)", () => {
     const symbolTable = tableWith(animalBase, dog, cat);
     const out = sortEdges(
-      resolver.resolveDispatch(
-        call,
-        ctx({
-          symbolTable,
-          localBindings: { pet: [{ line: 1, type: "Animal" }] },
-          hierarchy: hierarchyWith({ Animal: ["Dog", "Cat"] }),
-        }),
+      edgesOf(
+        resolver.resolveDispatch(
+          call,
+          ctx({
+            symbolTable,
+            localBindings: { pet: [{ line: 1, type: "Animal" }] },
+            hierarchy: hierarchyWith({ Animal: ["Dog", "Cat"] }),
+          }),
+        ),
       ),
     );
     expect(out).toEqual([
@@ -149,13 +174,15 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
     const prev = process.env.CODEGRAPH_PY_CONE_MAX;
     process.env.CODEGRAPH_PY_CONE_MAX = "1";
     try {
-      const out = new PythonCallResolver(DEFAULT_AMBIGUOUS_RESOLVE_MODE).resolveDispatch(
-        call,
-        ctx({
-          symbolTable,
-          localBindings: { pet: [{ line: 1, type: "Animal" }] },
-          hierarchy: hierarchyWith({ Animal: ["Dog", "Cat"] }),
-        }),
+      const out = edgesOf(
+        new PythonCallResolver(DEFAULT_AMBIGUOUS_RESOLVE_MODE).resolveDispatch(
+          call,
+          ctx({
+            symbolTable,
+            localBindings: { pet: [{ line: 1, type: "Animal" }] },
+            hierarchy: hierarchyWith({ Animal: ["Dog", "Cat"] }),
+          }),
+        ),
       );
       expect(out).toEqual([
         {

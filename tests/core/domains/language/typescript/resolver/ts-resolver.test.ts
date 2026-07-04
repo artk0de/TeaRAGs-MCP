@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  CallContext,
+  CallRef,
+  DispatchEdge,
+  DispatchFanoutOutcome,
+} from "../../../../../../src/core/contracts/types/codegraph.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -1310,6 +1315,15 @@ describe("TSCallResolver", () => {
 // ─────────────────────────────────────────────────────────────────────
 // Lookup-table dispatch fan-out (bd tea-rags-mcp-n0zj) — resolveDispatch.
 // ─────────────────────────────────────────────────────────────────────
+
+// bd f2jsb: resolveDispatch now returns DispatchFanoutOutcome; existing
+// assertions target the edges payload, so unwrap (throwing on `ambiguous`
+// keeps the assertion strict — these fixtures never exceed the fan-out cap).
+const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
+  if (outcome.kind !== "edges") throw new Error(`expected edges outcome, got ${outcome.kind}`);
+  return outcome.edges;
+};
+
 describe("TSCallResolver.resolveDispatch", () => {
   function tableWith(fns: string[]): InMemoryGlobalSymbolTable {
     const symbolTable = new InMemoryGlobalSymbolTable();
@@ -1337,7 +1351,7 @@ describe("TSCallResolver.resolveDispatch", () => {
       startLine: 1,
       dispatch: { table: "T", field: "w", key: null },
     };
-    const edges = resolver.resolveDispatch(call, ctx);
+    const edges = edgesOf(resolver.resolveDispatch(call, ctx));
     expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["fnA", "fnB"]);
     expect(edges.every((e) => e.sourceSymbolId === null)).toBe(true);
   });
@@ -1351,15 +1365,17 @@ describe("TSCallResolver.resolveDispatch", () => {
       symbolTable,
       dispatchTables: { T: [{ relPath: "src/dispatch.ts", table: { entries: { a: { w: "fnA" }, b: { w: "fnB" } } } }] },
     };
-    const edges = resolver.resolveDispatch(
-      {
-        callText: 'T["a"].w(1)',
-        receiver: null,
-        member: "w",
-        startLine: 1,
-        dispatch: { table: "T", field: "w", key: "a" },
-      },
-      ctx,
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        {
+          callText: 'T["a"].w(1)',
+          receiver: null,
+          member: "w",
+          startLine: 1,
+          dispatch: { table: "T", field: "w", key: "a" },
+        },
+        ctx,
+      ),
     );
     expect(edges.map((e) => e.targetSymbolId)).toEqual(["fnA"]);
   });
@@ -1373,15 +1389,17 @@ describe("TSCallResolver.resolveDispatch", () => {
       symbolTable,
       dispatchTables: { H: [{ relPath: "src/dispatch.ts", table: { entries: { a: "fnA", b: "fnB" } } }] },
     };
-    const edges = resolver.resolveDispatch(
-      {
-        callText: "H[k](1)",
-        receiver: null,
-        member: "H",
-        startLine: 1,
-        dispatch: { table: "H", field: null, key: null },
-      },
-      ctx,
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        {
+          callText: "H[k](1)",
+          receiver: null,
+          member: "H",
+          startLine: 1,
+          dispatch: { table: "H", field: null, key: null },
+        },
+        ctx,
+      ),
     );
     expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["fnA", "fnB"]);
   });
@@ -1397,9 +1415,17 @@ describe("TSCallResolver.resolveDispatch", () => {
         T: [{ relPath: "src/dispatch.ts", table: { entries: { a: { w: "fnA" }, b: { w: "fnMissing" } } } }],
       },
     };
-    const edges = resolver.resolveDispatch(
-      { callText: "f(1)", receiver: null, member: "w", startLine: 1, dispatch: { table: "T", field: "w", key: null } },
-      ctx,
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        {
+          callText: "f(1)",
+          receiver: null,
+          member: "w",
+          startLine: 1,
+          dispatch: { table: "T", field: "w", key: null },
+        },
+        ctx,
+      ),
     );
     expect(edges.map((e) => e.targetSymbolId)).toEqual(["fnA"]);
   });
@@ -1413,9 +1439,17 @@ describe("TSCallResolver.resolveDispatch", () => {
       symbolTable,
       dispatchTables: { T: [{ relPath: "src/dispatch.ts", table: { entries: { a: { w: "fnA" } } } }] },
     };
-    const edges = resolver.resolveDispatch(
-      { callText: "f(1)", receiver: null, member: "w", startLine: 1, dispatch: { table: "Z", field: "w", key: null } },
-      ctx,
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        {
+          callText: "f(1)",
+          receiver: null,
+          member: "w",
+          startLine: 1,
+          dispatch: { table: "Z", field: "w", key: null },
+        },
+        ctx,
+      ),
     );
     expect(edges).toEqual([]);
   });
@@ -1440,9 +1474,17 @@ describe("TSCallResolver.resolveDispatch", () => {
         ],
       },
     };
-    const edges = resolver.resolveDispatch(
-      { callText: "f(1)", receiver: null, member: "w", startLine: 1, dispatch: { table: "T", field: "w", key: null } },
-      ctx,
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        {
+          callText: "f(1)",
+          receiver: null,
+          member: "w",
+          startLine: 1,
+          dispatch: { table: "T", field: "w", key: null },
+        },
+        ctx,
+      ),
     );
     // Caller imports src/a.ts → the a-table wins; fnB never reached.
     expect(edges.map((e) => e.targetSymbolId)).toEqual(["fnA"]);
@@ -1468,9 +1510,17 @@ describe("TSCallResolver.resolveDispatch", () => {
         ],
       },
     };
-    const edges = resolver.resolveDispatch(
-      { callText: "f(1)", receiver: null, member: "w", startLine: 1, dispatch: { table: "T", field: "w", key: null } },
-      ctx,
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        {
+          callText: "f(1)",
+          receiver: null,
+          member: "w",
+          startLine: 1,
+          dispatch: { table: "T", field: "w", key: null },
+        },
+        ctx,
+      ),
     );
     expect(edges).toEqual([]);
   });
@@ -1511,18 +1561,18 @@ describe("TSCallResolver.resolveDispatch", () => {
   };
 
   it("fans out from the CALLEE when a dispatch arg lands on a callback-param position", () => {
-    const edges = resolver.resolveDispatch(joinCall, joinCtx({ collectSymbols: [1] }));
+    const edges = edgesOf(resolver.resolveDispatch(joinCall, joinCtx({ collectSymbols: [1] })));
     expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["rbNameOf", "tsNameOf"]);
     expect(edges.every((e) => e.sourceSymbolId === "collectSymbols")).toBe(true);
   });
 
   it("emits NO join edge when the dispatch arg is at a non-callback position", () => {
-    const edges = resolver.resolveDispatch(joinCall, joinCtx({ collectSymbols: [0] }));
+    const edges = edgesOf(resolver.resolveDispatch(joinCall, joinCtx({ collectSymbols: [0] })));
     expect(edges).toEqual([]);
   });
 
   it("emits NO join edge when the callee has no callbackParams entry", () => {
-    const edges = resolver.resolveDispatch(joinCall, joinCtx({}));
+    const edges = edgesOf(resolver.resolveDispatch(joinCall, joinCtx({})));
     expect(edges).toEqual([]);
   });
 
@@ -1546,15 +1596,17 @@ describe("TSCallResolver.resolveDispatch", () => {
       symbolTable,
       dispatchTables: { CMD: [{ relPath: "src/dispatch.ts", table: { entries: { x: { run: "handle" } } } }] },
     };
-    const edges = resolver.resolveDispatch(
-      {
-        callText: "CMD[k].run(x)",
-        receiver: null,
-        member: "run",
-        startLine: 1,
-        dispatch: { table: "CMD", field: "run", key: null },
-      },
-      ctx,
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        {
+          callText: "CMD[k].run(x)",
+          receiver: null,
+          member: "run",
+          startLine: 1,
+          dispatch: { table: "CMD", field: "run", key: null },
+        },
+        ctx,
+      ),
     );
     // Import biases to handlers-a; handlers-b's `handle` is never reached.
     expect(edges.map((e) => e.targetRelPath)).toEqual(["src/handlers-a.ts"]);
@@ -1575,15 +1627,17 @@ describe("TSCallResolver.resolveDispatch", () => {
       symbolTable,
       dispatchTables: { CMD: [{ relPath: "src/dispatch.ts", table: { entries: { x: { run: "handle" } } } }] },
     };
-    const edges = resolver.resolveDispatch(
-      {
-        callText: "CMD[k].run(x)",
-        receiver: null,
-        member: "run",
-        startLine: 1,
-        dispatch: { table: "CMD", field: "run", key: null },
-      },
-      ctx,
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        {
+          callText: "CMD[k].run(x)",
+          receiver: null,
+          member: "run",
+          startLine: 1,
+          dispatch: { table: "CMD", field: "run", key: null },
+        },
+        ctx,
+      ),
     );
     expect(edges).toEqual([]);
   });

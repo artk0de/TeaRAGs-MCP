@@ -35,11 +35,12 @@
 
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  emptyDispatchFanout,
   type AmbiguousResolveMode,
   type CallContext,
   type CallRef,
   type CallResolver,
-  type DispatchEdge,
+  type DispatchFanoutOutcome,
   type FileExtraction,
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
@@ -88,8 +89,8 @@ export class PythonLanguage implements LanguageProvider {
     const callResolver: CallResolver = new PythonCallResolver(mode);
     this.resolver = {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
-      resolveDispatch: (call: CallRef, ctx: CallContext): DispatchEdge[] =>
-        callResolver.resolveDispatch?.(call, ctx) ?? [],
+      resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
+        callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
       targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
     };

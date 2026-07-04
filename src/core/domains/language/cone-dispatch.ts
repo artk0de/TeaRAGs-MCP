@@ -3,6 +3,7 @@ import {
   type CallContext,
   type CallRef,
   type DispatchEdge,
+  type DispatchFanoutOutcome,
   type SymbolResolutionTarget,
 } from "../../contracts/types/codegraph.js";
 import type { ConeTypeLocator, DispatchResolverComponent } from "../../contracts/types/language.js";
@@ -46,7 +47,13 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
     private readonly coneMax: number,
   ) {}
 
-  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
+    // The cone is bounded by design (`coneMax` → poly-base collapse), so it
+    // never yields an over-cap `ambiguous` verdict — always an edges outcome.
+    return { kind: "edges", edges: this.resolveDispatchEdges(call, ctx) };
+  }
+
+  private resolveDispatchEdges(call: CallRef, ctx: CallContext): DispatchEdge[] {
     if (!call.receiver) return [];
     const baseType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
     if (!baseType || !ctx.hierarchy) return [];

@@ -4,6 +4,8 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
+  type DispatchEdge,
+  type DispatchFanoutOutcome,
   type DispatchTableDef,
   type NamedSymbol,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
@@ -35,6 +37,14 @@ const ctx = (over: Partial<CallContext> & Pick<CallContext, "symbolTable">): Cal
   imports: [],
   ...over,
 });
+
+// bd f2jsb: resolveDispatch now returns DispatchFanoutOutcome; existing
+// assertions target the edges payload, so unwrap (throwing on `ambiguous`
+// keeps the assertion strict — these fixtures never exceed the fan-out cap).
+const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
+  if (outcome.kind !== "edges") throw new Error(`expected edges outcome, got ${outcome.kind}`);
+  return outcome.edges;
+};
 
 // Both files carry the class symbol (resolveConstant resolves the file) AND its
 // #perform method symbol (the dispatched target), mirroring what the walker emits.
@@ -76,9 +86,11 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
   const resolver = new RubyTableDispatchResolver(cfg);
 
   it("fans a dynamic-key registry call out to each value class's #method (registry, 1/N)", () => {
-    const edges = resolver.resolveDispatch(
-      dispatchCall("TCK", "perform", null),
-      ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: TCK_TABLE }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        dispatchCall("TCK", "perform", null),
+        ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: TCK_TABLE }),
+      ),
     );
     expect(edges).toHaveLength(2);
     expect(edges.every((e) => e.edgeKind === "registry")).toBe(true);
@@ -87,9 +99,11 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
   });
 
   it("narrows a static-key call to the one entry as an exact edge (1.0)", () => {
-    const edges = resolver.resolveDispatch(
-      dispatchCall("TCK", "perform", "JobTemplate"),
-      ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: TCK_TABLE }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        dispatchCall("TCK", "perform", "JobTemplate"),
+        ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: TCK_TABLE }),
+      ),
     );
     expect(edges).toHaveLength(1);
     expect(edges[0]).toMatchObject({ targetSymbolId: "Jobs::Clone#perform", edgeKind: "exact", confidence: 1 });
@@ -99,16 +113,18 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
     const tables = {
       TCK: [{ relPath: "app/services/registry.rb", table: { entries: { a: "Jobs::Clone", b: "Pipelines::Missing" } } }],
     };
-    const edges = resolver.resolveDispatch(
-      dispatchCall("TCK", "perform", null),
-      ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: tables }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        dispatchCall("TCK", "perform", null),
+        ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: tables }),
+      ),
     );
     expect(edges.map((e) => e.targetSymbolId)).toEqual(["Jobs::Clone#perform"]);
   });
 
   it("returns [] for a non-dispatch call (no call.dispatch) — leaves cone/dynamic untouched", () => {
     const plain: CallRef = { callText: "x.perform", receiver: "x", member: "perform", startLine: 1 };
-    expect(resolver.resolveDispatch(plain, ctx({ symbolTable: tableWith() }))).toEqual([]);
+    expect(edgesOf(resolver.resolveDispatch(plain, ctx({ symbolTable: tableWith() })))).toEqual([]);
   });
 
   it("drops an ambiguous table name declared in >1 file with no in-file def", () => {
@@ -118,9 +134,11 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
         { relPath: "b.rb", table: { entries: { a: "Jobs::Clone" } } },
       ],
     };
-    const edges = resolver.resolveDispatch(
-      dispatchCall("TCK", "perform", null),
-      ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: tables }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        dispatchCall("TCK", "perform", null),
+        ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: tables }),
+      ),
     );
     expect(edges).toEqual([]);
   });
@@ -134,9 +152,11 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
       dispatch: { table: "TCK", field: null, key: null },
     };
     expect(
-      resolver.resolveDispatch(
-        fieldlessCall,
-        ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: TCK_TABLE }),
+      edgesOf(
+        resolver.resolveDispatch(
+          fieldlessCall,
+          ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: TCK_TABLE }),
+        ),
       ),
     ).toEqual([]);
   });
@@ -145,9 +165,11 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
     // selectTableDef: defs exists but defs.length === 0 → return null
     const tables = { TCK: [] as DispatchTableDef[] };
     expect(
-      resolver.resolveDispatch(
-        dispatchCall("TCK", "perform", null),
-        ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: tables }),
+      edgesOf(
+        resolver.resolveDispatch(
+          dispatchCall("TCK", "perform", null),
+          ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: tables }),
+        ),
       ),
     ).toEqual([]);
   });
@@ -160,9 +182,11 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
         { relPath: "other/registry.rb", table: { entries: { JobTemplate: "Pipelines::Clone" } } },
       ],
     };
-    const edges = resolver.resolveDispatch(
-      dispatchCall("TCK", "perform", "JobTemplate"),
-      ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: tables }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        dispatchCall("TCK", "perform", "JobTemplate"),
+        ctx({ symbolTable: tableWith(...valueClassFiles()), dispatchTables: tables }),
+      ),
     );
     expect(edges).toHaveLength(1);
     expect(edges[0]).toMatchObject({ targetSymbolId: "Jobs::Clone#perform", edgeKind: "exact", confidence: 1 });
@@ -185,9 +209,8 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
         sym("Jobs::Clone#perform", "perform", "app/jobs/clone.rb", ["Jobs", "Clone"]),
       ],
     ]);
-    const edges = resolver.resolveDispatch(
-      dispatchCall("TCK", "perform", null),
-      ctx({ symbolTable: t, dispatchTables: tables }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(dispatchCall("TCK", "perform", null), ctx({ symbolTable: t, dispatchTables: tables })),
     );
     // Both keys → same Jobs::Clone#perform; dedup keeps only one
     expect(edges).toHaveLength(1);
@@ -208,9 +231,8 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
     const tables = {
       TCK: [{ relPath: "app/services/registry.rb", table: { entries: { Job: "Jobs::Clone" } } }],
     };
-    const edges = resolver.resolveDispatch(
-      dispatchCall("TCK", "perform", "Job"),
-      ctx({ symbolTable: t, dispatchTables: tables }),
+    const edges = edgesOf(
+      resolver.resolveDispatch(dispatchCall("TCK", "perform", "Job"), ctx({ symbolTable: t, dispatchTables: tables })),
     );
     // short-name "perform" scoped to "Clone" (last segment of "Jobs::Clone") → 1 match → resolves
     expect(edges).toHaveLength(1);
@@ -225,7 +247,12 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
       TCK: [{ relPath: "app/services/registry.rb", table: { entries: { Job: "Jobs::Clone" } } }],
     };
     expect(
-      resolver.resolveDispatch(dispatchCall("TCK", "perform", "Job"), ctx({ symbolTable: t, dispatchTables: tables })),
+      edgesOf(
+        resolver.resolveDispatch(
+          dispatchCall("TCK", "perform", "Job"),
+          ctx({ symbolTable: t, dispatchTables: tables }),
+        ),
+      ),
     ).toEqual([]);
   });
 });

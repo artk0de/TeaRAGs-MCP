@@ -34,7 +34,7 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
-  type DispatchEdge,
+  type DispatchFanoutOutcome,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
@@ -89,7 +89,7 @@ export class PythonCallResolver implements CallResolver {
    * undefined and the cone returns `[]` (external never cones); the provider then
    * takes the exact `resolve` chain.
    */
-  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
     return this.cone.resolveDispatch(call, ctx);
   }
 

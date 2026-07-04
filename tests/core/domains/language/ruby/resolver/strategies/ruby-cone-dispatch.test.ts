@@ -5,6 +5,7 @@ import {
   type CallContext,
   type CallRef,
   type DispatchEdge,
+  type DispatchFanoutOutcome,
   type HierarchyView,
   type InheritanceEdge,
   type NamedSymbol,
@@ -78,38 +79,51 @@ const twitter: [string, NamedSymbol[]] = [
 const sortEdges = (edges: DispatchEdge[]): DispatchEdge[] =>
   [...edges].sort((a, b) => (a.targetSymbolId ?? "").localeCompare(b.targetSymbolId ?? ""));
 
+// bd f2jsb: resolveDispatch now returns DispatchFanoutOutcome; existing
+// assertions target the edges payload, so unwrap (throwing on `ambiguous`
+// keeps the assertion strict — these fixtures never exceed the fan-out cap).
+const edgesOf = (outcome: DispatchFanoutOutcome): DispatchEdge[] => {
+  if (outcome.kind !== "edges") throw new Error(`expected edges outcome, got ${outcome.kind}`);
+  return outcome.edges;
+};
+
 describe("RubyConeDispatchResolver", () => {
   const resolver = new RubyConeDispatchResolver(cfg);
 
   it("returns [] when the receiver is null (bare call never cones)", () => {
     const symbolTable = tableWith(agentBase, website);
-    const out = resolver.resolveDispatch(
-      { callText: "check", receiver: null, member: "check", startLine: 1 },
-      ctx({ symbolTable, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "check", receiver: null, member: "check", startLine: 1 },
+        ctx({ symbolTable, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }),
+      ),
     );
     expect(out).toEqual([]);
   });
 
   it("returns [] when the receiver has no local binding (external never cones)", () => {
     const symbolTable = tableWith(agentBase, website);
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({ symbolTable, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }),
+    const out = edgesOf(
+      resolver.resolveDispatch(call, ctx({ symbolTable, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) })),
     );
     expect(out).toEqual([]);
   });
 
   it("returns [] when no hierarchy view is wired", () => {
     const symbolTable = tableWith(agentBase, website);
-    const out = resolver.resolveDispatch(call, ctx({ symbolTable, localBindings: { agent: [{ line: 1, type: "Agent" }] } }));
+    const out = edgesOf(
+      resolver.resolveDispatch(call, ctx({ symbolTable, localBindings: { agent: [{ line: 1, type: "Agent" }] } })),
+    );
     expect(out).toEqual([]);
   });
 
   it("returns [] when the bound type has no descendants (not polymorphic)", () => {
     const symbolTable = tableWith(agentBase);
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({ symbolTable, localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({}) }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({ symbolTable, localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({}) }),
+      ),
     );
     expect(out).toEqual([]);
   });
@@ -120,9 +134,15 @@ describe("RubyConeDispatchResolver", () => {
       "app/agents/website_agent.rb",
       [sym("WebsiteAgent", "WebsiteAgent", "app/agents/website_agent.rb", [])],
     ]);
-    const out = resolver.resolveDispatch(
-      call,
-      ctx({ symbolTable, localBindings: { agent: [{ line: 1, type: "Agent" }] }, hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }) }),
+    const out = edgesOf(
+      resolver.resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          localBindings: { agent: [{ line: 1, type: "Agent" }] },
+          hierarchy: hierarchyWith({ Agent: ["WebsiteAgent"] }),
+        }),
+      ),
     );
     expect(out).toEqual([]);
   });
@@ -130,13 +150,15 @@ describe("RubyConeDispatchResolver", () => {
   it("fans out to N overriding subtypes with confidence 1/N and edgeKind 'cone' (|cone| ≤ K)", () => {
     const symbolTable = tableWith(agentBase, website, twitter);
     const out = sortEdges(
-      resolver.resolveDispatch(
-        call,
-        ctx({
-          symbolTable,
-          localBindings: { agent: [{ line: 1, type: "Agent" }] },
-          hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
-        }),
+      edgesOf(
+        resolver.resolveDispatch(
+          call,
+          ctx({
+            symbolTable,
+            localBindings: { agent: [{ line: 1, type: "Agent" }] },
+            hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
+          }),
+        ),
       ),
     );
     expect(out).toEqual([
@@ -160,13 +182,15 @@ describe("RubyConeDispatchResolver", () => {
   it("collapses to a single poly-base edge to the base decl when |cone| > K", () => {
     const symbolTable = tableWith(agentBase, website, twitter);
     // K = 1 forces the >K branch with 2 overriding subtypes.
-    const out = new RubyConeDispatchResolver({ ...cfg, coneMax: 1 }).resolveDispatch(
-      call,
-      ctx({
-        symbolTable,
-        localBindings: { agent: [{ line: 1, type: "Agent" }] },
-        hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
-      }),
+    const out = edgesOf(
+      new RubyConeDispatchResolver({ ...cfg, coneMax: 1 }).resolveDispatch(
+        call,
+        ctx({
+          symbolTable,
+          localBindings: { agent: [{ line: 1, type: "Agent" }] },
+          hierarchy: hierarchyWith({ Agent: ["WebsiteAgent", "TwitterAgent"] }),
+        }),
+      ),
     );
     expect(out).toEqual([
       {

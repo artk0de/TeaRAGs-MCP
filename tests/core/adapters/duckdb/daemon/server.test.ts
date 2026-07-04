@@ -91,6 +91,53 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 
+  // bd tea-rags-mcp-s5ato — the daemon-side compute must weight PageRank by
+  // per-edge confidence: a 0.9-confidence dynamic edge routes 9× the rank
+  // mass of its 0.1 sibling, so the strong target must out-rank the weak one
+  // (unweighted PageRank would rank them identically).
+  it("computeAndPersistCyclesAndSignals weights PageRank by per-edge confidence", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_weighted_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: {
+          fileEdges: [],
+          methodEdges: [
+            {
+              sourceSymbolId: "A#run",
+              targetSymbolId: "B#hot",
+              targetRelPath: "b.ts",
+              callExpression: "x.hot()",
+              edgeKind: "dynamic",
+              confidence: 0.9,
+            },
+            {
+              sourceSymbolId: "A#run",
+              targetSymbolId: "C#cold",
+              targetRelPath: "c.ts",
+              callExpression: "x.cold()",
+              edgeKind: "dynamic",
+              confidence: 0.1,
+            },
+          ],
+        },
+      },
+    });
+    expect(
+      (await server.handle({ id: 2, op: "computeAndPersistCyclesAndSignals", params: { collection: c } })).ok,
+    ).toBe(true);
+    const hot = await server.handle({ id: 3, op: "getPageRank", params: { collection: c, symbolId: "B#hot" } });
+    const cold = await server.handle({ id: 4, op: "getPageRank", params: { collection: c, symbolId: "C#cold" } });
+    expect(hot.ok).toBe(true);
+    expect(cold.ok).toBe(true);
+    expect((hot as { result: number }).result).toBeGreaterThan((cold as { result: number }).result);
+    await pool.closeAll();
+  });
+
   it("findCycles op forwards pathPattern so the daemon scopes the result by file path", async () => {
     const { server, pool } = makeServer();
     const c = "code_cyc_v1";
@@ -368,6 +415,7 @@ describe("CodegraphDaemonServer.handle", () => {
         externalSkipped: 0,
         unresolvable: 3,
         noInProjectDef: 0,
+        ambiguousFanout: 0,
       },
       {
         language: "typescript",
@@ -377,6 +425,7 @@ describe("CodegraphDaemonServer.handle", () => {
         externalSkipped: 7,
         unresolvable: 0,
         noInProjectDef: 0,
+        ambiguousFanout: 0,
       },
     ]);
     await pool.closeAll();
@@ -517,6 +566,40 @@ describe("CodegraphDaemonServer.handle", () => {
     const ro = await pool.acquireRead("code_x_v2");
     expect(await ro.graphDb.hasData()).toBe(true); // new live
     await ro.graphDb.close();
+    await pool.closeAll();
+  });
+
+  // bd tea-rags-mcp-z3bcv (f2jsb A4) — the lazy ambiguous-expansion read is a
+  // full-proxy op like every other read: routed through the daemon's own RW
+  // connection against cg_ambiguous_fanout.
+  it("getAmbiguousCallersByMember read op returns member-matched aggregate rows", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_ambig_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "runner.rb", language: "ruby" },
+        edges: {
+          fileEdges: [],
+          methodEdges: [],
+          ambiguousFanouts: [
+            { sourceSymbolId: "Runner#go", callExpression: "x.firm", member: "firm", candidateCount: 240 },
+            { sourceSymbolId: "Runner#go", callExpression: "y.user", member: "user", candidateCount: 31 },
+          ],
+        },
+      },
+    });
+    const res = await server.handle({
+      id: 2,
+      op: "getAmbiguousCallersByMember",
+      params: { collection: c, member: "firm" },
+    });
+    expect(res.ok).toBe(true);
+    expect(res.result).toEqual([
+      { sourceSymbolId: "Runner#go", sourceRelPath: "runner.rb", callExpression: "x.firm", candidateCount: 240 },
+    ]);
     await pool.closeAll();
   });
 });

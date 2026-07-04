@@ -49,6 +49,7 @@ export type { IndexMetrics, SignalMetrics } from "./metrics.js";
 
 export type {
   // Codegraph
+  AmbiguousCallerResult,
   CalleeResult,
   CallerResult,
   CycleResult,

@@ -12,7 +12,9 @@
  *     its TERMINAL status (completed→healthy, degraded, failed).
  *   - A marker that is ABSENT or carries a STALE runId (a previous run, while a
  *     new run is active) is derived from `_run` timestamps:
- *       crashed (no progress > 1h) → failed, stalled (> 2min) / fresh → in_progress.
+ *       crashed (no progress > 1h) → failed, past the stall deadline (default
+ *       15min, ENRICHMENT_STALL_DEADLINE_MS) → failed, stalled (> 2min) →
+ *       in_progress warning, fresh → in_progress.
  *     It is NEVER rendered healthy — that was the old `pending → healthy` bug.
  *   - Legacy markers (no `_run`, old literal-property shape) fall back to a
  *     compatibility branch: terminal statuses render as-is, legacy `pending`
@@ -24,6 +26,33 @@ import type { EnrichmentHealthMap, EnrichmentLevelHealth, EnrichmentMarkerMap, R
 
 const STALE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
 const CRASHED_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour — pipeline crashed long ago
+const DEFAULT_STALL_DEADLINE_MS = 15 * 60 * 1000; // 15 minutes — in_progress past this renders failed
+
+/**
+ * Stall deadline (ms): an in_progress level whose last heartbeat is older than
+ * this renders `failed` (recovered on next reindex) instead of warning
+ * "stalled" forever — a dead enrichment process must not pin health at
+ * in_progress eternally. Defaults to 15 minutes; overridable via the
+ * `ENRICHMENT_STALL_DEADLINE_MS` env var (positive integer ms; invalid or
+ * non-positive values fall back to the default), mirroring how
+ * `CHUNKER_WORKER_TIMEOUT_MS` tunes the chunker pool in
+ * `pipeline/infra/pool-defaults.ts`.
+ */
+function stallDeadlineMs(): number {
+  const raw = process.env.ENRICHMENT_STALL_DEADLINE_MS;
+  if (raw !== undefined && raw.trim() !== "") {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return DEFAULT_STALL_DEADLINE_MS;
+}
+
+/** Failed-past-deadline message — names the stall duration, mirrors the crashed-message style. */
+function stallDeadlineMessage(elapsedMs: number, deadlineMs: number): string {
+  const elapsedMin = Math.round(elapsedMs / 60_000);
+  const deadlineMin = Math.round(deadlineMs / 60_000);
+  return `Enrichment appears stalled — no progress in ${elapsedMin} minutes, past the stall deadline (${deadlineMin} min). Status recovered on read. Will recover on next reindex.`;
+}
 
 type LevelRecord = Record<string, unknown>;
 
@@ -68,6 +97,10 @@ function mapLevelWithRun(
       message:
         "Enrichment appears to have crashed (no progress for over 1 hour). Status recovered on read. Will retry on next reindex.",
     };
+  }
+  const deadlineMs = stallDeadlineMs();
+  if (elapsed > deadlineMs) {
+    return { status: "failed", message: stallDeadlineMessage(elapsed, deadlineMs) };
   }
   if (elapsed > STALE_THRESHOLD_MS) {
     return {
@@ -139,8 +172,15 @@ function mapLegacyLevel(level: LevelRecord | undefined, levelName: "file" | "chu
           "Enrichment appears to have crashed (in_progress for over 1 hour with no completion). Status recovered on read. Will retry on next reindex.",
       };
     }
-    const isStale =
-      typeof level.lastProgressAt === "string" && Date.now() - Date.parse(level.lastProgressAt) > STALE_THRESHOLD_MS;
+    // Heartbeat age. Absent lastProgressAt yields undefined; an unparseable
+    // one yields NaN — both fail every comparison below (same as before).
+    const heartbeatAgeMs =
+      typeof level.lastProgressAt === "string" ? Date.now() - Date.parse(level.lastProgressAt) : undefined;
+    const deadlineMs = stallDeadlineMs();
+    if (heartbeatAgeMs !== undefined && heartbeatAgeMs > deadlineMs) {
+      return { ...base, status: "failed", message: stallDeadlineMessage(heartbeatAgeMs, deadlineMs) };
+    }
+    const isStale = heartbeatAgeMs !== undefined && heartbeatAgeMs > STALE_THRESHOLD_MS;
     return {
       ...base,
       status: "in_progress",

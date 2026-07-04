@@ -21,6 +21,13 @@ export interface GetCallersRequest {
   path?: string;
   symbolId: SymbolId;
   limit?: number;
+  /**
+   * Opt-in lazy ambiguous expansion (bd tea-rags-mcp-f2jsb A4): also fetch
+   * `cg_ambiguous_fanout` aggregates whose member matches the target's member
+   * segment and attach them as `ambiguousCallers`. Default false — the
+   * response stays byte-identical to the pre-flag shape.
+   */
+  includeAmbiguous?: boolean;
 }
 
 export interface CallerResult {
@@ -29,8 +36,28 @@ export interface CallerResult {
   callExpression: string;
 }
 
+/**
+ * Ambiguous dispatch site whose member matches the target (bd f2jsb): the
+ * call MAY reach the target among `candidateCount` candidates. NOT a
+ * materialized edge — the over-cap fan-out was persisted as one aggregate
+ * row instead of m edges.
+ */
+export interface AmbiguousCallerResult {
+  sourceSymbolId: SymbolId;
+  sourceRelPath: RelPath;
+  callExpression: string;
+  candidateCount: number;
+}
+
 export interface GetCallersResponse {
   callers: CallerResult[];
+  /**
+   * Present ONLY when the request set `includeAmbiguous: true` AND the target
+   * symbolId carries a member segment (text after the last `#` or `.`).
+   * Ambiguous dispatch sites whose member matches the target — each MAY reach
+   * it among `candidateCount` candidates; not materialized as edges (bd f2jsb).
+   */
+  ambiguousCallers?: AmbiguousCallerResult[];
 }
 
 export interface GetCalleesRequest {

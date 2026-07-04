@@ -115,6 +115,44 @@ describe("registerCodegraphTools — provider gating", () => {
     });
   });
 
+  // bd tea-rags-mcp-z3bcv (f2jsb A4) — opt-in lazy ambiguous expansion.
+  it("get_callers schema exposes optional boolean includeAmbiguous", () => {
+    const register = vi.fn();
+    const app = makeApp(true);
+
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+
+    const call = register.mock.calls.find((c) => c[1] === "get_callers");
+    const { inputSchema } = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny> };
+    const { includeAmbiguous } = inputSchema;
+    expect(includeAmbiguous).toBeDefined();
+    expect(includeAmbiguous.safeParse(true).success).toBe(true);
+    expect(includeAmbiguous.safeParse(false).success).toBe(true);
+    expect(includeAmbiguous.safeParse(undefined).success).toBe(true); // optional
+    expect(includeAmbiguous.safeParse("yes").success).toBe(false);
+  });
+
+  it("get_callers handler forwards includeAmbiguous into app.getCallers", async () => {
+    const register = vi.fn();
+    const app = makeApp(true);
+    (app.getCallers as ReturnType<typeof vi.fn>).mockResolvedValue({ callers: [] });
+
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+
+    const call = register.mock.calls.find((c) => c[1] === "get_callers");
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<unknown>;
+    await handler({ path: "/proj", symbolId: "Account#firm", includeAmbiguous: true });
+
+    expect(app.getCallers).toHaveBeenCalledWith({
+      project: undefined,
+      collection: undefined,
+      path: "/proj",
+      symbolId: "Account#firm",
+      limit: undefined,
+      includeAmbiguous: true,
+    });
+  });
+
   it("trace_path rerank is a curated enum: accepts a tagged preset, rejects a bogus one", () => {
     const register = vi.fn();
     const app = makeApp(true);

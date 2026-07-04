@@ -39,7 +39,7 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
-  type DispatchEdge,
+  type DispatchFanoutOutcome,
   type FileExtraction,
   type GraphEdges,
   type SymbolResolutionTarget,
@@ -172,7 +172,7 @@ export class RubyCallResolver implements CallResolver {
    * `external` receiver carries no in-project target on any path, so the
    * invariant "external never fabricates an out-of-project edge" holds.
    */
-  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
     return resolveDispatchViaComponents(this.dispatchComponents, call, ctx);
   }
 

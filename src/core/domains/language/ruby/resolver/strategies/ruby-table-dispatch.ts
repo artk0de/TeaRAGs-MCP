@@ -2,6 +2,7 @@ import type {
   CallContext,
   CallRef,
   DispatchEdge,
+  DispatchFanoutOutcome,
   DispatchRef,
   DispatchTable,
   DispatchTableDef,
@@ -27,7 +28,11 @@ import { isRubyPath, lastConstantSegment, resolveConstant, type ResolverConfig }
 export class RubyTableDispatchResolver implements DispatchResolverComponent {
   constructor(private readonly cfg: ResolverConfig) {}
 
-  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
+    return { kind: "edges", edges: this.resolveDispatchEdges(call, ctx) };
+  }
+
+  private resolveDispatchEdges(call: CallRef, ctx: CallContext): DispatchEdge[] {
     const ref = call.dispatch;
     if (!ref) return [];
     // The walker only tags a site once the dispatched member is known

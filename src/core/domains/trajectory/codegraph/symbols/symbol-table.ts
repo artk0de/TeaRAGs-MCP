@@ -61,6 +61,12 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
     return n;
   }
 
+  shortNameDefCounts(): ReadonlyMap<string, number> {
+    const counts = new Map<string, number>();
+    for (const [name, defs] of this.byShort) counts.set(name, defs.length);
+    return counts;
+  }
+
   /**
    * Bulk-load definitions, typically from `GraphDbClient.listAllSymbols`
    * on cold start. Groups by `relPath` and calls `upsertFile` once per

@@ -1,8 +1,9 @@
 import {
+  emptyDispatchFanout,
   resolveLocalBinding,
   type CallContext,
   type CallRef,
-  type DispatchEdge,
+  type DispatchFanoutOutcome,
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
 import {
@@ -92,14 +93,14 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
 
   constructor(private readonly cfg: ResolverConfig) {}
 
-  resolveDispatch(call: CallRef, ctx: CallContext): DispatchEdge[] {
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
     const r = call.receiver;
     // Receivers the exact chain owns — never a dynamic fan-out.
-    if (r === null) return []; // bare call
-    if (r === SUPER_RECEIVER_SENTINEL || r === "self") return [];
-    if (CONSTANT_RE.test(r)) return []; // constant / type receiver
-    if (ctx.localBindings && Object.prototype.hasOwnProperty.call(ctx.localBindings, r)) return []; // typed local
-    if (receiverLooksLikeArRelationChain(r)) return []; // AR::Relation chain
+    if (r === null) return emptyDispatchFanout(); // bare call
+    if (r === SUPER_RECEIVER_SENTINEL || r === "self") return emptyDispatchFanout();
+    if (CONSTANT_RE.test(r)) return emptyDispatchFanout(); // constant / type receiver
+    if (ctx.localBindings && Object.prototype.hasOwnProperty.call(ctx.localBindings, r)) return emptyDispatchFanout(); // typed local
+    if (receiverLooksLikeArRelationChain(r)) return emptyDispatchFanout(); // AR::Relation chain
     // Index-access receiver (`opts[k]`, `arr[i]`): suppress dynamic fan-out by
     // default (element type is untrackable → ~10%-precision noise). EXCEPTION:
     // when the base var has a typed container binding, the element type IS known
@@ -116,23 +117,23 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
         const baseBinding = resolveLocalBinding(ctx.localBindings, baseVar, call.startLine);
         if (baseBinding?.typeRef?.form === "container") {
           // Typed container — chainType owns the resolution; defer to it.
-          return [];
+          return emptyDispatchFanout();
         }
       }
       // Untyped index-access — suppress as before.
-      return [];
+      return emptyDispatchFanout();
     }
     // Provably-external chain tail (`req.headers`, `type.constantize`): the element
     // is core/runtime, no in-project target. Suppress; the external classifier
     // reclassifies so recall is not falsely penalised (bd Increment B / B-suppress).
-    if (receiverChainTailIsExternal(r)) return [];
+    if (receiverChainTailIsExternal(r)) return emptyDispatchFanout();
     // Typeable chain receiver: the propagation engine threads it to a known class/
     // instance type, so the precise `chainType` strategy (in resolve()) must own it
     // — returning [] here defers to it instead of fanning out speculative dynamic
     // edges. (bd tea-rags-mcp-epydb)
     if (r.includes(".")) {
       const t = typeOfReceiver(r, call.startLine, ctx);
-      if (t && (t.form === "class" || t.form === "instance")) return [];
+      if (t && (t.form === "class" || t.form === "instance")) return emptyDispatchFanout();
     }
     // AR/core instance member on an untyped receiver (`agent.update`): the true
     // target is an external base class (ActiveRecord::Base, ActiveModel). Fanning
@@ -140,11 +141,11 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     // Suppress; the external classifier (Consumer 2) reclassifies so recall is not
     // penalised (bd tea-rags-mcp-i9id8). The receiver is already untyped here — all
     // typed/constant/relation/index/external-chain receivers returned [] above.
-    if (isExternalQualifiedMember(call.member)) return [];
+    if (isExternalQualifiedMember(call.member)) return emptyDispatchFanout();
 
     // Truly dynamic receiver: short-name lookup, ruby-files only.
     const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => isRubyPath(def.relPath));
-    if (candidates.length === 0) return [];
+    if (candidates.length === 0) return emptyDispatchFanout();
     const discount = this.cfg.dynamicReceiverConfidence ?? DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT;
     return resolveNarrowedFanout(call, candidates, ctx, this.narrowers, discount);
   }

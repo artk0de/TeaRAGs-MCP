@@ -69,6 +69,27 @@ function edgeRecall(
   return denominator === 0 ? 0 : resolved / denominator;
 }
 
+/**
+ * bd tea-rags-mcp-f2jsb / j0pki — dual-recall companion to {@link edgeRecall}:
+ * `(resolved + ambiguousFanout) / SAME denominator`. An over-cap ambiguous
+ * fan-out stays a miss for STRICT recall (it produced no edge), but its
+ * aggregate record still covers the call site — coveredRecall reports
+ * completeness when that aggregate is accepted as coverage. 0 when the
+ * denominator is empty.
+ */
+function coveredRecall(
+  attempted: number,
+  resolved: number,
+  externalSkipped: number,
+  unresolvable: number,
+  noInProjectDef: number,
+  ambiguousFanout: number,
+): number {
+  const missWithInProjectDef = Math.max(0, attempted - resolved - externalSkipped - unresolvable - noInProjectDef);
+  const denominator = resolved + missWithInProjectDef;
+  return denominator === 0 ? 0 : (resolved + ambiguousFanout) / denominator;
+}
+
 /** Running tally aggregated from `cg_run_stats` rows (per language or per kind). */
 interface ResolveTally {
   attempted: number;
@@ -76,10 +97,11 @@ interface ResolveTally {
   externalSkipped: number;
   unresolvable: number;
   noInProjectDef: number;
+  ambiguousFanout: number;
 }
 
 function emptyTally(): ResolveTally {
-  return { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0, noInProjectDef: 0 };
+  return { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0, noInProjectDef: 0, ambiguousFanout: 0 };
 }
 
 /**
@@ -112,11 +134,20 @@ function buildByReceiverKind(kinds: Map<string, ResolveTally>): CodegraphResolve
     .map(([receiverKind, t]) => ({
       receiverKind,
       inProjectEdgeRecall: edgeRecall(t.attempted, t.resolved, t.externalSkipped, t.unresolvable, t.noInProjectDef),
+      coveredRecall: coveredRecall(
+        t.attempted,
+        t.resolved,
+        t.externalSkipped,
+        t.unresolvable,
+        t.noInProjectDef,
+        t.ambiguousFanout,
+      ),
       attempted: t.attempted,
       resolved: t.resolved,
       externalSkipped: t.externalSkipped,
       unresolvable: t.unresolvable,
       callsNoInProjectDef: t.noInProjectDef,
+      ambiguousFanout: t.ambiguousFanout,
       resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped, t.unresolvable, t.noInProjectDef),
     }))
     .sort((a, b) => b.attempted - a.attempted);
@@ -157,6 +188,7 @@ export function summarizeCodegraphResolve(
   let externalSkipped = 0;
   let unresolvable = 0;
   let noInProjectDef = 0;
+  let ambiguousFanout = 0;
   const byLang = new Map<string, ResolveTally>();
   // Per-language receiver-kind tally (bd tea-rags-mcp-7m5xz). Unlabeled rows are
   // excluded here exactly as they are for byLanguage. Populated only under DEBUG.
@@ -167,6 +199,7 @@ export function summarizeCodegraphResolve(
     externalSkipped += r.externalSkipped;
     unresolvable += r.unresolvable ?? 0; // pre-cai0 rows default to 0 (field added by migration 010)
     noInProjectDef += r.noInProjectDef ?? 0; // pre-recall rows default to 0 (column added later)
+    ambiguousFanout += r.ambiguousFanout ?? 0; // pre-013 rows default to 0 (bd f2jsb / j0pki)
     if (!r.language) continue; // unlabeled (pre-cnqrg / direct-mode) — aggregate only
     const e = byLang.get(r.language) ?? emptyTally();
     e.attempted += r.attempted;
@@ -174,6 +207,7 @@ export function summarizeCodegraphResolve(
     e.externalSkipped += r.externalSkipped;
     e.unresolvable += r.unresolvable ?? 0;
     e.noInProjectDef += r.noInProjectDef ?? 0;
+    e.ambiguousFanout += r.ambiguousFanout ?? 0;
     byLang.set(r.language, e);
     if (!debug) continue; // short form: skip receiver-kind tally entirely
     const kinds = byLangKind.get(r.language) ?? new Map<string, ResolveTally>();
@@ -183,6 +217,7 @@ export function summarizeCodegraphResolve(
     k.externalSkipped += r.externalSkipped;
     k.unresolvable += r.unresolvable ?? 0;
     k.noInProjectDef += r.noInProjectDef ?? 0;
+    k.ambiguousFanout += r.ambiguousFanout ?? 0;
     kinds.set(r.receiverKind, k);
     byLangKind.set(r.language, kinds);
   }
@@ -193,11 +228,15 @@ export function summarizeCodegraphResolve(
     // inProjectEdgeRecall (the former "denominator-polluted" gap is closed —
     // collapsing the two fields into one is a separate DTO decision).
     inProjectEdgeRecall: edgeRecall(attempted, resolved, externalSkipped, unresolvable, noInProjectDef),
+    // bd f2jsb / j0pki — dual recall: strict above (ambiguous stays a miss in
+    // the denominator), covered below (the aggregate counts as coverage).
+    coveredRecall: coveredRecall(attempted, resolved, externalSkipped, unresolvable, noInProjectDef, ambiguousFanout),
     callsAttempted: attempted,
     callsResolved: resolved,
     callsExternalSkipped: externalSkipped,
     callsUnresolvable: unresolvable,
     callsNoInProjectDef: noInProjectDef,
+    ambiguousFanout,
     ...(debug
       ? { resolveSuccessRate: resolveRate(attempted, resolved, externalSkipped, unresolvable, noInProjectDef) }
       : {}),
