@@ -1,7 +1,7 @@
 import type { IndexStatus } from "../../core/api/public/dto/ingest.js";
 import type { IndexMetrics } from "../../core/api/public/dto/metrics.js";
 import { formatForPrime } from "../update-check/format.js";
-import type { PrimeData, PrimeFailureReason } from "./types.js";
+import type { PrimeData, PrimeFailureReason, PrimeRegistryEntry } from "./types.js";
 
 type InfraHealth = NonNullable<IndexStatus["infraHealth"]>;
 type EnrichmentMap = NonNullable<IndexStatus["enrichment"]>;
@@ -36,13 +36,21 @@ function formatDigest(data: PrimeData, now: Date): string {
   lines.push("## Status");
   lines.push(formatStatusLine(data.status, now));
 
-  if (data.projectName) {
+  const registryParams = data.registry ? formatRegistryParamsLine(data.registry) : null;
+  if (data.projectName || registryParams) {
     lines.push("");
     lines.push("## Project");
-    lines.push(`name: \`${data.projectName}\``);
-    lines.push(
-      `[hint] Use \`project: "${data.projectName}"\` as the preferred parameter in MCP tool calls (over path / collection).`,
-    );
+    if (data.projectName) {
+      lines.push(`name: \`${data.projectName}\``);
+    }
+    if (registryParams) {
+      lines.push(registryParams);
+    }
+    if (data.projectName) {
+      lines.push(
+        `[hint] Use \`project: "${data.projectName}"\` as the preferred parameter in MCP tool calls (over path / collection).`,
+      );
+    }
   }
 
   if (data.status.status !== "indexed") {
@@ -112,6 +120,44 @@ function formatDigest(data: PrimeData, now: Date): string {
   lines.push('→ run `tea-rags prime "$CLAUDE_PROJECT_DIR"` to refresh this digest after re-indexing');
 
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * tea-rags-mcp-32cnc — ONE compact line with the effective per-project params
+ * from the registry entry, so a session immediately sees which env the CLI/MCP
+ * will actually use (registry params ≠ the current shell's env — e.g. DEBUG is
+ * a process env, not a registry param). Built generically from CollectionEntry
+ * scalars: absent fields are omitted and the line always stays single. The
+ * forward-compat `tuning` map (see PrimeRegistryEntry) appends as `key=value`
+ * pairs, key-sorted for output stability.
+ */
+function formatRegistryParamsLine(entry: PrimeRegistryEntry): string | null {
+  const parts: string[] = [];
+  if (entry.embeddingBaseUrl) {
+    const fallback = entry.embeddingFallbackUrl ? ` (fallback ${entry.embeddingFallbackUrl})` : "";
+    parts.push(`embedding ${entry.embeddingBaseUrl}${fallback}`);
+  } else if (entry.embeddingFallbackUrl) {
+    // Defensive: fallback recorded without a base URL (should not happen via
+    // the pipeline, but registry.json is hand-editable).
+    parts.push(`embedding fallback ${entry.embeddingFallbackUrl}`);
+  }
+  if (entry.qdrantUrl) {
+    parts.push(`qdrant ${entry.qdrantUrl}${entry.qdrantEmbedded ? " (embedded)" : ""}`);
+  }
+  if (entry.codegraphEnabled !== undefined) {
+    parts.push(`codegraph ${entry.codegraphEnabled ? "on" : "off"}`);
+  }
+  if (entry.teaRagsVersion) {
+    parts.push(`v${entry.teaRagsVersion}`);
+  }
+  const tuning = Object.entries(entry.tuning ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join(" ");
+  if (tuning) {
+    parts.push(tuning);
+  }
+  return parts.length > 0 ? `registry: ${parts.join(" · ")}` : null;
 }
 
 // Chunker artifacts that aren't real programming languages (markdown code blocks,

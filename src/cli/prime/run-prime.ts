@@ -146,6 +146,7 @@ export async function runPrime(input: { path?: string; project?: string }): Prom
     const data: PrimeData = {
       path,
       projectName: registryEntry?.name ?? null,
+      registry: registryEntry,
       status: status.value,
       metrics: metricsResult.status === "fulfilled" ? metricsResult.value : null,
       drift: drift.status === "fulfilled" ? drift.value : null,

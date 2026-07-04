@@ -1,5 +1,14 @@
 import type { IndexMetrics, IndexStatus } from "../../core/api/public/dto/index.js";
+import type { CollectionEntry } from "../../core/api/public/index.js";
 import type { UpdateStatus } from "../update-check/types.js";
+
+/**
+ * Registry entry as consumed by the prime digest. `tuning` is forward-compat:
+ * a parallel change adds `tuning?: Record<string, string>` to CollectionEntry;
+ * declaring it structurally here lets the digest render it the moment the
+ * field lands, without a hard type dependency. Absent map = omitted.
+ */
+export type PrimeRegistryEntry = CollectionEntry & { tuning?: Record<string, string> };
 
 /**
  * Successful prime data — index reachable, status fetched.
@@ -11,6 +20,11 @@ export interface PrimeData {
   path: string;
   /** Registered alias for this project, null when no registry entry has a name. */
   projectName: string | null;
+  /**
+   * Registry entry backing this project — source of the effective-params
+   * `registry:` line. Optional/null when no entry matched (heuristic path).
+   */
+  registry?: PrimeRegistryEntry | null;
   status: IndexStatus;
   metrics: IndexMetrics | null;
   drift: string | null;
