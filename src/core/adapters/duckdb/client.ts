@@ -60,6 +60,25 @@ import type {
  */
 const DEFAULT_DB_MEMORY_LIMIT = "2GB";
 
+/**
+ * Rows per multi-row `INSERT OR IGNORE ... VALUES` statement issued by
+ * `upsertFileImpl` (bd tea-rags-mcp-f2jsb). taxdome wrote 1.58M method edges
+ * through per-row prepared INSERTs at an effective ~97 rows/sec — the
+ * prepare/bind/destroy round-trip per EDGE dominated, and the per-row WAL
+ * churn even tripped the 2GB memory_limit inside one large transaction.
+ * Batching at 200 rows measured ~48x faster (probe: 10k rows, ~1.4k/s per-row
+ * vs ~66k/s batched on @duckdb/node-api 1.x).
+ *
+ * 200 rows x 7 params (widest table, cg_symbols_edges_method) = 1400
+ * positional params per statement — verified fine with the driver's
+ * positional `bindVarchar`. DuckDB's INSERT OR IGNORE keeps first-row-wins
+ * semantics for duplicate-PK rows WITHIN one multi-row statement (verified
+ * empirically), matching the previous sequential per-row behaviour exactly —
+ * no in-JS dedupe layer is needed, and OR IGNORE stays load-bearing for
+ * cross-file PK collisions (see `insertOrIgnoreBatched`).
+ */
+const EDGE_INSERT_CHUNK_ROWS = 200;
+
 export interface DuckDbGraphClientOptions {
   path: string;
   /**
@@ -299,38 +318,47 @@ export class DuckDbGraphClient implements GraphDbClient {
       ]);
       await this.run("DELETE FROM cg_symbols_edges_file WHERE source_rel_path = ?", [node.relPath]);
       await this.run("DELETE FROM cg_symbols_edges_method WHERE source_rel_path = ?", [node.relPath]);
-      for (const e of edges.fileEdges) {
-        // INSERT OR IGNORE: dedupe (source, target) — a file may
-        // re-import the same module on different lines, producing the
-        // same edge twice in one extraction batch.
-        await this.run(
-          "INSERT OR IGNORE INTO cg_symbols_edges_file (source_rel_path, target_rel_path, import_text) VALUES (?, ?, ?)",
-          [node.relPath, e.targetRelPath, e.importText],
-        );
-      }
-      for (const e of edges.methodEdges) {
-        // GraphEdges.methodEdges allows targetSymbolId=null (the
-        // resolver case where an import resolves to a file but the
-        // called member isn't in that file's exported symbol table).
-        // The cg_symbols_edges_method PK includes target_symbol_id —
-        // DuckDB enforces NOT NULL on PK columns, so we must skip
-        // null-target edges at the boundary. File-level reach is
-        // already captured by fileEdges; the method graph only carries
-        // edges with a known target symbol.
-        if (e.targetSymbolId === null) continue;
-        // INSERT OR IGNORE: same call shape may repeat — e.g.
-        // `this.cache.get(x)` invoked from multiple branches of the
-        // same method body. collectCalls walks every call_expression
-        // and emits one CallRef per occurrence; the PK
-        // (source_symbol_id, call_expression, target_symbol_id) is
-        // edge-existence semantics, not occurrence count.
-        // edge_kind/confidence (bd 2jet) default to exact/1.0 when the
-        // resolver did not mark the edge as CHA fan-out. INSERT OR IGNORE
-        // keeps the first edge's provenance when the same (source, call,
-        // target) tuple repeats — edge-existence semantics, not occurrence.
-        await this.run(
-          "INSERT OR IGNORE INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, edge_kind, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [
+      // INSERT OR IGNORE: dedupe (source, target) — a file may
+      // re-import the same module on different lines, producing the
+      // same edge twice in one extraction batch.
+      await this.insertOrIgnoreBatched(
+        "cg_symbols_edges_file",
+        ["source_rel_path", "target_rel_path", "import_text"],
+        edges.fileEdges.map((e) => [node.relPath, e.targetRelPath, e.importText]),
+      );
+      // GraphEdges.methodEdges allows targetSymbolId=null (the
+      // resolver case where an import resolves to a file but the
+      // called member isn't in that file's exported symbol table).
+      // The cg_symbols_edges_method PK includes target_symbol_id —
+      // DuckDB enforces NOT NULL on PK columns, so we must skip
+      // null-target edges at the boundary, BEFORE batching. File-level
+      // reach is already captured by fileEdges; the method graph only
+      // carries edges with a known target symbol.
+      //
+      // INSERT OR IGNORE: same call shape may repeat — e.g.
+      // `this.cache.get(x)` invoked from multiple branches of the
+      // same method body. collectCalls walks every call_expression
+      // and emits one CallRef per occurrence; the PK
+      // (source_symbol_id, call_expression, target_symbol_id) is
+      // edge-existence semantics, not occurrence count.
+      // edge_kind/confidence (bd 2jet) default to exact/1.0 when the
+      // resolver did not mark the edge as CHA fan-out. INSERT OR IGNORE
+      // keeps the first edge's provenance when the same (source, call,
+      // target) tuple repeats — edge-existence semantics, not occurrence.
+      await this.insertOrIgnoreBatched(
+        "cg_symbols_edges_method",
+        [
+          "source_symbol_id",
+          "source_rel_path",
+          "target_symbol_id",
+          "target_rel_path",
+          "call_expression",
+          "edge_kind",
+          "confidence",
+        ],
+        edges.methodEdges
+          .filter((e) => e.targetSymbolId !== null)
+          .map((e) => [
             e.sourceSymbolId,
             node.relPath,
             e.targetSymbolId,
@@ -338,40 +366,87 @@ export class DuckDbGraphClient implements GraphDbClient {
             e.callExpression,
             e.edgeKind ?? "exact",
             e.confidence ?? 1.0,
-          ],
-        );
-      }
+          ]),
+      );
       // Inheritance edges (bd tea-rags-mcp-f10y). Per-source-file delete+insert,
       // same lifecycle as the edge tables: re-walking a file replaces its rows.
       // INSERT OR IGNORE dedupes a (source, ancestor, kind) declared twice in
       // one extraction (e.g. duplicate include).
       await this.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [node.relPath]);
-      for (const e of edges.inheritance ?? []) {
-        await this.run(
-          `INSERT OR IGNORE INTO cg_symbols_inheritance
-             (source_fq_name, source_rel_path, source_symbol_id, ancestor_fq_name, ancestor_symbol_id, kind, ordinal)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [e.sourceFqName, node.relPath, e.sourceSymbolId, e.ancestorFqName, e.ancestorSymbolId, e.kind, e.ordinal],
-        );
-      }
+      await this.insertOrIgnoreBatched(
+        "cg_symbols_inheritance",
+        [
+          "source_fq_name",
+          "source_rel_path",
+          "source_symbol_id",
+          "ancestor_fq_name",
+          "ancestor_symbol_id",
+          "kind",
+          "ordinal",
+        ],
+        (edges.inheritance ?? []).map((e) => [
+          e.sourceFqName,
+          node.relPath,
+          e.sourceSymbolId,
+          e.ancestorFqName,
+          e.ancestorSymbolId,
+          e.kind,
+          e.ordinal,
+        ]),
+      );
       // Ambiguous fan-out aggregates (bd tea-rags-mcp-f2jsb / j0pki). Same
       // per-source-file DELETE+INSERT lifecycle as the edge tables: re-walking
       // a file replaces its rows (a fan-out resolved away must not survive).
       // INSERT OR IGNORE dedupes a repeated (source, call_expression) shape —
       // aggregate-existence semantics, not occurrence count.
       await this.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [node.relPath]);
-      for (const a of edges.ambiguousFanouts ?? []) {
-        await this.run(
-          `INSERT OR IGNORE INTO cg_ambiguous_fanout
-             (source_symbol_id, source_rel_path, call_expression, member, candidate_count)
-           VALUES (?, ?, ?, ?, ?)`,
-          [a.sourceSymbolId, node.relPath, a.callExpression, a.member, a.candidateCount],
-        );
-      }
+      await this.insertOrIgnoreBatched(
+        "cg_ambiguous_fanout",
+        ["source_symbol_id", "source_rel_path", "call_expression", "member", "candidate_count"],
+        (edges.ambiguousFanouts ?? []).map((a) => [
+          a.sourceSymbolId,
+          node.relPath,
+          a.callExpression,
+          a.member,
+          a.candidateCount,
+        ]),
+      );
       await this.exec("COMMIT");
     } catch (err) {
       await this.exec("ROLLBACK");
       throw err;
+    }
+  }
+
+  /**
+   * Issue `INSERT OR IGNORE INTO <table> (<cols>) VALUES (…), (…), …` in
+   * chunks of `EDGE_INSERT_CHUNK_ROWS` (bd tea-rags-mcp-f2jsb). Replaces the
+   * per-row INSERT loops in `upsertFileImpl` — one prepared statement per
+   * ~200 rows instead of one per row (see the constant's doc for measured
+   * rates). Callers run inside the per-file transaction; a chunk failure
+   * rolls the whole file back, same as the per-row path.
+   *
+   * OR IGNORE stays load-bearing even with batching: PK collisions can come
+   * from rows already persisted by ANOTHER file's upsert (e.g. a
+   * monkey-patched symbol defined in two files emits the same
+   * (source, call, target) tuple from both) — in-JS dedupe alone cannot see
+   * those. Duplicate-PK rows WITHIN one statement are also first-row-wins
+   * under DuckDB's OR IGNORE, preserving the old sequential semantics.
+   *
+   * `table`/`columns` are compile-time literals supplied by `upsertFileImpl`
+   * — never user input; all VALUES go through positional binds.
+   */
+  private async insertOrIgnoreBatched(
+    table: string,
+    columns: readonly string[],
+    rows: readonly (readonly unknown[])[],
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    const tuple = `(${columns.map(() => "?").join(", ")})`;
+    const prefix = `INSERT OR IGNORE INTO ${table} (${columns.join(", ")}) VALUES `;
+    for (let i = 0; i < rows.length; i += EDGE_INSERT_CHUNK_ROWS) {
+      const chunk = rows.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
+      await this.run(prefix + chunk.map(() => tuple).join(", "), chunk.flat());
     }
   }
 

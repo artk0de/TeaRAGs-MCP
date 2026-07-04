@@ -16,6 +16,7 @@ import { SQL_010_CG_RUN_STATS_UNRESOLVABLE } from "./010-cg-run-stats-unresolvab
 import { SQL_011_CG_RUN_STATS_NO_IN_PROJECT_DEF } from "./011-cg-run-stats-no-in-project-def.js";
 import { SQL_012_CG_SYMBOLS_ARITY_VISIBILITY } from "./012-cg-symbols-arity-visibility.js";
 import { SQL_013_CG_AMBIGUOUS_FANOUT } from "./013-cg-ambiguous-fanout.js";
+import { SQL_014_CG_METHOD_EDGES_SOURCE_PATH_INDEX } from "./014-cg-method-edges-source-path-index.js";
 
 export interface DatabaseMigration {
   filename: string;
@@ -36,4 +37,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "011-cg-run-stats-no-in-project-def.sql", sql: SQL_011_CG_RUN_STATS_NO_IN_PROJECT_DEF },
   { filename: "012-cg-symbols-arity-visibility.sql", sql: SQL_012_CG_SYMBOLS_ARITY_VISIBILITY },
   { filename: "013-cg-ambiguous-fanout.sql", sql: SQL_013_CG_AMBIGUOUS_FANOUT },
+  { filename: "014-cg-method-edges-source-path-index.sql", sql: SQL_014_CG_METHOD_EDGES_SOURCE_PATH_INDEX },
 ];
