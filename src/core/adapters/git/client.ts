@@ -236,6 +236,108 @@ export function createCatFileBatch(repoRoot: string): CatFileBatchReader {
   };
 }
 
+/**
+ * Persistent OID resolver over a single `git cat-file --batch-check` process
+ * (bd tea-rags-mcp-v2mlw). Resolves `<rev>` strings (e.g. `HEAD:src/a.ts`) to
+ * object OIDs — metadata only, no blob content transfer, so stdout stays
+ * line-based. ONE long-lived process resolves thousands of paths; unlike a
+ * per-path `git rev-parse` spawn it is immune to machine-wide EDR caps on
+ * FRESH process spawns (measured ~10 proc/s with zero parallel scaling, while
+ * persistent cat-file processes run ~2500 ops/s).
+ */
+export interface CatFileBatchCheckReader {
+  /** Resolve `<rev>` (e.g. `HEAD:src/a.ts`) to its object OID; null when the rev is missing. */
+  check: (rev: string) => Promise<string | null>;
+  /** End the underlying git process and reject any later checks. */
+  close: () => Promise<void>;
+}
+
+/**
+ * Protocol (FIFO — one response LINE per request, in order):
+ *   stdin:  `<rev>\n`
+ *   stdout: `<oid> <type> <size>\n`   (object exists → resolve the oid)
+ *           `<rev> missing\n`         (object absent → resolve null)
+ * Mirrors createCatFileBatch (lazy spawn, failAll on spawn error / unexpected
+ * close, closed/fatal guards, bounded close) minus content framing — there
+ * are no content bytes with --batch-check.
+ */
+export function createCatFileBatchCheck(repoRoot: string): CatFileBatchCheckReader {
+  interface PendingCheck {
+    resolve: (value: string | null) => void;
+    reject: (err: Error) => void;
+  }
+  const queue: PendingCheck[] = [];
+  let buf: Buffer = Buffer.alloc(0);
+  let closed = false;
+  let fatal: Error | null = null;
+  let child: ReturnType<typeof spawn> | null = null;
+
+  const failAll = (err: Error): void => {
+    fatal ??= err;
+    while (queue.length > 0) queue.shift()?.reject(err);
+  };
+
+  const onData = (chunk: Buffer): void => {
+    buf = buf.length === 0 ? chunk : Buffer.concat([buf, chunk]);
+    for (;;) {
+      const nl = buf.indexOf(0x0a); // '\n'
+      if (nl === -1) return; // response line not complete yet
+      const line = buf.toString("utf8", 0, nl);
+      buf = buf.subarray(nl + 1);
+      if (line.endsWith(" missing")) {
+        queue.shift()?.resolve(null);
+        continue;
+      }
+      const spaceIdx = line.indexOf(" ");
+      queue.shift()?.resolve(spaceIdx === -1 ? line : line.slice(0, spaceIdx));
+    }
+  };
+
+  // Spawn lazily on the first check — a run that resolves no OIDs never forks git.
+  const ensureChild = (): NonNullable<typeof child> => {
+    if (child) return child;
+    const c = spawn("git", ["cat-file", "--batch-check"], { cwd: repoRoot, stdio: ["pipe", "pipe", "ignore"] });
+    c.stdout?.on("data", onData);
+    c.on("error", (err) => {
+      failAll(err instanceof Error ? err : new Error(String(err)));
+    });
+    c.on("close", () => {
+      if (!closed) failAll(new Error("git cat-file --batch-check exited unexpectedly"));
+    });
+    child = c;
+    return c;
+  };
+
+  return {
+    check: async (rev: string): Promise<string | null> => {
+      if (closed) throw new Error("CatFileBatchCheckReader is closed");
+      if (fatal) throw fatal;
+      const c = ensureChild();
+      return new Promise<string | null>((resolve, reject) => {
+        queue.push({ resolve, reject });
+        c.stdin?.write(`${rev}\n`);
+      });
+    },
+    close: async (): Promise<void> => {
+      if (closed) return;
+      closed = true;
+      const c = child;
+      if (!c) return; // never spawned — nothing to tear down
+      await new Promise<void>((resolve) => {
+        const done = (): void => {
+          clearTimeout(timer);
+          resolve();
+        };
+        const timer = setTimeout(() => {
+          c.kill();
+        }, 2000);
+        c.once("close", done);
+        c.stdin?.end();
+      });
+    },
+  };
+}
+
 // ── Pathspec CLI operations ──────────────────────────────────────
 
 const PATHSPEC_BATCH_SIZE = 500;

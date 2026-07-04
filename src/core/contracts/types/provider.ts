@@ -250,6 +250,12 @@ export interface FileSignalOptions {
    * `structuredClone` boundary intact.
    */
   crossPass?: boolean;
+  /** Per-blame-pass instrumentation (bd tea-rags-mcp-v2mlw): invoked once per
+   *  populateBlameMap pass with cache hit/miss counters and wall duration;
+   *  the file phase binds it to the pipeline debug log ([GitEnrich] BLAME
+   *  line + "blame" stage). Never serialized: attached only on inline /
+   *  main-thread dispatch paths (precedent: onWalkStats). */
+  onBlameStats?: (stats: { files: number; hits: number; misses: number; durationMs: number }) => void;
 }
 
 /**

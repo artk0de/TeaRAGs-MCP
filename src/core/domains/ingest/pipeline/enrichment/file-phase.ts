@@ -199,6 +199,13 @@ export class FilePhase {
         .runFileBatch(ctx.provider, root, enrichPaths, {
           collectionName: this.coll || undefined,
           ignoreFilter: ctx.ignoreFilter ?? undefined,
+          // bd tea-rags-mcp-v2mlw: per-blame-pass telemetry → [GitEnrich] BLAME
+          // line + "blame" stage (inline-only dispatch path; never serialized —
+          // precedent: chunk-phase onWalkStats).
+          onBlameStats: (stats) => {
+            pipelineLog.step({ component: "GitEnrich" }, "BLAME", { provider: ctx.key, ...stats });
+            pipelineLog.addStageTime("blame", stats.durationMs);
+          },
         })
         .then(async (overlays) => {
           await this.applier.applyFileSignals(

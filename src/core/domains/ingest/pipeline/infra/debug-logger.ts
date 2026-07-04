@@ -111,7 +111,9 @@ export type PipelineStage =
   | "enrichment_prefetch"
   | "enrichGit"
   | "enrichApply"
-  | "chunkChurn";
+  | "chunkChurn"
+  // bd tea-rags-mcp-v2mlw: per-batch file-phase blame pass (cache hits + misses).
+  | "blame";
 
 export interface LogContext {
   component: string;
@@ -199,6 +201,7 @@ class StageProfiler {
       "enrichGit",
       "enrichApply",
       "chunkChurn",
+      "blame",
     ] as PipelineStage[]) {
       const data = this.stages.get(stage);
       if (data && data.totalMs > 0) {
@@ -546,6 +549,7 @@ DERIVED:
         enrichGit: 1, // Background, single-threaded
         enrichApply: 1, // Streaming setPayload calls
         chunkChurn: gitChunkConcurrency,
+        blame: gitChunkConcurrency, // Per-batch blame pass (cache misses spawn git blame)
       };
 
       // Column widths
@@ -569,6 +573,7 @@ DERIVED:
         "enrichGit",
         "enrichApply",
         "chunkChurn",
+        "blame",
       ] as PipelineStage[]) {
         const data = stageSummary[stage];
         if (data) {
