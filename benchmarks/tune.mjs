@@ -129,6 +129,7 @@ async function main() {
   console.log(
     `  ${c.dim}Model:${c.reset}         ${embeddingProviderType === "onnx" ? "jinaai/jina-embeddings-v2-base-code-fp16 (default)" : config.EMBEDDING_MODEL}`,
   );
+  console.log(`  ${c.dim}Git adapter:${c.reset}   ${process.env.GIT_ADAPTER ?? "git"}`);
   console.log();
 
   console.log(`${c.bold}Embedding calibration:${c.reset}`);

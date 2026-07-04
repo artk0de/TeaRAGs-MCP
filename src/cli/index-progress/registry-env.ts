@@ -12,6 +12,7 @@
  */
 
 import { EMBEDDED_MARKER, type CollectionEntry } from "../../core/api/public/index.js";
+import { replayTuningEnv } from "../registry-env-replay.js";
 
 /** Structural subset of CollectionRegistry used here — keeps tests fake-friendly. */
 export interface RegistryLookup {
@@ -105,8 +106,6 @@ export function resolveRegistryEnv(entry: CollectionEntry | null): Record<string
   // knobs instead of silently reverting to code defaults. Ambient process.env
   // still wins (the command merges process.env over these). Empty-string
   // values (hand-edited registry) are skipped like the endpoint fields above.
-  for (const [key, value] of Object.entries(entry.tuning ?? {})) {
-    if (value) env[key] = value;
-  }
+  replayTuningEnv(entry.tuning, env);
   return env;
 }

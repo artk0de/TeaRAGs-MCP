@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { parseAppConfig } from "../../bootstrap/config/index.js";
 import { createAppContext } from "../../bootstrap/factory.js";
 import { CollectionRegistry, resolveCollectionName, type CollectionEntry } from "../../core/api/public/index.js";
+import { replayTuningEnv } from "../registry-env-replay.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
 import { UpdateCheckService } from "../update-check/check-service.js";
 import { NpmRegistryClient } from "../update-check/registry-client.js";
@@ -105,12 +106,7 @@ export async function runPrime(input: { path?: string; project?: string }): Prom
   // without them. Unlike the embedding URL overrides, explicit shell env WINS
   // over the stored value — only unset keys are seeded (env > registry > code
   // default). Empty-string env values count as unset, matching envWithFallback.
-  for (const [key, value] of Object.entries(registryEntry?.tuning ?? {})) {
-    const current = process.env[key];
-    if ((current === undefined || current === "") && value !== "") {
-      process.env[key] = value;
-    }
-  }
+  replayTuningEnv(registryEntry?.tuning, process.env);
   const config = parseAppConfig();
   // Registry-first: prefer the registered qdrantUrl (the Qdrant the project was
   // indexed against). Fall back to heuristic only when the registry entry has

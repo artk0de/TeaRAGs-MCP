@@ -1,14 +1,20 @@
 import { spawn } from "node:child_process";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { CommandModule } from "yargs";
 
-import { InputValidationError } from "../../core/api/public/index.js";
+import { CollectionRegistry, InputValidationError } from "../../core/api/public/index.js";
 import { resolveTuneQdrantUrl } from "../qdrant-url-resolver.js";
+import { replayTuningEnv } from "../registry-env-replay.js";
 import { applyProjectDefaults } from "../registry-resolver.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function resolveDataDir(): string {
+  return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
+}
 
 interface TuneArgs {
   project?: string;
@@ -106,6 +112,14 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
         process.exit(1);
       }
       throw err;
+    }
+    // Registry tuning replay (env > registry > code default): seed the tuning
+    // snapshot the project was indexed with (GIT_ADAPTER et al.) into
+    // process.env so the spawned benchmark inherits it via buildEnv. Explicit
+    // shell env wins — replayTuningEnv only fills unset keys.
+    if (resolved.project) {
+      const entry = new CollectionRegistry(resolveDataDir()).findByName(resolved.project);
+      replayTuningEnv(entry?.tuning, process.env);
     }
     const resolution = await resolveTuneQdrantUrl(resolved["qdrant-url"]);
     if (resolution.url) {
