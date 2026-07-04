@@ -7,11 +7,14 @@ import { codegraphChunkNum } from "./helpers.js";
  * Method-level (chunk-scope) fan-in: how many call sites invoke this
  * symbol. The file-scope `FanInSignal` measures import-edge fan-in;
  * this one measures call-graph fan-in. `chunk` prefix matches project
- * convention (cf. `chunkSize`, `chunkDensity`).
+ * convention (cf. `chunkSize`, `chunkDensity`). The underlying
+ * `chunk.fanIn` payload value is a confidence-weighted sum (bd
+ * tea-rags-mcp-s5ato) and may be fractional — normalization is
+ * unaffected.
  */
 export class ChunkFanInSignal implements DerivedSignalDescriptor {
   readonly name = "chunkFanIn";
-  readonly description = "Normalized number of distinct call sites invoking this symbol (method-level fan-in)";
+  readonly description = "Normalized confidence-weighted sum of call sites invoking this symbol (method-level fan-in)";
   readonly sources = ["chunk.fanIn"];
   readonly defaultBound = 40;
   extract(raw: Record<string, unknown>, ctx?: ExtractContext): number {

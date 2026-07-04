@@ -649,6 +649,13 @@ export class DuckDbGraphClient implements GraphDbClient {
    * Stream the adjacency for the requested scope as `[source, target]`
    * pairs, fetched from DuckDB one result chunk (~2048 rows) at a time.
    *
+   * Method scope additionally carries the per-edge dispatch confidence as a
+   * third tuple element (bd tea-rags-mcp-s5ato) — legacy NULL rows coalesce
+   * to 1.0 — so the SCC/PageRank consumers can weight dynamic/cone fan-out
+   * edges without a second table pass. File edges have no confidence column;
+   * the file scope keeps yielding plain `[source, target]` pairs (weight
+   * defaults to 1 downstream).
+   *
    * TRUE streaming via `connection.stream` + `DuckDBResult.fetchChunk`: only
    * one chunk's rows are resident in JS at any moment. The prior
    * implementation routed through `queryAll` →
@@ -658,18 +665,23 @@ export class DuckDbGraphClient implements GraphDbClient {
    * Tarjan/PageRank working sets) was a multi-GB peak and a contributor to the
    * codegraph OOM. Chunked fetch keeps the read half bounded.
    */
-  async *streamAdjacency(scope: CycleScope): AsyncIterableIterator<[string, string]> {
+  async *streamAdjacency(scope: CycleScope): AsyncIterableIterator<[source: string, target: string, weight?: number]> {
     const sql =
       scope === "file"
         ? "SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_file"
-        : "SELECT source_symbol_id, target_symbol_id FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL";
+        : "SELECT source_symbol_id, target_symbol_id, COALESCE(confidence, 1.0) FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL";
     for await (const row of this.streamRows(sql)) {
       const source = row[0];
       const target = row[1];
       // Defensive: WHERE already excludes null targets for method scope, but
       // keep the guard so a null can never become the string "null".
       if (source === null || source === undefined || target === null || target === undefined) continue;
-      yield [String(source), String(target)];
+      if (scope === "file") {
+        yield [String(source), String(target)];
+      } else {
+        const weight = row[2];
+        yield [String(source), String(target), weight === null || weight === undefined ? 1 : Number(weight)];
+      }
     }
   }
 
@@ -1011,20 +1023,35 @@ export class DuckDbGraphClient implements GraphDbClient {
     return out;
   }
 
+  /**
+   * Confidence-weighted chunk fanIn (bd tea-rags-mcp-s5ato): SUM(confidence)
+   * over incoming method edges instead of COUNT(*). A dynamic/cone dispatch
+   * site that fans out to m candidates at confidence 1/m contributes ~1 call
+   * site in total — COUNT(*) previously inflated every fan-out target into a
+   * fake hub (m× per fan). Exact edges and legacy NULL-confidence rows weigh
+   * 1.0, so purely-exact graphs keep integer counts. The result is a FLOAT,
+   * rounded to 2 decimals at this boundary (see `roundEdgeWeightSum`).
+   */
   async getCalledByCount(symbolId: SymbolId): Promise<number> {
-    const rows = await this.queryAll<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM cg_symbols_edges_method WHERE target_symbol_id = ?",
+    const rows = await this.queryAll<{ n: number | null }>(
+      "SELECT SUM(COALESCE(confidence, 1.0)) AS n FROM cg_symbols_edges_method WHERE target_symbol_id = ?",
       [symbolId],
     );
-    return Number(rows[0]?.n ?? 0);
+    return roundEdgeWeightSum(Number(rows[0]?.n ?? 0));
   }
 
+  /**
+   * Confidence-weighted chunk fanOut — counterpart of `getCalledByCount`:
+   * SUM(confidence) over outgoing method edges, so a whole m-way fan-out
+   * (m edges at 1/m) counts as ONE outgoing call. Same NULL→1.0 legacy
+   * coalesce and 2-decimal boundary rounding.
+   */
   async getCallSiteCount(symbolId: SymbolId): Promise<number> {
-    const rows = await this.queryAll<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM cg_symbols_edges_method WHERE source_symbol_id = ?",
+    const rows = await this.queryAll<{ n: number | null }>(
+      "SELECT SUM(COALESCE(confidence, 1.0)) AS n FROM cg_symbols_edges_method WHERE source_symbol_id = ?",
       [symbolId],
     );
-    return Number(rows[0]?.n ?? 0);
+    return roundEdgeWeightSum(Number(rows[0]?.n ?? 0));
   }
 
   async hasData(): Promise<boolean> {
@@ -1295,4 +1322,17 @@ function lastNameSegment(symbol: string): string {
  */
 function escapeLikeLiteral(literal: string): string {
   return literal.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+/**
+ * Boundary rounding for confidence-weighted edge sums (bd tea-rags-mcp-s5ato).
+ * The `confidence` column is REAL (float32) and SUM accumulates in DOUBLE, so
+ * three 1/3-confidence edges yield 1.0000000298… — round to 2 decimals so
+ * float noise never leaks into Qdrant payloads while fractional weights
+ * (e.g. fanIn 1.25) survive intact. Deliberately NOT Math.round to integer:
+ * consumers (chunk fanIn/fanOut payload signals, derived-signal normalization,
+ * range filters) all tolerate non-integers, and the fraction IS the signal.
+ */
+function roundEdgeWeightSum(sum: number): number {
+  return Math.round(sum * 100) / 100;
 }

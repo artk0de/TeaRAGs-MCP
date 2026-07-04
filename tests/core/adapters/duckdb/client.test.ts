@@ -741,6 +741,116 @@ describe("DuckDbGraphClient", () => {
     expect(await client.getCalledByCount("A.x")).toBe(1);
   });
 
+  // bd tea-rags-mcp-s5ato — confidence-weighted chunk fanIn/fanOut. A dynamic
+  // dispatch site fanning out to m candidates at confidence 1/m must
+  // contribute ~1 in total, not m: COUNT(*) previously inflated every
+  // fan-out target into a fake hub (a 16-edge fan-out counted 16×).
+  it("getCalledByCount / getCallSiteCount sum per-edge confidence instead of counting rows", async () => {
+    await client.upsertFile(
+      { relPath: "src/exact.ts", language: "typescript" },
+      {
+        fileEdges: [],
+        methodEdges: [
+          // Exact edge — confidence omitted → persisted as 1.0.
+          {
+            sourceSymbolId: "caller1",
+            targetSymbolId: "B#target",
+            targetRelPath: "src/b.ts",
+            callExpression: "b.target()",
+          },
+        ],
+      },
+    );
+    await client.upsertFile(
+      { relPath: "src/dynamic.ts", language: "typescript" },
+      {
+        fileEdges: [],
+        methodEdges: [
+          // 4-way dynamic fan-out at confidence 0.25 each (exact in the
+          // REAL/float32 column); one candidate edge hits B#target.
+          {
+            sourceSymbolId: "caller2",
+            targetSymbolId: "B#target",
+            targetRelPath: "src/b.ts",
+            callExpression: "obj.target()",
+            edgeKind: "dynamic",
+            confidence: 0.25,
+          },
+          {
+            sourceSymbolId: "caller2",
+            targetSymbolId: "X1#target",
+            targetRelPath: "src/x1.ts",
+            callExpression: "obj.target()",
+            edgeKind: "dynamic",
+            confidence: 0.25,
+          },
+          {
+            sourceSymbolId: "caller2",
+            targetSymbolId: "X2#target",
+            targetRelPath: "src/x2.ts",
+            callExpression: "obj.target()",
+            edgeKind: "dynamic",
+            confidence: 0.25,
+          },
+          {
+            sourceSymbolId: "caller2",
+            targetSymbolId: "X3#target",
+            targetRelPath: "src/x3.ts",
+            callExpression: "obj.target()",
+            edgeKind: "dynamic",
+            confidence: 0.25,
+          },
+        ],
+      },
+    );
+    // fanIn(B#target) = 1.0 (exact) + 0.25 (one fan-out candidate) — NOT 2.
+    // Boundary decision pin: the weighted sum stays FRACTIONAL (rounded to
+    // 2 decimals at the client boundary), it is not coerced to an integer.
+    expect(await client.getCalledByCount("B#target")).toBe(1.25);
+    // fanOut(caller2) = 4 × 0.25 = 1.0 — the whole fan-out is ONE call site.
+    expect(await client.getCallSiteCount("caller2")).toBe(1);
+    expect(await client.getCallSiteCount("caller1")).toBe(1);
+  });
+
+  it("weighted counts round to 2 decimals at the client boundary (float-noise pin)", async () => {
+    // Three independent 3-way fan-outs each land one candidate edge on Y#t
+    // at confidence 1/3. float32 storage + DOUBLE summation yields
+    // 1.0000000298..., which must surface as exactly 1 — float noise never
+    // leaks into payloads.
+    const third = 1 / 3;
+    for (const src of ["f1", "f2", "f3"]) {
+      await client.upsertFile(
+        { relPath: `src/${src}.ts`, language: "typescript" },
+        {
+          fileEdges: [],
+          methodEdges: [
+            {
+              sourceSymbolId: src,
+              targetSymbolId: "Y#t",
+              targetRelPath: "src/y.ts",
+              callExpression: "y.t()",
+              edgeKind: "dynamic",
+              confidence: third,
+            },
+          ],
+        },
+      );
+    }
+    expect(await client.getCalledByCount("Y#t")).toBe(1);
+  });
+
+  it("legacy rows with NULL confidence count as weight 1.0", async () => {
+    // Pre-006 rows (or any row written without confidence) must keep the
+    // old COUNT semantics: one edge = one call site.
+    await client.exec(
+      "INSERT INTO cg_symbols_edges_method " +
+        "(source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, edge_kind, confidence) " +
+        "VALUES ('legacy', 'a.ts', 'L#t', 'b.ts', 'l.t()', 'exact', NULL)",
+    );
+    expect(await client.getCalledByCount("L#t")).toBe(1);
+    expect(await client.getCallSiteCount("legacy")).toBe(1);
+  });
+
   // Codegraph daemon read path opens the live-version DuckDB file with
   // access_mode=READ_ONLY so multiple MCP processes can query
   // concurrently while one daemon holds the RW lock. A READ_ONLY

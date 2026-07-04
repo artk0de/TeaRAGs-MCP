@@ -100,18 +100,25 @@ export const CODEGRAPH_SYMBOLS_CHUNK_SIGNALS: PayloadSignalDescriptor[] = [
     // Method-level fan-in: incoming edges in the call graph. Named to
     // match knowledge-base methodology (Henry & Kafura: fan-in/fan-out
     // apply at method, class, and namespace levels).
+    // Confidence-weighted (bd tea-rags-mcp-s5ato): each edge contributes its
+    // dispatch confidence, not 1 — an m-way dynamic/cone fan-out at 1/m adds
+    // ~1 in total, so fan-out targets no longer inflate into fake hubs. May
+    // be FRACTIONAL (e.g. 1.25); exact edges keep integer counts.
     key: "codegraph.chunk.fanIn",
     type: "number",
-    description: "Number of distinct call sites invoking this symbol",
+    description:
+      "Confidence-weighted sum of call sites invoking this symbol (exact edge = 1, dynamic fan-out edge = its dispatch confidence)",
     stats: {
       labels: { p25: "unused", p50: "typical", p75: "frequent", p95: "central" },
       chunkTypeFilter: "function",
     },
   },
   {
+    // Confidence-weighted like chunk.fanIn: a whole m-way fan-out counts as
+    // ONE outgoing call (m edges × 1/m), not m. May be fractional.
     key: "codegraph.chunk.fanOut",
     type: "number",
-    description: "Number of outgoing calls from this symbol",
+    description: "Confidence-weighted sum of outgoing calls from this symbol (a dynamic fan-out counts as one call)",
     stats: {
       labels: { p25: "leaf", p50: "typical", p75: "orchestrator", p95: "god-method" },
       chunkTypeFilter: "function",

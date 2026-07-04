@@ -1096,14 +1096,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
     try {
       const fileAdj = await collectAdjacency(graphDb, "file");
-      const fileSccs = tarjanScc(fileAdj);
+      const fileSccs = tarjanScc(fileAdj.adjacency);
       await graphDb.replaceCycles("file", fileSccs);
 
       const methodAdj = await collectAdjacency(graphDb, "method");
-      const methodSccs = tarjanScc(methodAdj);
+      const methodSccs = tarjanScc(methodAdj.adjacency);
       await graphDb.replaceCycles("method", methodSccs);
 
-      const rankResult = pageRank(methodAdj);
+      // Tarjan stays unweighted (cycles are structural); PageRank is
+      // confidence-weighted (bd tea-rags-mcp-s5ato) — mirrors the daemon's
+      // computeAndPersistCyclesAndSignals in adapters/duckdb/daemon/server.ts.
+      const rankResult = pageRank(methodAdj.adjacency, { weights: methodAdj.edgeWeights });
       await graphDb.replacePageRanks(rankResult.ranks);
     } catch (err) {
       // Non-fatal: data is consistent up to here, only metrics tables
@@ -1895,6 +1898,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // chunks from before codegraph wiring, or non-TS files), skip.
         const symbolId = this.resolveChunkSymbolId(options?.collectionName, relPath, entry.startLine, entry.endLine);
         if (!symbolId) continue;
+        // Confidence-weighted sums (bd tea-rags-mcp-s5ato) — may be
+        // fractional when dynamic/cone fan-out edges are involved; exact
+        // edges keep integer counts.
         const fanIn = await graphDb.getCalledByCount(symbolId);
         const fanOut = await graphDb.getCallSiteCount(symbolId);
         // Slice 2 / B3 — per-symbol PageRank from cg_symbols_metrics
@@ -2390,16 +2396,30 @@ function extensionOf(path: string): string {
  * compact `Map<string, string[]>` shape that `tarjanScc` and
  * `pageRank` consume. Differs from the legacy `listAdjacency` only in
  * that the adapter no longer pre-bucketed the rows; we build the Map
- * exactly once here.
+ * exactly once here. The per-edge confidence (third stream element,
+ * method scope only — bd tea-rags-mcp-s5ato) is bucketed into an
+ * index-aligned weight map for the weighted PageRank pass; absent
+ * weights (file scope, legacy rows) default to 1. Mirrors the daemon
+ * copy in `adapters/duckdb/daemon/server.ts`.
  */
-async function collectAdjacency(graphDb: GraphDbClient, scope: "file" | "method"): Promise<Map<string, string[]>> {
-  const adj = new Map<string, string[]>();
-  for await (const [source, target] of graphDb.streamAdjacency(scope)) {
-    const list = adj.get(source);
-    if (list) list.push(target);
-    else adj.set(source, [target]);
+async function collectAdjacency(
+  graphDb: GraphDbClient,
+  scope: "file" | "method",
+): Promise<{ adjacency: Map<string, string[]>; edgeWeights: Map<string, number[]> }> {
+  const adjacency = new Map<string, string[]>();
+  const edgeWeights = new Map<string, number[]>();
+  for await (const [source, target, weight] of graphDb.streamAdjacency(scope)) {
+    const list = adjacency.get(source);
+    const wList = edgeWeights.get(source);
+    if (list && wList) {
+      list.push(target);
+      wList.push(weight ?? 1);
+    } else {
+      adjacency.set(source, [target]);
+      edgeWeights.set(source, [weight ?? 1]);
+    }
   }
-  return adj;
+  return { adjacency, edgeWeights };
 }
 
 /**

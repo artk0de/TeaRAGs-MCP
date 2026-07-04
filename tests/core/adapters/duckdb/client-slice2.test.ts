@@ -294,12 +294,51 @@ describe("DuckDbGraphClient — slice 2 streaming primitives", () => {
         ],
       },
     );
-    const pairs: [string, string][] = [];
+    const pairs: [string, string, number?][] = [];
     for await (const pair of client.streamAdjacency("method")) {
       pairs.push(pair);
     }
     expect(pairs.length).toBe(1);
-    expect(pairs[0]).toEqual(["A.x", "B.y"]);
+    // Method scope carries the per-edge confidence as third element
+    // (bd tea-rags-mcp-s5ato); upsertFile defaults omitted confidence to 1.
+    expect(pairs[0]).toEqual(["A.x", "B.y", 1]);
+  });
+
+  // bd tea-rags-mcp-s5ato — method-scope adjacency carries edge confidence
+  // so the daemon/provider PageRank pass can weight dynamic fan-out edges.
+  it("streamAdjacency yields per-edge confidence as edge weight for the method scope", async () => {
+    client = new DuckDbGraphClient({ path: dbPath });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    await client.upsertFile(
+      { relPath: "src/a.ts", language: "typescript" },
+      {
+        fileEdges: [],
+        methodEdges: [
+          // Exact edge (no confidence → 1) + dynamic candidate at 0.25
+          // (exact in the REAL/float32 column).
+          { sourceSymbolId: "A#run", targetSymbolId: "B#x", targetRelPath: "src/b.ts", callExpression: "b.x()" },
+          {
+            sourceSymbolId: "A#run",
+            targetSymbolId: "C#y",
+            targetRelPath: "src/c.ts",
+            callExpression: "obj.y()",
+            edgeKind: "dynamic",
+            confidence: 0.25,
+          },
+        ],
+      },
+    );
+    const triples: [string, string, number?][] = [];
+    for await (const t of client.streamAdjacency("method")) {
+      triples.push(t);
+    }
+    expect(triples).toEqual(
+      expect.arrayContaining([
+        ["A#run", "B#x", 1],
+        ["A#run", "C#y", 0.25],
+      ]),
+    );
   });
 
   it("streamAdjacency is consistent with listAdjacency for the same data", async () => {

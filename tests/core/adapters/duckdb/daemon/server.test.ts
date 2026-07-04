@@ -91,6 +91,53 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 
+  // bd tea-rags-mcp-s5ato — the daemon-side compute must weight PageRank by
+  // per-edge confidence: a 0.9-confidence dynamic edge routes 9× the rank
+  // mass of its 0.1 sibling, so the strong target must out-rank the weak one
+  // (unweighted PageRank would rank them identically).
+  it("computeAndPersistCyclesAndSignals weights PageRank by per-edge confidence", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_weighted_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: {
+          fileEdges: [],
+          methodEdges: [
+            {
+              sourceSymbolId: "A#run",
+              targetSymbolId: "B#hot",
+              targetRelPath: "b.ts",
+              callExpression: "x.hot()",
+              edgeKind: "dynamic",
+              confidence: 0.9,
+            },
+            {
+              sourceSymbolId: "A#run",
+              targetSymbolId: "C#cold",
+              targetRelPath: "c.ts",
+              callExpression: "x.cold()",
+              edgeKind: "dynamic",
+              confidence: 0.1,
+            },
+          ],
+        },
+      },
+    });
+    expect(
+      (await server.handle({ id: 2, op: "computeAndPersistCyclesAndSignals", params: { collection: c } })).ok,
+    ).toBe(true);
+    const hot = await server.handle({ id: 3, op: "getPageRank", params: { collection: c, symbolId: "B#hot" } });
+    const cold = await server.handle({ id: 4, op: "getPageRank", params: { collection: c, symbolId: "C#cold" } });
+    expect(hot.ok).toBe(true);
+    expect(cold.ok).toBe(true);
+    expect((hot as { result: number }).result).toBeGreaterThan((cold as { result: number }).result);
+    await pool.closeAll();
+  });
+
   it("findCycles op forwards pathPattern so the daemon scopes the result by file path", async () => {
     const { server, pool } = makeServer();
     const c = "code_cyc_v1";

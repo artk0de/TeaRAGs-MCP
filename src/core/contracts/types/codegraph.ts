@@ -1059,7 +1059,18 @@ export interface GraphDbClient {
    * are simply absent from the returned map.
    */
   getCalleeEdges: (symbolIds: SymbolId[]) => Promise<Map<SymbolId, SymbolId[]>>;
+  /**
+   * Confidence-weighted chunk fanIn (bd tea-rags-mcp-s5ato):
+   * SUM(confidence) over incoming method edges — an m-way dynamic/cone
+   * fan-out at confidence 1/m contributes ~1 in total, not m. May be
+   * FRACTIONAL (e.g. 1.25); rounded to 2 decimals at the adapter boundary.
+   */
   getCalledByCount: (symbolId: SymbolId) => Promise<number>;
+  /**
+   * Confidence-weighted chunk fanOut — SUM(confidence) over outgoing
+   * method edges (a whole m-way fan-out counts as ONE outgoing call).
+   * Same fractional/rounding semantics as `getCalledByCount`.
+   */
   getCallSiteCount: (symbolId: SymbolId) => Promise<number>;
 
   // ── Class hierarchy (bd tea-rags-mcp-f10y) ──
@@ -1174,8 +1185,14 @@ export interface GraphDbClient {
    * domain layer freedom to bucket into a compact id-keyed structure
    * (e.g. `Map<number, number[]>` with a separate id-table) instead of
    * paying the string-keyed `Map<string, string[]>` overhead twice.
+   *
+   * Method scope also yields the per-edge dispatch confidence as an
+   * optional third element (bd tea-rags-mcp-s5ato; legacy NULL rows
+   * coalesce to 1.0) so PageRank can weight dynamic/cone fan-out edges.
+   * File edges carry no confidence — consumers default a missing weight
+   * to 1.
    */
-  streamAdjacency: (scope: CycleScope) => AsyncIterableIterator<[string, string]>;
+  streamAdjacency: (scope: CycleScope) => AsyncIterableIterator<[source: string, target: string, weight?: number]>;
 
   /**
    * Flush the WAL to the main database file. Slice 2 streaming

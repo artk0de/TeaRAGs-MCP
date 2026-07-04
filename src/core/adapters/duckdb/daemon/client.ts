@@ -333,13 +333,13 @@ export class DaemonGraphDbClient implements GraphDbClient {
   // inside the daemon (computeAndPersistCyclesAndSignals), so streaming the
   // adjacency over IPC is never correct. Throws on first iteration.
 
-  streamAdjacency(_scope: CycleScope): AsyncIterableIterator<[string, string]> {
+  streamAdjacency(_scope: CycleScope): AsyncIterableIterator<[source: string, target: string, weight?: number]> {
     const error = new UnsupportedDaemonReadError("streamAdjacency");
     return {
       [Symbol.asyncIterator]() {
         return this;
       },
-      async next(): Promise<IteratorResult<[string, string]>> {
+      async next(): Promise<IteratorResult<[source: string, target: string, weight?: number]>> {
         throw error;
       },
     };
