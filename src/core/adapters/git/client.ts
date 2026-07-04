@@ -196,6 +196,18 @@ export function createCatFileBatch(repoRoot: string): CatFileBatchReader {
     if (child) return child;
     const c = spawn("git", ["cat-file", "--batch"], { cwd: repoRoot, stdio: ["pipe", "pipe", "ignore"] });
     c.stdout?.on("data", onData);
+    c.stdin?.on("error", (err) => {
+      // Writing to a git process that has already exited (a non-repo dir exits
+      // immediately; a process can also die mid-walk) surfaces EPIPE/ECONNRESET
+      // asynchronously on the stdin pipe. The child 'close'/'error' handlers
+      // already fail the pending reads with the authoritative reason, so swallow
+      // the broken-pipe symptom — otherwise it escapes as an uncaught exception
+      // and fails the whole run (seen on Node 22 in CI). Non-benign stdin errors
+      // still fail loudly.
+      const { code } = err as NodeJS.ErrnoException;
+      if (code === "EPIPE" || code === "ECONNRESET") return;
+      failAll(err instanceof Error ? err : new Error(String(err)));
+    });
     c.on("error", (err) => {
       failAll(err instanceof Error ? err : new Error(String(err)));
     });
@@ -298,6 +310,18 @@ export function createCatFileBatchCheck(repoRoot: string): CatFileBatchCheckRead
     if (child) return child;
     const c = spawn("git", ["cat-file", "--batch-check"], { cwd: repoRoot, stdio: ["pipe", "pipe", "ignore"] });
     c.stdout?.on("data", onData);
+    c.stdin?.on("error", (err) => {
+      // Writing to a git process that has already exited (a non-repo dir exits
+      // immediately; a process can also die mid-walk) surfaces EPIPE/ECONNRESET
+      // asynchronously on the stdin pipe. The child 'close'/'error' handlers
+      // already fail the pending reads with the authoritative reason, so swallow
+      // the broken-pipe symptom — otherwise it escapes as an uncaught exception
+      // and fails the whole run (seen on Node 22 in CI). Non-benign stdin errors
+      // still fail loudly.
+      const { code } = err as NodeJS.ErrnoException;
+      if (code === "EPIPE" || code === "ECONNRESET") return;
+      failAll(err instanceof Error ? err : new Error(String(err)));
+    });
     c.on("error", (err) => {
       failAll(err instanceof Error ? err : new Error(String(err)));
     });
