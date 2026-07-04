@@ -3,7 +3,10 @@
  *
  * The allowlist mirrors the tuning env vars read by bootstrap/config/parse.ts
  * (canonical names AND deprecated aliases). Only vars actually SET in the
- * given env are captured — no code defaults materialized.
+ * given env are captured — no code defaults materialized — with ONE deliberate
+ * exception: GIT_ADAPTER is always pinned at its resolved value (spec
+ * decision: adapter choice is per-project explicit, ambient env must not
+ * silently flip it).
  */
 
 import { describe, expect, it } from "vitest";
@@ -11,8 +14,8 @@ import { describe, expect, it } from "vitest";
 import { captureTuningEnv, TUNING_ENV_ALLOWLIST } from "../../../../src/core/infra/registry/tuning-env.js";
 
 describe("captureTuningEnv", () => {
-  it("returns undefined for an env with no allowlisted vars set (no defaults materialized)", () => {
-    expect(captureTuningEnv({})).toBeUndefined();
+  it("pins only GIT_ADAPTER for an env with no allowlisted vars set (no other defaults materialized)", () => {
+    expect(captureTuningEnv({})).toEqual({ GIT_ADAPTER: "git" });
   });
 
   it("captures only allowlisted vars that are set", () => {
@@ -32,6 +35,7 @@ describe("captureTuningEnv", () => {
       TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5",
       INGEST_TUNE_FILE_CONCURRENCY: "25",
       QDRANT_TUNE_UPSERT_BATCH_SIZE: "512",
+      GIT_ADAPTER: "git", // force-pinned resolved default
     });
   });
 
@@ -55,6 +59,7 @@ describe("captureTuningEnv", () => {
       QDRANT_UPSERT_BATCH_SIZE: "256",
       CODE_CHUNK_SIZE: "900",
       CODE_CHUNK_OVERLAP: "100",
+      GIT_ADAPTER: "git", // force-pinned resolved default
     });
   });
 
@@ -64,7 +69,7 @@ describe("captureTuningEnv", () => {
         TRAJECTORY_GIT_CHUNK_CONCURRENCY: "",
         INGEST_TUNE_IO_CONCURRENCY: "40",
       }),
-    ).toEqual({ INGEST_TUNE_IO_CONCURRENCY: "40" });
+    ).toEqual({ INGEST_TUNE_IO_CONCURRENCY: "40", GIT_ADAPTER: "git" });
   });
 
   it("defaults to process.env when no env is given", () => {
@@ -76,6 +81,20 @@ describe("captureTuningEnv", () => {
       if (saved === undefined) delete process.env.TRAJECTORY_GIT_SESSION_GAP_MINUTES;
       else process.env.TRAJECTORY_GIT_SESSION_GAP_MINUTES = saved;
     }
+  });
+
+  describe("GIT_ADAPTER force-pin (spec: adapter choice is pinned per-project explicitly)", () => {
+    it("captures an explicit GIT_ADAPTER value verbatim", () => {
+      expect(captureTuningEnv({ GIT_ADAPTER: "es-git" })).toEqual({ GIT_ADAPTER: "es-git" });
+    });
+
+    it("pins the resolved default when GIT_ADAPTER is empty-string (unset semantics)", () => {
+      expect(captureTuningEnv({ GIT_ADAPTER: "" })).toEqual({ GIT_ADAPTER: "git" });
+    });
+
+    it("is allowlisted so an exported GIT_ADAPTER is captured by the generic loop", () => {
+      expect(TUNING_ENV_ALLOWLIST).toContain("GIT_ADAPTER");
+    });
   });
 
   describe("TUNING_ENV_ALLOWLIST", () => {

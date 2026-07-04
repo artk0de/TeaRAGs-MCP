@@ -7,7 +7,9 @@
  * replayed verbatim (envWithFallback resolves the same effective value).
  *
  * At index time the pipeline records the subset actually SET in the indexing
- * process env into `CollectionEntry.tuning`. Consumers launched in a fresh
+ * process env into `CollectionEntry.tuning` (GIT_ADAPTER excepted — always
+ * recorded at its resolved value, see `captureTuningEnv`). Consumers launched
+ * in a fresh
  * shell (CLI `index-codebase` worker, prime) re-apply the map registry-first
  * before building config, with explicit process env winning over the stored
  * value: env > registry > code default. Same mechanism as `codegraphEnabled`.
@@ -17,6 +19,8 @@
  * CODEGRAPH_ENABLED), server/transport knobs, and secrets (API keys).
  */
 export const TUNING_ENV_ALLOWLIST: readonly string[] = [
+  // vcs (parse.ts `vcs` section)
+  "GIT_ADAPTER",
   // trajectoryGit (parse.ts `trajectoryGit` section)
   "TRAJECTORY_GIT_ENABLED",
   "CODE_ENABLE_GIT_METADATA",
@@ -98,15 +102,21 @@ export const TUNING_ENV_ALLOWLIST: readonly string[] = [
 /**
  * Snapshot the allowlisted tuning vars actually SET in the given env.
  * Empty-string values are skipped — `envWithFallback` treats them as unset,
- * so recording them would materialize nothing. Returns undefined when no
- * allowlisted var is set, keeping the registry entry byte-identical to the
- * pre-tuning shape for untuned runs.
+ * so recording them would materialize nothing.
+ *
+ * Exception: GIT_ADAPTER is ALWAYS included at its RESOLVED value, even when
+ * the env var is unset (spec decision: the adapter choice is pinned
+ * per-project explicitly; ambient env must not silently flip it on a later
+ * run). Every other key keeps the only-when-set behavior, so the snapshot is
+ * never undefined anymore — it carries at least the pinned GIT_ADAPTER.
  */
-export function captureTuningEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
+export function captureTuningEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const tuning: Record<string, string> = {};
   for (const key of TUNING_ENV_ALLOWLIST) {
     const value = env[key];
     if (value !== undefined && value !== "") tuning[key] = value;
   }
-  return Object.keys(tuning).length > 0 ? tuning : undefined;
+  // Deliberate force-pin: resolved default materialized when unset/empty.
+  tuning.GIT_ADAPTER ??= "git";
+  return tuning;
 }

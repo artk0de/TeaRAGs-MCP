@@ -47,6 +47,16 @@ export interface TrajectoryGitConfig {
   sessionGapMinutes: number;
 }
 
+/**
+ * VCS history-access adapter selection (GIT_ADAPTER env var).
+ * Literal union kept inline — contracts/ imports nothing from core/;
+ * `GitAdapterKind` in adapters/vcs stays assignable via structural typing.
+ */
+export interface VcsConfig {
+  /** "git" = CLI subprocess adapter (default), "es-git" = in-process libgit2. */
+  adapter: "git" | "es-git";
+}
+
 export interface QdrantTuneConfig {
   upsertBatchSize: number;
   upsertFlushIntervalMs: number;

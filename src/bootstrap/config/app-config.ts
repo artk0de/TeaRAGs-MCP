@@ -7,6 +7,7 @@ import { ConfigNotInitializedError } from "../errors.js";
 import { DEFAULT_CODE_EXTENSIONS, DEFAULT_IGNORE_PATTERNS } from "./defaults.js";
 import { parseAppConfigZod } from "./parse.js";
 import { appDataDir, daemonPidFile, daemonSocketPath, logsDir, modelsDir, snapshotsDir } from "./paths.js";
+import type { VcsConfig } from "./schemas.js";
 
 export interface ResolvedPaths {
   appData: string;
@@ -27,6 +28,7 @@ export interface AppConfig {
   promptsConfigFile: string;
   ingestCode: IngestCodeConfig;
   trajectoryIngest: TrajectoryIngestConfig;
+  vcs: VcsConfig;
   paths: ResolvedPaths;
 }
 
@@ -73,6 +75,7 @@ export function parseAppConfig(): AppConfig {
       maxChunksPerFile: undefined,
       maxTotalChunks: undefined,
     },
+    vcs: zodConfig.vcs,
     paths,
     trajectoryIngest: {
       enableGitMetadata: zodConfig.trajectoryGit.enabled,

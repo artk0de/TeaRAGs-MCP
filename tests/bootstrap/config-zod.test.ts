@@ -100,6 +100,8 @@ describe("parseAppConfigZod", () => {
       "DELETE_CONCURRENCY",
       "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS",
       "DELETE_FLUSH_TIMEOUT_MS",
+      // vcs
+      "GIT_ADAPTER",
       // codegraph
       "CODEGRAPH_ENABLED",
       "CODEGRAPH_DB_PATH",
@@ -163,6 +165,30 @@ describe("parseAppConfigZod", () => {
       const { codegraph } = parseAppConfigZod();
 
       expect(codegraph.enabled).toBe(true);
+    });
+  });
+
+  describe("vcs (GIT_ADAPTER)", () => {
+    it("defaults adapter to git when GIT_ADAPTER is unset", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { vcs } = parseAppConfigZod();
+
+      expect(vcs.adapter).toBe("git");
+    });
+
+    it("GIT_ADAPTER=es-git selects the es-git adapter", async () => {
+      process.env.GIT_ADAPTER = "es-git";
+      const { parseAppConfigZod } = await freshImport();
+      const { vcs } = parseAppConfigZod();
+
+      expect(vcs.adapter).toBe("es-git");
+    });
+
+    it("throws readable error for an unknown adapter value", async () => {
+      process.env.GIT_ADAPTER = "svn";
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(() => parseAppConfigZod()).toThrow(/Invalid value.*for configuration field "vcs"/i);
     });
   });
 

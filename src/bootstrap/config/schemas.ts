@@ -125,6 +125,15 @@ export const trajectoryGitSchema = z.object({
   sessionGapMinutes: intWithDefault(30),
 });
 
+export const vcsSchema = z.object({
+  /**
+   * Git history access engine (GIT_ADAPTER): "git" = CLI subprocess
+   * (default), "es-git" = in-process libgit2 bindings. Unknown values are a
+   * config error — the factory has no silent fallback (fail-loud by design).
+   */
+  adapter: z.enum(["git", "es-git"]).default("git"),
+});
+
 export const codegraphSchema = z.object({
   /**
    * Master switch for the codegraph trajectory family. Beta — disabled by
@@ -234,5 +243,6 @@ export type {
   EmbeddingTuneConfig,
   EmbeddingConfig,
   TrajectoryGitConfig,
+  VcsConfig,
   QdrantTuneConfig,
 } from "../../core/contracts/types/config.js";

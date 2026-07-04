@@ -6,12 +6,14 @@ import {
   ingestSchema,
   qdrantTuneSchema,
   trajectoryGitSchema,
+  vcsSchema,
   type CodegraphConfig,
   type CoreConfig,
   type EmbeddingConfig,
   type IngestConfig,
   type QdrantTuneConfig,
   type TrajectoryGitConfig,
+  type VcsConfig,
 } from "./schemas.js";
 import { envWithFallback, type DeprecationNotice } from "./utils.js";
 
@@ -138,6 +140,10 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     sessionGapMinutes: env("TRAJECTORY_GIT_SESSION_GAP_MINUTES"),
   };
 
+  const vcs = {
+    adapter: env("GIT_ADAPTER"),
+  };
+
   const codegraph = {
     enabled: env("CODEGRAPH_ENABLED"),
     dbPath: env("CODEGRAPH_DB_PATH"),
@@ -172,6 +178,7 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     embedding,
     ingest,
     trajectoryGit,
+    vcs,
     codegraph,
     qdrantTune,
     userSetBatchSize,
@@ -186,6 +193,7 @@ export function parseAppConfigZod(): {
   embedding: EmbeddingConfig;
   ingest: IngestConfig;
   trajectoryGit: TrajectoryGitConfig;
+  vcs: VcsConfig;
   codegraph: CodegraphConfig;
   qdrantTune: QdrantTuneConfig;
   deprecations: DeprecationNotice[];
@@ -205,6 +213,7 @@ export function parseAppConfigZod(): {
   const embedding = validateSchema(embeddingSchema, inputs.embedding, "embedding");
   const ingest = validateSchema(ingestSchema, inputs.ingest, "ingest");
   const trajectoryGit = validateSchema(trajectoryGitSchema, inputs.trajectoryGit, "trajectoryGit");
+  const vcs = validateSchema(vcsSchema, inputs.vcs, "vcs");
   const codegraph = validateSchema(codegraphSchema, inputs.codegraph, "codegraph");
   const qdrantTune = validateSchema(qdrantTuneSchema, inputs.qdrantTune, "qdrantTune");
 
@@ -219,6 +228,7 @@ export function parseAppConfigZod(): {
     embedding,
     ingest,
     trajectoryGit,
+    vcs,
     codegraph,
     qdrantTune,
     deprecations,

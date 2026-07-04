@@ -175,9 +175,11 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
     }
   });
 
-  it("omits tuning when no allowlisted var is set (no defaults materialized)", async () => {
+  it("pins only GIT_ADAPTER when no allowlisted var is set (no other defaults materialized)", async () => {
     // Clear every allowlisted var (vitest.setup.ts sets CHUNKER_POOL_SIZE=1)
-    // so the entry reflects a genuinely untuned indexing process.
+    // so the entry reflects a genuinely untuned indexing process. GIT_ADAPTER
+    // is still force-pinned at its resolved default (spec decision: adapter
+    // choice is per-project explicit; ambient env must not silently flip it).
     const saved = new Map<string, string | undefined>();
     for (const key of TUNING_ENV_ALLOWLIST) {
       saved.set(key, process.env[key]);
@@ -190,7 +192,7 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
 
       const entry = registry.get(status.collectionName!);
       expect(entry).not.toBeNull();
-      expect(entry!.tuning).toBeUndefined();
+      expect(entry!.tuning).toEqual({ GIT_ADAPTER: "git" });
     } finally {
       for (const [key, value] of saved) {
         if (value === undefined) delete process.env[key];
