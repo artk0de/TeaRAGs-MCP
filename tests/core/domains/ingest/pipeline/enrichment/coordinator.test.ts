@@ -371,6 +371,56 @@ describe("EnrichmentCoordinator", () => {
     await coord.awaitCompletion("test-col");
   });
 
+  // bd tea-rags-mcp-7gnre — double-walk: a batch whose file work is still in
+  // flight when the post-flush snapshot is taken used to be walked TWICE (once
+  // by the mega-walk, once by its own gated dispatch). Coverage must be marked
+  // at batch ARRIVAL so the post-flush snapshot excludes queued/in-flight files.
+  it("does not double-walk a file whose file work is still in flight at startChunkEnrichment (bd tea-rags-mcp-7gnre)", async () => {
+    let releaseFile!: () => void;
+    const fileBlocked = new Promise<Map<string, Record<string, unknown>>>((resolve) => {
+      releaseFile = () => {
+        resolve(new Map([["src/a.ts", { commitCount: 1 }]]));
+      };
+    });
+    const provider: EnrichmentProvider = {
+      key: "git",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockReturnValue(fileBlocked),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+    const coord = new EnrichmentCoordinator(mockQdrant, provider);
+    coord.beginRun("/repo", "test-col");
+    coord.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 5 } } as any,
+    ]);
+
+    // Post-flush catch-up runs while src/a.ts's file work is STILL blocked —
+    // exactly the Jul-4 coverage-collapse shape (late batches vs mega-walk).
+    coord.startChunkEnrichment(
+      "test-col",
+      "/repo",
+      new Map([
+        ["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]],
+        ["src/b.ts", [{ chunkId: "c2", startLine: 1, endLine: 5 }]],
+      ]),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+
+    releaseFile();
+    await coord.awaitCompletion("test-col");
+
+    const walked = (provider.buildChunkSignals as any).mock.calls.flatMap((c: any[]) => [
+      ...(c[1] as Map<string, unknown>).keys(),
+    ]);
+    // src/a.ts covered by its own (late) batch ONCE — not also by the mega-walk.
+    expect(walked.filter((f: string) => f === "src/a.ts")).toHaveLength(1);
+    // src/b.ts had no streaming batch — covered by the mega-walk ONCE.
+    expect(walked.filter((f: string) => f === "src/b.ts")).toHaveLength(1);
+  });
+
   it("is a no-op when no providers are registered", async () => {
     const empty = new EnrichmentCoordinator(mockQdrant, []);
 

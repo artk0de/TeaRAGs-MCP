@@ -3,11 +3,14 @@
  *
  * Owns Semaphore(10) shared across both entry points so total git-blame
  * parallelism stays bounded. Streaming records files in
- * streamingEnrichedFiles; enrichRemaining consults that set to skip files
- * already enriched.
+ * streamingEnrichedFiles AT BATCH ARRIVAL (bd tea-rags-mcp-7gnre) — before the
+ * file-work dispatch gate — so enrichRemaining's post-flush snapshot excludes
+ * files whose batches are queued/in-flight and never walks them twice.
  *
  * Two provider classes:
- * - Streaming (git): onBatch dispatches buildChunkSignals immediately.
+ * - Streaming (git): onBatchProvider marks coverage at arrival, then
+ *   dispatches buildChunkSignals once the provider's file-work gate resolves
+ *   (immediately when no gate is passed).
  * - Fully-deferred (codegraph, `defersChunkEnrichment === true`): onBatch only
  *   accumulates the batch's chunkMap into deferredChunkMap; CompletionRunner
  *   drives a single runDeferredChunk pass after the graph is finalized.
@@ -16,6 +19,7 @@
 import type { CatFileBatchReader } from "../../../../adapters/git/client.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkSignalOptions, ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
+import { CommitDiffMemo } from "../../../../infra/commit-diff-memo.js";
 import { Semaphore } from "../../../../infra/semaphore.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
@@ -96,6 +100,15 @@ export class ChunkPhase {
    * `drain()`. Undefined when no factory is injected (legacy per-call reader).
    */
   private runBlobReader?: CatFileBatchReader;
+  /**
+   * One (commitSha, filePath) → hunks memo for the whole run, shared across
+   * every per-batch chunk walk (bd tea-rags-mcp-7gnre) — the same sweep
+   * commits are otherwise re-diffed by every batch. Lazily created beside the
+   * blobReader on the first chunk-signal dispatch, dropped at `drain()`.
+   * Memory is bounded inside CommitDiffMemo (LRU cap ~50k entries — see
+   * infra/commit-diff-memo.ts for the bound rationale).
+   */
+  private runDiffMemo?: CommitDiffMemo;
 
   constructor(
     private readonly applier: EnrichmentApplier,
@@ -108,10 +121,12 @@ export class ChunkPhase {
     this.runStartedAt = runStartedAt;
     this.states.clear();
     for (const key of contexts.keys()) this.states.set(key, createState());
-    // A fresh run never inherits a prior run's reader. createRunState builds a
-    // new ChunkPhase per run in production, so this only matters for the
-    // init()-reuse path (tests / future pooling); drain() owns the close.
+    // A fresh run never inherits a prior run's reader or diff memo.
+    // createRunState builds a new ChunkPhase per run in production, so this
+    // only matters for the init()-reuse path (tests / future pooling);
+    // drain() owns the close/drop.
     this.runBlobReader = undefined;
+    this.runDiffMemo = undefined;
   }
 
   setOnComplete(cb: (coll: string) => Promise<void>): void {
@@ -159,33 +174,76 @@ export class ChunkPhase {
 
   /**
    * Streaming entry for a SINGLE provider — fire-and-forget. The coordinator
-   * calls this once per provider, each gated on that provider's own file-work
-   * promise, so git chunk never waits on codegraph file extraction (wy5i).
-   * Unknown / unregistered keys are a benign no-op.
+   * calls this once per provider AT BATCH ARRIVAL, passing that provider's own
+   * file-work promise as `fileWorkGate`, so git chunk never waits on codegraph
+   * file extraction (wy5i). Unknown / unregistered keys are a benign no-op.
+   *
+   * bd tea-rags-mcp-7gnre: streaming coverage is marked HERE, synchronously at
+   * arrival — before the gate — so enrichRemaining's post-flush snapshot
+   * excludes files whose batches are queued/in-flight (each is covered by its
+   * own gated dispatch). Only the WALK dispatch waits on the gate. A marked
+   * batch that later fails its walk leaves its chunks unenriched — exactly as
+   * when marking happened at dispatch — and the backfill / recovery safety net
+   * still covers them (miss-tracking and enrichedAt scans are independent of
+   * streamingEnrichedFiles).
    */
-  onBatchProvider(providerKey: string, coll: string, absolutePath: string, items: ChunkItem[]): void {
+  onBatchProvider(
+    providerKey: string,
+    coll: string,
+    absolutePath: string,
+    items: ChunkItem[],
+    fileWorkGate?: Promise<void>,
+  ): void {
     const ctx = this.contexts.get(providerKey);
     if (!ctx) return;
     const state = this.states.get(providerKey);
     if (!state) return;
-    // Suppress dispatch when the file-side stream/finalize already failed —
-    // FilePhase calls markFailed before this (sequenced after fileDone).
+    // Suppress dispatch when the file-side stream/finalize already failed.
     if (state.prefetchFailed) return;
     const root = ctx.effectiveRoot ?? absolutePath;
     const map = this.extractBatchChunkMap(items, root);
     if (ctx.provider.defersChunkEnrichment) {
-      // Fully-deferred provider (codegraph): accumulate the batch's chunkMap;
-      // chunk signals are produced by a single runDeferredChunk pass after the
-      // graph is finalized. Do NOT dispatch buildChunkSignals here, and do NOT
-      // mark these files as streaming-enriched.
-      for (const [rel, entries] of map) {
-        const existing = state.deferredChunkMap.get(rel) ?? [];
-        existing.push(...entries);
-        state.deferredChunkMap.set(rel, existing);
-      }
+      // Fully-deferred provider (codegraph): accumulate the batch's chunkMap
+      // once the provider's file work settles (parity with the pre-7gnre
+      // coordinator gating); chunk signals are produced by a single
+      // runDeferredChunk pass after the graph is finalized. Do NOT dispatch
+      // buildChunkSignals here, and do NOT mark these files streaming-enriched.
+      const accumulate = (): void => {
+        if (state.prefetchFailed) return;
+        for (const [rel, entries] of map) {
+          const existing = state.deferredChunkMap.get(rel) ?? [];
+          existing.push(...entries);
+          state.deferredChunkMap.set(rel, existing);
+        }
+      };
+      if (fileWorkGate) void fileWorkGate.then(accumulate);
+      else accumulate();
       return;
     }
-    void this.runChunkSignals(ctx, state, coll, root, map, /* useSemaphore */ true);
+
+    // Mark streaming coverage at ARRIVAL, policy-filtered so files dropped by
+    // per-file enrichment policy are never marked (they are dropped by the
+    // post-flush path's own filter too).
+    const covered = this.filterByEnrichmentPolicy(map, ctx.provider, root);
+    if (covered.size === 0) return;
+    for (const rel of covered.keys()) state.streamingEnrichedFiles.add(rel);
+
+    if (!fileWorkGate) {
+      void this.runChunkSignals(ctx, state, coll, root, covered, /* useSemaphore */ true);
+      return;
+    }
+    // Gate only the DISPATCH on the provider's own file work (the walk reads
+    // the batch's blame results). Track the gated wrapper in chunkWork
+    // synchronously so drain() sees late batches before their gate resolves.
+    const work = fileWorkGate
+      .then(async () => {
+        // File work may have failed while this batch waited on the gate — a
+        // failed provider dispatches nothing (backfill/recovery covers).
+        if (state.prefetchFailed) return;
+        await this.runChunkSignals(ctx, state, coll, root, covered, /* useSemaphore */ true);
+      })
+      .catch(() => undefined);
+    state.chunkWork.push(work);
   }
 
   /** Post-flush catch-up entry — applied to files NOT covered by streaming. */
@@ -344,6 +402,8 @@ export class ChunkPhase {
       // process for the daemon's lifetime (see git-cat-file-batch.md). Null
       // first so a re-drain or a late batch lazily opens a fresh one. Close
       // errors are swallowed: the process is ending regardless.
+      // 7gnre: drop the run-scoped diff memo with it — nothing outlives the run.
+      this.runDiffMemo = undefined;
       const reader = this.runBlobReader;
       if (reader) {
         this.runBlobReader = undefined;
@@ -378,19 +438,22 @@ export class ChunkPhase {
     inputChunkMap: Map<string, ChunkLookupEntry[]>,
     useSemaphore: boolean,
   ): Promise<boolean> {
-    // Per-file policy: only "full"-scope files get the chunk-churn walk. Applied
-    // here (the single chokepoint for streaming + post-flush) and BEFORE the
-    // streaming-enriched marking below, so dropped files are never marked.
+    // Per-file policy: only "full"-scope files get the chunk-churn walk.
+    // Streaming batches arrive pre-filtered (and pre-marked) from
+    // onBatchProvider — re-filtering them here is an idempotent no-op; the
+    // post-flush path relies on this as its only policy chokepoint.
     const chunkMap = this.filterByEnrichmentPolicy(inputChunkMap, ctx.provider, root);
-    if (chunkMap.size === 0) return Promise.resolve(true);
-
-    if (useSemaphore) {
-      // Mark files as streaming-enriched BEFORE the async work to avoid races
-      // with enrichRemaining.
-      for (const relPath of chunkMap.keys()) {
-        state.streamingEnrichedFiles.add(relPath);
+    // bd tea-rags-mcp-7gnre: re-snapshot the remaining set immediately before
+    // the post-flush mega-walk — drop files whose streaming batch arrived (and
+    // marked coverage) after the caller built its snapshot; each is covered by
+    // its own gated dispatch.
+    if (!useSemaphore) {
+      for (const key of [...chunkMap.keys()]) {
+        const rel = key.startsWith(root) ? key.slice(root.length + 1) : key;
+        if (state.streamingEnrichedFiles.has(rel)) chunkMap.delete(key);
       }
     }
+    if (chunkMap.size === 0) return Promise.resolve(true);
 
     const allChunkIds = new Set<string>();
     for (const entries of chunkMap.values()) {
@@ -410,6 +473,11 @@ export class ChunkPhase {
     if (this.blobReaderFactory && !this.runBlobReader) {
       this.runBlobReader = this.blobReaderFactory(root);
     }
+    // 7gnre: ONE run-scoped (commitSha, filePath) → hunks memo shared across
+    // every batch walk (streaming + post-flush) — the same sweep commits are
+    // otherwise re-diffed per batch. LRU-capped inside CommitDiffMemo (~50k
+    // entries); dropped in drain(). Unlike the blobReader it needs no factory.
+    this.runDiffMemo ??= new CommitDiffMemo();
 
     // Carry the active collection on every chunk-signal call so codegraph
     // routes per-collection DuckDB lookups correctly. `coll` is the
@@ -418,6 +486,7 @@ export class ChunkPhase {
       ? { concurrencySemaphore: this.semaphore, skipCache: true, collectionName: coll }
       : { skipCache: true, collectionName: coll };
     if (this.runBlobReader) opts.blobReader = this.runBlobReader;
+    opts.diffMemo = this.runDiffMemo;
 
     const work = this.executor
       .runChunkBatch(ctx.provider, root, chunkMap, opts)

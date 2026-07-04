@@ -233,6 +233,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       // kc93: run-scoped reader shared across batches when ChunkPhase injects
       // one. The duck-typed contract shape is structurally CatFileBatchReader.
       options?.blobReader as CatFileBatchReader | undefined,
+      // 7gnre: run-scoped (commitSha, filePath) → hunks memo shared across
+      // batches — the same sweep commits are otherwise re-diffed per batch.
+      options?.diffMemo,
     );
 
     // Chunk enrichment is the last reader of blameByRelPath. Swap in a fresh

@@ -128,6 +128,30 @@ export interface ChunkSignalOptions {
    * and tea-rags-mcp-kc93.
    */
   blobReader?: { read: (commitOid: string, filepath: string) => Promise<string>; close: () => Promise<void> };
+  /**
+   * Run-scoped (commitSha, filePath) → diff-hunks memo shared across every
+   * per-batch chunk-signal call of one indexing run (bd tea-rags-mcp-7gnre).
+   * Structural shape of `CommitDiffMemo` (`core/infra/commit-diff-memo.ts`) —
+   * declared by value here, not imported, because contracts is pure.
+   *
+   * The same sweep commits are walked by many per-batch calls; the memo caps
+   * the re-diff cost (2 blob reads + structuredPatch) at one diff per
+   * (commit, file) per run. The concrete class bounds memory via an LRU cap
+   * (~50k entries — see commit-diff-memo.ts). The CALLER owns the lifecycle:
+   * ChunkPhase creates it lazily per run and drops it at drain. Providers
+   * that don't diff git objects (codegraph) ignore it.
+   */
+  diffMemo?: {
+    get: (
+      commitSha: string,
+      filePath: string,
+    ) => { oldStart: number; oldLines: number; newStart: number; newLines: number }[] | undefined;
+    set: (
+      commitSha: string,
+      filePath: string,
+      hunks: { oldStart: number; oldLines: number; newStart: number; newLines: number }[],
+    ) => void;
+  };
 }
 
 /**
