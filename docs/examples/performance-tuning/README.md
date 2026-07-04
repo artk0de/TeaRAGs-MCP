@@ -11,7 +11,6 @@ npm run tune
 ```
 
 This will:
-
 1. Test different batch sizes, concurrency levels, and ordering modes
 2. Automatically stop when optimal values are found
 3. Generate `tuned_environment_variables.env` with recommended settings
@@ -21,40 +20,32 @@ This will:
 
 Configure the benchmark via environment variables:
 
-| Variable                 | Description                     | Default                                            |
-| ------------------------ | ------------------------------- | -------------------------------------------------- |
-| `QDRANT_URL`             | Qdrant server URL               | `http://localhost:6333`                            |
-| `EMBEDDING_BASE_URL`     | Ollama server URL               | `http://localhost:11434`                           |
-| `EMBEDDING_MODEL`        | Embedding model name            | `unclemusclez/jina-embeddings-v2-base-code:latest` |
-| `EMBEDDING_DIMENSION`    | Vector dimension                | Auto-detected from model response                  |
-| `MEDIAN_CODE_CHUNK_SIZE` | Median chunk size in characters | `500` (matches production collections)             |
-| `MAX_TOTAL_CHUNKS`       | Maximum chunks per batch test   | `4096`                                             |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `QDRANT_URL` | Qdrant server URL | `http://localhost:6333` |
+| `EMBEDDING_BASE_URL` | Ollama server URL | `http://localhost:11434` |
+| `EMBEDDING_MODEL` | Embedding model name | `unclemusclez/jina-embeddings-v2-base-code:latest` |
+| `EMBEDDING_DIMENSION` | Vector dimension | Auto-detected from model response |
+| `MEDIAN_CODE_CHUNK_SIZE` | Median chunk size in characters | `500` (matches production collections) |
+| `MAX_TOTAL_CHUNKS` | Maximum chunks per batch test | `4096` |
 
 **Important Notes:**
-
-- `MEDIAN_CODE_CHUNK_SIZE=500` matches median chunk size in real production
-  collections
-- Embedding calibration uses adaptive chunk count:
-  `min(batch×2, MAX_TOTAL_CHUNKS)` per batch size
-- Vector dimension is auto-detected by making a test embedding call - no manual
-  configuration needed
-- Three-phase plateau detection algorithm finds stable optimal configurations,
-  not theoretical peaks
+- `MEDIAN_CODE_CHUNK_SIZE=500` matches median chunk size in real production collections
+- Embedding calibration uses adaptive chunk count: `min(batch×2, MAX_TOTAL_CHUNKS)` per batch size
+- Vector dimension is auto-detected by making a test embedding call - no manual configuration needed
+- Three-phase plateau detection algorithm finds stable optimal configurations, not theoretical peaks
 
 **Local setup** (defaults work out of the box):
-
 ```bash
 npm run tune
 ```
 
 **Remote GPU setup**:
-
 ```bash
 EMBEDDING_BASE_URL=http://192.168.1.100:11434 npm run tune
 ```
 
 **Full remote setup**:
-
 ```bash
 QDRANT_URL=http://192.168.1.100:6333 \
 EMBEDDING_BASE_URL=http://192.168.1.100:11434 \
@@ -62,13 +53,11 @@ npm run tune
 ```
 
 **Custom model**:
-
 ```bash
 EMBEDDING_MODEL=nomic-embed-text npm run tune
 ```
 
-Increase `MAX_TOTAL_CHUNKS` for more accurate results (at the cost of longer
-benchmark time):
+Increase `MAX_TOTAL_CHUNKS` for more accurate results (at the cost of longer benchmark time):
 
 ```bash
 # More accurate results for production tuning
@@ -128,26 +117,21 @@ npm run benchmark-embeddings
 
 ### Three-Phase Calibration Algorithm
 
-This benchmark uses a sophisticated plateau-detection algorithm designed for
-production robustness:
+This benchmark uses a sophisticated plateau-detection algorithm designed for production robustness:
 
 #### **Phase 1: Batch Plateau Detection** (CONCURRENCY=1)
-
 - Tests batch sizes: [256, 512, 1024, 2048, 3072, 4096]
 - Uses adaptive chunk count: `min(batch×2, MAX_TOTAL_CHUNKS)` per batch
 - Stops when improvement < 3% (plateau detected) or timeout exceeded
-- Plateau timeout: calculated from previous throughput to detect degradation
-  early
+- Plateau timeout: calculated from previous throughput to detect degradation early
 
 #### **Phase 2: Concurrency Testing** (on plateau only)
-
 - Tests concurrency: [1, 2, 4] on plateau batches only
 - Plateau timeout: calculated from baseline (CONC=1) throughput
 - Stops testing higher concurrency if timeout exceeded (degradation)
 - Reuses CONC=1 results from Phase 1 (no redundant testing)
 
 #### **Phase 3: Robust Selection**
-
 - Selects from configurations within 2% of maximum throughput
 - **Prefers**: Lower concurrency → Lower batch size → Higher throughput
 - Avoids overfitting to noise, reduces tail-risk
@@ -156,25 +140,20 @@ production robustness:
 
 The algorithm follows engineering best practices:
 
-1. **Adaptive Workload**: Each batch size tests `min(batch×2, MAX_TOTAL_CHUNKS)`
-   chunks
-2. **Plateau Over Peak**: Seeks stable performance range, not theoretical
-   maximum
+1. **Adaptive Workload**: Each batch size tests `min(batch×2, MAX_TOTAL_CHUNKS)` chunks
+2. **Plateau Over Peak**: Seeks stable performance range, not theoretical maximum
 3. **Noise Tolerance**: Differences < 2-3% considered measurement noise
-4. **Robustness**: Prefers simpler configs (lower concurrency/batch) when
-   performance is equivalent
+4. **Robustness**: Prefers simpler configs (lower concurrency/batch) when performance is equivalent
 
 ### When to Use
 
 Use `benchmark-embeddings` when you:
-
 - Want to understand GPU/CPU characteristics without Qdrant
 - Are comparing different embedding models
 - Need to diagnose embedding bottlenecks
 - Want to see the full calibration process with detailed output
 
 Use `tune` (full benchmark) when you:
-
 - Need complete end-to-end optimization (embedding + Qdrant)
 - Want production-ready configuration file
 - Are setting up new deployment
@@ -242,11 +221,10 @@ Everything runs on your machine:
 └─────────────────────────────────────┘
 ```
 
-**Pros:** Lowest latency, fastest storage, fully offline **Cons:** Uses local
-GPU/CPU resources, slower embedding than remote GPU
+**Pros:** Lowest latency, fastest storage, fully offline
+**Cons:** Uses local GPU/CPU resources, slower embedding than remote GPU
 
 **Calibrated values (M3 Pro, jina-embeddings-v2-base-code):**
-
 ```bash
 EMBEDDING_BATCH_SIZE=512
 EMBEDDING_CONCURRENCY=1
@@ -259,11 +237,8 @@ QDRANT_DELETE_CONCURRENCY=12
 ```
 
 **Why these values:**
-
-- `EMBEDDING_BATCH_SIZE=512` + `CONCURRENCY=1`: GPU-bound workload, concurrency
-  adds overhead without benefit
-- `QDRANT_BATCH_ORDERING=weak`: Local Qdrant doesn't need strong ordering
-  guarantees
+- `EMBEDDING_BATCH_SIZE=512` + `CONCURRENCY=1`: GPU-bound workload, concurrency adds overhead without benefit
+- `QDRANT_BATCH_ORDERING=weak`: Local Qdrant doesn't need strong ordering guarantees
 - `QDRANT_FLUSH_INTERVAL_MS=100`: Fast flushes for local SSD
 
 ### ⭐ Remote GPU + Local Qdrant (Recommended)
@@ -284,7 +259,6 @@ Embedding on a dedicated GPU server, Qdrant runs locally in Docker:
 **Cons:** Requires local Docker for Qdrant
 
 **Calibrated values (Remote AMD 7800M + local Qdrant):**
-
 ```bash
 EMBEDDING_BATCH_SIZE=256
 EMBEDDING_CONCURRENCY=6
@@ -297,9 +271,7 @@ QDRANT_DELETE_CONCURRENCY=16
 ```
 
 **Why these values:**
-
-- `EMBEDDING_BATCH_SIZE=256` + `CONCURRENCY=6`: Network latency hidden by
-  concurrent requests
+- `EMBEDDING_BATCH_SIZE=256` + `CONCURRENCY=6`: Network latency hidden by concurrent requests
 - `QDRANT_BATCH_ORDERING=strong`: Higher ordering ensures data consistency
 - Higher storage rate (6966 chunks/s) because Qdrant is local
 
@@ -317,11 +289,10 @@ Both Qdrant and Ollama on a dedicated server (e.g., Windows PC with GPU):
 └──────────────┘         └─────────────────────┘
 ```
 
-**Pros:** Dedicated GPU, doesn't affect local machine resources **Cons:**
-Network latency significantly impacts storage throughput (~4x slower than local)
+**Pros:** Dedicated GPU, doesn't affect local machine resources
+**Cons:** Network latency significantly impacts storage throughput (~4x slower than local)
 
 **Calibrated values (Remote AMD 7800M + remote Qdrant):**
-
 ```bash
 EMBEDDING_BATCH_SIZE=256
 EMBEDDING_CONCURRENCY=4
@@ -334,98 +305,86 @@ QDRANT_DELETE_CONCURRENCY=12
 ```
 
 **Why these values:**
-
-- `EMBEDDING_BATCH_SIZE=256` + `CONCURRENCY=4`: Balance between hiding latency
-  and avoiding queue buildup
+- `EMBEDDING_BATCH_SIZE=256` + `CONCURRENCY=4`: Balance between hiding latency and avoiding queue buildup
 - `QDRANT_BATCH_ORDERING=weak`: Reduce round-trips over network
 - `QDRANT_FLUSH_INTERVAL_MS=500`: Larger flush windows amortize network latency
 - Storage is bottlenecked by network (1810 chunks/s vs 6966 for local)
 
 ### Performance Comparison
 
-| Metric                 | 🏠 Fully Local (M3 Pro) | ⭐ Remote GPU + Local Qdrant | 🌐 Full Remote |
-| ---------------------- | ----------------------- | ---------------------------- | -------------- |
-| Optimal batch          | 512                     | 256                          | 256            |
-| Optimal concurrency    | 1                       | 6                            | 4              |
-| Optimal ordering       | `weak`                  | `strong`                     | `weak`         |
-| **Qdrant latency**     | **<1ms**                | **<1ms**                     | 5-50ms         |
-| **Storage rate**       | 6273 ch/s               | **6966 ch/s**                | 1810 ch/s      |
-| **Embedding rate**     | 87 ch/s                 | **156 ch/s**                 | 154 ch/s       |
-| **VS Code (3.5M LoC)** | 13m 36s                 | **7m 39s**                   | 8m 13s         |
+| Metric | 🏠 Fully Local (M3 Pro) | ⭐ Remote GPU + Local Qdrant | 🌐 Full Remote |
+|--------|-------------------------|------------------------------|----------------|
+| Optimal batch | 512 | 256 | 256 |
+| Optimal concurrency | 1 | 6 | 4 |
+| Optimal ordering | `weak` | `strong` | `weak` |
+| **Qdrant latency** | **<1ms** | **<1ms** | 5-50ms |
+| **Storage rate** | 6273 ch/s | **6966 ch/s** | 1810 ch/s |
+| **Embedding rate** | 87 ch/s | **156 ch/s** | 154 ch/s |
+| **VS Code (3.5M LoC)** | 13m 36s | **7m 39s** | 8m 13s |
 
-> **Why is Full Remote storage slower?** Each batch upsert requires a network
-> round-trip (request → processing → response). Even on local LAN with 1-5ms
-> latency, this adds up when sending thousands of batches. Local Docker uses
-> loopback interface with microsecond latency.
+> **Why is Full Remote storage slower?**
+> Each batch upsert requires a network round-trip (request → processing → response). Even on local LAN with 1-5ms latency, this adds up when sending thousands of batches. Local Docker uses loopback interface with microsecond latency.
 
 > **Why different EMBEDDING_BATCH_SIZE and CONCURRENCY?**
->
-> - **Local GPU (512/1)**: GPU-bound workload. Larger batches = less overhead.
->   Concurrency adds no benefit.
-> - **Remote GPU (256/4-6)**: Network latency is significant. Smaller batches +
->   higher concurrency hides latency by overlapping network I/O with GPU
->   compute. While one batch transfers, GPU processes another.
+> - **Local GPU (512/1)**: GPU-bound workload. Larger batches = less overhead. Concurrency adds no benefit.
+> - **Remote GPU (256/4-6)**: Network latency is significant. Smaller batches + higher concurrency hides latency by overlapping network I/O with GPU compute. While one batch transfers, GPU processes another.
 
 ### Recommended Setup
 
 **⭐ Remote GPU + Local Qdrant** is the recommended setup for most users:
 
-| Factor                    | Why This Setup Wins                                  |
-| ------------------------- | ---------------------------------------------------- |
-| **Total indexing time**   | Fastest overall (~7m 39s for VS Code 3.5M LoC)       |
-| **Storage performance**   | Local Qdrant = microsecond latency, 6966 ch/s        |
+| Factor | Why This Setup Wins |
+|--------|---------------------|
+| **Total indexing time** | Fastest overall (~7m 39s for VS Code 3.5M LoC) |
+| **Storage performance** | Local Qdrant = microsecond latency, 6966 ch/s |
 | **Embedding performance** | Dedicated GPU = 156 ch/s (1.8x faster than local M3) |
-| **Resource usage**        | Only Docker for Qdrant locally (lightweight)         |
-| **Flexibility**           | GPU server can serve multiple machines               |
+| **Resource usage** | Only Docker for Qdrant locally (lightweight) |
+| **Flexibility** | GPU server can serve multiple machines |
 
 **When to choose other setups:**
 
-- **Fully Local**: When you have a powerful GPU on your development machine and
-  want to work fully offline. M3 Pro achieves 87 ch/s which is still fast for
-  most projects.
-- **Full Remote**: When you cannot run Docker locally (e.g., corporate
-  restrictions) or need to index from multiple thin clients. Network latency
-  reduces storage to 1810 ch/s but embedding remains fast at 154 ch/s.
+- **Fully Local**: When you have a powerful GPU on your development machine and want to work fully offline. M3 Pro achieves 87 ch/s which is still fast for most projects.
+- **Full Remote**: When you cannot run Docker locally (e.g., corporate restrictions) or need to index from multiple thin clients. Network latency reduces storage to 1810 ch/s but embedding remains fast at 154 ch/s.
 
 ## Performance Benchmarks
 
 ### Estimated Indexing Times
 
-| Codebase       | LoC      | Chunks  | 🏠 Local (87 ch/s) | ⭐ Remote GPU (156 ch/s) | 🌐 Full Remote (154 ch/s) |
-| -------------- | -------- | ------- | ------------------ | ------------------------ | ------------------------- |
-| Small CLI tool | 10K      | 200     | 2s                 | 1s                       | 1s                        |
-| Medium library | 50K      | 1K      | 12s                | 7s                       | 7s                        |
-| Large library  | 100K     | 2K      | 23s                | 13s                      | 14s                       |
-| Enterprise app | 500K     | 10K     | 1m 57s             | 1m 6s                    | 1m 10s                    |
-| Large codebase | 1M       | 20K     | 3m 53s             | 2m 11s                   | 2m 21s                    |
-| **VS Code**    | **3.5M** | **70K** | **13m 36s**        | **7m 39s**               | **8m 13s**                |
-| Kubernetes     | 5M       | 100K    | 19m 25s            | 10m 55s                  | 11m 45s                   |
-| Linux kernel   | 10M      | 200K    | 38m 51s            | 21m 51s                  | 23m 29s                   |
+| Codebase | LoC | Chunks | 🏠 Local (87 ch/s) | ⭐ Remote GPU (156 ch/s) | 🌐 Full Remote (154 ch/s) |
+|----------|-----|--------|-------------------|-------------------------|---------------------------|
+| Small CLI tool | 10K | 200 | 2s | 1s | 1s |
+| Medium library | 50K | 1K | 12s | 7s | 7s |
+| Large library | 100K | 2K | 23s | 13s | 14s |
+| Enterprise app | 500K | 10K | 1m 57s | 1m 6s | 1m 10s |
+| Large codebase | 1M | 20K | 3m 53s | 2m 11s | 2m 21s |
+| **VS Code** | **3.5M** | **70K** | **13m 36s** | **7m 39s** | **8m 13s** |
+| Kubernetes | 5M | 100K | 19m 25s | 10m 55s | 11m 45s |
+| Linux kernel | 10M | 200K | 38m 51s | 21m 51s | 23m 29s |
 
-**Note**: Based on CODE_CHUNK_SIZE=2500, AVG_LOC_PER_CHUNK=50,
-jina-embeddings-v2-base-code. CPU-only embedding is 5-10x slower.
+**Note**: Based on CODE_CHUNK_SIZE=2500, AVG_LOC_PER_CHUNK=50, jina-embeddings-v2-base-code. CPU-only embedding is 5-10x slower.
 
 **Benchmark hardware:**
-
 - Local: Apple M3 Pro, Docker Qdrant, local Ollama
 - Remote GPU: AMD Radeon RX 7800M (external eGPU) via LAN
 - Model: unclemusclez/jina-embeddings-v2-base-code:latest
 
-**Measured rates:** | Setup | Embedding Rate | Storage Rate | Bottleneck |
-|-------|---------------|--------------|------------| | 🏠 Local | 87 ch/s |
-6273 ch/s | Embedding | | ⭐ Remote GPU | **156 ch/s** | **6966 ch/s** |
-Embedding | | 🌐 Full Remote | 154 ch/s | 1810 ch/s | Embedding |
+**Measured rates:**
+| Setup | Embedding Rate | Storage Rate | Bottleneck |
+|-------|---------------|--------------|------------|
+| 🏠 Local | 87 ch/s | 6273 ch/s | Embedding |
+| ⭐ Remote GPU | **156 ch/s** | **6966 ch/s** | Embedding |
+| 🌐 Full Remote | 154 ch/s | 1810 ch/s | Embedding |
 
 ## Embedding Performance
 
 ### Provider Comparison
 
-| Provider         | Speed        | Cost | Privacy | Best For      |
-| ---------------- | ------------ | ---- | ------- | ------------- |
-| **Ollama** (GPU) | Fastest      | Free | Full    | Production    |
-| **Ollama** (CPU) | 5-10x slower | Free | Full    | Dev/testing   |
-| **OpenAI**       | Fast         | $$   | Cloud   | Quick setup   |
-| **Voyage**       | Fast         | $$   | Cloud   | Code-specific |
+| Provider | Speed | Cost | Privacy | Best For |
+|----------|-------|------|---------|----------|
+| **Ollama** (GPU) | Fastest | Free | Full | Production |
+| **Ollama** (CPU) | 5-10x slower | Free | Full | Dev/testing |
+| **OpenAI** | Fast | $$ | Cloud | Quick setup |
+| **Voyage** | Fast | $$ | Cloud | Code-specific |
 
 ### GPU Acceleration
 
@@ -442,14 +401,13 @@ export EMBEDDING_MODEL="jina-unclemusclez/jina-embeddings-v2-base-code:latest-v2
 
 ### Batch Size Tuning
 
-**Key Insight**: Optimal batch size depends on whether Ollama is local or
-remote.
+**Key Insight**: Optimal batch size depends on whether Ollama is local or remote.
 
-| Setup      | Recommended `EMBEDDING_BATCH_SIZE` | Why                                         |
-| ---------- | ---------------------------------- | ------------------------------------------- |
-| Local GPU  | 512                                | Minimize per-batch overhead                 |
-| Remote GPU | 256                                | Smaller batches + concurrency hides latency |
-| CPU only   | 64-128                             | Balance memory vs throughput                |
+| Setup | Recommended `EMBEDDING_BATCH_SIZE` | Why |
+|-------|-----------------------------------|-----|
+| Local GPU | 512 | Minimize per-batch overhead |
+| Remote GPU | 256 | Smaller batches + concurrency hides latency |
+| CPU only | 64-128 | Balance memory vs throughput |
 
 ```bash
 # Local GPU
@@ -463,13 +421,12 @@ export EMBEDDING_CONCURRENCY=4
 
 ### Concurrency Tuning
 
-**Key Insight**: Concurrency is **only beneficial for remote GPU**. Local GPU
-sees no improvement from concurrency — it adds overhead without benefit.
+**Key Insight**: Concurrency is **only beneficial for remote GPU**. Local GPU sees no improvement from concurrency — it adds overhead without benefit.
 
-| Setup      | Recommended `EMBEDDING_CONCURRENCY` | Why                                         |
-| ---------- | ----------------------------------- | ------------------------------------------- |
-| Local GPU  | 1                                   | GPU-bound, concurrency adds overhead        |
-| Remote GPU | 4-6                                 | Hide network latency with parallel requests |
+| Setup | Recommended `EMBEDDING_CONCURRENCY` | Why |
+|-------|-------------------------------------|-----|
+| Local GPU | 1 | GPU-bound, concurrency adds overhead |
+| Remote GPU | 4-6 | Hide network latency with parallel requests |
 
 ```bash
 # For local GPU — don't use concurrency
@@ -483,24 +440,17 @@ export EMBEDDING_CONCURRENCY=4
 
 Based on extensive benchmarking across different setups:
 
-1. **Local M3 Pro is GPU-bound**: Adding concurrency does not improve
-   throughput. BATCH=512 + CONC=1 achieves peak performance (87 ch/s).
+1. **Local M3 Pro is GPU-bound**: Adding concurrency does not improve throughput. BATCH=512 + CONC=1 achieves peak performance (87 ch/s).
 
-2. **Remote GPU benefits from concurrency**: While one batch transfers over
-   network, GPU processes another. CONC=4-6 hides ~90% of network latency.
+2. **Remote GPU benefits from concurrency**: While one batch transfers over network, GPU processes another. CONC=4-6 hides ~90% of network latency.
 
-3. **Storage rate is consistent for local Qdrant**: ~6300-7000 ch/s regardless
-   of where Ollama runs. This confirms storage is not the bottleneck.
+3. **Storage rate is consistent for local Qdrant**: ~6300-7000 ch/s regardless of where Ollama runs. This confirms storage is not the bottleneck.
 
-4. **Network latency crushes remote Qdrant storage**: 6966 ch/s → 1810 ch/s
-   (3.8x drop). Always run Qdrant locally if possible.
+4. **Network latency crushes remote Qdrant storage**: 6966 ch/s → 1810 ch/s (3.8x drop). Always run Qdrant locally if possible.
 
-5. **Plateau detection is reliable**: The algorithm stops testing early when
-   improvements drop below 3%, saving significant benchmark time.
+5. **Plateau detection is reliable**: The algorithm stops testing early when improvements drop below 3%, saving significant benchmark time.
 
-6. **Embedding is always the bottleneck**: Even at 156 ch/s (remote GPU),
-   embedding is 40x slower than storage (6966 ch/s). Invest in GPU, not Qdrant
-   infrastructure.
+6. **Embedding is always the bottleneck**: Even at 156 ch/s (remote GPU), embedding is 40x slower than storage (6966 ch/s). Invest in GPU, not Qdrant infrastructure.
 
 ## Indexing Performance
 
@@ -556,7 +506,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G # Increase for large codebases
+          memory: 4G  # Increase for large codebases
 ```
 
 ### Query Optimization
@@ -569,10 +519,10 @@ services:
 
 Git metadata uses two-level caching:
 
-| Cache       | Location       | Purpose                       |
-| ----------- | -------------- | ----------------------------- |
-| L1 (Memory) | In-process     | Hot data, instant access      |
-| L2 (Disk)   | `~/.tea-rags/` | Persistent, survives restarts |
+| Cache | Location | Purpose |
+|-------|----------|---------|
+| L1 (Memory) | In-process | Hot data, instant access |
+| L2 (Disk) | `~/.tea-rags/` | Persistent, survives restarts |
 
 Cache is invalidated automatically when file content changes.
 
@@ -649,7 +599,6 @@ Monitor indexing progress:
 ```
 
 Returns:
-
 - Current status (not_indexed, indexing, indexed)
 - Chunk count
 - Last update time
@@ -659,61 +608,28 @@ Returns:
 
 ### Slow Initial Indexing
 
-| Cause                      | Solution                            |
-| -------------------------- | ----------------------------------- |
-| CPU embedding              | Use GPU-accelerated Ollama          |
-| Cloud provider rate limits | Switch to Ollama                    |
-| Large files                | Exclude with `.contextignore`       |
-| Many small files           | Increase `QDRANT_UPSERT_BATCH_SIZE` |
+| Cause | Solution |
+|-------|----------|
+| CPU embedding | Use GPU-accelerated Ollama |
+| Cloud provider rate limits | Switch to Ollama |
+| Large files | Exclude with `.contextignore` |
+| Many small files | Increase `QDRANT_UPSERT_BATCH_SIZE` |
 
 ### Memory Exhaustion
 
-| Cause         | Solution                          |
-| ------------- | --------------------------------- |
-| Large chunks  | Reduce `CODE_CHUNK_SIZE`          |
+| Cause | Solution |
+|-------|----------|
+| Large chunks | Reduce `CODE_CHUNK_SIZE` |
 | Large batches | Reduce `QDRANT_UPSERT_BATCH_SIZE` |
-| Qdrant memory | Increase container limits         |
-
-### Slow Git Enrichment (Endpoint Security / Antivirus)
-
-Endpoint Detection & Response agents (SentinelOne, CrowdStrike, Microsoft
-Defender for Endpoint, etc.) hook process launches and file opens at the kernel
-level. Git enrichment is unusually sensitive to this: `git blame` and per-file
-`git log` each **spawn a fresh git process** and open **hundreds of repository
-files**, so every operation waits for the agent's synchronous allow/deny
-verdict. Under an aggressive policy this throttles fresh-git-process throughput
-to ~10/s **machine-wide**, with no parallel scaling (concurrency 5, 10, 20 all
-give the same rate — the CPU sits in wait, not work). The effect is invisible in
-code: the same tea-rags build is fast before a policy change and slow after.
-
-**Symptom:** the embedding phase is normal, but the enrichment tail (git chunk
-churn + per-file blame in the backfill phase) balloons — often the dominant
-share of a `--force` reindex. `git --version` stays fast (spawn only, few file
-opens), and a persistent `git cat-file --batch` process is unaffected — only the
-"fresh process + many file opens" pattern is throttled.
-
-| Cause                                                   | Solution                                                                                                                                                                                                                        |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| EDR/antivirus hooking git process launches + file opens | Ask IT for a **Path/Process exclusion in Interoperability (performance) mode** for the git binary tree (`/opt/homebrew/Cellar/git/**`, `/usr/bin/git`) and your dev directory — _not_ "suppress alerts" mode, which still scans |
-| Repeated `--force` reindex pays full blame cost         | The persistent blob-OID **blame cache** re-blames only changed files — warm runs skip the throttled path entirely                                                                                                               |
-| Cold first index still spawns per-file blame            | Opt into the in-process git adapter (`TRAJECTORY_GIT_BACKEND=libgit2`, when available) to read git objects without spawning processes                                                                                           |
-
-**Diagnosing:** time a serial blame burst against a parallel one — flat scaling
-is the tell.
-
-```bash
-# serial: N fresh blame spawns
-time for i in $(seq 1 50); do git blame HEAD -- <some-file> >/dev/null; done
-# if 10 parallel is no faster than serial per-op, an EDR agent is gating spawns
-```
+| Qdrant memory | Increase container limits |
 
 ### Slow Search
 
-| Cause            | Solution                       |
-| ---------------- | ------------------------------ |
-| No filters       | Add `fileTypes`, `pathPattern` |
-| Large collection | Use hybrid search              |
-| Network latency  | Run Qdrant locally             |
+| Cause | Solution |
+|-------|----------|
+| No filters | Add `fileTypes`, `pathPattern` |
+| Large collection | Use hybrid search |
+| Network latency | Run Qdrant locally |
 
 ## Configuration Summary
 
