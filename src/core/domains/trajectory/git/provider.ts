@@ -29,6 +29,8 @@ import type { RerankPreset } from "../../../contracts/types/reranker.js";
 import { gitFilters } from "./filters.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
+import { GitCommitDiscoveryStore } from "./infra/commit-discovery-store.js";
+import { GitCommitDiscovery } from "./infra/commit-discovery.js";
 import { buildFileSignalMap, buildFileSignalsForPaths } from "./infra/file-reader.js";
 import { buildBugFixShaSet } from "./infra/merge-branch-resolver.js";
 import type { SquashOptions } from "./infra/metrics.js";
@@ -183,6 +185,18 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  file finalize is an empty no-op (and defersChunkEnrichment stays unset). */
   finalizeSignals = async (): Promise<Map<string, FileSignalOverlay>> => new Map();
 
+  /** bd tea-rags-mcp-82va1: factory for the run-scoped commit-discovery
+   *  matrix — the provider owns the window config (chunkMaxAgeMonths /
+   *  chunkTimeoutMs), ChunkPhase owns the instance lifecycle (lazy create at
+   *  first chunk dispatch, dropped at drain). Arrow-property so `this`
+   *  survives callback passing (precedent: streamFileBatch). */
+  createCommitDiscovery = (repoRoot: string): GitCommitDiscovery =>
+    new GitCommitDiscovery(repoRoot, {
+      maxAgeMonths: this.config.chunkMaxAgeMonths,
+      timeoutMs: this.config.chunkTimeoutMs,
+      store: new GitCommitDiscoveryStore(),
+    });
+
   /** Run `git blame HEAD` per file in parallel batches and store results in
    *  the WeakMap for later transform-time lookup. Failures fall back to empty
    *  arrays — assembleFileSignals will produce unknown ownership.
@@ -236,6 +250,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       // 7gnre: run-scoped (commitSha, filePath) → hunks memo shared across
       // batches — the same sweep commits are otherwise re-diffed per batch.
       options?.diffMemo,
+      // 82va1: run-scoped commit-discovery matrix — the walk slices it
+      // in-memory instead of paying a per-batch pathspec log.
+      options?.commitDiscovery,
     );
 
     // Chunk enrichment is the last reader of blameByRelPath. Swap in a fresh

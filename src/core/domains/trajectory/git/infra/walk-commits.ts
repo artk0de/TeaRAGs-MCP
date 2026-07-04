@@ -46,6 +46,15 @@ export interface WalkCommitDiffMemo {
   set: (commitSha: string, filePath: string, hunks: WalkCommitDiffHunk[]) => void;
 }
 
+/**
+ * Duck type for the run-scoped commit-discovery matrix — matches infra
+ * commit-discovery.ts GitCommitDiscovery (bd tea-rags-mcp-82va1).
+ */
+export interface WalkCommitDiscovery {
+  commitsForFiles: (filePaths: string[]) => Promise<{ commit: CommitInfo; changedFiles: string[] }[]>;
+  getBugFixShas: () => Promise<Set<string>>;
+}
+
 export interface WalkCommitsResult {
   /** Number of commits returned by `getCommitsByPathspec`. */
   commitCount: number;
@@ -83,6 +92,15 @@ export interface WalkCommitsOptions {
    * it — lifecycle belongs to the caller (ChunkPhase drops it at drain).
    */
   diffMemo?: WalkCommitDiffMemo;
+  /**
+   * Run-scoped commit-discovery matrix (bd tea-rags-mcp-82va1). When present,
+   * the walk slices the ONE run-scoped commitSha → changedFiles matrix via
+   * `commitsForFiles` instead of running its own per-batch pathspec log, and
+   * consumes the ONE shared bugFixShaSet via `getBugFixShas`. Lifecycle is
+   * owned by ChunkPhase (lazy create at first dispatch, dropped at drain).
+   * Absent ⇒ legacy per-batch discovery (recovery / backfill paths).
+   */
+  commitDiscovery?: WalkCommitDiscovery;
 }
 
 export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommitsResult> {
@@ -109,32 +127,63 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
   // Debug timing
   const t0 = Date.now();
 
-  // Use CLI pathspec filtering — only fetches commits touching our files
   let commitEntries: { commit: CommitInfo; changedFiles: string[] }[];
-  try {
-    commitEntries = await getCommitsByPathspec(repoRoot, sinceDate, filePaths, chunkTimeoutMs);
-  } catch (error) {
-    // CLI pathspec failed — no fallback (isomorphic-git git.log causes OOM on large repos)
+  let bugFixShas: Set<string>;
+  if (opts.commitDiscovery) {
+    // bd tea-rags-mcp-82va1: slice the ONE run-scoped matrix in-memory instead
+    // of paying a per-batch pathspec log; the bugFixShaSet is the ONE shared
+    // set over ALL matrix commits. Same failure semantics as the legacy
+    // branch: a broken discovery ⇒ no churn for this batch.
+    const discovery = opts.commitDiscovery;
+    try {
+      commitEntries = await discovery.commitsForFiles(filePaths);
+    } catch (error) {
+      if (isDebug()) {
+        console.error(
+          `[ChunkChurn] discovery slice failed, skipping chunk churn:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+      commitEntries = [];
+    }
+    bugFixShas = await discovery.getBugFixShas().catch(() => new Set<string>());
+
+    const sliceEnd = Date.now();
     if (isDebug()) {
       console.error(
-        `[ChunkChurn] CLI pathspec failed, skipping chunk churn:`,
-        error instanceof Error ? error.message : error,
+        `[ChunkChurn] discovery slice: ${commitEntries.length} commits for ${filePaths.length} files in ${sliceEnd - t0}ms`,
       );
     }
-    commitEntries = [];
+  } else {
+    // Use CLI pathspec filtering — only fetches commits touching our files
+    try {
+      commitEntries = await getCommitsByPathspec(repoRoot, sinceDate, filePaths, chunkTimeoutMs);
+    } catch (error) {
+      // CLI pathspec failed — no fallback (isomorphic-git git.log causes OOM on large repos)
+      if (isDebug()) {
+        console.error(
+          `[ChunkChurn] CLI pathspec failed, skipping chunk churn:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+      commitEntries = [];
+    }
+
+    const pathspecEnd = Date.now();
+
+    if (isDebug()) {
+      console.error(
+        `[ChunkChurn] CLI pathspec: ${commitEntries.length} commits for ${filePaths.length} files in ${pathspecEnd - t0}ms`,
+      );
+    }
+
+    // Build bug-fix SHA set from merge branch prefixes
+    bugFixShas = buildBugFixShaSet(commitEntries.map((e) => e.commit));
   }
 
+  // Shared origin for the Phase-1 timing log below (either branch above logged
+  // its own discovery elapsed against t0).
   const t1 = Date.now();
-
-  if (isDebug()) {
-    console.error(
-      `[ChunkChurn] CLI pathspec: ${commitEntries.length} commits for ${filePaths.length} files in ${t1 - t0}ms`,
-    );
-  }
-
-  // Build bug-fix SHA set from merge branch prefixes
-  const allCommitsForMerge = commitEntries.map((e) => e.commit);
-  const bugFixShas = buildBugFixShaSet(allCommitsForMerge);
 
   // ─── Phase 1: Parallel blob reads + structuredPatch → raw hunk data ───
   let blobReads = 0;

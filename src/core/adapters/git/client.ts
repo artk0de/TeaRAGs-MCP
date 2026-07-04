@@ -259,6 +259,61 @@ export function createCatFileBatch(repoRoot: string): CatFileBatchReader {
 
 const PATHSPEC_BATCH_SIZE = 500;
 
+/** NUL-delimited log format shared by the numstat log variants below. */
+const NUMSTAT_LOG_FORMAT = "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00";
+
+/**
+ * Repo-wide `git log --since --numstat` — NO pathspec, NO explicit rev
+ * (defaults to HEAD, matching getCommitsByPathspecSingle). ONE such call per
+ * indexing run replaces the K per-batch pathspec logs: the parsed
+ * commit → changedFiles matrix is a superset of every pathspec slice, and the
+ * chunk-churn walk already filters changedFiles against its chunk map
+ * (bd tea-rags-mcp-82va1).
+ */
+export async function getCommitsSince(
+  repoRoot: string,
+  sinceDate: Date,
+  timeoutMs?: number,
+): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
+  const effectiveTimeoutMs = timeoutMs ?? 30000;
+  const args = ["log", `--since=${sinceDate.toISOString()}`, NUMSTAT_LOG_FORMAT, "--numstat"];
+  const stdout = await execFileForPathspec(repoRoot, args, effectiveTimeoutMs);
+  return parsePathspecOutput(stdout);
+}
+
+/**
+ * `git log --since <fromSha>..<toSha> --numstat` — the incremental top-up for
+ * a persisted commit-discovery matrix: only commits reachable from the new
+ * HEAD but not from the persisted one (bd tea-rags-mcp-82va1).
+ */
+export async function getCommitsInRange(
+  repoRoot: string,
+  fromSha: string,
+  toSha: string,
+  sinceDate: Date,
+  timeoutMs?: number,
+): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
+  const effectiveTimeoutMs = timeoutMs ?? 30000;
+  const args = ["log", `--since=${sinceDate.toISOString()}`, `${fromSha}..${toSha}`, NUMSTAT_LOG_FORMAT, "--numstat"];
+  const stdout = await execFileForPathspec(repoRoot, args, effectiveTimeoutMs);
+  return parsePathspecOutput(stdout);
+}
+
+/**
+ * True iff `ancestor` is an ancestor of `descendant` per
+ * `git merge-base --is-ancestor`. Any failure — non-ancestor exit code,
+ * unresolvable / gc'd shas, not a repo — resolves false, which callers treat
+ * as "cannot top up, rebuild fully" (bd tea-rags-mcp-82va1).
+ */
+export async function isAncestor(repoRoot: string, ancestor: string, descendant: string): Promise<boolean> {
+  try {
+    await execFileAsync("git", ["merge-base", "--is-ancestor", ancestor, descendant], { cwd: repoRoot });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Run a single pathspec-filtered git log and parse the output. */
 export async function getCommitsByPathspecSingle(
   repoRoot: string,
