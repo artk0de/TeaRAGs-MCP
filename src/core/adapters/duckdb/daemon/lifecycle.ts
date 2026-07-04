@@ -77,6 +77,62 @@ export function decrementRefs(paths: CodegraphDaemonPaths): number {
   }
 }
 
+/** Read the daemon's pid from its pid file; undefined when absent/unreadable. */
+export function readDaemonPid(paths: CodegraphDaemonPaths): number | undefined {
+  try {
+    const pid = parseInt(readFileSync(paths.pidFile, "utf-8").trim(), 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export interface DaemonExitWaitOptions {
+  /** Give up after this long (the daemon's own drain is hard-capped at ~3s). */
+  timeoutMs?: number;
+  /** Delay between lifecycle-file polls. */
+  pollIntervalMs?: number;
+}
+
+export const DEFAULT_EXIT_TIMEOUT_MS = 10_000;
+const DEFAULT_EXIT_POLL_INTERVAL_MS = 50;
+
+/**
+ * Wait for the daemon that owned `stalePid` to exit after a graceful
+ * `shutdown` request (bd tea-rags-mcp-ji56r). Exit is observed through the
+ * lifecycle files — the daemon's cleanup unlinks its pid file — with a
+ * pid-liveness probe as backstop (a crashed daemon leaves the file behind).
+ * Considered exited when the pid file is gone, its content changed (a fresh
+ * daemon already took over), or the recorded pid no longer accepts signal 0.
+ * Resolves true on exit, false when `timeoutMs` elapses first.
+ */
+export async function waitForDaemonExit(
+  paths: CodegraphDaemonPaths,
+  stalePid: number | undefined,
+  opts?: DaemonExitWaitOptions,
+): Promise<boolean> {
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_EXIT_TIMEOUT_MS;
+  const pollIntervalMs = opts?.pollIntervalMs ?? DEFAULT_EXIT_POLL_INTERVAL_MS;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const current = readDaemonPid(paths);
+    if (current === undefined || (stalePid !== undefined && current !== stalePid)) return true;
+    if (stalePid !== undefined && !isPidAlive(stalePid)) return true;
+    if (Date.now() + pollIntervalMs > deadline) return false;
+    await new Promise<void>((r) => setTimeout(r, pollIntervalMs));
+  }
+}
+
+/** Signal-0 liveness probe (kill throws ESRCH once the process is gone). */
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Poll the refs file every 5s; once it has stayed at <= 0 for IDLE_SHUTDOWN_MS,
  * clear the interval and invoke onShutdown so the daemon releases the RW DuckDB

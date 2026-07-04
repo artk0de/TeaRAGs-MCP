@@ -424,6 +424,20 @@ export function wireCodegraph(
     // `DaemonGraphDbClient` over this socket; reads (`acquireRead`) always stay
     // in-process READ_ONLY and ignore it.
     daemonSocketPath: daemonPaths.socketPath,
+    // Build-version handshake restart (bd tea-rags-mcp-ji56r): when the pool's
+    // handshake finds a daemon from a DIFFERENT build (stale after `npm run
+    // build && npm link`), it drains that daemon gracefully and cold-spawns a
+    // fresh one from THIS build via ensureCodegraphDaemon — the same lazy
+    // spawn path as the first write (alive-check + cross-process DaemonLock
+    // single-flight make it safe to call again after the stale exit).
+    daemonRestart: {
+      respawn: () => {
+        ensureCodegraphDaemon(daemonPaths, rootDir, {
+          memoryLimit: codegraph.dbMemoryLimit,
+          threads: codegraph.dbThreads,
+        });
+      },
+    },
     // Hydrate the per-collection symbol table from disk on first open.
     // Without this, an incremental reindex of file A cannot resolve
     // calls into an unchanged file B — the walker only touches changed

@@ -48,6 +48,20 @@ export interface DaemonRuntimeOptions {
     threads?: number;
     preserveInsertionOrder?: boolean;
   };
+  /**
+   * Build identity handed to the `CodegraphDaemonServer` for the handshake
+   * (bd tea-rags-mcp-ji56r). Tests inject a forced value; a real daemon
+   * process defaults to the module-computed fingerprint (env-overridable via
+   * TEA_RAGS_CODEGRAPH_BUILD_FINGERPRINT).
+   */
+  buildFingerprint?: string;
+  /**
+   * Process-exit hook invoked after the graceful drain completes — both by
+   * the idle watcher and by a client-requested `shutdown` op. Defaults to
+   * `process.exit`; tests running the daemon IN-PROCESS inject a no-op so the
+   * drain path cannot kill the test runner.
+   */
+  exit?: (code: number) => void;
 }
 
 /** Hard ceiling on graceful teardown before the daemon force-exits anyway. */
@@ -118,6 +132,15 @@ export function createShutdown(deps: ShutdownDeps): () => Promise<void> {
 export function createConnectionHandler(
   server: CodegraphDaemonServer,
   paths: CodegraphDaemonPaths,
+  /**
+   * Invoked when a client sends the `shutdown` op (its build fingerprint
+   * differs from this daemon's — bd tea-rags-mcp-ji56r). Wired by `runDaemon`
+   * to the SAME drain/exit lambda the idle watcher uses, so there is exactly
+   * one teardown path. The ack is written BEFORE the drain starts so the
+   * requesting client can await confirmation, then close its socket and poll
+   * the lifecycle files for the actual exit.
+   */
+  onShutdownRequest?: () => void,
 ): (sock: Socket) => void {
   return (sock: Socket) => {
     incrementRefs(paths);
@@ -128,6 +151,11 @@ export function createConnectionHandler(
       buf = rest;
       for (const frame of frames) {
         const req = JSON.parse(frame) as DaemonRequest;
+        if (req.op === "shutdown") {
+          if (!sock.destroyed) sock.write(encodeFrame({ id: req.id, ok: true, result: null }));
+          onShutdownRequest?.();
+          continue;
+        }
         void server.handle(req).then((res) => {
           if (!sock.destroyed) sock.write(encodeFrame(res));
         });
@@ -164,12 +192,26 @@ export async function runDaemon(
     // NO daemonSocketPath — this process IS the daemon; its pool holds the
     // single RW DuckDB connection in-process.
   });
-  const handler = new CodegraphDaemonServer(pool);
-  const server = createServer(createConnectionHandler(handler, options.paths));
+  const handler = new CodegraphDaemonServer(pool, options.buildFingerprint);
 
-  // Holder so `shutdown` can clear the watcher that is armed after it is
-  // defined (avoids a forward-referenced `let` that prefer-const flags).
+  // Holders so the connection handler / `shutdown` can reference values that
+  // are only constructed after them (mirrors the watcherRef pattern; avoids
+  // forward-referenced `let`s that prefer-const flags). `shutdownRef` breaks
+  // the construction cycle: server → connection handler → drainAndExit →
+  // shutdown → boundedShutdown → server. It is assigned before `listen`, so
+  // every connection observes it set.
   const watcherRef: { current?: NodeJS.Timeout } = {};
+  const shutdownRef: { current?: () => Promise<void> } = {};
+  // ONE drain/exit lambda shared by the idle watcher AND the client-requested
+  // `shutdown` op (bd tea-rags-mcp-ji56r) — a single teardown path, no clone.
+  const exit = options.exit ?? ((code: number): void => process.exit(code));
+  const drainAndExit = (): void => {
+    void shutdownRef.current?.().then(() => {
+      exit(0);
+    });
+  };
+
+  const server = createServer(createConnectionHandler(handler, options.paths, drainAndExit));
   const boundedShutdown = createShutdown({
     server,
     pool,
@@ -181,6 +223,7 @@ export async function runDaemon(
     if (watcherRef.current) clearInterval(watcherRef.current);
     await boundedShutdown();
   };
+  shutdownRef.current = shutdown;
 
   // Clear any stale socket file left by a previously-crashed daemon. Without
   // this, `server.listen` fails with EADDRINUSE because the unix socket inode
@@ -200,9 +243,7 @@ export async function runDaemon(
   });
 
   writeFileSync(options.paths.pidFile, String(process.pid), "utf-8");
-  watcherRef.current = scheduleIdleWatcher(options.paths, () => {
-    void shutdown().then(() => process.exit(0));
-  });
+  watcherRef.current = scheduleIdleWatcher(options.paths, drainAndExit);
 
   return { server, shutdown };
 }

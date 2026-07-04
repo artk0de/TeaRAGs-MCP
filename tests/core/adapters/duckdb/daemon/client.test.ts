@@ -355,6 +355,54 @@ describe("DaemonGraphDbClient", () => {
     expect(seen.map((r) => r.op)).toContain("upsertFile");
   });
 
+  it("handshake() sends the client build fingerprint and resolves the daemon's fingerprint", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "handshake" ? { buildFingerprint: "daemon-fp" } : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_hs_v1");
+    await client.init();
+    const result = await client.handshake("client-fp");
+    await client.close();
+
+    expect(result).toEqual({ buildFingerprint: "daemon-fp" });
+    const req = seen.find((r) => r.op === "handshake");
+    expect(req?.params).toMatchObject({ collection: "code_hs_v1", buildFingerprint: "client-fp" });
+  });
+
+  it("handshake() against a LEGACY daemon (null result) resolves null — no fingerprint, no restart signal", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    // Legacy daemon answers every op with null (the pre-fingerprint handshake shape).
+    await echoServer(socketPath, () => null);
+
+    const client = new DaemonGraphDbClient(socketPath, "code_hs_v1");
+    await client.init();
+    expect(await client.handshake("client-fp")).toBeNull();
+    await client.close();
+  });
+
+  it("requestShutdown() sends the shutdown op and resolves on the daemon's ack", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_hs_v1");
+    await client.init();
+    await client.requestShutdown();
+    await client.close();
+
+    expect(seen.map((r) => r.op)).toContain("shutdown");
+  });
+
   it("init() rejects within the configured timeout when no daemon ever appears", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "never.sock");
