@@ -2,7 +2,12 @@ import * as nodeFs from "node:fs";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { blameFile, createCatFileBatchCheck, getHead } from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import { VcsAdapterFactory } from "../../../../../src/core/adapters/vcs/factory.js";
+import {
+  blameFile,
+  createCatFileBatchCheck,
+  getHead,
+} from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import { buildChunkChurnMap } from "../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { ChunkChurnWalkThread } from "../../../../../src/core/domains/trajectory/git/infra/churn-walk/thread.js";
 import { GitCommitDiscovery } from "../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
@@ -92,7 +97,12 @@ describe("GitEnrichmentProvider", () => {
 
       const result = await provider.buildFileSignals("/repo");
 
-      expect(buildFileSignalMap).toHaveBeenCalledWith("/repo", expect.anything(), 12, 60000);
+      expect(buildFileSignalMap).toHaveBeenCalledWith(
+        expect.objectContaining({ repoRoot: "/repo" }),
+        expect.anything(),
+        12,
+        60000,
+      );
       expect(result.size).toBe(1);
       expect(result.has("src/a.ts")).toBe(true);
     });
@@ -104,7 +114,11 @@ describe("GitEnrichmentProvider", () => {
 
       const result = await provider.buildFileSignals("/repo", { paths: ["src/b.ts"] });
 
-      expect(buildFileSignalsForPaths).toHaveBeenCalledWith("/repo", ["src/b.ts"], 60000);
+      expect(buildFileSignalsForPaths).toHaveBeenCalledWith(
+        expect.objectContaining({ repoRoot: "/repo" }),
+        ["src/b.ts"],
+        60000,
+      );
       expect(result.size).toBe(1);
       expect(result.has("src/b.ts")).toBe(true);
     });
@@ -193,7 +207,7 @@ describe("GitEnrichmentProvider", () => {
       await provider.buildChunkSignals("/repo", chunkMap as any);
 
       expect(buildChunkChurnMap).toHaveBeenCalledWith(
-        "/repo",
+        expect.objectContaining({ repoRoot: "/repo" }),
         chunkMap,
         expect.anything(), // enrichmentCache
         expect.anything(), // isoGitCache
@@ -230,7 +244,7 @@ describe("GitEnrichmentProvider", () => {
 
       // ONE repo-wide discovery, sliced in memory — the per-path pathspec log is
       // no longer spawned on the streaming path (bd tea-rags-mcp-j4lm9).
-      expect(buildFileSignalDiscovery).toHaveBeenCalledWith("/repo", 60000);
+      expect(buildFileSignalDiscovery).toHaveBeenCalledWith(expect.objectContaining({ repoRoot: "/repo" }), 60000);
       expect(buildFileSignalsForPaths).not.toHaveBeenCalled();
       expect(result.has("src/b.ts")).toBe(true);
       expect(result.has("src/other.ts")).toBe(false);
@@ -411,6 +425,82 @@ describe("GitEnrichmentProvider", () => {
       expect(threadA).toBeInstanceOf(ChunkChurnWalkThread);
       expect(threadB).toBeInstanceOf(ChunkChurnWalkThread);
       expect(threadA).not.toBe(threadB);
+    });
+  });
+
+  describe("vcs adapter DI — lazy per-root creation (w2dlu T6)", () => {
+    it("creates the vcs adapter lazily via the factory, once per root (cached for the run)", async () => {
+      const createSpy = vi.spyOn(VcsAdapterFactory, "create");
+      try {
+        vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+        vi.mocked(buildFileSignalsForPaths).mockResolvedValue(new Map() as never);
+
+        await provider.buildFileSignals("/repo", { paths: ["src/a.ts"] });
+        await provider.buildFileSignals("/repo", { paths: ["src/b.ts"] });
+        expect(createSpy).toHaveBeenCalledTimes(1);
+        expect(createSpy).toHaveBeenCalledWith("git", "/repo");
+
+        await provider.buildFileSignals("/repo-2", { paths: ["src/c.ts"] });
+        expect(createSpy).toHaveBeenCalledTimes(2);
+        expect(createSpy).toHaveBeenLastCalledWith("git", "/repo-2");
+      } finally {
+        createSpy.mockRestore();
+      }
+    });
+
+    it("passes the configured adapter kind through to the factory", async () => {
+      const createSpy = vi.spyOn(VcsAdapterFactory, "create");
+      try {
+        vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+        vi.mocked(buildFileSignalsForPaths).mockResolvedValue(new Map() as never);
+        const esProvider = new GitEnrichmentProvider({ vcsAdapter: "es-git" });
+        // The es-git branch fail-louds until T9 — resolve with a stub so the
+        // kind-threading assertion is observable without the real binding.
+        createSpy.mockResolvedValue({ repoRoot: "/repo" } as never);
+
+        await esProvider.buildFileSignals("/repo", { paths: [] });
+
+        expect(createSpy).toHaveBeenCalledWith("es-git", "/repo");
+      } finally {
+        createSpy.mockRestore();
+      }
+    });
+
+    it("finalizeSignals drops the per-root adapter cache (next run re-creates)", async () => {
+      const createSpy = vi.spyOn(VcsAdapterFactory, "create");
+      try {
+        vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+        vi.mocked(buildFileSignalsForPaths).mockResolvedValue(new Map() as never);
+
+        await provider.buildFileSignals("/repo", { paths: [] });
+        await provider.finalizeSignals();
+        await provider.buildFileSignals("/repo", { paths: [] });
+
+        expect(createSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        createSpy.mockRestore();
+      }
+    });
+
+    it("ships the vcs adapter kind in the off-thread walk job (structured-clone-safe literal)", async () => {
+      const discovery = {
+        commitsForFiles: vi.fn().mockResolvedValue([]),
+        getBugFixShas: vi.fn().mockResolvedValue(new Set<string>()),
+      };
+      const walkThread = { walk: vi.fn().mockResolvedValue({ overlays: new Map(), stats: {} }) };
+      const chunkMap = new Map([["/repo/src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]]]);
+
+      await provider.buildChunkSignals(
+        "/repo",
+        chunkMap as never,
+        {
+          churnWalkThread: walkThread,
+          commitDiscovery: discovery,
+          skipCache: true,
+        } as never,
+      );
+
+      expect(walkThread.walk).toHaveBeenCalledWith(expect.objectContaining({ gitAdapter: "git" }));
     });
   });
 

@@ -9,15 +9,17 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import {
-  blameFile,
-  createCatFileBatchCheck,
-  getHead,
-  resolveRepoRoot,
-  type CatFileBatchCheckReader,
-  type CatFileBatchReader,
-} from "../../../adapters/vcs/git/git-cli/client.js";
-import type { BlameLine, CommitInfo, FileChurnData } from "../../../adapters/vcs/types.js";
+import { VcsAdapterFactory } from "../../../adapters/vcs/factory.js";
+import type { VcsGitAdapter } from "../../../adapters/vcs/git/adapter.js";
+import { resolveRepoRoot } from "../../../adapters/vcs/git/git-cli/client.js";
+import type {
+  BlameLine,
+  BlobBatchReader,
+  CommitInfo,
+  FileChurnData,
+  GitAdapterKind,
+  OidBatchResolver,
+} from "../../../adapters/vcs/types.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
 import type { FileClassification } from "../../../contracts/types/file-classification.js";
 import type {
@@ -56,11 +58,15 @@ import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./rerank/presets/index.js";
 import type { ChunkChurnOverlay } from "./types.js";
 
-/** Subset of TrajectoryGitConfig used by the provider at runtime. */
+/** Subset of TrajectoryGitConfig used by the provider at runtime, plus the
+ *  VCS adapter kind (`config.vcs.adapter`) the per-root adapters are built with. */
 export type GitProviderConfig = Pick<
   TrajectoryGitConfig,
   "logMaxAgeMonths" | "logTimeoutMs" | "chunkConcurrency" | "chunkMaxAgeMonths" | "chunkTimeoutMs" | "chunkMaxFileLines"
->;
+> & {
+  /** GIT_ADAPTER kind for VcsAdapterFactory — structured-clone-safe literal. */
+  vcsAdapter: GitAdapterKind;
+};
 
 const DEFAULT_PROVIDER_CONFIG: GitProviderConfig = {
   logMaxAgeMonths: 12,
@@ -69,6 +75,7 @@ const DEFAULT_PROVIDER_CONFIG: GitProviderConfig = {
   chunkMaxAgeMonths: 6,
   chunkTimeoutMs: 120000,
   chunkMaxFileLines: 10000,
+  vcsAdapter: "git",
 };
 
 /**
@@ -118,8 +125,13 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   /** ONE persistent `git cat-file --batch-check` process per run/root — the
    *  OID lookups that key the blame cache ride it (EDR-immune: no fresh
    *  spawns). Closed at the finalize seam. */
-  private oidReader: CatFileBatchCheckReader | null = null;
+  private oidReader: OidBatchResolver | null = null;
   private oidReaderRoot: string | null = null;
+
+  /** Lazy per-root VCS adapters for the run (w2dlu T6) — created on first use
+   *  via VcsAdapterFactory with the configured kind, cached as promises so
+   *  concurrent callers share one creation. Dropped at the finalize seam. */
+  private readonly vcsAdapters = new Map<string, Promise<VcsGitAdapter>>();
 
   /**
    * Worker-pool descriptor — present iff the composition root wired this
@@ -154,6 +166,18 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     return resolveRepoRoot(absolutePath);
   }
 
+  /** Lazy per-root adapter for the run — one factory call per root, shared as
+   *  a cached promise (a rejected creation stays cached: fail-loud once per
+   *  run, per the es-git no-silent-fallback contract). */
+  private async adapterFor(root: string): Promise<VcsGitAdapter> {
+    let adapter = this.vcsAdapters.get(root);
+    if (!adapter) {
+      adapter = VcsAdapterFactory.create(this.config.vcsAdapter, root);
+      this.vcsAdapters.set(root, adapter);
+    }
+    return adapter;
+  }
+
   /**
    * Git policy: generated files carry harmful signals (regeneration churn,
    * generator as "owner") and are huge blame targets → skip entirely.
@@ -181,16 +205,17 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       return new Map();
     }
 
+    const adapter = await this.adapterFor(root);
     let rawData: Map<string, FileChurnData>;
 
     if (options?.paths) {
       // Whole-set path (backfill / recovery): a fresh per-path history walk.
       // Kept separate from streamFileBatch so backfill/recovery semantics are
       // unchanged — they do not share the run-scoped streaming discovery.
-      rawData = await buildFileSignalsForPaths(root, options.paths, this.config.logTimeoutMs);
+      rawData = await buildFileSignalsForPaths(adapter, options.paths, this.config.logTimeoutMs);
     } else {
       rawData = await buildFileSignalMap(
-        root,
+        adapter,
         this.enrichmentCache,
         this.config.logMaxAgeMonths,
         this.config.logTimeoutMs,
@@ -239,6 +264,10 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     await this.oidReader?.close().catch(() => undefined);
     this.oidReader = null;
     this.oidReaderRoot = null;
+    // w2dlu T6: per-root adapters are run-scoped — drop them with the run so
+    // a later run re-creates fresh instances (matters once adapters hold
+    // native repo handles, e.g. es-git).
+    this.vcsAdapters.clear();
     return new Map();
   };
 
@@ -248,11 +277,12 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    * (new run) rebuilds. Dropped at the finalize seam (finalizeSignals).
    */
   private async getRunDiscovery(root: string): Promise<Map<string, FileChurnData>> {
-    const headSha = await getHead(root).catch(() => "");
+    const adapter = await this.adapterFor(root);
+    const headSha = await adapter.getHead().catch(() => "");
     if (this.fileDiscovery?.root === root && this.fileDiscovery.headSha === headSha) {
       return this.fileDiscovery.data;
     }
-    const data = await buildFileSignalDiscovery(root, this.config.logTimeoutMs);
+    const data = await buildFileSignalDiscovery(adapter, this.config.logTimeoutMs);
     this.fileDiscovery = { root, headSha, data };
     return data;
   }
@@ -299,7 +329,10 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  first chunk dispatch, dropped at drain). Arrow-property so `this`
    *  survives callback passing (precedent: streamFileBatch). */
   createCommitDiscovery = (repoRoot: string): GitCommitDiscovery =>
-    new GitCommitDiscovery(repoRoot, {
+    // Construction stays synchronous (ChunkPhase creates it before any await
+    // to avoid a double-create race) — the discovery awaits the adapter
+    // promise internally on its first git touch.
+    new GitCommitDiscovery(this.adapterFor(repoRoot), {
       maxAgeMonths: this.config.chunkMaxAgeMonths,
       timeoutMs: this.config.chunkTimeoutMs,
       store: new GitCommitDiscoveryStore(),
@@ -342,6 +375,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     const entries = Array.from(rawData.entries());
     if (entries.length === 0) return;
     const startedAt = Date.now();
+    const adapter = await this.adapterFor(root);
 
     const oidByPath = await this.resolveHeadOids(
       root,
@@ -369,7 +403,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       while (cursor < missEntries.length) {
         const i = cursor++;
         const [relPath, churnData] = missEntries[i];
-        const lines = await blameFile(root, relPath, this.config.logTimeoutMs);
+        const lines = await adapter.blameFile(relPath, this.config.logTimeoutMs);
         this.blameByChurnData.set(churnData, lines);
         this.blameByRelPath.set(relPath, lines);
         const oid = oidByPath.get(relPath);
@@ -400,7 +434,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     try {
       if (this.oidReaderRoot !== root || !this.oidReader) {
         await this.oidReader?.close().catch(() => undefined);
-        this.oidReader = createCatFileBatchCheck(root);
+        this.oidReader = (await this.adapterFor(root)).createOidBatchResolver();
         this.oidReaderRoot = root;
       }
       const reader = this.oidReader;
@@ -449,7 +483,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       rawResult = await this.walkChunkChurnOffThread(root, chunkMap, walkThread, options.commitDiscovery, options);
     } else {
       rawResult = await buildChunkChurnMap(
-        root,
+        await this.adapterFor(root),
         chunkMap,
         this.enrichmentCache,
         this.isoGitCache,
@@ -463,8 +497,8 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
         options?.skipCache,
         this.blameByRelPath,
         // kc93: run-scoped reader shared across batches when ChunkPhase injects
-        // one. The duck-typed contract shape is structurally CatFileBatchReader.
-        options?.blobReader as CatFileBatchReader | undefined,
+        // one. The duck-typed contract shape is structurally BlobBatchReader.
+        options?.blobReader as BlobBatchReader | undefined,
         // 7gnre: run-scoped (commitSha, filePath) → hunks memo shared across
         // batches — the same sweep commits are otherwise re-diffed per batch.
         options?.diffMemo,
@@ -549,6 +583,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
 
     const outcome = await walkThread.walk({
       repoRoot: root,
+      gitAdapter: this.config.vcsAdapter,
       relativeChunkMap,
       commitEntries,
       bugFixShas,

@@ -92,6 +92,45 @@ export async function buildViaCli(
   return parseNumstatOutput(stdout);
 }
 
+/**
+ * Fetch file-level metadata for specific files (no --since filter).
+ * Used as a backfill for files that weren't in the main git log window.
+ * Batches file paths to stay within OS ARG_MAX limits.
+ */
+export async function buildViaCliForPaths(
+  repoRoot: string,
+  paths: string[],
+  timeoutMs = 30000,
+): Promise<Map<string, FileChurnData>> {
+  if (paths.length === 0) return new Map();
+
+  const result = new Map<string, FileChurnData>();
+  const BATCH = 500; // stay within ARG_MAX
+
+  for (let i = 0; i < paths.length; i += BATCH) {
+    const batch = paths.slice(i, i + BATCH);
+    const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00", "--", ...batch];
+
+    try {
+      const { stdout } = await execFileAsync("git", args, {
+        cwd: repoRoot,
+        maxBuffer: Infinity,
+        timeout: timeoutMs,
+      });
+      const batchResult = parseNumstatOutput(stdout);
+      for (const [path, data] of batchResult) {
+        result.set(path, data);
+      }
+    } catch (error) {
+      if (isDebug()) {
+        console.error(`[GitLogReader] Backfill batch failed:`, error instanceof Error ? error.message : error);
+      }
+    }
+  }
+
+  return result;
+}
+
 // ── Object reads (CLI cat-file — never loads the packfile into memory) ──
 // isomorphic-git's readBlob loaded the ENTIRE packfile into a JS ArrayBuffer
 // per cache object (heap profiler caught 3×1.4 GB `system / JSArrayBufferData`

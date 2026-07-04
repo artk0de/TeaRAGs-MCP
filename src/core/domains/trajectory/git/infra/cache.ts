@@ -3,7 +3,7 @@
  * Invalidates automatically when HEAD changes.
  */
 
-import { getHead } from "../../../../adapters/vcs/git/git-cli/client.js";
+import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { FileChurnData } from "../../../../adapters/vcs/types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 
@@ -14,9 +14,9 @@ export class GitEnrichmentCache {
     { headSha: string; data: Map<string, Map<string, ChunkChurnOverlay>> }
   >();
 
-  async getFileMetadata(cacheKey: string, repoRoot: string): Promise<Map<string, FileChurnData> | null> {
+  async getFileMetadata(cacheKey: string, adapter: VcsGitAdapter): Promise<Map<string, FileChurnData> | null> {
     try {
-      const headSha = await getHead(repoRoot);
+      const headSha = await adapter.getHead();
       const cached = this.fileMetadataCache.get(cacheKey);
       if (cached?.headSha === headSha) return cached.data;
     } catch {
@@ -25,19 +25,19 @@ export class GitEnrichmentCache {
     return null;
   }
 
-  async setFileMetadata(cacheKey: string, repoRoot: string, data: Map<string, FileChurnData>): Promise<void> {
+  async setFileMetadata(cacheKey: string, adapter: VcsGitAdapter, data: Map<string, FileChurnData>): Promise<void> {
     try {
-      const headSha = await getHead(repoRoot);
+      const headSha = await adapter.getHead();
       this.fileMetadataCache.set(cacheKey, { headSha, data });
     } catch {
       // Non-fatal
     }
   }
 
-  async getChunkChurn(repoRoot: string): Promise<Map<string, Map<string, ChunkChurnOverlay>> | null> {
+  async getChunkChurn(adapter: VcsGitAdapter): Promise<Map<string, Map<string, ChunkChurnOverlay>> | null> {
     try {
-      const headSha = await getHead(repoRoot);
-      const cached = this.chunkChurnCache.get(repoRoot);
+      const headSha = await adapter.getHead();
+      const cached = this.chunkChurnCache.get(adapter.repoRoot);
       if (cached?.headSha === headSha) return cached.data;
     } catch {
       // Skip cache
@@ -45,10 +45,10 @@ export class GitEnrichmentCache {
     return null;
   }
 
-  async setChunkChurn(repoRoot: string, data: Map<string, Map<string, ChunkChurnOverlay>>): Promise<void> {
+  async setChunkChurn(adapter: VcsGitAdapter, data: Map<string, Map<string, ChunkChurnOverlay>>): Promise<void> {
     try {
-      const headSha = await getHead(repoRoot);
-      this.chunkChurnCache.set(repoRoot, { headSha, data });
+      const headSha = await adapter.getHead();
+      this.chunkChurnCache.set(adapter.repoRoot, { headSha, data });
     } catch {
       // Non-fatal
     }

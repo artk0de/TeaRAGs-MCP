@@ -18,6 +18,7 @@ class StubGitAdapter extends VcsGitAdapter {
   readBlobAsString = async (): Promise<string> => "";
   blameFile = async (): Promise<BlameLine[]> => [];
   getCommitsByPathspec = async (): Promise<CommitWithChangedFiles[]> => [];
+  readNumstatLogForPaths = async (): Promise<Map<string, FileChurnData>> => new Map();
   createBlobBatchReader = (): BlobBatchReader => ({ read: async () => "", close: async () => {} });
   createOidBatchResolver = (): OidBatchResolver => ({ check: async () => null, close: async () => {} });
 }
@@ -31,6 +32,7 @@ describe("VcsGitAdapter", () => {
   it("declares the git-strength ops beyond the portable VcsAdapter contract", () => {
     const adapter = new StubGitAdapter("/some/repo");
     expect(typeof adapter.getCommitsByPathspec).toBe("function");
+    expect(typeof adapter.readNumstatLogForPaths).toBe("function");
     expect(typeof adapter.createBlobBatchReader).toBe("function");
     expect(typeof adapter.createOidBatchResolver).toBe("function");
   });

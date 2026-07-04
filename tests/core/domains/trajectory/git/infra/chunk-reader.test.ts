@@ -9,6 +9,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import * as chunkReader from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 
@@ -64,7 +65,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
 
     // maxFileLines is the 9th positional arg (squashOpts, chunkTimeoutMs precede it).
     const result = await chunkReader.buildChunkChurnMapUncached(
-      "/fake/repo",
+      new GitCliAdapter("/fake/repo"),
       chunkMap,
       {},
       10,
@@ -106,7 +107,14 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
+    const result = await chunkReader.buildChunkChurnMapUncached(
+      new GitCliAdapter("/fake/repo"),
+      chunkMap,
+      {},
+      10,
+      6,
+      undefined,
+    );
 
     // Should not throw; chunks should have 0 commits
     const overlay = result.get("test.ts");
@@ -139,7 +147,14 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
+    const result = await chunkReader.buildChunkChurnMapUncached(
+      new GitCliAdapter("/fake/repo"),
+      chunkMap,
+      {},
+      10,
+      6,
+      undefined,
+    );
 
     const overlay = result.get("test.ts");
     expect(overlay).toBeDefined();
@@ -172,7 +187,14 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
+    const result = await chunkReader.buildChunkChurnMapUncached(
+      new GitCliAdapter("/fake/repo"),
+      chunkMap,
+      {},
+      10,
+      6,
+      undefined,
+    );
 
     const overlay = result.get("test.ts");
     expect(overlay).toBeDefined();
@@ -206,7 +228,14 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
+    const result = await chunkReader.buildChunkChurnMapUncached(
+      new GitCliAdapter("/fake/repo"),
+      chunkMap,
+      {},
+      10,
+      6,
+      undefined,
+    );
 
     // With identical blobs, structuredPatch returns 0 hunks → skip
     const overlay = result.get("test.ts");
@@ -244,7 +273,14 @@ describe("processCommitEntry — no relevant files", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
+    const result = await chunkReader.buildChunkChurnMapUncached(
+      new GitCliAdapter("/fake/repo"),
+      chunkMap,
+      {},
+      10,
+      6,
+      undefined,
+    );
 
     // Chunks should have 0 commits since the changed file doesn't match
     const overlay = result.get("target.ts");
@@ -292,7 +328,14 @@ describe("processCommitEntry — bug fix accumulation", () => {
       { chunkId: "c2", startLine: 6, endLine: 100 },
     ]);
 
-    const result = await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
+    const result = await chunkReader.buildChunkChurnMapUncached(
+      new GitCliAdapter("/fake/repo"),
+      chunkMap,
+      {},
+      10,
+      6,
+      undefined,
+    );
 
     const overlay = result.get("auth.ts");
     expect(overlay).toBeDefined();
@@ -353,7 +396,7 @@ describe("buildChunkChurnMapUncached — single-chunk files", () => {
     ]);
 
     const result = await chunkReader.buildChunkChurnMapUncached(
-      "/fake/repo",
+      new GitCliAdapter("/fake/repo"),
       chunkMap,
       {},
       10,
@@ -416,7 +459,7 @@ describe("buildChunkChurnMapUncached — fallback fileCommitCount", () => {
 
     // Call WITHOUT fileChurnDataMap — should use fallback union calculation
     const result = await chunkReader.buildChunkChurnMapUncached(
-      "/fake/repo",
+      new GitCliAdapter("/fake/repo"),
       chunkMap,
       {},
       10,
@@ -452,7 +495,14 @@ describe("buildChunkChurnMapUncached — CLI pathspec failure", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
+    const result = await chunkReader.buildChunkChurnMapUncached(
+      new GitCliAdapter("/fake/repo"),
+      chunkMap,
+      {},
+      10,
+      6,
+      undefined,
+    );
 
     // Should not throw; returns empty overlays since no commits were processed
     expect(result).toBeInstanceOf(Map);
@@ -497,7 +547,7 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
     ]);
 
     await chunkReader.buildChunkChurnMapUncached(
-      "/fake/repo",
+      new GitCliAdapter("/fake/repo"),
       chunkMap,
       {},
       10,
@@ -517,7 +567,7 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
     const externalSem = { acquire: vi.fn() };
 
     const result = await chunkReader.buildChunkChurnMapUncached(
-      "/fake/repo",
+      new GitCliAdapter("/fake/repo"),
       new Map(),
       {},
       10,
@@ -559,7 +609,14 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
     ]);
 
     // No semaphore passed — should still work
-    const result = await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
+    const result = await chunkReader.buildChunkChurnMapUncached(
+      new GitCliAdapter("/fake/repo"),
+      chunkMap,
+      {},
+      10,
+      6,
+      undefined,
+    );
 
     expect(result.get("src/a.ts")).toBeDefined();
   });
@@ -604,7 +661,7 @@ describe("buildChunkChurnMapUncached — injected blobReader", () => {
 
     // blobReader is the LAST positional arg (after blameByPath).
     await chunkReader.buildChunkChurnMapUncached(
-      "/fake/repo",
+      new GitCliAdapter("/fake/repo"),
       chunkMap,
       {},
       10,
@@ -654,7 +711,7 @@ describe("buildChunkChurnMapUncached — injected blobReader", () => {
     ]);
 
     // No blobReader passed → walk owns the lifecycle: spawn once, close in finally.
-    await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
+    await chunkReader.buildChunkChurnMapUncached(new GitCliAdapter("/fake/repo"), chunkMap, {}, 10, 6, undefined);
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalledTimes(1);
@@ -712,7 +769,14 @@ describe("buildChunkChurnMapUncached — concurrency control", () => {
     ]);
 
     // Use concurrency=1 to exercise the queue mechanism
-    const result = await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 1, 6, undefined);
+    const result = await chunkReader.buildChunkChurnMapUncached(
+      new GitCliAdapter("/fake/repo"),
+      chunkMap,
+      {},
+      1,
+      6,
+      undefined,
+    );
 
     const overlay = result.get("test.ts");
     expect(overlay).toBeDefined();

@@ -40,6 +40,12 @@ export abstract class VcsGitAdapter implements VcsAdapter {
     filePaths: string[],
     timeoutMs?: number,
   ): Promise<CommitWithChangedFiles[]>;
+  /**
+   * Full-history per-file churn log scoped to `paths` (git pathspec semantics,
+   * no `--since` bound), batched internally to stay within OS arg limits.
+   * Per-batch failures are swallowed — absent paths simply yield no entries.
+   */
+  abstract readNumstatLogForPaths(paths: string[], timeoutMs?: number): Promise<Map<string, FileChurnData>>;
   /** Persistent batch blob reader — caller owns the lifecycle (`close()` at walk end). */
   abstract createBlobBatchReader(): BlobBatchReader;
   /** Persistent batch `<rev>` → OID resolver — caller owns the lifecycle. */

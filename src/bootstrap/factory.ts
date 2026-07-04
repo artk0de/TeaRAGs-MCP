@@ -263,7 +263,8 @@ function wireComposition(
   // overhead (postMessage chunkMap/results per batch) was measurable. Inline
   // is origin/main behavior and is the correct path.
   const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition({
-    git: { config: zodConfig.trajectoryGit, squashOpts },
+    // w2dlu T6: the provider builds its per-root VcsGitAdapter from this kind.
+    git: { config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter }, squashOpts },
     codegraph,
   });
   const schemaBuilder = new SchemaBuilder(reranker);

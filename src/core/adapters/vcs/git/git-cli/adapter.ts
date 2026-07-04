@@ -16,6 +16,7 @@ import { VcsGitAdapter } from "../adapter.js";
 import {
   blameFile,
   buildViaCli,
+  buildViaCliForPaths,
   createCatFileBatch,
   createCatFileBatchCheck,
   getCommitsByPathspec,
@@ -66,6 +67,10 @@ export class GitCliAdapter extends VcsGitAdapter {
     timeoutMs?: number,
   ): Promise<CommitWithChangedFiles[]> {
     return getCommitsByPathspec(this.repoRoot, sinceDate, filePaths, timeoutMs);
+  }
+
+  async readNumstatLogForPaths(paths: string[], timeoutMs?: number): Promise<Map<string, FileChurnData>> {
+    return buildViaCliForPaths(this.repoRoot, paths, timeoutMs);
   }
 
   createBlobBatchReader(): BlobBatchReader {

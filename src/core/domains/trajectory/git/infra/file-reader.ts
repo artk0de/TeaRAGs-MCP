@@ -1,46 +1,40 @@
 /**
  * File-level metadata building from git history.
- * CLI `git log` only — no isomorphic-git fallback (avoids OOM on large repos).
+ * All history access rides the injected `VcsGitAdapter` — no direct git CLI
+ * calls remain here (the CLI specifics live in adapters/vcs/git/git-cli).
  */
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-import { buildViaCli } from "../../../../adapters/vcs/git/git-cli/client.js";
-import { parseNumstatOutput } from "../../../../adapters/vcs/git/git-cli/parsers.js";
+import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { FileChurnData } from "../../../../adapters/vcs/types.js";
-import { isDebug } from "../../../../infra/runtime.js";
 import type { GitEnrichmentCache } from "./cache.js";
-
-const execFileAsync = promisify(execFile);
 
 /**
  * Build per-file FileChurnData from git history.
- * Uses CLI `git log HEAD --numstat` (single process spawn).
+ * Uses the adapter's repo-wide numstat log (single history walk).
  *
  * @param maxAgeMonths - limit commits to last N months (default 12).
  *   Set to 0 to disable (read all commits).
  * @param timeoutMs - timeout for git log command (default 60000).
  */
 export async function buildFileSignalMap(
-  repoRoot: string,
+  adapter: VcsGitAdapter,
   enrichmentCache: GitEnrichmentCache,
   maxAgeMonths = 12,
   timeoutMs = 60000,
 ): Promise<Map<string, FileChurnData>> {
   // Cache key includes maxAge to avoid returning stale results for different time windows
-  const cacheKey = `${repoRoot}:${maxAgeMonths}`;
+  const cacheKey = `${adapter.repoRoot}:${maxAgeMonths}`;
 
   // Check HEAD-based cache (non-fatal if HEAD resolution fails)
-  const cached = await enrichmentCache.getFileMetadata(cacheKey, repoRoot);
+  const cached = await enrichmentCache.getFileMetadata(cacheKey, adapter);
   if (cached) return cached;
 
   const sinceDate = maxAgeMonths > 0 ? new Date(Date.now() - maxAgeMonths * 30 * 86400 * 1000) : undefined;
 
-  const result = await buildViaCli(repoRoot, sinceDate, timeoutMs);
+  const result = await adapter.readNumstatLog(sinceDate, timeoutMs);
 
   // Store in cache (non-fatal if HEAD unresolvable)
-  await enrichmentCache.setFileMetadata(cacheKey, repoRoot, result);
+  await enrichmentCache.setFileMetadata(cacheKey, adapter, result);
   return result;
 }
 
@@ -55,17 +49,17 @@ export async function buildFileSignalMap(
  * filter — so a sliced entry deep-equals the legacy per-batch result. The only
  * flag difference from `buildFileSignalsForPaths` is the absent pathspec, which
  * is what `sliceFileSignalsByPaths` restores in memory. Reuses the same
- * `buildViaCli` primitive (and `parseNumstatOutput`) as `buildFileSignalMap`, so
- * there is a single git-command definition.
+ * numstat-log primitive as `buildFileSignalMap`, so there is a single
+ * git-command definition (adapter-side).
  *
  * @param timeoutMs - timeout for the git log command (default 60000).
  */
 export async function buildFileSignalDiscovery(
-  repoRoot: string,
+  adapter: VcsGitAdapter,
   timeoutMs = 60000,
 ): Promise<Map<string, FileChurnData>> {
   // No sinceDate ⇒ full history, identical to buildFileSignalsForPaths semantics.
-  return buildViaCli(repoRoot, undefined, timeoutMs);
+  return adapter.readNumstatLog(undefined, timeoutMs);
 }
 
 /**
@@ -91,38 +85,14 @@ export function sliceFileSignalsByPaths(
 /**
  * Fetch file-level metadata for specific files (no --since filter).
  * Used as a backfill for files that weren't in the main git log window.
- * Batches file paths to stay within OS ARG_MAX limits.
+ * Batching to stay within OS ARG_MAX limits happens adapter-side
+ * (`readNumstatLogForPaths`).
  */
 export async function buildFileSignalsForPaths(
-  repoRoot: string,
+  adapter: VcsGitAdapter,
   paths: string[],
   timeoutMs = 30000,
 ): Promise<Map<string, FileChurnData>> {
   if (paths.length === 0) return new Map();
-
-  const result = new Map<string, FileChurnData>();
-  const BATCH = 500; // stay within ARG_MAX
-
-  for (let i = 0; i < paths.length; i += BATCH) {
-    const batch = paths.slice(i, i + BATCH);
-    const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00", "--", ...batch];
-
-    try {
-      const { stdout } = await execFileAsync("git", args, {
-        cwd: repoRoot,
-        maxBuffer: Infinity,
-        timeout: timeoutMs,
-      });
-      const batchResult = parseNumstatOutput(stdout);
-      for (const [path, data] of batchResult) {
-        result.set(path, data);
-      }
-    } catch (error) {
-      if (isDebug()) {
-        console.error(`[GitLogReader] Backfill batch failed:`, error instanceof Error ? error.message : error);
-      }
-    }
-  }
-
-  return result;
+  return adapter.readNumstatLogForPaths(paths, timeoutMs);
 }

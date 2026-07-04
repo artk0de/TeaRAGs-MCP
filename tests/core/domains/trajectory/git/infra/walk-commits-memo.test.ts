@@ -12,6 +12,7 @@
 import { structuredPatch } from "diff";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { CommitDiffMemo } from "../../../../../../src/core/infra/commit-diff-memo.js";
@@ -62,7 +63,7 @@ async function walkOnce(
   memo: CommitDiffMemo,
 ): Promise<Map<string, Map<string, { commitCount: number }>>> {
   return (await buildChunkChurnMapUncached(
-    "/fake/repo",
+    new GitCliAdapter("/fake/repo"),
     chunkMapFor(file),
     {},
     10,
@@ -127,7 +128,7 @@ describe("walkCommits run-scoped diff memo (bd tea-rags-mcp-7gnre)", () => {
     const blobReader = fakeBlobReader();
 
     const result = (await buildChunkChurnMapUncached(
-      "/fake/repo",
+      new GitCliAdapter("/fake/repo"),
       chunkMapFor("test.ts"),
       {},
       10,

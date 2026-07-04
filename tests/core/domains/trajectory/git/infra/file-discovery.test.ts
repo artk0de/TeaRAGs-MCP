@@ -22,6 +22,7 @@ import { join, resolve, sep } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
 import {
   buildFileSignalDiscovery,
@@ -145,7 +146,7 @@ describe("file-phase single-discovery equivalence (real git)", () => {
   });
 
   it("sliced discovery DEEP-EQUALS the legacy per-batch pathspec log for every batch", async () => {
-    const discovery = await buildFileSignalDiscovery(tmp);
+    const discovery = await buildFileSignalDiscovery(new GitCliAdapter(tmp));
 
     // Guard against a trivially-empty false-green: the fixture history must
     // actually be present in the discovery with the expected commit counts.
@@ -155,7 +156,7 @@ describe("file-phase single-discovery equivalence (real git)", () => {
     expect(discovery.get("d.ts")?.commits).toHaveLength(2); // feat, sweep
 
     for (const batch of BATCHES) {
-      const legacy = await buildFileSignalsForPaths(tmp, batch);
+      const legacy = await buildFileSignalsForPaths(new GitCliAdapter(tmp), batch);
       const sliced = sliceFileSignalsByPaths(discovery, batch);
       // Deep equality over EVERY FileChurnData field: commits (sha, author,
       // authorEmail, timestamp, body, parents), linesAdded, linesDeleted —
@@ -165,7 +166,7 @@ describe("file-phase single-discovery equivalence (real git)", () => {
   });
 
   it("commit metadata carried by the discovery covers bugfix-classification inputs", async () => {
-    const discovery = await buildFileSignalDiscovery(tmp);
+    const discovery = await buildFileSignalDiscovery(new GitCliAdapter(tmp));
     const aFix = discovery.get("a.ts")?.commits.find((c) => c.body.startsWith("fix: bug in a"));
     expect(aFix).toBeDefined();
     expect(aFix?.author).toBe("Carol");
@@ -177,7 +178,7 @@ describe("file-phase single-discovery equivalence (real git)", () => {
   it("provider streamFileBatch (sliced route) matches the legacy per-batch result per batch", async () => {
     const provider = new GitEnrichmentProvider();
     for (const batch of BATCHES) {
-      const legacy = await buildFileSignalsForPaths(tmp, batch);
+      const legacy = await buildFileSignalsForPaths(new GitCliAdapter(tmp), batch);
       const viaProvider = await provider.streamFileBatch(tmp, batch);
       expect(viaProvider).toEqual(legacy);
     }
@@ -231,7 +232,7 @@ describe("file-phase single-discovery spawn counts (PATH shim)", () => {
   it("legacy path spawns one full-history numstat log PER BATCH", async () => {
     resetLog();
     for (const batch of BATCHES) {
-      await buildFileSignalsForPaths(tmp, batch);
+      await buildFileSignalsForPaths(new GitCliAdapter(tmp), batch);
     }
     expect(countPrefix("log HEAD --numstat")).toBe(BATCHES.length);
   });

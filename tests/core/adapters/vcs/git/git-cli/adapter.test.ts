@@ -20,6 +20,14 @@ describe("GitCliAdapter", () => {
     await expect(adapter.blameFile("no/such/file.xyz")).resolves.toEqual([]);
   });
 
+  it("readNumstatLogForPaths returns per-file churn for the requested paths only (real repo)", async () => {
+    const adapter = new GitCliAdapter(process.cwd());
+    const map = await adapter.readNumstatLogForPaths(["package.json"]);
+    expect(map.has("package.json")).toBe(true);
+    expect(map.get("package.json")?.commits.length).toBeGreaterThan(0);
+    expect(map.has("src/index.ts")).toBe(false);
+  });
+
   it("batch readers are constructed lazily without spawning git", async () => {
     const adapter = new GitCliAdapter(process.cwd());
     const reader = adapter.createBlobBatchReader();

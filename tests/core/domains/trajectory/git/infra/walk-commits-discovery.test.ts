@@ -9,6 +9,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
@@ -63,7 +64,7 @@ async function walkOnce(
   discovery?: WalkCommitDiscovery,
 ): Promise<Map<string, Map<string, { commitCount: number; bugFixRate: number }>>> {
   return (await buildChunkChurnMapUncached(
-    "/fake/repo",
+    new GitCliAdapter("/fake/repo"),
     chunkMapFor(file),
     {},
     10,

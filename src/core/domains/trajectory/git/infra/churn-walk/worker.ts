@@ -20,7 +20,9 @@
 
 import { parentPort } from "node:worker_threads";
 
-import { createCatFileBatch, type CatFileBatchReader } from "../../../../../adapters/vcs/git/git-cli/client.js";
+import { VcsAdapterFactory } from "../../../../../adapters/vcs/factory.js";
+import type { VcsGitAdapter } from "../../../../../adapters/vcs/git/adapter.js";
+import type { BlobBatchReader, GitAdapterKind } from "../../../../../adapters/vcs/types.js";
 import { CommitDiffMemo } from "../../../../../infra/commit-diff-memo.js";
 import { Semaphore } from "../../../../../infra/semaphore.js";
 import { buildChunkChurnMapUncached } from "../chunk-reader.js";
@@ -32,8 +34,36 @@ import type {
   ChurnWalkThreadResponse,
 } from "./protocol.js";
 
+/** Worker-owned run-scoped adapters, one per repoRoot — built IN-THREAD from
+ *  the job's structured-clone-safe kind (worker-DI: instances never cross
+ *  postMessage). */
+const adapters = new Map<string, VcsGitAdapter>();
 /** Worker-owned run-scoped readers, one per repoRoot (lazy git spawn inside). */
-const readers = new Map<string, CatFileBatchReader>();
+const readers = new Map<string, BlobBatchReader>();
+
+/** Worker-owned adapter per repoRoot — created in-thread via the factory. */
+async function adapterFor(kind: GitAdapterKind, repoRoot: string): Promise<VcsGitAdapter> {
+  let adapter = adapters.get(repoRoot);
+  if (!adapter) {
+    adapter = await VcsAdapterFactory.create(kind, repoRoot);
+    adapters.set(repoRoot, adapter);
+  }
+  return adapter;
+}
+
+/**
+ * Resolve (create-or-reuse) the worker's blob reader for a job — ONE
+ * long-lived reader per repoRoot, reused across every walk of the worker's
+ * lifetime; the underlying git process spawns lazily on the first read.
+ */
+export async function resolveWalkBlobReader(kind: GitAdapterKind, repoRoot: string): Promise<BlobBatchReader> {
+  let reader = readers.get(repoRoot);
+  if (!reader) {
+    reader = (await adapterFor(kind, repoRoot)).createBlobBatchReader();
+    readers.set(repoRoot, reader);
+  }
+  return reader;
+}
 /** Worker-owned (commitSha, filePath) → hunks memo shared across walks. */
 const memo = new CommitDiffMemo();
 /** Worker-owned shared limiter — sized from the first job's concurrency. */
@@ -52,11 +82,8 @@ const ZERO_STATS: ChunkChurnWalkStats = {
 
 async function runWalk(job: ChunkChurnWalkJobInput): Promise<ChunkChurnWalkOutcome> {
   sharedLimiter ??= new Semaphore(job.concurrency);
-  let reader = readers.get(job.repoRoot);
-  if (!reader) {
-    reader = createCatFileBatch(job.repoRoot);
-    readers.set(job.repoRoot, reader);
-  }
+  const adapter = await adapterFor(job.gitAdapter, job.repoRoot);
+  const reader = await resolveWalkBlobReader(job.gitAdapter, job.repoRoot);
 
   // Static adapter over the pre-sliced job data — the walk consumes it
   // exactly like the run-scoped GitCommitDiscovery on the inline path.
@@ -69,7 +96,7 @@ async function runWalk(job: ChunkChurnWalkJobInput): Promise<ChunkChurnWalkOutco
   // the callback — report zeroed stats for that case.
   let stats: ChunkChurnWalkStats = ZERO_STATS;
   const overlays = await buildChunkChurnMapUncached(
-    job.repoRoot,
+    adapter,
     job.relativeChunkMap,
     {},
     job.concurrency,
@@ -93,6 +120,7 @@ async function runWalk(job: ChunkChurnWalkJobInput): Promise<ChunkChurnWalkOutco
 async function handleClose(): Promise<void> {
   await Promise.all([...readers.values()].map(async (reader) => reader.close().catch(() => undefined)));
   readers.clear();
+  adapters.clear();
   parentPort?.close();
 }
 
