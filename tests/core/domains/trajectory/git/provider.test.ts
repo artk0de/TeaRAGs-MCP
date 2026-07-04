@@ -199,6 +199,7 @@ describe("GitEnrichmentProvider", () => {
         undefined, // blobReader (kc93 — not passed when no options.blobReader)
         undefined, // diffMemo (7gnre — not passed when no options.diffMemo)
         undefined, // commitDiscovery (82va1 — not passed when no options.commitDiscovery)
+        undefined, // onWalkStats (iqpuu — not passed when no options.onWalkStats)
       );
     });
   });

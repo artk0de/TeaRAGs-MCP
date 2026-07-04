@@ -96,7 +96,7 @@ describe("getCommitsByPathspecBatched (via getCommitsByPathspec)", () => {
   });
 });
 
-// readBlobAsString (and readCommitParent) are covered by real-git fixtures in
-// client-catfile.test.ts — they shell out to `git cat-file` / `git rev-parse`,
-// so a mock-based test here would only assert the mock. Content correctness and
-// the missing-path "" fallback live there against a real temp repo.
+// readBlobAsString is covered by real-git fixtures in client-catfile.test.ts —
+// it shells out to `git cat-file`, so a mock-based test here would only assert
+// the mock. Content correctness and the missing-path "" fallback live there
+// against a real temp repo.

@@ -11,12 +11,7 @@ import { join, resolve, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import {
-  buildViaCli,
-  createCatFileBatch,
-  readBlobAsString,
-  readCommitParent,
-} from "../../../../src/core/adapters/git/client.js";
+import { buildViaCli, createCatFileBatch, readBlobAsString } from "../../../../src/core/adapters/git/client.js";
 
 // Temp base captured ONCE at module load (realpath-normalised; macOS /var →
 // /private/var). Every fixture mkdtemp uses this — NOT a fresh tmpdir() call in
@@ -35,43 +30,6 @@ function gitIn(cwd: string, args: string[]): string {
   }
   return execFileSync("git", args, { cwd, encoding: "utf8" });
 }
-
-describe("readCommitParent (real git)", () => {
-  let tmp: string;
-  const g = (args: string[]): string => gitIn(tmp, args);
-
-  beforeEach(() => {
-    tmp = mkdtempSync(join(TMP_BASE, "git-cf-"));
-    g(["init", "-q"]);
-    g(["config", "user.email", "t@example.com"]);
-    g(["config", "user.name", "Test"]);
-  });
-  afterEach(() => {
-    rmSync(tmp, { recursive: true, force: true });
-  });
-
-  it("returns the first-parent oid of a commit", async () => {
-    writeFileSync(join(tmp, "a.txt"), "one");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "A"]);
-    const a = g(["rev-parse", "HEAD"]).trim();
-    writeFileSync(join(tmp, "a.txt"), "two");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "B"]);
-    const b = g(["rev-parse", "HEAD"]).trim();
-
-    expect(await readCommitParent(tmp, b)).toBe(a);
-  });
-
-  it("returns null for a root commit (no parent)", async () => {
-    writeFileSync(join(tmp, "a.txt"), "one");
-    g(["add", "-A"]);
-    g(["commit", "-q", "-m", "A"]);
-    const a = g(["rev-parse", "HEAD"]).trim();
-
-    expect(await readCommitParent(tmp, a)).toBeNull();
-  });
-});
 
 describe("readBlobAsString (cat-file, real git)", () => {
   let tmp: string;

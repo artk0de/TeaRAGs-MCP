@@ -3,17 +3,18 @@
  *
  * The same sweep commits are re-diffed by every per-batch chunk-churn walk of a
  * run (double-walk amplifier). A caller-owned memo threaded into walkCommits
- * must make the second walk over the same (commit, file) skip the blob reads,
- * the structuredPatch call, AND the parent rev lookup — while producing the
- * same overlays.
+ * must make the second walk over the same (commit, file) skip the blob reads
+ * and the structuredPatch call — while producing the same overlays. (Parent
+ * oids come from CommitInfo.parents since bd tea-rags-mcp-iqpuu — no rev
+ * lookup exists to skip; walk-commits-parents.test.ts pins that invariant.)
  */
 
 import { structuredPatch } from "diff";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as gitClient from "../../../../../../src/core/adapters/git/client.js";
-import { CommitDiffMemo } from "../../../../../../src/core/infra/commit-diff-memo.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
+import { CommitDiffMemo } from "../../../../../../src/core/infra/commit-diff-memo.js";
 
 // Wrap the real structuredPatch in a spy so recompute counts are observable.
 vi.mock("diff", async (importOriginal) => {
@@ -35,6 +36,7 @@ function mockOneCommitTouching(file: string): void {
         authorEmail: "alice@ex.com",
         timestamp: Math.floor(Date.now() / 1000),
         body: "feat: change",
+        parents: [PARENT_SHA],
       },
       changedFiles: [file],
     },
@@ -84,7 +86,6 @@ describe("walkCommits run-scoped diff memo (bd tea-rags-mcp-7gnre)", () => {
 
   it("second walk over the same (commit, file) does not recompute the diff and does not re-read blobs", async () => {
     mockOneCommitTouching("test.ts");
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue(PARENT_SHA);
     const blobReader = fakeBlobReader();
     const memo = new CommitDiffMemo();
 
@@ -104,23 +105,8 @@ describe("walkCommits run-scoped diff memo (bd tea-rags-mcp-7gnre)", () => {
     expect(second.get("test.ts")?.get("c1")?.commitCount).toBe(1);
   });
 
-  it("skips the parent rev lookup entirely when every file of a commit hits the memo", async () => {
-    mockOneCommitTouching("test.ts");
-    const parentSpy = vi.spyOn(gitClient, "readCommitParent").mockResolvedValue(PARENT_SHA);
-    const blobReader = fakeBlobReader();
-    const memo = new CommitDiffMemo();
-
-    await walkOnce("test.ts", blobReader, memo);
-    expect(parentSpy).toHaveBeenCalledTimes(1);
-
-    await walkOnce("test.ts", blobReader, memo);
-    // Fully-memoized commit → no second rev-parse.
-    expect(parentSpy).toHaveBeenCalledTimes(1);
-  });
-
   it("memoizes the empty diff (identical blobs) so the second walk skips blob reads too", async () => {
     mockOneCommitTouching("same.ts");
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue(PARENT_SHA);
     const blobReader = fakeBlobReader();
     blobReader.read.mockResolvedValue("identical\ncontent\n");
     const memo = new CommitDiffMemo();
@@ -138,7 +124,6 @@ describe("walkCommits run-scoped diff memo (bd tea-rags-mcp-7gnre)", () => {
 
   it("walks WITHOUT a memo behave exactly as before (memo is opt-in)", async () => {
     mockOneCommitTouching("test.ts");
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue(PARENT_SHA);
     const blobReader = fakeBlobReader();
 
     const result = (await buildChunkChurnMapUncached(

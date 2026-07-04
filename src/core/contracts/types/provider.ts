@@ -182,6 +182,38 @@ export interface ChunkSignalOptions {
     >;
     getBugFixShas: () => Promise<Set<string>>;
   };
+  /**
+   * Run-scoped off-thread chunk-churn walk thread (bd tea-rags-mcp-iqpuu).
+   * Main-side handle to a dedicated worker thread that owns the whole walk
+   * pipeline (commit iteration + cat-file reader + diff memo), so the
+   * per-commit await chains leave the ingest main thread (the measured
+   * cause of hold inflation 120ms->1.2s and embed-call inflation ~2x).
+   * The job/outcome shapes are the git domain's ChunkChurnWalk* protocol
+   * types (domains/trajectory/git/infra/churn-walk/protocol.ts) — declared
+   * opaque here (contracts is pure); ingest only needs close(). The CALLER
+   * (ChunkPhase) owns the lifecycle: lazy create at first chunk dispatch via
+   * the provider's createChunkChurnWalkThread hook, closed at drain.
+   */
+  churnWalkThread?: {
+    walk: (job: never) => Promise<unknown>;
+    close: () => Promise<void>;
+  };
+  /**
+   * Per-walk instrumentation callback (bd tea-rags-mcp-iqpuu). Invoked once
+   * per chunk-churn walk with counter snapshot; ChunkPhase binds it to the
+   * pipeline debug log ([ChunkChurn] line + chunkChurn stage time). Never
+   * serialized: attached only on inline/main-thread dispatch paths.
+   */
+  onWalkStats?: (stats: {
+    files: number;
+    commits: number;
+    holdCount: number;
+    semWaitMs: number;
+    blobReads: number;
+    patches: number;
+    memoHits: number;
+    wallMs: number;
+  }) => void;
 }
 
 /**
@@ -362,6 +394,16 @@ export interface EnrichmentProvider {
    * Providers whose chunk signals don't walk git history omit this.
    */
   createCommitDiscovery?: (repoRoot: string) => NonNullable<ChunkSignalOptions["commitDiscovery"]>;
+  /**
+   * Factory for the run-scoped off-thread chunk-churn walk thread
+   * (bd tea-rags-mcp-iqpuu) — the provider owns the walk implementation
+   * (the thread wraps the git domain's walk pipeline), ChunkPhase owns the
+   * instance lifecycle (lazy create at first chunk dispatch, closed at
+   * drain). Construction is synchronous; the worker thread is spawned
+   * lazily on the first walk. Providers whose chunk signals don't walk git
+   * history omit this.
+   */
+  createChunkChurnWalkThread?: () => NonNullable<ChunkSignalOptions["churnWalkThread"]>;
   /**
    * Optional per-run counters surfaced via
    * `EnrichmentMetrics.byProvider[provider.key]`. Returned shape is

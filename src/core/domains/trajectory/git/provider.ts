@@ -26,9 +26,12 @@ import type {
   WorkerEnrichmentDescriptor,
 } from "../../../contracts/types/provider.js";
 import type { RerankPreset } from "../../../contracts/types/reranker.js";
+import { isDebug } from "../../../infra/runtime.js";
 import { gitFilters } from "./filters.js";
+import { relativizeChunkMap } from "./infra/build-accumulators.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
+import { ChunkChurnWalkThread } from "./infra/churn-walk/thread.js";
 import { GitCommitDiscoveryStore } from "./infra/commit-discovery-store.js";
 import { GitCommitDiscovery } from "./infra/commit-discovery.js";
 import {
@@ -43,6 +46,7 @@ import { assembleFileSignals } from "./infra/metrics/file-assembler.js";
 import { gitPayloadSignalDescriptors } from "./payload-signals.js";
 import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./rerank/presets/index.js";
+import type { ChunkChurnOverlay } from "./types.js";
 
 /** Subset of TrajectoryGitConfig used by the provider at runtime. */
 export type GitProviderConfig = Pick<
@@ -266,6 +270,13 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       store: new GitCommitDiscoveryStore(),
     });
 
+  /** bd tea-rags-mcp-iqpuu: factory for the run-scoped off-thread churn-walk
+   *  thread — the provider owns the walk implementation, ChunkPhase owns the
+   *  instance lifecycle (lazy create at first chunk dispatch, closed at
+   *  drain). Arrow-property so `this` survives callback passing (precedent:
+   *  createCommitDiscovery). */
+  createChunkChurnWalkThread = (): ChunkChurnWalkThread => new ChunkChurnWalkThread();
+
   /** Run `git blame HEAD` per file in parallel batches and store results in
    *  the WeakMap for later transform-time lookup. Failures fall back to empty
    *  arrays — assembleFileSignals will produce unknown ownership.
@@ -299,30 +310,44 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     chunkMap: Map<string, ChunkLookupEntry[]>,
     options?: ChunkSignalOptions,
   ): Promise<Map<string, Map<string, ChunkSignalOverlay>>> {
-    const rawResult = await buildChunkChurnMap(
-      root,
-      chunkMap,
-      this.enrichmentCache,
-      this.isoGitCache,
-      this.config.chunkConcurrency,
-      this.config.chunkMaxAgeMonths,
-      this.lastFileResult ?? undefined,
-      this.squashOpts,
-      this.config.chunkTimeoutMs,
-      this.config.chunkMaxFileLines,
-      options?.concurrencySemaphore,
-      options?.skipCache,
-      this.blameByRelPath,
-      // kc93: run-scoped reader shared across batches when ChunkPhase injects
-      // one. The duck-typed contract shape is structurally CatFileBatchReader.
-      options?.blobReader as CatFileBatchReader | undefined,
-      // 7gnre: run-scoped (commitSha, filePath) → hunks memo shared across
-      // batches — the same sweep commits are otherwise re-diffed per batch.
-      options?.diffMemo,
-      // 82va1: run-scoped commit-discovery matrix — the walk slices it
-      // in-memory instead of paying a per-batch pathspec log.
-      options?.commitDiscovery,
-    );
+    // bd tea-rags-mcp-iqpuu: off-thread branch iff ChunkPhase attached the
+    // run-scoped walk thread AND the run-scoped discovery is present AND the
+    // HEAD cache is skipped (ChunkPhase always sets skipCache; the cached
+    // path stays inline-only so cache semantics are untouched). The contract
+    // duck type is structurally ChunkChurnWalkThread — cast at the boundary
+    // (precedent: blobReader below).
+    const walkThread = options?.churnWalkThread as unknown as ChunkChurnWalkThread | undefined;
+    let rawResult: Map<string, Map<string, ChunkChurnOverlay>>;
+    if (walkThread && options?.commitDiscovery && options.skipCache) {
+      rawResult = await this.walkChunkChurnOffThread(root, chunkMap, walkThread, options.commitDiscovery, options);
+    } else {
+      rawResult = await buildChunkChurnMap(
+        root,
+        chunkMap,
+        this.enrichmentCache,
+        this.isoGitCache,
+        this.config.chunkConcurrency,
+        this.config.chunkMaxAgeMonths,
+        this.lastFileResult ?? undefined,
+        this.squashOpts,
+        this.config.chunkTimeoutMs,
+        this.config.chunkMaxFileLines,
+        options?.concurrencySemaphore,
+        options?.skipCache,
+        this.blameByRelPath,
+        // kc93: run-scoped reader shared across batches when ChunkPhase injects
+        // one. The duck-typed contract shape is structurally CatFileBatchReader.
+        options?.blobReader as CatFileBatchReader | undefined,
+        // 7gnre: run-scoped (commitSha, filePath) → hunks memo shared across
+        // batches — the same sweep commits are otherwise re-diffed per batch.
+        options?.diffMemo,
+        // 82va1: run-scoped commit-discovery matrix — the walk slices it
+        // in-memory instead of paying a per-batch pathspec log.
+        options?.commitDiscovery,
+        // iqpuu: per-walk instrumentation for the [ChunkChurn] pipeline line.
+        options?.onWalkStats,
+      );
+    }
 
     // Chunk enrichment is the last reader of blameByRelPath. Swap in a fresh
     // map so every file's BlameLine[] (and the porcelain those slices used to
@@ -341,5 +366,75 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       result.set(filePath, chunkEntries);
     }
     return result;
+  }
+
+  /**
+   * bd tea-rags-mcp-iqpuu: off-thread chunk-churn walk. Builds one fully
+   * serializable job — the batch's relativized chunk map, the pre-sliced
+   * discovery rows + shared bugFixShaSet (queried HERE so the run-scoped
+   * matrix stays a main-thread singleton), and the blame / file-churn slices
+   * this instance accumulated during streamFileBatch — and ships it to the
+   * dedicated walk worker. Walk semantics are byte-identical to the inline
+   * path: the worker runs the same buildChunkChurnMapUncached with its own
+   * run-scoped reader/memo/limiter.
+   */
+  private async walkChunkChurnOffThread(
+    root: string,
+    chunkMap: Map<string, ChunkLookupEntry[]>,
+    walkThread: ChunkChurnWalkThread,
+    discovery: NonNullable<ChunkSignalOptions["commitDiscovery"]>,
+    options?: ChunkSignalOptions,
+  ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
+    const relativeChunkMap = relativizeChunkMap(root, chunkMap);
+    if (relativeChunkMap.size === 0) return new Map();
+
+    // Same failure semantics as walkCommits' discovery branch: a broken
+    // discovery ⇒ no churn for this batch, never a thrown enrichment error.
+    let commitEntries: { commit: CommitInfo; changedFiles: string[] }[];
+    try {
+      // The contract duck type's commit shape is structurally CommitInfo.
+      commitEntries = (await discovery.commitsForFiles([...relativeChunkMap.keys()])) as {
+        commit: CommitInfo;
+        changedFiles: string[];
+      }[];
+    } catch (error) {
+      if (isDebug()) {
+        console.error(
+          `[ChunkChurn] discovery slice failed, skipping chunk churn:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+      commitEntries = [];
+    }
+    const bugFixShas = await discovery.getBugFixShas().catch(() => new Set<string>());
+
+    // Slice the file-phase state to this batch's files (only existing
+    // entries) — equivalent to the inline path passing the full maps, since
+    // the walk only reads keys of its own relativeChunkMap.
+    const blameByPath = new Map<string, BlameLine[]>();
+    const fileChurnData = this.lastFileResult ? new Map<string, FileChurnData>() : undefined;
+    for (const rel of relativeChunkMap.keys()) {
+      const blame = this.blameByRelPath.get(rel);
+      if (blame) blameByPath.set(rel, blame);
+      const churn = this.lastFileResult?.get(rel);
+      if (churn && fileChurnData) fileChurnData.set(rel, churn);
+    }
+
+    const outcome = await walkThread.walk({
+      repoRoot: root,
+      relativeChunkMap,
+      commitEntries,
+      bugFixShas,
+      blameByPath,
+      fileChurnData,
+      squashOpts: this.squashOpts,
+      concurrency: this.config.chunkConcurrency,
+      maxAgeMonths: this.config.chunkMaxAgeMonths,
+      chunkTimeoutMs: this.config.chunkTimeoutMs,
+      maxFileLines: this.config.chunkMaxFileLines,
+      useSharedLimiter: options?.concurrencySemaphore !== undefined,
+    });
+    options?.onWalkStats?.(outcome.stats);
+    return outcome.overlays;
   }
 }

@@ -87,7 +87,6 @@ describe("walkCommits run-scoped commit discovery (bd tea-rags-mcp-82va1)", () =
 
   it("slices the injected matrix instead of spawning a per-batch pathspec log", async () => {
     const pathspecSpy = vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([]);
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue(PARENT_SHA);
     const discovery = fakeDiscovery([commitTouching(["test.ts"])]);
     const blobReader = fakeBlobReader();
 
@@ -100,7 +99,6 @@ describe("walkCommits run-scoped commit discovery (bd tea-rags-mcp-82va1)", () =
 
   it("handles matrix rows carrying FULL changedFiles — files outside the chunkMap produce no overlays", async () => {
     vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([]);
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue(PARENT_SHA);
     const discovery = fakeDiscovery([commitTouching(["test.ts", "other.ts"])]);
     const blobReader = fakeBlobReader();
 
@@ -112,7 +110,6 @@ describe("walkCommits run-scoped commit discovery (bd tea-rags-mcp-82va1)", () =
 
   it("consumes the ONE shared bugFixShaSet from the discovery", async () => {
     vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([]);
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue(PARENT_SHA);
     // Non-fix commit body — the ONLY bug-fix evidence is the shared set.
     const discovery = fakeDiscovery([commitTouching(["test.ts"], "feat: not a fix")], new Set([COMMIT_SHA]));
     const blobReader = fakeBlobReader();
@@ -124,7 +121,6 @@ describe("walkCommits run-scoped commit discovery (bd tea-rags-mcp-82va1)", () =
 
   it("falls back to the legacy per-batch pathspec log when no discovery is injected", async () => {
     const pathspecSpy = vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([commitTouching(["test.ts"])]);
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue(PARENT_SHA);
     const blobReader = fakeBlobReader();
 
     const result = await walkOnce("test.ts", blobReader);
