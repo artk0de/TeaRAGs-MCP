@@ -23,9 +23,9 @@ describe("LanguageFactory.capabilities", () => {
     expect(ruby.codegraph.tier).toMatchObject({ untyped: "high", yard: "maximum", "rbs/sorbet": "tbd" });
   });
 
-  it("ports markdown AST as partial and codegraph as none", () => {
+  it("ports markdown AST as full and codegraph as none", () => {
     const md = factory.capabilities().get("markdown")!;
-    expect(md.ast.tier).toBe("partial");
+    expect(md.ast.tier).toBe("full");
     expect(md.codegraph.tier).toBe("none");
   });
 });

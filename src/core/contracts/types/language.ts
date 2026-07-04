@@ -510,9 +510,23 @@ export interface TypingTieredCodegraph {
  * per-index state owned by prime. Aggregated by `LanguageFactory.capabilities()`
  * and rendered by `domains/language/capability/{rule,readme}.ts`.
  */
+/**
+ * One AST chunker-hook entry on a language's capability descriptor. `name` is the
+ * implementation hook id (e.g. `bodyChunker`); `short` is a REQUIRED, ≤4-word
+ * product phrase describing what the hook DOES (`"method-body splitting"`), never
+ * the impl name. The README renderer shows only `short`; `name` is retained for
+ * traceability. Decoupled from the runtime `ChunkingHook` — this is hand-written
+ * descriptor prose, not the executable chain (spec
+ * `docs/superpowers/specs/2026-07-04-capability-table-redesign-design.md` §1).
+ */
+export interface AstHookDescriptor {
+  name: string;
+  short: string;
+}
+
 export interface LanguageCapability {
   language: string;
-  ast: { tier: "full" | "partial" | "none"; engine: string; hooks?: string[] };
+  ast: { tier: "full" | "partial" | "none"; engine: string; hooks?: AstHookDescriptor[] };
   tests: { tier: "high" | "medium" | "low" | "na"; detection: string; tech: string };
   codegraph: { tier: CodegraphTier | TypingTieredCodegraph; tech: string };
   /** README prose extras (humans only). */

@@ -5,12 +5,17 @@ export const capability: LanguageCapability = {
   ast: {
     tier: "full",
     engine: "tree-sitter",
-    hooks: ["rspecFilter", "commentCapture", "rspecScopeChunker", "bodyChunker"],
+    hooks: [
+      { name: "rspecFilter", short: "RSpec block grouping" },
+      { name: "commentCapture", short: "comment attachment" },
+      { name: "rspecScopeChunker", short: "spec scope splitting" },
+      { name: "bodyChunker", short: "method-body splitting" },
+    ],
   },
   tests: { tier: "high", detection: "*_test.rb / *_spec.rb", tech: "RSpec scope chunker (parent setup injected)" },
   codegraph: {
     tier: { untyped: "high", yard: "maximum", "rbs/sorbet": "tbd" },
-    tech: "11-strategy + 4 dispatch components (table/union/cone/dynamic) + YARD type-source",
+    tech: "12-strategy chain + 4 dispatch components (table/union/cone/dynamic) + 14-grammar DSL catalogue + arity/kwarg-narrowed fan-out (corpus-adaptive p99 cap) + YARD type-source",
   },
   notes:
     "Codegraph trust is corpus-dependent: high untyped, maximum YARD-annotated; un-annotated Rails drops (a prime number, not a language property).",

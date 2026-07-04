@@ -18,18 +18,18 @@ here. Per-project realized numbers live in **prime**, never in this file.
 
 ## Matrix
 
-| Language               | AST code chunking                      | Tests code chunking                                    | Codegraph capability                                     |
-| ---------------------- | -------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------- |
-| **TypeScript**         | **full** · tree-sitter                 | **high** · testScopeChunker (describe/it scopes)       | **high**                                                 |
-| **JavaScript**         | **full** · tree-sitter                 | **high** · testScopeChunker (describe/it scopes)       | **high**                                                 |
-| **Python**             | **full** · tree-sitter                 | **medium** · generic AST                               | **moderate**                                             |
-| **Go**                 | **full** · tree-sitter                 | **medium** · generic AST                               | **moderate**                                             |
-| **Java**               | **full** · tree-sitter                 | **medium** · generic AST                               | **moderate**                                             |
-| **Rust**               | **full** · tree-sitter                 | **medium** · generic AST (#[test] attrs not preserved) | **moderate**                                             |
-| **Ruby**               | **full** · tree-sitter                 | **high** · RSpec scope chunker (parent setup injected) | untyped **high** · YARD **maximum** · RBS/Sorbet **TBD** |
-| **Bash**               | **full** · tree-sitter                 | **low** · generic AST (bats/shunit not recognized)     | **minimal**                                              |
-| **Markdown**           | **partial** · MarkdownChunker (remark) | **N/A** · doc-only                                     | **none**                                                 |
-| **sql / jsonc / json** | **none** · CharacterChunker            | **none**                                               | **none**                                                 |
+| Language               | AST code chunking                                 | Tests code chunking                                    | Codegraph capability                                     |
+| ---------------------- | ------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------- |
+| **TypeScript**         | **full** · tree-sitter                            | **high** · testScopeChunker (describe/it scopes)       | **high**                                                 |
+| **JavaScript**         | **full** · tree-sitter                            | **high** · testScopeChunker (describe/it scopes)       | **high**                                                 |
+| **Python**             | **full** · tree-sitter                            | **medium** · generic AST                               | **moderate**                                             |
+| **Go**                 | **full** · tree-sitter                            | **medium** · generic AST                               | **moderate**                                             |
+| **Java**               | **full** · tree-sitter                            | **medium** · generic AST                               | **moderate**                                             |
+| **Rust**               | **full** · tree-sitter                            | **medium** · generic AST (#[test] attrs not preserved) | **moderate**                                             |
+| **Ruby**               | **full** · tree-sitter                            | **high** · RSpec scope chunker (parent setup injected) | untyped **high** · YARD **maximum** · RBS/Sorbet **TBD** |
+| **Bash**               | **full** · tree-sitter                            | **low** · generic AST (bats/shunit not recognized)     | **minimal**                                              |
+| **Markdown**           | **full** · MarkdownChunker (ToC + smart chunking) | **N/A** · doc-only                                     | **none**                                                 |
+| **sql / jsonc / json** | **none** · CharacterChunker                       | **none**                                               | **none**                                                 |
 
 ## Scales — what each tier means for the agent
 
@@ -87,7 +87,8 @@ conclude absence from a graph the index says is incomplete.
 - **Go** — 6-strategy; explicit interfaces (no poly dispatch)
 - **Java** — 6-strategy + java.lang stdlib whitelist + overload disambiguation
 - **Rust** — 6-strategy; trait-based dispatch
-- **Ruby** — 11-strategy + 4 dispatch components (table/union/cone/dynamic) +
-  YARD type-source
+- **Ruby** — 12-strategy chain + 4 dispatch components
+  (table/union/cone/dynamic) + 14-grammar DSL catalogue + arity/kwarg-narrowed
+  fan-out (corpus-adaptive p99 cap) + YARD type-source
 - **Bash** — function-call extraction only, no dispatch
 - **Markdown** — no call graph
