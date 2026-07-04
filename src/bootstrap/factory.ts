@@ -14,6 +14,7 @@ import { OllamaEmbeddings } from "../core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
+import { VcsAdapterFactory } from "../core/adapters/vcs/factory.js";
 import {
   createApp,
   createComposition,
@@ -660,6 +661,10 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
     config: config.ingestCode,
+    // kc93 + w2dlu: run-scoped blob reader from the GIT_ADAPTER-selected
+    // adapter; es-git selection fail-louds here on first git blob read.
+    blobReaderFactory: async (repoRoot: string) =>
+      (await VcsAdapterFactory.create(zodConfig.vcs.adapter, repoRoot)).createBlobBatchReader(),
     trajectoryConfig: config.trajectoryIngest,
     statsCache,
     allPayloadSignals: composition.allPayloadSignalDescriptors,

@@ -16,7 +16,7 @@
  *   drives a single runDeferredChunk pass after the graph is finalized.
  */
 
-import type { CatFileBatchReader } from "../../../../adapters/vcs/git/git-cli/client.js";
+import type { BlobBatchReader } from "../../../../adapters/vcs/types.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkSignalOptions, ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
 import { CommitDiffMemo } from "../../../../infra/commit-diff-memo.js";
@@ -91,11 +91,12 @@ export interface ChunkPhaseMetrics {
 
 /**
  * Factory for a run-scoped git object reader. Injected (DI) so ChunkPhase never
- * imports the git adapter at runtime — the composition root wires
- * `createCatFileBatch`. Absent ⇒ each git walk spawns its own per-call reader
- * (legacy behavior). See tea-rags-mcp-kc93.
+ * imports the git adapter at runtime — the composition root wires it from the
+ * active VcsGitAdapter (`createBlobBatchReader`). May be async: es-git opens a
+ * repository handle before it can hand out readers. Absent ⇒ each git walk
+ * spawns its own per-call reader (legacy behavior). See tea-rags-mcp-kc93.
  */
-export type BlobReaderFactory = (repoRoot: string) => CatFileBatchReader;
+export type BlobReaderFactory = (repoRoot: string) => Promise<BlobBatchReader> | BlobBatchReader;
 
 export class ChunkPhase {
   private readonly states = new Map<string, ChunkPhaseState>();
@@ -104,12 +105,14 @@ export class ChunkPhase {
   private runStartedAt = "";
   private onComplete?: (coll: string) => Promise<void>;
   /**
-   * One git `cat-file --batch` reader for the whole run, shared across every
-   * per-batch chunk walk so the pack is opened once instead of once-per-batch.
-   * Lazily created on the first streaming/post-flush git batch, closed at
-   * `drain()`. Undefined when no factory is injected (legacy per-call reader).
+   * One batch blob reader for the whole run, shared across every per-batch
+   * chunk walk so the backend (git pack / repository handle) is opened once
+   * instead of once-per-batch. The PROMISE is created synchronously on the
+   * first streaming/post-flush git batch (anti-double-create under concurrent
+   * batches) and awaited at use; closed at `drain()`. Undefined when no
+   * factory is injected (legacy per-call reader).
    */
-  private runBlobReader?: CatFileBatchReader;
+  private runBlobReader?: Promise<BlobBatchReader>;
   /**
    * One (commitSha, filePath) → hunks memo for the whole run, shared across
    * every per-batch chunk walk (bd tea-rags-mcp-7gnre) — the same sweep
@@ -448,7 +451,7 @@ export class ChunkPhase {
       const reader = this.runBlobReader;
       if (reader) {
         this.runBlobReader = undefined;
-        await reader.close().catch(() => undefined);
+        await reader.then(async (r) => r.close()).catch(() => undefined);
       }
     }
   }
@@ -538,7 +541,7 @@ export class ChunkPhase {
     // concurrent fire-and-forget batches never race to spawn two. Closed in
     // drain(). No factory ⇒ the git walk falls back to its own per-call reader.
     if (this.blobReaderFactory && !this.runBlobReader) {
-      this.runBlobReader = this.blobReaderFactory(root);
+      this.runBlobReader = Promise.resolve(this.blobReaderFactory(root));
     }
     // 7gnre: ONE run-scoped (commitSha, filePath) → hunks memo shared across
     // every batch walk (streaming + post-flush) — the same sweep commits are
@@ -566,7 +569,7 @@ export class ChunkPhase {
     const opts: ChunkSignalOptions = useSemaphore
       ? { concurrencySemaphore: this.semaphore, skipCache: true, collectionName: coll }
       : { skipCache: true, collectionName: coll };
-    if (this.runBlobReader) opts.blobReader = this.runBlobReader;
+    if (this.runBlobReader) opts.blobReader = await this.runBlobReader;
     opts.diffMemo = this.runDiffMemo;
     // 82va1: attach ONLY for providers that declare the hook — a provider
     // without it never sees another provider's discovery instance.
