@@ -8,6 +8,7 @@
 
 import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } from "../../../types.js";
 import { NotIndexedError, PartialDeletionError, ReindexFailedError, SnapshotMissingError } from "../errors.js";
+import { cleanupOrphanedVersions, sweepCodegraphOrphans } from "../infra/alias-cleanup.js";
 import {
   BaseIndexingPipeline,
   type PipelineRegistryDeps,
@@ -92,6 +93,21 @@ export class ReindexPipeline extends BaseIndexingPipeline {
   ): Promise<ChangeStats> {
     const startTime = Date.now();
     const { absolutePath, collectionName } = await this.resolveContext(path);
+    // Orphan sweep (55xk2): versioned targets left by killed runs
+    // (`<base>_vN` no alias points at) used to survive every INCREMENTAL
+    // reindex — only the force path cleaned them at setup, so they piled up
+    // between force runs. Same cleanup here, best-effort: a sweep failure
+    // must never abort an incremental reindex.
+    try {
+      await cleanupOrphanedVersions(this.qdrant, collectionName, this.codegraphRemover);
+      if (this.codegraphLister && this.codegraphRemover) {
+        await sweepCodegraphOrphans(this.qdrant, collectionName, this.codegraphLister, this.codegraphRemover);
+      }
+    } catch (err) {
+      if (isDebug()) {
+        console.error(`[Reindex] orphan sweep failed (non-fatal):`, err);
+      }
+    }
     const stats: ChangeStats = {
       filesAdded: 0,
       filesModified: 0,

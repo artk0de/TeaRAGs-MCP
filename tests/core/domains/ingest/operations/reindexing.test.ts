@@ -76,6 +76,40 @@ describe("ReindexPipeline", () => {
       await expect(ingest.reindexChanges(codebaseDir)).rejects.toThrow("not indexed");
     });
 
+    it("sweeps orphaned versioned collections left by killed runs (55xk2)", async () => {
+      // A run killed mid-index leaves its versioned target behind (no alias
+      // points at it). Only the force path used to sweep those — an
+      // incremental reindex must reclaim them too, without touching the
+      // active alias target.
+      await createTestFile(codebaseDir, "orph.ts", "export const x = 1;");
+      await ingest.indexCodebase(codebaseDir);
+      const status = await ingest.getIndexStatus(codebaseDir);
+      const base = status.collectionName!;
+      await (qdrant as any).createCollection(`${base}_v99`, 384, "Cosine", false);
+
+      await createTestFile(codebaseDir, "orph2.ts", "export const y = 2;");
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.status).toBe("completed");
+      const collections = (await (qdrant as any).listCollections()) as string[];
+      expect(collections).not.toContain(`${base}_v99`);
+      expect(collections.some((c) => c.startsWith(`${base}_v`))).toBe(true);
+    });
+
+    it("sweeps orphans even on a no-changes reindex (bare rerun reclaims leftovers)", async () => {
+      await createTestFile(codebaseDir, "orphnc.ts", "export const x = 1;");
+      await ingest.indexCodebase(codebaseDir);
+      const status = await ingest.getIndexStatus(codebaseDir);
+      const base = status.collectionName!;
+      await (qdrant as any).createCollection(`${base}_v99`, 384, "Cosine", false);
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.status).toBe("completed");
+      const collections = (await (qdrant as any).listCollections()) as string[];
+      expect(collections).not.toContain(`${base}_v99`);
+    });
+
     it("should detect and index new files", async () => {
       await createTestFile(
         codebaseDir,
