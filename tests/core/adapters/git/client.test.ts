@@ -6,6 +6,8 @@ import {
   blameFile,
   getCommitsByPathspec,
   getCommitsByPathspecBatched,
+  getCommitsInRange,
+  isAncestor,
   resolveRepoRoot,
 } from "../../../../src/core/adapters/git/client.js";
 import { parseBlameOutput, parsePathspecOutput } from "../../../../src/core/adapters/git/parsers.js";
@@ -287,5 +289,70 @@ describe("resolveRepoRoot", () => {
     const result = resolveRepoRoot("/tmp/not-a-repo");
 
     expect(result).toBe("/tmp/not-a-repo");
+  });
+});
+
+describe("getCommitsInRange", () => {
+  const repoRoot = "/fake/repo";
+  const sinceDate = new Date("2025-01-01");
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("invokes git log with the fromSha..toSha range and parses numstat output (incremental discovery re-walk)", async () => {
+    // commit-discovery.ts calls this to re-walk ONLY the commits between the
+    // previously-discovered HEAD and the current HEAD, instead of re-scanning
+    // the whole --since window on every incremental run.
+    const commit = makeCommit("f".repeat(40));
+    mockExecFileResolving("fake-stdout");
+    mockParsePathspecOutput.mockReturnValue([{ commit, changedFiles: ["src/a.ts"] }]);
+
+    const result = await getCommitsInRange(repoRoot, "abc123", "def456", sinceDate);
+
+    expect(result).toEqual([{ commit, changedFiles: ["src/a.ts"] }]);
+    const callArgs = (execFile as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(callArgs[0]).toBe("git");
+    expect(callArgs[1]).toEqual(expect.arrayContaining(["log", "abc123..def456", "--numstat"]));
+    expect(callArgs[1][1]).toBe(`--since=${sinceDate.toISOString()}`);
+  });
+
+  it("returns an empty range result when git log finds no commits in the range", async () => {
+    mockExecFileResolving("");
+    mockParsePathspecOutput.mockReturnValue([]);
+
+    const result = await getCommitsInRange(repoRoot, "abc123", "abc123", sinceDate);
+
+    expect(result).toEqual([]);
+  });
+});
+
+describe("isAncestor", () => {
+  const repoRoot = "/fake/repo";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns true when git merge-base --is-ancestor exits successfully (fast-forward re-walk)", async () => {
+    // commit-discovery.ts gates getCommitsInRange behind isAncestor: only take
+    // the incremental range path when the prior HEAD is a real ancestor of the
+    // current HEAD (i.e. no force-push / history rewrite happened).
+    mockExecFileResolving("");
+
+    const result = await isAncestor(repoRoot, "abc123", "def456");
+
+    expect(result).toBe(true);
+    const callArgs = (execFile as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(callArgs[0]).toBe("git");
+    expect(callArgs[1]).toEqual(["merge-base", "--is-ancestor", "abc123", "def456"]);
+  });
+
+  it("returns false when git merge-base --is-ancestor fails (history diverged)", async () => {
+    mockExecFileRejecting(new Error("fatal: Not a valid commit name def456"));
+
+    const result = await isAncestor(repoRoot, "abc123", "def456");
+
+    expect(result).toBe(false);
   });
 });
