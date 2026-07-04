@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { blameFile } from "../../../../../src/core/adapters/git/client.js";
 import { buildChunkChurnMap } from "../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import {
+  buildFileSignalDiscovery,
   buildFileSignalMap,
   buildFileSignalsForPaths,
 } from "../../../../../src/core/domains/trajectory/git/infra/file-reader.js";
@@ -18,11 +19,23 @@ vi.mock("node:fs", async () => {
 vi.mock("../../../../../src/core/adapters/git/client.js", () => ({
   resolveRepoRoot: vi.fn((p: string) => p),
   blameFile: vi.fn().mockResolvedValue([]),
+  getHead: vi.fn().mockResolvedValue("headsha"),
 }));
 
 vi.mock("../../../../../src/core/domains/trajectory/git/infra/file-reader.js", () => ({
   buildFileSignalMap: vi.fn().mockResolvedValue(new Map()),
   buildFileSignalsForPaths: vi.fn().mockResolvedValue(new Map()),
+  buildFileSignalDiscovery: vi.fn().mockResolvedValue(new Map()),
+  // Real slicing so streamFileBatch tests exercise the actual pick-by-path
+  // behavior (the pure function is separately unit-tested in file-discovery.test.ts).
+  sliceFileSignalsByPaths: vi.fn((discovery: Map<string, unknown>, paths: string[]) => {
+    const out = new Map<string, unknown>();
+    for (const p of paths) {
+      const e = discovery.get(p);
+      if (e) out.set(p, e);
+    }
+    return out;
+  }),
 }));
 
 vi.mock("../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js", () => ({
@@ -190,13 +203,56 @@ describe("GitEnrichmentProvider", () => {
   });
 
   describe("streamFileBatch + finalizeSignals", () => {
-    it("streamFileBatch delegates to per-path buildFileSignals for the batch", async () => {
+    it("streamFileBatch slices the run-scoped discovery for the batch (not a per-path log)", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
-      const data = new Map([["src/b.ts", { commits: [], recentAuthors: [] }]]);
-      vi.mocked(buildFileSignalsForPaths).mockResolvedValue(data as never);
+      // This file has no per-test mock reset; scope call history to this test.
+      vi.mocked(buildFileSignalDiscovery).mockClear();
+      vi.mocked(buildFileSignalsForPaths).mockClear();
+      const discovery = new Map([
+        ["src/b.ts", { commits: [], recentAuthors: [] }],
+        ["src/other.ts", { commits: [], recentAuthors: [] }],
+      ]);
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValue(discovery as never);
+
       const result = await provider.streamFileBatch("/repo", ["src/b.ts"]);
-      expect(buildFileSignalsForPaths).toHaveBeenCalledWith("/repo", ["src/b.ts"], 60000);
+
+      // ONE repo-wide discovery, sliced in memory — the per-path pathspec log is
+      // no longer spawned on the streaming path (bd tea-rags-mcp-j4lm9).
+      expect(buildFileSignalDiscovery).toHaveBeenCalledWith("/repo", 60000);
+      expect(buildFileSignalsForPaths).not.toHaveBeenCalled();
       expect(result.has("src/b.ts")).toBe(true);
+      expect(result.has("src/other.ts")).toBe(false);
+    });
+
+    it("builds the discovery ONCE across batches within a run (run-scoped, HEAD-keyed)", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      vi.mocked(buildFileSignalDiscovery).mockClear();
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValue(
+        new Map([
+          ["src/a.ts", { commits: [], recentAuthors: [] }],
+          ["src/b.ts", { commits: [], recentAuthors: [] }],
+        ]) as never,
+      );
+
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.streamFileBatch("/repo", ["src/b.ts"]);
+
+      expect(buildFileSignalDiscovery).toHaveBeenCalledTimes(1);
+    });
+
+    it("finalizeSignals drops the run discovery so the next run rebuilds it", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      vi.mocked(buildFileSignalDiscovery).mockClear();
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValue(
+        new Map([["src/a.ts", { commits: [], recentAuthors: [] }]]) as never,
+      );
+
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.finalizeSignals("/repo");
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+
+      // Dropped at finalize ⇒ the second run rebuilds (no cross-run leak).
+      expect(buildFileSignalDiscovery).toHaveBeenCalledTimes(2);
     });
 
     it("finalizeSignals returns an empty file map (git streams everything)", async () => {

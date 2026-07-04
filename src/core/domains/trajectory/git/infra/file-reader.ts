@@ -45,6 +45,50 @@ export async function buildFileSignalMap(
 }
 
 /**
+ * Build the run-scoped, repo-wide file churn discovery (bd tea-rags-mcp-j4lm9).
+ *
+ * ONE `git log HEAD --numstat` over the WHOLE repo, parsed once into a per-file
+ * FileChurnData map that a streaming run slices per batch (see
+ * `sliceFileSignalsByPaths`) instead of re-running a full-history pathspec log
+ * per file batch. It is deliberately UNBOUNDED (no `--since`): it must reproduce
+ * `buildFileSignalsForPaths` exactly — that per-batch call carries no `--since`
+ * filter — so a sliced entry deep-equals the legacy per-batch result. The only
+ * flag difference from `buildFileSignalsForPaths` is the absent pathspec, which
+ * is what `sliceFileSignalsByPaths` restores in memory. Reuses the same
+ * `buildViaCli` primitive (and `parseNumstatOutput`) as `buildFileSignalMap`, so
+ * there is a single git-command definition.
+ *
+ * @param timeoutMs - timeout for the git log command (default 60000).
+ */
+export async function buildFileSignalDiscovery(
+  repoRoot: string,
+  timeoutMs = 60000,
+): Promise<Map<string, FileChurnData>> {
+  // No sinceDate ⇒ full history, identical to buildFileSignalsForPaths semantics.
+  return buildViaCli(repoRoot, undefined, timeoutMs);
+}
+
+/**
+ * Slice a run-scoped discovery (see `buildFileSignalDiscovery`) down to a batch's
+ * paths, in memory — the equivalent of the pathspec on a per-batch
+ * `buildFileSignalsForPaths` call, without spawning git. Paths absent from the
+ * discovery (never committed under HEAD) are omitted, matching a pathspec log
+ * that returns no rows for them. Entries are shared by reference: the returned
+ * FileChurnData objects are the discovery's own (never mutated downstream).
+ */
+export function sliceFileSignalsByPaths(
+  discovery: Map<string, FileChurnData>,
+  paths: string[],
+): Map<string, FileChurnData> {
+  const result = new Map<string, FileChurnData>();
+  for (const path of paths) {
+    const entry = discovery.get(path);
+    if (entry) result.set(path, entry);
+  }
+  return result;
+}
+
+/**
  * Fetch file-level metadata for specific files (no --since filter).
  * Used as a backfill for files that weren't in the main git log window.
  * Batches file paths to stay within OS ARG_MAX limits.
