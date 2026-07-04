@@ -10,8 +10,9 @@ import type {
 } from "../../../contracts/types/codegraph.js";
 import { pageRank } from "../../../infra/graph/page-rank.js";
 import { tarjanScc } from "../../../infra/graph/tarjan-scc.js";
-import type { GraphDbClientPool } from "../pool.js";
+import type { CollectionGraphHandle, GraphDbClientPool } from "../pool.js";
 import { getBuildFingerprint } from "./build-fingerprint.js";
+import type { DaemonMemoryGovernor } from "./memory-governor.js";
 import type { DaemonHandshakeResult, DaemonRequest, DaemonResponse } from "./protocol.js";
 
 /**
@@ -37,7 +38,26 @@ export class CodegraphDaemonServer {
      * module-computed fingerprint (env-overridable).
      */
     private readonly buildFingerprint: string = getBuildFingerprint(),
+    /**
+     * Optional adaptive memory governor (bd tea-rags-mcp-1ruih). When wired,
+     * every write op notifies it so the FIRST write of an ingest burst raises
+     * the DuckDB memory_limit to the configured ceiling. Reads never notify —
+     * the governor is write-burst-scoped by design.
+     */
+    private readonly governor?: DaemonMemoryGovernor,
   ) {}
+
+  /**
+   * Acquire the pooled handle for a WRITE op and notify the memory governor
+   * (`onWrite` is a no-op for already-raised collections — one live SET per
+   * burst). `finalizeReindex` does NOT route through here: it only unlinks the
+   * superseded DB file, so there is no open handle to govern.
+   */
+  private async acquireForWrite(collection: string): Promise<CollectionGraphHandle> {
+    const handle = await this.pool.acquire(collection);
+    await this.governor?.onWrite(collection, handle.graphDb);
+    return handle;
+  }
 
   async handle(req: DaemonRequest): Promise<DaemonResponse> {
     try {
@@ -70,55 +90,55 @@ export class CodegraphDaemonServer {
         throw new Error("shutdown is handled by the daemon transport (entry.ts), not the request dispatcher");
       // ── writes ──
       case "upsertFile": {
-        const { graphDb } = await this.pool.acquire(collection);
+        const { graphDb } = await this.acquireForWrite(collection);
         await graphDb.upsertFile(p.node as GraphFileNode, p.edges as GraphEdges);
         return null;
       }
       case "removeFile": {
-        const { graphDb } = await this.pool.acquire(collection);
+        const { graphDb } = await this.acquireForWrite(collection);
         await graphDb.removeFile(p.relPath as RelPath);
         return null;
       }
       case "removeSymbolsForFile": {
-        const { graphDb } = await this.pool.acquire(collection);
+        const { graphDb } = await this.acquireForWrite(collection);
         await graphDb.removeSymbolsForFile(p.relPath as RelPath);
         return null;
       }
       case "upsertSymbols": {
-        const { graphDb } = await this.pool.acquire(collection);
+        const { graphDb } = await this.acquireForWrite(collection);
         await graphDb.upsertSymbols(p.relPath as RelPath, p.definitions as SymbolDefinition[]);
         return null;
       }
       case "updateSymbolChunkIds": {
-        const { graphDb } = await this.pool.acquire(collection);
+        const { graphDb } = await this.acquireForWrite(collection);
         // entries → Map (mirrors replacePageRanks rebuild).
         await graphDb.updateSymbolChunkIds(p.relPath as RelPath, new Map(p.chunkIds as [SymbolId, string][]));
         return null;
       }
       case "replaceCycles": {
-        const { graphDb } = await this.pool.acquire(collection);
+        const { graphDb } = await this.acquireForWrite(collection);
         await graphDb.replaceCycles(p.scope as CycleScope, p.sccs as readonly (readonly string[])[]);
         return null;
       }
       case "replacePageRanks": {
-        const { graphDb } = await this.pool.acquire(collection);
+        const { graphDb } = await this.acquireForWrite(collection);
         // Ranks ride the wire as `[symbolId, rank][]` entries (a Map cannot
         // JSON-serialise) — rebuild the Map before delegating to the adapter.
         await graphDb.replacePageRanks(new Map(p.ranks as [string, number][]));
         return null;
       }
       case "checkpoint": {
-        const { graphDb } = await this.pool.acquire(collection);
+        const { graphDb } = await this.acquireForWrite(collection);
         await graphDb.checkpoint();
         return null;
       }
       case "recordRunStats": {
-        const { graphDb } = await this.pool.acquire(collection);
+        const { graphDb } = await this.acquireForWrite(collection);
         await graphDb.recordRunStats(p.rows as ResolveRunStatsRow[]);
         return null;
       }
       case "computeAndPersistCyclesAndSignals": {
-        const { graphDb } = await this.pool.acquire(collection);
+        const { graphDb } = await this.acquireForWrite(collection);
         await computeAndPersistCyclesAndSignals(graphDb);
         return null;
       }

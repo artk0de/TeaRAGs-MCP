@@ -33,6 +33,7 @@ import {
   scheduleIdleWatcher,
   type CodegraphDaemonPaths,
 } from "./lifecycle.js";
+import { DaemonMemoryGovernor, DEFAULT_MEMORY_LIMIT_BASE, DEFAULT_MEMORY_LIMIT_MAX } from "./memory-governor.js";
 import { NoopGlobalSymbolTable } from "./noop-symbol-table.js";
 import { decodeFrames, encodeFrame, type DaemonRequest } from "./protocol.js";
 import { CodegraphDaemonServer } from "./server.js";
@@ -45,6 +46,13 @@ export interface DaemonRuntimeOptions {
   /** DuckDB resource ceiling mirrored from the bootstrap pool options. */
   resources?: {
     memoryLimit?: string;
+    /**
+     * Adaptive-governor ceiling (bd tea-rags-mcp-1ruih): the memory_limit the
+     * daemon may raise to during a bulk-ingest write burst. Consumed by the
+     * `DaemonMemoryGovernor` only — the pool keeps opening connections at the
+     * base `memoryLimit`.
+     */
+    memoryLimitMax?: string;
     threads?: number;
     preserveInsertionOrder?: boolean;
   };
@@ -125,6 +133,34 @@ export function createShutdown(deps: ShutdownDeps): () => Promise<void> {
   };
 }
 
+export interface IdleShutdownDeps {
+  /** Memory governor whose `onIdle` restores the base memory_limit. */
+  governor: Pick<DaemonMemoryGovernor, "onIdle">;
+  /** The daemon's bounded graceful shutdown (see `createShutdown`). */
+  shutdown: () => Promise<void>;
+  /** Process exit, injectable for tests. */
+  exit: () => void;
+}
+
+/**
+ * Build the idle-watcher callback: restore the base DuckDB memory_limit on
+ * every burst-raised collection BEFORE the shutdown releases the RW lock, so
+ * the next opener never inherits a file whose live connection was still at
+ * the ingest ceiling. Lowering is best-effort — a rejecting `onIdle` never
+ * blocks the shutdown + exit path (the lock release is the priority).
+ */
+export function createIdleShutdown(deps: IdleShutdownDeps): () => void {
+  return () => {
+    void deps.governor
+      .onIdle()
+      .catch(() => undefined)
+      .then(async () => deps.shutdown())
+      .then(() => {
+        deps.exit();
+      });
+  };
+}
+
 /**
  * Build the per-connection `data`/`close` handler pair for a socket. Extracted
  * so tests can drive framing + refcounting without a live `net.Server`.
@@ -192,7 +228,14 @@ export async function runDaemon(
     // NO daemonSocketPath — this process IS the daemon; its pool holds the
     // single RW DuckDB connection in-process.
   });
-  const handler = new CodegraphDaemonServer(pool, options.buildFingerprint);
+  // Adaptive memory governor (bd tea-rags-mcp-1ruih): raises memory_limit to
+  // the ceiling on the first write of an ingest burst; the idle watcher
+  // restores the base BEFORE releasing the RW lock (see createIdleShutdown).
+  const governor = new DaemonMemoryGovernor({
+    baseLimit: options.resources?.memoryLimit ?? DEFAULT_MEMORY_LIMIT_BASE,
+    maxLimit: options.resources?.memoryLimitMax ?? DEFAULT_MEMORY_LIMIT_MAX,
+  });
+  const handler = new CodegraphDaemonServer(pool, options.buildFingerprint, governor);
 
   // Holders so the connection handler / `shutdown` can reference values that
   // are only constructed after them (mirrors the watcherRef pattern; avoids
@@ -243,7 +286,19 @@ export async function runDaemon(
   });
 
   writeFileSync(options.paths.pidFile, String(process.pid), "utf-8");
-  watcherRef.current = scheduleIdleWatcher(options.paths, drainAndExit);
+  // Idle teardown lowers the memory limit BEFORE the shared drain path
+  // (1ruih); the client-requested `shutdown` op keeps the plain drainAndExit —
+  // the process dies anyway, no SET needed there (ji56r).
+  watcherRef.current = scheduleIdleWatcher(
+    options.paths,
+    createIdleShutdown({
+      governor,
+      shutdown,
+      exit: () => {
+        exit(0);
+      },
+    }),
+  );
 
   return { server, shutdown };
 }
@@ -270,12 +325,14 @@ function optionsFromEnv(): DaemonRuntimeOptions {
   const rootDir = process.env.TEA_RAGS_CODEGRAPH_DAEMON_ROOT ?? process.cwd();
   const paths = getDaemonPaths(getStorageDir(rootDir));
   const memoryLimit = process.env.TEA_RAGS_CODEGRAPH_DAEMON_MEMORY;
+  const memoryLimitMax = process.env.TEA_RAGS_CODEGRAPH_DAEMON_MEMORY_MAX;
   const threadsRaw = process.env.TEA_RAGS_CODEGRAPH_DAEMON_THREADS;
   return {
     rootDir,
     paths,
     resources: {
       memoryLimit,
+      memoryLimitMax,
       threads: threadsRaw ? parseInt(threadsRaw, 10) || undefined : undefined,
       preserveInsertionOrder: false,
     },

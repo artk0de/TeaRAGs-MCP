@@ -11,7 +11,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createShutdown } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { createIdleShutdown, createShutdown } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
 
 describe("createShutdown — bounded daemon teardown", () => {
   afterEach(() => {
@@ -95,5 +95,49 @@ describe("createShutdown — bounded daemon teardown", () => {
     });
     await expect(shutdown()).resolves.toBeUndefined();
     expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createIdleShutdown — governor lowers memory BEFORE the lock is released (1ruih)", () => {
+  it("lowers via governor.onIdle first, then shuts down, then exits", async () => {
+    const order: string[] = [];
+    let done!: () => void;
+    const finished = new Promise<void>((resolve) => (done = resolve));
+    const idle = createIdleShutdown({
+      governor: {
+        onIdle: async () => {
+          order.push("lower");
+        },
+      },
+      shutdown: async () => {
+        order.push("shutdown");
+      },
+      exit: () => {
+        order.push("exit");
+        done();
+      },
+    });
+    idle();
+    await finished;
+    expect(order).toEqual(["lower", "shutdown", "exit"]);
+  });
+
+  it("still shuts down and exits when governor.onIdle rejects (best-effort lowering)", async () => {
+    const order: string[] = [];
+    let done!: () => void;
+    const finished = new Promise<void>((resolve) => (done = resolve));
+    const idle = createIdleShutdown({
+      governor: { onIdle: async () => Promise.reject(new Error("SET failed")) },
+      shutdown: async () => {
+        order.push("shutdown");
+      },
+      exit: () => {
+        order.push("exit");
+        done();
+      },
+    });
+    idle();
+    await finished;
+    expect(order).toEqual(["shutdown", "exit"]);
   });
 });

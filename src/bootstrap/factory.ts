@@ -318,6 +318,8 @@ function ensureCodegraphDaemon(
   rootDir: string,
   resources: {
     memoryLimit?: string;
+    /** Adaptive-governor ceiling (bd tea-rags-mcp-1ruih) — daemon-only. */
+    memoryLimitMax?: string;
     threads?: number;
   },
 ): void {
@@ -336,6 +338,7 @@ function ensureCodegraphDaemon(
         TEA_RAGS_CODEGRAPH_DAEMON_ROOT: rootDir,
         TEA_RAGS_CODEGRAPH_DAEMON_DIR: paths.storageDir,
         ...(resources.memoryLimit ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY: resources.memoryLimit } : {}),
+        ...(resources.memoryLimitMax ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY_MAX: resources.memoryLimitMax } : {}),
         ...(resources.threads !== undefined ? { TEA_RAGS_CODEGRAPH_DAEMON_THREADS: String(resources.threads) } : {}),
       },
     });
@@ -475,6 +478,9 @@ export function wireCodegraph(
     ensured = true;
     ensureCodegraphDaemon(daemonPaths, rootDir, {
       memoryLimit: codegraph.dbMemoryLimit,
+      // Governor ceiling rides the spawn env to the daemon; the in-process
+      // pool above intentionally stays at the base limit (daemon-only raise).
+      memoryLimitMax: codegraph.dbMemoryLimitMax,
       threads: codegraph.dbThreads,
     });
   };
