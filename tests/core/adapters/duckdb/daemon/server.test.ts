@@ -568,4 +568,38 @@ describe("CodegraphDaemonServer.handle", () => {
     await ro.graphDb.close();
     await pool.closeAll();
   });
+
+  // bd tea-rags-mcp-z3bcv (f2jsb A4) — the lazy ambiguous-expansion read is a
+  // full-proxy op like every other read: routed through the daemon's own RW
+  // connection against cg_ambiguous_fanout.
+  it("getAmbiguousCallersByMember read op returns member-matched aggregate rows", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_ambig_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "runner.rb", language: "ruby" },
+        edges: {
+          fileEdges: [],
+          methodEdges: [],
+          ambiguousFanouts: [
+            { sourceSymbolId: "Runner#go", callExpression: "x.firm", member: "firm", candidateCount: 240 },
+            { sourceSymbolId: "Runner#go", callExpression: "y.user", member: "user", candidateCount: 31 },
+          ],
+        },
+      },
+    });
+    const res = await server.handle({
+      id: 2,
+      op: "getAmbiguousCallersByMember",
+      params: { collection: c, member: "firm" },
+    });
+    expect(res.ok).toBe(true);
+    expect(res.result).toEqual([
+      { sourceSymbolId: "Runner#go", sourceRelPath: "runner.rb", callExpression: "x.firm", candidateCount: 240 },
+    ]);
+    await pool.closeAll();
+  });
 });

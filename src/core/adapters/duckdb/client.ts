@@ -21,6 +21,7 @@ import { DuckDBInstance, type DuckDBConnection, type DuckDBValue } from "@duckdb
 import picomatch from "picomatch";
 
 import type {
+  AmbiguousCallerSite,
   AritySignature,
   CalleeEdge,
   CallerEdge,
@@ -1024,6 +1025,42 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   /**
+   * Lazy ambiguous-group expansion read (bd tea-rags-mcp-f2jsb A4). Selects
+   * the `cg_ambiguous_fanout` aggregates whose `member` equals the target's
+   * member segment — uses the migration-013 member index. The suppressed
+   * edges are NEVER materialized; consumers see the aggregate + its
+   * candidateCount. `limit` is INLINED (not bound) for the same reason as
+   * `getTransitiveImpact`'s depth: bindParams binds every value via
+   * bindVarchar and a varchar LIMIT misbehaves — the value is sanitised to a
+   * small positive integer first, so injection is structurally impossible.
+   * Empty member short-circuits to [] (the kernel always records a non-empty
+   * member, so nothing can match).
+   */
+  async getAmbiguousCallersByMember(member: string, limit = 50): Promise<AmbiguousCallerSite[]> {
+    if (member.length === 0) return [];
+    const safeLimit = Math.max(1, Math.floor(limit));
+    const rows = await this.queryAll<{
+      sourceSymbolId: string;
+      sourceRelPath: string;
+      callExpression: string;
+      candidateCount: number | bigint;
+    }>(
+      `SELECT source_symbol_id AS "sourceSymbolId", source_rel_path AS "sourceRelPath",
+              call_expression AS "callExpression", candidate_count AS "candidateCount"
+         FROM cg_ambiguous_fanout WHERE member = ?
+        ORDER BY source_symbol_id, call_expression
+        LIMIT ${safeLimit}`,
+      [member],
+    );
+    return rows.map((r) => ({
+      sourceSymbolId: r.sourceSymbolId,
+      sourceRelPath: r.sourceRelPath,
+      callExpression: r.callExpression,
+      candidateCount: Number(r.candidateCount),
+    }));
+  }
+
+  /**
    * Confidence-weighted chunk fanIn (bd tea-rags-mcp-s5ato): SUM(confidence)
    * over incoming method edges instead of COUNT(*). A dynamic/cone dispatch
    * site that fans out to m candidates at confidence 1/m contributes ~1 call
@@ -1270,8 +1307,12 @@ function parseScope(json: string): string[] {
  * present (so `Acme::User#save` → base `Acme::User`, member `save`); otherwise
  * fall back to the last `.`. Returns `null` for a bare top-level symbol with no
  * member separator — nothing to expand.
+ *
+ * Exported for the GraphFacade's lazy ambiguous expansion (bd f2jsb A4): the
+ * `includeAmbiguous` read extracts the target's member segment with the same
+ * convention this adapter persists `cg_ambiguous_fanout.member` under.
  */
-function splitMethodSymbol(symbolId: SymbolId): { base: string; sep: "#" | "."; member: string } | null {
+export function splitMethodSymbol(symbolId: SymbolId): { base: string; sep: "#" | "."; member: string } | null {
   const hash = symbolId.lastIndexOf("#");
   if (hash > 0 && hash < symbolId.length - 1) {
     return { base: symbolId.slice(0, hash), sep: "#", member: symbolId.slice(hash + 1) };

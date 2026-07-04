@@ -38,6 +38,7 @@ export type DaemonOp =
   | "getFanOut"
   | "getCallers"
   | "getCallees"
+  | "getAmbiguousCallersByMember"
   | "getCalleeEdges"
   | "getCalledByCount"
   | "getCallSiteCount"
@@ -68,6 +69,7 @@ export interface DaemonRequest {
     | { collection: string; relPath: RelPath; maxDepth?: number } // getTransitiveImpact
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
     | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount | getPageRank
+    | { collection: string; member: string; limit?: number } // getAmbiguousCallersByMember
     | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges
     | { collection: string; scope: CycleScope; pathPattern?: string } // findCycles (pathPattern) | listAdjacency
     | { collection: string; scope: CycleScope; sccs: readonly (readonly string[])[] } // replaceCycles

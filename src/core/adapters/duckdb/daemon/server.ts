@@ -118,6 +118,10 @@ export class CodegraphDaemonServer {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getCallers(p.symbolId as SymbolId);
       }
+      case "getAmbiguousCallersByMember": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.getAmbiguousCallersByMember(p.member as string, p.limit as number | undefined);
+      }
       case "findSymbolChunk": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.findSymbolChunk(p.symbolId as SymbolId);

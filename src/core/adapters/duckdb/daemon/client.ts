@@ -1,6 +1,7 @@
 import { connect, type Socket } from "node:net";
 
 import type {
+  AmbiguousCallerSite,
   CalleeEdge,
   CallerEdge,
   CycleEntry,
@@ -258,6 +259,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async getCallees(symbolId: SymbolId): Promise<CalleeEdge[]> {
     return (await this.call("getCallees", { symbolId })) as CalleeEdge[];
+  }
+
+  async getAmbiguousCallersByMember(member: string, limit?: number): Promise<AmbiguousCallerSite[]> {
+    return (await this.call("getAmbiguousCallersByMember", { member, limit })) as AmbiguousCallerSite[];
   }
 
   async getCalleeEdges(symbolIds: SymbolId[]): Promise<Map<SymbolId, SymbolId[]>> {

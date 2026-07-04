@@ -1051,6 +1051,15 @@ export interface GraphDbClient {
   getCallers: (symbolId: SymbolId) => Promise<CallerEdge[]>;
   getCallees: (symbolId: SymbolId) => Promise<CalleeEdge[]>;
   /**
+   * Lazy ambiguous-group expansion (bd tea-rags-mcp-f2jsb A4). Reads the
+   * `cg_ambiguous_fanout` aggregates whose `member` matches the target's
+   * member segment — call sites whose over-cap candidate set plausibly
+   * contained the target — WITHOUT materializing the suppressed edges.
+   * Ordered by (sourceSymbolId, callExpression); `limit` defaults to 50.
+   * Empty `member` always returns [] (aggregates never record one).
+   */
+  getAmbiguousCallersByMember: (member: string, limit?: number) => Promise<AmbiguousCallerSite[]>;
+  /**
    * Batch adjacency: for each input source symbolId, the list of resolved
    * callee target symbolIds. Method edges whose callee could not be resolved
    * to a known symbol (null `target_symbol_id`) are excluded. Used by
@@ -1378,6 +1387,21 @@ export interface CallerEdge {
   edgeKind?: MethodEdgeKind;
   /** Dispatch confidence in (0,1] from `cg_symbols_edges_method.confidence` (xlnub Task 5). */
   confidence?: number;
+}
+
+/**
+ * One `cg_ambiguous_fanout` aggregate row surfaced by
+ * `getAmbiguousCallersByMember` (bd tea-rags-mcp-f2jsb A4): an over-cap
+ * dispatch site whose member matches the queried target. The call MAY reach
+ * the target among `candidateCount` candidates — it is NOT a materialized
+ * edge (`CallerEdge`), so no edgeKind/confidence provenance applies.
+ */
+export interface AmbiguousCallerSite {
+  sourceSymbolId: SymbolId;
+  sourceRelPath: RelPath;
+  callExpression: string;
+  /** Size of the suppressed candidate set the target plausibly belongs to. */
+  candidateCount: number;
 }
 
 export interface CalleeEdge {

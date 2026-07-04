@@ -170,4 +170,77 @@ describe("DuckDbGraphClient — ambiguous fan-out persistence (j0pki)", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].source_rel_path).toBe("app/services/other.rb");
   });
+
+  // bd tea-rags-mcp-z3bcv (f2jsb A4) — lazy ambiguous-group expansion read
+  // path: get_callers optionally surfaces the aggregates whose `member`
+  // matches the target's member segment, WITHOUT materializing edges.
+  describe("getAmbiguousCallersByMember (A4 lazy expansion)", () => {
+    const seedTwoFiles = async (): Promise<void> => {
+      await client.upsertFile(
+        { relPath: "app/services/runner.rb", language: "ruby" },
+        {
+          fileEdges: [],
+          methodEdges: [],
+          ambiguousFanouts: [
+            { sourceSymbolId: "Runner#go", callExpression: "x.firm", member: "firm", candidateCount: 240 },
+            { sourceSymbolId: "Runner#go", callExpression: "y.user", member: "user", candidateCount: 31 },
+          ],
+        },
+      );
+      await client.upsertFile(
+        { relPath: "app/services/other.rb", language: "ruby" },
+        {
+          fileEdges: [],
+          methodEdges: [],
+          ambiguousFanouts: [
+            { sourceSymbolId: "Other#zap", callExpression: "a.firm", member: "firm", candidateCount: 18 },
+            { sourceSymbolId: "Aaa#first", callExpression: "b.firm", member: "firm", candidateCount: 7 },
+          ],
+        },
+      );
+    };
+
+    it("returns only member-matched rows, ordered by (sourceSymbolId, callExpression)", async () => {
+      await seedTwoFiles();
+      const rows = await client.getAmbiguousCallersByMember("firm");
+      expect(rows).toEqual([
+        {
+          sourceSymbolId: "Aaa#first",
+          sourceRelPath: "app/services/other.rb",
+          callExpression: "b.firm",
+          candidateCount: 7,
+        },
+        {
+          sourceSymbolId: "Other#zap",
+          sourceRelPath: "app/services/other.rb",
+          callExpression: "a.firm",
+          candidateCount: 18,
+        },
+        {
+          sourceSymbolId: "Runner#go",
+          sourceRelPath: "app/services/runner.rb",
+          callExpression: "x.firm",
+          candidateCount: 240,
+        },
+      ]);
+      // candidateCount must land as a plain JS number, not a driver bigint.
+      expect(rows.every((r) => typeof r.candidateCount === "number")).toBe(true);
+    });
+
+    it("caps the result at the supplied limit (ordered prefix)", async () => {
+      await seedTwoFiles();
+      const rows = await client.getAmbiguousCallersByMember("firm", 2);
+      expect(rows.map((r) => r.sourceSymbolId)).toEqual(["Aaa#first", "Other#zap"]);
+    });
+
+    it("empty member returns [] (never matches a persisted aggregate)", async () => {
+      await seedTwoFiles();
+      expect(await client.getAmbiguousCallersByMember("")).toEqual([]);
+    });
+
+    it("unknown member returns []", async () => {
+      await seedTwoFiles();
+      expect(await client.getAmbiguousCallersByMember("nope")).toEqual([]);
+    });
+  });
 });

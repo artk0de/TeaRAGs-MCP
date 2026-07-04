@@ -109,6 +109,29 @@ describe("DaemonGraphDbClient", () => {
     expect((seen[2].params as { scope: string }).scope).toBe("file");
   });
 
+  it("getAmbiguousCallersByMember proxies member + limit over the socket (f2jsb A4)", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "getAmbiguousCallersByMember"
+        ? [{ sourceSymbolId: "Runner#go", sourceRelPath: "runner.rb", callExpression: "x.firm", candidateCount: 240 }]
+        : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const rows = await client.getAmbiguousCallersByMember("firm", 25);
+    await client.close();
+
+    expect(rows).toEqual([
+      { sourceSymbolId: "Runner#go", sourceRelPath: "runner.rb", callExpression: "x.firm", candidateCount: 240 },
+    ]);
+    const req = seen.find((r) => r.op === "getAmbiguousCallersByMember");
+    expect(req?.params).toMatchObject({ collection: "code_x_v1", member: "firm", limit: 25 });
+  });
+
   it("findCycles forwards a pathPattern scope filter over the socket", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "d.sock");
