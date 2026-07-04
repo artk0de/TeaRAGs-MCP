@@ -16,6 +16,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
 import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
+import { captureTuningEnv } from "../../../infra/registry/tuning-env.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
@@ -237,6 +238,11 @@ export abstract class BaseIndexingPipeline {
       // was wired up, not which endpoint we happened to be on at write time.
       const embeddingBaseUrl = this.embeddings.getPrimaryBaseUrl?.() ?? this.embeddings.getBaseUrl?.();
       const embeddingFallbackUrl = this.embeddings.getFallbackBaseUrl?.();
+      // Tuning env snapshot (curated allowlist) — only vars actually SET in
+      // this indexing process are recorded, no defaults materialized. CLI
+      // index-codebase / prime re-apply the map registry-first in a fresh
+      // shell (env > registry > code default), symmetric with codegraphEnabled.
+      const tuning = captureTuningEnv();
       this.registry.record({
         collectionName,
         path: absolutePath,
@@ -255,6 +261,7 @@ export abstract class BaseIndexingPipeline {
         // when CODEGRAPH_ENABLED is off — see RegistryDeps doc). prime reads
         // this back to re-apply the flag, symmetric with the embedding URLs.
         codegraphEnabled: this.codegraphRemover !== undefined,
+        ...(tuning !== undefined ? { tuning } : {}),
         indexedAt: new Date().toISOString(),
         teaRagsVersion: this.teaRagsVersion,
         chunksCount,

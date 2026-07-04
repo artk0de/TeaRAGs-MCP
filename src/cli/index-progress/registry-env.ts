@@ -100,5 +100,13 @@ export function resolveRegistryEnv(entry: CollectionEntry | null): Record<string
     env.QDRANT_URL = entry.qdrantUrl;
   }
   if (entry.codegraphEnabled) env.CODEGRAPH_ENABLED = "true";
+  // Tuning snapshot re-apply: seed the worker with the exact tuning env the
+  // project was last indexed with, so a fresh-shell reindex keeps the same
+  // knobs instead of silently reverting to code defaults. Ambient process.env
+  // still wins (the command merges process.env over these). Empty-string
+  // values (hand-edited registry) are skipped like the endpoint fields above.
+  for (const [key, value] of Object.entries(entry.tuning ?? {})) {
+    if (value) env[key] = value;
+  }
   return env;
 }

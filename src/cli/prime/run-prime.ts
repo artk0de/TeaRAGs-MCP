@@ -99,6 +99,18 @@ export async function runPrime(input: { path?: string; project?: string }): Prom
   if (registryEntry?.codegraphEnabled) {
     process.env.CODEGRAPH_ENABLED = "true";
   }
+  // Tuning env registry-first re-apply (same seam as CODEGRAPH_ENABLED above):
+  // the project was indexed with these tuning vars in the indexing process env
+  // (typically the MCP server's env block), but prime runs in a fresh shell
+  // without them. Unlike the embedding URL overrides, explicit shell env WINS
+  // over the stored value — only unset keys are seeded (env > registry > code
+  // default). Empty-string env values count as unset, matching envWithFallback.
+  for (const [key, value] of Object.entries(registryEntry?.tuning ?? {})) {
+    const current = process.env[key];
+    if ((current === undefined || current === "") && value !== "") {
+      process.env[key] = value;
+    }
+  }
   const config = parseAppConfig();
   // Registry-first: prefer the registered qdrantUrl (the Qdrant the project was
   // indexed against). Fall back to heuristic only when the registry entry has

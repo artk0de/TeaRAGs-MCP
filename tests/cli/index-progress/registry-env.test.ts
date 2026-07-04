@@ -53,6 +53,31 @@ describe("resolveRegistryEnv", () => {
     expect(resolveRegistryEnv(null)).toEqual({});
   });
 
+  it("injects the tuning snapshot keys verbatim so the worker runs with index-time tuning", () => {
+    const env = resolveRegistryEnv(
+      entry({
+        tuning: {
+          TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5",
+          INGEST_TUNE_FILE_CONCURRENCY: "25",
+          QDRANT_TUNE_UPSERT_BATCH_SIZE: "512",
+        },
+      }),
+    );
+    expect(env.TRAJECTORY_GIT_CHUNK_CONCURRENCY).toBe("5");
+    expect(env.INGEST_TUNE_FILE_CONCURRENCY).toBe("25");
+    expect(env.QDRANT_TUNE_UPSERT_BATCH_SIZE).toBe("512");
+  });
+
+  it("adds no tuning keys when the entry has no tuning snapshot (legacy entry)", () => {
+    const env = resolveRegistryEnv(entry({ embeddingBaseUrl: undefined, embeddingFallbackUrl: undefined }));
+    expect(env).toEqual({ EMBEDDING_MODEL: "jina-v2", QDRANT_URL: "http://127.0.0.1:6333" });
+  });
+
+  it("skips empty-string tuning values (hand-edited registry) so they don't poison the env", () => {
+    const env = resolveRegistryEnv(entry({ tuning: { TRAJECTORY_GIT_CHUNK_CONCURRENCY: "" } }));
+    expect("TRAJECTORY_GIT_CHUNK_CONCURRENCY" in env).toBe(false);
+  });
+
   it("maps qdrantUrl to a QDRANT_URL env var so the worker reuses the last backend", () => {
     const env = resolveRegistryEnv(entry({ qdrantUrl: "http://192.168.1.71:6333" }));
     expect(env.QDRANT_URL).toBe("http://192.168.1.71:6333");

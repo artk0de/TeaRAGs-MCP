@@ -46,6 +46,30 @@ describe("CollectionRegistry", () => {
     expect(got?.name).toBeNull();
   });
 
+  it("record() round-trips the tuning snapshot and persists it across instances", () => {
+    const r = new CollectionRegistry(dir);
+    r.record(makeEntry({ tuning: { TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5", INGEST_TUNE_FILE_CONCURRENCY: "25" } }));
+    expect(r.get("code_abc")?.tuning).toEqual({
+      TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5",
+      INGEST_TUNE_FILE_CONCURRENCY: "25",
+    });
+
+    const reloaded = new CollectionRegistry(dir);
+    expect(reloaded.get("code_abc")?.tuning).toEqual({
+      TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5",
+      INGEST_TUNE_FILE_CONCURRENCY: "25",
+    });
+  });
+
+  it("record() without tuning stores an entry with no tuning field (old behavior byte-identical)", () => {
+    const r = new CollectionRegistry(dir);
+    r.record(makeEntry());
+    const got = r.get("code_abc");
+    expect(got).not.toBeNull();
+    expect(got?.tuning).toBeUndefined();
+    expect(got !== null && "tuning" in got).toBe(false);
+  });
+
   it("record() preserves sticky name on second record() call", () => {
     const r = new CollectionRegistry(dir);
     r.record(makeEntry());
