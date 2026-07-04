@@ -11,7 +11,8 @@ import type {
 import { pageRank } from "../../../infra/graph/page-rank.js";
 import { tarjanScc } from "../../../infra/graph/tarjan-scc.js";
 import type { GraphDbClientPool } from "../pool.js";
-import type { DaemonRequest, DaemonResponse } from "./protocol.js";
+import { getBuildFingerprint } from "./build-fingerprint.js";
+import type { DaemonHandshakeResult, DaemonRequest, DaemonResponse } from "./protocol.js";
 
 /**
  * In-process request handler for the codegraph daemon. Owns the internal
@@ -27,7 +28,16 @@ import type { DaemonRequest, DaemonResponse } from "./protocol.js";
  * as `{ ok: false, error }` so the socket loop can keep serving.
  */
 export class CodegraphDaemonServer {
-  constructor(private readonly pool: GraphDbClientPool) {}
+  constructor(
+    private readonly pool: GraphDbClientPool,
+    /**
+     * This daemon's build identity, returned in every handshake response so a
+     * client from a different build can decide to drain-restart the daemon
+     * (bd tea-rags-mcp-ji56r). Injectable for tests; defaults to the shared
+     * module-computed fingerprint (env-overridable).
+     */
+    private readonly buildFingerprint: string = getBuildFingerprint(),
+  ) {}
 
   async handle(req: DaemonRequest): Promise<DaemonResponse> {
     try {
@@ -43,9 +53,21 @@ export class CodegraphDaemonServer {
     const p = req.params as Record<string, unknown>;
     const collection = p.collection as string;
     switch (req.op) {
-      case "handshake":
-        await this.pool.acquire(collection); // opens + migrates + hydrates
-        return null;
+      case "handshake": {
+        const clientFingerprint = p.buildFingerprint as string | undefined;
+        // A client from a DIFFERENT build is about to drain-restart this
+        // daemon — do NOT open/migrate the DB with stale code first. Legacy
+        // clients (no fingerprint) keep the original open-on-handshake path.
+        if (clientFingerprint === undefined || clientFingerprint === this.buildFingerprint) {
+          await this.pool.acquire(collection); // opens + migrates + hydrates
+        }
+        return { buildFingerprint: this.buildFingerprint } satisfies DaemonHandshakeResult;
+      }
+      case "shutdown":
+        // Transport-level op: daemon/entry.ts acks it and reuses the
+        // idle-watcher drain/exit path. Reaching the dispatcher means the
+        // transport interception is miswired — a caller bug, not a user error.
+        throw new Error("shutdown is handled by the daemon transport (entry.ts), not the request dispatcher");
       // ── writes ──
       case "upsertFile": {
         const { graphDb } = await this.pool.acquire(collection);

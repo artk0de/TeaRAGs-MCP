@@ -18,6 +18,11 @@ import type {
  */
 export type DaemonOp =
   | "handshake"
+  // Graceful drain+exit requested by a client whose build fingerprint differs
+  // from the daemon's (bd tea-rags-mcp-ji56r). Handled by the TRANSPORT layer
+  // (daemon/entry.ts) — acked first, then the daemon reuses the idle-watcher
+  // drain/exit path — so it never reaches the request dispatcher.
+  | "shutdown"
   | "finalizeReindex"
   // ── writes ──
   | "upsertFile"
@@ -61,7 +66,8 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // handshake | checkpoint | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols
+    | { collection: string } // checkpoint | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | shutdown
+    | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
     | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut
     | { collection: string; relPath: RelPath; definitions: SymbolDefinition[] } // upsertSymbols
@@ -76,6 +82,14 @@ export interface DaemonRequest {
     | { collection: string; ranks: [string, number][] } // replacePageRanks
     | { collection: string; rows: ResolveRunStatsRow[] } // recordRunStats
     | { collection: string; fqName: string }; // getSupertypes | getSubtypes | getTransitiveSubtypes
+}
+
+/**
+ * `handshake` op result. A legacy daemon (pre-fingerprint build) returns null
+ * instead — the client treats a missing fingerprint as "no restart".
+ */
+export interface DaemonHandshakeResult {
+  buildFingerprint?: string;
 }
 
 export type DaemonResponse =

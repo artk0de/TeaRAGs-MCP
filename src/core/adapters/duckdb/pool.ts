@@ -29,9 +29,22 @@ import { copyFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
+import { isDebug } from "../../infra/runtime.js";
 import { DuckDbGraphClient } from "./client.js";
+import { getBuildFingerprint } from "./daemon/build-fingerprint.js";
 import type { DaemonGraphDbClient } from "./daemon/client.js";
-import { DuckDbCloseFailedError, DuckDbOpenFailedError } from "./errors.js";
+import {
+  DEFAULT_EXIT_TIMEOUT_MS,
+  getDaemonPaths,
+  readDaemonPid,
+  waitForDaemonExit,
+} from "./daemon/lifecycle.js";
+import {
+  CodegraphDaemonExitTimeoutError,
+  CodegraphDaemonStaleBuildError,
+  DuckDbCloseFailedError,
+  DuckDbOpenFailedError,
+} from "./errors.js";
 
 /**
  * Initialiser hook the pool calls once per newly-opened collection
@@ -80,6 +93,24 @@ export interface GraphDbClientPoolOptions {
    * Reads (`acquireRead`) always go in-process READ_ONLY and ignore this.
    */
   daemonSocketPath?: string;
+  /**
+   * Build-version handshake restart wiring (bd tea-rags-mcp-ji56r), daemon
+   * mode only. When the daemon's handshake fingerprint differs from ours, the
+   * pool drains it (graceful `shutdown` op), waits for its lifecycle files to
+   * clear, invokes `respawn` to cold-spawn a daemon from THIS build, and
+   * reconnects (one retry max). Absent fingerprint on either side (legacy
+   * peer) → no restart, proceed as before.
+   */
+  daemonRestart?: {
+    /** Cold-spawn hook — wired to `ensureCodegraphDaemon` by the bootstrap factory. */
+    respawn?: () => void;
+    /** Override the module-computed local fingerprint (tests). */
+    buildFingerprint?: string;
+    /** Bound on the wait for the stale daemon's exit (default 10s). */
+    exitTimeoutMs?: number;
+    /** Lifecycle-file poll interval while waiting for the exit. */
+    pollIntervalMs?: number;
+  };
 }
 
 interface PoolEntry {
@@ -329,9 +360,7 @@ export class GraphDbClientPool {
     if (!socketPath) throw new Error("acquireDaemonClient called without daemonSocketPath");
 
     const promise = (async (): Promise<DaemonClientEntry> => {
-      const { DaemonGraphDbClient } = await import("./daemon/client.js");
-      const client = new DaemonGraphDbClient(socketPath, collectionName);
-      await client.init();
+      const client = await this.connectWithBuildHandshake(socketPath, collectionName);
       const wrapped = wrapNoopClose(client);
       // One shared symbol table per collection (see DaemonClientEntry doc).
       // Hydrate it from the daemon's DuckDB via the init hook — mirrors
@@ -356,6 +385,87 @@ export class GraphDbClientPool {
     });
     this.daemonInflight.set(collectionName, promise);
     return promise;
+  }
+
+  /**
+   * Connect to the daemon and exchange build fingerprints (bd
+   * tea-rags-mcp-ji56r). Same build or a legacy peer (no fingerprint in the
+   * response) → return the connected client, exactly as before. A DIFFERENT
+   * fingerprint means the daemon runs stale code (spawned before the last
+   * `npm run build` / `npm link` flip): drain it gracefully, cold-spawn a
+   * fresh daemon from THIS build via the respawn hook, reconnect, and
+   * re-verify — one retry max, then a typed error.
+   */
+  private async connectWithBuildHandshake(socketPath: string, collectionName: string): Promise<DaemonGraphDbClient> {
+    // Dynamic so direct/test mode never loads the node:net socket code.
+    const { DaemonGraphDbClient } = await import("./daemon/client.js");
+    const restart = this.options.daemonRestart;
+    const localFingerprint = restart?.buildFingerprint ?? getBuildFingerprint();
+
+    const first = new DaemonGraphDbClient(socketPath, collectionName);
+    await first.init();
+    const daemonFingerprint = (await first.handshake(localFingerprint))?.buildFingerprint;
+    // Legacy daemon (no fingerprint) or same build → proceed as today.
+    if (daemonFingerprint === undefined || daemonFingerprint === localFingerprint) return first;
+
+    // Restart is gated on a wired respawn hook: draining a daemon this pool
+    // cannot cold-spawn again (worker-thread pools rebuilt from serializable
+    // config) would strand codegraph for every process on the machine. Such
+    // pools TOLERATE the stale daemon — the main MCP process, whose factory
+    // wires the hook, performs the actual restart.
+    const respawn = restart?.respawn;
+    if (!respawn) {
+      if (isDebug()) {
+        process.stderr.write(
+          `[tea-rags] codegraph daemon build mismatch (daemon=${daemonFingerprint}, ` +
+            `client=${localFingerprint}) — no respawn hook wired, proceeding with the running daemon\n`,
+        );
+      }
+      return first;
+    }
+
+    if (isDebug()) {
+      process.stderr.write(
+        `[tea-rags] codegraph daemon build mismatch (daemon=${daemonFingerprint}, ` +
+          `client=${localFingerprint}) — draining stale daemon and respawning from this build\n`,
+      );
+    }
+    await this.drainStaleDaemon(first, socketPath);
+    respawn();
+
+    // One retry: reconnect (init retries the connect while the fresh daemon
+    // boots) and re-verify the fingerprint.
+    const second = new DaemonGraphDbClient(socketPath, collectionName);
+    await second.init();
+    const retryFingerprint = (await second.handshake(localFingerprint))?.buildFingerprint;
+    if (retryFingerprint !== undefined && retryFingerprint !== localFingerprint) {
+      await second.close();
+      throw new CodegraphDaemonStaleBuildError(socketPath, localFingerprint, retryFingerprint);
+    }
+    return second;
+  }
+
+  /**
+   * Gracefully retire a stale daemon: request the drain (acked, then the
+   * daemon reuses its idle-watcher teardown), close our socket so the daemon's
+   * `server.close` is not held open by us, and poll the lifecycle files until
+   * the old process is gone. Times out with a typed error — never cold-spawns
+   * on top of a daemon that still holds the socket + RW lock.
+   */
+  private async drainStaleDaemon(client: DaemonGraphDbClient, socketPath: string): Promise<void> {
+    // The lifecycle files live next to the socket (getDaemonPaths layout).
+    const paths = getDaemonPaths(dirname(socketPath));
+    const stalePid = readDaemonPid(paths);
+    await client.requestShutdown().catch(() => undefined);
+    await client.close();
+    const restart = this.options.daemonRestart;
+    const exited = await waitForDaemonExit(paths, stalePid, {
+      timeoutMs: restart?.exitTimeoutMs,
+      pollIntervalMs: restart?.pollIntervalMs,
+    });
+    if (!exited) {
+      throw new CodegraphDaemonExitTimeoutError(socketPath, restart?.exitTimeoutMs ?? DEFAULT_EXIT_TIMEOUT_MS);
+    }
   }
 
   /**

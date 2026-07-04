@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { getBuildFingerprint } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
 import { CodegraphDaemonServer } from "../../../../../src/core/adapters/duckdb/daemon/server.js";
 import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -13,11 +14,63 @@ afterEach(() => {
   if (root) rmSync(root, { recursive: true, force: true });
 });
 
-function makeServer() {
+function makeServer(buildFingerprint?: string) {
   root = mkdtempSync(join(tmpdir(), "cg-daemon-"));
   const pool = new GraphDbClientPool({ rootDir: root, symbolTableFactory: () => new InMemoryGlobalSymbolTable() });
-  return { server: new CodegraphDaemonServer(pool), pool };
+  return { server: new CodegraphDaemonServer(pool, buildFingerprint), pool };
 }
+
+describe("CodegraphDaemonServer.handle — handshake build fingerprint (bd tea-rags-mcp-ji56r)", () => {
+  it("handshake returns the daemon's build fingerprint and opens the collection when the client matches", async () => {
+    const { server, pool } = makeServer("fp-same");
+    const c = "code_fp_match_v1";
+    const res = await server.handle({ id: 1, op: "handshake", params: { collection: c, buildFingerprint: "fp-same" } });
+    expect(res.ok).toBe(true);
+    expect((res as { result: unknown }).result).toEqual({ buildFingerprint: "fp-same" });
+    // Matching fingerprints → the daemon opened + migrated the collection DB.
+    expect(existsSync(pool.pathFor(c))).toBe(true);
+    await pool.closeAll();
+  });
+
+  it("handshake from a LEGACY client (no fingerprint) still opens the collection — backward compat", async () => {
+    const { server, pool } = makeServer("fp-own");
+    const c = "code_fp_legacy_v1";
+    const res = await server.handle({ id: 1, op: "handshake", params: { collection: c } });
+    expect(res.ok).toBe(true);
+    expect((res as { result: unknown }).result).toEqual({ buildFingerprint: "fp-own" });
+    expect(existsSync(pool.pathFor(c))).toBe(true);
+    await pool.closeAll();
+  });
+
+  it("handshake with a MISMATCHED client fingerprint skips the acquire (stale code must not touch the DB)", async () => {
+    const { server, pool } = makeServer("fp-old");
+    const c = "code_fp_mismatch_v1";
+    const res = await server.handle({ id: 1, op: "handshake", params: { collection: c, buildFingerprint: "fp-new" } });
+    // Still ok — the daemon reports its fingerprint so the CLIENT decides to restart it.
+    expect(res.ok).toBe(true);
+    expect((res as { result: unknown }).result).toEqual({ buildFingerprint: "fp-old" });
+    // The stale daemon must NOT have opened/migrated the DB for this collection.
+    expect(existsSync(pool.pathFor(c))).toBe(false);
+    await pool.closeAll();
+  });
+
+  it("defaults its fingerprint to the module-computed build fingerprint when none is injected", async () => {
+    const { server, pool } = makeServer();
+    const res = await server.handle({ id: 1, op: "handshake", params: { collection: "code_fp_default_v1" } });
+    expect(res.ok).toBe(true);
+    const fp = (res as { result: { buildFingerprint?: string } }).result.buildFingerprint;
+    expect(fp).toBe(getBuildFingerprint());
+    await pool.closeAll();
+  });
+
+  it("shutdown op is transport-level — the request dispatcher rejects it with a clear error", async () => {
+    const { server, pool } = makeServer();
+    const res = await server.handle({ id: 1, op: "shutdown", params: { collection: "code_sd_v1" } });
+    expect(res.ok).toBe(false);
+    expect((res as { error: { message: string } }).error.message).toMatch(/transport|entry/);
+    await pool.closeAll();
+  });
+});
 
 describe("CodegraphDaemonServer.handle", () => {
   it("upsertFile then computeAndPersistCyclesAndSignals persists with no throw", async () => {

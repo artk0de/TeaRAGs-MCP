@@ -18,7 +18,13 @@ import type {
   SymbolDefinition,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
-import { decodeFrames, encodeFrame, type DaemonOp, type DaemonResponse } from "./protocol.js";
+import {
+  decodeFrames,
+  encodeFrame,
+  type DaemonHandshakeResult,
+  type DaemonOp,
+  type DaemonResponse,
+} from "./protocol.js";
 
 /**
  * Thrown when a daemon-internal op is invoked on the daemon client. In daemon
@@ -170,6 +176,29 @@ export class DaemonGraphDbClient implements GraphDbClient {
       p.reject(new Error("DaemonGraphDbClient closed before response arrived"));
     }
     this.pending.clear();
+  }
+
+  // ── build-version handshake (bd tea-rags-mcp-ji56r) ──
+
+  /**
+   * Exchange build fingerprints with the daemon. Sends the CLIENT's
+   * fingerprint; resolves the daemon's (a legacy daemon returns null — no
+   * fingerprint, treated by the pool as "proceed, no restart"). On a match or
+   * legacy peer the daemon also opens + migrates + hydrates the collection.
+   */
+  async handshake(buildFingerprint?: string): Promise<DaemonHandshakeResult | null> {
+    // `undefined` vanishes in JSON serialisation — a legacy-shaped request.
+    return (await this.call("handshake", { buildFingerprint })) as DaemonHandshakeResult | null;
+  }
+
+  /**
+   * Ask the daemon to drain in-flight ops and exit gracefully (release the RW
+   * DuckDB lock + remove its lifecycle files). The daemon ACKS first, then
+   * tears down via its idle-watcher drain/exit path — the caller must close
+   * its socket and poll the lifecycle files for the actual exit.
+   */
+  async requestShutdown(): Promise<void> {
+    await this.call("shutdown", {});
   }
 
   // ── writes (proxied over the socket) ──
