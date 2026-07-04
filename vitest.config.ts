@@ -16,8 +16,14 @@ export default defineConfig({
     environment: "node",
     // Retry flaky timing tests + widen timeout under coverage / CI (slow runners)
     ...(resilient && { retry: 2, testTimeout: 30_000 }),
-    // Local: use all CPU cores for faster runs
-    ...(!isCI && { pool: "forks" }),
+    // Fork pool everywhere (was local-only). The thread pool leaves a
+    // worker_thread / persistent child (churn-walk thread, cat-file reader,
+    // codegraph daemon) alive on CI's constrained 2-core runners, so the shared
+    // vitest process never exits and the job is killed with no summary. Forks
+    // isolate each file in a child process that is reaped on teardown, so a
+    // leaked handle cannot hang the whole run. Local + pre-commit already used
+    // forks and passed; this extends it to CI. (Real leak hunt tracked in beads.)
+    pool: "forks",
     // Give worker_threads (ChunkerPool) time to terminate before fork exits
     teardownTimeout: resilient ? 10_000 : 5_000,
     // Detect hanging async operations (timers, promises, connections)
