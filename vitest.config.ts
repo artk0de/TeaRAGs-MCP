@@ -16,19 +16,8 @@ export default defineConfig({
     environment: "node",
     // Retry flaky timing tests + widen timeout under coverage / CI (slow runners)
     ...(resilient && { retry: 2, testTimeout: 30_000 }),
-    // Fork pool everywhere (was local-only) — child-process isolation per file.
-    pool: "forks",
-    // CI hang fix (bd tea-rags-mcp-rytq3). Several NEW real-git fixture files
-    // (file-discovery, churn-walk-thread, …) build a repo with ~16 SYNCHRONOUS
-    // `execFileSync` git spawns in beforeAll. execFileSync blocks the fork's
-    // event loop, so vitest's hook timeout timer cannot preempt it. On the
-    // 4-vCPU GitHub runner the default fork fan-out runs 4 such files at once;
-    // they starve git/CPU, one beforeAll blocks past any recoverable point, and
-    // the job is killed with no summary (green locally on many cores, hangs only
-    // under CI contention — confirmed: threads AND forks both hang, no leaked
-    // handle at teardown, no OOM). Cap CI fan-out so heavy sync-git setups don't
-    // pile up; each spawn then completes in ms. Local (many cores) stays uncapped.
-    ...(isCI && { poolOptions: { forks: { minForks: 1, maxForks: 2 } } }),
+    // Local: use all CPU cores for faster runs
+    ...(!isCI && { pool: "forks" }),
     // Give worker_threads (ChunkerPool) time to terminate before fork exits
     teardownTimeout: resilient ? 10_000 : 5_000,
     // Detect hanging async operations (timers, promises, connections)

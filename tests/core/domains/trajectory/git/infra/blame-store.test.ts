@@ -88,6 +88,38 @@ describe("GitBlameStore (bd tea-rags-mcp-v2mlw)", () => {
     expect(store.load(repoRoot)).toBeNull();
   });
 
+  // Structural validation: any snapshot whose shape breaks the persisted
+  // contract must load as null (silent rebuild), never as partial/garbage data.
+  type LooseSnapshot = {
+    version: number;
+    repoRoot: string;
+    commits: Record<string, unknown>;
+    files: Record<string, { oid: unknown; lines: unknown }>;
+  };
+  const withFileA = (p: LooseSnapshot, patch: Partial<{ oid: unknown; lines: unknown }>): LooseSnapshot => ({
+    ...p,
+    files: { ...p.files, "src/a.ts": { ...p.files["src/a.ts"], ...patch } },
+  });
+  it.each<[string, (p: LooseSnapshot) => unknown]>([
+    ["a non-object snapshot", () => 42],
+    ["a version other than 1", (p) => ({ ...p, version: 2 })],
+    ["a non-object commits table", (p) => ({ ...p, commits: "nope" })],
+    ["a non-object files table", (p) => ({ ...p, files: "nope" })],
+    ["a malformed commit entry", (p) => ({ ...p, commits: { ...p.commits, [SHA_1]: "nope" } })],
+    ["a non-object file entry", (p) => ({ ...p, files: { ...p.files, "src/a.ts": "nope" } })],
+    ["a file oid that is not a string", (p) => withFileA(p, { oid: 5 })],
+    ["a file lines field that is not an array", (p) => withFileA(p, { lines: "nope" })],
+    ["a malformed line pair (sha not a string)", (p) => withFileA(p, { lines: [[1, 2]] })],
+  ])("load rejects %s → null (silent rebuild)", (_label, mutate) => {
+    const store = new GitBlameStore(baseDir);
+    store.save(repoRoot, fixtureFiles());
+    const path = locateBlameJson(baseDir);
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as LooseSnapshot;
+    writeFileSync(path, JSON.stringify(mutate(parsed)));
+
+    expect(store.load(repoRoot)).toBeNull();
+  });
+
   it("oversized payload skips the save (tiny maxBytes → nothing persisted)", () => {
     const store = new GitBlameStore(baseDir, 8);
     store.save(repoRoot, fixtureFiles());
