@@ -15,19 +15,32 @@ export interface AccumulatorInitResult {
   accumulators: Map<string, ChunkAccumulator>;
 }
 
-export function buildAccumulators(repoRoot: string, chunkMap: Map<string, ChunkLookupEntry[]>): AccumulatorInitResult {
-  // Build relative path → entries lookup (chunkMap keys may be absolute paths).
-  // Single-chunk files MUST go through the same pipeline as multi-chunk files —
-  // skipping them used to leave `git.chunk = null` and break the system invariant
-  // that every chunk has chunk-level data (recovery counts them as unenriched,
-  // reranker has no overlay to read, etc.). The git work cost is per-COMMIT,
-  // not per-chunk; processing single-chunk files adds no measurable overhead.
+/**
+ * Build the relative path → entries lookup (chunkMap keys may be absolute
+ * paths). Single-chunk files MUST go through the same pipeline as multi-chunk
+ * files — skipping them used to leave `git.chunk = null` and break the system
+ * invariant that every chunk has chunk-level data (recovery counts them as
+ * unenriched, reranker has no overlay to read, etc.). The git work cost is
+ * per-COMMIT, not per-chunk; processing single-chunk files adds no measurable
+ * overhead. Exported for the off-thread churn-walk job builder
+ * (bd tea-rags-mcp-iqpuu), which relativizes on the main side before shipping
+ * the serializable job to the walk worker.
+ */
+export function relativizeChunkMap(
+  repoRoot: string,
+  chunkMap: Map<string, ChunkLookupEntry[]>,
+): Map<string, ChunkLookupEntry[]> {
   const relativeChunkMap = new Map<string, ChunkLookupEntry[]>();
   for (const [filePath, entries] of chunkMap) {
     if (entries.length === 0) continue;
     const relPath = filePath.startsWith(repoRoot) ? filePath.slice(repoRoot.length + 1) : filePath;
     relativeChunkMap.set(relPath, entries);
   }
+  return relativeChunkMap;
+}
+
+export function buildAccumulators(repoRoot: string, chunkMap: Map<string, ChunkLookupEntry[]>): AccumulatorInitResult {
+  const relativeChunkMap = relativizeChunkMap(repoRoot, chunkMap);
 
   // Per-chunk accumulators
   const accumulators = new Map<string, ChunkAccumulator>();

@@ -1,7 +1,7 @@
 /**
  * Chunk-level churn analysis from git history.
- * Uses CLI for commit discovery, isomorphic-git only for individual object reads
- * (readCommit for parent OID, readBlob for file content).
+ * Uses CLI for commit discovery and `git cat-file --batch` for blob reads;
+ * parent oids come from `CommitInfo.parents` (bd tea-rags-mcp-iqpuu).
  */
 
 import type { CatFileBatchReader } from "../../../../adapters/git/client.js";
@@ -15,12 +15,18 @@ import type { GitEnrichmentCache } from "./cache.js";
 import type { SquashOptions } from "./metrics.js";
 import {
   walkCommits,
+  type ChunkChurnWalkStats,
   type ChunkConcurrencySemaphore,
   type WalkCommitDiffMemo,
   type WalkCommitDiscovery,
 } from "./walk-commits.js";
 
-export type { ChunkConcurrencySemaphore, WalkCommitDiffMemo, WalkCommitDiscovery } from "./walk-commits.js";
+export type {
+  ChunkChurnWalkStats,
+  ChunkConcurrencySemaphore,
+  WalkCommitDiffMemo,
+  WalkCommitDiscovery,
+} from "./walk-commits.js";
 
 const MAX_FILE_LINES_DEFAULT = 10000;
 
@@ -29,7 +35,7 @@ const MAX_FILE_LINES_DEFAULT = 10000;
  *
  * Algorithm:
  * 1. Get commits within `maxAgeMonths` window via CLI pathspec filtering
- * 2. For each commit: readCommit → parent OID, readBlob × 2 → structuredPatch → hunks
+ * 2. For each commit: parents[0] → parent OID, blob read × 2 → structuredPatch → hunks
  * 3. Map each hunk to overlapping chunks and accumulate per-chunk stats
  *
  * @returns Map<relativePath, Map<chunkId, ChunkChurnOverlay>>
@@ -51,6 +57,7 @@ export async function buildChunkChurnMap(
   blobReader?: CatFileBatchReader,
   diffMemo?: WalkCommitDiffMemo,
   commitDiscovery?: WalkCommitDiscovery,
+  onWalkStats?: (stats: ChunkChurnWalkStats) => void,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   if (!skipCache) {
     const cached = await enrichmentCache.getChunkChurn(repoRoot);
@@ -72,6 +79,7 @@ export async function buildChunkChurnMap(
     blobReader,
     diffMemo,
     commitDiscovery,
+    onWalkStats,
   );
 
   if (!skipCache) {
@@ -96,11 +104,13 @@ export async function buildChunkChurnMapUncached(
   blobReader?: CatFileBatchReader,
   diffMemo?: WalkCommitDiffMemo,
   commitDiscovery?: WalkCommitDiscovery,
+  onWalkStats?: (stats: ChunkChurnWalkStats) => void,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   // Phase 1: initialize per-chunk accumulator state
   const { relativeChunkMap, accumulators } = buildAccumulators(repoRoot, chunkMap);
 
   if (relativeChunkMap.size === 0) {
+    // No walk happened — the per-walk instrumentation callback is NOT invoked.
     return new Map();
   }
 
@@ -108,7 +118,7 @@ export async function buildChunkChurnMapUncached(
 
   // Phase 2: walk commits, parallel blob reads + structuredPatch,
   // offset-aware hunk → chunk mapping (mutates accumulators in place)
-  const { commitCount } = await walkCommits({
+  const { commitCount, holdCount, semWaitMs, blobReads, patchCalls, memoHits } = await walkCommits({
     repoRoot,
     relativeChunkMap,
     accumulators,
@@ -132,6 +142,20 @@ export async function buildChunkChurnMapUncached(
     fileChurnDataMap,
     squashOpts,
     blameByPath,
+  });
+
+  // bd tea-rags-mcp-iqpuu: ONE instrumentation snapshot per walk — wall time
+  // covers the whole uncached build (discovery slice → walk → assembly).
+  const wallMs = Date.now() - t0;
+  onWalkStats?.({
+    files: relativeChunkMap.size,
+    commits: commitCount,
+    holdCount,
+    semWaitMs,
+    blobReads,
+    patches: patchCalls,
+    memoHits,
+    wallMs,
   });
 
   if (isDebug()) {

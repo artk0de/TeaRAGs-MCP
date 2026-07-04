@@ -65,25 +65,6 @@ export async function getHead(repoRoot: string): Promise<string> {
   return stdout.trim();
 }
 
-/**
- * First-parent oid of a commit, via CLI. Returns null for a root commit (no
- * parent). Replaces the domain's former direct `isomorphic-git readCommit`
- * call — keeping all git mechanics in the adapter and off isomorphic-git
- * (which loads the whole packfile into memory). `rev-parse --verify --quiet`
- * exits non-zero with no output when `<sha>^` does not resolve (root commit).
- */
-export async function readCommitParent(repoRoot: string, sha: string): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync("git", ["rev-parse", "--verify", "--quiet", `${sha}^`], {
-      cwd: repoRoot,
-    });
-    const parent = stdout.trim();
-    return parent.length > 0 ? parent : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Resolve git repo root from a path. Returns absolutePath if not a git repo. */
 export function resolveRepoRoot(absolutePath: string): string {
   try {

@@ -8,12 +8,7 @@
 
 import { structuredPatch } from "diff";
 
-import {
-  createCatFileBatch,
-  getCommitsByPathspec,
-  readCommitParent,
-  type CatFileBatchReader,
-} from "../../../../adapters/git/client.js";
+import { createCatFileBatch, getCommitsByPathspec, type CatFileBatchReader } from "../../../../adapters/git/client.js";
 import type { CommitInfo, FileChurnData } from "../../../../adapters/git/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
@@ -55,9 +50,33 @@ export interface WalkCommitDiscovery {
   getBugFixShas: () => Promise<Set<string>>;
 }
 
+/** Per-walk instrumentation snapshot (bd tea-rags-mcp-iqpuu). */
+export interface ChunkChurnWalkStats {
+  /** Files in this walk's (relativized) chunk map — the batch size. */
+  files: number;
+  /** Commits in the discovery slice / pathspec result. */
+  commits: number;
+  /** Semaphore acquisitions (one per commit entry processed). */
+  holdCount: number;
+  /** Total ms spent waiting for a limiter slot across all holds. */
+  semWaitMs: number;
+  blobReads: number;
+  patches: number;
+  memoHits: number;
+  /** Whole uncached build: discovery slice -> walk -> overlay assembly. */
+  wallMs: number;
+}
+
 export interface WalkCommitsResult {
   /** Number of commits returned by `getCommitsByPathspec`. */
   commitCount: number;
+  /** Semaphore acquisitions — one per commit entry processed. */
+  holdCount: number;
+  /** Total ms spent waiting for a limiter slot across all holds. */
+  semWaitMs: number;
+  blobReads: number;
+  patchCalls: number;
+  memoHits: number;
 }
 
 export interface WalkCommitsOptions {
@@ -86,10 +105,10 @@ export interface WalkCommitsOptions {
   /**
    * Run-scoped, caller-owned (commitSha, filePath) → hunks memo shared across
    * the per-batch walks of one indexing run (bd tea-rags-mcp-7gnre). A memo
-   * hit skips the parent rev lookup, both blob reads, and structuredPatch for
-   * that (commit, file); a miss computes then memoizes — including empty
-   * results, so known-empty diffs are never recomputed. The walk never clears
-   * it — lifecycle belongs to the caller (ChunkPhase drops it at drain).
+   * hit skips both blob reads and structuredPatch for that (commit, file); a
+   * miss computes then memoizes — including empty results, so known-empty
+   * diffs are never recomputed. The walk never clears it — lifecycle belongs
+   * to the caller (ChunkPhase drops it at drain).
    */
   diffMemo?: WalkCommitDiffMemo;
   /**
@@ -115,10 +134,12 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
     externalSemaphore,
   } = opts;
   // `opts.isoGitCache` is intentionally NOT used: all git object reads go
-  // through the adapter's CLI `git cat-file` / `git rev-parse`, which stream a
-  // single object from the pack rather than loading the whole packfile into a
-  // JS ArrayBuffer (the isomorphic-git OOM). The field remains on the options
-  // for caller compatibility until the cache threading is dropped.
+  // through the adapter's CLI `git cat-file`, which streams a single object
+  // from the pack rather than loading the whole packfile into a JS ArrayBuffer
+  // (the isomorphic-git OOM). Parent oids come straight from
+  // `CommitInfo.parents` — no per-commit `git rev-parse` spawn remains
+  // (bd tea-rags-mcp-iqpuu). The field remains on the options for caller
+  // compatibility until the cache threading is dropped.
 
   const effectiveMonths = maxAgeMonths > 0 ? maxAgeMonths : 120;
   const sinceDate = new Date(Date.now() - effectiveMonths * 30 * 86400 * 1000);
@@ -244,9 +265,14 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
 
   const { diffMemo } = opts;
   let memoHits = 0;
+  let holdCount = 0;
+  let semWaitMs = 0;
 
   const collectHunks = async (entry: { commit: CommitInfo; changedFiles: string[] }): Promise<void> => {
+    const acquireStart = Date.now();
     const release = await acquire();
+    semWaitMs += Date.now() - acquireStart;
+    holdCount++;
     try {
       const { commit, changedFiles } = entry;
 
@@ -256,15 +282,12 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
       const isBugFix = isBugFixCommitOrBranch(commit.body, commit.sha, bugFixShas);
       const commitTaskIds = extractTaskIds(commit.body);
 
-      // First-parent oid via the git adapter (CLI). Root commit → null → no
-      // parent to diff against. The adapter owns the git mechanics; no
-      // isomorphic-git here (it loaded the whole packfile into memory).
-      // 7gnre: resolved LAZILY — once per commit, and ONLY when at least one
-      // file misses the diff memo — so a fully-memoized commit costs zero git
-      // calls on later walks of the same run.
-      let parentOidPromise: Promise<string | null> | undefined;
-      const getParentOid = async (): Promise<string | null> =>
-        (parentOidPromise ??= readCommitParent(repoRoot, commit.sha));
+      // First-parent oid straight from CommitInfo.parents — already parsed
+      // from `%P` by the git log parsers and validated by the discovery store,
+      // so no per-commit `git rev-parse <sha>^` spawn (bd tea-rags-mcp-iqpuu;
+      // ~3900 spawns/run removed). Root commit (parents [] or absent — the
+      // optional chain covers loose test fixtures) → null → nothing to diff.
+      const parentOid = entry.commit.parents?.[0] ?? null;
 
       await Promise.all(
         relevantFiles.map(async (filePath) => {
@@ -279,10 +302,9 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
 
           let hunks = diffMemo?.get(commit.sha, filePath);
           if (hunks === undefined) {
-            const parentOid = await getParentOid();
             if (parentOid === null) {
               // Root commit: nothing to diff — memoize the empty result so
-              // later walks skip the rev lookup retry too.
+              // later walks short-circuit on the memo too.
               diffMemo?.set(commit.sha, filePath, []);
               return;
             }
@@ -410,5 +432,5 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
     );
   }
 
-  return { commitCount: commitEntries.length };
+  return { commitCount: commitEntries.length, holdCount, semWaitMs, blobReads, patchCalls, memoHits };
 }

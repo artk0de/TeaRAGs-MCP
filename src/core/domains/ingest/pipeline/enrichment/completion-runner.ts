@@ -175,7 +175,9 @@ export class CompletionRunner {
       await markerStore.markChunkFinal(coll, ctx.key, {
         runId,
         status: chunkStatus,
-        durationMs: finalChunkMetrics.totalChunkEnrichmentDurationMs,
+        // iqpuu: per-provider wall span — the marker no longer inherits the
+        // cross-provider span (deferred codegraph used to stretch git's).
+        durationMs: finalChunkMetrics.providerDurationsMs[ctx.key] ?? 0,
         unenrichedChunks: chunkUnenriched,
       });
     }

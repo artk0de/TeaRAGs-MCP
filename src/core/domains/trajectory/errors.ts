@@ -13,6 +13,7 @@ export type TrajectoryErrorCode =
   | "TRAJECTORY_GIT_BLAME_FAILED"
   | "TRAJECTORY_GIT_LOG_TIMEOUT"
   | "TRAJECTORY_GIT_NOT_AVAILABLE"
+  | "TRAJECTORY_GIT_CHURN_WALK_THREAD_FAILED"
   | "TRAJECTORY_STATIC_PARSE_FAILED"
   | "TRAJECTORY_CODEGRAPH_SPILL_IO_FAILED"
   | "TRAJECTORY_CODEGRAPH_RESOLVE_FAILED"
@@ -85,6 +86,25 @@ export class GitNotAvailableError extends TrajectoryGitError {
       message: "Git is not available",
       hint: "Ensure git is installed and accessible in PATH",
       httpStatus: 503,
+      cause,
+    });
+  }
+}
+
+/**
+ * The dedicated chunk-churn walk worker thread failed or was torn down while
+ * walks were still pending (bd tea-rags-mcp-iqpuu). Raised on the main-side
+ * host (ChunkChurnWalkThread) for a worker-reported walk failure, an
+ * unexpected worker error/exit, or a close() with in-flight walks. Non-fatal
+ * for the run: the affected batch reports a failed walk and the
+ * backfill/recovery safety net re-enriches its chunks.
+ */
+export class ChunkChurnWalkThreadError extends TrajectoryGitError {
+  constructor(detail: string, cause?: Error) {
+    super({
+      code: "TRAJECTORY_GIT_CHURN_WALK_THREAD_FAILED",
+      message: `Chunk-churn walk thread failed: ${detail}`,
+      hint: "The next chunk dispatch spawns a fresh walk thread; backfill/recovery re-enrich the affected chunks",
       cause,
     });
   }

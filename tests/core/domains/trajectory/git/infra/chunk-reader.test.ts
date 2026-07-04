@@ -2,8 +2,9 @@
  * Tests for chunk-reader functions (buildChunkChurnMapUncached, processCommitEntry).
  *
  * Extracted from git-log-reader.test.ts — these tests mock the git adapter
- * (getCommitsByPathspec, readCommitParent, createCatFileBatch) to exercise
- * chunk-level churn map construction edge cases.
+ * (getCommitsByPathspec, createCatFileBatch) to exercise chunk-level churn
+ * map construction edge cases. Parent oids come from the fixture commits'
+ * `parents` field (bd tea-rags-mcp-iqpuu) — no rev-parse mock exists.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -44,15 +45,16 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
           authorEmail: "alice@ex.com",
           timestamp: Math.floor(Date.now() / 1000),
           body: "feat: add big file",
+          parents: ["p".repeat(40)],
         },
         changedFiles: ["big-file.ts"],
       },
     ]);
 
-    // Parent resolves so the walk proceeds to the maxFileLines check — that skip
-    // is the behavior under test. The blob reader is never consulted because the
-    // file is filtered out before any read (so no createCatFileBatch mock needed).
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
+    // The commit carries a parent so the walk proceeds to the maxFileLines
+    // check — that skip is the behavior under test. The blob reader is never
+    // consulted because the file is filtered out before any read (so no
+    // createCatFileBatch mock needed).
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("big-file.ts", [
@@ -81,7 +83,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
     }
   });
 
-  it("should skip commit when parent cannot be resolved (e.g., missing object)", async () => {
+  it("should skip commit when it carries no parents (e.g., loose fixture shape)", async () => {
     vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
@@ -95,9 +97,8 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       },
     ]);
 
-    // The adapter returns null when the parent can't be resolved (missing
-    // object, not-a-repo, etc.); the commit is skipped, no churn recorded.
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue(null);
+    // No `parents` field at all (loose cast) — the walk treats it as a root
+    // commit: nothing to diff against, no churn recorded, never a throw.
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
@@ -124,13 +125,13 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
           authorEmail: "alice@ex.com",
           timestamp: Math.floor(Date.now() / 1000),
           body: "initial commit",
+          parents: [],
         },
         changedFiles: ["test.ts"],
       },
     ]);
 
-    // Root commit → adapter returns null parent → the walk skips it.
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue(null);
+    // Root commit → parents [] → nothing to diff against → the walk skips it.
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
@@ -156,12 +157,11 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
           authorEmail: "alice@ex.com",
           timestamp: Math.floor(Date.now() / 1000),
           body: "fix: something",
+          parents: ["p".repeat(40)],
         },
         changedFiles: ["test.ts"],
       },
     ]);
-
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
     // Both blobs empty (path missing at both commits) → adapter returns "" → skip.
     mockBlobReads().mockResolvedValue("");
@@ -190,12 +190,11 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
           authorEmail: "alice@ex.com",
           timestamp: Math.floor(Date.now() / 1000),
           body: "feat: stuff",
+          parents: ["p".repeat(40)],
         },
         changedFiles: ["test.ts"],
       },
     ]);
-
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
     // Identical content for both parent and commit blobs → structuredPatch
     // produces 0 hunks (no changes → skip).
@@ -275,12 +274,11 @@ describe("processCommitEntry — bug fix accumulation", () => {
           authorEmail: "alice@ex.com",
           timestamp: Math.floor(Date.now() / 1000) - 86400,
           body: "fix: resolve critical auth bug",
+          parents: ["p".repeat(40)],
         },
         changedFiles: ["auth.ts"],
       },
     ]);
-
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
     // Different old/new content so structuredPatch produces hunks. Blobs are
     // read via the git adapter (cat-file), so mock at the adapter boundary.
@@ -336,12 +334,12 @@ describe("buildChunkChurnMapUncached — single-chunk files", () => {
           authorEmail: "alice@ex.com",
           timestamp: Math.floor(Date.now() / 1000),
           body: "feat: tiny header file",
+          parents: ["p".repeat(40)],
         },
         changedFiles: ["small.ts"],
       },
     ]);
 
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
     mockBlobReads().mockResolvedValueOnce("").mockResolvedValueOnce("import x from 'y';\nexport const z = 1;\n");
 
     // SINGLE chunk — file is small enough to be a single block
@@ -401,12 +399,11 @@ describe("buildChunkChurnMapUncached — fallback fileCommitCount", () => {
           authorEmail: "alice@ex.com",
           timestamp: Math.floor(Date.now() / 1000),
           body: "fix: something",
+          parents: ["p".repeat(40)],
         },
         changedFiles: ["test.ts"],
       },
     ]);
-
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
     // Old/new content so structuredPatch produces hunks.
     mockBlobReads().mockResolvedValueOnce("old content\nline2").mockResolvedValueOnce("new content\nline2\nline3");
@@ -482,12 +479,11 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
           authorEmail: "alice@ex.com",
           timestamp: Math.floor(Date.now() / 1000),
           body: "fix: something",
+          parents: ["p".repeat(40)],
         },
         changedFiles: ["src/a.ts"],
       },
     ]);
-
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
     mockBlobReads().mockResolvedValueOnce("old\n").mockResolvedValueOnce("new\nextra\n");
 
@@ -548,12 +544,11 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
           authorEmail: "alice@ex.com",
           timestamp: Math.floor(Date.now() / 1000),
           body: "fix: something",
+          parents: ["p".repeat(40)],
         },
         changedFiles: ["src/a.ts"],
       },
     ]);
-
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
 
     mockBlobReads().mockResolvedValueOnce("old\n").mockResolvedValueOnce("new\nextra\n");
 
@@ -587,12 +582,11 @@ describe("buildChunkChurnMapUncached — injected blobReader", () => {
           authorEmail: "alice@ex.com",
           timestamp: Math.floor(Date.now() / 1000),
           body: "fix: something",
+          parents: ["p".repeat(40)],
         },
         changedFiles: ["src/a.ts"],
       },
     ]);
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
-
     // Spy createCatFileBatch to assert the walk does NOT spawn its own reader
     // when one is injected.
     const spawnSpy = vi.spyOn(gitClient, "createCatFileBatch");
@@ -642,12 +636,11 @@ describe("buildChunkChurnMapUncached — injected blobReader", () => {
           authorEmail: "alice@ex.com",
           timestamp: Math.floor(Date.now() / 1000),
           body: "fix: something",
+          parents: ["p".repeat(40)],
         },
         changedFiles: ["src/a.ts"],
       },
     ]);
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValue("p".repeat(40));
-
     const read = vi.fn().mockResolvedValueOnce("old\n").mockResolvedValueOnce("new\nextra\n");
     const close = vi.fn().mockResolvedValue(undefined);
     const spawnSpy = vi
@@ -688,6 +681,7 @@ describe("buildChunkChurnMapUncached — concurrency control", () => {
           authorEmail: "alice@ex.com",
           timestamp: Math.floor(Date.now() / 1000) - 86400,
           body: "feat: first change",
+          parents: ["p".repeat(40)],
         },
         changedFiles: ["test.ts"],
       },
@@ -698,13 +692,11 @@ describe("buildChunkChurnMapUncached — concurrency control", () => {
           authorEmail: "bob@ex.com",
           timestamp: Math.floor(Date.now() / 1000),
           body: "fix: second change",
+          parents: ["q".repeat(40)],
         },
         changedFiles: ["test.ts"],
       },
     ]);
-
-    // One parent per commit (concurrency=1 → commit1 fully drains before commit2).
-    vi.spyOn(gitClient, "readCommitParent").mockResolvedValueOnce("p".repeat(40)).mockResolvedValueOnce("q".repeat(40));
 
     // Alternate old/new content per commit (2 blob reads each, in order).
     mockBlobReads()

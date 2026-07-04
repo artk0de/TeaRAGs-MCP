@@ -76,7 +76,17 @@ function createState(): ChunkPhaseState {
 }
 
 export interface ChunkPhaseMetrics {
+  /**
+   * Wall span across NON-deferred (streaming churn) providers only — the
+   * deferred codegraph resolve pass no longer pollutes the churn duration
+   * (bd tea-rags-mcp-iqpuu).
+   */
   totalChunkEnrichmentDurationMs: number;
+  /**
+   * Per-provider wall spans (first apply start -> last apply end), deferred
+   * providers included under their own key.
+   */
+  providerDurationsMs: Record<string, number>;
 }
 
 /**
@@ -120,6 +130,16 @@ export class ChunkPhase {
    * `drain()`.
    */
   private runCommitDiscovery?: NonNullable<ChunkSignalOptions["commitDiscovery"]>;
+  /**
+   * bd tea-rags-mcp-iqpuu: ONE run-scoped churn-walk worker thread for the
+   * whole run, shared by streaming batches AND the post-flush mega-walk so
+   * the per-commit await chains run off the ingest main thread. Construction
+   * is delegated to the provider offering `createChunkChurnWalkThread` — the
+   * provider owns the walk implementation. Lifecycle mirrors the
+   * blobReader/diffMemo/commitDiscovery trio: lazy create at first chunk
+   * dispatch, closed at `drain()`.
+   */
+  private runChurnWalkThread?: NonNullable<ChunkSignalOptions["churnWalkThread"]>;
 
   constructor(
     private readonly applier: EnrichmentApplier,
@@ -139,6 +159,7 @@ export class ChunkPhase {
     this.runBlobReader = undefined;
     this.runDiffMemo = undefined;
     this.runCommitDiscovery = undefined;
+    this.runChurnWalkThread = undefined;
   }
 
   setOnComplete(cb: (coll: string) => Promise<void>): void {
@@ -417,8 +438,13 @@ export class ChunkPhase {
       // 7gnre: drop the run-scoped diff memo with it — nothing outlives the run.
       // 82va1: the commit-discovery matrix too — a later batch lazily creates
       // a fresh one (persistence, if any, lives in the provider's store).
+      // iqpuu: close the churn-walk worker thread with them — an idle worker
+      // thread must not outlive the run's chunk work.
       this.runDiffMemo = undefined;
       this.runCommitDiscovery = undefined;
+      const walkThread = this.runChurnWalkThread;
+      this.runChurnWalkThread = undefined;
+      if (walkThread) await walkThread.close().catch(() => undefined);
       const reader = this.runBlobReader;
       if (reader) {
         this.runBlobReader = undefined;
@@ -432,16 +458,24 @@ export class ChunkPhase {
   }
 
   getMetrics(): ChunkPhaseMetrics {
+    // bd tea-rags-mcp-iqpuu: per-provider wall spans, plus a churn total
+    // computed ONLY over non-deferred providers — the deferred codegraph
+    // resolve pass reports under its own key instead of stretching the
+    // cross-provider min/max span.
+    const providerDurationsMs: Record<string, number> = {};
     let firstStartAt = 0;
     let lastEndAt = 0;
-    for (const s of this.states.values()) {
+    for (const [key, s] of this.states) {
+      providerDurationsMs[key] =
+        s.chunkFirstStartAt > 0 && s.chunkLastEndAt > 0 ? s.chunkLastEndAt - s.chunkFirstStartAt : 0;
+      if (this.contexts.get(key)?.provider.defersChunkEnrichment) continue;
       if (s.chunkFirstStartAt > 0 && (firstStartAt === 0 || s.chunkFirstStartAt < firstStartAt)) {
         firstStartAt = s.chunkFirstStartAt;
       }
       if (s.chunkLastEndAt > lastEndAt) lastEndAt = s.chunkLastEndAt;
     }
     const total = firstStartAt > 0 && lastEndAt > 0 ? lastEndAt - firstStartAt : 0;
-    return { totalChunkEnrichmentDurationMs: total };
+    return { totalChunkEnrichmentDurationMs: total, providerDurationsMs };
   }
 
   /** Single skeleton: build chunk signals, apply, log, track work. */
@@ -458,15 +492,33 @@ export class ChunkPhase {
     // onBatchProvider — re-filtering them here is an idempotent no-op; the
     // post-flush path relies on this as its only policy chokepoint.
     const chunkMap = this.filterByEnrichmentPolicy(inputChunkMap, ctx.provider, root);
+    const policyDropped = inputChunkMap.size - chunkMap.size;
     // bd tea-rags-mcp-7gnre: re-snapshot the remaining set immediately before
     // the post-flush mega-walk — drop files whose streaming batch arrived (and
     // marked coverage) after the caller built its snapshot; each is covered by
     // its own gated dispatch.
+    let streamingCovered = 0;
     if (!useSemaphore) {
       for (const key of [...chunkMap.keys()]) {
         const rel = key.startsWith(root) ? key.slice(root.length + 1) : key;
-        if (state.streamingEnrichedFiles.has(rel)) chunkMap.delete(key);
+        if (state.streamingEnrichedFiles.has(rel)) {
+          chunkMap.delete(key);
+          streamingCovered++;
+        }
       }
+    }
+    // bd tea-rags-mcp-iqpuu: the policy filter used to drop files SILENTLY —
+    // a fully-dropped batch (e.g. the 197-file post-flush mega-walk hitting
+    // an all-generated set) left no log trace. Emit BEFORE the early return
+    // so the all-dropped case is visible.
+    if (policyDropped > 0 || streamingCovered > 0) {
+      pipelineLog.enrichmentPhase("CHUNK_POLICY_FILTERED", {
+        provider: ctx.key,
+        inputFiles: inputChunkMap.size,
+        policyDropped,
+        streamingCovered,
+        dispatched: chunkMap.size,
+      });
     }
     if (chunkMap.size === 0) return Promise.resolve(true);
 
@@ -500,6 +552,13 @@ export class ChunkPhase {
     if (!this.runCommitDiscovery && ctx.provider.createCommitDiscovery) {
       this.runCommitDiscovery = ctx.provider.createCommitDiscovery(root);
     }
+    // iqpuu: ONE run-scoped churn-walk worker thread shared by every batch
+    // walk — created synchronously here (before any await) so concurrent
+    // fire-and-forget batches never race to spawn two. The provider offering
+    // the hook owns the walk implementation; closed in drain().
+    if (!this.runChurnWalkThread && ctx.provider.createChunkChurnWalkThread) {
+      this.runChurnWalkThread = ctx.provider.createChunkChurnWalkThread();
+    }
 
     // Carry the active collection on every chunk-signal call so codegraph
     // routes per-collection DuckDB lookups correctly. `coll` is the
@@ -514,6 +573,20 @@ export class ChunkPhase {
     if (this.runCommitDiscovery && ctx.provider.createCommitDiscovery) {
       opts.commitDiscovery = this.runCommitDiscovery;
     }
+    // iqpuu: same hook guard for the walk thread — a provider without the
+    // factory never sees another provider's thread.
+    if (this.runChurnWalkThread && ctx.provider.createChunkChurnWalkThread) {
+      opts.churnWalkThread = this.runChurnWalkThread;
+    }
+    // iqpuu: ONE [ChunkChurn] line per walk into the pipeline debug log —
+    // pipelineLog.step appends from the ingest process main thread (the same
+    // channel the GitEnrich PHASE events use), and the wall time finally
+    // feeds the pre-existing but never-fed "chunkChurn" stage in STAGE
+    // PROFILING.
+    opts.onWalkStats = (stats) => {
+      pipelineLog.step({ component: "ChunkChurn" }, "WALK", { provider: ctx.key, ...stats });
+      pipelineLog.addStageTime("chunkChurn", stats.wallMs);
+    };
 
     const work = this.executor
       .runChunkBatch(ctx.provider, root, chunkMap, opts)

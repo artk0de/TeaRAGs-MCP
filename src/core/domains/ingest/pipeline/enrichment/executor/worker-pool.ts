@@ -17,11 +17,16 @@
  *       symbolTable / chunkSymbolByLine across streamFileBatch →
  *       finalizeSignals → deferred buildChunkSignals.
  *   - Providers WITHOUT `workerDescriptor` (git) are dispatched inline via an
- *     internal `InlineEnrichmentExecutor`. Git runs in-process on the
- *     composition-root instance: blame cache reuse is automatic (same instance),
- *     postMessage serialization overhead is zero. Live taxdome evidence showed
- *     collection-affinity made git enrichment ~4x SLOWER by pinning to 1 worker
- *     (removing parallelism) while per-batch cost is dominated by walkCommits
+ *     internal `InlineEnrichmentExecutor`. Git's FILE/BLAME phases run
+ *     in-process on the composition-root instance: blame cache reuse is
+ *     automatic (same instance), postMessage serialization overhead is zero.
+ *     The chunk-churn WALK itself, however, now runs on a DEDICATED walk
+ *     worker thread owned by ChunkPhase via the provider's
+ *     createChunkChurnWalkThread hook (bd tea-rags-mcp-iqpuu) — the walk is
+ *     stateless/repo-scoped per batch and needs no collection affinity.
+ *     Historical note stands: live taxdome evidence showed collection-affinity
+ *     made git enrichment ~4x SLOWER by pinning to 1 worker (removing
+ *     parallelism) while per-batch cost is dominated by walkCommits
  *     (git log + cat-file + structuredPatch), not blame.
  *
  * Release path:
