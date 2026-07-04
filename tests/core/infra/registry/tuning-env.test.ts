@@ -1,136 +1,129 @@
 /**
- * captureTuningEnv — curated tuning env snapshot for the project registry.
+ * TUNING_ENV_GROUPS — canonical/alias vocabulary of the registry tuning
+ * snapshot (tea-rags-mcp-9vpnz).
  *
- * The allowlist mirrors the tuning env vars read by bootstrap/config/parse.ts
- * (canonical names AND deprecated aliases). Only vars actually SET in the
- * given env are captured — no code defaults materialized — with ONE deliberate
- * exception: GIT_ADAPTER is always pinned at its resolved value (spec
- * decision: adapter choice is per-project explicit, ambient env must not
- * silently flip it).
+ * Groups mirror the alias families of bootstrap/config/parse.ts so that:
+ * - the snapshot builder (bootstrap/config/tuning-snapshot.ts) emits one
+ *   CANONICAL key per group at its parsed effective value, and
+ * - replay (cli/registry-env-replay.ts) can skip a whole group when ANY
+ *   spelling is set in the ambient env (env > registry per-key, alias-aware).
+ *
+ * ADAPTIVE_DEFAULT_TUNING_KEYS marks the groups whose code default is
+ * runtime-adaptive (GPU calibration / per-language sizing / embedded-mode
+ * tuning) — materialized only when the user explicitly set them.
  */
 
 import { describe, expect, it } from "vitest";
 
-import { captureTuningEnv, TUNING_ENV_ALLOWLIST } from "../../../../src/core/infra/registry/tuning-env.js";
+import {
+  ADAPTIVE_DEFAULT_TUNING_KEYS,
+  TUNING_ENV_ALLOWLIST,
+  TUNING_ENV_GROUPS,
+} from "../../../../src/core/infra/registry/tuning-env.js";
 
-describe("captureTuningEnv", () => {
-  it("pins only GIT_ADAPTER for an env with no allowlisted vars set (no other defaults materialized)", () => {
-    expect(captureTuningEnv({})).toEqual({ GIT_ADAPTER: "git" });
+describe("TUNING_ENV_GROUPS", () => {
+  it("mirrors the alias families of bootstrap/config/parse.ts", () => {
+    const byCanonical = new Map(TUNING_ENV_GROUPS.map((g) => [g.canonical, [...g.aliases]]));
+    expect(byCanonical.get("GIT_ADAPTER")).toEqual([]);
+    expect(byCanonical.get("TRAJECTORY_GIT_ENABLED")).toEqual(["CODE_ENABLE_GIT_METADATA"]);
+    expect(byCanonical.get("TRAJECTORY_GIT_CHUNK_CONCURRENCY")).toEqual(["GIT_CHUNK_CONCURRENCY"]);
+    expect(byCanonical.get("INGEST_PIPELINE_CONCURRENCY")).toEqual([
+      "EMBEDDING_TUNE_CONCURRENCY",
+      "EMBEDDING_CONCURRENCY",
+    ]);
+    expect(byCanonical.get("INGEST_TUNE_CHUNKER_POOL_SIZE")).toEqual(["CHUNKER_POOL_SIZE"]);
+    expect(byCanonical.get("INGEST_CHUNK_SIZE")).toEqual(["CODE_CHUNK_SIZE"]);
+    expect(byCanonical.get("EMBEDDING_TUNE_BATCH_SIZE")).toEqual(["EMBEDDING_BATCH_SIZE", "CODE_BATCH_SIZE"]);
+    // CODE_BATCH_SIZE is deliberately a member of TWO groups (parse.ts feeds it
+    // into both embedding batchSize and qdrant upsertBatchSize).
+    expect(byCanonical.get("QDRANT_TUNE_UPSERT_BATCH_SIZE")).toEqual(["QDRANT_UPSERT_BATCH_SIZE", "CODE_BATCH_SIZE"]);
+    expect(byCanonical.get("QDRANT_TUNE_DELETE_BATCH_SIZE")).toEqual(["QDRANT_DELETE_BATCH_SIZE", "DELETE_BATCH_SIZE"]);
   });
 
-  it("captures only allowlisted vars that are set", () => {
-    const tuning = captureTuningEnv({
-      TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5",
-      INGEST_TUNE_FILE_CONCURRENCY: "25",
-      QDRANT_TUNE_UPSERT_BATCH_SIZE: "512",
-      // Not tuning — identity/endpoint config with dedicated registry fields:
-      QDRANT_URL: "http://localhost:6333",
-      EMBEDDING_MODEL: "jina",
-      CODEGRAPH_ENABLED: "true",
-      // Not tuning — ambient shell noise:
-      PATH: "/usr/bin",
-      DEBUG: "true",
-    });
-    expect(tuning).toEqual({
-      TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5",
-      INGEST_TUNE_FILE_CONCURRENCY: "25",
-      QDRANT_TUNE_UPSERT_BATCH_SIZE: "512",
-      GIT_ADAPTER: "git", // force-pinned resolved default
-    });
+  it("has unique canonical keys", () => {
+    const canonicals = TUNING_ENV_GROUPS.map((g) => g.canonical);
+    expect(new Set(canonicals).size).toBe(canonicals.length);
   });
 
-  it("captures deprecated aliases verbatim (replay reproduces the same effective config)", () => {
-    const tuning = captureTuningEnv({
-      GIT_CHUNK_CONCURRENCY: "3",
-      CHUNKER_POOL_SIZE: "1",
-      EMBEDDING_BATCH_SIZE: "64",
-      EMBEDDING_CONCURRENCY: "4",
-      BATCH_FORMATION_TIMEOUT_MS: "1500",
-      QDRANT_UPSERT_BATCH_SIZE: "256",
-      CODE_CHUNK_SIZE: "900",
-      CODE_CHUNK_OVERLAP: "100",
-    });
-    expect(tuning).toEqual({
-      GIT_CHUNK_CONCURRENCY: "3",
-      CHUNKER_POOL_SIZE: "1",
-      EMBEDDING_BATCH_SIZE: "64",
-      EMBEDDING_CONCURRENCY: "4",
-      BATCH_FORMATION_TIMEOUT_MS: "1500",
-      QDRANT_UPSERT_BATCH_SIZE: "256",
-      CODE_CHUNK_SIZE: "900",
-      CODE_CHUNK_OVERLAP: "100",
-      GIT_ADAPTER: "git", // force-pinned resolved default
-    });
-  });
-
-  it("skips empty-string values (envWithFallback treats them as unset)", () => {
-    expect(
-      captureTuningEnv({
-        TRAJECTORY_GIT_CHUNK_CONCURRENCY: "",
-        INGEST_TUNE_IO_CONCURRENCY: "40",
-      }),
-    ).toEqual({ INGEST_TUNE_IO_CONCURRENCY: "40", GIT_ADAPTER: "git" });
-  });
-
-  it("defaults to process.env when no env is given", () => {
-    const saved = process.env.TRAJECTORY_GIT_SESSION_GAP_MINUTES;
-    process.env.TRAJECTORY_GIT_SESSION_GAP_MINUTES = "45";
-    try {
-      expect(captureTuningEnv()?.TRAJECTORY_GIT_SESSION_GAP_MINUTES).toBe("45");
-    } finally {
-      if (saved === undefined) delete process.env.TRAJECTORY_GIT_SESSION_GAP_MINUTES;
-      else process.env.TRAJECTORY_GIT_SESSION_GAP_MINUTES = saved;
+  it("covers the canonical tuning families from bootstrap/config/parse.ts", () => {
+    const canonicals = new Set(TUNING_ENV_GROUPS.map((g) => g.canonical));
+    for (const key of [
+      "GIT_ADAPTER",
+      "TRAJECTORY_GIT_ENABLED",
+      "TRAJECTORY_GIT_CHUNK_CONCURRENCY",
+      "TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS",
+      "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS",
+      "TRAJECTORY_GIT_SESSION_GAP_MINUTES",
+      "INGEST_PIPELINE_CONCURRENCY",
+      "INGEST_TUNE_CHUNKER_POOL_SIZE",
+      "INGEST_TUNE_FILE_CONCURRENCY",
+      "INGEST_TUNE_IO_CONCURRENCY",
+      "INGEST_TUNE_ENRICHMENT_POOL_SIZE",
+      "INGEST_CHUNK_SIZE",
+      "INGEST_CHUNK_OVERLAP",
+      "EMBEDDING_TUNE_BATCH_SIZE",
+      "EMBEDDING_TUNE_MIN_BATCH_SIZE",
+      "EMBEDDING_TUNE_BATCH_TIMEOUT_MS",
+      "EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE",
+      "EMBEDDING_TUNE_RETRY_ATTEMPTS",
+      "EMBEDDING_TUNE_RETRY_DELAY_MS",
+      "EMBEDDING_TUNE_HEALTH_CHECK_RETRY_ATTEMPTS",
+      "EMBEDDING_TUNE_HEALTH_CHECK_RETRY_DELAY_MS",
+      "EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS",
+      "EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS",
+      "QDRANT_TUNE_UPSERT_BATCH_SIZE",
+      "QDRANT_TUNE_UPSERT_FLUSH_INTERVAL_MS",
+      "QDRANT_TUNE_UPSERT_ORDERING",
+      "QDRANT_TUNE_DELETE_BATCH_SIZE",
+      "QDRANT_TUNE_DELETE_CONCURRENCY",
+      "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS",
+      "QDRANT_QUANTIZATION_SCALAR",
+      "QDRANT_TURBO_QUANT",
+      "QDRANT_MAX_RESIDENT_MEMORY_PERCENT",
+      "QDRANT_SEARCH_MAX_BATCHSIZE",
+      "QDRANT_LOW_MEMORY",
+    ]) {
+      expect(canonicals).toContain(key);
     }
   });
 
-  describe("GIT_ADAPTER force-pin (spec: adapter choice is pinned per-project explicitly)", () => {
-    it("captures an explicit GIT_ADAPTER value verbatim", () => {
-      expect(captureTuningEnv({ GIT_ADAPTER: "es-git" })).toEqual({ GIT_ADAPTER: "es-git" });
-    });
+  it("excludes identity/endpoint/secret config that has dedicated handling", () => {
+    for (const key of [
+      "QDRANT_URL",
+      "QDRANT_API_KEY",
+      "EMBEDDING_MODEL",
+      "EMBEDDING_BASE_URL",
+      "EMBEDDING_FALLBACK_URL",
+      "CODEGRAPH_ENABLED",
+      "OPENAI_API_KEY",
+      "DEBUG",
+    ]) {
+      expect(TUNING_ENV_ALLOWLIST).not.toContain(key);
+    }
+  });
+});
 
-    it("pins the resolved default when GIT_ADAPTER is empty-string (unset semantics)", () => {
-      expect(captureTuningEnv({ GIT_ADAPTER: "" })).toEqual({ GIT_ADAPTER: "git" });
-    });
+describe("TUNING_ENV_ALLOWLIST", () => {
+  it("is derived from the groups — every canonical and alias spelling, nothing else", () => {
+    const expected = new Set(TUNING_ENV_GROUPS.flatMap((g) => [g.canonical, ...g.aliases]));
+    expect(new Set(TUNING_ENV_ALLOWLIST)).toEqual(expected);
+  });
+});
 
-    it("is allowlisted so an exported GIT_ADAPTER is captured by the generic loop", () => {
-      expect(TUNING_ENV_ALLOWLIST).toContain("GIT_ADAPTER");
-    });
+describe("ADAPTIVE_DEFAULT_TUNING_KEYS", () => {
+  it("marks exactly the four runtime-adaptive groups (matching the userSet* config flags)", () => {
+    expect([...ADAPTIVE_DEFAULT_TUNING_KEYS].sort()).toEqual([
+      "EMBEDDING_TUNE_BATCH_SIZE",
+      "INGEST_CHUNK_SIZE",
+      "QDRANT_TUNE_DELETE_BATCH_SIZE",
+      "QDRANT_TUNE_DELETE_CONCURRENCY",
+    ]);
   });
 
-  describe("TUNING_ENV_ALLOWLIST", () => {
-    it("covers the canonical tuning families from bootstrap/config/parse.ts", () => {
-      for (const key of [
-        "TRAJECTORY_GIT_ENABLED",
-        "TRAJECTORY_GIT_CHUNK_CONCURRENCY",
-        "TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS",
-        "INGEST_PIPELINE_CONCURRENCY",
-        "INGEST_TUNE_CHUNKER_POOL_SIZE",
-        "INGEST_TUNE_ENRICHMENT_POOL_SIZE",
-        "INGEST_CHUNK_SIZE",
-        "INGEST_CHUNK_OVERLAP",
-        "EMBEDDING_TUNE_BATCH_SIZE",
-        "EMBEDDING_TUNE_BATCH_TIMEOUT_MS",
-        "QDRANT_TUNE_UPSERT_BATCH_SIZE",
-        "QDRANT_TUNE_DELETE_CONCURRENCY",
-        "QDRANT_LOW_MEMORY",
-      ]) {
-        expect(TUNING_ENV_ALLOWLIST).toContain(key);
-      }
-    });
-
-    it("excludes identity/endpoint/secret config that has dedicated handling", () => {
-      for (const key of [
-        "QDRANT_URL",
-        "QDRANT_API_KEY",
-        "EMBEDDING_MODEL",
-        "EMBEDDING_BASE_URL",
-        "EMBEDDING_FALLBACK_URL",
-        "CODEGRAPH_ENABLED",
-        "OPENAI_API_KEY",
-        "DEBUG",
-      ]) {
-        expect(TUNING_ENV_ALLOWLIST).not.toContain(key);
-      }
-    });
+  it("every adaptive key is a canonical group key", () => {
+    const canonicals = new Set(TUNING_ENV_GROUPS.map((g) => g.canonical));
+    for (const key of ADAPTIVE_DEFAULT_TUNING_KEYS) {
+      expect(canonicals).toContain(key);
+    }
   });
 });

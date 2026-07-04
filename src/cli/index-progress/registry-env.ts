@@ -86,7 +86,10 @@ function isLegacyEmbeddedLoopback(qdrantUrl: string): boolean {
  * against. Empty-string values (recovered registry stubs) are skipped so they
  * don't poison the env.
  */
-export function resolveRegistryEnv(entry: CollectionEntry | null): Record<string, string> {
+export function resolveRegistryEnv(
+  entry: CollectionEntry | null,
+  ambient: NodeJS.ProcessEnv | Record<string, string> = process.env,
+): Record<string, string> {
   if (!entry) return {};
   const env: Record<string, string> = {};
   if (entry.embeddingModel) env.EMBEDDING_MODEL = entry.embeddingModel;
@@ -104,8 +107,10 @@ export function resolveRegistryEnv(entry: CollectionEntry | null): Record<string
   // Tuning snapshot re-apply: seed the worker with the exact tuning env the
   // project was last indexed with, so a fresh-shell reindex keeps the same
   // knobs instead of silently reverting to code defaults. Ambient process.env
-  // still wins (the command merges process.env over these). Empty-string
-  // values (hand-edited registry) are skipped like the endpoint fields above.
-  replayTuningEnv(entry.tuning, env);
+  // still wins — both via the later `{...env, ...process.env}` merge AND via
+  // the alias-group check here (an externally-set deprecated spelling must
+  // not be shadowed by the stored canonical key). Empty-string values
+  // (hand-edited registry) are skipped like the endpoint fields above.
+  replayTuningEnv(entry.tuning, env, ambient);
   return env;
 }

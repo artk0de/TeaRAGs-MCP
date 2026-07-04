@@ -16,7 +16,6 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
 import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
-import { captureTuningEnv } from "../../../infra/registry/tuning-env.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
@@ -79,6 +78,15 @@ export interface PipelineRegistryDeps {
    * `<base>_v<N>.duckdb` files whose Qdrant collection is already gone.
    */
   codegraphLister?: CodegraphDbLister;
+  /**
+   * Full effective tuning env set of this run (canonical keys, code defaults
+   * materialized), built by the bootstrap composition root from the parsed
+   * config (`buildTuningEnvSnapshot`) — the pipeline never reads process.env.
+   * Persisted verbatim into `CollectionEntry.tuning` so a bare-env CLI
+   * reindex reproduces the same configuration. Omitted only in direct
+   * (non-bootstrap) constructions — then no tuning is recorded.
+   */
+  tuningSnapshot?: Record<string, string>;
 }
 
 export abstract class BaseIndexingPipeline {
@@ -87,6 +95,7 @@ export abstract class BaseIndexingPipeline {
   protected readonly teaRagsVersion: string;
   protected readonly codegraphRemover: CodegraphDbRemover | undefined;
   protected readonly codegraphLister: CodegraphDbLister | undefined;
+  protected readonly tuningSnapshot: Record<string, string> | undefined;
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
@@ -103,6 +112,7 @@ export abstract class BaseIndexingPipeline {
     this.teaRagsVersion = registryDeps?.teaRagsVersion ?? "0.0.0";
     this.codegraphRemover = registryDeps?.codegraphRemover;
     this.codegraphLister = registryDeps?.codegraphLister;
+    this.tuningSnapshot = registryDeps?.tuningSnapshot;
   }
 
   /**
@@ -238,11 +248,12 @@ export abstract class BaseIndexingPipeline {
       // was wired up, not which endpoint we happened to be on at write time.
       const embeddingBaseUrl = this.embeddings.getPrimaryBaseUrl?.() ?? this.embeddings.getBaseUrl?.();
       const embeddingFallbackUrl = this.embeddings.getFallbackBaseUrl?.();
-      // Tuning env snapshot (curated allowlist) — only vars actually SET in
-      // this indexing process are recorded, no defaults materialized. CLI
-      // index-codebase / prime re-apply the map registry-first in a fresh
-      // shell (env > registry > code default), symmetric with codegraphEnabled.
-      const tuning = captureTuningEnv();
+      // Tuning env snapshot — the FULL effective set of this run (canonical
+      // keys, code defaults materialized), injected by the bootstrap
+      // composition root from the parsed config (9vpnz). CLI index-codebase /
+      // prime re-apply the map registry-first in a fresh shell
+      // (env > registry > code default), symmetric with codegraphEnabled.
+      const tuning = this.tuningSnapshot;
       this.registry.record({
         collectionName,
         path: absolutePath,

@@ -1,122 +1,101 @@
 /**
- * Tuning env snapshot for the project registry.
+ * Tuning env vocabulary for the project registry snapshot.
  *
- * Curated allowlist of the performance/behavior tuning env vars read by
- * `bootstrap/config/parse.ts` — canonical names AND their deprecated aliases,
- * so whichever spelling the operator actually exported is captured and later
- * replayed verbatim (envWithFallback resolves the same effective value).
+ * Each group mirrors one alias family read by `bootstrap/config/parse.ts`:
+ * the CANONICAL env name plus its deprecated spellings, resolved by
+ * `envWithFallback` in that order. The snapshot builder
+ * (`bootstrap/config/tuning-snapshot.ts`) emits one canonical key per group
+ * at its parsed effective value — code defaults materialized — so the
+ * registry carries the FULL set of tuning envs the indexing run lived with,
+ * and a bare-env CLI reindex reproduces the last run's configuration.
  *
- * At index time the pipeline records the subset actually SET in the indexing
- * process env into `CollectionEntry.tuning` (GIT_ADAPTER excepted — always
- * recorded at its resolved value, see `captureTuningEnv`). Consumers launched
- * in a fresh
- * shell (CLI `index-codebase` worker, prime) re-apply the map registry-first
- * before building config, with explicit process env winning over the stored
- * value: env > registry > code default. Same mechanism as `codegraphEnabled`.
+ * Replay (`cli/registry-env-replay.ts`) applies the map registry-first with
+ * env > registry > code default precedence PER GROUP: an externally-set
+ * value in ANY spelling of a group beats the stored canonical key, so a
+ * deprecated alias passed on the command line still overrides the registry.
  *
  * Deliberately EXCLUDED: identity/endpoint config with dedicated
  * CollectionEntry fields (EMBEDDING_MODEL / EMBEDDING_BASE_URL / QDRANT_URL /
  * CODEGRAPH_ENABLED), server/transport knobs, and secrets (API keys).
  */
-export const TUNING_ENV_ALLOWLIST: readonly string[] = [
+
+/** One alias family: the canonical env name plus its deprecated spellings. */
+export interface TuningEnvGroup {
+  canonical: string;
+  aliases: readonly string[];
+}
+
+export const TUNING_ENV_GROUPS: readonly TuningEnvGroup[] = [
   // vcs (parse.ts `vcs` section)
-  "GIT_ADAPTER",
+  { canonical: "GIT_ADAPTER", aliases: [] },
   // trajectoryGit (parse.ts `trajectoryGit` section)
-  "TRAJECTORY_GIT_ENABLED",
-  "CODE_ENABLE_GIT_METADATA",
-  "TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS",
-  "GIT_LOG_MAX_AGE_MONTHS",
-  "TRAJECTORY_GIT_LOG_TIMEOUT_MS",
-  "GIT_LOG_TIMEOUT_MS",
-  "TRAJECTORY_GIT_CHUNK_CONCURRENCY",
-  "GIT_CHUNK_CONCURRENCY",
-  "TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS",
-  "GIT_CHUNK_MAX_AGE_MONTHS",
-  "TRAJECTORY_GIT_CHUNK_TIMEOUT_MS",
-  "GIT_CHUNK_TIMEOUT_MS",
-  "TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES",
-  "GIT_CHUNK_MAX_FILE_LINES",
-  "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS",
-  "TRAJECTORY_GIT_SESSION_GAP_MINUTES",
+  { canonical: "TRAJECTORY_GIT_ENABLED", aliases: ["CODE_ENABLE_GIT_METADATA"] },
+  { canonical: "TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS", aliases: ["GIT_LOG_MAX_AGE_MONTHS"] },
+  { canonical: "TRAJECTORY_GIT_LOG_TIMEOUT_MS", aliases: ["GIT_LOG_TIMEOUT_MS"] },
+  { canonical: "TRAJECTORY_GIT_CHUNK_CONCURRENCY", aliases: ["GIT_CHUNK_CONCURRENCY"] },
+  { canonical: "TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS", aliases: ["GIT_CHUNK_MAX_AGE_MONTHS"] },
+  { canonical: "TRAJECTORY_GIT_CHUNK_TIMEOUT_MS", aliases: ["GIT_CHUNK_TIMEOUT_MS"] },
+  { canonical: "TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES", aliases: ["GIT_CHUNK_MAX_FILE_LINES"] },
+  { canonical: "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS", aliases: [] },
+  { canonical: "TRAJECTORY_GIT_SESSION_GAP_MINUTES", aliases: [] },
   // ingest.tune (parse.ts `ingestTune` section)
-  "INGEST_PIPELINE_CONCURRENCY",
-  "EMBEDDING_TUNE_CONCURRENCY",
-  "EMBEDDING_CONCURRENCY",
-  "INGEST_TUNE_CHUNKER_POOL_SIZE",
-  "CHUNKER_POOL_SIZE",
-  "INGEST_TUNE_FILE_CONCURRENCY",
-  "FILE_PROCESSING_CONCURRENCY",
-  "INGEST_TUNE_IO_CONCURRENCY",
-  "MAX_IO_CONCURRENCY",
-  "INGEST_TUNE_ENRICHMENT_POOL_SIZE",
-  "ENRICHMENT_POOL_SIZE",
+  { canonical: "INGEST_PIPELINE_CONCURRENCY", aliases: ["EMBEDDING_TUNE_CONCURRENCY", "EMBEDDING_CONCURRENCY"] },
+  { canonical: "INGEST_TUNE_CHUNKER_POOL_SIZE", aliases: ["CHUNKER_POOL_SIZE"] },
+  { canonical: "INGEST_TUNE_FILE_CONCURRENCY", aliases: ["FILE_PROCESSING_CONCURRENCY"] },
+  { canonical: "INGEST_TUNE_IO_CONCURRENCY", aliases: ["MAX_IO_CONCURRENCY"] },
+  { canonical: "INGEST_TUNE_ENRICHMENT_POOL_SIZE", aliases: ["ENRICHMENT_POOL_SIZE"] },
   // ingest chunking (parse.ts `ingest` section — sizes only, not feature flags)
-  "INGEST_CHUNK_SIZE",
-  "CODE_CHUNK_SIZE",
-  "INGEST_CHUNK_OVERLAP",
-  "CODE_CHUNK_OVERLAP",
-  // embedding.tune (parse.ts `embeddingTune` section)
-  "EMBEDDING_TUNE_BATCH_SIZE",
-  "EMBEDDING_BATCH_SIZE",
-  "CODE_BATCH_SIZE",
-  "EMBEDDING_TUNE_MIN_BATCH_SIZE",
-  "MIN_BATCH_SIZE",
-  "EMBEDDING_TUNE_BATCH_TIMEOUT_MS",
-  "BATCH_FORMATION_TIMEOUT_MS",
-  "EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE",
-  "EMBEDDING_MAX_REQUESTS_PER_MINUTE",
-  "EMBEDDING_TUNE_RETRY_ATTEMPTS",
-  "EMBEDDING_RETRY_ATTEMPTS",
-  "EMBEDDING_TUNE_RETRY_DELAY_MS",
-  "EMBEDDING_RETRY_DELAY",
-  "EMBEDDING_TUNE_HEALTH_CHECK_RETRY_ATTEMPTS",
-  "EMBEDDING_HEALTH_CHECK_RETRY_ATTEMPTS",
-  "EMBEDDING_TUNE_HEALTH_CHECK_RETRY_DELAY_MS",
-  "EMBEDDING_HEALTH_CHECK_RETRY_DELAY_MS",
-  "EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS",
-  "EMBEDDING_UNAVAILABLE_RETRY_MAX_WAIT_MS",
-  "EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS",
-  "EMBEDDING_UNAVAILABLE_RETRY_BASE_DELAY_MS",
+  { canonical: "INGEST_CHUNK_SIZE", aliases: ["CODE_CHUNK_SIZE"] },
+  { canonical: "INGEST_CHUNK_OVERLAP", aliases: ["CODE_CHUNK_OVERLAP"] },
+  // embedding.tune (parse.ts `embeddingTune` section). CODE_BATCH_SIZE is a
+  // member of TWO groups — parse.ts feeds it into both embedding batchSize
+  // and qdrant upsertBatchSize.
+  { canonical: "EMBEDDING_TUNE_BATCH_SIZE", aliases: ["EMBEDDING_BATCH_SIZE", "CODE_BATCH_SIZE"] },
+  { canonical: "EMBEDDING_TUNE_MIN_BATCH_SIZE", aliases: ["MIN_BATCH_SIZE"] },
+  { canonical: "EMBEDDING_TUNE_BATCH_TIMEOUT_MS", aliases: ["BATCH_FORMATION_TIMEOUT_MS"] },
+  { canonical: "EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE", aliases: ["EMBEDDING_MAX_REQUESTS_PER_MINUTE"] },
+  { canonical: "EMBEDDING_TUNE_RETRY_ATTEMPTS", aliases: ["EMBEDDING_RETRY_ATTEMPTS"] },
+  { canonical: "EMBEDDING_TUNE_RETRY_DELAY_MS", aliases: ["EMBEDDING_RETRY_DELAY"] },
+  { canonical: "EMBEDDING_TUNE_HEALTH_CHECK_RETRY_ATTEMPTS", aliases: ["EMBEDDING_HEALTH_CHECK_RETRY_ATTEMPTS"] },
+  { canonical: "EMBEDDING_TUNE_HEALTH_CHECK_RETRY_DELAY_MS", aliases: ["EMBEDDING_HEALTH_CHECK_RETRY_DELAY_MS"] },
+  { canonical: "EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS", aliases: ["EMBEDDING_UNAVAILABLE_RETRY_MAX_WAIT_MS"] },
+  {
+    canonical: "EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS",
+    aliases: ["EMBEDDING_UNAVAILABLE_RETRY_BASE_DELAY_MS"],
+  },
   // qdrantTune (parse.ts `qdrantTune` section)
-  "QDRANT_TUNE_UPSERT_BATCH_SIZE",
-  "QDRANT_UPSERT_BATCH_SIZE",
-  "QDRANT_TUNE_UPSERT_FLUSH_INTERVAL_MS",
-  "QDRANT_FLUSH_INTERVAL_MS",
-  "QDRANT_TUNE_UPSERT_ORDERING",
-  "QDRANT_BATCH_ORDERING",
-  "QDRANT_TUNE_DELETE_BATCH_SIZE",
-  "QDRANT_DELETE_BATCH_SIZE",
-  "DELETE_BATCH_SIZE",
-  "QDRANT_TUNE_DELETE_CONCURRENCY",
-  "QDRANT_DELETE_CONCURRENCY",
-  "DELETE_CONCURRENCY",
-  "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS",
-  "DELETE_FLUSH_TIMEOUT_MS",
-  "QDRANT_QUANTIZATION_SCALAR",
-  "QDRANT_TURBO_QUANT",
-  "QDRANT_MAX_RESIDENT_MEMORY_PERCENT",
-  "QDRANT_SEARCH_MAX_BATCHSIZE",
-  "QDRANT_LOW_MEMORY",
+  { canonical: "QDRANT_TUNE_UPSERT_BATCH_SIZE", aliases: ["QDRANT_UPSERT_BATCH_SIZE", "CODE_BATCH_SIZE"] },
+  { canonical: "QDRANT_TUNE_UPSERT_FLUSH_INTERVAL_MS", aliases: ["QDRANT_FLUSH_INTERVAL_MS"] },
+  { canonical: "QDRANT_TUNE_UPSERT_ORDERING", aliases: ["QDRANT_BATCH_ORDERING"] },
+  { canonical: "QDRANT_TUNE_DELETE_BATCH_SIZE", aliases: ["QDRANT_DELETE_BATCH_SIZE", "DELETE_BATCH_SIZE"] },
+  { canonical: "QDRANT_TUNE_DELETE_CONCURRENCY", aliases: ["QDRANT_DELETE_CONCURRENCY", "DELETE_CONCURRENCY"] },
+  { canonical: "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS", aliases: ["DELETE_FLUSH_TIMEOUT_MS"] },
+  { canonical: "QDRANT_QUANTIZATION_SCALAR", aliases: [] },
+  { canonical: "QDRANT_TURBO_QUANT", aliases: [] },
+  { canonical: "QDRANT_MAX_RESIDENT_MEMORY_PERCENT", aliases: [] },
+  { canonical: "QDRANT_SEARCH_MAX_BATCHSIZE", aliases: [] },
+  { canonical: "QDRANT_LOW_MEMORY", aliases: [] },
 ];
 
 /**
- * Snapshot the allowlisted tuning vars actually SET in the given env.
- * Empty-string values are skipped — `envWithFallback` treats them as unset,
- * so recording them would materialize nothing.
- *
- * Exception: GIT_ADAPTER is ALWAYS included at its RESOLVED value, even when
- * the env var is unset (spec decision: the adapter choice is pinned
- * per-project explicitly; ambient env must not silently flip it on a later
- * run). Every other key keeps the only-when-set behavior, so the snapshot is
- * never undefined anymore — it carries at least the pinned GIT_ADAPTER.
+ * Flat allowlist of every recognized spelling (canonical + aliases).
+ * Kept for consumers that only need membership checks.
  */
-export function captureTuningEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  const tuning: Record<string, string> = {};
-  for (const key of TUNING_ENV_ALLOWLIST) {
-    const value = env[key];
-    if (value !== undefined && value !== "") tuning[key] = value;
-  }
-  // Deliberate force-pin: resolved default materialized when unset/empty.
-  tuning.GIT_ADAPTER ??= "git";
-  return tuning;
-}
+export const TUNING_ENV_ALLOWLIST: readonly string[] = [
+  ...new Set(TUNING_ENV_GROUPS.flatMap((g) => [g.canonical, ...g.aliases])),
+];
+
+/**
+ * Canonical keys whose code default is runtime-ADAPTIVE, not a static value:
+ * GPU-calibrated embedding batch size, per-language chunk sizing
+ * (indexing-ops), and embedded-mode delete tuning (factory). The snapshot
+ * materializes these only when the user explicitly set them (the config
+ * layer marks exactly these four via its `userSet*` flags) — pinning an
+ * adaptive value would freeze behavior the default recomputes per run.
+ */
+export const ADAPTIVE_DEFAULT_TUNING_KEYS: ReadonlySet<string> = new Set([
+  "EMBEDDING_TUNE_BATCH_SIZE",
+  "INGEST_CHUNK_SIZE",
+  "QDRANT_TUNE_DELETE_BATCH_SIZE",
+  "QDRANT_TUNE_DELETE_CONCURRENCY",
+]);

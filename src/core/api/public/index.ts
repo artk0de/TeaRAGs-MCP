@@ -72,7 +72,8 @@ export type { ConfigErrorCode } from "../../infra/errors.js";
 // ── Project registry — runtime + types (infra/registry) ───────────────
 export { CollectionRegistry } from "../../infra/registry/index.js";
 export { PROJECT_NAME_RE } from "../../infra/registry/index.js";
-export type { CollectionEntry, ProjectInfo } from "../../infra/registry/index.js";
+export { TUNING_ENV_GROUPS } from "../../infra/registry/index.js";
+export type { CollectionEntry, ProjectInfo, TuningEnvGroup } from "../../infra/registry/index.js";
 
 // ── Collection-name helpers (infra/collection-name.ts) ────────────────
 export { resolveCollectionName, validatePath } from "../../infra/collection-name.js";

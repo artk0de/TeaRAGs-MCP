@@ -63,6 +63,12 @@ export interface IngestFacadeDeps {
   collectionRegistry?: CollectionRegistry;
   teaRagsVersion?: string;
   /**
+   * Full effective tuning env set of this run (canonical keys, code defaults
+   * materialized) built by bootstrap via `buildTuningEnvSnapshot`; persisted
+   * verbatim into `CollectionEntry.tuning` on every successful index (9vpnz).
+   */
+  tuningSnapshot?: Record<string, string>;
+  /**
    * Full enrichment provider list passed verbatim to EnrichmentCoordinator
    * — single source of truth, owned by the caller (bootstrap). Bootstrap
    * builds this list from `composition.registry.getAllEnrichmentProviders()`
@@ -259,6 +265,7 @@ export class IngestFacade {
       teaRagsVersion: deps.teaRagsVersion,
       codegraphRemover,
       codegraphLister,
+      tuningSnapshot: deps.tuningSnapshot,
     };
     const indexing = new IndexPipeline(
       qdrant,

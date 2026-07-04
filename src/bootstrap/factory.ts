@@ -53,6 +53,7 @@ import { registerAllTools } from "../mcp/tools/index.js";
 import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
 import { getConfigDump, getZodConfig, type AppConfig } from "./config/index.js";
 import { checkExternalQdrantVersion } from "./config/qdrant-compat.js";
+import { buildTuningEnvSnapshot } from "./config/tuning-snapshot.js";
 import {
   reconcileStrictMode,
   reconcileTurbo,
@@ -677,6 +678,10 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     modelGuard: infra.modelGuard,
     collectionRegistry,
     teaRagsVersion: pkg.version,
+    // Full effective tuning env set of this run (defaults materialized, 9vpnz).
+    // Built AFTER the adaptive adjustments above (GPU-calibrated batch size,
+    // embedded delete tuning) so user-set values reflect what actually ran.
+    tuningSnapshot: buildTuningEnvSnapshot(zodConfig),
     enrichmentProviders,
     codegraphPool: codegraphContext?.pool,
     indexRunDaemonGuard: codegraphContext?.indexRunDaemonGuard,
