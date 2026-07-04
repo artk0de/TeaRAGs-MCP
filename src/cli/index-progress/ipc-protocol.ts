@@ -21,8 +21,25 @@ export type WorkerMessage =
   | ({ type: "enrichment" } & EnrichmentProgressEvent)
   | { type: "status"; status: IndexStatus }
   | { type: "done"; result: EnrichmentOutcome }
-  | { type: "error"; message: string }
+  | {
+      type: "error";
+      message: string;
+      /** Typed error code (TeaRagsError.code) when the fatal was typed; drives the --json error object. */
+      code?: string;
+    }
   | { type: "phase-done"; phase: string; elapsedMs: number }
+  | {
+      type: "qdrant-state";
+      /**
+       * Embedded-daemon readiness while the worker waits before indexing:
+       * starting/recovering tick while the HTTP port is not bound yet
+       * (shard recovery after a restart can take minutes); ready is the
+       * terminal event that freezes the renderer's state line (2nfdm).
+       */
+      state: "starting" | "recovering" | "ready";
+      /** Wall-clock wait so far (ms). */
+      elapsedMs: number;
+    }
   | {
       type: "turbo-migration";
       /** Collection whose quantized vectors the background optimizer is rebuilding. */
@@ -64,9 +81,13 @@ export function isWorkerMessage(value: unknown): value is WorkerMessage {
     case "done":
       return typeof m.result === "object" && m.result !== null;
     case "error":
-      return typeof m.message === "string";
+      return typeof m.message === "string" && (m.code === undefined || typeof m.code === "string");
     case "phase-done":
       return typeof m.phase === "string" && typeof m.elapsedMs === "number";
+    case "qdrant-state":
+      return (
+        (m.state === "starting" || m.state === "recovering" || m.state === "ready") && typeof m.elapsedMs === "number"
+      );
     case "turbo-migration":
       return (
         typeof m.collection === "string" && (m.stage === "start" || m.stage === "done" || m.stage === "background")

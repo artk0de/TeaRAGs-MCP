@@ -92,6 +92,27 @@ describe("formatProgressLine", () => {
     expect(formatProgressLine({ type: "error", message: "boom" })).toContain("boom");
   });
 
+  describe("qdrant-state (2nfdm: daemon readiness surfaced before progress bars)", () => {
+    it("formats recovering WITHOUT elapsed so the line renderer de-dups per state, not per poll tick", () => {
+      const at3s = formatProgressLine({ type: "qdrant-state", state: "recovering", elapsedMs: 3000 });
+      const at9s = formatProgressLine({ type: "qdrant-state", state: "recovering", elapsedMs: 9000 });
+      expect(at3s).toContain("qdrant");
+      expect(at3s).toContain("recovering shards");
+      expect(at9s).toBe(at3s);
+    });
+
+    it("formats starting distinctly from recovering", () => {
+      const line = formatProgressLine({ type: "qdrant-state", state: "starting", elapsedMs: 1000 });
+      expect(line).toContain("starting up");
+    });
+
+    it("formats ready with the total wait duration", () => {
+      const line = formatProgressLine({ type: "qdrant-state", state: "ready", elapsedMs: 65_000 });
+      expect(line).toContain("ready");
+      expect(line).toContain("65.0s");
+    });
+  });
+
   it("returns null for status/done (not progress lines)", () => {
     expect(formatProgressLine({ type: "done", result: { failed: [], degraded: [] } })).toBeNull();
     expect(formatProgressLine({ type: "status", status: { isIndexed: true, status: "indexed" } })).toBeNull();

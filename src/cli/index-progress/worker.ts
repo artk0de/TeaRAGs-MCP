@@ -194,28 +194,71 @@ export async function main(): Promise<void> {
   const { parseAppConfig } = await import("../../bootstrap/config/index.js");
   const { createAppContext } = await import("../../bootstrap/factory.js");
   const { migrateHomeDir } = await import("../../bootstrap/migrate.js");
+  const { awaitQdrantReadiness } = await import("./qdrant-readiness.js");
 
   migrateHomeDir();
+  // Bounded qdrant-readiness gate (2nfdm): after an embedded-daemon restart,
+  // shard recovery blocks the HTTP bind for up to minutes — the run must WAIT
+  // (streaming the daemon state to the renderer), not die on
+  // INFRA_QDRANT_RECOVERING. Both context creation and the first cheap qdrant
+  // probe go through the gate; a `ready` event closes the state line once any
+  // wait actually happened.
+  let waitedForQdrant = false;
+  const readinessStart = Date.now();
+  const onWait = (state: "starting" | "recovering", elapsedMs: number): void => {
+    waitedForQdrant = true;
+    send({ type: "qdrant-state", state, elapsedMs });
+  };
+
   // Surface a one-time "Migrating to TurboQuant" phase: the startup reconcile in
   // createAppContext migrates any pre-turbo collection and polls the optimizer
   // pass, forwarding each progress event to the supervisor over the same IPC
   // channel as embedding/enrichment progress.
-  const ctx = await createAppContext(parseAppConfig(), {
-    onTurboMigration: (event) => {
-      send({
-        type: "turbo-migration",
-        collection: event.collection,
-        stage: event.stage,
-        ...(event.elapsedMs !== undefined ? { elapsedMs: event.elapsedMs } : {}),
-      });
-    },
+  const ctx = await awaitQdrantReadiness(
+    async () =>
+      createAppContext(parseAppConfig(), {
+        onTurboMigration: (event) => {
+          send({
+            type: "turbo-migration",
+            collection: event.collection,
+            stage: event.stage,
+            ...(event.elapsedMs !== undefined ? { elapsedMs: event.elapsedMs } : {}),
+          });
+        },
+      }),
+    { onWait },
+  ).catch((error: unknown) => {
+    // Context creation failed terminally (readiness window exhausted or a
+    // non-readiness fatal) — without this, the fatal would hit the uncaught
+    // handler and exit silently in --json mode.
+    send({
+      type: "error",
+      message: error instanceof Error ? error.message : String(error),
+      ...(typeof (error as { code?: unknown } | null)?.code === "string"
+        ? { code: (error as { code: string }).code }
+        : {}),
+    });
+    process.exit(1);
   });
   try {
+    // Cheap qdrant round-trip: the first real qdrant call of the run happens
+    // deep inside indexCodebase — probe here instead so a recovering daemon is
+    // awaited BEFORE any pipeline state is touched.
+    await awaitQdrantReadiness(async () => ctx.app.listCollections(), { onWait });
+    if (waitedForQdrant) {
+      send({ type: "qdrant-state", state: "ready", elapsedMs: Date.now() - readinessStart });
+    }
     const outcome = await runIndexWorker(ctx.app, path, options, send);
     ctx.cleanup?.();
     process.exit(outcome.failed.length > 0 ? 1 : 0);
   } catch (error) {
-    send({ type: "error", message: error instanceof Error ? error.message : String(error) });
+    send({
+      type: "error",
+      message: error instanceof Error ? error.message : String(error),
+      ...(typeof (error as { code?: unknown } | null)?.code === "string"
+        ? { code: (error as { code: string }).code }
+        : {}),
+    });
     try {
       ctx.cleanup?.();
     } catch {

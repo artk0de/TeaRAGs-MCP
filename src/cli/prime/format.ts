@@ -141,7 +141,11 @@ function formatRegistryParamsLine(entry: PrimeRegistryEntry): string | null {
     // the pipeline, but registry.json is hand-editable).
     parts.push(`embedding fallback ${entry.embeddingFallbackUrl}`);
   }
-  if (entry.qdrantUrl) {
+  if (entry.qdrantUrl === "embedded") {
+    // Sentinel persistence (2nfdm): the registry stores "embedded", never the
+    // daemon's ephemeral port URL — display it once, no redundant suffix.
+    parts.push("qdrant embedded");
+  } else if (entry.qdrantUrl) {
     parts.push(`qdrant ${entry.qdrantUrl}${entry.qdrantEmbedded ? " (embedded)" : ""}`);
   }
   if (entry.codegraphEnabled !== undefined) {
@@ -256,8 +260,7 @@ function formatStatusLine(status: IndexStatus, now: Date): string {
           ? `${status.filesCount} files / ${status.chunksCount ?? 0} chunks`
           : `${status.chunksCount ?? 0} chunks`;
       const qdrant = status.infraHealth?.qdrant;
-      const size =
-        qdrant?.indexSizeBytes !== undefined ? ` · ${formatBytes(qdrant.indexSizeBytes)} on disk` : "";
+      const size = qdrant?.indexSizeBytes !== undefined ? ` · ${formatBytes(qdrant.indexSizeBytes)} on disk` : "";
       const quant =
         qdrant?.quantization !== undefined
           ? ` · ${qdrant.quantization === "turbo" ? "turbo (8x)" : qdrant.quantization} quant`

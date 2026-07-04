@@ -167,6 +167,14 @@ export function formatProgressLine(message: WorkerMessage): string | null {
       }
       return `${label}continues in background`;
     }
+    case "qdrant-state": {
+      // No elapsed in the line: the worker polls every few seconds and the
+      // line renderer de-duplicates on exact text — one line per state change,
+      // not one per poll tick.
+      const label = "qdrant".padEnd(LABEL_WIDTH);
+      if (message.state === "ready") return `${label}ready ✓ in ${fmtDuration(message.elapsedMs)}`;
+      return message.state === "recovering" ? `${label}recovering shards… (waiting)` : `${label}starting up… (waiting)`;
+    }
     case "error":
       return `error: ${message.message}`;
     case "status":
@@ -344,6 +352,48 @@ export class TtyProgressRenderer implements ProgressRenderer {
       }
       return;
     }
+    if (message.type === "qdrant-state") {
+      // Daemon readiness wait (2nfdm): an indeterminate spinner-style row —
+      // recovery has no observable percentage — shown BEFORE any embedding
+      // bar exists, frozen with Done ✓ once the daemon answers.
+      const key = "qdrant-state";
+      const label = this.colors.brand("qdrant".padEnd(LABEL_WIDTH));
+      const rate =
+        message.state === "recovering" ? this.colors.dim("recovering shards…") : this.colors.dim("starting up…");
+      if (message.state === "ready") {
+        const state = this.barStates.get(key);
+        if (!state) return;
+        state.done = true;
+        state.bar.update(state.value, {
+          label: state.label,
+          rate: "",
+          elapsed: "",
+          eta: "",
+          done: { elapsed: fmtDuration(message.elapsedMs) },
+        });
+        return;
+      }
+      const existing = this.barStates.get(key);
+      if (existing) {
+        existing.rate = rate;
+        return;
+      }
+      const bar = this.multibar.create(0, 0, { label, rate, eta: "", elapsed: "", totalFinal: false });
+      this.barStates.set(key, {
+        bar,
+        startMs: this.now() - message.elapsedMs,
+        value: 0,
+        total: 0,
+        label,
+        rate,
+        done: false,
+        etaBaseSeconds: null,
+        etaBaseAtMs: this.now(),
+        totalFinal: false,
+      });
+      this.startTickIfNeeded();
+      return;
+    }
     if (message.type === "embedding") {
       const label = this.colors.brand("embeddings".padEnd(LABEL_WIDTH));
       // The worker forwards EVERY ProgressUpdate (scanning/chunking/storing/embedding)
@@ -510,6 +560,7 @@ export class JsonProgressRenderer implements ProgressRenderer {
       case "embedding":
       case "enrichment":
       case "turbo-migration":
+      case "qdrant-state":
         // no-op in JSON mode — progress bars suppressed
         break;
     }

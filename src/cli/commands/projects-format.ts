@@ -6,7 +6,7 @@
  * so the layout is identical with or without ANSI — tests assert on plain text.
  */
 
-import type { CollectionEntry } from "../../core/api/public/index.js";
+import { EMBEDDED_MARKER, type CollectionEntry } from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
 import { compareSemver, isValidSemver } from "../update-check/semver.js";
 
@@ -50,11 +50,13 @@ export function relativeAge(indexedAt: string | null | undefined, now: Date): st
 
 /**
  * Classify a stored Qdrant URL by shape (no probing):
+ * the "embedded" sentinel (2nfdm registry persistence model) → embedded;
  * loopback host + port 6333 → local; loopback + any other port → embedded;
  * non-loopback host → remote. Unparseable → remote.
  */
 export function classifyQdrant(url: string | null | undefined): QdrantClassification {
   if (!url) return { kind: "remote", host: null };
+  if (url === EMBEDDED_MARKER) return { kind: "embedded", host: null };
   let parsed: URL;
   try {
     parsed = new URL(url);

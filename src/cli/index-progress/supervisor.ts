@@ -127,17 +127,36 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
             printOutcome(raw.result);
           });
           break;
+        case "qdrant-state":
+          // Rendered by renderer.handle (called above): the daemon state line
+          // shows BEFORE any progress bars while the worker waits (2nfdm).
+          break;
         case "error":
+          // Run-phase fatal. JSON mode must emit a parseable error object —
+          // a silent exit 1 with zero bytes is exactly the 2nfdm bug.
           finish(1, () => {
-            if (!jsonRenderer) out(colors.alert(`error: ${raw.message}`));
+            if (jsonRenderer) {
+              out(JSON.stringify({ error: { code: raw.code ?? "UNKNOWN", message: raw.message } }));
+            } else {
+              out(colors.alert(`error: ${raw.message}`));
+            }
           });
           break;
       }
     });
 
     child.on("exit", (code) => {
-      // Worker exited before a terminal message (crash) — surface a failure.
-      finish(code === 0 ? 0 : 1);
+      // Worker exited before a terminal message (crash). Surface it in BOTH
+      // modes — a bare non-zero exit code with no output is undebuggable.
+      if (code === 0) {
+        finish(0);
+        return;
+      }
+      finish(1, () => {
+        const message = `worker exited with code ${code ?? "null"} before reporting a result`;
+        if (jsonRenderer) out(JSON.stringify({ error: { code: "WORKER_EXIT", message } }));
+        else out(colors.alert(message));
+      });
     });
   });
 }

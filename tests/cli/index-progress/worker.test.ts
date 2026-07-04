@@ -25,6 +25,8 @@ const mainFakeApp = {
     enrichment: { git: { file: { status: "healthy" }, chunk: { status: "healthy" } } },
   }),
   whenEnrichmentComplete: vi.fn().mockResolvedValue(undefined),
+  // Cheap qdrant round-trip used by the readiness gate (2nfdm) before indexing.
+  listCollections: vi.fn().mockResolvedValue([]),
 };
 const mainCleanup = vi.fn();
 vi.mock("../../../src/bootstrap/config/index.js", () => ({ parseAppConfig: vi.fn(() => ({})) }));
