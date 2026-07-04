@@ -13,7 +13,7 @@ import { join, resolve, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createCatFileBatchCheck } from "../../../../src/core/adapters/git/client.js";
+import { createCatFileBatchCheck } from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 
 // Temp base captured ONCE at module load (realpath-normalised; macOS /var →
 // /private/var). Guard: these tests run REAL `git init`/`git commit` — refuse

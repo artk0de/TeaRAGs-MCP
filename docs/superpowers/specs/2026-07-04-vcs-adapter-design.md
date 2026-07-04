@@ -95,7 +95,7 @@ git-strength contract:
 Logic common to both implementations (argument validation, error
 normalization, repo-root handling) lives in this base class, never duplicated
 in siblings. CLI plumbing vocabulary (`cat-file`) disappears from contracts;
-git-CLI helpers are implementation details of `vcs/git/cli/`.
+git-CLI helpers are implementation details of `vcs/git/git-cli/`.
 
 **Consumers.** The git trajectory domain and the factory return type are
 `VcsGitAdapter`, not `VcsAdapter`: trajectory's assumptions (object ids,
@@ -215,7 +215,7 @@ Shipped with phase 3, same PR as the setup UX:
 ## Testing & Validation
 
 1. **Relocation phase:** existing `client.test.ts` / `parsers.test.ts` move to
-   `tests/core/adapters/vcs/git/cli/` — moved, not rewritten (business-logic
+   `tests/core/adapters/vcs/git/git-cli/` — moved, not rewritten (business-logic
    tests immutable during refactor).
 2. **Equivalence suite (phase 2):** every `EsGitAdapter` op DEEP-EQUALs
    `GitCliAdapter` output on a fixture repo — blame lines (author/email/

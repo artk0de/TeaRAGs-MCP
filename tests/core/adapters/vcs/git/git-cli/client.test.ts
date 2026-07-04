@@ -9,9 +9,9 @@ import {
   getCommitsInRange,
   isAncestor,
   resolveRepoRoot,
-} from "../../../../src/core/adapters/git/client.js";
-import { parseBlameOutput, parsePathspecOutput } from "../../../../src/core/adapters/git/parsers.js";
-import type { BlameLine, CommitInfo } from "../../../../src/core/adapters/git/types.js";
+} from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import { parseBlameOutput, parsePathspecOutput } from "../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js";
+import type { BlameLine, CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 
 // Mock child_process before imports
 vi.mock("node:child_process", () => ({
@@ -20,7 +20,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 // Mock parsers — we control their return values to test the batched merge logic
-vi.mock("../../../../src/core/adapters/git/parsers.js", () => ({
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js", () => ({
   parseNumstatOutput: vi.fn(),
   parsePathspecOutput: vi.fn(),
   parseBlameOutput: vi.fn(),

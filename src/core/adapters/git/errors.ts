@@ -1,28 +1,7 @@
 /**
- * Git CLI adapter errors.
+ * Temporary re-export shim — the git CLI errors relocated to
+ * `adapters/vcs/git/git-cli/errors.ts` (vcs adapter seam, w2dlu). Deleted in T7
+ * once every consumer imports from the vcs adapter instead.
  */
 
-import { InfraError } from "../errors.js";
-
-export class GitCliNotFoundError extends InfraError {
-  constructor() {
-    super({
-      code: "INFRA_GIT_CLI_NOT_FOUND",
-      message: "Git CLI is not installed or not in PATH",
-      hint: "Install git: https://git-scm.com/downloads",
-      httpStatus: 503,
-    });
-  }
-}
-
-export class GitCliTimeoutError extends InfraError {
-  constructor(command: string, timeoutMs: number, cause?: Error) {
-    super({
-      code: "INFRA_GIT_CLI_TIMEOUT",
-      message: `Git command "${command}" timed out after ${timeoutMs}ms`,
-      hint: "The repository may be too large, or git is unresponsive",
-      httpStatus: 504,
-      cause,
-    });
-  }
-}
+export * from "../vcs/git/git-cli/errors.js";

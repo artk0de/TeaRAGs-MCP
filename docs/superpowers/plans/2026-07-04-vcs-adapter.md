@@ -209,14 +209,14 @@ YAGNI until Task 9 shows real duplication.
 
 **Files:**
 
-- Move: `src/core/adapters/git/client.ts` → `src/core/adapters/vcs/git/cli/client.ts`
-- Move: `src/core/adapters/git/parsers.ts` → `src/core/adapters/vcs/git/cli/parsers.ts`
-- Move: `src/core/adapters/git/errors.ts` → `src/core/adapters/vcs/git/cli/errors.ts`
-- Create: `src/core/adapters/vcs/git/cli/adapter.ts` (`GitCliAdapter`)
+- Move: `src/core/adapters/git/client.ts` → `src/core/adapters/vcs/git/git-cli/client.ts`
+- Move: `src/core/adapters/git/parsers.ts` → `src/core/adapters/vcs/git/git-cli/parsers.ts`
+- Move: `src/core/adapters/git/errors.ts` → `src/core/adapters/vcs/git/git-cli/errors.ts`
+- Create: `src/core/adapters/vcs/git/git-cli/adapter.ts` (`GitCliAdapter`)
 - Move: `src/core/adapters/vcs/` gets `resolveRepoRoot` re-export (module
   helper, stays a free function)
 - Move tests: `tests/core/adapters/git/*.test.ts` →
-  `tests/core/adapters/vcs/git/cli/` (git mv, update import paths ONLY)
+  `tests/core/adapters/vcs/git/git-cli/` (git mv, update import paths ONLY)
 - Delete: `src/core/adapters/git/types.ts` (content lives in `vcs/types.ts`
   since Task 1; `git mv` history preserved via Task 1 doing the move — this
   task removes the leftover re-export if any)
@@ -231,9 +231,9 @@ YAGNI until Task 9 shows real duplication.
 - [ ] **Step 2: Write failing test for the class surface**
 
 ```ts
-// tests/core/adapters/vcs/git/cli/adapter.test.ts
+// tests/core/adapters/vcs/git/git-cli/adapter.test.ts
 import { describe, expect, it } from "vitest";
-import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/cli/adapter.js";
+import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import { VcsGitAdapter } from "../../../../../../src/core/adapters/vcs/git/adapter.js";
 
 describe("GitCliAdapter", () => {
@@ -259,7 +259,7 @@ describe("GitCliAdapter", () => {
   `createOidBatchResolver()` → `createCatFileBatchCheck(this.repoRoot)`.
 - [ ] **Step 4: Full suite green** — `npx vitest run tests/core/adapters` →
   moved tests pass unchanged; `npx tsc --noEmit` → 0.
-- [ ] **Step 5: Commit** — `refactor(vcs): relocate git CLI client under vcs/git/cli as GitCliAdapter`
+- [ ] **Step 5: Commit** — `refactor(vcs): relocate git CLI client under vcs/git/git-cli as GitCliAdapter`
 
 ### Task 4: `VcsAdapterFactory`
 
@@ -280,7 +280,7 @@ describe("GitCliAdapter", () => {
 // tests/core/adapters/vcs/factory.test.ts
 import { describe, expect, it } from "vitest";
 import { VcsAdapterFactory } from "../../../../src/core/adapters/vcs/factory.js";
-import { GitCliAdapter } from "../../../../src/core/adapters/vcs/git/cli/adapter.js";
+import { GitCliAdapter } from "../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import { VcsAdapterUnavailableError } from "../../../../src/core/adapters/vcs/errors.js";
 
 describe("VcsAdapterFactory", () => {

@@ -12,7 +12,7 @@ paths:
 
 Bulk git blob/object reads (chunk-churn walk = two blobs per changed file per
 commit — tens of thousands per index) go through **persistent**
-`createCatFileBatch(repoRoot)` in `src/core/adapters/git/client.ts`. One
+`createCatFileBatch(repoRoot)` in `src/core/adapters/vcs/git/git-cli/client.ts`. One
 long-lived `git cat-file --batch` process per walk by default; close at walk
 end.
 
