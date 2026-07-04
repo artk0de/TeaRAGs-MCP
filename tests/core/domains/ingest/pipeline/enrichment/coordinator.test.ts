@@ -438,6 +438,105 @@ describe("EnrichmentCoordinator", () => {
     const providerOps = ops.filter((op: any) => op.key && op.key !== "enrichment._run");
     expect(providerOps).toHaveLength(0);
   });
+
+  // yl9tv Task 5b — a cross-pass run must reset each provider's extraction
+  // spill/dedup state BEFORE the chunk pass starts feeding it new extractions,
+  // otherwise stale entries from the previous pass leak into the new one.
+  describe("cross-pass extraction reset (yl9tv Task 5b)", () => {
+    it("resets each provider's extraction spill via beginExtractionRun on a cross-pass run", () => {
+      const beginExtractionRun = vi.fn();
+      const crossPassProvider: any = { ...mockProvider, beginExtractionRun };
+      const coord = new EnrichmentCoordinator(mockQdrant, crossPassProvider);
+      coord.beginRun("/repo", "test-col", undefined, undefined, true);
+      expect(beginExtractionRun).toHaveBeenCalledWith("test-col");
+    });
+
+    it("skips the reset on a non-cross-pass run", () => {
+      const beginExtractionRun = vi.fn();
+      const crossPassProvider: any = { ...mockProvider, beginExtractionRun };
+      const coord = new EnrichmentCoordinator(mockQdrant, crossPassProvider);
+      coord.beginRun("/repo", "test-col"); // crossPass defaults to false
+      expect(beginExtractionRun).not.toHaveBeenCalled();
+    });
+  });
+
+  it("onChunksStored is a no-op when called before beginRun has ever run", () => {
+    const coord = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    expect(() => {
+      coord.onChunksStored("test-col", "/repo", [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/a.ts" }, endLine: 5 } } as any,
+      ]);
+    }).not.toThrow();
+    expect(mockQdrant.batchSetPayload).not.toHaveBeenCalled();
+  });
+
+  it("skips the run-pointer heartbeat for an anonymous batch (no collectionName)", () => {
+    // maybeHeartbeat's guard (`!collectionName || currentRun !== run`) must
+    // short-circuit for an anonymous streamed batch instead of writing a
+    // heartbeat keyed on an empty collection name. Spy on the real
+    // markerStore directly — beginRun's OWN markRunStart write also uses the
+    // "enrichment._run" key, so asserting on batchSetPayload ops would
+    // conflate the two writers.
+    coordinator.beginRun("/repo", "test-col");
+    const { markerStore } = coordinator as any;
+    const heartbeatSpy = vi.spyOn(markerStore, "heartbeat");
+    expect(() => {
+      coordinator.onChunksStored("", "/repo", [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/a.ts" }, startLine: 1, endLine: 5 } } as any,
+      ]);
+    }).not.toThrow();
+    expect(heartbeatSpy).not.toHaveBeenCalled();
+  });
+
+  describe("whenComplete", () => {
+    it("resolves immediately when no run has started", async () => {
+      const coord = new EnrichmentCoordinator(mockQdrant, mockProvider);
+      await expect(coord.whenComplete()).resolves.toBeUndefined();
+    });
+
+    it("resolves immediately when the current run has no providers", async () => {
+      const empty = new EnrichmentCoordinator(mockQdrant, []);
+      empty.beginRun("/repo", "test-col");
+      await expect(empty.whenComplete()).resolves.toBeUndefined();
+    });
+
+    it("never rejects even when the run's donePromise rejects (contract: failures surface via terminal markers)", async () => {
+      coordinator.beginRun("/repo", "test-col");
+      const run = (coordinator as any).currentRun;
+      run.rejectDone(new Error("provider crashed"));
+      await expect(coordinator.whenComplete()).resolves.toBeUndefined();
+    });
+  });
+
+  describe("awaitCompletion — daemon release resilience", () => {
+    it("swallows a rejected daemonReleasePromise instead of crashing the run", async () => {
+      coordinator.beginRun("/repo", "test-col");
+      const run = (coordinator as any).currentRun;
+      const rejected = Promise.reject(new Error("daemon begin blew up"));
+      rejected.catch(() => undefined); // pre-empt unhandled-rejection noise in the test process
+      run.daemonReleasePromise = rejected;
+      await expect(coordinator.awaitCompletion("test-col")).resolves.toBeDefined();
+    });
+  });
+
+  describe("marker-store write resilience (belt-and-suspenders catches)", () => {
+    it("tolerates a failing markRunStart and heartbeat write without crashing the run", async () => {
+      const coord = new EnrichmentCoordinator(mockQdrant, mockProvider);
+      const { markerStore } = coord as any;
+      vi.spyOn(markerStore, "markRunStart").mockRejectedValue(new Error("run-start marker down"));
+      vi.spyOn(markerStore, "heartbeat").mockRejectedValue(new Error("heartbeat marker down"));
+
+      expect(() => {
+        coord.beginRun("/repo", "test-col");
+      }).not.toThrow();
+      coord.onChunksStored("test-col", "/repo", [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/a.ts" }, startLine: 1, endLine: 5 } } as any,
+      ]);
+      await new Promise((r) => setTimeout(r, 20));
+
+      await expect(coord.awaitCompletion("test-col")).resolves.toBeDefined();
+    });
+  });
 });
 
 describe("EnrichmentCoordinator — prefetch with ignoreFilter", () => {

@@ -1369,6 +1369,28 @@ describe("extractFromTypescriptFile — collectCallbackParams and paramName bran
     // No callback params because destructured param has no plain name
     expect(extraction.callbackParams?.["noNamedParams"]).toBeUndefined();
   });
+
+  it("sorts callbackParams indices when TWO params are both invoked as callbacks (collectCallbackParams sort comparator)", () => {
+    // Array.prototype.sort only invokes its comparator when length >= 2 — every
+    // existing test here invokes at most ONE callback param, so `[...merged].sort(...)`
+    // never actually ran its comparator. Invoking `second` before `first` in the body
+    // forces a real out-of-order merge that the comparator must fix back to [0, 1].
+    const code = [
+      "function withTwoCallbacks(first: () => void, second: () => void): void {",
+      "  second();",
+      "  first();",
+      "}",
+      "",
+    ].join("\n");
+    const extraction = extractFromTypescriptFile({
+      tree: parse(code),
+      code,
+      relPath: "src/x.ts",
+      language: "typescript",
+      chunks: [{ symbolId: "withTwoCallbacks", startLine: 1, endLine: 4, scope: [] }],
+    });
+    expect(extraction.callbackParams?.["withTwoCallbacks"]).toEqual([0, 1]);
+  });
 });
 
 describe("extractFromTypescriptFile — emitCall member_expression obj/prop null guard (line 327)", () => {

@@ -2,8 +2,10 @@ import * as nodeFs from "node:fs";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { blameFile } from "../../../../../src/core/adapters/git/client.js";
+import { blameFile, createCatFileBatchCheck, getHead } from "../../../../../src/core/adapters/git/client.js";
 import { buildChunkChurnMap } from "../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
+import { ChunkChurnWalkThread } from "../../../../../src/core/domains/trajectory/git/infra/churn-walk/thread.js";
+import { GitCommitDiscovery } from "../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
 import {
   buildFileSignalDiscovery,
   buildFileSignalMap,
@@ -20,6 +22,14 @@ vi.mock("../../../../../src/core/adapters/git/client.js", () => ({
   resolveRepoRoot: vi.fn((p: string) => p),
   blameFile: vi.fn().mockResolvedValue([]),
   getHead: vi.fn().mockResolvedValue("headsha"),
+  // Default: a fresh working reader so the resolveHeadOids success path runs
+  // (existing tests only care that blame still runs for every file — see
+  // populateBlameMap's oid-miss fallback). Individual tests below override
+  // per-call behavior via mockReturnValueOnce for the OID-reader lifecycle.
+  createCatFileBatchCheck: vi.fn(() => ({
+    check: vi.fn().mockResolvedValue(null),
+    close: vi.fn().mockResolvedValue(undefined),
+  })),
 }));
 
 vi.mock("../../../../../src/core/domains/trajectory/git/infra/file-reader.js", () => ({
@@ -320,6 +330,166 @@ describe("GitEnrichmentProvider", () => {
       expect(provider.shouldEnrich({ relPath: "app/models/user.rb", classification: base })).toBe("full");
       expect(provider.shouldEnrich({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } })).toBe(
         "full",
+      );
+    });
+  });
+
+  describe("streamFileBatch — no-git guard", () => {
+    it("returns an empty map without touching the run-scoped discovery when .git is absent", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(false);
+      vi.mocked(buildFileSignalDiscovery).mockClear();
+
+      const result = await provider.streamFileBatch("/no-git-repo", ["src/a.ts"]);
+
+      expect(result).toEqual(new Map());
+      expect(buildFileSignalDiscovery).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("streamFileBatch — HEAD resolution failure", () => {
+    it("falls back to an empty HEAD sha when getHead rejects, still slicing the batch", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      vi.mocked(buildFileSignalDiscovery).mockClear();
+      vi.mocked(getHead).mockRejectedValueOnce(new Error("no HEAD (empty repo)"));
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValueOnce(
+        new Map([["src/a.ts", { commits: [], recentAuthors: [] }]]) as never,
+      );
+
+      const result = await provider.streamFileBatch("/repo", ["src/a.ts"]);
+
+      // HEAD lookup failure degrades to "" as the cache key — the batch still
+      // resolves normally instead of throwing (getRunDiscovery's catch fallback).
+      expect(buildFileSignalDiscovery).toHaveBeenCalledTimes(1);
+      expect(result.has("src/a.ts")).toBe(true);
+    });
+  });
+
+  describe("OID reader lifecycle (resolveHeadOids / finalizeSignals)", () => {
+    it("closes the stale cat-file reader when the repo root changes, and again at finalizeSignals", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      const readerA = {
+        check: vi.fn().mockResolvedValue(null),
+        close: vi.fn().mockRejectedValue(new Error("closeA failed")),
+      };
+      const readerB = {
+        check: vi.fn().mockResolvedValue(null),
+        close: vi.fn().mockRejectedValue(new Error("closeB failed")),
+      };
+      vi.mocked(createCatFileBatchCheck)
+        .mockReturnValueOnce(readerA as any)
+        .mockReturnValueOnce(readerB as any);
+
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(
+        new Map([["src/a.ts", { commits: [], recentAuthors: [] }]]) as never,
+      );
+      await provider.buildFileSignals("/repo-1", { paths: ["src/a.ts"] });
+      // First root: no prior reader exists yet, so there is nothing to close.
+      expect(readerA.close).not.toHaveBeenCalled();
+
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(
+        new Map([["src/b.ts", { commits: [], recentAuthors: [] }]]) as never,
+      );
+      await provider.buildFileSignals("/repo-2", { paths: ["src/b.ts"] });
+      // Root switch closes the stale reader bound to the old root — the
+      // rejection is swallowed, never propagates.
+      expect(readerA.close).toHaveBeenCalledTimes(1);
+
+      await expect(provider.finalizeSignals("/repo-2")).resolves.toBeInstanceOf(Map);
+      expect(readerB.close).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("run-scoped chunk-churn infra factories", () => {
+    it("createCommitDiscovery builds a GitCommitDiscovery bound to the provider's chunk-window config", () => {
+      const discovery = provider.createCommitDiscovery("/repo");
+      expect(discovery).toBeInstanceOf(GitCommitDiscovery);
+    });
+
+    it("createChunkChurnWalkThread builds a fresh worker-thread host per call", () => {
+      const threadA = provider.createChunkChurnWalkThread();
+      const threadB = provider.createChunkChurnWalkThread();
+      expect(threadA).toBeInstanceOf(ChunkChurnWalkThread);
+      expect(threadB).toBeInstanceOf(ChunkChurnWalkThread);
+      expect(threadA).not.toBe(threadB);
+    });
+  });
+
+  describe("populateBlameMap — empty batch", () => {
+    it("skips the blame pass entirely when the batch's raw file-churn data is empty", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      vi.mocked(blameFile).mockClear();
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(new Map());
+
+      const result = await provider.buildFileSignals("/repo", { paths: [] });
+
+      expect(result.size).toBe(0);
+      expect(blameFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("resolveHeadOids — reader failure", () => {
+    it("degrades to blame-everything when the persistent cat-file reader throws", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      const brokenReader = {
+        check: vi.fn().mockRejectedValue(new Error("cat-file batch-check crashed")),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.mocked(createCatFileBatchCheck).mockReturnValueOnce(brokenReader as any);
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(
+        new Map([["src/a.ts", { commits: [], recentAuthors: [] }]]) as never,
+      );
+
+      // resolveHeadOids' outer catch must degrade to an empty OID map (every
+      // file becomes a cache miss) rather than throwing out of buildFileSignals.
+      const result = await provider.buildFileSignals("/repo-oid-fail", { paths: ["src/a.ts"] });
+
+      expect(result.has("src/a.ts")).toBe(true);
+      expect(blameFile).toHaveBeenCalledWith("/repo-oid-fail", "src/a.ts", expect.anything());
+    });
+  });
+
+  describe("buildChunkSignals — off-thread walk (bd tea-rags-mcp-iqpuu)", () => {
+    it("returns an empty map immediately when the batch has no relativizable chunk paths", async () => {
+      const discovery = { commitsForFiles: vi.fn(), getBugFixShas: vi.fn() };
+      const walkThread = { walk: vi.fn() };
+
+      const result = await provider.buildChunkSignals("/repo", new Map(), {
+        churnWalkThread: walkThread,
+        commitDiscovery: discovery,
+        skipCache: true,
+      } as any);
+
+      expect(result.size).toBe(0);
+      expect(discovery.commitsForFiles).not.toHaveBeenCalled();
+      expect(walkThread.walk).not.toHaveBeenCalled();
+    });
+
+    it("degrades to zero churn for the batch when the discovery slice fails, without throwing", async () => {
+      const discovery = {
+        commitsForFiles: vi.fn().mockRejectedValue(new Error("discovery slice failed")),
+        getBugFixShas: vi.fn().mockRejectedValue(new Error("bugfix set unavailable")),
+      };
+      const walkThread = {
+        walk: vi.fn().mockResolvedValue({ overlays: new Map(), stats: {} }),
+      };
+      const chunkMap = new Map([["/repo/src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]]]);
+
+      const result = await provider.buildChunkSignals(
+        "/repo",
+        chunkMap as any,
+        {
+          churnWalkThread: walkThread,
+          commitDiscovery: discovery,
+          skipCache: true,
+        } as any,
+      );
+
+      // Both the commit-discovery slice AND the bug-fix-sha lookup fail — the
+      // walk must still run (with empty commitEntries/bugFixShas) instead of
+      // the batch throwing an enrichment error.
+      expect(result).toBeInstanceOf(Map);
+      expect(walkThread.walk).toHaveBeenCalledWith(
+        expect.objectContaining({ commitEntries: [], bugFixShas: new Set() }),
       );
     });
   });

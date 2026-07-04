@@ -114,6 +114,25 @@ describe("waitForQuantization", () => {
     ).resolves.toBe("background");
     expect(getCollectionStatus).toHaveBeenCalledTimes(3);
   });
+
+  it("uses the real setTimeout-based default sleep when no `sleep` override is passed", async () => {
+    // Every other test in this describe injects `sleep: noSleep` to keep the
+    // suite instant — the production default (`options.sleep ?? (async (ms) =>
+    // new Promise((resolve) => setTimeout(resolve, ms)))`) has never actually
+    // run. Omitting `sleep` here forces the real setTimeout-based wait, proving
+    // production callers (which never pass `sleep`) actually delay between polls.
+    const getCollectionStatus = vi.fn().mockResolvedValueOnce("yellow").mockResolvedValueOnce("green");
+
+    const start = Date.now();
+    await expect(waitForQuantization({ getCollectionStatus }, "col", { maxPolls: 5, intervalMs: 10 })).resolves.toBe(
+      "settled",
+    );
+    const elapsed = Date.now() - start;
+
+    expect(getCollectionStatus).toHaveBeenCalledTimes(2);
+    // One real sleep of ~10ms must have elapsed between the "yellow" and "green" polls.
+    expect(elapsed).toBeGreaterThanOrEqual(9);
+  });
 });
 
 describe("reportTurboMigration", () => {
