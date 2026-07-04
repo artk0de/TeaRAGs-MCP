@@ -9,7 +9,14 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { blameFile, getHead, resolveRepoRoot, type CatFileBatchReader } from "../../../adapters/git/client.js";
+import {
+  blameFile,
+  createCatFileBatchCheck,
+  getHead,
+  resolveRepoRoot,
+  type CatFileBatchCheckReader,
+  type CatFileBatchReader,
+} from "../../../adapters/git/client.js";
 import type { BlameLine, CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
 import type { FileClassification } from "../../../contracts/types/file-classification.js";
@@ -28,6 +35,7 @@ import type {
 import type { RerankPreset } from "../../../contracts/types/reranker.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { gitFilters } from "./filters.js";
+import { GitBlameStore } from "./infra/blame-store.js";
 import { relativizeChunkMap } from "./infra/build-accumulators.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
@@ -98,6 +106,21 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  chunk overlays receive per-range line ownership. Same blame pass as file-level. */
   private blameByRelPath: Map<string, BlameLine[]> = new Map();
 
+  /** Persistent OID-keyed blame cache (bd tea-rags-mcp-v2mlw): blame lines
+   *  survive across runs keyed by each file's HEAD blob OID, so
+   *  force/incremental reindex only blames CHANGED files. */
+  private readonly blameStore = new GitBlameStore();
+  /** In-memory tier of the blame cache — lazily loaded from blameStore per
+   *  root, dropped at the finalize seam (finalizeSignals). */
+  private blameCache: Map<string, { oid: string; lines: BlameLine[] }> | null = null;
+  private blameCacheRoot: string | null = null;
+  private blameCacheDirty = false;
+  /** ONE persistent `git cat-file --batch-check` process per run/root — the
+   *  OID lookups that key the blame cache ride it (EDR-immune: no fresh
+   *  spawns). Closed at the finalize seam. */
+  private oidReader: CatFileBatchCheckReader | null = null;
+  private oidReaderRoot: string | null = null;
+
   /**
    * Worker-pool descriptor — present iff the composition root wired this
    * provider for off-main-thread dispatch via WorkerPoolEnrichmentExecutor.
@@ -152,7 +175,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  batch, reset by finalizeSignals (and re-keyed automatically when HEAD moves). */
   private fileDiscovery: RunFileDiscovery | null = null;
 
-  async buildFileSignals(root: string, options?: { paths?: string[] }): Promise<Map<string, FileSignalOverlay>> {
+  async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
     // Fast check: skip if not a git repo
     if (!existsSync(join(root, ".git"))) {
       return new Map();
@@ -174,7 +197,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       );
     }
 
-    return this.buildSignalsFromRawData(root, rawData);
+    return this.buildSignalsFromRawData(root, rawData, options);
   }
 
   /** Per-batch streaming: same computation as buildFileSignals, scoped to the
@@ -187,14 +210,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   streamFileBatch = async (
     root: string,
     batchPaths: string[],
-    _options?: FileSignalOptions,
+    options?: FileSignalOptions,
   ): Promise<Map<string, FileSignalOverlay>> => {
     // Fast check: skip if not a git repo (mirrors buildFileSignals).
     if (!existsSync(join(root, ".git"))) {
       return new Map();
     }
     const rawData = sliceFileSignalsByPaths(await this.getRunDiscovery(root), batchPaths);
-    return this.buildSignalsFromRawData(root, rawData);
+    return this.buildSignalsFromRawData(root, rawData, options);
   };
 
   /** git streams file+chunk signals per batch — nothing is deferred, so the
@@ -202,9 +225,20 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  It IS the once-per-run seam (CompletionRunner.runFinalize calls it for every
    *  provider), so drop the run-scoped discovery here — its full-repo
    *  FileChurnData map must not outlive the run. A fresh run rebuilds it lazily;
-   *  the (root, HEAD) key is the correctness guard, this is memory hygiene. */
+   *  the (root, HEAD) key is the correctness guard, this is memory hygiene.
+   *
+   *  bd tea-rags-mcp-v2mlw: also the blame-cache seam — persist the OID-keyed
+   *  blame cache to its store, drop the in-memory tier (next run reloads from
+   *  disk), and close the run's persistent `cat-file --batch-check` process
+   *  (best-effort — the process is idle either way). */
   finalizeSignals = async (): Promise<Map<string, FileSignalOverlay>> => {
     this.fileDiscovery = null;
+    this.persistBlameCache();
+    this.blameCache = null;
+    this.blameCacheRoot = null;
+    await this.oidReader?.close().catch(() => undefined);
+    this.oidReader = null;
+    this.oidReaderRoot = null;
     return new Map();
   };
 
@@ -233,6 +267,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   private async buildSignalsFromRawData(
     root: string,
     rawData: Map<string, FileChurnData>,
+    options?: FileSignalOptions,
   ): Promise<Map<string, FileSignalOverlay>> {
     this.lastFileResult = rawData;
 
@@ -247,7 +282,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
 
     // Fetch git blame per file in parallel (throttled by chunkConcurrency).
     // Stored in WeakMap so fileSignalTransform can look up by churnData identity later.
-    await this.populateBlameMap(root, rawData);
+    await this.populateBlameMap(root, rawData, options);
 
     // Return raw FileChurnData — coordinator/applier will call computeFileSignals
     // with actual line count when applying per-file
@@ -277,9 +312,21 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  createCommitDiscovery). */
   createChunkChurnWalkThread = (): ChunkChurnWalkThread => new ChunkChurnWalkThread();
 
-  /** Run `git blame HEAD` per file in parallel batches and store results in
-   *  the WeakMap for later transform-time lookup. Failures fall back to empty
-   *  arrays — assembleFileSignals will produce unknown ownership.
+  /** Run `git blame HEAD` per file and store results for transform-time
+   *  lookup. Failures fall back to empty arrays — assembleFileSignals will
+   *  produce unknown ownership.
+   *
+   *  bd tea-rags-mcp-v2mlw: OID-keyed blame cache. Per-file `git blame` is a
+   *  FRESH process spawn, and a machine-wide EDR change (SentinelOne) caps
+   *  fresh git spawns at ~10/s with zero parallel scaling — blame cost cannot
+   *  be parallelized away. Persistent processes are NOT throttled, so each
+   *  batch first resolves HEAD:<path> blob OIDs through ONE long-lived
+   *  `cat-file --batch-check` process (resolveHeadOids) and reuses stored
+   *  blame lines when a file's OID is unchanged; only changed files run
+   *  `git blame`. Cold first index is unaffected (all misses); force /
+   *  incremental runs and the backfill blame only changed files. Non-empty
+   *  results only are cached: [] can be a transient blame failure (blameFile
+   *  swallows errors) — pinning it would freeze the failure.
    *
    *  Accumulates into `this.blameByRelPath` across calls — buildFileSignals
    *  may be invoked multiple times per indexing run (initial pass + backfill,
@@ -287,22 +334,102 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  buildChunkSignals, so the chunk-level blame map must retain entries from
    *  every prior pass. Replacing the map would erase blame for files indexed
    *  in earlier batches and produce "unknown" chunk ownership. */
-  private async populateBlameMap(root: string, rawData: Map<string, FileChurnData>): Promise<void> {
-    const concurrency = Math.max(this.config.chunkConcurrency, 1);
+  private async populateBlameMap(
+    root: string,
+    rawData: Map<string, FileChurnData>,
+    options?: FileSignalOptions,
+  ): Promise<void> {
     const entries = Array.from(rawData.entries());
-    let cursor = 0;
+    if (entries.length === 0) return;
+    const startedAt = Date.now();
 
+    const oidByPath = await this.resolveHeadOids(
+      root,
+      entries.map(([rel]) => rel),
+    );
+    const cache = this.ensureBlameCache(root);
+
+    let hits = 0;
+    const missEntries: [string, FileChurnData][] = [];
+    for (const [relPath, churnData] of entries) {
+      const oid = oidByPath.get(relPath);
+      const cached = oid ? cache.get(relPath) : undefined;
+      if (oid && cached?.oid === oid) {
+        hits++;
+        this.blameByChurnData.set(churnData, cached.lines);
+        this.blameByRelPath.set(relPath, cached.lines);
+      } else {
+        missEntries.push([relPath, churnData]);
+      }
+    }
+
+    const concurrency = Math.max(this.config.chunkConcurrency, 1);
+    let cursor = 0;
     const worker = async (): Promise<void> => {
-      while (cursor < entries.length) {
+      while (cursor < missEntries.length) {
         const i = cursor++;
-        const [relPath, churnData] = entries[i];
+        const [relPath, churnData] = missEntries[i];
         const lines = await blameFile(root, relPath, this.config.logTimeoutMs);
         this.blameByChurnData.set(churnData, lines);
         this.blameByRelPath.set(relPath, lines);
+        const oid = oidByPath.get(relPath);
+        // Cache only non-empty results: [] can be a transient blame failure
+        // (blameFile swallows errors) — pinning it would freeze the failure.
+        if (oid && lines.length > 0) {
+          cache.set(relPath, { oid, lines });
+          this.blameCacheDirty = true;
+        }
       }
     };
+    await Promise.all(Array.from({ length: Math.min(concurrency, missEntries.length) }, worker));
 
-    await Promise.all(Array.from({ length: Math.min(concurrency, entries.length) }, worker));
+    options?.onBlameStats?.({
+      files: entries.length,
+      hits,
+      misses: missEntries.length,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
+  /** Resolve HEAD:<path> blob OIDs for a batch through ONE persistent
+   *  `cat-file --batch-check` process per run/root (EDR-immune: the lookups
+   *  ride an already-running process, no fresh spawns). ANY failure returns
+   *  an empty map — every file becomes a cache miss and the pass degrades to
+   *  today's blame-everything behavior; blame stays best-effort. */
+  private async resolveHeadOids(root: string, relPaths: string[]): Promise<Map<string, string | null>> {
+    try {
+      if (this.oidReaderRoot !== root || !this.oidReader) {
+        await this.oidReader?.close().catch(() => undefined);
+        this.oidReader = createCatFileBatchCheck(root);
+        this.oidReaderRoot = root;
+      }
+      const reader = this.oidReader;
+      const oids = await Promise.all(relPaths.map(async (rel) => reader.check(`HEAD:${rel}`)));
+      const result = new Map<string, string | null>();
+      relPaths.forEach((rel, i) => result.set(rel, oids[i]));
+      return result;
+    } catch {
+      return new Map();
+    }
+  }
+
+  /** Lazily load (or reuse) the in-memory blame cache for a root; a root
+   *  switch persists the previous root's dirty entries first. */
+  private ensureBlameCache(root: string): Map<string, { oid: string; lines: BlameLine[] }> {
+    if (this.blameCacheRoot === root && this.blameCache) return this.blameCache;
+    this.persistBlameCache();
+    this.blameCache = this.blameStore.load(root) ?? new Map();
+    this.blameCacheRoot = root;
+    this.blameCacheDirty = false;
+    return this.blameCache;
+  }
+
+  /** Persist the in-memory blame cache iff it has unsaved entries. */
+  private persistBlameCache(): void {
+    if (this.blameCacheDirty && this.blameCache && this.blameCacheRoot) {
+      this.blameStore.save(this.blameCacheRoot, this.blameCache);
+    }
+    this.blameCacheDirty = false;
   }
 
   async buildChunkSignals(
