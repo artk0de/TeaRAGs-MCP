@@ -70,25 +70,34 @@ let qdrantClient = null;
 async function checkConnectivity() {
   const errors = [];
 
-  // Check Qdrant connectivity
+  // Check Qdrant connectivity. A freshly-spawned embedded daemon binds its HTTP
+  // port only AFTER recovering shards (tens of seconds on a large storage), so a
+  // one-shot probe races the boot and false-fails. Retry connection errors on a
+  // bounded window; a real 4xx / non-connection error still fails fast.
   const qdrantCheck = await (async () => {
-    try {
-      const response = await fetch(`${config.QDRANT_URL}/collections`, {
-        method: "GET",
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!response.ok) {
-        return `Qdrant returned status ${response.status}`;
+    const deadline = Date.now() + 90_000;
+    let notified = false;
+    let lastErr = `Cannot connect to Qdrant at ${config.QDRANT_URL}`;
+    for (;;) {
+      try {
+        const response = await fetch(`${config.QDRANT_URL}/collections`, {
+          method: "GET",
+          signal: AbortSignal.timeout(5000),
+        });
+        if (response.ok) return null;
+        if (response.status < 500) return `Qdrant returned status ${response.status}`;
+        lastErr = `Qdrant returned status ${response.status}`;
+      } catch (err) {
+        if (err.cause?.code === "ECONNREFUSED") lastErr = `Cannot connect to Qdrant at ${config.QDRANT_URL}`;
+        else if (err.name === "TimeoutError") lastErr = `Connection to Qdrant timed out (${config.QDRANT_URL})`;
+        else return `Qdrant error: ${err.message}`;
       }
-      return null;
-    } catch (err) {
-      if (err.cause?.code === "ECONNREFUSED") {
-        return `Cannot connect to Qdrant at ${config.QDRANT_URL}`;
+      if (Date.now() >= deadline) return lastErr;
+      if (!notified) {
+        console.log(`  ${c.dim}Qdrant is recovering shards — waiting…${c.reset}`);
+        notified = true;
       }
-      if (err.name === "TimeoutError") {
-        return `Connection to Qdrant timed out (${config.QDRANT_URL})`;
-      }
-      return `Qdrant error: ${err.message}`;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
   })();
 
