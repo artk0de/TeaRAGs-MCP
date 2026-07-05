@@ -16,6 +16,7 @@ import { join, resolve, sep } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { ChunkSignalOverlay } from "../../../../../../src/core/contracts/types/provider.js";
 import { ChunkChurnWalkThread } from "../../../../../../src/core/domains/trajectory/git/infra/churn-walk/thread.js";
 import { GitCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
@@ -104,7 +105,7 @@ function fixtureChunkMap(): Map<string, { chunkId: string; startLine: number; en
 }
 
 function freshDiscovery(): GitCommitDiscovery {
-  return new GitCommitDiscovery(repo, { maxAgeMonths: 6, timeoutMs: 120000 });
+  return new GitCommitDiscovery(new GitCliAdapter(repo), { maxAgeMonths: 6, timeoutMs: 120000 });
 }
 
 /** Deterministic serialization: sorted files, sorted chunkIds, sorted object keys. */
