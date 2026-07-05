@@ -106,5 +106,11 @@ export interface VcsAdapter {
   /** Read a blob at a revision as UTF-8; "" when the path is absent there. */
   readBlobAsString: (commitOid: string, filepath: string) => Promise<string>;
   /** Per-line HEAD attributions; empty array when blame is unavailable. */
-  blameFile: (filePath: string, timeoutMs?: number) => Promise<BlameLine[]>;
+  /**
+   * `historyDepthHint` = number of commits that touched the file (cheaply known
+   * from the numstat churn map). The es-git hybrid uses it to route deep-history
+   * files to native `git blame` (libgit2 blame stalls and balloons memory past a
+   * depth) and keep shallow ones in-process. Adapters without that split ignore it.
+   */
+  blameFile: (filePath: string, timeoutMs?: number, historyDepthHint?: number) => Promise<BlameLine[]>;
 }

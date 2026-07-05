@@ -7,7 +7,7 @@
 
 import { rmSync } from "node:fs";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { VcsAdapterFactory } from "../../../../../../src/core/adapters/vcs/factory.js";
 import type { VcsGitAdapter } from "../../../../../../src/core/adapters/vcs/git/adapter.js";
@@ -103,6 +103,50 @@ describe.skipIf(!esGitAvailable)("EsGitAdapter ⇄ GitCliAdapter equivalence —
     await expect(esGit.blameFile("no/such/file.ts")).resolves.toEqual([]);
     await expect(cli.blameFile("src/untracked.ts")).resolves.toEqual([]);
     await expect(esGit.blameFile("src/untracked.ts")).resolves.toEqual([]);
+  });
+
+  it("blameFile: DEEP-history files (hint ≥ threshold) route to native git blame; SHALLOW ones stay in-process", async () => {
+    // Depth routing, not a value pin (parity is proven above). libgit2's
+    // git_blame__like_git is O(commits × tree-diff): fine shallow, 16-124s/file
+    // + ~1GB resident past a few dozen commits on the taxdome monolith. Deep
+    // files must hit the CLI; shallow must NOT (keeps them spawn-free/light).
+    const spy = vi.spyOn(GitCliAdapter.prototype, "blameFile");
+    try {
+      // hint 100 ≥ default threshold (30) → CLI, with timeout forwarded.
+      const deep = await esGit.blameFile("src/app.ts", 7_000, 100);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith("src/app.ts", 7_000);
+      expect(deep).toEqual(await cli.blameFile("src/app.ts")); // still correct
+
+      spy.mockClear();
+      // hint 3 < threshold → in-process es-git, no spawn.
+      await esGit.blameFile("src/app.ts", 7_000, 3);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("blameFile: caps concurrent native git blame spawns (OOM guard — 10×1GB bricked a run)", async () => {
+    let active = 0;
+    let peak = 0;
+    const spy = vi.spyOn(GitCliAdapter.prototype, "blameFile").mockImplementation(async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+      return [];
+    });
+    try {
+      // 8 deep files fired at once — the gate must hold the peak at the cap (2).
+      await Promise.all(
+        Array.from({ length: 8 }, async (_, i) => esGit.blameFile(`deep${String(i)}.ts`, undefined, 500)),
+      );
+      expect(spy).toHaveBeenCalledTimes(8); // all still complete
+      expect(peak).toBeLessThanOrEqual(2); // never all-at-once
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("readBlobAsString: identical utf8 content at historical revisions", async () => {

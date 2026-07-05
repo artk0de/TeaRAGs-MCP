@@ -32,7 +32,7 @@ export abstract class VcsGitAdapter implements VcsAdapter {
     timeoutMs?: number,
   ): Promise<CommitWithChangedFiles[]>;
   abstract readBlobAsString(commitOid: string, filepath: string): Promise<string>;
-  abstract blameFile(filePath: string, timeoutMs?: number): Promise<BlameLine[]>;
+  abstract blameFile(filePath: string, timeoutMs?: number, historyDepthHint?: number): Promise<BlameLine[]>;
 
   /** Commits touching `filePaths` (git pathspec semantics), batched internally. */
   abstract getCommitsByPathspec(

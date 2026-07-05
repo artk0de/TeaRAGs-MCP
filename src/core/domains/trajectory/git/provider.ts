@@ -403,7 +403,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       while (cursor < missEntries.length) {
         const i = cursor++;
         const [relPath, churnData] = missEntries[i];
-        const lines = await adapter.blameFile(relPath, this.config.logTimeoutMs);
+        // Pass the commit count so the es-git hybrid routes deep-history files
+        // to native `git blame` (in-process libgit2 blame stalls + OOMs there).
+        const lines = await adapter.blameFile(relPath, this.config.logTimeoutMs, churnData.commits.length);
         this.blameByChurnData.set(churnData, lines);
         this.blameByRelPath.set(relPath, lines);
         const oid = oidByPath.get(relPath);

@@ -57,7 +57,9 @@ export class GitCliAdapter extends VcsGitAdapter {
     return readBlobAsString(this.repoRoot, commitOid, filepath);
   }
 
-  async blameFile(filePath: string, timeoutMs?: number): Promise<BlameLine[]> {
+  async blameFile(filePath: string, timeoutMs?: number, _historyDepthHint?: number): Promise<BlameLine[]> {
+    // The CLI adapter always shells out to native `git blame`; the depth hint is
+    // an es-git-hybrid concern (in-process vs CLI routing) with nothing to do here.
     return blameFile(this.repoRoot, filePath, timeoutMs);
   }
 
