@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,6 +10,7 @@ import { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
 import {
   QdrantOperationError,
   QdrantOptimizationInProgressError,
+  QdrantStartingError,
   QdrantUnavailableError,
 } from "../../../../src/core/adapters/qdrant/errors.js";
 import { InvalidQueryError } from "../../../../src/core/domains/explore/errors.js";
@@ -103,6 +104,63 @@ describe("QdrantManager", () => {
         url: "http://localhost:6333",
         apiKey: undefined,
       });
+    });
+  });
+
+  describe("corrupt-collection self-heal (embedded daemon bricked by a killed reindex)", () => {
+    let storage: string;
+
+    afterEach(() => {
+      if (storage) rmSync(storage, { recursive: true, force: true });
+    });
+
+    it("quarantines the panicking collection, respawns, and surfaces a RETRYABLE QdrantStartingError (not a fatal fetch-failed)", async () => {
+      storage = mkdtempSync(join(tmpdir(), "qdrant-corrupt-heal-"));
+      const shard = join(storage, "collections", "code_bad_v9", "0");
+      mkdirSync(shard, { recursive: true });
+      const neighbour = join(storage, "collections", "code_good_v1");
+      mkdirSync(neighbour, { recursive: true });
+      writeFileSync(
+        join(storage, "qdrant-crash.log"),
+        `ERROR qdrant::startup: Panic: Failed to load local shard "${shard}": Service internal error: elements range out of bounds`,
+      );
+
+      // Daemon is DEAD until the respawn (reconnect) flips it to "starting".
+      let respawned = false;
+      const reconnect = vi.fn(async () => {
+        respawned = true;
+        return "http://127.0.0.1:59999";
+      });
+      const daemon = {
+        pid: 4242,
+        storagePath: storage,
+        startupPhase: () => (respawned ? ("starting" as const) : null),
+      };
+      const mgr = new QdrantManager("http://127.0.0.1:6333", undefined, reconnect, daemon);
+      mockClient.createCollection.mockRejectedValue(new Error("fetch failed"));
+
+      // Old behaviour was a bare QdrantUnavailableError that failed the run.
+      await expect(mgr.createCollection("t", 384)).rejects.toBeInstanceOf(QdrantStartingError);
+
+      expect(reconnect).toHaveBeenCalledTimes(1); // respawned against cleaned storage
+      expect(existsSync(join(storage, "collections", "code_bad_v9"))).toBe(false); // moved aside
+      expect(existsSync(join(storage, ".corrupt"))).toBe(true); // preserved, not deleted
+      expect(existsSync(neighbour)).toBe(true); // healthy neighbour untouched
+    });
+
+    it("does NOT quarantine when the dead daemon's crash log is a plain connection error (no false positive)", async () => {
+      storage = mkdtempSync(join(tmpdir(), "qdrant-nofalse-"));
+      mkdirSync(join(storage, "collections", "code_v1"), { recursive: true });
+      writeFileSync(join(storage, "qdrant-crash.log"), "ERROR qdrant: address already in use (os error 48)");
+
+      const reconnect = vi.fn(async () => null); // respawn does not recover
+      const daemon = { pid: 1, storagePath: storage, startupPhase: () => null };
+      const mgr = new QdrantManager("http://127.0.0.1:6333", undefined, reconnect, daemon);
+      mockClient.createCollection.mockRejectedValue(new Error("fetch failed"));
+
+      await expect(mgr.createCollection("t", 384)).rejects.toBeInstanceOf(QdrantUnavailableError);
+      expect(existsSync(join(storage, "collections", "code_v1"))).toBe(true); // untouched
+      expect(existsSync(join(storage, ".corrupt"))).toBe(false);
     });
   });
 
