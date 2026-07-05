@@ -248,4 +248,17 @@ describe("file-phase single-discovery spawn counts (PATH shim)", () => {
     // Blame stays per-file, untouched by the discovery: a.ts, b.ts, c.md, d.ts.
     expect(countPrefix("blame")).toBe(4);
   });
+
+  it("CONCURRENT batches (streaming fire-and-forget) still spawn exactly ONE numstat log — single-flight", async () => {
+    // The real coordinator calls FilePhase.onBatch per embedding batch WITHOUT
+    // awaiting (fire-and-forget), so N streamFileBatch land in flight before the
+    // first repo-wide discovery resolves. If getRunDiscovery memoizes the RESULT
+    // (not the in-flight PROMISE), every racing batch sees fileDiscovery=null and
+    // spawns its OWN full-history `git log --numstat` (~1GB each on a monolith)
+    // → the 3-5GB OOM storm. Promise-memoized discovery must collapse them to one.
+    resetLog();
+    const provider = new GitEnrichmentProvider();
+    await Promise.all(BATCHES.map(async (batch) => provider.streamFileBatch(tmp, batch)));
+    expect(countPrefix("log HEAD --numstat")).toBe(1);
+  });
 });

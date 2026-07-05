@@ -89,7 +89,10 @@ const DEFAULT_PROVIDER_CONFIG: GitProviderConfig = {
 interface RunFileDiscovery {
   readonly root: string;
   readonly headSha: string;
-  readonly data: Map<string, FileChurnData>;
+  /** The in-flight (or resolved) discovery — memoized as a PROMISE, not a
+   *  resolved value, so concurrent streaming batches share ONE full-history
+   *  `git log --numstat` instead of each racing to spawn its own (~1GB). */
+  readonly data: Promise<Map<string, FileChurnData>>;
 }
 
 export class GitEnrichmentProvider implements EnrichmentProvider {
@@ -125,7 +128,10 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   /** ONE persistent `git cat-file --batch-check` process per run/root — the
    *  OID lookups that key the blame cache ride it (EDR-immune: no fresh
    *  spawns). Closed at the finalize seam. */
-  private oidReader: OidBatchResolver | null = null;
+  /** Memoized as a PROMISE (not the resolved reader) so concurrent streaming
+   *  batches share ONE `cat-file --batch-check` process instead of each spawning
+   *  and leaking its own — the same single-flight the file discovery needs. */
+  private oidReaderPromise: Promise<OidBatchResolver> | null = null;
   private oidReaderRoot: string | null = null;
 
   /** Lazy per-root VCS adapters for the run (w2dlu T6) — created on first use
@@ -261,8 +267,8 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     this.persistBlameCache();
     this.blameCache = null;
     this.blameCacheRoot = null;
-    await this.oidReader?.close().catch(() => undefined);
-    this.oidReader = null;
+    await this.oidReaderPromise?.then(async (r) => r.close()).catch(() => undefined);
+    this.oidReaderPromise = null;
     this.oidReaderRoot = null;
     // w2dlu T6: per-root adapters are run-scoped — drop them with the run so
     // a later run re-creates fresh instances (matters once adapters hold
@@ -282,8 +288,20 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     if (this.fileDiscovery?.root === root && this.fileDiscovery.headSha === headSha) {
       return this.fileDiscovery.data;
     }
-    const data = await buildFileSignalDiscovery(adapter, this.config.logTimeoutMs);
+    // Store the PROMISE synchronously — before awaiting the full-history
+    // `git log --numstat` (minutes, ~1GB stdout on a monolith). The coordinator
+    // fires streamFileBatch per embedding batch WITHOUT awaiting, so dozens land
+    // in flight before the first discovery resolves; memoizing the resolved
+    // value (the old code) let every one spawn its own numstat log → 3-5GB OOM.
+    // This is the single-flight of adapterFor / GitCommitDiscovery.matrixPromise.
+    const data = buildFileSignalDiscovery(adapter, this.config.logTimeoutMs);
     this.fileDiscovery = { root, headSha, data };
+    // A transient discovery failure must not poison the whole run: drop the
+    // cache on rejection so a LATER (non-concurrent) batch can retry, while the
+    // batches already racing this one still shared it (no retry storm).
+    data.catch(() => {
+      if (this.fileDiscovery?.data === data) this.fileDiscovery = null;
+    });
     return data;
   }
 
@@ -434,12 +452,16 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  today's blame-everything behavior; blame stays best-effort. */
   private async resolveHeadOids(root: string, relPaths: string[]): Promise<Map<string, string | null>> {
     try {
-      if (this.oidReaderRoot !== root || !this.oidReader) {
-        await this.oidReader?.close().catch(() => undefined);
-        this.oidReader = (await this.adapterFor(root)).createOidBatchResolver();
+      if (this.oidReaderRoot !== root || !this.oidReaderPromise) {
+        // Close a stale (root-switched) reader out of band; set the new creation
+        // PROMISE synchronously — before any await — so concurrent batches share
+        // it instead of each spawning a `cat-file --batch-check`.
+        const stale = this.oidReaderRoot !== root ? this.oidReaderPromise : null;
         this.oidReaderRoot = root;
+        this.oidReaderPromise = this.adapterFor(root).then((a) => a.createOidBatchResolver());
+        void stale?.then(async (r) => r.close()).catch(() => undefined);
       }
-      const reader = this.oidReader;
+      const reader = await this.oidReaderPromise;
       const oids = await Promise.all(relPaths.map(async (rel) => reader.check(`HEAD:${rel}`)));
       const result = new Map<string, string | null>();
       relPaths.forEach((rel, i) => result.set(rel, oids[i]));
