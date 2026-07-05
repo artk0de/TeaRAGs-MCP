@@ -252,10 +252,10 @@ function wireComposition(
   const squashOpts = trajectoryConfig.squashAwareSessions
     ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
     : undefined;
-  // Git runs INLINE (no workerDescriptor) — WorkerPoolEnrichmentExecutor detects
-  // the missing descriptor and falls through to InlineEnrichmentExecutor, which
-  // calls provider.buildFileSignals/buildChunkSignals directly in-process on the
-  // single composition-root instance. Blame cache reuse is automatic (same
+  // Git enrichment DISPATCH runs INLINE (no workerDescriptor) — WorkerPoolEnrichmentExecutor
+  // detects the missing descriptor and falls through to InlineEnrichmentExecutor,
+  // which calls provider.buildFileSignals/buildChunkSignals directly in-process on
+  // the single composition-root instance. Blame cache reuse is automatic (same
   // instance), postMessage serialization overhead is zero.
   //
   // Live evidence (taxdome reindex): collection-affinity pinned git to 1 worker,
@@ -263,7 +263,14 @@ function wireComposition(
   // cost is dominated by walkCommits (git log + cat-file + structuredPatch), not
   // blame — blame reuse gave no per-apply speedup while worker-pool dispatch
   // overhead (postMessage chunkMap/results per batch) was measurable. Inline
-  // is origin/main behavior and is the correct path.
+  // dispatch is origin/main behavior and is the correct path.
+  //
+  // The two main-thread hazards inside that inline dispatch are OFF-loaded by the
+  // provider itself, not by this executor choice: the chunk-churn WALK runs in a
+  // dedicated worker thread (iqpuu), and the FILE-phase SYNC es-git blame — the
+  // cold-reindex event-loop stall — fans out across GitEnrichmentProvider's own
+  // BlameWorkerPool for shallow files while deep blames stay on main's async CLI
+  // (bd tea-rags-mcp-dog1v).
   const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition({
     // w2dlu T6: the provider builds its per-root VcsGitAdapter from this kind.
     git: { config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter }, squashOpts },
