@@ -117,7 +117,7 @@ export const trajectoryGitSchema = z.object({
   // Floored at the default: a sub-default env value is ignored so the env can
   // only RAISE git chunk walk parallelism, never silently halve it (bd f2jsb:
   // a stale env block pinned 5 vs the code default 10 across every CLI run).
-  chunkConcurrency: intWithDefault(10).transform((v) => Math.max(v, 10)),
+  chunkConcurrency: intWithDefault(10),
   chunkMaxAgeMonths: floatWithDefault(6),
   chunkTimeoutMs: intWithDefault(120000),
   chunkMaxFileLines: intWithDefault(10000),
