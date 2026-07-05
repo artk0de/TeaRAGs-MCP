@@ -85,6 +85,7 @@ export function parseAppConfig(): AppConfig {
         logMaxAgeMonths: zodConfig.trajectoryGit.logMaxAgeMonths,
         logTimeoutMs: zodConfig.trajectoryGit.logTimeoutMs,
         chunkConcurrency: zodConfig.trajectoryGit.chunkConcurrency,
+        blamePoolSize: zodConfig.trajectoryGit.blamePoolSize,
         chunkMaxAgeMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
         chunkTimeoutMs: zodConfig.trajectoryGit.chunkTimeoutMs,
         chunkMaxFileLines: zodConfig.trajectoryGit.chunkMaxFileLines,

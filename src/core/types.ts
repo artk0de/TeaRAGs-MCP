@@ -28,6 +28,7 @@ export interface TrajectoryIngestConfig {
     logMaxAgeMonths: number;
     logTimeoutMs: number;
     chunkConcurrency: number;
+    blamePoolSize: number;
     chunkMaxAgeMonths: number;
     chunkTimeoutMs: number;
     chunkMaxFileLines: number;

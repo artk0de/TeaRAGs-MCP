@@ -62,7 +62,7 @@ function envPositiveInt(key: string, fallback: number): number {
 /** Commit-count at/above which a file's blame goes to native `git blame`
  *  instead of in-process es-git — past a few dozen commits libgit2's blame both
  *  stalls (16-124s) and balloons memory. Env-tunable. */
-const BLAME_CLI_MIN_COMMITS = envPositiveInt("TRAJECTORY_GIT_BLAME_CLI_MIN_COMMITS", 30);
+export const BLAME_CLI_MIN_COMMITS = envPositiveInt("TRAJECTORY_GIT_BLAME_CLI_MIN_COMMITS", 30);
 /** Max concurrent native `git blame` spawns. Each resident-sets ~1GB on a
  *  deep-history monolith file; 10 in parallel OOM-killed a run, so cap it low.
  *  Shallow in-process blames are unbounded by this. Env-tunable. */

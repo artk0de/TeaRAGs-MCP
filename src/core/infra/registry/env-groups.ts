@@ -52,6 +52,7 @@ export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
   { canonical: "TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS", aliases: ["GIT_LOG_MAX_AGE_MONTHS"] },
   { canonical: "TRAJECTORY_GIT_LOG_TIMEOUT_MS", aliases: ["GIT_LOG_TIMEOUT_MS"] },
   { canonical: "TRAJECTORY_GIT_CHUNK_CONCURRENCY", aliases: ["GIT_CHUNK_CONCURRENCY"] },
+  { canonical: "TRAJECTORY_GIT_BLAME_POOL_SIZE", aliases: [] },
   { canonical: "TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS", aliases: ["GIT_CHUNK_MAX_AGE_MONTHS"] },
   { canonical: "TRAJECTORY_GIT_CHUNK_TIMEOUT_MS", aliases: ["GIT_CHUNK_TIMEOUT_MS"] },
   { canonical: "TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES", aliases: ["GIT_CHUNK_MAX_FILE_LINES"] },

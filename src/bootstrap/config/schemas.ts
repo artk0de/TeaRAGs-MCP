@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 import { defaultChunkerPoolSize } from "../../core/domains/ingest/pipeline/infra/pool-defaults.js";
+import { defaultBlamePoolSize } from "../../core/domains/trajectory/git/infra/churn-walk/blame-pool-defaults.js";
 import {
   booleanFromEnv,
   booleanFromEnvWithDefault,
@@ -118,6 +119,9 @@ export const trajectoryGitSchema = z.object({
   // only RAISE git chunk walk parallelism, never silently halve it (bd f2jsb:
   // a stale env block pinned 5 vs the code default 10 across every CLI run).
   chunkConcurrency: intWithDefault(10),
+  // FILE-phase blame worker-pool size (off-main-thread es-git blame). CPU-
+  // parallelism axis; default min(4, cpus-1). Env: TRAJECTORY_GIT_BLAME_POOL_SIZE.
+  blamePoolSize: intWithDefault(defaultBlamePoolSize()),
   chunkMaxAgeMonths: floatWithDefault(6),
   chunkTimeoutMs: intWithDefault(120000),
   chunkMaxFileLines: intWithDefault(10000),

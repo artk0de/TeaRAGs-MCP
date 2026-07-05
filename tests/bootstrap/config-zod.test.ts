@@ -671,6 +671,14 @@ describe("parseAppConfigZod — trajectoryGit", () => {
     expect(trajectoryGit.chunkMaxFileLines).toBe(10000);
     expect(trajectoryGit.squashAwareSessions).toBe(false);
     expect(trajectoryGit.sessionGapMinutes).toBe(30);
+    expect(trajectoryGit.blamePoolSize).toBeGreaterThanOrEqual(1);
+    expect(trajectoryGit.blamePoolSize).toBeLessThanOrEqual(4);
+  });
+
+  it("TRAJECTORY_GIT_BLAME_POOL_SIZE overrides the blame worker-pool size", async () => {
+    process.env.TRAJECTORY_GIT_BLAME_POOL_SIZE = "8";
+    const { parseAppConfigZod } = await freshImport();
+    expect(parseAppConfigZod().trajectoryGit.blamePoolSize).toBe(8);
   });
 
   it("TRAJECTORY_GIT_ENABLED falls back from CODE_ENABLE_GIT_METADATA", async () => {

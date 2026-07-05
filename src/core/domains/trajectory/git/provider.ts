@@ -41,6 +41,7 @@ import { GitBlameStore } from "./infra/blame-store.js";
 import { relativizeChunkMap } from "./infra/build-accumulators.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
+import { defaultBlamePoolSize } from "./infra/churn-walk/blame-pool-defaults.js";
 import { ChunkChurnWalkThread } from "./infra/churn-walk/thread.js";
 import { GitCommitDiscoveryStore } from "./infra/commit-discovery-store.js";
 import { GitCommitDiscovery } from "./infra/commit-discovery.js";
@@ -62,7 +63,13 @@ import type { ChunkChurnOverlay } from "./types.js";
  *  VCS adapter kind (`config.vcs.adapter`) the per-root adapters are built with. */
 export type GitProviderConfig = Pick<
   TrajectoryGitConfig,
-  "logMaxAgeMonths" | "logTimeoutMs" | "chunkConcurrency" | "chunkMaxAgeMonths" | "chunkTimeoutMs" | "chunkMaxFileLines"
+  | "logMaxAgeMonths"
+  | "logTimeoutMs"
+  | "chunkConcurrency"
+  | "blamePoolSize"
+  | "chunkMaxAgeMonths"
+  | "chunkTimeoutMs"
+  | "chunkMaxFileLines"
 > & {
   /** GIT_ADAPTER kind for VcsAdapterFactory — structured-clone-safe literal. */
   vcsAdapter: GitAdapterKind;
@@ -72,6 +79,7 @@ const DEFAULT_PROVIDER_CONFIG: GitProviderConfig = {
   logMaxAgeMonths: 12,
   logTimeoutMs: 60000,
   chunkConcurrency: 10,
+  blamePoolSize: defaultBlamePoolSize(),
   chunkMaxAgeMonths: 6,
   chunkTimeoutMs: 120000,
   chunkMaxFileLines: 10000,

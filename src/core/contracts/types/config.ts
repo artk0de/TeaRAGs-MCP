@@ -43,6 +43,8 @@ export interface TrajectoryGitConfig {
   chunkMaxAgeMonths: number;
   chunkTimeoutMs: number;
   chunkMaxFileLines: number;
+  /** FILE-phase off-main-thread blame worker-pool size (bd tea-rags-mcp-dog1v). */
+  blamePoolSize: number;
   squashAwareSessions: boolean;
   sessionGapMinutes: number;
 }
