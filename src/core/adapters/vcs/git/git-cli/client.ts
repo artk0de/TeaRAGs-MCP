@@ -14,6 +14,7 @@ import { promisify } from "node:util";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { BlameLine, CommitInfo, FileChurnData } from "../../types.js";
 import { parseBlameOutput, parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
+import { execWithStallGuard } from "./stall-guard-exec.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -40,14 +41,13 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, message: s
 
 // ── CLI primitives ───────────────────────────────────────────────
 
-/** Run `git log` with pathspec filtering, return raw stdout. */
+/**
+ * Run `git log` with pathspec filtering, return raw stdout. The timeout is an
+ * output-INACTIVITY window (stall guard), not a total-duration cap — a
+ * long-but-streaming log completes; a hung spawn is reaped.
+ */
 export async function execFileForPathspec(repoRoot: string, args: string[], timeoutMs: number): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, {
-    cwd: repoRoot,
-    maxBuffer: Infinity,
-    timeout: timeoutMs,
-  });
-  return stdout;
+  return execWithStallGuard("git", args, { cwd: repoRoot, stallTimeoutMs: timeoutMs });
 }
 
 /** Build CLI args for `git log --numstat`. Uses HEAD (not --all), no --max-count. */
@@ -77,17 +77,24 @@ export function resolveRepoRoot(absolutePath: string): string {
   }
 }
 
-/** Run CLI `git log --numstat` and parse output into FileChurnData map. */
+/**
+ * Run CLI `git log --numstat` and parse output into FileChurnData map.
+ *
+ * `timeoutMs` is an output-INACTIVITY window (stall guard), not a total cap:
+ * the UNBOUNDED (no --since) full-history sweep on a large monolith streams
+ * for minutes (taxdome: 104MB / 122.9s) and used to get SIGTERM'd at the 60s
+ * execFile budget — failing the whole git enrichment while the spawn was
+ * perfectly alive (tea-rags-mcp-w2dlu).
+ */
 export async function buildViaCli(
   repoRoot: string,
   sinceDate?: Date,
   timeoutMs?: number,
 ): Promise<Map<string, FileChurnData>> {
   const args = buildCliArgs(sinceDate);
-  const { stdout } = await execFileAsync("git", args, {
+  const stdout = await execWithStallGuard("git", args, {
     cwd: repoRoot,
-    maxBuffer: Infinity,
-    timeout: timeoutMs,
+    stallTimeoutMs: timeoutMs ?? 60_000,
   });
   return parseNumstatOutput(stdout);
 }
