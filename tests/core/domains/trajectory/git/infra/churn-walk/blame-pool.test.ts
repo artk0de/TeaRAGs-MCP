@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { VcsAdapterFactory } from "../../../../../../../src/core/adapters/vcs/factory.js";
 import { BlameWorkerPool } from "../../../../../../../src/core/domains/trajectory/git/infra/churn-walk/blame-pool.js";
+import { GitEnrichmentProvider } from "../../../../../../../src/core/domains/trajectory/git/provider.js";
 
 const TMP_BASE = realpathSync(tmpdir());
 let repo: string;
@@ -74,4 +75,21 @@ describe("BlameWorkerPool", () => {
     expect(result.size).toBe(0);
     await pool.close();
   });
+});
+
+describe("GitEnrichmentProvider file-phase blame through the real pool", () => {
+  it("enriches a batch end-to-end via off-thread es-git workers, then finalizes clean", async () => {
+    // Integration counterpart to the unit equivalence above: drive the REAL
+    // provider file phase (not mocked) so shallow files blame in actual
+    // worker_threads, and confirm the wiring spawns, blames, and tears down.
+    const provider = new GitEnrichmentProvider({ vcsAdapter: "es-git" });
+    try {
+      const overlays = await provider.streamFileBatch(repo, ["a.ts", "b.ts"]);
+      expect(overlays.size).toBe(2);
+      expect(overlays.has("a.ts")).toBe(true);
+      expect(overlays.has("b.ts")).toBe(true);
+    } finally {
+      await provider.finalizeSignals();
+    }
+  }, 30000);
 });

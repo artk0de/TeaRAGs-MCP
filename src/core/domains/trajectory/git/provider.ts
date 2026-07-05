@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { VcsAdapterFactory } from "../../../adapters/vcs/factory.js";
 import type { VcsGitAdapter } from "../../../adapters/vcs/git/adapter.js";
+import { BLAME_CLI_MIN_COMMITS } from "../../../adapters/vcs/git/es-git/adapter.js";
 import { resolveRepoRoot } from "../../../adapters/vcs/git/git-cli/client.js";
 import type {
   BlameLine,
@@ -42,6 +43,7 @@ import { relativizeChunkMap } from "./infra/build-accumulators.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
 import { defaultBlamePoolSize } from "./infra/churn-walk/blame-pool-defaults.js";
+import { BlameWorkerPool } from "./infra/churn-walk/blame-pool.js";
 import { ChunkChurnWalkThread } from "./infra/churn-walk/thread.js";
 import { GitCommitDiscoveryStore } from "./infra/commit-discovery-store.js";
 import { GitCommitDiscovery } from "./infra/commit-discovery.js";
@@ -133,6 +135,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   private blameCache: Map<string, { oid: string; lines: BlameLine[] }> | null = null;
   private blameCacheRoot: string | null = null;
   private blameCacheDirty = false;
+  /** FILE-phase off-main-thread blame pool (bd tea-rags-mcp-dog1v). Lazily
+   *  spawned on the first shallow cache-miss, closed at the finalize seam. */
+  private blamePool?: BlameWorkerPool;
   /** ONE persistent `git cat-file --batch-check` process per run/root — the
    *  OID lookups that key the blame cache ride it (EDR-immune: no fresh
    *  spawns). Closed at the finalize seam. */
@@ -278,6 +283,10 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     await this.oidReaderPromise?.then(async (r) => r.close()).catch(() => undefined);
     this.oidReaderPromise = null;
     this.oidReaderRoot = null;
+    // Close the FILE-phase blame pool — its workers hold their own es-git repo
+    // handles; drop them with the run (dog1v).
+    await this.blamePool?.close().catch(() => undefined);
+    this.blamePool = undefined;
     // w2dlu T6: per-root adapters are run-scoped — drop them with the run so
     // a later run re-creates fresh instances (matters once adapters hold
     // native repo handles, e.g. es-git).
@@ -423,27 +432,55 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       }
     }
 
-    const concurrency = Math.max(this.config.chunkConcurrency, 1);
-    let cursor = 0;
-    const worker = async (): Promise<void> => {
-      while (cursor < missEntries.length) {
-        const i = cursor++;
-        const [relPath, churnData] = missEntries[i];
-        // Pass the commit count so the es-git hybrid routes deep-history files
-        // to native `git blame` (in-process libgit2 blame stalls + OOMs there).
-        const lines = await adapter.blameFile(relPath, this.config.logTimeoutMs, churnData.commits.length);
-        this.blameByChurnData.set(churnData, lines);
-        this.blameByRelPath.set(relPath, lines);
-        const oid = oidByPath.get(relPath);
-        // Cache only non-empty results: [] can be a transient blame failure
-        // (blameFile swallows errors) — pinning it would freeze the failure.
-        if (oid && lines.length > 0) {
-          cache.set(relPath, { oid, lines });
-          this.blameCacheDirty = true;
-        }
+    // Partition cache misses by history depth. Shallow files go to the
+    // off-main-thread blame pool (sync in-process es-git blame is the event-loop
+    // stall — real parallelism needs threads, not async fan-out on one thread).
+    // Deep files stay on main: their blame already routes to the async CLI
+    // (non-blocking, capped in the adapter), so it never stalled embedding.
+    const shallowMisses: [string, FileChurnData][] = [];
+    const deepMisses: [string, FileChurnData][] = [];
+    for (const entry of missEntries) {
+      (entry[1].commits.length >= BLAME_CLI_MIN_COMMITS ? deepMisses : shallowMisses).push(entry);
+    }
+
+    const recordBlame = (relPath: string, churnData: FileChurnData, lines: BlameLine[]): void => {
+      this.blameByChurnData.set(churnData, lines);
+      this.blameByRelPath.set(relPath, lines);
+      const oid = oidByPath.get(relPath);
+      // Cache only non-empty results: [] can be a transient blame failure
+      // (blameFile swallows errors) — pinning it would freeze the failure.
+      if (oid && lines.length > 0) {
+        cache.set(relPath, { oid, lines });
+        this.blameCacheDirty = true;
       }
     };
-    await Promise.all(Array.from({ length: Math.min(concurrency, missEntries.length) }, worker));
+
+    if (shallowMisses.length > 0) {
+      const blameByPath = await this.ensureBlamePool().blame(
+        root,
+        this.config.vcsAdapter,
+        shallowMisses.map(([relPath, churnData]) => ({ relPath, historyDepthHint: churnData.commits.length })),
+        this.config.logTimeoutMs,
+      );
+      for (const [relPath, churnData] of shallowMisses) {
+        recordBlame(relPath, churnData, blameByPath.get(relPath) ?? []);
+      }
+    }
+
+    if (deepMisses.length > 0) {
+      // Deep blame stays on main but is async (CLI child process, capped in the
+      // adapter) — keep the same bounded fan-out the inline path used.
+      const concurrency = Math.max(this.config.chunkConcurrency, 1);
+      let cursor = 0;
+      const deepWorker = async (): Promise<void> => {
+        while (cursor < deepMisses.length) {
+          const [relPath, churnData] = deepMisses[cursor++];
+          const lines = await adapter.blameFile(relPath, this.config.logTimeoutMs, churnData.commits.length);
+          recordBlame(relPath, churnData, lines);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(concurrency, deepMisses.length) }, deepWorker));
+    }
 
     options?.onBlameStats?.({
       files: entries.length,
@@ -488,6 +525,12 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     this.blameCacheRoot = root;
     this.blameCacheDirty = false;
     return this.blameCache;
+  }
+
+  /** Lazily spawn (or reuse) the run's FILE-phase blame worker pool. */
+  private ensureBlamePool(): BlameWorkerPool {
+    this.blamePool ??= new BlameWorkerPool(this.config.blamePoolSize);
+    return this.blamePool;
   }
 
   /** Persist the in-memory blame cache iff it has unsaved entries. */

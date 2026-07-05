@@ -57,12 +57,36 @@ vi.mock("../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js", 
   buildChunkChurnMap: vi.fn().mockResolvedValue(new Map()),
 }));
 
+// The FILE-phase blame pool (bd tea-rags-mcp-dog1v). Mocked so unit tests never
+// spawn worker_threads: the spy DELEGATES to the same git-cli `blameFile` mock
+// the inline path used, so every existing blame assertion holds unchanged — the
+// pool is just the new transport for shallow-history files.
+const { blamePoolBlame } = vi.hoisted(() => ({ blamePoolBlame: vi.fn() }));
+vi.mock("../../../../../src/core/domains/trajectory/git/infra/churn-walk/blame-pool.js", () => ({
+  // Regular function (not arrow) so `new BlameWorkerPool(size)` works — the
+  // returned object is the instance; `blame` is the shared, delegating spy.
+  BlameWorkerPool: vi.fn(function () {
+    return { blame: blamePoolBlame, close: vi.fn().mockResolvedValue(undefined) };
+  }),
+}));
+
 describe("GitEnrichmentProvider", () => {
   let provider: GitEnrichmentProvider;
 
   beforeEach(() => {
     provider = new GitEnrichmentProvider();
     vi.mocked(nodeFs.existsSync).mockReturnValue(false);
+    // Delegate the pool to the git-cli `blameFile` mock (root, relPath, timeoutMs)
+    // so shallow-file blame is driven by each test's blameFile mock, exactly as
+    // the inline path was — existing assertions on blameFile stay valid.
+    blamePoolBlame.mockReset();
+    blamePoolBlame.mockImplementation(
+      async (root: string, _kind: string, files: { relPath: string }[], timeoutMs: number) => {
+        const map = new Map<string, unknown>();
+        for (const { relPath } of files) map.set(relPath, await blameFile(root, relPath, timeoutMs));
+        return map;
+      },
+    );
   });
 
   it("has key 'git'", () => {
@@ -163,6 +187,28 @@ describe("GitEnrichmentProvider", () => {
       expect(blameByPathArg.get("src/a.ts")).toEqual([blameLineA]);
       expect(blameByPathArg.get("src/b.ts")).toEqual([blameLineB]);
       expect(blameByPathArg.get("src/c.ts")).toEqual([blameLineC]);
+    });
+
+    it("routes shallow-history misses to the blame pool and keeps deep ones off it", async () => {
+      // bd tea-rags-mcp-dog1v: shallow files (< BLAME_CLI_MIN_COMMITS) blame in
+      // the off-main-thread pool; deep files stay on main's async CLI, never
+      // reaching the pool (so a deep-history file cannot pin a worker thread).
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      const shallow = { commits: Array.from({ length: 3 }, (_, i) => ({ hash: `s${i}` })), recentAuthors: [] };
+      const deep = { commits: Array.from({ length: 40 }, (_, i) => ({ hash: `d${i}` })), recentAuthors: [] };
+      vi.mocked(buildFileSignalMap).mockResolvedValue(
+        new Map([
+          ["shallow.ts", shallow],
+          ["deep.ts", deep],
+        ]) as any,
+      );
+
+      await provider.buildFileSignals("/repo");
+
+      expect(blamePoolBlame).toHaveBeenCalledTimes(1);
+      const poolFiles = blamePoolBlame.mock.calls[0][2] as { relPath: string }[];
+      expect(poolFiles.map((f) => f.relPath)).toEqual(["shallow.ts"]);
+      expect(poolFiles.map((f) => f.relPath)).not.toContain("deep.ts");
     });
 
     it("releases blameByRelPath after chunk enrichment (bounded retention)", async () => {
