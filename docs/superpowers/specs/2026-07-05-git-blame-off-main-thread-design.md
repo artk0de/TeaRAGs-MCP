@@ -109,6 +109,61 @@ did NOT take.)
 The rest of the design is transport-agnostic; only the pool's transport is now
 pinned to threads.
 
+## Design refinement (post-seam-analysis, 2026-07-05)
+
+A full seam trace (`git grep '\.blameFile('`, provider/chunk-phase/chunk-reader
+read) sharpened the design. The intent is unchanged (sync es-git blame off the
+main thread, on a pooled worker infra, hybrid routing preserved) but three facts
+narrow the mechanism from "pool the churn-walk WALK worker" to something smaller
+and lower-risk:
+
+1. **The stall is the FILE phase, and only the SHALLOW in-process blame.**
+   `adapter.blameFile` has exactly ONE consumer: `populateBlameMap`
+   (provider.ts:426), on the FILE phase (`buildSignalsFromRawData`, driven by
+   `streamFileBatch` / `buildFileSignals`). Inside `EsGitAdapter.blameFile`,
+   only the SHALLOW route (`blameFileInProcess`, sync napi) blocks the event
+   loop; the DEEP route already goes to the async CLI (`cliBlameSemaphore`,
+   `execFile` — non-blocking). So only shallow in-process blame needs a thread.
+
+2. **The chunk WALK is already off-thread and does NOT compute blame.**
+   `walkChunkChurnOffThread` (provider.ts:566) ships to the ChunkPhase-owned
+   `ChunkChurnWalkThread` and RECEIVES precomputed blame via `blameByPath`
+   (sliced from `blameByRelPath`, populated by the file phase). Pooling the walk
+   is unnecessary (it is not the stall) and would risk the shipped iqpuu path.
+   **The walk is left untouched.**
+
+3. **The blame cache stays entirely on main → A3 simplifies.** `resolveHeadOids`
+   (one persistent `cat-file --batch-check`, EDR-immune), `ensureBlameCache`
+   (load), and `persistBlameCache` (write at `finalizeSignals`) are cheap and
+   already on main, which holds `oidByPath`. Workers return only blame lines;
+   MAIN pairs them with the oids it already has and writes cache entries — the
+   single-writer discipline is automatic, no worker-returned "dirty entries".
+
+**Refined mechanism:**
+
+- A **provider-owned `BlameWorkerPool`** (N `worker_threads`, reuses the
+  churn-walk `worker.js` via a new `type: "blame"` job) — provider-owned because
+  the FILE phase (where blame runs) has no access to the ChunkPhase-owned walk
+  thread, and the provider already owns lazy run-scoped resources torn down in
+  `finalizeSignals` (`vcsAdapters`, `oidReaderPromise`, `blameCache`,
+  `fileDiscovery`) — the pool mirrors that lifecycle.
+- **Main partitions misses by depth** (`BLAME_CLI_MIN_COMMITS`, default 30):
+  SHALLOW → the pool (in-process es-git, parallel across N threads — the win);
+  DEEP → main-thread `adapter.blameFile` (async CLI, already non-blocking, cap
+  2). Workers therefore do ONLY in-process blame → zero CLI spawns in workers →
+  total `git blame` concurrency stays exactly the main adapter's cap (2),
+  closing risk #2 (no N×2 CLI OOM).
+- Pool size from a new `blamePoolSize` config (default `min(4, cpus-1)`, env
+  `TRAJECTORY_GIT_BLAME_POOL_SIZE`) — the CPU-parallelism axis, independent of
+  `chunkConcurrency` (which was async fan-out on ONE thread — no real
+  parallelism for sync blame, which is why inline stalled).
+
+The Data flow / Components sections below describe the original "blame in the
+walk worker" framing; where they conflict with this refinement, the refinement
+governs. The implementation plan
+(`docs/superpowers/plans/2026-07-05-git-blame-off-main-thread.md`) is authored
+to the refinement.
+
 ## Data flow (target)
 
 1. **Main** (per embedding batch, `streamFileBatch`): ensure the run discovery
