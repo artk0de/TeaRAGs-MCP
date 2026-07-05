@@ -41,6 +41,29 @@ describe("execWithStallGuard", () => {
     ).rejects.toThrow(/boom detail/);
   });
 
+  it("survives a long SYNCHRONOUS event-loop block while the child keeps streaming", async () => {
+    // Taxdome regression: es-git blame runs as SYNC NAPI calls on the same
+    // thread that owns this guard. A >window loop block queues the child's
+    // 'data' events in the poll phase, but expired timers fire FIRST — the
+    // guard used to kill a perfectly-alive `git log` as "stalled". The
+    // setImmediate re-check runs AFTER the poll phase, sees the fresh data
+    // timestamps, and re-arms instead of killing.
+    const script = "let i=0; const t=setInterval(()=>{console.log('line '+i); if(++i>=25){clearInterval(t);}},50);";
+    const pending = execWithStallGuard(process.execPath, ["-e", script], {
+      cwd: process.cwd(),
+      stallTimeoutMs: 400,
+    });
+    // Give the child time to start emitting, then block OUR loop well past
+    // the stall window while it keeps streaming into the pipe.
+    await new Promise((r) => setTimeout(r, 150));
+    const blockUntil = Date.now() + 700;
+    while (Date.now() < blockUntil) {
+      /* synchronous busy-wait — simulates a long sync NAPI blame call */
+    }
+    const stdout = await pending;
+    expect(stdout).toContain("line 24");
+  }, 10_000);
+
   it("resolves the full concatenated stdout for a fast command", async () => {
     const stdout = await execWithStallGuard(process.execPath, ["-e", "process.stdout.write('a\\nb\\nc')"], {
       cwd: process.cwd(),

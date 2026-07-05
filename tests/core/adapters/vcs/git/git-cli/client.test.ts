@@ -4,13 +4,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   blameFile,
+  buildViaCli,
+  execFileForPathspec,
   getCommitsByPathspec,
   getCommitsByPathspecBatched,
   getCommitsInRange,
   isAncestor,
   resolveRepoRoot,
 } from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
-import { parseBlameOutput, parsePathspecOutput } from "../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js";
+import {
+  parseBlameOutput,
+  parseNumstatOutput,
+  parsePathspecOutput,
+} from "../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js";
 import { execWithStallGuard } from "../../../../../../src/core/adapters/vcs/git/git-cli/stall-guard-exec.js";
 import type { BlameLine, CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 
@@ -174,6 +180,40 @@ describe("getCommitsByPathspecBatched", () => {
     expect(result).toEqual([]);
 
     vi.restoreAllMocks();
+  });
+});
+
+describe("bulk log stall-window floor (taxdome: a giant commit's numstat is legitimately silent >60s)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("buildViaCli floors the stall window at 10 minutes even when callers pass the 60s log timeout", async () => {
+    mockExecFileResolving("stdout");
+    (parseNumstatOutput as unknown as ReturnType<typeof vi.fn>).mockReturnValue(new Map());
+    await buildViaCli("/fake/repo", undefined, 60_000);
+    const opts = (execWithStallGuard as unknown as ReturnType<typeof vi.fn>).mock.calls[0][2] as {
+      stallTimeoutMs: number;
+    };
+    expect(opts.stallTimeoutMs).toBeGreaterThanOrEqual(600_000);
+  });
+
+  it("execFileForPathspec floors the stall window the same way", async () => {
+    mockExecFileResolving("stdout");
+    await execFileForPathspec("/fake/repo", ["log", "--numstat"], 120_000);
+    const opts = (execWithStallGuard as unknown as ReturnType<typeof vi.fn>).mock.calls[0][2] as {
+      stallTimeoutMs: number;
+    };
+    expect(opts.stallTimeoutMs).toBeGreaterThanOrEqual(600_000);
+  });
+
+  it("a caller-provided window ABOVE the floor is respected", async () => {
+    mockExecFileResolving("stdout");
+    await execFileForPathspec("/fake/repo", ["log", "--numstat"], 1_200_000);
+    const opts = (execWithStallGuard as unknown as ReturnType<typeof vi.fn>).mock.calls[0][2] as {
+      stallTimeoutMs: number;
+    };
+    expect(opts.stallTimeoutMs).toBe(1_200_000);
   });
 });
 

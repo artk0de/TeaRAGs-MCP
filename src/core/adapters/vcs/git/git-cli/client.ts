@@ -42,12 +42,25 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, message: s
 // ── CLI primitives ───────────────────────────────────────────────
 
 /**
+ * A bulk `git log` can be legitimately SILENT for minutes while staying
+ * alive: computing --numstat for one giant commit (vendored tree import,
+ * repo-wide migration) emits nothing until that diff finishes — taxdome got
+ * a real 60s+ gap mid-stream. The stall window exists to reap HUNGS, so it
+ * is floored well above any legitimate thinking pause; caller-provided
+ * windows can only RAISE it.
+ */
+const BULK_LOG_STALL_FLOOR_MS = 600_000;
+
+/**
  * Run `git log` with pathspec filtering, return raw stdout. The timeout is an
  * output-INACTIVITY window (stall guard), not a total-duration cap — a
  * long-but-streaming log completes; a hung spawn is reaped.
  */
 export async function execFileForPathspec(repoRoot: string, args: string[], timeoutMs: number): Promise<string> {
-  return execWithStallGuard("git", args, { cwd: repoRoot, stallTimeoutMs: timeoutMs });
+  return execWithStallGuard("git", args, {
+    cwd: repoRoot,
+    stallTimeoutMs: Math.max(timeoutMs, BULK_LOG_STALL_FLOOR_MS),
+  });
 }
 
 /** Build CLI args for `git log --numstat`. Uses HEAD (not --all), no --max-count. */
@@ -94,7 +107,7 @@ export async function buildViaCli(
   const args = buildCliArgs(sinceDate);
   const stdout = await execWithStallGuard("git", args, {
     cwd: repoRoot,
-    stallTimeoutMs: timeoutMs ?? 60_000,
+    stallTimeoutMs: Math.max(timeoutMs ?? 60_000, BULK_LOG_STALL_FLOOR_MS),
   });
   return parseNumstatOutput(stdout);
 }
