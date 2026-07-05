@@ -1,6 +1,7 @@
 /**
  * Churn-walk worker thread entry (bd tea-rags-mcp-iqpuu) — compiled to
- * build/.../churn-walk/worker.js and spawned by ChunkChurnWalkThread.
+ * build/.../churn-walk/worker.js and spawned by ChunkChurnWalkPool (walk jobs)
+ * and BlameWorkerPool (blame jobs).
  *
  * Owns the WHOLE walk pipeline off the ingest main thread: per-batch jobs
  * arrive fully serialized (protocol.ts) and the worker runs

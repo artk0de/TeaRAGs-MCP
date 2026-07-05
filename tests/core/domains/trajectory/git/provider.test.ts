@@ -9,7 +9,7 @@ import {
   getHead,
 } from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import { buildChunkChurnMap } from "../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
-import { ChunkChurnWalkThread } from "../../../../../src/core/domains/trajectory/git/infra/churn-walk/thread.js";
+import { ChunkChurnWalkPool } from "../../../../../src/core/domains/trajectory/git/infra/churn-walk/walk-pool.js";
 import { GitCommitDiscovery } from "../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
 import {
   buildFileSignalDiscovery,
@@ -465,11 +465,11 @@ describe("GitEnrichmentProvider", () => {
       expect(discovery).toBeInstanceOf(GitCommitDiscovery);
     });
 
-    it("createChunkChurnWalkThread builds a fresh worker-thread host per call", () => {
+    it("createChunkChurnWalkThread builds a fresh worker-pool host per call", () => {
       const threadA = provider.createChunkChurnWalkThread();
       const threadB = provider.createChunkChurnWalkThread();
-      expect(threadA).toBeInstanceOf(ChunkChurnWalkThread);
-      expect(threadB).toBeInstanceOf(ChunkChurnWalkThread);
+      expect(threadA).toBeInstanceOf(ChunkChurnWalkPool);
+      expect(threadB).toBeInstanceOf(ChunkChurnWalkPool);
       expect(threadA).not.toBe(threadB);
     });
   });

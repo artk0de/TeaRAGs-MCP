@@ -9,7 +9,7 @@
  * worker opens its own adapter and blames a disjoint shard in parallel.
  *
  * Reuses the churn-walk worker.js (a "blame" job type); this host differs from
- * ChunkChurnWalkThread only in fan-out (N workers + file sharding vs one).
+ * ChunkChurnWalkPool only in dispatch (file sharding vs round-robin walk jobs).
  * Provider-owned, lazily spawned on the first blame, closed at finalizeSignals.
  */
 

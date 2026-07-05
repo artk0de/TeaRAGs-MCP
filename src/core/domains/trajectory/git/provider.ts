@@ -44,7 +44,7 @@ import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
 import { defaultBlamePoolSize } from "./infra/churn-walk/blame-pool-defaults.js";
 import { BlameWorkerPool } from "./infra/churn-walk/blame-pool.js";
-import { ChunkChurnWalkThread } from "./infra/churn-walk/thread.js";
+import { ChunkChurnWalkPool } from "./infra/churn-walk/walk-pool.js";
 import { GitCommitDiscoveryStore } from "./infra/commit-discovery-store.js";
 import { GitCommitDiscovery } from "./infra/commit-discovery.js";
 import {
@@ -378,7 +378,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  instance lifecycle (lazy create at first chunk dispatch, closed at
    *  drain). Arrow-property so `this` survives callback passing (precedent:
    *  createCommitDiscovery). */
-  createChunkChurnWalkThread = (): ChunkChurnWalkThread => new ChunkChurnWalkThread();
+  createChunkChurnWalkThread = (): ChunkChurnWalkPool => new ChunkChurnWalkPool(this.config.blamePoolSize);
 
   /** Run `git blame HEAD` per file and store results for transform-time
    *  lookup. Failures fall back to empty arrays — assembleFileSignals will
@@ -550,9 +550,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     // run-scoped walk thread AND the run-scoped discovery is present AND the
     // HEAD cache is skipped (ChunkPhase always sets skipCache; the cached
     // path stays inline-only so cache semantics are untouched). The contract
-    // duck type is structurally ChunkChurnWalkThread — cast at the boundary
+    // duck type is structurally ChunkChurnWalkPool — cast at the boundary
     // (precedent: blobReader below).
-    const walkThread = options?.churnWalkThread as unknown as ChunkChurnWalkThread | undefined;
+    const walkThread = options?.churnWalkThread as unknown as ChunkChurnWalkPool | undefined;
     let rawResult: Map<string, Map<string, ChunkChurnOverlay>>;
     if (walkThread && options?.commitDiscovery && options.skipCache) {
       rawResult = await this.walkChunkChurnOffThread(root, chunkMap, walkThread, options.commitDiscovery, options);
@@ -617,7 +617,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   private async walkChunkChurnOffThread(
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
-    walkThread: ChunkChurnWalkThread,
+    walkThread: ChunkChurnWalkPool,
     discovery: NonNullable<ChunkSignalOptions["commitDiscovery"]>,
     options?: ChunkSignalOptions,
   ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
