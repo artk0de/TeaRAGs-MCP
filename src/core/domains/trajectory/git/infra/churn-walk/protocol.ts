@@ -50,8 +50,32 @@ export interface ChunkChurnWalkOutcome {
   stats: ChunkChurnWalkStats;
 }
 
-export type ChurnWalkThreadRequest = { type: "walk"; id: number; job: ChunkChurnWalkJobInput } | { type: "close" };
+/** One serializable BLAME job — the shallow-history files the main side routed
+ *  to the off-thread pool (deep files stay on main's async CLI). The worker
+ *  rebuilds its own es-git adapter (worker-DI) and blames each file. */
+export interface BlameJobInput {
+  repoRoot: string;
+  /** Adapter KIND literal — the worker rebuilds VcsGitAdapter in-thread. */
+  gitAdapter: GitAdapterKind;
+  /** Files to blame + each file's commit count, so the worker's adapter keeps
+   *  the depth-routing contract (shallow → in-process; a misclassified deep
+   *  file still routes to the worker's own capped CLI). */
+  files: { relPath: string; historyDepthHint: number }[];
+  timeoutMs: number;
+}
+
+/** Blame result crossing back to the main thread. */
+export interface BlameOutcome {
+  blameByPath: Map<string, BlameLine[]>;
+}
+
+export type ChurnWalkThreadRequest =
+  | { type: "walk"; id: number; job: ChunkChurnWalkJobInput }
+  | { type: "blame"; id: number; job: BlameJobInput }
+  | { type: "close" };
 
 export type ChurnWalkThreadResponse =
   | { type: "walked"; id: number; overlays: ChunkChurnWalkOutcome["overlays"]; stats: ChunkChurnWalkStats }
-  | { type: "walk-failed"; id: number; error: string };
+  | { type: "walk-failed"; id: number; error: string }
+  | { type: "blamed"; id: number; blameByPath: Map<string, BlameLine[]> }
+  | { type: "blame-failed"; id: number; error: string };

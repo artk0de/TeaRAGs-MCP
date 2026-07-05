@@ -22,12 +22,14 @@ import { parentPort } from "node:worker_threads";
 
 import { VcsAdapterFactory } from "../../../../../adapters/vcs/factory.js";
 import type { VcsGitAdapter } from "../../../../../adapters/vcs/git/adapter.js";
-import type { BlobBatchReader, GitAdapterKind } from "../../../../../adapters/vcs/types.js";
+import type { BlameLine, BlobBatchReader, GitAdapterKind } from "../../../../../adapters/vcs/types.js";
 import { CommitDiffMemo } from "../../../../../infra/commit-diff-memo.js";
 import { Semaphore } from "../../../../../infra/semaphore.js";
 import { buildChunkChurnMapUncached } from "../chunk-reader.js";
 import type { ChunkChurnWalkStats, WalkCommitDiscovery } from "../walk-commits.js";
 import type {
+  BlameJobInput,
+  BlameOutcome,
   ChunkChurnWalkJobInput,
   ChunkChurnWalkOutcome,
   ChurnWalkThreadRequest,
@@ -117,6 +119,20 @@ async function runWalk(job: ChunkChurnWalkJobInput): Promise<ChunkChurnWalkOutco
   return { overlays, stats };
 }
 
+/** Compute blame for a batch of shallow-history files on THIS worker thread
+ *  (bd tea-rags-mcp-dog1v). Serial per worker: in-process es-git blame is a
+ *  sync napi call — concurrency on one thread yields nothing (that is exactly
+ *  why the inline path stalled). The pool's parallelism is N workers, each
+ *  blaming a disjoint shard. */
+async function runBlame(job: BlameJobInput): Promise<BlameOutcome> {
+  const adapter = await adapterFor(job.gitAdapter, job.repoRoot);
+  const blameByPath = new Map<string, BlameLine[]>();
+  for (const { relPath, historyDepthHint } of job.files) {
+    blameByPath.set(relPath, await adapter.blameFile(relPath, job.timeoutMs, historyDepthHint));
+  }
+  return { blameByPath };
+}
+
 async function handleClose(): Promise<void> {
   await Promise.all([...readers.values()].map(async (reader) => reader.close().catch(() => undefined)));
   readers.clear();
@@ -129,6 +145,19 @@ if (parentPort) {
     void (async () => {
       if (request.type === "close") {
         await handleClose();
+        return;
+      }
+      if (request.type === "blame") {
+        try {
+          const { blameByPath } = await runBlame(request.job);
+          parentPort?.postMessage({ type: "blamed", id: request.id, blameByPath } satisfies ChurnWalkThreadResponse);
+        } catch (error) {
+          parentPort?.postMessage({
+            type: "blame-failed",
+            id: request.id,
+            error: error instanceof Error ? error.message : String(error),
+          } satisfies ChurnWalkThreadResponse);
+        }
         return;
       }
       try {

@@ -109,6 +109,9 @@ export class ChunkChurnWalkThread {
   }
 
   private onResponse(response: ChurnWalkThreadResponse): void {
+    // This host only ever dispatches "walk" jobs — ignore the pool's blame
+    // responses (they share the worker.js protocol union but never arrive here).
+    if (response.type !== "walked" && response.type !== "walk-failed") return;
     const entry = this.pending.get(response.id);
     if (!entry) return;
     this.pending.delete(response.id);
