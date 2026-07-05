@@ -61,6 +61,61 @@ describe("CompletionRunner", () => {
     expect(final.chunk.status).toBe("completed");
   });
 
+  it("preserves the prefetch failure errorMessage in the FINAL file+chunk markers (2nfdm diagnostics)", async () => {
+    // markPrefetchFailed writes the cause, but the terminal markFileFinal /
+    // markChunkFinal used to OVERWRITE the marker without it — the taxdome
+    // git-enrichment failure left `status: failed` with no message anywhere
+    // (worker stderr is detached). The final markers must carry the cause.
+    const qdrant = new MockQdrantManager();
+    await seedMarkerPoint(qdrant, "coll");
+
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    filePhase.bindChunkPhase(chunkPhase);
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
+    const runner = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
+    });
+
+    const ctx = {
+      key: "git",
+      provider: {
+        key: "git",
+        buildFileSignals: vi.fn().mockRejectedValue(new Error("es-git walk exploded on commit deadbeef")),
+        buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+        resolveRoot: (p: string) => p,
+        fileSignalTransform: undefined,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null,
+    };
+    const contexts = new Map([[ctx.key, ctx]]);
+    filePhase.init(contexts, "coll", "run-err", "ts");
+    chunkPhase.init(contexts, "coll", "ts");
+    await marker.markRunStart("coll", ["git"], "run-err", "ts");
+
+    // Drive one streaming batch — the provider's file work rejects and the
+    // phase records the prefetch failure.
+    const work = filePhase.onBatch("coll", "/repo", [{ chunk: { metadata: { filePath: "/repo/a.ts" } } } as any]);
+    await Promise.all(work.values());
+    expect(filePhase.hasPrefetchFailed("git")).toBe(true);
+
+    await runner.run("coll", contexts, Date.now() - 1000);
+
+    const final = (await marker.read("coll"))!.git as any;
+    expect(final.file.status).toBe("failed");
+    expect(final.file.errorMessage).toContain("es-git walk exploded");
+    expect(final.chunk.status).toBe("failed");
+    expect(final.chunk.errorMessage).toContain("es-git walk exploded");
+  });
+
   it("uses unenrichedReader callback for unenrichedChunks counts when provided", async () => {
     const qdrant = new MockQdrantManager();
     await seedMarkerPoint(qdrant, "coll");

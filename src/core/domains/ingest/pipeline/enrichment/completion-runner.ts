@@ -107,6 +107,10 @@ export class CompletionRunner {
         matchedFiles: applier.matchedFiles,
         missedFiles: applier.missedFiles,
         ignoredFiles: applier.ignoredFiles,
+        // Carry the prefetch failure cause into the TERMINAL marker — this
+        // write used to overwrite markPrefetchFailed's errorMessage, leaving
+        // `failed` with no cause anywhere (worker stderr is detached).
+        ...(fileStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
       });
     }
 
@@ -179,6 +183,7 @@ export class CompletionRunner {
         // cross-provider span (deferred codegraph used to stretch git's).
         durationMs: finalChunkMetrics.providerDurationsMs[ctx.key] ?? 0,
         unenrichedChunks: chunkUnenriched,
+        ...(chunkStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
       });
     }
 

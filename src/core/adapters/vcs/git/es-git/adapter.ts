@@ -1,40 +1,39 @@
 /**
- * In-process git adapter over the es-git binding (napi-rs / libgit2) — the
- * `GIT_ADAPTER=es-git` implementation, validated against the `GitCliAdapter`
- * oracle by the equivalence suites in `tests/core/adapters/vcs/git/es-git/`.
+ * Hybrid git adapter for `GIT_ADAPTER=es-git`: PER-FILE ops run in-process
+ * over the es-git binding (napi-rs / libgit2), BULK HISTORY sweeps delegate
+ * to the git CLI. Validated against the `GitCliAdapter` oracle by the
+ * equivalence suites in `tests/core/adapters/vcs/git/es-git/`.
+ *
+ * Why hybrid (measured on the taxdome monolith, 2026-07-05):
+ * - blame is thousands of per-file operations per run — the CLI pays one
+ *   process SPAWN each, and EDR throttles spawns machine-wide (~10/s):
+ *   112ms/file CLI vs 43ms/file in-process → es-git wins 2.6x.
+ * - a whole-history numstat sweep is ONE spawn per run — EDR-irrelevant —
+ *   and `git log --numstat` streams at C speed, while a JS-side revwalk with
+ *   a per-commit tree diff took 306.5s vs the CLI's 29.5s (10.4x): the
+ *   in-process walk lost on merit and was deleted.
  *
  * API mapping (es-git 0.7 — names read from `node_modules/es-git/index.d.ts`):
  *
- * | VcsGitAdapter op       | git CLI (oracle)                        | es-git                                                                   |
- * | ---------------------- | --------------------------------------- | ------------------------------------------------------------------------ |
- * | open                   | —                                       | `openRepository(repoRoot)` — ONCE; the handle is owned by the adapter     |
- * | getHead                | `git rev-parse HEAD`                    | `repo.revparseSingle("HEAD")`                                             |
- * | isAncestor             | `git merge-base --is-ancestor A D`      | `repo.getMergeBase(a, d) === a` on `^{commit}`-peeled oids; throw → false |
- * | blameFile              | `git blame --porcelain HEAD -- <f>`     | `repo.blameFile(f, { newestCommit, useMailmap: true })`, hunks expanded   |
- * |                        |                                         | per line via `getHunkByIndex` (`finalCommitId` + author `finalSignature`) |
- * | readBlobAsString       | `git cat-file blob <oid>:<path>`        | `revparseSingle("<oid>:<path>")` → `getObject(..).peelToBlob().content()` |
- * | createBlobBatchReader  | persistent `git cat-file --batch`       | closure over the SAME open repo handle + closed flag                      |
- * | createOidBatchResolver | persistent `git cat-file --batch-check` | `revparseSingle(rev)`; throw → null; closed flag                          |
- * | readNumstatLog         | `git log HEAD --numstat [--since]`      | revwalk in default order + per-commit tree diff (history-walk.ts)         |
- * | readNumstatLogForPaths | `git log HEAD --numstat -- <paths>`     | manual simplify-history pathspec walk (history-walk.ts)                   |
- * | getCommitsSince        | `git log --since --numstat`             | revwalk + committer-date bound                                            |
- * | getCommitsInRange      | `git log --since from..to --numstat`    | revwalk `push(to)` + `hide(from)` + committer-date bound                  |
- * | getCommitsByPathspec   | `git log --since --numstat -- <paths>`  | manual simplify-history pathspec walk + committer-date bound              |
- * | commit parents (`%P`)  | `--format=%P`                           | `revparseSingle("<sha>^<n>")` probing — 0.7 has no parent accessor        |
- * | per-file +/- counts    | `--numstat` columns                     | `diff.print({format:"Patch"})` with `contextLines: 0`; counts read from   |
- * |                        |                                         | `@@ -a,b +c,d @@` headers (es-git print strips content origin prefixes)   |
- * | rename detection       | `diff.renames` config (default ON)      | `diff.findSimilar({renames,...})` toggled by the SAME config; combined    |
- * |                        |                                         | `pfx{old => new}sfx` numstat path is a port of git's `pprint_rename`      |
+ * | VcsGitAdapter op       | Implementation                                                             |
+ * | ---------------------- | -------------------------------------------------------------------------- |
+ * | open                   | `openRepository(repoRoot)` — ONCE; the handle is owned by the adapter      |
+ * | getHead                | `repo.revparseSingle("HEAD")`                                               |
+ * | isAncestor             | `repo.getMergeBase(a, d) === a` on `^{commit}`-peeled oids; throw → false  |
+ * | blameFile              | `repo.blameFile(f, { newestCommit, useMailmap: true })`, hunks expanded    |
+ * |                        | per line via `getHunkByIndex` (`finalCommitId` + author `finalSignature`)  |
+ * | readBlobAsString       | `revparseSingle("<oid>:<path>")` → `getObject(..).peelToBlob().content()`  |
+ * | createBlobBatchReader  | closure over the SAME open repo handle + closed flag                       |
+ * | createOidBatchResolver | `revparseSingle(rev)`; throw → null; closed flag                           |
+ * | readNumstatLog         | DELEGATED → GitCliAdapter (`git log HEAD --numstat [--since]`, one spawn)  |
+ * | readNumstatLogForPaths | DELEGATED → GitCliAdapter (`git log HEAD --numstat -- <paths>`)            |
+ * | getCommitsSince        | DELEGATED → GitCliAdapter (`git log --since --numstat`)                    |
+ * | getCommitsInRange      | DELEGATED → GitCliAdapter (`git log --since from..to --numstat`)           |
+ * | getCommitsByPathspec   | DELEGATED → GitCliAdapter (`git log --since --numstat -- <paths>`)         |
  *
- * `timeoutMs` parameters are intentionally NOT declared on the overrides:
- * every operation is an in-process libgit2 call with no child process to
- * bound — the CLI timeouts exist solely to reap hung `git` spawns. Extra
- * arguments are ignored by the JS calling convention.
- *
- * Merge-commit numstat semantics (empirically pinned by the fixture):
- * `git log --numstat` without `-m` emits merge headers with NO file rows and
- * the CLI parsers drop row-less commits — merges never surface in any history
- * op output, so the walks skip diffing them entirely.
+ * `timeoutMs` parameters are intentionally NOT declared on the in-process
+ * overrides — no child process to bound. The delegated history ops inherit
+ * the CLI defaults (the base-class optional args pass through untouched).
  */
 
 import { openRepository, type Repository } from "es-git";
@@ -47,30 +46,24 @@ import type {
   OidBatchResolver,
 } from "../../types.js";
 import { VcsGitAdapter } from "../adapter.js";
-import { readRenameDetectionMode, type RenameDetectionMode } from "./diff-numstat.js";
-import {
-  aggregateCommitsWithChangedFiles,
-  aggregateFileChurn,
-  collectPathspecLogEntries,
-  collectPlainLogEntries,
-} from "./history-walk.js";
-
-/** `--since` bounds compare committer dates at whole-second precision. */
-const toSinceSec = (sinceDate: Date): number => Math.floor(sinceDate.getTime() / 1000);
+import { GitCliAdapter } from "../git-cli/adapter.js";
 
 export class EsGitAdapter extends VcsGitAdapter {
+  /** Bulk-history delegate — one `git log` spawn per sweep (see module doc). */
+  private readonly cliHistory: GitCliAdapter;
+
   private constructor(
     repoRoot: string,
     private readonly repo: Repository,
-    private readonly renameMode: RenameDetectionMode,
   ) {
     super(repoRoot);
+    this.cliHistory = new GitCliAdapter(repoRoot);
   }
 
   /** Opens the repository ONCE; the handle lives as long as the adapter. */
   static async open(repoRoot: string): Promise<EsGitAdapter> {
     const repo = await openRepository(repoRoot);
-    return new EsGitAdapter(repoRoot, repo, readRenameDetectionMode(repo));
+    return new EsGitAdapter(repoRoot, repo);
   }
 
   async getHead(): Promise<string> {
@@ -89,29 +82,21 @@ export class EsGitAdapter extends VcsGitAdapter {
     }
   }
 
-  async readNumstatLog(sinceDate?: Date): Promise<Map<string, FileChurnData>> {
-    return aggregateFileChurn(
-      collectPlainLogEntries(this.repo, this.renameMode, {
-        toRev: "HEAD",
-        sinceSec: sinceDate === undefined ? undefined : toSinceSec(sinceDate),
-      }),
-    );
+  async readNumstatLog(sinceDate?: Date, timeoutMs?: number): Promise<Map<string, FileChurnData>> {
+    return this.cliHistory.readNumstatLog(sinceDate, timeoutMs);
   }
 
-  async getCommitsSince(sinceDate: Date): Promise<CommitWithChangedFiles[]> {
-    return aggregateCommitsWithChangedFiles(
-      collectPlainLogEntries(this.repo, this.renameMode, { toRev: "HEAD", sinceSec: toSinceSec(sinceDate) }),
-    );
+  async getCommitsSince(sinceDate: Date, timeoutMs?: number): Promise<CommitWithChangedFiles[]> {
+    return this.cliHistory.getCommitsSince(sinceDate, timeoutMs);
   }
 
-  async getCommitsInRange(fromSha: string, toSha: string, sinceDate: Date): Promise<CommitWithChangedFiles[]> {
-    return aggregateCommitsWithChangedFiles(
-      collectPlainLogEntries(this.repo, this.renameMode, {
-        toRev: toSha,
-        fromRev: fromSha,
-        sinceSec: toSinceSec(sinceDate),
-      }),
-    );
+  async getCommitsInRange(
+    fromSha: string,
+    toSha: string,
+    sinceDate: Date,
+    timeoutMs?: number,
+  ): Promise<CommitWithChangedFiles[]> {
+    return this.cliHistory.getCommitsInRange(fromSha, toSha, sinceDate, timeoutMs);
   }
 
   async readBlobAsString(commitOid: string, filepath: string): Promise<string> {
@@ -153,22 +138,16 @@ export class EsGitAdapter extends VcsGitAdapter {
     }
   }
 
-  async getCommitsByPathspec(sinceDate: Date, filePaths: string[]): Promise<CommitWithChangedFiles[]> {
-    if (filePaths.length === 0) return [];
-    return aggregateCommitsWithChangedFiles(
-      collectPathspecLogEntries(this.repo, this.renameMode, filePaths, toSinceSec(sinceDate)),
-    );
+  async getCommitsByPathspec(
+    sinceDate: Date,
+    filePaths: string[],
+    timeoutMs?: number,
+  ): Promise<CommitWithChangedFiles[]> {
+    return this.cliHistory.getCommitsByPathspec(sinceDate, filePaths, timeoutMs);
   }
 
-  async readNumstatLogForPaths(paths: string[]): Promise<Map<string, FileChurnData>> {
-    if (paths.length === 0) return new Map();
-    // CLI parity: per-batch failures are swallowed there — absent paths and
-    // walk failures yield an empty map, never a rejection.
-    try {
-      return aggregateFileChurn(collectPathspecLogEntries(this.repo, this.renameMode, paths));
-    } catch {
-      return new Map();
-    }
+  async readNumstatLogForPaths(paths: string[], timeoutMs?: number): Promise<Map<string, FileChurnData>> {
+    return this.cliHistory.readNumstatLogForPaths(paths, timeoutMs);
   }
 
   createBlobBatchReader(): BlobBatchReader {
