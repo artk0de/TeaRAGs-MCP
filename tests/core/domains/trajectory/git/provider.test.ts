@@ -189,10 +189,10 @@ describe("GitEnrichmentProvider", () => {
       expect(blameByPathArg.get("src/c.ts")).toEqual([blameLineC]);
     });
 
-    it("routes shallow-history misses to the blame pool and keeps deep ones off it", async () => {
-      // bd tea-rags-mcp-dog1v: shallow files (< BLAME_CLI_MIN_COMMITS) blame in
-      // the off-main-thread pool; deep files stay on main's async CLI, never
-      // reaching the pool (so a deep-history file cannot pin a worker thread).
+    it("routes ALL cache-miss files to the off-main-thread blame pool", async () => {
+      // bd tea-rags-mcp-dog1v: blame is now native `git blame` (async child
+      // process) for every file — the depth partition was dropped (es-git
+      // in-process blame was a 60x loss). All misses fan out across the pool.
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
       const shallow = { commits: Array.from({ length: 3 }, (_, i) => ({ hash: `s${i}` })), recentAuthors: [] };
       const deep = { commits: Array.from({ length: 40 }, (_, i) => ({ hash: `d${i}` })), recentAuthors: [] };
@@ -207,8 +207,7 @@ describe("GitEnrichmentProvider", () => {
 
       expect(blamePoolBlame).toHaveBeenCalledTimes(1);
       const poolFiles = blamePoolBlame.mock.calls[0][2] as { relPath: string }[];
-      expect(poolFiles.map((f) => f.relPath)).toEqual(["shallow.ts"]);
-      expect(poolFiles.map((f) => f.relPath)).not.toContain("deep.ts");
+      expect(poolFiles.map((f) => f.relPath).sort()).toEqual(["deep.ts", "shallow.ts"]);
     });
 
     it("releases blameByRelPath after chunk enrichment (bounded retention)", async () => {

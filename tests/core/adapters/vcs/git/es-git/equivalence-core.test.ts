@@ -105,45 +105,23 @@ describe.skipIf(!esGitAvailable)("EsGitAdapter ⇄ GitCliAdapter equivalence —
     await expect(esGit.blameFile("src/untracked.ts")).resolves.toEqual([]);
   });
 
-  it("blameFile: DEEP-history files (hint ≥ threshold) route to native git blame; SHALLOW ones stay in-process", async () => {
-    // Depth routing, not a value pin (parity is proven above). libgit2's
-    // git_blame__like_git is O(commits × tree-diff): fine shallow, 16-124s/file
-    // + ~1GB resident past a few dozen commits on the taxdome monolith. Deep
-    // files must hit the CLI; shallow must NOT (keeps them spawn-free/light).
+  it("blameFile: always delegates to native git blame (no in-process libgit2 path), hint irrelevant", async () => {
+    // The in-process libgit2 blame was removed (bd tea-rags-mcp-dog1v): it has no
+    // commit-graph acceleration, so even a SHALLOW file costs ~12.5s on a large
+    // repo vs ~0.2s native (60x). Blame now unconditionally delegates to `git
+    // blame`; the historyDepthHint no longer routes.
     const spy = vi.spyOn(GitCliAdapter.prototype, "blameFile");
     try {
-      // hint 100 ≥ default threshold (30) → CLI, with timeout forwarded.
-      const deep = await esGit.blameFile("src/app.ts", 7_000, 100);
+      // Shallow hint → still CLI, with timeout forwarded.
+      const shallow = await esGit.blameFile("src/app.ts", 7_000, 3);
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy).toHaveBeenCalledWith("src/app.ts", 7_000);
-      expect(deep).toEqual(await cli.blameFile("src/app.ts")); // still correct
+      expect(shallow).toEqual(await cli.blameFile("src/app.ts")); // parity holds
 
       spy.mockClear();
-      // hint 3 < threshold → in-process es-git, no spawn.
-      await esGit.blameFile("src/app.ts", 7_000, 3);
-      expect(spy).not.toHaveBeenCalled();
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("blameFile: caps concurrent native git blame spawns (OOM guard — 10×1GB bricked a run)", async () => {
-    let active = 0;
-    let peak = 0;
-    const spy = vi.spyOn(GitCliAdapter.prototype, "blameFile").mockImplementation(async () => {
-      active += 1;
-      peak = Math.max(peak, active);
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      active -= 1;
-      return [];
-    });
-    try {
-      // 8 deep files fired at once — the gate must hold the peak at the cap (2).
-      await Promise.all(
-        Array.from({ length: 8 }, async (_, i) => esGit.blameFile(`deep${String(i)}.ts`, undefined, 500)),
-      );
-      expect(spy).toHaveBeenCalledTimes(8); // all still complete
-      expect(peak).toBeLessThanOrEqual(2); // never all-at-once
+      // Deep hint → also CLI (no routing branch anymore).
+      await esGit.blameFile("src/app.ts", 7_000, 100);
+      expect(spy).toHaveBeenCalledTimes(1);
     } finally {
       spy.mockRestore();
     }

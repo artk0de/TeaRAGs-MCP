@@ -672,7 +672,7 @@ describe("parseAppConfigZod — trajectoryGit", () => {
     expect(trajectoryGit.squashAwareSessions).toBe(false);
     expect(trajectoryGit.sessionGapMinutes).toBe(30);
     expect(trajectoryGit.blamePoolSize).toBeGreaterThanOrEqual(1);
-    expect(trajectoryGit.blamePoolSize).toBeLessThanOrEqual(4);
+    expect(trajectoryGit.blamePoolSize).toBeLessThanOrEqual(10);
   });
 
   it("TRAJECTORY_GIT_BLAME_POOL_SIZE overrides the blame worker-pool size", async () => {

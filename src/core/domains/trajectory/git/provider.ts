@@ -11,7 +11,6 @@ import { join } from "node:path";
 
 import { VcsAdapterFactory } from "../../../adapters/vcs/factory.js";
 import type { VcsGitAdapter } from "../../../adapters/vcs/git/adapter.js";
-import { BLAME_CLI_MIN_COMMITS } from "../../../adapters/vcs/git/es-git/adapter.js";
 import { resolveRepoRoot } from "../../../adapters/vcs/git/git-cli/client.js";
 import type {
   BlameLine,
@@ -378,7 +377,10 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  instance lifecycle (lazy create at first chunk dispatch, closed at
    *  drain). Arrow-property so `this` survives callback passing (precedent:
    *  createCommitDiscovery). */
-  createChunkChurnWalkThread = (): ChunkChurnWalkPool => new ChunkChurnWalkPool(this.config.blamePoolSize);
+  // Walk pool is decoupled from the (larger) blame concurrency: the chunk-churn
+  // walk is CPU-bound (git log + structuredPatch) and showed no measured win
+  // past a few workers, so cap it at 4 while the blame pool scales higher.
+  createChunkChurnWalkThread = (): ChunkChurnWalkPool => new ChunkChurnWalkPool(Math.min(4, this.config.blamePoolSize));
 
   /** Run `git blame HEAD` per file and store results for transform-time
    *  lookup. Failures fall back to empty arrays — assembleFileSignals will
@@ -410,7 +412,6 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     const entries = Array.from(rawData.entries());
     if (entries.length === 0) return;
     const startedAt = Date.now();
-    const adapter = await this.adapterFor(root);
 
     const oidByPath = await this.resolveHeadOids(
       root,
@@ -432,17 +433,11 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       }
     }
 
-    // Partition cache misses by history depth. Shallow files go to the
-    // off-main-thread blame pool (sync in-process es-git blame is the event-loop
-    // stall — real parallelism needs threads, not async fan-out on one thread).
-    // Deep files stay on main: their blame already routes to the async CLI
-    // (non-blocking, capped in the adapter), so it never stalled embedding.
-    const shallowMisses: [string, FileChurnData][] = [];
-    const deepMisses: [string, FileChurnData][] = [];
-    for (const entry of missEntries) {
-      (entry[1].commits.length >= BLAME_CLI_MIN_COMMITS ? deepMisses : shallowMisses).push(entry);
-    }
-
+    // Blame every cache-miss on the off-main-thread pool. Blame is native
+    // `git blame` (adapter-delegated for es-git too — the in-process libgit2
+    // blame was a 60x loss on large repos, dog1v). Native blame is an async
+    // child process, so the pool's N workers = N concurrent `git blame` (each
+    // worker serial); parallel git blame sustains ~69-89/s uncapped by EDR.
     const recordBlame = (relPath: string, churnData: FileChurnData, lines: BlameLine[]): void => {
       this.blameByChurnData.set(churnData, lines);
       this.blameByRelPath.set(relPath, lines);
@@ -455,31 +450,16 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       }
     };
 
-    if (shallowMisses.length > 0) {
+    if (missEntries.length > 0) {
       const blameByPath = await this.ensureBlamePool().blame(
         root,
         this.config.vcsAdapter,
-        shallowMisses.map(([relPath, churnData]) => ({ relPath, historyDepthHint: churnData.commits.length })),
+        missEntries.map(([relPath, churnData]) => ({ relPath, historyDepthHint: churnData.commits.length })),
         this.config.logTimeoutMs,
       );
-      for (const [relPath, churnData] of shallowMisses) {
+      for (const [relPath, churnData] of missEntries) {
         recordBlame(relPath, churnData, blameByPath.get(relPath) ?? []);
       }
-    }
-
-    if (deepMisses.length > 0) {
-      // Deep blame stays on main but is async (CLI child process, capped in the
-      // adapter) — keep the same bounded fan-out the inline path used.
-      const concurrency = Math.max(this.config.chunkConcurrency, 1);
-      let cursor = 0;
-      const deepWorker = async (): Promise<void> => {
-        while (cursor < deepMisses.length) {
-          const [relPath, churnData] = deepMisses[cursor++];
-          const lines = await adapter.blameFile(relPath, this.config.logTimeoutMs, churnData.commits.length);
-          recordBlame(relPath, churnData, lines);
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(concurrency, deepMisses.length) }, deepWorker));
     }
 
     options?.onBlameStats?.({

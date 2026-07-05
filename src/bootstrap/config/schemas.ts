@@ -119,9 +119,10 @@ export const trajectoryGitSchema = z.object({
   // only RAISE git chunk walk parallelism, never silently halve it (bd f2jsb:
   // a stale env block pinned 5 vs the code default 10 across every CLI run).
   chunkConcurrency: intWithDefault(10),
-  // Git enrichment worker-pool size — sizes BOTH the FILE-phase blame pool
-  // (off-main-thread es-git blame) AND the chunk-phase churn-walk pool. CPU-
-  // parallelism axis; default min(4, cpus-1). Env: TRAJECTORY_GIT_BLAME_POOL_SIZE.
+  // Git-blame CONCURRENCY = size of the FILE-phase blame worker pool. Blame is
+  // native `git blame` (async child process); N workers = N concurrent blames.
+  // Default 10 (capped cpus-1); parallel git blame is not EDR-capped. The
+  // chunk-walk pool is decoupled (capped at 4). Env: TRAJECTORY_GIT_BLAME_POOL_SIZE.
   blamePoolSize: intWithDefault(defaultBlamePoolSize()),
   chunkMaxAgeMonths: floatWithDefault(6),
   chunkTimeoutMs: intWithDefault(120000),
