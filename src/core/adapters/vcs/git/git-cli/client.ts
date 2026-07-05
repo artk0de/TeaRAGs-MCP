@@ -570,3 +570,24 @@ export async function blameFile(repoRoot: string, filePath: string, timeoutMs?: 
     return [];
   }
 }
+
+/**
+ * One-time pre-enrichment warmup: `git commit-graph write --reachable
+ * --changed-paths`. The commit-graph gives O(1) generation-number reachability
+ * (accelerates every `git log`) and the `--changed-paths` Bloom filters
+ * accelerate pathspec `git log` AND `git blame` — a free speedup for the whole
+ * enrichment sweep regardless of adapter. Best-effort: any failure (no repo
+ * write access, concurrent gc lock, old git) is swallowed — the graph is a pure
+ * optimization, never a correctness dependency. Persists on disk, so subsequent
+ * runs (and incremental reindexes) reuse it.
+ */
+export async function writeCommitGraph(repoRoot: string, timeoutMs?: number): Promise<void> {
+  try {
+    await execFileAsync("git", ["commit-graph", "write", "--reachable", "--changed-paths"], {
+      cwd: repoRoot,
+      timeout: timeoutMs,
+    });
+  } catch {
+    // Optimization only — proceed without it.
+  }
+}

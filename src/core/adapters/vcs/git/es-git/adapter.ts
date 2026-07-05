@@ -123,6 +123,10 @@ export class EsGitAdapter extends VcsGitAdapter {
     return this.cliHistory.blameFile(filePath, timeoutMs);
   }
 
+  async writeCommitGraph(timeoutMs?: number): Promise<void> {
+    return this.cliHistory.writeCommitGraph(timeoutMs);
+  }
+
   async getCommitsByPathspec(
     sinceDate: Date,
     filePaths: string[],

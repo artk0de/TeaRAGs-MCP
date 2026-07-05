@@ -26,6 +26,7 @@ vi.mock("node:fs", async () => {
 vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/client.js", () => ({
   resolveRepoRoot: vi.fn((p: string) => p),
   blameFile: vi.fn().mockResolvedValue([]),
+  writeCommitGraph: vi.fn().mockResolvedValue(undefined),
   getHead: vi.fn().mockResolvedValue("headsha"),
   // Default: a fresh working reader so the resolveHeadOids success path runs
   // (existing tests only care that blame still runs for every file — see

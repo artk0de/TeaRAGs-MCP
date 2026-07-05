@@ -310,7 +310,13 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     // in flight before the first discovery resolves; memoizing the resolved
     // value (the old code) let every one spawn its own numstat log → 3-5GB OOM.
     // This is the single-flight of adapterFor / GitCommitDiscovery.matrixPromise.
-    const data = buildFileSignalDiscovery(adapter, this.config.logTimeoutMs);
+    // Warm the commit-graph (+ changed-path Bloom filters) ONCE per run before
+    // the first big `git log --numstat`: it accelerates that log AND every
+    // subsequent `git blame` this run (bd tea-rags-mcp). Best-effort (never
+    // rejects), chained so it precedes the discovery yet keeps single-flight.
+    const data = adapter
+      .writeCommitGraph(this.config.logTimeoutMs)
+      .then(() => buildFileSignalDiscovery(adapter, this.config.logTimeoutMs));
     this.fileDiscovery = { root, headSha, data };
     // A transient discovery failure must not poison the whole run: drop the
     // cache on rejection so a LATER (non-concurrent) batch can retry, while the

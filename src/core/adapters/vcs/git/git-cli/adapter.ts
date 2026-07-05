@@ -25,6 +25,7 @@ import {
   getHead,
   isAncestor,
   readBlobAsString,
+  writeCommitGraph,
 } from "./client.js";
 
 export class GitCliAdapter extends VcsGitAdapter {
@@ -61,6 +62,10 @@ export class GitCliAdapter extends VcsGitAdapter {
     // The CLI adapter always shells out to native `git blame`; the depth hint is
     // an es-git-hybrid concern (in-process vs CLI routing) with nothing to do here.
     return blameFile(this.repoRoot, filePath, timeoutMs);
+  }
+
+  async writeCommitGraph(timeoutMs?: number): Promise<void> {
+    return writeCommitGraph(this.repoRoot, timeoutMs);
   }
 
   async getCommitsByPathspec(

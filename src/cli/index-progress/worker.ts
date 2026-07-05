@@ -183,6 +183,27 @@ export async function main(): Promise<void> {
   }
   const { path, options } = JSON.parse(raw) as WorkerParams;
 
+  // Parent-death guard. The worker runs in its OWN process group (detached
+  // fork), so killing the parent (CLI foreground OR MCP host) never reaches the
+  // git children (blame / log / cat-file, incl. those spawned inside blame/walk
+  // worker threads) — they orphan. On a CLEAN background hand-off the supervisor
+  // sends {type:"outlive"} then disconnects; on an INTERRUPT/kill the parent
+  // dies WITHOUT that message and the IPC disconnects with no outlive flag —
+  // then SIGKILL our whole process group so the git children die with us.
+  let outliveParent = false;
+  process.on("message", (m: unknown) => {
+    if (m && typeof m === "object" && (m as { type?: unknown }).type === "outlive") outliveParent = true;
+  });
+  process.on("disconnect", () => {
+    if (outliveParent) return;
+    try {
+      process.kill(-process.pid, "SIGKILL");
+    } catch {
+      // Not a process-group leader (inline/test invocation) — nothing to group-kill.
+    }
+    process.exit(1);
+  });
+
   const send = (message: WorkerMessage): void => {
     try {
       process.send?.(message);

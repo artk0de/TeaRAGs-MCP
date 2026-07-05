@@ -34,6 +34,11 @@ export abstract class VcsGitAdapter implements VcsAdapter {
   abstract readBlobAsString(commitOid: string, filepath: string): Promise<string>;
   abstract blameFile(filePath: string, timeoutMs?: number, historyDepthHint?: number): Promise<BlameLine[]>;
 
+  /** One-time pre-enrichment warmup — write the commit-graph (+ changed-path
+   *  Bloom filters) to accelerate every `git log` / `git blame` this run.
+   *  Best-effort: implementations swallow failures (pure optimization). */
+  abstract writeCommitGraph(timeoutMs?: number): Promise<void>;
+
   /** Commits touching `filePaths` (git pathspec semantics), batched internally. */
   abstract getCommitsByPathspec(
     sinceDate: Date,
