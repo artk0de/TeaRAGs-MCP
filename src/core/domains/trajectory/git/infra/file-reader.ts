@@ -7,6 +7,7 @@
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { FileChurnData } from "../../../../adapters/vcs/types.js";
 import type { GitEnrichmentCache } from "./cache.js";
+import type { FileChurnDiscovery } from "./file-churn-discovery.js";
 
 /**
  * Build per-file FileChurnData from git history.
@@ -15,13 +16,20 @@ import type { GitEnrichmentCache } from "./cache.js";
  * @param maxAgeMonths - limit commits to last N months (default 12).
  *   Set to 0 to disable (read all commits).
  * @param timeoutMs - timeout for git log command (default 60000).
+ * @param discovery - when supplied, its own incremental store IS the cache:
+ *   return `discovery.fileChurn()` directly and skip both the HEAD-keyed
+ *   `enrichmentCache` round-trip and the adapter's own `readNumstatLog` walk.
+ *   Absent ⇒ the existing cache + `readNumstatLog` path, unchanged.
  */
 export async function buildFileSignalMap(
   adapter: VcsGitAdapter,
   enrichmentCache: GitEnrichmentCache,
   maxAgeMonths = 12,
   timeoutMs = 60000,
+  discovery?: FileChurnDiscovery,
 ): Promise<Map<string, FileChurnData>> {
+  if (discovery) return discovery.fileChurn();
+
   // Cache key includes maxAge to avoid returning stale results for different time windows
   const cacheKey = `${adapter.repoRoot}:${maxAgeMonths}`;
 
@@ -57,12 +65,20 @@ export async function buildFileSignalMap(
  *
  * @param timeoutMs - timeout for the git log command (default 60000).
  * @param maxAgeMonths - `--since` window in months; 0 ⇒ full history (default 0).
+ * @param discovery - when supplied, return `discovery.fileChurn()` directly
+ *   instead of spawning the adapter's own `readNumstatLog` walk — the
+ *   discovery is itself the run-scoped, incrementally-cached repo-wide
+ *   aggregate this function used to compute from scratch. Absent ⇒ the
+ *   existing `readNumstatLog` path, unchanged.
  */
 export async function buildFileSignalDiscovery(
   adapter: VcsGitAdapter,
   timeoutMs = 60000,
   maxAgeMonths = 0,
+  discovery?: FileChurnDiscovery,
 ): Promise<Map<string, FileChurnData>> {
+  if (discovery) return discovery.fileChurn();
+
   // Bound by maxAgeMonths (the run's logMaxAgeMonths). A full-history numstat
   // sweep is MINUTES on a large monolith (141s / 1M lines on taxdome) and, being
   // the run-scoped prerequisite of every file signal, blocks git-file enrichment
