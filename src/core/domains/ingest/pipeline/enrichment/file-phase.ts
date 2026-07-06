@@ -23,6 +23,8 @@ import type { ProviderContext } from "./types.js";
 
 interface FilePhaseState {
   prefetchFailed: boolean;
+  /** Cause of the prefetch failure — carried into the terminal marker (2nfdm). */
+  prefetchError?: string;
   fileWork: Promise<void>[];
   prefetchStartTime: number;
   prefetchEndTime: number;
@@ -283,6 +285,11 @@ export class FilePhase {
     return this.states.get(providerKey)?.prefetchFailed ?? false;
   }
 
+  /** Cause of a failed prefetch (undefined when the provider did not fail). */
+  getPrefetchError(providerKey: string): string | undefined {
+    return this.states.get(providerKey)?.prefetchError;
+  }
+
   getPrefetchDurationMs(providerKey: string): number {
     return this.states.get(providerKey)?.prefetchDurationMs ?? 0;
   }
@@ -321,6 +328,7 @@ export class FilePhase {
     state.prefetchFailed = true;
     state.prefetchEndTime = Date.now();
     const msg = extractErrorMessage(error);
+    state.prefetchError = msg;
     console.error(`[Enrichment:${ctx.key}] Stream/finalize failed:`, msg);
     pipelineLog.enrichmentPhase("PREFETCH_FAILED", {
       provider: ctx.key,

@@ -94,7 +94,7 @@ export class GitNotAvailableError extends TrajectoryGitError {
 /**
  * The dedicated chunk-churn walk worker thread failed or was torn down while
  * walks were still pending (bd tea-rags-mcp-iqpuu). Raised on the main-side
- * host (ChunkChurnWalkThread) for a worker-reported walk failure, an
+ * host (ChunkChurnWalkPool / BlameWorkerPool) for a worker-reported failure, an
  * unexpected worker error/exit, or a close() with in-flight walks. Non-fatal
  * for the run: the affected batch reports a failed walk and the
  * backfill/recovery safety net re-enriches its chunks.

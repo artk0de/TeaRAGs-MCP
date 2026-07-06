@@ -29,6 +29,44 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e TRAJECTORY_GIT_ENABLED=true
 ```
 
+## Git History Engine
+
+All git history reads (blame, log, blob contents) go through a pluggable VCS
+adapter selected by `GIT_ADAPTER`:
+
+| Value    | Engine                                 | When to pick it                                                          |
+| -------- | -------------------------------------- | ------------------------------------------------------------------------ |
+| `git`    | System git CLI (default)               | Small projects, short history                                            |
+| `es-git` | In-process library (napi-rs / libgit2) | Large projects, monorepos, machines with EDR-throttled process creation |
+
+The CLI engine forks a `git` process per operation; on large repositories the
+cold enrichment path is dominated by process spawning — especially under
+endpoint-security tooling that rate-limits it. The `es-git` engine opens the
+repository once and reads history in-process, with no per-operation spawn.
+
+To opt in:
+
+```bash
+npm install -g es-git
+GIT_ADAPTER=es-git tea-rags index-codebase --project my-project
+```
+
+Behavior guarantees:
+
+- **Identical signals.** Both engines produce the same enrichment output —
+  the in-process engine is validated against the CLI engine by an equivalence
+  suite.
+- **Fail-loud.** If `GIT_ADAPTER=es-git` is set but the binding cannot load,
+  every git-dependent operation fails with a platform-specific install hint —
+  nothing silently degrades. The escape hatch is `GIT_ADAPTER=git`.
+- **Pinned per project.** The choice is captured into the project registry at
+  indexing time (the default `git` is written explicitly too), and
+  `tea-rags index-codebase` / `tea-rags tune` replay it automatically —
+  ambient shell environment never flips the engine by accident.
+
+The install wizard (`/tea-rags-setup:install`) asks for the engine and
+recommends one based on project size.
+
 ## What You Get
 
 tea-rags computes metrics at **two levels**:

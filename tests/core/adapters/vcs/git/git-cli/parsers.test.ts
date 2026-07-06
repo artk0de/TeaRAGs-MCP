@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import * as gitParsers from "../../../../src/core/adapters/git/parsers.js";
-import type { FileChurnData } from "../../../../src/core/adapters/git/types.js";
+import * as gitParsers from "../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js";
+import type { FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
 
 describe("parsePathspecOutput (via private method)", () => {
   it("should skip binary files with '-\\t-\\t' in numstat output", () => {

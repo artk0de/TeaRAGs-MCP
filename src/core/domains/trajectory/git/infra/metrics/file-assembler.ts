@@ -5,7 +5,7 @@
  * Replaces the monolithic computeFileSignals() function.
  */
 
-import type { BlameLine, CommitInfo, FileChurnData } from "../../../../../adapters/git/types.js";
+import type { BlameLine, CommitInfo, FileChurnData } from "../../../../../adapters/vcs/types.js";
 import type { GitFileSignals } from "../../types.js";
 import { computeBlameOwnership } from "../blame-ownership.js";
 import type { SquashOptions } from "../metrics.js";

@@ -8,8 +8,8 @@
 
 import { structuredPatch } from "diff";
 
-import { createCatFileBatch, getCommitsByPathspec, type CatFileBatchReader } from "../../../../adapters/git/client.js";
-import type { CommitInfo, FileChurnData } from "../../../../adapters/git/types.js";
+import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
+import type { BlobBatchReader, CommitInfo, FileChurnData } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
@@ -80,7 +80,8 @@ export interface WalkCommitsResult {
 }
 
 export interface WalkCommitsOptions {
-  repoRoot: string;
+  /** Repo-scoped VCS adapter — pathspec discovery + self-spawned blob reader. */
+  adapter: VcsGitAdapter;
   relativeChunkMap: Map<string, ChunkLookupEntry[]>;
   accumulators: Map<string, ChunkAccumulator>;
   isoGitCache: Record<string, unknown>;
@@ -101,7 +102,7 @@ export interface WalkCommitsOptions {
    * the lifecycle. Absent ⇒ the walk spawns its own and closes it in `finally`.
    * Amortizes the per-batch pack-open across all batches of a run (kc93).
    */
-  blobReader?: CatFileBatchReader;
+  blobReader?: BlobBatchReader;
   /**
    * Run-scoped, caller-owned (commitSha, filePath) → hunks memo shared across
    * the per-batch walks of one indexing run (bd tea-rags-mcp-7gnre). A memo
@@ -124,7 +125,7 @@ export interface WalkCommitsOptions {
 
 export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommitsResult> {
   const {
-    repoRoot,
+    adapter,
     relativeChunkMap,
     accumulators,
     concurrency,
@@ -178,7 +179,7 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
   } else {
     // Use CLI pathspec filtering — only fetches commits touching our files
     try {
-      commitEntries = await getCommitsByPathspec(repoRoot, sinceDate, filePaths, chunkTimeoutMs);
+      commitEntries = await adapter.getCommitsByPathspec(sinceDate, filePaths, chunkTimeoutMs);
     } catch (error) {
       // CLI pathspec failed — no fallback (isomorphic-git git.log causes OOM on large repos)
       if (isDebug()) {
@@ -261,7 +262,7 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
   // caller owns the lifecycle and we must NOT close it here; only a reader we
   // spawned ourselves is closed in the `finally`.
   const ownsReader = opts.blobReader === undefined;
-  const blobReader = opts.blobReader ?? createCatFileBatch(repoRoot);
+  const blobReader = opts.blobReader ?? adapter.createBlobBatchReader();
 
   const { diffMemo } = opts;
   let memoHits = 0;

@@ -54,6 +54,28 @@ variables are optional unless specified otherwise.
 | `INGEST_ENABLE_HYBRID`        | Enable hybrid search (dense + sparse vectors) | `true`  |
 | `INGEST_DEFAULT_SEARCH_LIMIT` | Default search result limit                   | `5`     |
 
+## VCS Adapter
+
+| Variable      | Description                                                        | Default |
+| ------------- | ------------------------------------------------------------------ | ------- |
+| `GIT_ADAPTER` | Git history engine: `git` (system CLI) or `es-git` (in-process)   | `git`   |
+
+`GIT_ADAPTER` selects how TeaRAGs reads git history (blame, log, blobs):
+
+- `git` — the system git binary, one process per operation. Right for small
+  projects and short histories.
+- `es-git` — the [es-git](https://github.com/toss/es-git) library (napi-rs
+  over libgit2), reading history in-process with no per-operation process
+  spawn. Right for large projects, monorepos, and machines where security
+  tooling throttles process creation. Install with `npm install -g es-git`.
+
+Selecting `es-git` without the binding installed makes every git-dependent
+operation fail with an install hint — there is no silent fallback; set
+`GIT_ADAPTER=git` to switch back. The value is pinned per-project: it is
+always captured into the project registry at indexing time (even the default),
+and `tea-rags index-codebase` / `tea-rags tune` replay it automatically with
+`env > registry > default` precedence.
+
 ## Trajectory: Git
 
 | Variable                               | Description                                          | Default  |

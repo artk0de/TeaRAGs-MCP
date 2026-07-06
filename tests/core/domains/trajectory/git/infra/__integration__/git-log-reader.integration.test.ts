@@ -10,14 +10,15 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import * as gitClient from "../../../../../../../src/core/adapters/git/client.js";
+import { GitCliAdapter } from "../../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
+import * as gitClient from "../../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import {
   computeFileSignals,
   GitLogReader,
 } from "../../../../../../../src/core/domains/trajectory/git/infra/git-log-reader.js";
 
 // Enable cross-module spy interception
-vi.mock("../../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
 
 async function resolveRepoRoot(): Promise<string> {
   const { execFile } = await import("node:child_process");
@@ -37,23 +38,25 @@ async function resolveRepoRoot(): Promise<string> {
 describe("GitLogReader (integration)", { retry: 2 }, () => {
   let reader: GitLogReader;
   let repoRoot: string;
+  let adapter: GitCliAdapter;
 
   beforeEach(async () => {
     reader = new GitLogReader();
     repoRoot = await resolveRepoRoot();
+    adapter = new GitCliAdapter(repoRoot);
   });
 
   it("should return HEAD sha for a real git repo", async () => {
     if (!repoRoot) return;
 
-    const head = await reader.getHead(repoRoot);
+    const head = await reader.getHead(adapter);
     expect(head).toMatch(/^[a-f0-9]{40}$/);
   });
 
   it("should build non-empty file metadata map for a real repo", async () => {
     if (!repoRoot) return;
 
-    const fileMap = await reader.buildFileSignalMap(repoRoot);
+    const fileMap = await reader.buildFileSignalMap(adapter);
 
     expect(fileMap.size).toBeGreaterThan(0);
 
@@ -66,7 +69,7 @@ describe("GitLogReader (integration)", { retry: 2 }, () => {
   it("should include valid commit info in file entries", async () => {
     if (!repoRoot) return;
 
-    const fileMap = await reader.buildFileSignalMap(repoRoot);
+    const fileMap = await reader.buildFileSignalMap(adapter);
     const pkgEntry = fileMap.get("package.json");
     if (!pkgEntry) return;
 
@@ -81,7 +84,7 @@ describe("GitLogReader (integration)", { retry: 2 }, () => {
   it("should produce valid GitFileSignals when combined with computeFileSignals", async () => {
     if (!repoRoot) return;
 
-    const fileMap = await reader.buildFileSignalMap(repoRoot);
+    const fileMap = await reader.buildFileSignalMap(adapter);
     const pkgEntry = fileMap.get("package.json");
     if (!pkgEntry) return;
 
@@ -109,16 +112,16 @@ describe("GitLogReader (integration)", { retry: 2 }, () => {
 
   it("should handle non-git directory gracefully (falls back to CLI, which also fails)", async () => {
     const nonGitDir = "/nonexistent_dir_for_test";
-    await expect(reader.buildFileSignalMap(nonGitDir)).rejects.toThrow();
+    await expect(reader.buildFileSignalMap(new GitCliAdapter(nonGitDir))).rejects.toThrow();
   });
 
   it("should accept maxAgeMonths parameter and limit commits by date", async () => {
     if (!repoRoot) return;
 
     // Full history (no age limit)
-    const fullMap = await reader.buildFileSignalMap(repoRoot, 0);
+    const fullMap = await reader.buildFileSignalMap(adapter, 0);
     // Tiny window (~43 minutes) — should return fewer files
-    const tinyMap = await reader.buildFileSignalMap(repoRoot, 0.001);
+    const tinyMap = await reader.buildFileSignalMap(adapter, 0.001);
 
     expect(fullMap.size).toBeGreaterThan(0);
     expect(tinyMap.size).toBeLessThanOrEqual(fullMap.size);
@@ -128,7 +131,7 @@ describe("GitLogReader (integration)", { retry: 2 }, () => {
     if (!repoRoot) return;
 
     const maxAgeMonths = 0.5;
-    const map = await reader.buildFileSignalMap(repoRoot, maxAgeMonths);
+    const map = await reader.buildFileSignalMap(adapter, maxAgeMonths);
     const toleranceSec = maxAgeMonths * 30 * 24 * 3600 * 2;
     const cutoffSec = Date.now() / 1000 - toleranceSec;
 
@@ -145,15 +148,17 @@ describe("GitLogReader (integration)", { retry: 2 }, () => {
 describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
   let reader: GitLogReader;
   let repoRoot: string;
+  let adapter: GitCliAdapter;
 
   beforeEach(async () => {
     reader = new GitLogReader();
     repoRoot = await resolveRepoRoot();
+    adapter = new GitCliAdapter(repoRoot);
   });
 
   it("should return empty map when chunkMap is empty", async () => {
     if (!repoRoot) return;
-    const result = await reader.buildChunkChurnMap(repoRoot, new Map());
+    const result = await reader.buildChunkChurnMap(adapter, new Map());
     expect(result.size).toBe(0);
   });
 
@@ -161,7 +166,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
     if (!repoRoot) return;
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set(`${repoRoot}/package.json`, [{ chunkId: "test-id-1", startLine: 1, endLine: 90 }]);
-    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap);
+    const result = await reader.buildChunkChurnMap(adapter, chunkMap);
     expect(result.size).toBe(0);
   });
 
@@ -175,7 +180,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
       { chunkId: "chunk-bot", startLine: 201, endLine: 500 },
     ]);
 
-    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap);
+    const result = await reader.buildChunkChurnMap(adapter, chunkMap);
 
     if (result.size > 0) {
       const overlayMap = result.get("src/core/api/indexer.ts");
@@ -198,7 +203,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
   it("should use file-level commit count as ratio denominator when fileChurnDataMap provided", async () => {
     if (!repoRoot) return;
 
-    const fileChurnMap = await reader.buildFileSignalMap(repoRoot, 6);
+    const fileChurnMap = await reader.buildFileSignalMap(adapter, 6);
     const testFile = "src/core/api/indexer.ts";
     const fileChurnData = fileChurnMap.get(testFile);
     if (!fileChurnData || fileChurnData.commits.length === 0) return;
@@ -210,7 +215,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
       { chunkId: "chunk-c", startLine: 201, endLine: 500 },
     ]);
 
-    const withFileData = await reader.buildChunkChurnMap(repoRoot, chunkMap, 10, 6, fileChurnMap);
+    const withFileData = await reader.buildChunkChurnMap(adapter, chunkMap, 10, 6, fileChurnMap);
     const overlayMap = withFileData.get(testFile);
     if (!overlayMap) return;
 
@@ -224,7 +229,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
   it("should cap contributorCount at file-level contributor count", async () => {
     if (!repoRoot) return;
 
-    const fileChurnMap = await reader.buildFileSignalMap(repoRoot, 6);
+    const fileChurnMap = await reader.buildFileSignalMap(adapter, 6);
     const testFile = "src/core/api/indexer.ts";
     const fileChurnData = fileChurnMap.get(testFile);
     if (!fileChurnData || fileChurnData.commits.length === 0) return;
@@ -237,7 +242,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
       { chunkId: "chunk-b", startLine: 51, endLine: 200 },
     ]);
 
-    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap, 10, 6, fileChurnMap);
+    const result = await reader.buildChunkChurnMap(adapter, chunkMap, 10, 6, fileChurnMap);
     const overlayMap = result.get(testFile);
     if (!overlayMap) return;
 
@@ -256,7 +261,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
       { chunkId: "chunk-search", startLine: 570, endLine: 750 },
     ]);
 
-    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap);
+    const result = await reader.buildChunkChurnMap(adapter, chunkMap);
 
     if (result.size > 0) {
       const overlayMap = result.get("src/core/api/indexer.ts");
@@ -290,7 +295,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
       { chunkId: "method-chunk", startLine: 6, endLine: 199 },
     ]);
 
-    const withRanges = await reader.buildChunkChurnMap(repoRoot, chunkMap);
+    const withRanges = await reader.buildChunkChurnMap(adapter, chunkMap);
 
     const chunkMapNoRanges = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMapNoRanges.set(`${repoRoot}/src/core/api/indexer.ts`, [
@@ -298,7 +303,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
       { chunkId: "method-chunk", startLine: 6, endLine: 199 },
     ]);
 
-    const withoutRanges = await reader.buildChunkChurnMap(repoRoot, chunkMapNoRanges);
+    const withoutRanges = await reader.buildChunkChurnMap(adapter, chunkMapNoRanges);
 
     const blockWithRanges = withRanges.get("src/core/api/indexer.ts")?.get("block-chunk");
     const blockWithoutRanges = withoutRanges.get("src/core/api/indexer.ts")?.get("block-chunk");
@@ -316,7 +321,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
 
     const cliSpy = vi.spyOn(gitClient, "buildViaCli");
 
-    await reader.buildFileSignalMap(repoRoot, 1);
+    await reader.buildFileSignalMap(adapter, 1);
 
     expect(cliSpy).toHaveBeenCalled();
 
@@ -328,7 +333,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
 
     const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockRejectedValue(new Error("git not found"));
 
-    await expect(reader.buildFileSignalMap(repoRoot, 1)).rejects.toThrow("git not found");
+    await expect(reader.buildFileSignalMap(adapter, 1)).rejects.toThrow("git not found");
 
     cliSpy.mockRestore();
   });
@@ -349,7 +354,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
   it("buildFileSignalsForPaths should fetch metadata for specific files without --since", async () => {
     if (!repoRoot) return;
 
-    const result = await reader.buildFileSignalsForPaths(repoRoot, ["package.json"]);
+    const result = await reader.buildFileSignalsForPaths(adapter, ["package.json"]);
 
     expect(result.size).toBeGreaterThan(0);
     const entry = result.get("package.json");
@@ -364,7 +369,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
   it("buildFileSignalsForPaths should return empty map for non-existent files", async () => {
     if (!repoRoot) return;
 
-    const result = await reader.buildFileSignalsForPaths(repoRoot, [
+    const result = await reader.buildFileSignalsForPaths(adapter, [
       "this-file-does-not-exist.txt",
       "neither-does-this.rb",
     ]);
@@ -373,7 +378,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
   });
 
   it("buildFileSignalsForPaths should return empty map for empty paths", async () => {
-    const result = await reader.buildFileSignalsForPaths(repoRoot || "/tmp", []);
+    const result = await reader.buildFileSignalsForPaths(new GitCliAdapter(repoRoot || "/tmp"), []);
     expect(result.size).toBe(0);
   });
 
@@ -388,7 +393,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
       ]);
     }
 
-    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap, 10, 1);
+    const result = await reader.buildChunkChurnMap(adapter, chunkMap, 10, 1);
 
     expect(result).toBeInstanceOf(Map);
   });

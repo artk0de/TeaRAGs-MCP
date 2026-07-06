@@ -17,19 +17,19 @@ For metric definitions and research context, see [Code Churn: Theory & Research]
 {`
 flowchart TB
     subgraph phase1["Phase 1: File-Level Enrichment"]
-        GitLog[🔀 git log<br/><small>isomorphic-git</small>]
+        GitLog[🔀 numstat log<br/><small>VCS adapter</small>]
         FileCommits["📋 Per-file CommitInfo list<br/><small>+ linesAdded / linesDeleted</small>"]
-        ComputeMeta[⚙️ computeFileMetadata]
-        GitFileMeta[📊 GitFileMetadata<br/><small>stored on all chunks of file</small>]
+        ComputeMeta[⚙️ computeFileSignals]
+        GitFileMeta[📊 GitFileSignals<br/><small>stored on all chunks of file</small>]
 
         GitLog --> FileCommits --> ComputeMeta --> GitFileMeta
     end
 
     subgraph phase2["Phase 2: Chunk-Level Churn Overlay"]
-        GitLogN[🔀 git log<br/><small>last N commits</small>]
-        DiffTrees[🔍 diffTrees<br/><small>parent vs commit</small>]
+        GitLogN[🔀 commit discovery<br/><small>VCS adapter</small>]
+        DiffTrees[🔍 changed files<br/><small>parent vs commit</small>]
         FilterFiles[📁 Filter to files<br/><small>with >1 chunk in index</small>]
-        ReadBlobs[📄 readBlob parent + commit<br/><small>structuredPatch via jsdiff</small>]
+        ReadBlobs[📄 batch blob reads<br/><small>structuredPatch via jsdiff</small>]
         MapHunks[🎯 Map hunks to chunks<br/><small>overlaps check</small>]
         ChurnOverlay[📊 ChunkChurnOverlay<br/><small>batchSetPayload</small>]
 
@@ -45,21 +45,70 @@ flowchart TB
 
 ## Key Design Decisions
 
-- **No git blame** — all metrics derive from commit history, not per-line attribution.
-- **No process spawns for commit data** — isomorphic-git reads `.git/objects/pack/` directly.
-- **Single CLI call** — only `git log --all --numstat` for line-level stats (one spawn total).
+- **Pluggable git access** — every history read (log, blame, blobs) goes
+  through the VCS adapter hierarchy below, selected by `GIT_ADAPTER`.
+- **Persistent batch reads** — bulk blob/OID reads share one long-lived
+  backend (a `git cat-file --batch` process on the CLI engine, an open
+  repository handle on es-git) instead of per-operation spawns. isomorphic-git
+  was removed entirely: its pack reader loaded whole packfiles into memory.
+- **Blame-backed ownership** — the `blame*` ownership family comes from
+  per-line HEAD attribution via the adapter; churn metrics derive from commit
+  history.
 - **Background execution** — both phases run asynchronously after indexing returns.
 - **HEAD-based caching** — results are cached and invalidated when HEAD changes.
 
+## Git Access Layer — VCS Adapter Hierarchy
+
+<MermaidTeaRAGs>
+{`
+flowchart LR
+    Trajectory[🍵 git trajectory<br/><small>enrichment domain</small>]
+    Factory[🏭 VcsAdapterFactory<br/><small>GIT_ADAPTER env</small>]
+
+    subgraph hierarchy["VCS adapter hierarchy"]
+        VcsAdapter[📜 VcsAdapter<br/><small>VCS-portable contract</small>]
+        VcsGit[🔀 VcsGitAdapter<br/><small>git-family contract</small>]
+        GitCli[💻 GitCliAdapter<br/><small>system git CLI</small>]
+        EsGit[⚡ EsGitAdapter<br/><small>in-process libgit2</small>]
+
+        VcsAdapter --> VcsGit
+        VcsGit --> GitCli
+        VcsGit --> EsGit
+    end
+
+    Trajectory --> Factory --> VcsGit
+`}
+</MermaidTeaRAGs>
+
+- `VcsAdapter` — the VCS-portable subset (head, blame, numstat log, commits,
+  blob reads); the top-level abstraction a future non-git VCS would implement.
+- `VcsGitAdapter` — the git-strength contract the trajectory domain actually
+  consumes: pathspec-filtered discovery and batch blob/OID plumbing are git
+  semantics, so consumers type against this class, not the weaker portable one.
+- `GitCliAdapter` — the system git binary, one process per operation; the
+  reference implementation and the equivalence oracle.
+- `EsGitAdapter` — [es-git](https://github.com/toss/es-git) (napi-rs over
+  libgit2): the repository opens once and every read happens in-process.
+  Selected with `GIT_ADAPTER=es-git`; if the binding cannot load, every git
+  operation fails loudly with an install hint — no silent fallback.
+
+Adapter instances are repo-scoped and constructed lazily per resolved
+repository root; worker threads build their own instance in-thread from the
+job payload (instances never cross thread boundaries). See
+[Git Enrichments — Git History Engine](/usage/advanced/git-enrichments#git-history-engine)
+for the user-facing guide.
+
 ## Phase 1: File-Level Enrichment
 
-Reads git history via isomorphic-git (bounded by `TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`, default 12 months), with CLI fallback on timeout (`TRAJECTORY_GIT_LOG_TIMEOUT_MS`).
+Reads git history through the active VCS adapter (`readNumstatLog`, bounded by
+`TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`, default 12 months; timeout
+`TRAJECTORY_GIT_LOG_TIMEOUT_MS` applies to the CLI engine).
 
 ```text
-git log (isomorphic-git, reads .git directly)
+numstat log (VCS adapter: git CLI or in-process es-git)
   -> per-file CommitInfo[] + linesAdded/linesDeleted
-    -> computeFileMetadata()
-      -> GitFileMetadata (stored on all chunks of the file)
+    -> computeFileSignals()
+      -> GitFileSignals (stored on all chunks of the file)
 ```
 
 **Output:** `GitFileMetadata` containing commitCount, relativeChurn, recencyWeightedFreq, changeDensity, churnVolatility, bugFixRate, two parallel ownership families (`recentDominantAuthor` / `recentDominantAuthorPct` / `recentAuthors` / `recentContributorCount` from the configurable recent commit window, and `blameDominantAuthor` / `blameDominantAuthorPct` / `blameAuthors` / `blameContributorCount` from `git blame HEAD`), and other signals. Stored on **all chunks** of the file via the `git.*` payload namespace.
@@ -71,10 +120,10 @@ The two ownership families capture distinct semantics: `recent*` reflects who's 
 Walks recent commits, diffs trees, reads blobs, and computes line-level patches to determine which chunks were affected by each commit.
 
 ```text
-git log (last N commits, isomorphic-git)
-  -> for each commit: diffTrees(parent, commit) -> changed files
+commit discovery (VCS adapter, last N months)
+  -> for each commit: changed files (parent vs commit)
     -> filter to files with >1 chunk in index
-      -> readBlob(parent) + readBlob(commit) -> structuredPatch (jsdiff)
+      -> batch blob reads (parent + commit) -> structuredPatch (jsdiff)
         -> hunks with line numbers -> overlaps(hunk, chunk)
           -> per-chunk accumulators -> ChunkChurnOverlay
             -> batchSetPayload with dot-notation merge
@@ -142,6 +191,7 @@ analytics").
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `GIT_ADAPTER` | `git` | Git history engine: `git` (system CLI) or `es-git` (in-process libgit2). Pinned per project in the registry |
 | `TRAJECTORY_GIT_ENABLED` | `true` | Enable git enrichment during indexing. Set to `false` for non-git projects or fast iteration |
 | `TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS` | `12` | Time window for file-level git analysis (months). `0` = no age limit |
 | `TRAJECTORY_GIT_LOG_TIMEOUT_MS` | `60000` | Timeout for `git log --numstat` (ms); falls back to native CLI on expiry |

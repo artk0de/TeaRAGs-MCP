@@ -10,8 +10,9 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as gitClient from "../../../../../../src/core/adapters/git/client.js";
-import type { CommitInfo } from "../../../../../../src/core/adapters/git/types.js";
+import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
+import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 import {
   GitCommitDiscovery,
   type GitCommitDiscoveryEntry,
@@ -20,7 +21,7 @@ import {
 } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
 
 // Enable cross-module spy interception for adapter functions.
-vi.mock("../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
 
 const HEAD = "h".repeat(40);
 const PRIOR_HEAD = "g".repeat(40);
@@ -67,7 +68,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
     const sinceSpy = vi
       .spyOn(gitClient, "getCommitsSince")
       .mockResolvedValue([entry("sha3", ["a.ts"]), entry("sha2", ["b.ts", "a.ts"]), entry("sha1", ["a.ts"])]);
-    const discovery = new GitCommitDiscovery("/repo", { maxAgeMonths: 6, timeoutMs: 5000 });
+    const discovery = new GitCommitDiscovery(new GitCliAdapter("/repo"), { maxAgeMonths: 6, timeoutMs: 5000 });
 
     const forA = await discovery.commitsForFiles(["a.ts"]);
     expect(forA.map((e) => e.commit.sha)).toEqual(["sha3", "sha2", "sha1"]);
@@ -86,7 +87,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
   it("single-flights concurrent first calls (getCommitsSince called once across Promise.all)", async () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue(HEAD);
     const sinceSpy = vi.spyOn(gitClient, "getCommitsSince").mockResolvedValue([entry("sha1", ["a.ts"])]);
-    const discovery = new GitCommitDiscovery("/repo", { maxAgeMonths: 6, timeoutMs: 5000 });
+    const discovery = new GitCommitDiscovery(new GitCliAdapter("/repo"), { maxAgeMonths: 6, timeoutMs: 5000 });
 
     await Promise.all([discovery.commitsForFiles(["a.ts"]), discovery.getBugFixShas()]);
 
@@ -101,7 +102,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
       entry("sha1", ["a.ts"], "feat: base", []),
       entry("sha0", ["c.ts"], "feat: unrelated", []),
     ]);
-    const discovery = new GitCommitDiscovery("/repo", { maxAgeMonths: 6, timeoutMs: 5000 });
+    const discovery = new GitCommitDiscovery(new GitCliAdapter("/repo"), { maxAgeMonths: 6, timeoutMs: 5000 });
 
     const shas = await discovery.getBugFixShas();
 
@@ -117,7 +118,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
     const store = fakeStore({
       load: vi.fn().mockReturnValue(persisted(HEAD, freshIso, [entry("sha1", ["a.ts"])])),
     } as never);
-    const discovery = new GitCommitDiscovery("/repo", { maxAgeMonths: 6, timeoutMs: 5000, store });
+    const discovery = new GitCommitDiscovery(new GitCliAdapter("/repo"), { maxAgeMonths: 6, timeoutMs: 5000, store });
 
     const forA = await discovery.commitsForFiles(["a.ts"]);
 
@@ -137,7 +138,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
     const store = fakeStore({
       loadLatest: vi.fn().mockReturnValue(persisted(PRIOR_HEAD, priorIso, priorEntries)),
     } as never);
-    const discovery = new GitCommitDiscovery("/repo", { maxAgeMonths: 6, timeoutMs: 5000, store });
+    const discovery = new GitCommitDiscovery(new GitCliAdapter("/repo"), { maxAgeMonths: 6, timeoutMs: 5000, store });
 
     const forA = await discovery.commitsForFiles(["a.ts"]);
 
@@ -164,7 +165,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
     const store = fakeStore({
       loadLatest: vi.fn().mockReturnValue(persisted(PRIOR_HEAD, priorIso, [entry("oldsha", ["a.ts"])])),
     } as never);
-    const discovery = new GitCommitDiscovery("/repo", { maxAgeMonths: 6, timeoutMs: 5000, store });
+    const discovery = new GitCommitDiscovery(new GitCliAdapter("/repo"), { maxAgeMonths: 6, timeoutMs: 5000, store });
 
     const forA = await discovery.commitsForFiles(["a.ts"]);
 
@@ -186,7 +187,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
       load: vi.fn().mockReturnValue(persisted(HEAD, driftedIso, [entry("stale", ["a.ts"])])),
       loadLatest: vi.fn().mockReturnValue(persisted(HEAD, driftedIso, [entry("stale", ["a.ts"])])),
     } as never);
-    const discovery = new GitCommitDiscovery("/repo", { maxAgeMonths: 6, timeoutMs: 5000, store });
+    const discovery = new GitCommitDiscovery(new GitCliAdapter("/repo"), { maxAgeMonths: 6, timeoutMs: 5000, store });
 
     const forA = await discovery.commitsForFiles(["a.ts"]);
 
@@ -198,7 +199,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
   it("works without a store — plain single discovery", async () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue(HEAD);
     const sinceSpy = vi.spyOn(gitClient, "getCommitsSince").mockResolvedValue([entry("sha1", ["a.ts"])]);
-    const discovery = new GitCommitDiscovery("/repo", { maxAgeMonths: 6, timeoutMs: 5000 });
+    const discovery = new GitCommitDiscovery(new GitCliAdapter("/repo"), { maxAgeMonths: 6, timeoutMs: 5000 });
 
     expect((await discovery.commitsForFiles(["a.ts"])).map((e) => e.commit.sha)).toEqual(["sha1"]);
     expect(await discovery.commitsForFiles(["a.ts"])).toHaveLength(1);

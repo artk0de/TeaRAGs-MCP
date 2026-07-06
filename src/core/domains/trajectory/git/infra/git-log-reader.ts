@@ -2,11 +2,13 @@
  * GitLogReader — stateful facade over git enrichment modules.
  *
  * Holds cache state (HEAD-based result cache + isomorphic-git pack cache)
- * and delegates to file-reader, chunk-reader, and metrics modules.
+ * and delegates to file-reader, chunk-reader, and metrics modules. History
+ * access rides the per-call `VcsGitAdapter` (mirrors how the class used to
+ * receive repoRoot per method).
  */
 
-import { getHead } from "../../../../adapters/git/client.js";
-import type { FileChurnData } from "../../../../adapters/git/types.js";
+import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
+import type { FileChurnData } from "../../../../adapters/vcs/types.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import { GitEnrichmentCache } from "./cache.js";
@@ -28,19 +30,19 @@ export class GitLogReader {
 
   /**
    * Build per-file FileChurnData from git history.
-   * Delegates to file-reader (CLI only).
+   * Delegates to file-reader (adapter-backed).
    */
   async buildFileSignalMap(
-    repoRoot: string,
+    adapter: VcsGitAdapter,
     maxAgeMonths?: number,
     timeoutMs?: number,
   ): Promise<Map<string, FileChurnData>> {
-    return buildFileSignalMapImpl(repoRoot, this.enrichmentCache, maxAgeMonths, timeoutMs);
+    return buildFileSignalMapImpl(adapter, this.enrichmentCache, maxAgeMonths, timeoutMs);
   }
 
-  /** @deprecated Use getHead from adapters/git/client.js */
-  async getHead(repoRoot: string): Promise<string> {
-    return getHead(repoRoot);
+  /** @deprecated Use VcsGitAdapter#getHead directly */
+  async getHead(adapter: VcsGitAdapter): Promise<string> {
+    return adapter.getHead();
   }
 
   /**
@@ -48,11 +50,11 @@ export class GitLogReader {
    * Delegates to file-reader.
    */
   async buildFileSignalsForPaths(
-    repoRoot: string,
+    adapter: VcsGitAdapter,
     paths: string[],
     timeoutMs = 30000,
   ): Promise<Map<string, FileChurnData>> {
-    return buildFileSignalsForPaths(repoRoot, paths, timeoutMs);
+    return buildFileSignalsForPaths(adapter, paths, timeoutMs);
   }
 
   /**
@@ -60,14 +62,14 @@ export class GitLogReader {
    * Delegates to chunk-reader.
    */
   async buildChunkChurnMap(
-    repoRoot: string,
+    adapter: VcsGitAdapter,
     chunkMap: Map<string, ChunkLookupEntry[]>,
     concurrency = 10,
     maxAgeMonths = 6,
     fileChurnDataMap?: Map<string, FileChurnData>,
   ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
     return buildChunkChurnMapImpl(
-      repoRoot,
+      adapter,
       chunkMap,
       this.enrichmentCache,
       this.cache,

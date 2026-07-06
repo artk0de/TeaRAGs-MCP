@@ -1,4 +1,4 @@
-import { resolveQdrantUrl } from "../core/api/public/index.js";
+import { EMBEDDED_MARKER, resolveQdrantUrl } from "../core/api/public/index.js";
 
 export interface TuneQdrantResolution {
   /** URL to pass to the benchmark child. `undefined` only when the caller
@@ -35,8 +35,13 @@ export async function resolveTuneQdrantUrl(
   opts: ResolveTuneQdrantUrlOpts = {},
 ): Promise<TuneQdrantResolution> {
   const env = opts.env ?? process.env;
-  if (explicit) return { url: explicit };
-  if (env.QDRANT_URL) return { url: env.QDRANT_URL };
+  // The registry persists qdrantUrl as the `embedded` SENTINEL (the daemon's
+  // port is ephemeral), and replayRegistryEnv can seed QDRANT_URL=embedded. That
+  // is NOT a literal URL — it means "resolve the embedded daemon", so fall
+  // through to the spawn/attach path instead of handing "embedded" to the
+  // benchmark ("Failed to parse URL from embedded").
+  if (explicit && explicit !== EMBEDDED_MARKER) return { url: explicit };
+  if (env.QDRANT_URL && env.QDRANT_URL !== EMBEDDED_MARKER) return { url: env.QDRANT_URL };
 
   const resolve = opts.resolveEmbedded ?? resolveQdrantUrl;
   const resolution = await resolve();

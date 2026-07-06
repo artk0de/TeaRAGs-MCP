@@ -7,7 +7,8 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { CommitInfo } from "../../../../../../src/core/adapters/git/types.js";
+import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
+import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import type {
   ChunkChurnWalkStats,
@@ -59,7 +60,7 @@ async function walkOnce(
   memo?: CommitDiffMemo,
 ): Promise<void> {
   await buildChunkChurnMapUncached(
-    "/fake/repo",
+    new GitCliAdapter("/fake/repo"),
     chunkMapFor(file),
     {},
     10,
@@ -122,7 +123,7 @@ describe("chunk-churn walk stats (bd tea-rags-mcp-iqpuu)", () => {
 
     // Signature without the trailing callback must keep working unchanged.
     const result = (await buildChunkChurnMapUncached(
-      "/fake/repo",
+      new GitCliAdapter("/fake/repo"),
       chunkMapFor("test.ts"),
       {},
       10,

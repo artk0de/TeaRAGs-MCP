@@ -1,7 +1,7 @@
 /**
  * Worktree HEAD tripwire (vitest globalSetup).
  *
- * Real-git fixture tests (e.g. tests/core/adapters/git/client-catfile.test.ts)
+ * Real-git fixture tests (e.g. tests/core/adapters/vcs/git/git-cli/client-catfile.test.ts)
  * run `git init`/`git commit` in temp dirs. If one ever runs against a broken
  * cwd, it commits onto the REAL worktree's HEAD — silently corrupting the dev
  * repo. This snapshots HEAD before the run and fails the run loudly if any test

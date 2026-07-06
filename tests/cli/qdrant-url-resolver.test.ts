@@ -52,6 +52,25 @@ describe("resolveTuneQdrantUrl", () => {
     expect(release).not.toHaveBeenCalled();
   });
 
+  it("treats the 'embedded' sentinel (explicit) as spawn-embedded, not a literal URL", async () => {
+    // The registry persists qdrantUrl='embedded' (the daemon's port is
+    // ephemeral). applyProjectDefaults feeds it in as the explicit URL; without
+    // this it reached the benchmark verbatim → "Failed to parse URL from embedded".
+    const resolveEmbedded = vi
+      .fn()
+      .mockResolvedValue({ mode: "embedded", url: "http://127.0.0.1:60123", release: vi.fn() });
+    const out = await resolveTuneQdrantUrl("embedded", { resolveEmbedded, env: {} });
+    expect(out.url).toBe("http://127.0.0.1:60123");
+    expect(resolveEmbedded).toHaveBeenCalledOnce();
+  });
+
+  it("treats QDRANT_URL='embedded' (replayed from the registry) as spawn-embedded", async () => {
+    const resolveEmbedded = vi.fn().mockResolvedValue({ mode: "external", url: "http://localhost:6333" });
+    const out = await resolveTuneQdrantUrl(undefined, { resolveEmbedded, env: { QDRANT_URL: "embedded" } });
+    expect(out.url).toBe("http://localhost:6333");
+    expect(resolveEmbedded).toHaveBeenCalledOnce();
+  });
+
   it("propagates errors from the embedded resolver (daemon spawn failures surface to the user)", async () => {
     const resolveEmbedded = vi.fn().mockRejectedValue(new Error("qdrant binary missing"));
     await expect(resolveTuneQdrantUrl(undefined, { resolveEmbedded, env: {} })).rejects.toThrow(

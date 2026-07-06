@@ -7,7 +7,7 @@
  * Extracted from the monolithic computeFileSignals() in metrics.ts.
  */
 
-import type { CommitInfo } from "../../../../../adapters/git/types.js";
+import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
 import { isBugFixCommitOrBranch } from "../metrics.js";
 import { extractTaskIds } from "../utils.js";
 

@@ -97,23 +97,26 @@ describe("WorktreeProvisioner.create saga", () => {
     expect(recorded[0].qdrantEmbedded).toBe(true);
   });
 
-  it("propagates the tuning snapshot from the source entry to the worktree clone entry", async () => {
+  it("propagates the env snapshot from the source entry to the worktree clone entry", async () => {
     // A worktree reindex runs in a fresh shell; the clone entry must carry the
-    // source project's index-time tuning so the registry-first re-apply keeps
+    // source project's index-time env set so the registry-first re-apply keeps
     // the same knobs (mirrors qdrantEmbedded / codegraphEnabled propagation).
+    // Legacy sources store it in the deprecated `tuning` field — the clone
+    // normalizes it into `env`.
     const { deps, recorded } = makeDeps();
     const ops = new WorktreeProvisioner(deps);
     await ops.create({ name: "x", createGit: false });
-    expect(recorded[0].tuning).toEqual({ TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5" });
+    expect(recorded[0].env).toEqual({ TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5" });
   });
 
-  it("omits tuning on the clone when the source entry has none (legacy entry)", async () => {
+  it("omits the env snapshot on the clone when the source entry has none (legacy entry)", async () => {
     const { deps, recorded, sourceEntry } = makeDeps();
-    const { tuning: _tuning, ...legacy } = sourceEntry;
+    const { tuning: _tuning, env: _env, ...legacy } = sourceEntry;
     deps.registry.findByName = vi.fn(() => legacy);
     deps.registry.findByPath = vi.fn(() => legacy);
     const ops = new WorktreeProvisioner(deps);
     await ops.create({ name: "x", createGit: false });
+    expect("env" in recorded[0]).toBe(false);
     expect("tuning" in recorded[0]).toBe(false);
   });
 

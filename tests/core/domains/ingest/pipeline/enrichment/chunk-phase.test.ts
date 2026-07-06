@@ -388,18 +388,57 @@ describe("ChunkPhase", () => {
       expect(blobReaderFactory).toHaveBeenCalledTimes(1);
       expect(blobReaderFactory).toHaveBeenCalledWith("/repo");
 
-      // Every per-batch buildChunkSignals call receives the SAME shared reader.
-      expect(buildChunkSignals).toHaveBeenCalledTimes(3);
-      for (const call of buildChunkSignals.mock.calls) {
-        expect(call[2]).toEqual(expect.objectContaining({ blobReader: sharedReader }));
-      }
-
       // Reader is still open until drain completes the run's chunk work.
       expect(close).not.toHaveBeenCalled();
 
       await phase.drain();
 
+      // Every per-batch buildChunkSignals call received the SAME shared
+      // reader (the factory result is awaited, so dispatch lands a microtick
+      // after onBatchProvider — asserted post-drain).
+      expect(buildChunkSignals).toHaveBeenCalledTimes(3);
+      for (const call of buildChunkSignals.mock.calls) {
+        expect(call[2]).toEqual(expect.objectContaining({ blobReader: sharedReader }));
+      }
+
       // Closed exactly once at end of drain — no idle git process left behind.
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it("awaits an async blobReaderFactory once and shares the RESOLVED reader (vcs adapter path)", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+
+      const close = vi.fn().mockResolvedValue(undefined);
+      const sharedReader = { read: vi.fn(), close };
+      // es-git adapters open asynchronously — the factory returns a Promise.
+      const blobReaderFactory = vi.fn().mockResolvedValue(sharedReader);
+
+      const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
+      const ctx = buildCtx({ buildChunkSignals });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor(), blobReaderFactory);
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "2026-05-07T10:00:00Z");
+
+      const batchA = [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 } },
+      ] as any[];
+      const batchB = [
+        { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/b.ts" }, startLine: 1, endLine: 10 } },
+      ] as any[];
+
+      phase.onBatchProvider("git", "coll", "/repo", batchA);
+      phase.onBatchProvider("git", "coll", "/repo", batchB);
+
+      expect(blobReaderFactory).toHaveBeenCalledTimes(1);
+      expect(blobReaderFactory).toHaveBeenCalledWith("/repo");
+
+      await phase.drain();
+
+      // Both batches saw the RESOLVED reader, never the Promise wrapper.
+      expect(buildChunkSignals).toHaveBeenCalledTimes(2);
+      for (const call of buildChunkSignals.mock.calls) {
+        expect(call[2]).toEqual(expect.objectContaining({ blobReader: sharedReader }));
+      }
       expect(close).toHaveBeenCalledTimes(1);
     });
 
@@ -466,7 +505,10 @@ describe("ChunkPhase", () => {
     const threeFiles = [
       { chunkId: "g1", chunk: { metadata: { filePath: "/repo/db/schema.rb" }, startLine: 1, endLine: 10 } } as any,
       { chunkId: "d1", chunk: { metadata: { filePath: "/repo/README.md" }, startLine: 1, endLine: 10 } } as any,
-      { chunkId: "s1", chunk: { metadata: { filePath: "/repo/app/models/user.rb" }, startLine: 1, endLine: 10 } } as any,
+      {
+        chunkId: "s1",
+        chunk: { metadata: { filePath: "/repo/app/models/user.rb" }, startLine: 1, endLine: 10 },
+      } as any,
     ];
 
     const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
@@ -474,7 +516,9 @@ describe("ChunkPhase", () => {
     phase.onBatch("coll", "/repo", threeFiles);
     await phase.drain();
 
-    const enrichedRel = new Set(buildChunkSignals.mock.calls.flatMap((c) => [...(c[1] as Map<string, unknown>).keys()]));
+    const enrichedRel = new Set(
+      buildChunkSignals.mock.calls.flatMap((c) => [...(c[1] as Map<string, unknown>).keys()]),
+    );
     expect(enrichedRel.has("app/models/user.rb")).toBe(true);
     expect(enrichedRel.has("db/schema.rb")).toBe(false);
     expect(enrichedRel.has("README.md")).toBe(false);

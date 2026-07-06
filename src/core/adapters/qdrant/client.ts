@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -6,6 +7,11 @@ import { QdrantClient } from "@qdrant/js-client-rest";
 
 import { InvalidQueryError } from "../../domains/explore/errors.js";
 import { QdrantAliasManager } from "./aliases.js";
+import {
+  parseCorruptCollection,
+  QDRANT_CRASH_LOG_NAME,
+  quarantineCorruptCollection,
+} from "./embedded/corruption-recovery.js";
 import type { StartupPhase } from "./embedded/types.js";
 import {
   CollectionAlreadyExistsError,
@@ -107,29 +113,29 @@ export class QdrantManager {
     try {
       return await fn();
     } catch (error: unknown) {
-      if (isConnectionError(error) && (await this.tryReconnect())) {
-        return await fn();
-      }
-      if (isConnectionError(error)) {
-        const cause = error instanceof Error ? error : undefined;
-        const phase = this.daemon?.startupPhase();
-        if (phase === "starting") {
-          throw new QdrantStartingError(
-            this.qdrantUrl,
-            { pid: this.daemon?.pid, storagePath: this.daemon?.storagePath },
-            cause,
-          );
+      if (!isConnectionError(error)) throw error;
+      // A dead embedded daemon may have been bricked by a corrupt versioned
+      // collection (killed reindex → WAL replay panic on boot). Quarantine it
+      // BEFORE reconnect so the respawn boots clean (tea-rags-mcp-mh7nr).
+      this.quarantineCorruptCollectionIfDead();
+      let connError: unknown = error;
+      if (await this.tryReconnect()) {
+        try {
+          return await fn();
+        } catch (retryError: unknown) {
+          if (!isConnectionError(retryError)) throw retryError;
+          // The freshly-respawned daemon is still booting — fall through to
+          // phase classification so a RETRYABLE "starting" surfaces instead of
+          // a bare "fetch failed" that fails the whole run.
+          connError = retryError;
         }
-        if (phase === "recovering") {
-          throw new QdrantRecoveringError(
-            this.qdrantUrl,
-            { pid: this.daemon?.pid, storagePath: this.daemon?.storagePath },
-            cause,
-          );
-        }
-        throw new QdrantUnavailableError(this.qdrantUrl, cause);
       }
-      throw error;
+      const cause = connError instanceof Error ? connError : undefined;
+      const daemonCtx = { pid: this.daemon?.pid, storagePath: this.daemon?.storagePath };
+      const phase = this.daemon?.startupPhase();
+      if (phase === "starting") throw new QdrantStartingError(this.qdrantUrl, daemonCtx, cause);
+      if (phase === "recovering") throw new QdrantRecoveringError(this.qdrantUrl, daemonCtx, cause);
+      throw new QdrantUnavailableError(this.qdrantUrl, cause);
     }
   }
 
@@ -145,6 +151,37 @@ export class QdrantManager {
     this.client = new QdrantClient({ url: newUrl, apiKey: this.apiKey });
     this._aliases = undefined;
     return true;
+  }
+
+  /** Collections already moved aside this session — a name recurring here means
+   *  the quarantine did not help, so we stop rather than loop forever. */
+  private readonly quarantinedCorrupt = new Set<string>();
+
+  /**
+   * If the embedded daemon is DEAD and its crash log names a collection that
+   * panicked the shard load, move that collection aside so the next respawn
+   * boots clean. A no-op for a live daemon, an external qdrant, a healthy crash
+   * log, or a collection already tried this session (dedup guard against an
+   * infinite quarantine loop). The respawn itself is the caller's `tryReconnect`.
+   */
+  private quarantineCorruptCollectionIfDead(): void {
+    const {daemon} = this;
+    if (daemon?.startupPhase() !== null) return; // only a dead daemon
+    let crashLog: string;
+    try {
+      crashLog = readFileSync(join(daemon.storagePath, QDRANT_CRASH_LOG_NAME), "utf8");
+    } catch {
+      return; // no crash log (external qdrant, or never captured)
+    }
+    const corrupt = parseCorruptCollection(crashLog);
+    if (!corrupt || this.quarantinedCorrupt.has(corrupt)) return;
+    this.quarantinedCorrupt.add(corrupt);
+    try {
+      const dest = quarantineCorruptCollection(daemon.storagePath, corrupt, Date.now());
+      console.error(`[tea-rags] Quarantined corrupt Qdrant collection '${corrupt}' → ${dest}; respawning daemon`);
+    } catch {
+      /* dir gone / move raced → fall through to the normal unavailable path */
+    }
   }
 
   get url(): string {
@@ -310,7 +347,10 @@ export class QdrantManager {
       config.quantization_config = { scalar: { type: "int8", always_ram: true } };
     }
 
-    if (strictMode && (strictMode.maxResidentMemoryPercent !== undefined || strictMode.searchMaxBatchsize !== undefined)) {
+    if (
+      strictMode &&
+      (strictMode.maxResidentMemoryPercent !== undefined || strictMode.searchMaxBatchsize !== undefined)
+    ) {
       config.strict_mode_config = {
         enabled: true,
         ...(strictMode.maxResidentMemoryPercent !== undefined && {

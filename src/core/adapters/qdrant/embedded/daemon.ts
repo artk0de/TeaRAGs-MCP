@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -7,6 +7,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { compareSemver, isSemver } from "../../../infra/qdrant-version.js";
 import { QdrantOperationError, QdrantUnavailableError } from "../errors.js";
+import { QDRANT_CRASH_LOG_NAME } from "./corruption-recovery.js";
 import { DaemonLock } from "./daemon-lock.js";
 import {
   assertNoDowngrade,
@@ -555,13 +556,21 @@ async function ensureDaemon(appDataPath?: string, lowMemory = false): Promise<Da
     const port = await findFreePort();
     const binaryPath = getBinaryPath(undefined, appDataPath);
 
+    // Pipe qdrant's stderr to a per-storage crash log (truncated each cold
+    // spawn) so a shard-load panic is recoverable instead of vanishing into
+    // /dev/null. A killed reindex can leave a corrupt versioned collection whose
+    // WAL replay panics on the NEXT boot and bricks the WHOLE daemon; the client
+    // reads this log to quarantine the named collection and respawn clean
+    // (see corruption-recovery.ts, tea-rags-mcp-mh7nr). stdout stays discarded.
+    const crashLogFd = openSync(join(storagePath, QDRANT_CRASH_LOG_NAME), "w");
     const child = spawn(binaryPath, ["--disable-telemetry"], {
       cwd: dirname(binaryPath),
       detached: true,
-      stdio: "ignore",
+      stdio: ["ignore", "ignore", crashLogFd],
       env: buildDaemonEnv(storagePath, port, process.env, lowMemory),
     });
     child.unref();
+    closeSync(crashLogFd); // the detached child holds its own dup of the fd
 
     const { pid } = child;
     if (pid === undefined) {

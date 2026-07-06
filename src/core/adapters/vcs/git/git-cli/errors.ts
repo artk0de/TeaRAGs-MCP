@@ -2,7 +2,7 @@
  * Git CLI adapter errors.
  */
 
-import { InfraError } from "../errors.js";
+import { InfraError } from "../../../errors.js";
 
 export class GitCliNotFoundError extends InfraError {
   constructor() {

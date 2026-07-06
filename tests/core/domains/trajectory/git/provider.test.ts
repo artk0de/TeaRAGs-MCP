@@ -2,10 +2,16 @@ import * as nodeFs from "node:fs";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { blameFile, createCatFileBatchCheck, getHead } from "../../../../../src/core/adapters/git/client.js";
+import { VcsAdapterFactory } from "../../../../../src/core/adapters/vcs/factory.js";
+import {
+  blameFile,
+  createCatFileBatchCheck,
+  getHead,
+} from "../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import { buildChunkChurnMap } from "../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
-import { ChunkChurnWalkThread } from "../../../../../src/core/domains/trajectory/git/infra/churn-walk/thread.js";
+import { ChunkChurnWalkPool } from "../../../../../src/core/domains/trajectory/git/infra/churn-walk/walk-pool.js";
 import { GitCommitDiscovery } from "../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
+import { FileChurnDiscovery } from "../../../../../src/core/domains/trajectory/git/infra/file-churn-discovery.js";
 import {
   buildFileSignalDiscovery,
   buildFileSignalMap,
@@ -18,9 +24,10 @@ vi.mock("node:fs", async () => {
   return { ...actual, existsSync: vi.fn() };
 });
 
-vi.mock("../../../../../src/core/adapters/git/client.js", () => ({
+vi.mock("../../../../../src/core/adapters/vcs/git/git-cli/client.js", () => ({
   resolveRepoRoot: vi.fn((p: string) => p),
   blameFile: vi.fn().mockResolvedValue([]),
+  writeCommitGraph: vi.fn().mockResolvedValue(undefined),
   getHead: vi.fn().mockResolvedValue("headsha"),
   // Default: a fresh working reader so the resolveHeadOids success path runs
   // (existing tests only care that blame still runs for every file — see
@@ -52,12 +59,36 @@ vi.mock("../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js", 
   buildChunkChurnMap: vi.fn().mockResolvedValue(new Map()),
 }));
 
+// The FILE-phase blame pool (bd tea-rags-mcp-dog1v). Mocked so unit tests never
+// spawn worker_threads: the spy DELEGATES to the same git-cli `blameFile` mock
+// the inline path used, so every existing blame assertion holds unchanged — the
+// pool is just the new transport for shallow-history files.
+const { blamePoolBlame } = vi.hoisted(() => ({ blamePoolBlame: vi.fn() }));
+vi.mock("../../../../../src/core/domains/trajectory/git/infra/churn-walk/blame-pool.js", () => ({
+  // Regular function (not arrow) so `new BlameWorkerPool(size)` works — the
+  // returned object is the instance; `blame` is the shared, delegating spy.
+  BlameWorkerPool: vi.fn(function () {
+    return { blame: blamePoolBlame, close: vi.fn().mockResolvedValue(undefined) };
+  }),
+}));
+
 describe("GitEnrichmentProvider", () => {
   let provider: GitEnrichmentProvider;
 
   beforeEach(() => {
     provider = new GitEnrichmentProvider();
     vi.mocked(nodeFs.existsSync).mockReturnValue(false);
+    // Delegate the pool to the git-cli `blameFile` mock (root, relPath, timeoutMs)
+    // so shallow-file blame is driven by each test's blameFile mock, exactly as
+    // the inline path was — existing assertions on blameFile stay valid.
+    blamePoolBlame.mockReset();
+    blamePoolBlame.mockImplementation(
+      async (root: string, _kind: string, files: { relPath: string }[], timeoutMs: number) => {
+        const map = new Map<string, unknown>();
+        for (const { relPath } of files) map.set(relPath, await blameFile(root, relPath, timeoutMs));
+        return map;
+      },
+    );
   });
 
   it("has key 'git'", () => {
@@ -92,7 +123,13 @@ describe("GitEnrichmentProvider", () => {
 
       const result = await provider.buildFileSignals("/repo");
 
-      expect(buildFileSignalMap).toHaveBeenCalledWith("/repo", expect.anything(), 12, 60000);
+      expect(buildFileSignalMap).toHaveBeenCalledWith(
+        expect.objectContaining({ repoRoot: "/repo" }),
+        expect.anything(),
+        12,
+        60000,
+        expect.any(FileChurnDiscovery), // run-scoped store-backed discovery (Task 4 wiring)
+      );
       expect(result.size).toBe(1);
       expect(result.has("src/a.ts")).toBe(true);
     });
@@ -104,7 +141,11 @@ describe("GitEnrichmentProvider", () => {
 
       const result = await provider.buildFileSignals("/repo", { paths: ["src/b.ts"] });
 
-      expect(buildFileSignalsForPaths).toHaveBeenCalledWith("/repo", ["src/b.ts"], 60000);
+      expect(buildFileSignalsForPaths).toHaveBeenCalledWith(
+        expect.objectContaining({ repoRoot: "/repo" }),
+        ["src/b.ts"],
+        60000,
+      );
       expect(result.size).toBe(1);
       expect(result.has("src/b.ts")).toBe(true);
     });
@@ -151,6 +192,27 @@ describe("GitEnrichmentProvider", () => {
       expect(blameByPathArg.get("src/c.ts")).toEqual([blameLineC]);
     });
 
+    it("routes ALL cache-miss files to the off-main-thread blame pool", async () => {
+      // bd tea-rags-mcp-dog1v: blame is now native `git blame` (async child
+      // process) for every file — the depth partition was dropped (es-git
+      // in-process blame was a 60x loss). All misses fan out across the pool.
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      const shallow = { commits: Array.from({ length: 3 }, (_, i) => ({ hash: `s${i}` })), recentAuthors: [] };
+      const deep = { commits: Array.from({ length: 40 }, (_, i) => ({ hash: `d${i}` })), recentAuthors: [] };
+      vi.mocked(buildFileSignalMap).mockResolvedValue(
+        new Map([
+          ["shallow.ts", shallow],
+          ["deep.ts", deep],
+        ]) as any,
+      );
+
+      await provider.buildFileSignals("/repo");
+
+      expect(blamePoolBlame).toHaveBeenCalledTimes(1);
+      const poolFiles = blamePoolBlame.mock.calls[0][2] as { relPath: string }[];
+      expect(poolFiles.map((f) => f.relPath).sort()).toEqual(["deep.ts", "shallow.ts"]);
+    });
+
     it("releases blameByRelPath after chunk enrichment (bounded retention)", async () => {
       // blameByRelPath must persist ACROSS file passes (test above) so chunk
       // enrichment sees every file's blame. But once buildChunkSignals (the last
@@ -193,7 +255,7 @@ describe("GitEnrichmentProvider", () => {
       await provider.buildChunkSignals("/repo", chunkMap as any);
 
       expect(buildChunkChurnMap).toHaveBeenCalledWith(
-        "/repo",
+        expect.objectContaining({ repoRoot: "/repo" }),
         chunkMap,
         expect.anything(), // enrichmentCache
         expect.anything(), // isoGitCache
@@ -230,7 +292,12 @@ describe("GitEnrichmentProvider", () => {
 
       // ONE repo-wide discovery, sliced in memory — the per-path pathspec log is
       // no longer spawned on the streaming path (bd tea-rags-mcp-j4lm9).
-      expect(buildFileSignalDiscovery).toHaveBeenCalledWith("/repo", 60000);
+      expect(buildFileSignalDiscovery).toHaveBeenCalledWith(
+        expect.objectContaining({ repoRoot: "/repo" }),
+        60000,
+        12,
+        expect.any(FileChurnDiscovery), // run-scoped store-backed discovery (Task 4 wiring)
+      );
       expect(buildFileSignalsForPaths).not.toHaveBeenCalled();
       expect(result.has("src/b.ts")).toBe(true);
       expect(result.has("src/other.ts")).toBe(false);
@@ -405,12 +472,88 @@ describe("GitEnrichmentProvider", () => {
       expect(discovery).toBeInstanceOf(GitCommitDiscovery);
     });
 
-    it("createChunkChurnWalkThread builds a fresh worker-thread host per call", () => {
+    it("createChunkChurnWalkThread builds a fresh worker-pool host per call", () => {
       const threadA = provider.createChunkChurnWalkThread();
       const threadB = provider.createChunkChurnWalkThread();
-      expect(threadA).toBeInstanceOf(ChunkChurnWalkThread);
-      expect(threadB).toBeInstanceOf(ChunkChurnWalkThread);
+      expect(threadA).toBeInstanceOf(ChunkChurnWalkPool);
+      expect(threadB).toBeInstanceOf(ChunkChurnWalkPool);
       expect(threadA).not.toBe(threadB);
+    });
+  });
+
+  describe("vcs adapter DI — lazy per-root creation (w2dlu T6)", () => {
+    it("creates the vcs adapter lazily via the factory, once per root (cached for the run)", async () => {
+      const createSpy = vi.spyOn(VcsAdapterFactory, "create");
+      try {
+        vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+        vi.mocked(buildFileSignalsForPaths).mockResolvedValue(new Map() as never);
+
+        await provider.buildFileSignals("/repo", { paths: ["src/a.ts"] });
+        await provider.buildFileSignals("/repo", { paths: ["src/b.ts"] });
+        expect(createSpy).toHaveBeenCalledTimes(1);
+        expect(createSpy).toHaveBeenCalledWith("git", "/repo");
+
+        await provider.buildFileSignals("/repo-2", { paths: ["src/c.ts"] });
+        expect(createSpy).toHaveBeenCalledTimes(2);
+        expect(createSpy).toHaveBeenLastCalledWith("git", "/repo-2");
+      } finally {
+        createSpy.mockRestore();
+      }
+    });
+
+    it("passes the configured adapter kind through to the factory", async () => {
+      const createSpy = vi.spyOn(VcsAdapterFactory, "create");
+      try {
+        vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+        vi.mocked(buildFileSignalsForPaths).mockResolvedValue(new Map() as never);
+        const esProvider = new GitEnrichmentProvider({ vcsAdapter: "es-git" });
+        // The es-git branch fail-louds until T9 — resolve with a stub so the
+        // kind-threading assertion is observable without the real binding.
+        createSpy.mockResolvedValue({ repoRoot: "/repo" } as never);
+
+        await esProvider.buildFileSignals("/repo", { paths: [] });
+
+        expect(createSpy).toHaveBeenCalledWith("es-git", "/repo");
+      } finally {
+        createSpy.mockRestore();
+      }
+    });
+
+    it("finalizeSignals drops the per-root adapter cache (next run re-creates)", async () => {
+      const createSpy = vi.spyOn(VcsAdapterFactory, "create");
+      try {
+        vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+        vi.mocked(buildFileSignalsForPaths).mockResolvedValue(new Map() as never);
+
+        await provider.buildFileSignals("/repo", { paths: [] });
+        await provider.finalizeSignals();
+        await provider.buildFileSignals("/repo", { paths: [] });
+
+        expect(createSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        createSpy.mockRestore();
+      }
+    });
+
+    it("ships the vcs adapter kind in the off-thread walk job (structured-clone-safe literal)", async () => {
+      const discovery = {
+        commitsForFiles: vi.fn().mockResolvedValue([]),
+        getBugFixShas: vi.fn().mockResolvedValue(new Set<string>()),
+      };
+      const walkThread = { walk: vi.fn().mockResolvedValue({ overlays: new Map(), stats: {} }) };
+      const chunkMap = new Map([["/repo/src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]]]);
+
+      await provider.buildChunkSignals(
+        "/repo",
+        chunkMap as never,
+        {
+          churnWalkThread: walkThread,
+          commitDiscovery: discovery,
+          skipCache: true,
+        } as never,
+      );
+
+      expect(walkThread.walk).toHaveBeenCalledWith(expect.objectContaining({ gitAdapter: "git" }));
     });
   });
 

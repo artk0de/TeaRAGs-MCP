@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as gitClient from "../../../../src/core/adapters/git/client.js";
+import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 
 // ─── withTimeout utility ─────────────────────────────────────────────────────
 

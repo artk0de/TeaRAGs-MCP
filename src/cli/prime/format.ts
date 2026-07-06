@@ -141,7 +141,11 @@ function formatRegistryParamsLine(entry: PrimeRegistryEntry): string | null {
     // the pipeline, but registry.json is hand-editable).
     parts.push(`embedding fallback ${entry.embeddingFallbackUrl}`);
   }
-  if (entry.qdrantUrl) {
+  if (entry.qdrantUrl === "embedded") {
+    // Sentinel persistence (2nfdm): the registry stores "embedded", never the
+    // daemon's ephemeral port URL — display it once, no redundant suffix.
+    parts.push("qdrant embedded");
+  } else if (entry.qdrantUrl) {
     parts.push(`qdrant ${entry.qdrantUrl}${entry.qdrantEmbedded ? " (embedded)" : ""}`);
   }
   if (entry.codegraphEnabled !== undefined) {
@@ -150,12 +154,12 @@ function formatRegistryParamsLine(entry: PrimeRegistryEntry): string | null {
   if (entry.teaRagsVersion) {
     parts.push(`v${entry.teaRagsVersion}`);
   }
-  const tuning = Object.entries(entry.tuning ?? {})
+  const envSnapshot = Object.entries(entry.env ?? entry.tuning ?? {})
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
     .join(" ");
-  if (tuning) {
-    parts.push(tuning);
+  if (envSnapshot) {
+    parts.push(envSnapshot);
   }
   return parts.length > 0 ? `registry: ${parts.join(" · ")}` : null;
 }
@@ -256,8 +260,7 @@ function formatStatusLine(status: IndexStatus, now: Date): string {
           ? `${status.filesCount} files / ${status.chunksCount ?? 0} chunks`
           : `${status.chunksCount ?? 0} chunks`;
       const qdrant = status.infraHealth?.qdrant;
-      const size =
-        qdrant?.indexSizeBytes !== undefined ? ` · ${formatBytes(qdrant.indexSizeBytes)} on disk` : "";
+      const size = qdrant?.indexSizeBytes !== undefined ? ` · ${formatBytes(qdrant.indexSizeBytes)} on disk` : "";
       const quant =
         qdrant?.quantization !== undefined
           ? ` · ${qdrant.quantization === "turbo" ? "turbo (8x)" : qdrant.quantization} quant`

@@ -4,14 +4,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   blameFile,
+  buildViaCli,
+  execFileForPathspec,
   getCommitsByPathspec,
   getCommitsByPathspecBatched,
   getCommitsInRange,
   isAncestor,
   resolveRepoRoot,
-} from "../../../../src/core/adapters/git/client.js";
-import { parseBlameOutput, parsePathspecOutput } from "../../../../src/core/adapters/git/parsers.js";
-import type { BlameLine, CommitInfo } from "../../../../src/core/adapters/git/types.js";
+} from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import {
+  parseBlameOutput,
+  parseNumstatOutput,
+  parsePathspecOutput,
+} from "../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js";
+import { execWithStallGuard } from "../../../../../../src/core/adapters/vcs/git/git-cli/stall-guard-exec.js";
+import type { BlameLine, CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 
 // Mock child_process before imports
 vi.mock("node:child_process", () => ({
@@ -19,8 +26,14 @@ vi.mock("node:child_process", () => ({
   execFileSync: vi.fn(),
 }));
 
+// Mock the stall-guard exec seam — the pathspec/log ops stream through it
+// (spawn-based), not through execFile.
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/stall-guard-exec.js", () => ({
+  execWithStallGuard: vi.fn(),
+}));
+
 // Mock parsers — we control their return values to test the batched merge logic
-vi.mock("../../../../src/core/adapters/git/parsers.js", () => ({
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js", () => ({
   parseNumstatOutput: vi.fn(),
   parsePathspecOutput: vi.fn(),
   parseBlameOutput: vi.fn(),
@@ -31,7 +44,9 @@ vi.mock("../../../../src/core/domains/ingest/pipeline/infra/runtime.js", () => (
   isDebug: vi.fn(() => true),
 }));
 
-// Helper to create a mock execFile that resolves with stdout
+// Helper to create a mock execFile that resolves with stdout. The stall-guard
+// seam (spawn-based `git log` ops) is mocked to the same stdout so both exec
+// paths behave identically for these merge-logic tests.
 function mockExecFileResolving(stdout: string) {
   (execFile as unknown as ReturnType<typeof vi.fn>).mockImplementation(
     (_cmd: string, _args: string[], _opts: object, cb?: (err: Error | null, stdout: string) => void) => {
@@ -44,6 +59,7 @@ function mockExecFileResolving(stdout: string) {
       return { stdout };
     },
   );
+  (execWithStallGuard as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(stdout);
 }
 
 function mockExecFileRejecting(error: Error) {
@@ -55,6 +71,7 @@ function mockExecFileRejecting(error: Error) {
       return {};
     },
   );
+  (execWithStallGuard as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(error);
 }
 
 const mockParsePathspecOutput = parsePathspecOutput as ReturnType<typeof vi.fn>;
@@ -122,30 +139,14 @@ describe("getCommitsByPathspecBatched", () => {
 
     const commit1 = makeCommit("c".repeat(40));
 
-    let callCount = 0;
-    // First batch succeeds, second batch throws
-    (execFile as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      (_cmd: string, _args: string[], _opts: object, cb?: (err: Error | null, stdout: string) => void) => {
-        callCount++;
-        if (callCount === 1) {
-          if (cb) cb(null, "fake-stdout");
-          return { stdout: "fake-stdout" };
-        }
-        // Second call: simulate failure
-        if (cb) cb(new Error("git process killed"), "");
-        return {};
-      },
-    );
+    // First batch succeeds, second batch's spawn rejects (stall-guard seam).
+    (execWithStallGuard as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce("fake-stdout")
+      .mockRejectedValueOnce(new Error("git process killed"));
 
     // First batch parses OK
-    mockParsePathspecOutput
-      .mockResolvedValueOnce([{ commit: commit1, changedFiles: ["src/file1.ts"] }])
-      .mockImplementationOnce(() => {
-        throw new Error("git process killed");
-      });
+    mockParsePathspecOutput.mockReturnValueOnce([{ commit: commit1, changedFiles: ["src/file1.ts"] }]);
 
-    // Actually, execFileForPathspec uses promisify(execFile), so the error propagates
-    // through the promise. Let's set up the mock properly for the batched function.
     // The catch block in getCommitsByPathspecBatched catches errors from getCommitsByPathspecSingle.
 
     const filePaths = Array.from({ length: 600 }, (_, i) => `src/file${i}.ts`);
@@ -182,6 +183,40 @@ describe("getCommitsByPathspecBatched", () => {
   });
 });
 
+describe("bulk log stall-window floor (taxdome: a giant commit's numstat is legitimately silent >60s)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("buildViaCli floors the stall window at 10 minutes even when callers pass the 60s log timeout", async () => {
+    mockExecFileResolving("stdout");
+    (parseNumstatOutput as unknown as ReturnType<typeof vi.fn>).mockReturnValue(new Map());
+    await buildViaCli("/fake/repo", undefined, 60_000);
+    const opts = (execWithStallGuard as unknown as ReturnType<typeof vi.fn>).mock.calls[0][2] as {
+      stallTimeoutMs: number;
+    };
+    expect(opts.stallTimeoutMs).toBeGreaterThanOrEqual(600_000);
+  });
+
+  it("execFileForPathspec floors the stall window the same way", async () => {
+    mockExecFileResolving("stdout");
+    await execFileForPathspec("/fake/repo", ["log", "--numstat"], 120_000);
+    const opts = (execWithStallGuard as unknown as ReturnType<typeof vi.fn>).mock.calls[0][2] as {
+      stallTimeoutMs: number;
+    };
+    expect(opts.stallTimeoutMs).toBeGreaterThanOrEqual(600_000);
+  });
+
+  it("a caller-provided window ABOVE the floor is respected", async () => {
+    mockExecFileResolving("stdout");
+    await execFileForPathspec("/fake/repo", ["log", "--numstat"], 1_200_000);
+    const opts = (execWithStallGuard as unknown as ReturnType<typeof vi.fn>).mock.calls[0][2] as {
+      stallTimeoutMs: number;
+    };
+    expect(opts.stallTimeoutMs).toBe(1_200_000);
+  });
+});
+
 describe("getCommitsByPathspec", () => {
   const repoRoot = "/fake/repo";
   const sinceDate = new Date("2025-01-01");
@@ -206,7 +241,7 @@ describe("getCommitsByPathspec", () => {
 
     expect(result).toHaveLength(1);
     // Only one execFile call (single, not batched)
-    expect(execFile).toHaveBeenCalledTimes(1);
+    expect(execWithStallGuard).toHaveBeenCalledTimes(1);
   });
 
   it("should delegate to batched for large file lists (>500)", async () => {
@@ -219,7 +254,7 @@ describe("getCommitsByPathspec", () => {
 
     expect(result.length).toBeGreaterThanOrEqual(1);
     // Should have 2 execFile calls (2 batches: 500 + 1)
-    expect(execFile).toHaveBeenCalledTimes(2);
+    expect(execWithStallGuard).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -246,6 +281,7 @@ describe("blameFile", () => {
     const result = await blameFile(repoRoot, filePath);
 
     expect(result).toEqual([blameLine]);
+    // blame is a PER-FILE op — it stays on execFile, not the stall-guard seam.
     expect(execFile).toHaveBeenCalledTimes(1);
     const callArgs = (execFile as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(callArgs[0]).toBe("git");
@@ -311,7 +347,7 @@ describe("getCommitsInRange", () => {
     const result = await getCommitsInRange(repoRoot, "abc123", "def456", sinceDate);
 
     expect(result).toEqual([{ commit, changedFiles: ["src/a.ts"] }]);
-    const callArgs = (execFile as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const callArgs = (execWithStallGuard as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(callArgs[0]).toBe("git");
     expect(callArgs[1]).toEqual(expect.arrayContaining(["log", "abc123..def456", "--numstat"]));
     expect(callArgs[1][1]).toBe(`--since=${sinceDate.toISOString()}`);

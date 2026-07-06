@@ -1,14 +1,22 @@
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { CommandModule } from "yargs";
 
-import { InputValidationError } from "../../core/api/public/index.js";
+import { CollectionRegistry, InputValidationError } from "../../core/api/public/index.js";
 import { resolveTuneQdrantUrl } from "../qdrant-url-resolver.js";
+import { replayRegistryEnv } from "../registry-env-replay.js";
 import { applyProjectDefaults } from "../registry-resolver.js";
+import { mergeTunedEnvIntoRegistry } from "./tune-registry-write.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function resolveDataDir(): string {
+  return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
+}
 
 interface TuneArgs {
   project?: string;
@@ -33,8 +41,9 @@ function buildEnv(argv: TuneArgs): NodeJS.ProcessEnv {
 }
 
 /** Run a benchmark script with forwarded args and env, releasing the embedded
- *  daemon ref (if any) before exiting. */
-function runScript(script: string, argv: TuneArgs, release?: () => void): void {
+ *  daemon ref (if any) before exiting. `onSuccess` runs on exit 0, before the
+ *  process exits (registry env write for `--project` runs). */
+function runScript(script: string, argv: TuneArgs, release?: () => void, onSuccess?: () => void): void {
   const scriptPath = join(__dirname, "../../../benchmarks", script);
   const args: string[] = [];
   if (argv.path) args.push("--path", argv.path);
@@ -47,6 +56,15 @@ function runScript(script: string, argv: TuneArgs, release?: () => void): void {
 
   child.on("exit", (code) => {
     release?.();
+    if (code === 0) {
+      try {
+        onSuccess?.();
+      } catch (err) {
+        // The tuned run itself succeeded — a registry write failure must not
+        // flip the exit code, only surface.
+        process.stderr.write(`[tea-rags] tune registry write failed: ${(err as Error).message}\n`);
+      }
+    }
     process.exit(code ?? 1);
   });
 }
@@ -107,12 +125,44 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
       }
       throw err;
     }
+    // Registry env replay (outer env > registry env > code default): seed the
+    // env snapshot the project was indexed with (GIT_ADAPTER et al.) into
+    // process.env so the spawned benchmark inherits it via buildEnv. Explicit
+    // shell env wins — replayRegistryEnv only fills unset alias groups.
+    if (resolved.project) {
+      const entry = new CollectionRegistry(resolveDataDir()).findByName(resolved.project);
+      replayRegistryEnv(entry?.env ?? entry?.tuning, process.env);
+    }
     const resolution = await resolveTuneQdrantUrl(resolved["qdrant-url"]);
     if (resolution.url) {
       resolved["qdrant-url"] = resolution.url;
     }
     const sub = argv.subcommand as string | undefined;
     const script = sub === "embeddings" ? "benchmark-embeddings.mjs" : "tune.mjs";
-    runScript(script, resolved, resolution.release);
+    // tune → registry env write (9vpnz follow-through): after a successful
+    // full-tune run, merge the MEASURED envs (the generated env file) into the
+    // project's registry snapshot so the next indexing run picks them up
+    // registry-first. Only for `--project` (a bare-path tune has no entry to
+    // update) and only for the main tune script (embeddings sub-benchmark
+    // writes no env file).
+    const writeMeasuredEnv =
+      resolved.project && script === "tune.mjs" && resolved.path
+        ? (): void => {
+            const envFilePath = join(resolved.path as string, "tuned_environment_variables.env");
+            if (!existsSync(envFilePath)) return;
+            const registry = new CollectionRegistry(resolveDataDir());
+            const applied = mergeTunedEnvIntoRegistry(
+              registry,
+              resolved.project as string,
+              readFileSync(envFilePath, "utf-8"),
+            );
+            if (applied > 0) {
+              process.stdout.write(
+                `[tea-rags] registry env snapshot updated for '${resolved.project}' (${applied} measured keys)\n`,
+              );
+            }
+          }
+        : undefined;
+    runScript(script, resolved, resolution.release, writeMeasuredEnv);
   },
 };

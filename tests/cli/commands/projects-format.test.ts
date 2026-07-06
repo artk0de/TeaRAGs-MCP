@@ -65,6 +65,9 @@ describe("cli/commands/projects-format", () => {
     it("classifies 127.0.0.1 ephemeral port as embedded", () => {
       expect(classifyQdrant("http://127.0.0.1:57331").kind).toBe("embedded");
     });
+    it("classifies the 'embedded' sentinel as embedded (2nfdm registry persistence model)", () => {
+      expect(classifyQdrant("embedded").kind).toBe("embedded");
+    });
     it("classifies IPv6 loopback :6333 as local", () => {
       expect(classifyQdrant("http://[::1]:6333").kind).toBe("local");
     });

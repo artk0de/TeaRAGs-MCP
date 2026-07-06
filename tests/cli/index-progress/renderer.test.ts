@@ -92,6 +92,27 @@ describe("formatProgressLine", () => {
     expect(formatProgressLine({ type: "error", message: "boom" })).toContain("boom");
   });
 
+  describe("qdrant-state (2nfdm: daemon readiness surfaced before progress bars)", () => {
+    it("formats recovering WITHOUT elapsed so the line renderer de-dups per state, not per poll tick", () => {
+      const at3s = formatProgressLine({ type: "qdrant-state", state: "recovering", elapsedMs: 3000 });
+      const at9s = formatProgressLine({ type: "qdrant-state", state: "recovering", elapsedMs: 9000 });
+      expect(at3s).toContain("qdrant");
+      expect(at3s).toContain("recovering shards");
+      expect(at9s).toBe(at3s);
+    });
+
+    it("formats starting distinctly from recovering", () => {
+      const line = formatProgressLine({ type: "qdrant-state", state: "starting", elapsedMs: 1000 });
+      expect(line).toContain("starting up");
+    });
+
+    it("formats ready with the total wait duration", () => {
+      const line = formatProgressLine({ type: "qdrant-state", state: "ready", elapsedMs: 65_000 });
+      expect(line).toContain("ready");
+      expect(line).toContain("65.0s");
+    });
+  });
+
   it("returns null for status/done (not progress lines)", () => {
     expect(formatProgressLine({ type: "done", result: { failed: [], degraded: [] } })).toBeNull();
     expect(formatProgressLine({ type: "status", status: { isIndexed: true, status: "indexed" } })).toBeNull();
@@ -123,6 +144,19 @@ describe("formatProgressLine", () => {
       elapsedMs: 5000,
     });
     expect(line).toContain("background");
+  });
+
+  it("labels a codegraph.symbols:symbols enrichment message as 'codegraph nodes' (yl9tv Task 3)", () => {
+    const line = formatProgressLine({
+      type: "enrichment",
+      providerKey: "codegraph.symbols",
+      level: "symbols",
+      applied: 40,
+      total: 100,
+      totalFinal: false,
+    });
+    expect(line).toContain("codegraph nodes");
+    expect(line).toContain("40/100");
   });
 });
 
@@ -274,6 +308,28 @@ describe("TtyProgressRenderer", () => {
 
     expect(mockMultibar.create).not.toHaveBeenCalled();
   });
+
+  it("labels the codegraph.symbols:symbols bar 'codegraph nodes' (yl9tv Task 3)", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({
+      type: "enrichment",
+      providerKey: "codegraph.symbols",
+      level: "symbols",
+      applied: 12,
+      total: 12,
+      totalFinal: false,
+    });
+
+    expect(mockMultibar.create).toHaveBeenCalledWith(
+      12,
+      0,
+      expect.objectContaining({ label: expect.stringContaining("codegraph nodes"), totalFinal: false }),
+    );
+    expect(mockSingleBar.update).toHaveBeenCalledWith(
+      12,
+      expect.objectContaining({ label: expect.stringContaining("codegraph nodes") }),
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -349,6 +405,21 @@ describe("JsonProgressRenderer", () => {
     r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 5, total: 20 });
     expect(r.latestStatus).toBeUndefined();
     expect(r.outcome).toBeUndefined();
+  });
+
+  it("ignores the codegraph.symbols:symbols enrichment level too (yl9tv Task 3 — JSON mode unaffected)", () => {
+    const r = new JsonProgressRenderer();
+    r.handle({
+      type: "enrichment",
+      providerKey: "codegraph.symbols",
+      level: "symbols",
+      applied: 5,
+      total: 5,
+      totalFinal: false,
+    });
+    expect(r.latestStatus).toBeUndefined();
+    expect(r.outcome).toBeUndefined();
+    expect(r.error).toBeUndefined();
   });
 
   it("stop() is a no-op", () => {

@@ -6,12 +6,14 @@ import {
   ingestSchema,
   qdrantTuneSchema,
   trajectoryGitSchema,
+  vcsSchema,
   type CodegraphConfig,
   type CoreConfig,
   type EmbeddingConfig,
   type IngestConfig,
   type QdrantTuneConfig,
   type TrajectoryGitConfig,
+  type VcsConfig,
 } from "./schemas.js";
 import { envWithFallback, type DeprecationNotice } from "./utils.js";
 
@@ -131,11 +133,16 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     logMaxAgeMonths: env("TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS", "GIT_LOG_MAX_AGE_MONTHS"),
     logTimeoutMs: env("TRAJECTORY_GIT_LOG_TIMEOUT_MS", "GIT_LOG_TIMEOUT_MS"),
     chunkConcurrency: env("TRAJECTORY_GIT_CHUNK_CONCURRENCY", "GIT_CHUNK_CONCURRENCY"),
+    blamePoolSize: env("TRAJECTORY_GIT_BLAME_POOL_SIZE"),
     chunkMaxAgeMonths: env("TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS", "GIT_CHUNK_MAX_AGE_MONTHS"),
     chunkTimeoutMs: env("TRAJECTORY_GIT_CHUNK_TIMEOUT_MS", "GIT_CHUNK_TIMEOUT_MS"),
     chunkMaxFileLines: env("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES", "GIT_CHUNK_MAX_FILE_LINES"),
     squashAwareSessions: env("TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS"),
     sessionGapMinutes: env("TRAJECTORY_GIT_SESSION_GAP_MINUTES"),
+  };
+
+  const vcs = {
+    adapter: env("GIT_ADAPTER"),
   };
 
   const codegraph = {
@@ -172,6 +179,7 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     embedding,
     ingest,
     trajectoryGit,
+    vcs,
     codegraph,
     qdrantTune,
     userSetBatchSize,
@@ -186,6 +194,7 @@ export function parseAppConfigZod(): {
   embedding: EmbeddingConfig;
   ingest: IngestConfig;
   trajectoryGit: TrajectoryGitConfig;
+  vcs: VcsConfig;
   codegraph: CodegraphConfig;
   qdrantTune: QdrantTuneConfig;
   deprecations: DeprecationNotice[];
@@ -205,6 +214,7 @@ export function parseAppConfigZod(): {
   const embedding = validateSchema(embeddingSchema, inputs.embedding, "embedding");
   const ingest = validateSchema(ingestSchema, inputs.ingest, "ingest");
   const trajectoryGit = validateSchema(trajectoryGitSchema, inputs.trajectoryGit, "trajectoryGit");
+  const vcs = validateSchema(vcsSchema, inputs.vcs, "vcs");
   const codegraph = validateSchema(codegraphSchema, inputs.codegraph, "codegraph");
   const qdrantTune = validateSchema(qdrantTuneSchema, inputs.qdrantTune, "qdrantTune");
 
@@ -219,6 +229,7 @@ export function parseAppConfigZod(): {
     embedding,
     ingest,
     trajectoryGit,
+    vcs,
     codegraph,
     qdrantTune,
     deprecations,

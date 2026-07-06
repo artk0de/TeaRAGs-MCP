@@ -3,7 +3,7 @@
  * No I/O, no state — string → structured data.
  */
 
-import type { BlameLine, CommitInfo, FileChurnData } from "./types.js";
+import type { BlameLine, CommitFileNumstat, CommitInfo, FileChurnData } from "../../types.js";
 
 /**
  * Parse `git log --numstat --format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B` output
@@ -112,6 +112,74 @@ export function parsePathspecOutput(stdout: string): { commit: CommitInfo; chang
 
     if (changedFiles.length > 0) {
       result.push({ commit, changedFiles });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Parse `git log --numstat --format=%x00%H…%at%x00%ct%x00%B…` output (the
+ * committer-augmented format `NUMSTAT_LOG_FORMAT_WITH_COMMITTER`), keeping the
+ * PER-FILE +/- counts (`parsePathspecOutput`'s numstat loop keeps only the
+ * path, discarding them). Unlike the shared parsers this one also extracts the
+ * COMMITTER epoch (`%ct`, section i+5) alongside the author epoch (`%at`,
+ * section i+4): the file-churn discovery windows/evicts/sorts by committer
+ * date. Binary rows (`-\t-\t<path>`) are SKIPPED, exactly as
+ * `parseNumstatOutput` does (parseInt("-") is NaN → skip): a file touched
+ * ONLY by binary commits must not appear here with a phantom commit, so the
+ * incremental discovery aggregate equals the legacy full-recompute per file.
+ */
+export function parseCommitFileNumstat(stdout: string): CommitFileNumstat[] {
+  const result: CommitFileNumstat[] = [];
+  const sections = stdout.split("\0");
+  let i = 0;
+
+  while (i < sections.length) {
+    if (!sections[i]?.trim()) {
+      i++;
+      continue;
+    }
+
+    const sha = sections[i]?.trim();
+    if (sha?.length !== 40 || !/^[a-f0-9]+$/.test(sha)) {
+      i++;
+      continue;
+    }
+
+    const parentsRaw = sections[i + 1] || "";
+    const parents = parentsRaw.trim() ? parentsRaw.trim().split(" ") : [];
+    const author = sections[i + 2] || "";
+    const email = sections[i + 3] || "";
+    const timestamp = parseInt(sections[i + 4] || "0", 10);
+    const committerTimestamp = parseInt(sections[i + 5] || "0", 10);
+    const body = sections[i + 6] || "";
+    i += 7;
+
+    const commit: CommitInfo = { sha, author, authorEmail: email, timestamp, body, parents };
+    const files: { path: string; added: number; deleted: number }[] = [];
+
+    // Parse numstat section
+    const numstatSection = sections[i] || "";
+    i++;
+
+    for (const line of numstatSection.split("\n")) {
+      if (!line.trim()) continue;
+      const parts = line.split("\t");
+      if (parts.length < 3) continue;
+
+      // Binary files show "-\t-" — parseInt("-") is NaN. Skip the row entirely
+      // to match parseNumstatOutput (the legacy full-recompute path), so a file
+      // touched ONLY by binary commits gets the SAME commitCount on both paths.
+      const added = parseInt(parts[0], 10);
+      const deleted = parseInt(parts[1], 10);
+      if (Number.isNaN(added) || Number.isNaN(deleted)) continue;
+
+      files.push({ path: parts[2], added, deleted });
+    }
+
+    if (files.length > 0) {
+      result.push({ commit, committerTimestamp, files });
     }
   }
 

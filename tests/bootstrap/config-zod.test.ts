@@ -100,6 +100,8 @@ describe("parseAppConfigZod", () => {
       "DELETE_CONCURRENCY",
       "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS",
       "DELETE_FLUSH_TIMEOUT_MS",
+      // vcs
+      "GIT_ADAPTER",
       // codegraph
       "CODEGRAPH_ENABLED",
       "CODEGRAPH_DB_PATH",
@@ -163,6 +165,30 @@ describe("parseAppConfigZod", () => {
       const { codegraph } = parseAppConfigZod();
 
       expect(codegraph.enabled).toBe(true);
+    });
+  });
+
+  describe("vcs (GIT_ADAPTER)", () => {
+    it("defaults adapter to git when GIT_ADAPTER is unset", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { vcs } = parseAppConfigZod();
+
+      expect(vcs.adapter).toBe("git");
+    });
+
+    it("GIT_ADAPTER=es-git selects the es-git adapter", async () => {
+      process.env.GIT_ADAPTER = "es-git";
+      const { parseAppConfigZod } = await freshImport();
+      const { vcs } = parseAppConfigZod();
+
+      expect(vcs.adapter).toBe("es-git");
+    });
+
+    it("throws readable error for an unknown adapter value", async () => {
+      process.env.GIT_ADAPTER = "svn";
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(() => parseAppConfigZod()).toThrow(/Invalid value.*for configuration field "vcs"/i);
     });
   });
 
@@ -645,6 +671,14 @@ describe("parseAppConfigZod — trajectoryGit", () => {
     expect(trajectoryGit.chunkMaxFileLines).toBe(10000);
     expect(trajectoryGit.squashAwareSessions).toBe(false);
     expect(trajectoryGit.sessionGapMinutes).toBe(30);
+    expect(trajectoryGit.blamePoolSize).toBeGreaterThanOrEqual(1);
+    expect(trajectoryGit.blamePoolSize).toBeLessThanOrEqual(10);
+  });
+
+  it("TRAJECTORY_GIT_BLAME_POOL_SIZE overrides the blame worker-pool size", async () => {
+    process.env.TRAJECTORY_GIT_BLAME_POOL_SIZE = "8";
+    const { parseAppConfigZod } = await freshImport();
+    expect(parseAppConfigZod().trajectoryGit.blamePoolSize).toBe(8);
   });
 
   it("TRAJECTORY_GIT_ENABLED falls back from CODE_ENABLE_GIT_METADATA", async () => {
@@ -683,13 +717,14 @@ describe("parseAppConfigZod — trajectoryGit", () => {
     });
   });
 
-  it("TRAJECTORY_GIT_CHUNK_CONCURRENCY below the default is floored to 10 (env may only raise)", async () => {
-    // bd f2jsb: a stale env block tuned concurrency to 5 and silently halved
-    // git chunk walk parallelism vs the code default — sub-default env values
-    // are ignored so the env can only RAISE concurrency, never lower it.
-    process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY = "5";
+  it("TRAJECTORY_GIT_CHUNK_CONCURRENCY is taken directly — sub-default values are respected (no floor)", async () => {
+    // The env is authoritative in BOTH directions: the old Math.max(v,10) floor
+    // silently ignored a lowered value, so a project could not bound git-blame
+    // parallelism (e.g. to cap memory on a deep-history monolith) — the tuned
+    // registry value now applies verbatim.
+    process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY = "2";
     const { parseAppConfigZod } = await freshImport();
-    expect(parseAppConfigZod().trajectoryGit.chunkConcurrency).toBe(10);
+    expect(parseAppConfigZod().trajectoryGit.chunkConcurrency).toBe(2);
   });
 
   it("new name takes priority over old name", async () => {

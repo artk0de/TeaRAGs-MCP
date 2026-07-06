@@ -14,6 +14,7 @@ import { OllamaEmbeddings } from "../core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
+import { VcsAdapterFactory } from "../core/adapters/vcs/factory.js";
 import {
   createApp,
   createComposition,
@@ -50,6 +51,7 @@ import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
 import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
+import { buildRegistryEnvSnapshot } from "./config/env-snapshot.js";
 import { getConfigDump, getZodConfig, type AppConfig } from "./config/index.js";
 import { checkExternalQdrantVersion } from "./config/qdrant-compat.js";
 import {
@@ -250,10 +252,10 @@ function wireComposition(
   const squashOpts = trajectoryConfig.squashAwareSessions
     ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
     : undefined;
-  // Git runs INLINE (no workerDescriptor) — WorkerPoolEnrichmentExecutor detects
-  // the missing descriptor and falls through to InlineEnrichmentExecutor, which
-  // calls provider.buildFileSignals/buildChunkSignals directly in-process on the
-  // single composition-root instance. Blame cache reuse is automatic (same
+  // Git enrichment DISPATCH runs INLINE (no workerDescriptor) — WorkerPoolEnrichmentExecutor
+  // detects the missing descriptor and falls through to InlineEnrichmentExecutor,
+  // which calls provider.buildFileSignals/buildChunkSignals directly in-process on
+  // the single composition-root instance. Blame cache reuse is automatic (same
   // instance), postMessage serialization overhead is zero.
   //
   // Live evidence (taxdome reindex): collection-affinity pinned git to 1 worker,
@@ -261,9 +263,17 @@ function wireComposition(
   // cost is dominated by walkCommits (git log + cat-file + structuredPatch), not
   // blame — blame reuse gave no per-apply speedup while worker-pool dispatch
   // overhead (postMessage chunkMap/results per batch) was measurable. Inline
-  // is origin/main behavior and is the correct path.
+  // dispatch is origin/main behavior and is the correct path.
+  //
+  // The two main-thread hazards inside that inline dispatch are OFF-loaded by the
+  // provider itself, not by this executor choice: the chunk-churn WALK runs in a
+  // dedicated worker thread (iqpuu), and the FILE-phase SYNC es-git blame — the
+  // cold-reindex event-loop stall — fans out across GitEnrichmentProvider's own
+  // BlameWorkerPool for shallow files while deep blames stay on main's async CLI
+  // (bd tea-rags-mcp-dog1v).
   const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition({
-    git: { config: zodConfig.trajectoryGit, squashOpts },
+    // w2dlu T6: the provider builds its per-root VcsGitAdapter from this kind.
+    git: { config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter }, squashOpts },
     codegraph,
   });
   const schemaBuilder = new SchemaBuilder(reranker);
@@ -659,6 +669,10 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
     config: config.ingestCode,
+    // kc93 + w2dlu: run-scoped blob reader from the GIT_ADAPTER-selected
+    // adapter; es-git selection fail-louds here on first git blob read.
+    blobReaderFactory: async (repoRoot: string) =>
+      (await VcsAdapterFactory.create(zodConfig.vcs.adapter, repoRoot)).createBlobBatchReader(),
     trajectoryConfig: config.trajectoryIngest,
     statsCache,
     allPayloadSignals: composition.allPayloadSignalDescriptors,
@@ -671,6 +685,10 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     modelGuard: infra.modelGuard,
     collectionRegistry,
     teaRagsVersion: pkg.version,
+    // Full effective env set of this run (defaults materialized, 9vpnz).
+    // Built AFTER the adaptive adjustments above (GPU-calibrated batch size,
+    // embedded delete tuning) so user-set values reflect what actually ran.
+    envSnapshot: buildRegistryEnvSnapshot(zodConfig),
     enrichmentProviders,
     codegraphPool: codegraphContext?.pool,
     indexRunDaemonGuard: codegraphContext?.indexRunDaemonGuard,

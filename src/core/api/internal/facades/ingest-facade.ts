@@ -12,7 +12,6 @@ import { join } from "node:path";
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
-import { createCatFileBatch } from "../../../adapters/git/client.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
@@ -24,6 +23,7 @@ import { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
+import type { BlobReaderFactory } from "../../../domains/ingest/pipeline/enrichment/chunk-phase.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { InlineEnrichmentExecutor } from "../../../domains/ingest/pipeline/enrichment/executor/index.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
@@ -63,6 +63,12 @@ export interface IngestFacadeDeps {
   collectionRegistry?: CollectionRegistry;
   teaRagsVersion?: string;
   /**
+   * Full effective env set of this run (canonical keys, code defaults
+   * materialized) built by bootstrap via `buildRegistryEnvSnapshot`; persisted
+   * verbatim into `CollectionEntry.env` on every successful index (9vpnz).
+   */
+  envSnapshot?: Record<string, string>;
+  /**
    * Full enrichment provider list passed verbatim to EnrichmentCoordinator
    * — single source of truth, owned by the caller (bootstrap). Bootstrap
    * builds this list from `composition.registry.getAllEnrichmentProviders()`
@@ -97,6 +103,12 @@ export interface IngestFacadeDeps {
    * disabled — the coordinator falls back to a no-op guard.
    */
   indexRunDaemonGuard?: IndexRunDaemonGuard;
+  /**
+   * Run-scoped batch blob reader factory (kc93), built by the composition
+   * root from the active VcsGitAdapter (`GIT_ADAPTER`) — the facade never
+   * imports a concrete git adapter.
+   */
+  blobReaderFactory: BlobReaderFactory;
   /**
    * Attempts for the pre-indexing embedding health probe (resilient against
    * event-loop starvation). Forwarded to IndexingOps. Defaults applied there.
@@ -227,11 +239,12 @@ export class IngestFacade {
       recovery,
       enrichmentExecutor,
       deps.indexRunDaemonGuard,
-      // kc93: one git `cat-file --batch` reader per run, shared across every
-      // chunk batch so the pack is opened once instead of once-per-batch. The
-      // git walk is the only consumer; non-git providers ignore the injected
-      // reader. Lazy: no process spawns until the first git blob read.
-      createCatFileBatch,
+      // kc93: one batch blob reader per run, shared across every chunk batch
+      // so the backend (git pack / repository handle) is opened once instead
+      // of once-per-batch. The git walk is the only consumer; non-git
+      // providers ignore the injected reader. Lazy: nothing opens until the
+      // first git blob read. Built by the composition root from GIT_ADAPTER.
+      deps.blobReaderFactory,
     );
     // Codegraph DuckDB cleanup for orphan collections during alias cleanup.
     // Wired from the pool's removeCollection (closes any cached handle, then
@@ -252,6 +265,7 @@ export class IngestFacade {
       teaRagsVersion: deps.teaRagsVersion,
       codegraphRemover,
       codegraphLister,
+      envSnapshot: deps.envSnapshot,
     };
     const indexing = new IndexPipeline(
       qdrant,

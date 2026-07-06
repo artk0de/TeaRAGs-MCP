@@ -72,6 +72,7 @@ export class EnrichmentMarkerStore {
           matchedFiles: input.matchedFiles,
           missedFiles: input.missedFiles,
           ignoredFiles: input.ignoredFiles,
+          ...(input.errorMessage !== undefined ? { errorMessage: input.errorMessage } : {}),
         },
       },
     ]);
@@ -88,6 +89,7 @@ export class EnrichmentMarkerStore {
           completedAt: new Date().toISOString(),
           durationMs: input.durationMs,
           unenrichedChunks: input.unenrichedChunks,
+          ...(input.errorMessage !== undefined ? { errorMessage: input.errorMessage } : {}),
         },
       },
     ]);

@@ -28,6 +28,7 @@ export interface TrajectoryIngestConfig {
     logMaxAgeMonths: number;
     logTimeoutMs: number;
     chunkConcurrency: number;
+    blamePoolSize: number;
     chunkMaxAgeMonths: number;
     chunkTimeoutMs: number;
     chunkMaxFileLines: number;
@@ -430,7 +431,14 @@ export interface ProgressUpdate {
  */
 export interface EnrichmentProgressEvent {
   providerKey: string;
-  level: "file" | "chunk";
+  /**
+   * `"symbols"` (yl9tv Task 3) is a synthetic level emitted from
+   * `EnrichmentCoordinator.onFileExtraction` for the cross-pass codegraph
+   * eager node write — `providerKey: "codegraph.symbols"`, always
+   * `totalFinal: false` (no fixed denominator until the pass finishes).
+   * Not backed by the applier's `EnrichmentApplyEvent` (that stays `"file" | "chunk"`).
+   */
+  level: "file" | "chunk" | "symbols";
   applied: number;
   total: number;
   /**
@@ -439,7 +447,7 @@ export interface EnrichmentProgressEvent {
    * events are determinate as soon as a non-zero total is known: `total` is the
    * embedding chunk total (`chunksQueued`, pushed via `setChunkTotal` — the SAME
    * denominator embeddings uses), so git chunk tracks embeddings rather than its
-   * own lagging stored count.
+   * own lagging stored count. `symbols`-level events are always indeterminate.
    */
   totalFinal?: boolean;
 }

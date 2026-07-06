@@ -5,7 +5,7 @@
  * Extracted from git-log-reader.ts for SRP.
  */
 
-import type { FileChurnData } from "../../../../adapters/git/types.js";
+import type { FileChurnData } from "../../../../adapters/vcs/types.js";
 import type { ChunkChurnOverlay, GitFileSignals } from "../types.js";
 import { computeDominantAuthor, extractAllTaskIds } from "./metrics/extractors.js";
 

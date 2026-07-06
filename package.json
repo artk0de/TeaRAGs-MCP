@@ -59,7 +59,8 @@
     "tree-sitter": "npm:@artk0de/tree-sitter@0.25.1-prebuild.3"
   },
   "optionalDependencies": {
-    "@huggingface/transformers": "^4.0.0-next.6"
+    "@huggingface/transformers": "^4.0.0-next.6",
+    "es-git": "^0.7.0"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.5.3-r.1",

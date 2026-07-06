@@ -9,4 +9,10 @@ export type { CollectionEntry, ProjectInfo, RecordEntryInput, RegistryFileV1 } f
 export { PROJECT_NAME_RE } from "./constants.js";
 export { loadRegistryFile, saveRegistryFile } from "./registry-file.js";
 export { CollectionRegistry } from "./collection-registry.js";
-export { captureTuningEnv, TUNING_ENV_ALLOWLIST } from "./tuning-env.js";
+export {
+  ADAPTIVE_DEFAULT_ENV_KEYS,
+  DEDICATED_FIELD_ENV_KEYS,
+  REGISTRY_ENV_ALLOWLIST,
+  REGISTRY_ENV_GROUPS,
+} from "./env-groups.js";
+export type { RegistryEnvGroup } from "./env-groups.js";

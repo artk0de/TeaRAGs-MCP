@@ -271,6 +271,88 @@ describe("tune command", () => {
     });
   });
 
+  describe("registry tuning env replay (GIT_ADAPTER)", () => {
+    let dataDir: string;
+    let savedGitAdapter: string | undefined;
+    let savedChunkConcurrency: string | undefined;
+
+    function recordProject(tuning?: Record<string, string>): void {
+      const registry = new CollectionRegistry(dataDir);
+      registry.record({
+        collectionName: "code_tuned",
+        path: "/repo/tuned",
+        embeddingModel: "model-z",
+        embeddingDimensions: 512,
+        qdrantUrl: "http://qd:6333",
+        ...(tuning !== undefined ? { tuning } : {}),
+        indexedAt: "2026-07-04T00:00:00Z",
+        teaRagsVersion: "0.1",
+        chunksCount: 0,
+      });
+      registry.setName("code_tuned", "tuned");
+    }
+
+    beforeEach(() => {
+      dataDir = mkdtempSync(join(tmpdir(), "tune-tuning-"));
+      process.env.TEA_RAGS_DATA_DIR = dataDir;
+      savedGitAdapter = process.env.GIT_ADAPTER;
+      savedChunkConcurrency = process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY;
+      delete process.env.GIT_ADAPTER;
+      delete process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY;
+    });
+
+    afterEach(() => {
+      delete process.env.TEA_RAGS_DATA_DIR;
+      if (savedGitAdapter === undefined) delete process.env.GIT_ADAPTER;
+      else process.env.GIT_ADAPTER = savedGitAdapter;
+      if (savedChunkConcurrency === undefined) delete process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY;
+      else process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY = savedChunkConcurrency;
+      rmSync(dataDir, { recursive: true, force: true });
+    });
+
+    it("replays registry tuning.GIT_ADAPTER into process env before the benchmark spawns", async () => {
+      recordProject({ GIT_ADAPTER: "es-git", TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5" });
+
+      await (tuneCommand.handler as TuneHandler)({ project: "tuned", full: false });
+
+      const [, , opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+      expect(opts.env?.GIT_ADAPTER).toBe("es-git");
+      expect(opts.env?.TRAJECTORY_GIT_CHUNK_CONCURRENCY).toBe("5");
+      expect(process.env.GIT_ADAPTER).toBe("es-git");
+    });
+
+    it("explicit process.env.GIT_ADAPTER wins over the registry snapshot (env > registry)", async () => {
+      recordProject({ GIT_ADAPTER: "es-git" });
+      process.env.GIT_ADAPTER = "git";
+
+      await (tuneCommand.handler as TuneHandler)({ project: "tuned", full: false });
+
+      const [, , opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+      expect(opts.env?.GIT_ADAPTER).toBe("git");
+      expect(process.env.GIT_ADAPTER).toBe("git");
+    });
+
+    it("leaves env untouched when no --project is given (no registry entry consulted)", async () => {
+      recordProject({ GIT_ADAPTER: "es-git" });
+
+      await (tuneCommand.handler as TuneHandler)({ full: false });
+
+      const [, , opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+      expect(opts.env?.GIT_ADAPTER).toBeUndefined();
+      expect(process.env.GIT_ADAPTER).toBeUndefined();
+    });
+
+    it("leaves env untouched for a legacy entry without a tuning snapshot", async () => {
+      recordProject(undefined);
+
+      await (tuneCommand.handler as TuneHandler)({ project: "tuned", full: false });
+
+      const [, , opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+      expect(opts.env?.GIT_ADAPTER).toBeUndefined();
+      expect(process.env.GIT_ADAPTER).toBeUndefined();
+    });
+  });
+
   describe("tune handler catches applyProjectDefaults typed errors (audit #15 consumer)", () => {
     it("writes message + hint to stderr and exits 1 on ProjectNotRegisteredError", async () => {
       const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);

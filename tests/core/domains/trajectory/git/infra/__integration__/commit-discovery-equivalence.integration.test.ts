@@ -16,13 +16,14 @@ import { join } from "node:path";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import * as gitClient from "../../../../../../../src/core/adapters/git/client.js";
+import { GitCliAdapter } from "../../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
+import * as gitClient from "../../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 import { buildChunkChurnMapUncached } from "../../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { GitCommitDiscoveryStore } from "../../../../../../../src/core/domains/trajectory/git/infra/commit-discovery-store.js";
 import { GitCommitDiscovery } from "../../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
 
 // Enable cross-module CALL-THROUGH spy interception for adapter functions.
-vi.mock("../../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
 
 const TEST_TIMEOUT = 60000;
 
@@ -58,7 +59,7 @@ async function walk(
   discovery?: GitCommitDiscovery,
 ): Promise<ChurnResult> {
   return (await buildChunkChurnMapUncached(
-    repo,
+    new GitCliAdapter(repo),
     chunkMap,
     {},
     10,
@@ -142,7 +143,7 @@ describe("commit-discovery equivalence pin (bd tea-rags-mcp-82va1)", () => {
       sinceSpy.mockClear();
 
       // MATRIX leg: ONE discovery shared across the same three walks.
-      const discovery = new GitCommitDiscovery(repo, { maxAgeMonths: 6, timeoutMs: 120000 });
+      const discovery = new GitCommitDiscovery(new GitCliAdapter(repo), { maxAgeMonths: 6, timeoutMs: 120000 });
       const matrixA = canon(await walk(repo, batchA, discovery));
       const matrixB = canon(await walk(repo, batchB, discovery));
       const matrixMega = canon(await walk(repo, mega, discovery));
@@ -164,14 +165,14 @@ describe("commit-discovery equivalence pin (bd tea-rags-mcp-82va1)", () => {
 
       // Discovery A (cold store) — pays the ONE repo-wide log and persists it.
       const store = new GitCommitDiscoveryStore(storeBase);
-      const discoveryA = new GitCommitDiscovery(repo, { maxAgeMonths: 6, timeoutMs: 120000, store });
+      const discoveryA = new GitCommitDiscovery(new GitCliAdapter(repo), { maxAgeMonths: 6, timeoutMs: 120000, store });
       const megaA = canon(await walk(repo, mega, discoveryA));
       expect(sinceSpy).toHaveBeenCalledTimes(1);
 
       sinceSpy.mockClear();
 
       // Discovery B (same store, same HEAD) — exact-HEAD load, NO log at all.
-      const discoveryB = new GitCommitDiscovery(repo, {
+      const discoveryB = new GitCommitDiscovery(new GitCliAdapter(repo), {
         maxAgeMonths: 6,
         timeoutMs: 120000,
         store: new GitCommitDiscoveryStore(storeBase),
@@ -187,7 +188,7 @@ describe("commit-discovery equivalence pin (bd tea-rags-mcp-82va1)", () => {
       sinceSpy.mockClear();
       rangeSpy.mockClear();
 
-      const discoveryC = new GitCommitDiscovery(repo, {
+      const discoveryC = new GitCommitDiscovery(new GitCliAdapter(repo), {
         maxAgeMonths: 6,
         timeoutMs: 120000,
         store: new GitCommitDiscoveryStore(storeBase),

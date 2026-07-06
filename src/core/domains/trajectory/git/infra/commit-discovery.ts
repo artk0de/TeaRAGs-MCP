@@ -14,8 +14,8 @@
  * `git log oldHead..newHead`; anything stale/corrupt/drifted rebuilds fully.
  */
 
-import { getCommitsInRange, getCommitsSince, getHead, isAncestor } from "../../../../adapters/git/client.js";
-import type { CommitInfo } from "../../../../adapters/git/types.js";
+import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
+import type { CommitInfo } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 
@@ -76,10 +76,17 @@ export class GitCommitDiscovery {
    */
   private matrixPromise?: Promise<DiscoveryMatrix>;
 
+  /** Resolved lazily in resolveEntries — the provider's per-root adapter cache
+   *  hands over a Promise (its factory is async), while tests and the sync
+   *  `createCommitDiscovery` hook stay constructible without awaiting. */
+  private readonly adapter: Promise<VcsGitAdapter>;
+
   constructor(
-    private readonly repoRoot: string,
+    adapter: VcsGitAdapter | Promise<VcsGitAdapter>,
     private readonly opts: GitCommitDiscoveryOptions,
-  ) {}
+  ) {
+    this.adapter = Promise.resolve(adapter);
+  }
 
   /**
    * Slice the matrix for a batch's file set. Returns FULL rows (complete
@@ -137,31 +144,33 @@ export class GitCommitDiscovery {
 
   private async resolveEntries(sinceDate: Date): Promise<GitCommitDiscoveryEntry[]> {
     const { store, timeoutMs } = this.opts;
-    const head = await getHead(this.repoRoot);
+    const adapter = await this.adapter;
+    const { repoRoot } = adapter;
+    const head = await adapter.getHead();
     const wantedSinceMs = sinceDate.getTime();
     const withinTolerance = (sinceIso: string): boolean =>
       Math.abs(wantedSinceMs - Date.parse(sinceIso)) <= SINCE_DRIFT_TOLERANCE_MS;
 
     if (store) {
       // 1. Exact-HEAD hit — accept only within window tolerance; no re-save.
-      const exact = store.load(this.repoRoot, head);
+      const exact = store.load(repoRoot, head);
       if (exact && withinTolerance(exact.sinceIso)) return exact.entries;
 
       // 2. Prior-HEAD top-up — ancestor snapshot + `git log old..new`. The
       //    range old..new structurally excludes duplicates; the window is
       //    inherited from the prior snapshot, so drift accrues until the
       //    tolerance forces a full rebuild.
-      const prior = store.loadLatest(this.repoRoot);
+      const prior = store.loadLatest(repoRoot);
       if (
         prior &&
         prior.head !== head &&
         withinTolerance(prior.sinceIso) &&
-        (await isAncestor(this.repoRoot, prior.head, head))
+        (await adapter.isAncestor(prior.head, head))
       ) {
         try {
-          const fresh = await getCommitsInRange(this.repoRoot, prior.head, head, sinceDate, timeoutMs);
+          const fresh = await adapter.getCommitsInRange(prior.head, head, sinceDate, timeoutMs);
           const merged = [...fresh, ...prior.entries];
-          store.save(this.repoRoot, head, prior.sinceIso, merged);
+          store.save(repoRoot, head, prior.sinceIso, merged);
           return merged;
         } catch (error) {
           // Range log failed (gc'd sha, transient git error) — fall through
@@ -177,8 +186,8 @@ export class GitCommitDiscovery {
     }
 
     // 3. Full repo-wide discovery.
-    const entries = await getCommitsSince(this.repoRoot, sinceDate, timeoutMs);
-    store?.save(this.repoRoot, head, sinceDate.toISOString(), entries);
+    const entries = await adapter.getCommitsSince(sinceDate, timeoutMs);
+    store?.save(repoRoot, head, sinceDate.toISOString(), entries);
     return entries;
   }
 }

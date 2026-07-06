@@ -9,15 +9,17 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import {
-  blameFile,
-  createCatFileBatchCheck,
-  getHead,
-  resolveRepoRoot,
-  type CatFileBatchCheckReader,
-  type CatFileBatchReader,
-} from "../../../adapters/git/client.js";
-import type { BlameLine, CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
+import { VcsAdapterFactory } from "../../../adapters/vcs/factory.js";
+import type { VcsGitAdapter } from "../../../adapters/vcs/git/adapter.js";
+import { resolveRepoRoot } from "../../../adapters/vcs/git/git-cli/client.js";
+import type {
+  BlameLine,
+  BlobBatchReader,
+  CommitInfo,
+  FileChurnData,
+  GitAdapterKind,
+  OidBatchResolver,
+} from "../../../adapters/vcs/types.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
 import type { FileClassification } from "../../../contracts/types/file-classification.js";
 import type {
@@ -39,9 +41,13 @@ import { GitBlameStore } from "./infra/blame-store.js";
 import { relativizeChunkMap } from "./infra/build-accumulators.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
-import { ChunkChurnWalkThread } from "./infra/churn-walk/thread.js";
+import { defaultBlamePoolSize } from "./infra/churn-walk/blame-pool-defaults.js";
+import { BlameWorkerPool } from "./infra/churn-walk/blame-pool.js";
+import { ChunkChurnWalkPool } from "./infra/churn-walk/walk-pool.js";
 import { GitCommitDiscoveryStore } from "./infra/commit-discovery-store.js";
 import { GitCommitDiscovery } from "./infra/commit-discovery.js";
+import { FileChurnDiscoveryStore } from "./infra/file-churn-discovery-store.js";
+import { FileChurnDiscovery } from "./infra/file-churn-discovery.js";
 import {
   buildFileSignalDiscovery,
   buildFileSignalMap,
@@ -56,19 +62,31 @@ import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./rerank/presets/index.js";
 import type { ChunkChurnOverlay } from "./types.js";
 
-/** Subset of TrajectoryGitConfig used by the provider at runtime. */
+/** Subset of TrajectoryGitConfig used by the provider at runtime, plus the
+ *  VCS adapter kind (`config.vcs.adapter`) the per-root adapters are built with. */
 export type GitProviderConfig = Pick<
   TrajectoryGitConfig,
-  "logMaxAgeMonths" | "logTimeoutMs" | "chunkConcurrency" | "chunkMaxAgeMonths" | "chunkTimeoutMs" | "chunkMaxFileLines"
->;
+  | "logMaxAgeMonths"
+  | "logTimeoutMs"
+  | "chunkConcurrency"
+  | "blamePoolSize"
+  | "chunkMaxAgeMonths"
+  | "chunkTimeoutMs"
+  | "chunkMaxFileLines"
+> & {
+  /** GIT_ADAPTER kind for VcsAdapterFactory — structured-clone-safe literal. */
+  vcsAdapter: GitAdapterKind;
+};
 
 const DEFAULT_PROVIDER_CONFIG: GitProviderConfig = {
   logMaxAgeMonths: 12,
   logTimeoutMs: 60000,
   chunkConcurrency: 10,
+  blamePoolSize: defaultBlamePoolSize(),
   chunkMaxAgeMonths: 6,
   chunkTimeoutMs: 120000,
   chunkMaxFileLines: 10000,
+  vcsAdapter: "git",
 };
 
 /**
@@ -82,7 +100,10 @@ const DEFAULT_PROVIDER_CONFIG: GitProviderConfig = {
 interface RunFileDiscovery {
   readonly root: string;
   readonly headSha: string;
-  readonly data: Map<string, FileChurnData>;
+  /** The in-flight (or resolved) discovery — memoized as a PROMISE, not a
+   *  resolved value, so concurrent streaming batches share ONE full-history
+   *  `git log --numstat` instead of each racing to spawn its own (~1GB). */
+  readonly data: Promise<Map<string, FileChurnData>>;
 }
 
 export class GitEnrichmentProvider implements EnrichmentProvider {
@@ -115,11 +136,30 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   private blameCache: Map<string, { oid: string; lines: BlameLine[] }> | null = null;
   private blameCacheRoot: string | null = null;
   private blameCacheDirty = false;
+  /** FILE-phase off-main-thread blame pool (bd tea-rags-mcp-dog1v). Lazily
+   *  spawned on the first shallow cache-miss, closed at the finalize seam. */
+  private blamePool?: BlameWorkerPool;
   /** ONE persistent `git cat-file --batch-check` process per run/root — the
    *  OID lookups that key the blame cache ride it (EDR-immune: no fresh
    *  spawns). Closed at the finalize seam. */
-  private oidReader: CatFileBatchCheckReader | null = null;
+  /** Memoized as a PROMISE (not the resolved reader) so concurrent streaming
+   *  batches share ONE `cat-file --batch-check` process instead of each spawning
+   *  and leaking its own — the same single-flight the file discovery needs. */
+  private oidReaderPromise: Promise<OidBatchResolver> | null = null;
   private oidReaderRoot: string | null = null;
+
+  /** Lazy per-root VCS adapters for the run (w2dlu T6) — created on first use
+   *  via VcsAdapterFactory with the configured kind, cached as promises so
+   *  concurrent callers share one creation. Dropped at the finalize seam. */
+  private readonly vcsAdapters = new Map<string, Promise<VcsGitAdapter>>();
+
+  /** Run-scoped, store-backed per-file churn discovery — the FILE analogue of
+   *  the chunk `createCommitDiscovery` matrix, but provider-owned like
+   *  `fileDiscovery` (streamFileBatch / buildFileSignals own the lifecycle). ONE
+   *  instance per root, incrementally topped-up from its own file-churn store;
+   *  dropped at the finalize seam so a HEAD move (a new run) rebuilds the window
+   *  from the persisted snapshot instead of re-walking the whole repo. */
+  private readonly fileChurnDiscoveries = new Map<string, FileChurnDiscovery>();
 
   /**
    * Worker-pool descriptor — present iff the composition root wired this
@@ -154,6 +194,41 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     return resolveRepoRoot(absolutePath);
   }
 
+  /** Lazy per-root adapter for the run — one factory call per root, shared as
+   *  a cached promise (a rejected creation stays cached: fail-loud once per
+   *  run, per the es-git no-silent-fallback contract). */
+  private async adapterFor(root: string): Promise<VcsGitAdapter> {
+    let adapter = this.vcsAdapters.get(root);
+    if (!adapter) {
+      adapter = VcsAdapterFactory.create(this.config.vcsAdapter, root);
+      this.vcsAdapters.set(root, adapter);
+    }
+    return adapter;
+  }
+
+  /** Lazy per-root, run-scoped file-churn discovery — ONE store-backed instance
+   *  per root shared by BOTH the whole-set (`buildFileSignalMap`) and streaming
+   *  (`buildFileSignalDiscovery`) file-signal reads, so a warm run tops up its
+   *  window incrementally (a `from..to` range read) instead of re-walking the
+   *  whole repo. Window config mirrors the legacy reads
+   *  (`logMaxAgeMonths` / `logTimeoutMs`) so `buildFileSignalDiscovery`'s
+   *  otherwise-ignored window param stays consistent — no silent mismatch.
+   *  Construction is synchronous (mirrors createCommitDiscovery): the discovery
+   *  awaits the adapter promise internally on its first git touch. Dropped at
+   *  the finalize seam. */
+  private fileChurnDiscoveryFor(root: string): FileChurnDiscovery {
+    let discovery = this.fileChurnDiscoveries.get(root);
+    if (!discovery) {
+      discovery = new FileChurnDiscovery(this.adapterFor(root), {
+        maxAgeMonths: this.config.logMaxAgeMonths,
+        timeoutMs: this.config.logTimeoutMs,
+        store: new FileChurnDiscoveryStore(),
+      });
+      this.fileChurnDiscoveries.set(root, discovery);
+    }
+    return discovery;
+  }
+
   /**
    * Git policy: generated files carry harmful signals (regeneration churn,
    * generator as "owner") and are huge blame targets → skip entirely.
@@ -181,19 +256,21 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       return new Map();
     }
 
+    const adapter = await this.adapterFor(root);
     let rawData: Map<string, FileChurnData>;
 
     if (options?.paths) {
       // Whole-set path (backfill / recovery): a fresh per-path history walk.
       // Kept separate from streamFileBatch so backfill/recovery semantics are
       // unchanged — they do not share the run-scoped streaming discovery.
-      rawData = await buildFileSignalsForPaths(root, options.paths, this.config.logTimeoutMs);
+      rawData = await buildFileSignalsForPaths(adapter, options.paths, this.config.logTimeoutMs);
     } else {
       rawData = await buildFileSignalMap(
-        root,
+        adapter,
         this.enrichmentCache,
         this.config.logMaxAgeMonths,
         this.config.logTimeoutMs,
+        this.fileChurnDiscoveryFor(root),
       );
     }
 
@@ -233,12 +310,25 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  (best-effort — the process is idle either way). */
   finalizeSignals = async (): Promise<Map<string, FileSignalOverlay>> => {
     this.fileDiscovery = null;
+    // Drop the run-scoped file-churn discovery instances with the run — the next
+    // run rebuilds each from its persisted store snapshot (topping up the window
+    // for the new HEAD). Its own latch pins one HEAD's aggregate, so it must not
+    // outlive the run (matches vcsAdapters/fileDiscovery reset below).
+    this.fileChurnDiscoveries.clear();
     this.persistBlameCache();
     this.blameCache = null;
     this.blameCacheRoot = null;
-    await this.oidReader?.close().catch(() => undefined);
-    this.oidReader = null;
+    await this.oidReaderPromise?.then(async (r) => r.close()).catch(() => undefined);
+    this.oidReaderPromise = null;
     this.oidReaderRoot = null;
+    // Close the FILE-phase blame pool — its workers hold their own es-git repo
+    // handles; drop them with the run (dog1v).
+    await this.blamePool?.close().catch(() => undefined);
+    this.blamePool = undefined;
+    // w2dlu T6: per-root adapters are run-scoped — drop them with the run so
+    // a later run re-creates fresh instances (matters once adapters hold
+    // native repo handles, e.g. es-git).
+    this.vcsAdapters.clear();
     return new Map();
   };
 
@@ -248,12 +338,38 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    * (new run) rebuilds. Dropped at the finalize seam (finalizeSignals).
    */
   private async getRunDiscovery(root: string): Promise<Map<string, FileChurnData>> {
-    const headSha = await getHead(root).catch(() => "");
+    const adapter = await this.adapterFor(root);
+    const headSha = await adapter.getHead().catch(() => "");
     if (this.fileDiscovery?.root === root && this.fileDiscovery.headSha === headSha) {
       return this.fileDiscovery.data;
     }
-    const data = await buildFileSignalDiscovery(root, this.config.logTimeoutMs);
+    // Warm the commit-graph (+ changed-path Bloom filters) in the BACKGROUND —
+    // NOT chained before the discovery. It accelerates git BLAME (which runs
+    // after discovery) and future runs, but its Bloom filters help only PATHSPEC
+    // logs, not this pathspec-less numstat sweep; chaining it ahead would only
+    // delay git-file start. Fire-and-forget, best-effort (bd tea-rags-mcp).
+    void adapter.writeCommitGraph(this.config.logTimeoutMs).catch(() => undefined);
+    // Store the PROMISE synchronously — before awaiting the `git log --numstat`
+    // (still ~30s windowed on a monolith). The coordinator fires streamFileBatch
+    // per embedding batch WITHOUT awaiting, so dozens land in flight before the
+    // first discovery resolves; memoizing the resolved value (the old code) let
+    // every one spawn its own numstat log → 3-5GB OOM. This is the single-flight
+    // of adapterFor / GitCommitDiscovery.matrixPromise. Bounded by
+    // logMaxAgeMonths (full history was 141s on taxdome, blocking git-file
+    // enrichment ~150s; the window matches buildFileSignalMap).
+    const data = buildFileSignalDiscovery(
+      adapter,
+      this.config.logTimeoutMs,
+      this.config.logMaxAgeMonths,
+      this.fileChurnDiscoveryFor(root),
+    );
     this.fileDiscovery = { root, headSha, data };
+    // A transient discovery failure must not poison the whole run: drop the
+    // cache on rejection so a LATER (non-concurrent) batch can retry, while the
+    // batches already racing this one still shared it (no retry storm).
+    data.catch(() => {
+      if (this.fileDiscovery?.data === data) this.fileDiscovery = null;
+    });
     return data;
   }
 
@@ -299,7 +415,10 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  first chunk dispatch, dropped at drain). Arrow-property so `this`
    *  survives callback passing (precedent: streamFileBatch). */
   createCommitDiscovery = (repoRoot: string): GitCommitDiscovery =>
-    new GitCommitDiscovery(repoRoot, {
+    // Construction stays synchronous (ChunkPhase creates it before any await
+    // to avoid a double-create race) — the discovery awaits the adapter
+    // promise internally on its first git touch.
+    new GitCommitDiscovery(this.adapterFor(repoRoot), {
       maxAgeMonths: this.config.chunkMaxAgeMonths,
       timeoutMs: this.config.chunkTimeoutMs,
       store: new GitCommitDiscoveryStore(),
@@ -310,7 +429,10 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  instance lifecycle (lazy create at first chunk dispatch, closed at
    *  drain). Arrow-property so `this` survives callback passing (precedent:
    *  createCommitDiscovery). */
-  createChunkChurnWalkThread = (): ChunkChurnWalkThread => new ChunkChurnWalkThread();
+  // Walk pool is decoupled from the (larger) blame concurrency: the chunk-churn
+  // walk is CPU-bound (git log + structuredPatch) and showed no measured win
+  // past a few workers, so cap it at 4 while the blame pool scales higher.
+  createChunkChurnWalkThread = (): ChunkChurnWalkPool => new ChunkChurnWalkPool(Math.min(4, this.config.blamePoolSize));
 
   /** Run `git blame HEAD` per file and store results for transform-time
    *  lookup. Failures fall back to empty arrays — assembleFileSignals will
@@ -363,25 +485,34 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       }
     }
 
-    const concurrency = Math.max(this.config.chunkConcurrency, 1);
-    let cursor = 0;
-    const worker = async (): Promise<void> => {
-      while (cursor < missEntries.length) {
-        const i = cursor++;
-        const [relPath, churnData] = missEntries[i];
-        const lines = await blameFile(root, relPath, this.config.logTimeoutMs);
-        this.blameByChurnData.set(churnData, lines);
-        this.blameByRelPath.set(relPath, lines);
-        const oid = oidByPath.get(relPath);
-        // Cache only non-empty results: [] can be a transient blame failure
-        // (blameFile swallows errors) — pinning it would freeze the failure.
-        if (oid && lines.length > 0) {
-          cache.set(relPath, { oid, lines });
-          this.blameCacheDirty = true;
-        }
+    // Blame every cache-miss on the off-main-thread pool. Blame is native
+    // `git blame` (adapter-delegated for es-git too — the in-process libgit2
+    // blame was a 60x loss on large repos, dog1v). Native blame is an async
+    // child process, so the pool's N workers = N concurrent `git blame` (each
+    // worker serial); parallel git blame sustains ~69-89/s uncapped by EDR.
+    const recordBlame = (relPath: string, churnData: FileChurnData, lines: BlameLine[]): void => {
+      this.blameByChurnData.set(churnData, lines);
+      this.blameByRelPath.set(relPath, lines);
+      const oid = oidByPath.get(relPath);
+      // Cache only non-empty results: [] can be a transient blame failure
+      // (blameFile swallows errors) — pinning it would freeze the failure.
+      if (oid && lines.length > 0) {
+        cache.set(relPath, { oid, lines });
+        this.blameCacheDirty = true;
       }
     };
-    await Promise.all(Array.from({ length: Math.min(concurrency, missEntries.length) }, worker));
+
+    if (missEntries.length > 0) {
+      const blameByPath = await this.ensureBlamePool().blame(
+        root,
+        this.config.vcsAdapter,
+        missEntries.map(([relPath, churnData]) => ({ relPath, historyDepthHint: churnData.commits.length })),
+        this.config.logTimeoutMs,
+      );
+      for (const [relPath, churnData] of missEntries) {
+        recordBlame(relPath, churnData, blameByPath.get(relPath) ?? []);
+      }
+    }
 
     options?.onBlameStats?.({
       files: entries.length,
@@ -398,12 +529,16 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  today's blame-everything behavior; blame stays best-effort. */
   private async resolveHeadOids(root: string, relPaths: string[]): Promise<Map<string, string | null>> {
     try {
-      if (this.oidReaderRoot !== root || !this.oidReader) {
-        await this.oidReader?.close().catch(() => undefined);
-        this.oidReader = createCatFileBatchCheck(root);
+      if (this.oidReaderRoot !== root || !this.oidReaderPromise) {
+        // Close a stale (root-switched) reader out of band; set the new creation
+        // PROMISE synchronously — before any await — so concurrent batches share
+        // it instead of each spawning a `cat-file --batch-check`.
+        const stale = this.oidReaderRoot !== root ? this.oidReaderPromise : null;
         this.oidReaderRoot = root;
+        this.oidReaderPromise = this.adapterFor(root).then((a) => a.createOidBatchResolver());
+        void stale?.then(async (r) => r.close()).catch(() => undefined);
       }
-      const reader = this.oidReader;
+      const reader = await this.oidReaderPromise;
       const oids = await Promise.all(relPaths.map(async (rel) => reader.check(`HEAD:${rel}`)));
       const result = new Map<string, string | null>();
       relPaths.forEach((rel, i) => result.set(rel, oids[i]));
@@ -424,6 +559,12 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     return this.blameCache;
   }
 
+  /** Lazily spawn (or reuse) the run's FILE-phase blame worker pool. */
+  private ensureBlamePool(): BlameWorkerPool {
+    this.blamePool ??= new BlameWorkerPool(this.config.blamePoolSize);
+    return this.blamePool;
+  }
+
   /** Persist the in-memory blame cache iff it has unsaved entries. */
   private persistBlameCache(): void {
     if (this.blameCacheDirty && this.blameCache && this.blameCacheRoot) {
@@ -441,15 +582,15 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     // run-scoped walk thread AND the run-scoped discovery is present AND the
     // HEAD cache is skipped (ChunkPhase always sets skipCache; the cached
     // path stays inline-only so cache semantics are untouched). The contract
-    // duck type is structurally ChunkChurnWalkThread — cast at the boundary
+    // duck type is structurally ChunkChurnWalkPool — cast at the boundary
     // (precedent: blobReader below).
-    const walkThread = options?.churnWalkThread as unknown as ChunkChurnWalkThread | undefined;
+    const walkThread = options?.churnWalkThread as unknown as ChunkChurnWalkPool | undefined;
     let rawResult: Map<string, Map<string, ChunkChurnOverlay>>;
     if (walkThread && options?.commitDiscovery && options.skipCache) {
       rawResult = await this.walkChunkChurnOffThread(root, chunkMap, walkThread, options.commitDiscovery, options);
     } else {
       rawResult = await buildChunkChurnMap(
-        root,
+        await this.adapterFor(root),
         chunkMap,
         this.enrichmentCache,
         this.isoGitCache,
@@ -463,8 +604,8 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
         options?.skipCache,
         this.blameByRelPath,
         // kc93: run-scoped reader shared across batches when ChunkPhase injects
-        // one. The duck-typed contract shape is structurally CatFileBatchReader.
-        options?.blobReader as CatFileBatchReader | undefined,
+        // one. The duck-typed contract shape is structurally BlobBatchReader.
+        options?.blobReader as BlobBatchReader | undefined,
         // 7gnre: run-scoped (commitSha, filePath) → hunks memo shared across
         // batches — the same sweep commits are otherwise re-diffed per batch.
         options?.diffMemo,
@@ -508,7 +649,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   private async walkChunkChurnOffThread(
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
-    walkThread: ChunkChurnWalkThread,
+    walkThread: ChunkChurnWalkPool,
     discovery: NonNullable<ChunkSignalOptions["commitDiscovery"]>,
     options?: ChunkSignalOptions,
   ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
@@ -549,6 +690,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
 
     const outcome = await walkThread.walk({
       repoRoot: root,
+      gitAdapter: this.config.vcsAdapter,
       relativeChunkMap,
       commitEntries,
       bugFixShas,

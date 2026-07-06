@@ -23,6 +23,7 @@ import picomatch from "picomatch";
 import type {
   AmbiguousCallerSite,
   AritySignature,
+  BulkSymbolUpsertEntry,
   CalleeEdge,
   CallerEdge,
   CycleEntry,
@@ -515,6 +516,86 @@ export class DuckDbGraphClient implements GraphDbClient {
           ],
         );
       }
+      await this.exec("COMMIT");
+    } catch (err) {
+      await this.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  /**
+   * Batched form of {@link upsertSymbols}: one transaction for many files
+   * instead of one BEGIN/COMMIT per file. Equivalent to calling
+   * `upsertSymbols(relPath, definitions)` once per entry, in order — so a
+   * later entry for the same relPath fully REPLACES an earlier one (last-wins
+   * per relPath, matching sequential DELETE+INSERT). Empty `entries` is a
+   * no-op.
+   */
+  async upsertSymbolsBulk(entries: BulkSymbolUpsertEntry[]): Promise<void> {
+    if (entries.length === 0) return;
+    return this.serialize(async () => this.upsertSymbolsBulkImpl(entries));
+  }
+
+  private async upsertSymbolsBulkImpl(entries: BulkSymbolUpsertEntry[]): Promise<void> {
+    // Same DELETE+INSERT-inside-a-transaction contract as upsertSymbolsImpl,
+    // just spanning every file in the batch instead of one.
+    //
+    // A batch may legitimately carry TWO entries for the SAME relPath. The
+    // contract is "== calling upsertSymbols(relPath, defs) once per entry, in
+    // order" — and sequential per-file upsert is DELETE+INSERT, so a later
+    // entry for a file fully REPLACES an earlier one (the second call's DELETE
+    // wipes the first's rows). Collapse by relPath keeping LAST-wins BEFORE
+    // touching the DB so this holds: each distinct relPath is deleted once and
+    // only its final entry's definitions are inserted — never a union of both
+    // (a union would leak the superseded entry's rows through INSERT OR IGNORE).
+    // Distinct relPaths never share a PK, so cross-file rows never interfere.
+    //
+    // Within a single surviving entry, INSERT OR IGNORE still preserves
+    // first-wins on a duplicate symbolId: row build order iterates definitions
+    // in declaration order, so the first occurrence of a (rel_path, symbol_id)
+    // pair lands first in the batched VALUES list (see insertOrIgnoreBatched's
+    // doc comment for why duplicate-PK rows within one statement are
+    // first-row-wins).
+    const lastByRelPath = new Map<RelPath, SymbolDefinition[]>();
+    for (const { relPath, definitions } of entries) {
+      lastByRelPath.set(relPath, definitions);
+    }
+    await this.exec("BEGIN");
+    try {
+      for (const relPath of lastByRelPath.keys()) {
+        await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
+      }
+      const rows: unknown[][] = [];
+      for (const definitions of lastByRelPath.values()) {
+        for (const def of definitions) {
+          rows.push([
+            def.relPath,
+            def.symbolId,
+            def.fqName,
+            def.shortName,
+            JSON.stringify(def.scope ?? []),
+            def.arity ? JSON.stringify(def.arity) : null,
+            def.visibility ?? null,
+            def.kwargs ? JSON.stringify(def.kwargs) : null,
+            def.acceptsBlock ?? null,
+          ]);
+        }
+      }
+      await this.insertOrIgnoreBatched(
+        "cg_symbols",
+        [
+          "rel_path",
+          "symbol_id",
+          "fq_name",
+          "short_name",
+          "scope_json",
+          "arity_json",
+          "visibility",
+          "kwargs_json",
+          "accepts_block",
+        ],
+        rows,
+      );
       await this.exec("COMMIT");
     } catch (err) {
       await this.exec("ROLLBACK");
@@ -1335,7 +1416,7 @@ function dedupeCallerEdges(edges: CallerEdge[]): CallerEdge[] {
   const seen = new Set<string>();
   const out: CallerEdge[] = [];
   for (const e of edges) {
-    const k = `${e.sourceSymbolId} ${e.callExpression}`;
+    const k = `${e.sourceSymbolId} ${e.callExpression}`;
     if (seen.has(k)) continue;
     seen.add(k);
     out.push(e);

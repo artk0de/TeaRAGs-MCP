@@ -11,9 +11,10 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
-import { isDebug } from "../../infra/runtime.js";
-import { parseBlameOutput, parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
-import type { BlameLine, CommitInfo, FileChurnData } from "./types.js";
+import { isDebug } from "../../../../infra/runtime.js";
+import type { BlameLine, CommitFileNumstat, CommitInfo, FileChurnData } from "../../types.js";
+import { parseBlameOutput, parseCommitFileNumstat, parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
+import { execWithStallGuard } from "./stall-guard-exec.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -40,14 +41,26 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, message: s
 
 // ── CLI primitives ───────────────────────────────────────────────
 
-/** Run `git log` with pathspec filtering, return raw stdout. */
+/**
+ * A bulk `git log` can be legitimately SILENT for minutes while staying
+ * alive: computing --numstat for one giant commit (vendored tree import,
+ * repo-wide migration) emits nothing until that diff finishes — taxdome got
+ * a real 60s+ gap mid-stream. The stall window exists to reap HUNGS, so it
+ * is floored well above any legitimate thinking pause; caller-provided
+ * windows can only RAISE it.
+ */
+const BULK_LOG_STALL_FLOOR_MS = 600_000;
+
+/**
+ * Run `git log` with pathspec filtering, return raw stdout. The timeout is an
+ * output-INACTIVITY window (stall guard), not a total-duration cap — a
+ * long-but-streaming log completes; a hung spawn is reaped.
+ */
 export async function execFileForPathspec(repoRoot: string, args: string[], timeoutMs: number): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, {
+  return execWithStallGuard("git", args, {
     cwd: repoRoot,
-    maxBuffer: Infinity,
-    timeout: timeoutMs,
+    stallTimeoutMs: Math.max(timeoutMs, BULK_LOG_STALL_FLOOR_MS),
   });
-  return stdout;
 }
 
 /** Build CLI args for `git log --numstat`. Uses HEAD (not --all), no --max-count. */
@@ -77,19 +90,65 @@ export function resolveRepoRoot(absolutePath: string): string {
   }
 }
 
-/** Run CLI `git log --numstat` and parse output into FileChurnData map. */
+/**
+ * Run CLI `git log --numstat` and parse output into FileChurnData map.
+ *
+ * `timeoutMs` is an output-INACTIVITY window (stall guard), not a total cap:
+ * the UNBOUNDED (no --since) full-history sweep on a large monolith streams
+ * for minutes (taxdome: 104MB / 122.9s) and used to get SIGTERM'd at the 60s
+ * execFile budget — failing the whole git enrichment while the spawn was
+ * perfectly alive (tea-rags-mcp-w2dlu).
+ */
 export async function buildViaCli(
   repoRoot: string,
   sinceDate?: Date,
   timeoutMs?: number,
 ): Promise<Map<string, FileChurnData>> {
   const args = buildCliArgs(sinceDate);
-  const { stdout } = await execFileAsync("git", args, {
+  const stdout = await execWithStallGuard("git", args, {
     cwd: repoRoot,
-    maxBuffer: Infinity,
-    timeout: timeoutMs,
+    stallTimeoutMs: Math.max(timeoutMs ?? 60_000, BULK_LOG_STALL_FLOOR_MS),
   });
   return parseNumstatOutput(stdout);
+}
+
+/**
+ * Fetch file-level metadata for specific files (no --since filter).
+ * Used as a backfill for files that weren't in the main git log window.
+ * Batches file paths to stay within OS ARG_MAX limits.
+ */
+export async function buildViaCliForPaths(
+  repoRoot: string,
+  paths: string[],
+  timeoutMs = 30000,
+): Promise<Map<string, FileChurnData>> {
+  if (paths.length === 0) return new Map();
+
+  const result = new Map<string, FileChurnData>();
+  const BATCH = 500; // stay within ARG_MAX
+
+  for (let i = 0; i < paths.length; i += BATCH) {
+    const batch = paths.slice(i, i + BATCH);
+    const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00", "--", ...batch];
+
+    try {
+      const { stdout } = await execFileAsync("git", args, {
+        cwd: repoRoot,
+        maxBuffer: Infinity,
+        timeout: timeoutMs,
+      });
+      const batchResult = parseNumstatOutput(stdout);
+      for (const [path, data] of batchResult) {
+        result.set(path, data);
+      }
+    } catch (error) {
+      if (isDebug()) {
+        console.error(`[GitLogReader] Backfill batch failed:`, error instanceof Error ? error.message : error);
+      }
+    }
+  }
+
+  return result;
 }
 
 // ── Object reads (CLI cat-file — never loads the packfile into memory) ──
@@ -346,6 +405,17 @@ const PATHSPEC_BATCH_SIZE = 500;
 const NUMSTAT_LOG_FORMAT = "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00";
 
 /**
+ * NUL-delimited log format for `readCommitFileNumstat` ONLY — inserts the
+ * COMMITTER epoch (`%ct`) between the author epoch (`%at`) and the body (`%B`).
+ * The file-churn discovery windows/evicts/sorts by committer date to match
+ * `git log --since` (which filters on committer date), while `commit.timestamp`
+ * (`%at`, author date) still feeds signal VALUES. The shared
+ * `NUMSTAT_LOG_FORMAT` above is deliberately left untouched so the chunk path
+ * (parseNumstatOutput / parsePathspecOutput) stays byte-identical.
+ */
+const NUMSTAT_LOG_FORMAT_WITH_COMMITTER = "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00%B%x00";
+
+/**
  * Repo-wide `git log --since --numstat` — NO pathspec, NO explicit rev
  * (defaults to HEAD, matching getCommitsByPathspecSingle). ONE such call per
  * indexing run replaces the K per-batch pathspec logs: the parsed
@@ -380,6 +450,29 @@ export async function getCommitsInRange(
   const args = ["log", `--since=${sinceDate.toISOString()}`, `${fromSha}..${toSha}`, NUMSTAT_LOG_FORMAT, "--numstat"];
   const stdout = await execFileForPathspec(repoRoot, args, effectiveTimeoutMs);
   return parsePathspecOutput(stdout);
+}
+
+/**
+ * `git log [--since] [fromSha..toSha] --numstat` — the numstat-PRESERVING
+ * sibling of `getCommitsSince`/`getCommitsInRange`: same NUL-delimited log
+ * format and stall-guarded exec, but keeps each file's +/- counts instead of
+ * collapsing them into `changedFiles: string[]`. `range` present narrows to
+ * `fromSha..toSha` (incremental top-up, excludes `fromSha`'s own contribution
+ * same as `getCommitsInRange`); absent walks the whole `--since` window.
+ */
+export async function readCommitFileNumstat(
+  repoRoot: string,
+  sinceDate?: Date,
+  range?: { fromSha: string; toSha: string },
+  timeoutMs?: number,
+): Promise<CommitFileNumstat[]> {
+  const effectiveTimeoutMs = timeoutMs ?? 30000;
+  const args = ["log"];
+  if (sinceDate) args.push(`--since=${sinceDate.toISOString()}`);
+  if (range) args.push(`${range.fromSha}..${range.toSha}`);
+  args.push(NUMSTAT_LOG_FORMAT_WITH_COMMITTER, "--numstat");
+  const stdout = await execFileForPathspec(repoRoot, args, effectiveTimeoutMs);
+  return parseCommitFileNumstat(stdout);
 }
 
 /**
@@ -509,5 +602,26 @@ export async function blameFile(repoRoot: string, filePath: string, timeoutMs?: 
     return parseBlameOutput(stdout);
   } catch {
     return [];
+  }
+}
+
+/**
+ * One-time pre-enrichment warmup: `git commit-graph write --reachable
+ * --changed-paths`. The commit-graph gives O(1) generation-number reachability
+ * (accelerates every `git log`) and the `--changed-paths` Bloom filters
+ * accelerate pathspec `git log` AND `git blame` — a free speedup for the whole
+ * enrichment sweep regardless of adapter. Best-effort: any failure (no repo
+ * write access, concurrent gc lock, old git) is swallowed — the graph is a pure
+ * optimization, never a correctness dependency. Persists on disk, so subsequent
+ * runs (and incremental reindexes) reuse it.
+ */
+export async function writeCommitGraph(repoRoot: string, timeoutMs?: number): Promise<void> {
+  try {
+    await execFileAsync("git", ["commit-graph", "write", "--reachable", "--changed-paths"], {
+      cwd: repoRoot,
+      timeout: timeoutMs,
+    });
+  } catch {
+    // Optimization only — proceed without it.
   }
 }

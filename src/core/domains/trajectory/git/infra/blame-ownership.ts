@@ -1,4 +1,4 @@
-import type { BlameLine } from "../../../../adapters/git/types.js";
+import type { BlameLine } from "../../../../adapters/vcs/types.js";
 
 export interface BlameOwnership {
   blameDominantAuthor: string;

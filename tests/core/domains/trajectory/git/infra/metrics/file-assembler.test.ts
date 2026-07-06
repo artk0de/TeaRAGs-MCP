@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { BlameLine, FileChurnData } from "../../../../../../../src/core/adapters/git/types.js";
+import type { BlameLine, FileChurnData } from "../../../../../../../src/core/adapters/vcs/types.js";
 import { assembleFileSignals } from "../../../../../../../src/core/domains/trajectory/git/infra/metrics/file-assembler.js";
 
 describe("assembleFileSignals", () => {

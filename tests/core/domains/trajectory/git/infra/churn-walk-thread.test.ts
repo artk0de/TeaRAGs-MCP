@@ -1,5 +1,5 @@
 /**
- * bd tea-rags-mcp-iqpuu — ChunkChurnWalkThread equivalence pin on a REAL git
+ * bd tea-rags-mcp-iqpuu — ChunkChurnWalkPool equivalence pin on a REAL git
  * fixture. The dedicated churn-walk worker thread must produce BYTE-EQUAL
  * chunk overlays vs the inline main-thread path — the walk itself is
  * unchanged, only the thread it runs on moves.
@@ -16,8 +16,9 @@ import { join, resolve, sep } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { ChunkSignalOverlay } from "../../../../../../src/core/contracts/types/provider.js";
-import { ChunkChurnWalkThread } from "../../../../../../src/core/domains/trajectory/git/infra/churn-walk/thread.js";
+import { ChunkChurnWalkPool } from "../../../../../../src/core/domains/trajectory/git/infra/churn-walk/walk-pool.js";
 import { GitCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
 import type { ChunkChurnWalkStats } from "../../../../../../src/core/domains/trajectory/git/infra/walk-commits.js";
 import { GitEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/git/provider.js";
@@ -104,7 +105,7 @@ function fixtureChunkMap(): Map<string, { chunkId: string; startLine: number; en
 }
 
 function freshDiscovery(): GitCommitDiscovery {
-  return new GitCommitDiscovery(repo, { maxAgeMonths: 6, timeoutMs: 120000 });
+  return new GitCommitDiscovery(new GitCliAdapter(repo), { maxAgeMonths: 6, timeoutMs: 120000 });
 }
 
 /** Deterministic serialization: sorted files, sorted chunkIds, sorted object keys. */
@@ -125,7 +126,7 @@ function canonical(overlays: Map<string, Map<string, ChunkSignalOverlay>>): stri
   return JSON.stringify(out);
 }
 
-describe("ChunkChurnWalkThread equivalence (bd tea-rags-mcp-iqpuu, real git)", () => {
+describe("ChunkChurnWalkPool equivalence (bd tea-rags-mcp-iqpuu, real git)", () => {
   it("off-thread walk produces byte-equal overlays vs the inline path (no file signals)", async () => {
     const inlineProvider = new GitEnrichmentProvider();
     const inline = await inlineProvider.buildChunkSignals(repo, fixtureChunkMap(), {
@@ -133,7 +134,7 @@ describe("ChunkChurnWalkThread equivalence (bd tea-rags-mcp-iqpuu, real git)", (
       commitDiscovery: freshDiscovery() as never,
     });
 
-    const thread = new ChunkChurnWalkThread();
+    const thread = new ChunkChurnWalkPool(2);
     try {
       const offProvider = new GitEnrichmentProvider();
       const off = await offProvider.buildChunkSignals(repo, fixtureChunkMap(), {
@@ -159,7 +160,7 @@ describe("ChunkChurnWalkThread equivalence (bd tea-rags-mcp-iqpuu, real git)", (
       commitDiscovery: freshDiscovery() as never,
     });
 
-    const thread = new ChunkChurnWalkThread();
+    const thread = new ChunkChurnWalkPool(2);
     try {
       const offProvider = new GitEnrichmentProvider();
       await offProvider.streamFileBatch(repo, ["f1.ts", "f2.ts"]);
@@ -179,7 +180,7 @@ describe("ChunkChurnWalkThread equivalence (bd tea-rags-mcp-iqpuu, real git)", (
   }, 30000);
 
   it("reports walk stats from the worker", async () => {
-    const thread = new ChunkChurnWalkThread();
+    const thread = new ChunkChurnWalkPool(2);
     try {
       const provider = new GitEnrichmentProvider();
       const onWalkStats = vi.fn();
@@ -202,12 +203,12 @@ describe("ChunkChurnWalkThread equivalence (bd tea-rags-mcp-iqpuu, real git)", (
 
   it("close() shuts the thread down and is idempotent", async () => {
     // Never-walked thread: close() without a spawned worker is a no-op.
-    const idle = new ChunkChurnWalkThread();
+    const idle = new ChunkChurnWalkPool(2);
     await expect(idle.close()).resolves.toBeUndefined();
     await expect(idle.close()).resolves.toBeUndefined();
 
     // Walked thread: close() tears the worker down; the second close no-ops.
-    const thread = new ChunkChurnWalkThread();
+    const thread = new ChunkChurnWalkPool(2);
     const provider = new GitEnrichmentProvider();
     await provider.buildChunkSignals(repo, fixtureChunkMap(), {
       skipCache: true,
@@ -216,5 +217,35 @@ describe("ChunkChurnWalkThread equivalence (bd tea-rags-mcp-iqpuu, real git)", (
     });
     await expect(thread.close()).resolves.toBeUndefined();
     await expect(thread.close()).resolves.toBeUndefined();
+  }, 30000);
+
+  it("distributes concurrent walks across pool workers, each byte-equal to inline", async () => {
+    // Inline baseline for the fixture.
+    const inlineProvider = new GitEnrichmentProvider();
+    const inline = canonical(
+      await inlineProvider.buildChunkSignals(repo, fixtureChunkMap(), {
+        skipCache: true,
+        commitDiscovery: freshDiscovery() as never,
+      }),
+    );
+
+    // Three walks dispatched CONCURRENTLY onto one pool of 3 → round-robin to
+    // three distinct worker threads; each must still be byte-equal to inline.
+    const pool = new ChunkChurnWalkPool(3);
+    try {
+      const offs = await Promise.all(
+        Array.from({ length: 3 }, async () => {
+          const p = new GitEnrichmentProvider();
+          return p.buildChunkSignals(repo, fixtureChunkMap(), {
+            skipCache: true,
+            commitDiscovery: freshDiscovery() as never,
+            churnWalkThread: pool as never,
+          });
+        }),
+      );
+      for (const off of offs) expect(canonical(off)).toBe(inline);
+    } finally {
+      await pool.close();
+    }
   }, 30000);
 });

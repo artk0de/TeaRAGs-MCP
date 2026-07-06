@@ -24,6 +24,9 @@ import { formatIndexStatus, formatIndexStatusJson } from "./status-format.js";
 export interface WorkerHandle {
   on: ((event: "message", listener: (msg: unknown) => void) => void) &
     ((event: "exit", listener: (code: number | null) => void) => void);
+  /** IPC send — used to grant the worker "outlive" before a clean background
+   *  detach so its parent-death guard does not kill it on disconnect. */
+  send?: (msg: { type: string }) => void;
   disconnect?: () => void;
 }
 
@@ -113,7 +116,12 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
         case "status":
           latestStatus = raw.status;
           if (!waitEnrichments) {
-            // Index is searchable — stop bars first, then print status + ETA.
+            // Index is searchable — hand off cleanly: grant the worker "outlive"
+            // so its parent-death guard keeps enriching in the background, THEN
+            // detach. (An interrupt/kill skips this message → the worker's guard
+            // reaps its git children instead of orphaning them.)
+            child.send?.({ type: "outlive" });
+            // Stop bars first, then print status + ETA.
             child.disconnect?.();
             finish(0, () => {
               printStatus();
@@ -127,17 +135,36 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
             printOutcome(raw.result);
           });
           break;
+        case "qdrant-state":
+          // Rendered by renderer.handle (called above): the daemon state line
+          // shows BEFORE any progress bars while the worker waits (2nfdm).
+          break;
         case "error":
+          // Run-phase fatal. JSON mode must emit a parseable error object —
+          // a silent exit 1 with zero bytes is exactly the 2nfdm bug.
           finish(1, () => {
-            if (!jsonRenderer) out(colors.alert(`error: ${raw.message}`));
+            if (jsonRenderer) {
+              out(JSON.stringify({ error: { code: raw.code ?? "UNKNOWN", message: raw.message } }));
+            } else {
+              out(colors.alert(`error: ${raw.message}`));
+            }
           });
           break;
       }
     });
 
     child.on("exit", (code) => {
-      // Worker exited before a terminal message (crash) — surface a failure.
-      finish(code === 0 ? 0 : 1);
+      // Worker exited before a terminal message (crash). Surface it in BOTH
+      // modes — a bare non-zero exit code with no output is undebuggable.
+      if (code === 0) {
+        finish(0);
+        return;
+      }
+      finish(1, () => {
+        const message = `worker exited with code ${code ?? "null"} before reporting a result`;
+        if (jsonRenderer) out(JSON.stringify({ error: { code: "WORKER_EXIT", message } }));
+        else out(colors.alert(message));
+      });
     });
   });
 }

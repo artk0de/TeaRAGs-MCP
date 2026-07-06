@@ -6,22 +6,23 @@
  *
  * Integration tests (real git) → __integration__/git-log-reader.integration.test.ts
  * Metric functions → metrics.test.ts
- * Parser functions → tests/core/adapters/git/parsers.test.ts
- * Client utilities → tests/core/adapters/git/client-utils.test.ts
+ * Parser functions → tests/core/adapters/vcs/git/git-cli/parsers.test.ts
+ * Client utilities → tests/core/adapters/vcs/git/git-cli/client-utils.test.ts
  * Chunk reader → chunk-reader.test.ts
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as gitClient from "../../../../../../src/core/adapters/git/client.js";
-import * as gitParsers from "../../../../../../src/core/adapters/git/parsers.js";
-import type { FileChurnData } from "../../../../../../src/core/adapters/git/types.js";
+import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
+import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import * as gitParsers from "../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js";
+import type { FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
 import * as chunkReader from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { GitLogReader } from "../../../../../../src/core/domains/trajectory/git/infra/git-log-reader.js";
 
 // Enable cross-module spy interception for adapter functions
-vi.mock("../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
-vi.mock("../../../../../../src/core/adapters/git/parsers.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js", async (importOriginal) => importOriginal());
 vi.mock("../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js", async (importOriginal) =>
   importOriginal(),
 );
@@ -53,7 +54,7 @@ describe("getHead (CLI)", () => {
       return; // not in a git repo, skip
     }
 
-    const head = await reader.getHead(repoRoot);
+    const head = await reader.getHead(new GitCliAdapter(repoRoot));
     expect(head).toMatch(/^[a-f0-9]{40}$/);
   });
 });
@@ -86,7 +87,7 @@ describe("buildChunkChurnMap cache error", () => {
     ]);
 
     // Should not throw even though cache storage fails
-    const result = await reader.buildChunkChurnMap("/fake/repo", chunkMap);
+    const result = await reader.buildChunkChurnMap(new GitCliAdapter("/fake/repo"), chunkMap);
     expect(result).toBeInstanceOf(Map);
   });
 
@@ -121,7 +122,7 @@ describe("buildChunkChurnMap cache error", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await reader.buildChunkChurnMap("/fake/repo", chunkMap);
+    const result = await reader.buildChunkChurnMap(new GitCliAdapter("/fake/repo"), chunkMap);
     expect(result.size).toBe(1);
   });
 });
@@ -145,7 +146,7 @@ describe("buildFileSignalMap — timeout and cache", () => {
       Object.assign(new Error("Command failed: SIGTERM"), { killed: true, signal: "SIGTERM" }),
     );
 
-    await expect(reader.buildFileSignalMap("/fake/repo", undefined, 1)).rejects.toThrow();
+    await expect(reader.buildFileSignalMap(new GitCliAdapter("/fake/repo"), undefined, 1)).rejects.toThrow();
   });
 
   it("should return cached data when HEAD has not changed", async () => {
@@ -158,11 +159,11 @@ describe("buildFileSignalMap — timeout and cache", () => {
     const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(mockData);
 
     // First call — populates cache
-    const result1 = await reader.buildFileSignalMap("/fake/repo", 12);
+    const result1 = await reader.buildFileSignalMap(new GitCliAdapter("/fake/repo"), 12);
     expect(cliSpy).toHaveBeenCalledTimes(1);
 
     // Second call — same HEAD → should return cached
-    const result2 = await reader.buildFileSignalMap("/fake/repo", 12);
+    const result2 = await reader.buildFileSignalMap(new GitCliAdapter("/fake/repo"), 12);
     expect(cliSpy).toHaveBeenCalledTimes(1); // NOT called again
     expect(result2).toBe(result1); // Same reference
   });
@@ -176,7 +177,7 @@ describe("buildFileSignalMap — timeout and cache", () => {
     mockData.set("no-cache.ts", { commits: [], linesAdded: 0, linesDeleted: 0 });
     const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(mockData);
 
-    const result = await reader.buildFileSignalMap("/fake/repo", 6);
+    const result = await reader.buildFileSignalMap(new GitCliAdapter("/fake/repo"), 6);
     expect(cliSpy).toHaveBeenCalled();
     expect(result.size).toBe(1);
   });
@@ -191,7 +192,7 @@ describe("buildFileSignalMap — timeout and cache", () => {
       vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
       const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(new Map());
 
-      await reader.buildFileSignalMap("/fake/repo"); // no maxAgeMonths param
+      await reader.buildFileSignalMap(new GitCliAdapter("/fake/repo")); // no maxAgeMonths param
 
       // buildViaCli should be called; the sinceDate should be ~3 months ago
       expect(cliSpy).toHaveBeenCalled();
@@ -210,7 +211,7 @@ describe("buildFileSignalMap — timeout and cache", () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
     const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(new Map());
 
-    await reader.buildFileSignalMap("/fake/repo", 0);
+    await reader.buildFileSignalMap(new GitCliAdapter("/fake/repo"), 0);
 
     // buildViaCli is called with undefined sinceDate (maxAge=0 means no filter)
     expect(cliSpy).toHaveBeenCalled();
@@ -232,7 +233,7 @@ describe("buildFileSignalsForPaths — batch failure", () => {
     // Simpler approach: just make parseNumstatOutput return empty for the test
     vi.spyOn(gitParsers, "parseNumstatOutput").mockReturnValue(new Map());
 
-    const result = await reader.buildFileSignalsForPaths("/tmp", []);
+    const result = await reader.buildFileSignalsForPaths(new GitCliAdapter("/tmp"), []);
     expect(result.size).toBe(0);
   });
 });
@@ -252,7 +253,7 @@ describe("buildFileSignalsForPaths — DEBUG batch error logging", () => {
     // Force the git command to fail by using a non-git directory
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const result = await reader.buildFileSignalsForPaths("/tmp/not-a-git-repo", ["nonexistent.ts"]);
+    const result = await reader.buildFileSignalsForPaths(new GitCliAdapter("/tmp/not-a-git-repo"), ["nonexistent.ts"]);
 
     // Should not throw, return empty map
     expect(result.size).toBe(0);
@@ -288,11 +289,11 @@ describe("buildChunkChurnMap — cache hit", () => {
     ]);
 
     // First call — populates cache
-    const result1 = await reader.buildChunkChurnMap("/fake/repo", chunkMap);
+    const result1 = await reader.buildChunkChurnMap(new GitCliAdapter("/fake/repo"), chunkMap);
     expect(pathspecSpy).toHaveBeenCalledTimes(1);
 
     // Second call — same HEAD → cached (no git operations)
-    const result2 = await reader.buildChunkChurnMap("/fake/repo", chunkMap);
+    const result2 = await reader.buildChunkChurnMap(new GitCliAdapter("/fake/repo"), chunkMap);
     expect(pathspecSpy).toHaveBeenCalledTimes(1); // NOT called again
     expect(result2).toBe(result1);
   });

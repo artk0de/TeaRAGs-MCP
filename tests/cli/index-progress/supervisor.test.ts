@@ -411,7 +411,10 @@ describe("superviseIndexing — JSON mode", () => {
     expect(out.join("\n")).not.toContain("⚠");
   });
 
-  it("error message in json mode: stdout has exactly one JSON object with no human error text", async () => {
+  it("error message in json mode emits a parseable {error:{code,message}} object (2nfdm: no silent exit 1)", async () => {
+    // A run-phase fatal (e.g. INFRA_QDRANT_RECOVERING) used to die with exit 1
+    // and ZERO bytes in --json mode — agents saw a silent death. The supervisor
+    // must emit the error as JSON, never as human text.
     const child = fakeChild();
     const renderer = new JsonProgressRenderer();
     const out: string[] = [];
@@ -423,16 +426,103 @@ describe("superviseIndexing — JSON mode", () => {
       path: "/repo",
     });
 
+    child.emit("message", {
+      type: "error",
+      message: "Qdrant daemon at http://127.0.0.1:63627 is recovering shards",
+      code: "INFRA_QDRANT_RECOVERING",
+    });
+    const code = await p;
+
+    expect(code).not.toBe(0);
+    const objects = out.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const errorObject = objects.find((o) => o.error !== undefined);
+    expect(errorObject).toBeDefined();
+    expect(errorObject!.error).toEqual({
+      code: "INFRA_QDRANT_RECOVERING",
+      message: "Qdrant daemon at http://127.0.0.1:63627 is recovering shards",
+    });
+    // No human-formatted error text — every stdout line must be valid JSON (checked above by JSON.parse).
+    expect(out.join("\n")).not.toContain("error: Qdrant");
+  });
+
+  it("error message without a code falls back to UNKNOWN in the json error object", async () => {
+    const child = fakeChild();
+    const renderer = new JsonProgressRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child as never, {
+      renderer,
+      waitEnrichments: true,
+      colors: plain,
+      out: (s) => out.push(s),
+    });
+
     child.emit("message", { type: "error", message: "disk full" });
     await p;
 
-    // In error path without a status there may be 0 JSON items (no status to format),
-    // but there must be NO human error text on stdout
-    const joined = out.join("\n");
-    expect(joined).not.toContain("disk full");
-    // If anything is on stdout it must be valid JSON
-    for (const line of out) {
-      expect(() => JSON.parse(line)).not.toThrow();
-    }
+    const objects = out.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const errorObject = objects.find((o) => o.error !== undefined);
+    expect(errorObject!.error).toEqual({ code: "UNKNOWN", message: "disk full" });
+  });
+
+  it("worker crash (exit non-zero before any terminal message) emits a json error object", async () => {
+    const child = fakeChild();
+    const renderer = new JsonProgressRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child as never, {
+      renderer,
+      waitEnrichments: true,
+      colors: plain,
+      out: (s) => out.push(s),
+    });
+
+    child.emit("exit", 1);
+    const code = await p;
+
+    expect(code).toBe(1);
+    const objects = out.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const errorObject = objects.find((o) => o.error !== undefined);
+    expect(errorObject).toBeDefined();
+    expect((errorObject!.error as Record<string, unknown>).code).toBe("WORKER_EXIT");
+  });
+
+  it("worker crash in human mode prints an alert line instead of exiting silently", async () => {
+    const child = fakeChild();
+    const renderer = fakeRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child as never, {
+      renderer,
+      waitEnrichments: true,
+      colors: plain,
+      out: (s) => out.push(s),
+    });
+
+    child.emit("exit", 137);
+    const code = await p;
+
+    expect(code).toBe(1);
+    expect(out.join("\n")).toContain("worker exited");
+  });
+});
+
+describe("superviseIndexing — qdrant-state (2nfdm: recovery wait surfaced before progress)", () => {
+  it("forwards qdrant-state messages to the renderer and keeps waiting", async () => {
+    const child = fakeChild();
+    const renderer = fakeRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child as never, {
+      renderer,
+      waitEnrichments: false,
+      colors: plain,
+      out: (s) => out.push(s),
+    });
+
+    child.emit("message", { type: "qdrant-state", state: "recovering", elapsedMs: 3000 });
+    child.emit("message", { type: "qdrant-state", state: "ready", elapsedMs: 9000 });
+    child.emit("message", statusMsg);
+    const code = await p;
+
+    expect(code).toBe(0);
+    expect(renderer.handle).toHaveBeenCalledWith({ type: "qdrant-state", state: "recovering", elapsedMs: 3000 });
+    expect(renderer.handle).toHaveBeenCalledWith({ type: "qdrant-state", state: "ready", elapsedMs: 9000 });
   });
 });

@@ -2,13 +2,8 @@ import type { IndexMetrics, IndexStatus } from "../../core/api/public/dto/index.
 import type { CollectionEntry } from "../../core/api/public/index.js";
 import type { UpdateStatus } from "../update-check/types.js";
 
-/**
- * Registry entry as consumed by the prime digest. `tuning` is forward-compat:
- * a parallel change adds `tuning?: Record<string, string>` to CollectionEntry;
- * declaring it structurally here lets the digest render it the moment the
- * field lands, without a hard type dependency. Absent map = omitted.
- */
-export type PrimeRegistryEntry = CollectionEntry & { tuning?: Record<string, string> };
+/** Registry entry as consumed by the prime digest (env snapshot + legacy tuning). */
+export type PrimeRegistryEntry = CollectionEntry;
 
 /**
  * Successful prime data — index reachable, status fetched.

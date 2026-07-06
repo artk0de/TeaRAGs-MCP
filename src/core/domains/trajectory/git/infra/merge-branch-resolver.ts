@@ -6,7 +6,7 @@
  * Pure function — no I/O, no git CLI calls.
  */
 
-import type { CommitInfo } from "../../../../adapters/git/types.js";
+import type { CommitInfo } from "../../../../adapters/vcs/types.js";
 
 /**
  * Patterns that identify a merge commit as merging a bug-fix branch.

@@ -4,8 +4,8 @@
  * parent oids come from `CommitInfo.parents` (bd tea-rags-mcp-iqpuu).
  */
 
-import type { CatFileBatchReader } from "../../../../adapters/git/client.js";
-import type { BlameLine, FileChurnData } from "../../../../adapters/git/types.js";
+import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
+import type { BlameLine, BlobBatchReader, FileChurnData } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
@@ -41,7 +41,7 @@ const MAX_FILE_LINES_DEFAULT = 10000;
  * @returns Map<relativePath, Map<chunkId, ChunkChurnOverlay>>
  */
 export async function buildChunkChurnMap(
-  repoRoot: string,
+  adapter: VcsGitAdapter,
   chunkMap: Map<string, ChunkLookupEntry[]>,
   enrichmentCache: GitEnrichmentCache,
   isoGitCache: Record<string, unknown>,
@@ -54,18 +54,18 @@ export async function buildChunkChurnMap(
   externalSemaphore?: ChunkConcurrencySemaphore,
   skipCache = false,
   blameByPath?: Map<string, BlameLine[]>,
-  blobReader?: CatFileBatchReader,
+  blobReader?: BlobBatchReader,
   diffMemo?: WalkCommitDiffMemo,
   commitDiscovery?: WalkCommitDiscovery,
   onWalkStats?: (stats: ChunkChurnWalkStats) => void,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   if (!skipCache) {
-    const cached = await enrichmentCache.getChunkChurn(repoRoot);
+    const cached = await enrichmentCache.getChunkChurn(adapter);
     if (cached) return cached;
   }
 
   const result = await buildChunkChurnMapUncached(
-    repoRoot,
+    adapter,
     chunkMap,
     isoGitCache,
     concurrency,
@@ -83,14 +83,14 @@ export async function buildChunkChurnMap(
   );
 
   if (!skipCache) {
-    await enrichmentCache.setChunkChurn(repoRoot, result);
+    await enrichmentCache.setChunkChurn(adapter, result);
   }
 
   return result;
 }
 
 export async function buildChunkChurnMapUncached(
-  repoRoot: string,
+  adapter: VcsGitAdapter,
   chunkMap: Map<string, ChunkLookupEntry[]>,
   isoGitCache: Record<string, unknown>,
   concurrency: number,
@@ -101,13 +101,13 @@ export async function buildChunkChurnMapUncached(
   maxFileLines = MAX_FILE_LINES_DEFAULT,
   externalSemaphore?: ChunkConcurrencySemaphore,
   blameByPath?: Map<string, BlameLine[]>,
-  blobReader?: CatFileBatchReader,
+  blobReader?: BlobBatchReader,
   diffMemo?: WalkCommitDiffMemo,
   commitDiscovery?: WalkCommitDiscovery,
   onWalkStats?: (stats: ChunkChurnWalkStats) => void,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   // Phase 1: initialize per-chunk accumulator state
-  const { relativeChunkMap, accumulators } = buildAccumulators(repoRoot, chunkMap);
+  const { relativeChunkMap, accumulators } = buildAccumulators(adapter.repoRoot, chunkMap);
 
   if (relativeChunkMap.size === 0) {
     // No walk happened — the per-walk instrumentation callback is NOT invoked.
@@ -119,7 +119,7 @@ export async function buildChunkChurnMapUncached(
   // Phase 2: walk commits, parallel blob reads + structuredPatch,
   // offset-aware hunk → chunk mapping (mutates accumulators in place)
   const { commitCount, holdCount, semWaitMs, blobReads, patchCalls, memoHits } = await walkCommits({
-    repoRoot,
+    adapter,
     relativeChunkMap,
     accumulators,
     isoGitCache,

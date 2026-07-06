@@ -13,10 +13,10 @@ import type { Ignore } from "ignore";
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
 import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
-import { captureTuningEnv } from "../../../infra/registry/tuning-env.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
@@ -79,6 +79,15 @@ export interface PipelineRegistryDeps {
    * `<base>_v<N>.duckdb` files whose Qdrant collection is already gone.
    */
   codegraphLister?: CodegraphDbLister;
+  /**
+   * Full effective env set of this run (canonical keys, code defaults
+   * materialized), built by the bootstrap composition root from the parsed
+   * config (`buildRegistryEnvSnapshot`) — the pipeline never reads
+   * process.env. Persisted verbatim into `CollectionEntry.env` so a bare-env
+   * CLI reindex reproduces the same configuration. Omitted only in direct
+   * (non-bootstrap) constructions — then no env snapshot is recorded.
+   */
+  envSnapshot?: Record<string, string>;
 }
 
 export abstract class BaseIndexingPipeline {
@@ -87,6 +96,7 @@ export abstract class BaseIndexingPipeline {
   protected readonly teaRagsVersion: string;
   protected readonly codegraphRemover: CodegraphDbRemover | undefined;
   protected readonly codegraphLister: CodegraphDbLister | undefined;
+  protected readonly envSnapshot: Record<string, string> | undefined;
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
@@ -103,6 +113,7 @@ export abstract class BaseIndexingPipeline {
     this.teaRagsVersion = registryDeps?.teaRagsVersion ?? "0.0.0";
     this.codegraphRemover = registryDeps?.codegraphRemover;
     this.codegraphLister = registryDeps?.codegraphLister;
+    this.envSnapshot = registryDeps?.envSnapshot;
   }
 
   /**
@@ -238,22 +249,24 @@ export abstract class BaseIndexingPipeline {
       // was wired up, not which endpoint we happened to be on at write time.
       const embeddingBaseUrl = this.embeddings.getPrimaryBaseUrl?.() ?? this.embeddings.getBaseUrl?.();
       const embeddingFallbackUrl = this.embeddings.getFallbackBaseUrl?.();
-      // Tuning env snapshot (curated allowlist) — only vars actually SET in
-      // this indexing process are recorded, no defaults materialized. CLI
-      // index-codebase / prime re-apply the map registry-first in a fresh
-      // shell (env > registry > code default), symmetric with codegraphEnabled.
-      const tuning = captureTuningEnv();
+      // Env snapshot — the FULL effective env set of this run (canonical
+      // keys, code defaults materialized), injected by the bootstrap
+      // composition root from the parsed config (9vpnz). CLI index-codebase /
+      // prime re-apply the map registry-first in a fresh shell with the one
+      // general rule (outer env > registry env > code default).
+      const { envSnapshot } = this;
       this.registry.record({
         collectionName,
         path: absolutePath,
         embeddingModel: this.embeddings.getModel(),
         embeddingDimensions: this.embeddings.getDimensions(),
-        qdrantUrl: this.qdrant.url,
-        // Remember WHETHER this was the embedded daemon, not just its current
-        // port — the daemon rebinds an ephemeral port on restart, so a frozen
-        // URL goes stale. Consumers re-seed the embedded marker (fresh resolve +
-        // reconnect) when this is true. Same "what was wired up" principle as
-        // the embedding URLs above.
+        // Embedded daemon: persist the SENTINEL, never the concrete
+        // http://127.0.0.1:<random-port> URL — the daemon rebinds an ephemeral
+        // port per lifetime, so a frozen URL goes stale on every restart
+        // (2nfdm). Consumers resolve the sentinel through daemon discovery
+        // (daemon.port / spawn) at every run.
+        qdrantUrl: this.qdrant.isEmbedded ? EMBEDDED_MARKER : this.qdrant.url,
+        // Kept alongside the sentinel for pre-sentinel readers and display.
         qdrantEmbedded: this.qdrant.isEmbedded,
         ...(embeddingBaseUrl !== undefined ? { embeddingBaseUrl } : {}),
         ...(embeddingFallbackUrl !== undefined ? { embeddingFallbackUrl } : {}),
@@ -261,7 +274,7 @@ export abstract class BaseIndexingPipeline {
         // when CODEGRAPH_ENABLED is off — see RegistryDeps doc). prime reads
         // this back to re-apply the flag, symmetric with the embedding URLs.
         codegraphEnabled: this.codegraphRemover !== undefined,
-        ...(tuning !== undefined ? { tuning } : {}),
+        ...(envSnapshot !== undefined ? { env: envSnapshot } : {}),
         indexedAt: new Date().toISOString(),
         teaRagsVersion: this.teaRagsVersion,
         chunksCount,

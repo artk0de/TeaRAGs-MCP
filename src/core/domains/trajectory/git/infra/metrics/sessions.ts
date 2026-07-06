@@ -7,7 +7,7 @@
  * burst commits.
  */
 
-import type { CommitInfo } from "../../../../../adapters/git/types.js";
+import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
 import { isBugFixCommit, MERGE_SUBJECT } from "../metrics.js";
 
 export interface Session {

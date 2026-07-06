@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 import { defaultChunkerPoolSize } from "../../core/domains/ingest/pipeline/infra/pool-defaults.js";
+import { defaultBlamePoolSize } from "../../core/domains/trajectory/git/infra/churn-walk/blame-pool-defaults.js";
 import {
   booleanFromEnv,
   booleanFromEnvWithDefault,
@@ -117,12 +118,26 @@ export const trajectoryGitSchema = z.object({
   // Floored at the default: a sub-default env value is ignored so the env can
   // only RAISE git chunk walk parallelism, never silently halve it (bd f2jsb:
   // a stale env block pinned 5 vs the code default 10 across every CLI run).
-  chunkConcurrency: intWithDefault(10).transform((v) => Math.max(v, 10)),
+  chunkConcurrency: intWithDefault(10),
+  // Git-blame CONCURRENCY = size of the FILE-phase blame worker pool. Blame is
+  // native `git blame` (async child process); N workers = N concurrent blames.
+  // Default 10 (capped cpus-1); parallel git blame is not EDR-capped. The
+  // chunk-walk pool is decoupled (capped at 4). Env: TRAJECTORY_GIT_BLAME_POOL_SIZE.
+  blamePoolSize: intWithDefault(defaultBlamePoolSize()),
   chunkMaxAgeMonths: floatWithDefault(6),
   chunkTimeoutMs: intWithDefault(120000),
   chunkMaxFileLines: intWithDefault(10000),
   squashAwareSessions: booleanFromEnv,
   sessionGapMinutes: intWithDefault(30),
+});
+
+export const vcsSchema = z.object({
+  /**
+   * Git history access engine (GIT_ADAPTER): "git" = CLI subprocess
+   * (default), "es-git" = in-process libgit2 bindings. Unknown values are a
+   * config error — the factory has no silent fallback (fail-loud by design).
+   */
+  adapter: z.enum(["git", "es-git"]).default("git"),
 });
 
 export const codegraphSchema = z.object({
@@ -234,5 +249,6 @@ export type {
   EmbeddingTuneConfig,
   EmbeddingConfig,
   TrajectoryGitConfig,
+  VcsConfig,
   QdrantTuneConfig,
 } from "../../core/contracts/types/config.js";
