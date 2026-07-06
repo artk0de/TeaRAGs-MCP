@@ -121,9 +121,10 @@ export function parsePathspecOutput(stdout: string): { commit: CommitInfo; chang
 /**
  * Parse `git log --numstat --format=%x00...` output, keeping the PER-FILE
  * +/- counts (`parsePathspecOutput`'s numstat loop keeps only the path,
- * discarding them). Binary rows (`-\t-\t<path>`) contribute
- * `{ added: 0, deleted: 0 }`, matching `parseNumstatOutput`'s NaN-skip
- * semantics without dropping the file from the result.
+ * discarding them). Binary rows (`-\t-\t<path>`) are SKIPPED, exactly as
+ * `parseNumstatOutput` does (parseInt("-") is NaN → skip): a file touched
+ * ONLY by binary commits must not appear here with a phantom commit, so the
+ * incremental discovery aggregate equals the legacy full-recompute per file.
  */
 export function parseCommitFileNumstat(stdout: string): CommitFileNumstat[] {
   const result: CommitFileNumstat[] = [];
@@ -162,14 +163,14 @@ export function parseCommitFileNumstat(stdout: string): CommitFileNumstat[] {
       const parts = line.split("\t");
       if (parts.length < 3) continue;
 
-      // Binary files show "-\t-" — keep the file, zero the counts.
-      const added = parts[0] === "-" ? 0 : parseInt(parts[0], 10);
-      const deleted = parts[1] === "-" ? 0 : parseInt(parts[1], 10);
-      files.push({
-        path: parts[2],
-        added: Number.isNaN(added) ? 0 : added,
-        deleted: Number.isNaN(deleted) ? 0 : deleted,
-      });
+      // Binary files show "-\t-" — parseInt("-") is NaN. Skip the row entirely
+      // to match parseNumstatOutput (the legacy full-recompute path), so a file
+      // touched ONLY by binary commits gets the SAME commitCount on both paths.
+      const added = parseInt(parts[0], 10);
+      const deleted = parseInt(parts[1], 10);
+      if (Number.isNaN(added) || Number.isNaN(deleted)) continue;
+
+      files.push({ path: parts[2], added, deleted });
     }
 
     if (files.length > 0) {

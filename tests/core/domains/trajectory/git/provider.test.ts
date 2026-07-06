@@ -11,6 +11,7 @@ import {
 import { buildChunkChurnMap } from "../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import { ChunkChurnWalkPool } from "../../../../../src/core/domains/trajectory/git/infra/churn-walk/walk-pool.js";
 import { GitCommitDiscovery } from "../../../../../src/core/domains/trajectory/git/infra/commit-discovery.js";
+import { FileChurnDiscovery } from "../../../../../src/core/domains/trajectory/git/infra/file-churn-discovery.js";
 import {
   buildFileSignalDiscovery,
   buildFileSignalMap,
@@ -127,6 +128,7 @@ describe("GitEnrichmentProvider", () => {
         expect.anything(),
         12,
         60000,
+        expect.any(FileChurnDiscovery), // run-scoped store-backed discovery (Task 4 wiring)
       );
       expect(result.size).toBe(1);
       expect(result.has("src/a.ts")).toBe(true);
@@ -290,7 +292,12 @@ describe("GitEnrichmentProvider", () => {
 
       // ONE repo-wide discovery, sliced in memory — the per-path pathspec log is
       // no longer spawned on the streaming path (bd tea-rags-mcp-j4lm9).
-      expect(buildFileSignalDiscovery).toHaveBeenCalledWith(expect.objectContaining({ repoRoot: "/repo" }), 60000, 12);
+      expect(buildFileSignalDiscovery).toHaveBeenCalledWith(
+        expect.objectContaining({ repoRoot: "/repo" }),
+        60000,
+        12,
+        expect.any(FileChurnDiscovery), // run-scoped store-backed discovery (Task 4 wiring)
+      );
       expect(buildFileSignalsForPaths).not.toHaveBeenCalled();
       expect(result.has("src/b.ts")).toBe(true);
       expect(result.has("src/other.ts")).toBe(false);

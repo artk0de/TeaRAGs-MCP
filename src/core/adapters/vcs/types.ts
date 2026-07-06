@@ -59,7 +59,8 @@ export interface CommitWithChangedFiles {
  * The numstat-preserving sibling of `CommitWithChangedFiles` — that type
  * keeps only file paths; this one keeps the +/- counts a commit-cache needs
  * to evict a commit's contribution and re-aggregate. Binary files (git's
- * `-\t-` numstat columns) contribute `{ added: 0, deleted: 0 }`.
+ * `-\t-` numstat columns) are SKIPPED, matching the legacy `parseNumstatOutput`
+ * churn map — a binary-only file yields no entry (not `{ added: 0, deleted: 0 }`).
  */
 export interface CommitFileNumstat {
   commit: CommitInfo;

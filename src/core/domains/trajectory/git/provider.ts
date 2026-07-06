@@ -46,6 +46,8 @@ import { BlameWorkerPool } from "./infra/churn-walk/blame-pool.js";
 import { ChunkChurnWalkPool } from "./infra/churn-walk/walk-pool.js";
 import { GitCommitDiscoveryStore } from "./infra/commit-discovery-store.js";
 import { GitCommitDiscovery } from "./infra/commit-discovery.js";
+import { FileChurnDiscoveryStore } from "./infra/file-churn-discovery-store.js";
+import { FileChurnDiscovery } from "./infra/file-churn-discovery.js";
 import {
   buildFileSignalDiscovery,
   buildFileSignalMap,
@@ -151,6 +153,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  concurrent callers share one creation. Dropped at the finalize seam. */
   private readonly vcsAdapters = new Map<string, Promise<VcsGitAdapter>>();
 
+  /** Run-scoped, store-backed per-file churn discovery — the FILE analogue of
+   *  the chunk `createCommitDiscovery` matrix, but provider-owned like
+   *  `fileDiscovery` (streamFileBatch / buildFileSignals own the lifecycle). ONE
+   *  instance per root, incrementally topped-up from its own file-churn store;
+   *  dropped at the finalize seam so a HEAD move (a new run) rebuilds the window
+   *  from the persisted snapshot instead of re-walking the whole repo. */
+  private readonly fileChurnDiscoveries = new Map<string, FileChurnDiscovery>();
+
   /**
    * Worker-pool descriptor — present iff the composition root wired this
    * provider for off-main-thread dispatch via WorkerPoolEnrichmentExecutor.
@@ -196,6 +206,29 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     return adapter;
   }
 
+  /** Lazy per-root, run-scoped file-churn discovery — ONE store-backed instance
+   *  per root shared by BOTH the whole-set (`buildFileSignalMap`) and streaming
+   *  (`buildFileSignalDiscovery`) file-signal reads, so a warm run tops up its
+   *  window incrementally (a `from..to` range read) instead of re-walking the
+   *  whole repo. Window config mirrors the legacy reads
+   *  (`logMaxAgeMonths` / `logTimeoutMs`) so `buildFileSignalDiscovery`'s
+   *  otherwise-ignored window param stays consistent — no silent mismatch.
+   *  Construction is synchronous (mirrors createCommitDiscovery): the discovery
+   *  awaits the adapter promise internally on its first git touch. Dropped at
+   *  the finalize seam. */
+  private fileChurnDiscoveryFor(root: string): FileChurnDiscovery {
+    let discovery = this.fileChurnDiscoveries.get(root);
+    if (!discovery) {
+      discovery = new FileChurnDiscovery(this.adapterFor(root), {
+        maxAgeMonths: this.config.logMaxAgeMonths,
+        timeoutMs: this.config.logTimeoutMs,
+        store: new FileChurnDiscoveryStore(),
+      });
+      this.fileChurnDiscoveries.set(root, discovery);
+    }
+    return discovery;
+  }
+
   /**
    * Git policy: generated files carry harmful signals (regeneration churn,
    * generator as "owner") and are huge blame targets → skip entirely.
@@ -237,6 +270,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
         this.enrichmentCache,
         this.config.logMaxAgeMonths,
         this.config.logTimeoutMs,
+        this.fileChurnDiscoveryFor(root),
       );
     }
 
@@ -276,6 +310,11 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  (best-effort — the process is idle either way). */
   finalizeSignals = async (): Promise<Map<string, FileSignalOverlay>> => {
     this.fileDiscovery = null;
+    // Drop the run-scoped file-churn discovery instances with the run — the next
+    // run rebuilds each from its persisted store snapshot (topping up the window
+    // for the new HEAD). Its own latch pins one HEAD's aggregate, so it must not
+    // outlive the run (matches vcsAdapters/fileDiscovery reset below).
+    this.fileChurnDiscoveries.clear();
     this.persistBlameCache();
     this.blameCache = null;
     this.blameCacheRoot = null;
@@ -318,7 +357,12 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     // of adapterFor / GitCommitDiscovery.matrixPromise. Bounded by
     // logMaxAgeMonths (full history was 141s on taxdome, blocking git-file
     // enrichment ~150s; the window matches buildFileSignalMap).
-    const data = buildFileSignalDiscovery(adapter, this.config.logTimeoutMs, this.config.logMaxAgeMonths);
+    const data = buildFileSignalDiscovery(
+      adapter,
+      this.config.logTimeoutMs,
+      this.config.logMaxAgeMonths,
+      this.fileChurnDiscoveryFor(root),
+    );
     this.fileDiscovery = { root, headSha, data };
     // A transient discovery failure must not poison the whole run: drop the
     // cache on rejection so a LATER (non-concurrent) batch can retry, while the

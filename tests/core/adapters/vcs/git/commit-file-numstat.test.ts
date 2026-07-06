@@ -93,10 +93,13 @@ describe("readCommitFileNumstat (real git)", () => {
     expect(entries.map((e) => e.commit.sha)).toEqual([c2sha]);
   });
 
-  it("binary files count as 0 added / 0 deleted", async () => {
+  it("skips binary-file rows (matches legacy parseNumstatOutput churn map)", async () => {
     const entries = await adapter.readCommitFileNumstat(sinceEpoch);
 
+    // `-\t-` numstat rows are dropped: a binary-only file must not appear (else
+    // it would get a phantom commit vs the legacy full-recompute path). c2 still
+    // survives because it also touched the text file a.ts.
     const bin = entries.flatMap((e) => e.files).find((f) => f.path === "img.png");
-    expect(bin).toEqual({ path: "img.png", added: 0, deleted: 0 });
+    expect(bin).toBeUndefined();
   });
 });

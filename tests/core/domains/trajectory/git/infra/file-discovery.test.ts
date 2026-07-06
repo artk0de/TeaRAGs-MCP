@@ -9,8 +9,13 @@
  * counts, and Map/commit ordering.
  *
  * Spawn pin: a streaming run of N file batches used to spawn N full-history
- * numstat logs; with the discovery it spawns exactly ONE. Counted through a
- * real PATH shim wrapping the git binary — no child_process mocks here.
+ * numstat logs; with the discovery it spawns exactly ONE — now the
+ * numstat-PRESERVING reader (`readCommitFileNumstat` → `git log --since … --numstat`,
+ * the store-backed FileChurnDiscovery), not the legacy `git log HEAD --numstat`.
+ * Counted through a real PATH shim wrapping the git binary — no child_process
+ * mocks here. Each provider test gets an isolated file-churn store dir so the
+ * discovery is always COLD (a persisted snapshot would make a repeat run an
+ * exact-HEAD hit that spawns zero logs).
  *
  * Real-git fixture pattern follows tests/core/adapters/vcs/git/git-cli/client-catfile.test.ts
  * (gitIn temp-dir guard; the worktree-head-guard globalSetup is the backstop).
@@ -20,7 +25,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import type { FileChurnData } from "../../../../../../src/core/adapters/vcs/types.js";
@@ -32,6 +37,11 @@ import {
 import { GitEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/git/provider.js";
 
 const TMP_BASE = realpathSync(tmpdir());
+
+// The real-git provider tests here spawn many git subprocesses; under the full
+// parallel suite (compounded by the machine-wide EDR git-spawn throttle) the 5s
+// default is too tight — the same rationale as the 30s beforeAll hook timeouts.
+vi.setConfig({ testTimeout: 30000 });
 
 /** Refuse to run git outside the temp tree — see client-catfile.test.ts. */
 function gitIn(cwd: string, args: string[], env?: Record<string, string>): string {
@@ -101,6 +111,21 @@ function buildFixtureRepo(tmp: string): void {
 /** The batch shapes a streaming run would produce (incl. a never-committed path). */
 const BATCHES: string[][] = [["a.ts", "b.ts"], ["c.md", "missing.ts"], ["d.ts"]];
 
+/** Point the run-scoped stores (file-churn / blame) at a fresh temp dir so each
+ *  provider test is COLD and independent — a persisted file-churn snapshot would
+ *  turn a repeat run into an exact-HEAD store hit that spawns zero numstat logs. */
+function isolateStoreDir(): { restore: () => void } {
+  const prev = process.env.TEA_RAGS_DATA_DIR;
+  const dir = mkdtempSync(join(TMP_BASE, "git-fd-store-"));
+  process.env.TEA_RAGS_DATA_DIR = dir;
+  return {
+    restore: () => {
+      if (dir.startsWith(TMP_BASE + sep)) rmSync(dir, { recursive: true, force: true });
+      process.env.TEA_RAGS_DATA_DIR = prev;
+    },
+  };
+}
+
 // ─── sliceFileSignalsByPaths (pure) ──────────────────────────────────────────
 
 describe("sliceFileSignalsByPaths", () => {
@@ -137,12 +162,20 @@ describe("sliceFileSignalsByPaths", () => {
 describe("file-phase single-discovery equivalence (real git)", () => {
   let tmp: string;
 
+  let store: { restore: () => void };
+
   beforeAll(() => {
     tmp = mkdtempSync(join(TMP_BASE, "git-fd-"));
     buildFixtureRepo(tmp);
   }, 30000); // ~16 git spawns; 10s default hook timeout is too tight under CI contention (matches blame-cache/churn-walk fixtures)
   afterAll(() => {
     rmSync(tmp, { recursive: true, force: true });
+  });
+  beforeEach(() => {
+    store = isolateStoreDir();
+  });
+  afterEach(() => {
+    store.restore();
   });
 
   it("sliced discovery DEEP-EQUALS the legacy per-batch pathspec log for every batch", async () => {
@@ -229,6 +262,16 @@ describe("file-phase single-discovery spawn counts (PATH shim)", () => {
     rmSync(shimDir, { recursive: true, force: true });
   });
 
+  // Isolated store per test → each provider run is COLD (a warm snapshot from a
+  // prior test would make the discovery an exact-HEAD hit and spawn zero logs).
+  let store: { restore: () => void };
+  beforeEach(() => {
+    store = isolateStoreDir();
+  });
+  afterEach(() => {
+    store.restore();
+  });
+
   it("legacy path spawns one full-history numstat log PER BATCH", async () => {
     resetLog();
     for (const batch of BATCHES) {
@@ -243,8 +286,11 @@ describe("file-phase single-discovery spawn counts (PATH shim)", () => {
     for (const batch of BATCHES) {
       await provider.streamFileBatch(tmp, batch);
     }
-    // ONE repo-wide discovery replaces the per-batch full-history walks.
-    expect(countPrefix("log HEAD --numstat")).toBe(1);
+    // ONE repo-wide discovery (the numstat-preserving `git log --since … --numstat`
+    // read) replaces the per-batch full-history walks. The legacy `git log HEAD
+    // --numstat` shape is no longer used by the streaming path.
+    expect(countPrefix("log --since")).toBe(1);
+    expect(countPrefix("log HEAD --numstat")).toBe(0);
     // Blame stays per-file, untouched by the discovery: a.ts, b.ts, c.md, d.ts.
     expect(countPrefix("blame")).toBe(4);
   });
@@ -259,6 +305,7 @@ describe("file-phase single-discovery spawn counts (PATH shim)", () => {
     resetLog();
     const provider = new GitEnrichmentProvider();
     await Promise.all(BATCHES.map(async (batch) => provider.streamFileBatch(tmp, batch)));
-    expect(countPrefix("log HEAD --numstat")).toBe(1);
+    // Single-flight collapses the racing batches to ONE repo-wide numstat read.
+    expect(countPrefix("log --since")).toBe(1);
   });
 });
