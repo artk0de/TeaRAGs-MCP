@@ -525,9 +525,11 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   /**
    * Batched form of {@link upsertSymbols}: one transaction for many files
-   * instead of one BEGIN/COMMIT per file. Same per-file semantics —
-   * DELETE-per-file, then one `INSERT OR IGNORE` over every row — just
-   * amortised across the whole batch. Empty `entries` is a no-op.
+   * instead of one BEGIN/COMMIT per file. Equivalent to calling
+   * `upsertSymbols(relPath, definitions)` once per entry, in order — so a
+   * later entry for the same relPath fully REPLACES an earlier one (last-wins
+   * per relPath, matching sequential DELETE+INSERT). Empty `entries` is a
+   * no-op.
    */
   async upsertSymbolsBulk(entries: BulkSymbolUpsertEntry[]): Promise<void> {
     if (entries.length === 0) return;
@@ -536,19 +538,35 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   private async upsertSymbolsBulkImpl(entries: BulkSymbolUpsertEntry[]): Promise<void> {
     // Same DELETE+INSERT-inside-a-transaction contract as upsertSymbolsImpl,
-    // just spanning every file in the batch instead of one. INSERT OR IGNORE
-    // preserves first-wins on a within-file duplicate symbolId — row build
-    // order iterates entries then definitions in declaration order, so the
-    // first occurrence of a (rel_path, symbol_id) pair always lands first in
-    // the batched VALUES list (see insertOrIgnoreBatched's doc comment for
-    // why duplicate-PK rows within one statement are also first-row-wins).
+    // just spanning every file in the batch instead of one.
+    //
+    // A batch may legitimately carry TWO entries for the SAME relPath. The
+    // contract is "== calling upsertSymbols(relPath, defs) once per entry, in
+    // order" — and sequential per-file upsert is DELETE+INSERT, so a later
+    // entry for a file fully REPLACES an earlier one (the second call's DELETE
+    // wipes the first's rows). Collapse by relPath keeping LAST-wins BEFORE
+    // touching the DB so this holds: each distinct relPath is deleted once and
+    // only its final entry's definitions are inserted — never a union of both
+    // (a union would leak the superseded entry's rows through INSERT OR IGNORE).
+    // Distinct relPaths never share a PK, so cross-file rows never interfere.
+    //
+    // Within a single surviving entry, INSERT OR IGNORE still preserves
+    // first-wins on a duplicate symbolId: row build order iterates definitions
+    // in declaration order, so the first occurrence of a (rel_path, symbol_id)
+    // pair lands first in the batched VALUES list (see insertOrIgnoreBatched's
+    // doc comment for why duplicate-PK rows within one statement are
+    // first-row-wins).
+    const lastByRelPath = new Map<RelPath, SymbolDefinition[]>();
+    for (const { relPath, definitions } of entries) {
+      lastByRelPath.set(relPath, definitions);
+    }
     await this.exec("BEGIN");
     try {
-      for (const { relPath } of entries) {
+      for (const relPath of lastByRelPath.keys()) {
         await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
       }
       const rows: unknown[][] = [];
-      for (const { definitions } of entries) {
+      for (const definitions of lastByRelPath.values()) {
         for (const def of definitions) {
           rows.push([
             def.relPath,

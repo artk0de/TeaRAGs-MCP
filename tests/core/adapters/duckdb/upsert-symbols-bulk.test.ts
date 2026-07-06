@@ -75,6 +75,25 @@ describe("DuckDbGraphClient.upsertSymbolsBulk — direct client", () => {
     expect(sutRows.filter((r: Record<string, unknown>) => r.rel_path === "b.ts")).toHaveLength(1);
   });
 
+  it("duplicate relPath in one batch is LAST-wins (== two sequential upsertSymbols on that file)", async () => {
+    const defOld = mkDef("a.ts", "A#old", "A#old", "old");
+    const defNew = mkDef("a.ts", "A#new", "A#new", "new");
+    // reference client: two sequential per-file calls — the second DELETE wipes
+    // defOld, so only defNew survives.
+    await ref.upsertSymbols("a.ts", [defOld]);
+    await ref.upsertSymbols("a.ts", [defNew]);
+    // subject client: both in ONE bulk batch, same relPath twice.
+    await sut.upsertSymbolsBulk([
+      { relPath: "a.ts", definitions: [defOld] },
+      { relPath: "a.ts", definitions: [defNew] },
+    ]);
+    const refRows = await ref.queryAll("SELECT * FROM cg_symbols ORDER BY rel_path, symbol_id");
+    const sutRows = await sut.queryAll("SELECT * FROM cg_symbols ORDER BY rel_path, symbol_id");
+    expect(sutRows).toEqual(refRows);
+    // Only defNew's row survives for a.ts — defOld was replaced, not unioned.
+    expect(sutRows.map((r: Record<string, unknown>) => r.symbol_id)).toEqual(["A#new"]);
+  });
+
   it("bulk upsert is all-or-nothing: a bad row rolls back the whole batch", async () => {
     await sut.upsertSymbols("keep.ts", [mkDef("keep.ts", "K#a", "K#a", "a")]);
     const bad = [
@@ -87,6 +106,9 @@ describe("DuckDbGraphClient.upsertSymbolsBulk — direct client", () => {
     await expect(sut.upsertSymbolsBulk(bad)).rejects.toBeTruthy();
     const rows = await sut.queryAll("SELECT rel_path FROM cg_symbols WHERE rel_path IN ('x.ts','y.ts')");
     expect(rows).toHaveLength(0); // neither x nor y landed
+    // Unrelated pre-existing data survives the rolled-back batch untouched.
+    const kept = await sut.queryAll("SELECT symbol_id FROM cg_symbols WHERE rel_path = 'keep.ts'");
+    expect(kept.map((r: Record<string, unknown>) => r.symbol_id)).toEqual(["K#a"]);
   });
 
   it("empty entries is a no-op", async () => {
