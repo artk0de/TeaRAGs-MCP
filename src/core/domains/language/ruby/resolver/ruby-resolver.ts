@@ -64,6 +64,7 @@ import {
   RubyLocalTypeSymbolResolutionStrategy,
   RubyReceiverSetDropSymbolResolutionStrategy,
   RubyReturnTypeBindingSymbolResolutionStrategy,
+  RubySelfDispatchEntrySymbolResolutionStrategy,
   RubySelfMemberSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
   RubyTableDispatchResolver,
@@ -107,6 +108,10 @@ export class RubyCallResolver implements CallResolver {
       new RubyIvarFieldSymbolResolutionStrategy(cfg),
       new RubyReturnTypeBindingSymbolResolutionStrategy(cfg),
       new RubyEnqueueDispatchSymbolResolutionStrategy(cfg),
+      // Entry-anchored self-dispatch (DEFECT 2): MUST precede `constant` so a
+      // template entry `Const.member` narrows to `Const#H` before the constant
+      // pass resolves it to the shared template class-method / file edge.
+      new RubySelfDispatchEntrySymbolResolutionStrategy(cfg),
       new RubyConstantSymbolResolutionStrategy(cfg),
       new RubyExplicitRequireSymbolResolutionStrategy(cfg),
       new RubyChainTypeSymbolResolutionStrategy(cfg),

@@ -958,6 +958,19 @@ export interface CallContext {
    */
   includedBy?: Record<string, readonly string[]>;
   /**
+   * Run-global `templateMethodSymbolId → abstractHookMember` map (bd
+   * tea-rags-mcp — DEFECT 2, self-receiver abstract-hook dispatch). Built at the
+   * pass-1→pass-2 barrier by `discoverSelfDispatchTemplates`: a method `M` is a
+   * self-dispatch template when its body reaches a hook `H` on `self` that `M`'s
+   * enclosing type does NOT concretely define but a related concrete type
+   * (subclass / includer / prepender / extender) does. The Ruby self-dispatch
+   * entry strategy reads it at an entry call `Const.member`: when `member`
+   * resolves to a template `M` here, the concrete constant receiver narrows the
+   * abstract hook to exactly `Const#H` (entry-anchored, no fan-out). Plain Record
+   * for NDJSON-spill parity with the other run-global ancestor maps.
+   */
+  selfDispatchTemplates?: Record<string, string>;
+  /**
    * Run-global `tableName → DispatchTableDef[]` map propagated from every
    * file's `FileExtraction.dispatchTables` (bd tea-rags-mcp-n0zj). Keyed
    * by table NAME; the value is a LIST because the same name may be
