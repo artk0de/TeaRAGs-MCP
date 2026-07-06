@@ -1416,7 +1416,7 @@ function dedupeCallerEdges(edges: CallerEdge[]): CallerEdge[] {
   const seen = new Set<string>();
   const out: CallerEdge[] = [];
   for (const e of edges) {
-    const k = `${e.sourceSymbolId} ${e.callExpression}`;
+    const k = `${e.sourceSymbolId} ${e.callExpression}`;
     if (seen.has(k)) continue;
     seen.add(k);
     out.push(e);
