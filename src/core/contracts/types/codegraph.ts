@@ -719,6 +719,17 @@ export interface SymbolDefinition {
 }
 
 /**
+ * One file's worth of symbol definitions, as consumed by
+ * `GraphDbClient.upsertSymbolsBulk` — the batched form of
+ * `upsertSymbols(relPath, definitions)` that folds many files' worth of
+ * DELETE+INSERT into a single transaction.
+ */
+export interface BulkSymbolUpsertEntry {
+  relPath: RelPath;
+  definitions: SymbolDefinition[];
+}
+
+/**
  * Resolved location of a symbol's covering Qdrant chunk. Returned by
  * `GraphDbClient.findSymbolChunk` — null when no chunk_id has been
  * backfilled for the symbol yet.
@@ -1126,6 +1137,11 @@ export interface GraphDbClient {
   /** Atomic replacement of all symbols for a file (DELETE+INSERT inside
    *  a transaction). Idempotent: empty `definitions` clears the file. */
   upsertSymbols: (relPath: RelPath, definitions: SymbolDefinition[]) => Promise<void>;
+
+  /** Batched form of {@link upsertSymbols}: one transaction for many files
+   *  (DELETE-per-file + one INSERT OR IGNORE over all rows). Same per-file
+   *  semantics; empty entries is a no-op. */
+  upsertSymbolsBulk: (entries: BulkSymbolUpsertEntry[]) => Promise<void>;
 
   /** Drop all persisted symbols for a file. Called by `handleDeletedPaths`. */
   removeSymbolsForFile: (relPath: RelPath) => Promise<void>;

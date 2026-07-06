@@ -23,6 +23,7 @@ import picomatch from "picomatch";
 import type {
   AmbiguousCallerSite,
   AritySignature,
+  BulkSymbolUpsertEntry,
   CalleeEdge,
   CallerEdge,
   CycleEntry,
@@ -515,6 +516,68 @@ export class DuckDbGraphClient implements GraphDbClient {
           ],
         );
       }
+      await this.exec("COMMIT");
+    } catch (err) {
+      await this.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  /**
+   * Batched form of {@link upsertSymbols}: one transaction for many files
+   * instead of one BEGIN/COMMIT per file. Same per-file semantics —
+   * DELETE-per-file, then one `INSERT OR IGNORE` over every row — just
+   * amortised across the whole batch. Empty `entries` is a no-op.
+   */
+  async upsertSymbolsBulk(entries: BulkSymbolUpsertEntry[]): Promise<void> {
+    if (entries.length === 0) return;
+    return this.serialize(async () => this.upsertSymbolsBulkImpl(entries));
+  }
+
+  private async upsertSymbolsBulkImpl(entries: BulkSymbolUpsertEntry[]): Promise<void> {
+    // Same DELETE+INSERT-inside-a-transaction contract as upsertSymbolsImpl,
+    // just spanning every file in the batch instead of one. INSERT OR IGNORE
+    // preserves first-wins on a within-file duplicate symbolId — row build
+    // order iterates entries then definitions in declaration order, so the
+    // first occurrence of a (rel_path, symbol_id) pair always lands first in
+    // the batched VALUES list (see insertOrIgnoreBatched's doc comment for
+    // why duplicate-PK rows within one statement are also first-row-wins).
+    await this.exec("BEGIN");
+    try {
+      for (const { relPath } of entries) {
+        await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
+      }
+      const rows: unknown[][] = [];
+      for (const { definitions } of entries) {
+        for (const def of definitions) {
+          rows.push([
+            def.relPath,
+            def.symbolId,
+            def.fqName,
+            def.shortName,
+            JSON.stringify(def.scope ?? []),
+            def.arity ? JSON.stringify(def.arity) : null,
+            def.visibility ?? null,
+            def.kwargs ? JSON.stringify(def.kwargs) : null,
+            def.acceptsBlock ?? null,
+          ]);
+        }
+      }
+      await this.insertOrIgnoreBatched(
+        "cg_symbols",
+        [
+          "rel_path",
+          "symbol_id",
+          "fq_name",
+          "short_name",
+          "scope_json",
+          "arity_json",
+          "visibility",
+          "kwargs_json",
+          "accepts_block",
+        ],
+        rows,
+      );
       await this.exec("COMMIT");
     } catch (err) {
       await this.exec("ROLLBACK");
