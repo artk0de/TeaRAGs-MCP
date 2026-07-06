@@ -262,3 +262,48 @@ over-cap / abstract-self dispatch fan-out
   explicitly out of scope.
 - Every dispatch file is a single-owner deep-silo (no second reviewer) — lean on
   adversarial self-review + the live harness, not a green unit suite alone.
+
+## Implementation status (v1 — shipped, branch `worktree-cg-self-dispatch`, NOT merged)
+
+Shipped and green (unit + e2e through the real provider two-pass):
+
+- **DEFECT 1 (precision).** External-rooted receiver chain suppresses the
+  `cg_ambiguous_fanout` aggregate — `chainRootConstantIsExternal` gate in
+  `ruby-dynamic-dispatch.ts`. e2e `provider-ambiguous-fanout-external.test.ts`.
+- **Discovery pre-pass** (`self-dispatch-discovery.ts`, in
+  `domains/trajectory/codegraph/symbols/` — a codegraph pre-pass, NOT a resolver
+  concern; the dependency-direction guard forbids `trajectory → domains/language`).
+  `discoverSelfDispatchTemplates` + provider-facing pure adapters
+  (`extractSelfDispatchMethods`, `buildSelfDispatchProbe`,
+  `foldSelfDispatchTemplates`).
+- **Entry strategy** `RubySelfDispatchEntrySymbolResolutionStrategy` (in the
+  resolve chain, BEFORE `constant`): `Const.member` → template `M` (class-method
+  MRO) → `ctx.selfDispatchTemplates[M]` → `resolveTypeInstanceMethod(Const, H)` →
+  single `Const#H`.
+- **Provider two-pass wiring**: Ruby-gated pass-1 accumulation of light
+  `SelfDispatchMethod` records → barrier discovery over the run-global symbol
+  table + hierarchy view → `CallContext.selfDispatchTemplates` threaded per file.
+
+Deferred (safe under-coverage, no false edges — each a follow-up bead):
+
+- **Stub REDIRECT terminal.** `definesConcretely` currently answers "a body
+  exists", not "concrete vs abstract stub" — there is NO stub signal in the
+  extraction (`SymbolDefinition`/`ChunkExtraction` carry no
+  `raise NotImplementedError`/empty/bare-super marker). So the ABSENT-hook CREATE
+  case (dominant service-object shape, e.g. KindOfService) is covered; a
+  `raise NotImplementedError` stub reads as concretely-defined and its REDIRECT
+  template is not discovered. Needs a walker-emitted `isAbstractStub` flag.
+- **Multi-hook templates.** `foldSelfDispatchTemplates` EXCLUDES a template that
+  reaches >1 distinct hook (a genuine fan-out the single-target
+  `SymbolResolutionStrategy` cannot express) — deferred to a
+  `DispatchResolverComponent` variant, not silently truncated.
+- **Two-hop class-method entry** (`self.call → new.call → #call → perform`): the
+  constant entry resolves to the class-method template only; an instance-method
+  template two hops in is not reached in v1.
+- **Adjacent grammars** (unchanged from Scope): graphql-ruby
+  `public_send(self.class.<m>)`; `ActiveSupport::Concern` `class_methods do…end`.
+
+Live validation (T6, user-gated reindex) still pending — the mechanism is proven
+on synthetic over-cap fixtures; taxdome before/after recall via
+`scripts/taxdome-codegraph-recall-forensics.ts` needs a build+link+reindex the
+user must authorize.
