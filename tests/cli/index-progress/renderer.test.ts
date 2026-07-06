@@ -145,6 +145,19 @@ describe("formatProgressLine", () => {
     });
     expect(line).toContain("background");
   });
+
+  it("labels a codegraph.symbols:symbols enrichment message as 'codegraph nodes' (yl9tv Task 3)", () => {
+    const line = formatProgressLine({
+      type: "enrichment",
+      providerKey: "codegraph.symbols",
+      level: "symbols",
+      applied: 40,
+      total: 100,
+      totalFinal: false,
+    });
+    expect(line).toContain("codegraph nodes");
+    expect(line).toContain("40/100");
+  });
 });
 
 describe("TtyProgressRenderer — turbo-migration phase", () => {
@@ -295,6 +308,28 @@ describe("TtyProgressRenderer", () => {
 
     expect(mockMultibar.create).not.toHaveBeenCalled();
   });
+
+  it("labels the codegraph.symbols:symbols bar 'codegraph nodes' (yl9tv Task 3)", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({
+      type: "enrichment",
+      providerKey: "codegraph.symbols",
+      level: "symbols",
+      applied: 12,
+      total: 12,
+      totalFinal: false,
+    });
+
+    expect(mockMultibar.create).toHaveBeenCalledWith(
+      12,
+      0,
+      expect.objectContaining({ label: expect.stringContaining("codegraph nodes"), totalFinal: false }),
+    );
+    expect(mockSingleBar.update).toHaveBeenCalledWith(
+      12,
+      expect.objectContaining({ label: expect.stringContaining("codegraph nodes") }),
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -370,6 +405,21 @@ describe("JsonProgressRenderer", () => {
     r.handle({ type: "enrichment", providerKey: "git", level: "file", applied: 5, total: 20 });
     expect(r.latestStatus).toBeUndefined();
     expect(r.outcome).toBeUndefined();
+  });
+
+  it("ignores the codegraph.symbols:symbols enrichment level too (yl9tv Task 3 — JSON mode unaffected)", () => {
+    const r = new JsonProgressRenderer();
+    r.handle({
+      type: "enrichment",
+      providerKey: "codegraph.symbols",
+      level: "symbols",
+      applied: 5,
+      total: 5,
+      totalFinal: false,
+    });
+    expect(r.latestStatus).toBeUndefined();
+    expect(r.outcome).toBeUndefined();
+    expect(r.error).toBeUndefined();
   });
 
   it("stop() is a no-op", () => {

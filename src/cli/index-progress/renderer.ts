@@ -94,6 +94,25 @@ export interface BuildBarLineParams {
 const INDETERMINATE_GLYPH = "◍";
 
 /**
+ * Human-friendly overrides for specific `providerKey:level` enrichment bars.
+ * Keyed exactly like the TTY renderer's `barStates` map key. Falls back to the
+ * generic `${providerKey} ${level}` label (e.g. `git file`, `git chunk`) for
+ * every combination not listed here.
+ *
+ * `codegraph.symbols:symbols` (yl9tv Task 3) surfaces the cross-pass eager
+ * node write — labelled "codegraph nodes" rather than the raw
+ * "codegraph.symbols symbols", which would read as a typo.
+ */
+const ENRICHMENT_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
+  "codegraph.symbols:symbols": "codegraph nodes",
+};
+
+/** Resolve the display label for an enrichment bar from its provider key + level. */
+function enrichmentLabel(providerKey: string, level: string): string {
+  return ENRICHMENT_LABEL_OVERRIDES[`${providerKey}:${level}`] ?? `${providerKey} ${level}`;
+}
+
+/**
  * Pure function: assembles one progress bar line.
  * Bar glyphs use `colors.brand` (filled) and `colors.dim` (incomplete).
  * When colors are disabled both are identity, producing plain glyphs.
@@ -152,7 +171,7 @@ export function formatProgressLine(message: WorkerMessage): string | null {
         : base;
     }
     case "enrichment": {
-      const rawLabel = `${message.providerKey} ${message.level}`;
+      const rawLabel = enrichmentLabel(message.providerKey, message.level);
       const label = rawLabel.padEnd(LABEL_WIDTH);
       const pct = message.total > 0 ? Math.round((message.applied / message.total) * 100) : 0;
       return `${label}${message.applied}/${message.total} (${pct}%)`;
@@ -461,7 +480,7 @@ export class TtyProgressRenderer implements ProgressRenderer {
     }
     if (message.type === "enrichment") {
       const key = `${message.providerKey}:${message.level}`;
-      const rawLabel = `${message.providerKey} ${message.level}`;
+      const rawLabel = enrichmentLabel(message.providerKey, message.level);
       const label = this.colors.brand(rawLabel.padEnd(LABEL_WIDTH));
       // File-level events are always final; chunk-level are false until the final
       // chunk total is pinned. Missing flag (legacy) → determinate.

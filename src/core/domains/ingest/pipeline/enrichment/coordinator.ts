@@ -174,6 +174,17 @@ export class EnrichmentCoordinator {
    */
   private deferredStartEmitted = false;
 
+  /**
+   * yl9tv Task 3 — cumulative count of cross-pass `FileExtraction`s a codegraph
+   * provider has accepted for the current run. Numerator for the synthetic
+   * `codegraph.symbols:symbols` progress event emitted from `onFileExtraction`,
+   * surfacing Task 5b's eager node write (previously a "dark tail": the graph
+   * builds overlapped with embedding but only applies after finalize). Reset to
+   * 0 in `beginRun`. Stays 0 on a non-cross-pass run or when no provider
+   * implements `acceptExtraction` — `onFileExtraction` never increments it then.
+   */
+  private codegraphSymbolsApplied = 0;
+
   private _onChunkEnrichmentComplete?: (collectionName: string) => Promise<void>;
   get onChunkEnrichmentComplete(): ((collectionName: string) => Promise<void>) | undefined {
     return this._onChunkEnrichmentComplete;
@@ -302,6 +313,7 @@ export class EnrichmentCoordinator {
     this.chunkTotalAccumulated = 0;
     this.chunkTotal = 0;
     this.deferredStartEmitted = false;
+    this.codegraphSymbolsApplied = 0;
     this.progress.clear();
 
     // Wire the applier-site chokepoint: every apply batch (file, chunk, finalize,
@@ -449,11 +461,28 @@ export class EnrichmentCoordinator {
    * writes it to its run spill so its `streamFileBatch` skips the main-thread
    * re-parse. Fire-and-forget: extraction writes are serialized inside the
    * provider per collection; failures are swallowed there (best-effort spill).
+   *
+   * yl9tv Task 3 — after the fan-out, on a cross-pass run with a codegraph
+   * provider present (`acceptsExtractions()`), bumps `codegraphSymbolsApplied`
+   * and emits a `codegraph.symbols:symbols` progress event through the SAME
+   * `progressCb` sink the applier uses — no new transport. Always
+   * `totalFinal: false` (indeterminate): the eager node write has no fixed
+   * denominator until the cross-pass finishes.
    */
   onFileExtraction(collectionName: string, extraction: FileExtraction): void {
     if (!this.currentRun) return;
     for (const ctx of this.currentRun.contexts.values()) {
       ctx.provider.acceptExtraction?.(extraction, { collectionName });
+    }
+    if (this.currentRun.crossPass && this.progressCb && this.acceptsExtractions()) {
+      this.codegraphSymbolsApplied += 1;
+      this.progressCb({
+        providerKey: "codegraph.symbols",
+        level: "symbols",
+        applied: this.codegraphSymbolsApplied,
+        total: this.grandFileCount || this.codegraphSymbolsApplied,
+        totalFinal: false,
+      });
     }
   }
 

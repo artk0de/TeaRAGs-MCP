@@ -72,7 +72,7 @@ export function isWorkerMessage(value: unknown): value is WorkerMessage {
     case "enrichment":
       return (
         typeof m.providerKey === "string" &&
-        (m.level === "file" || m.level === "chunk") &&
+        (m.level === "file" || m.level === "chunk" || m.level === "symbols") &&
         typeof m.applied === "number" &&
         typeof m.total === "number"
       );
