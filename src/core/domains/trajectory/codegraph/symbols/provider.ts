@@ -457,10 +457,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    *     buffer reaches `nodeFlushFiles`, `enqueueNodeFlush` splices the batch and
    *     chains a `graphDb.upsertSymbolsBulk` onto `nodeFlushChain` — fire-and-
    *     chain, NOT awaited in the hot path.
-   *   - `drainInputSpill` final-flushes the remainder onto the chain and then
-   *     `await this.nodeFlushChain` (an eager-flush rejection surfaces THERE and
-   *     aborts the run — same failure contract as the former drain-time write),
-   *     before running its sorted drain with `skipDurableNodeWrite:true`.
+   *   - Each chain link ends in a `.catch` that LATCHES the first failure into
+   *     `nodeFlushError` and resolves the link, so the fire-and-chain tail never
+   *     rejects unhandled (Node >=22 terminates the process on an unhandled
+   *     rejection — there is no `unhandledRejection` handler here).
+   *   - `drainInputSpill` final-flushes the remainder onto the chain, awaits it,
+   *     and rethrows `nodeFlushError` — aborting the run cleanly at the drain
+   *     (before pass-2) without the unhandled-rejection crash window — then runs
+   *     its sorted drain with `skipDurableNodeWrite:true`.
    *   - `nodeFlushedFiles` records the relPaths flushed per collection so the
    *     flush log's cumulative count is honest and the once-per-file invariant is
    *     observable.
@@ -475,6 +479,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   private nodeFlushChain: Promise<void> = Promise.resolve();
   private readonly nodeFlushedFiles = new Map<string, Set<string>>();
   private readonly nodeFlushFiles = nodeFlushFilesFromEnv();
+  /**
+   * First eager-flush error, latched. Each `nodeFlushChain` link ends in a
+   * `.catch` that records the first failure here and RESOLVES the link — so the
+   * fire-and-chain tail never rejects unhandled (Node >=22 terminates the process
+   * on an unhandled rejection, and there is no `unhandledRejection` handler in
+   * this codebase). `drainInputSpill` rethrows this after awaiting the chain, so
+   * a mid-embedding flush failure still aborts the run cleanly at the drain
+   * without the unhandled-rejection crash window. Reset alongside the buffer.
+   */
+  private nodeFlushError: Error | undefined = undefined;
   /**
    * Per-run counters surfaced via `getRunMetrics()`. Read-and-cleared by
    * `CompletionRunner` at end of each enrichment cycle. Tracked here
@@ -1601,7 +1615,24 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const buf = this.nodeDefBuffer.get(key);
     if (!buf || buf.length < this.nodeFlushFiles) return;
     const batch = buf.splice(0, buf.length);
-    this.nodeFlushChain = this.nodeFlushChain.then(async () => this.flushNodeBatch(batch, key, collectionName));
+    this.chainNodeFlush(batch, key, collectionName);
+  }
+
+  /**
+   * Task 2 — append a batched flush to `nodeFlushChain`, terminating the link in
+   * a `.catch` that LATCHES the first error into `nodeFlushError` and RESOLVES
+   * the link. Keeping every link resolved is load-bearing: a bare rejected tail
+   * would be unhandled during the accept→drain window and, on Node >=22 with no
+   * `unhandledRejection` handler, terminate the indexer process. The latched
+   * error is rethrown by `drainInputSpill` after it awaits the chain, so the run
+   * still aborts cleanly at the drain.
+   */
+  private chainNodeFlush(batch: BulkSymbolUpsertEntry[], key: string, collectionName?: string): void {
+    this.nodeFlushChain = this.nodeFlushChain
+      .then(async () => this.flushNodeBatch(batch, key, collectionName))
+      .catch((e: unknown) => {
+        this.nodeFlushError ??= e instanceof Error ? e : new Error(String(e));
+      });
   }
 
   /**
@@ -1687,14 +1718,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // (it still builds the in-memory symbol table + line map + Half-B run-globals).
     const { sink, extracted } = this.ensureRunSink(key, collectionName, true);
     // Flush any buffered remainder for this collection, then await the whole
-    // flush chain: an eager-flush rejection surfaces at THIS await and aborts the
-    // run (same failure contract as the former drain-time write). Done BEFORE the
+    // flush chain and rethrow any latched eager-flush error HERE — aborting the
+    // run before pass-2 (the coordinator sees the error). Every chain link
+    // resolves (errors are latched in `nodeFlushError`, not left as a rejected
+    // tail), so this await never trips an unhandled rejection. Done BEFORE the
     // sorted drain so the graph's `cg_symbols` is fully durable before pass-2.
     const remainder = this.nodeDefBuffer.get(key)?.splice(0) ?? [];
-    if (remainder.length > 0) {
-      this.nodeFlushChain = this.nodeFlushChain.then(async () => this.flushNodeBatch(remainder, key, collectionName));
-    }
+    if (remainder.length > 0) this.chainNodeFlush(remainder, key, collectionName);
     await this.nodeFlushChain;
+    if (this.nodeFlushError) throw this.nodeFlushError;
     const reader = createInterface({
       input: createReadStream(spillPath, { encoding: "utf8" }),
       crlfDelay: Number.POSITIVE_INFINITY,
@@ -1844,6 +1876,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.nodeFlushedFiles.delete(key);
     }
     this.nodeFlushChain = Promise.resolve();
+    this.nodeFlushError = undefined;
   }
 
   /**
