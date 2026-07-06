@@ -1,6 +1,6 @@
 # Self-receiver abstract-hook dispatch — design
 
-Date: 2026-07-06 · Epic anchor: cai0 Ruby recall/precision · Beads: (created with plan)
+Date: 2026-07-06 · Epic anchor: cai0 Ruby recall/precision · Beads epic: `tea-rags-mcp-u7d9l`
 
 ## Summary
 
@@ -14,15 +14,18 @@ two branches of **one** gate. Both ship as a single epic increment.
   pure external noise. The receiver is provably external, so no aggregate should
   be recorded.
 
-- **DEFECT 2 (recall).** A call whose receiver is **`self` / `self.new` /
-  `self.class.new`** inside a shared base method, where the member is
-  **abstract** in the enclosing base (undefined, or a `raise
-  NotImplementedError` stub) but **concretely defined by subtypes/includers**, is
-  currently lost — dropped, pointed at the abstract stub, or left over-cap
-  ambiguous. Witness anchor: the taxdome `KindOfService` service base — a shared
-  `#call` template invokes a bare `perform` that ~200+ includer services each
-  define; ~3548 `SomeService.call` sites collapse onto one shared template chunk
-  with no terminal edge.
+- **DEFECT 2 (recall).** A shared base method (`M` in module/class `A`) issues a
+  bare implicit-self call to a hook `H` that `A` does not define but its
+  subtypes/includers do. Resolving `H` at that shared template — where `self` is
+  abstract — is where recall dies: it drops, points at the abstract stub, or goes
+  over-cap ambiguous. Witness anchor: taxdome `KindOfService` — its `#call`
+  template calls a bare `perform` no includer-agnostic definition exists for.
+  The fix resolves NOT at the template but at each **entry** `Const.call`, where
+  the receiver `Const` is a concrete constant → the hook narrows to exactly one
+  `Const#perform`. (The ~3548 `SomeService.call` sites are the entry fanIn and
+  already resolve to the class-method entry; the abstract-hook miss is the single
+  bare `perform` inside the template — the recall surface is the abstract-hook
+  call sites across the witness bases, not 3548.)
 
 The mechanism is a **purely structural predicate** — it depends on NO codebase,
 NO gem, NO method name. `KindOfService`/`call`/`perform` never appear in the
@@ -82,59 +85,76 @@ about the AST node and the symbol graph, never a name:
 When the predicate holds, the concrete self-type is drawn from the type flowing
 into `B`, and `m` resolves to the concrete override(s).
 
-## Mechanism — self-receiver cone, RTA-pruned
+## Mechanism — entry-anchored self-narrowing (interprocedural)
 
-Realize DEFECT 2 by **extending the existing cone-dispatch engine
-(`cone-dispatch.ts`, `ConeDispatchResolver` + `ConeTypeLocator`) to implicit-self
-/ `self.new` receivers**, rather than building a bespoke interprocedural pass.
-Reuse maximally; the substrate already devirtualizes typed receivers and already
-prunes cones to live (instantiated) types (RTA, `nearestDefiner`).
+DEFECT 2 is NOT a cone/CHA fan-out. Cone is context-INsensitive: it conflates
+every entry onto the shared template node and emits N edges
+(`KindOfService#call → {all ~200 includers}#perform`). No single execution
+dispatches to all 200 — that fan-out is a **representation error**, not
+completeness (and above `coneMax` it degrades to a useless file-only poly-base).
 
-- **Bind implicit-self as a typed receiver.** In the walker's local-binding
-  layer, a bare call / `self.new` / `self.class.new` inside `B` gets receiver
-  type `= B` (the enclosing class/module). This is the single new fact; the rest
-  is existing machinery.
-- **Cone over B's subtypes overriding `m`.** The cone locator walks
-  subtypes/includers of `B` that define `m` (`nearestDefiner` semantics already
-  present), **RTA-pruned to instantiated types** — i.e. only concrete `C` with a
-  live construction/entry site contribute (this is exactly the user's "рёбра
-  только для тех `C`, у которых есть живой сайт", not blind includedBy).
-- **Poly-base collapse above `coneMax`.** For large hierarchies (KindOfService's
-  ~200), the cone exceeds `coneMax` and collapses to one poly-base edge — the
-  honest bounded static representation. The context-sensitive *singular* target
-  (`SomeService#perform` for a specific caller) is recovered at QUERY time by
-  `trace_path` threading the entry constant, NOT stored per-edge. Small
-  hierarchies (huginn-scale, ≤ cap) emit N concrete cone edges.
+The real trace is per-entry and singular. The ambiguity is artificial — it
+appears only when resolving at the shared template where `self` is abstract. At
+the ENTRY the receiver is a **concrete constant** (`Create.call` — `Create` is
+known), so the candidate set narrows to exactly ONE by construction:
 
-`self.class.new` / `self.new` returns an instance of the concrete self-type;
-feed it to the same cone the same way `constInstanceType` already types
-`Const.new`.
+```
+Create.call   → Create#perform     (receiver Create concrete → 1)
+Refresh.call  → Refresh#perform    (receiver Refresh concrete → 1)
+```
+
+**The narrowing key is the concrete constant receiver at the entry**, not the
+type hierarchy — the cone is degenerate (a point) from the start. Mechanism, per
+entry call-site `Const.member`:
+
+1. `member` resolves via MRO/ancestry (`resolveInstanceMethodInClassChain`) to an
+   inherited method `M` declared in ancestor `A` (module/class) — NOT in `Const`
+   itself.
+2. `M` is a **self-dispatch template**: its body issues a bare (implicit-self)
+   call to a hook `H` that `A` does NOT define but `Const` DOES. `H` is
+   discovered structurally, not by name — see the pre-pass below.
+3. Emit ONE edge to `Const#H`. `Const` concrete ⇒ single target; no fan-out, no
+   poly-base, no cone.
+
+### Template→hook discovery (the interprocedural pre-pass)
+
+Recognising "`M` self-dispatches abstract hook `H`" needs `M`'s body (its bare
+self-calls) — the resolver sees one call at a time, so a pre-pass builds a map
+`templateMethodSymbolId → abstractHookMember`. Structural predicate per method
+`M` in type `A`: `M` contains a bare implicit-self call to member `H`, `A` does
+NOT concretely define `H` (abstract: absent, or a `raise NotImplementedError` /
+empty / bare-`super` stub), and ≥1 subtype/includer of `A` defines `H`. The
+provider already holds every method's call-list in its two-pass extraction, so
+the map is one cheap pass — NO grammar, NO name catalogue, NO `KindOfService` /
+`perform` / `call` literal anywhere.
 
 ## Terminal policy (three structural states)
 
-One engine, terminal action determined by the call's CURRENT graph state — never
-by base identity:
+The entry-anchored resolution yields exactly ONE concrete `Const#H`; the terminal
+action depends on the entry call's CURRENT graph state — never on base identity:
 
-- **CREATE** — no edge exists (e.g. Ruby-3.1 shorthand-hash bare self-calls). The
-  cone emits fresh edges.
-- **REDIRECT** — an edge exists pointing at `B`'s abstract stub. The cone's
-  concrete overriders REPLACE the stub edge (the stub is `B`'s own def; the
-  overriders are the real targets).
-- **COLLAPSE** — the call is over-cap ambiguous. The cone (RTA-pruned /
-  poly-base) REPLACES the ambiguous aggregate.
+- **CREATE** — no edge exists for the entry's hook path → emit `Const#H`.
+- **REDIRECT** — an edge points at `A`'s abstract stub → replace with concrete
+  `Const#H`.
+- **COLLAPSE** — the call is over-cap ambiguous → replace the ambiguous aggregate
+  with the single `Const#H`.
 
-The engine must therefore be permitted to both **emit where no edge exists** and
-**override an abstract-stub edge** — a three-state terminal, not three features.
+One resolver, three terminal states, one concrete target each.
 
-## Representation (E1)
+## Representation — entry-anchored (not template-anchored)
 
-The resolved edge is emitted **at the syntactic call site** — the bare-self /
-`self.new` call inside `B`'s shared method — with targets = the concrete
-overriders. This is identical to how every other resolver strategy places edges
-(edges live at call sites); no new "displaced" edge kind. It preserves the real
-trace with the shared template node in the middle
-(`SomeService.call → …B#call → …#perform`), matching the observed call structure.
-Context-sensitivity is a query concern (`trace_path`), not a storage concern.
+The edge is attributed to the **entry call-site's enclosing method**, threaded to
+the concrete hook: `enclosing(Const.member) → Const#H`. One edge per real entry —
+they never pile up at the shared template node, so the 200-fan-out cannot recur.
+`get_callers(Create#perform)` → the real callers, 1-to-1.
+
+The physical edge bypasses the middle template node (`KindOfService#call`), which
+keeps only its own already-existing entry edges. The literal 3-node path
+(`SomeService.call → KindOfService#call → SomeService#perform`) is the
+context-SENSITIVE trace; storing it WITH the middle node would need call-site-
+qualified edges (a context-sensitive graph model — explicitly out of scope). The
+entry-anchored edge gives the same `get_callers` / `trace_path` answers at
+method→method granularity.
 
 ## Precision branch (DEFECT 1)
 
@@ -153,8 +173,8 @@ Gate shape:
 ```
 over-cap / abstract-self dispatch fan-out
   ├─ receiver provably external            → suppress aggregate            [DEFECT 1]
-  ├─ receiver self / self.new (abstract m) → self-receiver cone (RTA)      [DEFECT 2]
-  │        terminal: CREATE | REDIRECT | COLLAPSE
+  ├─ entry Const.member → inherited self-  → emit Const#H (concrete → 1)   [DEFECT 2]
+  │   dispatch template with abstract H       terminal: CREATE|REDIRECT|COLLAPSE
   └─ else (in-project name-collision)      → scoped ambiguous aggregate (unchanged)
 ```
 
@@ -170,11 +190,13 @@ over-cap / abstract-self dispatch fan-out
 
 ## Testing & validation
 
-- Unit (TDD, RED first): predicate detection (each receiver kind × abstract-stub
-  vs absent vs concrete-in-B negative); cone-on-self over a synthetic hierarchy
-  (≤cap → N concrete edges; >cap → poly-base); three terminal states
-  (create/redirect/collapse) as separate cases; external-receiver aggregate
-  suppression (DEFECT 1).
+- Unit (TDD, RED first): template→hook discovery predicate (bare self-call to H,
+  A abstract-in-H via absent / `raise NotImplementedError` / empty / bare-super,
+  ≥1 subtype defines H; negative when A concretely defines H); entry-anchored
+  narrow-to-1 (`Const.member` → single `Const#H`, NOT a fan-out; two concrete
+  Consts → two distinct 1-edges, never piled on the template); three terminal
+  states (create/redirect/collapse) as separate cases; external-receiver
+  aggregate suppression (DEFECT 1, done).
 - No production code before a failing test. Business-logic tests immutable.
 - Live validation (user-gated reindex): measure taxdome codegraph recall
   byReceiverKind before/after via the committed
@@ -185,14 +207,22 @@ over-cap / abstract-self dispatch fan-out
 
 ## Risks
 
-- **Poly-base for big hierarchies** (KindOfService 200) yields a poly-base edge,
-  not the singular concrete. Accepted: it is the honest bounded static answer;
-  specifics recovered by `trace_path`. If a future increment wants the singular,
-  that is context-sensitive cloning — explicitly deferred.
-- **RTA liveness cost** on a 3M-LOC index — reuse the existing cone RTA path; do
-  not add a second liveness pass.
-- **Abstract-stub detection** (clause 3) must be conservative: only
-  single-statement `raise NotImplementedError` / empty / bare `super` count as
-  abstract, else a real base method is wrongly overridden. Guard with tests.
+- **Modest recall-rate surface.** The abstract-hook miss is the ONE bare hook
+  inside each shared template (not the entry fanIn — `KindOfService.call`'s ~3548
+  callers already resolve). Addressable ≈ the abstract-hook call sites across the
+  witness bases + `Base*/Abstract*` population (~dozens–low-hundreds of call
+  sites out of ~4452 bareCall misses). Real but bounded; the per-entry EDGES are
+  the higher-value navigation win.
+- **Interprocedural pre-pass cost** on a 3M-LOC index — the template→hook map is
+  one pass over method call-lists the provider already materialises in its
+  two-pass extraction; must not add a second full walk. Bound to methods whose
+  enclosing type is abstract-in-member.
+- **Abstract-stub detection** must be conservative: only absent, single-statement
+  `raise NotImplementedError`, empty, or bare-`super` bodies count as abstract —
+  else a real base method is wrongly treated as a hook. Guard with tests.
+- **Context-sensitivity ceiling.** The literal 3-node trace is not stored (method
+  →method graph); entry-anchored edges preserve navigation answers but bypass the
+  template node. Call-site-qualified edges (true context sensitivity) are
+  explicitly out of scope.
 - Every dispatch file is a single-owner deep-silo (no second reviewer) — lean on
   adversarial self-review + the live harness, not a green unit suite alone.
