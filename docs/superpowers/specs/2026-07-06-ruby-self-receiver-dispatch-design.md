@@ -110,9 +110,12 @@ entry call-site `Const.member`:
 1. `member` resolves via MRO/ancestry (`resolveInstanceMethodInClassChain`) to an
    inherited method `M` declared in ancestor `A` (module/class) — NOT in `Const`
    itself.
-2. `M` is a **self-dispatch template**: its body issues a bare (implicit-self)
-   call to a hook `H` that `A` does NOT define but `Const` DOES. `H` is
-   discovered structurally, not by name — see the pre-pass below.
+2. `M` is a **self-dispatch template**: its body reaches a hook `H` on `self` —
+   as a bare implicit-self call (`H`), `self.H`, or a class-method template that
+   instantiates self and dispatches (`self.new.H` / `self.class.new.H`) — where
+   `A` does NOT define `H` but `Const` DOES. `H` is discovered structurally, not
+   by name — see the pre-pass below. The self-reach may be multi-hop within `A`'s
+   own methods (`export_to_string → build_columns → build`).
 3. Emit ONE edge to `Const#H`. `Const` concrete ⇒ single target; no fan-out, no
    poly-base, no cone.
 
@@ -127,6 +130,27 @@ empty / bare-`super` stub), and ≥1 subtype/includer of `A` defines `H`. The
 provider already holds every method's call-list in its two-pass extraction, so
 the map is one cheap pass — NO grammar, NO name catalogue, NO `KindOfService` /
 `perform` / `call` literal anywhere.
+
+### Wiring channels — the mechanism spans all four
+
+`A` relates to its concrete definers of `H` through any Ruby mixin channel; the
+mechanism is defined over their **union**, not `include` alone:
+
+| Channel | `A`'s role | concrete definers |
+| --- | --- | --- |
+| `class C < A` | superclass template | subclasses |
+| `include A` | mixed-in template | includers |
+| `prepend A` | pre-pended template (above `C` in MRO) | prependers |
+| `extend A` | class-method template (`self.call` → `self.new.H`) | extenders |
+
+`extend` is NOT an edge case — it is the primary channel for class-method-entry
+templates (the `self.call` / `self.process_result` shape; witness `BaseProcessor`).
+Feasibility is already met: the walker captures every channel — `classAncestors`
+folds `< / include / extend` into one list, `classPrependedAncestors` holds
+`prepend`, `includedBy` gives the reverse (module → includers). No new walker
+work; the discovery pre-pass and the entry MRO walk read existing structures.
+Entry resolution across the singleton/extend channel is proven live: `Const.call`
+already resolves to the class-method template (fanIn 3548).
 
 ## Terminal policy (three structural states)
 
@@ -180,8 +204,11 @@ over-cap / abstract-self dispatch fan-out
 
 ## Scope boundaries
 
-- IN: implicit-self / `self.new` / `self.class.new` receivers on abstract hooks
-  (three terminal states); external-receiver aggregate suppression.
+- IN: self-dispatch to an abstract hook — bare `H` / `self.H` / `self.new.H` /
+  `self.class.new.H`, possibly multi-hop — across ALL wiring channels
+  (`< / include / prepend / extend`); entry-anchored narrow-to-1 by the concrete
+  constant receiver; three terminal states; external-receiver aggregate
+  suppression (DEFECT 1, done).
 - OUT (adjacent follow-up): dynamic `public_send(self.class.<method>)`
   (graphql-ruby) — needs constant-fold `self.class.<m> → :symbol`.
 - OUT (already covered): typed-local receivers (cone), literal receivers
