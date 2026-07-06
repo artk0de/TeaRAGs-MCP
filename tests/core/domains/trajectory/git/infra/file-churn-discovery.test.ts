@@ -141,6 +141,51 @@ describe("FileChurnDiscovery", () => {
     expect(store.save).toHaveBeenCalledWith("/repo", HEAD, freshIso, [c3, c2, c1]);
   });
 
+  it("warm == cold under MERGE history (side-branch dated between mainline commits)", async () => {
+    // A side-branch commit S is authored BETWEEN mainline A and B by date, but
+    // merged into HEAD AFTER prior.head=B. A single cold `readCommitFileNumstat`
+    // interleaves S among the mainline commits by date (B, S, A); the warm
+    // top-up range prior.head..head yields S in `fresh`, so the naive merge
+    // `[...fresh, ...prior]` = [S, B, A] — a DIFFERENT commits[] order for a
+    // file touched by both S and B. Sorting by (timestamp desc, sha) before
+    // aggregation makes both paths walk the same canonical order.
+    const B = fileEntry("b".repeat(40), [{ path: "a.ts", added: 5, deleted: 1 }], NOW_SEC - 1000);
+    const S = fileEntry("5".repeat(40), [{ path: "a.ts", added: 3, deleted: 0 }], NOW_SEC - 3000);
+    const A = fileEntry("a".repeat(40), [{ path: "a.ts", added: 1, deleted: 0 }], NOW_SEC - 5000);
+
+    // Cold: whole-repo read in git date-DESC order interleaves S between B and A.
+    const coldAdapter = fakeAdapter({
+      head: HEAD,
+      readCommitFileNumstat: async (_since, range) => (range ? [] : [B, S, A]),
+    });
+    const cold = await new FileChurnDiscovery(asAdapter(coldAdapter), {
+      maxAgeMonths: 12,
+      timeoutMs: 30000,
+    }).fileChurn();
+
+    // Warm: store holds [B, A] at PRIOR_HEAD; the range top-up returns the
+    // freshly-merged side commit S (dated older than B), giving raw [S, B, A].
+    const freshIso = new Date(legacySinceMs(12)).toISOString();
+    const store = fakeStore({
+      loadLatest: vi.fn().mockReturnValue(persisted(PRIOR_HEAD, freshIso, [B, A])),
+    } as never);
+    const warmAdapter = fakeAdapter({
+      head: HEAD,
+      isAncestor: true,
+      readCommitFileNumstat: async (_since, range) => (range ? [S] : []),
+    });
+    const warm = await new FileChurnDiscovery(asAdapter(warmAdapter), {
+      maxAgeMonths: 12,
+      timeoutMs: 30000,
+      store,
+    }).fileChurn();
+
+    expect(warm).toEqual(cold);
+    // Canonical order is date-DESC: B (newest), S, A (oldest) — split-independent.
+    expect(warm.get("a.ts")!.commits.map((c) => c.sha)).toEqual([B, S, A].map((e) => e.commit.sha));
+    expect(warm.get("a.ts")!.linesAdded).toBe(9);
+  });
+
   it("evicts commits older than the window lower bound", async () => {
     const agedOutSha = "0".repeat(40);
     const within = fileEntry("1".repeat(40), [{ path: "a.ts", added: 30, deleted: 5 }], NOW_SEC - 1000);

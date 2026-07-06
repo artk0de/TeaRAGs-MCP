@@ -65,6 +65,13 @@ export class FileChurnDiscovery {
    *  constructible without awaiting. */
   private readonly adapter: Promise<VcsGitAdapter>;
 
+  /**
+   * Single-flight latch — mirrors GitCommitDiscovery's `matrixPromise`. Repeated
+   * `fileChurn()` calls in one run share ONE resolve+aggregate (one git
+   * subprocess, one `store.save`); a failed build stays cached for the run.
+   */
+  private churnPromise?: Promise<Map<string, FileChurnData>>;
+
   constructor(
     adapter: VcsGitAdapter | Promise<VcsGitAdapter>,
     private readonly opts: FileChurnDiscoveryOptions,
@@ -75,9 +82,14 @@ export class FileChurnDiscovery {
   /**
    * Whole-repo per-file churn aggregate over the window: resolve (with the
    * store's incremental delta-merge when present), evict aged-out commits,
-   * then fold into `Map<string, FileChurnData>`.
+   * canonicalize the fold order, then aggregate into `Map<string, FileChurnData>`.
+   * Latched — one build per instance per run.
    */
   async fileChurn(): Promise<Map<string, FileChurnData>> {
+    return (this.churnPromise ??= this.computeFileChurn());
+  }
+
+  private async computeFileChurn(): Promise<Map<string, FileChurnData>> {
     // Frozen ONCE with the EXACT legacy per-batch formula (walk-commits.ts).
     const effectiveMonths = this.opts.maxAgeMonths > 0 ? this.opts.maxAgeMonths : 120;
     const sinceDate = new Date(Date.now() - effectiveMonths * 30 * 86400 * 1000);
@@ -89,12 +101,22 @@ export class FileChurnDiscovery {
     // ZERO. Compare in seconds against the same frozen `sinceDate`.
     const lowerBoundSec = Math.floor(sinceDate.getTime() / 1000);
 
-    // AGGREGATE: iterate entries in git-log order (newest→oldest, as returned)
-    // so each file's `commits[]` matches the cold `parseNumstatOutput` push
-    // order — the windowed-equality guard.
+    // CANONICALIZE: evict aged-out commits, then sort by (timestamp desc, sha
+    // asc) BEFORE aggregating. The union `[...fresh, ...prior]` is the correct
+    // SET but not git-log's order under MERGES — the top-up range
+    // `prior.head..head` can surface a side-branch commit dated among the prior
+    // window, which a cold full read interleaves by date. Both the warm and the
+    // cold path run through here, so both fold the SAME canonical order →
+    // `commits[]` is byte-identical (windowed-equality holds split-independently).
+    // `filter` yields a fresh array, so the `.sort` never mutates the array
+    // `resolveEntries` already persisted via `store.save`.
+    const ordered = entries
+      .filter((entry) => entry.commit.timestamp >= lowerBoundSec)
+      .sort((a, b) => b.commit.timestamp - a.commit.timestamp || a.commit.sha.localeCompare(b.commit.sha));
+
+    // AGGREGATE in canonical order — each file's `commits[]` is deterministic.
     const fileMap = new Map<string, FileChurnData>();
-    for (const entry of entries) {
-      if (entry.commit.timestamp < lowerBoundSec) continue;
+    for (const entry of ordered) {
       for (const file of entry.files) {
         let churn = fileMap.get(file.path);
         if (!churn) {
