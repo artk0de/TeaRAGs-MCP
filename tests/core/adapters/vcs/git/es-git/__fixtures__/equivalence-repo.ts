@@ -61,7 +61,21 @@ function git(root: string, args: string[], author: FixtureAuthor, isoDate: strin
     ["-C", root, "-c", `user.name=${author.name}`, "-c", `user.email=${author.email}`, ...args],
     {
       encoding: "utf8",
-      env: { ...process.env, GIT_AUTHOR_DATE: isoDate, GIT_COMMITTER_DATE: isoDate },
+      // Pin author/committer via env too: inside a `git commit` hook run
+      // (pre-commit affected-tests) git exports GIT_AUTHOR_NAME/EMAIL of the
+      // OUTER commit, which takes precedence over `-c user.name=` and would
+      // collapse both fixture authors (Alice/Bob) onto the outer identity,
+      // breaking the mailmap/ownership assertions. Same fix already applied
+      // in churn-walk-thread.test.ts's `gitIn` helper.
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: isoDate,
+        GIT_COMMITTER_DATE: isoDate,
+        GIT_AUTHOR_NAME: author.name,
+        GIT_AUTHOR_EMAIL: author.email,
+        GIT_COMMITTER_NAME: author.name,
+        GIT_COMMITTER_EMAIL: author.email,
+      },
     },
   ).trim();
 }
