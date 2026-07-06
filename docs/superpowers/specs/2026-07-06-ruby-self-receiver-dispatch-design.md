@@ -303,7 +303,47 @@ Deferred (safe under-coverage, no false edges — each a follow-up bead):
 - **Adjacent grammars** (unchanged from Scope): graphql-ruby
   `public_send(self.class.<m>)`; `ActiveSupport::Concern` `class_methods do…end`.
 
-Live validation (T6, user-gated reindex) still pending — the mechanism is proven
-on synthetic over-cap fixtures; taxdome before/after recall via
-`scripts/taxdome-codegraph-recall-forensics.ts` needs a build+link+reindex the
-user must authorize.
+## Live validation findings (2026-07-06) — v1 is a validated NO-OP on taxdome
+
+Measured in-process via `scripts/taxdome-codegraph-recall-forensics.ts` (extended
+with the DEFECT-2 wiring behind `CODEGRAPH_SELF_DISPATCH=1`, and a new
+distinct-edge-target coverage metric), A/B OFF vs ON, on huginn + taxdome.
+
+**Discovery is CORRECT on real code.** taxdome: **44 templates discovered**
+(huginn: 5) — including the exact recall-hole template `KindOfService#call →
+perform`, plus 39 real concern hooks (`…#acceptable_payment_methods → firm`,
+`…Shortcodes#resolved_* → client`, `SoftDeletable#restore → update`, …) and 5
+class-form (`ApplicationRecord.external_name → name`, …). `definesConcretely`,
+`relatedConcreteTypes` (2127 KindOfService includers), and the abstract-hook
+predicate all resolve correctly.
+
+**The entry strategy fires on ZERO taxdome calls** (ON ≡ OFF: 18270 edge targets,
+missWithInProjectDef 21207, resolveSuccessRate 84.62% — identical). No regression,
+no false edges — but no recall gain either. Root cause: **every discovered
+template is reached by a shape v1 does NOT anchor**:
+
+- **39 instance-form templates** (incl. `KindOfService#call → perform`) are entered
+  by INSTANCE dispatch / bare-self-in-includer, not `Const.member`. v1 only
+  anchors a **constant receiver**.
+- **KindOfService specifically** is a **two-hop, self-instance-binding** chain:
+  `Create.call` (class method installed by `class_methods do` — ActiveSupport::
+  Concern) → `instance = new(*a); instance.call` → instance `#call` → `perform`.
+  The class entry `KindOfService.call`'s only self-hook is `new` (the `instance.
+  call` delegation is on a LOCAL var across two statements, invisible to the
+  single-hop self-receiver predicate). v1 does one hop, `Const.member → Const#H`.
+- **5 class-form templates** are one-hop-eligible but have no `Const.member`
+  call-sites (called bare/self internally).
+
+**Verdict:** v1 ships a proven-correct *discovery* + a *safe, narrow* constant-entry
+resolver (e2e-proven on `<`-inheritance / literal-`self.call` shapes), but it does
+NOT move taxdome recall. Closing the real taxdome hole needs a **v2 entry
+mechanism**: self-instance local-binding tracking (`inst = new(…); inst.m`) +
+multi-hop (class-entry → instance-template → hook) + the ActiveSupport::Concern
+`class_methods do` grammar so `Const.call` resolves to the class template. Filed
+as a follow-up; v1 is the correct foundation it builds on.
+
+**Incidental harness fix:** the committed forensics harness read `.length` on the
+`DispatchFanoutOutcome` object returned by `resolveDispatch` (always falsy →
+always fell through to `resolve()`), under-counting dispatch edges — taxdome
+`resolveSuccessRate` was reported ~62% vs the corrected ~85%. Fixed here; prior
+harness numbers under-reported dispatch resolution.
