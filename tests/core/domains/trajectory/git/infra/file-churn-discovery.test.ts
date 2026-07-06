@@ -31,9 +31,12 @@ function commit(sha: string, timestamp = NOW_SEC - 1000): CommitInfo {
 function fileEntry(
   sha: string,
   files: { path: string; added: number; deleted: number }[],
-  timestamp?: number,
+  timestamp: number = NOW_SEC - 1000,
+  committerTimestamp?: number,
 ): CommitFileNumstat {
-  return { commit: commit(sha, timestamp), files };
+  // Default committer date == author date (the common non-rebased case). Tests
+  // simulating rebased history pass an explicit committerTimestamp.
+  return { commit: commit(sha, timestamp), committerTimestamp: committerTimestamp ?? timestamp, files };
 }
 
 /** The exact legacy window formula (mirrors walk-commits.ts). */
@@ -207,6 +210,78 @@ describe("FileChurnDiscovery", () => {
     expect(f.commits.map((c) => c.sha)).not.toContain(agedOutSha);
     expect(f.linesAdded).toBe(30);
     expect(f.linesDeleted).toBe(5);
+  });
+
+  it("windows by COMMITTER date, not author date (rebased history keeps in-window commits)", async () => {
+    // Rebased / cherry-picked / squash-merged commit: its AUTHOR date is old
+    // (40 days — below the 1-month window lower bound) but its COMMITTER date is
+    // fresh (in-window). `git log --since` (legacy readNumstatLog) filters on
+    // COMMITTER date and KEEPS it, so the incremental discovery must too — evict
+    // by committerTimestamp, NOT the author-date commit.timestamp. Author-date
+    // eviction (the pre-fix behavior) wrongly drops it → divergence from the
+    // legacy full recompute.
+    const rebasedSha = "1".repeat(40);
+    const rebased = fileEntry(
+      rebasedSha,
+      [{ path: "a.ts", added: 42, deleted: 7 }],
+      NOW_SEC - 40 * 86400, // author date: 40 days ago — OUTSIDE the 1-month window
+      NOW_SEC - 1000, // committer date: fresh — INSIDE the window
+    );
+    const freshIso = new Date(legacySinceMs(1)).toISOString();
+    const store = fakeStore({
+      load: vi.fn().mockReturnValue(persisted(HEAD, freshIso, [rebased])),
+    } as never);
+    const adapter = fakeAdapter({ head: HEAD });
+
+    const churn = await new FileChurnDiscovery(asAdapter(adapter), {
+      maxAgeMonths: 1,
+      timeoutMs: 30000,
+      store,
+    }).fileChurn();
+
+    const f = churn.get("a.ts");
+    expect(f).toBeDefined();
+    expect(f!.commits.map((c) => c.sha)).toContain(rebasedSha);
+    expect(f!.linesAdded).toBe(42);
+    expect(f!.linesDeleted).toBe(7);
+  });
+
+  it("does not cache a rejected build — a later call retries the adapter", async () => {
+    // Single-flight latch must share the IN-FLIGHT promise with concurrent
+    // callers but NOT memoize a rejection: a transient git failure on the first
+    // read must not poison every later batch of the run. The first fileChurn()
+    // rejects; a later call re-invokes the adapter and succeeds.
+    let calls = 0;
+    const adapter = fakeAdapter({
+      head: HEAD,
+      readCommitFileNumstat: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("transient git failure");
+        return [fileEntry("3".repeat(40), [{ path: "a.ts", added: 2, deleted: 0 }])];
+      },
+    });
+    const discovery = new FileChurnDiscovery(asAdapter(adapter), { maxAgeMonths: 12, timeoutMs: 30000 });
+
+    await expect(discovery.fileChurn()).rejects.toThrow("transient git failure");
+
+    const churn = await discovery.fileChurn();
+    expect(churn.get("a.ts")!.linesAdded).toBe(2);
+    expect(adapter.readCommitFileNumstat).toHaveBeenCalledTimes(2);
+  });
+
+  it("shares one in-flight build across concurrent callers (single-flight)", async () => {
+    // The de-poison must not regress the happy-path single-flight: two callers
+    // racing before the first resolve share ONE adapter read.
+    const adapter = fakeAdapter({
+      head: HEAD,
+      readCommitFileNumstat: async () => [fileEntry("3".repeat(40), [{ path: "a.ts", added: 2, deleted: 0 }])],
+    });
+    const discovery = new FileChurnDiscovery(asAdapter(adapter), { maxAgeMonths: 12, timeoutMs: 30000 });
+
+    const [a, b] = await Promise.all([discovery.fileChurn(), discovery.fileChurn()]);
+
+    expect(a).toBe(b);
+    expect(adapter.readCommitFileNumstat).toHaveBeenCalledTimes(1);
   });
 
   it("staleness → full recompute: non-ancestor prior.head", async () => {

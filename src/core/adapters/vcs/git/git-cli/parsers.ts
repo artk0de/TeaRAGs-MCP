@@ -119,9 +119,13 @@ export function parsePathspecOutput(stdout: string): { commit: CommitInfo; chang
 }
 
 /**
- * Parse `git log --numstat --format=%x00...` output, keeping the PER-FILE
- * +/- counts (`parsePathspecOutput`'s numstat loop keeps only the path,
- * discarding them). Binary rows (`-\t-\t<path>`) are SKIPPED, exactly as
+ * Parse `git log --numstat --format=%x00%H…%at%x00%ct%x00%B…` output (the
+ * committer-augmented format `NUMSTAT_LOG_FORMAT_WITH_COMMITTER`), keeping the
+ * PER-FILE +/- counts (`parsePathspecOutput`'s numstat loop keeps only the
+ * path, discarding them). Unlike the shared parsers this one also extracts the
+ * COMMITTER epoch (`%ct`, section i+5) alongside the author epoch (`%at`,
+ * section i+4): the file-churn discovery windows/evicts/sorts by committer
+ * date. Binary rows (`-\t-\t<path>`) are SKIPPED, exactly as
  * `parseNumstatOutput` does (parseInt("-") is NaN → skip): a file touched
  * ONLY by binary commits must not appear here with a phantom commit, so the
  * incremental discovery aggregate equals the legacy full-recompute per file.
@@ -148,8 +152,9 @@ export function parseCommitFileNumstat(stdout: string): CommitFileNumstat[] {
     const author = sections[i + 2] || "";
     const email = sections[i + 3] || "";
     const timestamp = parseInt(sections[i + 4] || "0", 10);
-    const body = sections[i + 5] || "";
-    i += 6;
+    const committerTimestamp = parseInt(sections[i + 5] || "0", 10);
+    const body = sections[i + 6] || "";
+    i += 7;
 
     const commit: CommitInfo = { sha, author, authorEmail: email, timestamp, body, parents };
     const files: { path: string; added: number; deleted: number }[] = [];
@@ -174,7 +179,7 @@ export function parseCommitFileNumstat(stdout: string): CommitFileNumstat[] {
     }
 
     if (files.length > 0) {
-      result.push({ commit, files });
+      result.push({ commit, committerTimestamp, files });
     }
   }
 

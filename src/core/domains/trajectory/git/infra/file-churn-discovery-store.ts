@@ -34,7 +34,10 @@ function isStringArray(value: unknown): value is string[] {
 /** Cheap structural validation of one file-churn entry. */
 function isValidEntry(value: unknown): value is CommitFileNumstat {
   if (typeof value !== "object" || value === null) return false;
-  const entry = value as { commit?: unknown; files?: unknown };
+  const entry = value as { commit?: unknown; committerTimestamp?: unknown; files?: unknown };
+  // A snapshot written before committer-date windowing lacks this field —
+  // reject it so the discovery rebuilds rather than evicting by `undefined`.
+  if (typeof entry.committerTimestamp !== "number") return false;
   if (!Array.isArray(entry.files)) return false;
   for (const file of entry.files) {
     if (typeof file !== "object" || file === null) return false;

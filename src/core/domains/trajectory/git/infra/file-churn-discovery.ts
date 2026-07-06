@@ -86,7 +86,19 @@ export class FileChurnDiscovery {
    * Latched — one build per instance per run.
    */
   async fileChurn(): Promise<Map<string, FileChurnData>> {
-    return (this.churnPromise ??= this.computeFileChurn());
+    // Single-flight, but do NOT memoize a REJECTION for the instance's life. The
+    // provider caches one FileChurnDiscovery per root until finalize; latching a
+    // rejected promise would poison every later streaming batch after a single
+    // transient git failure (pre-feature, `readNumstatLog` retried per batch).
+    // Clearing the latch in the failure tail lets concurrent callers still SHARE
+    // the in-flight promise while a LATER (non-concurrent) call retries.
+    if (!this.churnPromise) {
+      this.churnPromise = this.computeFileChurn().catch((error) => {
+        this.churnPromise = undefined;
+        throw error;
+      });
+    }
+    return this.churnPromise;
   }
 
   private async computeFileChurn(): Promise<Map<string, FileChurnData>> {
@@ -101,18 +113,25 @@ export class FileChurnDiscovery {
     // ZERO. Compare in seconds against the same frozen `sinceDate`.
     const lowerBoundSec = Math.floor(sinceDate.getTime() / 1000);
 
-    // CANONICALIZE: evict aged-out commits, then sort by (timestamp desc, sha
-    // asc) BEFORE aggregating. The union `[...fresh, ...prior]` is the correct
-    // SET but not git-log's order under MERGES — the top-up range
-    // `prior.head..head` can surface a side-branch commit dated among the prior
-    // window, which a cold full read interleaves by date. Both the warm and the
-    // cold path run through here, so both fold the SAME canonical order →
-    // `commits[]` is byte-identical (windowed-equality holds split-independently).
-    // `filter` yields a fresh array, so the `.sort` never mutates the array
-    // `resolveEntries` already persisted via `store.save`.
+    // CANONICALIZE: evict aged-out commits, then sort by (committerTimestamp
+    // desc, sha asc) BEFORE aggregating. Window membership AND order key off the
+    // COMMITTER date (`%ct`), NOT the author date (`commit.timestamp` = `%at`),
+    // because `git log --since` (the legacy `readNumstatLog` full recompute)
+    // filters on committer date: on rebased / cherry-picked / squash-merged
+    // history (author date ≪ committer date) an author-date evict would drop a
+    // commit the legacy path KEEPS, diverging commitCount / lines / sha-set.
+    // Sorting by committer date also matches git-log's own reverse-chronological
+    // order, so the union `[...fresh, ...prior]` — the correct SET but not
+    // git-log's order under MERGES (a top-up range `prior.head..head` can
+    // surface a side-branch commit dated among the prior window) — folds into
+    // the SAME canonical order on both the warm and cold path → `commits[]` is
+    // byte-identical (windowed-equality holds split-independently) and the
+    // tie-break-sensitive derived signals (recentDominantAuthor / lastCommitHash
+    // / taskId order) are stable. `filter` yields a fresh array, so the `.sort`
+    // never mutates the array `resolveEntries` already persisted via `store.save`.
     const ordered = entries
-      .filter((entry) => entry.commit.timestamp >= lowerBoundSec)
-      .sort((a, b) => b.commit.timestamp - a.commit.timestamp || a.commit.sha.localeCompare(b.commit.sha));
+      .filter((entry) => entry.committerTimestamp >= lowerBoundSec)
+      .sort((a, b) => b.committerTimestamp - a.committerTimestamp || a.commit.sha.localeCompare(b.commit.sha));
 
     // AGGREGATE in canonical order — each file's `commits[]` is deterministic.
     const fileMap = new Map<string, FileChurnData>();

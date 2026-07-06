@@ -87,6 +87,21 @@ describe("readCommitFileNumstat (real git)", () => {
     expect(c1.files).toContainEqual({ path: "a.ts", added: 3, deleted: 0 });
   });
 
+  it("populates committerTimestamp (%ct) alongside the author timestamp (%at)", async () => {
+    const entries = await adapter.readCommitFileNumstat(sinceEpoch);
+
+    // The fixture pins GIT_AUTHOR_DATE == GIT_COMMITTER_DATE, so %ct == %at ==
+    // the commit's epoch. The field must be a populated number (the windowing /
+    // eviction / sort key), never undefined or NaN.
+    const c2 = entries.find((e) => e.commit.sha === c2sha)!;
+    expect(c2.committerTimestamp).toBe(Math.floor(new Date(T2).getTime() / 1000));
+    expect(c2.committerTimestamp).toBe(c2.commit.timestamp);
+
+    const c1 = entries.find((e) => e.commit.sha === c1sha)!;
+    expect(c1.committerTimestamp).toBe(Math.floor(new Date(T1).getTime() / 1000));
+    expect(c1.committerTimestamp).toBe(c1.commit.timestamp);
+  });
+
   it("range form returns only commits in from..to (excludes the 'from' commit)", async () => {
     const entries = await adapter.readCommitFileNumstat(sinceEpoch, { fromSha: c1sha, toSha: c2sha });
 

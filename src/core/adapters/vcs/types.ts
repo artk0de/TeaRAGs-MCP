@@ -64,6 +64,15 @@ export interface CommitWithChangedFiles {
  */
 export interface CommitFileNumstat {
   commit: CommitInfo;
+  /**
+   * Committer epoch seconds (git `%ct`) — distinct from `commit.timestamp`
+   * (author date `%at`). `git log --since` windows history by COMMITTER date, so
+   * the file-churn discovery MUST evict/sort by this to match the legacy
+   * `readNumstatLog` full recompute on rebased / cherry-picked / squash-merged
+   * history (author date ≪ committer date). Signal VALUES still read the author
+   * date via `commit.timestamp`; this field is windowing/eviction/sort only.
+   */
+  committerTimestamp: number;
   files: { path: string; added: number; deleted: number }[];
 }
 

@@ -30,6 +30,7 @@ function entries(): CommitFileNumstat[] {
   return [
     {
       commit: commit("c".repeat(40)),
+      committerTimestamp: 1000,
       files: [
         { path: "a.ts", added: 3, deleted: 1 },
         { path: "b.ts", added: 0, deleted: 0 },
@@ -115,6 +116,26 @@ describe("FileChurnDiscoveryStore", () => {
         head: HEAD_A,
         sinceIso: SINCE_ISO,
         entries: [{ commit: commit("c".repeat(40)), files: [{ path: "a.ts", added: "nope", deleted: 1 }] }],
+      }),
+    );
+
+    expect(store.load(REPO_ROOT, HEAD_A)).toBeNull();
+  });
+
+  it("returns null on an entry missing committerTimestamp (pre-committer-date schema → rebuild)", () => {
+    const store = new FileChurnDiscoveryStore(baseDir);
+    mkdirSync(repoDir(baseDir), { recursive: true });
+    // A snapshot written before committer-date windowing: entry has no
+    // committerTimestamp. It must be rejected so the discovery rebuilds rather
+    // than evicting/sorting by `undefined`.
+    writeFileSync(
+      join(repoDir(baseDir), `${HEAD_A}.json`),
+      JSON.stringify({
+        version: 1,
+        repoRoot: REPO_ROOT,
+        head: HEAD_A,
+        sinceIso: SINCE_ISO,
+        entries: [{ commit: commit("c".repeat(40)), files: [{ path: "a.ts", added: 3, deleted: 1 }] }],
       }),
     );
 

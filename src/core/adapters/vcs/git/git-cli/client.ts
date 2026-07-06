@@ -405,6 +405,17 @@ const PATHSPEC_BATCH_SIZE = 500;
 const NUMSTAT_LOG_FORMAT = "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00";
 
 /**
+ * NUL-delimited log format for `readCommitFileNumstat` ONLY — inserts the
+ * COMMITTER epoch (`%ct`) between the author epoch (`%at`) and the body (`%B`).
+ * The file-churn discovery windows/evicts/sorts by committer date to match
+ * `git log --since` (which filters on committer date), while `commit.timestamp`
+ * (`%at`, author date) still feeds signal VALUES. The shared
+ * `NUMSTAT_LOG_FORMAT` above is deliberately left untouched so the chunk path
+ * (parseNumstatOutput / parsePathspecOutput) stays byte-identical.
+ */
+const NUMSTAT_LOG_FORMAT_WITH_COMMITTER = "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00%B%x00";
+
+/**
  * Repo-wide `git log --since --numstat` — NO pathspec, NO explicit rev
  * (defaults to HEAD, matching getCommitsByPathspecSingle). ONE such call per
  * indexing run replaces the K per-batch pathspec logs: the parsed
@@ -459,7 +470,7 @@ export async function readCommitFileNumstat(
   const args = ["log"];
   if (sinceDate) args.push(`--since=${sinceDate.toISOString()}`);
   if (range) args.push(`${range.fromSha}..${range.toSha}`);
-  args.push(NUMSTAT_LOG_FORMAT, "--numstat");
+  args.push(NUMSTAT_LOG_FORMAT_WITH_COMMITTER, "--numstat");
   const stdout = await execFileForPathspec(repoRoot, args, effectiveTimeoutMs);
   return parseCommitFileNumstat(stdout);
 }
