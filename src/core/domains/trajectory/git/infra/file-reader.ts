@@ -44,22 +44,33 @@ export async function buildFileSignalMap(
  * ONE `git log HEAD --numstat` over the WHOLE repo, parsed once into a per-file
  * FileChurnData map that a streaming run slices per batch (see
  * `sliceFileSignalsByPaths`) instead of re-running a full-history pathspec log
- * per file batch. It is deliberately UNBOUNDED (no `--since`): it must reproduce
- * `buildFileSignalsForPaths` exactly — that per-batch call carries no `--since`
- * filter — so a sliced entry deep-equals the legacy per-batch result. The only
- * flag difference from `buildFileSignalsForPaths` is the absent pathspec, which
- * is what `sliceFileSignalsByPaths` restores in memory. Reuses the same
- * numstat-log primitive as `buildFileSignalMap`, so there is a single
- * git-command definition (adapter-side).
+ * per file batch. Bounded by `maxAgeMonths` — the same `--since` window as
+ * `buildFileSignalMap` (the whole-set path). A full-history sweep is MINUTES on
+ * a monolith (141s / 1M lines on taxdome) and, being the run-scoped prerequisite
+ * of every file signal, delays git-file enrichment start until it finishes; the
+ * window caps that. The only flag difference from a per-batch
+ * `buildFileSignalsForPaths` call is the absent pathspec (restored in memory by
+ * `sliceFileSignalsByPaths`) — the backfill stays unbounded, so a file it later
+ * recovers may carry a slightly longer history than a windowed streaming slice;
+ * acceptable, both are best-effort churn. Reuses the same numstat-log primitive
+ * as `buildFileSignalMap`, so there is a single git-command definition.
  *
  * @param timeoutMs - timeout for the git log command (default 60000).
+ * @param maxAgeMonths - `--since` window in months; 0 ⇒ full history (default 0).
  */
 export async function buildFileSignalDiscovery(
   adapter: VcsGitAdapter,
   timeoutMs = 60000,
+  maxAgeMonths = 0,
 ): Promise<Map<string, FileChurnData>> {
-  // No sinceDate ⇒ full history, identical to buildFileSignalsForPaths semantics.
-  return adapter.readNumstatLog(undefined, timeoutMs);
+  // Bound by maxAgeMonths (the run's logMaxAgeMonths). A full-history numstat
+  // sweep is MINUTES on a large monolith (141s / 1M lines on taxdome) and, being
+  // the run-scoped prerequisite of every file signal, blocks git-file enrichment
+  // from starting until it finishes (~150s observed). The window matches
+  // `buildFileSignalMap` (the non-streaming whole-set path already bounds here);
+  // 0 ⇒ full history (matches the per-path `buildFileSignalsForPaths` backfill).
+  const sinceDate = maxAgeMonths > 0 ? new Date(Date.now() - maxAgeMonths * 30 * 86400 * 1000) : undefined;
+  return adapter.readNumstatLog(sinceDate, timeoutMs);
 }
 
 /**

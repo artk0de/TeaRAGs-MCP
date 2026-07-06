@@ -304,19 +304,21 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     if (this.fileDiscovery?.root === root && this.fileDiscovery.headSha === headSha) {
       return this.fileDiscovery.data;
     }
-    // Store the PROMISE synchronously — before awaiting the full-history
-    // `git log --numstat` (minutes, ~1GB stdout on a monolith). The coordinator
-    // fires streamFileBatch per embedding batch WITHOUT awaiting, so dozens land
-    // in flight before the first discovery resolves; memoizing the resolved
-    // value (the old code) let every one spawn its own numstat log → 3-5GB OOM.
-    // This is the single-flight of adapterFor / GitCommitDiscovery.matrixPromise.
-    // Warm the commit-graph (+ changed-path Bloom filters) ONCE per run before
-    // the first big `git log --numstat`: it accelerates that log AND every
-    // subsequent `git blame` this run (bd tea-rags-mcp). Best-effort (never
-    // rejects), chained so it precedes the discovery yet keeps single-flight.
-    const data = adapter
-      .writeCommitGraph(this.config.logTimeoutMs)
-      .then(() => buildFileSignalDiscovery(adapter, this.config.logTimeoutMs));
+    // Warm the commit-graph (+ changed-path Bloom filters) in the BACKGROUND —
+    // NOT chained before the discovery. It accelerates git BLAME (which runs
+    // after discovery) and future runs, but its Bloom filters help only PATHSPEC
+    // logs, not this pathspec-less numstat sweep; chaining it ahead would only
+    // delay git-file start. Fire-and-forget, best-effort (bd tea-rags-mcp).
+    void adapter.writeCommitGraph(this.config.logTimeoutMs).catch(() => undefined);
+    // Store the PROMISE synchronously — before awaiting the `git log --numstat`
+    // (still ~30s windowed on a monolith). The coordinator fires streamFileBatch
+    // per embedding batch WITHOUT awaiting, so dozens land in flight before the
+    // first discovery resolves; memoizing the resolved value (the old code) let
+    // every one spawn its own numstat log → 3-5GB OOM. This is the single-flight
+    // of adapterFor / GitCommitDiscovery.matrixPromise. Bounded by
+    // logMaxAgeMonths (full history was 141s on taxdome, blocking git-file
+    // enrichment ~150s; the window matches buildFileSignalMap).
+    const data = buildFileSignalDiscovery(adapter, this.config.logTimeoutMs, this.config.logMaxAgeMonths);
     this.fileDiscovery = { root, headSha, data };
     // A transient discovery failure must not poison the whole run: drop the
     // cache on rejection so a LATER (non-concurrent) batch can retry, while the

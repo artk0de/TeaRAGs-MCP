@@ -290,7 +290,7 @@ describe("GitEnrichmentProvider", () => {
 
       // ONE repo-wide discovery, sliced in memory — the per-path pathspec log is
       // no longer spawned on the streaming path (bd tea-rags-mcp-j4lm9).
-      expect(buildFileSignalDiscovery).toHaveBeenCalledWith(expect.objectContaining({ repoRoot: "/repo" }), 60000);
+      expect(buildFileSignalDiscovery).toHaveBeenCalledWith(expect.objectContaining({ repoRoot: "/repo" }), 60000, 12);
       expect(buildFileSignalsForPaths).not.toHaveBeenCalled();
       expect(result.has("src/b.ts")).toBe(true);
       expect(result.has("src/other.ts")).toBe(false);
