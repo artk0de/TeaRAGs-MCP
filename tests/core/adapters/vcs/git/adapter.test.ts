@@ -4,6 +4,7 @@ import { VcsGitAdapter } from "../../../../../src/core/adapters/vcs/git/adapter.
 import type {
   BlameLine,
   BlobBatchReader,
+  CommitFileNumstat,
   CommitWithChangedFiles,
   FileChurnData,
   OidBatchResolver,
@@ -15,6 +16,7 @@ class StubGitAdapter extends VcsGitAdapter {
   readNumstatLog = async (): Promise<Map<string, FileChurnData>> => new Map();
   getCommitsSince = async (): Promise<CommitWithChangedFiles[]> => [];
   getCommitsInRange = async (): Promise<CommitWithChangedFiles[]> => [];
+  readCommitFileNumstat = async (): Promise<CommitFileNumstat[]> => [];
   readBlobAsString = async (): Promise<string> => "";
   blameFile = async (): Promise<BlameLine[]> => [];
   getCommitsByPathspec = async (): Promise<CommitWithChangedFiles[]> => [];

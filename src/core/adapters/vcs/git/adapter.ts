@@ -12,6 +12,7 @@
 import type {
   BlameLine,
   BlobBatchReader,
+  CommitFileNumstat,
   CommitWithChangedFiles,
   FileChurnData,
   OidBatchResolver,
@@ -31,6 +32,17 @@ export abstract class VcsGitAdapter implements VcsAdapter {
     sinceDate: Date,
     timeoutMs?: number,
   ): Promise<CommitWithChangedFiles[]>;
+  /**
+   * Numstat-PRESERVING sibling of `getCommitsSince`/`getCommitsInRange`: keeps
+   * each file's +/- counts instead of collapsing them into `changedFiles`.
+   * `range` present narrows to `fromSha..toSha`; absent walks the whole
+   * `sinceDate`-bounded window.
+   */
+  abstract readCommitFileNumstat(
+    sinceDate?: Date,
+    range?: { fromSha: string; toSha: string },
+    timeoutMs?: number,
+  ): Promise<CommitFileNumstat[]>;
   abstract readBlobAsString(commitOid: string, filepath: string): Promise<string>;
   abstract blameFile(filePath: string, timeoutMs?: number, historyDepthHint?: number): Promise<BlameLine[]>;
 

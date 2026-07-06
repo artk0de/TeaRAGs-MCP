@@ -3,7 +3,7 @@
  * No I/O, no state — string → structured data.
  */
 
-import type { BlameLine, CommitInfo, FileChurnData } from "../../types.js";
+import type { BlameLine, CommitFileNumstat, CommitInfo, FileChurnData } from "../../types.js";
 
 /**
  * Parse `git log --numstat --format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B` output
@@ -112,6 +112,68 @@ export function parsePathspecOutput(stdout: string): { commit: CommitInfo; chang
 
     if (changedFiles.length > 0) {
       result.push({ commit, changedFiles });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Parse `git log --numstat --format=%x00...` output, keeping the PER-FILE
+ * +/- counts (`parsePathspecOutput`'s numstat loop keeps only the path,
+ * discarding them). Binary rows (`-\t-\t<path>`) contribute
+ * `{ added: 0, deleted: 0 }`, matching `parseNumstatOutput`'s NaN-skip
+ * semantics without dropping the file from the result.
+ */
+export function parseCommitFileNumstat(stdout: string): CommitFileNumstat[] {
+  const result: CommitFileNumstat[] = [];
+  const sections = stdout.split("\0");
+  let i = 0;
+
+  while (i < sections.length) {
+    if (!sections[i]?.trim()) {
+      i++;
+      continue;
+    }
+
+    const sha = sections[i]?.trim();
+    if (sha?.length !== 40 || !/^[a-f0-9]+$/.test(sha)) {
+      i++;
+      continue;
+    }
+
+    const parentsRaw = sections[i + 1] || "";
+    const parents = parentsRaw.trim() ? parentsRaw.trim().split(" ") : [];
+    const author = sections[i + 2] || "";
+    const email = sections[i + 3] || "";
+    const timestamp = parseInt(sections[i + 4] || "0", 10);
+    const body = sections[i + 5] || "";
+    i += 6;
+
+    const commit: CommitInfo = { sha, author, authorEmail: email, timestamp, body, parents };
+    const files: { path: string; added: number; deleted: number }[] = [];
+
+    // Parse numstat section
+    const numstatSection = sections[i] || "";
+    i++;
+
+    for (const line of numstatSection.split("\n")) {
+      if (!line.trim()) continue;
+      const parts = line.split("\t");
+      if (parts.length < 3) continue;
+
+      // Binary files show "-\t-" — keep the file, zero the counts.
+      const added = parts[0] === "-" ? 0 : parseInt(parts[0], 10);
+      const deleted = parts[1] === "-" ? 0 : parseInt(parts[1], 10);
+      files.push({
+        path: parts[2],
+        added: Number.isNaN(added) ? 0 : added,
+        deleted: Number.isNaN(deleted) ? 0 : deleted,
+      });
+    }
+
+    if (files.length > 0) {
+      result.push({ commit, files });
     }
   }
 

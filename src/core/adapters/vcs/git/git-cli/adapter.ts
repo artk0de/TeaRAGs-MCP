@@ -8,6 +8,7 @@
 import type {
   BlameLine,
   BlobBatchReader,
+  CommitFileNumstat,
   CommitWithChangedFiles,
   FileChurnData,
   OidBatchResolver,
@@ -25,6 +26,7 @@ import {
   getHead,
   isAncestor,
   readBlobAsString,
+  readCommitFileNumstat,
   writeCommitGraph,
 } from "./client.js";
 
@@ -52,6 +54,14 @@ export class GitCliAdapter extends VcsGitAdapter {
     timeoutMs?: number,
   ): Promise<CommitWithChangedFiles[]> {
     return getCommitsInRange(this.repoRoot, fromSha, toSha, sinceDate, timeoutMs);
+  }
+
+  async readCommitFileNumstat(
+    sinceDate?: Date,
+    range?: { fromSha: string; toSha: string },
+    timeoutMs?: number,
+  ): Promise<CommitFileNumstat[]> {
+    return readCommitFileNumstat(this.repoRoot, sinceDate, range, timeoutMs);
   }
 
   async readBlobAsString(commitOid: string, filepath: string): Promise<string> {

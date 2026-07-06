@@ -12,8 +12,8 @@ import { execFile, execFileSync, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
 import { isDebug } from "../../../../infra/runtime.js";
-import type { BlameLine, CommitInfo, FileChurnData } from "../../types.js";
-import { parseBlameOutput, parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
+import type { BlameLine, CommitFileNumstat, CommitInfo, FileChurnData } from "../../types.js";
+import { parseBlameOutput, parseCommitFileNumstat, parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";
 
 const execFileAsync = promisify(execFile);
@@ -439,6 +439,29 @@ export async function getCommitsInRange(
   const args = ["log", `--since=${sinceDate.toISOString()}`, `${fromSha}..${toSha}`, NUMSTAT_LOG_FORMAT, "--numstat"];
   const stdout = await execFileForPathspec(repoRoot, args, effectiveTimeoutMs);
   return parsePathspecOutput(stdout);
+}
+
+/**
+ * `git log [--since] [fromSha..toSha] --numstat` — the numstat-PRESERVING
+ * sibling of `getCommitsSince`/`getCommitsInRange`: same NUL-delimited log
+ * format and stall-guarded exec, but keeps each file's +/- counts instead of
+ * collapsing them into `changedFiles: string[]`. `range` present narrows to
+ * `fromSha..toSha` (incremental top-up, excludes `fromSha`'s own contribution
+ * same as `getCommitsInRange`); absent walks the whole `--since` window.
+ */
+export async function readCommitFileNumstat(
+  repoRoot: string,
+  sinceDate?: Date,
+  range?: { fromSha: string; toSha: string },
+  timeoutMs?: number,
+): Promise<CommitFileNumstat[]> {
+  const effectiveTimeoutMs = timeoutMs ?? 30000;
+  const args = ["log"];
+  if (sinceDate) args.push(`--since=${sinceDate.toISOString()}`);
+  if (range) args.push(`${range.fromSha}..${range.toSha}`);
+  args.push(NUMSTAT_LOG_FORMAT, "--numstat");
+  const stdout = await execFileForPathspec(repoRoot, args, effectiveTimeoutMs);
+  return parseCommitFileNumstat(stdout);
 }
 
 /**

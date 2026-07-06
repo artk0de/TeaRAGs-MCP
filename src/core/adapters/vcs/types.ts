@@ -54,6 +54,18 @@ export interface CommitWithChangedFiles {
   changedFiles: string[];
 }
 
+/**
+ * A commit paired with its per-file numstat (added/deleted line counts).
+ * The numstat-preserving sibling of `CommitWithChangedFiles` — that type
+ * keeps only file paths; this one keeps the +/- counts a commit-cache needs
+ * to evict a commit's contribution and re-aggregate. Binary files (git's
+ * `-\t-` numstat columns) contribute `{ added: 0, deleted: 0 }`.
+ */
+export interface CommitFileNumstat {
+  commit: CommitInfo;
+  files: { path: string; added: number; deleted: number }[];
+}
+
 /** Closed enum of supported git adapters — the `GIT_ADAPTER` env value space. */
 export type GitAdapterKind = "git" | "es-git";
 
