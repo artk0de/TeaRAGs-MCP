@@ -211,6 +211,15 @@ over-cap / abstract-self dispatch fan-out
   suppression (DEFECT 1, done).
 - OUT (adjacent follow-up): dynamic `public_send(self.class.<method>)`
   (graphql-ruby) — needs constant-fold `self.class.<m> → :symbol`.
+- OUT (adjacent follow-up, closes the dynamic-extend gap): an
+  `ActiveSupport::Concern` DSL grammar — `include ActiveSupport::Concern` +
+  `class_methods do … end` is a recognizable static shape that installs the
+  block's methods as class methods on includers. Modeled as a grammar (like the
+  gem-gated vocabularies), it makes the Concern extend-channel statically visible
+  so the entry `Const.<classMethod>` resolves and the self-dispatch mechanism
+  anchors on top. Composes with the core; not required for the literal-`extend` /
+  `def self.<m>` witnesses (whose entries already resolve — `KindOfService.call`
+  fanIn 3548).
 - OUT (already covered): typed-local receivers (cone), literal receivers
   (`exact`), MRO scope-tail, ivar/param receiver-type inference.
 - Do NOT touch: the f2jsb reindex/perf work (owned by a parallel session).
