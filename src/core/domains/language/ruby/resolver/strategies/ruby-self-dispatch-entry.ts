@@ -51,13 +51,14 @@ export class RubySelfDispatchEntrySymbolResolutionStrategy implements SymbolReso
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     const templates = ctx.selfDispatchTemplates;
     if (templates === undefined) return CONTINUE; // feature off / non-Ruby run
-    const receiver = call.receiver;
+    const { receiver } = call;
     if (receiver === null || !CONSTANT_RE.test(receiver)) return CONTINUE; // need a concrete constant entry
 
     // Resolve the entry member (a class-method call on the constant) to the
     // inherited method it dispatches to — the self-dispatch template candidate.
     const template = resolveTypeStaticMethod(receiver, call.member, ctx, this.cfg.mode);
-    if (template === null || template.targetSymbolId === null) return CONTINUE;
+    if (template === null) return CONTINUE; // member does not resolve on the constant
+    if (template.targetSymbolId === null) return CONTINUE; // file-only — no template candidate
 
     const hook = templates[template.targetSymbolId];
     if (hook === undefined) return CONTINUE; // not a template — normal passes own it
@@ -67,6 +68,8 @@ export class RubySelfDispatchEntrySymbolResolutionStrategy implements SymbolReso
     // (the recall fix needs the method target), so CONTINUE and let the normal
     // constant/bare passes handle it.
     const target = resolveTypeInstanceMethod(receiver, hook, ctx, this.cfg.mode);
-    return target && target.targetSymbolId !== null ? resolved(target) : CONTINUE;
+    if (target === null) return CONTINUE; // hook does not resolve on the concrete constant
+    if (target.targetSymbolId === null) return CONTINUE; // file-only miss must NOT fabricate an edge
+    return resolved(target);
   }
 }

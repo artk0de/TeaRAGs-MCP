@@ -12,7 +12,7 @@ import {
   discoverSelfDispatchTemplates,
   type SelfDispatchMethod,
   type SelfDispatchProbe,
-} from "../../../../../../src/core/domains/language/ruby/resolver/self-dispatch-templates.js";
+} from "../../../../../../src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.js";
 
 /** Build a probe from two plain maps: type→concretely-defined members, type→related types. */
 function probeOf(
