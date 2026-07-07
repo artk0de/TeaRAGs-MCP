@@ -25,11 +25,37 @@ import {
   isRubyPath,
   receiverChainTailIsExternal,
   receiverIsIndexAccess,
+  resolveConstant,
   type ResolverConfig,
 } from "./shared.js";
 
 /** Ruby constants begin uppercase; `::`-joined segments form a scope chain. */
 const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
+
+/**
+ * A chain receiver ROOTED in an external constant (`Capybara.<…>.perform`,
+ * `Selenium::WebDriver.<…>.foo`): the whole chain dispatches on a gem / stdlib
+ * object, so a same-name in-project def of the member is wrong-type noise.
+ *
+ * `receiverChainTailIsExternal` only knows a NARROW set of core TAILS
+ * (`.headers` / `.backtrace` / …) — its own doc defers the general case to a
+ * "root-segment vocab gate". An external ROOT is that general signal. Require:
+ *   - a chain (`.`) — a bare constant is the constant-exact path, returned above;
+ *   - a constant root (`/^[A-Z]/`) — a lowercase root can't be told apart from a
+ *     project receiver, so it stays non-external (conservative, no over-suppress);
+ *   - the root resolves to NO in-project file (`resolveConstant → null`) — a
+ *     gem / stdlib constant. An in-project root still fans out (unchanged).
+ *
+ * Suppressing here (not materialising an ambiguous fan-out) lets the external
+ * classifier reclassify the drop as `externalSkipped` instead of persisting a
+ * meaningless `cg_ambiguous_fanout` aggregate. bd tea-rags-mcp-z9pky (DEFECT 1).
+ */
+function chainRootConstantIsExternal(receiver: string, ctx: CallContext): boolean {
+  if (!receiver.includes(".")) return false;
+  const root = receiver.split(/[.([]/)[0]?.trim() ?? "";
+  if (!/^[A-Z]/.test(root)) return false;
+  return resolveConstant(root, ctx) === null;
+}
 
 /**
  * Map a literal-receiver source text to its Ruby core type (bd d9o7o), or
@@ -127,6 +153,12 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     // is core/runtime, no in-project target. Suppress; the external classifier
     // reclassifies so recall is not falsely penalised (bd Increment B / B-suppress).
     if (receiverChainTailIsExternal(r)) return emptyDispatchFanout();
+    // Root-segment external gate (bd tea-rags-mcp-z9pky / DEFECT 1): a chain
+    // rooted in an external constant is external regardless of its tail — the
+    // general signal the narrow tail vocab above defers to. Suppress so the
+    // external classifier reclassifies to externalSkipped rather than persisting
+    // an ambiguous aggregate (taxdome `Capybara…action…release.perform` noise).
+    if (chainRootConstantIsExternal(r, ctx)) return emptyDispatchFanout();
     // Typeable chain receiver: the propagation engine threads it to a known class/
     // instance type, so the precise `chainType` strategy (in resolve()) must own it
     // — returning [] here defers to it instead of fanning out speculative dynamic

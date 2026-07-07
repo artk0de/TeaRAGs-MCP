@@ -37,6 +37,7 @@ import type { AstNode } from "../src/core/contracts/types/ast.js";
 import type {
   CallContext,
   CallRef,
+  DispatchFanoutOutcome,
   FileExtraction,
   InheritanceEdgeRow,
   SymbolDefinition,
@@ -57,6 +58,14 @@ import {
   buildHierarchySnapshot,
   normalizeInheritanceEdges,
 } from "../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
+import {
+  buildSelfDispatchProbe,
+  collectSelfInstantiatingClassMethods,
+  discoverSelfDispatchTemplates,
+  extractSelfDispatchMethods,
+  foldSelfDispatchTemplates,
+  type SelfDispatchMethod,
+} from "../src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.js";
 import { MapHierarchyView } from "../src/core/infra/graph/hierarchy-view.js";
 import { materializeTree } from "../src/core/infra/materialize.js";
 import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
@@ -179,6 +188,13 @@ const runStructuredReturnTypes: Record<string, RubyTypeRef> = {};
 const runInheritanceRows: InheritanceEdgeRow[] = [];
 const runDispatchTables: Record<string, DispatchTableDef[]> = {};
 const runCallbackParams: Record<string, number[]> = {};
+// DEFECT 2 self-dispatch (env-gated A/B): the map is ALWAYS discovered (so the
+// template count is reported), but only THREADED into ctx when
+// CODEGRAPH_SELF_DISPATCH=1 — OFF reproduces the pre-2d baseline recall.
+const SELF_DISPATCH_ENABLED = process.env.CODEGRAPH_SELF_DISPATCH === "1";
+const runSelfDispatchMethods: SelfDispatchMethod[] = [];
+let runSelfDispatchTemplates: Record<string, string> = {};
+let runSelfInstantiatingClassMethods: string[] = [];
 
 // Macro-provenance: union of short-names declared by REAL `method` /
 // `singleton_method` AST nodes across all ruby files. A miss member NOT in this
@@ -236,6 +252,7 @@ function ingestPass1(extraction: FileExtraction, materializedRoot: AstNode): voi
   }
   if (extraction.callbackParams)
     for (const [symbolId, indices] of Object.entries(extraction.callbackParams)) runCallbackParams[symbolId] = indices;
+  runSelfDispatchMethods.push(...extractSelfDispatchMethods(extraction.chunks));
   collectRealDefNames(materializedRoot);
 }
 
@@ -252,6 +269,11 @@ let callsResolved = 0;
 let callsUnresolvable = 0;
 let callsExternalSkipped = 0;
 let callsNoInProjectDef = 0;
+// DEFECT-2 signal: distinct in-project method symbolIds that RECEIVE ≥1 edge.
+// DEFECT-2 redirects an entry `Const.member` from the shared template node to the
+// concrete `Const#hook`, so ON adds hook targets that had get_callers()==[] OFF —
+// the true recall win (invisible to callsResolved, which counts the entry either way).
+const resolvedTargets = new Set<string>();
 
 interface MissRecord {
   member: string;
@@ -340,27 +362,34 @@ function resolvePass2(extraction: FileExtraction): void {
         callbackParams: runCallbackParams,
         hierarchy: hierarchyView,
         instantiatedTypes: instantiatedForResolver,
+        selfDispatchTemplates: SELF_DISPATCH_ENABLED ? runSelfDispatchTemplates : undefined,
+        selfInstantiatingClassMethods: SELF_DISPATCH_ENABLED ? runSelfInstantiatingClassMethods : undefined,
       };
       let resolved = false;
+      const noteDispatch = (out: DispatchFanoutOutcome | undefined): boolean => {
+        const edges = out?.kind === "edges" ? out.edges : [];
+        for (const edge of edges) if (edge.targetSymbolId !== null) resolvedTargets.add(edge.targetSymbolId);
+        return edges.length > 0;
+      };
       if (call.dispatch) {
-        for (const _edge of resolver.resolveDispatch?.(call, ctx) ?? []) {
-          void _edge;
-          resolved = true;
-        }
+        if (noteDispatch(resolver.resolveDispatch?.(call, ctx))) resolved = true;
       } else if (call.dispatchArgs && call.dispatchArgs.length > 0) {
         const target = resolver.resolve(call, ctx);
-        if (target) resolved = true;
-        for (const _edge of resolver.resolveDispatch?.(call, ctx) ?? []) {
-          void _edge;
+        if (target) {
           resolved = true;
+          if (target.targetSymbolId !== null) resolvedTargets.add(target.targetSymbolId);
         }
+        if (noteDispatch(resolver.resolveDispatch?.(call, ctx))) resolved = true;
       } else {
-        const cone = resolver.resolveDispatch?.(call, ctx) ?? [];
-        if (cone.length > 0) {
+        const out = resolver.resolveDispatch?.(call, ctx);
+        if (noteDispatch(out)) {
           resolved = true;
         } else {
           const target = resolver.resolve(call, ctx);
-          if (target) resolved = true;
+          if (target) {
+            resolved = true;
+            if (target.targetSymbolId !== null) resolvedTargets.add(target.targetSymbolId);
+          }
         }
       }
 
@@ -490,6 +519,11 @@ async function main(): Promise<void> {
   // BARRIER (provider.ts:898).
   hierarchyView = new MapHierarchyView(buildHierarchySnapshot(runInheritanceRows));
   includedBy = buildIncludedBy(runAncestors, runPrependedAncestors);
+  // DEFECT 2 discovery (always built for the count; threaded into ctx only when enabled).
+  runSelfDispatchTemplates = foldSelfDispatchTemplates(
+    discoverSelfDispatchTemplates(runSelfDispatchMethods, buildSelfDispatchProbe(symbolTable, hierarchyView)),
+  );
+  runSelfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(runSelfDispatchMethods);
 
   // PASS-2: resolve.
   for (const extraction of extractions) resolvePass2(extraction);
@@ -514,6 +548,16 @@ async function main(): Promise<void> {
   L(`extractions:             ${extractions.length}`);
   L(`symbols in table:        ${symbolTable.size()}`);
   L(`realDef short-names:     ${realDefShortNames.size}`);
+  L(
+    `selfDispatch:            ${SELF_DISPATCH_ENABLED ? "ON " : "off"}  templates=${Object.keys(runSelfDispatchTemplates).length}  (self-hook methods scanned=${runSelfDispatchMethods.length})`,
+  );
+  L(`distinct edge targets:   ${resolvedTargets.size}   <-- DEFECT-2 target-coverage signal`);
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    join(OUT_DIR, `targets-${SELF_DISPATCH_ENABLED ? "on" : "off"}.json`),
+    JSON.stringify([...resolvedTargets].sort(), null, 0),
+  );
+  writeFileSync(join(OUT_DIR, "self-dispatch-templates.json"), JSON.stringify(runSelfDispatchTemplates, null, 2));
   L("");
   L(`callsAttempted:          ${callsAttempted}`);
   L(`callsResolved:           ${callsResolved}`);

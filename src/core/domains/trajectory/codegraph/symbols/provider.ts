@@ -100,6 +100,14 @@ import {
 } from "../../errors.js";
 import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
+import {
+  buildSelfDispatchProbe,
+  collectSelfInstantiatingClassMethods,
+  discoverSelfDispatchTemplates,
+  extractSelfDispatchMethods,
+  foldSelfDispatchTemplates,
+  type SelfDispatchMethod,
+} from "./self-dispatch-discovery.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 
@@ -606,6 +614,33 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private hierarchyView: HierarchyView | undefined;
   /**
+   * Per-run accumulation of self-dispatch method candidates (DEFECT 2 —
+   * self-receiver abstract-hook dispatch). One LIGHT record per method that
+   * self-calls (`symbolId` + enclosing type + bare hook names), NOT the chunks,
+   * so the NDJSON-spill heap optimisation holds. Fed to
+   * `discoverSelfDispatchTemplates` at the pass-1→pass-2 barrier. Populated for
+   * Ruby files only (the entry strategy that consumes the map is Ruby). Reset
+   * alongside `runInheritanceRows`.
+   */
+  private runSelfDispatchMethods: SelfDispatchMethod[] = [];
+  /**
+   * Run-global `templateMethodSymbolId → abstractHookMember` map (DEFECT 2) built
+   * from `runSelfDispatchMethods` at the barrier and threaded into every resolve
+   * `CallContext.selfDispatchTemplates`. Empty until the barrier runs (and on
+   * reset) — the Ruby entry strategy CONTINUEs when it is absent/empty. Reset
+   * alongside `hierarchyView`.
+   */
+  private runSelfDispatchTemplates: Record<string, string> = {};
+  /**
+   * Run-global list of self-instantiating CLASS-method symbolIds (DEFECT 2 v2)
+   * built from `runSelfDispatchMethods` at the barrier and threaded into every
+   * resolve `CallContext.selfInstantiatingClassMethods`. The Ruby entry strategy's
+   * v2 branch reads it to bridge a class entry to the same-named instance template
+   * (`self.call → new.call` service idiom). Empty until the barrier runs (and on
+   * reset). Reset alongside `runSelfDispatchTemplates`.
+   */
+  private runSelfInstantiatingClassMethods: string[] = [];
+  /**
    * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
    * Built once at construction from `deps.exclusion` PLUS each registered
    * language's own non-app-code globs (`deps.languageFactory`, bd
@@ -928,6 +963,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             this.runCallbackParams[symbolId] = indices;
           }
         }
+        // Accumulate per-method self-dispatch candidates run-global (DEFECT 2):
+        // LIGHT records (symbolId + enclosing type + self-hook member names), NOT
+        // the chunks, so the spill heap optimisation holds. Ruby-only for v1 —
+        // the entry strategy that consumes the discovered map is Ruby.
+        if (extraction.language === "ruby") {
+          this.runSelfDispatchMethods.push(...extractSelfDispatchMethods(extraction.chunks));
+        }
 
         const stream = await ensureSpillStream();
         const line = `${JSON.stringify(extraction)}\n`;
@@ -963,6 +1005,21 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // in-memory view ONCE here; pass-2 `resolveExtraction` threads it into
         // each resolve `CallContext.hierarchy` for CHA cone devirtualization.
         this.hierarchyView = new MapHierarchyView(buildHierarchySnapshot(this.runInheritanceRows));
+        // Discover self-dispatch templates (DEFECT 2) now pass-1 is complete: the
+        // symbol table holds every def and the hierarchy view every wiring edge,
+        // so the abstract-hook + related-concrete-definer predicate is exact. The
+        // resulting `templateSymbolId → hook` map threads into each pass-2 resolve
+        // `CallContext.selfDispatchTemplates` (entry-anchored narrowing).
+        if (this.runSelfDispatchMethods.length > 0) {
+          const { symbolTable: barrierSymbolTable } = await this.getStore(collectionName);
+          this.runSelfDispatchTemplates = foldSelfDispatchTemplates(
+            discoverSelfDispatchTemplates(
+              this.runSelfDispatchMethods,
+              buildSelfDispatchProbe(barrierSymbolTable, this.hierarchyView),
+            ),
+          );
+          this.runSelfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(this.runSelfDispatchMethods);
+        }
         try {
           if (spillWriteCount > 0) {
             await this.streamingResolveAndUpsert(spillPath, collectionName);
@@ -1218,6 +1275,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runCallbackParams = {};
       this.runInheritanceRows = [];
       this.hierarchyView = undefined;
+      this.runSelfDispatchMethods = [];
+      this.runSelfDispatchTemplates = {};
+      this.runSelfInstantiatingClassMethods = [];
       this.resetNodeFlushState();
       return undefined;
     }
@@ -1858,6 +1918,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runCallbackParams = {};
     this.runInheritanceRows = [];
     this.hierarchyView = undefined;
+    this.runSelfDispatchMethods = [];
+    this.runSelfDispatchTemplates = {};
+    this.runSelfInstantiatingClassMethods = [];
     this.resetNodeFlushState(key);
   }
 
@@ -1919,6 +1982,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runCallbackParams = {};
     this.runInheritanceRows = [];
     this.hierarchyView = undefined;
+    this.runSelfDispatchMethods = [];
+    this.runSelfDispatchTemplates = {};
+    this.runSelfInstantiatingClassMethods = [];
     this.resetNodeFlushState();
   };
 
@@ -2218,6 +2284,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // bd tea-rags-mcp-pffv — run-global instantiation set drives RTA
           // pruning of the CHA cone. Empty ⇒ cone keeps full fan-out (gate).
           instantiatedTypes: instantiatedForResolver,
+          // bd DEFECT 2 — run-global self-dispatch template map narrows an entry
+          // `Const.member` to the concrete `Const#hook`. Empty ⇒ the Ruby entry
+          // strategy CONTINUEs (no-op).
+          selfDispatchTemplates: this.runSelfDispatchTemplates,
+          // bd DEFECT 2 v2 — self-instantiating class methods bridge a class entry
+          // to the same-named instance template. Empty ⇒ v2 branch is a no-op.
+          selfInstantiatingClassMethods: this.runSelfInstantiatingClassMethods,
         };
         let resolved = false;
         if (call.dispatch) {
