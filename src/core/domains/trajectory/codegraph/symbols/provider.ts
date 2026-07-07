@@ -861,7 +861,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // for an invariant.
           throw new Error("CodegraphEnrichmentProvider sink: write() called after finish()");
         }
-        const { graphDb, symbolTable } = await this.getStore(collectionName);
+        const { symbolTable } = await this.getStore(collectionName);
         const defs = this.buildSymbolDefs(extraction);
         // Persist defs to both the in-memory table (for in-pass
         // resolver lookups) AND DuckDB (for cold-start hydration of a
@@ -876,7 +876,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // suppresses the (idempotent) per-file re-write here; the in-memory table
         // build stays unconditional (the resolver needs it in this context).
         symbolTable.upsertFile(extraction.relPath, defs);
-        if (!skipDurableNodeWrite) await graphDb.upsertSymbols(extraction.relPath, defs);
+        if (!skipDurableNodeWrite) this.bufferNodeDefs(extraction.relPath, defs, collectionName);
         this.indexChunkSymbolsByLine(collectionName, extraction);
         // Merge file-local ancestors into the run-global map so the
         // resolver in pass-2 sees ancestors keyed by target class
@@ -989,6 +989,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       },
       finish: async () => {
         finished = true;
+        // Nodes-before-edges: flush any durable node defs the buffered `write`
+        // path accumulated BEFORE pass-2 resolves + upserts edges that reference
+        // them. Owning it here makes the sink self-contained — correct for every
+        // caller (incremental finalize, standalone sink, cross-pass drain where
+        // the buffer is already empty so this no-ops).
+        await this.flushNodeRemainder(this.collectionKey(collectionName), collectionName);
         const streamToClose = spillStream;
         if (streamToClose) {
           // Close the writable end before the reader opens it. `end`
@@ -1583,6 +1589,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         }
       }
     }
+    // Fire-and-chain flush of THIS batch's buffered node defs so each streamed
+    // batch's `cg_symbols` land durably DURING embedding overlap. The 256-file
+    // `enqueueNodeFlush` threshold alone would defer a sub-256 changeset (the
+    // common incremental case) to the finalize remainder, losing the overlap the
+    // former per-file `upsertSymbols` had. Not awaited — overlaps the next
+    // embedding batch; `finalizeSignals` awaits the chain via `flushNodeRemainder`.
+    const batch = this.nodeDefBuffer.get(key)?.splice(0) ?? [];
+    if (batch.length > 0) this.chainNodeFlush(batch, key, options?.collectionName);
     return new Map(); // signals deferred to finalizeSignals
   }
 
@@ -1658,11 +1672,28 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // skips it (`skipDurableNodeWrite`). Order-independent: `upsertSymbolsBulk`
     // is last-wins per relPath, so accept-order flushing == sorted-drain rows.
     // Runs after the dedup guard above, so a file is buffered exactly once.
-    const buf = this.nodeDefBuffer.get(key) ?? [];
-    buf.push({ relPath: extraction.relPath, definitions: this.buildSymbolDefs(extraction) });
-    this.nodeDefBuffer.set(key, buf);
-    this.enqueueNodeFlush(key, options?.collectionName);
+    this.bufferNodeDefs(extraction.relPath, this.buildSymbolDefs(extraction), options?.collectionName);
   };
+
+  /**
+   * Buffer one file's durable symbol defs for the bulk node-write chain — the
+   * single seam BOTH entry points share: `acceptExtraction` (cross-pass
+   * main-thread tee) and `asExtractionSink.write` (incremental worker). Appends
+   * to the per-collection `nodeDefBuffer` and enqueues a flush at the
+   * `nodeFlushFiles` cadence. Order-independent — `upsertSymbolsBulk` is
+   * last-wins per relPath.
+   */
+  private bufferNodeDefs(
+    relPath: BulkSymbolUpsertEntry["relPath"],
+    defs: SymbolDefinition[],
+    collectionName?: string,
+  ): void {
+    const key = this.collectionKey(collectionName);
+    const buf = this.nodeDefBuffer.get(key) ?? [];
+    buf.push({ relPath, definitions: defs });
+    this.nodeDefBuffer.set(key, buf);
+    this.enqueueNodeFlush(key, collectionName);
+  }
 
   /**
    * Task 2 — when the per-collection node buffer reaches `nodeFlushFiles`, splice
@@ -1693,6 +1724,21 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       .catch((e: unknown) => {
         this.nodeFlushError ??= e instanceof Error ? e : new Error(String(e));
       });
+  }
+
+  /**
+   * Flush the per-collection node buffer's remainder, await the whole flush
+   * chain, and rethrow any latched eager-flush error — aborting the run before
+   * pass-2. Every chain link resolves (errors latch in `nodeFlushError`, not a
+   * rejected tail), so this await never trips an unhandled rejection. Shared by
+   * the cross-pass drain and the incremental finalize so `cg_symbols` is fully
+   * durable before pass-2 edge-resolve (nodes-before-edges).
+   */
+  private async flushNodeRemainder(key: string, collectionName?: string): Promise<void> {
+    const remainder = this.nodeDefBuffer.get(key)?.splice(0) ?? [];
+    if (remainder.length > 0) this.chainNodeFlush(remainder, key, collectionName);
+    await this.nodeFlushChain;
+    if (this.nodeFlushError) throw this.nodeFlushError;
   }
 
   /**
@@ -1777,16 +1823,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // batched flush, so this drain's sink SKIPS the per-file `graphDb.upsertSymbols`
     // (it still builds the in-memory symbol table + line map + Half-B run-globals).
     const { sink, extracted } = this.ensureRunSink(key, collectionName, true);
-    // Flush any buffered remainder for this collection, then await the whole
-    // flush chain and rethrow any latched eager-flush error HERE — aborting the
-    // run before pass-2 (the coordinator sees the error). Every chain link
-    // resolves (errors are latched in `nodeFlushError`, not left as a rejected
-    // tail), so this await never trips an unhandled rejection. Done BEFORE the
-    // sorted drain so the graph's `cg_symbols` is fully durable before pass-2.
-    const remainder = this.nodeDefBuffer.get(key)?.splice(0) ?? [];
-    if (remainder.length > 0) this.chainNodeFlush(remainder, key, collectionName);
-    await this.nodeFlushChain;
-    if (this.nodeFlushError) throw this.nodeFlushError;
+    // Flush the buffered node remainder + await the chain + rethrow BEFORE the
+    // sorted drain, so `cg_symbols` is fully durable before pass-2 (see
+    // `flushNodeRemainder`).
+    await this.flushNodeRemainder(key, collectionName);
     const reader = createInterface({
       input: createReadStream(spillPath, { encoding: "utf8" }),
       crlfDelay: Number.POSITIVE_INFINITY,
