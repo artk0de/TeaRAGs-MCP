@@ -143,11 +143,16 @@ describe("indexCodebaseCommand handler — supervisor branch", () => {
     expect(fork).toHaveBeenCalledWith(
       process.argv[1],
       ["index-codebase", "--__worker"],
-      expect.objectContaining({
-        detached: true,
-        stdio: ["ignore", "ignore", "ignore", "ipc"],
-      }),
+      expect.objectContaining({ detached: true }),
     );
+    // stdin/stdout ignored, IPC channel on fd3 — the invariant this test guards.
+    // fd2 (worker stderr) is "ignore" by default but a debug-log fd under DEBUG
+    // (observability for the enrichment finalize tail); accept either shape.
+    const forkOpts = vi.mocked(fork).mock.calls[0][2] as { stdio: unknown[] };
+    expect(forkOpts.stdio[0]).toBe("ignore");
+    expect(forkOpts.stdio[1]).toBe("ignore");
+    expect(forkOpts.stdio[3]).toBe("ipc");
+    expect(forkOpts.stdio[2] === "ignore" || typeof forkOpts.stdio[2] === "number").toBe(true);
     exitSpy.mockRestore();
   });
 
