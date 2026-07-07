@@ -97,6 +97,11 @@ describe("CodegraphEnrichmentProvider — incremental node-write unification", (
     expect(rows.length).toBeGreaterThan(0);
     expect(perFileSpy).not.toHaveBeenCalled();
     expect(bulkSpy).toHaveBeenCalled();
+    // Regression guard for the per-batch flush (the embedding-overlap mechanism):
+    // each streamed batch flushes DURING streaming, so two batches ⇒ ≥2 bulk
+    // calls. Deleting the streamFileBatchInner per-batch flush would collapse this
+    // to a single finalize-time bulk call (overlap lost) — this assertion fails.
+    expect(bulkSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it("graph-equality: bulk-written rows == the same defs replayed per-file", async () => {
