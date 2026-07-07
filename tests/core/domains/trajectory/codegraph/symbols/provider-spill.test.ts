@@ -196,12 +196,15 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
     expect(defs.length).toBe(0);
   });
 
-  it("upsertSymbols persists on every write (not deferred to finish)", async () => {
-    // Slice 2 invariant: defs land in DuckDB at write-time so an
-    // incremental reindex's `listAllSymbols` hydration sees the full
-    // cross-file set on the next cold start. Prior implementation
-    // batched defs at finish, which broke partial reindex resolver
-    // accuracy after a crash mid-batch.
+  it("buffered node defs persist by sink.finish (unified per-batch bulk write path)", async () => {
+    // Post-unification contract: the durable node write goes through the SAME
+    // buffered-bulk mechanism on every path (cross-pass + incremental) —
+    // `sink.write` buffers into `nodeDefBuffer`, each streamed batch flushes via
+    // `upsertSymbolsBulk`, and `sink.finish` flushes the remainder before pass-2
+    // (nodes-before-edges). Crash-recovery granularity is therefore per-batch
+    // (<= CODEGRAPH_NODE_FLUSH_FILES), consistent with fix#1's cross-pass
+    // batching: a mid-crash cold start rehydrates whole flushed batches and the
+    // next incremental reindex re-adds the changed files it re-processes.
     const sink = provider.asExtractionSink("alpha");
     await sink.write({
       relPath: "src/index.ts",
@@ -210,13 +213,11 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
       chunks: [{ symbolId: "EarlyDef", scope: [], calls: [] }],
       fileScope: [],
     });
+    await sink.finish();
 
-    // Before finish: the def is already queryable from the per-collection
-    // DuckDB symbol table because upsertSymbols ran on the write path.
+    // Durable once finish() flushes the buffered node batch (before pass-2).
     const handle = await pool.acquire("alpha");
     const defs = await handle.graphDb.listAllSymbols();
     expect(defs.map((d) => d.symbolId)).toContain("EarlyDef");
-
-    await sink.finish();
   });
 });

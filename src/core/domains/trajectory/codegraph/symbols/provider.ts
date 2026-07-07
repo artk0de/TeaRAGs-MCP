@@ -826,7 +826,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // for an invariant.
           throw new Error("CodegraphEnrichmentProvider sink: write() called after finish()");
         }
-        const { graphDb, symbolTable } = await this.getStore(collectionName);
+        const { symbolTable } = await this.getStore(collectionName);
         const defs = this.buildSymbolDefs(extraction);
         // Persist defs to both the in-memory table (for in-pass
         // resolver lookups) AND DuckDB (for cold-start hydration of a
@@ -841,7 +841,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // suppresses the (idempotent) per-file re-write here; the in-memory table
         // build stays unconditional (the resolver needs it in this context).
         symbolTable.upsertFile(extraction.relPath, defs);
-        if (!skipDurableNodeWrite) await graphDb.upsertSymbols(extraction.relPath, defs);
+        if (!skipDurableNodeWrite) this.bufferNodeDefs(extraction.relPath, defs, collectionName);
         this.indexChunkSymbolsByLine(collectionName, extraction);
         // Merge file-local ancestors into the run-global map so the
         // resolver in pass-2 sees ancestors keyed by target class
@@ -947,6 +947,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       },
       finish: async () => {
         finished = true;
+        // Nodes-before-edges: flush any durable node defs the buffered `write`
+        // path accumulated BEFORE pass-2 resolves + upserts edges that reference
+        // them. Owning it here makes the sink self-contained — correct for every
+        // caller (incremental finalize, standalone sink, cross-pass drain where
+        // the buffer is already empty so this no-ops).
+        await this.flushNodeRemainder(this.collectionKey(collectionName), collectionName);
         const streamToClose = spillStream;
         if (streamToClose) {
           // Close the writable end before the reader opens it. `end`
@@ -1523,6 +1529,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         }
       }
     }
+    // Fire-and-chain flush of THIS batch's buffered node defs so each streamed
+    // batch's `cg_symbols` land durably DURING embedding overlap. The 256-file
+    // `enqueueNodeFlush` threshold alone would defer a sub-256 changeset (the
+    // common incremental case) to the finalize remainder, losing the overlap the
+    // former per-file `upsertSymbols` had. Not awaited — overlaps the next
+    // embedding batch; `finalizeSignals` awaits the chain via `flushNodeRemainder`.
+    const batch = this.nodeDefBuffer.get(key)?.splice(0) ?? [];
+    if (batch.length > 0) this.chainNodeFlush(batch, key, options?.collectionName);
     return new Map(); // signals deferred to finalizeSignals
   }
 

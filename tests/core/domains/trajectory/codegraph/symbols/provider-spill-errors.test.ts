@@ -56,6 +56,9 @@ function makeStubGraphDb(flags: ThrowFlags = {}): GraphDbClient {
     upsertSymbols: async (relPath: string, defs: SymbolDefinition[]) => {
       symbolsByFile.set(relPath, defs);
     },
+    upsertSymbolsBulk: async (entries: { relPath: string; definitions: SymbolDefinition[] }[]) => {
+      for (const e of entries) symbolsByFile.set(e.relPath, e.definitions);
+    },
     upsertFile: async (_meta: { relPath: string; language: string }, _edges: GraphEdges) => {
       if (flags.upsertFile) throw flags.upsertFile;
     },
