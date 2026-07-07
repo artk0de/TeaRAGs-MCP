@@ -100,6 +100,8 @@ import {
 } from "../../errors.js";
 import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
+import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
+import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 import {
   buildSelfDispatchProbe,
   collectSelfInstantiatingClassMethods,
@@ -108,8 +110,6 @@ import {
   foldSelfDispatchTemplates,
   type SelfDispatchMethod,
 } from "./self-dispatch-discovery.js";
-import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
-import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 
 /**
  * Layered ignore for `discoverSupportedFiles` (tea-rags-mcp-tf1o, hh4m):
@@ -1788,6 +1788,25 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         process.stderr.write(`[codegraph] xpass spill reset failed ${spillPath}: ${(err as Error).message}\n`);
       }
     }
+  };
+
+  /**
+   * Cross-pass end-of-file-phase seam — mirror of `beginExtractionRun`, awaited.
+   * The cross-pass file phase feeds `acceptExtraction` on THIS (main-thread)
+   * instance, which buffers each file's durable symbol defs and flushes only
+   * COMPLETE `nodeFlushFiles` batches during embedding overlap. The trailing
+   * `N mod nodeFlushFiles` files sit unflushed in `nodeDefBuffer`. finalize runs
+   * on a SEPARATE worker instance whose own buffer is empty, so its
+   * `flushNodeRemainder` never reaches this remainder. Flush it here — before the
+   * coordinator dispatches the worker's `finalizeSignals` (pass-2 edge resolve) —
+   * so `cg_symbols` is fully durable before any edge references it
+   * (nodes-before-edges across the main↔worker instance boundary). Also awaits the
+   * whole eager-flush chain and rethrows a latched flush error, aborting the run
+   * before pass-2. No-op for non-cross-pass runs (buffer empty — the incremental
+   * finalize on this same instance already owns the flush via `sink.finish`).
+   */
+  endExtractionRun = async (collectionName?: string): Promise<void> => {
+    await this.flushNodeRemainder(this.collectionKey(collectionName), collectionName);
   };
 
   /**
