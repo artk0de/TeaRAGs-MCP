@@ -102,6 +102,7 @@ import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from ".
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
 import {
   buildSelfDispatchProbe,
+  collectSelfInstantiatingClassMethods,
   discoverSelfDispatchTemplates,
   extractSelfDispatchMethods,
   foldSelfDispatchTemplates,
@@ -631,6 +632,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runSelfDispatchTemplates: Record<string, string> = {};
   /**
+   * Run-global list of self-instantiating CLASS-method symbolIds (DEFECT 2 v2)
+   * built from `runSelfDispatchMethods` at the barrier and threaded into every
+   * resolve `CallContext.selfInstantiatingClassMethods`. The Ruby entry strategy's
+   * v2 branch reads it to bridge a class entry to the same-named instance template
+   * (`self.call → new.call` service idiom). Empty until the barrier runs (and on
+   * reset). Reset alongside `runSelfDispatchTemplates`.
+   */
+  private runSelfInstantiatingClassMethods: string[] = [];
+  /**
    * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
    * Built once at construction from `deps.exclusion` PLUS each registered
    * language's own non-app-code globs (`deps.languageFactory`, bd
@@ -1008,6 +1018,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
               buildSelfDispatchProbe(barrierSymbolTable, this.hierarchyView),
             ),
           );
+          this.runSelfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(this.runSelfDispatchMethods);
         }
         try {
           if (spillWriteCount > 0) {
@@ -1266,6 +1277,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.hierarchyView = undefined;
       this.runSelfDispatchMethods = [];
       this.runSelfDispatchTemplates = {};
+      this.runSelfInstantiatingClassMethods = [];
       this.resetNodeFlushState();
       return undefined;
     }
@@ -1908,6 +1920,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.hierarchyView = undefined;
     this.runSelfDispatchMethods = [];
     this.runSelfDispatchTemplates = {};
+    this.runSelfInstantiatingClassMethods = [];
     this.resetNodeFlushState(key);
   }
 
@@ -1971,6 +1984,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.hierarchyView = undefined;
     this.runSelfDispatchMethods = [];
     this.runSelfDispatchTemplates = {};
+    this.runSelfInstantiatingClassMethods = [];
     this.resetNodeFlushState();
   };
 
@@ -2274,6 +2288,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // `Const.member` to the concrete `Const#hook`. Empty ⇒ the Ruby entry
           // strategy CONTINUEs (no-op).
           selfDispatchTemplates: this.runSelfDispatchTemplates,
+          // bd DEFECT 2 v2 — self-instantiating class methods bridge a class entry
+          // to the same-named instance template. Empty ⇒ v2 branch is a no-op.
+          selfInstantiatingClassMethods: this.runSelfInstantiatingClassMethods,
         };
         let resolved = false;
         if (call.dispatch) {

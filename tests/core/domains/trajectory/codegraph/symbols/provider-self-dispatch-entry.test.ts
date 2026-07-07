@@ -153,3 +153,96 @@ describe("CodegraphEnrichmentProvider — entry-anchored self-dispatch (DEFECT 2
     expect(toTemplate).toHaveLength(0);
   });
 });
+
+// DEFECT 2 v2: the REAL taxdome KindOfService shape is TWO hops via a self-instance
+// LOCAL VAR. The CLASS method `self.call` self-instantiates and delegates to the
+// SAME-named INSTANCE method (`instance = new; instance.call`); the INSTANCE method
+// `#call` is the self-dispatch template that self-calls the abstract `perform` hook.
+// v1 misses because the class method's only self-hook is `new` (the `instance.call`
+// delegation is on a local var, not captured), so the class method is NOT a template.
+// v2 bridges: entry `Create.call` → class method `KindOfService.call` (a known
+// self-instantiating delegator) → same-named instance template `KindOfService#call`
+// (hook perform) → concrete `Create#perform`.
+describe("CodegraphEnrichmentProvider — self-instance delegation entry (DEFECT 2 v2)", () => {
+  let tmp: string;
+  let root: string;
+  let client: DuckDbGraphClient;
+  let provider: CodegraphEnrichmentProvider;
+
+  const writeFixture = (): string[] => {
+    mkdirSync(join(root, "src"), { recursive: true });
+    const paths: string[] = [];
+    // Shared service module-as-class: the CLASS method `self.call` self-instantiates
+    // and delegates to the SAME-named INSTANCE method via a local var; the INSTANCE
+    // method `call` self-calls the abstract `perform` hook. `KindOfService` never
+    // defines `perform`.
+    writeFileSync(
+      join(root, "src", "kind_of_service.rb"),
+      [
+        "class KindOfService",
+        "  def self.call",
+        "    instance = new",
+        "    instance.call",
+        "  end",
+        "  def call",
+        "    perform",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    paths.push("src/kind_of_service.rb");
+    // Concrete subclass defines the `#perform` hook (via `<` so classAncestors carries it).
+    writeFileSync(
+      join(root, "src", "create.rb"),
+      ["class Create < KindOfService", "  def perform", "  end", "end", ""].join("\n"),
+    );
+    paths.push("src/create.rb");
+    // Caller: a concrete entry through the shared self-instantiating class method.
+    writeFileSync(
+      join(root, "src", "c.rb"),
+      ["class C", "  def go", "    Create.call", "  end", "end", ""].join("\n"),
+    );
+    paths.push("src/c.rb");
+    return paths;
+  };
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "cg-self-dispatch-v2-prov-"));
+    root = mkdtempSync(join(tmpdir(), "cg-self-dispatch-v2-fixture-"));
+    client = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    provider = new CodegraphEnrichmentProvider({
+      graphDb: client,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      ...buildTestCodegraphDeps(),
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+    });
+  });
+
+  afterEach(async () => {
+    await client.close();
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("bridges the class→instance self-delegation: `C#go` reaches the concrete `Create#perform`", async () => {
+    const paths = writeFixture();
+    await provider.streamFileBatch(root, paths);
+    await provider.finalizeSignals(root);
+
+    const edges = await client.queryAll<MethodEdge>(
+      "SELECT source_symbol_id, target_symbol_id, call_expression FROM cg_symbols_edges_method",
+    );
+
+    // The entry-anchored recall win: the KindOfService chain fires end-to-end,
+    // so `get_callers(Create#perform)` includes `C#go` (was `[]` in v1).
+    expect(edges).toContainEqual({
+      source_symbol_id: "C#go",
+      target_symbol_id: "Create#perform",
+      call_expression: "Create.call",
+    });
+  });
+});

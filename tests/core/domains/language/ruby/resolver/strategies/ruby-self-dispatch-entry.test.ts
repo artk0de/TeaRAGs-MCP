@@ -145,3 +145,50 @@ describe("RubySelfDispatchEntrySymbolResolutionStrategy (DEFECT 2)", () => {
     expect(outcome.kind).toBe("continue");
   });
 });
+
+// The self-instance delegation shape (DEFECT 2 v2): the entry class method
+// `KindOfService.call` self-INSTANTIATES and delegates to the SAME-named INSTANCE
+// method (`instance = new; instance.call`), and it is that instance method
+// `KindOfService#call` — NOT the class method — that is the self-dispatch template
+// (hook `perform`). The class method's only self-hook is `new`, so v1 (class method
+// itself a template) misses; v2 bridges class → same-named instance template.
+const v2Table = (): InMemoryGlobalSymbolTable =>
+  tableWith(
+    [
+      KOS_FILE,
+      [
+        sym("KindOfService", "KindOfService", KOS_FILE, []),
+        sym("KindOfService.call", "call", KOS_FILE, ["KindOfService"]),
+        sym("KindOfService#call", "call", KOS_FILE, ["KindOfService"]),
+      ],
+    ],
+    [CREATE_FILE, [sym("Create", "Create", CREATE_FILE, []), sym("Create#perform", "perform", CREATE_FILE, ["Create"])]],
+  );
+
+const v2Ctx = (over: Partial<CallContext> = {}): CallContext =>
+  ctx({
+    symbolTable: v2Table(),
+    classAncestors: { Create: ["KindOfService"] },
+    // The TEMPLATE is the instance method `KindOfService#call` (hook perform), NOT
+    // the class method — the class method is only a self-instantiating delegator.
+    selfDispatchTemplates: { "KindOfService#call": "perform" },
+    selfInstantiatingClassMethods: ["KindOfService.call"],
+    ...over,
+  });
+
+describe("RubySelfDispatchEntrySymbolResolutionStrategy — self-instance delegation (DEFECT 2 v2)", () => {
+  it("narrows `Create.call` through the class→instance delegation to `Create#perform`", () => {
+    const outcome = strat.attempt(entryCall("Create"), v2Ctx());
+    expect(outcome.kind).toBe("resolved");
+    expect(outcome.kind === "resolved" && outcome.target).toEqual({
+      targetRelPath: CREATE_FILE,
+      targetSymbolId: "Create#perform",
+    });
+  });
+
+  it("CONTINUES when the class method is not a known self-instantiating delegator (no v2 bridge)", () => {
+    expect(strat.attempt(entryCall("Create"), v2Ctx({ selfInstantiatingClassMethods: undefined })).kind).toBe(
+      "continue",
+    );
+  });
+});

@@ -213,3 +213,29 @@ export function foldSelfDispatchTemplates(templates: readonly SelfDispatchTempla
   }
   return map;
 }
+
+/**
+ * The DELEGATING half of the `self.call → new.call` service idiom (DEFECT 2 v2):
+ * the class-form methods that self-INSTANTIATE (invoke `new` on self). The real
+ * KindOfService service entry is two hops — a CLASS method `self.call` that does
+ * `instance = new(*args); instance.call` and delegates to the SAME-named INSTANCE
+ * method, where that instance method is the actual self-dispatch template (its
+ * bare `perform` self-call is captured; the `instance.call` delegation is on a
+ * local var, so the class method's ONLY self-hook is `new`). Such a class method
+ * is therefore NOT itself a template — but it bridges the entry constant to the
+ * instance template, so the entry strategy's v2 branch needs to recognise it.
+ *
+ * A method qualifies iff its symbolId is CLASS-form (`Type.m` / `Ns::Type.m`,
+ * i.e. contains `.` but not `#`) AND it self-instantiates (`new` ∈
+ * `selfHookCandidates`). Returns the list of such class-method symbolIds, built
+ * at the pass-1→pass-2 barrier from the same `SelfDispatchMethod[]` the template
+ * discovery folds over.
+ */
+export function collectSelfInstantiatingClassMethods(methods: readonly SelfDispatchMethod[]): string[] {
+  const result: string[] = [];
+  for (const method of methods) {
+    const isClassForm = method.symbolId.includes(".") && !method.symbolId.includes("#");
+    if (isClassForm && method.selfHookCandidates.includes("new")) result.push(method.symbolId);
+  }
+  return result;
+}

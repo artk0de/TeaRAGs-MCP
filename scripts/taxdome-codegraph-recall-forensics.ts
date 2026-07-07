@@ -60,6 +60,7 @@ import {
 } from "../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
 import {
   buildSelfDispatchProbe,
+  collectSelfInstantiatingClassMethods,
   discoverSelfDispatchTemplates,
   extractSelfDispatchMethods,
   foldSelfDispatchTemplates,
@@ -193,6 +194,7 @@ const runCallbackParams: Record<string, number[]> = {};
 const SELF_DISPATCH_ENABLED = process.env.CODEGRAPH_SELF_DISPATCH === "1";
 const runSelfDispatchMethods: SelfDispatchMethod[] = [];
 let runSelfDispatchTemplates: Record<string, string> = {};
+let runSelfInstantiatingClassMethods: string[] = [];
 
 // Macro-provenance: union of short-names declared by REAL `method` /
 // `singleton_method` AST nodes across all ruby files. A miss member NOT in this
@@ -361,6 +363,7 @@ function resolvePass2(extraction: FileExtraction): void {
         hierarchy: hierarchyView,
         instantiatedTypes: instantiatedForResolver,
         selfDispatchTemplates: SELF_DISPATCH_ENABLED ? runSelfDispatchTemplates : undefined,
+        selfInstantiatingClassMethods: SELF_DISPATCH_ENABLED ? runSelfInstantiatingClassMethods : undefined,
       };
       let resolved = false;
       const noteDispatch = (out: DispatchFanoutOutcome | undefined): boolean => {
@@ -520,6 +523,7 @@ async function main(): Promise<void> {
   runSelfDispatchTemplates = foldSelfDispatchTemplates(
     discoverSelfDispatchTemplates(runSelfDispatchMethods, buildSelfDispatchProbe(symbolTable, hierarchyView)),
   );
+  runSelfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(runSelfDispatchMethods);
 
   // PASS-2: resolve.
   for (const extraction of extractions) resolvePass2(extraction);

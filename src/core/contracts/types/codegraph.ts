@@ -971,6 +971,20 @@ export interface CallContext {
    */
   selfDispatchTemplates?: Record<string, string>;
   /**
+   * Run-global list of CLASS-form method symbolIds that self-INSTANTIATE (bd
+   * tea-rags-mcp — DEFECT 2 v2, self-instance delegation). Built at the
+   * pass-1→pass-2 barrier by `collectSelfInstantiatingClassMethods` from the same
+   * `SelfDispatchMethod[]` the template discovery folds over: a class method whose
+   * body does `instance = new(*args); instance.member` (the `self.call → new.call`
+   * service idiom) has `new` as its only self-hook, so it is NOT itself a
+   * template — but it BRIDGES an entry constant to the SAME-named instance
+   * template. The entry strategy's v2 branch reads it: at `Const.member` resolving
+   * to such a class method, it re-resolves `Const#member` (instance form) and, when
+   * THAT is a `selfDispatchTemplates` key, narrows the abstract hook to `Const#H`.
+   * Plain array for NDJSON-spill parity with the other run-global maps.
+   */
+  selfInstantiatingClassMethods?: readonly string[];
+  /**
    * Run-global `tableName → DispatchTableDef[]` map propagated from every
    * file's `FileExtraction.dispatchTables` (bd tea-rags-mcp-n0zj). Keyed
    * by table NAME; the value is a LIST because the same name may be

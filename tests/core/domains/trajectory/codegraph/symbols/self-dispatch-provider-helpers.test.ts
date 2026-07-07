@@ -20,9 +20,11 @@ import type {
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   buildSelfDispatchProbe,
+  collectSelfInstantiatingClassMethods,
   discoverSelfDispatchTemplates,
   extractSelfDispatchMethods,
   foldSelfDispatchTemplates,
+  type SelfDispatchMethod,
 } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -149,6 +151,39 @@ describe("foldSelfDispatchTemplates", () => {
     // Multi-hook BaseEvent#to_h dropped (single-target strategy can't express a
     // fan-out); the single-hook template survives.
     expect(map).toEqual({ "KindOfService.call": "perform" });
+  });
+});
+
+describe("collectSelfInstantiatingClassMethods (DEFECT 2 v2)", () => {
+  it("includes a class-form method that self-instantiates (`new` self-hook)", () => {
+    const methods: SelfDispatchMethod[] = [
+      { symbolId: "KindOfService.call", enclosingType: "KindOfService", selfHookCandidates: ["new"] },
+    ];
+    expect(collectSelfInstantiatingClassMethods(methods)).toEqual(["KindOfService.call"]);
+  });
+
+  it("excludes an instance-form method (`Foo#bar`) even when it self-instantiates", () => {
+    const methods: SelfDispatchMethod[] = [
+      { symbolId: "KindOfService#call", enclosingType: "KindOfService", selfHookCandidates: ["new"] },
+    ];
+    expect(collectSelfInstantiatingClassMethods(methods)).toEqual([]);
+  });
+
+  it("excludes a class-form method that does not self-instantiate (no `new` self-hook)", () => {
+    const methods: SelfDispatchMethod[] = [
+      { symbolId: "KindOfService.call", enclosingType: "KindOfService", selfHookCandidates: ["perform", "audit"] },
+    ];
+    expect(collectSelfInstantiatingClassMethods(methods)).toEqual([]);
+  });
+
+  it("keeps only the class-form self-instantiating methods across a mixed batch", () => {
+    const methods: SelfDispatchMethod[] = [
+      { symbolId: "KindOfService.call", enclosingType: "KindOfService", selfHookCandidates: ["new"] },
+      { symbolId: "KindOfService#call", enclosingType: "KindOfService", selfHookCandidates: ["perform"] },
+      { symbolId: "OtherService.run", enclosingType: "OtherService", selfHookCandidates: ["new", "log"] },
+      { symbolId: "NoNew.build", enclosingType: "NoNew", selfHookCandidates: ["assemble"] },
+    ];
+    expect(collectSelfInstantiatingClassMethods(methods)).toEqual(["KindOfService.call", "OtherService.run"]);
   });
 });
 
