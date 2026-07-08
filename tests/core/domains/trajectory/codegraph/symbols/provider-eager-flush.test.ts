@@ -281,4 +281,21 @@ describe("CodegraphEnrichmentProvider — Task 2 eager batched node flush (cross
       process.off("unhandledRejection", onUnhandled);
     }
   });
+
+  it("streams a >CHECKPOINT_EVERY file set through the batched flush + checkpoint cadence", async () => {
+    // The pass-2 resolve/upsert loop buffers file writes and flushes them in
+    // BULK_FILES (256) sub-batches, running a `graphDb.checkpoint()` every
+    // CHECKPOINT_EVERY (500) files (plus a final flush + trailing checkpoint for
+    // the remainder). A 550-file run crosses the 256 flush boundary twice, the
+    // 500 checkpoint once, and leaves a sub-batch remainder — exercising the
+    // whole cadence, not just the small-N single-flush path the other cases hit.
+    const many = Array.from({ length: 550 }, (_, i) => {
+      const id = String(i).padStart(4, "0");
+      return mkExtraction(`f${id}.rb`, `K${id}`, `m${id}`);
+    });
+    const { rows } = await runCrossPass(many, { flushFiles: Number.MAX_SAFE_INTEGER });
+    // Every file persisted exactly one symbol row across the whole cadence.
+    expect(rows).toHaveLength(550);
+    expect(new Set(rows.map((r) => r.relPath)).size).toBe(550);
+  });
 });

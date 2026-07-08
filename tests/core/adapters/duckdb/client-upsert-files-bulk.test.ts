@@ -16,7 +16,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import type { BulkFileUpsertEntry } from "../../../../src/core/contracts/types/codegraph.js";
@@ -162,6 +162,27 @@ describe("DuckDbGraphClient — upsertFilesBulk equivalence to per-file upsertFi
   it("empty batch is a no-op", async () => {
     const db = await freshDb();
     await db.upsertFilesBulk([]);
+    expect((await dumpGraph(db)).files).toHaveLength(0);
+  });
+
+  it("rolls the whole batch back (no partial rows) when a mid-batch file write throws", async () => {
+    const db = await freshDb();
+    // The batch folds M files into ONE BEGIN/COMMIT. Let the first file's rows
+    // land for real, then make the SECOND file's write throw mid-transaction:
+    // the catch must ROLLBACK — reverting the first file too — and rethrow, so
+    // no partial state survives a failed bulk.
+    const proto = db as unknown as { upsertFileRows(node: unknown, edges: unknown): Promise<void> };
+    const realRows = proto.upsertFileRows.bind(db);
+    let seen = 0;
+    vi.spyOn(proto, "upsertFileRows").mockImplementation(async (node, edges) => {
+      seen += 1;
+      if (seen === 2) throw new Error("bulk write boom");
+      return realRows(node, edges);
+    });
+
+    await expect(db.upsertFilesBulk(batch())).rejects.toThrow("bulk write boom");
+    vi.restoreAllMocks();
+    // The first file's write was rolled back with the failed transaction.
     expect((await dumpGraph(db)).files).toHaveLength(0);
   });
 });

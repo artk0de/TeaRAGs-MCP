@@ -83,6 +83,7 @@ const ZERO_STATS: ChunkChurnWalkStats = {
   wallMs: 0,
 };
 
+/* v8 ignore start -- worker-thread entry: runWalk/runBlame/handleClose + the parentPort message loop run only inside the churn-walk Worker isolate, which v8 coverage (main test thread) structurally cannot observe */
 async function runWalk(job: ChunkChurnWalkJobInput): Promise<ChunkChurnWalkOutcome> {
   sharedLimiter ??= new Semaphore(job.concurrency);
   const adapter = await adapterFor(job.gitAdapter, job.repoRoot);
@@ -175,3 +176,4 @@ if (parentPort) {
     })();
   });
 }
+/* v8 ignore stop */

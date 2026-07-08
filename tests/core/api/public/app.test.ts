@@ -115,6 +115,22 @@ describe("createApp", () => {
     expect(result).toHaveProperty("signalDescriptors");
   });
 
+  it("awaits ingest for whenEnrichmentComplete", async () => {
+    const deps = makeDeps();
+    const app = createApp(deps as never);
+    await app.whenEnrichmentComplete();
+    expect(deps.ingest.whenEnrichmentComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("codegraph methods return empty results when no graph backend is wired", async () => {
+    // makeDeps() supplies neither graphFacade nor tracePathOps, so the App's
+    // fallback branch must surface empties rather than crash the MCP tool.
+    const deps = makeDeps();
+    const app = createApp(deps as never);
+    await expect(app.getCallees({ symbolId: "X" } as never)).resolves.toEqual({ callees: [] });
+    await expect(app.findCycles({ scope: "file" } as never)).resolves.toEqual({ cycles: [] });
+  });
+
   it("checkSchemaDrift routes path ref to checkAndConsume", async () => {
     const deps = makeDeps();
     const app = createApp(deps as never);
