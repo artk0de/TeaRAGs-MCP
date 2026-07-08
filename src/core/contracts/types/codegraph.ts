@@ -730,6 +730,16 @@ export interface BulkSymbolUpsertEntry {
 }
 
 /**
+ * One file's worth of node + outgoing edges, as consumed by
+ * `GraphDbClient.upsertFilesBulk` — the batched form of `upsertFile(node, edges)`
+ * that folds many files' per-source-file DELETE+INSERT into a single transaction.
+ */
+export interface BulkFileUpsertEntry {
+  node: GraphFileNode;
+  edges: GraphEdges;
+}
+
+/**
  * Resolved location of a symbol's covering Qdrant chunk. Returned by
  * `GraphDbClient.findSymbolChunk` — null when no chunk_id has been
  * backfilled for the symbol yet.
@@ -1080,6 +1090,12 @@ export interface GraphDbClient {
   /** Atomic upsert of file row + all outgoing edges. Used by the streaming
    *  write path. */
   upsertFile: (node: GraphFileNode, edges: GraphEdges) => Promise<void>;
+
+  /** Batched `upsertFile`: fold M files' node + edge writes into ONE
+   *  transaction (and, on the daemon, one IPC round-trip). Each file keeps its
+   *  own per-`source_rel_path` DELETE+INSERT (last-wins), so the persisted rows
+   *  are identical to calling `upsertFile` per file. Empty batch is a no-op. */
+  upsertFilesBulk: (entries: readonly BulkFileUpsertEntry[]) => Promise<void>;
 
   /** Used by incremental reindex when a file is removed from disk. */
   removeFile: (relPath: RelPath) => Promise<void>;

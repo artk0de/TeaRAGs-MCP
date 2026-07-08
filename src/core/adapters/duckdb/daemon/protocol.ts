@@ -1,4 +1,5 @@
 import type {
+  BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CycleScope,
   GraphEdges,
@@ -31,6 +32,7 @@ export type DaemonOp =
   | "removeSymbolsForFile"
   | "upsertSymbols"
   | "upsertSymbolsBulk"
+  | "upsertFilesBulk"
   | "updateSymbolChunkIds"
   | "replaceCycles"
   | "replacePageRanks"
@@ -75,6 +77,7 @@ export interface DaemonRequest {
     | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut
     | { collection: string; relPath: RelPath; definitions: SymbolDefinition[] } // upsertSymbols
     | { collection: string; entries: BulkSymbolUpsertEntry[] } // upsertSymbolsBulk
+    | { collection: string; entries: BulkFileUpsertEntry[] } // upsertFilesBulk
     | { collection: string; relPath: RelPath; chunkIds: [string, string][] } // updateSymbolChunkIds
     | { collection: string; relPath: RelPath; maxDepth?: number } // getTransitiveImpact
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex

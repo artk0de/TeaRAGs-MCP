@@ -1,4 +1,5 @@
 import type {
+  BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CycleScope,
   GraphDbClient,
@@ -113,6 +114,11 @@ export class CodegraphDaemonServer {
       case "upsertSymbolsBulk": {
         const { graphDb } = await this.acquireForWrite(collection);
         await graphDb.upsertSymbolsBulk(p.entries as BulkSymbolUpsertEntry[]);
+        return null;
+      }
+      case "upsertFilesBulk": {
+        const { graphDb } = await this.acquireForWrite(collection);
+        await graphDb.upsertFilesBulk(p.entries as BulkFileUpsertEntry[]);
         return null;
       }
       case "updateSymbolChunkIds": {

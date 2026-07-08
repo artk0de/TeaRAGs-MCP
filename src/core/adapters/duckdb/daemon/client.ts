@@ -2,6 +2,7 @@ import { connect, type Socket } from "node:net";
 
 import type {
   AmbiguousCallerSite,
+  BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CalleeEdge,
   CallerEdge,
@@ -223,6 +224,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async upsertSymbolsBulk(entries: BulkSymbolUpsertEntry[]): Promise<void> {
     await this.call("upsertSymbolsBulk", { entries });
+  }
+
+  async upsertFilesBulk(entries: readonly BulkFileUpsertEntry[]): Promise<void> {
+    await this.call("upsertFilesBulk", { entries });
   }
 
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {

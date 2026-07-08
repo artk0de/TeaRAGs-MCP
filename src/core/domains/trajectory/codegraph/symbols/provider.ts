@@ -51,6 +51,7 @@ import TsLang from "tree-sitter-typescript";
 
 import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
+  BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CallContext,
   DispatchTableDef,
@@ -1088,9 +1089,33 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // for the entire project. Cap chosen by inspection of the ugnest
     // failure (file with 96k method edges OOM'd at 1.8GB).
     const MAX_EDGES_PER_FILE = 10000;
+    // Files folded into one bulk upsert transaction (and, on the daemon, one IPC
+    // round-trip) instead of one BEGIN/COMMIT + round-trip per file.
+    const BULK_FILES = 256;
     let processed = 0;
     let lastRelPath: string | null = null;
     let reader: ReturnType<typeof createInterface> | null = null;
+    let buffer: BulkFileUpsertEntry[] = [];
+    // Flush the buffered files as ONE transaction. The per-file MAX_EDGES skip
+    // above already dropped pathological files, so no single row can abort a batch.
+    const flushBuffer = async (): Promise<void> => {
+      if (buffer.length === 0) return;
+      const pending = buffer;
+      buffer = [];
+      try {
+        await graphDb.upsertFilesBulk(pending);
+      } catch (err) {
+        // Batch-level failure (was per-file): surface batch size + last file so
+        // the marker / stderr still points near where pass-2 tripped.
+        const wrapped = err instanceof Error ? err : new Error(String(err));
+        throw new CodegraphResolveError(
+          processed,
+          Object.assign(wrapped, {
+            message: `graphDb.upsertFilesBulk failed near file #${processed} (batch=${pending.length}, last=${pending[pending.length - 1]?.node.relPath}): ${wrapped.message}`,
+          }),
+        );
+      }
+    };
     try {
       reader = createInterface({
         input: createReadStream(spillPath, { encoding: "utf8" }),
@@ -1139,19 +1164,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           processed += 1;
           continue;
         }
-        try {
-          await graphDb.upsertFile({ relPath: extraction.relPath, language: extraction.language }, edges);
-        } catch (err) {
-          // Per-file upsert throw — DuckDB constraint / connection /
-          // type error. Same wrap pattern as above.
-          const wrapped = err instanceof Error ? err : new Error(String(err));
-          throw new CodegraphResolveError(
-            processed,
-            Object.assign(wrapped, {
-              message: `graphDb.upsertFile failed at file #${processed + 1} (${lastRelPath}, edges=${edges.fileEdges.length}+${edges.methodEdges.length}): ${wrapped.message}`,
-            }),
-          );
-        }
+        // Buffer for the next bulk flush (fired at BULK_FILES / checkpoint / end)
+        // instead of one transaction per file.
+        buffer.push({ node: { relPath: extraction.relPath, language: extraction.language }, edges });
         this.runStats.fileEdgeCount += edges.fileEdges.length;
         this.runStats.methodEdgeCount += edges.methodEdges.length;
         processed += 1;
@@ -1166,7 +1181,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             });
           }
         }
+        if (buffer.length >= BULK_FILES) await flushBuffer();
         if (processed % CHECKPOINT_EVERY === 0) {
+          // Flush the buffered files before the checkpoint so the bounded WAL
+          // reflects the whole processed window.
+          await flushBuffer();
           try {
             await graphDb.checkpoint();
           } catch (err) {
@@ -1174,6 +1193,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           }
         }
       }
+      // Flush the sub-batch remainder, then a final checkpoint for any files
+      // written since the last one.
+      await flushBuffer();
       if (processed > 0 && processed % CHECKPOINT_EVERY !== 0) {
         try {
           await graphDb.checkpoint();
