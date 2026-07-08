@@ -2174,6 +2174,19 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     options?: ChunkSignalOptions,
   ): Promise<Map<string, Map<string, ChunkSignalOverlay>>> {
     const { graphDb } = await this.getStore(options?.collectionName);
+    // Batched read-back (replaces the former per-chunk getCalledByCount +
+    // getCallSiteCount + getPageRank N+1 — 3 serial IPC+SQL round-trips per
+    // chunk over the daemon socket): one set-based fetch of every symbol's
+    // {fanIn, fanOut, pageRank}, then an in-memory lookup per chunk. Values are
+    // identical to the point getters (a symbol absent from the map is {0,0,0}).
+    const bulkStartMs = isDebug() ? Date.now() : 0;
+    const chunkSignals = await graphDb.getChunkSignalsBulk();
+    if (isDebug()) {
+      console.error("[GitEnrich] PHASE: CODEGRAPH_CHUNK_SIGNALS_READ", {
+        symbols: chunkSignals.size,
+        durationMs: Date.now() - bulkStartMs,
+      });
+    }
     const out = new Map<string, Map<string, ChunkSignalOverlay>>();
     for (const [relPath, entries] of chunkMap) {
       const perChunk = new Map<string, ChunkSignalOverlay>();
@@ -2185,24 +2198,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // chunks from before codegraph wiring, or non-TS files), skip.
         const symbolId = this.resolveChunkSymbolId(options?.collectionName, relPath, entry.startLine, entry.endLine);
         if (!symbolId) continue;
-        // Confidence-weighted sums (bd tea-rags-mcp-s5ato) — may be
-        // fractional when dynamic/cone fan-out edges are involved; exact
-        // edges keep integer counts.
-        const fanIn = await graphDb.getCalledByCount(symbolId);
-        const fanOut = await graphDb.getCallSiteCount(symbolId);
-        // Slice 2 / B3 — per-symbol PageRank from cg_symbols_metrics
-        // (populated by recomputePageRank at sink.finish). Returns 0
-        // when the symbol isn't in the table yet (first index pass
-        // before recompute completes, or non-TS chunks without
-        // extraction edges).
-        const pageRankValue = await graphDb.getPageRank(symbolId);
-        // Bare inner keys (tea-rags-mcp-k6xu) — written under providerKey
-        // `codegraph.symbols.chunk`, so the addressable path is
-        // `codegraph.symbols.chunk.fanIn`. See buildFileSignals for rationale.
+        // Confidence-weighted fanIn/fanOut (bd tea-rags-mcp-s5ato — fractional
+        // under dynamic/cone fan-out, integer for exact edges) + per-symbol
+        // PageRank from cg_symbols_metrics (0 when the symbol isn't in the table
+        // yet). Read from the bulk map; a missing symbol ⇒ {0,0,0}, identical to
+        // the point getters. Bare inner keys (tea-rags-mcp-k6xu) under
+        // providerKey `codegraph.symbols.chunk` → `…chunk.fanIn`.
+        const sig = chunkSignals.get(symbolId);
         perChunk.set(entry.chunkId, {
-          fanIn,
-          fanOut,
-          pageRank: pageRankValue,
+          fanIn: sig?.fanIn ?? 0,
+          fanOut: sig?.fanOut ?? 0,
+          pageRank: sig?.pageRank ?? 0,
         });
       }
       // 0rskm — store-time symbol→covering-chunk join. The walker's per-file

@@ -26,6 +26,7 @@ import type {
   BulkSymbolUpsertEntry,
   CalleeEdge,
   CallerEdge,
+  ChunkGraphSignals,
   CycleEntry,
   CycleScope,
   EdgeKindCount,
@@ -1170,6 +1171,41 @@ export class DuckDbGraphClient implements GraphDbClient {
       [symbolId],
     );
     return roundEdgeWeightSum(Number(rows[0]?.n ?? 0));
+  }
+
+  /**
+   * Set-based read-back of `{ fanIn, fanOut, pageRank }` for every symbol in the
+   * graph — the batched replacement for looping `getCalledByCount` +
+   * `getCallSiteCount` + `getPageRank` per chunk (`buildChunkSignals`). Three
+   * whole-table GROUP-BY / scan queries (no `IN (…)` list → no param-limit
+   * chunking) instead of `3 × chunkCount` point queries. Each value is computed
+   * identically to the per-symbol getter — same `SUM(COALESCE(confidence, 1.0))`
+   * with `roundEdgeWeightSum`, same `Number()` pageRank — so a caller that reads
+   * `map.get(id) ?? { 0, 0, 0 }` gets byte-identical results.
+   */
+  async getChunkSignalsBulk(): Promise<Map<SymbolId, ChunkGraphSignals>> {
+    const out = new Map<SymbolId, ChunkGraphSignals>();
+    const entryFor = (id: string): ChunkGraphSignals => {
+      let e = out.get(id);
+      if (!e) {
+        e = { fanIn: 0, fanOut: 0, pageRank: 0 };
+        out.set(id, e);
+      }
+      return e;
+    };
+    const fanInRows = await this.queryAll<{ id: string; n: number | null }>(
+      "SELECT target_symbol_id AS id, SUM(COALESCE(confidence, 1.0)) AS n FROM cg_symbols_edges_method GROUP BY target_symbol_id",
+    );
+    for (const r of fanInRows) entryFor(r.id).fanIn = roundEdgeWeightSum(Number(r.n ?? 0));
+    const fanOutRows = await this.queryAll<{ id: string; n: number | null }>(
+      "SELECT source_symbol_id AS id, SUM(COALESCE(confidence, 1.0)) AS n FROM cg_symbols_edges_method GROUP BY source_symbol_id",
+    );
+    for (const r of fanOutRows) entryFor(r.id).fanOut = roundEdgeWeightSum(Number(r.n ?? 0));
+    const pageRankRows = await this.queryAll<{ id: string; page_rank: number | bigint | string }>(
+      "SELECT symbol_id AS id, page_rank FROM cg_symbols_metrics",
+    );
+    for (const r of pageRankRows) entryFor(r.id).pageRank = Number(r.page_rank);
+    return out;
   }
 
   async hasData(): Promise<boolean> {

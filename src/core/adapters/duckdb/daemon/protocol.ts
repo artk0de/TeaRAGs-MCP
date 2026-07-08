@@ -49,6 +49,7 @@ export type DaemonOp =
   | "getCalleeEdges"
   | "getCalledByCount"
   | "getCallSiteCount"
+  | "getChunkSignalsBulk"
   | "hasData"
   | "getRunStats"
   | "getEdgeKindDistribution"
@@ -68,7 +69,7 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | shutdown
+    | { collection: string } // checkpoint | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | getChunkSignalsBulk | shutdown
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
     | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut

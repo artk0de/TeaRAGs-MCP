@@ -192,6 +192,12 @@ export class CodegraphDaemonServer {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getCallSiteCount(p.symbolId as SymbolId);
       }
+      case "getChunkSignalsBulk": {
+        const { graphDb } = await this.pool.acquire(collection);
+        // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
+        const sig = await graphDb.getChunkSignalsBulk();
+        return [...sig.entries()];
+      }
       case "hasData": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.hasData();

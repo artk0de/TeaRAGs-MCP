@@ -1061,6 +1061,18 @@ export interface SymbolResolutionTarget {
  * The interface is the contract — driver-specific concerns (transaction
  * style, prepared statement caching) are implementation details.
  */
+
+/**
+ * Per-symbol graph metrics read back for chunk-level enrichment: confidence-
+ * weighted fanIn/fanOut over method edges + PageRank. The value shape of
+ * `getChunkSignalsBulk`'s map (mirrors the three per-symbol getters it batches).
+ */
+export interface ChunkGraphSignals {
+  fanIn: number;
+  fanOut: number;
+  pageRank: number;
+}
+
 export interface GraphDbClient {
   init: () => Promise<void>;
   close: () => Promise<void>;
@@ -1119,6 +1131,18 @@ export interface GraphDbClient {
    * Same fractional/rounding semantics as `getCalledByCount`.
    */
   getCallSiteCount: (symbolId: SymbolId) => Promise<number>;
+  /**
+   * Bulk read-back of `{ fanIn, fanOut, pageRank }` for EVERY symbol in the
+   * graph — the set-based replacement for the per-chunk
+   * `getCalledByCount` + `getCallSiteCount` + `getPageRank` loop in
+   * `buildChunkSignals` (the deferred-chunk tail). Three GROUP-BY / scan queries
+   * instead of `3 × chunkCount` point queries. Values are byte-identical to the
+   * per-symbol getters — same confidence-weighted `SUM(COALESCE(confidence,1.0))`
+   * with 2-decimal `roundEdgeWeightSum`, same `Number()`/0 pageRank default — and
+   * a symbol absent from the map reads as `{ 0, 0, 0 }` (matching the getters,
+   * which each return 0 on no rows).
+   */
+  getChunkSignalsBulk: () => Promise<Map<SymbolId, ChunkGraphSignals>>;
 
   // ── Class hierarchy (bd tea-rags-mcp-f10y) ──
   /** Direct ancestors of a type (forward), ordered by declaration ordinal. */
