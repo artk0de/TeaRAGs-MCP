@@ -171,7 +171,7 @@ describe("DuckDbGraphClient — upsertFilesBulk equivalence to per-file upsertFi
     // land for real, then make the SECOND file's write throw mid-transaction:
     // the catch must ROLLBACK — reverting the first file too — and rethrow, so
     // no partial state survives a failed bulk.
-    const proto = db as unknown as { upsertFileRows(node: unknown, edges: unknown): Promise<void> };
+    const proto = db as unknown as { upsertFileRows: (node: unknown, edges: unknown) => Promise<void> };
     const realRows = proto.upsertFileRows.bind(db);
     let seen = 0;
     vi.spyOn(proto, "upsertFileRows").mockImplementation(async (node, edges) => {
