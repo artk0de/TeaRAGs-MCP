@@ -5,105 +5,40 @@ sidebar_position: 99
 
 ## [1.35.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.34.1...v1.35.0) (2026-07-08)
 
-### ⚠ BREAKING CHANGES
+### 🧠 Code intelligence
 
-* **config:** CollectionEntry.tuning is deprecated in favor of
-CollectionEntry.env (full effective snapshot); registry entries written by
-this version are not fully understood by older tea-rags (they ignore .env).
+* Ruby call-graph navigation (get_callers/find_callers) now resolves calls dispatched through a shared abstract method invoked via self — including the common two-hop `ClassName.call -&gt; new.call` service-object delegation pattern — instead of returning no results for these call sites.
 
-Co-Authored-By: Claude Fable 5 &lt;noreply@anthropic.com&gt;
+### ⚡ Indexing & performance
 
-### Features
+* Incremental reindexing now updates git-derived file signals (age, churn, ownership) incrementally instead of re-scanning the full git history on every run, including on repositories with rebased or merged branch history — making incremental reindexes on large repos noticeably faster.
+* Indexing no longer stalls the whole run while computing git blame on repositories with deep file histories — blame is now computed off the main thread, with a new tunable concurrency knob for large monorepos.
 
-* **adapters:** abstract VcsGitAdapter git-family base class ([92bd27d](https://github.com/artk0de/TeaRAGs-MCP/commit/92bd27d296ba5b8dde163169263638b3218af82f))
-* **adapters:** add GraphDbClient.upsertSymbolsBulk (batched node upsert) ([7d6f609](https://github.com/artk0de/TeaRAGs-MCP/commit/7d6f609e29729f794db2735994d23ebabaea9937))
-* **adapters:** add readCommitFileNumstat (per-commit per-file numstat reader) ([c5076a4](https://github.com/artk0de/TeaRAGs-MCP/commit/c5076a4877a8140eaa0ffc30c0e3bd2ab3f9d209))
-* **adapters:** full in-process EsGitAdapter with CLI-equivalence suites ([06c9812](https://github.com/artk0de/TeaRAGs-MCP/commit/06c981203db85af7b561f6e279423b51db9e8bb8))
-* **adapters:** VcsAdapter contract + fail-loud VcsAdapterUnavailableError ([0262fcb](https://github.com/artk0de/TeaRAGs-MCP/commit/0262fcb2c977a3b94648a489cc54fe8170b013c1))
-* **adapters:** VcsAdapterFactory — closed enum git|es-git, fail-loud es-git branch ([2f59e61](https://github.com/artk0de/TeaRAGs-MCP/commit/2f59e61d813c17fc19d2269e52f034dad7fb9e7b))
-* **codegraph:** report eager node-upsert progress in the CLI index UI ([d19b353](https://github.com/artk0de/TeaRAGs-MCP/commit/d19b353180e1d60efbc4e3d0c996b83cefb66c0d))
-* **config:** GIT_ADAPTER env -&gt; VcsConfig, always pinned into registry tuning snapshot ([acdd544](https://github.com/artk0de/TeaRAGs-MCP/commit/acdd544858ef764cdee884c3c52f3f78c14b5204))
-* **config:** TRAJECTORY_GIT_BLAME_POOL_SIZE knob + export blame depth threshold ([563115f](https://github.com/artk0de/TeaRAGs-MCP/commit/563115f5717c2e0ee9bc34f8216f1d07306031b2))
-* **config:** tune --project persists measured envs into the registry snapshot ([dbf77d4](https://github.com/artk0de/TeaRAGs-MCP/commit/dbf77d4575b47a31e64b7c255edda9ed49471ad3))
-* **config:** tune replays GIT_ADAPTER from project registry, labels report ([d9f5e5b](https://github.com/artk0de/TeaRAGs-MCP/commit/d9f5e5b4920bdb87f7102762cfc4d0cf896253b0))
-* **setup:** git history engine choice in install wizard (git vs es-git, dynamic recommended) ([6e1cc68](https://github.com/artk0de/TeaRAGs-MCP/commit/6e1cc68565f7fe8ed6a9c3b7e147b9d3398fe0a1))
-* **trajectory:** BlameWorkerPool — off-thread es-git blame via a churn-walk blame job ([0826bb5](https://github.com/artk0de/TeaRAGs-MCP/commit/0826bb5204b3b3f292403fad79c8aae79302c64b))
-* **trajectory:** entry-anchored self-dispatch resolver strategy (DEFECT 2c) ([f2d1b45](https://github.com/artk0de/TeaRAGs-MCP/commit/f2d1b452d1f4fed8a85d06023784357ec47ff8c4)), closes [Const#H](https://github.com/artk0de/Const/issues/H) [Const#H](https://github.com/artk0de/Const/issues/H) [Sub#perform](https://github.com/artk0de/Sub/issues/perform)
-* **trajectory:** file-phase blame off the main thread via BlameWorkerPool ([418cbf4](https://github.com/artk0de/TeaRAGs-MCP/commit/418cbf472357d881e738942df56a6c3b7d433cfc))
-* **trajectory:** file-reader consumes FileChurnDiscovery when available ([776695e](https://github.com/artk0de/TeaRAGs-MCP/commit/776695e094403cbdc1fd96b8731fa4131174c2cb))
-* **trajectory:** FileChurnDiscovery — incremental delta-merge + window eviction for file signals ([651a1b3](https://github.com/artk0de/TeaRAGs-MCP/commit/651a1b3d5ac7dd6a61bea13e340548062b9dfea4))
-* **trajectory:** self-dispatch template discovery pre-pass (DEFECT 2a) ([4b68cb2](https://github.com/artk0de/TeaRAGs-MCP/commit/4b68cb2bb2d650ef47bfeeef2314ca9ccff188fa))
-* **trajectory:** self-instance delegation entry (DEFECT 2 v2 — close taxdome KindOfService recall) ([820bb38](https://github.com/artk0de/TeaRAGs-MCP/commit/820bb3805a8a58083354e235558669dbb6a25dc8))
-* **trajectory:** unify incremental codegraph node-write onto buffered bulk ([23230dc](https://github.com/artk0de/TeaRAGs-MCP/commit/23230dc4ec445705c9bac4cbb5da0430aebf8097))
-* **trajectory:** wire entry-anchored self-dispatch through provider two-pass (DEFECT 2d) ([9658200](https://github.com/artk0de/TeaRAGs-MCP/commit/9658200792a3cf5c402f3048bdedd01538a17bd9)), closes [Sub#perform](https://github.com/artk0de/Sub/issues/perform) [Service0#perform](https://github.com/artk0de/Service0/issues/perform) [Const#perform](https://github.com/artk0de/Const/issues/perform)
-* **trajectory:** wire FileChurnDiscovery into GitEnrichmentProvider file signals ([812a2a5](https://github.com/artk0de/TeaRAGs-MCP/commit/812a2a5b1cd97f79e9138d1ba86555f2f5ddbbb9))
+### 🛠 CLI & workflow
 
-### Improvements
+* Setup now asks which git history engine to use for indexing — the standard git CLI or a faster in-process alternative (recommended automatically for very large repositories) — configurable per project via a new GIT_ADAPTER setting, and `tune` reports which engine is active.
+* `tea-rags tune --project` now saves the performance settings it measures directly into the project's configuration, so future indexing runs pick them up automatically instead of requiring the generated .env file to be copied in by hand.
+* The CLI indexing progress display now reports code-graph write progress instead of appearing to stall near the end of a run.
 
-* **logs:** capture detached index worker stderr under DEBUG ([8cf16a7](https://github.com/artk0de/TeaRAGs-MCP/commit/8cf16a7f858b9e605c010999431928ba76f93752))
+### 🩹 Fixes
 
-### Bug Fixes
+* Code intelligence results (e.g. get_callers) could silently miss up to 255 files' symbols after a full reindex — the call graph now captures every file's symbols instead of dropping a batch's remainder.
+* Call-graph results for Ruby code no longer include meaningless noise entries from call chains rooted in external libraries.
+* Indexing very large repositories no longer risks running out of memory during git-history enrichment — concurrent batches previously each triggered their own full git-history scan, and a hidden concurrency floor ignored lower concurrency settings meant to bound memory use.
+* Indexing large repositories no longer fails with a false timeout while scanning git history — the timeout now resets on activity instead of capping total duration, so long-but-alive scans (including ones with a single giant commit) complete instead of being killed.
+* The embedded Qdrant daemon now self-heals when a previous interrupted reindex leaves behind a corrupted collection, instead of permanently failing to start.
+* `tea-rags tune --project` now works on projects using the embedded Qdrant daemon — previously it failed immediately, either erroring while the daemon was still starting up or misresolving the embedded connection address.
+* CLI indexing commands now wait for the embedded Qdrant daemon to finish recovering after a restart instead of failing immediately, and --json output now reports the actual error instead of exiting silently with no output.
+* A reindex run with no environment variables set now reproduces the project's last configured indexing settings instead of silently falling back to code defaults.
+* Incremental reindexing now automatically cleans up leftover data from previous interrupted full reindexes, instead of it accumulating until the next successful one.
+* Interrupting an indexing run (Ctrl-C) now fully stops its git subprocesses instead of leaving orphaned git processes running in the background.
 
-* **adapters:** pin GIT_AUTHOR/COMMITTER env in equivalence fixture repo ([4ad8ac1](https://github.com/artk0de/TeaRAGs-MCP/commit/4ad8ac155bdb661e3e42d33368663e7163d203bb))
-* **adapters:** upsertSymbolsBulk last-wins on duplicate relPath in one batch ([492bffa](https://github.com/artk0de/TeaRAGs-MCP/commit/492bffa78f60194c0dccc338c6a7376467d64d59))
-* **cli:** wait for qdrant recovery, surface run-phase fatals in --json, embedded sentinel consumers ([eca7fb5](https://github.com/artk0de/TeaRAGs-MCP/commit/eca7fb5a533209a7da8ae18e017c6ec3a7b310a4))
-* **codegraph:** latch eager-flush errors so a mid-run bulk failure aborts at the drain, not crash ([b0d488a](https://github.com/artk0de/TeaRAGs-MCP/commit/b0d488aa823bf9fd8506dd20838b18aa4f7a981b))
-* **codegraph:** replace NUL separators with spaces; document bulk-upsert last-wins ([fc7d337](https://github.com/artk0de/TeaRAGs-MCP/commit/fc7d3373347dbe8141cf78dca7988d052de65f0e))
-* **config:** persist FULL effective tuning env set in registry; alias-aware replay ([f631b4c](https://github.com/artk0de/TeaRAGs-MCP/commit/f631b4ca9fa860a252b5738def36b2fd6ae563f9))
-* **config:** resolve the 'embedded' qdrant sentinel in tune, not pass it verbatim ([d8f3ae3](https://github.com/artk0de/TeaRAGs-MCP/commit/d8f3ae316933f51c3ccff1dd963448c4e0baa5a8))
-* **config:** take git chunk concurrency straight from the env, drop the min-10 floor ([939e8f0](https://github.com/artk0de/TeaRAGs-MCP/commit/939e8f096888c4bb580ec23d15d109df9156d7e1))
-* **git:** floor bulk-log stall window at 10min — giant commits think silently ([d4e1c07](https://github.com/artk0de/TeaRAGs-MCP/commit/d4e1c0777a9aafdaabf08fa8d83b47a6ddeffd25))
-* **git:** stall-guard exec for bulk git log — inactivity window, not total cap ([16f2016](https://github.com/artk0de/TeaRAGs-MCP/commit/16f2016ef55fc71440120316974fd6c85a2f5740))
-* **git:** window file-churn by committer date; de-poison single-flight latch ([dedc329](https://github.com/artk0de/TeaRAGs-MCP/commit/dedc32998992cce4a4a7585c482050b1853006fa))
-* **ingest:** incremental reindex sweeps orphaned versioned collections ([ebdbfaf](https://github.com/artk0de/TeaRAGs-MCP/commit/ebdbfaf3368bf53f55dc82078d541882f478b92f))
-* **pipeline:** cross-pass MAIN-instance codegraph node remainder flush (endExtractionRun); ([a1bad48](https://github.com/artk0de/TeaRAGs-MCP/commit/a1bad48fdabfde6ecf62c093c985eb6d94a2b3ea))
-* **pipeline:** flush cross-pass main-instance codegraph node remainder ([e63ac4c](https://github.com/artk0de/TeaRAGs-MCP/commit/e63ac4c159def74044c520be082e7655e9fb846f))
-* **qdrant:** self-heal a daemon bricked by a corrupt collection ([e5fc692](https://github.com/artk0de/TeaRAGs-MCP/commit/e5fc692e27586cc908be6bdb3b46b09abd632801))
-* **scripts:** tune waits for embedded-qdrant recovery instead of one-shot probing ([b54c576](https://github.com/artk0de/TeaRAGs-MCP/commit/b54c5763a7d90bd1db30bb08d7094be3cfd6253d))
-* **trajectory:** canonical fold order + single-flight latch in FileChurnDiscovery ([2c1a429](https://github.com/artk0de/TeaRAGs-MCP/commit/2c1a42945272b6a60ed43f6f5e803678f29bdf0a))
-* **trajectory:** single-flight run-scoped git file discovery — the real OOM storm ([02eca2f](https://github.com/artk0de/TeaRAGs-MCP/commit/02eca2fedb22e9c7e088dafcf4ec0a42291623f5))
-* **trajectory:** suppress ambiguous-fanout for external-rooted receiver chains ([45df6d8](https://github.com/artk0de/TeaRAGs-MCP/commit/45df6d86e21236a9f5a505ddbf9241bd7ba66319))
+### 🔧 Environment Variables
 
-### Performance Improvements
-
-* **adapters:** depth-route es-git blame — in-process shallow, native git deep ([b770e18](https://github.com/artk0de/TeaRAGs-MCP/commit/b770e18da5ac8c5861e401b8f4e3331487775e56))
-* **adapters:** es-git blame delegates to native git blame; drop in-process path ([231ca7c](https://github.com/artk0de/TeaRAGs-MCP/commit/231ca7ca37a6d12b894d262ae809ef86ae9de2ec))
-* **adapters:** EsGitAdapter delegates bulk-history sweeps to one git CLI spawn ([4539cef](https://github.com/artk0de/TeaRAGs-MCP/commit/4539cef1a71274ae0dec1c09d05689e6d1b0bc3b))
-* **codegraph:** eager batched node upsert during embedding on cross-pass ([9ba98ca](https://github.com/artk0de/TeaRAGs-MCP/commit/9ba98ca17ad6e14239b41ec14f487e93060a7245))
-* **git)+fix(cli:** commit-graph warmup + reap orphaned git children on interrupt ([3534922](https://github.com/artk0de/TeaRAGs-MCP/commit/3534922921e8cd05718ab5941328d25505e70172))
-* **git:** bound streaming file discovery by logMaxAgeMonths + move commit-graph warmup off the critical path ([dd98a3c](https://github.com/artk0de/TeaRAGs-MCP/commit/dd98a3cb93bdf11f5c32f0e5d3470b1e88675ed1))
-* **pipeline:** batch deferred-chunk read-back via getChunkSignalsBulk ([36cb174](https://github.com/artk0de/TeaRAGs-MCP/commit/36cb174ce2869037585e51940b5c1c30b2361b3c))
-* **pipeline:** batch pass-2 edge writes via upsertFilesBulk ([6e0887f](https://github.com/artk0de/TeaRAGs-MCP/commit/6e0887fc015a16b9899697aa8067506b995df971))
-* **trajectory:** hoist run-global buildIncludedBy to the pass-2 barrier ([d165bb2](https://github.com/artk0de/TeaRAGs-MCP/commit/d165bb293cb38538e9865c6cf25c0f1a8f852c16))
-* **trajectory:** memoize self-dispatch relatedConcreteTypes walk ([d732f81](https://github.com/artk0de/TeaRAGs-MCP/commit/d732f818b87b9343eedcf95bcbaae304d121142a))
-* **trajectory:** pool the chunk-churn walk across N worker threads ([c90c2a0](https://github.com/artk0de/TeaRAGs-MCP/commit/c90c2a0bb598c28a9262b3911a346844c48c6ac6))
-
-### Documentation
-
-* **codegraph:** correct DEFECT-2 mechanism to entry-anchored narrow-to-1 ([ae12b03](https://github.com/artk0de/TeaRAGs-MCP/commit/ae12b03def75b60051c0c0ade281d6ca9a2b3440)), closes [Const#perform](https://github.com/artk0de/Const/issues/perform)
-* **codegraph:** DEFECT-2 v1 implementation status — shipped vs deferred ([c08b76d](https://github.com/artk0de/TeaRAGs-MCP/commit/c08b76d1490f820780d72d83d7661900f657ff9e))
-* **codegraph:** design for node-upsert overlap + bulk-append on cross-pass finalize ([ddf0cdb](https://github.com/artk0de/TeaRAGs-MCP/commit/ddf0cdbc3406e487c8f8afb09dfc279b8951dacc))
-* **codegraph:** generalize DEFECT-2 over 4 wiring channels + self-dispatch shapes ([571f9f9](https://github.com/artk0de/TeaRAGs-MCP/commit/571f9f97bdcbb9d164b82a96fc72f219177258e3))
-* **codegraph:** implementation plan for node-upsert overlap + bulk-append ([7dbc09d](https://github.com/artk0de/TeaRAGs-MCP/commit/7dbc09dd6890a1c1325de539ab398c40922d9b57))
-* **codegraph:** spec — Ruby self-receiver abstract-hook dispatch (generalized) ([6ed5be0](https://github.com/artk0de/TeaRAGs-MCP/commit/6ed5be0d8ed3787f191a217f2d9206c857d9b047))
-* **factory:** note FILE-phase blame now pools off-thread ([8f324ce](https://github.com/artk0de/TeaRAGs-MCP/commit/8f324cef6c8717b1c70a74d912278b9657eef8f2))
-* **plan:** git blame off the main thread — impl plan + seam-analysis spec refinement ([bc0781d](https://github.com/artk0de/TeaRAGs-MCP/commit/bc0781db7dc20fb9cf486faa50719e3c32fd7e91))
-* **plan:** vcs-adapter implementation plan (13 tasks, 4 phases) ([b325e7e](https://github.com/artk0de/TeaRAGs-MCP/commit/b325e7e6843e3d8963af0d652f51a691a6964e58))
-* **spec:** git blame off the main thread — cold-reindex un-stall design ([d0e5bb8](https://github.com/artk0de/TeaRAGs-MCP/commit/d0e5bb8c498d4933c4235e1773402ccbe5387c79))
-* **spec:** VCS adapter seam + in-process es-git adapter design (w2dlu) ([92e8995](https://github.com/artk0de/TeaRAGs-MCP/commit/92e8995ba644d8eac3a80e97de26ef987fd38028))
-* **trajectory:** plan — unify codegraph durable node-write across paths ([922086c](https://github.com/artk0de/TeaRAGs-MCP/commit/922086c1d5142b926f53e38462130d6cdeaef3a6))
-* **trajectory:** plan for incremental git file-signal commit-cache + window eviction ([cba3c53](https://github.com/artk0de/TeaRAGs-MCP/commit/cba3c53a3fbccd55a007867ddaa94f22bcf801d4))
-* **trajectory:** spec — unify codegraph durable node-write across indexing paths ([d37ed75](https://github.com/artk0de/TeaRAGs-MCP/commit/d37ed75099dbe1b5da9d50696a1118553751a802))
-* **website:** VCS adapter hierarchy + GIT_ADAPTER across git docs ([4c03015](https://github.com/artk0de/TeaRAGs-MCP/commit/4c030151e672ba65058fd5f5d5030e0504952e67))
-
-### Code Refactoring
-
-* **adapters:** point all git seam consumers at vcs paths ([189a2e9](https://github.com/artk0de/TeaRAGs-MCP/commit/189a2e9b5433f007f5e42efd5d757068d3ca4b03))
-* **adapters:** relocate git CLI under vcs/git/git-cli as GitCliAdapter ([55bbf7c](https://github.com/artk0de/TeaRAGs-MCP/commit/55bbf7c71ebb86496d10a542d07a01ca6cd12a17))
-* **config:** generalize registry snapshot to the FULL indexing env surface ([235a86d](https://github.com/artk0de/TeaRAGs-MCP/commit/235a86d7fd2e8a104f0c12c962d0b3105be71c32))
-* **ingest:** blob reader via DI from GIT_ADAPTER; drop adapters/git shims ([3c39d20](https://github.com/artk0de/TeaRAGs-MCP/commit/3c39d203846cd3e9d9828dc006ea2aef864faa50))
-* **trajectory:** extract bufferNodeDefs + flushNodeRemainder seams ([9dda04f](https://github.com/artk0de/TeaRAGs-MCP/commit/9dda04f5c1cd1dd3f8b847fe37d87a16eb86b79f))
-* **trajectory:** thread VcsGitAdapter through the git trajectory domain ([5dc0601](https://github.com/artk0de/TeaRAGs-MCP/commit/5dc0601037440ecd3474e0d3154a31822e68d94a))
+* `GIT_ADAPTER` · Selects the git history engine used for indexing: the standard git CLI or a faster in-process es-git library (auto-recommended for very large repositories) · default: `git` (new)
+* `TRAJECTORY_GIT_BLAME_POOL_SIZE` · Number of worker threads used to compute git blame off the main thread during indexing · default: `min(4, cpus - 1)` (new)
+* `TRAJECTORY_GIT_CHUNK_CONCURRENCY` · Number of concurrent git-blame operations during chunk-level enrichment; a hidden floor that kept this at a minimum of 10 was removed, so lower values are now honored · default: `10` (changed)
+* `TRAJECTORY_GIT_LOG_TIMEOUT_MS` · Now an inactivity window that resets on any output, instead of a hard cap on the total duration of the bulk git-history scan · default: `60000` (changed)
 
 ## [1.34.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.34.0...v1.34.1) (2026-07-04)
 
