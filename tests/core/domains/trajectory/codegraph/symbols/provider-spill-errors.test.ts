@@ -44,6 +44,7 @@ import {
  */
 interface ThrowFlags {
   upsertFile?: Error;
+  upsertFilesBulk?: Error;
   checkpoint?: Error;
   streamAdjacency?: Error;
   replaceCycles?: Error;
@@ -61,6 +62,9 @@ function makeStubGraphDb(flags: ThrowFlags = {}): GraphDbClient {
     },
     upsertFile: async (_meta: { relPath: string; language: string }, _edges: GraphEdges) => {
       if (flags.upsertFile) throw flags.upsertFile;
+    },
+    upsertFilesBulk: async (_entries: { node: { relPath: string; language: string }; edges: GraphEdges }[]) => {
+      if (flags.upsertFilesBulk) throw flags.upsertFilesBulk;
     },
     checkpoint: async () => {
       if (flags.checkpoint) throw flags.checkpoint;
@@ -127,8 +131,8 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("wraps graphDb.upsertFile failure as CodegraphResolveError with file context", async () => {
-    const graphDb = makeStubGraphDb({ upsertFile: new Error("duckdb constraint X failed") });
+  it("wraps graphDb.upsertFilesBulk failure as CodegraphResolveError with file context", async () => {
+    const graphDb = makeStubGraphDb({ upsertFilesBulk: new Error("duckdb constraint X failed") });
     const provider = makeProvider(graphDb);
     const sink = provider.asExtractionSink();
     await sink.write({
@@ -141,8 +145,8 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
     await expect(sink.finish()).rejects.toBeInstanceOf(CodegraphResolveError);
   });
 
-  it("wraps the cause for upsertFile failure with file index + relPath in message", async () => {
-    const graphDb = makeStubGraphDb({ upsertFile: new Error("write conflict") });
+  it("wraps the cause for upsertFilesBulk failure with batch context (last relPath) in message", async () => {
+    const graphDb = makeStubGraphDb({ upsertFilesBulk: new Error("write conflict") });
     const provider = makeProvider(graphDb);
     const sink = provider.asExtractionSink();
     await sink.write({
@@ -159,10 +163,9 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
       expect(err).toBeInstanceOf(CodegraphResolveError);
       const { cause } = err as CodegraphResolveError;
       expect(cause).toBeDefined();
-      // The wrap pattern reassigns .message on the cause to include the
-      // file index (1-based) and the relPath so operators can locate the
-      // failing row.
-      expect((cause as Error).message).toContain("graphDb.upsertFile failed");
+      // The wrap pattern reassigns .message on the cause to include the batch
+      // size + the last file's relPath so operators can locate the failing range.
+      expect((cause as Error).message).toContain("graphDb.upsertFilesBulk failed");
       expect((cause as Error).message).toContain("src/specific-file.ts");
       expect((cause as Error).message).toContain("write conflict");
     }
@@ -173,8 +176,8 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
     // `err instanceof Error ? err : new Error(String(err))` to normalise.
     // Drive that branch via a stub that rejects with a string.
     const graphDb = makeStubGraphDb();
-    // Override upsertFile to reject with a string (not an Error instance).
-    (graphDb as { upsertFile: (...args: unknown[]) => Promise<void> }).upsertFile = async () => {
+    // Override upsertFilesBulk to reject with a string (not an Error instance).
+    (graphDb as { upsertFilesBulk: (...args: unknown[]) => Promise<void> }).upsertFilesBulk = async () => {
       throw "raw string failure" as unknown as Error;
     };
     const provider = makeProvider(graphDb);

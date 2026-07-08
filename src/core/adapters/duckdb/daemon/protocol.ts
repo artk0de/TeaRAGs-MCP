@@ -1,4 +1,5 @@
 import type {
+  BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CycleScope,
   GraphEdges,
@@ -31,6 +32,7 @@ export type DaemonOp =
   | "removeSymbolsForFile"
   | "upsertSymbols"
   | "upsertSymbolsBulk"
+  | "upsertFilesBulk"
   | "updateSymbolChunkIds"
   | "replaceCycles"
   | "replacePageRanks"
@@ -49,6 +51,7 @@ export type DaemonOp =
   | "getCalleeEdges"
   | "getCalledByCount"
   | "getCallSiteCount"
+  | "getChunkSignalsBulk"
   | "hasData"
   | "getRunStats"
   | "getEdgeKindDistribution"
@@ -68,12 +71,13 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | shutdown
+    | { collection: string } // checkpoint | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | getChunkSignalsBulk | shutdown
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
     | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut
     | { collection: string; relPath: RelPath; definitions: SymbolDefinition[] } // upsertSymbols
     | { collection: string; entries: BulkSymbolUpsertEntry[] } // upsertSymbolsBulk
+    | { collection: string; entries: BulkFileUpsertEntry[] } // upsertFilesBulk
     | { collection: string; relPath: RelPath; chunkIds: [string, string][] } // updateSymbolChunkIds
     | { collection: string; relPath: RelPath; maxDepth?: number } // getTransitiveImpact
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex

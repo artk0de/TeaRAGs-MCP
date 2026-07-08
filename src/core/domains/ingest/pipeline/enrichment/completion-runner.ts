@@ -49,12 +49,26 @@ export class CompletionRunner {
     runStartedAt = "",
     runId = "",
   ): Promise<EnrichmentMetrics> {
-    const { filePhase, chunkPhase, backfiller, applier, markerStore, executor } = this.deps;
+    const { filePhase, chunkPhase, applier, markerStore, executor } = this.deps;
     const readUnenriched: UnenrichedReader = unenrichedReader ?? (async () => 0);
 
     // 1. drain prefetch (no-op) + drain streaming fileWork
     await filePhase.awaitPrefetch();
     await filePhase.drain();
+
+    // 2‖3 OVERLAP: the out-of-window file backfill (re-enrich of files the 12mo
+    // streaming window missed — the serial tail's dominant cost) depends only on
+    // the missed set, now stable after the drain above, and writes a DISJOINT
+    // payload subtree (`git.*`) to Qdrant — independent of the codegraph finalize
+    // below (DuckDB `cg_*` + `codegraph.*` Qdrant keys) and of the shared applier
+    // state (only git miss-tracks; codegraph defers, so `markBackfilled` races
+    // nothing the finalize pass touches). Kick it off HERE so its git-blame runs
+    // concurrently with the codegraph resolve/SCC/PageRank finalize, collapsing
+    // the tail from finalize+backfill to max(finalize, backfill). Awaited below,
+    // before the terminal file markers read post-backfill unenriched counts.
+    // `backfiller.runFor` is internally try/caught (never rejects), so the
+    // in-flight promise can't surface an unhandled rejection before the await.
+    const backfillPromise = this.runBackfills(coll, contexts, runStartedAt);
 
     // 2. finalize-file pass — deferred whole-repo FILE overlays (codegraph graph
     //    metrics) read back after the run sink finishes, applied by the
@@ -66,6 +80,17 @@ export class CompletionRunner {
       // apply step — equivalent to the old `if (!finalizeSignals) continue`.
       if (filePhase.hasPrefetchFailed(ctx.key)) continue;
       const root = ctx.effectiveRoot ?? "";
+      // Cross-pass end-of-file-phase flush: the MAIN-thread provider instance
+      // buffered node defs via `acceptExtraction` and flushed only complete
+      // cadence batches during embedding — its `N mod cadence` remainder is still
+      // buffered. `runFinalize` dispatches to a SEPARATE worker instance whose own
+      // buffer is empty, so flush the MAIN remainder HERE (on `ctx.provider`, the
+      // main instance) and await it BEFORE the worker resolves + upserts edges —
+      // nodes-before-edges across the instance boundary. Mirrors the cross-pass
+      // `beginExtractionRun` call in `coordinator.beginRun`. No-op off cross-pass
+      // (incremental finalize runs on this same instance and owns its own flush)
+      // and for providers without the seam (git omits it).
+      if (filePhase.crossPassEnabled) await ctx.provider.endExtractionRun?.(coll || undefined);
       // yl9tv Task 5b — thread crossPass so the codegraph worker's finalize
       // drains the main-written input spill (pass-1) before resolving (pass-2),
       // instead of relying on a streamFileBatch that no-opped. Other providers
@@ -80,16 +105,10 @@ export class CompletionRunner {
     }
     await filePhase.drain();
 
-    // 3. backfill per ctx — skips defer-providers (they have no miss-tracking;
-    //    their file overlays came from applyFinalize).
-    let backfillOccurred = false;
-    if (applier.getMissedFileChunks().size > 0) {
-      backfillOccurred = true;
-      for (const ctx of contexts.values()) {
-        if (filePhase.hasPrefetchFailed(ctx.key) || ctx.provider.defersChunkEnrichment) continue;
-        await backfiller.runFor(coll, ctx, runStartedAt);
-      }
-    }
+    // 3. await the backfill kicked off before the finalize pass (see 2‖3 above).
+    //    Must resolve before the terminal file markers below read per-provider
+    //    unenriched counts — they must reflect post-backfill state.
+    const backfillOccurred = await backfillPromise;
 
     // 4. markFileFinal per ctx — reconcile to degraded on residual file-unenriched.
     for (const ctx of contexts.values()) {
@@ -197,5 +216,27 @@ export class CompletionRunner {
 
     pipelineLog.enrichmentPhase("ALL_COMPLETE", { ...metrics });
     return metrics;
+  }
+
+  /**
+   * Backfill file+chunk signals for every non-deferring provider's missed files.
+   * Extracted so the completion sequence can OVERLAP it with the codegraph
+   * finalize pass (see `run` step 2‖3). Skips defer-providers (codegraph) — they
+   * have no miss-tracking; their overlays come from `applyFinalize`. Returns
+   * whether any missed files existed (drives the post-backfill stats re-fire).
+   * `backfiller.runFor` is internally try/caught, so this never rejects.
+   */
+  private async runBackfills(
+    coll: string,
+    contexts: ReadonlyMap<string, ProviderContext>,
+    runStartedAt: string,
+  ): Promise<boolean> {
+    const { filePhase, backfiller, applier } = this.deps;
+    if (applier.getMissedFileChunks().size === 0) return false;
+    for (const ctx of contexts.values()) {
+      if (filePhase.hasPrefetchFailed(ctx.key) || ctx.provider.defersChunkEnrichment) continue;
+      await backfiller.runFor(coll, ctx, runStartedAt);
+    }
+    return true;
   }
 }

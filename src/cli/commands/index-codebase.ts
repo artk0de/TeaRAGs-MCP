@@ -1,4 +1,5 @@
 import { fork } from "node:child_process";
+import { closeSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -29,23 +30,51 @@ export interface IndexCodebaseArgs {
 }
 
 /**
+ * Under DEBUG, open a per-run file to receive the detached worker's stderr and
+ * return its fd; otherwise return "ignore". The worker's granular per-phase
+ * `console.error` DEBUG (e.g. codegraph `CODEGRAPH_NODES_FLUSH`, edge-resolve,
+ * SCC/PageRank durations) is otherwise discarded because the foreground owns the
+ * terminal and the fork ignores the worker's stdio — leaving the enrichment
+ * finalize tail a "dark window" no per-phase split can reach. Best-effort: any
+ * IO error falls back to "ignore" so a logging hiccup never blocks indexing.
+ */
+function openWorkerDebugLog(): number | "ignore" {
+  if (process.env.DEBUG !== "true" && process.env.DEBUG !== "1") return "ignore";
+  try {
+    const logDir = join(resolveDataDir(), "logs");
+    mkdirSync(logDir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    return openSync(join(logDir, `worker-debug-${stamp}.log`), "a");
+  } catch {
+    return "ignore";
+  }
+}
+
+/**
  * Fork the same CLI binary as a detached worker that runs the actual indexing.
  * `detached` + own process group means the worker survives the foreground's exit
  * (default mode detaches once embeddings finish); `ipc` carries progress back.
- * stdio is otherwise ignored — the foreground owns the terminal and renders.
+ * stdio is otherwise ignored — the foreground owns the terminal and renders —
+ * EXCEPT under DEBUG, where the worker's stderr is redirected to a per-run
+ * `logs/worker-debug-*.log` so its per-phase timing survives (observability).
  */
 function forkWorker(
   path: string,
   options: IndexOptions,
   envOverrides: Record<string, string>,
 ): ReturnType<typeof fork> {
-  return fork(process.argv[1], ["index-codebase", "--__worker"], {
+  const stderrTarget = openWorkerDebugLog();
+  const child = fork(process.argv[1], ["index-codebase", "--__worker"], {
     detached: true,
-    stdio: ["ignore", "ignore", "ignore", "ipc"],
+    stdio: ["ignore", "ignore", stderrTarget, "ipc"],
     // Registry-resolved config seeds the worker env; ambient process.env wins so
     // explicit overrides still take precedence (gap-fill, not override).
     env: { ...envOverrides, ...process.env, TEA_RAGS_INDEX_WORKER: JSON.stringify({ path, options }) },
   });
+  // The child inherited its own dup of the log fd at fork; close the parent's
+  // copy so the detached worker is its sole owner (the file closes when it exits).
+  if (typeof stderrTarget === "number") closeSync(stderrTarget);
+  return child;
 }
 
 function resolveDataDir(): string {

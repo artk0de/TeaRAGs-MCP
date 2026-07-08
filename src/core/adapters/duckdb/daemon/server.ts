@@ -1,4 +1,5 @@
 import type {
+  BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CycleScope,
   GraphDbClient,
@@ -115,6 +116,11 @@ export class CodegraphDaemonServer {
         await graphDb.upsertSymbolsBulk(p.entries as BulkSymbolUpsertEntry[]);
         return null;
       }
+      case "upsertFilesBulk": {
+        const { graphDb } = await this.acquireForWrite(collection);
+        await graphDb.upsertFilesBulk(p.entries as BulkFileUpsertEntry[]);
+        return null;
+      }
       case "updateSymbolChunkIds": {
         const { graphDb } = await this.acquireForWrite(collection);
         // entries → Map (mirrors replacePageRanks rebuild).
@@ -191,6 +197,12 @@ export class CodegraphDaemonServer {
       case "getCallSiteCount": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getCallSiteCount(p.symbolId as SymbolId);
+      }
+      case "getChunkSignalsBulk": {
+        const { graphDb } = await this.pool.acquire(collection);
+        // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
+        const sig = await graphDb.getChunkSignalsBulk();
+        return [...sig.entries()];
       }
       case "hasData": {
         const { graphDb } = await this.pool.acquire(collection);

@@ -23,9 +23,11 @@ import picomatch from "picomatch";
 import type {
   AmbiguousCallerSite,
   AritySignature,
+  BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CalleeEdge,
   CallerEdge,
+  ChunkGraphSignals,
   CycleEntry,
   CycleScope,
   EdgeKindCount,
@@ -314,110 +316,144 @@ export class DuckDbGraphClient implements GraphDbClient {
   private async upsertFileImpl(node: GraphFileNode, edges: GraphEdges): Promise<void> {
     await this.exec("BEGIN");
     try {
-      await this.run("INSERT OR REPLACE INTO cg_symbols_files (rel_path, language) VALUES (?, ?)", [
-        node.relPath,
-        node.language,
-      ]);
-      await this.run("DELETE FROM cg_symbols_edges_file WHERE source_rel_path = ?", [node.relPath]);
-      await this.run("DELETE FROM cg_symbols_edges_method WHERE source_rel_path = ?", [node.relPath]);
-      // INSERT OR IGNORE: dedupe (source, target) — a file may
-      // re-import the same module on different lines, producing the
-      // same edge twice in one extraction batch.
-      await this.insertOrIgnoreBatched(
-        "cg_symbols_edges_file",
-        ["source_rel_path", "target_rel_path", "import_text"],
-        edges.fileEdges.map((e) => [node.relPath, e.targetRelPath, e.importText]),
-      );
-      // GraphEdges.methodEdges allows targetSymbolId=null (the
-      // resolver case where an import resolves to a file but the
-      // called member isn't in that file's exported symbol table).
-      // The cg_symbols_edges_method PK includes target_symbol_id —
-      // DuckDB enforces NOT NULL on PK columns, so we must skip
-      // null-target edges at the boundary, BEFORE batching. File-level
-      // reach is already captured by fileEdges; the method graph only
-      // carries edges with a known target symbol.
-      //
-      // INSERT OR IGNORE: same call shape may repeat — e.g.
-      // `this.cache.get(x)` invoked from multiple branches of the
-      // same method body. collectCalls walks every call_expression
-      // and emits one CallRef per occurrence; the PK
-      // (source_symbol_id, call_expression, target_symbol_id) is
-      // edge-existence semantics, not occurrence count.
-      // edge_kind/confidence (bd 2jet) default to exact/1.0 when the
-      // resolver did not mark the edge as CHA fan-out. INSERT OR IGNORE
-      // keeps the first edge's provenance when the same (source, call,
-      // target) tuple repeats — edge-existence semantics, not occurrence.
-      await this.insertOrIgnoreBatched(
-        "cg_symbols_edges_method",
-        [
-          "source_symbol_id",
-          "source_rel_path",
-          "target_symbol_id",
-          "target_rel_path",
-          "call_expression",
-          "edge_kind",
-          "confidence",
-        ],
-        edges.methodEdges
-          .filter((e) => e.targetSymbolId !== null)
-          .map((e) => [
-            e.sourceSymbolId,
-            node.relPath,
-            e.targetSymbolId,
-            e.targetRelPath,
-            e.callExpression,
-            e.edgeKind ?? "exact",
-            e.confidence ?? 1.0,
-          ]),
-      );
-      // Inheritance edges (bd tea-rags-mcp-f10y). Per-source-file delete+insert,
-      // same lifecycle as the edge tables: re-walking a file replaces its rows.
-      // INSERT OR IGNORE dedupes a (source, ancestor, kind) declared twice in
-      // one extraction (e.g. duplicate include).
-      await this.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [node.relPath]);
-      await this.insertOrIgnoreBatched(
-        "cg_symbols_inheritance",
-        [
-          "source_fq_name",
-          "source_rel_path",
-          "source_symbol_id",
-          "ancestor_fq_name",
-          "ancestor_symbol_id",
-          "kind",
-          "ordinal",
-        ],
-        (edges.inheritance ?? []).map((e) => [
-          e.sourceFqName,
-          node.relPath,
-          e.sourceSymbolId,
-          e.ancestorFqName,
-          e.ancestorSymbolId,
-          e.kind,
-          e.ordinal,
-        ]),
-      );
-      // Ambiguous fan-out aggregates (bd tea-rags-mcp-f2jsb / j0pki). Same
-      // per-source-file DELETE+INSERT lifecycle as the edge tables: re-walking
-      // a file replaces its rows (a fan-out resolved away must not survive).
-      // INSERT OR IGNORE dedupes a repeated (source, call_expression) shape —
-      // aggregate-existence semantics, not occurrence count.
-      await this.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [node.relPath]);
-      await this.insertOrIgnoreBatched(
-        "cg_ambiguous_fanout",
-        ["source_symbol_id", "source_rel_path", "call_expression", "member", "candidate_count"],
-        (edges.ambiguousFanouts ?? []).map((a) => [
-          a.sourceSymbolId,
-          node.relPath,
-          a.callExpression,
-          a.member,
-          a.candidateCount,
-        ]),
-      );
+      await this.upsertFileRows(node, edges);
       await this.exec("COMMIT");
     } catch (err) {
       await this.exec("ROLLBACK");
       throw err;
     }
+  }
+
+  /**
+   * Bulk variant of `upsertFile` (mirrors `upsertSymbolsBulk`): fold M files'
+   * node + edge writes into ONE `BEGIN/COMMIT` instead of M per-file
+   * transactions — and, on the daemon path, ONE IPC round-trip instead of M.
+   * Each file keeps its own per-`source_rel_path` DELETE+INSERT (last-wins) via
+   * the shared `upsertFileRows` body, so the persisted edge / inheritance /
+   * ambiguous-fanout set is byte-identical to calling `upsertFile` per file —
+   * only the transaction + round-trip count drops. Any row failure rolls the
+   * whole batch back (callers cap batch size + skip pathological files upstream).
+   */
+  async upsertFilesBulk(entries: readonly BulkFileUpsertEntry[]): Promise<void> {
+    if (entries.length === 0) return;
+    return this.serialize(async () => {
+      await this.exec("BEGIN");
+      try {
+        for (const { node, edges } of entries) await this.upsertFileRows(node, edges);
+        await this.exec("COMMIT");
+      } catch (err) {
+        await this.exec("ROLLBACK");
+        throw err;
+      }
+    });
+  }
+
+  /**
+   * The per-file node + edge + inheritance + ambiguous-fanout write body — the
+   * DELETE+INSERT lifecycle scoped by `source_rel_path`, WITHOUT the surrounding
+   * transaction. Shared by `upsertFileImpl` (one BEGIN/COMMIT per file) and
+   * `upsertFilesBulk` (one BEGIN/COMMIT per M files) so both persist identical rows.
+   */
+  private async upsertFileRows(node: GraphFileNode, edges: GraphEdges): Promise<void> {
+    await this.run("INSERT OR REPLACE INTO cg_symbols_files (rel_path, language) VALUES (?, ?)", [
+      node.relPath,
+      node.language,
+    ]);
+    await this.run("DELETE FROM cg_symbols_edges_file WHERE source_rel_path = ?", [node.relPath]);
+    await this.run("DELETE FROM cg_symbols_edges_method WHERE source_rel_path = ?", [node.relPath]);
+    // INSERT OR IGNORE: dedupe (source, target) — a file may
+    // re-import the same module on different lines, producing the
+    // same edge twice in one extraction batch.
+    await this.insertOrIgnoreBatched(
+      "cg_symbols_edges_file",
+      ["source_rel_path", "target_rel_path", "import_text"],
+      edges.fileEdges.map((e) => [node.relPath, e.targetRelPath, e.importText]),
+    );
+    // GraphEdges.methodEdges allows targetSymbolId=null (the
+    // resolver case where an import resolves to a file but the
+    // called member isn't in that file's exported symbol table).
+    // The cg_symbols_edges_method PK includes target_symbol_id —
+    // DuckDB enforces NOT NULL on PK columns, so we must skip
+    // null-target edges at the boundary, BEFORE batching. File-level
+    // reach is already captured by fileEdges; the method graph only
+    // carries edges with a known target symbol.
+    //
+    // INSERT OR IGNORE: same call shape may repeat — e.g.
+    // `this.cache.get(x)` invoked from multiple branches of the
+    // same method body. collectCalls walks every call_expression
+    // and emits one CallRef per occurrence; the PK
+    // (source_symbol_id, call_expression, target_symbol_id) is
+    // edge-existence semantics, not occurrence count.
+    // edge_kind/confidence (bd 2jet) default to exact/1.0 when the
+    // resolver did not mark the edge as CHA fan-out. INSERT OR IGNORE
+    // keeps the first edge's provenance when the same (source, call,
+    // target) tuple repeats — edge-existence semantics, not occurrence.
+    await this.insertOrIgnoreBatched(
+      "cg_symbols_edges_method",
+      [
+        "source_symbol_id",
+        "source_rel_path",
+        "target_symbol_id",
+        "target_rel_path",
+        "call_expression",
+        "edge_kind",
+        "confidence",
+      ],
+      edges.methodEdges
+        .filter((e) => e.targetSymbolId !== null)
+        .map((e) => [
+          e.sourceSymbolId,
+          node.relPath,
+          e.targetSymbolId,
+          e.targetRelPath,
+          e.callExpression,
+          e.edgeKind ?? "exact",
+          e.confidence ?? 1.0,
+        ]),
+    );
+    // Inheritance edges (bd tea-rags-mcp-f10y). Per-source-file delete+insert,
+    // same lifecycle as the edge tables: re-walking a file replaces its rows.
+    // INSERT OR IGNORE dedupes a (source, ancestor, kind) declared twice in
+    // one extraction (e.g. duplicate include).
+    await this.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [node.relPath]);
+    await this.insertOrIgnoreBatched(
+      "cg_symbols_inheritance",
+      [
+        "source_fq_name",
+        "source_rel_path",
+        "source_symbol_id",
+        "ancestor_fq_name",
+        "ancestor_symbol_id",
+        "kind",
+        "ordinal",
+      ],
+      (edges.inheritance ?? []).map((e) => [
+        e.sourceFqName,
+        node.relPath,
+        e.sourceSymbolId,
+        e.ancestorFqName,
+        e.ancestorSymbolId,
+        e.kind,
+        e.ordinal,
+      ]),
+    );
+    // Ambiguous fan-out aggregates (bd tea-rags-mcp-f2jsb / j0pki). Same
+    // per-source-file DELETE+INSERT lifecycle as the edge tables: re-walking
+    // a file replaces its rows (a fan-out resolved away must not survive).
+    // INSERT OR IGNORE dedupes a repeated (source, call_expression) shape —
+    // aggregate-existence semantics, not occurrence count.
+    await this.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [node.relPath]);
+    await this.insertOrIgnoreBatched(
+      "cg_ambiguous_fanout",
+      ["source_symbol_id", "source_rel_path", "call_expression", "member", "candidate_count"],
+      (edges.ambiguousFanouts ?? []).map((a) => [
+        a.sourceSymbolId,
+        node.relPath,
+        a.callExpression,
+        a.member,
+        a.candidateCount,
+      ]),
+    );
   }
 
   /**
@@ -1170,6 +1206,41 @@ export class DuckDbGraphClient implements GraphDbClient {
       [symbolId],
     );
     return roundEdgeWeightSum(Number(rows[0]?.n ?? 0));
+  }
+
+  /**
+   * Set-based read-back of `{ fanIn, fanOut, pageRank }` for every symbol in the
+   * graph — the batched replacement for looping `getCalledByCount` +
+   * `getCallSiteCount` + `getPageRank` per chunk (`buildChunkSignals`). Three
+   * whole-table GROUP-BY / scan queries (no `IN (…)` list → no param-limit
+   * chunking) instead of `3 × chunkCount` point queries. Each value is computed
+   * identically to the per-symbol getter — same `SUM(COALESCE(confidence, 1.0))`
+   * with `roundEdgeWeightSum`, same `Number()` pageRank — so a caller that reads
+   * `map.get(id) ?? { 0, 0, 0 }` gets byte-identical results.
+   */
+  async getChunkSignalsBulk(): Promise<Map<SymbolId, ChunkGraphSignals>> {
+    const out = new Map<SymbolId, ChunkGraphSignals>();
+    const entryFor = (id: string): ChunkGraphSignals => {
+      let e = out.get(id);
+      if (!e) {
+        e = { fanIn: 0, fanOut: 0, pageRank: 0 };
+        out.set(id, e);
+      }
+      return e;
+    };
+    const fanInRows = await this.queryAll<{ id: string; n: number | null }>(
+      "SELECT target_symbol_id AS id, SUM(COALESCE(confidence, 1.0)) AS n FROM cg_symbols_edges_method GROUP BY target_symbol_id",
+    );
+    for (const r of fanInRows) entryFor(r.id).fanIn = roundEdgeWeightSum(Number(r.n ?? 0));
+    const fanOutRows = await this.queryAll<{ id: string; n: number | null }>(
+      "SELECT source_symbol_id AS id, SUM(COALESCE(confidence, 1.0)) AS n FROM cg_symbols_edges_method GROUP BY source_symbol_id",
+    );
+    for (const r of fanOutRows) entryFor(r.id).fanOut = roundEdgeWeightSum(Number(r.n ?? 0));
+    const pageRankRows = await this.queryAll<{ id: string; page_rank: number | bigint | string }>(
+      "SELECT symbol_id AS id, page_rank FROM cg_symbols_metrics",
+    );
+    for (const r of pageRankRows) entryFor(r.id).pageRank = Number(r.page_rank);
+    return out;
   }
 
   async hasData(): Promise<boolean> {

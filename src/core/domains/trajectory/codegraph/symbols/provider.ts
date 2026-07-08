@@ -51,6 +51,7 @@ import TsLang from "tree-sitter-typescript";
 
 import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
+  BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CallContext,
   DispatchTableDef,
@@ -100,6 +101,8 @@ import {
 } from "../../errors.js";
 import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
+import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
+import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 import {
   buildSelfDispatchProbe,
   collectSelfInstantiatingClassMethods,
@@ -108,8 +111,6 @@ import {
   foldSelfDispatchTemplates,
   type SelfDispatchMethod,
 } from "./self-dispatch-discovery.js";
-import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
-import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 
 /**
  * Layered ignore for `discoverSupportedFiles` (tea-rags-mcp-tf1o, hh4m):
@@ -538,6 +539,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * so prepended modules' methods shadow the class's own.
    */
   private runPrependedAncestors: Record<string, readonly string[]> = {};
+  /**
+   * Reverse include-by index (`buildIncludedBy`) computed ONCE from the frozen
+   * run-global ancestor + prepended maps at the pass-1→pass-2 barrier, instead of
+   * rebuilding the same inversion per file inside `resolveExtraction`
+   * (24583× on taxdome — pure waste, `buildIncludedBy` has an inner O(n²) scan).
+   * Pass-2 reads it only when BOTH resolver ancestor inputs ARE the run-global
+   * maps; the per-file fallback (single-file / test mode) still computes fresh.
+   */
+  private runIncludedBy: Record<string, string[]> = {};
   /**
    * Per-run aggregation of `FileExtraction.classExtends`
    * (bd tea-rags-mcp-d29r). Single-inheritance parent map merged across
@@ -1011,6 +1021,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // in-memory view ONCE here; pass-2 `resolveExtraction` threads it into
         // each resolve `CallContext.hierarchy` for CHA cone devirtualization.
         this.hierarchyView = new MapHierarchyView(buildHierarchySnapshot(this.runInheritanceRows));
+        // Reverse include-by index (bd cai0/2oky5 Task 4) — build ONCE here from
+        // the now-frozen run-global ancestor maps. Pass-2 `resolveExtraction`
+        // reads this directly instead of rebuilding the identical inversion per
+        // file (the maps no longer change after pass-1).
+        this.runIncludedBy = buildIncludedBy(this.runAncestors, this.runPrependedAncestors);
         // Discover self-dispatch templates (DEFECT 2) now pass-1 is complete: the
         // symbol table holds every def and the hierarchy view every wiring edge,
         // so the abstract-hook + related-concrete-definer predicate is exact. The
@@ -1074,9 +1089,33 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // for the entire project. Cap chosen by inspection of the ugnest
     // failure (file with 96k method edges OOM'd at 1.8GB).
     const MAX_EDGES_PER_FILE = 10000;
+    // Files folded into one bulk upsert transaction (and, on the daemon, one IPC
+    // round-trip) instead of one BEGIN/COMMIT + round-trip per file.
+    const BULK_FILES = 256;
     let processed = 0;
     let lastRelPath: string | null = null;
     let reader: ReturnType<typeof createInterface> | null = null;
+    let buffer: BulkFileUpsertEntry[] = [];
+    // Flush the buffered files as ONE transaction. The per-file MAX_EDGES skip
+    // above already dropped pathological files, so no single row can abort a batch.
+    const flushBuffer = async (): Promise<void> => {
+      if (buffer.length === 0) return;
+      const pending = buffer;
+      buffer = [];
+      try {
+        await graphDb.upsertFilesBulk(pending);
+      } catch (err) {
+        // Batch-level failure (was per-file): surface batch size + last file so
+        // the marker / stderr still points near where pass-2 tripped.
+        const wrapped = err instanceof Error ? err : new Error(String(err));
+        throw new CodegraphResolveError(
+          processed,
+          Object.assign(wrapped, {
+            message: `graphDb.upsertFilesBulk failed near file #${processed} (batch=${pending.length}, last=${pending[pending.length - 1]?.node.relPath}): ${wrapped.message}`,
+          }),
+        );
+      }
+    };
     try {
       reader = createInterface({
         input: createReadStream(spillPath, { encoding: "utf8" }),
@@ -1125,19 +1164,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           processed += 1;
           continue;
         }
-        try {
-          await graphDb.upsertFile({ relPath: extraction.relPath, language: extraction.language }, edges);
-        } catch (err) {
-          // Per-file upsert throw — DuckDB constraint / connection /
-          // type error. Same wrap pattern as above.
-          const wrapped = err instanceof Error ? err : new Error(String(err));
-          throw new CodegraphResolveError(
-            processed,
-            Object.assign(wrapped, {
-              message: `graphDb.upsertFile failed at file #${processed + 1} (${lastRelPath}, edges=${edges.fileEdges.length}+${edges.methodEdges.length}): ${wrapped.message}`,
-            }),
-          );
-        }
+        // Buffer for the next bulk flush (fired at BULK_FILES / checkpoint / end)
+        // instead of one transaction per file.
+        buffer.push({ node: { relPath: extraction.relPath, language: extraction.language }, edges });
         this.runStats.fileEdgeCount += edges.fileEdges.length;
         this.runStats.methodEdgeCount += edges.methodEdges.length;
         processed += 1;
@@ -1152,7 +1181,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             });
           }
         }
+        if (buffer.length >= BULK_FILES) await flushBuffer();
         if (processed % CHECKPOINT_EVERY === 0) {
+          // Flush the buffered files before the checkpoint so the bounded WAL
+          // reflects the whole processed window.
+          await flushBuffer();
           try {
             await graphDb.checkpoint();
           } catch (err) {
@@ -1160,6 +1193,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           }
         }
       }
+      // Flush the sub-batch remainder, then a final checkpoint for any files
+      // written since the last one.
+      await flushBuffer();
       if (processed > 0 && processed % CHECKPOINT_EVERY !== 0) {
         try {
           await graphDb.checkpoint();
@@ -1791,6 +1827,25 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   };
 
   /**
+   * Cross-pass end-of-file-phase seam — mirror of `beginExtractionRun`, awaited.
+   * The cross-pass file phase feeds `acceptExtraction` on THIS (main-thread)
+   * instance, which buffers each file's durable symbol defs and flushes only
+   * COMPLETE `nodeFlushFiles` batches during embedding overlap. The trailing
+   * `N mod nodeFlushFiles` files sit unflushed in `nodeDefBuffer`. finalize runs
+   * on a SEPARATE worker instance whose own buffer is empty, so its
+   * `flushNodeRemainder` never reaches this remainder. Flush it here — before the
+   * coordinator dispatches the worker's `finalizeSignals` (pass-2 edge resolve) —
+   * so `cg_symbols` is fully durable before any edge references it
+   * (nodes-before-edges across the main↔worker instance boundary). Also awaits the
+   * whole eager-flush chain and rethrows a latched flush error, aborting the run
+   * before pass-2. No-op for non-cross-pass runs (buffer empty — the incremental
+   * finalize on this same instance already owns the flush via `sink.finish`).
+   */
+  endExtractionRun = async (collectionName?: string): Promise<void> => {
+    await this.flushNodeRemainder(this.collectionKey(collectionName), collectionName);
+  };
+
+  /**
    * Deterministic cross-pass INPUT-spill path for a collection. Pool mode uses
    * `GraphDbClientPool.inputSpillPathFor` (a `.xpass` dir the pool never purges,
    * so the worker's mid-run pool construction can't wipe it); direct mode (tests,
@@ -1949,6 +2004,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runGemfileContent = undefined;
     this.runGemfileLoaded = false;
     this.runPrependedAncestors = {};
+    this.runIncludedBy = {};
     this.runExtends = {};
     this.runReturnTypes = {};
     this.runInstantiatedTypes.clear();
@@ -2155,6 +2211,19 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     options?: ChunkSignalOptions,
   ): Promise<Map<string, Map<string, ChunkSignalOverlay>>> {
     const { graphDb } = await this.getStore(options?.collectionName);
+    // Batched read-back (replaces the former per-chunk getCalledByCount +
+    // getCallSiteCount + getPageRank N+1 — 3 serial IPC+SQL round-trips per
+    // chunk over the daemon socket): one set-based fetch of every symbol's
+    // {fanIn, fanOut, pageRank}, then an in-memory lookup per chunk. Values are
+    // identical to the point getters (a symbol absent from the map is {0,0,0}).
+    const bulkStartMs = isDebug() ? Date.now() : 0;
+    const chunkSignals = await graphDb.getChunkSignalsBulk();
+    if (isDebug()) {
+      console.error("[GitEnrich] PHASE: CODEGRAPH_CHUNK_SIGNALS_READ", {
+        symbols: chunkSignals.size,
+        durationMs: Date.now() - bulkStartMs,
+      });
+    }
     const out = new Map<string, Map<string, ChunkSignalOverlay>>();
     for (const [relPath, entries] of chunkMap) {
       const perChunk = new Map<string, ChunkSignalOverlay>();
@@ -2166,24 +2235,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // chunks from before codegraph wiring, or non-TS files), skip.
         const symbolId = this.resolveChunkSymbolId(options?.collectionName, relPath, entry.startLine, entry.endLine);
         if (!symbolId) continue;
-        // Confidence-weighted sums (bd tea-rags-mcp-s5ato) — may be
-        // fractional when dynamic/cone fan-out edges are involved; exact
-        // edges keep integer counts.
-        const fanIn = await graphDb.getCalledByCount(symbolId);
-        const fanOut = await graphDb.getCallSiteCount(symbolId);
-        // Slice 2 / B3 — per-symbol PageRank from cg_symbols_metrics
-        // (populated by recomputePageRank at sink.finish). Returns 0
-        // when the symbol isn't in the table yet (first index pass
-        // before recompute completes, or non-TS chunks without
-        // extraction edges).
-        const pageRankValue = await graphDb.getPageRank(symbolId);
-        // Bare inner keys (tea-rags-mcp-k6xu) — written under providerKey
-        // `codegraph.symbols.chunk`, so the addressable path is
-        // `codegraph.symbols.chunk.fanIn`. See buildFileSignals for rationale.
+        // Confidence-weighted fanIn/fanOut (bd tea-rags-mcp-s5ato — fractional
+        // under dynamic/cone fan-out, integer for exact edges) + per-symbol
+        // PageRank from cg_symbols_metrics (0 when the symbol isn't in the table
+        // yet). Read from the bulk map; a missing symbol ⇒ {0,0,0}, identical to
+        // the point getters. Bare inner keys (tea-rags-mcp-k6xu) under
+        // providerKey `codegraph.symbols.chunk` → `…chunk.fanIn`.
+        const sig = chunkSignals.get(symbolId);
         perChunk.set(entry.chunkId, {
-          fanIn,
-          fanOut,
-          pageRank: pageRankValue,
+          fanIn: sig?.fanIn ?? 0,
+          fanOut: sig?.fanOut ?? 0,
+          pageRank: sig?.pageRank ?? 0,
         });
       }
       // 0rskm — store-time symbol→covering-chunk join. The walker's per-file
@@ -2232,12 +2294,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       Object.keys(this.runPrependedAncestors).length > 0
         ? this.runPrependedAncestors
         : extraction.classPrependedAncestors;
-    // Reverse include-by index (bd cai0/2oky5 Task 4): derived from the
-    // run-global ancestor maps so `resolveViaIncludingClasses` in ruby-super.ts
-    // can find which classes include a given module. No new reset site needed —
-    // it is computed fresh from `ancestorsForResolver`/`prependedAncestorsForResolver`
-    // which are already reset at every existing reset site.
-    const includedByForResolver = buildIncludedBy(ancestorsForResolver ?? {}, prependedAncestorsForResolver ?? {});
+    // Reverse include-by index (bd cai0/2oky5 Task 4): find which classes include
+    // a given module (`resolveViaIncludingClasses` in ruby-super.ts). When BOTH
+    // ancestor inputs ARE the run-global maps (production pass-2) the inversion is
+    // a run-global invariant — read the copy built ONCE at the pass-1→pass-2
+    // barrier (`this.runIncludedBy`) instead of recomputing it per file. The
+    // single-file / test fallback (per-file extraction maps) still computes fresh,
+    // so the result is byte-identical in every case.
+    const includedByForResolver =
+      ancestorsForResolver === this.runAncestors && prependedAncestorsForResolver === this.runPrependedAncestors
+        ? this.runIncludedBy
+        : buildIncludedBy(ancestorsForResolver ?? {}, prependedAncestorsForResolver ?? {});
     const extendsForResolver = Object.keys(this.runExtends).length > 0 ? this.runExtends : extraction.classExtends;
     const returnTypesForResolver =
       Object.keys(this.runReturnTypes).length > 0 ? this.runReturnTypes : extraction.functionReturnTypes;

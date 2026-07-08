@@ -730,6 +730,16 @@ export interface BulkSymbolUpsertEntry {
 }
 
 /**
+ * One file's worth of node + outgoing edges, as consumed by
+ * `GraphDbClient.upsertFilesBulk` — the batched form of `upsertFile(node, edges)`
+ * that folds many files' per-source-file DELETE+INSERT into a single transaction.
+ */
+export interface BulkFileUpsertEntry {
+  node: GraphFileNode;
+  edges: GraphEdges;
+}
+
+/**
  * Resolved location of a symbol's covering Qdrant chunk. Returned by
  * `GraphDbClient.findSymbolChunk` — null when no chunk_id has been
  * backfilled for the symbol yet.
@@ -1061,6 +1071,18 @@ export interface SymbolResolutionTarget {
  * The interface is the contract — driver-specific concerns (transaction
  * style, prepared statement caching) are implementation details.
  */
+
+/**
+ * Per-symbol graph metrics read back for chunk-level enrichment: confidence-
+ * weighted fanIn/fanOut over method edges + PageRank. The value shape of
+ * `getChunkSignalsBulk`'s map (mirrors the three per-symbol getters it batches).
+ */
+export interface ChunkGraphSignals {
+  fanIn: number;
+  fanOut: number;
+  pageRank: number;
+}
+
 export interface GraphDbClient {
   init: () => Promise<void>;
   close: () => Promise<void>;
@@ -1068,6 +1090,12 @@ export interface GraphDbClient {
   /** Atomic upsert of file row + all outgoing edges. Used by the streaming
    *  write path. */
   upsertFile: (node: GraphFileNode, edges: GraphEdges) => Promise<void>;
+
+  /** Batched `upsertFile`: fold M files' node + edge writes into ONE
+   *  transaction (and, on the daemon, one IPC round-trip). Each file keeps its
+   *  own per-`source_rel_path` DELETE+INSERT (last-wins), so the persisted rows
+   *  are identical to calling `upsertFile` per file. Empty batch is a no-op. */
+  upsertFilesBulk: (entries: readonly BulkFileUpsertEntry[]) => Promise<void>;
 
   /** Used by incremental reindex when a file is removed from disk. */
   removeFile: (relPath: RelPath) => Promise<void>;
@@ -1119,6 +1147,18 @@ export interface GraphDbClient {
    * Same fractional/rounding semantics as `getCalledByCount`.
    */
   getCallSiteCount: (symbolId: SymbolId) => Promise<number>;
+  /**
+   * Bulk read-back of `{ fanIn, fanOut, pageRank }` for EVERY symbol in the
+   * graph — the set-based replacement for the per-chunk
+   * `getCalledByCount` + `getCallSiteCount` + `getPageRank` loop in
+   * `buildChunkSignals` (the deferred-chunk tail). Three GROUP-BY / scan queries
+   * instead of `3 × chunkCount` point queries. Values are byte-identical to the
+   * per-symbol getters — same confidence-weighted `SUM(COALESCE(confidence,1.0))`
+   * with 2-decimal `roundEdgeWeightSum`, same `Number()`/0 pageRank default — and
+   * a symbol absent from the map reads as `{ 0, 0, 0 }` (matching the getters,
+   * which each return 0 on no rows).
+   */
+  getChunkSignalsBulk: () => Promise<Map<SymbolId, ChunkGraphSignals>>;
 
   // ── Class hierarchy (bd tea-rags-mcp-f10y) ──
   /** Direct ancestors of a type (forward), ordered by declaration ordinal. */

@@ -2,9 +2,11 @@ import { connect, type Socket } from "node:net";
 
 import type {
   AmbiguousCallerSite,
+  BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CalleeEdge,
   CallerEdge,
+  ChunkGraphSignals,
   CycleEntry,
   CycleScope,
   EdgeKindCount,
@@ -224,6 +226,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     await this.call("upsertSymbolsBulk", { entries });
   }
 
+  async upsertFilesBulk(entries: readonly BulkFileUpsertEntry[]): Promise<void> {
+    await this.call("upsertFilesBulk", { entries });
+  }
+
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
     await this.call("updateSymbolChunkIds", { relPath, chunkIds: [...chunkIds.entries()] });
   }
@@ -312,6 +318,13 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async getCallSiteCount(symbolId: SymbolId): Promise<number> {
     return (await this.call("getCallSiteCount", { symbolId })) as number;
+  }
+
+  async getChunkSignalsBulk(): Promise<Map<SymbolId, ChunkGraphSignals>> {
+    // Server serialises the Map as `[key, value][]` entries — rebuild here
+    // (same pattern as getCalleeEdges / listAdjacency).
+    const entries = (await this.call("getChunkSignalsBulk", {})) as [SymbolId, ChunkGraphSignals][];
+    return new Map(entries);
   }
 
   async hasData(): Promise<boolean> {

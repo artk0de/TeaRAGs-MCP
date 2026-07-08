@@ -175,6 +175,14 @@ export function buildSelfDispatchProbe(
   symbolTable: GlobalSymbolTable,
   hierarchy: HierarchyView | undefined,
 ): SelfDispatchProbe {
+  // Memoize the transitive descendant walk per enclosing type: the discovery
+  // fold calls `relatedConcreteTypes(enclosingType)` once per (method, hook), so
+  // a type is re-walked for every hook of every method sharing it — on deep/wide
+  // Rails concern hierarchies that transitive `getDescendants` dominates the
+  // barrier. The hierarchy view is immutable for the whole discovery pass, so the
+  // per-type result is stable → memoizing is behavior-preserving (same set, and
+  // the fold only `.some()`s over it, order-independent).
+  const relatedCache = new Map<string, readonly string[]>();
   return {
     definesConcretely(type, member) {
       const bare = type.split("::").pop();
@@ -185,9 +193,13 @@ export function buildSelfDispatchProbe(
     },
     relatedConcreteTypes(type) {
       if (hierarchy === undefined) return [];
-      return hierarchy
+      const cached = relatedCache.get(type);
+      if (cached !== undefined) return cached;
+      const related = hierarchy
         .getDescendants(type, { kinds: SELF_DISPATCH_CHANNELS, transitive: true })
         .map((edge) => edge.sourceFqName);
+      relatedCache.set(type, related);
+      return related;
     },
   };
 }

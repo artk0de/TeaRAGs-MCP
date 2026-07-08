@@ -492,6 +492,20 @@ export interface EnrichmentProvider {
    * omit this.
    */
   beginExtractionRun?: (collectionName?: string) => void;
+  /**
+   * Cross-pass end-of-file-phase seam — mirror of `beginExtractionRun`. Called by
+   * `CompletionRunner` on the MAIN-thread provider AFTER the file phase drains
+   * and BEFORE the WORKER's `finalizeSignals` (`runFinalize`) is dispatched, ONLY
+   * when the run is cross-pass. Flushes the MAIN instance's sub-cadence node-def
+   * remainder (the `acceptExtraction` buffer's `N mod flushCadence` tail that the
+   * eager batch threshold never reached) durably before pass-2 resolves edges —
+   * the WORKER's own remainder flush sees only its empty buffer, so without this
+   * seam the MAIN remainder is discarded by the next run's reset (dangling edges).
+   * Awaited (unlike sync `beginExtractionRun`) so nodes-before-edges holds across
+   * the MAIN↔WORKER instance boundary. Providers without an input spill (git) omit
+   * this.
+   */
+  endExtractionRun?: (collectionName?: string) => Promise<void>;
 }
 
 // Re-export for convenience
