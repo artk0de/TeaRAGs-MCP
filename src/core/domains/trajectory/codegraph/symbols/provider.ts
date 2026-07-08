@@ -539,6 +539,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runPrependedAncestors: Record<string, readonly string[]> = {};
   /**
+   * Reverse include-by index (`buildIncludedBy`) computed ONCE from the frozen
+   * run-global ancestor + prepended maps at the pass-1→pass-2 barrier, instead of
+   * rebuilding the same inversion per file inside `resolveExtraction`
+   * (24583× on taxdome — pure waste, `buildIncludedBy` has an inner O(n²) scan).
+   * Pass-2 reads it only when BOTH resolver ancestor inputs ARE the run-global
+   * maps; the per-file fallback (single-file / test mode) still computes fresh.
+   */
+  private runIncludedBy: Record<string, string[]> = {};
+  /**
    * Per-run aggregation of `FileExtraction.classExtends`
    * (bd tea-rags-mcp-d29r). Single-inheritance parent map merged across
    * pass-1 files so the resolver's `super()` branch can route to the
@@ -1011,6 +1020,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // in-memory view ONCE here; pass-2 `resolveExtraction` threads it into
         // each resolve `CallContext.hierarchy` for CHA cone devirtualization.
         this.hierarchyView = new MapHierarchyView(buildHierarchySnapshot(this.runInheritanceRows));
+        // Reverse include-by index (bd cai0/2oky5 Task 4) — build ONCE here from
+        // the now-frozen run-global ancestor maps. Pass-2 `resolveExtraction`
+        // reads this directly instead of rebuilding the identical inversion per
+        // file (the maps no longer change after pass-1).
+        this.runIncludedBy = buildIncludedBy(this.runAncestors, this.runPrependedAncestors);
         // Discover self-dispatch templates (DEFECT 2) now pass-1 is complete: the
         // symbol table holds every def and the hierarchy view every wiring edge,
         // so the abstract-hook + related-concrete-definer predicate is exact. The
@@ -1968,6 +1982,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runGemfileContent = undefined;
     this.runGemfileLoaded = false;
     this.runPrependedAncestors = {};
+    this.runIncludedBy = {};
     this.runExtends = {};
     this.runReturnTypes = {};
     this.runInstantiatedTypes.clear();
@@ -2257,12 +2272,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       Object.keys(this.runPrependedAncestors).length > 0
         ? this.runPrependedAncestors
         : extraction.classPrependedAncestors;
-    // Reverse include-by index (bd cai0/2oky5 Task 4): derived from the
-    // run-global ancestor maps so `resolveViaIncludingClasses` in ruby-super.ts
-    // can find which classes include a given module. No new reset site needed —
-    // it is computed fresh from `ancestorsForResolver`/`prependedAncestorsForResolver`
-    // which are already reset at every existing reset site.
-    const includedByForResolver = buildIncludedBy(ancestorsForResolver ?? {}, prependedAncestorsForResolver ?? {});
+    // Reverse include-by index (bd cai0/2oky5 Task 4): find which classes include
+    // a given module (`resolveViaIncludingClasses` in ruby-super.ts). When BOTH
+    // ancestor inputs ARE the run-global maps (production pass-2) the inversion is
+    // a run-global invariant — read the copy built ONCE at the pass-1→pass-2
+    // barrier (`this.runIncludedBy`) instead of recomputing it per file. The
+    // single-file / test fallback (per-file extraction maps) still computes fresh,
+    // so the result is byte-identical in every case.
+    const includedByForResolver =
+      ancestorsForResolver === this.runAncestors && prependedAncestorsForResolver === this.runPrependedAncestors
+        ? this.runIncludedBy
+        : buildIncludedBy(ancestorsForResolver ?? {}, prependedAncestorsForResolver ?? {});
     const extendsForResolver = Object.keys(this.runExtends).length > 0 ? this.runExtends : extraction.classExtends;
     const returnTypesForResolver =
       Object.keys(this.runReturnTypes).length > 0 ? this.runReturnTypes : extraction.functionReturnTypes;
