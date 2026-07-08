@@ -1,9 +1,15 @@
 name: Release
 
 on:
-  push:
-    branches:
-      - main
+  # Gate the release on CI. This workflow runs only AFTER the CI workflow
+  # completes for a push to main; the jobs below additionally require
+  # conclusion == 'success', so a red CI pipeline yields no npm publish and no
+  # GitHub release post. NOTE: workflow_run always uses the workflow file from
+  # the default branch, so this gate only takes effect once merged to main.
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: write
@@ -16,11 +22,14 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    # Skips semantic-release's own `chore(release):` version commit AND the
+    # Publish only when CI is green (conclusion == 'success'). Also skip
+    # semantic-release's own `chore(release):` version commit AND the
     # declarative-changelog bot's `chore(release): … declarative changelog`
     # follow-up (release-changelog.yml). The latter intentionally lands here so
-    # deploy-docs (if: always) redeploys the website with the declarative notes.
-    if: "!startsWith(github.event.head_commit.message, 'chore(release)')"
+    # deploy-docs redeploys the website with the declarative notes.
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'chore(release)') }}
     concurrency:
       group: release-main
       cancel-in-progress: false
@@ -75,8 +84,11 @@ jobs:
   deploy-docs:
     name: Deploy Documentation
     runs-on: ubuntu-latest
-    # Run on every push: when release runs, wait for it; when skipped, run immediately
-    if: always() && !failure() && !cancelled()
+    # Deploy docs only when CI is green. When release ran, wait for it; when the
+    # release job was skipped (a chore(release) commit), still redeploy the site.
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+      !failure() && !cancelled() }}
     needs: release
     concurrency:
       group: "pages"
