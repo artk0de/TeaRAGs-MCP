@@ -79,3 +79,83 @@ design doc under "Findings" before the epic's Wave-2 decision point.
 - No resolver/production change of any kind.
 - No new walker pass — extraction data the harness already holds.
 - No reindex.
+
+## Findings (2026-07-21)
+
+Measured on taxdome (`/Users/artk0re/Dev/Job/taxdome`, 9 297 ruby files, 226 k
+call sites) in-process via the oracle-extended harness
+(`CODEGRAPH_ORACLE=1 npx tsx scripts/taxdome-codegraph-recall-forensics.ts`,
+93 s, no qdrant/ollama/reindex). Full JSON:
+`$CLAUDE_JOB_DIR/tmp/g0-oracle-report.json`.
+
+### VTA gate — OUT
+
+| Bucket | Shape | Sites | Oracle edges (upper bound) | Currently-miss subset |
+| --- | --- | --- | --- | --- |
+| A | `coll.each { \|x\| x.m }` block-param | 4 102 | **3 164** | 967 |
+| B (total) | `coll.map(&:m)` symbol-to-proc | 1 391 | 990 | — |
+| B — G1-typable | assoc / query-interface receiver | — | 421 | — |
+| B — VTA-remainder | true VTA | — | **569** | 355 |
+| C | `obj[k].m` index receiver | 317 | **317** | 317 (all) |
+
+**Gate = A + B(remainder) + C:**
+
+- Spec-literal upper bound: `3 164 + 569 + 317 = 4 050` < 5 000 → **VTA-OUT**.
+- Honest new-recall bound: `967 + 355 + 317 = 1 639` (67 % below threshold).
+
+Even the generous upper bound (monomorphic 1-edge-per-site, homonym-inflated —
+the oracle-resolvable A/B sets are dominated by `id`, `to_s`, `name`, `present?`,
+`sti_name`, i.e. core/attr homonyms that VTA would not usefully disambiguate) is
+19 % below the gate. Both readings agree: **do NOT write G5. Close `wbj3` with
+this report.**
+
+C is dominated by core Enumerable/Hash/String members on the element
+(`join` 47, `each` 41, `as_json` 29, `first`, `scan`, `presence`, `to_s`,
+`to_h`) — the index element is usually a stdlib container, not a project model,
+so VTA cannot type it anyway. B's G1-typable half (421) is genuinely covered by
+G1 (top receiver tails: `select`, `where`, `documents`, `bills`, `clients`,
+`users`, association + query-interface names), which is why crediting it to G1
+and reporting the 569 remainder keeps the VTA number honest.
+
+### Bucket D — Concern-coverage micro-verdicts
+
+| Sub | Shape | Measured | Threshold | Verdict |
+| --- | --- | --- | --- | --- |
+| D1 | legacy `self.included(base); base.extend(ClassMethods)` | 2 hooks, 3 addressable members, **0** unresolved entries | > 500 | **negligible** — modern `ActiveSupport::Concern` only; no legacy-Concern grammar task |
+| D2 | `prepended do` hidden defs/macros | **0** blocks, 0 defs, 0 macros | > 100 | **negligible** — taxdome uses NO `prepended do`; no transparency fix needed |
+| D3 | `included do` bareCall misses | 38 blocks, **4** misses (`value`×2, `order`, `byte_size`) | feeds `vh0yh` | trivial; not a Wave-2 driver |
+
+Confirms the epic's expectation ("taxdome is modern Rails; D1/D2 ≈ small") — it
+is effectively zero. `82o24` (`class_methods do`) + include/prepend MRO channels
+have already closed the Concern surface that matters; the legacy-extend and
+`prepended do` idioms are absent from this corpus.
+
+### How the oracle works
+
+Additive, env-gated (`CODEGRAPH_ORACLE=1`) fold over the SAME materialized AST +
+global symbol table the harness already builds in PASS-1 — no re-extraction, no
+resolver change, no reindex; flag unset ⇒ byte-identical to before. One DFS per
+file enumerates candidate sites (iterator block-param calls, `&:sym` args,
+`has_many`/habtm accessor names, `included`/`prepended do` blocks, legacy
+`self.included`+`base.extend` hooks). After the normal PASS-2 populates the miss
+set, each candidate is folded against the oracle predicate
+`symbolTable.lookupByShortName(member).length > 0` ("would resolve if the
+element/receiver type were known perfectly"); bucket B is split by receiver-tail
+into G1-typable vs true-VTA-remainder, and C reads directly off the existing
+index-receiver recall holes.
+
+### Deviations from spec
+
+1. **B premise stale.** Spec says `&:sym` "never enters `callsAttempted`". Since
+   2026-06-28 (`38319fb9`, pg5ya C2) `walker.emitBlockPassEdge` emits `&:m` as a
+   receiver-null `bareCall` edge, so it IS attempted and resolves via ambiguous
+   short-name lookup — B's oracle edges are mostly ALREADY edges (precision, not
+   recall). Handled by reporting both the upper-bound and the new-recall bound;
+   the verdict is OUT under both, so the staleness does not change the decision.
+2. **C = 317, not 581.** 581 was the LIVE-index `receiverKind missWithDef`
+   (`code_27622aef_v8`, 2026-07-10). 317 is the ruby-only in-process harness
+   against the current worktree resolver (which carries other Wave-1 groups'
+   uncommitted in-flight edits). C is not the deciding term at either value.
+3. **"edges" = 1 per resolvable site** (monomorphic "known perfectly"
+   assumption). The A/B oracle-resolvable sets are homonym-heavy, so the upper
+   bound is deliberately generous — real addressable recall is below 4 050.
