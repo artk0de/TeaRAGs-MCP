@@ -66,6 +66,11 @@ L3 pathPattern = null                             (project-wide)
      - `ageDays` label is `"old"` or `"legacy"`, AND
      - `bugFixRate` label is `"healthy"`
    - If `ideal_count ≥ 2` → return top result + locality annotation. Stop.
+   - **Lone-ideal-hub**: `ideal_count == 1` AND lone ideal's
+     `payload.codegraph.symbols.file.isHub == true` → level accepted,
+     `templates[0]` = lone ideal itself (NOT top-by-score). Stop. Why: hub =
+     usage-proof (fanIn > p95), corroborates single replication. No
+     `codegraph.symbols` in payload → branch inert, normal fall-through.
 3. Apply reject filter (regardless of gate pass):
    - chunks where `bugFixRate` is `"critical"` OR (`ageDays` is `"recent"` AND
      `commitCount` is `"low"`) excluded from returned top.
