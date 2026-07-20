@@ -118,6 +118,11 @@ Verify ALL referenced identifiers:
 1. find_symbol(metaOnly=true) for every function name, type name. ripgrep for
    import paths (find_symbol doesn't cover imports).
 2. 0 results = hallucinated identifier → fix before committing.
+3. Generated class declaration modeled on template (superclass / include / mixin
+   / implements): chunk headers DON'T carry declarations — Read template file
+   head (`templates[0].path`, declaration lines only, limit ~30) + verify
+   generated declaration against real one. Wrong base class / missing include →
+   fix before committing. Sanctioned Read: declaration lives OUTSIDE chunk.
 
 ### Step 6: IMPACT
 
