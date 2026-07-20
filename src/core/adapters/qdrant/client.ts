@@ -165,7 +165,7 @@ export class QdrantManager {
    * infinite quarantine loop). The respawn itself is the caller's `tryReconnect`.
    */
   private quarantineCorruptCollectionIfDead(): void {
-    const {daemon} = this;
+    const { daemon } = this;
     if (daemon?.startupPhase() !== null) return; // only a dead daemon
     let crashLog: string;
     try {
@@ -1490,12 +1490,18 @@ export class QdrantManager {
    * Scroll points matching a filter. Returns points with IDs and full payloads.
    * No ordering — results come in Qdrant internal order.
    * Paginates automatically. Hard cap at `limit` total results to prevent runaway pagination.
+   *
+   * `payloadInclude` narrows the returned payload to the listed keys (Qdrant
+   * include-selector) — full-collection traversals (enrichment recovery) read
+   * three scalar keys per point; materializing `content` for tens of thousands
+   * of chunks would cost hundreds of MB for nothing.
    */
   async scrollFiltered(
     collectionName: string,
     filter: Record<string, unknown>,
     limit: number,
     pageSize?: number,
+    payloadInclude?: string[],
   ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
     const results: { id: string | number; payload: Record<string, unknown> }[] = [];
     const effectivePageSize = pageSize ? Math.min(pageSize, limit) : Math.min(limit, 200);
@@ -1505,7 +1511,7 @@ export class QdrantManager {
       const result = await this.call(async () =>
         this.client.scroll(collectionName, {
           limit: effectivePageSize,
-          with_payload: true,
+          with_payload: payloadInclude ? { include: payloadInclude } : true,
           with_vector: false,
           filter,
           ...(offset !== undefined ? { offset } : {}),
