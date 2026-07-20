@@ -38,19 +38,29 @@ present. Else return
 ## Recipe — three-level locality cascade
 
 ```
-L1 pathPattern = pathPatternL1                    (deepest subdomain)
-L2 pathPattern = first 2 path segments of L1      (broader domain)
-                 if L1 has ≤ 2 segments → L2 = L1, skip L2 step entirely
-L3 pathPattern = null                             (project-wide)
+L1 pathPattern = pathPatternL1                         (deepest subdomain)
+L2 pathPattern = infra prefix + first semantic segment (broader domain)
+L3 pathPattern = null                                  (project-wide)
 ```
 
-**L2 derivation example.**
+**L2 derivation.** Split L1 segments: leading run from skip-vocabulary = infra
+prefix (NOT counted, KEPT in glob); rest = semantic tail. L2 = glob cut after
+first semantic segment. Semantic tail ≤ 1 segment → L2 = L1, skip L2 step
+entirely.
 
-- L1 = `**/domains/trajectory/git/rerank/derived-signals/**` → segments
-  `[domains, trajectory, git, rerank, derived-signals]` → L2 =
+Skip-vocabulary (infra/layer prefixes): `app`, `src`, `lib`, `core`, `packages`,
+`internal`, `domains`; Rails layers: `services`, `models`, `controllers`,
+`jobs`, `workers`, `mailers`, `concerns`, `graphql`.
+
+- L1 = `**/domains/trajectory/git/rerank/derived-signals/**` → prefix
+  `[domains]`, semantic `[trajectory, git, rerank, derived-signals]` → L2 =
   `**/domains/trajectory/**`.
-- L1 = `**/chunker/hooks/**` → segments `[chunker, hooks]` → L2 = L1, skip L2,
-  jump to L3.
+- L1 = `**/app/services/crm/accounts/**` → prefix `[app, services]`, semantic
+  `[crm, accounts]` → L2 = `**/app/services/crm/**` (NOT `**/app/services/**` —
+  layer-wide L2 = degenerate L3).
+- L1 = `**/app/services/billing/**` → semantic `[billing]`, 1 segment → skip L2.
+- L1 = `**/chunker/hooks/**` → no prefix, semantic `[chunker, hooks]` → L2 =
+  `**/chunker/**`.
 
 **For each level in [L1, L2, L3]:**
 
