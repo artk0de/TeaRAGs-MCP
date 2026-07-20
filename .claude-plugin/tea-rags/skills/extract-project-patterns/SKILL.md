@@ -50,7 +50,8 @@ entirely.
 
 Skip-vocabulary (infra/layer prefixes): `app`, `src`, `lib`, `core`, `packages`,
 `internal`, `domains`; Rails layers: `services`, `models`, `controllers`,
-`jobs`, `workers`, `mailers`, `concerns`, `graphql`.
+`jobs`, `workers`, `mailers`, `concerns`, `graphql`, `serializers`,
+`presenters`, `decorators`, `operations`, `interactors`, `policies`.
 
 - L1 = `**/domains/trajectory/git/rerank/derived-signals/**` → prefix
   `[domains]`, semantic `[trajectory, git, rerank, derived-signals]` → L2 =

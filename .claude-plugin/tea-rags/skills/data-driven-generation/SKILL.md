@@ -75,10 +75,11 @@ Delegate to `tea-rags:extract-project-patterns` with:
 - `limit` = 10
 
 Read `templates[0]` as reference for Step 4 (GENERATE). Recipe owns the locality
-cascade (L1 = subdomain, L2 = first semantic segment with infra prefixes
-skipped, L3 = project) and the quality gate (commitCount low/typical + ageDays
-old/legacy + bugFixRate healthy; lone ideal on hub file also accepts; reject if
-bugFixRate critical or ageDays recent + commitCount low).
+cascade (L1 = subdomain, L2 = first semantic segment (infra prefixes kept in
+glob, not counted), L3 = project) and the quality gate (commitCount
+low/typical + ageDays old/legacy + bugFixRate healthy; lone ideal on hub file
+also accepts; reject if bugFixRate critical or ageDays recent + commitCount
+low).
 
 Read `locality` to inform Step 3 (STYLE):
 
