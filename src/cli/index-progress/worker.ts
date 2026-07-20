@@ -174,6 +174,36 @@ interface WorkerParams {
   options: IndexOptions;
 }
 
+/** Structural subset of `process` the crash guard needs — test-fakeable. */
+export interface WorkerCrashGuardProcess {
+  on: (event: "uncaughtException" | "unhandledRejection", listener: (reason: unknown) => void) => unknown;
+  exit: (code: number) => void;
+}
+
+/**
+ * Last-resort crash guard for the detached worker (tea-rags-mcp-0ej8v).
+ *
+ * Without it an uncaught throw / unhandled rejection exits code 1 with ZERO
+ * diagnostics: the fork discards worker stderr unless DEBUG opened the
+ * worker-debug log, no IPC error is sent, and the supervisor can only print
+ * "worker exited with code 1 before reporting a result" — a live
+ * codegraph-finalize crash lost its cause entirely this way. The guard sends
+ * the error over IPC (the supervisor renders it in both text and JSON modes)
+ * and echoes the stack to stderr so a DEBUG re-run captures it on disk.
+ */
+export function installWorkerCrashGuard(proc: WorkerCrashGuardProcess, send: (message: WorkerMessage) => void): void {
+  const report = (origin: "uncaughtException" | "unhandledRejection") => {
+    return (reason: unknown): void => {
+      const err = reason instanceof Error ? reason : new Error(String(reason));
+      console.error(`[tea-rags] worker ${origin}:`, err.stack ?? err.message);
+      send({ type: "error", message: `${origin}: ${err.message}`, code: "WORKER_UNCAUGHT" });
+      proc.exit(1);
+    };
+  };
+  proc.on("uncaughtException", report("uncaughtException"));
+  proc.on("unhandledRejection", report("unhandledRejection"));
+}
+
 /** Bootstrap entry executed by the forked worker process. */
 export async function main(): Promise<void> {
   const raw = process.env.TEA_RAGS_INDEX_WORKER;
@@ -211,6 +241,10 @@ export async function main(): Promise<void> {
       // Parent detached (default mode) — IPC channel closed; keep working silently.
     }
   };
+
+  // A crash anywhere past this point must surface over IPC + stderr instead of
+  // a bare silent exit 1 (tea-rags-mcp-0ej8v).
+  installWorkerCrashGuard(process, send);
 
   const { parseAppConfig } = await import("../../bootstrap/config/index.js");
   const { createAppContext } = await import("../../bootstrap/factory.js");
