@@ -8,7 +8,6 @@
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
-import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
@@ -29,7 +28,27 @@ interface UnenrichedPoint {
   endLine?: number;
 }
 
-const SCROLL_LIMIT = 10_000;
+/**
+ * Runaway backstop for the unenriched scroll — NOT a working cap. The former
+ * 10k cap silently truncated recovery on real damage: a crashed codegraph
+ * finalize left 29 461 points unenriched on taxdome, the first scroll page
+ * saturated with policy-ignored points, and repeated recovery passes healed
+ * nothing beyond page one while reporting a capped remaining count (405).
+ * Recovery must see the WHOLE unenriched set; the payload include-selector
+ * below keeps the traversal cheap (three scalar keys, no content).
+ */
+const RECOVERY_SCROLL_HARD_CAP = 1_000_000;
+
+/** Payload keys recovery actually reads — everything else stays server-side. */
+const RECOVERY_PAYLOAD_KEYS = ["relativePath", "startLine", "endLine"];
+
+/**
+ * Max unique file paths per provider dispatch. Bounds worker-side memory and
+ * IPC message size on large recoveries (a whole-repo codegraph walk), and makes
+ * healing incremental: each batch's payload writes land before the next batch
+ * runs, so a mid-recovery crash keeps the progress made so far.
+ */
+export const RECOVERY_FILE_BATCH_SIZE = 500;
 
 export interface RecoveryOptions {
   scrollPageSize?: number;
@@ -56,6 +75,10 @@ export class EnrichmentRecovery {
 
   /**
    * Re-enrich file-level signals for chunks missing `{providerKey}.file.enrichedAt`.
+   *
+   * Dispatches in bounded file batches (RECOVERY_FILE_BATCH_SIZE): one failed
+   * batch is logged and counted as remaining while the rest keep healing — a
+   * single provider hiccup must not zero out a whole-collection recovery.
    */
   async recoverFileLevel(
     collectionName: string,
@@ -71,55 +94,63 @@ export class EnrichmentRecovery {
       return { recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 };
     }
 
-    try {
-      const root = provider.resolveRoot(absolutePath);
-      const uniquePaths = [...new Set(unenriched.map((p) => p.relativePath))];
+    const root = provider.resolveRoot(absolutePath);
+    const pointsByPath = groupByRelativePath(unenriched);
+    const uniquePaths = [...pointsByPath.keys()];
 
-      // Whole-set recovery — must NOT route through streamFileBatch; the
-      // streaming extraction side-effects belong to the live file phase, not
-      // to post-hoc recovery.
-      const signals = await this.executor.runFileSignals(provider, root, uniquePaths, { collectionName });
+    let recoveredFiles = 0;
+    let recoveredChunks = 0;
+    let failedPoints = 0;
 
-      // Build ChunkItem-like objects for applyFileSignals
-      const items = unenriched.map((point) => ({
-        chunkId: String(point.id),
-        chunk: {
-          metadata: {
-            filePath: root.endsWith("/") ? `${root}${point.relativePath}` : `${root}/${point.relativePath}`,
+    for (let i = 0; i < uniquePaths.length; i += RECOVERY_FILE_BATCH_SIZE) {
+      const batchPaths = uniquePaths.slice(i, i + RECOVERY_FILE_BATCH_SIZE);
+      const batchPoints = batchPaths.flatMap((p) => pointsByPath.get(p) ?? []);
+      try {
+        // Batched recovery — must NOT route through streamFileBatch; the
+        // streaming extraction side-effects belong to the live file phase, not
+        // to post-hoc recovery.
+        const signals = await this.executor.runFileSignals(provider, root, batchPaths, { collectionName });
+
+        // Build ChunkItem-like objects for applyFileSignals
+        const items = batchPoints.map((point) => ({
+          chunkId: String(point.id),
+          chunk: {
+            metadata: {
+              filePath: root.endsWith("/") ? `${root}${point.relativePath}` : `${root}/${point.relativePath}`,
+            },
+            startLine: point.startLine ?? 0,
+            endLine: point.endLine ?? 0,
+            content: "",
           },
-          startLine: point.startLine ?? 0,
-          endLine: point.endLine ?? 0,
-          content: "",
-        },
-      }));
+        }));
 
-      await this.applier.applyFileSignals(
-        collectionName,
-        provider.key,
-        signals,
-        root,
-        items as unknown as ChunkItem[],
-        provider.fileSignalTransform,
-        enrichedAt,
-      );
+        await this.applier.applyFileSignals(
+          collectionName,
+          provider.key,
+          signals,
+          root,
+          items as unknown as ChunkItem[],
+          provider.fileSignalTransform,
+          enrichedAt,
+        );
 
-      const remaining = await this.countUnenriched(collectionName, provider, "file");
-
-      return {
-        recoveredFiles: uniquePaths.length,
-        recoveredChunks: unenriched.length,
-        remainingUnenriched: remaining,
-      };
-    } catch (error) {
-      if (isDebug()) {
-        console.error(`[EnrichmentRecovery:${provider.key}] recoverFileLevel failed:`, error);
+        recoveredFiles += batchPaths.length;
+        recoveredChunks += batchPoints.length;
+      } catch (error) {
+        failedPoints += batchPoints.length;
+        // Unconditional: a debug-gated log already cost a full debugging
+        // session on live damage — a recovery failure must always surface.
+        console.error(
+          `[EnrichmentRecovery:${provider.key}] recoverFileLevel batch failed ` +
+            `(${batchPaths.length} files, ${batchPoints.length} chunks):`,
+          error,
+        );
       }
-      return {
-        recoveredFiles: 0,
-        recoveredChunks: 0,
-        remainingUnenriched: unenriched.length,
-      };
     }
+
+    const remaining = await this.countRemaining(collectionName, provider, "file", failedPoints);
+
+    return { recoveredFiles, recoveredChunks, remainingUnenriched: remaining };
   }
 
   /**
@@ -140,57 +171,80 @@ export class EnrichmentRecovery {
       return { recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 };
     }
 
-    try {
-      const root = provider.resolveRoot(absolutePath);
+    const root = provider.resolveRoot(absolutePath);
+    const pointsByPath = groupByRelativePath(unenriched);
+    const uniquePaths = [...pointsByPath.keys()];
 
-      // Build chunkMap: Map<relativePath, ChunkLookupEntry[]>
+    let recoveredFiles = 0;
+    let recoveredChunks = 0;
+    let failedPoints = 0;
+
+    for (let i = 0; i < uniquePaths.length; i += RECOVERY_FILE_BATCH_SIZE) {
+      const batchPaths = uniquePaths.slice(i, i + RECOVERY_FILE_BATCH_SIZE);
+
+      // Build chunkMap for this batch: Map<relativePath, ChunkLookupEntry[]>
       const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
-      for (const point of unenriched) {
-        const existing = chunkMap.get(point.relativePath) ?? [];
-        existing.push({
+      const batchChunkIds = new Set<string>();
+      let batchPointCount = 0;
+      for (const relPath of batchPaths) {
+        const entries = (pointsByPath.get(relPath) ?? []).map((point) => ({
           chunkId: String(point.id),
           startLine: point.startLine ?? 0,
           endLine: point.endLine ?? 0,
-        });
-        chunkMap.set(point.relativePath, existing);
+        }));
+        chunkMap.set(relPath, entries);
+        for (const entry of entries) batchChunkIds.add(entry.chunkId);
+        batchPointCount += entries.length;
       }
 
-      const allChunkIds = new Set<string>();
-      for (const entries of chunkMap.values()) {
-        for (const entry of entries) allChunkIds.add(entry.chunkId);
+      try {
+        const chunkSignals = await this.executor.runChunkBatch(
+          provider,
+          root,
+          chunkMap as unknown as Map<string, ChunkLookupEntry[]>,
+          { collectionName },
+        );
+        const applied = await this.applier.applyChunkSignals(
+          collectionName,
+          provider.key,
+          chunkSignals,
+          enrichedAt,
+          batchChunkIds,
+        );
+
+        recoveredFiles += chunkMap.size;
+        recoveredChunks += applied;
+      } catch (error) {
+        failedPoints += batchPointCount;
+        // Unconditional — see recoverFileLevel: silent recovery failures are
+        // exactly how a 29k-point damage went unnoticed.
+        console.error(
+          `[EnrichmentRecovery:${provider.key}] recoverChunkLevel batch failed ` +
+            `(${chunkMap.size} files, ${batchPointCount} chunks):`,
+          error,
+        );
       }
-
-      const chunkSignals = await this.executor.runChunkBatch(
-        provider,
-        root,
-        chunkMap as unknown as Map<string, ChunkLookupEntry[]>,
-        { collectionName },
-      );
-      const applied = await this.applier.applyChunkSignals(
-        collectionName,
-        provider.key,
-        chunkSignals,
-        enrichedAt,
-        allChunkIds,
-      );
-
-      const remaining = await this.countUnenriched(collectionName, provider, "chunk");
-
-      return {
-        recoveredFiles: chunkMap.size,
-        recoveredChunks: applied,
-        remainingUnenriched: remaining,
-      };
-    } catch (error) {
-      if (isDebug()) {
-        console.error(`[EnrichmentRecovery:${provider.key}] recoverChunkLevel failed:`, error);
-      }
-      return {
-        recoveredFiles: 0,
-        recoveredChunks: 0,
-        remainingUnenriched: unenriched.length,
-      };
     }
+
+    const remaining = await this.countRemaining(collectionName, provider, "chunk", failedPoints);
+
+    return { recoveredFiles, recoveredChunks, remainingUnenriched: remaining };
+  }
+
+  /**
+   * Post-recovery remaining count. The live count is authoritative, but points
+   * sitting in failed batches are KNOWN un-healed — when the live count lags
+   * (or the count itself fails), the failed-batch floor keeps the marker
+   * honest instead of reporting a clean state after a broken pass.
+   */
+  private async countRemaining(
+    collectionName: string,
+    provider: EnrichmentProvider,
+    level: "file" | "chunk",
+    failedPoints: number,
+  ): Promise<number> {
+    const live = await this.countUnenriched(collectionName, provider, level).catch(() => 0);
+    return Math.max(live, failedPoints);
   }
 
   /**
@@ -289,7 +343,13 @@ export class EnrichmentRecovery {
     level: "file" | "chunk",
   ): Promise<UnenrichedPoint[]> {
     const filter = this.buildUnenrichedFilter(provider.key, level);
-    const points = await this.qdrant.scrollFiltered(collectionName, filter, SCROLL_LIMIT, this.scrollPageSize);
+    const points = await this.qdrant.scrollFiltered(
+      collectionName,
+      filter,
+      RECOVERY_SCROLL_HARD_CAP,
+      this.scrollPageSize,
+      RECOVERY_PAYLOAD_KEYS,
+    );
 
     const result: UnenrichedPoint[] = [];
     for (const point of points) {
@@ -310,4 +370,15 @@ export class EnrichmentRecovery {
     }
     return result;
   }
+}
+
+/** Group unenriched points by relativePath, preserving scroll order. */
+function groupByRelativePath(points: UnenrichedPoint[]): Map<string, UnenrichedPoint[]> {
+  const byPath = new Map<string, UnenrichedPoint[]>();
+  for (const point of points) {
+    const existing = byPath.get(point.relativePath) ?? [];
+    existing.push(point);
+    byPath.set(point.relativePath, existing);
+  }
+  return byPath;
 }

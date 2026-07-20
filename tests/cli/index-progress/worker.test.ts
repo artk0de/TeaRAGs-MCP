@@ -360,4 +360,78 @@ describe("main — bootstrap happy path", () => {
       elapsedMs: 4200,
     });
   });
+
+  it("installs the crash guard on the real process (tea-rags-mcp-0ej8v)", async () => {
+    const onSpy = vi.spyOn(process, "on");
+    try {
+      const { main } = await import("../../../src/cli/index-progress/worker.js");
+      await main();
+
+      const events = onSpy.mock.calls.map((c) => c[0]);
+      expect(events).toContain("uncaughtException");
+      expect(events).toContain("unhandledRejection");
+    } finally {
+      onSpy.mockRestore();
+    }
+  });
+});
+
+describe("installWorkerCrashGuard (tea-rags-mcp-0ej8v)", () => {
+  // The taxdome codegraph-finalize crash exited 1 with ZERO diagnostics:
+  // stderr is discarded without DEBUG and no IPC error was sent, so the
+  // supervisor could only print "worker exited with code 1 before reporting a
+  // result". The guard must turn any uncaught throw / unhandled rejection
+  // into a visible IPC error before exiting.
+  const makeProc = () => {
+    const listeners = new Map<string, (reason: unknown) => void>();
+    return {
+      on: vi.fn((event: string, listener: (reason: unknown) => void) => {
+        listeners.set(event, listener);
+      }),
+      exit: vi.fn(),
+      emit: (event: string, reason: unknown) => listeners.get(event)?.(reason),
+    };
+  };
+
+  it("sends an IPC error and exits 1 on uncaughtException", async () => {
+    const { installWorkerCrashGuard } = await import("../../../src/cli/index-progress/worker.js");
+    const proc = makeProc();
+    const send = vi.fn();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      installWorkerCrashGuard(proc as never, send);
+      proc.emit("uncaughtException", new Error("finalize boom"));
+
+      expect(send).toHaveBeenCalledWith({
+        type: "error",
+        message: expect.stringContaining("finalize boom"),
+        code: "WORKER_UNCAUGHT",
+      });
+      expect(proc.exit).toHaveBeenCalledWith(1);
+      // Stack echoed to stderr so a DEBUG run captures it in worker-debug logs.
+      expect(errSpy).toHaveBeenCalled();
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it("sends an IPC error and exits 1 on unhandledRejection with a non-Error reason", async () => {
+    const { installWorkerCrashGuard } = await import("../../../src/cli/index-progress/worker.js");
+    const proc = makeProc();
+    const send = vi.fn();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      installWorkerCrashGuard(proc as never, send);
+      proc.emit("unhandledRejection", "string reason");
+
+      expect(send).toHaveBeenCalledWith({
+        type: "error",
+        message: expect.stringContaining("string reason"),
+        code: "WORKER_UNCAUGHT",
+      });
+      expect(proc.exit).toHaveBeenCalledWith(1);
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
 });

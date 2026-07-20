@@ -357,7 +357,10 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       ctx.scanner,
       changedPaths,
       chunkSizeOverride,
-      ctx.currentFiles.length,
+      // File-progress denominator = the DELTA that will actually stream, not
+      // the full scan: currentFiles.length rendered a 4.5k-file incremental as
+      // "2458/25531 (10%)" with a whole-repo ETA (tea-rags-mcp-d0aqv).
+      changedPaths.length,
     );
     // Embed-phase poison-pill isolation (shares the read/parse quarantine store).
     pCtx.chunkPipeline.setQuarantineStore(quarantineStore);

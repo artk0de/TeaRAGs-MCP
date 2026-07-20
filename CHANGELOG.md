@@ -1,3 +1,40 @@
+## [1.35.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.34.1...v1.35.0) (2026-07-08)
+
+### 🧠 Code intelligence
+
+* Ruby call-graph navigation (get_callers/find_callers) now resolves calls dispatched through a shared abstract method invoked via self — including the common two-hop `ClassName.call -> new.call` service-object delegation pattern — instead of returning no results for these call sites.
+
+### ⚡ Indexing & performance
+
+* Incremental reindexing now updates git-derived file signals (age, churn, ownership) incrementally instead of re-scanning the full git history on every run, including on repositories with rebased or merged branch history — making incremental reindexes on large repos noticeably faster.
+* Indexing no longer stalls the whole run while computing git blame on repositories with deep file histories — blame is now computed off the main thread, with a new tunable concurrency knob for large monorepos.
+
+### 🛠 CLI & workflow
+
+* Setup now asks which git history engine to use for indexing — the standard git CLI or a faster in-process alternative (recommended automatically for very large repositories) — configurable per project via a new GIT_ADAPTER setting, and `tune` reports which engine is active.
+* `tea-rags tune --project` now saves the performance settings it measures directly into the project's configuration, so future indexing runs pick them up automatically instead of requiring the generated .env file to be copied in by hand.
+* The CLI indexing progress display now reports code-graph write progress instead of appearing to stall near the end of a run.
+
+### 🩹 Fixes
+
+* Code intelligence results (e.g. get_callers) could silently miss up to 255 files' symbols after a full reindex — the call graph now captures every file's symbols instead of dropping a batch's remainder.
+* Call-graph results for Ruby code no longer include meaningless noise entries from call chains rooted in external libraries.
+* Indexing very large repositories no longer risks running out of memory during git-history enrichment — concurrent batches previously each triggered their own full git-history scan, and a hidden concurrency floor ignored lower concurrency settings meant to bound memory use.
+* Indexing large repositories no longer fails with a false timeout while scanning git history — the timeout now resets on activity instead of capping total duration, so long-but-alive scans (including ones with a single giant commit) complete instead of being killed.
+* The embedded Qdrant daemon now self-heals when a previous interrupted reindex leaves behind a corrupted collection, instead of permanently failing to start.
+* `tea-rags tune --project` now works on projects using the embedded Qdrant daemon — previously it failed immediately, either erroring while the daemon was still starting up or misresolving the embedded connection address.
+* CLI indexing commands now wait for the embedded Qdrant daemon to finish recovering after a restart instead of failing immediately, and --json output now reports the actual error instead of exiting silently with no output.
+* A reindex run with no environment variables set now reproduces the project's last configured indexing settings instead of silently falling back to code defaults.
+* Incremental reindexing now automatically cleans up leftover data from previous interrupted full reindexes, instead of it accumulating until the next successful one.
+* Interrupting an indexing run (Ctrl-C) now fully stops its git subprocesses instead of leaving orphaned git processes running in the background.
+
+### 🔧 Environment Variables
+
+* `GIT_ADAPTER` · Selects the git history engine used for indexing: the standard git CLI or a faster in-process es-git library (auto-recommended for very large repositories) · default: `git` (new)
+* `TRAJECTORY_GIT_BLAME_POOL_SIZE` · Number of worker threads used to compute git blame off the main thread during indexing · default: `min(4, cpus - 1)` (new)
+* `TRAJECTORY_GIT_CHUNK_CONCURRENCY` · Number of concurrent git-blame operations during chunk-level enrichment; a hidden floor that kept this at a minimum of 10 was removed, so lower values are now honored · default: `10` (changed)
+* `TRAJECTORY_GIT_LOG_TIMEOUT_MS` · Now an inactivity window that resets on any output, instead of a hard cap on the total duration of the bulk git-history scan · default: `60000` (changed)
+
 ## [1.34.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.34.0...v1.34.1) (2026-07-04)
 
 ### 🩹 Fixes

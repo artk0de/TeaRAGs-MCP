@@ -729,6 +729,30 @@ console.log('This file has secrets');`,
 
       prefetchSpy.mockRestore();
     });
+
+    it("passes the DELTA size as the file-progress denominator, not the full scan (tea-rags-mcp-d0aqv)", async () => {
+      // Live symptom: a 4 574-file delta on a 25 531-file project rendered as
+      // "git file 2458/25531 (10%) ~25.3m" — the full-scan count as denominator
+      // makes an incremental run look like a whole-repo recompute and the ETA
+      // extrapolates to files that will never stream.
+      await createTestFile(codebaseDir, "one.ts", "export const a = 1;\nconsole.log('one');");
+      await createTestFile(codebaseDir, "two.ts", "export const b = 2;\nconsole.log('two');");
+      await createTestFile(codebaseDir, "three.ts", "export const c = 3;\nconsole.log('three');");
+      await ingest.indexCodebase(codebaseDir);
+
+      const prefetchSpy = vi.spyOn(EnrichmentCoordinator.prototype, "beginRun");
+
+      await createTestFile(codebaseDir, "one.ts", "export const a = 11;\nconsole.log('one changed substantially');");
+
+      await ingest.reindexChanges(codebaseDir);
+
+      expect(prefetchSpy).toHaveBeenCalledTimes(1);
+      const fileCount = prefetchSpy.mock.calls[0]?.[5];
+      // 1 modified file out of 3 on disk — the denominator is the delta.
+      expect(fileCount).toBe(1);
+
+      prefetchSpy.mockRestore();
+    });
   });
 
   describe("performDeletion fallback levels", () => {

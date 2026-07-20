@@ -4,8 +4,12 @@ import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/domains/ingest/constants.js";
 import { mapMarkerToHealth } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
-import { EnrichmentRecovery } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/recovery.js";
+import {
+  EnrichmentRecovery,
+  RECOVERY_FILE_BATCH_SIZE,
+} from "../../../../../../src/core/domains/ingest/pipeline/enrichment/recovery.js";
 import type { EnrichmentMarkerMap } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
+import { setDebug } from "../../../../../../src/core/domains/ingest/pipeline/infra/runtime.js";
 
 describe("EnrichmentRecovery", () => {
   let mockQdrant: {
@@ -118,6 +122,7 @@ describe("EnrichmentRecovery", () => {
         }),
         expect.any(Number),
         undefined,
+        expect.any(Array),
       );
 
       expect(mockProvider.buildFileSignals).toHaveBeenCalledWith("/repo", {
@@ -366,6 +371,7 @@ describe("EnrichmentRecovery", () => {
         expect.any(Object),
         expect.any(Number),
         1000,
+        expect.any(Array),
       );
     });
 
@@ -375,6 +381,118 @@ describe("EnrichmentRecovery", () => {
       // Fourth arg should be undefined (no custom pageSize)
       const call = mockQdrant.scrollFiltered.mock.calls[0];
       expect(call[3]).toBeUndefined();
+    });
+  });
+
+  describe("full-collection pagination + batched dispatch (tea-rags-mcp-xnd3j)", () => {
+    // Live taxdome damage shape: 29 461 raw points missing codegraph file
+    // signals while the legacy scroll cap surfaced only the first 10 000 to
+    // recovery. Page 1 was saturated with policy-ignored points, so repeated
+    // recovery passes healed nothing beyond it and reported a capped
+    // remainingUnenriched (405 vs 29 461). The fake honours the `limit`
+    // argument exactly like the real adapter's runaway backstop.
+    const DAMAGE = 12_000;
+    const FILES = 3_000;
+
+    beforeEach(() => {
+      // Sync return (awaitable as-is) keeps the untyped vi.fn mock free of
+      // misused-promise lint noise.
+      mockQdrant.scrollFiltered.mockImplementation((_coll: string, _filter: unknown, limit: number) => {
+        const n = Math.min(DAMAGE, limit);
+        return Array.from({ length: n }, (_, i) => ({
+          id: `chunk-${i}`,
+          payload: { relativePath: `src/f${i % FILES}.ts`, startLine: 1, endLine: 2 },
+        }));
+      });
+    });
+
+    it("recoverFileLevel heals damage past the legacy 10k scroll cap in one pass", async () => {
+      const result = await recovery.recoverFileLevel(
+        "test-collection",
+        "/repo",
+        mockProvider as any,
+        "2026-01-01T00:00:00Z",
+      );
+
+      const itemsApplied = mockApplier.applyFileSignals.mock.calls.reduce(
+        (sum: number, call: unknown[]) => sum + (call[4] as unknown[]).length,
+        0,
+      );
+      expect(itemsApplied).toBe(DAMAGE);
+      expect(result.recoveredChunks).toBe(DAMAGE);
+      expect(result.recoveredFiles).toBe(FILES);
+    });
+
+    it("dispatches buildFileSignals in bounded batches of unique paths", async () => {
+      await recovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+
+      const { calls } = mockProvider.buildFileSignals.mock;
+      expect(calls.length).toBe(Math.ceil(FILES / RECOVERY_FILE_BATCH_SIZE));
+      for (const call of calls) {
+        expect((call[1] as { paths: string[] }).paths.length).toBeLessThanOrEqual(RECOVERY_FILE_BATCH_SIZE);
+      }
+      const totalPaths = calls.reduce(
+        (sum: number, call: unknown[]) => sum + (call[1] as { paths: string[] }).paths.length,
+        0,
+      );
+      expect(totalPaths).toBe(FILES);
+    });
+
+    it("logs a failed batch even with debug off and still heals the remaining batches", async () => {
+      mockProvider.buildFileSignals.mockRejectedValueOnce(new Error("worker thread died")).mockResolvedValue(new Map());
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      setDebug(false);
+      try {
+        const result = await recovery.recoverFileLevel(
+          "test-collection",
+          "/repo",
+          mockProvider as any,
+          "2026-01-01T00:00:00Z",
+        );
+
+        expect(errSpy.mock.calls.some((c) => String(c[0]).includes("recoverFileLevel"))).toBe(true);
+        // Later batches are not aborted by the first failure…
+        expect(mockProvider.buildFileSignals.mock.calls.length).toBe(Math.ceil(FILES / RECOVERY_FILE_BATCH_SIZE));
+        expect(mockApplier.applyFileSignals).toHaveBeenCalled();
+        // …and the failed batch's points stay counted as remaining even when
+        // the live count (mocked to 0 here) lags behind reality.
+        expect(result.remainingUnenriched).toBeGreaterThan(0);
+      } finally {
+        setDebug(true);
+        errSpy.mockRestore();
+      }
+    });
+
+    it("recoverChunkLevel heals chunk damage past the legacy cap in bounded file batches", async () => {
+      mockApplier.applyChunkSignals.mockImplementation(
+        (_coll: string, _key: string, _signals: unknown, _at: string, ids: Set<string>) => ids.size,
+      );
+
+      const result = await recovery.recoverChunkLevel(
+        "test-collection",
+        "/repo",
+        mockProvider as any,
+        "2026-01-01T00:00:00Z",
+      );
+
+      expect(result.recoveredChunks).toBe(DAMAGE);
+      expect(result.recoveredFiles).toBe(FILES);
+      expect(mockProvider.buildChunkSignals.mock.calls.length).toBe(Math.ceil(FILES / RECOVERY_FILE_BATCH_SIZE));
+    });
+
+    it("countUnenriched (policy path) counts past the legacy cap", async () => {
+      (mockProvider as unknown as { shouldEnrich: () => string }).shouldEnrich = () => "full";
+
+      const count = await recovery.countUnenriched("test-collection", mockProvider as any, "file");
+
+      expect(count).toBe(DAMAGE);
+    });
+
+    it("requests only recovery-relevant payload keys from the scroll", async () => {
+      await recovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+
+      const call = mockQdrant.scrollFiltered.mock.calls[0];
+      expect(call[4]).toEqual(["relativePath", "startLine", "endLine"]);
     });
   });
 });
