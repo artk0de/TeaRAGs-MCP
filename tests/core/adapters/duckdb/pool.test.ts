@@ -176,6 +176,35 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     await pool.closeAll();
   });
 
+  it("release then acquire re-runs the init hook and yields a fresh entry (invariant 3)", async () => {
+    // Invariant 3: release() evicts the cached entry, so the NEXT acquire must
+    // re-open the collection — a fresh client AND a second init-hook pass. A
+    // cached hit would short-circuit openCollection and skip the hook, so the
+    // hook-invocation count is the observable that proves the re-open happened.
+    let initHookInvocations = 0;
+    const pool = new GraphDbClientPool({
+      rootDir: tmp,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      initHook: async () => {
+        initHookInvocations++;
+      },
+    });
+
+    const first = await pool.acquire("alpha");
+    expect(initHookInvocations).toBe(1);
+
+    expect(await pool.release("alpha")).toBe(true);
+
+    const second = await pool.acquire("alpha");
+    // Fresh client instance after the release-driven re-open.
+    expect(second.graphDb).not.toBe(first.graphDb);
+    // The init hook fired a SECOND time — proof openCollection ran again rather
+    // than returning a still-cached entry.
+    expect(initHookInvocations).toBe(2);
+
+    await pool.closeAll();
+  });
+
   it("sanitises unsafe characters in collection names", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
@@ -185,6 +214,30 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     // to escape the codegraph dir.
     const path = pool.pathFor("../etc/passwd");
     expect(path.endsWith("codegraph/.._etc_passwd.duckdb")).toBe(true);
+  });
+
+  it("sanitises control characters (not just separators) in the DB file leaf (invariant 4)", () => {
+    // Invariant 4: EVERY char outside `[a-zA-Z0-9_.-]` collapses to `_`, not
+    // just path separators. Tab / newline / null byte in the collection name
+    // must never survive into the on-disk `.duckdb` leaf. A slash-only sanitiser
+    // would pass the `../etc/passwd` case above yet leak these control chars, so
+    // this pins the full character class. Built via fromCharCode so the source
+    // stays plain ASCII (no literal control chars embedded in the test file).
+    const pool = new GraphDbClientPool({
+      rootDir: tmp,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    });
+    const tab = String.fromCharCode(9);
+    const newline = String.fromCharCode(10);
+    const nul = String.fromCharCode(0);
+
+    const path = pool.pathFor(`a/b${tab}c${newline}d${nul}e`);
+    // Separator + tab + newline + null byte all become `_`.
+    expect(path.endsWith(join("codegraph", "a_b_c_d_e.duckdb"))).toBe(true);
+    // No raw control char survives anywhere in the resolved leaf.
+    expect(path.includes(tab)).toBe(false);
+    expect(path.includes(newline)).toBe(false);
+    expect(path.includes(nul)).toBe(false);
   });
 
   it("removeCollection deletes the on-disk file and evicts the cached client", async () => {
@@ -682,6 +735,37 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     // A distinct collection still gets its own table.
     const other = await pool.acquireWrite("code_symtab_other_v1");
     expect(other.symbolTable).not.toBe(h1.symbolTable);
+
+    await pool.closeAll();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("acquireReader shares the SAME per-collection symbol table as acquireWrite (invariant 2, mixed path)", async () => {
+    // Invariant 2 (mixed path): the fresh-table regression is pinned above for
+    // acquireWrite/acquireWrite; this locks the WRITE -> READER path too. In
+    // daemon mode the facade read (acquireReader) must resolve against the SAME
+    // per-collection table the write pass populated — a fresh table here would
+    // blind method-edge resolution at finish to every symbol the writes recorded.
+    const root = mkdtempSync(join(tmpdir(), "pool-cache-rw-symtab-"));
+    const socketPath = join(root, "cg.sock");
+    await startEchoDaemon(socketPath);
+
+    const pool = new GraphDbClientPool({
+      rootDir: root,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      daemonSocketPath: socketPath,
+    });
+
+    const w = await pool.acquireWrite("code_rw_symtab_v1");
+    w.symbolTable.upsertFile("src/a.ts", [
+      { symbolId: "Foo#bar", fqName: "Foo#bar", shortName: "bar", relPath: "src/a.ts", scope: ["Foo"] },
+    ]);
+
+    const r = await pool.acquireReader("code_rw_symtab_v1");
+    // Same instance across the write/read boundary — not a fresh factory table.
+    expect(r.symbolTable).toBe(w.symbolTable);
+    // Symbols the write recorded are visible through the reader's table.
+    expect(r.symbolTable.lookupByShortName("bar")).toHaveLength(1);
 
     await pool.closeAll();
     rmSync(root, { recursive: true, force: true });
