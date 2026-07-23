@@ -35,6 +35,7 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
+import { resolvePayloadValue } from "../../../contracts/signal-utils.js";
 import type {
   CollectionSignalStats,
   PayloadSignalDescriptor,
@@ -150,7 +151,7 @@ export class StatsRecomputeService {
     const points = await scrollAllPoints(this.qdrant, collectionName);
     const values: number[] = [];
     for (const point of points) {
-      const v = readPayloadPath(point.payload, signalKey);
+      const v = resolvePayloadValue(point.payload, signalKey);
       if (typeof v === "number" && v > 0) values.push(v);
     }
     values.sort((a, b) => a - b);
@@ -247,21 +248,4 @@ function percentile(sorted: number[], p: number): number {
   const upper = Math.ceil(idx);
   if (lower === upper) return sorted[lower];
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (idx - lower);
-}
-
-/**
- * Read a value from Qdrant payload via dot-path, tolerating both flat
- * ("git.file.commitCount" key) and nested ({git: {file: {commitCount}}}) shapes.
- * Mirrors readPayloadPath in collection-stats — kept local to avoid
- * re-exporting an ingest-internal helper.
- */
-function readPayloadPath(payload: Record<string, unknown>, path: string): unknown {
-  if (path in payload) return payload[path];
-  const parts = path.split(".");
-  let current: unknown = payload;
-  for (const part of parts) {
-    if (current === null || current === undefined || typeof current !== "object") return undefined;
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
 }
