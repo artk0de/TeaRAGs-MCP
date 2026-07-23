@@ -58,3 +58,18 @@ compatible, measurement discipline makes them attributable).
 - Harness A/B target: `result.successful?` / `failed?` fan-outs collapse to
   exact edges into the Result class; ambiguous `failed?` aggregate sites drop.
   Record numbers here before merge.
+
+## Findings (2026-07-21, harness A/B)
+
+Run A' (G1+G2, self-dispatch OFF) = 18 763 distinct targets, 85.12 % —
+**identical to G1-only: G2's corpus effect on the harness metrics is ZERO.**
+Root cause (honest): the dominant taxdome service idiom is
+`class_methods do; def call; instance = new(*a); instance.call; end` — a
+METHOD-CALL tail, which the conservative shapes deliberately SILENCE; and the
+instance template's `#call` ends in the abstract `perform` dispatch, not
+`Const.new`. So the `result.successful?` fan-out is fed by entries G2's
+last-expression shapes cannot type without widening (a precision risk not
+taken). The mechanism is invariant-proven (25 tests) and correct on the
+shapes it claims; a future increment able to type the KindOfService entry
+would need template-aware return threading (class `.call` → instance `#call`
+→ Result) — noted, not filed, until reindex numbers justify it.
