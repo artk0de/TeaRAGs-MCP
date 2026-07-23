@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
+import {
+  EnrichmentApplier,
+  type EnrichmentApplyEvent,
+} from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 
 describe("EnrichmentApplier", () => {
   let mockQdrant: any;
@@ -213,6 +216,52 @@ describe("EnrichmentApplier", () => {
       expect(ops).toHaveLength(2);
       expect(ops[0].points).toEqual(["c1"]);
       expect(ops[1].points).toEqual(["c2"]);
+    });
+
+    it("records a genuine miss in missedPathSamples, capping the sample at 10", async () => {
+      // 12 distinct source files, none with an overlay and none ignored → all
+      // genuine misses. missedFiles counts every one, but missedPathSamples is a
+      // bounded debug sample capped at MISSED_PATH_SAMPLE_LIMIT (10): the first
+      // paths land in the sample, the overflow is counted but not sampled.
+      const items = Array.from({ length: 12 }, (_, i) => ({
+        chunkId: `c${i}`,
+        chunk: { metadata: { filePath: `/repo/src/f${i}.ts` }, startLine: 1, endLine: 10 },
+      })) as any[];
+
+      await applier.applyFileSignals("test-collection", "git", new Map(), "/repo", items);
+
+      expect(applier.missedFiles).toBe(12);
+      // The first missed path is captured in the bounded sample...
+      expect(applier.missedPathSamples).toContain("src/f0.ts");
+      // ...but the sample never grows past the cap of 10.
+      expect(applier.missedPathSamples).toHaveLength(10);
+    });
+
+    it("splits a >100-op file-apply into batches of at most BATCH_SIZE (100), all applied", async () => {
+      // One MATCHED file with 101 chunks → 101 file-level ops → two Qdrant writes:
+      // a full 100 then the remaining 1. Guards the applyFileSignals batch-slicing
+      // loop specifically (the applyChunkSignals overflow path is pinned separately).
+      const items = Array.from({ length: 101 }, (_, i) => ({
+        chunkId: `c${i}`,
+        chunk: { metadata: { filePath: "/repo/src/big.ts" }, endLine: i + 1 },
+      })) as any[];
+
+      await applier.applyFileSignals(
+        "test-collection",
+        "git",
+        new Map([["src/big.ts", { commitCount: 7 }]]),
+        "/repo",
+        items,
+      );
+
+      expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(2);
+      expect(mockQdrant.batchSetPayload.mock.calls[0][1]).toHaveLength(100);
+      expect(mockQdrant.batchSetPayload.mock.calls[1][1]).toHaveLength(1);
+      // All 101 point-ops were written — none dropped by the split.
+      const allPoints = mockQdrant.batchSetPayload.mock.calls.flatMap((c: any[]) =>
+        (c[1] as any[]).flatMap((op) => op.points),
+      );
+      expect(allPoints).toHaveLength(101);
     });
   });
 
@@ -519,6 +568,66 @@ describe("EnrichmentApplier", () => {
 
       expect(applier.ignoredFiles).toBe(0);
       expect(applier.missedFiles).toBe(1);
+    });
+  });
+
+  describe("onApply cumulative progress events", () => {
+    it("emits file-level applied as a Set-deduped cumulative — same relPath across two batches counts once", async () => {
+      const events: EnrichmentApplyEvent[] = [];
+      applier.onApply = (e) => events.push(e);
+      const overlay = new Map([["src/a.ts", { commitCount: 3 }]]);
+
+      // Batch 1 — src/a.ts
+      await applier.applyFileSignals("test-collection", "git", overlay, "/repo", [
+        { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+      ]);
+      // Batch 2 — same relPath, different chunk
+      await applier.applyFileSignals("test-collection", "git", overlay, "/repo", [
+        { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 20 } } as any,
+      ]);
+
+      const fileApplied = events.filter((e) => e.level === "file" && e.providerKey === "git").map((e) => e.applied);
+      // One event per batch; cumulative + Set-deduped → the re-seen file stays at 1.
+      expect(fileApplied).toEqual([1, 1]);
+    });
+
+    it("emits chunk-level applied as a running sum across batches — 3 then 5", async () => {
+      const events: EnrichmentApplyEvent[] = [];
+      applier.onApply = (e) => events.push(e);
+
+      // Batch 1 — 3 chunk overlays
+      await applier.applyChunkSignals(
+        "test-collection",
+        "git",
+        new Map([
+          [
+            "src/a.ts",
+            new Map([
+              ["a1", { churn: 0.1 }],
+              ["a2", { churn: 0.2 }],
+              ["a3", { churn: 0.3 }],
+            ]),
+          ],
+        ]),
+      );
+      // Batch 2 — 2 chunk overlays
+      await applier.applyChunkSignals(
+        "test-collection",
+        "git",
+        new Map([
+          [
+            "src/b.ts",
+            new Map([
+              ["b1", { churn: 0.4 }],
+              ["b2", { churn: 0.5 }],
+            ]),
+          ],
+        ]),
+      );
+
+      const chunkApplied = events.filter((e) => e.level === "chunk" && e.providerKey === "git").map((e) => e.applied);
+      // Running sum, NOT a per-batch delta: 3, then 3 + 2 = 5.
+      expect(chunkApplied).toEqual([3, 5]);
     });
   });
 });
