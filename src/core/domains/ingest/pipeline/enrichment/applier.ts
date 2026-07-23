@@ -134,7 +134,26 @@ export class EnrichmentApplier {
     isIgnored?: (relativePath: string) => boolean,
   ): Promise<void> {
     const applyStart = Date.now();
+    const byFile = this.groupItemsByFile(items);
+    const { operations, opResidual } = this.buildFilePayloadOps(
+      byFile,
+      pathBase,
+      providerKey,
+      fileMetadata,
+      transform,
+      enrichedAt,
+      isIgnored,
+    );
+    await this.flushFileOps(collectionName, providerKey, pathBase, byFile, operations, opResidual);
+    pipelineLog.addStageTime("enrichApply", Date.now() - applyStart);
+  }
 
+  /**
+   * Group a chunk-item batch by full file path. The map key is the absolute
+   * filePath; buildFilePayloadOps later resolves it to a relPath. Moved verbatim
+   * from applyFileSignals.
+   */
+  private groupItemsByFile(items: ChunkItem[]): Map<string, ChunkItem[]> {
     // Group items by filePath
     const byFile = new Map<string, ChunkItem[]>();
     for (const item of items) {
@@ -143,7 +162,27 @@ export class EnrichmentApplier {
       existing.push(item);
       byFile.set(fp, existing);
     }
+    return byFile;
+  }
 
+  /**
+   * Per-file transform + payload-op assembly, plus matched/ignored/missed
+   * tracking. Returns the file-level operations and their parallel residual
+   * sidecar (matched (relPath, chunk) for backfill routing; null for stamp ops).
+   * Moved verbatim from applyFileSignals.
+   */
+  private buildFilePayloadOps(
+    byFile: Map<string, ChunkItem[]>,
+    pathBase: string,
+    providerKey: string,
+    fileMetadata: Map<string, FileSignalOverlay>,
+    transform: FileSignalTransform | undefined,
+    enrichedAt: string | undefined,
+    isIgnored: ((relativePath: string) => boolean) | undefined,
+  ): {
+    operations: { payload: Record<string, unknown>; points: (string | number)[]; key?: string }[];
+    opResidual: ({ relativePath: string; chunk: MissedFileChunk } | null)[];
+  } {
     const operations: {
       payload: Record<string, unknown>;
       points: (string | number)[];
@@ -217,6 +256,23 @@ export class EnrichmentApplier {
       }
     }
 
+    return { operations, opResidual };
+  }
+
+  /**
+   * BATCH_SIZE-chunked batchSetPayloadWithRetry loop, cumulative file-progress
+   * tracking, and onApply emission. A failed batch routes its matched residual
+   * into the missed-file tracker so backfill re-applies it. Moved verbatim from
+   * applyFileSignals.
+   */
+  private async flushFileOps(
+    collectionName: string,
+    providerKey: string,
+    pathBase: string,
+    byFile: Map<string, ChunkItem[]>,
+    operations: { payload: Record<string, unknown>; points: (string | number)[]; key?: string }[],
+    opResidual: ({ relativePath: string; chunk: MissedFileChunk } | null)[],
+  ): Promise<void> {
     // Track every file that was processed in this batch (including missed/ignored
     // paths that produced no overlay — they were still seen). Do this BEFORE the
     // early-return so the file count advances even for stamp-only batches.
@@ -236,7 +292,6 @@ export class EnrichmentApplier {
       if (seenNewFiles) {
         this.onApply?.({ providerKey, level: "file", applied: providerFileSet.size });
       }
-      pipelineLog.addStageTime("enrichApply", Date.now() - applyStart);
       return;
     }
 
@@ -247,7 +302,6 @@ export class EnrichmentApplier {
     }
 
     this.onApply?.({ providerKey, level: "file", applied: providerFileSet.size });
-    pipelineLog.addStageTime("enrichApply", Date.now() - applyStart);
   }
 
   /**
