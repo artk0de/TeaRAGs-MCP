@@ -187,6 +187,12 @@ describe("collection-name utilities", () => {
       const freshPath = "/unregistered/fresh/project";
       const first = resolveCollection(registry, { path: freshPath });
       const second = resolveCollection(registry, { path: freshPath });
+      // Golden literal pins the EXACT `code_` + md5(absPath)[0:8] identity,
+      // independent of resolveCollectionName. A self-referential compare
+      // (both operands routed through the same hash fn) survives a
+      // substring(0,8)->(0,7), offset, or algorithm mutation; the frozen
+      // on-the-wire name does not.
+      expect(first.collectionName).toBe("code_b6f31e23");
       expect(first.collectionName).toBe(resolveCollectionName(freshPath));
       expect(second.collectionName).toBe(first.collectionName);
     });
