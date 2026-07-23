@@ -79,3 +79,13 @@ The redirect is resolver-owned (`domains/language/ruby/resolver/` — a small
   `provider-self-dispatch-entry.test.ts`).
 - Harness A/B target: `#call` zero-caller 71/85 → < 20; instance-form
   templates gain entry-anchored edges. Record numbers here before merge.
+
+## Findings (2026-07-21, harness A/B)
+
+Run B (G1+v2+G4, self-dispatch ON, templates=45) = 20 605 distinct targets vs
+Run A (G1 only) 18 763 → +1 842 from v2+G4 combined; vs the historical v2-only
+ON baseline (20 065) → **+540**, of which G4's distinct-target share is small
+(~+47 beyond v2) — expected: G4 REDIRECTS existing template-node edges to
+concrete hooks, which the distinct-target count barely sees. G4's real metric
+(`#call` zero-callers 71/85 → target < 20) is index-level; measured at the
+Wave-2 `--force` reindex.

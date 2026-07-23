@@ -112,3 +112,12 @@ external-member suppression instead of a 173-candidate aggregate. The
 - Harness A/B targets: `firm.owner` 4 634 dynamic → exact; conf < 0.05 edges
   −60–80 %; `firm`/`user`/`client`/`firm_id` aggregates collapse; chain
   missWithDef drops materially. Record numbers here before merge.
+
+## Findings (2026-07-21, harness A/B)
+
+Run A (self-dispatch OFF ⇒ G1 isolated) vs the pre-Wave-1 baseline:
+distinct edge targets 18 270 → **18 763 (+493)**; resolveSuccessRate
+84.62 % → **85.12 %** — a net recall gain delivered WHILE suppressing the
+fan-out noise G1 primarily targets. Precision effects (conf < 0.05 edge kill,
+`firm`/`firm_id` aggregate collapse) are index-level and land with the Wave-2
+`--force` reindex measurement.
