@@ -75,9 +75,11 @@ Delegate to `tea-rags:extract-project-patterns` with:
 - `limit` = 10
 
 Read `templates[0]` as reference for Step 4 (GENERATE). Recipe owns the locality
-cascade (L1 = subdomain, L2 = first 2 segments, L3 = project) and the quality
-gate (commitCount low/typical + ageDays old/legacy + bugFixRate healthy; reject
-if bugFixRate critical or ageDays recent + commitCount low).
+cascade (L1 = subdomain, L2 = first semantic segment (infra prefixes kept in
+glob, not counted), L3 = project) and the quality gate (commitCount
+low/typical + ageDays old/legacy + bugFixRate healthy; lone ideal on hub file
+also accepts; reject if bugFixRate critical or ageDays recent + commitCount
+low).
 
 Read `locality` to inform Step 3 (STYLE):
 
@@ -117,6 +119,11 @@ Verify ALL referenced identifiers:
 1. find_symbol(metaOnly=true) for every function name, type name. ripgrep for
    import paths (find_symbol doesn't cover imports).
 2. 0 results = hallucinated identifier → fix before committing.
+3. Generated class declaration modeled on template (superclass / include / mixin
+   / implements): chunk headers DON'T carry declarations — Read template file
+   head (`templates[0].path`, declaration lines only, limit ~30) + verify
+   generated declaration against real one. Wrong base class / missing include →
+   fix before committing. Sanctioned Read: declaration lives OUTSIDE chunk.
 
 ### Step 6: IMPACT
 
