@@ -23,6 +23,7 @@
 
 import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+import { ACTIVE_RECORD_QUERY_INTERFACE } from "../dsl/rails.js";
 import { catalogueForGemfile } from "../gemfile.js";
 
 /**
@@ -234,6 +235,56 @@ function resolveChain(receiver: string, atLine: number, ctx: CallContext): RubyT
 }
 
 /**
+ * Whether `className`'s transitive ancestry (walking `ctx.classAncestors`,
+ * cycle-guarded by `seen`) reaches any class in `targets`. A local membership
+ * predicate rather than the strategies' `collectAncestorChain`: importing that
+ * would pull `strategies/shared.ts` → `walker.ts` → `type-sources/ast-inference`
+ * → back here, a module cycle that breaks this file's top-level `CONTAINER_*`
+ * const init. `className` itself counts (a call on `ApplicationRecord` directly).
+ */
+function ancestryReaches(
+  className: string,
+  targets: ReadonlySet<string>,
+  ctx: CallContext,
+  seen: Set<string> = new Set(),
+): boolean {
+  if (seen.has(className)) return false;
+  seen.add(className);
+  if (targets.has(className)) return true;
+  for (const ancestor of ctx.classAncestors?.[className] ?? []) {
+    if (ancestryReaches(ancestor, targets, ctx, seen)) return true;
+  }
+  return false;
+}
+
+/** `find_by_<attr>` / `find_by_<attr>!` — a dynamic finder (requires an attr suffix). */
+function isDynamicFinder(member: string): boolean {
+  const prefix = ACTIVE_RECORD_QUERY_INTERFACE.dynamicFinderPrefix;
+  return member.startsWith(prefix) && member.length > prefix.length;
+}
+
+/**
+ * ActiveRecord query-interface fallback (G1b): on an AR-model receiver, the
+ * Rails-defined query methods resolve WITHOUT per-model facts. Instance-returning
+ * finders/factories (`find`, `create!`, `find_by_<attr>`) yield the model;
+ * relation-returning query methods (`where`, `order`, …) yield a relation
+ * (`container(model)`). Returns `undefined` when the receiver is not an AR model
+ * or the member is not query vocabulary — the caller then falls through to
+ * `undefined` (no fabrication).
+ */
+function activeRecordQueryReturn(className: string, member: string, ctx: CallContext): RubyTypeRef | undefined {
+  if (!ancestryReaches(className, ACTIVE_RECORD_QUERY_INTERFACE.modelBaseClasses, ctx)) return undefined;
+  const catalogue = catalogueForGemfile(ctx.gemfileContent);
+  if (catalogue.instanceReturning.has(member) || isDynamicFinder(member)) {
+    return { form: "instance", name: className };
+  }
+  if (catalogue.relationReturning.has(member)) {
+    return { form: "container", element: { form: "instance", name: className } };
+  }
+  return undefined;
+}
+
+/**
  * Resolve the return type of calling `member` on a receiver of type `recv`.
  *
  * Resolution order (first non-undefined wins):
@@ -245,6 +296,8 @@ function resolveChain(receiver: string, atLine: number, ctx: CallContext): RubyT
  * 4. `ctx.functionReturnTypes?.[member]` → `{form:"instance", name}` — flat
  *    fallback (YARD @return map, already populated today). Applied LAST so the
  *    more-precise paths win when available.
+ * 5. ActiveRecord query interface (G1b) — consulted AFTER every declared fact
+ *    (a declared type beats vocabulary), gated on the AR-model check.
  *
  * Container element-returning methods unwrap to the element type (Task 1.6);
  * union forms are not threaded here (deferred, Task 1.7) — returns `undefined`.
@@ -278,7 +331,9 @@ function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): Ruby
   const flatName = ctx.functionReturnTypes?.[member];
   if (flatName !== undefined) return { form: "instance", name: flatName };
 
-  return undefined;
+  // 5. ActiveRecord query-interface vocabulary — AR-model receivers only,
+  //    consulted last so every declared fact above wins over it (G1b).
+  return activeRecordQueryReturn(recv.name, member, ctx);
 }
 
 /**

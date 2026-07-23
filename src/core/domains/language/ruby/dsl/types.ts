@@ -74,6 +74,22 @@ export type RubyDslEmits =
   | "route-action"
   | "serialized-attribute";
 
+/**
+ * How the walker's association type-source (`walker/type-sources/associations.ts`)
+ * derives the RETURN type of this Rails class-macro's synthesised accessor — the
+ * declarative half of G1a. `dsl/` (pure data) only NAMES the derivation rule; the
+ * AST interpreter reads this facet and applies it (`class_name:` literal vs
+ * inflection, container vs instance). Absent → the macro contributes no
+ * return-type fact.
+ *   - `"association-singular"`   — `belongs_to` / `has_one`: an INSTANCE of the
+ *     associated model (`class_name:` literal wins, else singularize+camelize).
+ *   - `"association-collection"` — `has_many` / `has_and_belongs_to_many`: a
+ *     relation — `container(model)` — over the associated model.
+ *   - `"scope-relation"`         — `scope`: a relation — `container(self)` — over
+ *     the ENCLOSING model (a scope returns an `ActiveRecord::Relation` of it).
+ */
+export type RubyMacroReturnShape = "association-singular" | "association-collection" | "scope-relation";
+
 export interface RubyDslEntry {
   /** Intrinsic category. Drives the chunker's class-body group (`CATEGORY_TO_GROUP`). */
   category: DslCategory;
@@ -119,6 +135,13 @@ export interface RubyDslEntry {
    * walker routes edge dispatch through this descriptor (`emitDslEdges`).
    */
   emits?: RubyDslEmits;
+  /**
+   * How the association / scope type-source derives this macro's return type
+   * (see {@link RubyMacroReturnShape}). Absent → no return-type fact emitted. The
+   * interpreter is `walker/type-sources/associations.ts`; `dsl/` only names the
+   * rule (G1a).
+   */
+  returnShape?: RubyMacroReturnShape;
 }
 
 /**

@@ -43,13 +43,31 @@ const singularAssoc = (b: string): DeclaredMethodSpec[] => [
 
 const RAILS_ENTRIES: Record<string, RubyDslEntry> = {
   // associations — synthesise the convention accessors so bare-call resolution
-  // lands on them (the model-edge synthesis stays in the walker).
-  has_many: { category: "association", emits: "model-constant-ref", declares: collectionAssoc },
-  has_one: { category: "association", emits: "model-constant-ref", declares: singularAssoc },
-  has_and_belongs_to_many: { category: "association", emits: "model-constant-ref", declares: collectionAssoc },
+  // lands on them (the model-edge synthesis stays in the walker). `returnShape`
+  // additionally types the accessor's return value (G1a): collection macros
+  // return a relation (`container(model)`), singular macros an instance.
+  has_many: {
+    category: "association",
+    emits: "model-constant-ref",
+    declares: collectionAssoc,
+    returnShape: "association-collection",
+  },
+  has_one: {
+    category: "association",
+    emits: "model-constant-ref",
+    declares: singularAssoc,
+    returnShape: "association-singular",
+  },
+  has_and_belongs_to_many: {
+    category: "association",
+    emits: "model-constant-ref",
+    declares: collectionAssoc,
+    returnShape: "association-collection",
+  },
   belongs_to: {
     category: "association",
     emits: "model-constant-ref",
+    returnShape: "association-singular",
     // singular accessors + the foreign-key reader/writer (`user_id`/`user_id=`).
     declares: (b) => [
       ...singularAssoc(b),
@@ -83,8 +101,14 @@ const RAILS_ENTRIES: Record<string, RubyDslEntry> = {
 
   // scopes — `scope :active, -> { ... }` adds a class method named by the
   // first symbol arg (the lambda is not a name; `operands: 'first-symbol'` takes
-  // only the first simple_symbol arg).
-  scope: { category: "scope", declares: (b) => [{ name: b, kind: "static" }], operands: "first-symbol" },
+  // only the first simple_symbol arg). `returnShape` types it as a relation over
+  // the enclosing model (`Post.active` → `container(Post)`).
+  scope: {
+    category: "scope",
+    declares: (b) => [{ name: b, kind: "static" }],
+    operands: "first-symbol",
+    returnShape: "scope-relation",
+  },
 
   // callbacks
   before_validation: { category: "callback", emits: "self-instance" },
@@ -203,3 +227,26 @@ export const RAILS_VOCABULARY = defineFrameworkVocabulary("rails", RAILS_ENTRIES
   // gem-gated (dsl/aasm.ts) so it moved out of this vocab (bd tea-rags-mcp-o5kwh).
   structuredMacros: new Set(["enum"]),
 });
+
+/**
+ * ActiveRecord query-interface fallback DATA consulted by the resolver's
+ * `returnTypeOf` AR-model rule (G1b). The instance-returning vs relation-returning
+ * METHOD categorisation is the framework vocabulary's `instanceReturning` /
+ * `relationReturning` sets above (reused via the composed catalogue — NOT
+ * duplicated here); this const carries only what that categorisation does not:
+ *
+ *   - `modelBaseClasses` — the AR-model gate: a receiver is an AR model iff its
+ *     transitive ancestry reaches one of these (`class Firm < ApplicationRecord`,
+ *     `class Firm < ActiveRecord::Base`). Gates the fallback so a non-model class
+ *     that happens to define `find` is never typed by the vocabulary.
+ *   - `dynamicFinderPrefix` — Rails synthesises `find_by_<attr>` /
+ *     `find_by_<attr>!` per column; they are instance-returning but not
+ *     enumerable, so a prefix rule stands in for a Set membership check.
+ */
+export const ACTIVE_RECORD_QUERY_INTERFACE: {
+  readonly modelBaseClasses: ReadonlySet<string>;
+  readonly dynamicFinderPrefix: string;
+} = {
+  modelBaseClasses: new Set(["ApplicationRecord", "ActiveRecord::Base"]),
+  dynamicFinderPrefix: "find_by_",
+};

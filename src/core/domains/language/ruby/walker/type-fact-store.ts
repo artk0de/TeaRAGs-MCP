@@ -2,8 +2,9 @@ import type { LocalBinding } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import type { RubyTypeFact } from "./type-sources/types.js";
 
-/** Default source precedence: first = strongest. */
-const DEFAULT_SOURCE_ORDER: readonly string[] = ["sorbet", "rbs", "yard", "ast"];
+/** Default source precedence: first = strongest. `associations` (Rails DSL
+ *  inflection) ranks below YARD annotations but above raw AST inference. */
+const DEFAULT_SOURCE_ORDER: readonly string[] = ["sorbet", "rbs", "yard", "associations", "ast"];
 
 /** Flatten a RubyTypeRef to the bare class name today's LocalBinding.type holds (Incr 0 parity). */
 function refToName(ref: RubyTypeRef): string | undefined {
