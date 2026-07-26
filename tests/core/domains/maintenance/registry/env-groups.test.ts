@@ -23,7 +23,7 @@ import {
   DEDICATED_FIELD_ENV_KEYS,
   REGISTRY_ENV_ALLOWLIST,
   REGISTRY_ENV_GROUPS,
-} from "../../../../src/core/infra/registry/env-groups.js";
+} from "../../../../../src/core/domains/maintenance/registry/env-groups.js";
 
 describe("REGISTRY_ENV_GROUPS", () => {
   it("mirrors the alias families of bootstrap/config/parse.ts", () => {

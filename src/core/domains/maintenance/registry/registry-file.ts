@@ -5,8 +5,8 @@ import {
   RegistryConcurrencyError,
   RegistryFileCorruptedError,
   RegistryWriteError,
-} from "../../adapters/registry/errors.js";
-import type { CollectionEntry, RegistryFileV1 } from "../../contracts/types/registry.js";
+} from "./errors.js";
+import type { CollectionEntry, RegistryFileV1 } from "../../../contracts/types/registry.js";
 
 const FILE_NAME = "registry.json";
 const CURRENT_VERSION = 1 as const;

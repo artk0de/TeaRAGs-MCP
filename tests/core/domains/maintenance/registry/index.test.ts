@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { CollectionRegistry, loadRegistryFile, saveRegistryFile } from "../../../../src/core/infra/registry/index.js";
+import { CollectionRegistry, loadRegistryFile, saveRegistryFile } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
-describe("infra/registry barrel", () => {
+describe("maintenance/registry barrel", () => {
   it("re-exports all public API surface", () => {
     expect(CollectionRegistry).toBeDefined();
     expect(typeof loadRegistryFile).toBe("function");

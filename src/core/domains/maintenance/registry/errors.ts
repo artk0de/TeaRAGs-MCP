@@ -1,28 +1,18 @@
 /**
- * Project Registry — adapter-layer errors.
+ * Project Registry errors.
  *
- * Lives under `core/adapters/registry/` because each class extends
- * `InfraError` (declared in `core/adapters/errors.ts`); keeping the file under
- * `core/infra/registry/` would force an `infra -> adapters` upward import
- * which `.claude/rules/domain-boundaries.md` forbids.
+ * These sat under `core/adapters/registry/` while the registry itself sat in
+ * `core/infra/registry/`: the classes extend `InfraError` (an adapters class),
+ * and infra may not import adapters, so the errors were parked one layer up
+ * while their throwing sites stayed below — a split the file itself documented
+ * as a KNOWN LAYERING CAVEAT.
  *
- * KNOWN LAYERING CAVEAT: `core/infra/registry/registry-file.ts` and
- * `core/infra/registry/collection-registry.ts` still need to instantiate
- * these classes (they're the throwing sites), which means those infra
- * files import from this adapter file — the same upward direction the
- * relocation was meant to avoid.
- *
- * The relocation is therefore a partial fix that makes the directory
- * layout match the inheritance chain; the systemic resolution requires
- * relocating `InfraError` itself from `core/adapters/errors.ts` down to
- * `core/infra/errors.ts` (next to its sibling `TeaRagsError`). That move
- * touches the broader codebase (`embedding-model-guard.ts`,
- * `migration/adapters/*`, `collection-name.ts` already exhibit the same
- * `infra -> adapters`/`infra -> api` pattern) and is tracked separately
- * — see audit follow-up for "InfraError base class relocation".
+ * The registry is a maintenance-domain concern, and domains may import
+ * adapters, so the split is gone: errors live next to the code that throws
+ * them. See docs/superpowers/specs/2026-07-26-infra-tidy-design.md.
  */
 
-import { InfraError } from "../errors.js";
+import { InfraError } from "../../../adapters/errors.js";
 
 /**
  * Thrown when registry.json cannot be parsed (invalid JSON, wrong version,

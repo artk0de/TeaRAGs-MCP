@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { tuneCommand } from "../../../src/cli/commands/tune.js";
-import { CollectionRegistry } from "../../../src/core/infra/registry/collection-registry.js";
+import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 vi.mock("node:child_process", () => ({
   spawn: vi.fn(),

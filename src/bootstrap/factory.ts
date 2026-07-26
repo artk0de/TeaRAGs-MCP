@@ -41,7 +41,7 @@ import { CollectionFootprintFactory } from "../core/domains/maintenance/footprin
 import { WorktreeProvisioner } from "../core/domains/maintenance/worktree/index.js";
 import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { CollectionRegistry } from "../core/infra/registry/index.js";
+import { CollectionRegistry } from "../core/domains/maintenance/registry/index.js";
 import { setDebug } from "../core/infra/runtime.js";
 import { SchemaDriftMonitor } from "../core/domains/maintenance/schema-drift-monitor.js";
 import { StatsCache } from "../core/infra/stats-cache.js";

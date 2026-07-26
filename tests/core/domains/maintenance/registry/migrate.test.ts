@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { RegistryFileCorruptedError } from "../../../../src/core/adapters/registry/errors.js";
-import { loadRegistryFile } from "../../../../src/core/infra/registry/registry-file.js";
+import { RegistryFileCorruptedError } from "../../../../../src/core/domains/maintenance/registry/errors.js";
+import { loadRegistryFile } from "../../../../../src/core/domains/maintenance/registry/registry-file.js";
 
 describe("registry migration framework (audit #10)", () => {
   let dir: string;

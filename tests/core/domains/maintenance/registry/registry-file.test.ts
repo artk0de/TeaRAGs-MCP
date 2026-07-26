@@ -8,15 +8,15 @@ import {
   RegistryConcurrencyError,
   RegistryFileCorruptedError,
   RegistryWriteError,
-} from "../../../../src/core/adapters/registry/errors.js";
+} from "../../../../../src/core/domains/maintenance/registry/errors.js";
 import {
   flushWithCAS,
   loadRegistryFile,
   mergeRegistryDelta,
   mergeRegistryEntries,
   saveRegistryFile,
-} from "../../../../src/core/infra/registry/registry-file.js";
-import type { CollectionEntry, RegistryFileV1 } from "../../../../src/core/infra/registry/types.js";
+} from "../../../../../src/core/domains/maintenance/registry/registry-file.js";
+import type { CollectionEntry, RegistryFileV1 } from "../../../../../src/core/domains/maintenance/registry/types.js";
 
 describe("registry-file", () => {
   let dir: string;

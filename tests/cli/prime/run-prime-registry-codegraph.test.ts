@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { unavailable } from "../../../src/cli/update-check/types.js";
-import { CollectionRegistry } from "../../../src/core/infra/registry/collection-registry.js";
+import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 const { pingMock, createAppContextMock, parseAppConfigMock, realExistsSyncRef } = vi.hoisted(() => ({
   pingMock: vi.fn(),

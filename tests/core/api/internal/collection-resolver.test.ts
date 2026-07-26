@@ -11,7 +11,7 @@ import {
 } from "../../../../src/core/api/errors.js";
 import { resolveCollection } from "../../../../src/core/api/internal/collection-resolver.js";
 import { resolveCollectionName } from "../../../../src/core/infra/collection-name.js";
-import { CollectionRegistry } from "../../../../src/core/infra/registry/index.js";
+import { CollectionRegistry } from "../../../../src/core/domains/maintenance/registry/index.js";
 
 describe("collection-resolver", () => {
   describe("resolveCollection (new signature)", () => {

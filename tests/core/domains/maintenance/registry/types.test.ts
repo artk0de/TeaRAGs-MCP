@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { RegistryFileCorruptedError, RegistryWriteError } from "../../../../src/core/adapters/registry/errors.js";
+import { RegistryFileCorruptedError, RegistryWriteError } from "../../../../../src/core/domains/maintenance/registry/errors.js";
 import type {
   CollectionEntry,
   ProjectInfo,
   RecordEntryInput,
   RegistryFileV1,
-} from "../../../../src/core/infra/registry/types.js";
+} from "../../../../../src/core/domains/maintenance/registry/types.js";
 
 describe("registry types", () => {
   it("CollectionEntry has every required field", () => {

@@ -4,9 +4,9 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CollectionRegistry } from "../../../../src/core/infra/registry/collection-registry.js";
-import { saveRegistryFile } from "../../../../src/core/infra/registry/registry-file.js";
-import type { CollectionEntry } from "../../../../src/core/infra/registry/types.js";
+import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
+import { saveRegistryFile } from "../../../../../src/core/domains/maintenance/registry/registry-file.js";
+import type { CollectionEntry } from "../../../../../src/core/domains/maintenance/registry/types.js";
 
 function makeEntry(over: Partial<CollectionEntry> = {}): Omit<CollectionEntry, "name"> {
   return {

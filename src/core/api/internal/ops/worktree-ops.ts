@@ -7,7 +7,7 @@ import type {
   WorktreeRemoveInput,
 } from "../../../contracts/index.js";
 import type { WorktreeProvisioner } from "../../../domains/maintenance/worktree/index.js";
-import type { CollectionEntry, CollectionRegistry } from "../../../infra/registry/index.js";
+import type { CollectionEntry, CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 
 /**
  * WorktreeOps — CLI-facing facade over the maintenance worktree domain.

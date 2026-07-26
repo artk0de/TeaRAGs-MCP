@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { WorktreeCreateInput, WorktreeCreateResult, WorktreeRemoveInput } from "../../../contracts/index.js";
 import { resolveCollectionName } from "../../../infra/collection-name.js";
-import type { CollectionRegistry } from "../../../infra/registry/index.js";
+import type { CollectionRegistry } from "../registry/index.js";
 import { WorktreeCollectionExistsError, WorktreeNotFoundError, WorktreeSourceNotFoundError } from "../errors.js";
 import type { CollectionArtifact, CollectionFootprintFactory, ResolvedCollection } from "../footprint/index.js";
 import {
