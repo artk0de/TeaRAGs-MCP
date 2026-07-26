@@ -8,7 +8,7 @@
  */
 
 import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
-import { isBugFixCommit, MERGE_SUBJECT } from "../metrics.js";
+import { isBugFixCommit, MERGE_SUBJECT } from "../utils.js";
 
 export interface Session {
   author: string;

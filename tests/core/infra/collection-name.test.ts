@@ -5,7 +5,11 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../../../src/core/api/errors.js";
+import {
+  CollectionNotProvidedError,
+  ProjectNotRegisteredError,
+  StaleProjectAliasError,
+} from "../../../src/core/api/errors.js";
 import { resolveCollection, resolveCollectionName, validatePath } from "../../../src/core/infra/collection-name.js";
 import { CollectionRegistry } from "../../../src/core/infra/registry/index.js";
 
@@ -96,6 +100,101 @@ describe("collection-name utilities", () => {
 
     it("priority 4: nothing -> CollectionNotProvidedError", () => {
       expect(() => resolveCollection(registry, {})).toThrow(CollectionNotProvidedError);
+    });
+
+    it("priority 2 failure: ProjectNotRegisteredError carries the available names", () => {
+      registry.record({
+        collectionName: "code_a",
+        path: dir,
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "u",
+        indexedAt: "t",
+        teaRagsVersion: "v",
+        chunksCount: 0,
+      });
+      registry.setName("code_a", "alpha");
+      registry.record({
+        collectionName: "code_b",
+        path: dir,
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "u",
+        indexedAt: "t",
+        teaRagsVersion: "v",
+        chunksCount: 0,
+      });
+      registry.setName("code_b", "beta");
+      // Unknown alias surfaces the registered names so callers can recover.
+      expect(() => resolveCollection(registry, { project: "ghost" })).toThrow(/alpha/);
+      expect(() => resolveCollection(registry, { project: "ghost" })).toThrow(/beta/);
+    });
+
+    it("priority 2 stale alias: entry path missing from disk throws StaleProjectAliasError", () => {
+      // `dir` exists but this sub-path never does — a moved/removed worktree.
+      const gonePath = join(dir, "moved-away");
+      registry.record({
+        collectionName: "code_moved",
+        path: gonePath,
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "u",
+        indexedAt: "t",
+        teaRagsVersion: "v",
+        chunksCount: 0,
+      });
+      registry.setName("code_moved", "moved");
+      expect(() => resolveCollection(registry, { project: "moved" })).toThrow(StaleProjectAliasError);
+    });
+
+    it("priority 2 recovery stub: empty entry path skips the stale guard", () => {
+      // Empty path == recoverFromQdrant stub; NOT a stale alias, must resolve.
+      registry.record({
+        collectionName: "code_stub",
+        path: "",
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "u",
+        indexedAt: "t",
+        teaRagsVersion: "v",
+        chunksCount: 0,
+      });
+      registry.setName("code_stub", "stub");
+      const out = resolveCollection(registry, { project: "stub" });
+      expect(out.collectionName).toBe("code_stub");
+      expect(out.path).toBe("");
+    });
+
+    it("priority 3 moved alias: registered path returns the entry collectionName, not a fresh hash", () => {
+      const movedPath = join(dir, "renamed-here");
+      registry.record({
+        collectionName: "code_old12345",
+        path: movedPath,
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "u",
+        indexedAt: "t",
+        teaRagsVersion: "v",
+        chunksCount: 0,
+      });
+      const out = resolveCollection(registry, { path: movedPath });
+      expect(out.collectionName).toBe("code_old12345");
+      expect(out.collectionName).not.toBe(resolveCollectionName(movedPath));
+      expect(out.path).toBe(movedPath);
+    });
+
+    it("priority 3 fresh path: unregistered path falls back to md5-derived hash, deterministically", () => {
+      const freshPath = "/unregistered/fresh/project";
+      const first = resolveCollection(registry, { path: freshPath });
+      const second = resolveCollection(registry, { path: freshPath });
+      // Golden literal pins the EXACT `code_` + md5(absPath)[0:8] identity,
+      // independent of resolveCollectionName. A self-referential compare
+      // (both operands routed through the same hash fn) survives a
+      // substring(0,8)->(0,7), offset, or algorithm mutation; the frozen
+      // on-the-wire name does not.
+      expect(first.collectionName).toBe("code_b6f31e23");
+      expect(first.collectionName).toBe(resolveCollectionName(freshPath));
+      expect(second.collectionName).toBe(first.collectionName);
     });
   });
 });
