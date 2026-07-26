@@ -29,6 +29,11 @@ explicitly, don't omit.
 - `.claude/rules/naming.md` — qualify generic suffixes
   (`Outcome`/`Strategy`/`Metadata`/`Result`…) with domain context, unambiguous
   at use. Scoped project-wide (`**/*`).
+- `.claude/rules/worktree-beads-lifecycle.md` — tearing down a worktree (merge
+  OR abandon) MUST first settle every bead the branch touched: close with
+  evidence, reset to `open`, or hand to a named live worktree. Recover the bead
+  set from `git log main..worktree-<name>` before removal. Scoped project-wide
+  (`**/*`).
 
 ## Terminology (MANDATORY)
 
