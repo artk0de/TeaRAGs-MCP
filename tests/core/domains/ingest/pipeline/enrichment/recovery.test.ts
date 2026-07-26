@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
-import { INDEXING_METADATA_ID } from "../../../../../../src/core/domains/ingest/constants.js";
+import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
 import { mapMarkerToHealth } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 import {
@@ -9,7 +9,7 @@ import {
   RECOVERY_FILE_BATCH_SIZE,
 } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/recovery.js";
 import type { EnrichmentMarkerMap } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
-import { setDebug } from "../../../../../../src/core/domains/ingest/pipeline/infra/runtime.js";
+import { setDebug } from "../../../../../../src/core/infra/runtime.js";
 
 describe("EnrichmentRecovery", () => {
   let mockQdrant: {

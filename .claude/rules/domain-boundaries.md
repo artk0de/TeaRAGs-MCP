@@ -36,8 +36,16 @@ paths:
 | `core/domains/ingest/`     | `contracts/`, `adapters/`, `infra/`                       | `api/`                       |
 | `core/domains/language/`   | `contracts/`, `infra/` _(leaf)_                           | injected via factory         |
 | `core/contracts/`          | _(nothing — pure interfaces/types, zero `core/` deps)_    | domain modules, `api/`       |
-| `core/adapters/`           | `infra/`                                                  | domain modules, `api/`       |
-| `core/infra/`              | _(nothing)_                                               | all `core/` layers           |
+| `core/adapters/`           | `contracts/`, `infra/`                                    | domain modules, `api/`       |
+| `core/infra/`              | `contracts/` _(type-only)_                                | all `core/` layers           |
+
+**Foundation order.** Inside the foundation row the three layers are ordered
+`contracts < infra < adapters`. `contracts` imports nothing; `infra` may
+`import type` from `contracts` (runtime imports stay forbidden — a runtime edge
+means logic, not a type, was placed wrong); `adapters` may import both. No cycle
+can form, because `contracts` is held free of every `core/` import by its own
+guard zone. Rationale and the type duplication the stricter rule caused:
+`docs/superpowers/specs/2026-07-26-infra-tidy-design.md`.
 
 **Consumer surface rule (MANDATORY).** `cli`/`mcp` reach `core` ONLY through
 `core/api/public/`. NOT `api/internal`, `contracts`, `adapters`, `infra`

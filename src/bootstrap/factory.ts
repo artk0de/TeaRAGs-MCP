@@ -14,6 +14,7 @@ import { OllamaEmbeddings } from "../core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
+import { EmbeddingModelGuard } from "../core/adapters/qdrant/embedding-model-guard.js";
 import { VcsAdapterFactory } from "../core/adapters/vcs/factory.js";
 import {
   createApp,
@@ -32,7 +33,6 @@ import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-exe
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
-import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
@@ -41,8 +41,8 @@ import { CollectionFootprintFactory } from "../core/domains/maintenance/footprin
 import { WorktreeProvisioner } from "../core/domains/maintenance/worktree/index.js";
 import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
 import { CollectionRegistry } from "../core/infra/registry/index.js";
+import { setDebug } from "../core/infra/runtime.js";
 import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";

@@ -1,5 +1,5 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import { isDebug } from "../pipeline/infra/runtime.js";
+import { isDebug } from "../../../infra/runtime.js";
 
 /**
  * Drops the per-version codegraph DuckDB file (and its WAL sidecar) for a

@@ -16,7 +16,7 @@ import type {
   WorkerPoolConfig,
   WorkItem,
 } from "../types.js";
-import { isDebug } from "./runtime.js";
+import { isDebug } from "../../../../infra/runtime.js";
 
 interface QueuedBatch<T extends WorkItem> {
   batch: Batch<T>;

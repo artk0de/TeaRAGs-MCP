@@ -5,7 +5,7 @@
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
+import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import type { CollectionInfo, CreateCollectionRequest } from "../../public/dto/index.js";
 
 export class CollectionOps {

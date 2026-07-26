@@ -149,7 +149,7 @@ describe("typed-errors rule: cause preserved, never interpolated into message", 
   const SECRET = "RAW_CAUSE_9f3ac71e_must_not_leak_into_message";
   const cause = new Error(SECRET);
 
-  const constructors: Array<[string, () => InfraError]> = [
+  const constructors: [string, () => InfraError][] = [
     ["QdrantUnavailableError", () => new QdrantUnavailableError("http://localhost:6333", cause)],
     ["QdrantStartingError", () => new QdrantStartingError("http://localhost:6333", { pid: 1 }, cause)],
     ["QdrantRecoveringError", () => new QdrantRecoveringError("http://localhost:6333", { pid: 1 }, cause)],

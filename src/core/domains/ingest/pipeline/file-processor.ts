@@ -23,7 +23,7 @@ import { detectLanguage } from "./chunker/utils/language-detector.js";
 import { containsSecrets } from "./chunker/utils/secrets-detector.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { parallelLimit } from "./infra/parallel.js";
-import { isDebug } from "./infra/runtime.js";
+import { isDebug } from "../../../infra/runtime.js";
 
 /**
  * Post-process chunks of a single file:

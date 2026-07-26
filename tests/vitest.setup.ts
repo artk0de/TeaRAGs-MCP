@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { afterAll } from "vitest";
 
-import { setDebug } from "../src/core/domains/ingest/pipeline/infra/runtime.js";
+import { setDebug } from "../src/core/infra/runtime.js";
 
 // Set test-specific environment variables
 // Enable DEBUG to cover debug logging branches across all modules

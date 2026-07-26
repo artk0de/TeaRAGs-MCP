@@ -10,6 +10,7 @@
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import type { SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import {
@@ -18,7 +19,6 @@ import {
 } from "../../../domains/explore/errors.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
-import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { CollectionRegistry } from "../../../infra/registry/index.js";
 import type { SchemaDriftMonitor } from "../../../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";

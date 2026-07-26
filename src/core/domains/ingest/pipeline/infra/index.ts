@@ -19,7 +19,7 @@
 export { BatchAccumulator } from "./batch-accumulator.js";
 export { pipelineLog } from "./debug-logger.js";
 export { parallelLimit } from "./parallel.js";
-export { isDebug, setDebug } from "./runtime.js";
+export { isDebug, setDebug } from "../../../../infra/runtime.js";
 export { WorkerDispatchPool } from "./worker-dispatch-pool.js";
 export { WorkerPool } from "./worker-pool.js";
 export { ThreadTransport } from "./thread-transport.js";

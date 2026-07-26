@@ -6,10 +6,10 @@
  * MCP server lifetime). Backfills legacy collections that lack the marker field.
  */
 
-import { EmbeddingModelMismatchError } from "../adapters/embeddings/errors.js";
-import type { QdrantManager } from "../adapters/qdrant/client.js";
-import { INDEXING_METADATA_ID } from "../domains/ingest/constants.js";
-import { isDebug } from "../domains/ingest/pipeline/infra/runtime.js";
+import { EmbeddingModelMismatchError } from "../../adapters/embeddings/errors.js";
+import { INDEXING_METADATA_ID } from "../../contracts/constants.js";
+import { isDebug } from "../../infra/runtime.js";
+import type { QdrantManager } from "./client.js";
 
 export class EmbeddingModelGuard {
   private readonly cache = new Map<string, string | null>();

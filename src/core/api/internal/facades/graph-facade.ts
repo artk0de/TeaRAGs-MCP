@@ -27,7 +27,6 @@
 import { splitMethodSymbol } from "../../../adapters/duckdb/client.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { SymbolChunkLocation, SymbolId } from "../../../contracts/types/codegraph.js";
-import { resolveCollection } from "../../../infra/collection-name.js";
 import type { CollectionRegistry } from "../../../infra/registry/index.js";
 import type {
   FindCyclesRequest,
@@ -37,6 +36,7 @@ import type {
   GetCallersRequest,
   GetCallersResponse,
 } from "../../public/dto/graph.js";
+import { resolveCollection } from "../collection-resolver.js";
 
 export interface GraphFacadeDeps {
   pool: GraphDbClientPool;

@@ -13,6 +13,7 @@ import { join } from "node:path";
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
@@ -29,7 +30,6 @@ import { InlineEnrichmentExecutor } from "../../../domains/ingest/pipeline/enric
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strategy.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
-import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {

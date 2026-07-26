@@ -13,6 +13,7 @@
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import type { SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
@@ -30,8 +31,7 @@ import {
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/stats-recompute.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
-import { resolveCollection, resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
-import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
+import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { CollectionRegistry } from "../../../infra/registry/index.js";
 import type { SchemaDriftMonitor } from "../../../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
@@ -46,6 +46,7 @@ import {
   type RankChunksRequest,
   type SemanticSearchRequest,
 } from "../../public/dto/index.js";
+import { resolveCollection } from "../collection-resolver.js";
 
 export interface ExploreOpsDeps {
   qdrant: QdrantManager;

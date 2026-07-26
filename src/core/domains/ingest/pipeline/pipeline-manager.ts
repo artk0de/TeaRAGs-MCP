@@ -22,7 +22,7 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { PipelineNotStartedError } from "../errors.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
-import { isDebug } from "./infra/runtime.js";
+import { isDebug } from "../../../infra/runtime.js";
 import { WorkerPool } from "./infra/worker-pool.js";
 import type { Batch, BatchResult, DeleteItem, PipelineConfig, PipelineStats, UpsertItem, WorkItem } from "./types.js";
 
