@@ -29,6 +29,7 @@ import { copyFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
+import type { DatabaseMigrationApplier } from "../../contracts/types/migration.js";
 import { isDebug } from "../../infra/runtime.js";
 import { DuckDbGraphClient } from "./client.js";
 import { getBuildFingerprint } from "./daemon/build-fingerprint.js";
@@ -84,6 +85,12 @@ export interface GraphDbClientPoolOptions {
     tempDirectory?: string;
     preserveInsertionOrder?: boolean;
   };
+  /**
+   * Applies pending graph DDL to a freshly opened collection. Required: the
+   * migration steps live in `domains/maintenance/migration/database/`, which
+   * `adapters` may not import, so every construction site must pass one.
+   */
+  applyMigrations: DatabaseMigrationApplier;
   /**
    * Unix socket of the running codegraph daemon. When set, `acquireWrite`
    * routes mutations through a `DaemonGraphDbClient` over this socket — the
@@ -524,12 +531,10 @@ export class GraphDbClientPool {
     });
     try {
       await graphDb.init();
-      // Migrations live in `infra/migration/database/migrations` and
-      // ship inline as TS modules (no SQL file copy step) — same path
-      // the prior shared-DB bootstrap used.
-      const { runMigrations } = await import("../../infra/migration/database/runner.js");
-      const { DATABASE_MIGRATIONS } = await import("../../infra/migration/database/migrations/index.js");
-      await runMigrations(graphDb, DATABASE_MIGRATIONS);
+      // The DDL steps live in the maintenance domain, which adapters may not
+      // import — the composition root injects the applier (required option, so
+      // a missed call site is a type error rather than a schema-less DB).
+      await this.options.applyMigrations(graphDb);
     } catch (err) {
       await graphDb.close().catch(() => undefined);
       throw new DuckDbOpenFailedError(dbPath, err instanceof Error ? err : undefined);

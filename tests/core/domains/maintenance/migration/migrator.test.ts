@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { Migrator } from "../../../../src/core/infra/migration/migrator.js";
-import type { Migration, MigrationRunner } from "../../../../src/core/infra/migration/types.js";
+import { Migrator } from "../../../../../src/core/domains/maintenance/migration/migrator.js";
+import type { Migration, MigrationRunner } from "../../../../../src/core/domains/maintenance/migration/types.js";
 
 function createMockMigration(name: string, version: number): Migration {
   return {

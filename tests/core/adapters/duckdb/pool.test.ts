@@ -21,6 +21,7 @@ import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.j
 import { decodeFrames, encodeFrame, type DaemonRequest } from "../../../../src/core/adapters/duckdb/daemon/protocol.js";
 import { DuckDbCloseFailedError, DuckDbOpenFailedError } from "../../../../src/core/adapters/duckdb/errors.js";
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
+import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 describe("GraphDbClientPool — per-collection isolation", () => {
@@ -38,6 +39,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
 
     // No file exists yet — peek() returns nothing. The pool created
@@ -59,6 +61,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
 
     const alpha = await pool.acquire("project-alpha");
@@ -100,6 +103,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
 
     const alpha = await pool.acquire("alpha");
@@ -126,6 +130,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
 
     const first = await pool.acquire("alpha");
@@ -142,6 +147,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       initHook: async () => {
         initHookInvocations++;
       },
@@ -161,6 +167,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
 
     const first = await pool.acquire("alpha");
@@ -185,6 +192,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       initHook: async () => {
         initHookInvocations++;
       },
@@ -209,6 +217,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     // Names containing path separators or wildcards are not allowed
     // to escape the codegraph dir.
@@ -226,6 +235,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     const tab = String.fromCharCode(9);
     const newline = String.fromCharCode(10);
@@ -244,6 +254,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
 
     await pool.acquire("alpha");
@@ -260,6 +271,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
 
     // Never acquired — no cached entry, no file on disk. Must not throw.
@@ -278,6 +290,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     const codegraphDir = join(tmp, "codegraph");
     // Versioned DBs for the base under test.
@@ -299,6 +312,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     // Only a foreign project's file exists.
     writeFileSync(pool.pathFor("code_other_v1"), "");
@@ -310,6 +324,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     // Remove the codegraph dir the pool created at construction.
     rmSync(join(tmp, "codegraph"), { recursive: true, force: true });
@@ -321,6 +336,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     await pool.acquire("alpha");
     expect(pool.peek("alpha")).toBeDefined();
@@ -336,6 +352,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       initHook: async ({ collectionName }) => {
         seen.push(collectionName);
       },
@@ -351,6 +368,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       initHook: async () => {
         throw new Error("hydration failed");
       },
@@ -370,6 +388,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
 
     const first = await pool.acquire("alpha");
@@ -405,6 +424,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
 
     const dbPath = pool.pathFor("locked");
@@ -440,6 +460,7 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
 
     const entry = await pool.acquire("hung");
@@ -480,6 +501,7 @@ describe("GraphDbClientPool — spill and cross-pass path helpers", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     const path = pool.spillPathFor("code_abc", "run-42");
     expect(path).toContain(join("codegraph", ".spill", "code_abc-run-42.ndjson"));
@@ -489,6 +511,7 @@ describe("GraphDbClientPool — spill and cross-pass path helpers", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     const path = pool.spillPathFor("code/unsafe:name", "run-1");
     // slashes and colons must be replaced with underscores
@@ -500,6 +523,7 @@ describe("GraphDbClientPool — spill and cross-pass path helpers", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     const path = pool.inputSpillPathFor("code_abc");
     expect(path).toContain(join("codegraph", ".xpass", "code_abc.ndjson"));
@@ -509,6 +533,7 @@ describe("GraphDbClientPool — spill and cross-pass path helpers", () => {
     const pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       resources: { tempDirectory: join(tmp, "custom-spill") },
     });
     // xpassDir is always <rootDir>/codegraph/.xpass regardless of tempDirectory
@@ -524,6 +549,7 @@ describe("GraphDbClientPool — mode-aware acquireRead/acquireWrite", () => {
     const pool = new GraphDbClientPool({
       rootDir: root,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     // populate code_x_v2 via write path
     const w = await pool.acquireWrite("code_x_v2");
@@ -559,6 +585,7 @@ describe("GraphDbClientPool — acquireReader (mode-aware facade read path)", ()
     const pool = new GraphDbClientPool({
       rootDir: root,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
 
     // Populate via the write path so the file has data on disk.
@@ -611,6 +638,7 @@ describe("GraphDbClientPool — acquireReader (mode-aware facade read path)", ()
     const pool = new GraphDbClientPool({
       rootDir: root,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
     });
 
@@ -686,6 +714,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     const pool = new GraphDbClientPool({
       rootDir: root,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
     });
 
@@ -713,6 +742,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     const pool = new GraphDbClientPool({
       rootDir: root,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
     });
 
@@ -753,6 +783,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     const pool = new GraphDbClientPool({
       rootDir: root,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
     });
 
@@ -779,6 +810,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     const pool = new GraphDbClientPool({
       rootDir: root,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
     });
 
@@ -809,6 +841,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     const pool = new GraphDbClientPool({
       rootDir: root,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
     });
 
@@ -832,6 +865,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     const pool = new GraphDbClientPool({
       rootDir: root,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
     });
 
@@ -859,6 +893,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     const pool = new GraphDbClientPool({
       rootDir: root,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
     });
 
@@ -888,6 +923,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     const pool = new GraphDbClientPool({
       rootDir: root,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
     });
 
@@ -915,6 +951,7 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     const pool = new GraphDbClientPool({
       rootDir: root,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
     });
 

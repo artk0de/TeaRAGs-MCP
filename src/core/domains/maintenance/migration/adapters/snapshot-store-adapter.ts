@@ -8,7 +8,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { ShardedSnapshotManager } from "../../../domains/ingest/sync/snapshot/sharded-snapshot.js";
+import type { ShardedSnapshotAccessFactory } from "../../../../contracts/types/migration.js";
 import type { SnapshotStore } from "../types.js";
 
 interface OldSnapshotV1 {
@@ -30,6 +30,12 @@ export class SnapshotStoreAdapter implements SnapshotStore {
   constructor(
     private readonly snapshotDir: string,
     private readonly collectionName: string,
+    /**
+     * Builds the sharded-snapshot view. Injected because the concrete
+     * `ShardedSnapshotManager` lives in the ingest domain and maintenance may
+     * not import a sibling domain — the composition root supplies it.
+     */
+    private readonly createSnapshotAccess: ShardedSnapshotAccessFactory,
     private readonly shardCount = 4,
   ) {
     this.oldSnapshotPath = join(snapshotDir, `${collectionName}.json`);
@@ -90,7 +96,7 @@ export class SnapshotStoreAdapter implements SnapshotStore {
     codebasePath: string,
     files: Map<string, { mtime: number; size: number; hash: string }>,
   ): Promise<void> {
-    const manager = new ShardedSnapshotManager(this.snapshotDir, this.collectionName, this.shardCount);
+    const manager = this.createSnapshotAccess(this.snapshotDir, this.collectionName, this.shardCount);
     await manager.save(codebasePath, files);
   }
 
@@ -121,7 +127,7 @@ export class SnapshotStoreAdapter implements SnapshotStore {
 
     // Read actual shard count from meta.json — snapshot may use different count than default
     const shardCount = await this.readShardCount();
-    const snapshotManager = new ShardedSnapshotManager(this.snapshotDir, this.collectionName, shardCount);
+    const snapshotManager = this.createSnapshotAccess(this.snapshotDir, this.collectionName, shardCount);
     const snapshot = await snapshotManager.load();
     if (!snapshot) return 0;
 

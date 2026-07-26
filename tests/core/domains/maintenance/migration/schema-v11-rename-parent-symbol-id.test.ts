@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SchemaV11RenameParentSymbolId } from "../../../../src/core/infra/migration/schema_migrations/schema-v11-rename-parent-symbol-id.js";
+import { SchemaV11RenameParentSymbolId } from "../../../../../src/core/domains/maintenance/migration/schema_migrations/schema-v11-rename-parent-symbol-id.js";
 
 const COLLECTION = "test_col";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SnapshotMigrator } from "../../../../src/core/infra/migration/snapshot-migrator.js";
-import type { SnapshotStore } from "../../../../src/core/infra/migration/types.js";
+import { SnapshotMigrator } from "../../../../../src/core/domains/maintenance/migration/snapshot-migrator.js";
+import type { SnapshotStore } from "../../../../../src/core/domains/maintenance/migration/types.js";
 
 function createMockStore(format: "v1" | "v2" | "sharded" | "none" = "v1"): SnapshotStore {
   return {

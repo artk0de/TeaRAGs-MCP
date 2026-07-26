@@ -5,7 +5,7 @@
  * (payload indexes, schema version point, collection info).
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import type { IndexStore } from "../types.js";
 
 /** Reserved point ID for schema metadata storage. */

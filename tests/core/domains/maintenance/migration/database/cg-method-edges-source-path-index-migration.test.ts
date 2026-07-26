@@ -4,9 +4,9 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
-import { DATABASE_MIGRATIONS } from "../../../../../src/core/infra/migration/database/migrations/index.js";
-import { runMigrations } from "../../../../../src/core/infra/migration/database/runner.js";
+import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
+import { DATABASE_MIGRATIONS } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 // bd tea-rags-mcp-f2jsb — upsertFileImpl deletes a file's method edges by
 // source_rel_path on every re-walk; without an index each DELETE scans the

@@ -19,10 +19,10 @@ import { DuckDBPreparedStatement } from "@duckdb/node-api";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
-import { runMigrations } from "../../../../src/core/infra/migration/database/runner.js";
+import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const MIG_DIR = resolve(__dirname, "../../../../src/core/infra/migration/database/migrations");
+const MIG_DIR = resolve(__dirname, "../../../../src/core/domains/maintenance/migration/database/migrations");
 
 /** Parse DuckDB's human-readable memory_limit ("1.8 GiB", "256.0 MiB") to bytes. */
 function parseDuckDbBytes(s: string): number {

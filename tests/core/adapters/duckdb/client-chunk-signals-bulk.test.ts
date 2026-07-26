@@ -18,8 +18,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import type { SymbolId } from "../../../../src/core/contracts/types/codegraph.js";
-import { DATABASE_MIGRATIONS } from "../../../../src/core/infra/migration/database/migrations/index.js";
-import { runMigrations } from "../../../../src/core/infra/migration/database/runner.js";
+import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
+import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 describe("DuckDbGraphClient — getChunkSignalsBulk (deferred-chunk read-back)", () => {
   let dir: string;

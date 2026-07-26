@@ -18,10 +18,11 @@ import { DaemonGraphDbClient } from "../../../../src/core/adapters/duckdb/daemon
 import { decodeFrames, encodeFrame, type DaemonRequest } from "../../../../src/core/adapters/duckdb/daemon/protocol.js";
 import { CodegraphDaemonServer } from "../../../../src/core/adapters/duckdb/daemon/server.js";
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
+import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
 import type { SymbolDefinition } from "../../../../src/core/contracts/types/codegraph.js";
 import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { DATABASE_MIGRATIONS } from "../../../../src/core/infra/migration/database/migrations/index.js";
-import { runMigrations } from "../../../../src/core/infra/migration/database/runner.js";
+import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
+import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 function mkDef(relPath: string, symbolId: string, fqName: string, shortName: string): SymbolDefinition {
   return {
@@ -141,7 +142,11 @@ describe("upsertSymbolsBulk — daemon proxy parity", () => {
 
   it("upsertSymbolsBulk via the daemon socket writes identical cg_symbols rows to the direct client", async () => {
     root = mkdtempSync(join(tmpdir(), "cg-bulk-daemon-"));
-    const pool = new GraphDbClientPool({ rootDir: root, symbolTableFactory: () => new InMemoryGlobalSymbolTable() });
+    const pool = new GraphDbClientPool({
+      rootDir: root,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
+    });
     const server = new CodegraphDaemonServer(pool);
     const socketPath = join(root, "d.sock");
 

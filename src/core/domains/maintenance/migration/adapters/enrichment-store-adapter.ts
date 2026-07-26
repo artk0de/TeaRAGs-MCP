@@ -5,8 +5,8 @@
  * and tracks migration completion via marker on the indexing metadata point.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
+import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import { INDEXING_METADATA_ID } from "../../../../contracts/constants.js";
 import type { EnrichmentStore } from "../types.js";
 
 const SCROLL_LIMIT = 50_000;

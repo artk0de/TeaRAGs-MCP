@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SchemaV9EnrichedAtBackfill } from "../../../../../src/core/infra/migration/schema_migrations/schema-v9-enrichedat-backfill.js";
-import type { EnrichmentStore } from "../../../../../src/core/infra/migration/types.js";
+import { SchemaV9EnrichedAtBackfill } from "../../../../../../src/core/domains/maintenance/migration/schema_migrations/schema-v9-enrichedat-backfill.js";
+import type { EnrichmentStore } from "../../../../../../src/core/domains/maintenance/migration/types.js";
 
 describe("SchemaV9EnrichedAtBackfill", () => {
   let mockStore: {

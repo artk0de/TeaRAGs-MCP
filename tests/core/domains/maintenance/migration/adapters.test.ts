@@ -11,9 +11,10 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { IndexStoreAdapter } from "../../../../src/core/infra/migration/adapters/index-store-adapter.js";
-import { SnapshotStoreAdapter } from "../../../../src/core/infra/migration/adapters/snapshot-store-adapter.js";
-import { SparseStoreAdapter } from "../../../../src/core/infra/migration/adapters/sparse-store-adapter.js";
+import { IndexStoreAdapter } from "../../../../../src/core/domains/maintenance/migration/adapters/index-store-adapter.js";
+import { SnapshotStoreAdapter } from "../../../../../src/core/domains/maintenance/migration/adapters/snapshot-store-adapter.js";
+import { SparseStoreAdapter } from "../../../../../src/core/domains/maintenance/migration/adapters/sparse-store-adapter.js";
+import { createShardedSnapshotAccess } from "../../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot-access.js";
 
 // ── SnapshotStoreAdapter ──────────────────────────────────────────────────────
 
@@ -25,7 +26,7 @@ describe("SnapshotStoreAdapter", () => {
   beforeEach(async () => {
     snapshotDir = join(tmpdir(), `tea-rags-test-${Date.now()}`);
     await fs.mkdir(snapshotDir, { recursive: true });
-    adapter = new SnapshotStoreAdapter(snapshotDir, collectionName);
+    adapter = new SnapshotStoreAdapter(snapshotDir, collectionName, createShardedSnapshotAccess);
   });
 
   afterEach(async () => {
@@ -189,7 +190,7 @@ describe("SnapshotStoreAdapter", () => {
 
       // Reload snapshot to verify mtime was zeroed (forces hash recompute in synchronizer)
       const { ShardedSnapshotManager } =
-        await import("../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js");
+        await import("../../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js");
       const manager = new ShardedSnapshotManager(snapshotDir, collectionName);
       const snapshot = await manager.load();
       expect(snapshot).not.toBeNull();
@@ -351,7 +352,7 @@ describe("EnrichmentStoreAdapter", () => {
   // Dynamically import to avoid issues with module resolution
   async function makeAdapter(overrides: Record<string, unknown> = {}) {
     const { EnrichmentStoreAdapter } =
-      await import("../../../../src/core/infra/migration/adapters/enrichment-store-adapter.js");
+      await import("../../../../../src/core/domains/maintenance/migration/adapters/enrichment-store-adapter.js");
     const qdrant = {
       getPoint: vi.fn().mockResolvedValue(null),
       scrollFiltered: vi.fn().mockResolvedValue([]),

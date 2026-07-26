@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SchemaV12EnrichmentPayloadIndexes } from "../../../../../src/core/infra/migration/schema_migrations/schema-v12-enrichment-payload-indexes.js";
-import type { IndexStore } from "../../../../../src/core/infra/migration/types.js";
+import { SchemaV12EnrichmentPayloadIndexes } from "../../../../../../src/core/domains/maintenance/migration/schema_migrations/schema-v12-enrichment-payload-indexes.js";
+import type { IndexStore } from "../../../../../../src/core/domains/maintenance/migration/types.js";
 
 function createMockStore(): IndexStore {
   return {

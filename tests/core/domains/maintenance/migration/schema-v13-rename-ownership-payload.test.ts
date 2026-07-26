@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SchemaV13RenameOwnershipPayload } from "../../../../src/core/infra/migration/schema_migrations/schema-v13-rename-ownership-payload.js";
+import { SchemaV13RenameOwnershipPayload } from "../../../../../src/core/domains/maintenance/migration/schema_migrations/schema-v13-rename-ownership-payload.js";
 
 const COLLECTION = "test_col";
 

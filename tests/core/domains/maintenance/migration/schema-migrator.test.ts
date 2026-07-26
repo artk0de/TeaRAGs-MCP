@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SchemaMigrator } from "../../../../src/core/infra/migration/schema-migrator.js";
-import { SparseMigrator } from "../../../../src/core/infra/migration/sparse-migrator.js";
-import type { IndexStore, SnapshotStore, SparseStore } from "../../../../src/core/infra/migration/types.js";
+import { SchemaMigrator } from "../../../../../src/core/domains/maintenance/migration/schema-migrator.js";
+import { SparseMigrator } from "../../../../../src/core/domains/maintenance/migration/sparse-migrator.js";
+import type { IndexStore, SnapshotStore, SparseStore } from "../../../../../src/core/domains/maintenance/migration/types.js";
 
 function createMockIndexStore(version = 0): IndexStore {
   return {

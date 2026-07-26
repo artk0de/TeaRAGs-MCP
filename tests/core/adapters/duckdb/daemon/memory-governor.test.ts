@@ -18,6 +18,7 @@ import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/clien
 import { DaemonMemoryGovernor } from "../../../../../src/core/adapters/duckdb/daemon/memory-governor.js";
 import { CodegraphDaemonServer } from "../../../../../src/core/adapters/duckdb/daemon/server.js";
 import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
+import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 let root: string;
@@ -51,6 +52,7 @@ function makeGovernedServer(baseLimit: string, maxLimit: string) {
   const pool = new GraphDbClientPool({
     rootDir: root,
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    applyMigrations: createDatabaseMigrationApplier(),
     resources: { memoryLimit: baseLimit },
   });
   const governor = new DaemonMemoryGovernor({ baseLimit, maxLimit });

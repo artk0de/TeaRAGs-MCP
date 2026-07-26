@@ -1,4 +1,4 @@
-import { TeaRagsError } from "../errors.js";
+import { TeaRagsError } from "../../../infra/errors.js";
 
 export class MigrationStepError extends TeaRagsError {
   constructor(pipeline: string, stepName: string, cause: Error) {

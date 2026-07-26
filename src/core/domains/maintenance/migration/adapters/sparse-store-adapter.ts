@@ -5,7 +5,7 @@
  * and BM25 vector rebuild for hybrid search collections.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import type { SparseStore } from "../types.js";
 
 /** Reserved point ID for schema metadata storage (shared with IndexStoreAdapter). */
@@ -35,7 +35,7 @@ export class SparseStoreAdapter implements SparseStore {
   }
 
   async rebuildSparseVectors(collection: string): Promise<void> {
-    const { generateSparseVector } = await import("../../../adapters/qdrant/sparse.js");
+    const { generateSparseVector } = await import("../../../../adapters/qdrant/sparse.js");
     let totalRebuilt = 0;
 
     for await (const batch of this.qdrant.scrollWithVectors(collection)) {
