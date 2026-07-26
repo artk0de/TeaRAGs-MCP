@@ -1,6 +1,5 @@
 export type * from "./errors.js";
 export type { AstNode, MaterializedTree } from "./types/ast.js";
-export type * from "./types/app.js";
 export type * from "./types/config.js";
 export type * from "./types/enrichment-executor.js";
 export type * from "./types/provider.js";

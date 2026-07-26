@@ -167,3 +167,23 @@ is the long-standing blocker flagged on `qbod`; the blanket
 - Re-homing `core/types.ts` content beyond the single `IngestCodeConfig` move
   needed to clear the `mcp → core/types` edge (broader `core/types.ts` cleanup
   is a separate concern).
+
+## Amendment 2026-07-26 — foundation order
+
+The `core/infra/** -> nothing but external packages` row is superseded by the
+order `contracts < infra < adapters`: `infra` may `import type` from
+`contracts`. See `docs/superpowers/specs/2026-07-26-infra-tidy-design.md` for
+the reason — the stricter rule produced three structural type duplicates
+(`FileClassification`, the by-value `CommitDiffMemo` shape in
+`contracts/types/provider.ts`, and `WalkCommitDiffMemo`). The "no
+allowTypeImports escape hatch" principle still governs every other edge in the
+matrix.
+
+Two further findings from enabling the guard for real (the zone globs had been
+anchored at `core/`, so no relative intra-`core` import ever matched them):
+
+- `contracts/types/app.ts` re-exported three `api/public/dto/*` modules through
+  the `contracts` barrel. Dead code — nothing imported the names. Deleted.
+- `adapters/qdrant/client.ts` throws the explore-domain `InvalidQueryError`.
+  Still open as `tea-rags-mcp-pn12w`; the `**/domains/**` pattern stays out of
+  the `adapters` zone until that error taxonomy is fixed.

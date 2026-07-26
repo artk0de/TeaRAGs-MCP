@@ -228,7 +228,19 @@ acceptance gate.
 - The `infra` zone drops `**/core/contracts/**` from its deny list and keeps the
   rest, per the new foundation order.
 - The `adapters` zone keeps `contracts` allowed (already true in the matrix) and
-  gains working globs for `domains`, `api`, and the outer layers.
+  gains working globs for `api` and the outer layers.
+
+**Correction, recorded after wave 1 landed.** This section originally assumed
+the `contracts` and `adapters` zones had nothing to catch. They did — the
+pre-plan check covered only the `infra` zone, and the assumption was carried
+over without testing it. Enabling the fixed globs surfaced four real violations:
+`contracts/types/app.ts` re-exporting three `api/public/dto/*` modules (dead
+code, since deleted along with its `contracts/index.ts` barrel line), and
+`adapters/qdrant/client.ts` importing the explore-domain `InvalidQueryError`.
+The latter needs an adapter-level error class plus a mapping in `explore`, which
+changes an error surfaced through MCP; it is tracked as `tea-rags-mcp-pn12w`,
+and until it lands `**/domains/**` stays out of the `adapters` zone with a
+fixture case skipped against that bead.
 
 Config changes require explicit approval per `.claude/rules/linter-config.md`;
 this spec is that approval request, and the guard-repair task carries it.
@@ -264,12 +276,13 @@ again silent.
 Five waves, each independently committable and green:
 
 1. **Foundation order + partial guard repair.** Rewrite the `contracts` and
-   `adapters` zones prefix-free (both are violation-free today, so they go green
-   immediately), legalize `infra -> contracts` type-only, and add the fixture
-   test. The `infra` zone's `domains` / `api` / `adapters` patterns are written
-   but stay commented with a pointer to wave 5 — the rollout principle the
-   dependency-guard spec set: fix every violation first, enable in one commit
-   last.
+   `adapters` zones prefix-free, legalize `infra -> contracts` type-only, and
+   add the fixture test. Whatever the fixed globs surface has to be cleared in
+   this wave or deferred against a bead — see the correction above for what they
+   actually surfaced. The `infra` zone's `domains` / `api` / `adapters` patterns
+   are written but stay commented with a pointer to wave 5 — the rollout
+   principle the dependency-guard spec set: fix every violation first, enable in
+   one commit last.
 2. **Cheap edge cuts.** Delete the `runtime.ts` shim (23 importers), move
    `INDEXING_METADATA_ID` to `contracts`, move the two error classes down to
    `infra/errors.ts`, collapse the three type duplicates.

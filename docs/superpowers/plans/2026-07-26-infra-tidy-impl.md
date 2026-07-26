@@ -197,8 +197,14 @@ In `eslint.config.js`, the `src/core/contracts/**/*.ts` zone's `group` becomes:
 The `src/core/adapters/**/*.ts` zone's `group` becomes:
 
 ```javascript
-              group: ["**/domains/**", "**/api/**", "**/bootstrap/**", "**/mcp/**", "**/cli/**"],
+              group: ["**/api/**", "**/bootstrap/**", "**/mcp/**", "**/cli/**"],
 ```
+
+`**/domains/**` is missing on purpose: it fails on
+`adapters/qdrant/client.ts:8`, which throws the explore-domain
+`InvalidQueryError`. That fix changes an error surfaced through MCP, so it is
+deferred to `tea-rags-mcp-pn12w` with a TODO in the zone and a skipped fixture
+case.
 
 `contracts` is deliberately absent. The matrix already allows
 `adapters -> contracts`, and the old zone forbade it only because the glob never
@@ -231,9 +237,15 @@ The `src/core/infra/**/*.ts` zone becomes:
 npx eslint src/ tests/ && npx vitest run tests/eslint-layer-guard.test.ts
 ```
 
-Expected: eslint exits 0 (the newly-live `contracts`/`adapters` zones have no
-violations today — verified pre-plan), and the fixture test passes with the
-`infra -> domains` case still skipped.
+Expected: the fixture test passes with the `infra -> domains` case still
+skipped. eslint will NOT exit 0 on the first run: the newly-live zones catch
+violations that were invisible before. Clear each one in this task if it is
+mechanical, or defer it against a bead with a TODO in the zone plus a skipped
+fixture case. What they surfaced on the first run: `contracts/types/app.ts`
+(dead re-export of three `api/public/dto/*` modules — delete it and its
+`contracts/index.ts` barrel line, then `npx tsc --noEmit` proves nothing
+depended on it) and `adapters/qdrant/client.ts:8` (deferred to
+`tea-rags-mcp-pn12w`).
 
 - [ ] **Step 8: Update the rule doc**
 

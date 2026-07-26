@@ -398,11 +398,14 @@ export default tseslint.config(
         {
           patterns: [
             {
+              // Globs are prefix-free on purpose: every import inside src/core is
+              // relative ("../infra/runtime.js"), so a "**/core/..."-anchored
+              // pattern never matches and the zone silently allows everything.
               group: [
-                "**/core/infra/**",
-                "**/core/adapters/**",
-                "**/core/domains/**",
-                "**/core/api/**",
+                "**/infra/**",
+                "**/adapters/**",
+                "**/domains/**",
+                "**/api/**",
                 "**/core/types",
                 "**/core/types.js",
                 "**/bootstrap/**",
@@ -425,15 +428,17 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: [
-                "**/core/contracts/**",
-                "**/core/domains/**",
-                "**/core/api/**",
-                "**/bootstrap/**",
-                "**/mcp/**",
-                "**/cli/**",
-              ],
-              message: "adapters may import only core/infra.",
+              // `contracts` is deliberately absent: the layer matrix allows
+              // adapters -> contracts, and the old zone only appeared to forbid
+              // it because the "**/core/..." glob never fired.
+              //
+              // TODO(tea-rags-mcp-pn12w): "**/domains/**" belongs in this group,
+              // but enabling it today fails on adapters/qdrant/client.ts, which
+              // throws the explore-domain InvalidQueryError. Fixing that means
+              // an adapter-level error class plus a mapping in explore — a
+              // user-visible error-taxonomy change, tracked separately.
+              group: ["**/api/**", "**/bootstrap/**", "**/mcp/**", "**/cli/**"],
+              message: "adapters may import only core/{contracts,infra}.",
             },
           ],
         },
@@ -448,16 +453,18 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: [
-                "**/core/contracts/**",
-                "**/core/adapters/**",
-                "**/core/domains/**",
-                "**/core/api/**",
-                "**/bootstrap/**",
-                "**/mcp/**",
-                "**/cli/**",
-              ],
-              message: "infra is the lowest layer — no imports from any core/ layer.",
+              // Foundation order: contracts < infra < adapters. `infra` may
+              // `import type` from `contracts` — contracts has zero core/ deps
+              // (its own zone enforces that), so no cycle can form. See
+              // docs/superpowers/specs/2026-07-26-infra-tidy-design.md.
+              //
+              // TODO(infra-tidy T15): uncomment once the last
+              // infra -> {domains, adapters, api} edge is gone. Enabling it now
+              // would turn the tree red mid-refactor; the dependency-guard spec
+              // set the rollout order — fix every violation first, enable last.
+              // group: ["**/domains/**", "**/adapters/**", "**/api/**", "**/bootstrap/**", "**/mcp/**", "**/cli/**"],
+              group: ["**/bootstrap/**", "**/mcp/**", "**/cli/**"],
+              message: "infra is the lowest layer — it may only import type from contracts.",
             },
           ],
         },

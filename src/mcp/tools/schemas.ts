@@ -175,7 +175,7 @@ function collectionPathFields() {
 
 /**
  * Typed filter params shared across all search tools (semantic, hybrid, search_code, rank_chunks).
- * These map 1:1 to TypedFilterParams in contracts/types/app.ts.
+ * These map 1:1 to TypedFilterParams in api/public/dto/explore.ts.
  */
 function typedFilterFields() {
   return {
