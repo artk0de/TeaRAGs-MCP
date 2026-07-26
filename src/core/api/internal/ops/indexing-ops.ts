@@ -15,7 +15,7 @@ import { scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import { INDEXING_METADATA_ID } from "../../../domains/ingest/constants.js";
+import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";

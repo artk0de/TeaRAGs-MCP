@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { INDEXING_METADATA_ID } from "../../../../../src/core/domains/ingest/constants.js";
+import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
 import { storeIndexingMarker } from "../../../../../src/core/domains/ingest/pipeline/indexing-marker.js";
 
 describe("storeIndexingMarker", () => {

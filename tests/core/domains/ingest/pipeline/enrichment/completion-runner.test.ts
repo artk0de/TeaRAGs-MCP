@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
-import { INDEXING_METADATA_ID } from "../../../../../../src/core/domains/ingest/constants.js";
+import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
 import { EnrichmentApplier } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentBackfiller } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/backfiller.js";
 import { ChunkPhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/chunk-phase.js";

@@ -6,7 +6,7 @@
  */
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import { INDEXING_METADATA_ID } from "../../../domains/ingest/constants.js";
+import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { EnrichmentStore } from "../types.js";
 
 const SCROLL_LIMIT = 50_000;

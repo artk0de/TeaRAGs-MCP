@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
-import { INDEXING_METADATA_ID } from "../../../../../../src/core/domains/ingest/constants.js";
+import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
 import { mapMarkerToHealth } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 import {

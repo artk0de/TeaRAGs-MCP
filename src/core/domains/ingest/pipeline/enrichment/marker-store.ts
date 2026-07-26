@@ -20,7 +20,7 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
-import { INDEXING_METADATA_ID } from "../../constants.js";
+import { INDEXING_METADATA_ID } from "../../../../contracts/constants.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkFinalInput, FileFinalInput, RecoveryResultInput } from "./types.js";
 

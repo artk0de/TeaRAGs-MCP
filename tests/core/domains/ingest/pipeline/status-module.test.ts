@@ -367,7 +367,7 @@ describe("StatusModule", () => {
       it("should write lastHeartbeat to marker during indexCodebase", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
 
         // Create files to trigger real indexing pipeline (not no-op)
         for (let i = 0; i < 3; i++) {
@@ -539,7 +539,7 @@ describe("StatusModule", () => {
       it("should detect indexing _v1 collection when alias does not exist yet", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
         const versionedName = `${collectionName}_v1`;
@@ -571,7 +571,7 @@ describe("StatusModule", () => {
       it("should auto-cleanup stale _v1 and return not_indexed when marker has no recent heartbeat", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
         const versionedName = `${collectionName}_v1`;
@@ -597,7 +597,7 @@ describe("StatusModule", () => {
       it("should report indexing (not stale) when lastHeartbeat is recent despite old startedAt", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
         const versionedName = `${collectionName}_v1`;
@@ -629,7 +629,7 @@ describe("StatusModule", () => {
       it("should auto-cleanup stale _v1 when lastHeartbeat is also old", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
         const versionedName = `${collectionName}_v1`;
@@ -661,7 +661,7 @@ describe("StatusModule", () => {
       it("should detect completed _v1 collection when alias does not exist yet", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
         const versionedName = `${collectionName}_v1`;
@@ -692,7 +692,7 @@ describe("StatusModule", () => {
       it("should show latest version during forceReindex when alias points to old version", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
 
@@ -735,7 +735,7 @@ describe("StatusModule", () => {
       it("should cleanup stale _v1 and return not_indexed when no valid alias exists", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
         const versionedName = `${collectionName}_v1`;
@@ -766,7 +766,7 @@ describe("StatusModule", () => {
         // by numeric suffix, but the alias is the real source of truth.
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
 
@@ -815,7 +815,7 @@ describe("StatusModule", () => {
       it("should cleanup stale _v2 and return indexed from alias target _v1", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
 
@@ -856,7 +856,7 @@ describe("StatusModule", () => {
       it("should cleanup stale _v2 and return indexed from legacy real collection (no alias)", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
 
@@ -896,7 +896,7 @@ describe("StatusModule", () => {
       it("should keep stale_indexing for _vN collection with real chunks (partial data)", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
         const versionedName = `${collectionName}_v1`;
@@ -924,7 +924,7 @@ describe("StatusModule", () => {
       it("should keep stale_indexing for legacy collection without _vN suffix", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
-        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
 
@@ -1136,7 +1136,7 @@ describe("StatusModule", () => {
     // the method picks the highest-versioned one as fallback.
     it("reads status from highest _vN when alias exists pointing to completed version", async () => {
       const { resolveCollectionName, validatePath } = await import("../../../../../src/core/infra/collection-name.js");
-      const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+      const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
       const absolutePath = await validatePath(codebaseDir);
       const collectionName = resolveCollectionName(absolutePath);
 

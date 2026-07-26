@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EmbeddingModelMismatchError } from "../../../src/core/adapters/embeddings/errors.js";
-import { INDEXING_METADATA_ID } from "../../../src/core/domains/ingest/constants.js";
+import { INDEXING_METADATA_ID } from "../../../src/core/contracts/constants.js";
 import { EmbeddingModelGuard } from "../../../src/core/infra/embedding-model-guard.js";
 
 function createMockQdrant(markerPayload?: Record<string, unknown> | null) {

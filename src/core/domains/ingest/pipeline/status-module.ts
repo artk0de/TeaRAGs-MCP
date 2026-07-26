@@ -24,7 +24,7 @@ import type {
   EdgeKindBreakdown,
   IndexStatus,
 } from "../../../types.js";
-import { INDEXING_METADATA_ID } from "../constants.js";
+import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { MIN_LANGUAGE_SHARE } from "../infra/index.js";
 import { QuarantineStore } from "../sync/index.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
