@@ -108,31 +108,3 @@ export class UnknownError extends TeaRagsError {
     });
   }
 }
-
-/**
- * Abstract base class for infrastructure errors (adapters, external services).
- *
- * Lives here rather than in `adapters/errors.ts` because foundation code throws
- * it too — `EmbeddingModelGuard` below is in `infra` and `infra` may not import
- * `adapters`. The adapter-specific code vocabulary (`InfraErrorCode`) stays in
- * `adapters/errors.ts`, which re-exports this class for its own subclasses.
- */
-export abstract class InfraError extends TeaRagsError {}
-
-/**
- * Collection was indexed with a different embedding model than currently configured.
- * Vectors from different models are incompatible — search results will be incorrect.
- */
-export class EmbeddingModelMismatchError extends InfraError {
-  constructor(expected: string, actual: string) {
-    super({
-      code: "INFRA_EMBEDDING_MODEL_MISMATCH",
-      message: `Embedding model mismatch: collection indexed with "${expected}", current config uses "${actual}"`,
-      hint:
-        `Either:\n` +
-        `1. Fix EMBEDDING_MODEL in config to "${expected}"\n` +
-        `2. Force re-index: index_codebase with forceReindex=true`,
-      httpStatus: 409,
-    });
-  }
-}

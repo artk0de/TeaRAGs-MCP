@@ -17,8 +17,8 @@
 import type { GraphDbClientPool } from "../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
 import type { Reranker } from "../../domains/explore/reranker.js";
-import type { EmbeddingModelGuard } from "../../infra/embedding-model-guard.js";
 import type { ProjectInfo } from "../../infra/registry/index.js";
 import type { SchemaDriftMonitor } from "../../infra/schema-drift-monitor.js";
 import type { ExploreFacade } from "../internal/facades/explore-facade.js";

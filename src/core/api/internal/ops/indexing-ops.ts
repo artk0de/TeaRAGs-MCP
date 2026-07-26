@@ -11,11 +11,12 @@
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
+import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
@@ -24,7 +25,6 @@ import { parseMarkerPayload } from "../../../domains/ingest/pipeline/indexing-ma
 import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
-import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,

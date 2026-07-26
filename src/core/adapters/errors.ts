@@ -5,7 +5,7 @@
  * that can fail due to external service unavailability.
  */
 
-export { InfraError } from "../infra/errors.js";
+import { TeaRagsError } from "../infra/errors.js";
 
 /**
  * Infrastructure error codes. Local strict union — Qdrant, embeddings, git CLI,
@@ -52,3 +52,9 @@ export type InfraErrorCode =
   | "INFRA_REGISTRY_NAME_CONFLICT"
   // DuckDB (codegraph adapter)
   | "INFRA_DUCKDB_OPEN_FAILED";
+
+/**
+ * Abstract base class for infrastructure errors (adapters, external services).
+ * Default httpStatus: 503 (Service Unavailable).
+ */
+export abstract class InfraError extends TeaRagsError {}
