@@ -3,7 +3,7 @@ import { watch, type FSWatcher } from "node:fs";
 import { RegistryNameConflictError } from "../../adapters/registry/errors.js";
 import { PROJECT_NAME_RE } from "./constants.js";
 import { flushWithCAS, loadRegistryFile } from "./registry-file.js";
-import type { CollectionEntry, RecordEntryInput } from "./types.js";
+import type { CollectionEntry, RecordEntryInput } from "../../contracts/types/registry.js";
 
 export class CollectionRegistry {
   private cache: Map<string, CollectionEntry> | null = null;

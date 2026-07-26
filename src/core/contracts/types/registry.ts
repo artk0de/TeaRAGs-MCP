@@ -83,3 +83,15 @@ export interface RegistryFileV1 {
 
 /** Wire shape returned by list_projects MCP tool. */
 export type ProjectInfo = CollectionEntry;
+
+/**
+ * The registry surface a module outside the owning domain may depend on.
+ *
+ * The concrete `CollectionRegistry` lives in `domains/maintenance/registry/`;
+ * the ingest pipeline only records an entry after an indexing run and receives
+ * the instance by DI, so it types that parameter with this port instead of
+ * reaching into a sibling domain.
+ */
+export interface CollectionRegistryPort {
+  record: (entry: RecordEntryInput) => void;
+}
