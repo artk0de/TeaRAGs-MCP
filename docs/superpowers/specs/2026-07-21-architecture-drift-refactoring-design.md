@@ -79,7 +79,8 @@ merges (its `endExtractionRun` seam lands first and aids the split).
 `isBugFixCommitOrBranch` lives in the parent while extractors needs it.
 
 **Decision.** Move `isBugFixCommitOrBranch` (plus any co-used pure helpers)
-from `metrics.ts` to `metrics/utils.ts` (leaf; extractors already imports it).
+from `metrics.ts` to `git/infra/utils.ts` (the leaf extractors already imports
+as `../utils.js` — `metrics/utils.ts` does not exist).
 `metrics.ts` keeps a re-export for import stability — the cycle still breaks
 because extractors takes the predicate from utils directly.
 

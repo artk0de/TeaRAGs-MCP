@@ -190,7 +190,8 @@ import type { CommitInfo } from "../../../../../adapters/vcs/types.js";
 import { extractTaskIds, isBugFixCommitOrBranch } from "../utils.js";
 ```
 
-- [ ] **Step 5: Switch `sessions.ts` import (kills cycle edge 2)**
+- [ ] **Step 5: Switch `sessions.ts` import (coupling reduction — `sessions.ts`
+      was never a cycle edge: `metrics.ts` does not import it)**
 
 Replace line 11:
 
@@ -208,7 +209,10 @@ import { isBugFixCommit, MERGE_SUBJECT } from "../utils.js";
 
 Run:
 `rg 'from "\.\./metrics\.js"' src/core/domains/trajectory/git/infra/metrics/`
-Expected: no matches (both edges gone → import DAG).
+Expected: no VALUE-import matches — the runtime edges are gone (import DAG).
+Three type-only importers (`chunk-assembler.ts`, `file-assembler.ts`,
+`types.ts` — `ChunkAccumulator`/`SquashOptions` type homes) legitimately
+remain; they are one-way child→parent and cannot form a cycle.
 
 - [ ] **Step 7: Type-check + tests**
 
