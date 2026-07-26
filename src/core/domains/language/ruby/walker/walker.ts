@@ -145,6 +145,9 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
       base.visibility = sig.visibility;
       if (sig.kwargs !== undefined) base.kwargs = sig.kwargs;
       base.acceptsBlock = sig.acceptsBlock;
+      // Only ever set when TRUE — absent means "carries a real body", which is
+      // the overwhelming majority of defs (bd tea-rags-mcp-bcdfe).
+      if (sig.isAbstractStub) base.isAbstractStub = true;
     }
     if (trackTypes) {
       // Store provides YARD + AST param/local bindings (position-filtered to chunk).
@@ -552,6 +555,70 @@ function computeRubyAcceptsBlock(methodNode: AstNode): boolean {
   return yields;
 }
 
+/** The two spellings of Ruby's built-in `NotImplementedError` an abstract stub
+ *  may raise. A namespaced look-alike (`Legacy::NotImplementedError`) is a
+ *  DIFFERENT class and deliberately absent — see `computeRubyIsAbstractStub`. */
+const NOT_IMPLEMENTED_ERROR_NAMES = new Set<string>(["NotImplementedError", "::NotImplementedError"]);
+
+/**
+ * Whether a `method` / `singleton_method` node is an ABSTRACT STUB — a
+ * declaration carrying no implementation (bd tea-rags-mcp-bcdfe). The single
+ * detection site: the codegraph self-dispatch probe READS the resulting flag off
+ * the symbol table, it never re-derives it.
+ *
+ * Exactly three body shapes qualify (spec "Generalized predicate" clause 3):
+ *   - EMPTY — `def m; end`, with or without params (tree-sitter drops the `body`
+ *     field entirely; comments are extras, so a comment-only body is empty too);
+ *   - a SINGLE-statement `raise NotImplementedError` — bare constant,
+ *     `::NotImplementedError`, with a message, or `NotImplementedError.new(…)`;
+ *   - a SINGLE-statement `super` — bare, `super()`, or `super(args)`.
+ *
+ * Conservative by construction: anything else (a guard clause before the raise,
+ * two statements, a different error class, a real expression, an endless method
+ * with a value) is a REAL body. Over-marking is the dangerous direction — it
+ * turns a genuine base method into a dispatch hook and fabricates edges (spec
+ * "Risks" → abstract-stub detection must be conservative).
+ */
+function computeRubyIsAbstractStub(methodNode: AstNode): boolean {
+  const body = methodNode.childForFieldName("body");
+  if (!body) return true; // `def m; end` / comment-only — no body field at all
+  // A block body is a `body_statement` wrapper; an endless method (`def m = x`)
+  // exposes its single expression directly.
+  const statements = body.type === "body_statement" ? body.namedChildren : [body];
+  if (statements.length === 0) return true;
+  if (statements.length > 1) return false; // real body — more than a declaration
+  const only = statements[0];
+  if (only.type === "super") return true; // bare `super`
+  if (only.type !== "call" && only.type !== "method_call") return false;
+  const methodField = only.childForFieldName("method") ?? only.children.find((c) => c.type === "identifier");
+  if (!methodField) return false;
+  if (methodField.type === "super") return true; // `super()` / `super(args)`
+  if (only.childForFieldName("receiver")) return false; // `x.raise` is not Kernel#raise
+  if (methodField.text !== "raise") return false;
+  return raisesNotImplementedError(only);
+}
+
+/**
+ * Whether a `raise …` call node names Ruby's `NotImplementedError` as the error
+ * it raises: `raise NotImplementedError` / `raise ::NotImplementedError` /
+ * `raise NotImplementedError, "msg"` / `raise NotImplementedError.new(…)`. A bare
+ * `raise` (re-raise — no arguments) and any other error class are excluded.
+ */
+function raisesNotImplementedError(raiseCall: AstNode): boolean {
+  const args = raiseCall.childForFieldName("arguments") ?? raiseCall.children.find((c) => c.type === "argument_list");
+  const first = args?.namedChildren[0];
+  if (!first) return false;
+  if (first.type === "constant" || first.type === "scope_resolution") {
+    return NOT_IMPLEMENTED_ERROR_NAMES.has(first.text);
+  }
+  // `NotImplementedError.new("msg")` — a constructed error instance.
+  if (first.type !== "call" && first.type !== "method_call") return false;
+  const receiver = first.childForFieldName("receiver");
+  if (!receiver) return false;
+  if (first.childForFieldName("method")?.text !== "new") return false;
+  return NOT_IMPLEMENTED_ERROR_NAMES.has(receiver.text);
+}
+
 /** Whether a call passes a block (`{ … }` / `do … end`) (bd d9o7o). The block
  *  is a `block` / `do_block` node, either a direct child of the call or inside
  *  its argument list. */
@@ -582,12 +649,19 @@ function collectRubyMethodSignatures(root: AstNode): Map<
     visibility: "public" | "private" | "protected";
     kwargs?: KwargSignature;
     acceptsBlock: boolean;
+    isAbstractStub: boolean;
   }
 > {
   type VisMode = "public" | "private" | "protected";
   const out = new Map<
     number,
-    { arity: AritySignature; visibility: VisMode; kwargs?: KwargSignature; acceptsBlock: boolean }
+    {
+      arity: AritySignature;
+      visibility: VisMode;
+      kwargs?: KwargSignature;
+      acceptsBlock: boolean;
+      isAbstractStub: boolean;
+    }
   >();
 
   const processClassBody = (classNode: AstNode): void => {
@@ -656,6 +730,7 @@ function collectRubyMethodSignatures(root: AstNode): Map<
           visibility: symVis.get(name) ?? currentVis,
           kwargs: computeRubyKwargs(stmt),
           acceptsBlock: computeRubyAcceptsBlock(stmt),
+          isAbstractStub: computeRubyIsAbstractStub(stmt),
         });
         continue;
       }
@@ -679,6 +754,7 @@ function collectRubyMethodSignatures(root: AstNode): Map<
               visibility: modifier,
               kwargs: computeRubyKwargs(firstArg),
               acceptsBlock: computeRubyAcceptsBlock(firstArg),
+              isAbstractStub: computeRubyIsAbstractStub(firstArg),
             });
           }
           // Symbol form already resolved in pass 1 — nothing to do here.

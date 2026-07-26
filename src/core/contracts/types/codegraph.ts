@@ -593,6 +593,21 @@ export interface ChunkExtraction {
   /** Method yields or takes an `&block` param (bd d9o7o). `false` = proven
    *  non-yielder; undefined for non-method chunks. */
   acceptsBlock?: boolean;
+  /**
+   * The method this chunk represents is an ABSTRACT STUB — a declaration with no
+   * implementation (bd tea-rags-mcp-bcdfe). Populated by the Ruby walker for the
+   * three conservative shapes the self-dispatch spec admits: an empty body, a
+   * single-statement `raise NotImplementedError`, or a single-statement `super`.
+   * Consumed by the codegraph self-dispatch discovery, where a stub is NOT a
+   * concrete definition of its member (so the template's hook stays abstract-in-A
+   * and the REDIRECT terminal fires).
+   *
+   * Only ever `true` — absent means "not a stub / not captured", so the field
+   * costs nothing on the ~99% of defs that carry a real body. Detection is
+   * deliberately narrow: mis-marking a real base method as a stub would fabricate
+   * hook edges (spec "Risks" → abstract-stub conservatism).
+   */
+  isAbstractStub?: boolean;
 }
 
 export interface CallRef {
@@ -716,6 +731,18 @@ export interface SymbolDefinition {
   /** Method yields or takes an `&block` param (statically visible). `false` =
    *  PROVEN non-yielder; `undefined` = not captured / non-method (bd d9o7o). */
   acceptsBlock?: boolean;
+  /**
+   * This definition is an ABSTRACT STUB — see {@link ChunkExtraction.isAbstractStub}
+   * for the (deliberately narrow) shapes that qualify. Threaded from the chunk
+   * extraction by the codegraph provider so the self-dispatch probe can answer
+   * "concretely defines" rather than merely "a body exists" (bd tea-rags-mcp-bcdfe).
+   *
+   * Only ever `true`; absent means not-a-stub. NOT persisted in `cg_symbols` — a
+   * def hydrated from disk (an unchanged file on an incremental run) therefore
+   * reads as non-stub, which degrades discovery to the pre-flag behaviour
+   * (under-coverage, never a wrong target). Persisting it is a follow-up.
+   */
+  isAbstractStub?: boolean;
 }
 
 /**

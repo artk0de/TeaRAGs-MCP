@@ -161,12 +161,20 @@ export function extractSelfDispatchMethods(chunks: readonly ChunkExtraction[]): 
  *   - `definesConcretely(type, member)` — the symbol table holds a method-level
  *     def of `member` whose enclosing type matches `type` by scope tail (FQ or
  *     bare last segment — the resolver's own type-match convention, mirroring
- *     `resolveTypeMethodInternal`). **v1 boundary:** this answers "a body exists",
- *     NOT "concrete impl vs abstract stub" — there is no stub signal in the
- *     extraction yet, so a `raise NotImplementedError` / empty / bare-`super`
- *     stub reads as concretely-defined and its REDIRECT template is NOT
- *     discovered. The ABSENT-hook case (the dominant service-object shape) is
- *     fully covered; stub REDIRECT is a follow-up gated on a walker stub flag.
+ *     `resolveTypeMethodInternal`) AND that def is not an abstract STUB. The
+ *     walker marks stubs (`SymbolDefinition.isAbstractStub`, bd
+ *     tea-rags-mcp-bcdfe) for exactly three shapes — empty body, single
+ *     `raise NotImplementedError`, single `super` — so both terminals are
+ *     covered: an ABSENT hook (CREATE, the dominant service-object shape) and a
+ *     hook DECLARED as a stub in the template's own type (REDIRECT). The same
+ *     rule applies to the related types, so a subtype whose override is itself a
+ *     stub does not count as a concrete definer.
+ *
+ *     One caveat, by design: the flag lives on the in-memory symbol table and is
+ *     NOT persisted in `cg_symbols`, so a def hydrated from disk (an unchanged
+ *     file during an incremental run) reads as non-stub. That degrades discovery
+ *     to the pre-flag behaviour for those files — under-coverage, never a wrong
+ *     target.
  *   - `relatedConcreteTypes(type)` — the transitive descendants across all four
  *     wiring channels (`super`/`include`/`extend`/`prepend`) from the hierarchy
  *     view. Empty when no hierarchy is present.
@@ -187,6 +195,9 @@ export function buildSelfDispatchProbe(
     definesConcretely(type, member) {
       const bare = type.split("::").pop();
       return symbolTable.lookupByShortName(member).some((def) => {
+        // A stub DECLARES the member without implementing it — the hook stays
+        // abstract in this type (bd tea-rags-mcp-bcdfe).
+        if (def.isAbstractStub === true) return false;
         const tail = def.scope[def.scope.length - 1];
         return tail === type || tail === bare;
       });

@@ -4,8 +4,12 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
-import { firstDefinerAfter } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/shared.js";
+import {
+  firstDefinerAfter,
+  resolveSelfDispatchHookTarget,
+} from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/shared.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 // Mirrors the harness in strategies.test.ts.
@@ -100,5 +104,76 @@ describe("firstDefinerAfter — MRO after X (cai0/2oky5)", () => {
       DEFAULT_AMBIGUOUS_RESOLVE_MODE,
     );
     expect(t).toEqual({ targetRelPath: "base.rb", targetSymbolId: "Base#m" });
+  });
+});
+
+// bd tea-rags-mcp-wceck — the self-dispatch hook narrow, and its abstract-stub
+// guard. Both narrow-to-1 consumers (the constant-entry strategy and the
+// instance-rooted template redirect) route their hook lookup through this ONE
+// choke point, so "never emit an edge to a stub" is decided in a single place.
+describe("resolveSelfDispatchHookTarget — abstract-stub guard (wceck)", () => {
+  const def = (
+    symbolId: string,
+    shortName: string,
+    relPath: string,
+    scope: string[],
+    isAbstractStub?: true,
+  ): SymbolDefinition => ({
+    symbolId,
+    fqName: symbolId,
+    shortName,
+    relPath,
+    scope,
+    ...(isAbstractStub === true ? { isAbstractStub: true } : {}),
+  });
+
+  const BASE_FILE = "app/services/base_processor.rb";
+  const CONCRETE_FILE = "app/services/form_1040.rb";
+  const PLAIN_FILE = "app/services/plain.rb";
+
+  // `BaseProcessor#process_result` is a `raise NotImplementedError` stub;
+  // `Form1040` overrides it for real, `Plain` inherits the stub untouched.
+  const hookCtx = (): CallContext => {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile(BASE_FILE, [
+      def("BaseProcessor", "BaseProcessor", BASE_FILE, []),
+      def("BaseProcessor#process_result", "process_result", BASE_FILE, ["BaseProcessor"], true),
+    ]);
+    symbolTable.upsertFile(CONCRETE_FILE, [
+      def("Form1040", "Form1040", CONCRETE_FILE, []),
+      def("Form1040#process_result", "process_result", CONCRETE_FILE, ["Form1040"]),
+    ]);
+    symbolTable.upsertFile(PLAIN_FILE, [def("Plain", "Plain", PLAIN_FILE, [])]);
+    return ctx({
+      symbolTable,
+      classAncestors: { Form1040: ["BaseProcessor"], Plain: ["BaseProcessor"] },
+    });
+  };
+
+  it("resolves the hook to a concrete override", () => {
+    expect(
+      resolveSelfDispatchHookTarget("Form1040", "process_result", hookCtx(), DEFAULT_AMBIGUOUS_RESOLVE_MODE),
+    ).toEqual({ targetRelPath: CONCRETE_FILE, targetSymbolId: "Form1040#process_result" });
+  });
+
+  it("returns null when the MRO walk lands on the base's abstract STUB (no edge to a stub)", () => {
+    // `Plain` does not override the hook, so the walk reaches
+    // `BaseProcessor#process_result` — a declaration, not a target.
+    expect(
+      resolveSelfDispatchHookTarget("Plain", "process_result", hookCtx(), DEFAULT_AMBIGUOUS_RESOLVE_MODE),
+    ).toBeNull();
+  });
+
+  it("returns null for a file-only resolution (never downgrades a narrow to a file edge)", () => {
+    // `Plain` resolves to a file but nothing in its chain defines `missing_hook`.
+    expect(
+      resolveSelfDispatchHookTarget("Plain", "missing_hook", hookCtx(), DEFAULT_AMBIGUOUS_RESOLVE_MODE),
+    ).toBeNull();
+  });
+
+  it("returns null for a type with no known file at all", () => {
+    expect(
+      resolveSelfDispatchHookTarget("Unknown", "process_result", hookCtx(), DEFAULT_AMBIGUOUS_RESOLVE_MODE),
+    ).toBeNull();
   });
 });

@@ -17,6 +17,7 @@ import type {
   HierarchyView,
   InheritanceKind,
   NamedSymbol,
+  SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   buildSelfDispatchProbe,
@@ -48,17 +49,26 @@ const fakeHierarchy = (descendants: Record<string, { fq: string; kind: Inheritan
 const chunk = (symbolId: string, scope: string[], calls: [string | null, string][]): ChunkExtraction => ({
   symbolId,
   scope,
-  calls: calls.map(([receiver, member]) => ({ callText: `${receiver ?? ""}.${member}`, receiver, member, startLine: 1 })),
+  calls: calls.map(([receiver, member]) => ({
+    callText: `${receiver ?? ""}.${member}`,
+    receiver,
+    member,
+    startLine: 1,
+  })),
 });
 
 describe("extractSelfDispatchMethods", () => {
   it("captures self-shaped calls (bare / self / self.new / self.class.new), normalized to bare members", () => {
     const chunks: ChunkExtraction[] = [
-      chunk("KindOfService.call", ["KindOfService"], [
-        ["self.new", "perform"],
-        ["self", "audit"],
-        [null, "log"],
-      ]),
+      chunk(
+        "KindOfService.call",
+        ["KindOfService"],
+        [
+          ["self.new", "perform"],
+          ["self", "audit"],
+          [null, "log"],
+        ],
+      ),
     ];
     expect(extractSelfDispatchMethods(chunks)).toEqual([
       {
@@ -71,11 +81,15 @@ describe("extractSelfDispatchMethods", () => {
 
   it("captures implicit self-instantiation receivers (`new` / `new(args)` / `self.class.new`)", () => {
     const chunks: ChunkExtraction[] = [
-      chunk("BaseService.call", ["BaseService"], [
-        ["new", "perform"], // implicit self.new — walker emits receiver "new"
-        ["new(args)", "run"], // implicit self.new(args)
-        ["self.class.new", "process"],
-      ]),
+      chunk(
+        "BaseService.call",
+        ["BaseService"],
+        [
+          ["new", "perform"], // implicit self.new — walker emits receiver "new"
+          ["new(args)", "run"], // implicit self.new(args)
+          ["self.class.new", "process"],
+        ],
+      ),
     ];
     expect(extractSelfDispatchMethods(chunks)).toEqual([
       {
@@ -88,14 +102,28 @@ describe("extractSelfDispatchMethods", () => {
 
   it("ignores non-self receivers and methods with no self-calls", () => {
     const chunks: ChunkExtraction[] = [
-      chunk("Foo#bar", ["Foo"], [["baz", "qux"], ["Other", "thing"]]), // no self-call → dropped
+      chunk(
+        "Foo#bar",
+        ["Foo"],
+        [
+          ["baz", "qux"],
+          ["Other", "thing"],
+        ],
+      ), // no self-call → dropped
     ];
     expect(extractSelfDispatchMethods(chunks)).toEqual([]);
   });
 
   it("skips type-body chunks (DSL macros) — only method-shaped symbolIds are templates", () => {
     const chunks: ChunkExtraction[] = [
-      chunk("Post", ["Post"], [[null, "has_many"], [null, "validates"]]), // class body, symbolId is the type
+      chunk(
+        "Post",
+        ["Post"],
+        [
+          [null, "has_many"],
+          [null, "validates"],
+        ],
+      ), // class body, symbolId is the type
     ];
     expect(extractSelfDispatchMethods(chunks)).toEqual([]);
   });
@@ -135,10 +163,85 @@ describe("buildSelfDispatchProbe", () => {
   });
 });
 
+// bd tea-rags-mcp-bcdfe — the abstract-stub half of the abstract-in-A predicate.
+// `definesConcretely` must answer "a CONCRETE body exists", not merely "a def
+// exists": a walker-marked stub (`raise NotImplementedError` / empty / bare
+// `super`) is a declaration, so the hook stays abstract in its declaring type and
+// the REDIRECT terminal becomes reachable.
+describe("buildSelfDispatchProbe — abstract stubs are not concrete definitions (bcdfe)", () => {
+  const def = (
+    symbolId: string,
+    shortName: string,
+    relPath: string,
+    scope: string[],
+    isAbstractStub?: true,
+  ): SymbolDefinition => ({
+    symbolId,
+    fqName: symbolId,
+    shortName,
+    relPath,
+    scope,
+    ...(isAbstractStub === true ? { isAbstractStub: true } : {}),
+  });
+
+  // The spec's `ApplicationCsvExporter` witness: the base DECLARES `build` as a
+  // `raise NotImplementedError` stub; the concrete exporter overrides it.
+  const EXPORTER_FILE = "app/exporters/application_csv_exporter.rb";
+  const FOO_FILE = "app/exporters/foo_exporter.rb";
+
+  const exporterTable = (fooOverrideIsStub = false): InMemoryGlobalSymbolTable => {
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile(EXPORTER_FILE, [
+      def("ApplicationCsvExporter#export", "export", EXPORTER_FILE, ["ApplicationCsvExporter"]),
+      def("ApplicationCsvExporter#build", "build", EXPORTER_FILE, ["ApplicationCsvExporter"], true),
+    ]);
+    t.upsertFile(FOO_FILE, [
+      def("FooExporter#build", "build", FOO_FILE, ["FooExporter"], fooOverrideIsStub ? true : undefined),
+    ]);
+    return t;
+  };
+
+  it("definesConcretely is FALSE for a def the walker marked as an abstract stub", () => {
+    const probe = buildSelfDispatchProbe(exporterTable(), undefined);
+    expect(probe.definesConcretely("ApplicationCsvExporter", "build")).toBe(false);
+    expect(probe.definesConcretely("FooExporter", "build")).toBe(true); // real override
+  });
+
+  it("discovers the REDIRECT template: base hook is a STUB, a subtype overrides it concretely", () => {
+    const methods: SelfDispatchMethod[] = [
+      {
+        symbolId: "ApplicationCsvExporter#export",
+        enclosingType: "ApplicationCsvExporter",
+        selfHookCandidates: ["build"],
+      },
+    ];
+    const hierarchy = fakeHierarchy({ ApplicationCsvExporter: [{ fq: "FooExporter", kind: "super" }] });
+    const templates = discoverSelfDispatchTemplates(methods, buildSelfDispatchProbe(exporterTable(), hierarchy));
+    expect(templates).toEqual([
+      { templateSymbolId: "ApplicationCsvExporter#export", enclosingType: "ApplicationCsvExporter", hook: "build" },
+    ]);
+  });
+
+  it("discovers NOTHING when every override is itself a stub (no concrete definer anywhere)", () => {
+    const methods: SelfDispatchMethod[] = [
+      {
+        symbolId: "ApplicationCsvExporter#export",
+        enclosingType: "ApplicationCsvExporter",
+        selfHookCandidates: ["build"],
+      },
+    ];
+    const hierarchy = fakeHierarchy({ ApplicationCsvExporter: [{ fq: "FooExporter", kind: "super" }] });
+    const templates = discoverSelfDispatchTemplates(methods, buildSelfDispatchProbe(exporterTable(true), hierarchy));
+    expect(templates).toEqual([]);
+  });
+});
+
 describe("foldSelfDispatchTemplates", () => {
   it("folds single-hook templates into a symbolId → hook map", () => {
     expect(
-      foldSelfDispatchTemplates([{ templateSymbolId: "KindOfService.call", enclosingType: "KindOfService", hook: "perform" }]),
+      foldSelfDispatchTemplates([
+        { templateSymbolId: "KindOfService.call", enclosingType: "KindOfService", hook: "perform" },
+      ]),
     ).toEqual({ "KindOfService.call": "perform" });
   });
 
@@ -189,9 +292,7 @@ describe("collectSelfInstantiatingClassMethods (DEFECT 2 v2)", () => {
 
 describe("end-to-end: extract → probe → discover → fold (KindOfService shape)", () => {
   it("produces the KindOfService.call → perform run-global map", () => {
-    const chunks: ChunkExtraction[] = [
-      chunk("KindOfService.call", ["KindOfService"], [["self.new", "perform"]]),
-    ];
+    const chunks: ChunkExtraction[] = [chunk("KindOfService.call", ["KindOfService"], [["self.new", "perform"]])];
     const t = new InMemoryGlobalSymbolTable();
     t.upsertFile("app/services/kind_of_service.rb", [
       sym("KindOfService.call", "call", "app/services/kind_of_service.rb", ["KindOfService"]),

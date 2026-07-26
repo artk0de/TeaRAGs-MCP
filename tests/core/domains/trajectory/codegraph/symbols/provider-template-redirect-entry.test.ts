@@ -58,10 +58,12 @@ describe("CodegraphEnrichmentProvider — instance-rooted template redirect (DEF
       ["class KindOfService", "  def call", "    perform", "  end", "end", ""].join("\n"),
     );
     paths.push("src/kind_of_service.rb");
-    // Concrete subclass defines the `#perform` hook (via `<` so classAncestors carries it).
+    // Concrete subclass defines the `#perform` hook (via `<` so classAncestors
+    // carries it) with a REAL body — an empty body would be an abstract stub
+    // (bd tea-rags-mcp-bcdfe), i.e. a declaration rather than a concrete definer.
     writeFileSync(
       join(root, "src", "create.rb"),
-      ["class Create < KindOfService", "  def perform", "  end", "end", ""].join("\n"),
+      ["class Create < KindOfService", "  def perform", "    :done", "  end", "end", ""].join("\n"),
     );
     paths.push("src/create.rb");
     // Caller: a typed-instance entry — `service = Create.new; service.call` — the
@@ -105,9 +107,7 @@ describe("CodegraphEnrichmentProvider — instance-rooted template redirect (DEF
     );
 
     // ── Entry-anchored redirect: `C#go` reaches the concrete hook, the SOLE edge.
-    const goToConcrete = edges.filter(
-      (e) => e.source_symbol_id === "C#go" && e.target_symbol_id === "Create#perform",
-    );
+    const goToConcrete = edges.filter((e) => e.source_symbol_id === "C#go" && e.target_symbol_id === "Create#perform");
     expect(goToConcrete).toHaveLength(1);
     expect(goToConcrete[0].call_expression).toBe("service.call");
 

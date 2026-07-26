@@ -790,6 +790,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // Thread walker-captured kwarg signature + block-acceptance (bd d9o7o)
       ...(c.kwargs !== undefined ? { kwargs: c.kwargs } : {}),
       ...(c.acceptsBlock !== undefined ? { acceptsBlock: c.acceptsBlock } : {}),
+      // Abstract-stub marker (bd tea-rags-mcp-bcdfe) — set only when true, so the
+      // self-dispatch probe can tell a declaration from a concrete definition.
+      ...(c.isAbstractStub === true ? { isAbstractStub: true } : {}),
     }));
   }
 

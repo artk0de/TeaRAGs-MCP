@@ -23,6 +23,7 @@ import {
   type CallContext,
   type CallRef,
   type NamedSymbol,
+  type SymbolDefinition,
   type SymbolResolutionTarget,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { redirectSelfDispatchTemplate } from "../../../../../../src/core/domains/language/ruby/resolver/template-redirect.js";
@@ -69,7 +70,10 @@ const serviceTable = (): InMemoryGlobalSymbolTable =>
         sym("KindOfService#call", "call", KOS_FILE, ["KindOfService"]),
       ],
     ],
-    [CREATE_FILE, [sym("Create", "Create", CREATE_FILE, []), sym("Create#perform", "perform", CREATE_FILE, ["Create"])]],
+    [
+      CREATE_FILE,
+      [sym("Create", "Create", CREATE_FILE, []), sym("Create#perform", "perform", CREATE_FILE, ["Create"])],
+    ],
     // Widget is a concrete type that does NOT define `perform` (hook-missing case).
     [WIDGET_FILE, [sym("Widget", "Widget", WIDGET_FILE, [])]],
   );
@@ -160,6 +164,42 @@ describe("redirectSelfDispatchTemplate (DEFECT 2 G4 — instance-rooted template
     const c = serviceCtx({ localBindings: { base: [{ line: 1, type: "KindOfService", valueKind: "instance" }] } });
     const out = redirectSelfDispatchTemplate(TEMPLATE_TARGET, callWith("base"), c, MODE);
     expect(out).toBe(TEMPLATE_TARGET);
+  });
+
+  it("hook resolves to the base's abstract STUB → keeps the ORIGINAL template target (wceck)", () => {
+    // `KindOfService#perform` EXISTS as a `raise NotImplementedError` stub, so the
+    // template IS discovered — but `Plain` does not override it, and the MRO walk
+    // lands on the stub. Redirecting there would point `get_callers` at a
+    // declaration, so the original (abstract) template edge stays.
+    const stubDef = (
+      symbolId: string,
+      shortName: string,
+      relPath: string,
+      scope: string[],
+      isAbstractStub?: true,
+    ): SymbolDefinition => ({
+      symbolId,
+      fqName: symbolId,
+      shortName,
+      relPath,
+      scope,
+      ...(isAbstractStub === true ? { isAbstractStub: true } : {}),
+    });
+    const PLAIN_FILE = "app/services/plain.rb";
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile(KOS_FILE, [
+      stubDef("KindOfService", "KindOfService", KOS_FILE, []),
+      stubDef("KindOfService#call", "call", KOS_FILE, ["KindOfService"]),
+      stubDef("KindOfService#perform", "perform", KOS_FILE, ["KindOfService"], true),
+    ]);
+    symbolTable.upsertFile(PLAIN_FILE, [stubDef("Plain", "Plain", PLAIN_FILE, [])]);
+    const c = ctx({
+      symbolTable,
+      classAncestors: { Plain: ["KindOfService"] },
+      selfDispatchTemplates: { "KindOfService#call": "perform" },
+      localBindings: { service: [{ line: 1, type: "Plain", valueKind: "instance" }] },
+    });
+    expect(redirectSelfDispatchTemplate(TEMPLATE_TARGET, callWith("service"), c, MODE)).toBe(TEMPLATE_TARGET);
   });
 
   it("feature off (no selfDispatchTemplates map) → returns the target unchanged", () => {

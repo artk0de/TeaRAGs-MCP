@@ -1,7 +1,12 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { resolveTypeInstanceMethod, resolveTypeStaticMethod, type ResolverConfig } from "./shared.js";
+import {
+  resolveSelfDispatchHookTarget,
+  resolveTypeInstanceMethod,
+  resolveTypeStaticMethod,
+  type ResolverConfig,
+} from "./shared.js";
 
 /** Ruby constants begin uppercase; `::`-joined segments form a scope chain. */
 const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
@@ -74,8 +79,8 @@ export class RubySelfDispatchEntrySymbolResolutionStrategy implements SymbolReso
     // method-level. A file-only miss must NOT fabricate an edge, so fall through.
     const hook = templates[mClass.targetSymbolId];
     if (hook !== undefined) {
-      const target = resolveTypeInstanceMethod(receiver, hook, ctx, this.cfg.mode);
-      if (target !== null && target.targetSymbolId !== null) return resolved(target);
+      const target = resolveSelfDispatchHookTarget(receiver, hook, ctx, this.cfg.mode);
+      if (target !== null) return resolved(target);
     }
 
     // v2 — the class method self-instantiates and delegates to the SAME-named
@@ -89,8 +94,8 @@ export class RubySelfDispatchEntrySymbolResolutionStrategy implements SymbolReso
       if (mInst !== null && mInst.targetSymbolId !== null) {
         const hook2 = templates[mInst.targetSymbolId];
         if (hook2 !== undefined) {
-          const target2 = resolveTypeInstanceMethod(receiver, hook2, ctx, this.cfg.mode);
-          if (target2 !== null && target2.targetSymbolId !== null) return resolved(target2);
+          const target2 = resolveSelfDispatchHookTarget(receiver, hook2, ctx, this.cfg.mode);
+          if (target2 !== null) return resolved(target2);
         }
       }
     }

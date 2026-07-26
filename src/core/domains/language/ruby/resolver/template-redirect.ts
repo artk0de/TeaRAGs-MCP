@@ -22,14 +22,16 @@
  * static type (drawn from the exact sources the strategies already consult —
  * `localBindings`, `ivarTypes`, chain propagation — via {@link typeOfReceiver}),
  * the abstract hook narrows to that concrete type's `Type#hook` via
- * {@link resolveTypeInstanceMethod}. The edge stays entry-anchored
+ * {@link resolveSelfDispatchHookTarget}. The edge stays entry-anchored
  * (`enclosing(service.call) → Create#perform`).
  *
  * Strictly ADDITIVE refinement — zero recall risk. ANY miss keeps the ORIGINAL
  * resolved target: feature off, file-only target, non-template target, null /
  * untyped / non-concrete receiver, the receiver's type IS the template's own
- * (abstract) enclosing type (no concrete subtype to narrow to), or the hook is
- * not method-level-defined on the concrete type. Never drop an existing edge,
+ * (abstract) enclosing type (no concrete subtype to narrow to), the hook is
+ * not method-level-defined on the concrete type, or the concrete type does not
+ * override the hook so the MRO walk lands on the base's abstract STUB (bd
+ * tea-rags-mcp-wceck — a declaration is not a call target). Never drop an existing edge,
  * never fabricate a file-only edge. Constant-entry narrowing (v1/v2) is
  * untouched — a constant entry already resolves to `Const#H`, which is not a
  * `selfDispatchTemplates` key, so this redirect is inert for it.
@@ -41,7 +43,7 @@ import type {
   CallRef,
   SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
-import { resolveTypeInstanceMethod } from "./strategies/shared.js";
+import { resolveSelfDispatchHookTarget } from "./strategies/shared.js";
 import { typeOfReceiver } from "./type-propagation.js";
 
 /**
@@ -79,9 +81,10 @@ export function redirectSelfDispatchTemplate(
   if (receiverType === enclosingTypeOf(target.targetSymbolId)) return target;
 
   // Narrow the abstract hook to the concrete type's method-level `Type#hook`.
-  const redirected = resolveTypeInstanceMethod(receiverType, hook, ctx, mode);
-  if (redirected === null) return target; // concrete type / hook unresolved → keep original
-  if (redirected.targetSymbolId === null) return target; // never downgrade to a file-only edge
+  // The shared choke point also rejects a file-only resolution and a hook whose
+  // MRO walk lands on an abstract STUB — both keep the original target.
+  const redirected = resolveSelfDispatchHookTarget(receiverType, hook, ctx, mode);
+  if (redirected === null) return target;
   return redirected;
 }
 
