@@ -25,6 +25,7 @@ import type {
   GraphEdges,
   SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { LanguageFactoryDescriptor } from "../../../../../../src/core/contracts/types/language.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
@@ -380,21 +381,38 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
 
   it("wraps resolveExtraction failure with file context as CodegraphResolveError", async () => {
     const graphDb = makeStubGraphDb();
-    const provider = makeProvider(graphDb);
+    // Make pass-2 resolution blow up through the REAL path: the language factory
+    // is the provider's only source of resolver capability, so a resolver that
+    // throws reproduces a resolver crash without reaching into provider
+    // internals (the resolution code itself moved to CallEdgeResolutionRunner).
+    const provider = new CodegraphEnrichmentProvider({
+      graphDb,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      languageFactory: {
+        supported: () => ["typescript"],
+        create: () =>
+          ({
+            resolver: {
+              resolve: () => {
+                throw new Error("resolver internal crash");
+              },
+            },
+          }) as unknown as ReturnType<LanguageFactoryDescriptor["create"]>,
+      },
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+    });
     const internalProv = provider as unknown as {
-      resolveExtraction: () => GraphEdges;
       streamingResolveAndUpsert: (spillPath: string, collectionName?: string) => Promise<void>;
-    };
-    internalProv.resolveExtraction = () => {
-      throw new Error("resolver internal crash");
     };
     const { mkdirSync, writeFileSync } = await import("node:fs");
     const spillDir = join(tmp, "resolve-fail-spill");
     mkdirSync(spillDir, { recursive: true });
     const spillPath = join(spillDir, "fail.ndjson");
+    // One import so the file-edge pass actually calls the resolver.
     writeFileSync(
       spillPath,
-      '{"relPath":"src/x.ts","language":"typescript","imports":[],"chunks":[],"fileScope":[]}\n',
+      '{"relPath":"src/x.ts","language":"typescript","imports":[{"importText":"./y.js","startLine":1}],"chunks":[],"fileScope":[]}\n',
     );
     try {
       await internalProv.streamingResolveAndUpsert(spillPath);

@@ -43,10 +43,17 @@ import { runMigrations } from "../../../../../../src/core/infra/migration/databa
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../../src/core/infra/migration/database/migrations");
 
+/**
+ * The provider's run-global maps, owned by `CodegraphRunState` since the G2
+ * collaborator split (bd tea-rags-mcp-6vfrj). Same fields, same semantics — only
+ * the object holding them moved, so this snapshot reads them at the new address.
+ */
 interface ProviderRunGlobals {
-  runAncestors: Record<string, readonly string[]>;
-  runReturnTypes: Record<string, string>;
-  runInheritanceRows: InheritanceEdgeRow[];
+  runState: {
+    ancestors: Record<string, readonly string[]>;
+    returnTypes: Record<string, string>;
+    inheritanceRows: InheritanceEdgeRow[];
+  };
 }
 
 interface RunGlobalSnapshot {
@@ -120,9 +127,9 @@ function bySymbol(a: SymbolDefinition, b: SymbolDefinition): number {
 
 function snapshotRunGlobals(p: ProviderRunGlobals): RunGlobalSnapshot {
   return {
-    runAncestors: structuredClone(p.runAncestors),
-    runReturnTypes: structuredClone(p.runReturnTypes),
-    runInheritanceRows: structuredClone(p.runInheritanceRows),
+    runAncestors: structuredClone(p.runState.ancestors),
+    runReturnTypes: structuredClone(p.runState.returnTypes),
+    runInheritanceRows: structuredClone(p.runState.inheritanceRows),
   };
 }
 
