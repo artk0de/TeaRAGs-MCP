@@ -1684,6 +1684,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * (debug-logged) so a spill hiccup never aborts indexing.
    */
   acceptExtraction = (extraction: FileExtraction, options?: { collectionName?: string }): void => {
+    // G3a (bd tea-rags-mcp-lx8sb): the cross-pass tee receives EVERY chunked
+    // file from the file-processor — unlike the batch path (streamFileBatchInner)
+    // and buildFileSignals, which filter. Without this guard a test-classified
+    // file (spec/support/gem_extensions/capybara.rb reopening `module Capybara`)
+    // enters the graph under CODEGRAPH_EXCLUDE_TESTS, defeats the DEFECT-1
+    // external-root gate, and re-records the dnd_helpers aggregates on every
+    // --force reindex.
+    if (this.codegraphExclusionFilter.ignores(extraction.relPath)) return;
     const key = this.collectionKey(options?.collectionName);
     let written = this.xpassWritten.get(key);
     if (!written) {

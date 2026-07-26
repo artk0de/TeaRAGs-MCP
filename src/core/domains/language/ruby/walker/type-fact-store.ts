@@ -2,8 +2,12 @@ import type { LocalBinding } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import type { RubyTypeFact } from "./type-sources/types.js";
 
-/** Default source precedence: first = strongest. */
-const DEFAULT_SOURCE_ORDER: readonly string[] = ["sorbet", "rbs", "yard", "ast"];
+/** Default source precedence: first = strongest. `associations` (Rails DSL
+ *  inflection) ranks below YARD annotations; `body-last-expr` (service `call` /
+ *  `perform` body last-expression inference) ranks below both — an annotation or
+ *  a macro-declared type always beats a body-inferred return — but above raw AST
+ *  local inference. */
+const DEFAULT_SOURCE_ORDER: readonly string[] = ["sorbet", "rbs", "yard", "associations", "body-last-expr", "ast"];
 
 /** Flatten a RubyTypeRef to the bare class name today's LocalBinding.type holds (Incr 0 parity). */
 function refToName(ref: RubyTypeRef): string | undefined {

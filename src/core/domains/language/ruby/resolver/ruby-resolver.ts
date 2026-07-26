@@ -49,6 +49,7 @@ import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveDispatchViaComponents, resolveViaChain } from "../../resolver-chain.js";
 import { ZEITWERK_PREFIX } from "../walker/walker.js";
 import { RubyExternalVocabulary } from "./ruby-external-vocabulary.js";
+import { redirectSelfDispatchTemplate } from "./template-redirect.js";
 import {
   CONE_MAX_DEFAULT,
   resolveConstant,
@@ -132,7 +133,13 @@ export class RubyCallResolver implements CallResolver {
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
-    return resolveViaChain(this.strategies, call, ctx);
+    const target = resolveViaChain(this.strategies, call, ctx);
+    if (target === null) return null;
+    // DEFECT 2 G4: central post-resolution refinement — a resolved self-dispatch
+    // template node reached via a typed-instance receiver narrows to the entry's
+    // concrete `Type#hook`. Strictly additive; any miss keeps `target` (see
+    // template-redirect.ts). Constant-entry (v1/v2) narrowing is unaffected.
+    return redirectSelfDispatchTemplate(target, call, ctx, this.mode);
   }
 
   /**
