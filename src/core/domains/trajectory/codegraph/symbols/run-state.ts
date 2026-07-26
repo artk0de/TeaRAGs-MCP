@@ -28,7 +28,7 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import type { ProviderRunMetrics } from "../../../../contracts/types/provider.js";
-import { MapHierarchyView } from "../../../../infra/graph/hierarchy-view.js";
+import { MapHierarchyView } from "../hierarchy-view.js";
 import { buildHierarchySnapshot } from "./inheritance-edges.js";
 import { RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 import {

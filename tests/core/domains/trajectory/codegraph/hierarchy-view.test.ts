@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { HierarchySnapshot, InheritanceEdgeRow } from "../../../../src/core/contracts/types/codegraph.js";
-import { MapHierarchyView } from "../../../../src/core/infra/graph/hierarchy-view.js";
+import type { HierarchySnapshot, InheritanceEdgeRow } from "../../../../../src/core/contracts/types/codegraph.js";
+import { MapHierarchyView } from "../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
 
 function r(
   source: string,

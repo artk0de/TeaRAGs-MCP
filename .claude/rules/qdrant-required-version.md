@@ -1,7 +1,7 @@
 ---
 paths:
   - ".qdrant-required-version"
-  - "src/core/infra/qdrant-version.ts"
+  - "src/core/adapters/qdrant/required-version.ts"
   - "src/core/adapters/qdrant/embedded/**"
 ---
 
@@ -19,10 +19,10 @@ Single-line file at repo root = Qdrant server version this package targets
 **Single source of truth** for all Qdrant-version matters — both embedded daemon
 version AND minimum accepted external server version. Shipped with npm package
 via `package.json` `files[]`, loaded eagerly at module import by
-`src/core/infra/qdrant-version.ts`:
+`src/core/adapters/qdrant/required-version.ts`:
 
 ```ts
-import { QDRANT_VERSION } from "./core/infra/qdrant-version.js";
+import { QDRANT_VERSION } from "./core/adapters/qdrant/required-version.js";
 
 console.log(QDRANT_VERSION); // "1.17.0"
 ```
@@ -87,5 +87,5 @@ compiled JS.
 
 Never hardcode version in multiple places or introduce parallel "min" vs
 "embedded" split — one version, one file, one export. Need the value → import
-`QDRANT_VERSION` from `src/core/infra/qdrant-version.ts`. Don't duplicate string
-literal.
+`QDRANT_VERSION` from `src/core/adapters/qdrant/required-version.ts`. Don't
+duplicate string literal.
