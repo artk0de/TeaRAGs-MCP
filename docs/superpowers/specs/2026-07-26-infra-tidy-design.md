@@ -116,7 +116,7 @@ evidence the original matrix did not have.
 | `scope-detection.ts`                                          | 60  | none. Shared by `ingest` (2) and `explore` (1), so neither can own it. Add the constraint as a comment                                                                                                                                                      |
 | `stats-cache.ts`                                              | 148 | none — the `SignalStats` type edge is now legal                                                                                                                                                                                                             |
 | `collection-name.ts`                                          | 102 | see W1                                                                                                                                                                                                                                                      |
-| `embedding-model-guard.ts`                                    | 126 | see W4                                                                                                                                                                                                                                                      |
+| ~~`embedding-model-guard.ts`~~                                | 126 | RELOCATED during execution to `adapters/qdrant/` — see the revised W4                                                                                                                                                                                       |
 
 ### Relocates — 2865 LOC
 
@@ -199,16 +199,24 @@ skip migrating.
 W3 is the only part of this spec that changes runtime behaviour. It gets its own
 acceptance gate.
 
-### W4 — Guard depends on a port, not on Qdrant
+### W4 — Guard moves to `adapters/qdrant/` (revised during execution)
 
-`embedding-model-guard.ts` stays in `infra` and loses four edges:
+Two of the guard's four edges were mechanical and are gone:
+`INDEXING_METADATA_ID` moved to `contracts/constants.ts`, and the `isDebug`
+import turned out to point at a deprecated re-export of `infra/runtime.ts`.
 
-| Edge                                                               | Fix                                                                                                                                                                |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `INDEXING_METADATA_ID` from `domains/ingest/constants.ts`          | constant moves to `contracts` (shared with W2)                                                                                                                     |
-| `isDebug` from `domains/ingest/pipeline/infra/runtime.ts`          | that file is a deprecated re-export of `infra/runtime.ts`; import directly                                                                                         |
-| `import type { QdrantManager }` from `adapters/qdrant/client.ts`   | narrow `CollectionPointStore` port in `contracts` (`getPoint`, `upsert`, `delete` for one collection); `bootstrap` already injects the manager at `factory.ts:202` |
-| `EmbeddingModelMismatchError` from `adapters/embeddings/errors.ts` | error class moves down to `infra/errors.ts`, re-exported where it is consumed today                                                                                |
+The other two forced a placement rethink. The guard calls five `QdrantManager`
+methods — `getPoint`, `setPayload`, `getCollectionInfo`, `addPoints`,
+`addPointsWithSparse` — so a `CollectionPointStore` port would have had to
+mirror a third of the Qdrant client and drag the `CollectionInfo` and
+`SparseVector` types into `contracts`: the duplication this spec exists to
+remove. The guard is a Qdrant marker-point manager, not a foundation primitive,
+and its consumers (`api` ×7, `bootstrap`) may import `adapters` directly.
+
+So `embedding-model-guard.ts` moves to `adapters/qdrant/` and needs no port at
+all. `EmbeddingModelMismatchError` and the `InfraError` base stay where
+`.claude/rules/typed-errors.md` puts them — the only reason to move them down
+was the guard sitting in the foundation.
 
 ## Type duplications removed
 

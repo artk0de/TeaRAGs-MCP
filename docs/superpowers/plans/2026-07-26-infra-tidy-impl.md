@@ -1689,8 +1689,12 @@ Expected: eslint exits 0; all four fixture cases pass.
 git ls-files src/core/infra | xargs wc -l | tail -1
 ```
 
-Expected: 1329 total. A different number means a module landed somewhere the
-spec did not plan — reconcile against the spec's placement tables before
+Expected: roughly 1200 total — the spec's 1329 minus the 126-line
+`embedding-model-guard.ts`, which moved to `adapters/qdrant/` during wave 2, and
+minus the `resolveCollection` body that moved to `api/internal`. Treat the
+placement tables, not the byte count, as the gate: every remaining module must
+appear in the spec's "Stays in infra" list. A module that appears nowhere means
+it spec did not plan — reconcile against the spec's placement tables before
 committing.
 
 - [ ] **Step 5: Full gates**
