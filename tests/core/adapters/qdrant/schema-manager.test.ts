@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SchemaManager } from "../../../../src/core/adapters/qdrant/schema-manager.js";
-import { SchemaMigrator } from "../../../../src/core/infra/migration/schema-migrator.js";
-import { SparseMigrator } from "../../../../src/core/infra/migration/sparse-migrator.js";
+import { SchemaMigrator } from "../../../../src/core/domains/maintenance/migration/schema-migrator.js";
+import { SparseMigrator } from "../../../../src/core/domains/maintenance/migration/sparse-migrator.js";
 
 const LATEST_SCHEMA_VERSION = new SchemaMigrator(
   "",

@@ -9,6 +9,15 @@ forbids — and the eslint zone that should have blocked them has never fired.
 This spec relocates the product logic to its owning module, cuts every upward
 edge, repairs the guard, and pins the result with a fixture test.
 
+**Outcome, recorded after the last wave landed.** `src/core/infra/` is 17 files
+and 1189 LOC with zero imports of `domains`, `adapters` or `api`; the guard that
+allows none of those is live and a fixture test proves it fires. Two placements
+changed during execution against what this spec first assumed — the embedding
+guard went to `adapters/qdrant/` (see the revised W4) and `commit-diff-memo.ts`
+stayed in the foundation, because BOTH the ingest chunk phase and the git
+churn-walk worker construct it, so either domain would have been a
+`domains <-> domains` edge. Planned task T8 was dropped for that reason.
+
 ## Problem
 
 Three independent defects, all confirmed against `f56e611c`:

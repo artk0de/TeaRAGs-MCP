@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IngestFacade } from "../../../../src/core/api/index.js";
-import { createIngestDependencies } from "../../../../src/core/domains/ingest/factory.js";
+import { createIngestDependencies } from "../../../../src/core/api/internal/ingest-dependencies.js";
 import type { IngestCodeConfig } from "../../../../src/core/types.js";
 import {
   cleanupTempDir,

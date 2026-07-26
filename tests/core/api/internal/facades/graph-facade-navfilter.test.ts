@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
 import { GraphFacade, isNavigationVisibleEdge } from "../../../../../src/core/api/internal/facades/graph-facade.js";
-import type { CollectionRegistry } from "../../../../../src/core/infra/registry/index.js";
+import type { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
 // ── truth-table for the predicate itself ────────────────────────────────────
 

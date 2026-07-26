@@ -26,11 +26,11 @@ import { DefaultSymbolIdComposer } from "../../../../../src/core/domains/languag
 import { CodegraphEnrichmentProvider } from "../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { CallEdgeResolutionRunner } from "../../../../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../src/core/infra/migration/database/runner.js";
+import { runMigrations } from "../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { buildTestCodegraphDeps } from "../../trajectory/codegraph/__helpers__/language-factory.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const MIG_DIR = resolve(__dirname, "../../../../../src/core/infra/migration/database/migrations");
+const MIG_DIR = resolve(__dirname, "../../../../../src/core/domains/maintenance/migration/database/migrations");
 const DIRECT_INPUT_SPILL = join(process.cwd(), ".tea-rags-codegraph-spill", "xpass-__direct__.ndjson");
 
 // A small multi-file project: several normal TS files with cross-file calls,

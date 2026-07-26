@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { listProjectNames, maybeCompleteProjectName } from "../../src/cli/completion.js";
-import { CollectionRegistry } from "../../src/core/infra/registry/collection-registry.js";
+import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/collection-registry.js";
 
 describe("CLI completion helpers", () => {
   let dir: string;

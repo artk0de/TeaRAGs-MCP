@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { projectsCommand, runInfo, runList, runRegister, runUnregister } from "../../../src/cli/commands/projects.js";
-import { CollectionRegistry } from "../../../src/core/infra/registry/collection-registry.js";
+import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 describe("CLI 'projects' command group", () => {
   let dir: string;

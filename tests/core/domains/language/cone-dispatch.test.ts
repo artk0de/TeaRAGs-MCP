@@ -13,7 +13,7 @@ import type {
 } from "../../../../src/core/contracts/types/codegraph.js";
 import type { ConeTypeLocator } from "../../../../src/core/contracts/types/language.js";
 import { ConeDispatchResolver } from "../../../../src/core/domains/language/cone-dispatch.js";
-import { MapHierarchyView } from "../../../../src/core/infra/graph/hierarchy-view.js";
+import { MapHierarchyView } from "../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
 
 /**
  * Fake `ConeTypeLocator` — the engine is language-neutral, so the Ruby /

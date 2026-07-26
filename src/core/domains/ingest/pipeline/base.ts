@@ -16,7 +16,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
-import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
+import type { CollectionRegistryPort } from "../../../contracts/types/registry.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
@@ -64,7 +64,7 @@ const HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
 
 /** Optional collaborators wired by the facade — kept out of the long positional list. */
 export interface PipelineRegistryDeps {
-  registry?: CollectionRegistry;
+  registry?: CollectionRegistryPort;
   teaRagsVersion?: string;
   /**
    * Deletes the per-version codegraph DuckDB file for an orphan collection
@@ -92,7 +92,7 @@ export interface PipelineRegistryDeps {
 
 export abstract class BaseIndexingPipeline {
   protected readonly tuning: PipelineTuning;
-  protected readonly registry: CollectionRegistry | undefined;
+  protected readonly registry: CollectionRegistryPort | undefined;
   protected readonly teaRagsVersion: string;
   protected readonly codegraphRemover: CodegraphDbRemover | undefined;
   protected readonly codegraphLister: CodegraphDbLister | undefined;

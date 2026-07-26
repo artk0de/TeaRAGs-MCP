@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getBuildFingerprint } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
 import { CodegraphDaemonServer } from "../../../../../src/core/adapters/duckdb/daemon/server.js";
 import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
+import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 let root: string;
@@ -16,7 +17,11 @@ afterEach(() => {
 
 function makeServer(buildFingerprint?: string) {
   root = mkdtempSync(join(tmpdir(), "cg-daemon-"));
-  const pool = new GraphDbClientPool({ rootDir: root, symbolTableFactory: () => new InMemoryGlobalSymbolTable() });
+  const pool = new GraphDbClientPool({
+    rootDir: root,
+    symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    applyMigrations: createDatabaseMigrationApplier(),
+  });
   return { server: new CodegraphDaemonServer(pool, buildFingerprint), pool };
 }
 

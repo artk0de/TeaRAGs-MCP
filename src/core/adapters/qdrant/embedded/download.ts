@@ -5,10 +5,10 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { ConfigValueInvalidError } from "../../../infra/errors.js";
-import { compareSemver, isSemver, QDRANT_VERSION } from "../../../infra/qdrant-version.js";
 import { QdrantDowngradeNotSupportedError, QdrantOperationError } from "../errors.js";
+import { compareSemver, isSemver, QDRANT_VERSION } from "../required-version.js";
 
-export { QDRANT_VERSION } from "../../../infra/qdrant-version.js";
+export { QDRANT_VERSION } from "../required-version.js";
 
 /* v8 ignore next 3 -- fallback for backward compat when DI paths not provided */
 function fallbackAppDataDir(): string {

@@ -10,6 +10,7 @@ import { structuredPatch } from "diff";
 
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { BlobBatchReader, CommitInfo, FileChurnData } from "../../../../adapters/vcs/types.js";
+import type { CommitDiffHunk, CommitDiffMemoPort } from "../../../../contracts/types/commit-diff-memo.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
@@ -23,12 +24,7 @@ export interface ChunkConcurrencySemaphore {
 }
 
 /** Structural hunk shape shared with the diff memo (positions of one structuredPatch hunk). */
-export interface WalkCommitDiffHunk {
-  oldStart: number;
-  oldLines: number;
-  newStart: number;
-  newLines: number;
-}
+export type WalkCommitDiffHunk = CommitDiffHunk;
 
 /**
  * Duck type for the run-scoped (commitSha, filePath) → hunks memo — matches
@@ -36,10 +32,7 @@ export interface WalkCommitDiffHunk {
  * array is a valid memoized value (root commit / identical or empty blobs /
  * patch failure); `undefined` means never computed.
  */
-export interface WalkCommitDiffMemo {
-  get: (commitSha: string, filePath: string) => WalkCommitDiffHunk[] | undefined;
-  set: (commitSha: string, filePath: string, hunks: WalkCommitDiffHunk[]) => void;
-}
+export type WalkCommitDiffMemo = CommitDiffMemoPort;
 
 /**
  * Duck type for the run-scoped commit-discovery matrix — matches infra

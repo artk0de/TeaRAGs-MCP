@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { applyProjectDefaults } from "../../src/cli/registry-resolver.js";
 import { ProjectNotRegisteredError } from "../../src/core/api/errors.js";
-import { CollectionRegistry } from "../../src/core/infra/registry/collection-registry.js";
+import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/collection-registry.js";
 
 describe("applyProjectDefaults", () => {
   let dir: string;
@@ -92,7 +92,7 @@ describe("applyProjectDefaults typed-error refactor (audit #5 + #15)", () => {
   it("throws ProjectPathMissingError when entry.path is empty (audit #6/#7 + #15)", async () => {
     const { applyProjectDefaults } = await import("../../src/cli/registry-resolver.js");
     const { ProjectPathMissingError } = await import("../../src/core/api/errors.js");
-    const { CollectionRegistry } = await import("../../src/core/infra/registry/collection-registry.js");
+    const { CollectionRegistry } = await import("../../src/core/domains/maintenance/registry/collection-registry.js");
     process.env.TEA_RAGS_DATA_DIR = mkdtempSync(join(tmpdir(), "pr3-resolver-"));
     try {
       const reg = new CollectionRegistry(process.env.TEA_RAGS_DATA_DIR);
@@ -116,7 +116,7 @@ describe("applyProjectDefaults typed-error refactor (audit #5 + #15)", () => {
 
   it("returns undefined (not empty string) for missing embeddingModel and qdrantUrl (audit #5)", async () => {
     const { applyProjectDefaults } = await import("../../src/cli/registry-resolver.js");
-    const { CollectionRegistry } = await import("../../src/core/infra/registry/collection-registry.js");
+    const { CollectionRegistry } = await import("../../src/core/domains/maintenance/registry/collection-registry.js");
     const dir = mkdtempSync(join(tmpdir(), "pr3-resolver-"));
     process.env.TEA_RAGS_DATA_DIR = dir;
     try {
@@ -144,7 +144,7 @@ describe("applyProjectDefaults typed-error refactor (audit #5 + #15)", () => {
 
   it("preserves caller-provided argv values (does not overwrite explicit args)", async () => {
     const { applyProjectDefaults } = await import("../../src/cli/registry-resolver.js");
-    const { CollectionRegistry } = await import("../../src/core/infra/registry/collection-registry.js");
+    const { CollectionRegistry } = await import("../../src/core/domains/maintenance/registry/collection-registry.js");
     const dir = mkdtempSync(join(tmpdir(), "pr3-resolver-"));
     process.env.TEA_RAGS_DATA_DIR = dir;
     try {

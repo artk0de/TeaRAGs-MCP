@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createCli } from "../../src/cli/create-cli.js";
-import { CollectionRegistry } from "../../src/core/infra/registry/collection-registry.js";
+import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/collection-registry.js";
 
 /**
  * End-to-end completion tests that drive the real yargs `.completion(...)`

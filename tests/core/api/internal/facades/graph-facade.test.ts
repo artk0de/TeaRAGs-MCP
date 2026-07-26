@@ -4,7 +4,7 @@ import type { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/
 import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../../../../../src/core/api/errors.js";
 import { GraphFacade } from "../../../../../src/core/api/internal/facades/graph-facade.js";
 import type { SymbolId } from "../../../../../src/core/contracts/types/codegraph.js";
-import type { CollectionRegistry } from "../../../../../src/core/infra/registry/index.js";
+import type { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
 /**
  * Build a fake pool that returns the same graphDb (+ trivial symbolTable

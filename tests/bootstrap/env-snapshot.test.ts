@@ -31,7 +31,7 @@ import {
   ADAPTIVE_DEFAULT_ENV_KEYS,
   DEDICATED_FIELD_ENV_KEYS,
   REGISTRY_ENV_GROUPS,
-} from "../../src/core/infra/registry/env-groups.js";
+} from "../../src/core/domains/maintenance/registry/env-groups.js";
 
 const bareFlags = {
   userSetBatchSize: false,

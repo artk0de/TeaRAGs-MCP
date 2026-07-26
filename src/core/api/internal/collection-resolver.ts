@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { resolveCollectionName } from "../../infra/collection-name.js";
-import type { CollectionRegistry } from "../../infra/registry/collection-registry.js";
+import type { CollectionRegistry } from "../../domains/maintenance/registry/collection-registry.js";
 import { CollectionNotProvidedError, ProjectNotRegisteredError, StaleProjectAliasError } from "../errors.js";
 
 /**

@@ -7,7 +7,7 @@ import type { AppConfig, getZodConfig } from "../../src/bootstrap/config/index.j
 import { createAppContext, createConfiguredServer, loadPrompts, wireCodegraph } from "../../src/bootstrap/factory.js";
 import type { WorkerEnrichmentDescriptor } from "../../src/core/contracts/types/provider.js";
 import type { GitTrajectory as GitTrajectoryType } from "../../src/core/domains/trajectory/git.js";
-import { CollectionRegistry } from "../../src/core/infra/registry/index.js";
+import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/index.js";
 import { loadPromptsConfig } from "../../src/mcp/prompts/index.js";
 
 // vi.hoisted: shared state for the GitTrajectory constructor spy (used in Test 1

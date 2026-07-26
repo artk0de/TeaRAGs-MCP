@@ -96,7 +96,7 @@ describe("InputValidationError hierarchy", () => {
     });
 
     it("is not re-exported from the registry barrel (infra->api boundary)", async () => {
-      const fromRegistry = await import("../../../src/core/infra/registry/index.js");
+      const fromRegistry = await import("../../../src/core/domains/maintenance/registry/index.js");
       expect((fromRegistry as Record<string, unknown>).ProjectNameNotUniqueError).toBeUndefined();
     });
   });

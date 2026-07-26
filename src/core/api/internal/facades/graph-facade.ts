@@ -27,7 +27,7 @@
 import { splitMethodSymbol } from "../../../adapters/duckdb/client.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { SymbolChunkLocation, SymbolId } from "../../../contracts/types/codegraph.js";
-import type { CollectionRegistry } from "../../../infra/registry/index.js";
+import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import type {
   FindCyclesRequest,
   FindCyclesResponse,

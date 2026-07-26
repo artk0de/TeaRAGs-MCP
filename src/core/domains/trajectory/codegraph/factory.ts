@@ -29,6 +29,7 @@
 
 import { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
+import type { DatabaseMigrationApplier } from "../../../contracts/types/migration.js";
 import type {
   CollectSymbolsFn,
   LanguageFactoryDescriptor,
@@ -55,6 +56,13 @@ export interface CodegraphWorkerConfig {
    * walker + resolver capabilities.
    */
   languageModulePath: string;
+  /**
+   * Compiled `domains/maintenance/migration/database` barrel the worker
+   * dynamic-imports in-thread to get the graph DDL applier. Same reason as
+   * `languageModulePath`: a function cannot cross `postMessage`, and this
+   * domain may not import a sibling domain statically.
+   */
+  migrationsModulePath: string;
   /**
    * Absolute socket path of the running `DaemonGraphDbClient` daemon
    * (`adapters/duckdb/daemon/`). The worker opens a fresh multi-client
@@ -162,9 +170,14 @@ export async function createCodegraphEnrichmentProvider(
   const composer = new lang.DefaultSymbolIdComposer();
   const { collectSymbols } = lang;
 
+  const migrations = (await import(config.migrationsModulePath)) as {
+    createDatabaseMigrationApplier: () => DatabaseMigrationApplier;
+  };
+
   const pool = new GraphDbClientPool({
     rootDir: config.rootDir,
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    applyMigrations: migrations.createDatabaseMigrationApplier(),
     resources: {
       memoryLimit: config.dbMemoryLimit,
       threads: config.dbThreads,

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import { pageRank } from "../../../../src/core/infra/graph/page-rank.js";
 import { tarjanScc } from "../../../../src/core/infra/graph/tarjan-scc.js";
-import { runMigrations } from "../../../../src/core/infra/migration/database/runner.js";
+import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 // Adapter exposes primitives only (listAdjacency / replaceCycles /
 // replacePageRanks); the orchestration that combines them with the
@@ -29,7 +29,7 @@ async function recomputePageRankViaPrimitives(client: DuckDbGraphClient): Promis
 }
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const MIG_DIR = resolve(__dirname, "../../../../src/core/infra/migration/database/migrations");
+const MIG_DIR = resolve(__dirname, "../../../../src/core/domains/maintenance/migration/database/migrations");
 
 describe("DuckDbGraphClient", () => {
   let tmp: string;

@@ -27,6 +27,7 @@ import {
   CodegraphDaemonStaleBuildError,
 } from "../../../../../src/core/adapters/duckdb/errors.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
+import { DATABASE_MIGRATIONS_MODULE_URL } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { getDaemonPaths, type CodegraphDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import {
   decodeFrames,
@@ -34,6 +35,7 @@ import {
   type DaemonRequest,
 } from "../../../../../src/core/adapters/duckdb/daemon/protocol.js";
 import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
+import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { setDebug } from "../../../../../src/core/infra/runtime.js";
 
@@ -71,6 +73,7 @@ async function startDaemon(paths: CodegraphDaemonPaths, buildFingerprint: string
     rootDir: root,
     paths,
     buildFingerprint,
+    migrationsModulePath: DATABASE_MIGRATIONS_MODULE_URL,
     // In-process stand-in for process.exit — runDaemon's drain path must not
     // kill the vitest worker. Lifecycle-file cleanup has already run by now.
     exit: () => undefined,
@@ -90,6 +93,7 @@ function makePool(
   return new GraphDbClientPool({
     rootDir: root,
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    applyMigrations: createDatabaseMigrationApplier(),
     daemonSocketPath: paths.socketPath,
     daemonRestart: restart,
   });

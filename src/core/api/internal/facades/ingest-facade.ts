@@ -19,7 +19,8 @@ import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import { createIngestDependencies, type SynchronizerTuning } from "../../../domains/ingest/factory.js";
+import type { SynchronizerTuning } from "../../../domains/ingest/factory.js";
+import { createIngestDependencies } from "../ingest-dependencies.js";
 import { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
@@ -30,7 +31,7 @@ import { InlineEnrichmentExecutor } from "../../../domains/ingest/pipeline/enric
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strategy.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
-import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
+import type { CollectionRegistry } from "../../../domains/maintenance/registry/collection-registry.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,

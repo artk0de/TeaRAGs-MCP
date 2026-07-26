@@ -9,7 +9,7 @@ import {
   type CollectionEntry,
   type CollectionRegistry,
   type ProjectInfo,
-} from "../../../infra/registry/index.js";
+} from "../../../domains/maintenance/registry/index.js";
 import { PathDoesNotExistError, ProjectNameInvalidError, ProjectNameNotUniqueError } from "../../errors.js";
 
 export interface ProjectRegistryOpsDeps {

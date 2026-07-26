@@ -46,5 +46,5 @@ export type { IngestFacadeDeps } from "./internal/facades/ingest-facade.js";
 export { InputValidationError, CollectionNotProvidedError } from "./errors.js";
 
 // Project registry types re-exported from infra (public surface)
-export type { CollectionEntry, ProjectInfo } from "../infra/registry/index.js";
-export { CollectionRegistry } from "../infra/registry/index.js";
+export type { CollectionEntry, ProjectInfo } from "../domains/maintenance/registry/index.js";
+export { CollectionRegistry } from "../domains/maintenance/registry/index.js";

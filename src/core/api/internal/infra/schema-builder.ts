@@ -13,11 +13,11 @@ import { z } from "zod";
 
 import { ConfigValueInvalidError } from "../../../infra/errors.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import { PROJECT_NAME_RE } from "../../../infra/registry/constants.js";
+import { PROJECT_NAME_RE } from "../../../domains/maintenance/registry/constants.js";
 
 /**
  * Zod schema for an optional project name. Sourced from PROJECT_NAME_RE
- * (`src/core/infra/registry/constants.ts`) — the single source of truth.
+ * (`src/core/domains/maintenance/registry/constants.ts`) — the single source of truth.
  */
 const projectNameSchema = z
   .string()

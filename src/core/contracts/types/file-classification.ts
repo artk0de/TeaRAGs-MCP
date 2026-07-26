@@ -2,12 +2,10 @@
  * What kind of file this is — the single FACT consumed by per-provider
  * enrichment policy (EnrichmentProvider.shouldEnrich). Canonical home.
  *
- * Domain-boundary note: core/infra/ may NOT import core/contracts/ (foundation
- * imports nothing — applies to `import type` too). So
- * infra/file-classification/classify() declares a structurally-identical local
- * return type instead of importing this one; the two are kept in sync by
- * structural assignability, mirroring the ChunkSignalOptions.blobReader ↔
- * CatFileBatchReader pairing in provider.ts.
+ * Sole declaration: `infra/file-classification/classify()` imports this type
+ * and re-exports it. The foundation order (contracts < infra < adapters) makes
+ * that type-only edge legal — before it was legalized, infra kept a
+ * structurally-identical copy that had to be hand-synced.
  */
 export interface FileClassification {
   /** Ordinary, human-edited source code. */

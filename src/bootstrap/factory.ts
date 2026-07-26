@@ -38,12 +38,16 @@ import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
 import { collectSymbols, DefaultSymbolIdComposer } from "../core/domains/language/index.js";
 import { CollectionFootprintFactory } from "../core/domains/maintenance/footprint/index.js";
+import {
+  createDatabaseMigrationApplier,
+  DATABASE_MIGRATIONS_MODULE_URL,
+} from "../core/domains/maintenance/migration/database/index.js";
 import { WorktreeProvisioner } from "../core/domains/maintenance/worktree/index.js";
 import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { CollectionRegistry } from "../core/infra/registry/index.js";
+import { CollectionRegistry } from "../core/domains/maintenance/registry/index.js";
 import { setDebug } from "../core/infra/runtime.js";
-import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
+import { SchemaDriftMonitor } from "../core/domains/maintenance/schema-drift-monitor.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
@@ -347,6 +351,10 @@ function ensureCodegraphDaemon(
         ...process.env,
         TEA_RAGS_CODEGRAPH_DAEMON_ROOT: rootDir,
         TEA_RAGS_CODEGRAPH_DAEMON_DIR: paths.storageDir,
+        // The daemon creates graph DBs in its own process and `adapters` may
+        // not import the maintenance domain, so the DDL module travels as a
+        // URL it imports in-process.
+        TEA_RAGS_CODEGRAPH_DAEMON_MIGRATIONS: DATABASE_MIGRATIONS_MODULE_URL,
         ...(resources.memoryLimit ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY: resources.memoryLimit } : {}),
         ...(resources.memoryLimitMax ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY_MAX: resources.memoryLimitMax } : {}),
         ...(resources.threads !== undefined ? { TEA_RAGS_CODEGRAPH_DAEMON_THREADS: String(resources.threads) } : {}),
@@ -420,6 +428,7 @@ export function wireCodegraph(
   const pool = new GraphDbClientPool({
     rootDir,
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    applyMigrations: createDatabaseMigrationApplier(),
     // Slice 2 resource ceiling — caps per-collection DuckDB memory at
     // CODEGRAPH_DB_MEMORY_LIMIT (default 2GB) with disk spill into
     // `<rootDir>/codegraph/.spill/`. Without the cap DuckDB defaults
@@ -517,6 +526,7 @@ export function wireCodegraph(
   // worker connects to the SAME multi-client daemon that owns the RW lock.
   const codegraphWorkerConfig: CodegraphWorkerConfig = {
     languageModulePath: LANGUAGE_MODULE_PATH,
+    migrationsModulePath: DATABASE_MIGRATIONS_MODULE_URL,
     daemonSocketPath: daemonPaths.socketPath,
     rootDir,
     excludeTests: codegraph.excludeTests,
@@ -718,6 +728,7 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
       new GraphDbClientPool({
         rootDir: config.paths.appData,
         symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+        applyMigrations: createDatabaseMigrationApplier(),
       }),
     statsCache,
     snapshotBaseDir: config.paths.snapshots,

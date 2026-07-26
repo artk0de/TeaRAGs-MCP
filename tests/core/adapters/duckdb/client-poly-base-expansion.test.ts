@@ -11,8 +11,8 @@ import type {
   SymbolDefinition,
   SymbolId,
 } from "../../../../src/core/contracts/types/codegraph.js";
-import { DATABASE_MIGRATIONS } from "../../../../src/core/infra/migration/database/migrations/index.js";
-import { runMigrations } from "../../../../src/core/infra/migration/database/runner.js";
+import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
+import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 // bd tea-rags-mcp-2jet-E — query-time CHA cone expansion. The resolver capped a
 // large cone to ONE `poly-base` edge to the base declaration `Agent#check`;

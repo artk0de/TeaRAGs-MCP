@@ -11,6 +11,7 @@ import type { Ignore } from "ignore";
 
 import type { ChunkLookupEntry } from "./chunker.js";
 import type { FileExtraction } from "./codegraph.js";
+import type { CommitDiffMemoPort } from "./commit-diff-memo.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
 import type { PayloadSignalDescriptor } from "./trajectory.js";
 
@@ -141,17 +142,7 @@ export interface ChunkSignalOptions {
    * ChunkPhase creates it lazily per run and drops it at drain. Providers
    * that don't diff git objects (codegraph) ignore it.
    */
-  diffMemo?: {
-    get: (
-      commitSha: string,
-      filePath: string,
-    ) => { oldStart: number; oldLines: number; newStart: number; newLines: number }[] | undefined;
-    set: (
-      commitSha: string,
-      filePath: string,
-      hunks: { oldStart: number; oldLines: number; newStart: number; newLines: number }[],
-    ) => void;
-  };
+  diffMemo?: CommitDiffMemoPort;
   /**
    * Run-scoped commitSha → changedFiles matrix + ONE shared bugFixShaSet
    * (bd tea-rags-mcp-82va1). Structural shape of `GitCommitDiscovery`

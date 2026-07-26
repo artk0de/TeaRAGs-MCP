@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
+import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
 import { QuarantineStore } from "../../../../src/core/domains/ingest/sync/quarantine-store.js";
 import { ShardedSnapshotManager } from "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
 import { StatsCache } from "../../../../src/core/infra/stats-cache.js";
@@ -72,6 +73,7 @@ describe("owner clone methods", () => {
     const pool = new GraphDbClientPool({
       rootDir: dir,
       symbolTableFactory: () => ({ symbols: new Map(), methods: new Map() }) as never,
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     const srcPath = pool.pathFor("code_src");
     mkdirSync(join(dir, "codegraph"), { recursive: true });
@@ -84,6 +86,7 @@ describe("owner clone methods", () => {
     const pool = new GraphDbClientPool({
       rootDir: dir,
       symbolTableFactory: () => ({ symbols: new Map(), methods: new Map() }) as never,
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     await expect(pool.cloneDatabase("code_missing", "code_dst")).resolves.not.toThrow();
     expect(existsSync(pool.pathFor("code_dst"))).toBe(false);

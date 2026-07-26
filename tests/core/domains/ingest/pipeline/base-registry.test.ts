@@ -21,7 +21,7 @@ import {
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
-import { CollectionRegistry } from "../../../../../src/core/infra/registry/collection-registry.js";
+import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import type { IngestCodeConfig } from "../../../../../src/core/types.js";
 
 vi.mock("tree-sitter", () => ({

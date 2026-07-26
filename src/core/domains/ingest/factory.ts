@@ -4,20 +4,18 @@
  * Replaces direct `new` of SchemaManager, ParallelFileSynchronizer, and
  * SnapshotMigrator inside orchestrators, enabling testability and
  * adherence to the Dependency Inversion Principle.
+ *
+ * Only the CONTRACT lives here. The concrete wiring moved to
+ * `api/internal/ingest-dependencies.ts`: it assembles the migration pipelines,
+ * which now live in the maintenance domain, and ingest may not import a sibling
+ * domain — `createMigrator` therefore hands back a `MigratorPort`.
  */
 
-import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import { SchemaManager } from "../../adapters/qdrant/schema-manager.js";
+import type { SchemaManager } from "../../adapters/qdrant/schema-manager.js";
+import type { MigratorPort } from "../../contracts/types/migration.js";
 import type { PayloadBuilder } from "../../contracts/types/provider.js";
-import { EnrichmentStoreAdapter } from "../../infra/migration/adapters/enrichment-store-adapter.js";
-import { IndexStoreAdapter } from "../../infra/migration/adapters/index-store-adapter.js";
-import { SnapshotStoreAdapter } from "../../infra/migration/adapters/snapshot-store-adapter.js";
-import { SparseStoreAdapter } from "../../infra/migration/adapters/sparse-store-adapter.js";
-import { Migrator } from "../../infra/migration/migrator.js";
-import { SchemaMigrator } from "../../infra/migration/schema-migrator.js";
-import { SnapshotMigrator } from "../../infra/migration/snapshot-migrator.js";
-import { SparseMigrator } from "../../infra/migration/sparse-migrator.js";
-import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
+
+import type { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 
 // ── Public interfaces ────────────────────────────────────────────
 
@@ -29,62 +27,7 @@ export interface SynchronizerTuning {
 export interface IngestDependencies {
   createSchemaManager: (collectionName: string) => SchemaManager;
   createSynchronizer: (codebasePath: string, collectionName: string) => ParallelFileSynchronizer;
-  createMigrator: (collectionName: string, codebasePath: string) => Migrator;
+  createMigrator: (collectionName: string, codebasePath: string) => MigratorPort;
   payloadBuilder: PayloadBuilder;
   snapshotDir: string;
-}
-
-// ── Default factory ──────────────────────────────────────────────
-
-export function createIngestDependencies(
-  qdrant: QdrantManager,
-  snapshotDir: string,
-  payloadBuilder: PayloadBuilder,
-  syncTuning?: SynchronizerTuning,
-  enableHybrid = false,
-  providerKey?: string,
-): IngestDependencies {
-  return {
-    createSchemaManager: (collectionName: string) => {
-      const indexStore = new IndexStoreAdapter(qdrant);
-      const sparseStore = new SparseStoreAdapter(qdrant);
-      const enrichmentStore = providerKey ? new EnrichmentStoreAdapter(qdrant) : undefined;
-      const schemaMigrator = new SchemaMigrator(
-        collectionName,
-        indexStore,
-        { enableHybrid, providerKey },
-        enrichmentStore,
-      );
-      const sparseMigrator = new SparseMigrator(collectionName, sparseStore, enableHybrid);
-      return new SchemaManager(qdrant, schemaMigrator.latestVersion, sparseMigrator.latestVersion);
-    },
-    createSynchronizer: (codebasePath, collectionName) =>
-      new ParallelFileSynchronizer(
-        codebasePath,
-        collectionName,
-        snapshotDir,
-        syncTuning?.concurrency,
-        syncTuning?.ioConcurrency,
-      ),
-    createMigrator: (collectionName, _codebasePath) => {
-      const snapshotStore = new SnapshotStoreAdapter(snapshotDir, collectionName);
-      const indexStore = new IndexStoreAdapter(qdrant);
-      const sparseStore = new SparseStoreAdapter(qdrant);
-      const enrichmentStore = providerKey ? new EnrichmentStoreAdapter(qdrant) : undefined;
-
-      return new Migrator({
-        snapshot: new SnapshotMigrator(snapshotStore),
-        schema: new SchemaMigrator(
-          collectionName,
-          indexStore,
-          { enableHybrid, providerKey },
-          enrichmentStore,
-          snapshotStore,
-        ),
-        sparse: new SparseMigrator(collectionName, sparseStore, enableHybrid),
-      });
-    },
-    payloadBuilder,
-    snapshotDir,
-  };
 }

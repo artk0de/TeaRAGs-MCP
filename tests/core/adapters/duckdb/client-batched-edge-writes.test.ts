@@ -6,8 +6,8 @@ import { DuckDBPreparedStatement } from "@duckdb/node-api";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
-import { DATABASE_MIGRATIONS } from "../../../../src/core/infra/migration/database/migrations/index.js";
-import { runMigrations } from "../../../../src/core/infra/migration/database/runner.js";
+import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
+import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 // bd tea-rags-mcp-f2jsb Task 5 — taxdome wrote 1.58M method edges through
 // per-row `INSERT OR IGNORE` prepared statements (effective ~97 rows/sec,

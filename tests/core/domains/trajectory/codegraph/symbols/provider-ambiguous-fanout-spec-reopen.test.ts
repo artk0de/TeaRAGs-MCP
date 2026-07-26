@@ -45,10 +45,10 @@ import { DISPATCH_FANOUT_CAP_FLOOR } from "../../../../../../src/core/domains/la
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/infra/migration/database/runner.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const MIG_DIR = resolvePath(__dirname, "../../../../../../src/core/infra/migration/database/migrations");
+const MIG_DIR = resolvePath(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
 
 const CLASS_COUNT = DISPATCH_FANOUT_CAP_FLOOR + 2; // 18 defs of `perform` > floor cap 16
 

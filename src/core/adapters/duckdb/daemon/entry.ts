@@ -24,6 +24,7 @@ import { unlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { pathToFileURL } from "node:url";
 
+import type { MigrationCapableGraphClient } from "../../../contracts/types/migration.js";
 import { GraphDbClientPool } from "../pool.js";
 import {
   decrementRefs,
@@ -41,6 +42,16 @@ import { CodegraphDaemonServer } from "./server.js";
 export interface DaemonRuntimeOptions {
   /** Root directory for per-collection DuckDB files (`<rootDir>/codegraph/`). */
   rootDir: string;
+  /**
+   * URL of the module exporting `runMigrations` + `DATABASE_MIGRATIONS`
+   * (`domains/maintenance/migration/database/index.js`).
+   *
+   * The daemon holds the single RW connection and creates graph databases, so
+   * it must apply the DDL itself — but it lives in `adapters`, which may not
+   * import a domain. The spawner passes the URL and the daemon imports it
+   * in-process: the module-path DI pattern the worker threads already use.
+   */
+  migrationsModulePath: string;
   /** Lifecycle file locations (socket/pid/refs/lock). */
   paths: CodegraphDaemonPaths;
   /** DuckDB resource ceiling mirrored from the bootstrap pool options. */
@@ -217,6 +228,13 @@ export function createConnectionHandler(
 export async function runDaemon(
   options: DaemonRuntimeOptions,
 ): Promise<{ server: Server; shutdown: () => Promise<void> }> {
+  // Same reason the symbol table is injected: the DDL steps live in a domain
+  // this layer may not import, so they arrive as a module URL and are loaded
+  // in-process here.
+  const { runMigrations, DATABASE_MIGRATIONS } = (await import(options.migrationsModulePath)) as {
+    runMigrations: (client: MigrationCapableGraphClient, migrations: unknown[]) => Promise<unknown>;
+    DATABASE_MIGRATIONS: unknown[];
+  };
   const pool = new GraphDbClientPool({
     rootDir: options.rootDir,
     // The daemon never resolves call edges (resolution happens in the MCP
@@ -224,6 +242,9 @@ export async function runDaemon(
     // real symbol table — a no-op table avoids the adapter->domain import of
     // InMemoryGlobalSymbolTable, and there is no hydrate initHook to run.
     symbolTableFactory: () => new NoopGlobalSymbolTable(),
+    applyMigrations: async (client) => {
+      await runMigrations(client, DATABASE_MIGRATIONS);
+    },
     resources: options.resources,
     // NO daemonSocketPath — this process IS the daemon; its pool holds the
     // single RW DuckDB connection in-process.
@@ -327,9 +348,16 @@ function optionsFromEnv(): DaemonRuntimeOptions {
   const memoryLimit = process.env.TEA_RAGS_CODEGRAPH_DAEMON_MEMORY;
   const memoryLimitMax = process.env.TEA_RAGS_CODEGRAPH_DAEMON_MEMORY_MAX;
   const threadsRaw = process.env.TEA_RAGS_CODEGRAPH_DAEMON_THREADS;
+  const migrationsModulePath = process.env.TEA_RAGS_CODEGRAPH_DAEMON_MIGRATIONS;
+  if (!migrationsModulePath) {
+    // Invariant violation — the spawner always sets it (see bootstrap/factory).
+    // Starting without it would open collections with no schema.
+    throw new Error("TEA_RAGS_CODEGRAPH_DAEMON_MIGRATIONS is required to start the codegraph daemon");
+  }
   return {
     rootDir,
     paths,
+    migrationsModulePath,
     resources: {
       memoryLimit,
       memoryLimitMax,

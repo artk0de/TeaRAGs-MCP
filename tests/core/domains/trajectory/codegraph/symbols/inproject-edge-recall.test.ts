@@ -26,10 +26,10 @@ import { collectSymbols } from "../../../../../../src/core/domains/language/kern
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/infra/migration/database/runner.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const MIG_DIR = resolvePath(__dirname, "../../../../../../src/core/infra/migration/database/migrations");
+const MIG_DIR = resolvePath(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
 
 describe("CodegraphEnrichmentProvider — inProjectEdgeRecall", () => {
   let tmp: string;

@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { GraphDbClientPool } from "../../../../../../src/core/adapters/duckdb/pool.js";
+import { createDatabaseMigrationApplier } from "../../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
@@ -41,6 +42,7 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
     pool = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     provider = new CodegraphEnrichmentProvider({
       pool,
@@ -84,6 +86,7 @@ describe("CodegraphEnrichmentProvider — slice 2 spill lifecycle", () => {
     const pool2 = new GraphDbClientPool({
       rootDir: tmp,
       symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
     });
     void pool2;
     expect(readdirSync(spillDir)).not.toContain("stale-collection-uuid.ndjson");

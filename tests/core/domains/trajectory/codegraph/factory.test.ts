@@ -19,10 +19,17 @@ import {
 // the chunker pool precedent (LANGUAGE_MODULE_PATH at /build/.../language/index.js).
 const LANGUAGE_MODULE_PATH = new URL("../../../../../build/core/domains/language/index.js", import.meta.url).pathname;
 
+/** Same idea for the graph DDL module the factory dynamic-imports in-thread. */
+const MIGRATIONS_MODULE_PATH = new URL(
+  "../../../../../build/core/domains/maintenance/migration/database/index.js",
+  import.meta.url,
+).pathname;
+
 describe("createCodegraphEnrichmentProvider", () => {
   it("builds a pool-mode provider from a structured-clone-safe config", async () => {
     const config: CodegraphWorkerConfig = {
       languageModulePath: LANGUAGE_MODULE_PATH,
+      migrationsModulePath: MIGRATIONS_MODULE_PATH,
       rootDir: "/tmp/tea-rags-test-root",
       collectionName: "code_test",
       excludeTests: true,
@@ -45,6 +52,7 @@ describe("createCodegraphEnrichmentProvider", () => {
   it("attaches workerDescriptor when composition root supplies one", async () => {
     const config: CodegraphWorkerConfig = {
       languageModulePath: LANGUAGE_MODULE_PATH,
+      migrationsModulePath: MIGRATIONS_MODULE_PATH,
       rootDir: "/tmp/tea-rags-test-root",
     };
     const descriptor: WorkerEnrichmentDescriptor = {
@@ -81,6 +89,7 @@ describe("createCodegraphEnrichmentProvider", () => {
       // exercised when the collection is first opened via acquireWrite.
       const config: CodegraphWorkerConfig = {
         languageModulePath: LANGUAGE_MODULE_PATH,
+      migrationsModulePath: MIGRATIONS_MODULE_PATH,
         rootDir,
         excludeTests: true,
         customExcludePatterns: [],
@@ -108,6 +117,7 @@ describe("createCodegraphEnrichmentProvider", () => {
 
       const config: CodegraphWorkerConfig = {
         languageModulePath: LANGUAGE_MODULE_PATH,
+      migrationsModulePath: MIGRATIONS_MODULE_PATH,
         rootDir,
         excludeTests: true,
         customExcludePatterns: [],

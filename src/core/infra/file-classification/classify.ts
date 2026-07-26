@@ -1,19 +1,9 @@
 import ignore, { type Ignore } from "ignore";
 
+import type { FileClassification } from "../../contracts/types/file-classification.js";
 import { GENERATED_CONTENT_MARKERS, GENERATED_PATTERNS, TEST_PATTERNS, USER_GENERATED_PATTERNS } from "./patterns.js";
 
-/**
- * Structurally identical to FileClassification in
- * core/contracts/types/file-classification.ts. Declared locally because
- * core/infra/ may not import core/contracts/ (foundation imports nothing).
- * Keep the two in sync — see the note in the contracts file.
- */
-export interface FileClassification {
-  isSource: boolean;
-  isGenerated: boolean;
-  isDocumentation: boolean;
-  isTest: boolean;
-}
+export type { FileClassification };
 
 export interface ClassifyOptions {
   /** First ~5 lines of the file, for content-marker generated detection. */

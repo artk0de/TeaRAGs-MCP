@@ -18,7 +18,7 @@ import {
   waitForDaemonReady,
   type EvictStaleDaemonDeps,
 } from "../../../../../src/core/adapters/qdrant/embedded/daemon.js";
-import { QDRANT_VERSION } from "../../../../../src/core/infra/qdrant-version.js";
+import { QDRANT_VERSION } from "../../../../../src/core/adapters/qdrant/required-version.js";
 
 describe("EMBEDDED_MARKER", () => {
   it("equals 'embedded'", () => {

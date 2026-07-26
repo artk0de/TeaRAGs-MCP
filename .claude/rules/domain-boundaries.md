@@ -150,8 +150,25 @@ See spec
 
 **core/infra/** — Foundation utilities (lowest level)
 
-- isDebug(), setDebug() — runtime config imported by all layers
-- collection-name.ts: validatePath, resolveCollectionName, resolveCollection
+Only technology-generic primitives, and only ones at least two layers need. A
+module whose reason to change is a PRODUCT decision belongs to its owning
+domain, however many places import it — see
+`docs/superpowers/specs/2026-07-26-infra-tidy-design.md` for the criterion and
+what it moved out (the project registry and the migration framework to
+`domains/maintenance/`, drift detection likewise, the embedding-model guard to
+`adapters/qdrant/`).
+
+- `runtime.ts` — isDebug(), setDebug(); imported by every layer
+- `errors.ts` — `TeaRagsError` base + config errors + `UnknownError`
+- `collection-name.ts` — validatePath, resolveCollectionName (request
+  resolution, which validates input and throws api errors, lives in
+  `api/internal/collection-resolver.ts`)
+- `semaphore.ts`, `materialize.ts`, `stats-cache.ts`
+- `graph/` — Tarjan SCC + PageRank, language-agnostic
+- `symbolid/`, `file-classification/`, `scope-detection.ts`,
+  `commit-diff-memo.ts` — each shared by two domains that may not import each
+  other, so the foundation is their only legal home; each says so in its
+  docblock
 
 ## New Code Placement Rule (MANDATORY)
 

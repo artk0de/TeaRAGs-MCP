@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { checkExternalQdrantVersion } from "../../src/bootstrap/config/qdrant-compat.js";
 import { QdrantVersionTooOldError } from "../../src/core/adapters/qdrant/errors.js";
-import { QDRANT_VERSION } from "../../src/core/infra/qdrant-version.js";
+import { QDRANT_VERSION } from "../../src/core/adapters/qdrant/required-version.js";
 
 const URL = "http://qdrant.example.test:6333";
 
