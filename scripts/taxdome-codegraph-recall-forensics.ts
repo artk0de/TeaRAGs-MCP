@@ -37,6 +37,7 @@ import type { AstNode } from "../src/core/contracts/types/ast.js";
 import type {
   CallContext,
   CallRef,
+  ChunkExtraction,
   DispatchFanoutOutcome,
   FileExtraction,
   InheritanceEdgeRow,
@@ -78,6 +79,7 @@ const ROOT = process.env.TAXDOME_ROOT ?? join(homedir(), "Dev/Job/taxdome");
 const OUT_DIR = "/Users/artk0re/.claude/jobs/24baee70/tmp";
 const OUT_MISSES = join(OUT_DIR, "taxdome-misses.json");
 const OUT_ORACLE = join(OUT_DIR, "g0-oracle-report.json");
+const OUT_DUCK = join(OUT_DIR, "duck-oracle-report.json");
 const RUBY_EXT = ".rb";
 
 // ---------------------------------------------------------------------------
@@ -91,6 +93,18 @@ const RUBY_EXT = ".rb";
 // type were known perfectly, would `member` resolve to an in-project def?
 // ---------------------------------------------------------------------------
 const ORACLE_ENABLED = process.env.CODEGRAPH_ORACLE === "1";
+
+// ---------------------------------------------------------------------------
+// DUCK-TYPING DISAMBIGUATION ORACLE (2026-07-26). Same additive, env-gated
+// contract as the G0 oracle above: with CODEGRAPH_DUCK_ORACLE unset the harness
+// behaves byte-identically (no schema parse, no call-set collection, no extra
+// report). Measures ONE hypothesis: an untyped receiver's SET of member calls
+// inside its enclosing method identifies its class, because the members a class
+// answers (schema columns + real defs + macro-synthesised accessors) are a
+// near-signature. Nothing here touches the resolver — it is a fold over the same
+// materialized AST + symbol table + miss set the harness already builds.
+// ---------------------------------------------------------------------------
+const DUCK_ENABLED = process.env.CODEGRAPH_DUCK_ORACLE === "1";
 
 // ---------------------------------------------------------------------------
 // verbatim helpers copied from provider.ts (lastSegment) — pure, no logic reuse
@@ -241,6 +255,7 @@ function ingestPass1(extraction: FileExtraction, materializedRoot: AstNode): voi
     ...(c.acceptsBlock !== undefined ? { acceptsBlock: c.acceptsBlock } : {}),
   }));
   symbolTable.upsertFile(extraction.relPath, defs);
+  if (DUCK_ENABLED) noteDuckDefs(defs);
   if (extraction.classAncestors)
     for (const [k, v] of Object.entries(extraction.classAncestors)) runAncestors[k] = v;
   if (extraction.compactDeclaredClasses) for (const fq of extraction.compactDeclaredClasses) runCompactClasses.add(fq);
@@ -352,6 +367,7 @@ function resolvePass2(extraction: FileExtraction): void {
       callsAttempted += 1;
       const receiverKind = classifyReceiverKind(call, chunk.localBindings);
       kindTally[receiverKind].attempted += 1;
+      if (DUCK_ENABLED) noteDuckCall(call, receiverKind, extraction.relPath, chunk);
       const ctx: CallContext = {
         callerFile: extraction.relPath,
         callerScope: chunk.scope,
@@ -942,6 +958,905 @@ function runOracle(elapsedMs: number, files: number): void {
   L("");
 }
 
+// ===========================================================================
+// DUCK-TYPING DISAMBIGUATION ORACLE (CODEGRAPH_DUCK_ORACLE=1)
+//
+// Hypothesis under test: for an untyped receiver (bare identifier / @ivar), the
+// SET of members called on it inside one method is a near-signature — score every
+// candidate class by the IDF-weighted members it answers, and a unique winner with
+// a margin IS the type. Sections mirror the task letters:
+//   A schema member-sets   — db/schema.rb columns → per-table method names
+//   B candidate index      — class → member set (schema ∪ defs ∪ 1-level ancestors)
+//   C variable call-sets   — (file, method, receiver) → full member-call set
+//   D duck scoring         — IDF sum, unique argmax + margin + coverage gate
+//   E ground-truth accuracy— hide localBindings/ivarTypes type, predict, compare
+//   F impact projection    — how many of the recall-hole misses the oracle covers
+// ===========================================================================
+
+const DUCK_MARGINS = [1.25, 1.5, 2.0] as const;
+const DUCK_MIN_COVERAGE = 0.6;
+/** Phase-1 accumulation cap: a member defined by more than this many classes is
+ *  DEFERRED to the phase-2 exact rescore instead of enumerating its whole posting
+ *  list per variable. It still scores — it just doesn't generate candidates. */
+const DUCK_DF_ACCUMULATE_CAP = 5000;
+/** Phase-2 exact rescore breadth (top-K by phase-1 score). Must be wide enough
+ *  that the true runner-up is inside it — a truncated runner-up inflates the
+ *  margin and fabricates confident wrong predictions. */
+const DUCK_TOP_CANDIDATES = 256;
+const DUCK_AR_BASE_CLASSES = new Set(["ApplicationRecord", "ActiveRecord::Base"]);
+/** Receiver shapes the oracle treats as a "variable": bare identifier, @ivar, @@cvar. */
+const DUCK_RECEIVER_RE = /^@{0,2}[a-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Members EVERY ruby object answers (Object / Kernel / Enumerable / ActiveSupport
+ * core_ext). They are a systematic trap for this mechanism, not neutral noise: an
+ * AR model inherits `present?` from the framework, so its statically-derived member
+ * set does NOT contain it — while a small in-project PORO that happens to `def
+ * present?` DOES. The generic member therefore votes for the PORO and against the
+ * model. The `strictCore` scoring variant drops them from the variable's member set
+ * to measure how much of the error they cause. `CORE_HOMONYMS` (already in this
+ * harness) is folded in; these are the additions it lacks.
+ */
+const DUCK_UNIVERSAL_MEMBERS = new Set<string>([
+  ...CORE_HOMONYMS,
+  "initialize", "inspect", "hash", "eql?", "equal?", "==", "!=", "<=>", "===", "=~",
+  "nil?", "empty?", "size", "length", "class", "instance_of?", "is_a?", "kind_of?",
+  "respond_to?", "send", "public_send", "__send__", "method", "methods", "object_id",
+  "frozen?", "itself", "display", "to_proc", "to_str", "to_f", "to_d", "to_r", "to_c",
+  "presence", "presence_in", "in?", "try", "try!", "deep_dup", "deep_symbolize_keys",
+  "deep_stringify_keys", "symbolize_keys", "stringify_keys", "with_indifferent_access",
+  "to_json", "to_xml", "to_param", "to_query", "instance_variable_get",
+  "instance_variable_set", "instance_variables", "define_singleton_method", "extend",
+  "clone", "hash?", "each_with_object", "each_with_index", "reverse", "slice", "values_at",
+  "zip", "take", "drop", "step", "upto", "downto", "times", "round", "floor", "ceil", "abs",
+]);
+
+// ---- A. schema member-sets -------------------------------------------------
+
+interface DuckSchemaTable {
+  columns: string[];
+  hasId: boolean;
+  primaryKey: string | null;
+}
+
+/**
+ * Parse `db/schema.rb` into table → column names. Deliberately regex-level (this
+ * is a measurement script, not production): `create_table "x", … do |t|` opens a
+ * table, `t.<type> "col"` adds a column, `end` closes it. `t.index` /
+ * `t.check_constraint` are NOT columns. `id: false` drops the implicit `id`;
+ * `primary_key: "v"` replaces it with `v`. `t.timestamps` expands to
+ * created_at/updated_at (taxdome's schema uses explicit datetime columns, so this
+ * branch is defensive).
+ */
+function parseSchemaTables(path: string): Map<string, DuckSchemaTable> {
+  const out = new Map<string, DuckSchemaTable>();
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return out;
+  }
+  const createRe = /^\s*create_table\s+"([^"]+)"([^\n]*)\bdo\s*\|/;
+  const colRe = /^\s*t\.(\w+)\s+"([^"]+)"/;
+  const NON_COLUMN = new Set(["index", "check_constraint", "constraint", "exclusion_constraint", "unique_constraint"]);
+  let cur: DuckSchemaTable | null = null;
+  for (const line of text.split(/\r?\n/)) {
+    const created = createRe.exec(line);
+    if (created) {
+      const opts = created[2] ?? "";
+      const pk = /primary_key:\s*"([^"]+)"/.exec(opts)?.[1] ?? null;
+      cur = { columns: [], hasId: pk === null && !/\bid:\s*false\b/.test(opts), primaryKey: pk };
+      if (pk) cur.columns.push(pk);
+      out.set(created[1]!, cur);
+      continue;
+    }
+    if (!cur) continue;
+    if (/^\s*end\s*$/.test(line)) {
+      cur = null;
+      continue;
+    }
+    if (/^\s*t\.timestamps\b/.test(line)) {
+      cur.columns.push("created_at", "updated_at");
+      continue;
+    }
+    const col = colRe.exec(line);
+    if (col && !NON_COLUMN.has(col[1]!)) cur.columns.push(col[2]!);
+  }
+  return out;
+}
+
+/** Column → the instance methods ActiveRecord synthesises for it: reader, writer,
+ *  query. (Dirty-tracking `_was`/`_changed?` are NOT included — they would triple
+ *  the member set for a member family that is rare at call sites.) */
+function schemaMembersOf(table: DuckSchemaTable): string[] {
+  const out: string[] = [];
+  const add = (c: string): void => {
+    out.push(c, `${c}=`, `${c}?`);
+  };
+  if (table.hasId) add("id");
+  for (const c of table.columns) add(c);
+  return out;
+}
+
+// ---- A. explicit `self.table_name` declarations (AST, PASS-1) --------------
+
+const duckExplicitTableName = new Map<string, string>(); // class FQ → table
+
+/**
+ * DFS with a namespace stack recording `self.table_name = "x"` per enclosing
+ * class. taxdome carries 344 of these in app/models — inflection alone would
+ * mis-map every one of them, so the explicit declaration always wins.
+ */
+function scanTableNameDecls(node: AstNode, ns: string[]): void {
+  for (const child of node.children) {
+    if (child.type === "class" || child.type === "module") {
+      const nameNode = child.childForFieldName("name");
+      const raw = nameNode?.text ?? "";
+      const segs = raw.replace(/^::/, "").split("::").filter((s) => s.length > 0);
+      scanTableNameDecls(child, segs.length > 0 ? [...ns, ...segs] : ns);
+      continue;
+    }
+    if (child.type === "assignment") {
+      const lhs = child.childForFieldName("left");
+      const rhs = child.childForFieldName("right");
+      if (lhs && rhs && lhs.text.replace(/\s+/g, "") === "self.table_name" && ns.length > 0) {
+        const lit = /^[:'"]([A-Za-z0-9_.]+)['"]?$/.exec(rhs.text.trim());
+        if (lit) duckExplicitTableName.set(ns.join("::"), lit[1]!);
+      }
+    }
+    scanTableNameDecls(child, ns);
+  }
+}
+
+// ---- B. class → own member names (PASS-1, from the same defs the table gets) --
+
+const duckClassOwnMembers = new Map<string, Set<string>>();
+
+/** Split `Acme::Firm#save` / `Acme::Firm.find` into owner + member. Class/module
+ *  chunks (no `#`/`.`) contribute no member — they only name a candidate. */
+function noteDuckDefs(defs: SymbolDefinition[]): void {
+  for (const d of defs) {
+    const fq = d.fqName;
+    const cut = Math.max(fq.lastIndexOf("#"), fq.lastIndexOf("."));
+    if (cut <= 0) {
+      if (!duckClassOwnMembers.has(fq)) duckClassOwnMembers.set(fq, new Set());
+      continue;
+    }
+    const owner = fq.slice(0, cut);
+    const member = fq.slice(cut + 1).replace(/~\d+$/, "");
+    if (member.length === 0) continue;
+    let set = duckClassOwnMembers.get(owner);
+    if (!set) {
+      set = new Set();
+      duckClassOwnMembers.set(owner, set);
+    }
+    set.add(member);
+  }
+}
+
+// ---- C. variable call-sets (PASS-2) ---------------------------------------
+
+interface DuckVarCallSet {
+  relPath: string;
+  callerSymbolId: string;
+  receiver: string;
+  receiverKind: ReceiverKind;
+  line: number;
+  members: Set<string>;
+  /** Statically-known type (ground truth), or null when the variable is untyped. */
+  gtType: string | null;
+  gtSource: string | null;
+}
+
+const duckVarSets = new Map<string, DuckVarCallSet>();
+
+function duckKey(relPath: string, callerSymbolId: string, receiver: string): string {
+  return `${relPath}|${callerSymbolId}|${receiver}`;
+}
+
+/**
+ * Record one call against its receiver variable. The FULL member set is kept —
+ * resolved, missed and external-looking alike — because the narrowing power comes
+ * from the whole set, not from the miss subset (the miss-only intersection was
+ * measured to collapse to empty).
+ */
+function noteDuckCall(call: CallRef, receiverKind: ReceiverKind, relPath: string, chunk: ChunkExtraction): void {
+  const r = call.receiver;
+  if (r === null || !DUCK_RECEIVER_RE.test(r)) return;
+  const key = duckKey(relPath, chunk.symbolId, r);
+  let group = duckVarSets.get(key);
+  if (!group) {
+    let gtType: string | null = null;
+    let gtSource: string | null = null;
+    if (r.startsWith("@")) {
+      const t = runIvarTypes[chunk.scope.join("::")]?.[r];
+      if (t !== undefined) {
+        gtType = t;
+        gtSource = "ivarTypes";
+      }
+    } else {
+      const bindings = chunk.localBindings?.[r];
+      if (bindings && bindings.length > 0) {
+        const types = new Set(bindings.map((b) => b.type));
+        if (types.size === 1) {
+          gtType = [...types][0] ?? null;
+          gtSource = "localBindings";
+        } else {
+          // Reassigned to a different type inside the method — "the" type is not
+          // well-defined, so it is neither ground truth nor a patient.
+          gtSource = "localBindings-multitype";
+        }
+      }
+    }
+    group = {
+      relPath,
+      callerSymbolId: chunk.symbolId,
+      receiver: r,
+      receiverKind,
+      line: call.startLine,
+      members: new Set(),
+      gtType,
+      gtSource,
+    };
+    duckVarSets.set(key, group);
+  }
+  group.members.add(call.member);
+}
+
+// ---- B. candidate member index (post-barrier) ------------------------------
+
+interface DuckIndex {
+  classes: string[];
+  classMembers: Set<string>[];
+  isArModel: boolean[];
+  /** member → candidate class indices that answer it. */
+  postings: Map<string, number[]>;
+  idf: Map<string, number>;
+  byLastSegment: Map<string, number[]>;
+  mapping: {
+    schemaTables: number;
+    explicitTableName: number;
+    tablesMappedExplicit: number;
+    tablesMappedInflection: number;
+    tablesAmbiguous: number;
+    tablesUnmapped: number;
+    unmappedSample: string[];
+    arModels: number;
+    arModelsWithTable: number;
+  };
+}
+
+function duckLastSegment(fq: string): string {
+  const i = fq.lastIndexOf("::");
+  return i === -1 ? fq : fq.slice(i + 2);
+}
+
+/** Naive Rails singularize — enough for schema table names (measurement script). */
+function duckSingularize(word: string): string {
+  const IRREGULAR: Record<string, string> = {
+    people: "person",
+    children: "child",
+    men: "man",
+    women: "woman",
+    data: "datum",
+    statuses: "status",
+    taxes: "tax",
+    indices: "index",
+    matrices: "matrix",
+  };
+  const known = IRREGULAR[word];
+  if (known) return known;
+  if (word.endsWith("ies")) return `${word.slice(0, -3)}y`;
+  if (/(?:xes|ses|shes|ches|zes)$/.test(word)) return word.slice(0, -2);
+  if (word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
+  return word;
+}
+
+function duckCamelize(snake: string): string {
+  return snake
+    .split("_")
+    .filter((s) => s.length > 0)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join("");
+}
+
+/** Transitive superclass walk over the run-global `classExtends`, asking whether
+ *  the chain reaches ApplicationRecord / ActiveRecord::Base. */
+function duckIsArModel(fq: string): boolean {
+  let cur: string | undefined = fq;
+  for (let i = 0; i < 12 && cur !== undefined; i += 1) {
+    const parent: string | undefined = runExtends[cur];
+    if (parent === undefined) return false;
+    if (DUCK_AR_BASE_CLASSES.has(parent)) return true;
+    cur = parent;
+  }
+  return false;
+}
+
+function buildDuckIndex(): DuckIndex {
+  const schema = parseSchemaTables(join(ROOT, "db/schema.rb"));
+
+  // Candidate universe: every namespace that owns ≥1 def in the symbol table.
+  const classes = [...duckClassOwnMembers.keys()];
+  const classIndex = new Map<string, number>();
+  classes.forEach((c, i) => classIndex.set(c, i));
+  const isArModel = classes.map((c) => duckIsArModel(c));
+
+  // table → owning class. Explicit `self.table_name` first; inflection only for
+  // tables no declaration claims.
+  const byLastSegment = new Map<string, number[]>();
+  classes.forEach((c, i) => {
+    const seg = duckLastSegment(c);
+    const arr = byLastSegment.get(seg);
+    if (arr) arr.push(i);
+    else byLastSegment.set(seg, [i]);
+  });
+
+  const tableOfClass = new Map<number, string>();
+  let tablesMappedExplicit = 0;
+  const claimedTables = new Set<string>();
+  for (const [cls, table] of duckExplicitTableName) {
+    const idx = classIndex.get(cls);
+    if (idx === undefined) continue;
+    tableOfClass.set(idx, table);
+    if (schema.has(table) && !claimedTables.has(table)) {
+      claimedTables.add(table);
+      tablesMappedExplicit += 1;
+    }
+  }
+
+  let tablesMappedInflection = 0;
+  let tablesAmbiguous = 0;
+  const unmapped: string[] = [];
+  for (const table of schema.keys()) {
+    if (claimedTables.has(table)) continue;
+    const guess = duckCamelize(duckSingularize(table));
+    const hits = (byLastSegment.get(guess) ?? []).filter((i) => isArModel[i] && !tableOfClass.has(i));
+    if (hits.length === 1) {
+      tableOfClass.set(hits[0]!, table);
+      tablesMappedInflection += 1;
+    } else if (hits.length > 1) {
+      // Ambiguous (same demodulized name in two namespaces) — assign none rather
+      // than fabricate columns on the wrong model.
+      tablesAmbiguous += 1;
+    } else {
+      unmapped.push(table);
+    }
+  }
+
+  // Member sets: own defs (real + macro-synthesised) ∪ schema columns (AR models)
+  // ∪ ONE level of included-module / superclass members. One level only: the
+  // full MRO closure would smear every ApplicationRecord concern over all 400
+  // models and destroy the discriminative power the mechanism depends on.
+  const classMembers: Set<string>[] = classes.map((c, i) => {
+    const set = new Set(duckClassOwnMembers.get(c) ?? []);
+    for (const anc of runAncestors[c] ?? []) for (const m of duckClassOwnMembers.get(anc) ?? []) set.add(m);
+    const sup = runExtends[c];
+    if (sup !== undefined) for (const m of duckClassOwnMembers.get(sup) ?? []) set.add(m);
+    const table = tableOfClass.get(i);
+    if (table !== undefined) {
+      const t = schema.get(table);
+      if (t) for (const m of schemaMembersOf(t)) set.add(m);
+    }
+    return set;
+  });
+
+  const postings = new Map<string, number[]>();
+  for (let i = 0; i < classes.length; i += 1) {
+    for (const m of classMembers[i]!) {
+      const arr = postings.get(m);
+      if (arr) arr.push(i);
+      else postings.set(m, [i]);
+    }
+  }
+  const total = Math.max(1, classes.length);
+  const idf = new Map<string, number>();
+  for (const [m, arr] of postings) idf.set(m, Math.log(total / arr.length));
+
+  let arModelsWithTable = 0;
+  for (let i = 0; i < classes.length; i += 1) if (isArModel[i] && tableOfClass.has(i)) arModelsWithTable += 1;
+
+  return {
+    classes,
+    classMembers,
+    isArModel,
+    postings,
+    idf,
+    byLastSegment,
+    mapping: {
+      schemaTables: schema.size,
+      explicitTableName: duckExplicitTableName.size,
+      tablesMappedExplicit,
+      tablesMappedInflection,
+      tablesAmbiguous,
+      tablesUnmapped: unmapped.length,
+      unmappedSample: unmapped.slice(0, 15),
+      arModels: isArModel.filter(Boolean).length,
+      arModelsWithTable,
+    },
+  };
+}
+
+// ---- D. duck scoring -------------------------------------------------------
+
+interface DuckPrediction {
+  classIdx: number;
+  score: number;
+  runnerUpScore: number;
+  margin: number;
+  coverage: number;
+  scorableMembers: number;
+  /** Classes that scored > 0 in phase 1. `1` ⇒ the margin is unopposed, not earned. */
+  candidatePool: number;
+}
+
+/**
+ * score(C) = Σ_{m ∈ V, m scorable} idf(m)·[m ∈ members(C)]. Members no candidate
+ * class defines (core/stdlib/gem calls) are IGNORED — they carry no signal and
+ * must not veto a candidate. Returns the argmax + the runner-up so the caller can
+ * apply a margin; the FIRING rule (unique argmax, margin, coverage) lives in
+ * `duckFires` so margin sensitivity is one parameter.
+ */
+function duckPredict(members: Set<string>, idx: DuckIndex, exclude?: ReadonlySet<string>): DuckPrediction | null {
+  const scorable: string[] = [];
+  for (const m of members) if (idx.postings.has(m) && !(exclude?.has(m) ?? false)) scorable.push(m);
+  if (scorable.length === 0) return null;
+
+  // Phase 1 — accumulate EXACT partial scores over every member within the DF cap
+  // (rarest first). Ultra-common members are deferred to phase 2 so a single
+  // `to_s` does not enumerate half the corpus; if every member is ultra-common the
+  // rarest one still accumulates, so the variable is never silently dropped.
+  scorable.sort((a, b) => (idx.postings.get(a)?.length ?? 0) - (idx.postings.get(b)?.length ?? 0));
+  const seedScores = new Map<number, number>();
+  let accumulated = 0;
+  for (const m of scorable) {
+    const posting = idx.postings.get(m)!;
+    if (posting.length > DUCK_DF_ACCUMULATE_CAP && accumulated > 0) break;
+    const w = idx.idf.get(m) ?? 0;
+    for (const c of posting) seedScores.set(c, (seedScores.get(c) ?? 0) + w);
+    accumulated += 1;
+  }
+  if (seedScores.size === 0) return null;
+
+  const ranked = [...seedScores.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, DUCK_TOP_CANDIDATES)
+    .map(([c]) => c);
+
+  let best = -1;
+  let bestScore = 0;
+  let bestHits = 0;
+  let secondScore = 0;
+  for (const c of ranked) {
+    const memberSet = idx.classMembers[c]!;
+    let score = 0;
+    let hits = 0;
+    for (const m of scorable) {
+      if (!memberSet.has(m)) continue;
+      score += idx.idf.get(m) ?? 0;
+      hits += 1;
+    }
+    if (score > bestScore) {
+      secondScore = bestScore;
+      best = c;
+      bestScore = score;
+      bestHits = hits;
+    } else if (score > secondScore) {
+      secondScore = score;
+    }
+  }
+  if (best === -1 || bestScore <= 0) return null;
+  return {
+    classIdx: best,
+    score: bestScore,
+    runnerUpScore: secondScore,
+    margin: secondScore <= 0 ? Number.POSITIVE_INFINITY : bestScore / secondScore,
+    coverage: bestHits / scorable.length,
+    scorableMembers: scorable.length,
+    candidatePool: seedScores.size,
+  };
+}
+
+function duckFires(p: DuckPrediction | null, margin: number): boolean {
+  return p !== null && p.margin >= margin && p.coverage >= DUCK_MIN_COVERAGE;
+}
+
+// ---- E/F. report -----------------------------------------------------------
+
+function duckTop<T>(items: T[], key: (t: T) => string, n = 10): { name: string; count: number }[] {
+  const m = new Map<string, number>();
+  for (const it of items) {
+    const k = key(it);
+    m.set(k, (m.get(k) ?? 0) + 1);
+  }
+  return [...m.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([name, count]) => ({ name, count }));
+}
+
+interface DuckGtBucket {
+  predicted: number;
+  correctStrict: number;
+  correctLastSeg: number;
+  wrong: number;
+  silent: number;
+}
+
+interface DuckImpactBucket {
+  misses: number;
+  byReceiverKind: Record<string, number>;
+  predictedArModel: number;
+  predictedOther: number;
+  blockParamSlice: number;
+  nonBlockParamSlice: number;
+  variables: number;
+  /** Sub-slice where the SET actually did the work (see `duckIsNarrowing`). */
+  missesNarrowing: number;
+  variablesNarrowing: number;
+}
+
+/**
+ * "Genuine narrowing": ≥2 members voted AND ≥2 candidate classes were in play. The
+ * complement is a variable whose single member is answered by exactly one class —
+ * a win the hypothesis does not need (it is plain unique-name lookup, not
+ * duck-typing), so it must be reported apart or the mechanism looks stronger than
+ * the idea being tested actually is.
+ */
+function duckIsNarrowing(p: DuckPrediction): boolean {
+  return p.scorableMembers >= 2 && p.candidatePool >= 2;
+}
+
+interface DuckVariantResult {
+  groundTruth: Record<
+    string,
+    { all: DuckGtBucket; resolvable: DuckGtBucket; multiMember: DuckGtBucket; narrowing: DuckGtBucket }
+  >;
+  gtMultiMemberPool: number;
+  confusionTop: { name: string; count: number }[];
+  confusionExamples: Record<string, unknown>[];
+  impact: Record<string, DuckImpactBucket>;
+  patientFiringCoverage: Record<string, { allPatients: number; blockParamLike: number; nonBlockParam: number }>;
+  topPredictedClasses: { name: string; count: number }[];
+  diagnostics: { groundTruth: Record<string, number>; patients: Record<string, number> };
+}
+
+const duckEmptyGt = (): DuckGtBucket => ({
+  predicted: 0,
+  correctStrict: 0,
+  correctLastSeg: 0,
+  wrong: 0,
+  silent: 0,
+});
+
+const duckEmptyImpact = (): DuckImpactBucket => ({
+  misses: 0,
+  byReceiverKind: {},
+  predictedArModel: 0,
+  predictedOther: 0,
+  blockParamSlice: 0,
+  nonBlockParamSlice: 0,
+  variables: 0,
+  missesNarrowing: 0,
+  variablesNarrowing: 0,
+});
+
+const duckIsBlockParamLike = (recv: string | null): boolean =>
+  recv !== null && !recv.startsWith("@") && recv.length <= 2;
+
+/**
+ * Run E (ground-truth accuracy) + F (impact projection) for one scoring variant.
+ * `exclude` is the member-name veto list — `undefined` is the spec-literal scoring
+ * (every member votes), `DUCK_UNIVERSAL_MEMBERS` is the `strictCore` sensitivity
+ * run that drops framework-universal members.
+ */
+function evaluateDuckVariant(
+  idx: DuckIndex,
+  gtGroups: DuckVarCallSet[],
+  gtResolvable: DuckVarCallSet[],
+  patients: DuckVarCallSet[],
+  missesOnPatients: MissRecord[],
+  patientByKey: Map<string, DuckVarCallSet>,
+  isGtResolvable: (g: DuckVarCallSet) => boolean,
+  exclude: ReadonlySet<string> | undefined,
+): DuckVariantResult {
+  const predOf = new Map<DuckVarCallSet, DuckPrediction | null>();
+  for (const g of gtGroups) predOf.set(g, duckPredict(g.members, idx, exclude));
+  for (const g of patients) if (!predOf.has(g)) predOf.set(g, duckPredict(g.members, idx, exclude));
+
+  // ---- E. ground-truth accuracy ----
+  const groundTruth: DuckVariantResult["groundTruth"] = {};
+  const confusion = new Map<string, number>();
+  const confusionExamples: Record<string, unknown>[] = [];
+
+  for (const margin of DUCK_MARGINS) {
+    const all = duckEmptyGt();
+    const resolvable = duckEmptyGt();
+    const multi = duckEmptyGt();
+    const narrowing = duckEmptyGt();
+    for (const g of gtGroups) {
+      const p = predOf.get(g) ?? null;
+      const fires = duckFires(p, margin);
+      const isResolvable = isGtResolvable(g);
+      const bump = (b: DuckGtBucket, ok: boolean, okLast: boolean): void => {
+        if (!fires) {
+          b.silent += 1;
+          return;
+        }
+        b.predicted += 1;
+        if (ok) b.correctStrict += 1;
+        if (okLast) b.correctLastSeg += 1;
+        else b.wrong += 1;
+      };
+      let ok = false;
+      let okLast = false;
+      if (fires && p) {
+        const predicted = idx.classes[p.classIdx]!;
+        const gt = g.gtType!.replace(/^::/, "");
+        ok = predicted === gt;
+        okLast = ok || duckLastSegment(predicted) === duckLastSegment(gt);
+        if (!okLast && margin === 1.5) {
+          const k = `${gt} → ${predicted}`;
+          confusion.set(k, (confusion.get(k) ?? 0) + 1);
+          if (confusionExamples.length < 12)
+            confusionExamples.push({
+              at: `${g.relPath}:${g.line}`,
+              receiver: g.receiver,
+              groundTruth: gt,
+              gtSource: g.gtSource,
+              predicted,
+              score: +p.score.toFixed(2),
+              runnerUp: +p.runnerUpScore.toFixed(2),
+              coverage: +p.coverage.toFixed(2),
+              candidatePool: p.candidatePool,
+              members: [...g.members].slice(0, 12),
+            });
+        }
+      }
+      bump(all, ok, okLast);
+      if (isResolvable) bump(resolvable, ok, okLast);
+      if (isResolvable && g.members.size >= 2) bump(multi, ok, okLast);
+      if (isResolvable && fires && p && duckIsNarrowing(p)) bump(narrowing, ok, okLast);
+    }
+    groundTruth[String(margin)] = { all, resolvable, multiMember: multi, narrowing };
+  }
+
+  // ---- F. impact projection over the recall holes ----
+  const impact: Record<string, DuckImpactBucket> = {};
+  for (const margin of DUCK_MARGINS) {
+    const b = duckEmptyImpact();
+    const firedVars = new Set<DuckVarCallSet>();
+    const narrowingVars = new Set<DuckVarCallSet>();
+    for (const m of missesOnPatients) {
+      const g = patientByKey.get(duckKey(m.relPath, m.callerSymbolId, m.receiver!))!;
+      const p = predOf.get(g) ?? null;
+      if (!duckFires(p, margin)) continue;
+      b.misses += 1;
+      firedVars.add(g);
+      if (duckIsNarrowing(p!)) {
+        b.missesNarrowing += 1;
+        narrowingVars.add(g);
+      }
+      b.byReceiverKind[m.receiverKind] = (b.byReceiverKind[m.receiverKind] ?? 0) + 1;
+      if (idx.isArModel[p!.classIdx]) b.predictedArModel += 1;
+      else b.predictedOther += 1;
+      if (duckIsBlockParamLike(m.receiver)) b.blockParamSlice += 1;
+      else b.nonBlockParamSlice += 1;
+    }
+    b.variables = firedVars.size;
+    b.variablesNarrowing = narrowingVars.size;
+    impact[String(margin)] = b;
+  }
+
+  const patientBlockParam = patients.filter((g) => duckIsBlockParamLike(g.receiver));
+  const patientNonBlockParam = patients.filter((g) => !duckIsBlockParamLike(g.receiver));
+  const coverageAt = (margin: number, pool: DuckVarCallSet[]): number =>
+    pool.filter((g) => duckFires(predOf.get(g) ?? null, margin)).length;
+
+  const shape = (pool: DuckVarCallSet[]): Record<string, number> => {
+    const fired = pool.map((g) => predOf.get(g) ?? null).filter((p): p is DuckPrediction => duckFires(p, 1.5));
+    const sizes = fired.map((p) => idx.classMembers[p.classIdx]!.size).sort((a, b) => a - b);
+    const varSizes = fired.map((p) => p.scorableMembers).sort((a, b) => a - b);
+    return {
+      fired: fired.length,
+      unopposedMargin: fired.filter((p) => !Number.isFinite(p.margin)).length,
+      singleCandidatePool: fired.filter((p) => p.candidatePool <= 1).length,
+      winnerMemberSetP50: sizes[Math.floor(sizes.length / 2)] ?? 0,
+      winnerMemberSetP90: sizes[Math.floor(sizes.length * 0.9)] ?? 0,
+      varScorableMembersP50: varSizes[Math.floor(varSizes.length / 2)] ?? 0,
+    };
+  };
+
+  return {
+    groundTruth,
+    gtMultiMemberPool: gtResolvable.filter((g) => g.members.size >= 2).length,
+    confusionTop: [...confusion.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([name, count]) => ({ name, count })),
+    confusionExamples,
+    impact,
+    patientFiringCoverage: Object.fromEntries(
+      DUCK_MARGINS.map((m) => [
+        String(m),
+        {
+          allPatients: coverageAt(m, patients),
+          blockParamLike: coverageAt(m, patientBlockParam),
+          nonBlockParam: coverageAt(m, patientNonBlockParam),
+        },
+      ]),
+    ),
+    topPredictedClasses: duckTop(
+      patients.filter((g) => duckFires(predOf.get(g) ?? null, 1.5)),
+      (g) => idx.classes[predOf.get(g)!.classIdx]!,
+      15,
+    ),
+    diagnostics: { groundTruth: shape(gtResolvable), patients: shape(patients) },
+  };
+}
+
+function runDuckOracle(): void {
+  const L = (s: string): void => console.log(s);
+  const t0 = Date.now();
+  const idx = buildDuckIndex();
+
+  const groups = [...duckVarSets.values()];
+  const gtGroups = groups.filter((g) => g.gtType !== null);
+  const patients = groups.filter((g) => g.gtType === null && g.gtSource === null);
+
+  const classKnown = (typeName: string): number | null => {
+    const norm = typeName.replace(/^::/, "");
+    const exact = idx.classes.indexOf(norm);
+    if (exact !== -1) return exact;
+    const hits = idx.byLastSegment.get(duckLastSegment(norm)) ?? [];
+    return hits.length > 0 ? hits[0]! : null;
+  };
+  const resolvableSet = new Set(gtGroups.filter((g) => classKnown(g.gtType!) !== null));
+  const gtResolvable = [...resolvableSet];
+
+  const patientByKey = new Map<string, DuckVarCallSet>();
+  for (const g of patients) patientByKey.set(duckKey(g.relPath, g.callerSymbolId, g.receiver), g);
+  const missesOnPatients = misses.filter((m) =>
+    m.receiver !== null ? patientByKey.has(duckKey(m.relPath, m.callerSymbolId, m.receiver)) : false,
+  );
+
+  const spec = evaluateDuckVariant(
+    idx,
+    gtGroups,
+    gtResolvable,
+    patients,
+    missesOnPatients,
+    patientByKey,
+    (g) => resolvableSet.has(g),
+    undefined,
+  );
+  const strictCore = evaluateDuckVariant(
+    idx,
+    gtGroups,
+    gtResolvable,
+    patients,
+    missesOnPatients,
+    patientByKey,
+    (g) => resolvableSet.has(g),
+    DUCK_UNIVERSAL_MEMBERS,
+  );
+
+  const memberSetSizeHist: Record<string, number> = {};
+  for (const g of patients) {
+    const k = g.members.size >= 6 ? "6+" : String(g.members.size);
+    memberSetSizeHist[k] = (memberSetSizeHist[k] ?? 0) + 1;
+  }
+  const gtSourceHist: Record<string, number> = {};
+  for (const g of groups) gtSourceHist[g.gtSource ?? "untyped"] = (gtSourceHist[g.gtSource ?? "untyped"] ?? 0) + 1;
+
+  const report = {
+    meta: {
+      generatedAt: new Date().toISOString(),
+      root: ROOT,
+      elapsedSec: +((Date.now() - t0) / 1000).toFixed(1),
+      totalMisses: misses.length,
+      candidateClasses: idx.classes.length,
+      minCoverage: DUCK_MIN_COVERAGE,
+      margins: DUCK_MARGINS,
+      dfAccumulateCap: DUCK_DF_ACCUMULATE_CAP,
+      topCandidates: DUCK_TOP_CANDIDATES,
+      note:
+        "Measurement only — no resolver/production change. Member sets = schema columns ∪ symbol-table defs (real + macro-synthesised) ∪ ONE level of included-module/superclass members. Two scoring variants: `spec` (every member votes, as specified) and `strictCore` (framework-universal members dropped).",
+    },
+    mapping: idx.mapping,
+    population: {
+      variableCallSets: groups.length,
+      groundTruthTyped: gtGroups.length,
+      groundTruthResolvableToCandidate: gtResolvable.length,
+      groundTruthResolvableMultiMember: spec.gtMultiMemberPool,
+      patientsUntyped: patients.length,
+      gtSourceHistogram: gtSourceHist,
+      patientMemberSetSizeHistogram: memberSetSizeHist,
+      patientBlockParamLike: patients.filter((g) => duckIsBlockParamLike(g.receiver)).length,
+      patientNonBlockParam: patients.filter((g) => !duckIsBlockParamLike(g.receiver)).length,
+      missesOnPatientVariables: missesOnPatients.length,
+      // How much ground truth the ivar channel could have supplied at all: if the
+      // walker recorded no ivar type facts for this corpus, every GT sample comes
+      // from localBindings and @ivar-receiver precision stays UNVALIDATED.
+      ivarTypeFactClasses: Object.keys(runIvarTypes).length,
+      ivarTypeFactEntries: Object.values(runIvarTypes).reduce((n, m) => n + Object.keys(m).length, 0),
+      patientIvarReceivers: patients.filter((g) => g.receiver.startsWith("@")).length,
+    },
+    variants: { spec, strictCore },
+  };
+  writeFileSync(OUT_DUCK, JSON.stringify(report, null, 2));
+
+  const pct = (a: number, b: number): string => (b === 0 ? "n/a" : `${((a / b) * 100).toFixed(1)}%`);
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  DUCK-TYPING DISAMBIGUATION ORACLE");
+  L("═══════════════════════════════════════════════════════════════════");
+  L(
+    `schema tables=${idx.mapping.schemaTables}  explicit self.table_name=${idx.mapping.explicitTableName}  ` +
+      `mapped(explicit)=${idx.mapping.tablesMappedExplicit} mapped(inflection)=${idx.mapping.tablesMappedInflection} ` +
+      `ambiguous=${idx.mapping.tablesAmbiguous} unmapped=${idx.mapping.tablesUnmapped}`,
+  );
+  L(
+    `candidate classes=${idx.classes.length}  AR models=${idx.mapping.arModels}  AR models with a table=${idx.mapping.arModelsWithTable}`,
+  );
+  L(
+    `variable call-sets=${groups.length}  GT-typed=${gtGroups.length} (candidate-resolvable ${gtResolvable.length}, of them ≥2 members ${spec.gtMultiMemberPool})  patients=${patients.length}  misses on patients=${missesOnPatients.length}/${misses.length}`,
+  );
+
+  for (const [variantName, v] of [
+    ["spec (every member votes)", spec],
+    ["strictCore (framework-universal members dropped)", strictCore],
+  ] as [string, DuckVariantResult][]) {
+    L("");
+    L(`══ VARIANT: ${variantName} ══`);
+    L("─── E. ground-truth accuracy (type hidden, predicted from the call-set) ───");
+    L("margin   pool                 pred   ok(FQ)  ok(lastSeg)  precision  coverage");
+    for (const margin of DUCK_MARGINS) {
+      const rows: [string, DuckGtBucket, number][] = [
+        ["all-GT", v.groundTruth[String(margin)]!.all, gtGroups.length],
+        ["GT→known class", v.groundTruth[String(margin)]!.resolvable, gtResolvable.length],
+        ["GT known, ≥2 members", v.groundTruth[String(margin)]!.multiMember, v.gtMultiMemberPool],
+        ["GT known, NARROWING", v.groundTruth[String(margin)]!.narrowing, gtResolvable.length],
+      ];
+      for (const [label, b, poolSize] of rows) {
+        L(
+          `${String(margin).padEnd(7)}  ${label.padEnd(20)} ${String(b.predicted).padStart(5)}  ` +
+            `${String(b.correctStrict).padStart(6)}  ${String(b.correctLastSeg).padStart(11)}  ` +
+            `${pct(b.correctLastSeg, b.predicted).padStart(9)}  ${pct(b.predicted, poolSize).padStart(8)}`,
+        );
+      }
+    }
+    L("");
+    L("─── F. impact projection over the recall holes ────────────────────");
+    L("margin   misses  vars   AR-model  other   blockParam(e/t)  non-blockParam   narrowingMisses/vars");
+    for (const margin of DUCK_MARGINS) {
+      const b = v.impact[String(margin)]!;
+      L(
+        `${String(margin).padEnd(7)}  ${String(b.misses).padStart(6)}  ${String(b.variables).padStart(5)}  ` +
+          `${String(b.predictedArModel).padStart(8)}  ${String(b.predictedOther).padStart(5)}  ` +
+          `${String(b.blockParamSlice).padStart(15)}  ${String(b.nonBlockParamSlice).padStart(14)}   ` +
+          `${String(b.missesNarrowing).padStart(9)}/${b.variablesNarrowing}`,
+      );
+    }
+    L(
+      `  receiverKind @1.5: ${Object.entries(v.impact["1.5"]!.byReceiverKind)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, n]) => `${k}=${n}`)
+        .join("  ")}`,
+    );
+    L(
+      `  diagnostics @1.5 (GT pool): fired=${v.diagnostics.groundTruth.fired} unopposed=${v.diagnostics.groundTruth.unopposedMargin} ` +
+        `winnerMemberSet p50=${v.diagnostics.groundTruth.winnerMemberSetP50} p90=${v.diagnostics.groundTruth.winnerMemberSetP90} ` +
+        `varScorableMembers p50=${v.diagnostics.groundTruth.varScorableMembersP50}`,
+    );
+    L("  top confusions @1.5 (GT → predicted):");
+    for (const { name, count } of v.confusionTop) L(`    ${String(count).padStart(5)}  ${name}`);
+  }
+  L("");
+  L(`duck oracle report → ${OUT_DUCK}`);
+  L("");
+}
+
 // ---------------------------------------------------------------------------
 // MAIN
 // ---------------------------------------------------------------------------
@@ -985,6 +1900,7 @@ async function main(): Promise<void> {
       });
       ingestPass1(extraction, materializedRoot);
       if (ORACLE_ENABLED) scanOracleAst(materializedRoot, relPath);
+      if (DUCK_ENABLED && code.includes("table_name")) scanTableNameDecls(materializedRoot, []);
       extractions.push(extraction);
     } catch (err) {
       parseFailures += 1;
@@ -1188,6 +2104,7 @@ async function main(): Promise<void> {
   writeFileSync(OUT_MISSES, JSON.stringify(payload, null, 2));
   L(`misses dumped: ${misses.length} -> ${OUT_MISSES}`);
   if (ORACLE_ENABLED) runOracle(Date.now() - t0, files.length);
+  if (DUCK_ENABLED) runDuckOracle();
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 

@@ -159,3 +159,125 @@ index-receiver recall holes.
 3. **"edges" = 1 per resolvable site** (monomorphic "known perfectly"
    assumption). The A/B oracle-resolvable sets are homonym-heavy, so the upper
    bound is deliberately generous — real addressable recall is below 4 050.
+
+## Duck-typing oracle findings (2026-07-26)
+
+A second oracle rides the same harness (`CODEGRAPH_DUCK_ORACLE=1`, additive and
+default-off byte-identical, exactly like `CODEGRAPH_ORACLE`). It tests a different
+hypothesis from VTA: an untyped receiver's **set of member calls** inside one
+method identifies its class, because the members a class answers (schema columns +
+real defs + macro-synthesised accessors) form a near-signature. Measured on
+taxdome, one pass, 98 s. Full JSON: `$CLAUDE_JOB_DIR/tmp/duck-oracle-report.json`.
+
+### What was built
+
+- **Schema member-sets.** `db/schema.rb` parsed to 367 tables; each column yields
+  `col` / `col=` / `col?`, plus `id` unless `id: false`. Dirty-tracking
+  (`_was`, `_changed?`) deliberately excluded.
+- **Table→model mapping.** 343 explicit `self.table_name` declarations scanned
+  from the AST with a namespace stack (inflection alone would mis-map all of
+  them). Coverage: **330 tables mapped explicitly + 12 by inflection = 342/367
+  (93.2 %)**, 0 ambiguous, 25 unmapped. The unmapped tail is join / framework
+  tables with no model (`active_storage_*`, `clients_inbox_notifications`,
+  `data_migrations`, `client_codes`) — correct, not a defect. 636 AR models,
+  355 of them carry a table.
+- **Candidate index.** 12 311 classes. Member set = own defs from the symbol
+  table (real methods AND macro-synthesised names — enum predicates, association
+  accessors, `attribute` readers all verified present) ∪ schema columns for AR
+  models ∪ **one** level of `classAncestors` (include/prepend) and `classExtends`
+  (superclass) members. Full MRO closure was skipped on purpose: it smears every
+  `ApplicationRecord` concern across 400 models and destroys the discrimination
+  the mechanism depends on.
+- **Variable call-sets.** 35 622 `(file, method, receiver)` groups over the FULL
+  call set (resolved + missed + external alike). Receivers already typed by
+  `localBindings` / `ivarTypes` are held out as ground truth.
+- **Scoring.** `score(C) = Σ idf(m)·[m ∈ members(C)]` over members at least one
+  candidate defines; fires on unique argmax + margin + winner covering ≥ 60 % of
+  the variable's scorable members.
+
+### The specified scoring rule fails; one veto fixes it
+
+| Variant | precision @1.25 | @1.5 | @2.0 |
+| --- | --- | --- | --- |
+| `spec` — every member votes | 71.3 % | **65.8 %** | 57.6 % |
+| `strictCore` — framework-universal members vetoed | 90.3 % | **94.5 %** | 95.0 % |
+
+Precision = correct / predicted over ground-truth variables whose hidden type
+resolves to a candidate class (n = **2 256**; sample is large enough that these
+are not weak estimates). Correctness is last-segment match; strict full-FQ match
+is ~2 pp lower.
+
+The failure mode of the literal rule is systematic, not noise. An AR model
+inherits `present?` / `blank?` / `to_s` from the framework, so those names are
+**absent** from its statically-derived member set — while a 4-method PORO that
+happens to `def present?` **has** them. The generic member then votes for the
+PORO and against the model. Top confusion under `spec`: `Firm →
+Communication::…::AttachPhoneNumber::OptionalValue` 38×, plus `Hash`, `String`,
+`Integer` → the same PORO. Vetoing the universal-member set removes every one of
+those; the residual `strictCore` confusions are singletons with no pattern
+(top entry 3×).
+
+### Impact projection (`strictCore`, patient variables only)
+
+| Margin | Addressable misses | of which genuine narrowing | Variables | AR model / other | `e`/`t` block-param slice |
+| --- | --- | --- | --- | --- | --- |
+| 1.25 | **1 792** (8.6 % of 20 964) | 1 715 | 1 011 | 1 315 / 477 | 126 |
+| 1.5 | **1 442** (6.9 %) | 1 365 | 827 | 1 004 / 438 | 118 |
+| 2.0 | **605** (2.9 %) | 528 | 318 | 467 / 138 | 16 |
+
+"Genuine narrowing" = ≥ 2 members voted and ≥ 2 candidate classes were in play —
+i.e. the SET did the work, not a single globally-unique member. 95 % of the
+addressable misses qualify, so the volume is not an artefact of trivial
+unique-name lookups. By receiver kind at margin 1.5: `dynamic` 1 109, `ivar` 333.
+The `e`/`t` block-param slice is 8 % of the addressable misses — it does not
+inflate the number, as expected from its 1–2-member call sets.
+
+### Verdict against the suggested gate — SPLIT
+
+- Precision ≥ 0.9: **met** (`strictCore`, every margin 1.25–2.0).
+- ≥ 2 000 addressable misses: **not met** at any margin (ceiling 1 792 at the
+  loosest margin, 1 442 at 1.5).
+
+Optimistic reading: 1.4–1.8 k new in-project edges at ~94 % precision, on the
+single largest untyped-receiver bucket, from data (schema + symbol table) already
+in the index — a real mechanism with a real, if modest, number.
+Conservative reading: 7–9 % of the recall hole, ~80 wrong edges per 1 442 at the
+measured precision, and 38 % of all firing patient variables predict ONE class
+(`KindOfService::Result`, 1 683 of 4 415) — the volume is concentrated in a single
+service-result idiom, so a cheaper targeted grammar for that idiom would capture
+most of the win without a general duck-typing engine.
+
+### Honest caveats
+
+1. **Two thirds of the population is out of reach by construction.** 22 384 of
+   33 088 untyped receivers (67.7 %) get exactly ONE member call in their method.
+   Nothing to intersect. Set size 2 → 7 022, 3 → 2 197, 4+ → 1 485.
+2. **`ivarTypes` supplied ZERO ground truth.** The map is empty across the whole
+   taxdome corpus (0 classes, 0 entries) — a separate finding worth its own look,
+   since the resolver receives that empty map too. Consequence here: all 2 530 GT
+   variables come from `localBindings`, so the 5 343 `@ivar` patient receivers
+   (333 addressed misses at margin 1.5) are **unvalidated** by this measurement.
+3. **Impact counts firing, not correctness.** Applying the GT precision gives
+   ~1 360 correct / ~80 wrong at margin 1.5 — and that transfer assumes patients
+   behave like GT variables. Their median scorable-member count is the same (2),
+   which supports the transfer, but GT variables are typed *because* they came
+   from `X.new` / `X.find` / a YARD annotation, so a residual skew remains.
+4. **Candidate truncation.** Phase 1 accumulates exact partial scores over members
+   with ≤ 5 000 defining classes; the top 256 are then rescored exactly over all
+   members. A true winner outside that 256 would be missed. Widening the cutoff
+   from 64 to 256 moved the numbers by < 0.5 %, so the residual bias is small.
+5. **One level of ancestors only**, matched by exact name; a concern referenced
+   under a different namespace spelling contributes nothing.
+
+### Deviations from the task spec
+
+1. **Candidates are all 12 311 classes, not only AR models.** Restricting to AR
+   models would mispredict every service-object variable into a model and inflate
+   precision loss; the wider universe is also what makes the AR-vs-PORO split in
+   the impact table meaningful.
+2. **A second scoring variant was added** (`strictCore`). The specified rule
+   measures 65.8 % precision — reporting only that would have buried the finding
+   that a single veto list lifts it to 94.5 %.
+3. **The 1-member slice is reported, not excluded.** It fires (a globally unique
+   member gives coverage 1.0 and an unopposed margin) and it is separated out via
+   the "genuine narrowing" column instead of being silently folded in.
