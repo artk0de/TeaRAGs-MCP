@@ -43,7 +43,7 @@ import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/traje
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { CollectionRegistry } from "../core/infra/registry/index.js";
 import { setDebug } from "../core/infra/runtime.js";
-import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
+import { SchemaDriftMonitor } from "../core/domains/maintenance/schema-drift-monitor.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";

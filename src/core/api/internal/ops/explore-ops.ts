@@ -33,7 +33,7 @@ import { StatsRecomputeService } from "../../../domains/ingest/infra/stats-recom
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { CollectionRegistry } from "../../../infra/registry/index.js";
-import type { SchemaDriftMonitor } from "../../../infra/schema-drift-monitor.js";
+import type { SchemaDriftMonitor } from "../../../domains/maintenance/schema-drift-monitor.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import {
   stripInternalFields,
