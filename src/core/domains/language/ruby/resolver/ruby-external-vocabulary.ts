@@ -10,7 +10,7 @@ import {
   resolveConstant,
   RUBY_RUNTIME_HOOKS,
 } from "./strategies/index.js";
-import { typeOfReceiver } from "./type-propagation.js";
+import { ivarTypeName, typeOfReceiver } from "./type-propagation.js";
 
 /**
  * Ruby implementation of `ExternalVocabulary`, bridging the `dsl/` framework
@@ -56,17 +56,20 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
 const IVAR_RECEIVER = /^@\w+$/;
 
 /**
- * An `@ivar` receiver whose walker-inferred type (`classFieldTypes`) resolves to
- * NO project file is a gem / stdlib instance (`@http = Net::HTTP.new`): the ivar
- * strategy DROPs it, so it reaches this classifier unresolved and is honestly
- * external — excluded from the resolveSuccessRate denominator, not an internal
- * miss (cai0 imass). An in-project type → false (the strategy resolved it). An
- * unrecorded ivar → false (genuinely attempted-unresolved; we don't know it's a
- * gem, so we never over-shrink the denominator).
+ * An `@ivar` receiver whose inferred type resolves to NO project file is a gem /
+ * stdlib instance (`@http = Net::HTTP.new`): the ivar strategy DROPs it, so it
+ * reaches this classifier unresolved and is honestly external — excluded from the
+ * resolveSuccessRate denominator, not an internal miss (cai0 imass). An
+ * in-project type → false (the strategy resolved it). An unrecorded ivar → false
+ * (genuinely attempted-unresolved; we don't know it's a gem, so we never
+ * over-shrink the denominator).
+ *
+ * The type comes from {@link ivarTypeName} — the same authority the ivar strategy
+ * uses (bd tea-rags-mcp-wr7ku), so the classifier and the strategy can never
+ * disagree about which ivars are typed.
  */
 function ivarTargetsExternal(receiver: string, ctx: CallContext): boolean {
-  if (ctx.callerScope.length === 0) return false;
-  const typeName = ctx.classFieldTypes?.[ctx.callerScope.join("::")]?.[receiver];
+  const typeName = ivarTypeName(receiver, ctx);
   return typeName !== undefined && resolveConstant(typeName, ctx) === null;
 }
 

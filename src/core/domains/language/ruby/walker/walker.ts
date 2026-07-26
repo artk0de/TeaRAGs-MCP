@@ -229,11 +229,18 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // Precise type-source maps for the resolver's PRECISE propagation paths
   // (Increment 1, Task 1.5). `structuredReturnTypes` keys `"<fqClass>#method"` →
   // RubyTypeRef (engine's structured-return path); `ivarTypes` keys
-  // `fqClass → "@ivar" → typeName` (engine's precise ivar path). Both derive
-  // from the SAME store as the flat `functionReturnTypes` / `classFieldTypes`
-  // fallbacks — the precise maps win in the engine, the flat maps stay as
-  // fallback. Conditionally set (omit when empty) so files with no annotations
-  // don't carry empty objects through the NDJSON spill.
+  // `fqClass → "@ivar" → typeName` (engine's precise ivar path). Both read the
+  // store's DECLARED facts — the flat `functionReturnTypes` / `classFieldTypes`
+  // above stay as the inference-based fallback the engine consults second.
+  // Conditionally set (omit when empty) so files with no annotations don't carry
+  // empty objects through the NDJSON spill.
+  //
+  // `ivarTypes` is empty on every file today (bd tea-rags-mcp-wr7ku): no source
+  // in INLINE_TYPE_SOURCES emits `kind:"ivar"`. Do NOT "fix" that by copying
+  // `ivarFieldTypes` in here — that publishes AST inference under the channel
+  // that outranks it, and buys nothing (measured on taxdome: no fq class draws
+  // ivar types from more than one file, so the run-global merge adds zero).
+  // The channel goes live when a Sorbet/RBS source starts emitting ivar facts.
   if (trackTypes) {
     const structuredReturnTypes = store.structuredReturnTypesMap();
     if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;

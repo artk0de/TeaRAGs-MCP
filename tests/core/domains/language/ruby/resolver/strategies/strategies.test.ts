@@ -1334,6 +1334,70 @@ describe("RubyIvarFieldSymbolResolutionStrategy", () => {
     );
     expect(outcome.kind).toBe("continue");
   });
+
+  // bd tea-rags-mcp-wr7ku — ONE authority answers "what type is @ivar in class C".
+  // `typeOfReceiver` consults `ctx.ivarTypes` (precise channel) before
+  // `ctx.classFieldTypes` (walker AST channel); this terminal strategy must agree,
+  // or a precise-channel fact types a chain receiver while the same fact DROPs on
+  // a bare `@ivar.member` call site.
+  it("resolves @ivar.X from the precise ivarTypes channel when classFieldTypes has no entry", () => {
+    const symbolTable = tableWith([
+      "app/clients/http_client.rb",
+      [
+        sym("HttpClient", "HttpClient", "app/clients/http_client.rb", []),
+        sym("HttpClient#get", "get", "app/clients/http_client.rb", ["HttpClient"]),
+      ],
+    ]);
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, callerScope: ["Foo"], ivarTypes: { Foo: { "@client": "HttpClient" } } }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/clients/http_client.rb", targetSymbolId: "HttpClient#get" },
+    });
+  });
+
+  it("prefers ivarTypes over classFieldTypes at the same (class, @ivar) coordinate", () => {
+    const symbolTable = tableWith(
+      [
+        "app/clients/http_client.rb",
+        [
+          sym("HttpClient", "HttpClient", "app/clients/http_client.rb", []),
+          sym("HttpClient#get", "get", "app/clients/http_client.rb", ["HttpClient"]),
+        ],
+      ],
+      [
+        "app/clients/stale_client.rb",
+        [
+          sym("StaleClient", "StaleClient", "app/clients/stale_client.rb", []),
+          sym("StaleClient#get", "get", "app/clients/stale_client.rb", ["StaleClient"]),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(
+      call,
+      ctx({
+        symbolTable,
+        callerScope: ["Foo"],
+        ivarTypes: { Foo: { "@client": "HttpClient" } },
+        classFieldTypes: { Foo: { "@client": "StaleClient" } },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/clients/http_client.rb", targetSymbolId: "HttpClient#get" },
+    });
+  });
+
+  it("DROPS when NEITHER channel records the ivar — silence preserved", () => {
+    const symbolTable = tableWith(["other.rb", [sym("Other#get", "get", "other.rb", ["Other"])]]);
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, callerScope: ["Foo"], ivarTypes: { Foo: {} }, classFieldTypes: { Foo: {} } }),
+    );
+    expect(outcome.kind).toBe("drop");
+  });
 });
 
 describe("RubyReturnTypeBindingSymbolResolutionStrategy", () => {

@@ -394,11 +394,20 @@ export interface FileExtraction {
   inheritanceEdges?: InheritanceEdgeDecl[];
   /**
    * Optional per-class instance-variable type map: `fqClassName → ivarName →
-   * typeName`. Populated by the Ruby type-source propagation engine (Increment 1,
-   * Task 1.1) from YARD / Sorbet / RBS annotations and AST inference. The ivar
-   * name is recorded with the leading `@` (`"@account"`, `"@user"`). Lets the
-   * resolver bind `@ivar.method()` calls to `<typeName>#method` for annotated
-   * Ruby code. Mirror of `CallContext.ivarTypes`; persisted via the NDJSON spill.
+   * typeName`, built from DECLARED ivar types — `RubyTypeFact` entries of
+   * `kind:"ivar"` (YARD / Sorbet / RBS). The ivar name is recorded with the
+   * leading `@` (`"@account"`, `"@user"`). Lets the resolver bind
+   * `@ivar.method()` calls to `<typeName>#method`. Mirror of
+   * `CallContext.ivarTypes`; persisted via the NDJSON spill.
+   *
+   * **Empty today (bd tea-rags-mcp-wr7ku).** No inline type source emits
+   * `kind:"ivar"` yet — YARD carries ivar types on `attr_*` readers, not on the
+   * ivar itself — so this stays undefined until a sidecar source (Sorbet
+   * `T.let` / RBS `@x: Foo`) lands. Ruby's live ivar channel is
+   * {@link FileExtraction.classFieldTypes}, filled by AST inference over
+   * `@x = Const.new`. The two are NOT mirrors of each other: one carries
+   * declarations, the other inference, and `ivarTypes` outranks
+   * `classFieldTypes` at every reader precisely because of that.
    *
    * Plain Record (NOT Map) for NDJSON-spill round-trip. Undefined for languages
    * without ivar annotations.
@@ -1055,6 +1064,11 @@ export interface CallContext {
    * resolver binds `@ivar.method()` calls to `<typeName>#method` for
    * annotated Ruby code. Undefined for languages without ivar annotations and
    * for Ruby files not covered by a type source.
+   *
+   * Read it through `ivarTypeName` (`ruby/resolver/type-propagation.ts`), never
+   * inline: that helper is the single authority ordering this map ahead of the
+   * inference-based {@link CallContext.classFieldTypes}. See
+   * {@link FileExtraction.ivarTypes} for why the map is empty today.
    *
    * Plain Record (NOT Map) for NDJSON-spill round-trip.
    */

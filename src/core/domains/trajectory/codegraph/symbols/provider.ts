@@ -578,6 +578,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * (`ctx.ivarTypes`) sees a class's annotated ivars regardless of which file
    * declared the class. Same lifecycle as `runReturnTypes` — last-write-wins on
    * duplicate class keys, reset on finish / empty-run.
+   *
+   * Stays empty while no type source emits `kind:"ivar"` facts (bd
+   * tea-rags-mcp-wr7ku) — an empty map here is expected, not a wiring defect.
    */
   private runIvarTypes: Record<string, Record<string, string>> = {};
   /**

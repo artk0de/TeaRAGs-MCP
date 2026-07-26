@@ -43,6 +43,38 @@ describe("RubyExternalVocabulary", () => {
     expect(vocab.isQualifiedMemberExternal("handle_details_post")).toBe(false);
   });
 
+  // bd tea-rags-mcp-wr7ku — the external classifier answers the same question the
+  // ivarField strategy does ("what type is @ivar in class C"), so it must read the
+  // same two channels in the same order. A gem-typed ivar recorded ONLY in the
+  // precise `ivarTypes` channel is still honestly external.
+  describe("@ivar receiver honours BOTH ivar type channels", () => {
+    it("flags a gem-typed ivar recorded in the precise ivarTypes channel as external", () => {
+      const callCtx = ctx(new InMemoryGlobalSymbolTable(), {
+        callerScope: ["Foo"],
+        ivarTypes: { Foo: { "@http": "Net::HTTP" } },
+      });
+      expect(vocab.isQualifiedReceiverExternal("@http", callCtx)).toBe(true);
+    });
+
+    it("does NOT flag an ivar typed to an IN-PROJECT class via ivarTypes", () => {
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("app/models/user.rb", [
+        { symbolId: "User", fqName: "User", shortName: "User", relPath: "app/models/user.rb", scope: [] },
+      ]);
+      const callCtx = ctx(table, { callerScope: ["Foo"], ivarTypes: { Foo: { "@user": "User" } } });
+      expect(vocab.isQualifiedReceiverExternal("@user", callCtx)).toBe(false);
+    });
+
+    it("does NOT flag an ivar recorded in NEITHER channel (honest denominator)", () => {
+      const callCtx = ctx(new InMemoryGlobalSymbolTable(), {
+        callerScope: ["Foo"],
+        ivarTypes: { Foo: {} },
+        classFieldTypes: { Foo: {} },
+      });
+      expect(vocab.isQualifiedReceiverExternal("@whatever", callCtx)).toBe(false);
+    });
+  });
+
   describe("core/gem-typed local receiver → external (dnd9s)", () => {
     it("flags a local var typed to a Ruby core class (Hash) even when an in-project method shares the name", () => {
       // `options` typed Hash via localBinding; `merge` also exists on in-project X#merge.

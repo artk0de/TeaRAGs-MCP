@@ -8,8 +8,10 @@
  *
  * **Scope of this module:**
  * - Local variable → `LocalBinding` via `resolveLocalBinding` → `RubyTypeRef`.
- * - `@ivar` → `ctx.ivarTypes` (wins; populated run-global by the codegraph
- *   provider, bd 9bliu) or `ctx.classFieldTypes` (fallback — walker-populated).
+ * - `@ivar` → {@link ivarTypeName}: `ctx.ivarTypes` (declared types, merged
+ *   run-global by the codegraph provider — empty until a Sorbet/RBS source
+ *   emits `kind:"ivar"` facts) then `ctx.classFieldTypes` (the live channel:
+ *   walker AST inference over `@x = Const.new`).
  * - Dotted chain receiver (`a.b.c`) → multi-hop threading via {@link returnTypeOf}
  *   seeded from the head segment and walked left-to-right. Capped at
  *   `CODEGRAPH_RB_CHAIN_MAX_HOPS` (default 4).
@@ -17,8 +19,9 @@
  *   container yields the element type (Task 1.6); untyped index → `undefined`.
  *
  * **Wired.** Consumed by the ruby dynamic-dispatch, chain-type, and
- * union-dispatch strategies; `ctx.structuredReturnTypes` / `ctx.ivarTypes` are
- * populated run-global by the codegraph provider (bd 9bliu).
+ * union-dispatch strategies; the codegraph provider merges
+ * `ctx.structuredReturnTypes` / `ctx.ivarTypes` run-global from the per-file
+ * extractions (bd 9bliu) — whatever the type sources put there.
  */
 
 import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
@@ -337,22 +340,29 @@ function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): Ruby
 }
 
 /**
- * Resolve `@ivar` to its type via `ctx.ivarTypes` (wins when present) or the
- * fallback `ctx.classFieldTypes` (already populated by the walker). The
- * enclosing-class key is `ctx.callerScope.join("::")`, mirroring
- * {@link RubyIvarFieldSymbolResolutionStrategy} — the same key that
- * `collectRubyClassAncestors` / `collectRubyIvarFieldTypes` produce.
+ * The ONE authority for "what type does `@ivar` hold inside the caller's class"
+ * (bd tea-rags-mcp-wr7ku). Two channels carry ivar types and every reader must
+ * consult both, in this order:
+ *
+ *  1. `ctx.ivarTypes` — type-SOURCE facts (`RubyTypeFact` of `kind:"ivar"`,
+ *     merged run-global by the codegraph provider). Declared types win.
+ *  2. `ctx.classFieldTypes` — the walker's AST inference over `@x = Const.new`
+ *     assignments (`collectRubyIvarFieldTypes`), per-file. The channel that
+ *     actually carries facts today: no INLINE type source emits `kind:"ivar"`
+ *     yet, so (1) stays empty until a sidecar/Sorbet source lands.
+ *
+ * The enclosing-class key is `ctx.callerScope.join("::")` — the same key
+ * `collectRubyClassAncestors` / `collectRubyIvarFieldTypes` produce. Unknown
+ * ivar → `undefined`; callers own the resulting silence.
  */
-function resolveIvarType(ivar: string, ctx: CallContext): RubyTypeRef | undefined {
+export function ivarTypeName(ivar: string, ctx: CallContext): string | undefined {
   if (ctx.callerScope.length === 0) return undefined;
   const scopeKey = ctx.callerScope.join("::");
+  return ctx.ivarTypes?.[scopeKey]?.[ivar] ?? ctx.classFieldTypes?.[scopeKey]?.[ivar];
+}
 
-  // ivarTypes wins over classFieldTypes (richer source; Task 1.4/1.5 wires population)
-  const fromIvarTypes = ctx.ivarTypes?.[scopeKey]?.[ivar];
-  if (fromIvarTypes !== undefined) return { form: "instance", name: fromIvarTypes };
-
-  const fromFieldTypes = ctx.classFieldTypes?.[scopeKey]?.[ivar];
-  if (fromFieldTypes !== undefined) return { form: "instance", name: fromFieldTypes };
-
-  return undefined;
+/** {@link ivarTypeName} lifted to the engine's structured ref (always instance form). */
+function resolveIvarType(ivar: string, ctx: CallContext): RubyTypeRef | undefined {
+  const name = ivarTypeName(ivar, ctx);
+  return name === undefined ? undefined : { form: "instance", name };
 }
