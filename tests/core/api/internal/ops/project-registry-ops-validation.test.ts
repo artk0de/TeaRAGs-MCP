@@ -9,8 +9,8 @@ import {
   ProjectNotRegisteredError,
   StaleProjectAliasError,
 } from "../../../../../src/core/api/errors.js";
+import { resolveCollection } from "../../../../../src/core/api/internal/collection-resolver.js";
 import { ProjectRegistryOps } from "../../../../../src/core/api/internal/ops/project-registry-ops.js";
-import { resolveCollection } from "../../../../../src/core/infra/collection-name.js";
 import { CollectionRegistry } from "../../../../../src/core/infra/registry/collection-registry.js";
 
 describe("Project registry — additional coverage for merged branches", () => {

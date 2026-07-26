@@ -22,9 +22,9 @@ import type { SymbolId } from "../../../contracts/types/codegraph.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { enumeratePaths } from "../../../domains/trajectory/codegraph/symbols/index.js";
-import { resolveCollection } from "../../../infra/collection-name.js";
 import type { CollectionRegistry } from "../../../infra/registry/index.js";
 import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "../../public/dto/graph.js";
+import { resolveCollection } from "../collection-resolver.js";
 
 const DEFAULT_MAX_DEPTH = 8;
 const DEFAULT_MAX_PATHS = 10;

@@ -30,7 +30,7 @@ import {
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/stats-recompute.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
-import { resolveCollection, resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { CollectionRegistry } from "../../../infra/registry/index.js";
 import type { SchemaDriftMonitor } from "../../../infra/schema-drift-monitor.js";
@@ -46,6 +46,7 @@ import {
   type RankChunksRequest,
   type SemanticSearchRequest,
 } from "../../public/dto/index.js";
+import { resolveCollection } from "../collection-resolver.js";
 
 export interface ExploreOpsDeps {
   qdrant: QdrantManager;
