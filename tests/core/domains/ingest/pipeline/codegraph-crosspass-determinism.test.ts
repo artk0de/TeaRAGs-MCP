@@ -24,6 +24,7 @@ import type { FileExtraction } from "../../../../../src/core/contracts/types/cod
 import { collectSymbols } from "../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { CodegraphEnrichmentProvider } from "../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
+import { CallEdgeResolutionRunner } from "../../../../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { runMigrations } from "../../../../../src/core/infra/migration/database/runner.js";
 import { buildTestCodegraphDeps } from "../../trajectory/codegraph/__helpers__/language-factory.js";
@@ -132,13 +133,14 @@ describe("codegraph cross-pass drain determinism (yl9tv)", () => {
       // once per drained file IN DRAIN ORDER, and its outcome feeds the
       // order-sensitive run-global merges + the resolve tally.
       const drainOrder: string[] = [];
-      const target = provider as unknown as {
-        resolveExtraction: (extraction: FileExtraction, ...rest: unknown[]) => unknown;
-      };
-      const original = target.resolveExtraction.bind(target);
-      vi.spyOn(target, "resolveExtraction").mockImplementation((extraction: FileExtraction, ...rest: unknown[]) => {
+      const originalResolve = CallEdgeResolutionRunner.prototype.resolve;
+      const resolveSpy = vi.spyOn(CallEdgeResolutionRunner.prototype, "resolve").mockImplementation(function (
+        this: CallEdgeResolutionRunner,
+        extraction: FileExtraction,
+        symbolTable,
+      ) {
         drainOrder.push(extraction.relPath);
-        return original(extraction, ...rest);
+        return originalResolve.call(this, extraction, symbolTable);
       });
 
       // Unique per-run collection ⇒ a private input-spill path
@@ -167,6 +169,7 @@ describe("codegraph cross-pass drain determinism (yl9tv)", () => {
       const resolved = constant?.resolved ?? 0;
       successRates.push(attempted === 0 ? 0 : resolved / attempted);
 
+      resolveSpy.mockRestore();
       drainOrders.push(drainOrder);
       await client.close();
     }
