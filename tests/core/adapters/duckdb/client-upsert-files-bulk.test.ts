@@ -42,7 +42,7 @@ async function freshDb(): Promise<DuckDbGraphClient> {
 
 /** Deterministic dump of every write-affected table, sorted, for equality. */
 async function dumpGraph(db: DuckDbGraphClient): Promise<Record<string, unknown[]>> {
-  const q = (sql: string): Promise<unknown[]> => db.queryAll(sql);
+  const q = async (sql: string): Promise<unknown[]> => db.queryAll(sql);
   return {
     files: await q("SELECT rel_path, language FROM cg_symbols_files ORDER BY rel_path"),
     fileEdges: await q(
