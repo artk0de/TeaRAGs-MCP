@@ -52,7 +52,6 @@ import TsLang from "tree-sitter-typescript";
 import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
   BulkFileUpsertEntry,
-  CallContext,
   ExtractionSink,
   FileExtraction,
   GlobalSymbolTable,
@@ -65,7 +64,6 @@ import type { FileClassification } from "../../../../contracts/types/file-classi
 import type {
   CollectSymbolsFn,
   LanguageFactoryDescriptor,
-  LanguageSymbolResolver,
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
 import type {
@@ -96,9 +94,10 @@ import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from ".
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
-import { classifyReceiverKind } from "./receiver-kind.js";
-import { buildIncludedBy, CodegraphRunState, languageKindTally } from "./run-state.js";
+import { CallEdgeResolutionRunner } from "./resolution-runner.js";
+import { CodegraphRunState } from "./run-state.js";
 import { extractSelfDispatchMethods } from "./self-dispatch-discovery.js";
+import { lastSegment } from "./symbol-name.js";
 
 /**
  * Layered ignore for `discoverSupportedFiles` (tea-rags-mcp-tf1o, hh4m):
@@ -440,6 +439,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     nodeFlushFilesFromEnv(),
   );
   /**
+   * Pass-2 per-file call resolution (bd tea-rags-mcp-6vfrj / G2). Reads the
+   * run-global maps this provider's pass-1 sink filled and emits one file's
+   * `GraphEdges`; the resolve tally lands back in `runState.stats`. Assigned in
+   * the constructor — a field initializer cannot read the `deps` parameter
+   * property.
+   */
+  private readonly resolutionRunner: CallEdgeResolutionRunner;
+  /**
    * Per-run aggregates + resolve tally (bd tea-rags-mcp-6vfrj / G2). One object
    * owns every run-global map the pass-1 sink merges into and pass-2 resolution
    * reads back, plus the run-metrics drain and the reset seams. The provider
@@ -472,6 +479,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.derivedSignals = deps.derivedSignals ?? [];
     this.presets = deps.presets ?? [];
     this.workerDescriptor = workerDescriptor;
+    this.resolutionRunner = new CallEdgeResolutionRunner(deps.languageFactory, this.runState);
     this.codegraphExclusionFilter = buildCodegraphExclusionFilter(
       deps.exclusion ?? { excludeTests: false, customPatterns: [] },
       deps.languageFactory,
@@ -837,7 +845,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         lastRelPath = extraction.relPath;
         let edges: GraphEdges;
         try {
-          edges = this.resolveExtraction(extraction, symbolTable);
+          edges = this.resolutionRunner.resolve(extraction, symbolTable);
         } catch (err) {
           // Per-file resolver throw — wrap with file context so the
           // marker / stderr surfaces "at file #N (relPath)" instead of
@@ -1728,333 +1736,6 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
     return out;
   }
-
-  private resolveExtraction(extraction: FileExtraction, symbolTable: GlobalSymbolTable): GraphEdges {
-    // Resolver capability comes from the injected LanguageFactoryDescriptor (keyed by
-    // language NAME) — each native provider carries its own `CallResolver`.
-    // `create` throws for unregistered languages, so gate on `supported()` first
-    // (the defensive empty extraction emits `language: ""`, never registered).
-    const resolver = this.deps.languageFactory.supported().includes(extraction.language)
-      ? this.deps.languageFactory.create(extraction.language).resolver
-      : undefined;
-    const methodEdges: GraphEdges["methodEdges"] = [];
-    // Over-cap ambiguous dispatch fan-outs (bd f2jsb / j0pki) — one aggregate
-    // record per suppressed fan-out, persisted alongside this file's edges via
-    // upsertFile (INSTEAD of m noise edges).
-    const ambiguousFanouts: NonNullable<GraphEdges["ambiguousFanouts"]> = [];
-    if (!resolver) return { fileEdges: [], methodEdges };
-
-    // Resolver receives the run-global `classAncestors` so it can walk
-    // a bound type's inheritance chain regardless of which file
-    // declares that class. Per-file ancestors are merged into
-    // `this.runState.ancestors` during pass-1 (sink.write).
-    const ancestorsForResolver =
-      Object.keys(this.runState.ancestors).length > 0 ? this.runState.ancestors : extraction.classAncestors;
-    const prependedAncestorsForResolver =
-      Object.keys(this.runState.prependedAncestors).length > 0
-        ? this.runState.prependedAncestors
-        : extraction.classPrependedAncestors;
-    // Reverse include-by index (bd cai0/2oky5 Task 4): find which classes include
-    // a given module (`resolveViaIncludingClasses` in ruby-super.ts). When BOTH
-    // ancestor inputs ARE the run-global maps (production pass-2) the inversion is
-    // a run-global invariant — read the copy built ONCE at the pass-1→pass-2
-    // barrier (`this.runState.includedBy`) instead of recomputing it per file. The
-    // single-file / test fallback (per-file extraction maps) still computes fresh,
-    // so the result is byte-identical in every case.
-    const includedByForResolver =
-      ancestorsForResolver === this.runState.ancestors &&
-      prependedAncestorsForResolver === this.runState.prependedAncestors
-        ? this.runState.includedBy
-        : buildIncludedBy(ancestorsForResolver ?? {}, prependedAncestorsForResolver ?? {});
-    const extendsForResolver =
-      Object.keys(this.runState.classExtends).length > 0 ? this.runState.classExtends : extraction.classExtends;
-    const returnTypesForResolver =
-      Object.keys(this.runState.returnTypes).length > 0 ? this.runState.returnTypes : extraction.functionReturnTypes;
-    // Run-global instantiation set if any file contributed, else this file's
-    // own (mirrors the returnTypes "run-global if present else extraction"
-    // pattern). bd tea-rags-mcp-pffv.
-    const instantiatedForResolver =
-      this.runState.instantiatedTypes.size > 0
-        ? this.runState.instantiatedTypes
-        : new Set(extraction.instantiatedTypes ?? []);
-    // Ruby type-source PRECISE maps (Increment 1, Task 1.5): run-global if any
-    // file contributed, else this file's own — same "run-global if present else
-    // extraction" pattern as ancestors / return types.
-    const ivarTypesForResolver =
-      Object.keys(this.runState.ivarTypes).length > 0 ? this.runState.ivarTypes : extraction.ivarTypes;
-    const structuredReturnTypesForResolver =
-      Object.keys(this.runState.structuredReturnTypes).length > 0
-        ? this.runState.structuredReturnTypes
-        : extraction.structuredReturnTypes;
-    // File-level edges. A resolver that implements `resolveFileEdges` owns its
-    // language's full set of file-coupling channels (Ruby: require + Zeitwerk
-    // constants + inheritance/mixins). Resolvers that don't fall back to the
-    // generic synthesised-call import loop — correct for languages whose file
-    // graph comes purely from explicit imports (TS/Python/Go/Java/Rust/JS).
-    const fileEdgeCtx: CallContext = {
-      callerFile: extraction.relPath,
-      callerScope: extraction.fileScope,
-      imports: extraction.imports,
-      symbolTable,
-      classFieldTypes: extraction.classFieldTypes,
-      associationTypes: extraction.associationTypes,
-      classAncestors: ancestorsForResolver,
-      classPrependedAncestors: prependedAncestorsForResolver,
-      includedBy: includedByForResolver,
-      classExtends: extendsForResolver,
-      ivarTypes: ivarTypesForResolver,
-      structuredReturnTypes: structuredReturnTypesForResolver,
-      gemfileContent: this.runState.gemfileContent,
-    };
-    const fileEdges: GraphEdges["fileEdges"] = resolver.resolveFileEdges
-      ? resolver.resolveFileEdges(extraction, fileEdgeCtx)
-      : defaultImportFileEdges(extraction, resolver, fileEdgeCtx);
-
-    // Method-level edges from calls. Track resolve success ratio so the
-    // run metrics surface how many call sites the resolver couldn't pin
-    // to a target (low ratio = lots of dynamic / external calls).
-    // bd tea-rags-mcp-cnqrg — resolve the per-language tally bucket once per file
-    // (extraction.language is constant across this file's chunks). Test files
-    // never reach resolveExtraction (excluded upstream at extraction), so every
-    // call counted here is production code.
-    const kindTally = languageKindTally(this.runState.stats, extraction.language);
-    for (const chunk of extraction.chunks) {
-      for (const call of chunk.calls) {
-        this.runState.stats.callsAttempted += 1;
-        const receiverKind = classifyReceiverKind(call, chunk.localBindings);
-        kindTally[receiverKind].attempted += 1;
-        const ctx = {
-          callerFile: extraction.relPath,
-          callerScope: chunk.scope,
-          callerSymbolId: chunk.symbolId,
-          imports: extraction.imports,
-          symbolTable,
-          classFieldTypes: extraction.classFieldTypes,
-          associationTypes: extraction.associationTypes,
-          localBindings: chunk.localBindings,
-          localCallBindings: chunk.localCallBindings,
-          functionReturnTypes: returnTypesForResolver,
-          // Ruby type-source PRECISE paths (Increment 1, Task 1.5) — these wire
-          // the previously-dead `ctx.ivarTypes` / `ctx.structuredReturnTypes`
-          // reads in `type-propagation.ts`.
-          ivarTypes: ivarTypesForResolver,
-          structuredReturnTypes: structuredReturnTypesForResolver,
-          classAncestors: ancestorsForResolver,
-          compactDeclaredClasses: this.runState.compactClasses,
-          gemfileContent: this.runState.gemfileContent,
-          classPrependedAncestors: prependedAncestorsForResolver,
-          includedBy: includedByForResolver,
-          classExtends: extendsForResolver,
-          // bd tea-rags-mcp-n0zj — run-global dispatch tables + callback
-          // params drive the resolver's fan-out / inter-proc join.
-          dispatchTables: this.runState.dispatchTables,
-          callbackParams: this.runState.callbackParams,
-          // bd tea-rags-mcp-o17v2 — run-global class hierarchy drives CHA cone
-          // devirtualization of a polymorphic typed receiver. Built at the
-          // pass-1→pass-2 barrier; undefined ⇒ cone resolver no-ops.
-          hierarchy: this.runState.hierarchyView,
-          // bd tea-rags-mcp-pffv — run-global instantiation set drives RTA
-          // pruning of the CHA cone. Empty ⇒ cone keeps full fan-out (gate).
-          instantiatedTypes: instantiatedForResolver,
-          // bd DEFECT 2 — run-global self-dispatch template map narrows an entry
-          // `Const.member` to the concrete `Const#hook`. Empty ⇒ the Ruby entry
-          // strategy CONTINUEs (no-op).
-          selfDispatchTemplates: this.runState.selfDispatchTemplates,
-          // bd DEFECT 2 v2 — self-instantiating class methods bridge a class entry
-          // to the same-named instance template. Empty ⇒ v2 branch is a no-op.
-          selfInstantiatingClassMethods: this.runState.selfInstantiatingClassMethods,
-        };
-        let resolved = false;
-        if (call.dispatch) {
-          // Dispatch call: fan out to candidates instead of normal
-          // resolution. `sourceSymbolId: null` ⇒ the caller chunk.
-          const tableOutcome = resolver.resolveDispatch?.(call, ctx);
-          for (const edge of tableOutcome?.kind === "edges" ? tableOutcome.edges : []) {
-            methodEdges.push({
-              sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
-              targetSymbolId: edge.targetSymbolId,
-              targetRelPath: edge.targetRelPath,
-              callExpression: call.callText,
-              edgeKind: edge.edgeKind,
-              confidence: edge.confidence,
-            });
-            resolved = true;
-          }
-        } else if (call.dispatchArgs && call.dispatchArgs.length > 0) {
-          // Bounded inter-proc join: a dispatch candidate-set passed as a
-          // callback argument fans out from the CALLEE (non-null sourceSymbolId
-          // on the edge), additive to the normal callee edge.
-          const target = resolver.resolve(call, ctx);
-          if (target) {
-            methodEdges.push({
-              sourceSymbolId: chunk.symbolId,
-              targetSymbolId: target.targetSymbolId,
-              targetRelPath: target.targetRelPath,
-              callExpression: call.callText,
-            });
-            resolved = true;
-          }
-          const argsOutcome = resolver.resolveDispatch?.(call, ctx);
-          for (const edge of argsOutcome?.kind === "edges" ? argsOutcome.edges : []) {
-            methodEdges.push({
-              sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
-              targetSymbolId: edge.targetSymbolId,
-              targetRelPath: edge.targetRelPath,
-              callExpression: call.callText,
-              edgeKind: edge.edgeKind,
-              confidence: edge.confidence,
-            });
-            resolved = true;
-          }
-        } else {
-          // CHA cone fan-out FIRST (bd tea-rags-mcp-2jet): a polymorphic
-          // receiver whose static type has subtypes overriding the member
-          // expands to N `cone` (or one `poly-base`) edges, REPLACING the
-          // single imprecise base edge the exact chain would emit. Returns `[]`
-          // for every non-polymorphic call (and every other language, whose
-          // resolveDispatch keys off call.dispatch only), so the exact `resolve`
-          // path stays the default — external receivers never cone.
-          const fanout = resolver.resolveDispatch?.(call, ctx);
-          if (fanout?.kind === "ambiguous") {
-            // Over-cap dynamic fan-out (bd f2jsb): NO edges, NO exact-chain
-            // fallback — mirrors the pre-cap decisiveness of a non-empty
-            // fan-out. bd j0pki (Task 3): record the aggregate + the
-            // run-stats bucket, then `continue` — the miss classifiers below
-            // (externalSkipped / unresolvable / noInProjectDef) must NOT
-            // count this call. Its own bucket: not a genuine miss, not
-            // external — strict recall keeps it in the denominator,
-            // coveredRecall counts the aggregate as coverage.
-            this.runState.stats.callsAmbiguousFanout += 1;
-            kindTally[receiverKind].ambiguousFanout += 1;
-            ambiguousFanouts.push({
-              sourceSymbolId: chunk.symbolId,
-              callExpression: call.callText,
-              member: fanout.member,
-              candidateCount: fanout.candidateCount,
-            });
-            continue;
-          } else if (fanout !== undefined && fanout.edges.length > 0) {
-            for (const edge of fanout.edges) {
-              methodEdges.push({
-                sourceSymbolId: edge.sourceSymbolId ?? chunk.symbolId,
-                targetSymbolId: edge.targetSymbolId,
-                targetRelPath: edge.targetRelPath,
-                callExpression: call.callText,
-                edgeKind: edge.edgeKind,
-                confidence: edge.confidence,
-              });
-              resolved = true;
-            }
-          } else {
-            const target = resolver.resolve(call, ctx);
-            if (target) {
-              methodEdges.push({
-                sourceSymbolId: chunk.symbolId,
-                targetSymbolId: target.targetSymbolId,
-                targetRelPath: target.targetRelPath,
-                callExpression: call.callText,
-              });
-              resolved = true;
-            }
-          }
-        }
-        if (resolved) {
-          this.runState.stats.callsResolved += 1;
-          kindTally[receiverKind].resolved += 1;
-        } else if (call.dynamicSend === true) {
-          // bd cai0 — a dynamic `send(var)` / `public_send(expr)` whose target
-          // is statically undeterminable. NOT a resolver miss and NOT external —
-          // count it as `unresolvable` (excluded from the denominator). Checked
-          // BEFORE targetsExternalImport: `send` ∈ RUBY_KERNEL_BUILTINS, so the
-          // external classifier would otherwise mis-bucket it as externalSkipped.
-          this.runState.stats.callsUnresolvable += 1;
-          kindTally[receiverKind].unresolvable += 1;
-        } else if (resolver.targetsExternalImport?.(call, ctx) ?? false) {
-          // tea-rags-mcp-ykj7 — the resolver could not pin this call AND
-          // classified it as an external-library / runtime import. Count it
-          // separately (aggregate + per-(language, receiver-kind)) so
-          // getRunMetrics excludes it from the denominator and cg_run_stats
-          // persists the breakdown.
-          this.runState.stats.callsExternalSkipped += 1;
-          kindTally[receiverKind].externalSkipped += 1;
-        } else if (symbolTable.lookupByShortName(call.member).length === 0) {
-          // Genuine miss whose member has NO in-project definition — it can
-          // never produce an in-project edge (gem/core/runtime-generated/
-          // dynamic), so it is excluded from the inProjectEdgeRecall
-          // denominator. The complement (miss WITH an in-project def) is the
-          // true recall hole, derived in getRunMetrics.
-          this.runState.stats.callsNoInProjectDef += 1;
-          kindTally[receiverKind].noInProjectDef += 1;
-        }
-      }
-    }
-
-    // Class hierarchy (bd tea-rags-mcp-f10y). Persist this file's declared
-    // inheritance edges alongside its file/method edges so cg_symbols_inheritance
-    // shares the per-file upsert lifecycle. Ancestor names resolve to in-project
-    // symbol_ids via the now-complete symbol table (pass-1 done); external
-    // ancestors keep ancestorSymbolId=null. Sources every language: TS via the
-    // unified inheritanceEdges field, others via the legacy class* Records.
-    const inheritance = normalizeInheritanceEdges(extraction, (fq) => symbolTable.lookup(fq)[0]?.symbolId ?? null);
-    const edges: GraphEdges = { fileEdges, methodEdges };
-    if (inheritance.length > 0) edges.inheritance = inheritance;
-    if (ambiguousFanouts.length > 0) edges.ambiguousFanouts = ambiguousFanouts;
-    return edges;
-  }
-}
-
-/**
- * Generic import→file-edge resolution: synthesise a "call-shaped" lookup per
- * import so the same resolver contract handles import-to-file resolution. Used
- * for every language whose `CallResolver` does NOT implement `resolveFileEdges`
- * (TS/Python/Go/Java/Rust/JS) — their file graph comes purely from explicit
- * imports. Ruby overrides this via `resolveFileEdges` to add the Zeitwerk
- * constant channel and inheritance edges.
- */
-function defaultImportFileEdges(
-  extraction: FileExtraction,
-  resolver: LanguageSymbolResolver,
-  ctx: CallContext,
-): GraphEdges["fileEdges"] {
-  const fileEdges: GraphEdges["fileEdges"] = [];
-  for (const imp of extraction.imports) {
-    const last = lastSegment(imp.importText);
-    const target = resolver.resolve(
-      { callText: imp.importText, receiver: last, member: last, startLine: imp.startLine },
-      ctx,
-    );
-    if (target) {
-      fileEdges.push({ targetRelPath: target.targetRelPath, importText: imp.importText });
-    }
-  }
-  return fileEdges;
-}
-
-function lastSegment(name: string): string {
-  // Four callers with different separator conventions:
-  //  - symbolIds like "Foo#bar" (instance) split on "#" → "bar"
-  //  - symbolIds like "Foo.bar" (static / nested namespace) split on "." → "bar"
-  //  - import paths like "../core/api/index.js" split on "/" → "index.js"
-  //  - overload-disambiguated ids like "Foo.bar~2" (bd a466) — the
-  //    `~N` suffix MUST be stripped before the last-segment cut so
-  //    `lookupByShortName("bar")` matches every overload. Without the
-  //    strip the short name would carry the suffix
-  //    (`bar~2`) and shortName lookup would miss.
-  // Path lookups must NOT split on "." or we'd return the extension
-  // ("js") instead of the basename. Order is: "/" wins (path detection),
-  // then "#" (instance method short-name), then "." (static / namespace
-  // last component); finally strip any trailing `~N` arity suffix.
-  const slash = name.lastIndexOf("/");
-  if (slash !== -1) return name.slice(slash + 1);
-  const hash = name.lastIndexOf("#");
-  const segment =
-    hash !== -1
-      ? name.slice(hash + 1)
-      : (() => {
-          const dot = name.lastIndexOf(".");
-          return dot === -1 ? name : name.slice(dot + 1);
-        })();
-  return segment.replace(/~\d+$/, "");
 }
 
 function extensionOf(path: string): string {
