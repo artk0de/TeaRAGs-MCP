@@ -81,3 +81,6 @@ release-notes.md
 commits.json
 _apply-one.mjs
 changelog-*.json
+
+# local presentation decks (contain employer-internal material — never publish)
+docs/presentations/
