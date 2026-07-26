@@ -51,12 +51,10 @@ import TsLang from "tree-sitter-typescript";
 
 import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
-  BulkFileUpsertEntry,
   ExtractionSink,
   FileExtraction,
   GlobalSymbolTable,
   GraphDbClient,
-  GraphEdges,
   SymbolDefinition,
   SymbolId,
 } from "../../../../contracts/types/codegraph.js";
@@ -80,17 +78,11 @@ import type {
   WorkerEnrichmentDescriptor,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
-import { pageRank } from "../../../../infra/graph/page-rank.js";
-import { tarjanScc } from "../../../../infra/graph/tarjan-scc.js";
 import { materializeTree } from "../../../../infra/materialize.js";
 import { isDebug } from "../../../../infra/runtime.js";
-import {
-  CodegraphCheckpointError,
-  CodegraphMetricsError,
-  CodegraphResolveError,
-  CodegraphSpillIoError,
-} from "../../errors.js";
+import { CodegraphMetricsError, CodegraphSpillIoError } from "../../errors.js";
 import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
+import { GraphBuildFinalizer } from "./graph-finalizer.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
@@ -447,6 +439,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private readonly resolutionRunner: CallEdgeResolutionRunner;
   /**
+   * Pass-2 completion (bd tea-rags-mcp-6vfrj / G2): the streaming spill →
+   * resolve → bulk-upsert → checkpoint loop, plus the SCC / PageRank recompute.
+   * Assigned in the constructor because it depends on `resolutionRunner`.
+   */
+  private readonly graphFinalizer: GraphBuildFinalizer;
+  /**
    * Per-run aggregates + resolve tally (bd tea-rags-mcp-6vfrj / G2). One object
    * owns every run-global map the pass-1 sink merges into and pass-2 resolution
    * reads back, plus the run-metrics drain and the reset seams. The provider
@@ -480,6 +478,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.presets = deps.presets ?? [];
     this.workerDescriptor = workerDescriptor;
     this.resolutionRunner = new CallEdgeResolutionRunner(deps.languageFactory, this.runState);
+    this.graphFinalizer = new GraphBuildFinalizer(
+      async (collectionName) => this.getStore(collectionName),
+      this.resolutionRunner,
+      this.runState,
+    );
     this.codegraphExclusionFilter = buildCodegraphExclusionFilter(
       deps.exclusion ?? { excludeTests: false, customPatterns: [] },
       deps.languageFactory,
@@ -788,154 +791,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * and the global symbol table (already loaded in-memory).
    */
   private async streamingResolveAndUpsert(spillPath: string, collectionName?: string): Promise<void> {
-    const { graphDb, symbolTable } = await this.getStore(collectionName);
-    const CHECKPOINT_EVERY = 500;
-    const PROGRESS_EVERY = 100;
-    // Cardinality cap per single upsertFile transaction. Minified
-    // JS/TS bundles (Vite/Nuxt/Webpack build artefacts that should
-    // really live behind .gitignore but sometimes don't) can produce
-    // tens of thousands of method edges in one file — DuckDB blows
-    // past its memory_limit trying to commit a single transaction with
-    // that many INSERTs. Skipping these files is safe: a minified
-    // bundle has no resolvable cross-file graph semantics anyway, and
-    // letting one pathological row abort pass-2 wipes hours of work
-    // for the entire project. Cap chosen by inspection of the ugnest
-    // failure (file with 96k method edges OOM'd at 1.8GB).
-    const MAX_EDGES_PER_FILE = 10000;
-    // Files folded into one bulk upsert transaction (and, on the daemon, one IPC
-    // round-trip) instead of one BEGIN/COMMIT + round-trip per file.
-    const BULK_FILES = 256;
-    let processed = 0;
-    let lastRelPath: string | null = null;
-    let reader: ReturnType<typeof createInterface> | null = null;
-    let buffer: BulkFileUpsertEntry[] = [];
-    // Flush the buffered files as ONE transaction. The per-file MAX_EDGES skip
-    // above already dropped pathological files, so no single row can abort a batch.
-    const flushBuffer = async (): Promise<void> => {
-      if (buffer.length === 0) return;
-      const pending = buffer;
-      buffer = [];
-      try {
-        await graphDb.upsertFilesBulk(pending);
-      } catch (err) {
-        // Batch-level failure (was per-file): surface batch size + last file so
-        // the marker / stderr still points near where pass-2 tripped.
-        const wrapped = err instanceof Error ? err : new Error(String(err));
-        throw new CodegraphResolveError(
-          processed,
-          Object.assign(wrapped, {
-            message: `graphDb.upsertFilesBulk failed near file #${processed} (batch=${pending.length}, last=${pending[pending.length - 1]?.node.relPath}): ${wrapped.message}`,
-          }),
-        );
-      }
-    };
-    try {
-      reader = createInterface({
-        input: createReadStream(spillPath, { encoding: "utf8" }),
-        crlfDelay: Number.POSITIVE_INFINITY,
-      });
-      for await (const line of reader) {
-        if (!line) continue;
-        let extraction: FileExtraction;
-        try {
-          extraction = JSON.parse(line) as FileExtraction;
-        } catch (err) {
-          throw new CodegraphResolveError(processed, err instanceof Error ? err : undefined);
-        }
-        lastRelPath = extraction.relPath;
-        let edges: GraphEdges;
-        try {
-          edges = this.resolutionRunner.resolve(extraction, symbolTable);
-        } catch (err) {
-          // Per-file resolver throw — wrap with file context so the
-          // marker / stderr surfaces "at file #N (relPath)" instead of
-          // a bare position counter.
-          const wrapped = err instanceof Error ? err : new Error(String(err));
-          throw new CodegraphResolveError(
-            processed,
-            Object.assign(wrapped, {
-              message: `resolveExtraction failed at file #${processed + 1} (${lastRelPath}): ${wrapped.message}`,
-            }),
-          );
-        }
-        const totalEdges = edges.fileEdges.length + edges.methodEdges.length;
-        if (totalEdges > MAX_EDGES_PER_FILE) {
-          // Skip pathological files (typically minified JS bundles) but
-          // record the skip so operators can surface them via marker
-          // log. Graph remains consistent because no partial state
-          // landed for this row.
-          if (isDebug()) {
-            console.error("[GitEnrich] PHASE: CODEGRAPH_PASS2_SKIPPED_LARGE_FILE", {
-              processed: processed + 1,
-              relPath: extraction.relPath,
-              language: extraction.language,
-              fileEdges: edges.fileEdges.length,
-              methodEdges: edges.methodEdges.length,
-              cap: MAX_EDGES_PER_FILE,
-            });
-          }
-          processed += 1;
-          continue;
-        }
-        // Buffer for the next bulk flush (fired at BULK_FILES / checkpoint / end)
-        // instead of one transaction per file.
-        buffer.push({ node: { relPath: extraction.relPath, language: extraction.language }, edges });
-        this.runState.stats.fileEdgeCount += edges.fileEdges.length;
-        this.runState.stats.methodEdgeCount += edges.methodEdges.length;
-        processed += 1;
-        // Per-N debug log so a slow run shows where it stalled.
-        if (processed % PROGRESS_EVERY === 0) {
-          if (isDebug()) {
-            console.error("[GitEnrich] PHASE: CODEGRAPH_PASS2_PROGRESS", {
-              processed,
-              lastRelPath,
-              fileEdges: this.runState.stats.fileEdgeCount,
-              methodEdges: this.runState.stats.methodEdgeCount,
-            });
-          }
-        }
-        if (buffer.length >= BULK_FILES) await flushBuffer();
-        if (processed % CHECKPOINT_EVERY === 0) {
-          // Flush the buffered files before the checkpoint so the bounded WAL
-          // reflects the whole processed window.
-          await flushBuffer();
-          try {
-            await graphDb.checkpoint();
-          } catch (err) {
-            throw new CodegraphCheckpointError(err instanceof Error ? err : undefined);
-          }
-        }
-      }
-      // Flush the sub-batch remainder, then a final checkpoint for any files
-      // written since the last one.
-      await flushBuffer();
-      if (processed > 0 && processed % CHECKPOINT_EVERY !== 0) {
-        try {
-          await graphDb.checkpoint();
-        } catch (err) {
-          throw new CodegraphCheckpointError(err instanceof Error ? err : undefined);
-        }
-      }
-    } catch (err) {
-      if (
-        err instanceof CodegraphResolveError ||
-        err instanceof CodegraphCheckpointError ||
-        err instanceof CodegraphSpillIoError
-      ) {
-        throw err;
-      }
-      // Catch-all wrap: include last-seen file in the cause message so
-      // the propagated marker tells the operator WHERE the loop tripped.
-      const wrapped = err instanceof Error ? err : new Error(String(err));
-      throw new CodegraphResolveError(
-        processed,
-        Object.assign(wrapped, {
-          message: `loop fatal after ${processed} files (last seen: ${lastRelPath ?? "<none>"}): ${wrapped.message}`,
-        }),
-      );
-    } finally {
-      reader?.close();
-    }
+    await this.graphFinalizer.resolveAndUpsert(spillPath, collectionName);
   }
 
   /**
@@ -958,43 +814,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * alone is not enough when the failure happens silently mid-run.
    */
   private async recomputeGraphMetricsStreaming(collectionName?: string): Promise<void> {
-    const { graphDb } = await this.getStore(collectionName);
-    // Daemon-routed write path: the daemon owns the RW connection and runs
-    // the (potentially 30 GB) SCC + PageRank build itself, so the MCP client
-    // process never allocates the adjacency. When the handle exposes the
-    // method (DaemonGraphDbClient) delegate and return; the in-process
-    // DuckDbGraphClient leaves it undefined, falling through to the inline
-    // path below (direct/test mode).
-    if (graphDb.computeAndPersistCyclesAndSignals) {
-      await graphDb.computeAndPersistCyclesAndSignals();
-      return;
-    }
-    try {
-      const fileAdj = await collectAdjacency(graphDb, "file");
-      const fileSccs = tarjanScc(fileAdj.adjacency);
-      await graphDb.replaceCycles("file", fileSccs);
-
-      const methodAdj = await collectAdjacency(graphDb, "method");
-      const methodSccs = tarjanScc(methodAdj.adjacency);
-      await graphDb.replaceCycles("method", methodSccs);
-
-      // Tarjan stays unweighted (cycles are structural); PageRank is
-      // confidence-weighted (bd tea-rags-mcp-s5ato) — mirrors the daemon's
-      // computeAndPersistCyclesAndSignals in adapters/duckdb/daemon/server.ts.
-      const rankResult = pageRank(methodAdj.adjacency, { weights: methodAdj.edgeWeights });
-      await graphDb.replacePageRanks(rankResult.ranks);
-    } catch (err) {
-      // Non-fatal: data is consistent up to here, only metrics tables
-      // may be stale. Surface as a typed error so the caller's debug
-      // log carries the stage; the prefetch path catches and proceeds.
-      if (process.env.DEBUG === "true") {
-        process.stderr.write(`[codegraph] post-extract metric recompute failed: ${(err as Error).message}\n`);
-      }
-      throw new CodegraphMetricsError(
-        err instanceof CodegraphMetricsError ? "pagerank" : "tarjan",
-        err instanceof Error ? err : undefined,
-      );
-    }
+    await this.graphFinalizer.recomputeMetrics(collectionName);
   }
 
   /**
@@ -1784,26 +1604,6 @@ function nodeFlushFilesFromEnv(): number {
  * weights (file scope, legacy rows) default to 1. Mirrors the daemon
  * copy in `adapters/duckdb/daemon/server.ts`.
  */
-async function collectAdjacency(
-  graphDb: GraphDbClient,
-  scope: "file" | "method",
-): Promise<{ adjacency: Map<string, string[]>; edgeWeights: Map<string, number[]> }> {
-  const adjacency = new Map<string, string[]>();
-  const edgeWeights = new Map<string, number[]>();
-  for await (const [source, target, weight] of graphDb.streamAdjacency(scope)) {
-    const list = adjacency.get(source);
-    const wList = edgeWeights.get(source);
-    if (list && wList) {
-      list.push(target);
-      wList.push(weight ?? 1);
-    } else {
-      adjacency.set(source, [target]);
-      edgeWeights.set(source, [weight ?? 1]);
-    }
-  }
-  return { adjacency, edgeWeights };
-}
-
 /**
  * Symbol→covering-chunk containment join (0rskm). For each symbol start line,
  * pick the tightest chunk whose range (or any of its non-contiguous
