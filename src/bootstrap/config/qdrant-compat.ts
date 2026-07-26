@@ -1,5 +1,5 @@
 import { QdrantVersionTooOldError } from "../../core/adapters/qdrant/errors.js";
-import { compareSemver, isSemver, QDRANT_VERSION } from "../../core/infra/qdrant-version.js";
+import { compareSemver, isSemver, QDRANT_VERSION } from "../../core/adapters/qdrant/required-version.js";
 
 /**
  * Validate that an externally-managed Qdrant server meets the version

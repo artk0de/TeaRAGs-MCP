@@ -5,8 +5,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { compareSemver, isSemver } from "../../../infra/qdrant-version.js";
 import { QdrantOperationError, QdrantUnavailableError } from "../errors.js";
+import { compareSemver, isSemver } from "../required-version.js";
 import { QDRANT_CRASH_LOG_NAME } from "./corruption-recovery.js";
 import { DaemonLock } from "./daemon-lock.js";
 import {

@@ -6,11 +6,12 @@ const VERSION_FILE_NAME = ".qdrant-required-version";
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
 function resolveVersionFilePath(): string {
-  // Works for both `src/core/infra/qdrant-version.ts` (dev via tsx/vitest)
-  // and `build/core/infra/qdrant-version.js` (published package layout):
-  // in both cases the file lives three levels up at the package root.
+  // Works for both `src/core/adapters/qdrant/required-version.ts` (dev via
+  // tsx/vitest) and `build/core/adapters/qdrant/required-version.js` (published
+  // package layout): in both cases the file lives four levels up at the package
+  // root.
   const here = dirname(fileURLToPath(import.meta.url));
-  return join(here, "..", "..", "..", VERSION_FILE_NAME);
+  return join(here, "..", "..", "..", "..", VERSION_FILE_NAME);
 }
 
 function loadVersion(): string {

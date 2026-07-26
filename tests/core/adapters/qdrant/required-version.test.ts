@@ -4,10 +4,10 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { compareSemver, isSemver, QDRANT_VERSION } from "../../../src/core/infra/qdrant-version.js";
+import { compareSemver, isSemver, QDRANT_VERSION } from "../../../../src/core/adapters/qdrant/required-version.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = join(HERE, "..", "..", "..");
+const REPO_ROOT = join(HERE, "..", "..", "..", "..");
 const VERSION_FILE = join(REPO_ROOT, ".qdrant-required-version");
 
 describe("QDRANT_VERSION", () => {
