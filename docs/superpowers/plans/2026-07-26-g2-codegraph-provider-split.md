@@ -996,3 +996,55 @@ git commit -m "test(trajectory): relocate codegraph tests beside their collabora
   comparing `resolveSuccessRate` and `byReceiverKind` before/after the split.
   User-gated; the split is a behavior-preserving refactor, so any delta is a
   bug.
+
+## Execution log (2026-07-26)
+
+All eight tasks executed on `worktree-arch-drift-g2`, base local main
+`f56e611c`. `provider.ts` went from 2836 to 1511 lines.
+
+| Task                           | Commit      | Result                                                                                                                                                                                                                                    |
+| ------------------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 — characterization tests     | `4013ba7a`  | 6 tests. Surfaced an asymmetry worth recording: `onRelease` clears the run-global maps and node-flush state but NOT the resolve tally, so a finished run's metrics stay readable after release. `beginExtractionRun` does zero the tally. |
+| 2 — `CodegraphRunState`        | `47a6f09e`  | 17 fields + tally + 4 reset seams + `absorb` + `seal` + `drainMetrics`. `buildIncludedBy` moved along and is re-exported from `provider.ts` so no module cycle appears.                                                                   |
+| 3 — `SymbolNodeFlushQueue`     | `06ebcac5`  | 4 methods (`buffer` / `flushPending` / `flushRemainder` / `reset`), store resolver injected as a callback.                                                                                                                                |
+| 4 — `CallEdgeResolutionRunner` | `4991d61a`  | Moved AND decomposed in one commit (plan called for two; the second write of a 268-LOC body was not worth the tokens). `lastSegment` split into `symbol-name.ts`.                                                                         |
+| 5 — `GraphBuildFinalizer`      | `85993836`  | Pass-2 loop + SCC/PageRank. Provider keeps both methods as private delegates — 31 test call sites drive pass-2 through them.                                                                                                              |
+| 6 — extraction sink            | `f497612e`  | `createCodegraphExtractionSink` + `CodegraphSinkDeps`. Pass-2 stages passed as thunks so instance-level patching in tests still works.                                                                                                    |
+| 7 — `walkCommits`              | `4b5e7e13`  | Sliced into `discoverCommits` / `createAcquire` / `collectHunksPerFile` / `applyFileHunksToAccumulators`; `walkCommits` is a ~40-line orchestrator.                                                                                       |
+| 8 — test redistribution        | — (no move) | See below.                                                                                                                                                                                                                                |
+
+**Task 8 outcome: zero files moved, deliberately.** The plan's own criterion is
+"only rename a file when its subject is now a single collaborator". Applied to
+the actual suite, it selects nothing: all 35 files under
+`tests/core/domains/trajectory/codegraph/symbols/` drive the provider
+end-to-end, either through its public surface or through provider-private seams
+(`streamingResolveAndUpsert`, `asExtractionSink`). Moving them beside a
+collaborator would misrepresent what they cover.
+
+**Test edits, all justified under `.claude/rules/test-invariants.md`:**
+
+- `provider-eager-flush.test.ts` — the run-global snapshot reads the same fields
+  at their new address (`provider.runState`). Access-point adaptation; every
+  `it` and assertion unchanged.
+- `provider-spill-errors.test.ts` — rule-2 rewrite. It forced a resolver crash
+  by monkey-patching the private `resolveExtraction`; now it injects a language
+  factory whose resolver throws, asserting the same invariant (a per-file
+  resolve failure surfaces as `CodegraphResolveError` carrying the file path)
+  through the real path.
+- `codegraph-crosspass-determinism.test.ts` — drain-order spy retargeted at
+  `CallEdgeResolutionRunner.prototype.resolve`, which is still called exactly
+  once per drained file in drain order.
+
+**Verification.** Full suite: 8939 passed / 171 failed — byte-identical to the
+pre-work baseline on this worktree. Every one of those 171 is a
+`Cannot find module .../build/.../worker.js` failure from the worktree not being
+built (three worktrees are active, so the auto-build rule does not apply); they
+sit in `ingest` worker/pool paths, `codegraph/factory`, and `git` worker paths,
+none of which this work touches.
+`tests/core/domains/trajectory/codegraph/symbols`: 425/425 green. `tsc --noEmit`
+and `eslint --max-warnings 0` clean throughout.
+
+**Not verified here:** the coverage gate (`npm run test:coverage`) is not
+meaningful on an unbuilt worktree — the 171 build-dependent failures would
+depress coverage for reasons unrelated to this change. Run it after a build, or
+on main post-merge.
