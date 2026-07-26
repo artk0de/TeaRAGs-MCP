@@ -54,15 +54,11 @@ import type {
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CallContext,
-  DispatchTableDef,
   ExtractionSink,
   FileExtraction,
   GlobalSymbolTable,
   GraphDbClient,
   GraphEdges,
-  HierarchyView,
-  InheritanceEdgeRow,
-  ResolveRunStatsRow,
   SymbolDefinition,
   SymbolId,
 } from "../../../../contracts/types/codegraph.js";
@@ -71,7 +67,6 @@ import type {
   CollectSymbolsFn,
   LanguageFactoryDescriptor,
   LanguageSymbolResolver,
-  RubyTypeRef,
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
 import type {
@@ -88,7 +83,6 @@ import type {
   WorkerEnrichmentDescriptor,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
-import { MapHierarchyView } from "../../../../infra/graph/hierarchy-view.js";
 import { pageRank } from "../../../../infra/graph/page-rank.js";
 import { tarjanScc } from "../../../../infra/graph/tarjan-scc.js";
 import { materializeTree } from "../../../../infra/materialize.js";
@@ -100,17 +94,11 @@ import {
   CodegraphSpillIoError,
 } from "../../errors.js";
 import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
-import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
+import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
-import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
-import {
-  buildSelfDispatchProbe,
-  collectSelfInstantiatingClassMethods,
-  discoverSelfDispatchTemplates,
-  extractSelfDispatchMethods,
-  foldSelfDispatchTemplates,
-  type SelfDispatchMethod,
-} from "./self-dispatch-discovery.js";
+import { classifyReceiverKind } from "./receiver-kind.js";
+import { buildIncludedBy, CodegraphRunState, languageKindTally } from "./run-state.js";
+import { extractSelfDispatchMethods } from "./self-dispatch-discovery.js";
 
 /**
  * Layered ignore for `discoverSupportedFiles` (tea-rags-mcp-tf1o, hh4m):
@@ -364,29 +352,12 @@ export interface CodegraphProviderDeps {
 }
 
 /**
- * Reverse include-by index (bd cai0/2oky5): invert the run-global ancestor maps
- * so `out[X]` lists every class that has X as a direct ancestor (via superclass,
- * include, or prepend). Language-agnostic — pure data inversion. Consumed by the
- * Ruby `super` module-method fallback to find the classes whose MRO a super call
- * inside module X dispatches through.
+ * Reverse include-by index — re-exported for import stability (bd cai0/2oky5).
+ * The implementation moved to `run-state.ts` alongside the ancestor maps it
+ * inverts; re-exporting here keeps every existing importer working without a
+ * module cycle (`run-state.ts` must not import its own consumer).
  */
-export function buildIncludedBy(
-  ancestors: Record<string, readonly string[]>,
-  prepended: Record<string, readonly string[]>,
-): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
-  const add = (child: string, ancestor: string): void => {
-    const list = (out[ancestor] ??= []);
-    if (!list.includes(child)) list.push(child);
-  };
-  for (const [child, list] of Object.entries(ancestors)) {
-    for (const a of list) add(child, a);
-  }
-  for (const [child, list] of Object.entries(prepended)) {
-    for (const a of list) add(child, a);
-  }
-  return out;
-}
+export { buildIncludedBy } from "./run-state.js";
 
 export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   readonly key = "codegraph.symbols";
@@ -499,157 +470,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private nodeFlushError: Error | undefined = undefined;
   /**
-   * Per-run counters surfaced via `getRunMetrics()`. Read-and-cleared by
-   * `CompletionRunner` at end of each enrichment cycle. Tracked here
-   * (not in the sink) so they survive across multiple sink.write/finish
-   * pairs within a single run (e.g. backfill paths).
+   * Per-run aggregates + resolve tally (bd tea-rags-mcp-6vfrj / G2). One object
+   * owns every run-global map the pass-1 sink merges into and pass-2 resolution
+   * reads back, plus the run-metrics drain and the reset seams. The provider
+   * keeps only the per-collection sink lifecycle maps below.
    */
-  private runStats = createEmptyRunStats();
-  /**
-   * Per-run aggregation of `FileExtraction.classAncestors` across every
-   * file walked in pass-1. The resolver needs ancestors keyed by
-   * `targetType` (the class a variable is bound to) — that target type's
-   * declaration usually lives in a DIFFERENT file than the caller, so
-   * per-file ancestor maps are insufficient. Reset on finish().
-   */
-  private runAncestors: Record<string, readonly string[]> = {};
-  /**
-   * Per-run set of FQs declared COMPACT (`class A::B::C`), aggregated from
-   * `FileExtraction.compactDeclaredClasses`. Passed to the resolver ctx so
-   * `canonicalizeAncestorFq` skips the nesting prefix-walk for them (bd
-   * lawlq.3.7). Reset on finish() alongside runAncestors.
-   */
-  private runCompactClasses = new Set<string>();
-  /**
-   * Raw `Gemfile` contents for the CURRENT run, read ONCE from the project root
-   * by {@link loadGemfile} and attached to every resolver `CallContext` so the
-   * Ruby resolver gates DSL grammar to this project's gems (`catalogueForGemfile`).
-   * Single-valued (not per-collection), same as `runAncestors` — the provider
-   * processes one collection per instance at a time. `undefined` ⇒ no Gemfile ⇒
-   * FULL catalogue. `runGemfileLoaded` guards the one-per-run read. Both reset
-   * alongside `runCompactClasses` (bd tea-rags-mcp-adx5p.1).
-   */
-  private runGemfileContent: string | undefined = undefined;
-  private runGemfileLoaded = false;
-  /**
-   * Per-run aggregation of `FileExtraction.classPrependedAncestors`
-   * (bd tea-rags-mcp-3jvn). Same lifecycle as `runAncestors` — merged
-   * across pass-1 files, consumed by pass-2 resolver. Walked BEFORE the
-   * bound class itself by `RubyCallResolver.resolveByLocalTypeInternal`
-   * so prepended modules' methods shadow the class's own.
-   */
-  private runPrependedAncestors: Record<string, readonly string[]> = {};
-  /**
-   * Reverse include-by index (`buildIncludedBy`) computed ONCE from the frozen
-   * run-global ancestor + prepended maps at the pass-1→pass-2 barrier, instead of
-   * rebuilding the same inversion per file inside `resolveExtraction`
-   * (24583× on taxdome — pure waste, `buildIncludedBy` has an inner O(n²) scan).
-   * Pass-2 reads it only when BOTH resolver ancestor inputs ARE the run-global
-   * maps; the per-file fallback (single-file / test mode) still computes fresh.
-   */
-  private runIncludedBy: Record<string, string[]> = {};
-  /**
-   * Per-run aggregation of `FileExtraction.classExtends`
-   * (bd tea-rags-mcp-d29r). Single-inheritance parent map merged across
-   * pass-1 files so the resolver's `super()` branch can route to the
-   * parent class regardless of which file declares it.
-   */
-  private runExtends: Record<string, string> = {};
-  /**
-   * Per-run aggregation of `FileExtraction.functionReturnTypes`
-   * (bd tea-rags-mcp-6g9c). `functionName → declaredReturnTypeName` merged
-   * across pass-1 files so the Go resolver can bind `x := New(); x.method()`
-   * to `<New's return type>#method` even when `New` is declared in a
-   * different file. Same lifecycle as `runExtends` — reset on finish().
-   */
-  private runReturnTypes: Record<string, string> = {};
-  /**
-   * Per-run aggregation of `FileExtraction.instantiatedTypes` (bd
-   * tea-rags-mcp-pffv). The union of every instantiated fq const across pass-1
-   * files, so `ConeDispatchResolver` can RTA-prune a CHA cone regardless of
-   * which file does the `Klass.new`. Same lifecycle as `runReturnTypes` — reset
-   * on finish / empty-run / release.
-   */
-  private readonly runInstantiatedTypes = new Set<string>();
-  /**
-   * Per-run aggregation of `FileExtraction.ivarTypes` (Ruby type-source engine,
-   * Increment 1, Task 1.5). `fqClassName → "@ivar" → typeName` merged across
-   * pass-1 files so the resolver's PRECISE `@ivar.method()` path
-   * (`ctx.ivarTypes`) sees a class's annotated ivars regardless of which file
-   * declared the class. Same lifecycle as `runReturnTypes` — last-write-wins on
-   * duplicate class keys, reset on finish / empty-run.
-   */
-  private runIvarTypes: Record<string, Record<string, string>> = {};
-  /**
-   * Per-run aggregation of `FileExtraction.structuredReturnTypes` (Ruby
-   * type-source engine, Increment 1, Task 1.5). `"<fqClass>#method" →
-   * RubyTypeRef` merged across pass-1 files so the resolver's PRECISE
-   * structured-return path (`ctx.structuredReturnTypes`) threads
-   * `recv.method().member` chains to the richer ref (union / container
-   * preserved) regardless of which file declared the method. Same lifecycle as
-   * `runReturnTypes` — last-write-wins, reset on finish / empty-run.
-   */
-  private runStructuredReturnTypes: Record<string, RubyTypeRef> = {};
-  /**
-   * Per-run aggregation of `FileExtraction.dispatchTables` keyed by table
-   * NAME (bd tea-rags-mcp-n0zj). The value is a `DispatchTableDef[]` because
-   * the same name may be declared in several files; the resolver
-   * disambiguates by the caller's import map. Re-walking a file replaces its
-   * own entry (dedup by relPath). Same lifecycle as `runExtends` —
-   * reset on the empty-run path of `getRunMetrics`.
-   */
-  private runDispatchTables: Record<string, DispatchTableDef[]> = {};
-  /**
-   * Per-run aggregation of `FileExtraction.callbackParams` keyed by the
-   * function/method symbolId (bd tea-rags-mcp-n0zj). Merged across pass-1
-   * files so the resolver's bounded inter-procedural join sees a callee's
-   * invoked param positions regardless of which file declared it.
-   */
-  private runCallbackParams: Record<string, number[]> = {};
-  /**
-   * Per-run aggregation of normalized inheritance rows (bd tea-rags-mcp-o17v2).
-   * Accumulated across pass-1 `sink.write` so the pass-1→pass-2 barrier can build
-   * a complete `MapHierarchyView` BEFORE any file resolves. Inheritance edges are
-   * persisted per-file DURING pass-2, so the DB is not yet complete when the
-   * first file's CHA cone needs `getDescendants` — the in-memory snapshot closes
-   * that gap. Same lifecycle as `runExtends` — reset on finish / empty-run.
-   */
-  private runInheritanceRows: InheritanceEdgeRow[] = [];
-  /**
-   * Bidirectional class-hierarchy view built from `runInheritanceRows` at the
-   * pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2). Threaded into every resolve
-   * `CallContext.hierarchy` so the CHA cone resolver can devirtualize a
-   * polymorphic typed receiver to its overriding subtypes. `undefined` until the
-   * barrier runs (and on reset) — the cone resolver treats absent as "no cone".
-   */
-  private hierarchyView: HierarchyView | undefined;
-  /**
-   * Per-run accumulation of self-dispatch method candidates (DEFECT 2 —
-   * self-receiver abstract-hook dispatch). One LIGHT record per method that
-   * self-calls (`symbolId` + enclosing type + bare hook names), NOT the chunks,
-   * so the NDJSON-spill heap optimisation holds. Fed to
-   * `discoverSelfDispatchTemplates` at the pass-1→pass-2 barrier. Populated for
-   * Ruby files only (the entry strategy that consumes the map is Ruby). Reset
-   * alongside `runInheritanceRows`.
-   */
-  private runSelfDispatchMethods: SelfDispatchMethod[] = [];
-  /**
-   * Run-global `templateMethodSymbolId → abstractHookMember` map (DEFECT 2) built
-   * from `runSelfDispatchMethods` at the barrier and threaded into every resolve
-   * `CallContext.selfDispatchTemplates`. Empty until the barrier runs (and on
-   * reset) — the Ruby entry strategy CONTINUEs when it is absent/empty. Reset
-   * alongside `hierarchyView`.
-   */
-  private runSelfDispatchTemplates: Record<string, string> = {};
-  /**
-   * Run-global list of self-instantiating CLASS-method symbolIds (DEFECT 2 v2)
-   * built from `runSelfDispatchMethods` at the barrier and threaded into every
-   * resolve `CallContext.selfInstantiatingClassMethods`. The Ruby entry strategy's
-   * v2 branch reads it to bridge a class entry to the same-named instance template
-   * (`self.call → new.call` service idiom). Empty until the barrier runs (and on
-   * reset). Reset alongside `runSelfDispatchTemplates`.
-   */
-  private runSelfInstantiatingClassMethods: string[] = [];
+  private readonly runState = new CodegraphRunState();
   /**
    * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
    * Built once at construction from `deps.exclusion` PLUS each registered
@@ -888,98 +714,22 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         symbolTable.upsertFile(extraction.relPath, defs);
         if (!skipDurableNodeWrite) this.bufferNodeDefs(extraction.relPath, defs, collectionName);
         this.indexChunkSymbolsByLine(collectionName, extraction);
-        // Merge file-local ancestors into the run-global map so the
-        // resolver in pass-2 sees ancestors keyed by target class
-        // regardless of which file declared them. Last write wins on
-        // duplicate keys — same-class declarations across files are
-        // rare in Ruby; when they happen the later definition is what
-        // the runtime would see too.
-        if (extraction.classAncestors) {
-          for (const [k, v] of Object.entries(extraction.classAncestors)) {
-            this.runAncestors[k] = v;
-          }
-        }
-        if (extraction.compactDeclaredClasses) {
-          for (const fq of extraction.compactDeclaredClasses) this.runCompactClasses.add(fq);
-        }
-        if (extraction.classPrependedAncestors) {
-          for (const [k, v] of Object.entries(extraction.classPrependedAncestors)) {
-            this.runPrependedAncestors[k] = v;
-          }
-        }
-        if (extraction.classExtends) {
-          for (const [k, v] of Object.entries(extraction.classExtends)) {
-            this.runExtends[k] = v;
-          }
-        }
-        // Merge file-local function return types into the run-global map so
-        // the resolver in pass-2 can resolve `x := New()` return-type
-        // bindings keyed by function name regardless of which file declares
-        // the function. bd tea-rags-mcp-6g9c. Last write wins on duplicate
-        // names; the resolver's symbol-table existence gate suppresses any
-        // wrong type that survives the collision.
-        if (extraction.functionReturnTypes) {
-          for (const [k, v] of Object.entries(extraction.functionReturnTypes)) {
-            this.runReturnTypes[k] = v;
-          }
-        }
-        // Merge the Ruby type-source PRECISE maps run-global so the resolver's
-        // precise `@ivar.method()` / structured-return paths see annotated types
-        // keyed by class regardless of which file declared the class/method
-        // (Increment 1, Task 1.5). Last-write-wins, mirroring functionReturnTypes.
-        if (extraction.ivarTypes) {
-          for (const [k, v] of Object.entries(extraction.ivarTypes)) {
-            this.runIvarTypes[k] = v;
-          }
-        }
-        if (extraction.structuredReturnTypes) {
-          for (const [k, v] of Object.entries(extraction.structuredReturnTypes)) {
-            this.runStructuredReturnTypes[k] = v;
-          }
-        }
-        // Union this file's instantiation set into the run-global RTA set so
-        // the cone resolver in pass-2 prunes by program-wide instantiation
-        // regardless of which file instantiates the type. bd tea-rags-mcp-pffv.
-        if (extraction.instantiatedTypes) {
-          for (const t of extraction.instantiatedTypes) {
-            this.runInstantiatedTypes.add(t);
-          }
-        }
+        // Merge this file's pass-1 aggregates (ancestors, return types, dispatch
+        // tables, instantiations, …) into the run-global state so pass-2 resolves
+        // against the whole run regardless of which file declared what. Ruby-only
+        // for the self-dispatch candidates (DEFECT 2) — the entry strategy that
+        // consumes the discovered map is Ruby.
+        this.runState.absorb(
+          extraction,
+          extraction.language === "ruby" ? extractSelfDispatchMethods(extraction.chunks) : [],
+        );
         // Accumulate this file's inheritance edges run-global (bd tea-rags-mcp-o17v2)
         // so the pass-1→pass-2 barrier can build a complete hierarchy view for the
         // CHA cone resolver. Resolve ancestor symbol_ids lazily against the now-
         // partial table is unnecessary here — the cone reads by fqName — so pass a
         // null resolver and let the per-file persist (pass-2) own symbol_id binding.
         const inheritanceRows = normalizeInheritanceEdges(extraction, () => null);
-        if (inheritanceRows.length > 0) this.runInheritanceRows.push(...inheritanceRows);
-        // Merge dispatch tables run-global keyed by table name + defining
-        // relpath so the resolver can fan a `TABLE[key].field()` call out to
-        // every candidate regardless of which file declared the table (bd
-        // tea-rags-mcp-n0zj). Re-walking a file replaces its own def for that
-        // name (dedup by relPath) — incremental reindex stays idempotent.
-        if (extraction.dispatchTables) {
-          for (const [name, table] of Object.entries(extraction.dispatchTables)) {
-            const defs = (this.runDispatchTables[name] ??= []);
-            const at = defs.findIndex((d) => d.relPath === extraction.relPath);
-            if (at >= 0) defs[at] = { relPath: extraction.relPath, table };
-            else defs.push({ relPath: extraction.relPath, table });
-          }
-        }
-        // Merge callback-param maps run-global keyed by symbolId so the
-        // bounded inter-proc join sees a callee's invoked param positions
-        // even when the call site is in a different file.
-        if (extraction.callbackParams) {
-          for (const [symbolId, indices] of Object.entries(extraction.callbackParams)) {
-            this.runCallbackParams[symbolId] = indices;
-          }
-        }
-        // Accumulate per-method self-dispatch candidates run-global (DEFECT 2):
-        // LIGHT records (symbolId + enclosing type + self-hook member names), NOT
-        // the chunks, so the spill heap optimisation holds. Ruby-only for v1 —
-        // the entry strategy that consumes the discovered map is Ruby.
-        if (extraction.language === "ruby") {
-          this.runSelfDispatchMethods.push(...extractSelfDispatchMethods(extraction.chunks));
-        }
+        if (inheritanceRows.length > 0) this.runState.inheritanceRows.push(...inheritanceRows);
 
         const stream = await ensureSpillStream();
         const line = `${JSON.stringify(extraction)}\n`;
@@ -995,7 +745,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           }
         }
         spillWriteCount += 1;
-        this.runStats.extractedFiles += 1;
+        this.runState.stats.extractedFiles += 1;
       },
       finish: async () => {
         finished = true;
@@ -1016,31 +766,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             });
           });
         }
-        // Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2): pass-1 is complete, so
-        // `runInheritanceRows` holds every class's hierarchy edges. Build the
-        // in-memory view ONCE here; pass-2 `resolveExtraction` threads it into
-        // each resolve `CallContext.hierarchy` for CHA cone devirtualization.
-        this.hierarchyView = new MapHierarchyView(buildHierarchySnapshot(this.runInheritanceRows));
-        // Reverse include-by index (bd cai0/2oky5 Task 4) — build ONCE here from
-        // the now-frozen run-global ancestor maps. Pass-2 `resolveExtraction`
-        // reads this directly instead of rebuilding the identical inversion per
-        // file (the maps no longer change after pass-1).
-        this.runIncludedBy = buildIncludedBy(this.runAncestors, this.runPrependedAncestors);
-        // Discover self-dispatch templates (DEFECT 2) now pass-1 is complete: the
-        // symbol table holds every def and the hierarchy view every wiring edge,
-        // so the abstract-hook + related-concrete-definer predicate is exact. The
-        // resulting `templateSymbolId → hook` map threads into each pass-2 resolve
-        // `CallContext.selfDispatchTemplates` (entry-anchored narrowing).
-        if (this.runSelfDispatchMethods.length > 0) {
-          const { symbolTable: barrierSymbolTable } = await this.getStore(collectionName);
-          this.runSelfDispatchTemplates = foldSelfDispatchTemplates(
-            discoverSelfDispatchTemplates(
-              this.runSelfDispatchMethods,
-              buildSelfDispatchProbe(barrierSymbolTable, this.hierarchyView),
-            ),
-          );
-          this.runSelfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(this.runSelfDispatchMethods);
-        }
+        // Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2 + cai0/2oky5 + DEFECT 2):
+        // pass-1 is complete, so the run-global maps are frozen. Build the
+        // hierarchy view + reverse include-by index ONCE and discover the
+        // self-dispatch templates; pass-2 threads all three into every resolve
+        // `CallContext`. The symbol table is resolved lazily — only the
+        // self-dispatch branch needs it, so a run without candidates pays no
+        // extra pool acquire.
+        await this.runState.seal(async () => (await this.getStore(collectionName)).symbolTable);
         try {
           if (spillWriteCount > 0) {
             await this.streamingResolveAndUpsert(spillPath, collectionName);
@@ -1167,8 +900,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // Buffer for the next bulk flush (fired at BULK_FILES / checkpoint / end)
         // instead of one transaction per file.
         buffer.push({ node: { relPath: extraction.relPath, language: extraction.language }, edges });
-        this.runStats.fileEdgeCount += edges.fileEdges.length;
-        this.runStats.methodEdgeCount += edges.methodEdges.length;
+        this.runState.stats.fileEdgeCount += edges.fileEdges.length;
+        this.runState.stats.methodEdgeCount += edges.methodEdges.length;
         processed += 1;
         // Per-N debug log so a slow run shows where it stalled.
         if (processed % PROGRESS_EVERY === 0) {
@@ -1176,8 +909,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             console.error("[GitEnrich] PHASE: CODEGRAPH_PASS2_PROGRESS", {
               processed,
               lastRelPath,
-              fileEdges: this.runStats.fileEdgeCount,
-              methodEdges: this.runStats.methodEdgeCount,
+              fileEdges: this.runState.stats.fileEdgeCount,
+              methodEdges: this.runState.stats.methodEdgeCount,
             });
           }
         }
@@ -1291,104 +1024,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * once per cycle.
    */
   getRunMetrics(): ProviderRunMetrics | undefined {
-    const {
-      extractedFiles,
-      fileEdgeCount,
-      methodEdgeCount,
-      callsAttempted,
-      callsResolved,
-      callsExternalSkipped,
-      callsUnresolvable,
-      callsNoInProjectDef,
-    } = this.runStats;
-    if (extractedFiles === 0 && fileEdgeCount === 0 && methodEdgeCount === 0) {
-      this.runStats = createEmptyRunStats();
-      this.runAncestors = {};
-      this.runCompactClasses = new Set();
-      this.runGemfileContent = undefined;
-      this.runGemfileLoaded = false;
-      this.runPrependedAncestors = {};
-      this.runExtends = {};
-      this.runReturnTypes = {};
-      this.runInstantiatedTypes.clear();
-      this.runIvarTypes = {};
-      this.runStructuredReturnTypes = {};
-      this.runDispatchTables = {};
-      this.runCallbackParams = {};
-      this.runInheritanceRows = [];
-      this.hierarchyView = undefined;
-      this.runSelfDispatchMethods = [];
-      this.runSelfDispatchTemplates = {};
-      this.runSelfInstantiatingClassMethods = [];
-      this.resetNodeFlushState();
-      return undefined;
-    }
-    // tea-rags-mcp-ykj7 + cai0.2 (Option A) — the denominator excludes
-    // external-library calls (ykj7), dynamic-undeterminable calls, AND calls
-    // whose member has no in-project def (`callsNoInProjectDef`): a member with
-    // zero in-project definitions can never resolve to an in-project symbol, so
-    // it is not a resolver failure (the same exclusion inProjectEdgeRecall
-    // applies). With the four terms excluded the rate equals inProjectEdgeRecall
-    // by construction. `max(1, …)` guards a divide-by-zero when every attempted
-    // call was external / no-in-project-def.
-    const internalAttempted = Math.max(
-      1,
-      callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef,
-    );
-    const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / internalAttempted;
-    // inProjectEdgeRecall — graph completeness. A genuine miss whose member has
-    // no in-project definition (callsNoInProjectDef) can never yield an edge, so
-    // it is excluded; only misses WITH an in-project def are true recall holes.
-    const missWithInProjectDef = Math.max(
-      0,
-      callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef,
-    );
-    const recallDenominator = callsResolved + missWithInProjectDef;
-    const inProjectEdgeRecall = recallDenominator === 0 ? 0 : callsResolved / recallDenominator;
-    const byReceiverKind = aggregateReceiverKinds(this.runStats);
-    const resolveByReceiverKind = Object.fromEntries(
-      RECEIVER_KINDS.map((kind) => {
-        const t = byReceiverKind[kind];
-        return [
-          kind,
-          { attempted: t.attempted, resolved: t.resolved, rate: t.attempted === 0 ? 0 : t.resolved / t.attempted },
-        ];
-      }),
-    );
-    // One-line per-idiom diagnostic (bd tea-rags-mcp-j431): surfaces the
-    // resolve breakdown to mcp-logs once per enrichment cycle so each cai0
-    // slice's delta is readable without a DTO change. Mirrors the unconditional
-    // `[codegraph]` diagnostics elsewhere in this provider.
-    if (callsAttempted > 0) {
-      const summary = RECEIVER_KINDS.map((kind) => {
-        const t = byReceiverKind[kind];
-        return `${kind} ${t.resolved}/${t.attempted}`;
-      }).join(", ");
-      process.stderr.write(
-        `[codegraph] resolve by receiver-kind (rate ${resolveSuccessRate.toFixed(2)}, ` +
-          `${callsExternalSkipped}/${callsAttempted} external-skipped, ` +
-          `${callsUnresolvable} unresolvable): ${summary}\n`,
-      );
-    }
-    this.runStats = createEmptyRunStats();
-    this.runAncestors = {};
-    this.runCompactClasses = new Set();
-    this.runGemfileContent = undefined;
-    this.runGemfileLoaded = false;
-    this.runPrependedAncestors = {};
+    // Both branches of the drain (empty run and real run) reset the eager
+    // node-flush state with no key, so it is hoisted out of the branch here.
+    const metrics = this.runState.drainMetrics();
     this.resetNodeFlushState();
-    return {
-      extractedFiles,
-      fileEdgeCount,
-      methodEdgeCount,
-      resolveSuccessRate,
-      inProjectEdgeRecall,
-      callsResolved,
-      callsExternalSkipped,
-      callsUnresolvable,
-      callsNoInProjectDef,
-      resolveByReceiverKind,
-    };
+    return metrics;
   }
 
   private collectionKey(collectionName?: string): string {
@@ -1447,28 +1087,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     return best?.sym;
   }
 
-  /**
-   * Read the project's `Gemfile` ONCE per run (guarded by `runGemfileLoaded`) so
-   * the Ruby resolver can gate DSL grammar to the declared gems. The provider is
-   * already a file-walking provider (see `extractOneFile`), so reading one root
-   * manifest is in-domain; it forwards the RAW string to every `CallContext` and
-   * the parse lives in the resolver (`catalogueForGemfile`). Absent / unreadable
-   * Gemfile ⇒ `undefined` ⇒ FULL catalogue (gating off). bd tea-rags-mcp-adx5p.1.
-   */
-  private loadGemfile(root: string): void {
-    if (this.runGemfileLoaded) return;
-    this.runGemfileLoaded = true;
-    try {
-      this.runGemfileContent = readFileSync(join(root, "Gemfile"), "utf8");
-    } catch {
-      this.runGemfileContent = undefined;
-    }
-  }
-
   async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
     // Read the run's Gemfile for gem-gated DSL grammar (adx5p.1) before pass-2
     // resolve reads it off each CallContext. One read per run (guarded).
-    this.loadGemfile(root);
+    this.runState.loadGemfile(root);
     // Discover the file set to walk. Caller-supplied paths win
     // (incremental reindex); otherwise scan the repo for any
     // supported language extension. `ignoreFilter` is threaded from the
@@ -1594,7 +1216,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const key = this.collectionKey(options?.collectionName);
     // Gem-gated DSL grammar (adx5p.1): read the run's Gemfile before the crossPass
     // early-return so finalizeSignals resolves pass-2 off this state (one/run).
-    this.loadGemfile(root);
+    this.runState.loadGemfile(root);
     // yl9tv Task 5b — cross-pass: the full-index chunk pass has fed this run's
     // extractions into the input spill (drained in finalizeSignals), so the
     // worker/main re-parse here is redundant AND would race the chunker pool's
@@ -1656,7 +1278,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     let sink = this.runSinks.get(key);
     if (!sink) {
       this.chunkSymbolByLine.delete(key);
-      this.runStats = createEmptyRunStats();
+      this.runState.resetTally();
       sink = this.asExtractionSink(collectionName, skipDurableNodeWrite);
       this.runSinks.set(key, sink);
     }
@@ -1820,7 +1442,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // counts into this run's `recordRunStats` → `resolveSuccessRate` jitters
     // run-to-run. Make this the authoritative zero-seam for the cross-pass
     // entry, mirroring `ensureRunSink` for the streaming entry.
-    this.runStats = createEmptyRunStats();
+    this.runState.resetTally();
     this.clearRunState(key);
     this.xpassWritten.set(key, new Set());
     const spillPath = this.inputSpillPath(collectionName);
@@ -1980,23 +1602,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // bd tea-rags-mcp-cnqrg — one row per (observed language, receiver kind).
     // The client overwrites the whole table so stale prior-run cells never leak;
     // a language absent from this run simply has no rows.
-    const rows: ResolveRunStatsRow[] = [];
-    for (const [language, kinds] of this.runStats.byLanguageKind) {
-      for (const kind of RECEIVER_KINDS) {
-        const t = kinds[kind];
-        rows.push({
-          language,
-          receiverKind: kind,
-          attempted: t.attempted,
-          resolved: t.resolved,
-          externalSkipped: t.externalSkipped,
-          unresolvable: t.unresolvable,
-          noInProjectDef: t.noInProjectDef,
-          ambiguousFanout: t.ambiguousFanout,
-        });
-      }
-    }
-    await graphDb.recordRunStats(rows);
+    await graphDb.recordRunStats(this.runState.toResolveRunStatsRows());
   }
 
   /**
@@ -2007,24 +1613,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * streamFileBatch (`key` retained for signature symmetry / future per-key use).
    */
   private clearRunState(key: string): void {
-    this.runAncestors = {};
-    this.runCompactClasses = new Set();
-    this.runGemfileContent = undefined;
-    this.runGemfileLoaded = false;
-    this.runPrependedAncestors = {};
-    this.runIncludedBy = {};
-    this.runExtends = {};
-    this.runReturnTypes = {};
-    this.runInstantiatedTypes.clear();
-    this.runIvarTypes = {};
-    this.runStructuredReturnTypes = {};
-    this.runDispatchTables = {};
-    this.runCallbackParams = {};
-    this.runInheritanceRows = [];
-    this.hierarchyView = undefined;
-    this.runSelfDispatchMethods = [];
-    this.runSelfDispatchTemplates = {};
-    this.runSelfInstantiatingClassMethods = [];
+    this.runState.clearForNextRun();
     this.resetNodeFlushState(key);
   }
 
@@ -2072,23 +1661,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runExtractedPaths.clear();
     this.runBatchChains.clear();
     this.xpassWritten.clear();
-    this.runAncestors = {};
-    this.runCompactClasses = new Set();
-    this.runGemfileContent = undefined;
-    this.runGemfileLoaded = false;
-    this.runPrependedAncestors = {};
-    this.runExtends = {};
-    this.runReturnTypes = {};
-    this.runInstantiatedTypes.clear();
-    this.runIvarTypes = {};
-    this.runStructuredReturnTypes = {};
-    this.runDispatchTables = {};
-    this.runCallbackParams = {};
-    this.runInheritanceRows = [];
-    this.hierarchyView = undefined;
-    this.runSelfDispatchMethods = [];
-    this.runSelfDispatchTemplates = {};
-    this.runSelfInstantiatingClassMethods = [];
+    this.runState.clearAll();
     this.resetNodeFlushState();
   };
 
@@ -2196,7 +1769,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // Gem-gated declares (bd tea-rags-mcp-o5kwh): bind the run's Gemfile so the
       // Ruby nameOf gates class-body macro DECLARES to this project's gems.
       // undefined runGemfileContent -> FULL catalogue (other languages ignore it).
-      (node) => walker.nameOf(node, this.runGemfileContent),
+      (node) => walker.nameOf(node, this.runState.gemfileContent),
       langConfig.scopeSeparator,
       langConfig.disambiguateOverloads ?? false,
       this.deps.composer,
@@ -2209,7 +1782,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       chunks,
       // Gem-gated DSL grammar at extraction time (adx5p.1b): the run's Gemfile,
       // read once in loadGemfile. undefined → FULL catalogue.
-      gemfileContent: this.runGemfileContent,
+      gemfileContent: this.runState.gemfileContent,
     });
   }
 
@@ -2295,39 +1868,44 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // Resolver receives the run-global `classAncestors` so it can walk
     // a bound type's inheritance chain regardless of which file
     // declares that class. Per-file ancestors are merged into
-    // `this.runAncestors` during pass-1 (sink.write).
+    // `this.runState.ancestors` during pass-1 (sink.write).
     const ancestorsForResolver =
-      Object.keys(this.runAncestors).length > 0 ? this.runAncestors : extraction.classAncestors;
+      Object.keys(this.runState.ancestors).length > 0 ? this.runState.ancestors : extraction.classAncestors;
     const prependedAncestorsForResolver =
-      Object.keys(this.runPrependedAncestors).length > 0
-        ? this.runPrependedAncestors
+      Object.keys(this.runState.prependedAncestors).length > 0
+        ? this.runState.prependedAncestors
         : extraction.classPrependedAncestors;
     // Reverse include-by index (bd cai0/2oky5 Task 4): find which classes include
     // a given module (`resolveViaIncludingClasses` in ruby-super.ts). When BOTH
     // ancestor inputs ARE the run-global maps (production pass-2) the inversion is
     // a run-global invariant — read the copy built ONCE at the pass-1→pass-2
-    // barrier (`this.runIncludedBy`) instead of recomputing it per file. The
+    // barrier (`this.runState.includedBy`) instead of recomputing it per file. The
     // single-file / test fallback (per-file extraction maps) still computes fresh,
     // so the result is byte-identical in every case.
     const includedByForResolver =
-      ancestorsForResolver === this.runAncestors && prependedAncestorsForResolver === this.runPrependedAncestors
-        ? this.runIncludedBy
+      ancestorsForResolver === this.runState.ancestors &&
+      prependedAncestorsForResolver === this.runState.prependedAncestors
+        ? this.runState.includedBy
         : buildIncludedBy(ancestorsForResolver ?? {}, prependedAncestorsForResolver ?? {});
-    const extendsForResolver = Object.keys(this.runExtends).length > 0 ? this.runExtends : extraction.classExtends;
+    const extendsForResolver =
+      Object.keys(this.runState.classExtends).length > 0 ? this.runState.classExtends : extraction.classExtends;
     const returnTypesForResolver =
-      Object.keys(this.runReturnTypes).length > 0 ? this.runReturnTypes : extraction.functionReturnTypes;
+      Object.keys(this.runState.returnTypes).length > 0 ? this.runState.returnTypes : extraction.functionReturnTypes;
     // Run-global instantiation set if any file contributed, else this file's
     // own (mirrors the returnTypes "run-global if present else extraction"
     // pattern). bd tea-rags-mcp-pffv.
     const instantiatedForResolver =
-      this.runInstantiatedTypes.size > 0 ? this.runInstantiatedTypes : new Set(extraction.instantiatedTypes ?? []);
+      this.runState.instantiatedTypes.size > 0
+        ? this.runState.instantiatedTypes
+        : new Set(extraction.instantiatedTypes ?? []);
     // Ruby type-source PRECISE maps (Increment 1, Task 1.5): run-global if any
     // file contributed, else this file's own — same "run-global if present else
     // extraction" pattern as ancestors / return types.
-    const ivarTypesForResolver = Object.keys(this.runIvarTypes).length > 0 ? this.runIvarTypes : extraction.ivarTypes;
+    const ivarTypesForResolver =
+      Object.keys(this.runState.ivarTypes).length > 0 ? this.runState.ivarTypes : extraction.ivarTypes;
     const structuredReturnTypesForResolver =
-      Object.keys(this.runStructuredReturnTypes).length > 0
-        ? this.runStructuredReturnTypes
+      Object.keys(this.runState.structuredReturnTypes).length > 0
+        ? this.runState.structuredReturnTypes
         : extraction.structuredReturnTypes;
     // File-level edges. A resolver that implements `resolveFileEdges` owns its
     // language's full set of file-coupling channels (Ruby: require + Zeitwerk
@@ -2347,7 +1925,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       classExtends: extendsForResolver,
       ivarTypes: ivarTypesForResolver,
       structuredReturnTypes: structuredReturnTypesForResolver,
-      gemfileContent: this.runGemfileContent,
+      gemfileContent: this.runState.gemfileContent,
     };
     const fileEdges: GraphEdges["fileEdges"] = resolver.resolveFileEdges
       ? resolver.resolveFileEdges(extraction, fileEdgeCtx)
@@ -2360,10 +1938,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // (extraction.language is constant across this file's chunks). Test files
     // never reach resolveExtraction (excluded upstream at extraction), so every
     // call counted here is production code.
-    const kindTally = languageKindTally(this.runStats, extraction.language);
+    const kindTally = languageKindTally(this.runState.stats, extraction.language);
     for (const chunk of extraction.chunks) {
       for (const call of chunk.calls) {
-        this.runStats.callsAttempted += 1;
+        this.runState.stats.callsAttempted += 1;
         const receiverKind = classifyReceiverKind(call, chunk.localBindings);
         kindTally[receiverKind].attempted += 1;
         const ctx = {
@@ -2383,29 +1961,29 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           ivarTypes: ivarTypesForResolver,
           structuredReturnTypes: structuredReturnTypesForResolver,
           classAncestors: ancestorsForResolver,
-          compactDeclaredClasses: this.runCompactClasses,
-          gemfileContent: this.runGemfileContent,
+          compactDeclaredClasses: this.runState.compactClasses,
+          gemfileContent: this.runState.gemfileContent,
           classPrependedAncestors: prependedAncestorsForResolver,
           includedBy: includedByForResolver,
           classExtends: extendsForResolver,
           // bd tea-rags-mcp-n0zj — run-global dispatch tables + callback
           // params drive the resolver's fan-out / inter-proc join.
-          dispatchTables: this.runDispatchTables,
-          callbackParams: this.runCallbackParams,
+          dispatchTables: this.runState.dispatchTables,
+          callbackParams: this.runState.callbackParams,
           // bd tea-rags-mcp-o17v2 — run-global class hierarchy drives CHA cone
           // devirtualization of a polymorphic typed receiver. Built at the
           // pass-1→pass-2 barrier; undefined ⇒ cone resolver no-ops.
-          hierarchy: this.hierarchyView,
+          hierarchy: this.runState.hierarchyView,
           // bd tea-rags-mcp-pffv — run-global instantiation set drives RTA
           // pruning of the CHA cone. Empty ⇒ cone keeps full fan-out (gate).
           instantiatedTypes: instantiatedForResolver,
           // bd DEFECT 2 — run-global self-dispatch template map narrows an entry
           // `Const.member` to the concrete `Const#hook`. Empty ⇒ the Ruby entry
           // strategy CONTINUEs (no-op).
-          selfDispatchTemplates: this.runSelfDispatchTemplates,
+          selfDispatchTemplates: this.runState.selfDispatchTemplates,
           // bd DEFECT 2 v2 — self-instantiating class methods bridge a class entry
           // to the same-named instance template. Empty ⇒ v2 branch is a no-op.
-          selfInstantiatingClassMethods: this.runSelfInstantiatingClassMethods,
+          selfInstantiatingClassMethods: this.runState.selfInstantiatingClassMethods,
         };
         let resolved = false;
         if (call.dispatch) {
@@ -2467,7 +2045,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             // count this call. Its own bucket: not a genuine miss, not
             // external — strict recall keeps it in the denominator,
             // coveredRecall counts the aggregate as coverage.
-            this.runStats.callsAmbiguousFanout += 1;
+            this.runState.stats.callsAmbiguousFanout += 1;
             kindTally[receiverKind].ambiguousFanout += 1;
             ambiguousFanouts.push({
               sourceSymbolId: chunk.symbolId,
@@ -2502,7 +2080,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           }
         }
         if (resolved) {
-          this.runStats.callsResolved += 1;
+          this.runState.stats.callsResolved += 1;
           kindTally[receiverKind].resolved += 1;
         } else if (call.dynamicSend === true) {
           // bd cai0 — a dynamic `send(var)` / `public_send(expr)` whose target
@@ -2510,7 +2088,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // count it as `unresolvable` (excluded from the denominator). Checked
           // BEFORE targetsExternalImport: `send` ∈ RUBY_KERNEL_BUILTINS, so the
           // external classifier would otherwise mis-bucket it as externalSkipped.
-          this.runStats.callsUnresolvable += 1;
+          this.runState.stats.callsUnresolvable += 1;
           kindTally[receiverKind].unresolvable += 1;
         } else if (resolver.targetsExternalImport?.(call, ctx) ?? false) {
           // tea-rags-mcp-ykj7 — the resolver could not pin this call AND
@@ -2518,7 +2096,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // separately (aggregate + per-(language, receiver-kind)) so
           // getRunMetrics excludes it from the denominator and cg_run_stats
           // persists the breakdown.
-          this.runStats.callsExternalSkipped += 1;
+          this.runState.stats.callsExternalSkipped += 1;
           kindTally[receiverKind].externalSkipped += 1;
         } else if (symbolTable.lookupByShortName(call.member).length === 0) {
           // Genuine miss whose member has NO in-project definition — it can
@@ -2526,7 +2104,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // dynamic), so it is excluded from the inProjectEdgeRecall
           // denominator. The complement (miss WITH an in-project def) is the
           // true recall hole, derived in getRunMetrics.
-          this.runStats.callsNoInProjectDef += 1;
+          this.runState.stats.callsNoInProjectDef += 1;
           kindTally[receiverKind].noInProjectDef += 1;
         }
       }
@@ -2544,126 +2122,6 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     if (ambiguousFanouts.length > 0) edges.ambiguousFanouts = ambiguousFanouts;
     return edges;
   }
-}
-
-interface ReceiverKindTally {
-  attempted: number;
-  resolved: number;
-  // tea-rags-mcp-ykj7 — unresolved-but-external calls in this bucket (subset of
-  // attempted − resolved). Persisted to cg_run_stats.external_skipped.
-  externalSkipped: number;
-  // bd cai0 — unresolved-but-statically-undeterminable calls in this bucket
-  // (dynamic send(var)). Persisted to cg_run_stats.unresolvable.
-  unresolvable: number;
-  // Unresolved calls in this bucket whose member has NO in-project definition
-  // (gem/core/runtime-generated/dynamic). Excluded from the inProjectEdgeRecall
-  // denominator. Persisted to cg_run_stats.no_in_project_def.
-  noInProjectDef: number;
-  // bd f2jsb/j0pki — unresolved-but-over-cap-ambiguous dispatch fan-outs in
-  // this bucket (subset of attempted − resolved). Its own bucket: NOT a genuine
-  // miss, NOT external. Persisted to cg_run_stats.ambiguous_fanout.
-  ambiguousFanout: number;
-}
-
-interface RunStats {
-  extractedFiles: number;
-  fileEdgeCount: number;
-  methodEdgeCount: number;
-  callsAttempted: number;
-  callsResolved: number;
-  // tea-rags-mcp-ykj7 — unresolved calls the language resolver flagged as
-  // targeting an external library / runtime import (`Math.max`, `fs.readFile`,
-  // `Net::HTTP.get`). Excluded from the resolveSuccessRate denominator so the
-  // rate reflects PROJECT-INTERNAL resolver capability, not unresolvable
-  // external-library noise. Subset of (callsAttempted − callsResolved).
-  callsExternalSkipped: number;
-  // bd cai0 — unresolved calls flagged by the walker as dynamic send(var) with a
-  // non-literal target: statically undeterminable, not a resolver miss. Excluded
-  // from the resolveSuccessRate denominator. Subset of (callsAttempted −
-  // callsResolved − callsExternalSkipped).
-  callsUnresolvable: number;
-  // Genuine-miss calls whose member short-name has NO in-project definition
-  // (symbolTable.lookupByShortName empty) — gem/core/runtime-generated/dynamic
-  // targets that can never produce an in-project edge. Excluded from the
-  // inProjectEdgeRecall denominator so recall measures graph completeness over
-  // calls that COULD resolve to a project symbol. Subset of the genuine-miss
-  // bucket (callsAttempted − callsResolved − callsExternalSkipped −
-  // callsUnresolvable).
-  callsNoInProjectDef: number;
-  // bd f2jsb/j0pki — subset of (callsAttempted − callsResolved) that the
-  // dispatch kernel judged over-cap AMBIGUOUS (survivors > corpus-adaptive
-  // fan-out cap) and recorded as a cg_ambiguous_fanout aggregate instead of m
-  // edges. Its own bucket: NOT a genuine miss, NOT external — strict recall
-  // keeps it in the denominator, coveredRecall counts it as coverage.
-  callsAmbiguousFanout: number;
-  // Per-(code language, receiver kind) resolve breakdown (bd tea-rags-mcp-cnqrg,
-  // extends j431). Source of truth: the aggregate scalars above, the per-kind
-  // summary (getRunMetrics, j431 view) and the per-language summary
-  // (get_index_status) all derive from this by summing across the other axis.
-  // recordRunStats persists each (language, kind) cell to cg_run_stats so the
-  // daemon-readable proxy can break resolveSuccessRate down per language and
-  // locate the resolver gap. Lazily grows one entry per language observed in
-  // this run. Test files never reach here — they are excluded upstream at
-  // extraction (CODEGRAPH_EXCLUDE_TESTS, default true).
-  byLanguageKind: Map<string, Record<ReceiverKind, ReceiverKindTally>>;
-}
-
-function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally> {
-  const out = {} as Record<ReceiverKind, ReceiverKindTally>;
-  for (const kind of RECEIVER_KINDS) {
-    out[kind] = {
-      attempted: 0,
-      resolved: 0,
-      externalSkipped: 0,
-      unresolvable: 0,
-      noInProjectDef: 0,
-      ambiguousFanout: 0,
-    };
-  }
-  return out;
-}
-
-/** Lazily fetch this language's per-kind tally, creating a zeroed one on first sight. */
-function languageKindTally(stats: RunStats, language: string): Record<ReceiverKind, ReceiverKindTally> {
-  let kinds = stats.byLanguageKind.get(language);
-  if (!kinds) {
-    kinds = emptyReceiverKindTally();
-    stats.byLanguageKind.set(language, kinds);
-  }
-  return kinds;
-}
-
-/**
- * Project the per-(language, kind) tally onto the per-receiver-kind axis by
- * summing across languages — the j431 view consumed by getRunMetrics.
- */
-function aggregateReceiverKinds(stats: RunStats): Record<ReceiverKind, ReceiverKindTally> {
-  const out = emptyReceiverKindTally();
-  for (const kinds of stats.byLanguageKind.values()) {
-    for (const kind of RECEIVER_KINDS) {
-      out[kind].attempted += kinds[kind].attempted;
-      out[kind].resolved += kinds[kind].resolved;
-      out[kind].externalSkipped += kinds[kind].externalSkipped;
-      out[kind].unresolvable += kinds[kind].unresolvable;
-      out[kind].ambiguousFanout += kinds[kind].ambiguousFanout;
-    }
-  }
-  return out;
-}
-
-function createEmptyRunStats(): RunStats {
-  return {
-    extractedFiles: 0,
-    fileEdgeCount: 0,
-    methodEdgeCount: 0,
-    callsAttempted: 0,
-    callsResolved: 0,
-    callsExternalSkipped: 0,
-    callsUnresolvable: 0,
-    callsNoInProjectDef: 0,
-    callsAmbiguousFanout: 0,
-    byLanguageKind: new Map(),
-  };
 }
 
 /**
