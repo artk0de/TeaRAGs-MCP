@@ -19,9 +19,11 @@ import type {
   NamedSymbol,
   SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { RubyTypeRef } from "../../../../../../src/core/contracts/types/language.js";
 import {
   buildSelfDispatchProbe,
   collectSelfInstantiatingClassMethods,
+  deriveServiceEntryReturnTypes,
   discoverSelfDispatchTemplates,
   extractSelfDispatchMethods,
   foldSelfDispatchTemplates,
@@ -287,6 +289,97 @@ describe("collectSelfInstantiatingClassMethods (DEFECT 2 v2)", () => {
       { symbolId: "NoNew.build", enclosingType: "NoNew", selfHookCandidates: ["assemble"] },
     ];
     expect(collectSelfInstantiatingClassMethods(methods)).toEqual(["KindOfService.call", "OtherService.run"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bd tea-rags-mcp-j9xpf — service-entry RETURN threading.
+//
+// The walker types the SHARED template's return (`KindOfService#call` →
+// `KindOfService::Result`) but every real call site names a CONCRETE entry
+// (`Billing::X::Create.call`). The barrier owns the join: for each entry the
+// self-dispatch discovery already classifies, re-key the template's return fact
+// onto every concrete type wired to it, so the consumption path sees the fact at
+// the coordinate it actually looks up. DERIVED — never overrides a declared fact.
+// ---------------------------------------------------------------------------
+describe("deriveServiceEntryReturnTypes (j9xpf)", () => {
+  const RESULT: RubyTypeRef = { form: "instance", name: "KindOfService::Result" };
+  const related = (map: Record<string, string[]>) => (type: string) => map[type] ?? [];
+
+  it("re-keys the template's return fact onto every concrete entry (class-form entry)", () => {
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      { "KindOfService#call": RESULT },
+      related({ KindOfService: ["Billing::Create", "Billing::Refresh"] }),
+    );
+    expect(derived).toEqual({ "Billing::Create#call": RESULT, "Billing::Refresh#call": RESULT });
+  });
+
+  it("re-keys from an INSTANCE-form template symbolId too", () => {
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService#call"],
+      { "KindOfService#call": RESULT },
+      related({ KindOfService: ["Billing::Create"] }),
+    );
+    expect(derived).toEqual({ "Billing::Create#call": RESULT });
+  });
+
+  it("SILENCE when the template itself has no return fact (nothing to thread)", () => {
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      {},
+      related({ KindOfService: ["Billing::Create"] }),
+    );
+    expect(derived).toEqual({});
+  });
+
+  it("SILENCE when no concrete type is wired to the template", () => {
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      { "KindOfService#call": RESULT },
+      related({}),
+    );
+    expect(derived).toEqual({});
+  });
+
+  it("NEVER overrides a DECLARED fact at the entry coordinate (YARD / associations / body-last-expr win)", () => {
+    const declared: RubyTypeRef = { form: "instance", name: "Billing::CreateResult" };
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      { "KindOfService#call": RESULT, "Billing::Create#call": declared },
+      related({ KindOfService: ["Billing::Create", "Billing::Refresh"] }),
+    );
+    expect(derived["Billing::Create#call"]).toBeUndefined();
+    expect(derived["Billing::Refresh#call"]).toEqual(RESULT);
+  });
+
+  it("threads the ENTRY's own member name, not a fixed `call`", () => {
+    const derived = deriveServiceEntryReturnTypes(
+      ["BaseProcessor.process_result"],
+      { "BaseProcessor#process_result": RESULT },
+      related({ BaseProcessor: ["CsvProcessor"] }),
+    );
+    expect(derived).toEqual({ "CsvProcessor#process_result": RESULT });
+  });
+
+  it("ignores a symbolId with no method separator (a type-body chunk)", () => {
+    expect(
+      deriveServiceEntryReturnTypes(
+        ["KindOfService"],
+        { "KindOfService#call": RESULT },
+        related({ KindOfService: ["X"] }),
+      ),
+    ).toEqual({});
+  });
+
+  it("first entry channel wins when two templates derive the same coordinate (deterministic, no flip-flop)", () => {
+    const other: RubyTypeRef = { form: "instance", name: "Other::Result" };
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call", "OtherBase.call"],
+      { "KindOfService#call": RESULT, "OtherBase#call": other },
+      related({ KindOfService: ["Shared"], OtherBase: ["Shared"] }),
+    );
+    expect(derived["Shared#call"]).toEqual(RESULT);
   });
 });
 

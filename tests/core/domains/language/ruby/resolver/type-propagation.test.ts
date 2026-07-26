@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { typeOfReceiver } from "../../../../../../src/core/domains/language/ruby/resolver/type-propagation.js";
+import {
+  boundCallReturnType,
+  returnTypeOf,
+  typeOfReceiver,
+} from "../../../../../../src/core/domains/language/ruby/resolver/type-propagation.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const emptyCtx = (over: Partial<CallContext> = {}): CallContext => ({
@@ -179,5 +183,63 @@ describe("typeOfReceiver — non-propagatable receiver forms", () => {
 
   it("returns undefined for index-access receiver arr[0]", () => {
     expect(typeOfReceiver("arr[0]", 10, emptyCtx())).toBeUndefined();
+  });
+});
+
+// ── returnTypeOf — the ONE return-type authority (j9xpf) ─────────────────────
+
+describe("returnTypeOf — channel precedence and receiver-form scoping", () => {
+  it("the structured fact at the exact coordinate wins", () => {
+    const ctx = emptyCtx({ structuredReturnTypes: { "Svc#call": { form: "instance", name: "Result" } } });
+    expect(returnTypeOf({ form: "class", name: "Svc" }, "call", ctx)).toEqual({ form: "instance", name: "Result" });
+  });
+
+  it("falls back to an inherited fact through the ancestor MRO", () => {
+    const ctx = emptyCtx({
+      classAncestors: { Svc: ["KindOfService"] },
+      structuredReturnTypes: { "KindOfService#call": { form: "instance", name: "Result" } },
+    });
+    expect(returnTypeOf({ form: "class", name: "Svc" }, "call", ctx)).toEqual({ form: "instance", name: "Result" });
+  });
+
+  it("a Rails association accessor types an INSTANCE receiver", () => {
+    const ctx = emptyCtx({ associationTypes: { Client: { firm: "Firm" } } });
+    expect(returnTypeOf({ form: "instance", name: "Client" }, "firm", ctx)).toEqual({ form: "instance", name: "Firm" });
+  });
+
+  it("a Rails association accessor does NOT type a CLASS receiver — `belongs_to` defines an instance method", () => {
+    const ctx = emptyCtx({
+      associationTypes: { Client: { firm: "Firm" } },
+      functionReturnTypes: { firm: "FirmScope" },
+    });
+    // Must fall through to the flat channel, not borrow the instance accessor.
+    expect(returnTypeOf({ form: "class", name: "Client" }, "firm", ctx)).toEqual({
+      form: "instance",
+      name: "FirmScope",
+    });
+  });
+
+  it("returns undefined when no channel knows the member", () => {
+    expect(returnTypeOf({ form: "class", name: "Svc" }, "call", emptyCtx())).toBeUndefined();
+  });
+});
+
+describe("boundCallReturnType — the localCallBindings channel (j9xpf)", () => {
+  it("SCOPE-QUALIFIED binding resolves through the scoped channels", () => {
+    const ctx = emptyCtx({
+      localCallBindings: { result: "Billing::Create.call" },
+      classAncestors: { "Billing::Create": ["KindOfService"] },
+      structuredReturnTypes: { "KindOfService#call": { form: "instance", name: "Result" } },
+    });
+    expect(boundCallReturnType("result", ctx)).toEqual({ form: "instance", name: "Result" });
+  });
+
+  it("BARE binding still reads the flat, project-wide map (unchanged)", () => {
+    const ctx = emptyCtx({ localCallBindings: { x: "fetch" }, functionReturnTypes: { fetch: "HttpResponse" } });
+    expect(boundCallReturnType("x", ctx)).toEqual({ form: "instance", name: "HttpResponse" });
+  });
+
+  it("returns undefined for a receiver with no call binding", () => {
+    expect(boundCallReturnType("x", emptyCtx())).toBeUndefined();
   });
 });

@@ -606,3 +606,83 @@ describe("RubyDynamicDispatchResolver — Tier-2+3 cascade wiring (d9o7o)", () =
     expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#run"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// bd tea-rags-mcp-j9xpf — `result = Svc.call(…)` leaves `result` with NO
+// localBindings entry (the walker cannot know another file's return type), so
+// without this gate the dynamic component fans `result.successful?` out to every
+// same-named def in the project, PREEMPTING the precise `returnTypeBinding` pass
+// (resolveDispatch runs before resolve()). The gate mirrors the one `chainType`
+// already gets: defer exactly when the exact path will emit an edge, so recall
+// is untouched wherever it cannot.
+// ---------------------------------------------------------------------------
+describe("RubyDynamicDispatchResolver — defers to the returnTypeBinding pass (j9xpf)", () => {
+  const resolver = new RubyDynamicDispatchResolver(cfg);
+  const call = { callText: "result.successful?", receiver: "result", member: "successful?", startLine: 2 };
+  const twoDefiners = () =>
+    tableWith(
+      [
+        "app/service_result.rb",
+        [
+          sym("ServiceResult", "ServiceResult", "app/service_result.rb", []),
+          sym("ServiceResult#successful?", "successful?", "app/service_result.rb", ["ServiceResult"]),
+        ],
+      ],
+      [
+        "app/cache_entry.rb",
+        [
+          sym("CacheEntry", "CacheEntry", "app/cache_entry.rb", []),
+          sym("CacheEntry#successful?", "successful?", "app/cache_entry.rb", ["CacheEntry"]),
+        ],
+      ],
+    );
+
+  it("returns [] when a SCOPE-QUALIFIED binding types the receiver to an in-project class", () => {
+    const outcome = resolver.resolveDispatch(
+      call,
+      ctx({
+        symbolTable: twoDefiners(),
+        localCallBindings: { result: "Billing::Create.call" },
+        structuredReturnTypes: { "Billing::Create#call": { form: "instance", name: "ServiceResult" } },
+      }),
+    );
+    expect(edgesOf(outcome)).toEqual([]);
+  });
+
+  it("returns [] when the type comes from the shared template via the ancestor MRO", () => {
+    const outcome = resolver.resolveDispatch(
+      call,
+      ctx({
+        symbolTable: twoDefiners(),
+        localCallBindings: { result: "Billing::Create.call" },
+        classAncestors: { "Billing::Create": ["KindOfService"] },
+        structuredReturnTypes: { "KindOfService#call": { form: "instance", name: "ServiceResult" } },
+      }),
+    );
+    expect(edgesOf(outcome)).toEqual([]);
+  });
+
+  it("STILL fans out when the binding's return type is unknown (recall unchanged)", () => {
+    const outcome = resolver.resolveDispatch(
+      call,
+      ctx({ symbolTable: twoDefiners(), localCallBindings: { result: "Billing::Create.call" } }),
+    );
+    expect(
+      edgesOf(outcome)
+        .map((e) => e.targetSymbolId)
+        .sort(),
+    ).toEqual(["CacheEntry#successful?", "ServiceResult#successful?"]);
+  });
+
+  it("STILL fans out when the return type is a gem/stdlib class with no in-project def", () => {
+    const outcome = resolver.resolveDispatch(
+      call,
+      ctx({
+        symbolTable: twoDefiners(),
+        localCallBindings: { result: "Billing::Create.call" },
+        structuredReturnTypes: { "Billing::Create#call": { form: "instance", name: "Dry::Monads::Result" } },
+      }),
+    );
+    expect(edgesOf(outcome)).toHaveLength(2);
+  });
+});

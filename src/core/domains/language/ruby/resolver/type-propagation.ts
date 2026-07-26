@@ -288,7 +288,11 @@ function activeRecordQueryReturn(className: string, member: string, ctx: CallCon
 }
 
 /**
- * Resolve the return type of calling `member` on a receiver of type `recv`.
+ * The ONE authority for "what type does calling `member` on a receiver of type
+ * `recv` yield" (bd tea-rags-mcp-j9xpf — same single-authority discipline as
+ * {@link ivarTypeName}). Every reader — the chain engine's hop walk and the
+ * `returnTypeBinding` pass's scope-qualified lookup — MUST go through here, so
+ * the channel precedence below is stated once and cannot drift between callers.
  *
  * Resolution order (first non-undefined wins):
  * 1. `ctx.structuredReturnTypes?.["${recv.name}#${member}"]` — precise structured ref.
@@ -305,7 +309,7 @@ function activeRecordQueryReturn(className: string, member: string, ctx: CallCon
  * Container element-returning methods unwrap to the element type (Task 1.6);
  * union forms are not threaded here (deferred, Task 1.7) — returns `undefined`.
  */
-function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): RubyTypeRef | undefined {
+export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): RubyTypeRef | undefined {
   // Container form: element-returning methods unwrap to the element type (Task 1.6).
   // Non-element methods (size, count, map, …) → undefined (Array/Enumerable = external).
   if (recv.form === "container") {
@@ -321,8 +325,15 @@ function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): Ruby
   if (direct !== undefined) return direct;
 
   // 2. Rails association DSL: associationTypes[className][accessorName] → modelName.
-  const assocName = ctx.associationTypes?.[recv.name]?.[member];
-  if (assocName !== undefined) return { form: "instance", name: assocName };
+  //    INSTANCE receivers only — `belongs_to :firm` defines `#firm` on instances,
+  //    never on the class object, so `SomeClass.firm` is a different method that
+  //    must fall through to the scoped/flat return channels below (j9xpf: without
+  //    this guard a class-form receiver silently borrows an instance accessor's
+  //    type and shadows the correct one).
+  if (recv.form === "instance") {
+    const assocName = ctx.associationTypes?.[recv.name]?.[member];
+    if (assocName !== undefined) return { form: "instance", name: assocName };
+  }
 
   // 3. Ancestor MRO: walk classAncestors[recv.name] for an inherited return type.
   for (const ancestor of ctx.classAncestors?.[recv.name] ?? []) {
@@ -365,4 +376,32 @@ export function ivarTypeName(ivar: string, ctx: CallContext): string | undefined
 function resolveIvarType(ivar: string, ctx: CallContext): RubyTypeRef | undefined {
   const name = ivarTypeName(ivar, ctx);
   return name === undefined ? undefined : { form: "instance", name };
+}
+
+/**
+ * The type a receiver BOUND TO A METHOD CALL carries — `result = Svc.call(…)`
+ * leaves `result` with no `localBindings` entry (the walker cannot know another
+ * file's return type), only a `localCallBindings` one naming what was called.
+ * This is the ONE authority for that channel (bd tea-rags-mcp-j9xpf), read by
+ * both the `returnTypeBinding` pass and the dynamic-dispatch component that
+ * defers to it, so the two can never disagree about which receivers the exact
+ * path owns.
+ *
+ * Two binding forms, mirroring what the walker records:
+ *  - SCOPE-QUALIFIED (`"Billing::Create.call"`, recorded when the RHS receiver
+ *    was a constant) — the receiver's type is known, so {@link returnTypeOf}
+ *    answers over the CLASS object and every scoped channel applies (structured
+ *    fact at the entry coordinate, ancestor MRO, then the flat map);
+ *  - BARE (`"fetch"`) — no receiver type, so only the flat, project-wide
+ *    `functionReturnTypes` map can answer. Unchanged from before.
+ */
+export function boundCallReturnType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
+  const binding = ctx.localCallBindings?.[receiver];
+  if (binding === undefined) return undefined;
+  const separator = binding.lastIndexOf(".");
+  if (separator <= 0) {
+    const flat = ctx.functionReturnTypes?.[binding];
+    return flat ? { form: "instance", name: flat } : undefined;
+  }
+  return returnTypeOf({ form: "class", name: binding.slice(0, separator) }, binding.slice(separator + 1), ctx);
 }

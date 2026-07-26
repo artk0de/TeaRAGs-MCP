@@ -50,7 +50,10 @@ function factFor(code: string, method: string) {
 
 describe("rubyBodyLastExprTypeSource — conservative emitting shapes", () => {
   it("`Const.new(...)` tail on instance `#call` → instance(Const)", () => {
-    const fact = factFor(["class BuildReport", "  def call", "    Result.new(data)", "  end", "end"].join("\n"), "call");
+    const fact = factFor(
+      ["class BuildReport", "  def call", "    Result.new(data)", "  end", "end"].join("\n"),
+      "call",
+    );
     expect(fact?.symbolScope).toEqual(["BuildReport"]);
     expect(fact?.type).toEqual({ form: "instance", name: "Result" });
     expect(fact?.source).toBe("body-last-expr");
@@ -119,7 +122,9 @@ describe("rubyBodyLastExprTypeSource — silence gates (precision, never fabrica
   });
 
   it("opaque method-call tail (delegates to another service) → NO fact", () => {
-    expect(factFor(["class Svc", "  def call", "    OtherService.call(x)", "  end", "end"].join("\n"), "call")).toBeUndefined();
+    expect(
+      factFor(["class Svc", "  def call", "    OtherService.call(x)", "  end", "end"].join("\n"), "call"),
+    ).toBeUndefined();
   });
 
   it("bare method-call tail (no receiver, not a local) → NO fact", () => {
@@ -201,14 +206,7 @@ describe("rubyBodyLastExprTypeSource — convention gate (O(service defs), not O
 
 describe("rubyBodyLastExprTypeSource — store precedence", () => {
   it("YARD `@return` on the same `call` wins over body-last-expr inference", () => {
-    const code = [
-      "class Svc",
-      "  # @return [Admin]",
-      "  def call",
-      "    Result.new(x)",
-      "  end",
-      "end",
-    ].join("\n");
+    const code = ["class Svc", "  # @return [Admin]", "  def call", "    Result.new(x)", "  end", "end"].join("\n");
     const input = makeInput(code);
     const facts = [...rubyYardTypeSource.extract(input), ...rubyBodyLastExprTypeSource.extract(input)];
     const map = RubyTypeFactStore.fromFacts(facts).structuredReturnTypesMap();
@@ -242,7 +240,13 @@ describe("rubyBodyLastExprTypeSource — store precedence", () => {
 describe("rubyBodyLastExprTypeSource — registered end-to-end + local-bindings boundary", () => {
   it("extractFromRubyFile surfaces the service return type in structuredReturnTypes", () => {
     const code = ["class BuildReport", "  def call", "    Result.new(data)", "  end", "end"].join("\n");
-    const r = extractFromRubyFile({ tree: parse(code), code, relPath: "app/services/build_report.rb", language: "ruby", chunks: [] });
+    const r = extractFromRubyFile({
+      tree: parse(code),
+      code,
+      relPath: "app/services/build_report.rb",
+      language: "ruby",
+      chunks: [],
+    });
     expect(r.structuredReturnTypes?.["BuildReport#call"]).toEqual({ form: "instance", name: "Result" });
   });
 
@@ -251,8 +255,147 @@ describe("rubyBodyLastExprTypeSource — registered end-to-end + local-bindings 
     // same `Const.new` tail; body-last-expr fills the PRECISE `structuredReturnTypes`.
     // Different channels, no store double-emit — the resolver prefers structured.
     const code = ["class BuildReport", "  def call", "    Result.new(data)", "  end", "end"].join("\n");
-    const r = extractFromRubyFile({ tree: parse(code), code, relPath: "app/services/build_report.rb", language: "ruby", chunks: [] });
+    const r = extractFromRubyFile({
+      tree: parse(code),
+      code,
+      relPath: "app/services/build_report.rb",
+      language: "ruby",
+      chunks: [],
+    });
     expect(r.structuredReturnTypes?.["BuildReport#call"]).toEqual({ form: "instance", name: "Result" });
     expect(r.functionReturnTypes?.["call"]).toBe("Result");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bd tea-rags-mcp-j9xpf — the two tail shapes the REAL service-object template
+// uses. Ground truth: taxdome `lib/kind_of_service.rb#call` ends in the ivar
+// `@result`, itself assigned ONCE from a type-guard COERCION ternary
+// (`raw.is_a?(Result) ? raw : Result.new(raw)`). Both shapes are statically
+// decidable without widening: an ivar is a binding like a local, and a guarded
+// coercion proves BOTH branches carry the guard's constant.
+// ---------------------------------------------------------------------------
+describe("rubyBodyLastExprTypeSource — @ivar tail (single in-body assignment)", () => {
+  it("`@result` tail assigned once from `Const.new(...)` → instance(Const)", () => {
+    const code = ["class Svc", "  def call", "    @result = Result.new(x)", "    @result", "  end", "end"].join("\n");
+    expect(factFor(code, "call")?.type).toEqual({ form: "instance", name: "Result" });
+  });
+
+  it("`@result` assigned inside a block (blocks share the method's scope) still types", () => {
+    const code = [
+      "class Svc",
+      "  def call",
+      "    wrap do",
+      "      @result = Result.new(x)",
+      "    end",
+      "    @result",
+      "  end",
+      "end",
+    ].join("\n");
+    expect(factFor(code, "call")?.type).toEqual({ form: "instance", name: "Result" });
+  });
+
+  it("ivar reassigned twice in the body → NO fact", () => {
+    const code = [
+      "class Svc",
+      "  def call",
+      "    @result = Result.new(x)",
+      "    @result = Other.new",
+      "    @result",
+      "  end",
+      "end",
+    ].join("\n");
+    expect(factFor(code, "call")).toBeUndefined();
+  });
+
+  it("ivar never assigned in THIS body (set elsewhere, e.g. `initialize`) → NO fact", () => {
+    const code = [
+      "class Svc",
+      "  def initialize",
+      "    @result = Result.new(x)",
+      "  end",
+      "  def call",
+      "    @result",
+      "  end",
+      "end",
+    ].join("\n");
+    expect(factFor(code, "call")).toBeUndefined();
+  });
+
+  it("ivar assigned via `||=` → NO fact (not a clean single-assign)", () => {
+    const code = ["class Svc", "  def call", "    @result ||= Result.new(x)", "    @result", "  end", "end"].join("\n");
+    expect(factFor(code, "call")).toBeUndefined();
+  });
+});
+
+describe("rubyBodyLastExprTypeSource — type-guard coercion ternary", () => {
+  it("`raw.is_a?(Result) ? raw : Result.new(raw)` tail → instance(Result)", () => {
+    const code = ["class Svc", "  def call", "    raw.is_a?(Result) ? raw : Result.new(raw)", "  end", "end"].join(
+      "\n",
+    );
+    expect(factFor(code, "call")?.type).toEqual({ form: "instance", name: "Result" });
+  });
+
+  it("scope-resolved guard constant (`Svc::Result`) → instance(Svc::Result)", () => {
+    const code = [
+      "module KindOfService",
+      "  def call",
+      "    raw.is_a?(KindOfService::Result) ? raw : KindOfService::Result.new(raw)",
+      "  end",
+      "end",
+    ].join("\n");
+    expect(factFor(code, "call")?.type).toEqual({ form: "instance", name: "KindOfService::Result" });
+  });
+
+  it("`kind_of?` / `instance_of?` guards are equivalent", () => {
+    for (const guard of ["kind_of?", "instance_of?"]) {
+      const code = ["class Svc", "  def call", `    raw.${guard}(Result) ? raw : Result.new(raw)`, "  end", "end"].join(
+        "\n",
+      );
+      expect(factFor(code, "call")?.type).toEqual({ form: "instance", name: "Result" });
+    }
+  });
+
+  it("the REAL KindOfService shape — ivar tail whose single assignment is a coercion ternary", () => {
+    const code = [
+      "module KindOfService",
+      "  def call",
+      "    raw = perform",
+      "    @result = raw.is_a?(KindOfService::Result) ? raw : KindOfService::Result.new(raw)",
+      "    log_failure(@result) if @result.failed?",
+      "    @result",
+      "  end",
+      "end",
+    ].join("\n");
+    const fact = factFor(code, "call");
+    expect(fact?.symbolScope).toEqual(["KindOfService"]);
+    expect(fact?.type).toEqual({ form: "instance", name: "KindOfService::Result" });
+  });
+
+  it("false branch types to a DIFFERENT constant → NO fact (genuine union)", () => {
+    const code = ["class Svc", "  def call", "    raw.is_a?(Result) ? raw : Other.new(raw)", "  end", "end"].join("\n");
+    expect(factFor(code, "call")).toBeUndefined();
+  });
+
+  it("true branch is NOT the guarded expression → NO fact (guard proves nothing about it)", () => {
+    const code = ["class Svc", "  def call", "    raw.is_a?(Result) ? other : Result.new(raw)", "  end", "end"].join(
+      "\n",
+    );
+    expect(factFor(code, "call")).toBeUndefined();
+  });
+
+  it("non-guard predicate condition (`ok?`) → NO fact", () => {
+    const code = ["class Svc", "  def call", "    raw.ok? ? raw : Result.new(raw)", "  end", "end"].join("\n");
+    expect(factFor(code, "call")).toBeUndefined();
+  });
+
+  it("false branch is opaque → NO fact", () => {
+    const code = ["class Svc", "  def call", "    raw.is_a?(Result) ? raw : build(raw)", "  end", "end"].join("\n");
+    expect(factFor(code, "call")).toBeUndefined();
+  });
+
+  it("guard argument is not a constant → NO fact", () => {
+    const code = ["class Svc", "  def call", "    raw.is_a?(klass) ? raw : Result.new(raw)", "  end", "end"].join("\n");
+    expect(factFor(code, "call")).toBeUndefined();
   });
 });

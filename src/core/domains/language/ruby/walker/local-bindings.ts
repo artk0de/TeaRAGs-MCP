@@ -3,7 +3,7 @@ import { resolveLocalBindingType, type LocalBinding } from "../../../../contract
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
 import { constInstanceType, isOrAssignment } from "./type-sources/ast-inference.js";
-import { collectYardParamTypes } from "./type-sources/yard.js";
+import { collectYardParamTypes, YARD_CONST } from "./type-sources/yard.js";
 
 export { collectYardParamTypes, collectYardReturnTypes, YARD_CONST } from "./type-sources/yard.js";
 export { RUBY_BLOCK_ITERATOR_METHODS } from "./type-sources/ast-inference.js";
@@ -248,8 +248,8 @@ export function collectRubyBodyReturnTypes(
 }
 
 /**
- * Collect `varName → calledMethodName` for assignments whose RHS is a method
- * call WITHOUT a directly-knowable type (`x = client.fetch`, `x = build_thing()`).
+ * Collect `varName → calledMethod` for assignments whose RHS is a method call
+ * WITHOUT a directly-knowable type (`x = client.fetch`, `x = build_thing()`).
  * Pairs with the run-global `functionReturnTypes` channel so the resolver binds
  * `x.member` to `<fetch's return type>#member` (the universal return-type channel;
  * Go fills it via `collectGoLocalBindingsForChunk`, bd 6g9c). Constructor /
@@ -258,6 +258,18 @@ export function collectRubyBodyReturnTypes(
  * a redundant weaker binding. The method name is the OUTERMOST call's method
  * (`x = a.b.c` → `c`), matching how `collectYardReturnTypes` keys return types.
  * Simple `Record` (last-write-wins), mirroring Go's `localCallBindings`.
+ *
+ * ── SCOPE-QUALIFIED FORM (bd tea-rags-mcp-j9xpf) ──
+ * When the outermost receiver is a CONSTANT the value keeps it —
+ * `result = Billing::X::Create.call(…)` records `"Billing::X::Create.call"`, not
+ * `"call"`. The constant IS the receiver's type, so the resolver can consult the
+ * SCOPED return-type channels (`structuredReturnTypes["Type#member"]`, the
+ * ancestor MRO) instead of the flat, project-wide map keyed by the bare name —
+ * and `call` is the most collided method name in a Rails codebase. The two forms
+ * are unambiguous: a Ruby method name never contains `.`. Anything else — a
+ * lowercase/ivar receiver, a chained tail, a leading-`::` constant — keeps the
+ * bare form, so the flat path is byte-identical for every binding that had no
+ * statically-known receiver type to begin with.
  */
 export function collectRubyLocalCallBindingsForChunk(
   root: AstNode,
@@ -276,7 +288,12 @@ export function collectRubyLocalCallBindingsForChunk(
     if (rhs.type !== "call" && rhs.type !== "method_call") return;
     if (constInstanceType(rhs, catalogue) !== null) return; // directly typed → localBindings owns it
     const method = rhs.childForFieldName("method");
-    if (method) out[lhs.text] = method.text; // last-write-wins
+    if (!method) return;
+    const receiver = rhs.childForFieldName("receiver");
+    const receiverText =
+      receiver === null ? "" : receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
+    // last-write-wins
+    out[lhs.text] = YARD_CONST.test(receiverText) ? `${receiverText}.${method.text}` : method.text;
   });
   return out;
 }

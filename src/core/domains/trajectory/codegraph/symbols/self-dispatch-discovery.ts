@@ -33,6 +33,7 @@ import type {
   HierarchyView,
   InheritanceKind,
 } from "../../../../contracts/types/codegraph.js";
+import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 
 /** One method's self-reach: the members it invokes on `self`, normalized to bare names. */
 export interface SelfDispatchMethod {
@@ -261,4 +262,70 @@ export function collectSelfInstantiatingClassMethods(methods: readonly SelfDispa
     if (isClassForm && method.selfHookCandidates.includes("new")) result.push(method.symbolId);
   }
   return result;
+}
+
+/**
+ * Split a method symbolId into its declaring type and member — `KindOfService.call`
+ * and `KindOfService#call` both yield `{ type: "KindOfService", member: "call" }`.
+ * Namespace `::` is never a method separator, so a symbolId carrying neither `#`
+ * nor `.` (a type-body chunk) yields `null`.
+ */
+function splitMethodSymbolId(symbolId: string): { type: string; member: string } | null {
+  const hash = symbolId.lastIndexOf("#");
+  if (hash > 0) return { type: symbolId.slice(0, hash), member: symbolId.slice(hash + 1) };
+  const dot = symbolId.lastIndexOf(".");
+  if (dot > 0) return { type: symbolId.slice(0, dot), member: symbolId.slice(dot + 1) };
+  return null;
+}
+
+/**
+ * Thread a shared service template's RETURN type onto every concrete entry
+ * (bd tea-rags-mcp-j9xpf). Spec:
+ * docs/superpowers/specs/2026-07-10-service-result-return-types-design.md.
+ *
+ * The type of `result` in `result = Billing::X::Create.call(...)` is statically
+ * known — but one hop away from where the walker can see it. The walker types the
+ * SHARED template (`KindOfService#call` → `KindOfService::Result`, from the body
+ * tail); every real call site names a CONCRETE entry constant. The self-dispatch
+ * discovery already enumerates exactly that relation — the entry members
+ * (`selfInstantiatingClassMethods` for the two-hop `self.call → new.call` service
+ * idiom, `selfDispatchTemplates` keys for the one-hop form) and, through the
+ * probe, the concrete types wired to each template across all four Ruby channels.
+ * This fold is the join: re-key the template's fact onto `<Entry>#<member>` for
+ * every such concrete type, in the `structuredReturnTypes` convention
+ * (`"<fqType>#<member>"`, instance form for both entry shapes) that
+ * `returnTypeOf` looks up.
+ *
+ * The facts are DERIVED, so they yield to everything declared:
+ *   - a coordinate already present in `structuredReturnTypes` (YARD, Rails
+ *     associations, the walker's own body-last-expr fact) is SKIPPED, never
+ *     overwritten — the caller merges the result on top of the same map it read;
+ *   - a template with no return fact of its own derives NOTHING (silence, not a
+ *     guess), so an untypeable tail stays untyped all the way down.
+ * When two templates reach the SAME concrete type (a class wired to two service
+ * bases) the FIRST entry wins, keeping the fold order-deterministic rather than
+ * last-write-wins.
+ *
+ * Pure over the injected `relatedConcreteTypes` — the provider passes the very
+ * `SelfDispatchProbe` closure the discovery folded over, so the memoized
+ * descendant walk is shared and no hierarchy traversal is repeated.
+ */
+export function deriveServiceEntryReturnTypes(
+  entrySymbolIds: readonly string[],
+  structuredReturnTypes: Readonly<Record<string, RubyTypeRef>>,
+  relatedConcreteTypes: (type: string) => readonly string[],
+): Record<string, RubyTypeRef> {
+  const derived: Record<string, RubyTypeRef> = {};
+  for (const symbolId of entrySymbolIds) {
+    const split = splitMethodSymbolId(symbolId);
+    if (split === null) continue;
+    const templateReturn = structuredReturnTypes[`${split.type}#${split.member}`];
+    if (templateReturn === undefined) continue;
+    for (const entryType of relatedConcreteTypes(split.type)) {
+      const key = `${entryType}#${split.member}`;
+      if (key in structuredReturnTypes || key in derived) continue; // declared wins; first derivation wins
+      derived[key] = templateReturn;
+    }
+  }
+  return derived;
 }

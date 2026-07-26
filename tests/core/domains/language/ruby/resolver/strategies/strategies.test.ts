@@ -1466,6 +1466,92 @@ describe("RubyReturnTypeBindingSymbolResolutionStrategy", () => {
       target: { targetRelPath: "app/clients/http_client.rb", targetSymbolId: null },
     });
   });
+
+  // -------------------------------------------------------------------------
+  // bd tea-rags-mcp-j9xpf — a SCOPE-QUALIFIED binding (`Svc.call`, recorded when
+  // the RHS receiver is a constant) asks the one return-type authority about the
+  // CLASS object, so the SCOPED channels answer first: the structured fact at
+  // `Type#member`, then the ancestor MRO. Only when they are silent does it fall
+  // through to the same flat map the bare form uses — the qualified path is a
+  // strict superset, never a narrowing.
+  // -------------------------------------------------------------------------
+  describe("scope-qualified binding (constant receiver)", () => {
+    const resultTable = () =>
+      tableWith([
+        "app/services/result.rb",
+        [
+          sym("ServiceResult", "ServiceResult", "app/services/result.rb", []),
+          sym("ServiceResult#successful?", "successful?", "app/services/result.rb", ["ServiceResult"]),
+        ],
+      ]);
+    const successfulCall: CallRef = { callText: "r.successful?", receiver: "r", member: "successful?", startLine: 1 };
+
+    it("resolves via the structured return fact at the ENTRY coordinate", () => {
+      const outcome = strat.attempt(
+        successfulCall,
+        ctx({
+          symbolTable: resultTable(),
+          localCallBindings: { r: "Billing::Create.call" },
+          structuredReturnTypes: { "Billing::Create#call": { form: "instance", name: "ServiceResult" } },
+        }),
+      );
+      expect(outcome).toEqual({
+        kind: "resolved",
+        target: { targetRelPath: "app/services/result.rb", targetSymbolId: "ServiceResult#successful?" },
+      });
+    });
+
+    it("resolves via the ancestor MRO when only the shared template carries the fact", () => {
+      const outcome = strat.attempt(
+        successfulCall,
+        ctx({
+          symbolTable: resultTable(),
+          localCallBindings: { r: "Billing::Create.call" },
+          classAncestors: { "Billing::Create": ["KindOfService"] },
+          structuredReturnTypes: { "KindOfService#call": { form: "instance", name: "ServiceResult" } },
+        }),
+      );
+      expect(outcome).toEqual({
+        kind: "resolved",
+        target: { targetRelPath: "app/services/result.rb", targetSymbolId: "ServiceResult#successful?" },
+      });
+    });
+
+    it("still falls through to the FLAT map when no scoped fact exists (superset, not a narrowing)", () => {
+      const outcome = strat.attempt(
+        successfulCall,
+        ctx({
+          symbolTable: resultTable(),
+          localCallBindings: { r: "Billing::Create.call" },
+          functionReturnTypes: { call: "ServiceResult" },
+        }),
+      );
+      expect(outcome).toEqual({
+        kind: "resolved",
+        target: { targetRelPath: "app/services/result.rb", targetSymbolId: "ServiceResult#successful?" },
+      });
+    });
+
+    it("CONTINUEs when no channel knows the entry's return type", () => {
+      const outcome = strat.attempt(
+        successfulCall,
+        ctx({ symbolTable: resultTable(), localCallBindings: { r: "Billing::Create.call" } }),
+      );
+      expect(outcome.kind).toBe("continue");
+    });
+
+    it("CONTINUEs when the return type resolves to no project file (gem/stdlib — additive, never DROP)", () => {
+      const outcome = strat.attempt(
+        successfulCall,
+        ctx({
+          symbolTable: tableWith(),
+          localCallBindings: { r: "Billing::Create.call" },
+          structuredReturnTypes: { "Billing::Create#call": { form: "instance", name: "Dry::Monads::Result" } },
+        }),
+      );
+      expect(outcome.kind).toBe("continue");
+    });
+  });
 });
 
 describe("receiverIsIndexAccess (mktkk increment A)", () => {

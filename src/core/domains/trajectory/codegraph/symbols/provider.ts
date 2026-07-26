@@ -106,6 +106,7 @@ import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./recei
 import {
   buildSelfDispatchProbe,
   collectSelfInstantiatingClassMethods,
+  deriveServiceEntryReturnTypes,
   discoverSelfDispatchTemplates,
   extractSelfDispatchMethods,
   foldSelfDispatchTemplates,
@@ -1039,13 +1040,28 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // `CallContext.selfDispatchTemplates` (entry-anchored narrowing).
         if (this.runSelfDispatchMethods.length > 0) {
           const { symbolTable: barrierSymbolTable } = await this.getStore(collectionName);
+          const selfDispatchProbe = buildSelfDispatchProbe(barrierSymbolTable, this.hierarchyView);
           this.runSelfDispatchTemplates = foldSelfDispatchTemplates(
-            discoverSelfDispatchTemplates(
-              this.runSelfDispatchMethods,
-              buildSelfDispatchProbe(barrierSymbolTable, this.hierarchyView),
-            ),
+            discoverSelfDispatchTemplates(this.runSelfDispatchMethods, selfDispatchProbe),
           );
           this.runSelfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(this.runSelfDispatchMethods);
+          // Service-entry RETURN threading (bd tea-rags-mcp-j9xpf). The walker
+          // types the SHARED template's return (`KindOfService#call` →
+          // `KindOfService::Result`); call sites name a CONCRETE entry constant.
+          // Both entry channels just discovered enumerate that relation, so the
+          // join belongs HERE — the only point where the walker's run-global
+          // return facts and the wiring hierarchy are both complete. Merged
+          // DERIVED-last into the same map it read: the helper skips coordinates
+          // already carrying a declared fact, so YARD / associations /
+          // body-last-expr keep precedence by construction.
+          const entryReturnTypes = deriveServiceEntryReturnTypes(
+            [...this.runSelfInstantiatingClassMethods, ...Object.keys(this.runSelfDispatchTemplates)],
+            this.runStructuredReturnTypes,
+            selfDispatchProbe.relatedConcreteTypes,
+          );
+          for (const [key, ref] of Object.entries(entryReturnTypes)) {
+            this.runStructuredReturnTypes[key] = ref;
+          }
         }
         try {
           if (spillWriteCount > 0) {
