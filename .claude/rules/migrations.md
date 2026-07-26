@@ -4,8 +4,8 @@ description:
   sparse vector migrations. Triggers when changing payload structure, adding
   indexes, modifying persisted data format, or working with migration code.
 paths:
-  - "src/core/infra/migration/**/*.ts"
-  - "src/core/domains/ingest/factory.ts"
+  - "src/core/domains/maintenance/migration/**/*.ts"
+  - "src/core/api/internal/ingest-dependencies.ts"
   - "src/core/domains/ingest/pipeline/payload/**/*.ts"
   - "src/core/contracts/types/payload.ts"
   - "src/core/contracts/types/qdrant.ts"
@@ -46,7 +46,8 @@ collections/snapshots already contain:
 
 ## Migration Interface
 
-Every migration implements `Migration` from `infra/migration/types.ts`:
+Every migration implements `Migration` from
+`domains/maintenance/migration/types.ts`:
 
 ```typescript
 interface Migration {
@@ -167,16 +168,19 @@ if (!this.enableHybrid) {
 
 Migrations hardcoded in runner constructors — no auto-discovery:
 
-- Schema: `src/core/infra/migration/schema-migrator.ts`
-- Snapshot: `src/core/infra/migration/snapshot-migrator.ts`
-- Sparse: `src/core/infra/migration/sparse-migrator.ts`
+- Schema: `src/core/domains/maintenance/migration/schema-migrator.ts`
+- Snapshot: `src/core/domains/maintenance/migration/snapshot-migrator.ts`
+- Sparse: `src/core/domains/maintenance/migration/sparse-migrator.ts`
 
-Runner instantiation in `src/core/domains/ingest/factory.ts` →
-`createIngestDependencies()`.
+Runner instantiation in `src/core/api/internal/ingest-dependencies.ts` →
+`createIngestDependencies()`. The pipelines live in the maintenance domain, so
+composition happens at the api layer — ingest triggers them through
+`MigratorPort` (`contracts/types/migration.ts`).
 
 ## Testing
 
-Test file: `tests/core/infra/migration/<pipeline>-migrator.test.ts`
+Test file:
+`tests/core/domains/maintenance/migration/<pipeline>-migrator.test.ts`
 
 Required scenarios:
 
@@ -201,7 +205,7 @@ pre-bump code.
    build → server runs old code, new migration class not even registered in
    `SchemaMigrator`.
 3. Verify new migration class in compiled output:
-   `grep -l <MigrationClassName> build/core/infra/migration/schema_migrations/`.
+   `grep -l <MigrationClassName> build/core/domains/maintenance/migration/schema_migrations/`.
 
 ### Live verification protocol
 

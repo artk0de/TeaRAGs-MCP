@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import { saveRegistryFile } from "../../../../../src/core/domains/maintenance/registry/registry-file.js";
-import type { CollectionEntry } from "../../../../../src/core/domains/maintenance/registry/types.js";
+import type { CollectionEntry } from "../../../../../src/core/contracts/types/registry.js";
 
 function makeEntry(over: Partial<CollectionEntry> = {}): Omit<CollectionEntry, "name"> {
   return {

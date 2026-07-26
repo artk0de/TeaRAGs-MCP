@@ -6,7 +6,7 @@ import type {
   ProjectInfo,
   RecordEntryInput,
   RegistryFileV1,
-} from "../../../../../src/core/domains/maintenance/registry/types.js";
+} from "../../../../../src/core/contracts/types/registry.js";
 
 describe("registry types", () => {
   it("CollectionEntry has every required field", () => {

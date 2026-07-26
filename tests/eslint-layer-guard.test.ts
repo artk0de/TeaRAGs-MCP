@@ -102,10 +102,7 @@ describe("eslint layer guard — foundation zones", () => {
     expect(reportFor(FIXTURES.infraToContractsType)).not.toContain("infra is the lowest layer");
   });
 
-  // Unskipped in T15 (wave 5): the infra deny patterns stay commented out until
-  // the last infra -> {domains, adapters, api} edge is gone, so enabling them
-  // now would turn the whole tree red mid-refactor.
-  it.skip("rejects a relative infra -> domains import", () => {
+  it("rejects a relative infra -> domains import", () => {
     expect(reportFor(FIXTURES.infraToDomains)).toContain("infra is the lowest layer");
   });
 });

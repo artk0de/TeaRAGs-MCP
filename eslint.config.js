@@ -458,12 +458,7 @@ export default tseslint.config(
               // (its own zone enforces that), so no cycle can form. See
               // docs/superpowers/specs/2026-07-26-infra-tidy-design.md.
               //
-              // TODO(infra-tidy T15): uncomment once the last
-              // infra -> {domains, adapters, api} edge is gone. Enabling it now
-              // would turn the tree red mid-refactor; the dependency-guard spec
-              // set the rollout order — fix every violation first, enable last.
-              // group: ["**/domains/**", "**/adapters/**", "**/api/**", "**/bootstrap/**", "**/mcp/**", "**/cli/**"],
-              group: ["**/bootstrap/**", "**/mcp/**", "**/cli/**"],
+              group: ["**/domains/**", "**/adapters/**", "**/api/**", "**/bootstrap/**", "**/mcp/**", "**/cli/**"],
               message: "infra is the lowest layer — it may only import type from contracts.",
             },
           ],

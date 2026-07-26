@@ -16,7 +16,7 @@ import {
   mergeRegistryEntries,
   saveRegistryFile,
 } from "../../../../../src/core/domains/maintenance/registry/registry-file.js";
-import type { CollectionEntry, RegistryFileV1 } from "../../../../../src/core/domains/maintenance/registry/types.js";
+import type { CollectionEntry, RegistryFileV1 } from "../../../../../src/core/contracts/types/registry.js";
 
 describe("registry-file", () => {
   let dir: string;
