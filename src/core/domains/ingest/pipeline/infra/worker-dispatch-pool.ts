@@ -17,7 +17,7 @@
  */
 import { PipelineNotStartedError, WorkerTimeoutError } from "../../errors.js";
 import { defaultWorkerDispatchTimeoutMs } from "./pool-defaults.js";
-import { isDebug } from "./runtime.js";
+import { isDebug } from "../../../../infra/runtime.js";
 import type { WorkerHandle, WorkerTransport } from "./worker-transport.js";
 
 interface Pending<Res> {

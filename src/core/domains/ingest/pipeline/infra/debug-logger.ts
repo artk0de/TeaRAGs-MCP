@@ -13,7 +13,7 @@
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { isDebug } from "./runtime.js";
+import { isDebug } from "../../../../infra/runtime.js";
 
 /** Module-level state populated via initDebugLogger() from bootstrap */
 let _logsDir: string | null = null;

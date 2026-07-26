@@ -9,7 +9,7 @@
 import { EmbeddingModelMismatchError } from "../adapters/embeddings/errors.js";
 import type { QdrantManager } from "../adapters/qdrant/client.js";
 import { INDEXING_METADATA_ID } from "../domains/ingest/constants.js";
-import { isDebug } from "../domains/ingest/pipeline/infra/runtime.js";
+import { isDebug } from "./runtime.js";
 
 export class EmbeddingModelGuard {
   private readonly cache = new Map<string, string | null>();

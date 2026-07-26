@@ -9,7 +9,7 @@ import {
   RECOVERY_FILE_BATCH_SIZE,
 } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/recovery.js";
 import type { EnrichmentMarkerMap } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
-import { setDebug } from "../../../../../../src/core/domains/ingest/pipeline/infra/runtime.js";
+import { setDebug } from "../../../../../../src/core/infra/runtime.js";
 
 describe("EnrichmentRecovery", () => {
   let mockQdrant: {

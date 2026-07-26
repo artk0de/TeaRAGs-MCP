@@ -40,7 +40,7 @@ vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/parsers.js", () => 
 }));
 
 // Mock runtime
-vi.mock("../../../../src/core/domains/ingest/pipeline/infra/runtime.js", () => ({
+vi.mock("../../../../src/core/infra/runtime.js", () => ({
   isDebug: vi.fn(() => true),
 }));
 

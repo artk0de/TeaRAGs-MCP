@@ -21,7 +21,7 @@ import { classifyEmbeddingQuarantinable, type QuarantineStore } from "../sync/in
 import { AdaptiveBatchSizer } from "./adaptive-batch-sizer.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { pipelineLog } from "./infra/debug-logger.js";
-import { isDebug } from "./infra/runtime.js";
+import { isDebug } from "../../../infra/runtime.js";
 import { WorkerPool } from "./infra/worker-pool.js";
 import type {
   Batch,

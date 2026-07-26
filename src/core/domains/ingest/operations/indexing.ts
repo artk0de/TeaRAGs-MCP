@@ -19,7 +19,7 @@ import { BaseIndexingPipeline, type ProcessingContext } from "../pipeline/base.j
 import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
-import { isDebug } from "../pipeline/infra/runtime.js";
+import { isDebug } from "../../../infra/runtime.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import { QuarantineStore } from "../sync/index.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";

@@ -18,7 +18,7 @@ import {
 import { processRelativeFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
-import { isDebug } from "../pipeline/infra/runtime.js";
+import { isDebug } from "../../../infra/runtime.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import type { DeletionOutcome } from "../sync/deletion/outcome.js";
 import { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";

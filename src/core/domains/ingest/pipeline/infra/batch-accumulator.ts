@@ -11,7 +11,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { BackpressureCallback, Batch, BatchAccumulatorConfig, OperationType, WorkItem } from "../types.js";
-import { isDebug } from "./runtime.js";
+import { isDebug } from "../../../../infra/runtime.js";
 
 export class BatchAccumulator<T extends WorkItem> {
   private readonly config: BatchAccumulatorConfig;

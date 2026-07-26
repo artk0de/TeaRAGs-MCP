@@ -21,7 +21,7 @@ import { materializeTree } from "../../../../infra/materialize.js";
 import { isStaticMethodNode } from "../../../../infra/symbolid/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
 import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../errors.js";
-import { isDebug } from "../infra/runtime.js";
+import { isDebug } from "../../../../infra/runtime.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import type { LanguageConfig } from "./config.js";

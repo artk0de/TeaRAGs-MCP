@@ -32,7 +32,7 @@ import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-exe
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
-import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
+import { setDebug } from "../core/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
