@@ -5,9 +5,9 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { CollectionSignalStats } from "../../../src/core/contracts/types/trajectory.js";
+import type { CollectionSignalStats } from "../../../../src/core/contracts/types/trajectory.js";
 import { SchemaDriftMonitor } from "../../../../src/core/domains/maintenance/schema-drift-monitor.js";
-import { StatsCache } from "../../../src/core/infra/stats-cache.js";
+import { StatsCache } from "../../../../src/core/infra/stats-cache.js";
 
 function makeTmpDir(): string {
   const suffix = randomBytes(6).toString("hex");
@@ -123,7 +123,7 @@ describe("SchemaDriftMonitor", () => {
       const cachedKeys = ["git.file.commitCount"];
       const currentKeys = ["git.file.commitCount", "git.file.ageDays"];
       // Save under the collection name that resolveCollectionName would produce
-      const { resolveCollectionName, validatePath } = await import("../../../src/core/infra/collection-name.js");
+      const { resolveCollectionName, validatePath } = await import("../../../../src/core/infra/collection-name.js");
       const absPath = await validatePath("/tmp/test-project");
       const collName = resolveCollectionName(absPath);
       cache.save(collName, SAMPLE_STATS, cachedKeys);
@@ -141,7 +141,7 @@ describe("SchemaDriftMonitor", () => {
     });
 
     it("returns null for already-checked collection via async path", async () => {
-      const { resolveCollectionName, validatePath } = await import("../../../src/core/infra/collection-name.js");
+      const { resolveCollectionName, validatePath } = await import("../../../../src/core/infra/collection-name.js");
       const absPath = await validatePath("/tmp/test-project");
       const collName = resolveCollectionName(absPath);
       const keys = ["git.file.commitCount"];
@@ -159,7 +159,7 @@ describe("SchemaDriftMonitor", () => {
     });
 
     it("returns null when async drift check finds no drift (keys match)", async () => {
-      const { resolveCollectionName, validatePath } = await import("../../../src/core/infra/collection-name.js");
+      const { resolveCollectionName, validatePath } = await import("../../../../src/core/infra/collection-name.js");
       const absPath = await validatePath("/tmp/test-project-nodrift");
       const collName = resolveCollectionName(absPath);
       const keys = ["git.file.commitCount", "git.file.ageDays"];
