@@ -18,6 +18,7 @@ import { SQL_012_CG_SYMBOLS_ARITY_VISIBILITY } from "./012-cg-symbols-arity-visi
 import { SQL_013_CG_AMBIGUOUS_FANOUT } from "./013-cg-ambiguous-fanout.js";
 import { SQL_014_CG_METHOD_EDGES_SOURCE_PATH_INDEX } from "./014-cg-method-edges-source-path-index.js";
 import { SQL_015_CG_RUN_STATS_CORE_AMBIGUOUS } from "./015-cg-run-stats-core-ambiguous.js";
+import { SQL_016_CG_SYMBOLS_ABSTRACT_STUB } from "./016-cg-symbols-abstract-stub.js";
 
 export interface DatabaseMigration {
   filename: string;
@@ -40,4 +41,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "013-cg-ambiguous-fanout.sql", sql: SQL_013_CG_AMBIGUOUS_FANOUT },
   { filename: "014-cg-method-edges-source-path-index.sql", sql: SQL_014_CG_METHOD_EDGES_SOURCE_PATH_INDEX },
   { filename: "015-cg-run-stats-core-ambiguous.sql", sql: SQL_015_CG_RUN_STATS_CORE_AMBIGUOUS },
+  { filename: "016-cg-symbols-abstract-stub.sql", sql: SQL_016_CG_SYMBOLS_ABSTRACT_STUB },
 ];

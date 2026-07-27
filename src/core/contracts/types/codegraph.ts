@@ -462,6 +462,69 @@ export interface FileExtraction {
    * Undefined for languages whose walkers don't collect instantiation sites.
    */
   instantiatedTypes?: string[];
+  /**
+   * Argument types observed at call sites whose CALLEE IS SYNTACTICALLY KNOWN
+   * — no resolution required (bd tea-rags-mcp-bvalc). Populated by the Ruby
+   * walker for `Const.new(...)` and constant-receiver factory verbs; the
+   * pass-1→pass-2 barrier folds them per callee coordinate into parameter
+   * types (see `foldKnownTargetParamTypes`).
+   *
+   * These sites are the increment that dodges the interprocedural fixpoint:
+   * the target of `Firm::Service.new(x)` is `Firm::Service#initialize`
+   * regardless of what any other call site resolves to, so the fold can run at
+   * the barrier — before ANY call is resolved.
+   *
+   * Plain array (NOT Map) for NDJSON-spill round-trip. Undefined for languages
+   * whose walkers don't collect call-site argument types.
+   */
+  knownTargetCallArgs?: KnownTargetCallArgs[];
+  /**
+   * Per-class map of `@ivar` fields assigned VERBATIM from a method parameter:
+   * `fqClassName → "@ivar" → { method, param }` (bd tea-rags-mcp-bvalc). The
+   * unresolved half of an ivar's type — the walker knows WHICH parameter the
+   * field copies but not that parameter's type, which only the barrier's
+   * interprocedural fold can supply.
+   *
+   * Populated by the Ruby walker for INSTANCE methods only (a `@x` inside
+   * `def self.m` is a class-level ivar — a different storage slot). An `@ivar`
+   * fed by two different (method, param) coordinates in one class is DROPPED,
+   * not last-write-wins: two origins mean two candidate types and Increment 1
+   * never picks between them.
+   *
+   * Plain Record (NOT Map) for NDJSON-spill round-trip.
+   */
+  classFieldParamLinks?: Record<string, Record<string, ClassFieldParamLink>>;
+}
+
+/**
+ * Argument types at ONE call site whose callee is known from syntax alone
+ * (bd tea-rags-mcp-bvalc).
+ */
+export interface KnownTargetCallArgs {
+  /**
+   * Callee coordinate candidates in the symbolId convention
+   * (`"Fq::Type#initialize"` / `"Fq::Type.build"`), ordered INNERMOST LEXICAL
+   * SCOPE FIRST — Ruby's own constant-lookup order. The barrier picks the first
+   * candidate that is a real method definition; a call site whose constant
+   * resolves to nothing in-project contributes nothing.
+   */
+  readonly targets: readonly string[];
+  /**
+   * Per-POSITION argument type. `null` where the argument shape is not
+   * conservatively typeable (a literal, a bare method result, an untyped
+   * local). A `null` never votes and never vetoes — it is simply absent
+   * evidence. The array is truncated at the first argument that breaks
+   * positional correspondence (splat / double-splat / keyword pair).
+   */
+  readonly argTypes: readonly (RubyTypeRef | null)[];
+}
+
+/** The `(method, parameter)` coordinate an `@ivar` copies its value from. */
+export interface ClassFieldParamLink {
+  /** Short name of the enclosing instance method, e.g. `"initialize"`. */
+  readonly method: string;
+  /** Parameter name the field is assigned from, e.g. `"firm"`. */
+  readonly param: string;
 }
 
 export interface ImportRef {
@@ -611,6 +674,20 @@ export interface ChunkExtraction {
    * don't compute arity.
    */
   arity?: AritySignature;
+  /**
+   * Positional parameter NAMES of the method definition this chunk represents,
+   * in declaration order (bd tea-rags-mcp-bvalc). Only the LEADING run of
+   * plain required positionals is recorded — the list is truncated at the first
+   * optional / splat / keyword / block parameter, past which a call site's
+   * argument index no longer corresponds to a fixed parameter. Empty run ⇒
+   * undefined.
+   *
+   * Kept beside {@link AritySignature} rather than inside it: arity is
+   * persisted on `SymbolDefinition` and consumed by the arity narrower, while
+   * names exist only to map a call site's argument POSITION to a parameter
+   * NAME at the pass-1→pass-2 barrier.
+   */
+  paramNames?: string[];
   /**
    * Visibility of the method definition this chunk represents (bd xlnub).
    * Populated by the Ruby walker using the class-body visibility state machine
@@ -795,10 +872,12 @@ export interface SymbolDefinition {
    * extraction by the codegraph provider so the self-dispatch probe can answer
    * "concretely defines" rather than merely "a body exists" (bd tea-rags-mcp-bcdfe).
    *
-   * Only ever `true`; absent means not-a-stub. NOT persisted in `cg_symbols` — a
-   * def hydrated from disk (an unchanged file on an incremental run) therefore
-   * reads as non-stub, which degrades discovery to the pre-flag behaviour
-   * (under-coverage, never a wrong target). Persisting it is a follow-up.
+   * Only ever `true`; absent means not-a-stub. PERSISTED in `cg_symbols`
+   * (`is_abstract_stub`, migration 016, bd tea-rags-mcp-eikry), so a def
+   * hydrated from disk — an unchanged file on an incremental run — carries the
+   * same verdict as a freshly walked one. A row written before that migration
+   * has the column NULL and hydrates as non-stub, the pre-flag behaviour
+   * (under-coverage, never a wrong target), until its file is next walked.
    */
   isAbstractStub?: boolean;
   /**

@@ -171,11 +171,12 @@ export function extractSelfDispatchMethods(chunks: readonly ChunkExtraction[]): 
  *     rule applies to the related types, so a subtype whose override is itself a
  *     stub does not count as a concrete definer.
  *
- *     One caveat, by design: the flag lives on the in-memory symbol table and is
- *     NOT persisted in `cg_symbols`, so a def hydrated from disk (an unchanged
- *     file during an incremental run) reads as non-stub. That degrades discovery
- *     to the pre-flag behaviour for those files — under-coverage, never a wrong
- *     target.
+ *     The flag is persisted in `cg_symbols` (`is_abstract_stub`, migration 016,
+ *     bd tea-rags-mcp-eikry), so a def hydrated from disk — an unchanged file
+ *     during an incremental run — reaches this probe with the same verdict as a
+ *     freshly walked one. Rows written before that migration have the column
+ *     NULL and read as non-stub until their file is next walked: the pre-flag
+ *     behaviour for those files, under-coverage and never a wrong target.
  *   - `relatedConcreteTypes(type)` — the transitive descendants across all four
  *     wiring channels (`super`/`include`/`extend`/`prepend`) from the hierarchy
  *     view. Empty when no hierarchy is present.
