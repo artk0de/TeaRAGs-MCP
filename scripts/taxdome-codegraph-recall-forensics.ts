@@ -33,14 +33,28 @@ import {
   DefaultSymbolIdComposer,
 } from "../src/core/domains/language/index.js";
 import { rbNameOf } from "../src/core/domains/language/ruby/walker/index.js";
+import { readScopeResolution } from "../src/core/domains/language/ruby/walker/ast-utils.js";
+import { constantLookupCandidates } from "../src/core/domains/language/ruby/walker/param-arg-types.js";
+import { constInstanceType } from "../src/core/domains/language/ruby/walker/type-sources/ast-inference.js";
+import {
+  boundCallReturnType,
+  ivarTypeName,
+  returnTypeOf,
+} from "../src/core/domains/language/ruby/resolver/type-propagation.js";
+import { catalogueForGemfile } from "../src/core/domains/language/ruby/gemfile.js";
+import type { RubyDslCatalogue } from "../src/core/domains/language/ruby/dsl/index.js";
 import type { AstNode } from "../src/core/contracts/types/ast.js";
+import { resolveLocalBinding } from "../src/core/contracts/types/codegraph.js";
 import type {
   CallContext,
   CallRef,
   ChunkExtraction,
+  ClassFieldParamLink,
+  KnownTargetCallArgs,
   DispatchFanoutOutcome,
   FileExtraction,
   InheritanceEdgeRow,
+  LocalBinding,
   SymbolDefinition,
   DispatchTableDef,
   RubyTypeRef,
@@ -71,6 +85,13 @@ import {
   collectSchemaColumnModels,
   synthesizeSchemaColumnDefs,
 } from "../src/core/domains/trajectory/codegraph/symbols/schema-column-synthesis.js";
+import {
+  deriveClassFieldTypesFromParams,
+  foldKnownTargetParamTypes,
+  mergeDerivedClassFieldTypes,
+  seedParamLocalBindings,
+  type KnownTargetParamTypes,
+} from "../src/core/domains/trajectory/codegraph/symbols/call-arg-param-types.js";
 import { MapHierarchyView } from "../src/core/infra/graph/hierarchy-view.js";
 import { materializeTree } from "../src/core/infra/materialize.js";
 import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
@@ -84,6 +105,7 @@ const OUT_DIR = "/Users/artk0re/.claude/jobs/24baee70/tmp";
 const OUT_MISSES = join(OUT_DIR, "taxdome-misses.json");
 const OUT_ORACLE = join(OUT_DIR, "g0-oracle-report.json");
 const OUT_DUCK = join(OUT_DIR, "duck-oracle-report.json");
+const OUT_FIXPOINT = join(OUT_DIR, "fixpoint-oracle-report.json");
 const RUBY_EXT = ".rb";
 
 // ---------------------------------------------------------------------------
@@ -109,6 +131,26 @@ const ORACLE_ENABLED = process.env.CODEGRAPH_ORACLE === "1";
 // materialized AST + symbol table + miss set the harness already builds.
 // ---------------------------------------------------------------------------
 const DUCK_ENABLED = process.env.CODEGRAPH_DUCK_ORACLE === "1";
+
+// ---------------------------------------------------------------------------
+// INTERPROCEDURAL FIXPOINT ORACLE (bd tea-rags-mcp-a2hrq, 2026-07-27). Third
+// oracle under the SAME additive, env-gated contract as the two above: with
+// CODEGRAPH_FIXPOINT_ORACLE unset nothing extra is scanned, iterated or
+// reported, so the A/B recall metrics are byte-identical. Measures ONE number:
+// the ADDRESSABLE CEILING of a worklist fixpoint over the type environment
+// (params ← call-site args ← locals/ivars ← return types ← params). Everything
+// here is a read-only SIMULATION over the same materialized AST + extractions +
+// symbol table the harness already builds; the propagation rules are the REAL
+// exported ones (`returnTypeOf` / `ivarTypeName` / `boundCallReturnType` /
+// `resolveLocalBinding`) and the agreement fold is the REAL `bvalc` fold, so the
+// simulation cannot drift from production semantics.
+// ---------------------------------------------------------------------------
+const FIXPOINT_ENABLED = process.env.CODEGRAPH_FIXPOINT_ORACLE === "1";
+/** Hard cap on worklist waves; a run that hits it is reported as NON-converged. */
+const FIXPOINT_MAX_WAVES = 20;
+/** `bounded` drops the wide "any resolvable target" scope back to bvalc-shaped
+ *  const-receiver + bare-call sites (runtime fallback; reported either way). */
+const FIXPOINT_WIDE = process.env.CODEGRAPH_FIXPOINT_SCOPE !== "bounded";
 
 // ---------------------------------------------------------------------------
 // verbatim helpers copied from provider.ts (lastSegment) — pure, no logic reuse
@@ -228,6 +270,17 @@ const SELF_DISPATCH_ENABLED = process.env.CODEGRAPH_SELF_DISPATCH === "1";
 const runSelfDispatchMethods: SelfDispatchMethod[] = [];
 let runSelfDispatchTemplates: Record<string, string> = {};
 let runSelfInstantiatingClassMethods: string[] = [];
+// Interprocedural param typing, Increment 1 (bd tea-rags-mcp-bvalc). Env-gated
+// A/B like self-dispatch: pass-1 accumulation and the barrier fold ALWAYS run
+// (so the derived counts are reported), but the products only reach ctx when
+// CODEGRAPH_CTOR_PARAM_TYPES !== "0" — "0" reproduces the pre-bvalc baseline.
+const CTOR_PARAM_TYPES_ENABLED = process.env.CODEGRAPH_CTOR_PARAM_TYPES !== "0";
+const runKnownTargetCallArgs = new Map<string, KnownTargetCallArgs>();
+const runParamNames: Record<string, readonly string[]> = {};
+const runClassFieldParamLinks: Record<string, Record<string, ClassFieldParamLink>> = {};
+const runTypedClassFields = new Set<string>();
+let runParamTypes: KnownTargetParamTypes = {};
+let runDerivedClassFieldTypes: Record<string, Record<string, string>> = {};
 
 // Macro-provenance: union of short-names declared by REAL `method` /
 // `singleton_method` AST nodes across all ruby files. A miss member NOT in this
@@ -289,6 +342,14 @@ function ingestPass1(extraction: FileExtraction, materializedRoot: AstNode): voi
   if (extraction.callbackParams)
     for (const [symbolId, indices] of Object.entries(extraction.callbackParams)) runCallbackParams[symbolId] = indices;
   runSelfDispatchMethods.push(...extractSelfDispatchMethods(extraction.chunks));
+  // bd tea-rags-mcp-bvalc — interprocedural param typing accumulators.
+  for (const record of extraction.knownTargetCallArgs ?? [])
+    runKnownTargetCallArgs.set(`${record.targets.join("|")} ${JSON.stringify(record.argTypes)}`, record);
+  for (const c of extraction.chunks) if (c.paramNames !== undefined) runParamNames[c.symbolId] = c.paramNames;
+  for (const [fqClass, fields] of Object.entries(extraction.classFieldParamLinks ?? {}))
+    runClassFieldParamLinks[fqClass] = { ...runClassFieldParamLinks[fqClass], ...fields };
+  for (const [fqClass, fields] of Object.entries(extraction.classFieldTypes ?? {}))
+    for (const ivar of Object.keys(fields)) runTypedClassFields.add(`${fqClass}|${ivar}`);
   collectRealDefNames(materializedRoot);
 }
 
@@ -372,10 +433,19 @@ function resolvePass2(extraction: FileExtraction): void {
   const structuredReturnTypesForResolver =
     Object.keys(runStructuredReturnTypes).length > 0 ? runStructuredReturnTypes : extraction.structuredReturnTypes;
 
+  // bd tea-rags-mcp-bvalc — derived ivar types ride the file's own channel.
+  const classFieldTypesForResolver = CTOR_PARAM_TYPES_ENABLED
+    ? mergeDerivedClassFieldTypes(extraction.classFieldTypes, runDerivedClassFieldTypes)
+    : extraction.classFieldTypes;
+
   for (const chunk of extraction.chunks) {
+    // bd tea-rags-mcp-bvalc — derived param types seeded at the def line.
+    const localBindings = CTOR_PARAM_TYPES_ENABLED
+      ? seedParamLocalBindings(chunk.localBindings, runParamTypes[chunk.symbolId], chunk.startLine)
+      : chunk.localBindings;
     for (const call of chunk.calls) {
       callsAttempted += 1;
-      const receiverKind = classifyReceiverKind(call, chunk.localBindings);
+      const receiverKind = classifyReceiverKind(call, localBindings);
       kindTally[receiverKind].attempted += 1;
       if (DUCK_ENABLED) noteDuckCall(call, receiverKind, extraction.relPath, chunk);
       const ctx: CallContext = {
@@ -384,9 +454,9 @@ function resolvePass2(extraction: FileExtraction): void {
         callerSymbolId: chunk.symbolId,
         imports: extraction.imports,
         symbolTable,
-        classFieldTypes: extraction.classFieldTypes,
+        classFieldTypes: classFieldTypesForResolver,
         associationTypes: extraction.associationTypes,
-        localBindings: chunk.localBindings,
+        localBindings,
         localCallBindings: chunk.localCallBindings,
         functionReturnTypes: returnTypesForResolver,
         ivarTypes: ivarTypesForResolver,
@@ -1873,10 +1943,1203 @@ function runDuckOracle(): void {
   L("");
 }
 
+// ===========================================================================
+// INTERPROCEDURAL FIXPOINT ORACLE (CODEGRAPH_FIXPOINT_ORACLE=1)
+//
+// bvalc (Increment 1) typed parameters from call sites whose callee is known
+// from SYNTAX ALONE, which dodges the fixpoint but is input-starved: 88% of the
+// arguments at syntactically-known callees are themselves untyped. That is the
+// signature of a propagation CYCLE. This oracle simulates the cycle's fixpoint
+// read-only and measures its addressable ceiling:
+//
+//   A scan       — argument/receiver EXPRESSION shapes per call site + method
+//                  body tails (one extra DFS over the already-materialized AST)
+//   B waves      — ARG (re-evaluate hints under the current environment) →
+//                  BIND (real bvalc fold binds params; real ivar derivation;
+//                  params reach locals at the def line) → RETURN (body tails)
+//   C convergence— repeat until the environment stops changing; hard cap 20
+//                  waves + state-hash cycle guard
+//   D scoring    — re-run the REAL resolver over every extraction with the
+//                  converged environment and diff the miss multiset against the
+//                  baseline pass. ADDRESSABLE = a baseline miss that resolves.
+//   E residual   — the misses that survive, classified by WHY they are not
+//                  typeable, so the ceiling is stated with its complement.
+// ===========================================================================
+
+/** Bare / `::`-qualified constant text. */
+const FX_CONST_RE = /^(?:::)?[A-Z]\w*(?:::[A-Z]\w*)*$/;
+
+/**
+ * The conservatively-typeable SHAPES of an expression. Deliberately a shape,
+ * not a type: the whole point of the fixpoint is that the same expression is
+ * re-evaluated every wave against a bigger environment, so the shape must
+ * survive to wave N while the type is recomputed.
+ */
+type FxExpr =
+  | { readonly k: "const"; readonly name: string }
+  | { readonly k: "instConst"; readonly name: string }
+  | { readonly k: "ident"; readonly name: string }
+  | { readonly k: "ivar"; readonly name: string }
+  | { readonly k: "call"; readonly recv: FxExpr | null; readonly member: string }
+  | { readonly k: "opaque" };
+
+const FX_OPAQUE: FxExpr = { k: "opaque" };
+
+/** One call site whose arguments could ever carry a type hint. */
+interface FxSite {
+  relPath: string;
+  /** Owning chunk symbolId — the local-binding / param environment of the site. */
+  chunkId: string;
+  /** Owning chunk lexical scope: constant-lookup base AND enclosing-class key. */
+  scope: readonly string[];
+  line: number;
+  /** `null` ⇒ bare (implicit-self) call. */
+  recv: FxExpr | null;
+  member: string;
+  args: FxExpr[];
+  /**
+   * Keyword arguments by NAME. bvalc's substrate is positional — argument INDEX
+   * → parameter NAME — so a `Service.new(firm: firm)` contributes nothing to it.
+   * Ruby service objects are overwhelmingly kwarg-shaped, so the oracle measures
+   * BOTH: the positional-only fixpoint (what Increment 1's substrate can carry
+   * today) and the kwarg-extended one (what Increment 2 would have to build).
+   */
+  kwargs: { name: string; expr: FxExpr }[];
+  /** Positional argument list was closed early by a keyword pair. */
+  kwargTruncated: boolean;
+  /** Memoized constant-receiver candidate chain (scope walk is wave-invariant). */
+  constTargets?: string[];
+}
+
+/** A method's tail expression — Ruby's implicit return value. */
+interface FxTail {
+  methodId: string;
+  relPath: string;
+  scope: readonly string[];
+  line: number;
+  expr: FxExpr;
+}
+
+/** Per-chunk slices of the walker environment the propagation rules read. */
+interface FxChunkEnv {
+  relPath: string;
+  scope: readonly string[];
+  localBindings?: Record<string, LocalBinding[]>;
+  localCallBindings?: Record<string, string>;
+}
+
+const fxSites: FxSite[] = [];
+const fxTails: FxTail[] = [];
+const fxChunks = new Map<string, FxChunkEnv>();
+/** Declared kwarg names per method chunk — the name-based existence gate. */
+const runKwargNames: Record<string, string[]> = {};
+const fxFileClassFields = new Map<string, Record<string, Record<string, string>>>();
+const fxFileAssoc = new Map<string, Record<string, Record<string, string>>>();
+/** Sites dropped at scan time because no argument had a typeable shape. */
+let fxSilentSites = 0;
+/** Sites whose argument list was cut short by a keyword pair. */
+let fxKwargSites = 0;
+let fxCatalogueCache: RubyDslCatalogue | undefined;
+
+function fxCatalogue(): RubyDslCatalogue {
+  fxCatalogueCache ??= catalogueForGemfile(gemfileContent);
+  return fxCatalogueCache;
+}
+
+/** Structural shape of one expression node; `opaque` where nothing is knowable. */
+function fxExprOf(node: AstNode, depth: number): FxExpr {
+  if (depth > 5) return FX_OPAQUE;
+  if (node.type === "call" || node.type === "method_call") {
+    const instantiated = constInstanceType(node, fxCatalogue());
+    if (instantiated !== null) return { k: "instConst", name: instantiated };
+    const method = node.childForFieldName("method")?.text;
+    if (method === undefined) return FX_OPAQUE;
+    const receiverNode = node.childForFieldName("receiver");
+    if (receiverNode === null) return { k: "call", recv: null, member: method };
+    const recv = fxExprOf(receiverNode, depth + 1);
+    return recv.k === "opaque" ? FX_OPAQUE : { k: "call", recv, member: method };
+  }
+  if (node.type === "constant" || node.type === "scope_resolution") {
+    const text = node.type === "scope_resolution" ? readScopeResolution(node) : node.text;
+    return FX_CONST_RE.test(text) ? { k: "const", name: text.replace(/^::/, "") } : FX_OPAQUE;
+  }
+  if (node.type === "identifier") return { k: "ident", name: node.text };
+  if (node.type === "instance_variable") return { k: "ivar", name: node.text };
+  return FX_OPAQUE;
+}
+
+/** `firm: x` / `:firm => x` key name; anything dynamic or string-keyed → null. */
+function fxPairKey(pair: AstNode): string | null {
+  const key = pair.childForFieldName("key") ?? pair.namedChildren[0] ?? null;
+  if (key === null) return null;
+  if (key.type === "hash_key_symbol") return key.text;
+  if (key.type === "simple_symbol") return key.text.replace(/^:/, "");
+  return null;
+}
+
+/** Line → innermost owning chunk. Ascending startLine, later (inner) wins. */
+function fxLineOwners(extraction: FileExtraction): (ChunkExtraction | undefined)[] {
+  let maxLine = 0;
+  for (const c of extraction.chunks) if ((c.endLine ?? 0) > maxLine) maxLine = c.endLine ?? 0;
+  const owners = new Array<ChunkExtraction | undefined>(maxLine + 2);
+  const sorted = [...extraction.chunks].sort((a, b) => (a.startLine ?? 0) - (b.startLine ?? 0));
+  for (const c of sorted) {
+    if (c.startLine === undefined || c.endLine === undefined) continue;
+    for (let l = c.startLine; l <= c.endLine && l < owners.length; l++) owners[l] = c;
+  }
+  return owners;
+}
+
+/** Last non-comment statement of a method body — Ruby's implicit return. */
+function fxTailNode(methodNode: AstNode): AstNode | null {
+  const body = methodNode.childForFieldName("body");
+  if (!body) return null;
+  for (let i = body.namedChildren.length - 1; i >= 0; i--) {
+    const n = body.namedChildren[i];
+    if (n.type === "comment") continue;
+    return n;
+  }
+  return null;
+}
+
+/** ONE extra DFS per file over the AST the harness already materialized. */
+function scanFixpointAst(root: AstNode, relPath: string, extraction: FileExtraction): void {
+  if (extraction.classFieldTypes) fxFileClassFields.set(relPath, extraction.classFieldTypes);
+  if (extraction.associationTypes) fxFileAssoc.set(relPath, extraction.associationTypes);
+  for (const chunk of extraction.chunks) {
+    if (chunk.kwargs !== undefined) {
+      const declared = [...chunk.kwargs.required, ...(chunk.kwargs.optional ?? [])];
+      if (declared.length > 0) runKwargNames[chunk.symbolId] = declared;
+    }
+    if (chunk.localBindings === undefined && chunk.localCallBindings === undefined) continue;
+    fxChunks.set(chunk.symbolId, {
+      relPath,
+      scope: chunk.scope,
+      localBindings: chunk.localBindings,
+      localCallBindings: chunk.localCallBindings,
+    });
+  }
+  const owners = fxLineOwners(extraction);
+  const ownerAt = (line: number): ChunkExtraction | undefined => (line < owners.length ? owners[line] : undefined);
+
+  const stack: AstNode[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+
+    if (node.type === "call" || node.type === "method_call") {
+      const method = node.childForFieldName("method");
+      const args =
+        node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list") ?? null;
+      if (method && args) {
+        const line = node.startPosition.row + 1;
+        const receiverNode = node.childForFieldName("receiver");
+        const recv = receiverNode ? fxExprOf(receiverNode, 0) : null;
+        if (recv === null || recv.k !== "opaque") {
+          const argExprs: FxExpr[] = [];
+          const kwargExprs: { name: string; expr: FxExpr }[] = [];
+          let kwargTruncated = false;
+          let typeable = false;
+          for (const arg of args.namedChildren) {
+            if (arg.type === "block" || arg.type === "do_block" || arg.type === "block_argument") break;
+            if (arg.type === "splat_argument" || arg.type === "hash_splat_argument") break;
+            if (arg.type === "pair") {
+              // Positional correspondence ends here (bvalc truncation), but the
+              // pair itself carries a NAME → value binding the kwarg-extended
+              // variant can use without any positional reasoning.
+              kwargTruncated = true;
+              const key = fxPairKey(arg);
+              const value = arg.childForFieldName("value") ?? arg.namedChildren[1] ?? null;
+              if (key !== null && value !== null) {
+                const shape = fxExprOf(value, 0);
+                if (shape.k !== "opaque") {
+                  typeable = true;
+                  kwargExprs.push({ name: key, expr: shape });
+                }
+              }
+              continue;
+            }
+            if (kwargTruncated) continue; // a positional after a pair is not positional
+            const shape = fxExprOf(arg, 0);
+            if (shape.k !== "opaque") typeable = true;
+            argExprs.push(shape);
+          }
+          if (kwargTruncated) fxKwargSites += 1;
+          if (typeable) {
+            const owner = ownerAt(line);
+            fxSites.push({
+              relPath,
+              chunkId: owner?.symbolId ?? "",
+              scope: owner?.scope ?? extraction.fileScope,
+              line,
+              recv,
+              member: method.text,
+              args: argExprs,
+              kwargs: kwargExprs,
+              kwargTruncated,
+            });
+          } else if (argExprs.length > 0 || kwargTruncated) {
+            fxSilentSites += 1;
+          }
+        }
+      }
+    }
+
+    if (node.type === "method" || node.type === "singleton_method") {
+      const line = node.startPosition.row + 1;
+      const owner = ownerAt(line);
+      if (owner !== undefined && owner.startLine === line) {
+        const tail = fxTailNode(node);
+        if (tail !== null) {
+          const shape = fxExprOf(tail, 0);
+          if (shape.k !== "opaque")
+            fxTails.push({
+              methodId: owner.symbolId,
+              relPath,
+              scope: owner.scope,
+              line: tail.startPosition.row + 1,
+              expr: shape,
+            });
+        }
+      }
+    }
+
+    for (const c of node.children) stack.push(c);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// B. Wave machinery
+// ---------------------------------------------------------------------------
+
+interface FxEnv {
+  paramTypes: KnownTargetParamTypes;
+  ivarTypes: Record<string, Record<string, string>>;
+  returnTypes: Record<string, RubyTypeRef>;
+}
+
+interface FxWaveStat {
+  wave: number;
+  paramsTyped: number;
+  calleesTyped: number;
+  ivarsTyped: number;
+  returnsTyped: number;
+  contributingSites: number;
+  ms: number;
+}
+
+/** One call site's keyword-argument hints, keyed by NAME rather than position. */
+interface FxKwargRecord {
+  readonly targets: readonly string[];
+  readonly kwargTypes: readonly { readonly name: string; readonly type: RubyTypeRef }[];
+}
+
+/**
+ * Name-keyed mirror of `foldKnownTargetParamTypes`, for keyword arguments.
+ *
+ * Same agreement rule, stated once more because the real fold is POSITIONAL
+ * (`argTypes[i]` → `paramNames[i]`) and a keyword argument has no position: a
+ * single uncontradicted witness binds, absent evidence neither votes nor vetoes,
+ * ANY structural disagreement is silence for that name. `runKwargNames` is the
+ * existence gate the positional fold gets from `runParamNames` — a `def
+ * initialize(firm:, user:)` declares NO positional params, so it is invisible to
+ * the real fold and reachable only here.
+ */
+function fxFoldKwargParamTypes(records: readonly FxKwargRecord[]): KnownTargetParamTypes {
+  const byTarget = new Map<string, Map<string, RubyTypeRef | null>>(); // null ⇒ conflicted
+  for (const record of records) {
+    const target = record.targets.find((c) => runKwargNames[c] !== undefined);
+    if (target === undefined) continue;
+    const declared = runKwargNames[target];
+    let names = byTarget.get(target);
+    if (names === undefined) {
+      names = new Map<string, RubyTypeRef | null>();
+      byTarget.set(target, names);
+    }
+    for (const hint of record.kwargTypes) {
+      if (!declared.includes(hint.name)) continue; // not a parameter of this callee
+      const seen = names.get(hint.name);
+      if (seen === undefined) names.set(hint.name, hint.type);
+      else if (seen !== null && fxTypeKey(seen) !== fxTypeKey(hint.type)) names.set(hint.name, null);
+    }
+  }
+  const out: KnownTargetParamTypes = {};
+  for (const [target, names] of byTarget) {
+    const params: Record<string, RubyTypeRef> = {};
+    for (const [name, type] of names) if (type !== null) params[name] = type;
+    if (Object.keys(params).length > 0) out[target] = params;
+  }
+  return out;
+}
+
+/** Union of two per-callee param maps (positional names and kwarg names are disjoint). */
+function fxMergeParamTypes(a: KnownTargetParamTypes, b: KnownTargetParamTypes): KnownTargetParamTypes {
+  const out: KnownTargetParamTypes = { ...a };
+  for (const [target, params] of Object.entries(b)) out[target] = { ...out[target], ...params };
+  return out;
+}
+
+/** Transitive ancestor closure over `runAncestors`, cycle-guarded, depth-capped. */
+const fxAncestorClosure = new Map<string, string[]>();
+function fxAncestorsOf(klass: string): string[] {
+  const cached = fxAncestorClosure.get(klass);
+  if (cached !== undefined) return cached;
+  const out: string[] = [];
+  const seen = new Set<string>([klass]);
+  let frontier = [...(runAncestors[klass] ?? [])];
+  for (let depth = 0; depth < 8 && frontier.length > 0; depth++) {
+    const next: string[] = [];
+    for (const a of frontier) {
+      if (seen.has(a)) continue;
+      seen.add(a);
+      out.push(a);
+      next.push(...(runAncestors[a] ?? []));
+    }
+    frontier = next;
+  }
+  fxAncestorClosure.set(klass, out);
+  return out;
+}
+
+/** `derived` wins on a shared coordinate; both are derivations of one fold. */
+function fxMergeClassFields(
+  base: Record<string, Record<string, string>>,
+  derived: Record<string, Record<string, string>>,
+): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = { ...base };
+  for (const [klass, fields] of Object.entries(derived)) out[klass] = { ...out[klass], ...fields };
+  return out;
+}
+
+/**
+ * A CallContext carrying the fixpoint environment, for the propagation rules
+ * only (`returnTypeOf` / `ivarTypeName` / `boundCallReturnType`). Per-file maps
+ * stay per-file — a run-global merge of `classFieldTypes` would type ivars the
+ * production resolver never sees and inflate the ceiling.
+ */
+function fxCtx(
+  relPath: string,
+  chunkId: string,
+  scope: readonly string[],
+  fieldsByFile: Map<string, Record<string, Record<string, string>>>,
+  mergedReturns: Record<string, RubyTypeRef>,
+): CallContext {
+  const chunk = fxChunks.get(chunkId);
+  return {
+    callerFile: relPath,
+    callerScope: [...scope],
+    callerSymbolId: chunkId,
+    imports: [],
+    symbolTable,
+    classFieldTypes: fieldsByFile.get(relPath),
+    associationTypes: fxFileAssoc.get(relPath),
+    localBindings: chunk?.localBindings,
+    localCallBindings: chunk?.localCallBindings,
+    functionReturnTypes: runReturnTypes,
+    ivarTypes: runIvarTypes,
+    structuredReturnTypes: mergedReturns,
+    classAncestors: runAncestors,
+    compactDeclaredClasses: runCompactClasses,
+    gemfileContent,
+    classPrependedAncestors: runPrependedAncestors,
+    includedBy,
+    classExtends: runExtends,
+    dispatchTables: runDispatchTables,
+    callbackParams: runCallbackParams,
+    hierarchy: hierarchyView,
+    instantiatedTypes: runInstantiatedTypes,
+  };
+}
+
+/** The environment's answer for one expression shape, or `undefined`. */
+function fxTypeOf(
+  expr: FxExpr,
+  chunkId: string,
+  line: number,
+  klass: string,
+  ctx: CallContext,
+  env: FxEnv,
+  depth: number,
+): RubyTypeRef | undefined {
+  if (depth > 4) return undefined;
+  switch (expr.k) {
+    case "const":
+      return { form: "class", name: expr.name };
+    case "instConst":
+      return { form: "instance", name: expr.name };
+    case "ident": {
+      const binding = resolveLocalBinding(ctx.localBindings, expr.name, line);
+      if (binding !== undefined)
+        return binding.typeRef ?? { form: binding.valueKind === "class" ? "class" : "instance", name: binding.type };
+      const derived = env.paramTypes[chunkId]?.[expr.name];
+      if (derived !== undefined) return derived;
+      return boundCallReturnType(expr.name, ctx);
+    }
+    case "ivar": {
+      const name = ivarTypeName(expr.name, ctx);
+      return name === undefined ? undefined : { form: "instance", name };
+    }
+    case "call": {
+      if (expr.recv === null) {
+        if (klass === "") return undefined;
+        return returnTypeOf({ form: "instance", name: klass }, expr.member, ctx);
+      }
+      const recvType = fxTypeOf(expr.recv, chunkId, line, klass, ctx, env, depth + 1);
+      if (recvType === undefined) return undefined;
+      return returnTypeOf(recvType, expr.member, ctx);
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** Callee coordinate candidates for a site, in Ruby lookup order. */
+function fxTargetsOf(site: FxSite, ctx: CallContext, env: FxEnv): string[] {
+  const member = site.member;
+  if (site.recv === null) {
+    const klass = site.scope.join("::");
+    if (klass === "") return [];
+    const out: string[] = [];
+    for (const c of [klass, ...fxAncestorsOf(klass)]) {
+      out.push(`${c}#${member}`);
+      out.push(`${c}.${member}`);
+    }
+    return out;
+  }
+  if (site.recv.k === "const") {
+    if (site.constTargets === undefined) {
+      const suffix = member === "new" ? "#initialize" : `.${member}`;
+      const out: string[] = [];
+      for (const fq of constantLookupCandidates(site.scope, site.recv.name)) {
+        out.push(`${fq}${suffix}`);
+        for (const anc of fxAncestorsOf(fq)) out.push(`${anc}${suffix}`);
+      }
+      site.constTargets = out;
+    }
+    return site.constTargets;
+  }
+  if (!FIXPOINT_WIDE) return [];
+  const recvType = fxTypeOf(site.recv, site.chunkId, site.line, site.scope.join("::"), ctx, env, 0);
+  if (recvType === undefined || (recvType.form !== "instance" && recvType.form !== "class")) return [];
+  const suffix =
+    recvType.form === "class" ? (member === "new" ? "#initialize" : `.${member}`) : `#${member}`;
+  const out = [`${recvType.name}${suffix}`];
+  for (const anc of fxAncestorsOf(recvType.name)) out.push(`${anc}${suffix}`);
+  return out;
+}
+
+/** Cheap order-independent digest of the environment, for convergence/cycles. */
+function fxDigest(env: FxEnv): string {
+  let params = 0;
+  let paramMix = 0;
+  for (const [target, fields] of Object.entries(env.paramTypes)) {
+    for (const [name, type] of Object.entries(fields)) {
+      params += 1;
+      paramMix = (paramMix + fxStrHash(`${target}|${name}|${fxTypeKey(type)}`)) >>> 0;
+    }
+  }
+  let ivars = 0;
+  let ivarMix = 0;
+  for (const [klass, fields] of Object.entries(env.ivarTypes)) {
+    for (const [ivar, type] of Object.entries(fields)) {
+      ivars += 1;
+      ivarMix = (ivarMix + fxStrHash(`${klass}|${ivar}|${type}`)) >>> 0;
+    }
+  }
+  let returns = 0;
+  let returnMix = 0;
+  for (const [key, type] of Object.entries(env.returnTypes)) {
+    returns += 1;
+    returnMix = (returnMix + fxStrHash(`${key}|${fxTypeKey(type)}`)) >>> 0;
+  }
+  return `${params}:${paramMix}|${ivars}:${ivarMix}|${returns}:${returnMix}`;
+}
+
+function fxStrHash(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+function fxTypeKey(t: RubyTypeRef): string {
+  if (t.form === "container") return `c(${fxTypeKey(t.element)})`;
+  if (t.form === "union") return `u(${t.members.map(fxTypeKey).join(",")})`;
+  return `${t.form}:${t.name}`;
+}
+
+/** Per-(callee, position) evidence, for the never-typeable cause classes. */
+interface FxPositionDiag {
+  sites: number;
+  known: number;
+  conflicted: boolean;
+}
+const fxDiag = new Map<string, Map<number, FxPositionDiag>>();
+const fxKwargDiag = new Map<string, Map<string, FxPositionDiag>>();
+
+/** Mirror of the folds' bookkeeping, for diagnostics ONLY (never binds). */
+function fxRecordDiag(records: KnownTargetCallArgs[], kwargRecords: FxKwargRecord[]): void {
+  fxDiag.clear();
+  fxKwargDiag.clear();
+  for (const record of records) {
+    const target = record.targets.find((c) => runParamNames[c] !== undefined);
+    if (target === undefined) continue;
+    const names = runParamNames[target];
+    let positions = fxDiag.get(target);
+    if (positions === undefined) {
+      positions = new Map<number, FxPositionDiag>();
+      fxDiag.set(target, positions);
+    }
+    for (let i = 0; i < record.argTypes.length && i < names.length; i++) {
+      const slot = positions.get(i) ?? { sites: 0, known: 0, conflicted: false };
+      slot.sites += 1;
+      if (record.argTypes[i] != null) slot.known += 1;
+      positions.set(i, slot);
+    }
+  }
+  for (const record of kwargRecords) {
+    const target = record.targets.find((c) => runKwargNames[c] !== undefined);
+    if (target === undefined) continue;
+    let names = fxKwargDiag.get(target);
+    if (names === undefined) {
+      names = new Map<string, FxPositionDiag>();
+      fxKwargDiag.set(target, names);
+    }
+    for (const hint of record.kwargTypes) {
+      if (!runKwargNames[target].includes(hint.name)) continue;
+      const slot = names.get(hint.name) ?? { sites: 0, known: 0, conflicted: false };
+      slot.sites += 1;
+      slot.known += 1;
+      names.set(hint.name, slot);
+    }
+  }
+  // Conflicted = a coordinate with ≥1 known hint the fold refused to bind. Read
+  // off the fold's own product, so diagnostics and binding can never disagree.
+  for (const [target, positions] of fxDiag) {
+    const names = runParamNames[target] ?? [];
+    for (const [index, slot] of positions) {
+      const name = names[index];
+      if (name === undefined) continue;
+      slot.conflicted = slot.known > 0 && fxFinalParamTypes[target]?.[name] === undefined;
+    }
+  }
+  for (const [target, names] of fxKwargDiag)
+    for (const [name, slot] of names)
+      slot.conflicted = slot.known > 0 && fxFinalParamTypes[target]?.[name] === undefined;
+}
+let fxFinalParamTypes: KnownTargetParamTypes = {};
+
+/** Run the worklist to convergence (or the cap). Returns per-wave growth. */
+function fxRunWaves(useKwargs: boolean): { env: FxEnv; waves: FxWaveStat[]; converged: boolean; cycle: boolean } {
+  const env: FxEnv = { paramTypes: {}, ivarTypes: {}, returnTypes: {} };
+  const waves: FxWaveStat[] = [];
+  const seen = new Map<string, number>();
+  let converged = false;
+  let cycle = false;
+  let previous = fxDigest(env);
+  let lastRecords: KnownTargetCallArgs[] = [];
+  let lastKwargRecords: FxKwargRecord[] = [];
+
+  for (let wave = 1; wave <= FIXPOINT_MAX_WAVES; wave++) {
+    const started = Date.now();
+
+    // Per-wave materialization of the two maps every ctx reads.
+    const mergedReturns: Record<string, RubyTypeRef> = { ...runStructuredReturnTypes, ...env.returnTypes };
+    const fieldsByFile = new Map<string, Record<string, Record<string, string>>>();
+    for (const relPath of fxFileClassFields.keys())
+      fieldsByFile.set(relPath, fxMergeClassFields(fxFileClassFields.get(relPath) ?? {}, env.ivarTypes));
+    for (const relPath of fxFileAssoc.keys())
+      if (!fieldsByFile.has(relPath)) fieldsByFile.set(relPath, fxMergeClassFields({}, env.ivarTypes));
+
+    const ctxCache = new Map<string, CallContext>();
+    const ctxFor = (relPath: string, chunkId: string, scope: readonly string[]): CallContext => {
+      const key = `${relPath} ${chunkId}`;
+      let ctx = ctxCache.get(key);
+      if (ctx === undefined) {
+        ctx = fxCtx(relPath, chunkId, scope, fieldsByFile, mergedReturns);
+        ctxCache.set(key, ctx);
+      }
+      return ctx;
+    };
+
+    // ── ARG WAVE ──────────────────────────────────────────────────────────
+    const records: KnownTargetCallArgs[] = [];
+    const kwargRecords: FxKwargRecord[] = [];
+    let contributing = 0;
+    for (const site of fxSites) {
+      const ctx = ctxFor(site.relPath, site.chunkId, site.scope);
+      const targets = fxTargetsOf(site, ctx, env);
+      if (targets.length === 0) continue;
+      const klass = site.scope.join("::");
+      const argTypes: (RubyTypeRef | null)[] = [];
+      let positionalKnown = false;
+      for (const arg of site.args) {
+        const type = fxTypeOf(arg, site.chunkId, site.line, klass, ctx, env, 0) ?? null;
+        if (type !== null) positionalKnown = true;
+        argTypes.push(type);
+      }
+      const kwargTypes: { name: string; type: RubyTypeRef }[] = [];
+      if (useKwargs) {
+        for (const kwarg of site.kwargs) {
+          const type = fxTypeOf(kwarg.expr, site.chunkId, site.line, klass, ctx, env, 0);
+          if (type !== undefined) kwargTypes.push({ name: kwarg.name, type });
+        }
+      }
+      if (!positionalKnown && kwargTypes.length === 0) continue;
+      contributing += 1;
+      if (positionalKnown) records.push({ targets, argTypes });
+      if (kwargTypes.length > 0) kwargRecords.push({ targets, kwargTypes });
+    }
+
+    // ── BIND WAVE (the REAL bvalc fold + the REAL ivar derivation) ────────
+    const positionalParams = foldKnownTargetParamTypes(records, runParamNames);
+    env.paramTypes = useKwargs
+      ? fxMergeParamTypes(positionalParams, fxFoldKwargParamTypes(kwargRecords))
+      : positionalParams;
+    env.ivarTypes = deriveClassFieldTypesFromParams(runClassFieldParamLinks, env.paramTypes, runTypedClassFields);
+    lastRecords = records;
+    lastKwargRecords = kwargRecords;
+
+    // ── RETURN WAVE (body tails, re-evaluated under the just-bound env) ───
+    const tailReturns: Record<string, RubyTypeRef> = {};
+    const tailReturnsMerged: Record<string, RubyTypeRef> = { ...runStructuredReturnTypes, ...env.returnTypes };
+    const tailFields = new Map<string, Record<string, Record<string, string>>>();
+    for (const relPath of fxFileClassFields.keys())
+      tailFields.set(relPath, fxMergeClassFields(fxFileClassFields.get(relPath) ?? {}, env.ivarTypes));
+    for (const tail of fxTails) {
+      if (runStructuredReturnTypes[tail.methodId] !== undefined) continue; // declared wins
+      const ctx = fxCtx(tail.relPath, tail.methodId, tail.scope, tailFields, tailReturnsMerged);
+      const type = fxTypeOf(tail.expr, tail.methodId, tail.line, tail.scope.join("::"), ctx, env, 0);
+      if (type !== undefined && (type.form === "instance" || type.form === "container"))
+        tailReturns[tail.methodId] = type;
+    }
+    env.returnTypes = tailReturns;
+
+    const digest = fxDigest(env);
+    waves.push({
+      wave,
+      paramsTyped: Object.values(env.paramTypes).reduce((n, p) => n + Object.keys(p).length, 0),
+      calleesTyped: Object.keys(env.paramTypes).length,
+      ivarsTyped: Object.values(env.ivarTypes).reduce((n, f) => n + Object.keys(f).length, 0),
+      returnsTyped: Object.keys(env.returnTypes).length,
+      contributingSites: contributing,
+      ms: Date.now() - started,
+    });
+    console.error(
+      `[fixpoint${useKwargs ? "+kw" : ""}] wave ${wave}: params=${waves[waves.length - 1].paramsTyped} ` +
+        `callees=${waves[waves.length - 1].calleesTyped} ivars=${waves[waves.length - 1].ivarsTyped} ` +
+        `returns=${waves[waves.length - 1].returnsTyped} sites=${contributing} ` +
+        `(${((Date.now() - started) / 1000).toFixed(1)}s)`,
+    );
+
+    if (digest === previous) {
+      converged = true;
+      break;
+    }
+    if (seen.has(digest)) {
+      cycle = true;
+      break;
+    }
+    seen.set(digest, wave);
+    previous = digest;
+  }
+
+  fxFinalParamTypes = env.paramTypes;
+  fxRecordDiag(lastRecords, lastKwargRecords);
+  return { env, waves, converged, cycle };
+}
+
+// ---------------------------------------------------------------------------
+// D. Scoring — re-resolve everything with the converged environment
+// ---------------------------------------------------------------------------
+
+function fxMissKey(relPath: string, line: number, member: string, receiver: string | null, caller: string): string {
+  return `${relPath}|${line}|${member}|${receiver ?? "~"}|${caller}`;
+}
+
+interface FxPassResult {
+  kindTally: Record<ReceiverKind, KindTally>;
+  attempted: number;
+  resolved: number;
+  externalSkipped: number;
+  unresolvable: number;
+  noInProjectDef: number;
+  coreAmbiguous: number;
+  hole: number;
+  missKeys: Map<string, number>;
+}
+
+/**
+ * Faithful re-run of PASS-2 with the fixpoint environment substituted into the
+ * three channels the mechanism would actually use in production (seeded param
+ * locals, derived ivar field types, derived return types). Deliberately a
+ * SEPARATE loop from `resolvePass2` rather than a parameterization of it: the
+ * default-off path must stay byte-identical, and a shared mutable tally is
+ * exactly how that guarantee gets lost.
+ */
+function fxResolvePass(extractions: FileExtraction[], env: FxEnv): FxPassResult {
+  if (resolver === undefined) throw new Error("ruby resolver missing");
+  const mergedReturns: Record<string, RubyTypeRef> = { ...runStructuredReturnTypes, ...env.returnTypes };
+  const derivedFields = fxMergeClassFields(runDerivedClassFieldTypes, env.ivarTypes);
+  const result: FxPassResult = {
+    kindTally: Object.fromEntries(RECEIVER_KINDS.map((k) => [k, emptyKind()])) as Record<ReceiverKind, KindTally>,
+    attempted: 0,
+    resolved: 0,
+    externalSkipped: 0,
+    unresolvable: 0,
+    noInProjectDef: 0,
+    coreAmbiguous: 0,
+    hole: 0,
+    missKeys: new Map<string, number>(),
+  };
+
+  for (const extraction of extractions) {
+    const ancestorsForResolver = Object.keys(runAncestors).length > 0 ? runAncestors : extraction.classAncestors;
+    const prependedAncestorsForResolver =
+      Object.keys(runPrependedAncestors).length > 0 ? runPrependedAncestors : extraction.classPrependedAncestors;
+    const includedByForResolver = buildIncludedBy(ancestorsForResolver ?? {}, prependedAncestorsForResolver ?? {});
+    const extendsForResolver = Object.keys(runExtends).length > 0 ? runExtends : extraction.classExtends;
+    const returnTypesForResolver =
+      Object.keys(runReturnTypes).length > 0 ? runReturnTypes : extraction.functionReturnTypes;
+    const instantiatedForResolver =
+      runInstantiatedTypes.size > 0 ? runInstantiatedTypes : new Set(extraction.instantiatedTypes ?? []);
+    const ivarTypesForResolver = Object.keys(runIvarTypes).length > 0 ? runIvarTypes : extraction.ivarTypes;
+    const classFieldTypesForResolver = mergeDerivedClassFieldTypes(extraction.classFieldTypes, derivedFields);
+
+    for (const chunk of extraction.chunks) {
+      const seededParams = { ...runParamTypes[chunk.symbolId], ...env.paramTypes[chunk.symbolId] };
+      const localBindings = seedParamLocalBindings(
+        chunk.localBindings,
+        Object.keys(seededParams).length > 0 ? seededParams : undefined,
+        chunk.startLine,
+      );
+      for (const call of chunk.calls) {
+        result.attempted += 1;
+        const receiverKind = classifyReceiverKind(call, localBindings);
+        result.kindTally[receiverKind].attempted += 1;
+        const ctx: CallContext = {
+          callerFile: extraction.relPath,
+          callerScope: chunk.scope,
+          callerSymbolId: chunk.symbolId,
+          imports: extraction.imports,
+          symbolTable,
+          classFieldTypes: classFieldTypesForResolver,
+          associationTypes: extraction.associationTypes,
+          localBindings,
+          localCallBindings: chunk.localCallBindings,
+          functionReturnTypes: returnTypesForResolver,
+          ivarTypes: ivarTypesForResolver,
+          structuredReturnTypes: mergedReturns,
+          classAncestors: ancestorsForResolver,
+          compactDeclaredClasses: runCompactClasses,
+          gemfileContent,
+          classPrependedAncestors: prependedAncestorsForResolver,
+          includedBy: includedByForResolver,
+          classExtends: extendsForResolver,
+          dispatchTables: runDispatchTables,
+          callbackParams: runCallbackParams,
+          hierarchy: hierarchyView,
+          instantiatedTypes: instantiatedForResolver,
+          selfDispatchTemplates: SELF_DISPATCH_ENABLED ? runSelfDispatchTemplates : undefined,
+          selfInstantiatingClassMethods: SELF_DISPATCH_ENABLED ? runSelfInstantiatingClassMethods : undefined,
+        };
+        let resolved = false;
+        const noteDispatch = (out: DispatchFanoutOutcome | undefined): boolean => {
+          const edges = out?.kind === "edges" ? out.edges : [];
+          return edges.length > 0;
+        };
+        if (call.dispatch) {
+          if (noteDispatch(resolver.resolveDispatch?.(call, ctx))) resolved = true;
+        } else if (call.dispatchArgs && call.dispatchArgs.length > 0) {
+          if (resolver.resolve(call, ctx)) resolved = true;
+          if (noteDispatch(resolver.resolveDispatch?.(call, ctx))) resolved = true;
+        } else if (noteDispatch(resolver.resolveDispatch?.(call, ctx))) {
+          resolved = true;
+        } else if (resolver.resolve(call, ctx)) {
+          resolved = true;
+        }
+
+        if (resolved) {
+          result.resolved += 1;
+          result.kindTally[receiverKind].resolved += 1;
+        } else if (call.dynamicSend === true) {
+          result.unresolvable += 1;
+          result.kindTally[receiverKind].unresolvable += 1;
+        } else if (resolver.targetsExternalImport?.(call, ctx) ?? false) {
+          result.externalSkipped += 1;
+          result.kindTally[receiverKind].externalSkipped += 1;
+        } else if (symbolTable.lookupByShortName(call.member).length === 0) {
+          result.noInProjectDef += 1;
+          result.kindTally[receiverKind].noInProjectDef += 1;
+        } else if (resolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false) {
+          result.coreAmbiguous += 1;
+          result.kindTally[receiverKind].coreAmbiguous += 1;
+        } else {
+          result.hole += 1;
+          const key = fxMissKey(extraction.relPath, call.startLine, call.member, call.receiver, chunk.symbolId);
+          result.missKeys.set(key, (result.missKeys.get(key) ?? 0) + 1);
+        }
+      }
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// E. Residual cause classification + report
+// ---------------------------------------------------------------------------
+
+const FX_CAUSE = {
+  bare: "no-receiver (bareCall / implicit self)",
+  index: "index or hash access receiver (params[:x])",
+  ivarNoLink: "ivar: no @x = <param> link",
+  ivarParamUntyped: "ivar: link exists, source param untyped",
+  ivarLinkUnusable: "ivar: link exists, param typed but not instance-form",
+  chain: "chain: an intermediate hop is untyped",
+  posNoSite: "positional param: callee has no observed call site",
+  posAllNull: "positional param: every observed hint is null (literal / hash / external)",
+  posDisagree: "positional param: hints disagree (fold stays silent)",
+  kwNoSite: "kwarg param: callee has no observed kwarg call site",
+  kwDisagree: "kwarg param: hints disagree (fold stays silent)",
+  untypedLocal: "untyped local (assigned from an untypeable expression)",
+  memberNotFound: "receiver typed but member not found on that type",
+} as const;
+type FxCause = (typeof FX_CAUSE)[keyof typeof FX_CAUSE];
+
+function fxClassifyResidual(miss: MissRecord, env: FxEnv, typedReceiver: boolean): FxCause {
+  if (miss.receiverKind === "bareCall" || miss.receiver === null) return FX_CAUSE.bare;
+  if (typedReceiver) return FX_CAUSE.memberNotFound;
+  if (miss.receiver.includes("[")) return FX_CAUSE.index;
+  if (miss.receiver.startsWith("@") && !miss.receiver.includes(".")) {
+    const klass = miss.enclosingScope.split(" > ").join("::");
+    const link = runClassFieldParamLinks[klass]?.[miss.receiver];
+    if (link === undefined) return FX_CAUSE.ivarNoLink;
+    return env.paramTypes[`${klass}#${link.method}`]?.[link.param] === undefined
+      ? FX_CAUSE.ivarParamUntyped
+      : FX_CAUSE.ivarLinkUnusable;
+  }
+  if (miss.receiver.includes(".")) return FX_CAUSE.chain;
+  const position = runParamNames[miss.callerSymbolId]?.indexOf(miss.receiver) ?? -1;
+  if (position >= 0) {
+    const slot = fxDiag.get(miss.callerSymbolId)?.get(position);
+    if (slot === undefined) return FX_CAUSE.posNoSite;
+    if (slot.known === 0) return FX_CAUSE.posAllNull;
+    return slot.conflicted ? FX_CAUSE.posDisagree : FX_CAUSE.posAllNull;
+  }
+  if (runKwargNames[miss.callerSymbolId]?.includes(miss.receiver) === true) {
+    const slot = fxKwargDiag.get(miss.callerSymbolId)?.get(miss.receiver);
+    if (slot === undefined) return FX_CAUSE.kwNoSite;
+    return slot.conflicted ? FX_CAUSE.kwDisagree : FX_CAUSE.kwNoSite;
+  }
+  return FX_CAUSE.untypedLocal;
+}
+
+/**
+ * One full variant: waves to convergence, converged re-resolve, miss diff,
+ * residual causes, printed section. `useKwargs` selects the substrate — OFF is
+ * the fixpoint Increment 1's positional machinery could carry as-is, ON is the
+ * fixpoint that also binds keyword arguments by NAME (which Increment 2 would
+ * have to build, because Ruby service objects are kwarg-shaped).
+ */
+function fxRunVariant(extractions: FileExtraction[], useKwargs: boolean): Record<string, unknown> {
+  const t0 = Date.now();
+  const L = (s: string) => console.log(s);
+  const label = useKwargs ? "positional + KEYWORD arguments" : "positional arguments only (bvalc substrate)";
+
+  const { env, waves, converged, cycle } = fxRunWaves(useKwargs);
+  const waveMs = Date.now() - t0;
+
+  const scoreStart = Date.now();
+  const pass = fxResolvePass(extractions, env);
+  const scoreMs = Date.now() - scoreStart;
+
+  // ── multiset diff vs the baseline miss set ────────────────────────────────
+  const remaining = new Map(pass.missKeys);
+  const addressableByKind: Record<string, number> = {};
+  const residualByKind: Record<string, number> = {};
+  const addressableMembers = new Map<string, number>();
+  const residualCause: Record<string, number> = {};
+  const residualCauseByKind: Record<string, Record<string, number>> = {};
+  const addressableSamples: { member: string; receiver: string | null; kind: string; at: string }[] = [];
+
+  const mergedReturns: Record<string, RubyTypeRef> = { ...runStructuredReturnTypes, ...env.returnTypes };
+  const fieldsByFile = new Map<string, Record<string, Record<string, string>>>();
+  for (const relPath of fxFileClassFields.keys())
+    fieldsByFile.set(relPath, fxMergeClassFields(fxFileClassFields.get(relPath) ?? {}, env.ivarTypes));
+
+  for (const miss of misses) {
+    const key = fxMissKey(miss.relPath, miss.line, miss.member, miss.receiver, miss.callerSymbolId);
+    const left = remaining.get(key) ?? 0;
+    if (left > 0) {
+      remaining.set(key, left - 1);
+      residualByKind[miss.receiverKind] = (residualByKind[miss.receiverKind] ?? 0) + 1;
+      // Did the environment type the receiver even though the member missed?
+      let typedReceiver = false;
+      if (miss.receiver !== null && miss.receiverKind !== "bareCall") {
+        const ctx = fxCtx(
+          miss.relPath,
+          miss.callerSymbolId,
+          miss.enclosingScope === "" ? [] : miss.enclosingScope.split(" > "),
+          fieldsByFile,
+          mergedReturns,
+        );
+        const shape: FxExpr = miss.receiver.startsWith("@")
+          ? { k: "ivar", name: miss.receiver }
+          : { k: "ident", name: miss.receiver };
+        if (!miss.receiver.includes(".") && !miss.receiver.includes("["))
+          typedReceiver =
+            fxTypeOf(
+              shape,
+              miss.callerSymbolId,
+              miss.line,
+              miss.enclosingScope.split(" > ").join("::"),
+              ctx,
+              env,
+              0,
+            ) !== undefined;
+      }
+      const cause = fxClassifyResidual(miss, env, typedReceiver);
+      residualCause[cause] = (residualCause[cause] ?? 0) + 1;
+      (residualCauseByKind[miss.receiverKind] ??= {})[cause] =
+        ((residualCauseByKind[miss.receiverKind] ??= {})[cause] ?? 0) + 1;
+    } else {
+      addressableByKind[miss.receiverKind] = (addressableByKind[miss.receiverKind] ?? 0) + 1;
+      addressableMembers.set(miss.member, (addressableMembers.get(miss.member) ?? 0) + 1);
+      if (addressableSamples.length < 40)
+        addressableSamples.push({
+          member: miss.member,
+          receiver: miss.receiver,
+          kind: miss.receiverKind,
+          at: `${miss.relPath}:${miss.line}`,
+        });
+    }
+  }
+  // Whatever is still unconsumed in `remaining` is a miss the fixpoint CREATED.
+  let regressions = 0;
+  for (const n of remaining.values()) regressions += n;
+
+  const addressableTotal = Object.values(addressableByKind).reduce((a, b) => a + b, 0);
+  const topMembers = [...addressableMembers.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15);
+  const bvalcParams = Object.values(runParamTypes).reduce((n, p) => n + Object.keys(p).length, 0);
+  const bvalcIvars = Object.values(runDerivedClassFieldTypes).reduce((n, f) => n + Object.keys(f).length, 0);
+  const last = waves[waves.length - 1];
+
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L(`  FIXPOINT ORACLE — VARIANT: ${label}`);
+  L("═══════════════════════════════════════════════════════════════════");
+  L(`scope:                   ${FIXPOINT_WIDE ? "WIDE (any resolvable target)" : "BOUNDED (const-receiver + bare)"}`);
+  L(`call sites scanned:      ${fxSites.length}  (silent=${fxSilentSites}, kwarg-bearing=${fxKwargSites})`);
+  L(`method tails scanned:    ${fxTails.length}`);
+  L(
+    `convergence:             ${converged ? `CONVERGED after ${waves.length} waves` : cycle ? `CYCLE detected at wave ${waves.length}` : `CAP HIT (${FIXPOINT_MAX_WAVES} waves, NOT converged)`}`,
+  );
+  L("");
+  L("─── per-wave growth ───────────────────────────────────────────────");
+  L("wave   params  callees   ivars  returns   sites      s");
+  for (const w of waves) {
+    L(
+      `${String(w.wave).padStart(4)}  ${String(w.paramsTyped).padStart(7)}  ${String(w.calleesTyped).padStart(7)}  ` +
+        `${String(w.ivarsTyped).padStart(6)}  ${String(w.returnsTyped).padStart(7)}  ${String(w.contributingSites).padStart(6)}  ${(w.ms / 1000).toFixed(1).padStart(5)}`,
+    );
+  }
+  L("");
+  L("─── converged environment vs wave-0 (bvalc) baseline ──────────────");
+  L(`known-target sites:      ${runKnownTargetCallArgs.size}  ->  ${last?.contributingSites ?? 0}`);
+  L(`params typed:            ${bvalcParams}  ->  ${last?.paramsTyped ?? 0}`);
+  L(`callees with a typed param: ${Object.keys(runParamTypes).length}  ->  ${last?.calleesTyped ?? 0}`);
+  L(`ivars derived:           ${bvalcIvars}  ->  ${last?.ivarsTyped ?? 0}`);
+  L(`return types derived:    0  ->  ${last?.returnsTyped ?? 0}`);
+  L("");
+  L("─── ADDRESSABLE MISSES at convergence ─────────────────────────────");
+  L("kind          baselineHole   addressable    residual    share");
+  for (const kind of RECEIVER_KINDS) {
+    const t = kindTally[kind];
+    const hole = t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef - t.coreAmbiguous;
+    if (hole === 0) continue;
+    const addressable = addressableByKind[kind] ?? 0;
+    L(
+      `${kind.padEnd(12)}  ${String(hole).padStart(12)}  ${String(addressable).padStart(11)}  ` +
+        `${String(residualByKind[kind] ?? 0).padStart(10)}  ${((addressable / hole) * 100).toFixed(1).padStart(6)}%`,
+    );
+  }
+  const baselineHole =
+    callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous;
+  L(
+    `${"TOTAL".padEnd(12)}  ${String(baselineHole).padStart(12)}  ${String(addressableTotal).padStart(11)}  ` +
+      `${String(baselineHole - addressableTotal).padStart(10)}  ${((addressableTotal / Math.max(1, baselineHole)) * 100).toFixed(1).padStart(6)}%`,
+  );
+  L(`fixpoint-INTRODUCED misses (regressions): ${regressions}`);
+  L("");
+  L("─── never-typeable residual, by cause ─────────────────────────────");
+  for (const [cause, n] of Object.entries(residualCause).sort((a, b) => b[1] - a[1]))
+    L(`  ${String(n).padStart(6)}  ${cause}`);
+  L("");
+  L("─── top 15 members among ADDRESSABLE misses ───────────────────────");
+  for (const [member, n] of topMembers) L(`  ${String(n).padStart(6)}  ${member}`);
+  L("");
+  L("─── converged pass aggregate ──────────────────────────────────────");
+  const convergedInternal = Math.max(
+    1,
+    pass.attempted - pass.externalSkipped - pass.unresolvable - pass.noInProjectDef - pass.coreAmbiguous,
+  );
+  L(`callsResolved:           ${callsResolved}  ->  ${pass.resolved}`);
+  L(`missWithInProjectDef:    ${baselineHole}  ->  ${pass.hole}`);
+  L(
+    `resolveSuccessRate:      ${fmtPct(resolveSuccessRateBaseline)}  ->  ${fmtPct(pass.resolved / convergedInternal)}`,
+  );
+  L("");
+  L(
+    `waves: ${(waveMs / 1000).toFixed(1)}s   scoring: ${(scoreMs / 1000).toFixed(1)}s   ` +
+      `variant total: ${((Date.now() - t0) / 1000).toFixed(1)}s`,
+  );
+
+  return {
+    variant: useKwargs ? "positional+kwargs" : "positional-only",
+    converged,
+    cycle,
+    wavesRun: waves.length,
+    waveSeconds: waveMs / 1000,
+    scoringSeconds: scoreMs / 1000,
+    waves,
+    baselineEnvironment: {
+      knownTargetSites: runKnownTargetCallArgs.size,
+      paramsTyped: bvalcParams,
+      calleesTyped: Object.keys(runParamTypes).length,
+      ivarsDerived: bvalcIvars,
+      returnsDerived: 0,
+    },
+    convergedEnvironment: {
+      knownTargetSites: last?.contributingSites ?? 0,
+      paramsTyped: last?.paramsTyped ?? 0,
+      calleesTyped: last?.calleesTyped ?? 0,
+      ivarsDerived: last?.ivarsTyped ?? 0,
+      returnsDerived: last?.returnsTyped ?? 0,
+    },
+    addressable: {
+      total: addressableTotal,
+      baselineHole,
+      regressions,
+      byReceiverKind: Object.fromEntries(
+        RECEIVER_KINDS.map((kind) => {
+          const t = kindTally[kind];
+          const hole =
+            t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef - t.coreAmbiguous;
+          return [
+            kind,
+            { baselineHole: hole, addressable: addressableByKind[kind] ?? 0, residual: residualByKind[kind] ?? 0 },
+          ];
+        }),
+      ),
+      topMembers: topMembers.map(([member, count]) => ({ member, count })),
+      samples: addressableSamples,
+    },
+    residual: { byCause: residualCause, byKindAndCause: residualCauseByKind },
+    convergedPass: {
+      attempted: pass.attempted,
+      resolved: pass.resolved,
+      externalSkipped: pass.externalSkipped,
+      unresolvable: pass.unresolvable,
+      noInProjectDef: pass.noInProjectDef,
+      coreAmbiguous: pass.coreAmbiguous,
+      hole: pass.hole,
+      resolveSuccessRate: pass.resolved / convergedInternal,
+      byReceiverKind: pass.kindTally,
+    },
+  };
+}
+
+/**
+ * Both variants in one run — the positional-only fixpoint is the ceiling of the
+ * substrate that exists, the kwarg-extended one is the ceiling of the substrate
+ * Increment 2 would have to build. Reporting one without the other would answer
+ * the wrong question: the difference between them IS the funding decision.
+ */
+function runFixpointOracle(extractions: FileExtraction[], elapsedBeforeMs: number): void {
+  const t0 = Date.now();
+  console.error(
+    `[fixpoint] scan: sites=${fxSites.length} tails=${fxTails.length} ` +
+      `silentSites=${fxSilentSites} kwargBearing=${fxKwargSites} ` +
+      `kwargDeclaringMethods=${Object.keys(runKwargNames).length} scope=${FIXPOINT_WIDE ? "wide" : "bounded"}`,
+  );
+  const positionalOnly = fxRunVariant(extractions, false);
+  const withKwargs = fxRunVariant(extractions, true);
+
+  console.log("─── VARIANT COMPARISON ────────────────────────────────────────────");
+  for (const v of [positionalOnly, withKwargs]) {
+    const a = v.addressable as { total: number; baselineHole: number };
+    const e = v.convergedEnvironment as { paramsTyped: number; ivarsDerived: number };
+    console.log(
+      `  ${String(v.variant).padEnd(18)} params=${String(e.paramsTyped).padStart(6)} ` +
+        `ivars=${String(e.ivarsDerived).padStart(5)} addressable=${String(a.total).padStart(6)} ` +
+        `(${((a.total / Math.max(1, a.baselineHole)) * 100).toFixed(1)}% of the ${a.baselineHole} hole)  ` +
+        `waves=${String(v.wavesRun)}`,
+    );
+  }
+  console.log("");
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_FIXPOINT,
+    JSON.stringify(
+      {
+        meta: {
+          bead: "tea-rags-mcp-a2hrq",
+          root: ROOT,
+          generatedAt: new Date().toISOString(),
+          scope: FIXPOINT_WIDE ? "wide" : "bounded",
+          maxWaves: FIXPOINT_MAX_WAVES,
+          scanSites: fxSites.length,
+          scanTails: fxTails.length,
+          silentSites: fxSilentSites,
+          kwargBearingSites: fxKwargSites,
+          kwargDeclaringMethods: Object.keys(runKwargNames).length,
+          classFieldParamLinks: Object.values(runClassFieldParamLinks).reduce(
+            (n, f) => n + Object.keys(f).length,
+            0,
+          ),
+          harnessBeforeOracleSeconds: elapsedBeforeMs / 1000,
+          oracleSeconds: (Date.now() - t0) / 1000,
+        },
+        baselinePass: {
+          callsAttempted,
+          callsResolved,
+          missWithInProjectDef:
+            callsAttempted -
+            callsResolved -
+            callsExternalSkipped -
+            callsUnresolvable -
+            callsNoInProjectDef -
+            callsCoreAmbiguous,
+          resolveSuccessRate: resolveSuccessRateBaseline,
+          byReceiverKind: Object.fromEntries(
+            RECEIVER_KINDS.map((kind) => {
+              const t = kindTally[kind];
+              return [
+                kind,
+                {
+                  ...t,
+                  recallHole:
+                    t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef - t.coreAmbiguous,
+                },
+              ];
+            }),
+          ),
+        },
+        variants: { positionalOnly, withKwargs },
+      },
+      null,
+      2,
+    ),
+  );
+  console.log(`fixpoint oracle report → ${OUT_FIXPOINT}`);
+  console.log("");
+}
+
 // ---------------------------------------------------------------------------
 // MAIN
 // ---------------------------------------------------------------------------
 let hierarchyView: MapHierarchyView;
+/** Baseline resolveSuccessRate, published for the fixpoint oracle's delta line. */
+let resolveSuccessRateBaseline = 0;
 
 function fmtPct(n: number): string {
   return (n * 100).toFixed(2) + "%";
@@ -1916,6 +3179,7 @@ async function main(): Promise<void> {
       });
       ingestPass1(extraction, materializedRoot);
       if (ORACLE_ENABLED) scanOracleAst(materializedRoot, relPath);
+      if (FIXPOINT_ENABLED) scanFixpointAst(materializedRoot, relPath, extraction);
       if (DUCK_ENABLED && code.includes("table_name")) scanTableNameDecls(materializedRoot, []);
       extractions.push(extraction);
     } catch (err) {
@@ -1967,6 +3231,21 @@ async function main(): Promise<void> {
     discoverSelfDispatchTemplates(runSelfDispatchMethods, buildSelfDispatchProbe(symbolTable, hierarchyView)),
   );
   runSelfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(runSelfDispatchMethods);
+  // bd tea-rags-mcp-bvalc barrier fold — always computed for the report, threaded
+  // into ctx only when enabled.
+  runParamTypes = foldKnownTargetParamTypes(runKnownTargetCallArgs.values(), runParamNames);
+  runDerivedClassFieldTypes = deriveClassFieldTypesFromParams(
+    runClassFieldParamLinks,
+    runParamTypes,
+    runTypedClassFields,
+  );
+  console.error(
+    `[forensics] ctor param types: ${CTOR_PARAM_TYPES_ENABLED ? "ON " : "off"} ` +
+      `sites=${runKnownTargetCallArgs.size} callees=${Object.keys(runParamTypes).length} ` +
+      `params=${Object.values(runParamTypes).reduce((n, p) => n + Object.keys(p).length, 0)} ` +
+      `links=${Object.values(runClassFieldParamLinks).reduce((n, f) => n + Object.keys(f).length, 0)} ` +
+      `derivedIvars=${Object.values(runDerivedClassFieldTypes).reduce((n, f) => n + Object.keys(f).length, 0)}`,
+  );
 
   // PASS-2: resolve.
   for (const extraction of extractions) resolvePass2(extraction);
@@ -1977,6 +3256,7 @@ async function main(): Promise<void> {
     callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
   );
   const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / internalAttempted;
+  resolveSuccessRateBaseline = resolveSuccessRate;
   const missWithInProjectDef = Math.max(
     0,
     callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
@@ -2179,6 +3459,7 @@ async function main(): Promise<void> {
   L(`misses dumped: ${misses.length} -> ${OUT_MISSES}`);
   if (ORACLE_ENABLED) runOracle(Date.now() - t0, files.length);
   if (DUCK_ENABLED) runDuckOracle();
+  if (FIXPOINT_ENABLED) runFixpointOracle(extractions, Date.now() - t0);
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
