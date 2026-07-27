@@ -2504,6 +2504,72 @@ describe("extractFromRubyFile — localBindings P3 RHS expansion + flow-sensitiv
   });
 });
 
+describe("extractFromRubyFile — rescue exception-variable bindings (02saq)", () => {
+  const extract = (src: string, chunk: { startLine: number; endLine: number }) =>
+    extractFromRubyFile({
+      tree: parse(src.endsWith("\n") ? src : `${src}\n`),
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: chunk.startLine, endLine: chunk.endLine }],
+    });
+
+  it("reaches localBindings for `rescue Const => e`", () => {
+    const r = extract("def f\n  risky\nrescue Widget => e\n  e.spin\nend", { startLine: 1, endLine: 5 });
+    expect(r.chunks[0].localBindings).toEqual({ e: [{ line: 3, type: "Widget" }] });
+  });
+
+  it("carries a constant union as a typeRef alongside a best-effort name", () => {
+    const r = extract("def f\n  risky\nrescue Widget, Gadget => e\n  e.spin\nend", { startLine: 1, endLine: 5 });
+    expect(r.chunks[0].localBindings).toEqual({
+      e: [
+        {
+          line: 3,
+          type: "Widget",
+          typeRef: {
+            form: "union",
+            members: [
+              { form: "instance", name: "Widget" },
+              { form: "instance", name: "Gadget" },
+            ],
+          },
+        },
+      ],
+    });
+  });
+
+  it("emits NO binding for a bare `rescue => e`", () => {
+    const r = extract("def f\n  risky\nrescue => e\n  e.spin\nend", { startLine: 1, endLine: 5 });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+
+  it("binds the rescue variable only from its own clause line onward", () => {
+    const r = extract("def f\n  e = Foo.new\n  e.a\nrescue Widget => e\n  e.spin\nend", { startLine: 1, endLine: 6 });
+    expect(r.chunks[0].localBindings).toEqual({
+      e: [
+        { line: 2, type: "Foo" },
+        { line: 4, type: "Widget" },
+      ],
+    });
+  });
+
+  it("attributes each clause to the chunk that owns its line", () => {
+    const src = ["def a", "  risky", "rescue Widget => e", "  e.spin", "end", "", "def b", "  risky", "rescue Gadget => g", "  g.spin", "end"].join("\n");
+    const r = extractFromRubyFile({
+      tree: parse(`${src}\n`),
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [
+        { symbolId: "a", scope: ["a"], startLine: 1, endLine: 5 },
+        { symbolId: "b", scope: ["b"], startLine: 7, endLine: 11 },
+      ],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ e: [{ line: 3, type: "Widget" }] });
+    expect(r.chunks[1].localBindings).toEqual({ g: [{ line: 9, type: "Gadget" }] });
+  });
+});
+
 describe("collectRubyIvarFieldTypes (ivar → type, classFieldTypes channel)", () => {
   it("records @ivar = Const.new under the enclosing class", () => {
     const root = parse(`
