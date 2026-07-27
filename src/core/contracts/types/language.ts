@@ -497,6 +497,47 @@ export interface LanguageProvider {
    * indexes the files; only the fan-graph drops them. bd tea-rags-mcp-biwbq.
    */
   codegraphExclusionGlobs?: readonly string[];
+  /**
+   * Optional persisted-schema column vocabulary — how this language's ORM turns
+   * a schema snapshot into instance accessors that exist at runtime but have no
+   * `def` anywhere in source (Rails `db/schema.rb` → `name` / `name=` / `name?`
+   * on the owning model). The codegraph provider reads the snapshot ONCE per
+   * run at the project root and hands it to the language-agnostic pre-pass; the
+   * engine carries no Rails knowledge of its own, exactly as
+   * `codegraphExclusionGlobs` keeps `db/migrate/**` in the Ruby domain.
+   * Absent → no pre-pass for this language. bd tea-rags-mcp-8l5fo.
+   */
+  schemaColumnAccessors?: SchemaColumnAccessorSource;
+}
+
+/**
+ * One schema table and the instance-accessor names its columns synthesize on the
+ * owning model. The COLUMN→accessor expansion (reader / writer / query
+ * predicate, the implicit primary key, timestamps) is the language's own
+ * convention and is already applied here — the consumer sees method names only.
+ */
+export interface SchemaTableColumns {
+  readonly table: string;
+  readonly accessors: readonly string[];
+}
+
+/**
+ * The per-language half of the project-scope schema-column pre-pass
+ * (bd tea-rags-mcp-8l5fo): where the snapshot lives, how to read it, how a table
+ * name maps to a model name, and which base classes make a class a model. The
+ * trajectory-side pre-pass supplies everything else (the run's class inventory,
+ * the explicit table overrides, the symbol synthesis).
+ */
+export interface SchemaColumnAccessorSource {
+  /** Project-root-relative path of the schema snapshot (`db/schema.rb`). */
+  readonly schemaRelPath: string;
+  /** Parse the snapshot into table → accessor names. Never throws on garbage. */
+  readonly parseSchema: (source: string) => SchemaTableColumns[];
+  /** Convention model name for a table (`firms` → `Firm`). Inflection fallback
+   *  only — an explicit in-source declaration always wins upstream. */
+  readonly modelNameForTable: (table: string) => string;
+  /** A class owns a schema table only if its ancestry reaches one of these. */
+  readonly modelBaseClasses: readonly string[];
 }
 
 /**

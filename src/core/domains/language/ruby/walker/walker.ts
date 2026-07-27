@@ -107,6 +107,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     prepended: prependedMap,
     extends: extendsMap,
     compact: compactClassSet,
+    schemaTables: schemaTableMap,
   } = collectRubyClassAncestors(input.tree.rootNode);
   const dispatchTables = collectRubyDispatchTables(input.tree.rootNode);
   const dispatchTableNames = new Set(Object.keys(dispatchTables));
@@ -187,6 +188,12 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     out.classAncestors = ancestorRecord;
   }
   if (compactClassSet.size > 0) out.compactDeclaredClasses = [...compactClassSet];
+  if (schemaTableMap.size > 0) {
+    // Record (not Map) so the channel survives the NDJSON spill round-trip.
+    const schemaTableRecord: Record<string, string> = {};
+    for (const [k, v] of schemaTableMap) schemaTableRecord[k] = v;
+    out.classSchemaTables = schemaTableRecord;
+  }
   if (prependedMap.size > 0) {
     const prependedRecord: Record<string, readonly string[]> = {};
     for (const [k, v] of prependedMap) prependedRecord[k] = v;
@@ -351,10 +358,13 @@ function collectRubyClassAncestors(root: AstNode): {
   prepended: Map<string, string[]>;
   extends: Map<string, string>;
   compact: Set<string>;
+  schemaTables: Map<string, string>;
 } {
   const out = new Map<string, string[]>();
   const prependedOut = new Map<string, string[]>();
   const extendsOut = new Map<string, string>();
+  /** class FQ → explicit `self.table_name` override (bd tea-rags-mcp-8l5fo). */
+  const schemaTablesOut = new Map<string, string>();
   // FQs declared in COMPACT form (`class A::B::C`): their intermediate namespaces
   // (A, A::B) are NOT open lexical scopes, so a raw ancestor must NOT be
   // prefix-walked through them (bd lawlq.3.7). Consumed by canonicalizeAncestorFq.
@@ -420,6 +430,13 @@ function collectRubyClassAncestors(root: AstNode): {
       }
       if (ancestors.length > 0) out.set(fq, ancestors);
       if (prepended.length > 0) prependedOut.set(fq, prepended);
+      // `self.table_name = "companies"` — the explicit ORM table override
+      // (bd tea-rags-mcp-8l5fo). Collected on THIS traversal (which already
+      // owns the namespace stack that yields `fq`) rather than in a second walk.
+      for (const stmt of stmtSource) {
+        const table = schemaTableOverrideFromStatement(stmt);
+        if (table !== null) schemaTablesOut.set(fq, table);
+      }
       // Recurse — nested classes get their own ancestor maps. Children of
       // the body are the canonical recursion target; without an explicit
       // body field, fall back to scanning the class node's own children.
@@ -430,7 +447,31 @@ function collectRubyClassAncestors(root: AstNode): {
     for (const child of node.children) walkScope(child, scope);
   };
   walkScope(root, []);
-  return { ancestors: out, prepended: prependedOut, extends: extendsOut, compact: compactOut };
+  return {
+    ancestors: out,
+    prepended: prependedOut,
+    extends: extendsOut,
+    compact: compactOut,
+    schemaTables: schemaTablesOut,
+  };
+}
+
+/**
+ * The table a class-body statement declares as its ORM table:
+ * `self.table_name = "companies"` (bd tea-rags-mcp-8l5fo). ONLY the
+ * `self`-qualified assignment counts — a bare `table_name = "x"` is a local
+ * variable, not the class-level override — and only a STRING literal: a computed
+ * expression (`self.table_name = compute_name`) is unknowable statically, and a
+ * guess would attach a whole table's columns to the wrong model.
+ */
+function schemaTableOverrideFromStatement(node: AstNode): string | null {
+  if (node.type !== "assignment") return null;
+  const left = node.childForFieldName("left");
+  const right = node.childForFieldName("right");
+  if (!left || !right) return null;
+  if (left.text.replace(/\s+/g, "") !== "self.table_name") return null;
+  const literal = /^["']([A-Za-z0-9_.]+)["']$/.exec(right.text.trim());
+  return literal?.[1] ?? null;
 }
 
 const RUBY_MIXIN_METHODS = new Set(["include", "extend", "prepend"]);

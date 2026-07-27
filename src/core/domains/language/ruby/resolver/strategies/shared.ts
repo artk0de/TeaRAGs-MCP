@@ -15,6 +15,7 @@ import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
   type CallContext,
+  type SymbolDefinition,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import { ZEITWERK_PREFIX } from "../../walker/walker.js";
@@ -104,6 +105,18 @@ export function receiverChainTailIsExternal(receiver: string): boolean {
 }
 
 /** Last `::`-segment of a (possibly qualified) Ruby constant — `A::B::C` → `C`. */
+/**
+ * A real `def` SHADOWS the schema-synthesized accessor of the same name — Ruby
+ * generates column methods into a module the model includes, so an explicit
+ * `def name` in the class body wins (bd tea-rags-mcp-8l5fo). Applied after the
+ * file/scope narrowing so a model carrying both never looks AMBIGUOUS to
+ * `pickSingleCandidate` and degrades to a file-only edge.
+ */
+export function preferDeclaredOverSchemaColumn(defs: SymbolDefinition[]): SymbolDefinition[] {
+  const declared = defs.filter((def) => def.isSchemaColumn !== true);
+  return declared.length > 0 ? declared : defs;
+}
+
 export function lastConstantSegment(qualified: string): string {
   const parts = qualified.split("::");
   return parts[parts.length - 1] ?? qualified;
@@ -290,7 +303,11 @@ export function resolveInstanceMethodInClassChain(
     klassFile !== null ? { targetRelPath: klassFile, targetSymbolId: null } : null;
 
   if (klassFile !== null) {
-    const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => def.relPath === klassFile);
+    const candidates = preferDeclaredOverSchemaColumn(
+      ctx.symbolTable
+        .lookupByShortName(member, { includeSchemaColumns: true })
+        .filter((def) => def.relPath === klassFile),
+    );
     const target = pickSingleCandidate(candidates, mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   }
@@ -609,12 +626,17 @@ function resolveTypeMethodInternal(
     }
 
     const bareType = lastConstantSegment(typeName);
-    const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
-      if (def.relPath !== targetFile) return false;
-      const tail = def.scope[def.scope.length - 1];
-      if (tail !== typeName && tail !== bareType) return false;
-      return symbolIdFilter === null || symbolIdFilter(def.symbolId, member);
-    });
+    // Schema columns join HERE and only here on the typed path: the lookup is
+    // already narrowed to one class's file and scope, so a synthesized `name`
+    // cannot widen anything (bd tea-rags-mcp-8l5fo).
+    const candidates = preferDeclaredOverSchemaColumn(
+      ctx.symbolTable.lookupByShortName(member, { includeSchemaColumns: true }).filter((def) => {
+        if (def.relPath !== targetFile) return false;
+        const tail = def.scope[def.scope.length - 1];
+        if (tail !== typeName && tail !== bareType) return false;
+        return symbolIdFilter === null || symbolIdFilter(def.symbolId, member);
+      }),
+    );
     const target = pickSingleCandidate(candidates, mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   }

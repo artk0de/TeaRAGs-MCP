@@ -67,6 +67,10 @@ import {
   foldSelfDispatchTemplates,
   type SelfDispatchMethod,
 } from "../src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.js";
+import {
+  collectSchemaColumnModels,
+  synthesizeSchemaColumnDefs,
+} from "../src/core/domains/trajectory/codegraph/symbols/schema-column-synthesis.js";
 import { MapHierarchyView } from "../src/core/infra/graph/hierarchy-view.js";
 import { materializeTree } from "../src/core/infra/materialize.js";
 import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
@@ -208,6 +212,8 @@ const runAncestors: Record<string, readonly string[]> = {};
 const runCompactClasses = new Set<string>();
 const runPrependedAncestors: Record<string, readonly string[]> = {};
 const runExtends: Record<string, string> = {};
+/** class FQ → explicit `self.table_name` (bd tea-rags-mcp-8l5fo, mirrors provider.ts). */
+const runSchemaTables: Record<string, string> = {};
 const runReturnTypes: Record<string, string> = {};
 const runInstantiatedTypes = new Set<string>();
 const runIvarTypes: Record<string, Record<string, string>> = {};
@@ -262,6 +268,8 @@ function ingestPass1(extraction: FileExtraction, materializedRoot: AstNode): voi
   if (extraction.classPrependedAncestors)
     for (const [k, v] of Object.entries(extraction.classPrependedAncestors)) runPrependedAncestors[k] = v;
   if (extraction.classExtends) for (const [k, v] of Object.entries(extraction.classExtends)) runExtends[k] = v;
+  if (extraction.classSchemaTables)
+    for (const [k, v] of Object.entries(extraction.classSchemaTables)) runSchemaTables[k] = v;
   if (extraction.functionReturnTypes)
     for (const [k, v] of Object.entries(extraction.functionReturnTypes)) runReturnTypes[k] = v;
   if (extraction.ivarTypes) for (const [k, v] of Object.entries(extraction.ivarTypes)) runIvarTypes[k] = v;
@@ -287,8 +295,8 @@ function ingestPass1(extraction: FileExtraction, materializedRoot: AstNode): voi
 // ---------------------------------------------------------------------------
 // Tally state (mirrors runStats + per-kind kindTally + languageKindTally).
 // ---------------------------------------------------------------------------
-type KindTally = { attempted: number; resolved: number; unresolvable: number; externalSkipped: number; noInProjectDef: number };
-const emptyKind = (): KindTally => ({ attempted: 0, resolved: 0, unresolvable: 0, externalSkipped: 0, noInProjectDef: 0 });
+type KindTally = { attempted: number; resolved: number; unresolvable: number; externalSkipped: number; noInProjectDef: number; coreAmbiguous: number };
+const emptyKind = (): KindTally => ({ attempted: 0, resolved: 0, unresolvable: 0, externalSkipped: 0, noInProjectDef: 0, coreAmbiguous: 0 });
 const kindTally: Record<ReceiverKind, KindTally> = Object.fromEntries(
   RECEIVER_KINDS.map((k) => [k, emptyKind()]),
 ) as Record<ReceiverKind, KindTally>;
@@ -297,6 +305,8 @@ let callsResolved = 0;
 let callsUnresolvable = 0;
 let callsExternalSkipped = 0;
 let callsNoInProjectDef = 0;
+// bd tea-rags-mcp-83cl7 — core-homonym misses carved out of the recall hole.
+let callsCoreAmbiguous = 0;
 // DEFECT-2 signal: distinct in-project method symbolIds that RECEIVE ≥1 edge.
 // DEFECT-2 redirects an entry `Const.member` from the shared template node to the
 // concrete `Const#hook`, so ON adds hook targets that had get_callers()==[] OFF —
@@ -434,6 +444,12 @@ function resolvePass2(extraction: FileExtraction): void {
       } else if (symbolTable.lookupByShortName(call.member).length === 0) {
         callsNoInProjectDef += 1;
         kindTally[receiverKind].noInProjectDef += 1;
+      } else if (resolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false) {
+        // bd tea-rags-mcp-83cl7 — CORE HOMONYM: a core/runtime member on an
+        // UNTYPED receiver whose in-project def of the same short name is a
+        // coincidence. Mirrors provider.ts `resolveExtraction` branch-for-branch.
+        callsCoreAmbiguous += 1;
+        kindTally[receiverKind].coreAmbiguous += 1;
       } else {
         // THE RECALL HOLE: unresolved, non-dynamic, non-external, has in-project def.
         recordMiss(call, receiverKind, extraction.relPath, chunk.scope, chunk.symbolId);
@@ -1914,6 +1930,38 @@ async function main(): Promise<void> {
   // BARRIER (provider.ts:898).
   hierarchyView = new MapHierarchyView(buildHierarchySnapshot(runInheritanceRows));
   includedBy = buildIncludedBy(runAncestors, runPrependedAncestors);
+  // Schema-column pre-pass (bd tea-rags-mcp-8l5fo) — an UNGATED mirror of
+  // `provider.applySchemaColumns`, so the measured numbers reflect production.
+  // Deliberately outside the CODEGRAPH_DUCK_ORACLE section: the duck oracle has
+  // its own measurement-only schema reader, this is the production path.
+  {
+    const schemaSource = ruby.schemaColumnAccessors;
+    let snapshot: string | null = null;
+    try {
+      if (schemaSource) snapshot = readFileSync(join(ROOT, schemaSource.schemaRelPath), "utf8");
+    } catch {
+      snapshot = null;
+    }
+    if (schemaSource && snapshot !== null) {
+      const models = collectSchemaColumnModels({
+        classAncestors: runAncestors,
+        declaredTables: runSchemaTables,
+        modelBaseClasses: schemaSource.modelBaseClasses,
+        symbolTable,
+      });
+      const { definitions, stats } = synthesizeSchemaColumnDefs(
+        schemaSource.parseSchema(snapshot),
+        models,
+        schemaSource.modelNameForTable,
+      );
+      symbolTable.setSchemaColumns(definitions);
+      console.error(
+        `[forensics] schema columns: tables=${stats.schemaTables} models=${stats.models} ` +
+          `explicit=${stats.mappedExplicit} inflected=${stats.mappedInflection} ` +
+          `ambiguous=${stats.ambiguous} unmapped=${stats.unmapped} defs=${stats.definitions}`,
+      );
+    }
+  }
   // DEFECT 2 discovery (always built for the count; threaded into ctx only when enabled).
   runSelfDispatchTemplates = foldSelfDispatchTemplates(
     discoverSelfDispatchTemplates(runSelfDispatchMethods, buildSelfDispatchProbe(symbolTable, hierarchyView)),
@@ -1924,14 +1972,23 @@ async function main(): Promise<void> {
   for (const extraction of extractions) resolvePass2(extraction);
 
   // metrics (provider.ts:1161-1174).
-  const internalAttempted = Math.max(1, callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef);
+  const internalAttempted = Math.max(
+    1,
+    callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
+  );
   const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / internalAttempted;
   const missWithInProjectDef = Math.max(
     0,
-    callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef,
+    callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
   );
   const recallDenominator = callsResolved + missWithInProjectDef;
   const inProjectEdgeRecall = recallDenominator === 0 ? 0 : callsResolved / recallDenominator;
+  // bd 83cl7 pre/post view: the new branch only carves from the residual, so the
+  // pre-83cl7 hole is EXACTLY the post-hole plus the carve-out — one run reports
+  // both sides of the delta without a second baseline pass.
+  const missPre83cl7 = missWithInProjectDef + callsCoreAmbiguous;
+  const recallPre83cl7 =
+    callsResolved + missPre83cl7 === 0 ? 0 : callsResolved / (callsResolved + missPre83cl7);
 
   // ---- report ----
   const L = (s: string) => console.log(s);
@@ -1959,19 +2016,26 @@ async function main(): Promise<void> {
   L(`callsExternalSkipped:    ${callsExternalSkipped}`);
   L(`callsUnresolvable:       ${callsUnresolvable}`);
   L(`callsNoInProjectDef:     ${callsNoInProjectDef}`);
+  L(`callsCoreAmbiguous:      ${callsCoreAmbiguous}   <-- bd 83cl7 core-homonym carve-out`);
   L(`missWithInProjectDef:    ${missWithInProjectDef}   <-- RECALL HOLE`);
   L("");
   L(`resolveSuccessRate:      ${fmtPct(resolveSuccessRate)}`);
   L(`inProjectEdgeRecall:     ${fmtPct(inProjectEdgeRecall)}`);
   L("");
+  L("─── bd 83cl7 delta (pre vs post core-homonym carve-out) ───────────");
+  L(`missWithInProjectDef:    ${missPre83cl7} -> ${missWithInProjectDef}   (${missWithInProjectDef - missPre83cl7})`);
+  L(
+    `inProjectEdgeRecall:     ${fmtPct(recallPre83cl7)} -> ${fmtPct(inProjectEdgeRecall)}   (+${((inProjectEdgeRecall - recallPre83cl7) * 100).toFixed(2)}pp)`,
+  );
+  L("");
   L("─── byReceiverKind ────────────────────────────────────────────────");
-  L("kind          attempted  resolved   rate     ext-skip  no-def   recallHole");
+  L("kind          attempted  resolved   rate     ext-skip  no-def   coreAmb   recallHole");
   for (const kind of RECEIVER_KINDS) {
     const t = kindTally[kind];
-    const hole = t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef;
+    const hole = t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef - t.coreAmbiguous;
     const rate = t.attempted === 0 ? 0 : t.resolved / t.attempted;
     L(
-      `${kind.padEnd(12)}  ${String(t.attempted).padStart(8)}  ${String(t.resolved).padStart(8)}  ${fmtPct(rate).padStart(7)}  ${String(t.externalSkipped).padStart(8)}  ${String(t.noInProjectDef).padStart(6)}  ${String(hole).padStart(9)}`,
+      `${kind.padEnd(12)}  ${String(t.attempted).padStart(8)}  ${String(t.resolved).padStart(8)}  ${fmtPct(rate).padStart(7)}  ${String(t.externalSkipped).padStart(8)}  ${String(t.noInProjectDef).padStart(6)}  ${String(t.coreAmbiguous).padStart(7)}  ${String(hole).padStart(9)}`,
     );
   }
   L("");
@@ -2086,16 +2150,26 @@ async function main(): Promise<void> {
       callsExternalSkipped,
       callsUnresolvable,
       callsNoInProjectDef,
+      callsCoreAmbiguous,
       missWithInProjectDef,
+      missPre83cl7,
       resolveSuccessRate,
       inProjectEdgeRecall,
+      recallPre83cl7,
       rubyOnly: true,
       note: "Ruby-only symbol table; cross-language short-name collisions may shift cg_run_stats cross-check slightly.",
     },
     byReceiverKind: Object.fromEntries(
       RECEIVER_KINDS.map((k) => {
         const t = kindTally[k];
-        return [k, { ...t, recallHole: t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef }];
+        return [
+          k,
+          {
+            ...t,
+            recallHole:
+              t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef - t.coreAmbiguous,
+          },
+        ];
       }),
     ),
     bareCallTaxonomy: Object.fromEntries(CATS.map((c) => [c, (catCounts[c] ?? []).length])),

@@ -22,6 +22,41 @@ const attrPair = (b: string): DeclaredMethodSpec[] => [
   { name: `${b}=`, kind: "instance" },
 ];
 
+/**
+ * Accessors ActiveRecord generates for ONE persisted column: reader, writer and
+ * query predicate (`name` → `name`, `name=`, `name?`). Same shape as
+ * {@link attrPair} one row up — a column IS an attribute, it just happens to be
+ * declared in `db/schema.rb` instead of in the class body, which is why it has
+ * no `def` anywhere in source (bd tea-rags-mcp-8l5fo).
+ *
+ * Dirty-tracking (`name_was`, `name_changed?`, `name_before_last_save`, …) is
+ * deliberately NOT synthesized: it would triple an already-large member family
+ * for shapes that are rare at call sites, and every extra name is another
+ * chance to shadow a real def.
+ */
+export const columnAccessors = (b: string): DeclaredMethodSpec[] => [
+  ...attrPair(b),
+  { name: `${b}?`, kind: "instance" },
+];
+
+/**
+ * The Rails schema-snapshot conventions the column reader interprets. Pure DATA
+ * (this file imports no tree-sitter and no AST): WHERE the snapshot lives, what
+ * the implicit primary key is called, which columns `t.timestamps` stands for,
+ * and which `t.<verb>` calls declare no column at all.
+ */
+export const ACTIVE_RECORD_SCHEMA_SNAPSHOT: {
+  readonly relPath: string;
+  readonly implicitPrimaryKey: string;
+  readonly timestampColumns: readonly string[];
+  readonly nonColumnVerbs: ReadonlySet<string>;
+} = {
+  relPath: "db/schema.rb",
+  implicitPrimaryKey: "id",
+  timestampColumns: ["created_at", "updated_at"],
+  nonColumnVerbs: new Set(["index", "check_constraint", "constraint", "exclusion_constraint", "unique_constraint"]),
+};
+
 const collectionAssoc = (b: string): DeclaredMethodSpec[] => [
   { name: b, kind: "instance" },
   { name: `${b}=`, kind: "instance" },

@@ -30,7 +30,8 @@
  *   9. chainType (multi-hop dotted chain via propagation engine — terminal guard)
  *  10. arRelationGuard (AR::Relation chain receiver — terminal guard)
  *  11. receiverSetDrop (any remaining receiver-set call — terminal guard)
- *  12. bareCall (bare-call global short-name fallback — last pass)
+ *  12. bareCall (bare-call global short-name fallback)
+ *  13. schemaColumn (bare read of the enclosing model's db/schema.rb column — last pass)
  */
 
 import {
@@ -65,6 +66,7 @@ import {
   RubyLocalTypeSymbolResolutionStrategy,
   RubyReceiverSetDropSymbolResolutionStrategy,
   RubyReturnTypeBindingSymbolResolutionStrategy,
+  RubySchemaColumnSymbolResolutionStrategy,
   RubySelfDispatchEntrySymbolResolutionStrategy,
   RubySelfMemberSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
@@ -119,6 +121,10 @@ export class RubyCallResolver implements CallResolver {
       new RubyArRelationGuardSymbolResolutionStrategy(cfg),
       new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
       new RubyBareCallSymbolResolutionStrategy(cfg),
+      // After bareCall by design (bd tea-rags-mcp-8l5fo): any DECLARED definition
+      // the caller's MRO offers wins first, and only then does a `db/schema.rb`
+      // column accessor — which has no `def` anywhere — get a chance.
+      new RubySchemaColumnSymbolResolutionStrategy(),
     ];
     this.table = new RubyTableDispatchResolver(cfg);
     this.union = new RubyUnionDispatchResolver(cfg);

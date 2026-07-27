@@ -308,6 +308,18 @@ export interface FileExtraction {
    */
   compactDeclaredClasses?: readonly string[];
   /**
+   * Explicit ORM table overrides declared in a class body, keyed by class FQ
+   * (`Firm` → `companies` for `self.table_name = "companies"`). Consumed by the
+   * project-scope schema-column pre-pass at the pass-1→pass-2 barrier: an
+   * explicit declaration always beats the table→model inflection guess, and a
+   * table a declaration claims can never be inflected onto a namesake model
+   * (bd tea-rags-mcp-8l5fo). Populated by the Ruby walker; languages with no
+   * such convention leave it undefined.
+   *
+   * Plain Record (NOT Map) so the value round-trips through the NDJSON spill.
+   */
+  classSchemaTables?: Record<string, string>;
+  /**
    * Optional per-class superclass map for languages with single inheritance
    * via an `extends` clause (TypeScript / JavaScript / Java). Keyed by the
    * fully-qualified class name (`Outer.Inner` for nested classes); value is
@@ -690,8 +702,21 @@ export interface GlobalSymbolTable {
    *  rare but possible for monkey-patched modules. */
   lookup: (fqName: string) => SymbolDefinition[];
   /** Lookup by short name; returns all candidates for scope-walk
-   *  resolution. */
-  lookupByShortName: (name: string) => SymbolDefinition[];
+   *  resolution. SCHEMA COLUMNS ARE EXCLUDED unless `options` opts in — see
+   *  {@link SymbolLookupOptions}. */
+  lookupByShortName: (name: string, options?: SymbolLookupOptions) => SymbolDefinition[];
+  /**
+   * Replace the run's schema-column index with `definitions` (each carrying
+   * `isSchemaColumn: true`). Optional capability: a table that omits it simply
+   * never holds synthesized columns, and the pre-pass no-ops (bd
+   * tea-rags-mcp-8l5fo).
+   *
+   * Held in a SEPARATE index from the real definitions, so `lookup`,
+   * `size`, `shortNameDefCounts` and the default `lookupByShortName` are
+   * byte-identical to a run with no schema — the whole anti-explosion
+   * guarantee is structural, not a per-consumer filter.
+   */
+  setSchemaColumns?: (definitions: SymbolDefinition[]) => void;
   size: () => number;
   /** Bulk-load symbol definitions, typically from disk-backed storage on
    *  cold start. Equivalent to calling `upsertFile` once per file —
@@ -700,6 +725,20 @@ export interface GlobalSymbolTable {
   /** Definition count per shortName across the corpus — the distribution the
    *  DispatchFanoutPolicy p99 cap derives from (bd tea-rags-mcp-f2jsb). */
   shortNameDefCounts: () => ReadonlyMap<string, number>;
+}
+
+/**
+ * Options for {@link GlobalSymbolTable.lookupByShortName} (bd tea-rags-mcp-8l5fo).
+ *
+ * The default (omitted / `false`) is the ONLY safe setting for a global
+ * short-name fan-out or an ambiguity aggregate: a synthesized AR column
+ * accessor such as `name` exists on every model that has the column, so
+ * admitting them into a global candidate set multiplies it by hundreds. Opt in
+ * ONLY from a lookup already narrowed to a receiver type / MRO class.
+ */
+export interface SymbolLookupOptions {
+  /** Include schema-synthesized column accessors (`isSchemaColumn`). Default false. */
+  includeSchemaColumns?: boolean;
 }
 
 /** Positional-arity envelope of a method definition (bd xlnub). `maxPositional`
@@ -752,6 +791,21 @@ export interface SymbolDefinition {
    * (under-coverage, never a wrong target). Persisting it is a follow-up.
    */
   isAbstractStub?: boolean;
+  /**
+   * This definition was SYNTHESIZED by the project-scope schema pre-pass from a
+   * persisted schema snapshot (`db/schema.rb`) rather than extracted from a
+   * `def` — an ActiveRecord column accessor (`name` / `name=` / `name?`) that
+   * exists at runtime and nowhere in source (bd tea-rags-mcp-8l5fo).
+   *
+   * Only ever `true`; absent means a real definition. Load-bearing: the symbol
+   * table keeps these in a SEPARATE index so they reach ONLY the typed-receiver
+   * and MRO lookups that opt in via {@link SymbolLookupOptions}, and never a
+   * global short-name fan-out or an ambiguity aggregate.
+   *
+   * NOT persisted in `cg_symbols` — the pre-pass rebuilds the index at every
+   * run's pass-1→pass-2 barrier, same lifecycle as `hierarchyView`.
+   */
+  isSchemaColumn?: boolean;
 }
 
 /**

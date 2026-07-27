@@ -21,7 +21,7 @@
 
 import ignore, { type Ignore } from "ignore";
 
-import type { LanguageFactoryDescriptor } from "../../../contracts/types/language.js";
+import type { LanguageFactoryDescriptor, SchemaColumnAccessorSource } from "../../../contracts/types/language.js";
 import { GENERATED_PATTERNS, TEST_PATTERNS } from "../../../infra/file-classification/index.js";
 
 /**
@@ -101,4 +101,25 @@ export function buildCodegraphExclusionFilter(
     ig.add(options.customPatterns as string[]);
   }
   return ig;
+}
+
+/**
+ * Every registered language's persisted-schema column vocabulary
+ * (`LanguageProvider.schemaColumnAccessors` — Ruby's `db/schema.rb` reader). Same
+ * aggregation shape as `buildCodegraphExclusionFilter` above and for the same
+ * reason: the codegraph engine must know THAT a language can declare columns
+ * outside source, never WHICH file or WHICH convention. Omitting the factory
+ * (tests / fixtures) yields no sources, so the schema pre-pass no-ops.
+ * bd tea-rags-mcp-8l5fo.
+ */
+export function collectSchemaColumnSources(
+  languageFactory?: LanguageFactoryDescriptor,
+): readonly SchemaColumnAccessorSource[] {
+  if (!languageFactory) return [];
+  const sources: SchemaColumnAccessorSource[] = [];
+  for (const lang of languageFactory.supported()) {
+    const source = languageFactory.create(lang).schemaColumnAccessors;
+    if (source !== undefined) sources.push(source);
+  }
+  return sources;
 }

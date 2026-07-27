@@ -17,7 +17,12 @@
  * lands.
  */
 
-import type { GlobalSymbolTable, RelPath, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
+import type {
+  GlobalSymbolTable,
+  RelPath,
+  SymbolDefinition,
+  SymbolLookupOptions,
+} from "../../../../contracts/types/codegraph.js";
 
 export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
   /** fqName -> definitions across files (multiple = monkey-patched module). */
@@ -26,6 +31,21 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
   private readonly byShort = new Map<string, SymbolDefinition[]>();
   /** relPath -> definitions, for cheap removal on re-upsert. */
   private readonly byFile = new Map<RelPath, SymbolDefinition[]>();
+  /**
+   * shortName -> SCHEMA-SYNTHESIZED column accessors (bd tea-rags-mcp-8l5fo).
+   *
+   * A separate index, not a flag inside `byShort`, because the exclusion has to
+   * be structural: `lookup`, `size`, `shortNameDefCounts` and the DEFAULT
+   * `lookupByShortName` are then byte-identical to a run with no schema, so no
+   * global short-name fan-out and no ambiguity aggregate can ever see a column
+   * that 300 models "define". Only a caller passing
+   * `{ includeSchemaColumns: true }` — the typed-receiver / MRO paths, already
+   * narrowed to one class — reaches it.
+   *
+   * Run-scoped: rebuilt wholesale by `setSchemaColumns` at each pass-1→pass-2
+   * barrier, so per-file `upsertFile` / `removeFile` deliberately leave it alone.
+   */
+  private schemaColumnsByShort = new Map<string, SymbolDefinition[]>();
 
   upsertFile(relPath: RelPath, definitions: SymbolDefinition[]): void {
     this.removeFile(relPath);
@@ -51,8 +71,20 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
     return (this.byFq.get(fqName) ?? []).slice();
   }
 
-  lookupByShortName(name: string): SymbolDefinition[] {
-    return (this.byShort.get(name) ?? []).slice();
+  lookupByShortName(name: string, options?: SymbolLookupOptions): SymbolDefinition[] {
+    const declared = (this.byShort.get(name) ?? []).slice();
+    if (options?.includeSchemaColumns !== true) return declared;
+    // Declared definitions stay FIRST: a real `def name` shadows the AR-generated
+    // attribute method in Ruby, and callers that pick a single candidate rely on
+    // the declared-before-synthesized order.
+    const columns = this.schemaColumnsByShort.get(name);
+    return columns === undefined ? declared : [...declared, ...columns];
+  }
+
+  setSchemaColumns(definitions: SymbolDefinition[]): void {
+    const next = new Map<string, SymbolDefinition[]>();
+    for (const def of definitions) pushTo(next, def.shortName, def);
+    this.schemaColumnsByShort = next;
   }
 
   size(): number {

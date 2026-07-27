@@ -72,6 +72,7 @@ import type {
   LanguageFactoryDescriptor,
   LanguageSymbolResolver,
   RubyTypeRef,
+  SchemaColumnAccessorSource,
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
 import type {
@@ -99,10 +100,11 @@ import {
   CodegraphResolveError,
   CodegraphSpillIoError,
 } from "../../errors.js";
-import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
+import { buildCodegraphExclusionFilter, collectSchemaColumnSources, type CodegraphExclusionOptions } from "../exclusion.js";
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
+import { collectSchemaColumnModels, synthesizeSchemaColumnDefs } from "./schema-column-synthesis.js";
 import {
   buildSelfDispatchProbe,
   collectSelfInstantiatingClassMethods,
@@ -557,6 +559,22 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runExtends: Record<string, string> = {};
   /**
+   * Per-run aggregation of `FileExtraction.classSchemaTables`
+   * (bd tea-rags-mcp-8l5fo): `class FQ → explicit ORM table override`. Read ONCE
+   * at the pass-1→pass-2 barrier by the schema-column pre-pass, where it decides
+   * which model owns each `db/schema.rb` table. Same lifecycle as `runExtends`.
+   */
+  private runSchemaTables: Record<string, string> = {};
+  /**
+   * Raw contents of the project's persisted-schema snapshot for the CURRENT run,
+   * keyed by the declaring language's `schemaRelPath`. Read ONCE per run from the
+   * project root by `loadSchemaSnapshots` — the same one-manifest-read shape as
+   * `runGemfileContent` — because the barrier has no `root` of its own.
+   * bd tea-rags-mcp-8l5fo.
+   */
+  private runSchemaSnapshots: Record<string, string> = {};
+  private runSchemaSnapshotsLoaded = false;
+  /**
    * Per-run aggregation of `FileExtraction.functionReturnTypes`
    * (bd tea-rags-mcp-6g9c). `functionName → declaredReturnTypeName` merged
    * across pass-1 files so the Go resolver can bind `x := New(); x.method()`
@@ -664,6 +682,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * transparent.
    */
   private readonly codegraphExclusionFilter: Ignore;
+  /**
+   * Persisted-schema column vocabularies contributed by the registered languages
+   * (bd tea-rags-mcp-8l5fo). Collected ONCE at construction, alongside the
+   * exclusion filter and through the same `deps.languageFactory` seam, because
+   * `factory.create` is expensive. Empty (no factory / no language declares one)
+   * ⇒ the schema pre-pass never runs.
+   */
+  private readonly schemaColumnSources: readonly SchemaColumnAccessorSource[];
 
   /**
    * Worker-pool descriptor — surfaced when the composition root wires this
@@ -684,6 +710,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       deps.exclusion ?? { excludeTests: false, customPatterns: [] },
       deps.languageFactory,
     );
+    this.schemaColumnSources = collectSchemaColumnSources(deps.languageFactory);
     // Configuration invariant: exactly one routing mode must be picked
     // at construction. We accept either `pool` OR (`graphDb`+`symbolTable`),
     // never both, never neither — silent fallback would mask wiring bugs
@@ -919,6 +946,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             this.runExtends[k] = v;
           }
         }
+        // Explicit ORM table overrides (`self.table_name`), merged run-global so
+        // the schema-column pre-pass at the barrier sees every declaration in the
+        // project regardless of which file carries it (bd tea-rags-mcp-8l5fo).
+        if (extraction.classSchemaTables) {
+          for (const [k, v] of Object.entries(extraction.classSchemaTables)) {
+            this.runSchemaTables[k] = v;
+          }
+        }
         // Merge file-local function return types into the run-global map so
         // the resolver in pass-2 can resolve `x := New()` return-type
         // bindings keyed by function name regardless of which file declares
@@ -1033,6 +1068,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // reads this directly instead of rebuilding the identical inversion per
         // file (the maps no longer change after pass-1).
         this.runIncludedBy = buildIncludedBy(this.runAncestors, this.runPrependedAncestors);
+        // Persisted-schema column accessors (bd tea-rags-mcp-8l5fo). Composed at
+        // this same barrier and for the same reason as the discovery below: only
+        // here are the run-global ancestry map (which classes are models) and the
+        // explicit `self.table_name` overrides both complete. Pass-2's typed and
+        // MRO lookups then find a column exactly like any other member.
+        if (this.schemaColumnSources.length > 0) {
+          const { symbolTable: schemaSymbolTable } = await this.getStore(collectionName);
+          this.applySchemaColumns(schemaSymbolTable);
+        }
         // Discover self-dispatch templates (DEFECT 2) now pass-1 is complete: the
         // symbol table holds every def and the hierarchy view every wiring edge,
         // so the abstract-hook + related-concrete-definer predicate is exact. The
@@ -1332,6 +1376,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runGemfileLoaded = false;
       this.runPrependedAncestors = {};
       this.runExtends = {};
+      this.runSchemaTables = {};
+      this.runSchemaSnapshots = {};
+      this.runSchemaSnapshotsLoaded = false;
       this.runReturnTypes = {};
       this.runInstantiatedTypes.clear();
       this.runIvarTypes = {};
@@ -1406,6 +1453,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runCompactClasses = new Set();
     this.runGemfileContent = undefined;
     this.runGemfileLoaded = false;
+    this.runSchemaSnapshots = {};
+    this.runSchemaSnapshotsLoaded = false;
     this.runPrependedAncestors = {};
     this.resetNodeFlushState();
     return {
@@ -1497,10 +1546,70 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
   }
 
+  /**
+   * Read every registered language's persisted-schema snapshot ONCE per run
+   * (bd tea-rags-mcp-8l5fo). Same shape and rationale as `loadGemfile`: a
+   * root-relative manifest read is in-domain for a file-walking provider, and the
+   * barrier — where the pre-pass runs — never sees `root`. An absent or
+   * unreadable snapshot is a clean no-op (the project simply has no schema).
+   */
+  private loadSchemaSnapshots(root: string): void {
+    if (this.runSchemaSnapshotsLoaded) return;
+    this.runSchemaSnapshotsLoaded = true;
+    for (const source of this.schemaColumnSources) {
+      try {
+        this.runSchemaSnapshots[source.schemaRelPath] = readFileSync(join(root, source.schemaRelPath), "utf8");
+      } catch {
+        // No snapshot for this language in this project — nothing to synthesize.
+      }
+    }
+  }
+
+  /**
+   * Synthesize the persisted-schema column accessors onto their owning models
+   * and publish them into the run's symbol table (bd tea-rags-mcp-8l5fo). Runs at
+   * the pass-1→pass-2 barrier, where BOTH inputs are complete for the first time:
+   * the ancestry map (which classes are models) and the explicit table overrides.
+   *
+   * The definitions are deliberately NOT persisted to `cg_symbols` — they are
+   * derived from a file that is not part of the call graph, and the pre-pass
+   * rebuilds them on every run (same lifecycle as `hierarchyView`).
+   */
+  private applySchemaColumns(symbolTable: GlobalSymbolTable): void {
+    if (symbolTable.setSchemaColumns === undefined) return;
+    const definitions: SymbolDefinition[] = [];
+    for (const source of this.schemaColumnSources) {
+      const snapshot = this.runSchemaSnapshots[source.schemaRelPath];
+      if (snapshot === undefined) continue;
+      const models = collectSchemaColumnModels({
+        classAncestors: this.runAncestors,
+        declaredTables: this.runSchemaTables,
+        modelBaseClasses: source.modelBaseClasses,
+        symbolTable,
+      });
+      const { definitions: synthesized, stats } = synthesizeSchemaColumnDefs(
+        source.parseSchema(snapshot),
+        models,
+        source.modelNameForTable,
+      );
+      definitions.push(...synthesized);
+      if (isDebug()) {
+        console.error("[GitEnrich] PHASE: CODEGRAPH_SCHEMA_COLUMNS", {
+          schema: source.schemaRelPath,
+          ...stats,
+        });
+      }
+    }
+    symbolTable.setSchemaColumns(definitions);
+  }
+
   async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
     // Read the run's Gemfile for gem-gated DSL grammar (adx5p.1) before pass-2
     // resolve reads it off each CallContext. One read per run (guarded).
     this.loadGemfile(root);
+    // Read the run's persisted-schema snapshot(s) for the barrier schema-column
+    // pre-pass (bd tea-rags-mcp-8l5fo). One read per run (guarded), same shape.
+    this.loadSchemaSnapshots(root);
     // Discover the file set to walk. Caller-supplied paths win
     // (incremental reindex); otherwise scan the repo for any
     // supported language extension. `ignoreFilter` is threaded from the
@@ -1627,6 +1736,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // Gem-gated DSL grammar (adx5p.1): read the run's Gemfile before the crossPass
     // early-return so finalizeSignals resolves pass-2 off this state (one/run).
     this.loadGemfile(root);
+    // Read the run's persisted-schema snapshot(s) for the barrier schema-column
+    // pre-pass (bd tea-rags-mcp-8l5fo). One read per run (guarded), same shape.
+    this.loadSchemaSnapshots(root);
     // yl9tv Task 5b — cross-pass: the full-index chunk pass has fed this run's
     // extractions into the input spill (drained in finalizeSignals), so the
     // worker/main re-parse here is redundant AND would race the chunker pool's
@@ -2047,6 +2159,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runPrependedAncestors = {};
     this.runIncludedBy = {};
     this.runExtends = {};
+    this.runSchemaTables = {};
+    this.runSchemaSnapshots = {};
+    this.runSchemaSnapshotsLoaded = false;
     this.runReturnTypes = {};
     this.runInstantiatedTypes.clear();
     this.runIvarTypes = {};
@@ -2111,6 +2226,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runGemfileLoaded = false;
     this.runPrependedAncestors = {};
     this.runExtends = {};
+    this.runSchemaTables = {};
+    this.runSchemaSnapshots = {};
+    this.runSchemaSnapshotsLoaded = false;
     this.runReturnTypes = {};
     this.runInstantiatedTypes.clear();
     this.runIvarTypes = {};
