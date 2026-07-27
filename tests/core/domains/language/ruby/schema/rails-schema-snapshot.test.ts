@@ -102,8 +102,14 @@ describe("RAILS_SCHEMA_COLUMN_ACCESSORS facet (bd tea-rags-mcp-8l5fo)", () => {
   });
 
   it("exposes the reader + naming convention through the language-agnostic facet", () => {
+    // The parse output also carries the readers' value types (bd tea-rags-mcp-2a5oo);
+    // the implicit `id` key is a bigint, hence Integer.
     expect(RAILS_SCHEMA_COLUMN_ACCESSORS.parseSchema('create_table "firms" do |t|\nend\n')).toEqual([
-      { table: "firms", accessors: ["id", "id=", "id?"] },
+      {
+        table: "firms",
+        accessors: ["id", "id=", "id?"],
+        accessorReturnTypes: { id: { form: "instance", name: "Integer" } },
+      },
     ]);
     expect(RAILS_SCHEMA_COLUMN_ACCESSORS.modelNameForTable("firms")).toBe("Firm");
   });

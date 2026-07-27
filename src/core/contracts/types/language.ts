@@ -519,6 +519,20 @@ export interface LanguageProvider {
 export interface SchemaTableColumns {
   readonly table: string;
   readonly accessors: readonly string[];
+  /**
+   * Accessor name → the type READING it yields, for the subset of accessors
+   * whose column declares a type the language can name honestly
+   * (bd tea-rags-mcp-2a5oo). A `t.string "name"` column types its reader as
+   * `String`, so a chain continuing past the column hop (`firm.name.strip`) has
+   * a known receiver instead of dying at an untyped hop.
+   *
+   * SPARSE by design and never a total map over {@link accessors}: writers and
+   * query predicates carry no value type, and a column whose declared type has
+   * no single Ruby class (Rails `boolean`, a PG enum) contributes nothing. The
+   * consumer keys these onto the owning model as structured return facts, so a
+   * wrong entry is a wrong edge — absence is always the safe answer.
+   */
+  readonly accessorReturnTypes?: Readonly<Record<string, RubyTypeRef>>;
 }
 
 /**

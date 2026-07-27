@@ -127,6 +127,83 @@ describe("CodegraphEnrichmentProvider — db/schema.rb column declares (bd tea-r
     expect(edges.map((e) => e.targetSymbolId)).toContain("Firm#name");
   });
 
+  /**
+   * bd tea-rags-mcp-2a5oo — the column's VALUE type. `firm.name` reads a
+   * `t.string` column, so the chain hop is a core `String` and a same-named
+   * in-project def past it is wrong-type noise; a DECLARED return fact on the
+   * same coordinate still outranks the column.
+   */
+  describe("column value types (bd tea-rags-mcp-2a5oo)", () => {
+    const TYPED_SCHEMA = [
+      "ActiveRecord::Schema[7.0].define(version: 2026_07_27_000000) do",
+      '  create_table "firms", force: :cascade do |t|',
+      '    t.string "name"',
+      '    t.jsonb "settings"',
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+
+    /**
+     * Model + an unrelated class defining `compute_total`. `Firm#settings` is a
+     * REAL def carrying a YARD `@return [Widget]`, shadowing the jsonb column;
+     * `Firm#name` has no def at all and only the schema declares it.
+     */
+    function writeChainProject(): void {
+      mkdirSync(join(root, "db"), { recursive: true });
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      mkdirSync(join(root, "app", "services"), { recursive: true });
+      writeFileSync(join(root, "db", "schema.rb"), TYPED_SCHEMA);
+      writeFileSync(
+        join(root, "app", "models", "firm.rb"),
+        [
+          "class Firm < ApplicationRecord",
+          "  # @return [Widget]",
+          "  def settings",
+          "    Widget.new",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(
+        join(root, "app", "models", "widget.rb"),
+        ["class Widget", "  def compute_total", "    1", "  end", "end", ""].join("\n"),
+      );
+      writeFileSync(
+        join(root, "app", "services", "report.rb"),
+        [
+          "class Report",
+          "  def declared_hop",
+          "    firm = Firm.new",
+          "    firm.settings.compute_total",
+          "  end",
+          "",
+          "  def column_hop",
+          "    firm = Firm.new",
+          "    firm.name.compute_total",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+      );
+    }
+
+    it("stops a chain at a core-typed column hop instead of guessing a same-named def", async () => {
+      writeChainProject();
+      await provider.buildFileSignals(root);
+      const edges = await client.getCallees("Report#column_hop");
+      expect(edges.map((e) => e.targetSymbolId)).not.toContain("Widget#compute_total");
+    });
+
+    it("keeps a DECLARED return fact ahead of the column type on the same coordinate", async () => {
+      writeChainProject();
+      await provider.buildFileSignals(root);
+      const edges = await client.getCallees("Report#declared_hop");
+      expect(edges.map((e) => e.targetSymbolId)).toContain("Widget#compute_total");
+    });
+  });
+
   it("is a clean no-op when the project has no db/schema.rb", async () => {
     mkdirSync(join(root, "app", "models"), { recursive: true });
     writeFileSync(

@@ -140,6 +140,111 @@ describe("synthesizeSchemaColumnDefs (bd tea-rags-mcp-8l5fo)", () => {
   });
 });
 
+describe("synthesizeSchemaColumnDefs column value types (bd tea-rags-mcp-2a5oo)", () => {
+  /** `firms` carrying a typed reader plus the untyped accessors around it. */
+  const typedFirms: SchemaTableColumns = {
+    table: "firms",
+    accessors: ["name", "name=", "name?"],
+    accessorReturnTypes: { name: { form: "instance", name: "String" } },
+  };
+
+  it("keys each typed accessor by the owning model's method coordinate", () => {
+    const { returnTypes } = synthesizeSchemaColumnDefs(
+      [typedFirms],
+      [model("Firm", "app/models/firm.rb", ["Firm"])],
+      modelNameForTable,
+    );
+    expect(returnTypes).toEqual({ "Firm#name": { form: "instance", name: "String" } });
+  });
+
+  it("types the columns of an explicitly declared table onto its declaring model", () => {
+    const { returnTypes } = synthesizeSchemaColumnDefs(
+      [{ ...typedFirms, table: "companies" }],
+      [model("Firm", "app/models/firm.rb", ["Firm"], "companies")],
+      modelNameForTable,
+    );
+    expect(returnTypes).toEqual({ "Firm#name": { form: "instance", name: "String" } });
+  });
+
+  it("types a nested model's columns under its fully-qualified name", () => {
+    const { returnTypes } = synthesizeSchemaColumnDefs(
+      [typedFirms],
+      [model("Admin::Firm", "app/models/admin/firm.rb", ["Admin", "Firm"], "firms")],
+      modelNameForTable,
+    );
+    expect(Object.keys(returnTypes)).toEqual(["Admin::Firm#name"]);
+  });
+
+  it("preserves a container value type verbatim", () => {
+    const { returnTypes } = synthesizeSchemaColumnDefs(
+      [
+        {
+          table: "firms",
+          accessors: ["tags", "tags=", "tags?"],
+          accessorReturnTypes: { tags: { form: "container", element: { form: "instance", name: "String" } } },
+        },
+      ],
+      [model("Firm", "app/models/firm.rb", ["Firm"])],
+      modelNameForTable,
+    );
+    expect(returnTypes["Firm#tags"]).toEqual({ form: "container", element: { form: "instance", name: "String" } });
+  });
+
+  it("types nothing for a table no model claims", () => {
+    const { returnTypes } = synthesizeSchemaColumnDefs(
+      [{ ...typedFirms, table: "ar_internal_metadata" }],
+      [model("Firm", "app/models/firm.rb", ["Firm"])],
+      modelNameForTable,
+    );
+    expect(returnTypes).toEqual({});
+  });
+
+  it("types nothing for an ambiguous table (two models share the inflected name)", () => {
+    const { returnTypes } = synthesizeSchemaColumnDefs(
+      [typedFirms],
+      [model("Firm", "app/models/firm.rb", ["Firm"]), model("Admin::Firm", "app/models/admin/firm.rb", ["Admin", "Firm"])],
+      modelNameForTable,
+    );
+    expect(returnTypes).toEqual({});
+  });
+
+  it("types nothing for a table whose columns carry no value types", () => {
+    const { returnTypes } = synthesizeSchemaColumnDefs(
+      [{ table: "firms", accessors: ["name", "name=", "name?"] }],
+      [model("Firm", "app/models/firm.rb", ["Firm"])],
+      modelNameForTable,
+    );
+    expect(returnTypes).toEqual({});
+  });
+
+  it("counts the typed columns in the run stats", () => {
+    const { stats } = synthesizeSchemaColumnDefs(
+      [typedFirms],
+      [model("Firm", "app/models/firm.rb", ["Firm"])],
+      modelNameForTable,
+    );
+    expect(stats.typedColumns).toBe(1);
+  });
+
+  // ANTI-EXPLOSION (8l5fo pin, re-asserted): value types are a SEPARATE output.
+  // The definitions a typed table synthesises are byte-identical to the untyped
+  // run's, so nothing about the short-name indexes can move.
+  it("synthesises exactly the same definitions with and without value types", () => {
+    const withTypes = synthesizeSchemaColumnDefs(
+      [typedFirms],
+      [model("Firm", "app/models/firm.rb", ["Firm"])],
+      modelNameForTable,
+    );
+    const withoutTypes = synthesizeSchemaColumnDefs(
+      [{ table: "firms", accessors: ["name", "name=", "name?"] }],
+      [model("Firm", "app/models/firm.rb", ["Firm"])],
+      modelNameForTable,
+    );
+    expect(withTypes.definitions).toEqual(withoutTypes.definitions);
+    expect(withTypes.stats.definitions).toBe(withoutTypes.stats.definitions);
+  });
+});
+
 describe("collectSchemaColumnModels (bd tea-rags-mcp-8l5fo)", () => {
   it("collects a class whose ancestry reaches an ActiveRecord base", () => {
     const symbolTable = new InMemoryGlobalSymbolTable();

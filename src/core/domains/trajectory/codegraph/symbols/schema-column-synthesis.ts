@@ -31,7 +31,7 @@ import type {
   RelPath,
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
-import type { SchemaTableColumns } from "../../../../contracts/types/language.js";
+import type { RubyTypeRef, SchemaTableColumns } from "../../../../contracts/types/language.js";
 
 /** One model the pre-pass may attach columns to. */
 export interface SchemaColumnModel {
@@ -60,10 +60,21 @@ export interface SchemaColumnSynthesisStats {
   ambiguous: number;
   unmapped: number;
   definitions: number;
+  /** Accessors that also received a VALUE type (bd tea-rags-mcp-2a5oo). */
+  typedColumns: number;
 }
 
 export interface SchemaColumnSynthesis {
   definitions: SymbolDefinition[];
+  /**
+   * `"<fqModel>#<accessor>" → value type` for the typed READERS among the
+   * synthesized accessors (bd tea-rags-mcp-2a5oo), in the structured-return key
+   * convention the resolver's propagation engine reads. Consumed as the WEAKEST
+   * evidence: the caller merges it under every declared and derived fact, so a
+   * YARD `@return`, an association or a body-inferred type on the same
+   * coordinate always wins.
+   */
+  returnTypes: Record<string, RubyTypeRef>;
   stats: SchemaColumnSynthesisStats;
 }
 
@@ -134,7 +145,9 @@ export function collectSchemaColumnModels(input: SchemaColumnModelInput): Schema
 
 /**
  * Map every schema table onto its owning model and synthesize the column
- * accessor definitions.
+ * accessor definitions, plus the VALUE type of each typed reader among them
+ * (bd tea-rags-mcp-2a5oo — the two outputs share this ONE mapping pass because
+ * they must agree on which model owns which table).
  *
  * Mapping precedence, exactly the oracle's (measured on taxdome 2026-07-26: 342
  * of 367 tables mapped, 330 of them explicit, zero ambiguous):
@@ -163,8 +176,9 @@ export function synthesizeSchemaColumnDefs(
     ambiguous: 0,
     unmapped: 0,
     definitions: 0,
+    typedColumns: 0,
   };
-  if (tables.length === 0 || models.length === 0) return { definitions: [], stats };
+  if (tables.length === 0 || models.length === 0) return { definitions: [], returnTypes: {}, stats };
 
   const tablesByName = new Map(tables.map((t) => [t.table, t]));
   /** table → the model that owns it. */
@@ -207,6 +221,11 @@ export function synthesizeSchemaColumnDefs(
   }
 
   const definitions: SymbolDefinition[] = [];
+  // Value types travel BESIDE the definitions, never on them (bd tea-rags-mcp-2a5oo):
+  // a definition is what the short-name indexes hold, and the 8l5fo anti-explosion
+  // invariant is that those stay byte-identical to a schema-less run. The types are
+  // a second, independent output the caller merges into the run's return facts.
+  const returnTypes: Record<string, RubyTypeRef> = {};
   for (const [tableName, model] of owners) {
     const table = tablesByName.get(tableName);
     if (table === undefined) continue;
@@ -220,8 +239,13 @@ export function synthesizeSchemaColumnDefs(
         scope: [...model.scope],
         isSchemaColumn: true,
       });
+      const valueType = table.accessorReturnTypes?.[accessor];
+      if (valueType !== undefined) {
+        returnTypes[symbolId] = valueType;
+        stats.typedColumns += 1;
+      }
     }
   }
   stats.definitions = definitions.length;
-  return { definitions, stats };
+  return { definitions, returnTypes, stats };
 }

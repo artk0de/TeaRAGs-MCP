@@ -1143,9 +1143,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // here are the run-global ancestry map (which classes are models) and the
         // explicit `self.table_name` overrides both complete. Pass-2's typed and
         // MRO lookups then find a column exactly like any other member.
+        let schemaColumnReturnTypes: Record<string, RubyTypeRef> = {};
         if (this.schemaColumnSources.length > 0) {
           const { symbolTable: schemaSymbolTable } = await this.getStore(collectionName);
-          this.applySchemaColumns(schemaSymbolTable);
+          schemaColumnReturnTypes = this.applySchemaColumns(schemaSymbolTable);
         }
         // Discover self-dispatch templates (DEFECT 2) now pass-1 is complete: the
         // symbol table holds every def and the hierarchy view every wiring edge,
@@ -1176,6 +1177,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           for (const [key, ref] of Object.entries(entryReturnTypes)) {
             this.runStructuredReturnTypes[key] = ref;
           }
+        }
+        // Persisted-schema column VALUE types (bd tea-rags-mcp-2a5oo), merged
+        // LAST and only where the coordinate is still empty. A column accessor
+        // has no `def` in source, so ANY other fact at `Model#col` — a YARD
+        // `@return`, an association, a body-inferred return, a service-entry
+        // derivation — describes a real declaration that shadows the column and
+        // must win. The schema is the fallback of last resort, exactly as the
+        // `schemaColumn` resolution strategy is the chain's last pass.
+        for (const [key, ref] of Object.entries(schemaColumnReturnTypes)) {
+          if (!(key in this.runStructuredReturnTypes)) this.runStructuredReturnTypes[key] = ref;
         }
         // Interprocedural PARAMETER typing, Increment 1 (bd tea-rags-mcp-bvalc).
         // Composed at this barrier for the same reason as the two folds above:
@@ -1660,9 +1671,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * derived from a file that is not part of the call graph, and the pre-pass
    * rebuilds them on every run (same lifecycle as `hierarchyView`).
    */
-  private applySchemaColumns(symbolTable: GlobalSymbolTable): void {
-    if (symbolTable.setSchemaColumns === undefined) return;
+  private applySchemaColumns(symbolTable: GlobalSymbolTable): Record<string, RubyTypeRef> {
+    if (symbolTable.setSchemaColumns === undefined) return {};
     const definitions: SymbolDefinition[] = [];
+    // Column VALUE types (bd tea-rags-mcp-2a5oo) — returned rather than merged
+    // here, because they rank BELOW every other return fact and the barrier's
+    // derived facts are not all folded yet at this point.
+    const returnTypes: Record<string, RubyTypeRef> = {};
     for (const source of this.schemaColumnSources) {
       const snapshot = this.runSchemaSnapshots[source.schemaRelPath];
       if (snapshot === undefined) continue;
@@ -1672,12 +1687,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         modelBaseClasses: source.modelBaseClasses,
         symbolTable,
       });
-      const { definitions: synthesized, stats } = synthesizeSchemaColumnDefs(
-        source.parseSchema(snapshot),
-        models,
-        source.modelNameForTable,
-      );
+      const {
+        definitions: synthesized,
+        returnTypes: synthesizedTypes,
+        stats,
+      } = synthesizeSchemaColumnDefs(source.parseSchema(snapshot), models, source.modelNameForTable);
       definitions.push(...synthesized);
+      Object.assign(returnTypes, synthesizedTypes);
       if (isDebug()) {
         console.error("[GitEnrich] PHASE: CODEGRAPH_SCHEMA_COLUMNS", {
           schema: source.schemaRelPath,
@@ -1686,6 +1702,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       }
     }
     symbolTable.setSchemaColumns(definitions);
+    return returnTypes;
   }
 
   async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
