@@ -101,7 +101,7 @@ What the oracle's residual decomposition funds INSTEAD (the real next leads):
 | Lead | Size | Nature |
 | --- | --- | --- |
 | Untyped locals the walker never binds — block params, destructuring, `rescue =>`, multiple assignment | **6 068** (largest single bucket) | walker-side local-binding widening; NOT interprocedural; block-param element typing stays VTA-OUT, the rest does not need it |
-| Receiver typed but member NOT found on that type | **568** | the environment already knows the type; the LOOKUP fails — an MRO/synthesis gap with its own cheap mechanism |
+| Type-fact quality (was: "member-lookup gap") | **615** | FALSIFIED as a lookup problem — 0 MRO/macro/scope/schema gaps; all 615 are UPSTREAM fact defects: the flat bare-name return map types every same-named method project-wide (~374), and fictional annotation classes (`ServiceResult`, 241) shadow correct derived facts via the `.`/`#` key split. Two design leads filed |
 | Callee never instantiated at a resolvable site (Rails DI, `constantize`) | 1 399 | permanent floor |
 | `params[:x]` / hash / literal args, no-receiver bareCall residual | ~10 k | permanent floor / receiver-typing-independent |
 
@@ -117,3 +117,26 @@ What the oracle's residual decomposition funds INSTEAD (the real next leads):
    fake recall and was the most valuable precision change of the wave.
 4. **Oracles before epics** — G0/duck/fixpoint: a ~90 s harness fold decides
    epics cheaper than building them.
+
+## Addendum — the finishing wave (2026-07-27, same day)
+
+Four measure-first strikes after the verdict snapshot, final honest rate
+**87.19 %** (drift-adjusted corpus, 9 420 files):
+
+- **rescue-clause typing** (02saq): the 6.6 k "untyped local" census showed the
+  bucket is mostly NOT walker work; the one zero-ambiguity mass — 978 rescue
+  locals — landed for +0.70 pp, dynamic hole −995, `message` (1 114) gone from
+  the top-25 misses; new exact edges REPLACE fan-out guesses.
+- **schema column value types** (2a5oo): completes the schema.rb feature —
+  17 tokens → 7 core classes with id:/renamed-PK and boolean silences; a pure
+  precision move (46 core-receiver fan-out guesses → externalSkipped, exact
+  accounting).
+- **member-lookup gap FALSIFIED** (1g7kz): 615/615 are upstream type-fact
+  defects, the lookup never even starts. Two design leads: flat-map scoping
+  and declared-fact invalidation (the `.`/`#` shadow between the 8ypeu
+  directive key and the j9xpf derived key).
+- **fixpoint oracle** (a2hrq): worklist ceiling 510 — closed above.
+
+Deferred WITH numbers (the census's honest tails): nullary-receiver typing
+1 800 · callee-return coverage 1 365 · `create_table` DSL block params 664 ·
+iterator block params 572 (VTA-OUT) · non-leading def params 378.

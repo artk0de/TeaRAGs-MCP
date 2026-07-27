@@ -35,16 +35,24 @@ import {
 import { rbNameOf } from "../src/core/domains/language/ruby/walker/index.js";
 import { readScopeResolution } from "../src/core/domains/language/ruby/walker/ast-utils.js";
 import { constantLookupCandidates } from "../src/core/domains/language/ruby/walker/param-arg-types.js";
-import { constInstanceType } from "../src/core/domains/language/ruby/walker/type-sources/ast-inference.js";
+import {
+  constInstanceType,
+  RUBY_BLOCK_ITERATOR_METHODS,
+} from "../src/core/domains/language/ruby/walker/type-sources/ast-inference.js";
 import {
   boundCallReturnType,
   ivarTypeName,
   returnTypeOf,
 } from "../src/core/domains/language/ruby/resolver/type-propagation.js";
+import {
+  resolveConstant,
+  resolveTypeInstanceMethod,
+  resolveTypeStaticMethod,
+} from "../src/core/domains/language/ruby/resolver/strategies/shared.js";
 import { catalogueForGemfile } from "../src/core/domains/language/ruby/gemfile.js";
 import type { RubyDslCatalogue } from "../src/core/domains/language/ruby/dsl/index.js";
 import type { AstNode } from "../src/core/contracts/types/ast.js";
-import { resolveLocalBinding } from "../src/core/contracts/types/codegraph.js";
+import { resolveLocalBinding, resolveLocalBindingType } from "../src/core/contracts/types/codegraph.js";
 import type {
   CallContext,
   CallRef,
@@ -256,6 +264,13 @@ const runPrependedAncestors: Record<string, readonly string[]> = {};
 const runExtends: Record<string, string> = {};
 /** class FQ → explicit `self.table_name` (bd tea-rags-mcp-8l5fo, mirrors provider.ts). */
 const runSchemaTables: Record<string, string> = {};
+// bd tea-rags-mcp-1g7kz — the schema pre-pass's INPUT and OUTPUT, captured at the
+// barrier so the typed-receiver member-lookup forensics can tell "this member is a
+// column of a table nobody mapped onto this model" apart from "not a column at all".
+// Measurement-only: nothing reads these on the resolve path.
+const runSchemaColumnsByTable = new Map<string, Set<string>>();
+const runSchemaMappedModels = new Set<string>();
+let runSchemaModelNameForTable: ((table: string) => string) | undefined;
 const runReturnTypes: Record<string, string> = {};
 const runInstantiatedTypes = new Set<string>();
 const runIvarTypes: Record<string, Record<string, string>> = {};
@@ -502,28 +517,37 @@ function resolvePass2(extraction: FileExtraction): void {
         }
       }
 
+      let outcome: LcOutcome;
       if (resolved) {
         callsResolved += 1;
         kindTally[receiverKind].resolved += 1;
+        outcome = "resolved";
       } else if (call.dynamicSend === true) {
         callsUnresolvable += 1;
         kindTally[receiverKind].unresolvable += 1;
+        outcome = "dynamicSend";
       } else if (resolver.targetsExternalImport?.(call, ctx) ?? false) {
         callsExternalSkipped += 1;
         kindTally[receiverKind].externalSkipped += 1;
+        outcome = "externalSkipped";
       } else if (symbolTable.lookupByShortName(call.member).length === 0) {
         callsNoInProjectDef += 1;
         kindTally[receiverKind].noInProjectDef += 1;
+        outcome = "noInProjectDef";
       } else if (resolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false) {
         // bd tea-rags-mcp-83cl7 — CORE HOMONYM: a core/runtime member on an
         // UNTYPED receiver whose in-project def of the same short name is a
         // coincidence. Mirrors provider.ts `resolveExtraction` branch-for-branch.
         callsCoreAmbiguous += 1;
         kindTally[receiverKind].coreAmbiguous += 1;
+        outcome = "coreAmbiguous";
       } else {
         // THE RECALL HOLE: unresolved, non-dynamic, non-external, has in-project def.
         recordMiss(call, receiverKind, extraction.relPath, chunk.scope, chunk.symbolId);
+        outcome = "miss";
       }
+      if (LOCAL_CENSUS_ENABLED)
+        noteLocalCensusCall(call, receiverKind, extraction.relPath, chunk, localBindings, outcome);
     }
   }
 }
@@ -2033,6 +2057,14 @@ const fxTails: FxTail[] = [];
 const fxChunks = new Map<string, FxChunkEnv>();
 /** Declared kwarg names per method chunk — the name-based existence gate. */
 const runKwargNames: Record<string, string[]> = {};
+/**
+ * bd 1g7kz — bare constant name → the FQ class/module coordinates this run
+ * DECLARES. `resolveConstant` answers "can I reach this name from here"; this
+ * answers the different question the member-lookup forensics needs: "does the
+ * project declare this name at all, and under what namespace" — which separates
+ * a type fact naming a real but unqualified class from one naming a fiction.
+ */
+const fxClassFqByBareName = new Map<string, Set<string>>();
 const fxFileClassFields = new Map<string, Record<string, Record<string, string>>>();
 const fxFileAssoc = new Map<string, Record<string, Record<string, string>>>();
 /** Sites dropped at scan time because no argument had a typeable shape. */
@@ -2107,6 +2139,13 @@ function scanFixpointAst(root: AstNode, relPath: string, extraction: FileExtract
   if (extraction.classFieldTypes) fxFileClassFields.set(relPath, extraction.classFieldTypes);
   if (extraction.associationTypes) fxFileAssoc.set(relPath, extraction.associationTypes);
   for (const chunk of extraction.chunks) {
+    // A class / module / top-level coordinate carries no member separator.
+    if (!chunk.symbolId.includes("#") && !chunk.symbolId.includes(".")) {
+      const bare = fxBareConst(chunk.symbolId);
+      const bucket = fxClassFqByBareName.get(bare);
+      if (bucket) bucket.add(chunk.symbolId);
+      else fxClassFqByBareName.set(bare, new Set([chunk.symbolId]));
+    }
     if (chunk.kwargs !== undefined) {
       const declared = [...chunk.kwargs.required, ...(chunk.kwargs.optional ?? [])];
       if (declared.length > 0) runKwargNames[chunk.symbolId] = declared;
@@ -2801,12 +2840,25 @@ const FX_CAUSE = {
   kwDisagree: "kwarg param: hints disagree (fold stays silent)",
   untypedLocal: "untyped local (assigned from an untypeable expression)",
   memberNotFound: "receiver typed but member not found on that type",
+  // bd tea-rags-mcp-1g7kz — the honest split of what USED to be reported wholly as
+  // `memberNotFound`. "The environment produced a type" and "that type names a
+  // class the project declares" are different claims, and only the second one
+  // makes a member LOOKUP possible at all: when the type name resolves to no
+  // project file and carries no ancestors, the MRO walk never runs, so calling the
+  // failure "member not found" points the reader at a lookup seam that was never
+  // reached. This bucket names the real seam — the type FACT.
+  receiverTypeUnresolvable: "receiver typed, but the TYPE NAME resolves to no project class",
 } as const;
 type FxCause = (typeof FX_CAUSE)[keyof typeof FX_CAUSE];
 
-function fxClassifyResidual(miss: MissRecord, env: FxEnv, typedReceiver: boolean): FxCause {
+function fxClassifyResidual(
+  miss: MissRecord,
+  env: FxEnv,
+  typedReceiver: boolean,
+  typeResolvable: boolean,
+): FxCause {
   if (miss.receiverKind === "bareCall" || miss.receiver === null) return FX_CAUSE.bare;
-  if (typedReceiver) return FX_CAUSE.memberNotFound;
+  if (typedReceiver) return typeResolvable ? FX_CAUSE.memberNotFound : FX_CAUSE.receiverTypeUnresolvable;
   if (miss.receiver.includes("[")) return FX_CAUSE.index;
   if (miss.receiver.startsWith("@") && !miss.receiver.includes(".")) {
     const klass = miss.enclosingScope.split(" > ").join("::");
@@ -2830,6 +2882,343 @@ function fxClassifyResidual(miss: MissRecord, env: FxEnv, typedReceiver: boolean
     return slot.conflicted ? FX_CAUSE.kwDisagree : FX_CAUSE.kwNoSite;
   }
   return FX_CAUSE.untypedLocal;
+}
+
+// ---------------------------------------------------------------------------
+// E2. TYPED-RECEIVER MEMBER-LOOKUP FORENSICS (bd tea-rags-mcp-1g7kz)
+//
+// `FX_CAUSE.memberNotFound` is the ONE residual bucket where the type side is
+// already done: the environment answers with a class for the receiver and the
+// member lookup still fails. That makes it a precision lead rather than a typing
+// lead — and precision leads need a NAMED seam, not a count. This section dumps
+// every such miss and classifies it by the reason the lookup missed, probing the
+// REAL lookup (`resolveTypeInstanceMethod` / `resolveTypeStaticMethod` /
+// `resolveConstant`) rather than re-implementing the MRO walk, so a class here
+// points at a production seam and not at a harness approximation.
+//
+// Measurement-only, and only under the fixpoint gate — nothing here runs on the
+// default path.
+// ---------------------------------------------------------------------------
+
+/** Where the environment's answer for the receiver expression came from. */
+const FX_TYPE_CHANNEL = {
+  localBinding: "walker local binding",
+  fixpointParam: "fixpoint-derived param type (NOT a production channel)",
+  boundCallReturn: "localCallBindings return type",
+  ivarField: "ivar field type",
+} as const;
+type FxTypeChannel = (typeof FX_TYPE_CHANNEL)[keyof typeof FX_TYPE_CHANNEL];
+
+/** Why the member lookup missed on a receiver the environment DID type. */
+const FX_LOOKUP = {
+  channelGap: "(f) MRO DOES pin it — no production channel fed the type in",
+  formMismatch: "(a) found under the OTHER symbolId form (class vs instance)",
+  typeNameUnqualified: "(e) type name IS declared in-project, but only under a namespace the fact never qualified",
+  typeNameAmbiguous: "(e) type name declared in N>1 places — resolveConstant refuses to guess",
+  typeNotAProjectConstant: "(e) type name declared NOWHERE in project — the fact is a fiction",
+  scopeTailMismatch: "(c) member IS in the type's own file, under a different scope tail",
+  ancestorFileUnresolved: "(a) member sits on a named ancestor whose file the walk cannot pin",
+  extendChannel: "(a) reachable only through `extend` — resolveTypeMethodInternal never walks it",
+  concernClassMethods: "(a) def lives in a `ClassMethods` concern module (extend-by-included)",
+  schemaColumnUnmapped: "(d) column of a schema table the model mapping missed",
+  macroSynthesized: "(b) macro/DSL-declared member absent from declares",
+  absentOnType: "(e/f) member defined only on unrelated classes",
+  nonNominalType: "(f) environment answers union / container — no single class to look in",
+} as const;
+type FxLookupClass = (typeof FX_LOOKUP)[keyof typeof FX_LOOKUP];
+
+/** One residual miss whose receiver the environment typed. */
+interface FxMemberLookupMiss {
+  readonly miss: MissRecord;
+  readonly type: RubyTypeRef;
+  readonly channel: FxTypeChannel;
+}
+
+/** The environment's answer for a receiver shape, WITH its provenance. */
+function fxTypedReceiverOf(
+  shape: FxExpr,
+  chunkId: string,
+  line: number,
+  ctx: CallContext,
+  env: FxEnv,
+): { type: RubyTypeRef; channel: FxTypeChannel } | undefined {
+  if (shape.k === "ivar") {
+    const name = ivarTypeName(shape.name, ctx);
+    return name === undefined ? undefined : { type: { form: "instance", name }, channel: FX_TYPE_CHANNEL.ivarField };
+  }
+  if (shape.k !== "ident") return undefined;
+  const binding = resolveLocalBinding(ctx.localBindings, shape.name, line);
+  if (binding !== undefined)
+    return {
+      type: binding.typeRef ?? { form: binding.valueKind === "class" ? "class" : "instance", name: binding.type },
+      channel: FX_TYPE_CHANNEL.localBinding,
+    };
+  const derived = env.paramTypes[chunkId]?.[shape.name];
+  if (derived !== undefined) return { type: derived, channel: FX_TYPE_CHANNEL.fixpointParam };
+  const bound = boundCallReturnType(shape.name, ctx);
+  if (bound !== undefined) return { type: bound, channel: FX_TYPE_CHANNEL.boundCallReturn };
+  return undefined;
+}
+
+/**
+ * Can a member lookup even START on this receiver type? Mirrors the exact gate
+ * `resolveTypeMethodInternal` opens with: without a declaring file AND without an
+ * ancestors entry there is nothing to walk, so the miss is a type-fact failure,
+ * not a lookup failure.
+ */
+function fxReceiverTypeResolvable(type: RubyTypeRef, ctx: CallContext): boolean {
+  if (type.form !== "class" && type.form !== "instance") return false;
+  return resolveConstant(type.name, ctx) !== null || runAncestors[type.name] !== undefined;
+}
+
+/** Printable label for any `RubyTypeRef` form (union / container carry no name). */
+function fxTypeLabel(type: RubyTypeRef): string {
+  return type.form === "class" || type.form === "instance" ? `${type.form} ${type.name}` : `<${type.form}>`;
+}
+
+/** Bare last `::` segment of a constant path. */
+function fxBareConst(name: string): string {
+  const at = name.lastIndexOf("::");
+  return at === -1 ? name : name.slice(at + 2);
+}
+
+const fxSourceCache = new Map<string, string[]>();
+
+/** Lines of a project file, read once. `[]` when unreadable. */
+function fxSourceLines(relPath: string): string[] {
+  const cached = fxSourceCache.get(relPath);
+  if (cached !== undefined) return cached;
+  let lines: string[] = [];
+  try {
+    lines = readFileSync(join(ROOT, relPath), "utf8").split("\n");
+  } catch {
+    lines = [];
+  }
+  fxSourceCache.set(relPath, lines);
+  return lines;
+}
+
+/**
+ * The DSL verb that most plausibly SYNTHESIZES `member` in `relPath` — the
+ * leading token of the first line naming the member as a symbol / hash key /
+ * string. Names the macro instead of saying "some macro", which is the whole
+ * point of class (b): a grammar can only be written against a named verb.
+ */
+function fxMacroWitness(relPath: string, member: string): string | null {
+  const escaped = member.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const mention = new RegExp(`(?::${escaped}\\b|\\b${escaped}:|["']${escaped}["'])`);
+  for (const line of fxSourceLines(relPath)) {
+    if (!mention.test(line)) continue;
+    const verb = /^\s*([a-z_][\w]*)/.exec(line);
+    if (verb === null || verb[1] === "def" || verb[1] === "end") continue;
+    return `${verb[1]}  «${line.trim().slice(0, 90)}»`;
+  }
+  return null;
+}
+
+/**
+ * A schema table whose inflected model name is this type's own name and whose
+ * accessors include the member — i.e. the column EXISTS in db/schema.rb and the
+ * pre-pass declined to attach it (unmapped / ambiguous / model not collected).
+ */
+function fxUnmappedSchemaColumn(typeName: string, member: string): string | null {
+  if (runSchemaModelNameForTable === undefined) return null;
+  if (runSchemaMappedModels.has(typeName)) return null;
+  const own = fxBareConst(typeName);
+  for (const [table, columns] of runSchemaColumnsByTable) {
+    if (!columns.has(member)) continue;
+    if (runSchemaModelNameForTable(table) === own) return table;
+  }
+  return null;
+}
+
+/** Scope tail the resolver's own-file candidate filter compares against. */
+function fxScopeTail(def: SymbolDefinition): string {
+  return def.scope[def.scope.length - 1] ?? "";
+}
+
+/**
+ * Classify ONE typed-receiver member-lookup miss. Ordered most-specific first;
+ * every branch names a single production seam so the report is directly a work
+ * list rather than a taxonomy.
+ */
+function fxClassifyMemberLookup(
+  record: FxMemberLookupMiss,
+  ctx: CallContext,
+): { cls: FxLookupClass; detail: string } {
+  const { member } = record.miss;
+  if (record.type.form !== "class" && record.type.form !== "instance")
+    return { cls: FX_LOOKUP.nonNominalType, detail: `${record.type.form} (${record.channel})` };
+  const typeName = record.type.name;
+  const wantInstance = record.type.form !== "class";
+  const primary = wantInstance
+    ? resolveTypeInstanceMethod(typeName, member, ctx, "strict")
+    : resolveTypeStaticMethod(typeName, member, ctx, "strict");
+  if (primary !== null && primary.targetSymbolId !== null)
+    return { cls: FX_LOOKUP.channelGap, detail: `${primary.targetSymbolId} (${record.channel})` };
+
+  const alternate = wantInstance
+    ? resolveTypeStaticMethod(typeName, member, ctx, "strict")
+    : resolveTypeInstanceMethod(typeName, member, ctx, "strict");
+  if (alternate !== null && alternate.targetSymbolId !== null)
+    return {
+      cls: FX_LOOKUP.formMismatch,
+      detail: `env says ${record.type.form}, def is ${wantInstance ? "class" : "instance"}-form: ${alternate.targetSymbolId}`,
+    };
+
+  const typeFile = resolveConstant(typeName, ctx);
+  if (typeFile === null && runAncestors[typeName] === undefined) {
+    // Trace the FACT, not just the failure: for a `localCallBindings` receiver the
+    // binding text IS the structuredReturnTypes coordinate the type came from, so
+    // the report names the annotation that has to change.
+    const binding = ctx.localCallBindings?.[record.miss.receiver ?? ""];
+    const provenance = binding === undefined ? record.channel : `${record.channel} via ${binding}`;
+    const declared = fxClassFqByBareName.get(fxBareConst(typeName));
+    if (declared !== undefined && declared.size > 0) {
+      const cls = declared.size === 1 ? FX_LOOKUP.typeNameUnqualified : FX_LOOKUP.typeNameAmbiguous;
+      return { cls, detail: `${typeName} → ${[...declared].slice(0, 3).join(" | ")}  [${provenance}]` };
+    }
+    return { cls: FX_LOOKUP.typeNotAProjectConstant, detail: `${typeName}  [${provenance}]` };
+  }
+
+  const defs = symbolTable.lookupByShortName(member, { includeSchemaColumns: true });
+
+  if (typeFile !== null) {
+    const sameFile = defs.filter((d) => d.relPath === typeFile);
+    if (sameFile.length > 0)
+      return {
+        cls: FX_LOOKUP.scopeTailMismatch,
+        detail: `type=${typeName} tails=[${[...new Set(sameFile.map(fxScopeTail))].slice(0, 3).join(", ")}]`,
+      };
+  }
+
+  const classMethodsDef = defs.find((d) => fxScopeTail(d) === "ClassMethods");
+  const extended = runExtends[typeName];
+  if (extended !== undefined) {
+    const viaExtend = defs.find((d) => fxScopeTail(d) === extended || fxScopeTail(d) === fxBareConst(extended));
+    if (viaExtend !== undefined)
+      return { cls: FX_LOOKUP.extendChannel, detail: `${typeName} extends ${extended} → ${viaExtend.symbolId}` };
+  }
+
+  const ancestors = fxAncestorsOf(typeName);
+  const ancestorNames = new Set<string>(ancestors);
+  const ancestorBare = new Set(ancestors.map(fxBareConst));
+  const onAncestor = defs.find((d) => ancestorNames.has(fxScopeTail(d)) || ancestorBare.has(fxScopeTail(d)));
+  if (onAncestor !== undefined) {
+    const ancestor = ancestors.find((a) => a === fxScopeTail(onAncestor) || fxBareConst(a) === fxScopeTail(onAncestor));
+    const ancestorFile = ancestor === undefined ? null : resolveConstant(ancestor, ctx);
+    return {
+      cls: FX_LOOKUP.ancestorFileUnresolved,
+      detail: `${typeName} → ${ancestor ?? "?"}: def@${onAncestor.relPath}, resolveConstant=${ancestorFile ?? "null"}`,
+    };
+  }
+
+  if (classMethodsDef !== undefined)
+    return { cls: FX_LOOKUP.concernClassMethods, detail: `${typeName}.${member} → ${classMethodsDef.symbolId}` };
+
+  const table = fxUnmappedSchemaColumn(typeName, member);
+  if (table !== null) return { cls: FX_LOOKUP.schemaColumnUnmapped, detail: `${typeName} ← table ${table}` };
+
+  if (!realDefShortNames.has(member)) {
+    const witness = typeFile === null ? null : fxMacroWitness(typeFile, member);
+    return {
+      cls: FX_LOOKUP.macroSynthesized,
+      detail: witness ?? `no witness in ${typeFile ?? "?"} — declared elsewhere`,
+    };
+  }
+
+  return {
+    cls: FX_LOOKUP.absentOnType,
+    detail: `${typeName} (${record.channel}); defs@${[...new Set(defs.map((d) => d.relPath))].slice(0, 2).join(", ")}`,
+  };
+}
+
+/** Classify + print + return the JSON slice for the member-lookup residual. */
+function fxReportMemberLookup(
+  records: readonly FxMemberLookupMiss[],
+  fieldsByFile: Map<string, Record<string, Record<string, string>>>,
+  mergedReturns: Record<string, RubyTypeRef>,
+): Record<string, unknown> {
+  const L = (s: string) => console.log(s);
+  const byClass = new Map<FxLookupClass, FxMemberLookupMiss[]>();
+  const detailsByClass = new Map<FxLookupClass, Map<string, number>>();
+  const byChannel: Record<string, number> = {};
+  const byMember = new Map<string, number>();
+  const byType = new Map<string, number>();
+  const samples: Record<string, { member: string; type: string; at: string; caller: string; detail: string }[]> = {};
+
+  for (const record of records) {
+    const ctx = fxCtx(
+      record.miss.relPath,
+      record.miss.callerSymbolId,
+      record.miss.enclosingScope === "" ? [] : record.miss.enclosingScope.split(" > "),
+      fieldsByFile,
+      mergedReturns,
+    );
+    const { cls, detail } = fxClassifyMemberLookup(record, ctx);
+    const bucket = byClass.get(cls);
+    if (bucket) bucket.push(record);
+    else byClass.set(cls, [record]);
+    const details = detailsByClass.get(cls) ?? new Map<string, number>();
+    details.set(detail, (details.get(detail) ?? 0) + 1);
+    detailsByClass.set(cls, details);
+    byChannel[record.channel] = (byChannel[record.channel] ?? 0) + 1;
+    byMember.set(record.miss.member, (byMember.get(record.miss.member) ?? 0) + 1);
+    byType.set(fxTypeLabel(record.type), (byType.get(fxTypeLabel(record.type)) ?? 0) + 1);
+    (samples[cls] ??= []).push({
+      member: record.miss.member,
+      type: fxTypeLabel(record.type),
+      at: `${record.miss.relPath}:${record.miss.line}`,
+      caller: record.miss.callerSymbolId,
+      detail,
+    });
+  }
+
+  const ranked = [...byClass.entries()].sort((a, b) => b[1].length - a[1].length);
+  L("");
+  L("─── typed-receiver MEMBER-LOOKUP residual (bd 1g7kz) ──────────────");
+  L(`total: ${records.length}`);
+  L("");
+  L("  by TYPING CHANNEL (production channels vs fixpoint-only):");
+  for (const [channel, n] of Object.entries(byChannel).sort((a, b) => b[1] - a[1]))
+    L(`  ${String(n).padStart(6)}  ${channel}`);
+  L("");
+  L("  by CAUSE CLASS:");
+  for (const [cls, group] of ranked) L(`  ${String(group.length).padStart(6)}  ${cls}`);
+  L("");
+  for (const [cls, group] of ranked) {
+    L(`  ── ${cls} (${group.length}) ──`);
+    const details = [...(detailsByClass.get(cls) ?? new Map<string, number>()).entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6);
+    for (const [detail, n] of details) L(`     x${String(n).padStart(4)}  ${detail}`);
+    for (const sample of (samples[cls] ?? []).slice(0, 3))
+      L(`       e.g. ${sample.type}.${sample.member}  @ ${sample.at}`);
+    L("");
+  }
+  L("  top members / receiver types:");
+  const topMembers = [...byMember.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
+  const topTypes = [...byType.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
+  for (const [name, n] of topMembers) L(`  ${String(n).padStart(6)}  member ${name}`);
+  for (const [name, n] of topTypes) L(`  ${String(n).padStart(6)}  type   ${name}`);
+  L("");
+
+  return {
+    total: records.length,
+    byChannel,
+    byClass: Object.fromEntries(ranked.map(([cls, group]) => [cls, group.length])),
+    detailsByClass: Object.fromEntries(
+      ranked.map(([cls]) => [
+        cls,
+        Object.fromEntries(
+          [...(detailsByClass.get(cls) ?? new Map<string, number>()).entries()].sort((a, b) => b[1] - a[1]).slice(0, 20),
+        ),
+      ]),
+    ),
+    topMembers: topMembers.map(([member, count]) => ({ member, count })),
+    topTypes: topTypes.map(([type, count]) => ({ type, count })),
+    samples: Object.fromEntries(ranked.map(([cls]) => [cls, (samples[cls] ?? []).slice(0, 12)])),
+  };
 }
 
 /**
@@ -2859,6 +3248,8 @@ function fxRunVariant(extractions: FileExtraction[], useKwargs: boolean): Record
   const residualCause: Record<string, number> = {};
   const residualCauseByKind: Record<string, Record<string, number>> = {};
   const addressableSamples: { member: string; receiver: string | null; kind: string; at: string }[] = [];
+  /** bd 1g7kz — every residual whose receiver the environment DID type. */
+  const memberLookupMisses: FxMemberLookupMiss[] = [];
 
   const mergedReturns: Record<string, RubyTypeRef> = { ...runStructuredReturnTypes, ...env.returnTypes };
   const fieldsByFile = new Map<string, Record<string, Record<string, string>>>();
@@ -2872,7 +3263,11 @@ function fxRunVariant(extractions: FileExtraction[], useKwargs: boolean): Record
       remaining.set(key, left - 1);
       residualByKind[miss.receiverKind] = (residualByKind[miss.receiverKind] ?? 0) + 1;
       // Did the environment type the receiver even though the member missed?
+      // Same shapes and same channel precedence as `fxTypeOf`, but keeping the
+      // ANSWER and its provenance so the member-lookup forensics (bd 1g7kz) can
+      // classify the failure instead of only counting it.
       let typedReceiver = false;
+      let typeResolvable = false;
       if (miss.receiver !== null && miss.receiverKind !== "bareCall") {
         const ctx = fxCtx(
           miss.relPath,
@@ -2884,19 +3279,16 @@ function fxRunVariant(extractions: FileExtraction[], useKwargs: boolean): Record
         const shape: FxExpr = miss.receiver.startsWith("@")
           ? { k: "ivar", name: miss.receiver }
           : { k: "ident", name: miss.receiver };
-        if (!miss.receiver.includes(".") && !miss.receiver.includes("["))
-          typedReceiver =
-            fxTypeOf(
-              shape,
-              miss.callerSymbolId,
-              miss.line,
-              miss.enclosingScope.split(" > ").join("::"),
-              ctx,
-              env,
-              0,
-            ) !== undefined;
+        if (!miss.receiver.includes(".") && !miss.receiver.includes("[")) {
+          const answer = fxTypedReceiverOf(shape, miss.callerSymbolId, miss.line, ctx, env);
+          typedReceiver = answer !== undefined;
+          if (answer !== undefined) {
+            typeResolvable = fxReceiverTypeResolvable(answer.type, ctx);
+            memberLookupMisses.push({ miss, type: answer.type, channel: answer.channel });
+          }
+        }
       }
-      const cause = fxClassifyResidual(miss, env, typedReceiver);
+      const cause = fxClassifyResidual(miss, env, typedReceiver, typeResolvable);
       residualCause[cause] = (residualCause[cause] ?? 0) + 1;
       (residualCauseByKind[miss.receiverKind] ??= {})[cause] =
         ((residualCauseByKind[miss.receiverKind] ??= {})[cause] ?? 0) + 1;
@@ -2973,6 +3365,12 @@ function fxRunVariant(extractions: FileExtraction[], useKwargs: boolean): Record
   for (const [cause, n] of Object.entries(residualCause).sort((a, b) => b[1] - a[1]))
     L(`  ${String(n).padStart(6)}  ${cause}`);
   L("");
+  // bd 1g7kz — only for the PRODUCTION substrate: the kwarg variant's substrate
+  // does not exist, so classifying its lookup failures would name seams for a
+  // codebase state nobody can ship against.
+  const memberLookup = useKwargs
+    ? undefined
+    : fxReportMemberLookup(memberLookupMisses, fieldsByFile, mergedReturns);
   L("─── top 15 members among ADDRESSABLE misses ───────────────────────");
   for (const [member, n] of topMembers) L(`  ${String(n).padStart(6)}  ${member}`);
   L("");
@@ -3033,6 +3431,7 @@ function fxRunVariant(extractions: FileExtraction[], useKwargs: boolean): Record
       samples: addressableSamples,
     },
     residual: { byCause: residualCause, byKindAndCause: residualCauseByKind },
+    ...(memberLookup === undefined ? {} : { memberLookup }),
     convergedPass: {
       attempted: pass.attempted,
       resolved: pass.resolved,
@@ -3134,6 +3533,541 @@ function runFixpointOracle(extractions: FileExtraction[], elapsedBeforeMs: numbe
   console.log("");
 }
 
+// ===========================================================================
+// UNTYPED-LOCAL CENSUS (CODEGRAPH_LOCAL_CENSUS=1, bd tea-rags-mcp-02saq)
+//
+// The fixpoint oracle's residual named one bucket larger than everything the
+// fixpoint itself could address: misses whose receiver is a LOCAL the walker
+// records NO binding for. "Untyped local" is not a shape, though — it is the
+// ABSENCE of one, and a walker-side widening has to know which syntactic forms
+// carry the mass before it widens into any of them. This section sub-censuses
+// the bucket by the form that INTRODUCED the local (`rescue Const => e`,
+// destructuring target, block parameter, `params[:x]` read, …) and, where the
+// form carries a constant, probes the symbol table for whether the miss would
+// then resolve — so the implementation order is decided by measured mass and
+// measured addressability, not intuition.
+//
+// Same additive, env-gated contract as the three oracles above: with
+// CODEGRAPH_LOCAL_CENSUS unset nothing extra is scanned or reported and the A/B
+// recall metrics are byte-identical.
+// ===========================================================================
+const LOCAL_CENSUS_ENABLED = process.env.CODEGRAPH_LOCAL_CENSUS === "1";
+const OUT_LOCAL_CENSUS = join(OUT_DIR, "untyped-local-census.json");
+
+/** The syntactic forms that introduce a local binding. Value = report label. */
+const LC_SHAPE = {
+  rescueConstSingle: "rescue Const => e             (ONE constant class)",
+  rescueConstMulti: "rescue A, B => e              (constant union)",
+  rescueBare: "rescue => e                   (no class list)",
+  multiAssignPaired: "a, b = x, y                   (paired RHS list)",
+  multiAssignSplit: "a, b = <expr>                 (destructured single RHS)",
+  multiAssignSplat: "a, *rest = …                  (splat target)",
+  blockParamIterator: "block param of a KNOWN iterator (VTA-OUT)",
+  blockParamOther: "block param of a non-iterator block",
+  blockParamDestructured: "destructured block param |(a, b)|",
+  patternAsConst: "pattern match `in Const => v`",
+  patternOther: "pattern-match binding (no constant)",
+  forVar: "for v in coll",
+  defParamOptional: "def param: optional (x = default)",
+  defParamKeyword: "def param: keyword (x:)",
+  defParamSplat: "def param: splat (*a / **kw)",
+  defParamBlock: "def param: block (&blk)",
+  defParamPositional: "def param: positional past the leading required run",
+  assignIndex: "x = h[:k] / params[:k]        (index read)",
+  assignCallBare: "x = bare_call(...)            (no receiver)",
+  assignCallRecv: "x = recv.call(...)            (receiver-ful)",
+  assignIdent: "x = y                         (bare identifier RHS)",
+  assignCopyTypedSource: "x = y   where y IS typed here (propagation gap)",
+  assignCopyUntypedSource: "x = y   where y is itself untyped",
+  assignBareIdentCall: "x = paren_less_call           (identifier that is no local)",
+  assignIvar: "x = @ivar",
+  assignLiteral: "x = <literal>",
+  assignConditional: "x = if / case / ternary / begin",
+  assignYield: "x = yield",
+  assignOther: "x = <other expression>",
+  opAssign: "x ||= / += / &&= …",
+  introAfterUse: "introduced only AFTER the call line (flow order)",
+  noIntro: "no introduction found in the owning chunk",
+} as const;
+type LcShape = (typeof LC_SHAPE)[keyof typeof LC_SHAPE];
+
+/** One recorded introduction of a local name inside one chunk. */
+interface LcIntro {
+  readonly shape: LcShape;
+  readonly line: number;
+  /** Constant the form carries when it carries one (`rescue Foo => e` → `Foo`). */
+  readonly typeHint?: string;
+  /** Free-form provenance for the report (iterator verb, RHS node type, …). */
+  readonly note?: string;
+}
+
+/** chunkSymbolId → localName → introductions (push order = source order). */
+const lcIntros = new Map<string, Map<string, LcIntro[]>>();
+
+/** A bare local identifier: no `.`, no `[`, no `@`, no `::`. */
+const LC_LOCAL_RE = /^[a-z_][A-Za-z0-9_]*$/;
+
+function lcRecordIntro(chunkId: string | undefined, name: string, intro: LcIntro): void {
+  if (chunkId === undefined || chunkId === "") return;
+  let byName = lcIntros.get(chunkId);
+  if (byName === undefined) {
+    byName = new Map<string, LcIntro[]>();
+    lcIntros.set(chunkId, byName);
+  }
+  const list = byName.get(name);
+  if (list === undefined) byName.set(name, [intro]);
+  else list.push(intro);
+}
+
+/** Constant text of a node, or null when it is not a plain/`::`-qualified constant. */
+function lcConstText(node: AstNode): string | null {
+  const text = node.type === "scope_resolution" ? readScopeResolution(node) : node.type === "constant" ? node.text : null;
+  return text !== null && FX_CONST_RE.test(text) ? text.replace(/^::/, "") : null;
+}
+
+const LC_LITERAL_TYPES = new Set([
+  "string", "integer", "float", "rational", "complex", "array", "hash", "symbol", "simple_symbol",
+  "hash_key_symbol", "delimited_symbol", "true", "false", "nil", "regex", "string_array", "symbol_array",
+  "character", "heredoc_beginning", "subshell", "lambda", "unary",
+]);
+const LC_CONDITIONAL_TYPES = new Set(["conditional", "if", "unless", "case", "case_match", "begin", "while", "until", "parenthesized_statements"]);
+
+/** Shape of a single-target assignment, read off the RHS node. */
+function lcAssignShape(rhs: AstNode | null): { shape: LcShape; note?: string } {
+  if (rhs === null) return { shape: LC_SHAPE.assignOther };
+  if (rhs.type === "element_reference") {
+    const base = rhs.childForFieldName("object");
+    return { shape: LC_SHAPE.assignIndex, note: base?.text.slice(0, 24) };
+  }
+  if (rhs.type === "call" || rhs.type === "method_call") {
+    const receiver = rhs.childForFieldName("receiver");
+    const method = rhs.childForFieldName("method")?.text;
+    return receiver === null
+      ? { shape: LC_SHAPE.assignCallBare, note: method }
+      : { shape: LC_SHAPE.assignCallRecv, note: method };
+  }
+  if (rhs.type === "identifier") return { shape: LC_SHAPE.assignIdent, note: rhs.text };
+  if (rhs.type === "instance_variable" || rhs.type === "class_variable")
+    return { shape: LC_SHAPE.assignIvar, note: rhs.text };
+  if (rhs.type === "yield") return { shape: LC_SHAPE.assignYield };
+  if (LC_LITERAL_TYPES.has(rhs.type)) return { shape: LC_SHAPE.assignLiteral, note: rhs.type };
+  if (LC_CONDITIONAL_TYPES.has(rhs.type)) return { shape: LC_SHAPE.assignConditional, note: rhs.type };
+  return { shape: LC_SHAPE.assignOther, note: rhs.type };
+}
+
+/** `method_parameters` child → the shape its flavour maps to, plus bound name. */
+function lcDefParamShape(node: AstNode): { shape: LcShape; name: string } | null {
+  if (node.type === "identifier") return { shape: LC_SHAPE.defParamPositional, name: node.text };
+  const name = node.childForFieldName("name");
+  if (name?.type !== "identifier") return null;
+  if (node.type === "optional_parameter") return { shape: LC_SHAPE.defParamOptional, name: name.text };
+  if (node.type === "keyword_parameter") return { shape: LC_SHAPE.defParamKeyword, name: name.text };
+  if (node.type === "splat_parameter" || node.type === "hash_splat_parameter")
+    return { shape: LC_SHAPE.defParamSplat, name: name.text };
+  if (node.type === "block_parameter") return { shape: LC_SHAPE.defParamBlock, name: name.text };
+  return null;
+}
+
+/** Every bound name under a `destructured_parameter`, flattened. */
+function lcDestructuredNames(node: AstNode, out: string[]): void {
+  for (const child of node.namedChildren) {
+    if (child.type === "identifier") out.push(child.text);
+    else if (child.type === "destructured_parameter") lcDestructuredNames(child, out);
+  }
+}
+
+/** ONE extra DFS per file, attributing each local introduction to its chunk. */
+function scanLocalCensusAst(root: AstNode, extraction: FileExtraction): void {
+  const owners = fxLineOwners(extraction);
+  const ownerIdAt = (line: number): string | undefined => (line < owners.length ? owners[line]?.symbolId : undefined);
+  const stack: AstNode[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    const line = node.startPosition.row + 1;
+    const chunkId = ownerIdAt(line);
+
+    if (node.type === "rescue") {
+      const varNode = node.children.find((c) => c.type === "exception_variable");
+      const bound = varNode?.namedChildren[0];
+      if (bound?.type === "identifier") {
+        const exceptions = node.children.find((c) => c.type === "exceptions");
+        const declared = exceptions?.namedChildren ?? [];
+        const consts = declared.map(lcConstText).filter((c): c is string => c !== null);
+        const allConst = declared.length > 0 && consts.length === declared.length;
+        const shape = !allConst
+          ? LC_SHAPE.rescueBare
+          : consts.length === 1
+            ? LC_SHAPE.rescueConstSingle
+            : LC_SHAPE.rescueConstMulti;
+        lcRecordIntro(chunkId, bound.text, {
+          shape,
+          line: bound.startPosition.row + 1,
+          ...(shape === LC_SHAPE.rescueConstSingle ? { typeHint: consts[0] } : {}),
+          ...(consts.length > 0 ? { note: consts.join(",") } : {}),
+        });
+      }
+    } else if (node.type === "assignment") {
+      const lhs = node.childForFieldName("left");
+      const rhs = node.childForFieldName("right");
+      if (lhs?.type === "identifier") {
+        const { shape, note } = lcAssignShape(rhs);
+        lcRecordIntro(chunkId, lhs.text, { shape, line, ...(note !== undefined ? { note } : {}) });
+      } else if (lhs?.type === "left_assignment_list") {
+        const paired = rhs?.type === "right_assignment_list";
+        for (const target of lhs.namedChildren) {
+          if (target.type === "identifier")
+            lcRecordIntro(chunkId, target.text, {
+              shape: paired ? LC_SHAPE.multiAssignPaired : LC_SHAPE.multiAssignSplit,
+              line,
+              ...(rhs !== null ? { note: rhs.type } : {}),
+            });
+          else if (target.type === "rest_assignment") {
+            const inner = target.namedChildren.find((c) => c.type === "identifier");
+            if (inner) lcRecordIntro(chunkId, inner.text, { shape: LC_SHAPE.multiAssignSplat, line });
+          }
+        }
+      }
+    } else if (node.type === "operator_assignment") {
+      const lhs = node.childForFieldName("left");
+      if (lhs?.type === "identifier")
+        lcRecordIntro(chunkId, lhs.text, {
+          shape: LC_SHAPE.opAssign,
+          line,
+          note: node.children.find((c) => c.text.endsWith("="))?.text,
+        });
+    } else if (node.type === "for") {
+      const pattern = node.childForFieldName("pattern");
+      if (pattern?.type === "identifier") lcRecordIntro(chunkId, pattern.text, { shape: LC_SHAPE.forVar, line });
+    } else if (node.type === "as_pattern") {
+      const bound = node.childForFieldName("name");
+      const value = node.childForFieldName("value");
+      if (bound?.type === "identifier") {
+        const konst = value === null ? null : lcConstText(value);
+        lcRecordIntro(chunkId, bound.text, {
+          shape: konst !== null ? LC_SHAPE.patternAsConst : LC_SHAPE.patternOther,
+          line,
+          ...(konst !== null ? { typeHint: konst } : {}),
+        });
+      }
+    } else if (node.type === "in_clause") {
+      const pattern = node.childForFieldName("pattern");
+      if (pattern !== null) {
+        const sub: AstNode[] = [pattern];
+        while (sub.length > 0) {
+          const p = sub.pop()!;
+          if (p.type === "identifier" && p.parent?.type !== "as_pattern")
+            lcRecordIntro(chunkId, p.text, { shape: LC_SHAPE.patternOther, line: p.startPosition.row + 1 });
+          for (const c of p.namedChildren) sub.push(c);
+        }
+      }
+    } else if (node.type === "block" || node.type === "do_block") {
+      const params = node.childForFieldName("parameters");
+      if (params !== null) {
+        const { parent } = node;
+        const method = parent?.childForFieldName("method")?.text;
+        const iterator = method !== undefined && RUBY_BLOCK_ITERATOR_METHODS.has(method);
+        const pline = params.startPosition.row + 1;
+        for (const param of params.namedChildren) {
+          if (param.type === "identifier")
+            lcRecordIntro(chunkId, param.text, {
+              shape: iterator ? LC_SHAPE.blockParamIterator : LC_SHAPE.blockParamOther,
+              line: pline,
+              ...(method !== undefined ? { note: method } : {}),
+            });
+          else if (param.type === "destructured_parameter") {
+            const names: string[] = [];
+            lcDestructuredNames(param, names);
+            for (const name of names)
+              lcRecordIntro(chunkId, name, { shape: LC_SHAPE.blockParamDestructured, line: pline });
+          } else {
+            const flavour = lcDefParamShape(param);
+            if (flavour !== null)
+              lcRecordIntro(chunkId, flavour.name, {
+                shape: LC_SHAPE.blockParamOther,
+                line: pline,
+                note: param.type,
+              });
+          }
+        }
+      }
+    } else if (node.type === "method" || node.type === "singleton_method") {
+      const params = node.childForFieldName("parameters");
+      if (params !== null)
+        for (const param of params.namedChildren) {
+          const flavour = lcDefParamShape(param);
+          if (flavour !== null)
+            lcRecordIntro(chunkId, flavour.name, { shape: flavour.shape, line, note: param.type });
+        }
+    }
+
+    for (const c of node.children) stack.push(c);
+  }
+}
+
+/** Which bucket the baseline pass put a call in — the census needs ALL of them,
+ *  not only misses: binding a local that today resolves (or is carved out as a
+ *  core homonym on an UNTYPED receiver) can LOSE ground, and the exposure has to
+ *  be counted before the widening is written, not after it regresses. */
+type LcOutcome = "resolved" | "dynamicSend" | "externalSkipped" | "noInProjectDef" | "coreAmbiguous" | "miss";
+
+/** One call on an unbound local, tagged with the form that introduced it. */
+interface LcMissRecord {
+  outcome: LcOutcome;
+  shape: LcShape;
+  member: string;
+  receiver: string;
+  kind: ReceiverKind;
+  relPath: string;
+  line: number;
+  typeHint?: string;
+  note?: string;
+  /** Symbol-table probe: would `typeHint#member` (or an ancestor's) exist? */
+  wouldResolve?: boolean;
+  /** Is `typeHint` a class the PROJECT declares? A binding to an external class
+   *  routes the unresolved call to `externalSkipped` (out of the honest
+   *  denominator) via `localBindingTypedReceiverIsExternal`; a binding to an
+   *  in-project class leaves it a typed member-lookup miss. */
+  typeHintInProject?: boolean;
+  /** The walker DID record `x = recv.meth` for this local — the gap is the
+   *  callee's return type, not the binding (a different lead entirely). */
+  viaLocalCallBinding?: boolean;
+}
+const lcRecords: LcMissRecord[] = [];
+
+/**
+ * Does the type the form carries actually DEFINE the missed member (directly or
+ * through the run-global ancestor closure)? An upper-bound estimate of what a
+ * binding would buy: the real resolver also consults includedBy / MRO order and
+ * the external classifier, neither of which is simulated here.
+ */
+function lcWouldResolve(typeName: string, member: string): boolean {
+  const seen = new Set<string>();
+  let frontier = [typeName];
+  for (let depth = 0; depth < 8 && frontier.length > 0; depth++) {
+    const next: string[] = [];
+    for (const klass of frontier) {
+      if (seen.has(klass)) continue;
+      seen.add(klass);
+      if (symbolTable.lookup(`${klass}#${member}`).length > 0) return true;
+      if (symbolTable.lookup(`${klass}.${member}`).length > 0) return true;
+      next.push(...(runAncestors[klass] ?? []));
+    }
+    frontier = next;
+  }
+  return false;
+}
+
+/**
+ * The bucket predicate, mirroring the fixpoint classifier's `untypedLocal`
+ * branch on the BASELINE environment: a plain lowercase receiver that is not a
+ * declared parameter of its own method and for which the walker established NO
+ * binding at (or before) the call's line. A receiver the walker DID bind is a
+ * `memberNotFound` miss and belongs to the other successor lead.
+ */
+function noteLocalCensusCall(
+  call: CallRef,
+  receiverKind: ReceiverKind,
+  relPath: string,
+  chunk: ChunkExtraction,
+  localBindings: Record<string, LocalBinding[]> | undefined,
+  outcome: LcOutcome,
+): void {
+  const receiver = call.receiver;
+  if (receiver === null || receiverKind === "bareCall" || receiverKind === "super") return;
+  if (!LC_LOCAL_RE.test(receiver) || receiver === "self") return;
+  if (chunk.paramNames?.includes(receiver) === true) return;
+  if (chunk.kwargs !== undefined) {
+    if (chunk.kwargs.required.includes(receiver)) return;
+    if (chunk.kwargs.optional?.includes(receiver) === true) return;
+  }
+  if (resolveLocalBindingType(localBindings, receiver, call.startLine) !== undefined) return;
+
+  const chunkIntros = lcIntros.get(chunk.symbolId);
+  const intros = chunkIntros?.get(receiver) ?? [];
+  const before = intros.filter((i) => i.line <= call.startLine);
+  const chosen = before.length > 0 ? before[before.length - 1] : undefined;
+  let shape =
+    chosen !== undefined ? chosen.shape : intros.length > 0 ? LC_SHAPE.introAfterUse : LC_SHAPE.noIntro;
+  // `x = y` is ambiguous in the grammar: a paren-less no-arg method call parses
+  // as a bare `identifier`, exactly like a copy of a local. Split them here,
+  // where the chunk's full introduction map exists — a name that is introduced
+  // somewhere in this chunk is a local, anything else is a call. The copy case
+  // splits again on whether the SOURCE is typed at this line: if it is, the
+  // walker had the answer and failed to propagate it (a defect, not a widening).
+  if (shape === LC_SHAPE.assignIdent) {
+    const source = chosen?.note;
+    if (source === undefined || chunkIntros?.has(source) !== true) shape = LC_SHAPE.assignBareIdentCall;
+    else
+      shape =
+        resolveLocalBindingType(localBindings, source, call.startLine) !== undefined
+          ? LC_SHAPE.assignCopyTypedSource
+          : LC_SHAPE.assignCopyUntypedSource;
+  }
+  const typeHint = chosen?.typeHint;
+  const record: LcMissRecord = {
+    outcome,
+    shape,
+    member: call.member,
+    receiver,
+    kind: receiverKind,
+    relPath,
+    line: call.startLine,
+  };
+  if (chunk.localCallBindings?.[receiver] !== undefined) record.viaLocalCallBinding = true;
+  if (typeHint !== undefined) {
+    record.typeHint = typeHint;
+    record.wouldResolve = lcWouldResolve(typeHint, call.member);
+    record.typeHintInProject = symbolTable.lookup(typeHint).length > 0;
+  }
+  const note = chosen?.note ?? (intros.length > 0 ? intros[0].note : undefined);
+  if (note !== undefined) record.note = note;
+  lcRecords.push(record);
+}
+
+/** Printed census + JSON report. Runs after PASS-2, before the fixpoint oracle. */
+function runLocalCensus(): void {
+  const L = (s: string) => console.log(s);
+  const missRecords = lcRecords.filter((r) => r.outcome === "miss");
+  const total = missRecords.length;
+  const byShape = new Map<LcShape, LcMissRecord[]>();
+  for (const record of missRecords) {
+    const list = byShape.get(record.shape);
+    if (list === undefined) byShape.set(record.shape, [record]);
+    else list.push(record);
+  }
+  const ranked = [...byShape.entries()].sort((a, b) => b[1].length - a[1].length);
+  /** Every call on an unbound local, by shape — the EXPOSURE of a widening. */
+  const exposureByShape = new Map<LcShape, LcMissRecord[]>();
+  for (const record of lcRecords) {
+    const list = exposureByShape.get(record.shape);
+    if (list === undefined) exposureByShape.set(record.shape, [record]);
+    else list.push(record);
+  }
+
+  // Corpus-wide denominator: every introduction the scan recorded, whether or
+  // not any call on that local ever missed. Without it a small per-shape miss
+  // count is unreadable — 40 misses on a form that occurs 50 times is a very
+  // different lead from 40 misses on a form that occurs 40 000 times.
+  const introCounts = new Map<LcShape, number>();
+  let introTotal = 0;
+  for (const byName of lcIntros.values())
+    for (const list of byName.values())
+      for (const intro of list) {
+        introCounts.set(intro.shape, (introCounts.get(intro.shape) ?? 0) + 1);
+        introTotal += 1;
+      }
+
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  UNTYPED-LOCAL CENSUS — the walker-side widening bucket");
+  L("═══════════════════════════════════════════════════════════════════");
+  L(`misses whose receiver is an UNBOUND local: ${total}`);
+  L(`chunks carrying recorded introductions:    ${lcIntros.size}`);
+  L(`local introductions recorded (corpus):     ${introTotal}`);
+  L("");
+  L("─── every recorded introduction, by shape (the DENOMINATOR) ───────");
+  for (const [shape, n] of [...introCounts.entries()].sort((a, b) => b[1] - a[1]))
+    L(`  ${String(n).padStart(7)}  ${shape}`);
+  L("");
+  L("shape                                             count   share   members  hint  wouldResolve  inProject  callBound");
+  for (const [shape, records] of ranked) {
+    const members = new Set(records.map((r) => r.member)).size;
+    const hinted = records.filter((r) => r.typeHint !== undefined).length;
+    const resolves = records.filter((r) => r.wouldResolve === true).length;
+    const inProject = records.filter((r) => r.typeHintInProject === true).length;
+    const callBound = records.filter((r) => r.viaLocalCallBinding === true).length;
+    L(
+      `${shape.padEnd(46)}  ${String(records.length).padStart(6)}  ${((records.length / Math.max(1, total)) * 100).toFixed(1).padStart(5)}%  ` +
+        `${String(members).padStart(7)}  ${String(hinted).padStart(4)}  ${String(resolves).padStart(12)}  ${String(inProject).padStart(9)}  ${String(callBound).padStart(9)}`,
+    );
+  }
+  L("");
+  L("─── EXPOSURE: every call on an unbound local of that shape ────────");
+  L("(binding the local re-routes ALL of these, not only the misses — a call");
+  L(" carved out as coreAmbiguous today needs an UNTYPED receiver to stay carved)");
+  L("shape                                            calls  resolved   coreAmb  extSkip  noDef    miss");
+  for (const [shape, records] of [...exposureByShape.entries()].sort((a, b) => b[1].length - a[1].length)) {
+    const n = (outcome: LcOutcome): number => records.filter((r) => r.outcome === outcome).length;
+    L(
+      `${shape.padEnd(46)}  ${String(records.length).padStart(5)}  ${String(n("resolved")).padStart(8)}  ` +
+        `${String(n("coreAmbiguous")).padStart(8)}  ${String(n("externalSkipped")).padStart(7)}  ` +
+        `${String(n("noInProjectDef")).padStart(5)}  ${String(n("miss")).padStart(6)}`,
+    );
+  }
+  L("");
+  L("─── by receiverKind (misses) ──────────────────────────────────────");
+  const byKind: Record<string, number> = {};
+  for (const record of missRecords) byKind[record.kind] = (byKind[record.kind] ?? 0) + 1;
+  for (const [kind, n] of Object.entries(byKind).sort((a, b) => b[1] - a[1])) L(`  ${String(n).padStart(6)}  ${kind}`);
+  L("");
+  for (const [shape, records] of ranked.slice(0, 8)) {
+    L(`─── ${shape} (${records.length}) — top members ──`);
+    const byMember = new Map<string, number>();
+    for (const r of records) byMember.set(r.member, (byMember.get(r.member) ?? 0) + 1);
+    for (const [member, n] of [...byMember.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)) {
+      const ex = records.find((r) => r.member === member);
+      L(`     ${member} (x${n})  e.g. ${ex?.relPath}:${ex?.line} on \`${ex?.receiver}\`${ex?.note ? ` [${ex.note}]` : ""}`);
+    }
+    L("");
+  }
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_LOCAL_CENSUS,
+    JSON.stringify(
+      {
+        meta: {
+          bead: "tea-rags-mcp-02saq",
+          root: ROOT,
+          generatedAt: new Date().toISOString(),
+          missesInBucket: total,
+          callsOnUnboundLocals: lcRecords.length,
+          introTotal,
+        },
+        introductionsByShape: Object.fromEntries([...introCounts.entries()].sort((a, b) => b[1] - a[1])),
+        exposureByShape: Object.fromEntries(
+          [...exposureByShape.entries()]
+            .sort((a, b) => b[1].length - a[1].length)
+            .map(([shape, records]) => [
+              shape,
+              {
+                calls: records.length,
+                resolved: records.filter((r) => r.outcome === "resolved").length,
+                coreAmbiguous: records.filter((r) => r.outcome === "coreAmbiguous").length,
+                externalSkipped: records.filter((r) => r.outcome === "externalSkipped").length,
+                noInProjectDef: records.filter((r) => r.outcome === "noInProjectDef").length,
+                miss: records.filter((r) => r.outcome === "miss").length,
+              },
+            ]),
+        ),
+        byShape: Object.fromEntries(
+          ranked.map(([shape, records]) => [
+            shape,
+            {
+              count: records.length,
+              distinctMembers: new Set(records.map((r) => r.member)).size,
+              withTypeHint: records.filter((r) => r.typeHint !== undefined).length,
+              wouldResolve: records.filter((r) => r.wouldResolve === true).length,
+              typeHintInProject: records.filter((r) => r.typeHintInProject === true).length,
+              viaLocalCallBinding: records.filter((r) => r.viaLocalCallBinding === true).length,
+              topMembers: [...records.reduce((m, r) => m.set(r.member, (m.get(r.member) ?? 0) + 1), new Map<string, number>())]
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10)
+                .map(([member, count]) => ({ member, count })),
+              samples: records.slice(0, 10),
+            },
+          ]),
+        ),
+        byReceiverKind: byKind,
+      },
+      null,
+      2,
+    ),
+  );
+  L(`untyped-local census → ${OUT_LOCAL_CENSUS}`);
+  L("");
+}
+
 // ---------------------------------------------------------------------------
 // MAIN
 // ---------------------------------------------------------------------------
@@ -3180,6 +4114,7 @@ async function main(): Promise<void> {
       ingestPass1(extraction, materializedRoot);
       if (ORACLE_ENABLED) scanOracleAst(materializedRoot, relPath);
       if (FIXPOINT_ENABLED) scanFixpointAst(materializedRoot, relPath, extraction);
+      if (LOCAL_CENSUS_ENABLED) scanLocalCensusAst(materializedRoot, extraction);
       if (DUCK_ENABLED && code.includes("table_name")) scanTableNameDecls(materializedRoot, []);
       extractions.push(extraction);
     } catch (err) {
@@ -3213,12 +4148,22 @@ async function main(): Promise<void> {
         modelBaseClasses: schemaSource.modelBaseClasses,
         symbolTable,
       });
-      const { definitions, stats } = synthesizeSchemaColumnDefs(
-        schemaSource.parseSchema(snapshot),
+      const parsedTables = schemaSource.parseSchema(snapshot);
+      const { definitions, returnTypes, stats } = synthesizeSchemaColumnDefs(
+        parsedTables,
         models,
         schemaSource.modelNameForTable,
       );
       symbolTable.setSchemaColumns(definitions);
+      // 2a5oo production mirror: column VALUE types merge into the run-global
+      // structuredReturnTypes LAST (weakest evidence — declared facts win),
+      // matching the provider's barrier merge order.
+      for (const [k, v] of Object.entries(returnTypes)) {
+        if (!(k in runStructuredReturnTypes)) runStructuredReturnTypes[k] = v;
+      }
+      for (const table of parsedTables) runSchemaColumnsByTable.set(table.table, new Set(table.accessors));
+      for (const def of definitions) runSchemaMappedModels.add(def.symbolId.slice(0, def.symbolId.lastIndexOf("#")));
+      runSchemaModelNameForTable = schemaSource.modelNameForTable;
       console.error(
         `[forensics] schema columns: tables=${stats.schemaTables} models=${stats.models} ` +
           `explicit=${stats.mappedExplicit} inflected=${stats.mappedInflection} ` +
@@ -3458,6 +4403,7 @@ async function main(): Promise<void> {
   writeFileSync(OUT_MISSES, JSON.stringify(payload, null, 2));
   L(`misses dumped: ${misses.length} -> ${OUT_MISSES}`);
   if (ORACLE_ENABLED) runOracle(Date.now() - t0, files.length);
+  if (LOCAL_CENSUS_ENABLED) runLocalCensus();
   if (DUCK_ENABLED) runDuckOracle();
   if (FIXPOINT_ENABLED) runFixpointOracle(extractions, Date.now() - t0);
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
