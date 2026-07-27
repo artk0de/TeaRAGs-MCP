@@ -6,6 +6,7 @@
  * Composed into `RUBY_DSL` by `catalogue.ts`. Add a ruby-core keyword here; the
  * dup-key guard forbids it living in another framework module too.
  */
+import { RUBY_CORE_MEMBERS } from "./core-members.js";
 import { defineFrameworkVocabulary } from "./framework-module.js";
 import { RUBY_KERNEL_BUILTINS } from "./kernel-builtins.js";
 import type { MethodKind, RubyDslEntry } from "./types.js";
@@ -43,7 +44,15 @@ const RUBY_CORE_ENTRIES: Record<string, RubyDslEntry> = {
   prepend: { category: "include" },
 };
 
-/** Ruby-core declaring macros + the Kernel/Object runtime builtins (puts/raise/require/…). */
+/**
+ * Ruby-core declaring macros + the Kernel/Object runtime builtins
+ * (puts/raise/require/…). `coreAmbiguousMembers` adds the OTHER axis
+ * (bd tea-rags-mcp-83cl7): the same Kernel names plus the Enumerable /
+ * Array / Hash / String universals, consulted only for an unresolved call on an
+ * UNTYPED explicit receiver. Ruby-core is the only framework that owns it — a
+ * gem verb is external, never a core homonym.
+ */
 export const RUBY_CORE_VOCABULARY = defineFrameworkVocabulary("ruby-core", RUBY_CORE_ENTRIES, RUBY_KERNEL_BUILTINS, {
   instanceReturning: new Set(["new"]),
+  coreAmbiguousMembers: RUBY_CORE_MEMBERS,
 });

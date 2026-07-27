@@ -76,7 +76,11 @@ import type {
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { materializeTree } from "../../../../infra/materialize.js";
 import { isDebug } from "../../../../infra/runtime.js";
-import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
+import {
+  buildCodegraphExclusionFilter,
+  collectSchemaColumnSources,
+  type CodegraphExclusionOptions,
+} from "../exclusion.js";
 import { createCodegraphExtractionSink, type CodegraphSinkDeps } from "./extraction-sink.js";
 import { GraphBuildFinalizer } from "./graph-finalizer.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
@@ -442,9 +446,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * Per-run aggregates + resolve tally (bd tea-rags-mcp-6vfrj / G2). One object
    * owns every run-global map the pass-1 sink merges into and pass-2 resolution
    * reads back, plus the run-metrics drain and the reset seams. The provider
-   * keeps only the per-collection sink lifecycle maps below.
+   * keeps only the per-collection sink lifecycle maps below. Constructed with
+   * the languages' persisted-schema column vocabularies (bd tea-rags-mcp-8l5fo)
+   * — collected ONCE in the constructor, through the same `deps.languageFactory`
+   * seam as the exclusion filter, because `factory.create` is expensive.
    */
-  private readonly runState = new CodegraphRunState();
+  private readonly runState: CodegraphRunState;
   /**
    * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
    * Built once at construction from `deps.exclusion` PLUS each registered
@@ -471,6 +478,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.derivedSignals = deps.derivedSignals ?? [];
     this.presets = deps.presets ?? [];
     this.workerDescriptor = workerDescriptor;
+    this.runState = new CodegraphRunState(collectSchemaColumnSources(deps.languageFactory));
     this.resolutionRunner = new CallEdgeResolutionRunner(deps.languageFactory, this.runState);
     this.graphFinalizer = new GraphBuildFinalizer(
       async (collectionName) => this.getStore(collectionName),
@@ -591,6 +599,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // Thread walker-captured kwarg signature + block-acceptance (bd d9o7o)
       ...(c.kwargs !== undefined ? { kwargs: c.kwargs } : {}),
       ...(c.acceptsBlock !== undefined ? { acceptsBlock: c.acceptsBlock } : {}),
+      // Abstract-stub marker (bd tea-rags-mcp-bcdfe) — set only when true, so the
+      // self-dispatch probe can tell a declaration from a concrete definition.
+      ...(c.isAbstractStub === true ? { isAbstractStub: true } : {}),
     }));
   }
 
@@ -750,6 +761,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // Read the run's Gemfile for gem-gated DSL grammar (adx5p.1) before pass-2
     // resolve reads it off each CallContext. One read per run (guarded).
     this.runState.loadGemfile(root);
+    // Read the run's persisted-schema snapshot(s) for the barrier schema-column
+    // pre-pass (bd tea-rags-mcp-8l5fo). One read per run (guarded), same shape.
+    this.runState.loadSchemaSnapshots(root);
     // Discover the file set to walk. Caller-supplied paths win
     // (incremental reindex); otherwise scan the repo for any
     // supported language extension. `ignoreFilter` is threaded from the
@@ -876,6 +890,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // Gem-gated DSL grammar (adx5p.1): read the run's Gemfile before the crossPass
     // early-return so finalizeSignals resolves pass-2 off this state (one/run).
     this.runState.loadGemfile(root);
+    // Read the run's persisted-schema snapshot(s) for the barrier schema-column
+    // pre-pass (bd tea-rags-mcp-8l5fo). One read per run (guarded), same shape.
+    this.runState.loadSchemaSnapshots(root);
     // yl9tv Task 5b — cross-pass: the full-index chunk pass has fed this run's
     // extractions into the input spill (drained in finalizeSignals), so the
     // worker/main re-parse here is redundant AND would race the chunker pool's

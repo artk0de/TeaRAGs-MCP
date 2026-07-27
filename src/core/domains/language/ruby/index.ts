@@ -44,6 +44,7 @@ import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
 import { catalogueForGemfile } from "./gemfile.js";
 import { rubyKernel } from "./kernel.js";
 import { RubyCallResolver } from "./resolver/ruby-resolver.js";
+import { RAILS_SCHEMA_COLUMN_ACCESSORS } from "./schema/index.js";
 import { rbNameOf } from "./walker/name-of.js";
 import { extractFromRubyFile, type RubyExtractInput } from "./walker/walker.js";
 
@@ -112,6 +113,19 @@ export class RubyLanguage implements LanguageProvider {
    * verbatim so no per-instance copy is made. bd tea-rags-mcp-biwbq.
    */
   readonly codegraphExclusionGlobs = RUBY_CODEGRAPH_EXCLUSION_GLOBS;
+  /**
+   * ActiveRecord's persisted-column vocabulary — `db/schema.rb` is where a Rails
+   * column accessor is actually declared, since ActiveRecord generates the
+   * method at boot and no `def` exists in source. The codegraph provider reads
+   * the snapshot once per run and hands it to the language-agnostic
+   * schema-column pre-pass. bd tea-rags-mcp-8l5fo.
+   *
+   * Note this is the same `db/schema.rb` that `codegraphExclusionGlobs` keeps
+   * OUT of the call graph, and deliberately so: as a walked file it fabricates a
+   * bucket of dynamic-receiver misses on the block builder `t`, while as a
+   * DECLARATION SOURCE it is exactly the missing information.
+   */
+  readonly schemaColumnAccessors = RAILS_SCHEMA_COLUMN_ACCESSORS;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const callResolver: CallResolver = new RubyCallResolver(mode);
@@ -122,6 +136,8 @@ export class RubyLanguage implements LanguageProvider {
       resolveFileEdges: (extraction, ctx) => callResolver.resolveFileEdges?.(extraction, ctx) ?? [],
       targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
+      targetsCoreAmbiguousMember: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false,
     };
   }
 }

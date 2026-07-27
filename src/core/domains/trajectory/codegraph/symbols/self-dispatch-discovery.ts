@@ -33,6 +33,7 @@ import type {
   HierarchyView,
   InheritanceKind,
 } from "../../../../contracts/types/codegraph.js";
+import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 
 /** One method's self-reach: the members it invokes on `self`, normalized to bare names. */
 export interface SelfDispatchMethod {
@@ -161,12 +162,21 @@ export function extractSelfDispatchMethods(chunks: readonly ChunkExtraction[]): 
  *   - `definesConcretely(type, member)` — the symbol table holds a method-level
  *     def of `member` whose enclosing type matches `type` by scope tail (FQ or
  *     bare last segment — the resolver's own type-match convention, mirroring
- *     `resolveTypeMethodInternal`). **v1 boundary:** this answers "a body exists",
- *     NOT "concrete impl vs abstract stub" — there is no stub signal in the
- *     extraction yet, so a `raise NotImplementedError` / empty / bare-`super`
- *     stub reads as concretely-defined and its REDIRECT template is NOT
- *     discovered. The ABSENT-hook case (the dominant service-object shape) is
- *     fully covered; stub REDIRECT is a follow-up gated on a walker stub flag.
+ *     `resolveTypeMethodInternal`) AND that def is not an abstract STUB. The
+ *     walker marks stubs (`SymbolDefinition.isAbstractStub`, bd
+ *     tea-rags-mcp-bcdfe) for exactly three shapes — empty body, single
+ *     `raise NotImplementedError`, single `super` — so both terminals are
+ *     covered: an ABSENT hook (CREATE, the dominant service-object shape) and a
+ *     hook DECLARED as a stub in the template's own type (REDIRECT). The same
+ *     rule applies to the related types, so a subtype whose override is itself a
+ *     stub does not count as a concrete definer.
+ *
+ *     The flag is persisted in `cg_symbols` (`is_abstract_stub`, migration 016,
+ *     bd tea-rags-mcp-eikry), so a def hydrated from disk — an unchanged file
+ *     during an incremental run — reaches this probe with the same verdict as a
+ *     freshly walked one. Rows written before that migration have the column
+ *     NULL and read as non-stub until their file is next walked: the pre-flag
+ *     behaviour for those files, under-coverage and never a wrong target.
  *   - `relatedConcreteTypes(type)` — the transitive descendants across all four
  *     wiring channels (`super`/`include`/`extend`/`prepend`) from the hierarchy
  *     view. Empty when no hierarchy is present.
@@ -187,6 +197,9 @@ export function buildSelfDispatchProbe(
     definesConcretely(type, member) {
       const bare = type.split("::").pop();
       return symbolTable.lookupByShortName(member).some((def) => {
+        // A stub DECLARES the member without implementing it — the hook stays
+        // abstract in this type (bd tea-rags-mcp-bcdfe).
+        if (def.isAbstractStub === true) return false;
         const tail = def.scope[def.scope.length - 1];
         return tail === type || tail === bare;
       });
@@ -250,4 +263,70 @@ export function collectSelfInstantiatingClassMethods(methods: readonly SelfDispa
     if (isClassForm && method.selfHookCandidates.includes("new")) result.push(method.symbolId);
   }
   return result;
+}
+
+/**
+ * Split a method symbolId into its declaring type and member — `KindOfService.call`
+ * and `KindOfService#call` both yield `{ type: "KindOfService", member: "call" }`.
+ * Namespace `::` is never a method separator, so a symbolId carrying neither `#`
+ * nor `.` (a type-body chunk) yields `null`.
+ */
+function splitMethodSymbolId(symbolId: string): { type: string; member: string } | null {
+  const hash = symbolId.lastIndexOf("#");
+  if (hash > 0) return { type: symbolId.slice(0, hash), member: symbolId.slice(hash + 1) };
+  const dot = symbolId.lastIndexOf(".");
+  if (dot > 0) return { type: symbolId.slice(0, dot), member: symbolId.slice(dot + 1) };
+  return null;
+}
+
+/**
+ * Thread a shared service template's RETURN type onto every concrete entry
+ * (bd tea-rags-mcp-j9xpf). Spec:
+ * docs/superpowers/specs/2026-07-10-service-result-return-types-design.md.
+ *
+ * The type of `result` in `result = Billing::X::Create.call(...)` is statically
+ * known — but one hop away from where the walker can see it. The walker types the
+ * SHARED template (`KindOfService#call` → `KindOfService::Result`, from the body
+ * tail); every real call site names a CONCRETE entry constant. The self-dispatch
+ * discovery already enumerates exactly that relation — the entry members
+ * (`selfInstantiatingClassMethods` for the two-hop `self.call → new.call` service
+ * idiom, `selfDispatchTemplates` keys for the one-hop form) and, through the
+ * probe, the concrete types wired to each template across all four Ruby channels.
+ * This fold is the join: re-key the template's fact onto `<Entry>#<member>` for
+ * every such concrete type, in the `structuredReturnTypes` convention
+ * (`"<fqType>#<member>"`, instance form for both entry shapes) that
+ * `returnTypeOf` looks up.
+ *
+ * The facts are DERIVED, so they yield to everything declared:
+ *   - a coordinate already present in `structuredReturnTypes` (YARD, Rails
+ *     associations, the walker's own body-last-expr fact) is SKIPPED, never
+ *     overwritten — the caller merges the result on top of the same map it read;
+ *   - a template with no return fact of its own derives NOTHING (silence, not a
+ *     guess), so an untypeable tail stays untyped all the way down.
+ * When two templates reach the SAME concrete type (a class wired to two service
+ * bases) the FIRST entry wins, keeping the fold order-deterministic rather than
+ * last-write-wins.
+ *
+ * Pure over the injected `relatedConcreteTypes` — the provider passes the very
+ * `SelfDispatchProbe` closure the discovery folded over, so the memoized
+ * descendant walk is shared and no hierarchy traversal is repeated.
+ */
+export function deriveServiceEntryReturnTypes(
+  entrySymbolIds: readonly string[],
+  structuredReturnTypes: Readonly<Record<string, RubyTypeRef>>,
+  relatedConcreteTypes: (type: string) => readonly string[],
+): Record<string, RubyTypeRef> {
+  const derived: Record<string, RubyTypeRef> = {};
+  for (const symbolId of entrySymbolIds) {
+    const split = splitMethodSymbolId(symbolId);
+    if (split === null) continue;
+    const templateReturn = structuredReturnTypes[`${split.type}#${split.member}`];
+    if (templateReturn === undefined) continue;
+    for (const entryType of relatedConcreteTypes(split.type)) {
+      const key = `${entryType}#${split.member}`;
+      if (key in structuredReturnTypes || key in derived) continue; // declared wins; first derivation wins
+      derived[key] = templateReturn;
+    }
+  }
+  return derived;
 }

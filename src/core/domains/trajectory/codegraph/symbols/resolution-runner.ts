@@ -21,6 +21,7 @@ import type {
   GraphEdges,
 } from "../../../../contracts/types/codegraph.js";
 import type { LanguageFactoryDescriptor, LanguageSymbolResolver } from "../../../../contracts/types/language.js";
+import { mergeDerivedClassFieldTypes, seedParamLocalBindings } from "./call-arg-param-types.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { classifyReceiverKind, type ReceiverKind } from "./receiver-kind.js";
 import { buildIncludedBy, languageKindTally, type CodegraphRunState, type ReceiverKindTally } from "./run-state.js";
@@ -45,6 +46,7 @@ interface ResolverInputs {
   instantiatedTypes: Set<string>;
   ivarTypes: Record<string, Record<string, string>> | undefined;
   structuredReturnTypes: CallContext["structuredReturnTypes"];
+  classFieldTypes: CallContext["classFieldTypes"];
 }
 
 /**
@@ -164,6 +166,11 @@ export class CallEdgeResolutionRunner {
         Object.keys(state.structuredReturnTypes).length > 0
           ? state.structuredReturnTypes
           : extraction.structuredReturnTypes,
+      // `@ivar = <param>` fields completed at the barrier ride the file's OWN
+      // classFieldTypes channel, overlaid UNDERNEATH it (bd tea-rags-mcp-bvalc).
+      // Identity-returns when nothing was derived, so a non-Ruby run — or a
+      // Ruby run where no parameter could be typed — is byte-identical.
+      classFieldTypes: mergeDerivedClassFieldTypes(extraction.classFieldTypes, state.derivedClassFieldTypes),
     };
   }
 
@@ -185,7 +192,7 @@ export class CallEdgeResolutionRunner {
       callerScope: extraction.fileScope,
       imports: extraction.imports,
       symbolTable,
-      classFieldTypes: extraction.classFieldTypes,
+      classFieldTypes: inputs.classFieldTypes,
       associationTypes: extraction.associationTypes,
       classAncestors: inputs.ancestors,
       classPrependedAncestors: inputs.prependedAncestors,
@@ -221,11 +228,20 @@ export class CallEdgeResolutionRunner {
     const { stats } = this.runState;
     const kindTally = languageKindTally(stats, extraction.language);
     for (const chunk of extraction.chunks) {
+      // Barrier-derived parameter types enter the chunk's own binding map at the
+      // def line — the coordinate a YARD `@param` occupies — so every reader
+      // downstream, the receiver-kind classifier included, sees ONE kind of
+      // fact (bd tea-rags-mcp-bvalc). Names YARD already bound are untouched.
+      const localBindings = seedParamLocalBindings(
+        chunk.localBindings,
+        this.runState.paramTypes[chunk.symbolId],
+        chunk.startLine,
+      );
       for (const call of chunk.calls) {
         stats.callsAttempted += 1;
-        const receiverKind = classifyReceiverKind(call, chunk.localBindings);
+        const receiverKind = classifyReceiverKind(call, localBindings);
         kindTally[receiverKind].attempted += 1;
-        const ctx = this.buildCallContext(extraction, chunk, symbolTable, inputs);
+        const ctx = this.buildCallContext(extraction, chunk, symbolTable, inputs, localBindings);
         const outcome = this.dispatchCall(call, chunk, ctx, resolver, methodEdges, ambiguousFanouts);
         if (outcome === "ambiguous") {
           // Over-cap dynamic fan-out (bd f2jsb / j0pki): its own bucket — not a
@@ -250,6 +266,7 @@ export class CallEdgeResolutionRunner {
     chunk: ChunkExtraction,
     symbolTable: GlobalSymbolTable,
     inputs: ResolverInputs,
+    localBindings: ChunkExtraction["localBindings"],
   ): CallContext {
     return {
       callerFile: extraction.relPath,
@@ -257,9 +274,9 @@ export class CallEdgeResolutionRunner {
       callerSymbolId: chunk.symbolId,
       imports: extraction.imports,
       symbolTable,
-      classFieldTypes: extraction.classFieldTypes,
+      classFieldTypes: inputs.classFieldTypes,
       associationTypes: extraction.associationTypes,
-      localBindings: chunk.localBindings,
+      localBindings,
       localCallBindings: chunk.localCallBindings,
       functionReturnTypes: inputs.returnTypes,
       // Ruby type-source PRECISE paths (Increment 1, Task 1.5) — these wire
@@ -442,6 +459,19 @@ export class CallEdgeResolutionRunner {
       // true recall hole, derived in getRunMetrics.
       stats.callsNoInProjectDef += 1;
       kindTally[receiverKind].noInProjectDef += 1;
+      return;
+    }
+    if (resolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false) {
+      // tea-rags-mcp-83cl7 — CORE HOMONYM. The member IS defined somewhere
+      // in the project (the branch above did not fire), but it is a core /
+      // runtime name on an UNTYPED receiver (`row.cells.each`), so the real
+      // callee is Enumerable#each and the project def is a same-name
+      // coincidence. Counted here rather than as a recall hole it can never
+      // be — the mirror of the ykj7 external skip, one branch later. Placed
+      // AFTER the two gates above so externalSkipped / noInProjectDef stay
+      // byte-identical; only the residual missWithInProjectDef is carved.
+      stats.callsCoreAmbiguous += 1;
+      kindTally[receiverKind].coreAmbiguous += 1;
     }
   }
 }

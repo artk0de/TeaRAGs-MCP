@@ -12,6 +12,13 @@ export interface RubyTypeFact {
   methodName?: string;
   /** Param / ivar / local var name. Undefined for `return`. */
   name?: string;
+  /**
+   * `true` when the fact documents a CLASS-level member (`@!method self.call`)
+   * rather than an instance one. The store then joins the coordinate with `.`
+   * instead of `#`, keeping `Class.call` and `Class#call` — genuinely different
+   * methods — from overwriting each other (bd tea-rags-mcp-8ypeu).
+   */
+  classForm?: boolean;
   /** 1-based source line for position-scoped inline facts; undefined for sidecar/name-keyed facts. */
   line?: number;
   type: RubyTypeRef;

@@ -2256,7 +2256,7 @@ describe("extractFromRubyFile — registry dispatch tables (bd tea-rags-mcp-pq02
     const r = extract(code, [{ symbolId: "Runner#call", scope: ["Runner"], startLine: 3, endLine: 5 }]);
     const dispatched = r.chunks.flatMap((c) => c.calls).filter((c) => c.dispatch);
     expect(dispatched).toHaveLength(1);
-    expect(dispatched[0].dispatch).toEqual({ table: "TCK", field: "perform", key: null });
+    expect(dispatched[0].dispatch).toEqual({ table: "TCK", field: "perform", key: null, viaInstance: true });
   });
 
   it("tags a static-key dispatch site CONST['k'].new.m with the literal key", () => {
@@ -2271,7 +2271,12 @@ describe("extractFromRubyFile — registry dispatch tables (bd tea-rags-mcp-pq02
     const r = extract(code, [{ symbolId: "Runner#call", scope: ["Runner"], startLine: 3, endLine: 5 }]);
     const dispatched = r.chunks.flatMap((c) => c.calls).filter((c) => c.dispatch);
     expect(dispatched).toHaveLength(1);
-    expect(dispatched[0].dispatch).toEqual({ table: "TCK", field: "perform", key: "JobTemplate" });
+    expect(dispatched[0].dispatch).toEqual({
+      table: "TCK",
+      field: "perform",
+      key: "JobTemplate",
+      viaInstance: true,
+    });
   });
 
   it("does NOT tag a plain local-array index call arr[i].m (object not a table constant)", () => {
@@ -2328,6 +2333,81 @@ describe("extractFromRubyFile — registry dispatch tables (bd tea-rags-mcp-pq02
     const dispatched = r.chunks.flatMap((c) => c.calls).filter((c) => c.dispatch);
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0].dispatch).toMatchObject({ table: "App::TCK", field: "perform" });
+  });
+
+  // bd tea-rags-mcp-exmwr: the call SHAPE decides the symbolId form the resolver
+  // asks for. A chain through an instantiator selects an INSTANCE member; a
+  // direct `CONST[k].m` is a CLASS-method call on the registry's value class.
+  it("marks a DIRECT class-method dispatch site CONST[k].m as not viaInstance (class form)", () => {
+    const code = [
+      "TCK = { 'Job' => Jobs::Clone }.freeze",
+      "class Runner",
+      "  def call(key)",
+      "    TCK[key].create!",
+      "  end",
+      "end",
+    ].join("\n");
+    const r = extract(code, [{ symbolId: "Runner#call", scope: ["Runner"], startLine: 3, endLine: 5 }]);
+    const dispatched = r.chunks.flatMap((c) => c.calls).filter((c) => c.dispatch);
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0].dispatch).toEqual({ table: "TCK", field: "create!", key: null, viaInstance: false });
+  });
+
+  // bd tea-rags-mcp-va9ng: `.new` is not the only verb that hands back an
+  // instance of the value class — the AR/factory verbs in the DSL catalogue's
+  // `instanceReturning` facet do too, so a hop AFTER one of them selects an
+  // INSTANCE member. Anything outside that facet stays silent.
+  describe("post-factory chaining beyond .new (bd tea-rags-mcp-va9ng)", () => {
+    // Emission ORDER of the nested call nodes is not an invariant — sort by the
+    // dispatched member so the assertions pin the SET of refs, not the walk order.
+    const refsOf = (source: string) => {
+      const code = [
+        "TCK = { 'Job' => Jobs::Clone }.freeze",
+        "class Runner",
+        "  def call(key)",
+        `    ${source}`,
+        "  end",
+        "end",
+      ].join("\n");
+      const r = extract(code, [{ symbolId: "Runner#call", scope: ["Runner"], startLine: 3, endLine: 5 }]);
+      return r.chunks
+        .flatMap((c) => c.calls)
+        .filter((c) => c.dispatch)
+        .map((c) => c.dispatch)
+        .sort((a, b) => String(a?.field).localeCompare(String(b?.field)));
+    };
+    const chainOf = (factory: string) => refsOf(`TCK[key].${factory}.perform`);
+
+    it.each(["create", "create!", "build", "find", "find!", "find_by!"])(
+      "continues the chain after .%s as an INSTANCE member",
+      (factory) => {
+        // The factory call itself stays a CLASS-method edge (exmwr); the hop
+        // after it is the instance member.
+        expect(chainOf(factory)).toEqual(
+          [
+            { table: "TCK", field: factory, key: null, viaInstance: false },
+            { table: "TCK", field: "perform", key: null, viaInstance: true },
+          ].sort((a, b) => a.field.localeCompare(b.field)),
+        );
+      },
+    );
+
+    it("stays silent for a hop after an ARBITRARY (non-instantiator) member", () => {
+      expect(chainOf("configure")).toEqual([{ table: "TCK", field: "configure", key: null, viaInstance: false }]);
+    });
+
+    it("resolves ONE hop after the factory, not two", () => {
+      expect(refsOf("TCK[key].create!.perform.upcase")).toEqual([
+        { table: "TCK", field: "create!", key: null, viaInstance: false },
+        { table: "TCK", field: "perform", key: null, viaInstance: true },
+      ]);
+    });
+
+    it("keeps .new a pure pass-through (no class-form edge for Kernel#new)", () => {
+      expect(refsOf("TCK[key].new.perform")).toEqual([
+        { table: "TCK", field: "perform", key: null, viaInstance: true },
+      ]);
+    });
   });
 
   it("skips dispatch tagging when the chain has a method called on an already-fielded inner ref", () => {
@@ -2421,6 +2501,84 @@ describe("extractFromRubyFile — localBindings P3 RHS expansion + flow-sensitiv
         { line: 4, type: "Bar" },
       ],
     });
+  });
+});
+
+describe("extractFromRubyFile — rescue exception-variable bindings (02saq)", () => {
+  const extract = (src: string, chunk: { startLine: number; endLine: number }) =>
+    extractFromRubyFile({
+      tree: parse(src.endsWith("\n") ? src : `${src}\n`),
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: chunk.startLine, endLine: chunk.endLine }],
+    });
+
+  it("reaches localBindings for `rescue Const => e`", () => {
+    const r = extract("def f\n  risky\nrescue Widget => e\n  e.spin\nend", { startLine: 1, endLine: 5 });
+    expect(r.chunks[0].localBindings).toEqual({ e: [{ line: 3, type: "Widget" }] });
+  });
+
+  it("carries a constant union as a typeRef alongside a best-effort name", () => {
+    const r = extract("def f\n  risky\nrescue Widget, Gadget => e\n  e.spin\nend", { startLine: 1, endLine: 5 });
+    expect(r.chunks[0].localBindings).toEqual({
+      e: [
+        {
+          line: 3,
+          type: "Widget",
+          typeRef: {
+            form: "union",
+            members: [
+              { form: "instance", name: "Widget" },
+              { form: "instance", name: "Gadget" },
+            ],
+          },
+        },
+      ],
+    });
+  });
+
+  it("emits NO binding for a bare `rescue => e`", () => {
+    const r = extract("def f\n  risky\nrescue => e\n  e.spin\nend", { startLine: 1, endLine: 5 });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+
+  it("binds the rescue variable only from its own clause line onward", () => {
+    const r = extract("def f\n  e = Foo.new\n  e.a\nrescue Widget => e\n  e.spin\nend", { startLine: 1, endLine: 6 });
+    expect(r.chunks[0].localBindings).toEqual({
+      e: [
+        { line: 2, type: "Foo" },
+        { line: 4, type: "Widget" },
+      ],
+    });
+  });
+
+  it("attributes each clause to the chunk that owns its line", () => {
+    const src = [
+      "def a",
+      "  risky",
+      "rescue Widget => e",
+      "  e.spin",
+      "end",
+      "",
+      "def b",
+      "  risky",
+      "rescue Gadget => g",
+      "  g.spin",
+      "end",
+    ].join("\n");
+    const r = extractFromRubyFile({
+      tree: parse(`${src}\n`),
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [
+        { symbolId: "a", scope: ["a"], startLine: 1, endLine: 5 },
+        { symbolId: "b", scope: ["b"], startLine: 7, endLine: 11 },
+      ],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ e: [{ line: 3, type: "Widget" }] });
+    expect(r.chunks[1].localBindings).toEqual({ g: [{ line: 9, type: "Gadget" }] });
   });
 });
 

@@ -9,15 +9,24 @@ import type {
   SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
-import { isRubyPath, lastConstantSegment, resolveConstant, type ResolverConfig } from "./shared.js";
+import {
+  isRubyPath,
+  lastConstantSegment,
+  resolveConstant,
+  symbolIdIsClassMethod,
+  symbolIdIsInstanceMethod,
+  type ResolverConfig,
+} from "./shared.js";
 
 /**
  * Registry-literal dispatch fan-out (bd tea-rags-mcp-pq02v). A
  * `CONST[key].new.member` site whose `CONST` is a frozen hash/array of
  * value-classes (the walker tagged it with `CallRef.dispatch`) fans out to each
- * value class's `#member`. The candidate set is statically COMPLETE (every value
- * class is in the literal); a dynamic key fans to all (`registry`, `1/N`), a
- * static literal key narrows to one (`exact`, `1.0`).
+ * value class's member — `#member` after an instantiator hop, `.member` for a
+ * direct class-method call (`DispatchRef.viaInstance`, bd tea-rags-mcp-exmwr).
+ * The candidate set is statically COMPLETE (every value class is in the
+ * literal); a dynamic key fans to all (`registry`, `1/N`), a static literal key
+ * narrows to one (`exact`, `1.0`).
  *
  * Implements `DispatchResolverComponent` (fan-out, per-edge confidence) — NOT the
  * single-target `SymbolResolutionStrategy` chain. Composed FIRST in
@@ -45,7 +54,7 @@ export class RubyTableDispatchResolver implements DispatchResolverComponent {
     const targets: SymbolResolutionTarget[] = [];
     const seen = new Set<string>();
     for (const className of candidateClasses(def.table, ref)) {
-      const target = this.resolveClassMethod(className, ref.field, ctx);
+      const target = this.resolveMember(className, ref.field, ref.viaInstance === true, ctx);
       if (!target) continue;
       const key = `${target.targetRelPath}::${target.targetSymbolId ?? ""}`;
       if (seen.has(key)) continue;
@@ -80,23 +89,36 @@ export class RubyTableDispatchResolver implements DispatchResolverComponent {
   }
 
   /**
-   * Resolve `Class#field` for a value-class FQ-name. The class FQ-name resolves
-   * to its declaring file via `resolveConstant`; the method is then looked up by
-   * exact `Class#field` fqName (filtered to that file) with a short-name
-   * fallback scoped to the class's last segment. Ruby files only.
+   * Resolve a member of a value-class FQ-name in the form the CALL SHAPE asks
+   * for: `Class#field` when the chain instantiated (`CONST[k].new.field`),
+   * `Class.field` for a direct class-method call (`CONST[k].field`) — bd
+   * tea-rags-mcp-exmwr. The class FQ-name resolves to its declaring file via
+   * `resolveConstant`; the member is then looked up by exact fqName (filtered to
+   * that file) with a short-name fallback scoped to the class's last segment.
+   * Both paths reject the OTHER form, so a class call never lands on an instance
+   * def (and vice versa) — dropping is correct: the real target is then an
+   * inherited framework method with no in-project `def`. Ruby files only.
    */
-  private resolveClassMethod(className: string, field: string, ctx: CallContext): SymbolResolutionTarget | null {
+  private resolveMember(
+    className: string,
+    field: string,
+    viaInstance: boolean,
+    ctx: CallContext,
+  ): SymbolResolutionTarget | null {
     const classRelPath = resolveConstant(className, ctx);
     if (classRelPath === null || !isRubyPath(classRelPath)) return null;
 
-    const fq = `${className}#${field}`;
+    const formMatches = viaInstance ? symbolIdIsInstanceMethod : symbolIdIsClassMethod;
+    const fq = `${className}${viaInstance ? "#" : "."}${field}`;
     const direct = ctx.symbolTable.lookup(fq).filter((d) => d.relPath === classRelPath);
     if (direct.length === 1) return { targetRelPath: direct[0].relPath, targetSymbolId: direct[0].symbolId };
 
     const shortSeg = lastConstantSegment(className);
     const byShort = ctx.symbolTable
       .lookupByShortName(field)
-      .filter((d) => d.relPath === classRelPath && d.scope[d.scope.length - 1] === shortSeg);
+      .filter(
+        (d) => d.relPath === classRelPath && d.scope[d.scope.length - 1] === shortSeg && formMatches(d.symbolId, field),
+      );
     if (byShort.length === 1) return { targetRelPath: byShort[0].relPath, targetSymbolId: byShort[0].symbolId };
 
     return null;

@@ -161,9 +161,12 @@ export class RubyTypeFactStore {
   /**
    * Full `"<fqClass>#<method>" → RubyTypeRef` map over every return fact, in the
    * engine's `structuredReturnTypes` key convention (the codegraph
-   * `fqMethodKey`): fq class = `symbolScope.join("::")`, member joined with `#`.
-   * Return facts carry no static flag, so the instance form `#` is always used
-   * — matching the engine's `recv.name#member` lookup and {@link returnTypeByMethod}.
+   * `fqMethodKey`): fq class = `symbolScope.join("::")`, member joined with `#`
+   * — the instance form, which is also what the engine looks up for a class
+   * receiver, so a `def self.x` `@return` keeps answering `Klass.x` chains.
+   * The one exception is a fact that explicitly declares itself class-level
+   * (`RubyTypeFact.classForm`, set by an `@!method self.x` directive): it joins
+   * with `.` so it cannot overwrite the same class's real instance method.
    * Union / container refs are preserved verbatim. Source precedence matches the
    * {@link structuredReturnType} point lookup: the highest-precedence source
    * (lowest `sourceRank`) wins per key.
@@ -173,7 +176,7 @@ export class RubyTypeFactStore {
     const bestRank = new Map<string, number>();
     for (const f of this.resolvedFacts) {
       if (f.kind !== "return" || !f.methodName) continue;
-      const key = `${f.symbolScope.join("::")}#${f.methodName}`;
+      const key = `${f.symbolScope.join("::")}${f.classForm === true ? "." : "#"}${f.methodName}`;
       const rank = sourceRank(f.source, DEFAULT_SOURCE_ORDER);
       const prev = bestRank.get(key);
       if (prev === undefined || rank < prev) {

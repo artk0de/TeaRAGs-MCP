@@ -209,6 +209,19 @@ describe("extractFromRubyFile — forwards the precise type-source maps", () => 
     expect(r.structuredReturnTypes?.["Repo#build"]).toEqual({ form: "instance", name: "Post" });
   });
 
+  // bd tea-rags-mcp-wr7ku — the AST `@x = Const.new` inference is the
+  // `classFieldTypes` channel and stays there. `ivarTypes` carries type-SOURCE
+  // ivar facts (`kind:"ivar"`), which no inline source emits today. Mirroring one
+  // into the other would create a second copy of the same facts under a channel
+  // that claims higher precedence — a parallel ivar channel, not a fix.
+  it("does NOT mirror the AST classFieldTypes channel into ivarTypes", () => {
+    const src = "class A\n  def initialize\n    @x = Foo.new\n  end\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "app/a.rb", language: "ruby", chunks: [] });
+    expect(r.classFieldTypes).toEqual({ A: { "@x": "Foo" } });
+    expect(r.ivarTypes).toBeUndefined();
+  });
+
   it("omits structuredReturnTypes / ivarTypes when there are no facts", () => {
     const src = "x = 1\n";
     const tree = parse(src);

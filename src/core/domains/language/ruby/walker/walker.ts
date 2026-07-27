@@ -62,6 +62,12 @@ import {
   collectRubyLocalCallBindingsForChunk,
   localTypeTrackingEnabled,
 } from "./local-bindings.js";
+import {
+  collectKnownTargetCallArgs,
+  collectRubyClassFieldParamLinks,
+  positionalParamNames,
+  type KnownTargetCallSite,
+} from "./param-arg-types.js";
 import { RubyTypeFactStore } from "./type-fact-store.js";
 import { collectRubyInstantiatedTypes } from "./type-sources/ast-inference.js";
 import { INLINE_TYPE_SOURCES } from "./type-sources/index.js";
@@ -107,6 +113,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     prepended: prependedMap,
     extends: extendsMap,
     compact: compactClassSet,
+    schemaTables: schemaTableMap,
   } = collectRubyClassAncestors(input.tree.rootNode);
   const dispatchTables = collectRubyDispatchTables(input.tree.rootNode);
   const dispatchTableNames = new Set(Object.keys(dispatchTables));
@@ -131,6 +138,17 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // Arity + visibility per method def (bd xlnub Task 2). Keyed by 1-based
   // start line — the same line the chunker assigns to the method's chunk.
   const methodSigs = collectRubyMethodSignatures(input.tree.rootNode);
+  // `@ivar` field types (cai0 imass) — hoisted ABOVE the chunk loop because the
+  // known-target arg-hint pass reads them to type an `@ivar` ARGUMENT
+  // (bd tea-rags-mcp-bvalc). Pure, so the position of the call is immaterial;
+  // it is still surfaced on the extraction below, unchanged.
+  const ivarFieldTypes = trackTypes
+    ? collectRubyIvarFieldTypes(input.tree.rootNode, associationTypes, input.code, catalogue)
+    : {};
+  // Per-chunk type environments, in `input.chunks` order, so a known-target call
+  // site can be typed against the bindings of the chunk that OWNS its line
+  // (bd tea-rags-mcp-bvalc). Filled during the chunk loop, read after it.
+  const chunkSites: (KnownTargetCallSite & { startLine: number; endLine: number })[] = [];
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -142,9 +160,16 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     const sig = c.startLine !== undefined ? methodSigs.get(c.startLine) : undefined;
     if (sig !== undefined) {
       base.arity = sig.arity;
+      // Positional names map a call site's argument INDEX to a parameter NAME at
+      // the pass-1→pass-2 barrier (bd tea-rags-mcp-bvalc). Omitted when the
+      // leading required run is empty — nothing to map.
+      if (sig.paramNames.length > 0) base.paramNames = sig.paramNames;
       base.visibility = sig.visibility;
       if (sig.kwargs !== undefined) base.kwargs = sig.kwargs;
       base.acceptsBlock = sig.acceptsBlock;
+      // Only ever set when TRUE — absent means "carries a real body", which is
+      // the overwhelming majority of defs (bd tea-rags-mcp-bcdfe).
+      if (sig.isAbstractStub) base.isAbstractStub = true;
     }
     if (trackTypes) {
       // Store provides YARD + AST param/local bindings (position-filtered to chunk).
@@ -165,9 +190,35 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
       // to `<meth's return type>#member` (cai0 a71lj, same channel as Go).
       const callBindings = collectRubyLocalCallBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine, catalogue);
       if (Object.keys(callBindings).length > 0) base.localCallBindings = callBindings;
+      // Type environment a known-target call site on these lines inherits
+      // (bd tea-rags-mcp-bvalc).
+      chunkSites.push({
+        startLine: c.startLine,
+        endLine: c.endLine,
+        scope: c.scope,
+        localBindings: base.localBindings,
+        classFields: ivarFieldTypes[c.scope.join("::")],
+      });
     }
     return base;
   });
+  // Innermost chunk owning a line — the narrowest containing range, ties broken
+  // by deeper scope, mirroring `assignCallsToInnermostChunks`. No chunk contains
+  // the line (a top-level statement) ⇒ file scope with no type environment.
+  const siteContextAt = (line: number): KnownTargetCallSite => {
+    let best: (typeof chunkSites)[number] | undefined;
+    for (const site of chunkSites) {
+      if (line < site.startLine || line > site.endLine) continue;
+      if (
+        best === undefined ||
+        site.endLine - site.startLine < best.endLine - best.startLine ||
+        (site.endLine - site.startLine === best.endLine - best.startLine && site.scope.length > best.scope.length)
+      ) {
+        best = site;
+      }
+    }
+    return best ?? { scope: [] };
+  };
   const out: FileExtraction = {
     relPath: input.relPath,
     language: input.language,
@@ -184,6 +235,12 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     out.classAncestors = ancestorRecord;
   }
   if (compactClassSet.size > 0) out.compactDeclaredClasses = [...compactClassSet];
+  if (schemaTableMap.size > 0) {
+    // Record (not Map) so the channel survives the NDJSON spill round-trip.
+    const schemaTableRecord: Record<string, string> = {};
+    for (const [k, v] of schemaTableMap) schemaTableRecord[k] = v;
+    out.classSchemaTables = schemaTableRecord;
+  }
   if (prependedMap.size > 0) {
     const prependedRecord: Record<string, readonly string[]> = {};
     for (const [k, v] of prependedMap) prependedRecord[k] = v;
@@ -219,18 +276,33 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // `@ivar` receiver types via the universal `classFieldTypes` channel (cai0
   // imass) — same env gate as the other type-inference paths. Ruby is the 5th
   // language to fill this channel (after TS/Java/Python/Rust).
+  if (Object.keys(ivarFieldTypes).length > 0) out.classFieldTypes = ivarFieldTypes;
+  // Interprocedural parameter typing, Increment 1 (bd tea-rags-mcp-bvalc). Both
+  // channels are HALF-FACTS the pass-1→pass-2 barrier completes: argument types
+  // at syntactically-known callees, and `@ivar = <param>` copies whose type is
+  // whatever that parameter turns out to hold. Same env gate as every other
+  // inference channel.
   if (trackTypes) {
-    const ivarFieldTypes = collectRubyIvarFieldTypes(input.tree.rootNode, associationTypes, input.code, catalogue);
-    if (Object.keys(ivarFieldTypes).length > 0) out.classFieldTypes = ivarFieldTypes;
+    const knownTargetCallArgs = collectKnownTargetCallArgs(input.tree.rootNode, siteContextAt, catalogue);
+    if (knownTargetCallArgs.length > 0) out.knownTargetCallArgs = knownTargetCallArgs;
+    const classFieldParamLinks = collectRubyClassFieldParamLinks(input.tree.rootNode);
+    if (Object.keys(classFieldParamLinks).length > 0) out.classFieldParamLinks = classFieldParamLinks;
   }
   // Precise type-source maps for the resolver's PRECISE propagation paths
   // (Increment 1, Task 1.5). `structuredReturnTypes` keys `"<fqClass>#method"` →
   // RubyTypeRef (engine's structured-return path); `ivarTypes` keys
-  // `fqClass → "@ivar" → typeName` (engine's precise ivar path). Both derive
-  // from the SAME store as the flat `functionReturnTypes` / `classFieldTypes`
-  // fallbacks — the precise maps win in the engine, the flat maps stay as
-  // fallback. Conditionally set (omit when empty) so files with no annotations
-  // don't carry empty objects through the NDJSON spill.
+  // `fqClass → "@ivar" → typeName` (engine's precise ivar path). Both read the
+  // store's DECLARED facts — the flat `functionReturnTypes` / `classFieldTypes`
+  // above stay as the inference-based fallback the engine consults second.
+  // Conditionally set (omit when empty) so files with no annotations don't carry
+  // empty objects through the NDJSON spill.
+  //
+  // `ivarTypes` is empty on every file today (bd tea-rags-mcp-wr7ku): no source
+  // in INLINE_TYPE_SOURCES emits `kind:"ivar"`. Do NOT "fix" that by copying
+  // `ivarFieldTypes` in here — that publishes AST inference under the channel
+  // that outranks it, and buys nothing (measured on taxdome: no fq class draws
+  // ivar types from more than one file, so the run-global merge adds zero).
+  // The channel goes live when a Sorbet/RBS source starts emitting ivar facts.
   if (trackTypes) {
     const structuredReturnTypes = store.structuredReturnTypesMap();
     if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;
@@ -341,10 +413,13 @@ function collectRubyClassAncestors(root: AstNode): {
   prepended: Map<string, string[]>;
   extends: Map<string, string>;
   compact: Set<string>;
+  schemaTables: Map<string, string>;
 } {
   const out = new Map<string, string[]>();
   const prependedOut = new Map<string, string[]>();
   const extendsOut = new Map<string, string>();
+  /** class FQ → explicit `self.table_name` override (bd tea-rags-mcp-8l5fo). */
+  const schemaTablesOut = new Map<string, string>();
   // FQs declared in COMPACT form (`class A::B::C`): their intermediate namespaces
   // (A, A::B) are NOT open lexical scopes, so a raw ancestor must NOT be
   // prefix-walked through them (bd lawlq.3.7). Consumed by canonicalizeAncestorFq.
@@ -410,6 +485,13 @@ function collectRubyClassAncestors(root: AstNode): {
       }
       if (ancestors.length > 0) out.set(fq, ancestors);
       if (prepended.length > 0) prependedOut.set(fq, prepended);
+      // `self.table_name = "companies"` — the explicit ORM table override
+      // (bd tea-rags-mcp-8l5fo). Collected on THIS traversal (which already
+      // owns the namespace stack that yields `fq`) rather than in a second walk.
+      for (const stmt of stmtSource) {
+        const table = schemaTableOverrideFromStatement(stmt);
+        if (table !== null) schemaTablesOut.set(fq, table);
+      }
       // Recurse — nested classes get their own ancestor maps. Children of
       // the body are the canonical recursion target; without an explicit
       // body field, fall back to scanning the class node's own children.
@@ -420,7 +502,31 @@ function collectRubyClassAncestors(root: AstNode): {
     for (const child of node.children) walkScope(child, scope);
   };
   walkScope(root, []);
-  return { ancestors: out, prepended: prependedOut, extends: extendsOut, compact: compactOut };
+  return {
+    ancestors: out,
+    prepended: prependedOut,
+    extends: extendsOut,
+    compact: compactOut,
+    schemaTables: schemaTablesOut,
+  };
+}
+
+/**
+ * The table a class-body statement declares as its ORM table:
+ * `self.table_name = "companies"` (bd tea-rags-mcp-8l5fo). ONLY the
+ * `self`-qualified assignment counts — a bare `table_name = "x"` is a local
+ * variable, not the class-level override — and only a STRING literal: a computed
+ * expression (`self.table_name = compute_name`) is unknowable statically, and a
+ * guess would attach a whole table's columns to the wrong model.
+ */
+function schemaTableOverrideFromStatement(node: AstNode): string | null {
+  if (node.type !== "assignment") return null;
+  const left = node.childForFieldName("left");
+  const right = node.childForFieldName("right");
+  if (!left || !right) return null;
+  if (left.text.replace(/\s+/g, "") !== "self.table_name") return null;
+  const literal = /^["']([A-Za-z0-9_.]+)["']$/.exec(right.text.trim());
+  return literal?.[1] ?? null;
 }
 
 const RUBY_MIXIN_METHODS = new Set(["include", "extend", "prepend"]);
@@ -552,6 +658,70 @@ function computeRubyAcceptsBlock(methodNode: AstNode): boolean {
   return yields;
 }
 
+/** The two spellings of Ruby's built-in `NotImplementedError` an abstract stub
+ *  may raise. A namespaced look-alike (`Legacy::NotImplementedError`) is a
+ *  DIFFERENT class and deliberately absent — see `computeRubyIsAbstractStub`. */
+const NOT_IMPLEMENTED_ERROR_NAMES = new Set<string>(["NotImplementedError", "::NotImplementedError"]);
+
+/**
+ * Whether a `method` / `singleton_method` node is an ABSTRACT STUB — a
+ * declaration carrying no implementation (bd tea-rags-mcp-bcdfe). The single
+ * detection site: the codegraph self-dispatch probe READS the resulting flag off
+ * the symbol table, it never re-derives it.
+ *
+ * Exactly three body shapes qualify (spec "Generalized predicate" clause 3):
+ *   - EMPTY — `def m; end`, with or without params (tree-sitter drops the `body`
+ *     field entirely; comments are extras, so a comment-only body is empty too);
+ *   - a SINGLE-statement `raise NotImplementedError` — bare constant,
+ *     `::NotImplementedError`, with a message, or `NotImplementedError.new(…)`;
+ *   - a SINGLE-statement `super` — bare, `super()`, or `super(args)`.
+ *
+ * Conservative by construction: anything else (a guard clause before the raise,
+ * two statements, a different error class, a real expression, an endless method
+ * with a value) is a REAL body. Over-marking is the dangerous direction — it
+ * turns a genuine base method into a dispatch hook and fabricates edges (spec
+ * "Risks" → abstract-stub detection must be conservative).
+ */
+function computeRubyIsAbstractStub(methodNode: AstNode): boolean {
+  const body = methodNode.childForFieldName("body");
+  if (!body) return true; // `def m; end` / comment-only — no body field at all
+  // A block body is a `body_statement` wrapper; an endless method (`def m = x`)
+  // exposes its single expression directly.
+  const statements = body.type === "body_statement" ? body.namedChildren : [body];
+  if (statements.length === 0) return true;
+  if (statements.length > 1) return false; // real body — more than a declaration
+  const only = statements[0];
+  if (only.type === "super") return true; // bare `super`
+  if (only.type !== "call" && only.type !== "method_call") return false;
+  const methodField = only.childForFieldName("method") ?? only.children.find((c) => c.type === "identifier");
+  if (!methodField) return false;
+  if (methodField.type === "super") return true; // `super()` / `super(args)`
+  if (only.childForFieldName("receiver")) return false; // `x.raise` is not Kernel#raise
+  if (methodField.text !== "raise") return false;
+  return raisesNotImplementedError(only);
+}
+
+/**
+ * Whether a `raise …` call node names Ruby's `NotImplementedError` as the error
+ * it raises: `raise NotImplementedError` / `raise ::NotImplementedError` /
+ * `raise NotImplementedError, "msg"` / `raise NotImplementedError.new(…)`. A bare
+ * `raise` (re-raise — no arguments) and any other error class are excluded.
+ */
+function raisesNotImplementedError(raiseCall: AstNode): boolean {
+  const args = raiseCall.childForFieldName("arguments") ?? raiseCall.children.find((c) => c.type === "argument_list");
+  const first = args?.namedChildren[0];
+  if (!first) return false;
+  if (first.type === "constant" || first.type === "scope_resolution") {
+    return NOT_IMPLEMENTED_ERROR_NAMES.has(first.text);
+  }
+  // `NotImplementedError.new("msg")` — a constructed error instance.
+  if (first.type !== "call" && first.type !== "method_call") return false;
+  const receiver = first.childForFieldName("receiver");
+  if (!receiver) return false;
+  if (first.childForFieldName("method")?.text !== "new") return false;
+  return NOT_IMPLEMENTED_ERROR_NAMES.has(receiver.text);
+}
+
 /** Whether a call passes a block (`{ … }` / `do … end`) (bd d9o7o). The block
  *  is a `block` / `do_block` node, either a direct child of the call or inside
  *  its argument list. */
@@ -579,15 +749,24 @@ function collectRubyMethodSignatures(root: AstNode): Map<
   number,
   {
     arity: AritySignature;
+    paramNames: string[];
     visibility: "public" | "private" | "protected";
     kwargs?: KwargSignature;
     acceptsBlock: boolean;
+    isAbstractStub: boolean;
   }
 > {
   type VisMode = "public" | "private" | "protected";
   const out = new Map<
     number,
-    { arity: AritySignature; visibility: VisMode; kwargs?: KwargSignature; acceptsBlock: boolean }
+    {
+      arity: AritySignature;
+      paramNames: string[];
+      visibility: VisMode;
+      kwargs?: KwargSignature;
+      acceptsBlock: boolean;
+      isAbstractStub: boolean;
+    }
   >();
 
   const processClassBody = (classNode: AstNode): void => {
@@ -653,9 +832,11 @@ function collectRubyMethodSignatures(root: AstNode): Map<
         const name = nameNode?.text ?? "";
         out.set(stmt.startPosition.row + 1, {
           arity: computeRubyArity(stmt),
+          paramNames: positionalParamNames(stmt),
           visibility: symVis.get(name) ?? currentVis,
           kwargs: computeRubyKwargs(stmt),
           acceptsBlock: computeRubyAcceptsBlock(stmt),
+          isAbstractStub: computeRubyIsAbstractStub(stmt),
         });
         continue;
       }
@@ -676,9 +857,11 @@ function collectRubyMethodSignatures(root: AstNode): Map<
             // Inline form: `private def foo; end`
             out.set(firstArg.startPosition.row + 1, {
               arity: computeRubyArity(firstArg),
+              paramNames: positionalParamNames(firstArg),
               visibility: modifier,
               kwargs: computeRubyKwargs(firstArg),
               acceptsBlock: computeRubyAcceptsBlock(firstArg),
+              isAbstractStub: computeRubyIsAbstractStub(firstArg),
             });
           }
           // Symbol form already resolved in pass 1 — nothing to do here.
@@ -928,11 +1111,30 @@ function collectRubyDispatchTables(root: AstNode): Record<string, DispatchTable>
  * known dispatch-table constant.
  *
  *   CONST            → (not a ref on its own)
- *   CONST[k]         → { table: CONST, field: null, key: staticKeyOf }
- *   CONST[k].new     → same ref, field stays null (Kernel#new pass-through)
- *   CONST[k].new.m   → { table: CONST, field: "m", key }
+ *   CONST[k]         → { table: CONST, field: null, key: staticKeyOf, viaInstance: false }
+ *   CONST[k].new     → same ref, field stays null, viaInstance flips true
+ *   CONST[k].new.m   → { table: CONST, field: "m", key, viaInstance: true }
+ *   CONST[k].m       → { table: CONST, field: "m", key, viaInstance: false }
+ *   CONST[k].create!.m → { table: CONST, field: "m", key, viaInstance: true }
+ *
+ * `viaInstance` records whether an instantiator hop happened, which decides the
+ * symbolId form the resolver looks up: `Class#m` after `.new`, `Class.m` for a
+ * direct class-method call (bd tea-rags-mcp-exmwr).
+ *
+ * `.new` is a PURE pass-through: it names no in-project member, so its own node
+ * carries no field and emits no edge. The other instantiators — the catalogue's
+ * `instanceReturning` facet, i.e. the AR/factory verbs whose return IS an
+ * instance of the receiver class (`create!`, `build`, `find!`, …) — are real
+ * members that a value class MAY define, so their node keeps its field (the
+ * class-form edge) while the NEXT hop continues the chain as an instance member
+ * (bd tea-rags-mcp-va9ng). One hop: a member of an already-instance ref ends the
+ * chain, exactly as before.
  */
-function exprToRubyDispatchRef(node: AstNode, tableNames: ReadonlySet<string>): DispatchRef | null {
+function exprToRubyDispatchRef(
+  node: AstNode,
+  tableNames: ReadonlySet<string>,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): DispatchRef | null {
   if (node.type === "element_reference") {
     const obj = node.childForFieldName("object") ?? node.namedChildren[0];
     if (!obj) return null;
@@ -941,18 +1143,27 @@ function exprToRubyDispatchRef(node: AstNode, tableNames: ReadonlySet<string>): 
     if (objName === null || !tableNames.has(objName)) return null;
     // The subscript index is the named child after the object.
     const index = node.namedChildren[1] ?? null;
-    return { table: objName, field: null, key: rubyDispatchKeyText(index) };
+    return { table: objName, field: null, key: rubyDispatchKeyText(index), viaInstance: false };
   }
   if (node.type === "call" || node.type === "method_call") {
     const receiver = node.childForFieldName("receiver");
     const method = node.childForFieldName("method");
     if (!receiver || !method) return null;
-    const inner = exprToRubyDispatchRef(receiver, tableNames);
+    const inner = exprToRubyDispatchRef(receiver, tableNames, catalogue);
     if (!inner) return null;
-    // `.new` on a table-bound chain is a pass-through (instantiation, no edge).
-    if (method.text === "new" && inner.field === null) return inner;
-    // Outer `.member` on an entry-ref (field still null) → select the member.
-    if (inner.field === null) return { table: inner.table, field: method.text, key: inner.key };
+    // `.new` on a table-bound chain is a pass-through (instantiation, no edge)
+    // that rebinds the receiver from the CLASS to one of its instances.
+    if (method.text === "new" && inner.field === null) return { ...inner, viaInstance: true };
+    // Outer `.member` on an entry-ref (field still null) → select the member,
+    // carrying the receiver form the chain has reached so far.
+    if (inner.field === null) {
+      return { table: inner.table, field: method.text, key: inner.key, viaInstance: inner.viaInstance };
+    }
+    // Post-factory hop: the inner ref selected a CLASS member that is an
+    // instantiator by framework convention, so this hop lands on an instance.
+    if (inner.viaInstance !== true && catalogue.instanceReturning.has(inner.field)) {
+      return { table: inner.table, field: method.text, key: inner.key, viaInstance: true };
+    }
   }
   return null;
 }
@@ -1437,11 +1648,12 @@ function emitMethodCallRef(
   dynamicSend: boolean,
   dispatchTableNames: ReadonlySet<string>,
   out: CallRef[],
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): void {
   const startLine = node.startPosition.row + 1;
   const callRef: CallRef = { callText: node.text, receiver: receiverText, member: method.text, startLine };
   if (dynamicSend) callRef.dynamicSend = true;
-  const dispatch = exprToRubyDispatchRef(node, dispatchTableNames);
+  const dispatch = exprToRubyDispatchRef(node, dispatchTableNames, catalogue);
   if (dispatch?.field) callRef.dispatch = dispatch;
   // Positional argCount (bd xlnub): excludes block and keyword args
   callRef.argCount = computeArgCount(node);
@@ -1582,7 +1794,7 @@ function collectRubyCalls(
 
       // The macro/method's own literal call edge, plus the block-pass `&:sym`
       // edge if present. Both lifted verbatim into emit helpers.
-      emitMethodCallRef(node, receiverText, method, dynamicSend, dispatchTableNames, out);
+      emitMethodCallRef(node, receiverText, method, dynamicSend, dispatchTableNames, out, catalogue);
       emitBlockPassEdge(node, out);
     }
 

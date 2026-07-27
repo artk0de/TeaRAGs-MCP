@@ -71,6 +71,16 @@ export interface DispatchRef {
   table: string;
   field: string | null;
   key: string | null;
+  /**
+   * Ruby registry overload (bd tea-rags-mcp-exmwr): the call SHAPE that reached
+   * `field`. `true` ⇒ the chain passed through an instantiator
+   * (`CONST[k].new.m`), so `field` names an INSTANCE member (`Class#field`);
+   * `false` ⇒ the member is invoked on the value CLASS itself
+   * (`CONST[k].create!` → `Class.field`). Omitted by table dispatch that has no
+   * receiver-form distinction (the TypeScript tables select a FUNCTION name, not
+   * a member of a receiver), where it reads as "not applicable".
+   */
+  viaInstance?: boolean;
 }
 
 /**
@@ -308,6 +318,18 @@ export interface FileExtraction {
    */
   compactDeclaredClasses?: readonly string[];
   /**
+   * Explicit ORM table overrides declared in a class body, keyed by class FQ
+   * (`Firm` → `companies` for `self.table_name = "companies"`). Consumed by the
+   * project-scope schema-column pre-pass at the pass-1→pass-2 barrier: an
+   * explicit declaration always beats the table→model inflection guess, and a
+   * table a declaration claims can never be inflected onto a namesake model
+   * (bd tea-rags-mcp-8l5fo). Populated by the Ruby walker; languages with no
+   * such convention leave it undefined.
+   *
+   * Plain Record (NOT Map) so the value round-trips through the NDJSON spill.
+   */
+  classSchemaTables?: Record<string, string>;
+  /**
    * Optional per-class superclass map for languages with single inheritance
    * via an `extends` clause (TypeScript / JavaScript / Java). Keyed by the
    * fully-qualified class name (`Outer.Inner` for nested classes); value is
@@ -394,11 +416,20 @@ export interface FileExtraction {
   inheritanceEdges?: InheritanceEdgeDecl[];
   /**
    * Optional per-class instance-variable type map: `fqClassName → ivarName →
-   * typeName`. Populated by the Ruby type-source propagation engine (Increment 1,
-   * Task 1.1) from YARD / Sorbet / RBS annotations and AST inference. The ivar
-   * name is recorded with the leading `@` (`"@account"`, `"@user"`). Lets the
-   * resolver bind `@ivar.method()` calls to `<typeName>#method` for annotated
-   * Ruby code. Mirror of `CallContext.ivarTypes`; persisted via the NDJSON spill.
+   * typeName`, built from DECLARED ivar types — `RubyTypeFact` entries of
+   * `kind:"ivar"` (YARD / Sorbet / RBS). The ivar name is recorded with the
+   * leading `@` (`"@account"`, `"@user"`). Lets the resolver bind
+   * `@ivar.method()` calls to `<typeName>#method`. Mirror of
+   * `CallContext.ivarTypes`; persisted via the NDJSON spill.
+   *
+   * **Empty today (bd tea-rags-mcp-wr7ku).** No inline type source emits
+   * `kind:"ivar"` yet — YARD carries ivar types on `attr_*` readers, not on the
+   * ivar itself — so this stays undefined until a sidecar source (Sorbet
+   * `T.let` / RBS `@x: Foo`) lands. Ruby's live ivar channel is
+   * {@link FileExtraction.classFieldTypes}, filled by AST inference over
+   * `@x = Const.new`. The two are NOT mirrors of each other: one carries
+   * declarations, the other inference, and `ivarTypes` outranks
+   * `classFieldTypes` at every reader precisely because of that.
    *
    * Plain Record (NOT Map) for NDJSON-spill round-trip. Undefined for languages
    * without ivar annotations.
@@ -431,6 +462,69 @@ export interface FileExtraction {
    * Undefined for languages whose walkers don't collect instantiation sites.
    */
   instantiatedTypes?: string[];
+  /**
+   * Argument types observed at call sites whose CALLEE IS SYNTACTICALLY KNOWN
+   * — no resolution required (bd tea-rags-mcp-bvalc). Populated by the Ruby
+   * walker for `Const.new(...)` and constant-receiver factory verbs; the
+   * pass-1→pass-2 barrier folds them per callee coordinate into parameter
+   * types (see `foldKnownTargetParamTypes`).
+   *
+   * These sites are the increment that dodges the interprocedural fixpoint:
+   * the target of `Firm::Service.new(x)` is `Firm::Service#initialize`
+   * regardless of what any other call site resolves to, so the fold can run at
+   * the barrier — before ANY call is resolved.
+   *
+   * Plain array (NOT Map) for NDJSON-spill round-trip. Undefined for languages
+   * whose walkers don't collect call-site argument types.
+   */
+  knownTargetCallArgs?: KnownTargetCallArgs[];
+  /**
+   * Per-class map of `@ivar` fields assigned VERBATIM from a method parameter:
+   * `fqClassName → "@ivar" → { method, param }` (bd tea-rags-mcp-bvalc). The
+   * unresolved half of an ivar's type — the walker knows WHICH parameter the
+   * field copies but not that parameter's type, which only the barrier's
+   * interprocedural fold can supply.
+   *
+   * Populated by the Ruby walker for INSTANCE methods only (a `@x` inside
+   * `def self.m` is a class-level ivar — a different storage slot). An `@ivar`
+   * fed by two different (method, param) coordinates in one class is DROPPED,
+   * not last-write-wins: two origins mean two candidate types and Increment 1
+   * never picks between them.
+   *
+   * Plain Record (NOT Map) for NDJSON-spill round-trip.
+   */
+  classFieldParamLinks?: Record<string, Record<string, ClassFieldParamLink>>;
+}
+
+/**
+ * Argument types at ONE call site whose callee is known from syntax alone
+ * (bd tea-rags-mcp-bvalc).
+ */
+export interface KnownTargetCallArgs {
+  /**
+   * Callee coordinate candidates in the symbolId convention
+   * (`"Fq::Type#initialize"` / `"Fq::Type.build"`), ordered INNERMOST LEXICAL
+   * SCOPE FIRST — Ruby's own constant-lookup order. The barrier picks the first
+   * candidate that is a real method definition; a call site whose constant
+   * resolves to nothing in-project contributes nothing.
+   */
+  readonly targets: readonly string[];
+  /**
+   * Per-POSITION argument type. `null` where the argument shape is not
+   * conservatively typeable (a literal, a bare method result, an untyped
+   * local). A `null` never votes and never vetoes — it is simply absent
+   * evidence. The array is truncated at the first argument that breaks
+   * positional correspondence (splat / double-splat / keyword pair).
+   */
+  readonly argTypes: readonly (RubyTypeRef | null)[];
+}
+
+/** The `(method, parameter)` coordinate an `@ivar` copies its value from. */
+export interface ClassFieldParamLink {
+  /** Short name of the enclosing instance method, e.g. `"initialize"`. */
+  readonly method: string;
+  /** Parameter name the field is assigned from, e.g. `"firm"`. */
+  readonly param: string;
 }
 
 export interface ImportRef {
@@ -581,6 +675,20 @@ export interface ChunkExtraction {
    */
   arity?: AritySignature;
   /**
+   * Positional parameter NAMES of the method definition this chunk represents,
+   * in declaration order (bd tea-rags-mcp-bvalc). Only the LEADING run of
+   * plain required positionals is recorded — the list is truncated at the first
+   * optional / splat / keyword / block parameter, past which a call site's
+   * argument index no longer corresponds to a fixed parameter. Empty run ⇒
+   * undefined.
+   *
+   * Kept beside {@link AritySignature} rather than inside it: arity is
+   * persisted on `SymbolDefinition` and consumed by the arity narrower, while
+   * names exist only to map a call site's argument POSITION to a parameter
+   * NAME at the pass-1→pass-2 barrier.
+   */
+  paramNames?: string[];
+  /**
    * Visibility of the method definition this chunk represents (bd xlnub).
    * Populated by the Ruby walker using the class-body visibility state machine
    * (`private` / `protected` / `public` bare calls, inline `private def`,
@@ -593,6 +701,21 @@ export interface ChunkExtraction {
   /** Method yields or takes an `&block` param (bd d9o7o). `false` = proven
    *  non-yielder; undefined for non-method chunks. */
   acceptsBlock?: boolean;
+  /**
+   * The method this chunk represents is an ABSTRACT STUB — a declaration with no
+   * implementation (bd tea-rags-mcp-bcdfe). Populated by the Ruby walker for the
+   * three conservative shapes the self-dispatch spec admits: an empty body, a
+   * single-statement `raise NotImplementedError`, or a single-statement `super`.
+   * Consumed by the codegraph self-dispatch discovery, where a stub is NOT a
+   * concrete definition of its member (so the template's hook stays abstract-in-A
+   * and the REDIRECT terminal fires).
+   *
+   * Only ever `true` — absent means "not a stub / not captured", so the field
+   * costs nothing on the ~99% of defs that carry a real body. Detection is
+   * deliberately narrow: mis-marking a real base method as a stub would fabricate
+   * hook edges (spec "Risks" → abstract-stub conservatism).
+   */
+  isAbstractStub?: boolean;
 }
 
 export interface CallRef {
@@ -666,8 +789,21 @@ export interface GlobalSymbolTable {
    *  rare but possible for monkey-patched modules. */
   lookup: (fqName: string) => SymbolDefinition[];
   /** Lookup by short name; returns all candidates for scope-walk
-   *  resolution. */
-  lookupByShortName: (name: string) => SymbolDefinition[];
+   *  resolution. SCHEMA COLUMNS ARE EXCLUDED unless `options` opts in — see
+   *  {@link SymbolLookupOptions}. */
+  lookupByShortName: (name: string, options?: SymbolLookupOptions) => SymbolDefinition[];
+  /**
+   * Replace the run's schema-column index with `definitions` (each carrying
+   * `isSchemaColumn: true`). Optional capability: a table that omits it simply
+   * never holds synthesized columns, and the pre-pass no-ops (bd
+   * tea-rags-mcp-8l5fo).
+   *
+   * Held in a SEPARATE index from the real definitions, so `lookup`,
+   * `size`, `shortNameDefCounts` and the default `lookupByShortName` are
+   * byte-identical to a run with no schema — the whole anti-explosion
+   * guarantee is structural, not a per-consumer filter.
+   */
+  setSchemaColumns?: (definitions: SymbolDefinition[]) => void;
   size: () => number;
   /** Bulk-load symbol definitions, typically from disk-backed storage on
    *  cold start. Equivalent to calling `upsertFile` once per file —
@@ -676,6 +812,20 @@ export interface GlobalSymbolTable {
   /** Definition count per shortName across the corpus — the distribution the
    *  DispatchFanoutPolicy p99 cap derives from (bd tea-rags-mcp-f2jsb). */
   shortNameDefCounts: () => ReadonlyMap<string, number>;
+}
+
+/**
+ * Options for {@link GlobalSymbolTable.lookupByShortName} (bd tea-rags-mcp-8l5fo).
+ *
+ * The default (omitted / `false`) is the ONLY safe setting for a global
+ * short-name fan-out or an ambiguity aggregate: a synthesized AR column
+ * accessor such as `name` exists on every model that has the column, so
+ * admitting them into a global candidate set multiplies it by hundreds. Opt in
+ * ONLY from a lookup already narrowed to a receiver type / MRO class.
+ */
+export interface SymbolLookupOptions {
+  /** Include schema-synthesized column accessors (`isSchemaColumn`). Default false. */
+  includeSchemaColumns?: boolean;
 }
 
 /** Positional-arity envelope of a method definition (bd xlnub). `maxPositional`
@@ -716,6 +866,35 @@ export interface SymbolDefinition {
   /** Method yields or takes an `&block` param (statically visible). `false` =
    *  PROVEN non-yielder; `undefined` = not captured / non-method (bd d9o7o). */
   acceptsBlock?: boolean;
+  /**
+   * This definition is an ABSTRACT STUB — see {@link ChunkExtraction.isAbstractStub}
+   * for the (deliberately narrow) shapes that qualify. Threaded from the chunk
+   * extraction by the codegraph provider so the self-dispatch probe can answer
+   * "concretely defines" rather than merely "a body exists" (bd tea-rags-mcp-bcdfe).
+   *
+   * Only ever `true`; absent means not-a-stub. PERSISTED in `cg_symbols`
+   * (`is_abstract_stub`, migration 016, bd tea-rags-mcp-eikry), so a def
+   * hydrated from disk — an unchanged file on an incremental run — carries the
+   * same verdict as a freshly walked one. A row written before that migration
+   * has the column NULL and hydrates as non-stub, the pre-flag behaviour
+   * (under-coverage, never a wrong target), until its file is next walked.
+   */
+  isAbstractStub?: boolean;
+  /**
+   * This definition was SYNTHESIZED by the project-scope schema pre-pass from a
+   * persisted schema snapshot (`db/schema.rb`) rather than extracted from a
+   * `def` — an ActiveRecord column accessor (`name` / `name=` / `name?`) that
+   * exists at runtime and nowhere in source (bd tea-rags-mcp-8l5fo).
+   *
+   * Only ever `true`; absent means a real definition. Load-bearing: the symbol
+   * table keeps these in a SEPARATE index so they reach ONLY the typed-receiver
+   * and MRO lookups that opt in via {@link SymbolLookupOptions}, and never a
+   * global short-name fan-out or an ambiguity aggregate.
+   *
+   * NOT persisted in `cg_symbols` — the pre-pass rebuilds the index at every
+   * run's pass-1→pass-2 barrier, same lifecycle as `hierarchyView`.
+   */
+  isSchemaColumn?: boolean;
 }
 
 /**
@@ -809,6 +988,24 @@ export interface CallResolver {
    * over-shrinks).
    */
   targetsExternalImport?: (call: CallRef, ctx: CallContext) => boolean;
+  /**
+   * Optional: is this UNRESOLVED, non-external call a CORE HOMONYM
+   * (tea-rags-mcp-83cl7)? True when the member belongs to the language's core /
+   * runtime vocabulary (`each`, `to_s`, `first`) AND the receiver is UNTYPED —
+   * the real callee is the runtime, but a project class defining the same short
+   * name defeats the `lookupByShortName === 0` gate and manufactures a phantom
+   * recall hole. Counted as `callsCoreAmbiguous` and excluded from the
+   * `inProjectEdgeRecall` / `resolveSuccessRate` denominators, exactly like
+   * `callsExternalSkipped`.
+   *
+   * Consulted ONLY after `targetsExternalImport` and the no-in-project-def gate,
+   * and never for a resolved call. A TYPED receiver whose class genuinely
+   * defines the member must answer `false` — precision runs in reverse here, a
+   * wrong `true` HIDES a real miss. Mirrors
+   * `LanguageSymbolResolver.targetsCoreAmbiguousMember`; resolvers that omit it
+   * keep every such call in the denominator.
+   */
+  targetsCoreAmbiguousMember?: (call: CallRef, ctx: CallContext) => boolean;
 }
 
 /**
@@ -1028,6 +1225,11 @@ export interface CallContext {
    * resolver binds `@ivar.method()` calls to `<typeName>#method` for
    * annotated Ruby code. Undefined for languages without ivar annotations and
    * for Ruby files not covered by a type source.
+   *
+   * Read it through `ivarTypeName` (`ruby/resolver/type-propagation.ts`), never
+   * inline: that helper is the single authority ordering this map ahead of the
+   * inference-based {@link CallContext.classFieldTypes}. See
+   * {@link FileExtraction.ivarTypes} for why the map is empty today.
    *
    * Plain Record (NOT Map) for NDJSON-spill round-trip.
    */
@@ -1423,6 +1625,15 @@ export interface ResolveRunStatsRow {
    * column was added (the recall then collapses to raw capability).
    */
   noInProjectDef?: number;
+  /**
+   * bd tea-rags-mcp-83cl7 — of the `attempted − resolved` misses in this bucket,
+   * how many are CORE HOMONYMS: a core/runtime member (`each`, `to_s`, `first`)
+   * on an UNTYPED receiver, whose in-project def of the same short name is a
+   * coincidence. Excluded from the inProjectEdgeRecall denominator alongside
+   * `noInProjectDef`. Defaults to 0 for rows persisted before the column was
+   * added (recall then reads its pre-83cl7 value).
+   */
+  coreAmbiguous?: number;
   /**
    * bd tea-rags-mcp-f2jsb / j0pki — of the `attempted − resolved` misses in
    * this bucket, how many the dispatch kernel judged over-cap AMBIGUOUS

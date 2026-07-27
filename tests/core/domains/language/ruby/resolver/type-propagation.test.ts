@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { typeOfReceiver } from "../../../../../../src/core/domains/language/ruby/resolver/type-propagation.js";
+import {
+  boundCallReturnType,
+  returnTypeOf,
+  typeOfReceiver,
+} from "../../../../../../src/core/domains/language/ruby/resolver/type-propagation.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const emptyCtx = (over: Partial<CallContext> = {}): CallContext => ({
@@ -85,6 +89,69 @@ describe("typeOfReceiver — Const.new-chain head seed (rvw34 gap b)", () => {
 
   it("seeds a scoped const head (A::B.new) as instance of A::B", () => {
     expect(typeOfReceiver("Mod::Svc.new", 1, emptyCtx())).toEqual({ form: "instance", name: "Mod::Svc" });
+  });
+});
+
+// ── Const-rooted CUSTOM-scope chains (bd tea-rags-mcp-6zpds) ─────────────────
+//
+// `scope :without_deleted` is NOT in the generic AR query vocabulary, so the
+// const-head seed can only type `Owner.without_deleted.find(id)` by consulting
+// the DECLARED fact the association type source already emits for the scope
+// (`structuredReturnTypes["Owner#without_deleted"] → container(Owner)`).
+// Declared facts are consulted FIRST; the vocabulary seed stays the fallback.
+
+describe("typeOfReceiver — const head typed by a DECLARED fact (bd tea-rags-mcp-6zpds)", () => {
+  const scopeFact = {
+    "Owner#without_deleted": { form: "container" as const, element: { form: "instance" as const, name: "Owner" } },
+  };
+
+  it("types a chain through a declared custom scope on the root constant", () => {
+    const ctx = emptyCtx({ structuredReturnTypes: scopeFact });
+    expect(typeOfReceiver("Owner.without_deleted.find(id)", 1, ctx)).toEqual({ form: "instance", name: "Owner" });
+  });
+
+  it("types the scope call itself as the declared relation (no terminal finder)", () => {
+    const ctx = emptyCtx({ structuredReturnTypes: scopeFact });
+    expect(typeOfReceiver("Owner.without_deleted", 1, ctx)).toEqual({
+      form: "container",
+      element: { form: "instance", name: "Owner" },
+    });
+  });
+
+  it("reaches a scope declared on an ANCESTOR of the root constant (MRO, no duplication)", () => {
+    const ctx = emptyCtx({
+      classAncestors: { Owner: ["SoftDeletable"] },
+      structuredReturnTypes: {
+        "SoftDeletable#without_deleted": { form: "container", element: { form: "instance", name: "Owner" } },
+      },
+    });
+    expect(typeOfReceiver("Owner.without_deleted.find", 1, ctx)).toEqual({ form: "instance", name: "Owner" });
+  });
+
+  it("prefers the CLASS-form coordinate for a class receiver, falling back to the instance one", () => {
+    // `Svc.call` and `Svc#call` are different methods (bd tea-rags-mcp-8ypeu):
+    // a `@!method self.call` fact lands on `Svc.call` and must win for the class
+    // receiver without disturbing the instance coordinate.
+    const ctx = emptyCtx({
+      structuredReturnTypes: {
+        "Svc.call": { form: "instance", name: "ServiceResult" },
+        "Svc#call": { form: "instance", name: "InstanceOnly" },
+      },
+    });
+    expect(typeOfReceiver("Svc.call(x)", 1, ctx)).toEqual({ form: "instance", name: "ServiceResult" });
+  });
+
+  it("still returns undefined for an UNDECLARED method on a constant (no heuristic)", () => {
+    const ctx = emptyCtx({ structuredReturnTypes: scopeFact });
+    expect(typeOfReceiver("Owner.mystery_scope.find(id)", 1, ctx)).toBeUndefined();
+  });
+
+  it("leaves the generic vocabulary seed unchanged when no fact is declared", () => {
+    expect(typeOfReceiver("PostStatusService.new.call", 1, emptyCtx())).toBeUndefined();
+    expect(typeOfReceiver("PostStatusService.new", 1, emptyCtx())).toEqual({
+      form: "instance",
+      name: "PostStatusService",
+    });
   });
 });
 
@@ -179,5 +246,63 @@ describe("typeOfReceiver — non-propagatable receiver forms", () => {
 
   it("returns undefined for index-access receiver arr[0]", () => {
     expect(typeOfReceiver("arr[0]", 10, emptyCtx())).toBeUndefined();
+  });
+});
+
+// ── returnTypeOf — the ONE return-type authority (j9xpf) ─────────────────────
+
+describe("returnTypeOf — channel precedence and receiver-form scoping", () => {
+  it("the structured fact at the exact coordinate wins", () => {
+    const ctx = emptyCtx({ structuredReturnTypes: { "Svc#call": { form: "instance", name: "Result" } } });
+    expect(returnTypeOf({ form: "class", name: "Svc" }, "call", ctx)).toEqual({ form: "instance", name: "Result" });
+  });
+
+  it("falls back to an inherited fact through the ancestor MRO", () => {
+    const ctx = emptyCtx({
+      classAncestors: { Svc: ["KindOfService"] },
+      structuredReturnTypes: { "KindOfService#call": { form: "instance", name: "Result" } },
+    });
+    expect(returnTypeOf({ form: "class", name: "Svc" }, "call", ctx)).toEqual({ form: "instance", name: "Result" });
+  });
+
+  it("a Rails association accessor types an INSTANCE receiver", () => {
+    const ctx = emptyCtx({ associationTypes: { Client: { firm: "Firm" } } });
+    expect(returnTypeOf({ form: "instance", name: "Client" }, "firm", ctx)).toEqual({ form: "instance", name: "Firm" });
+  });
+
+  it("a Rails association accessor does NOT type a CLASS receiver — `belongs_to` defines an instance method", () => {
+    const ctx = emptyCtx({
+      associationTypes: { Client: { firm: "Firm" } },
+      functionReturnTypes: { firm: "FirmScope" },
+    });
+    // Must fall through to the flat channel, not borrow the instance accessor.
+    expect(returnTypeOf({ form: "class", name: "Client" }, "firm", ctx)).toEqual({
+      form: "instance",
+      name: "FirmScope",
+    });
+  });
+
+  it("returns undefined when no channel knows the member", () => {
+    expect(returnTypeOf({ form: "class", name: "Svc" }, "call", emptyCtx())).toBeUndefined();
+  });
+});
+
+describe("boundCallReturnType — the localCallBindings channel (j9xpf)", () => {
+  it("SCOPE-QUALIFIED binding resolves through the scoped channels", () => {
+    const ctx = emptyCtx({
+      localCallBindings: { result: "Billing::Create.call" },
+      classAncestors: { "Billing::Create": ["KindOfService"] },
+      structuredReturnTypes: { "KindOfService#call": { form: "instance", name: "Result" } },
+    });
+    expect(boundCallReturnType("result", ctx)).toEqual({ form: "instance", name: "Result" });
+  });
+
+  it("BARE binding still reads the flat, project-wide map (unchanged)", () => {
+    const ctx = emptyCtx({ localCallBindings: { x: "fetch" }, functionReturnTypes: { fetch: "HttpResponse" } });
+    expect(boundCallReturnType("x", ctx)).toEqual({ form: "instance", name: "HttpResponse" });
+  });
+
+  it("returns undefined for a receiver with no call binding", () => {
+    expect(boundCallReturnType("x", emptyCtx())).toBeUndefined();
   });
 });

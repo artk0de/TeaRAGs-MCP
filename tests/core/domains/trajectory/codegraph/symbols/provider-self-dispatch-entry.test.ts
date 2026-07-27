@@ -30,9 +30,9 @@ import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/cl
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DISPATCH_FANOUT_CAP_FLOOR } from "../../../../../../src/core/domains/language/kernel/fanout-policy.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolvePath(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -70,9 +70,11 @@ describe("CodegraphEnrichmentProvider — entry-anchored self-dispatch (DEFECT 2
     // the floor and `perform` (SERVICE_COUNT defs) is genuinely over-cap.
     for (let i = 0; i < SERVICE_COUNT; i++) {
       const fillers = Array.from({ length: 6 }, (_, j) => `  def filler_${i}_${j}\n  end\n`).join("");
+      // `#perform` carries a real body — an EMPTY body is an abstract stub
+      // (bd tea-rags-mcp-bcdfe), which is a declaration, not a concrete definer.
       writeFileSync(
         join(root, "src", `service_${i}.rb`),
-        `class Service${i} < KindOfService\n  def perform\n  end\n${fillers}end\n`,
+        `class Service${i} < KindOfService\n  def perform\n    :done\n  end\n${fillers}end\n`,
       );
       paths.push(`src/service_${i}.rb`);
     }
@@ -192,17 +194,15 @@ describe("CodegraphEnrichmentProvider — self-instance delegation entry (DEFECT
       ].join("\n"),
     );
     paths.push("src/kind_of_service.rb");
-    // Concrete subclass defines the `#perform` hook (via `<` so classAncestors carries it).
+    // Concrete subclass defines the `#perform` hook (via `<` so classAncestors
+    // carries it) with a REAL body — an empty body would be an abstract stub.
     writeFileSync(
       join(root, "src", "create.rb"),
-      ["class Create < KindOfService", "  def perform", "  end", "end", ""].join("\n"),
+      ["class Create < KindOfService", "  def perform", "    :done", "  end", "end", ""].join("\n"),
     );
     paths.push("src/create.rb");
     // Caller: a concrete entry through the shared self-instantiating class method.
-    writeFileSync(
-      join(root, "src", "c.rb"),
-      ["class C", "  def go", "    Create.call", "  end", "end", ""].join("\n"),
-    );
+    writeFileSync(join(root, "src", "c.rb"), ["class C", "  def go", "    Create.call", "  end", "end", ""].join("\n"));
     paths.push("src/c.rb");
     return paths;
   };
@@ -244,5 +244,124 @@ describe("CodegraphEnrichmentProvider — self-instance delegation entry (DEFECT
       target_symbol_id: "Create#perform",
       call_expression: "Create.call",
     });
+  });
+});
+
+// bd tea-rags-mcp-bcdfe + tea-rags-mcp-wceck — the REDIRECT terminal. The base does
+// NOT merely omit the hook: it DECLARES it as a `raise NotImplementedError` stub,
+// and concrete subtypes override it (the spec's `ApplicationCsvExporter` /
+// `BaseProcessor` witnesses, whose graph state was "edge → abstract stub"). Before
+// the walker stub flag, that declaration read as a concrete definition, so no
+// template was discovered at all. Two invariants, both entry-anchored: an entry
+// whose constant OVERRIDES the stub reaches its own concrete `Const#hook`; an entry
+// whose constant does NOT override it emits NO edge to the inherited stub.
+describe("CodegraphEnrichmentProvider — abstract-stub REDIRECT terminal (bcdfe/wceck)", () => {
+  let tmp: string;
+  let root: string;
+  let client: DuckDbGraphClient;
+  let provider: CodegraphEnrichmentProvider;
+
+  const writeFixture = (): string[] => {
+    mkdirSync(join(root, "src"), { recursive: true });
+    const paths: string[] = [];
+    // Shared base: a class-method template dispatching to `process_result` on a
+    // fresh instance of self, and an ABSTRACT STUB declaration of that hook.
+    writeFileSync(
+      join(root, "src", "base_processor.rb"),
+      [
+        "class BaseProcessor",
+        "  def self.process",
+        "    new.process_result",
+        "  end",
+        "  def process_result",
+        "    raise NotImplementedError",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    paths.push("src/base_processor.rb");
+    // Concrete subtype: overrides the hook with a real body.
+    writeFileSync(
+      join(root, "src", "form_1040.rb"),
+      ["class Form1040 < BaseProcessor", "  def process_result", "    persist_rows", "  end", "end", ""].join("\n"),
+    );
+    paths.push("src/form_1040.rb");
+    // Non-overriding subtype: inherits the stub untouched.
+    writeFileSync(
+      join(root, "src", "plain_processor.rb"),
+      ["class PlainProcessor < BaseProcessor", "  def label", '    "plain"', "  end", "end", ""].join("\n"),
+    );
+    paths.push("src/plain_processor.rb");
+    // Caller: one entry through each subtype.
+    writeFileSync(
+      join(root, "src", "runner.rb"),
+      [
+        "class Runner",
+        "  def go",
+        "    Form1040.process",
+        "  end",
+        "  def go_plain",
+        "    PlainProcessor.process",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    paths.push("src/runner.rb");
+    return paths;
+  };
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "cg-stub-redirect-prov-"));
+    root = mkdtempSync(join(tmpdir(), "cg-stub-redirect-fixture-"));
+    client = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    provider = new CodegraphEnrichmentProvider({
+      graphDb: client,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      ...buildTestCodegraphDeps(),
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+    });
+  });
+
+  afterEach(async () => {
+    await client.close();
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("REDIRECTs the entry past the base's stub to the concrete override, and never edges to the stub", async () => {
+    const paths = writeFixture();
+    await provider.streamFileBatch(root, paths);
+    await provider.finalizeSignals(root);
+
+    const edges = await client.queryAll<MethodEdge>(
+      "SELECT source_symbol_id, target_symbol_id, call_expression FROM cg_symbols_edges_method",
+    );
+
+    // ── REDIRECT: the entry reaches the concrete override. The stub declaration
+    // in the base no longer masks the hook (pre-flag, no template was discovered
+    // at all and this edge did not exist).
+    expect(edges).toContainEqual({
+      source_symbol_id: "Runner#go",
+      target_symbol_id: "Form1040#process_result",
+      call_expression: "Form1040.process",
+    });
+
+    // ── GUARD: the non-overriding entry must NOT edge to the inherited stub —
+    // a declaration is not a call target.
+    const plainToStub = edges.filter(
+      (e) => e.source_symbol_id === "Runner#go_plain" && e.target_symbol_id === "BaseProcessor#process_result",
+    );
+    expect(plainToStub).toHaveLength(0);
+
+    // ── And the overriding entry never lands on the stub either.
+    const goToStub = edges.filter(
+      (e) => e.source_symbol_id === "Runner#go" && e.target_symbol_id === "BaseProcessor#process_result",
+    );
+    expect(goToStub).toHaveLength(0);
   });
 });

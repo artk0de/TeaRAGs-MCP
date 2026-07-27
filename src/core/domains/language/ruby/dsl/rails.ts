@@ -6,6 +6,7 @@
  * Composed into `RUBY_DSL` by `catalogue.ts`. Associations are GROUP-ONLY here
  * until Phase C adds their `declares` (synthesized accessors).
  */
+import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { defineFrameworkVocabulary } from "./framework-module.js";
 import { singularizeAssociation } from "./inflection.js";
 import { RAILS_RUNTIME_BUILTINS } from "./rails-runtime.js";
@@ -21,6 +22,108 @@ const attrPair = (b: string): DeclaredMethodSpec[] => [
   { name: b, kind: "instance" },
   { name: `${b}=`, kind: "instance" },
 ];
+
+/**
+ * Accessors ActiveRecord generates for ONE persisted column: reader, writer and
+ * query predicate (`name` → `name`, `name=`, `name?`). Same shape as
+ * {@link attrPair} one row up — a column IS an attribute, it just happens to be
+ * declared in `db/schema.rb` instead of in the class body, which is why it has
+ * no `def` anywhere in source (bd tea-rags-mcp-8l5fo).
+ *
+ * Dirty-tracking (`name_was`, `name_changed?`, `name_before_last_save`, …) is
+ * deliberately NOT synthesized: it would triple an already-large member family
+ * for shapes that are rare at call sites, and every extra name is another
+ * chance to shadow a real def.
+ */
+export const columnAccessors = (b: string): DeclaredMethodSpec[] => [
+  ...attrPair(b),
+  { name: `${b}?`, kind: "instance" },
+];
+
+/**
+ * The Rails schema-snapshot conventions the column reader interprets. Pure DATA
+ * (this file imports no tree-sitter and no AST): WHERE the snapshot lives, what
+ * the implicit primary key is called, which columns `t.timestamps` stands for,
+ * and which `t.<verb>` calls declare no column at all.
+ */
+export const ACTIVE_RECORD_SCHEMA_SNAPSHOT: {
+  readonly relPath: string;
+  readonly implicitPrimaryKey: string;
+  readonly implicitPrimaryKeyType: string;
+  readonly timestampColumns: readonly string[];
+  readonly timestampColumnType: string;
+  readonly nonColumnVerbs: ReadonlySet<string>;
+} = {
+  relPath: "db/schema.rb",
+  implicitPrimaryKey: "id",
+  // Rails 5+ dumps a bigint primary key; a table declaring another key type says
+  // so inline (`id: :uuid`), which the reader honours over this default.
+  implicitPrimaryKeyType: "bigint",
+  timestampColumns: ["created_at", "updated_at"],
+  timestampColumnType: "datetime",
+  nonColumnVerbs: new Set(["index", "check_constraint", "constraint", "exclusion_constraint", "unique_constraint"]),
+};
+
+/**
+ * The Ruby class a persisted column's value carries, per schema type token
+ * (bd tea-rags-mcp-2a5oo). Pure DATA — the reader turns a `t.<token> "col"` line
+ * into the reader accessor's return type through {@link columnValueAccessor}.
+ *
+ * ABSENT means SILENT, deliberately, and absence is the default: a token with no
+ * single honest Ruby class contributes nothing rather than an approximation.
+ * Two families are absent on purpose:
+ *
+ *   - `boolean` — Ruby has no `Boolean` class (`true.class` is `TrueClass`), and
+ *     this project has no union convention standing in for one. Naming a
+ *     fabricated `Boolean` would make every follow-up member resolve against a
+ *     class that exists nowhere.
+ *   - `enum` (PG enum-backed), `tsvector`, `ltree`, `virtual`, and anything else
+ *     unlisted — either database-adapter specific or type-erased in the dump.
+ */
+export const ACTIVE_RECORD_COLUMN_VALUE_TYPES: Readonly<Record<string, RubyTypeRef>> = {
+  string: { form: "instance", name: "String" },
+  text: { form: "instance", name: "String" },
+  citext: { form: "instance", name: "String" },
+  uuid: { form: "instance", name: "String" },
+  inet: { form: "instance", name: "String" },
+  integer: { form: "instance", name: "Integer" },
+  bigint: { form: "instance", name: "Integer" },
+  serial: { form: "instance", name: "Integer" },
+  float: { form: "instance", name: "Float" },
+  decimal: { form: "instance", name: "BigDecimal" },
+  datetime: { form: "instance", name: "Time" },
+  timestamp: { form: "instance", name: "Time" },
+  timestamptz: { form: "instance", name: "Time" },
+  date: { form: "instance", name: "Date" },
+  json: { form: "instance", name: "Hash" },
+  jsonb: { form: "instance", name: "Hash" },
+  hstore: { form: "instance", name: "Hash" },
+};
+
+/**
+ * The ONE accessor of a column that carries a VALUE type, and that type
+ * (bd tea-rags-mcp-2a5oo). Reader only, named exactly like the column:
+ *
+ *   - the writer (`name=`) evaluates to its ARGUMENT at every call site, not to
+ *     the column, so typing it would describe the wrong value;
+ *   - the query predicate (`name?`) yields a boolean, which
+ *     {@link ACTIVE_RECORD_COLUMN_VALUE_TYPES} deliberately cannot express.
+ *
+ * `isArray` lifts the element type into the container form — a PG array column
+ * (`t.string "tags", array: true`) reads as an Array of the element class, and
+ * the container form is what the propagation engine already unwraps for
+ * element-returning members. An array of a SILENT element stays silent: a
+ * container of nothing is nothing.
+ */
+export const columnValueAccessor = (
+  column: string,
+  columnType: string,
+  isArray = false,
+): { accessor: string; type: RubyTypeRef } | undefined => {
+  const element = ACTIVE_RECORD_COLUMN_VALUE_TYPES[columnType];
+  if (element === undefined) return undefined;
+  return { accessor: column, type: isArray ? { form: "container", element } : element };
+};
 
 const collectionAssoc = (b: string): DeclaredMethodSpec[] => [
   { name: b, kind: "instance" },

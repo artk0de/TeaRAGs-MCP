@@ -205,6 +205,14 @@ export interface CodegraphResolveSummary {
    */
   callsNoInProjectDef: number;
   /**
+   * bd tea-rags-mcp-83cl7 — genuine-miss calls whose member IS defined in the
+   * project but is a CORE/runtime name (`each`, `to_s`, `first`) reached through
+   * an UNTYPED receiver, so the project def is a same-name coincidence and the
+   * real callee is the language runtime. Excluded from the inProjectEdgeRecall
+   * denominator alongside {@link callsNoInProjectDef}.
+   */
+  callsCoreAmbiguous: number;
+  /**
    * bd f2jsb / j0pki — unresolved calls the dispatch kernel judged over-cap
    * AMBIGUOUS and recorded as a cg_ambiguous_fanout aggregate instead of m
    * edges. Its own bucket (not a genuine miss, not external): strict recall
@@ -272,6 +280,8 @@ export interface CodegraphResolveLanguageRow {
   callsUnresolvable: number;
   /** Genuine-miss calls in this language whose member has no in-project def. */
   callsNoInProjectDef: number;
+  /** bd 83cl7 — core-homonym misses in this language (untyped receiver, core member). */
+  callsCoreAmbiguous: number;
   /**
    * tea-rags-mcp-7m5xz — per-receiver-kind breakdown scoped to this language's
    * call-sites. Present only in the multi-language case (precise lang×kind).
@@ -302,6 +312,8 @@ export interface CodegraphResolveKindRow {
   unresolvable: number;
   /** Genuine-miss calls in this bucket whose member has no in-project def. */
   callsNoInProjectDef: number;
+  /** bd 83cl7 — core-homonym misses in this bucket (untyped receiver, core member). */
+  callsCoreAmbiguous: number;
   /** bd f2jsb / j0pki — over-cap ambiguous dispatch fan-outs in this bucket
    *  (recorded as aggregates, not edges). */
   ambiguousFanout: number;

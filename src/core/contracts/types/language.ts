@@ -153,6 +153,28 @@ export interface ExternalVocabulary {
    * classifier treats it as `false` (no behavior change). bd tea-rags-mcp-i9id8.
    */
   isQualifiedMemberExternal?: (member: string) => boolean;
+  /**
+   * bd tea-rags-mcp-83cl7 — is this MEMBER part of the language's CORE
+   * vocabulary (`each`, `to_s`, `first`, `join`)? The VOCABULARY half of the
+   * core-homonym classification; the classifier pairs it with
+   * {@link isReceiverTyped}. Optional: a vocabulary that omits it contributes
+   * nothing to the `coreAmbiguous` bucket (every miss stays in the denominator).
+   */
+  isCoreAmbiguousMember?: (member: string) => boolean;
+  /**
+   * bd tea-rags-mcp-83cl7 — does this receiver have a KNOWN static type
+   * (localBinding / ivar / chain / declared param), or is it a structurally
+   * self-identifying receiver (`self`, `super`, a constant)? The TYPEDNESS half
+   * of the core-homonym classification, and its precision guard: a TYPED
+   * receiver whose class genuinely defines the core-named member must stay a
+   * REAL miss, so returning `true` here forbids the `coreAmbiguous` bucket.
+   *
+   * `atLine` (1-based) is the call's `startLine`, needed for position-aware
+   * local-binding lookup. Optional: a vocabulary that omits the predicate is
+   * treated as "always typed", which disables the bucket entirely — the
+   * conservative direction (never hides a miss).
+   */
+  isReceiverTyped?: (receiver: string, ctx: CallContext, atLine?: number) => boolean;
 }
 
 /**
@@ -439,6 +461,17 @@ export interface LanguageSymbolResolver {
    * every unresolved call in the denominator (conservative — never over-shrinks).
    */
   targetsExternalImport?: (call: CallRef, ctx: CallContext) => boolean;
+  /**
+   * Optional: is this UNRESOLVED, non-external call a CORE HOMONYM
+   * (tea-rags-mcp-83cl7)? A core-vocabulary member (`each`, `to_s`, `first`) on
+   * an UNTYPED receiver, where some project class defines the same short name —
+   * the real callee is the runtime, so counting it as a recall hole is a phantom.
+   * Returning `true` moves the call into `callsCoreAmbiguous`, out of the
+   * `inProjectEdgeRecall` denominator. A TYPED receiver whose class defines the
+   * member must answer `false` (precision runs in reverse — a wrong `true` hides
+   * a real miss). Mirrors `CallResolver.targetsCoreAmbiguousMember`.
+   */
+  targetsCoreAmbiguousMember?: (call: CallRef, ctx: CallContext) => boolean;
 }
 
 /**
@@ -464,6 +497,61 @@ export interface LanguageProvider {
    * indexes the files; only the fan-graph drops them. bd tea-rags-mcp-biwbq.
    */
   codegraphExclusionGlobs?: readonly string[];
+  /**
+   * Optional persisted-schema column vocabulary — how this language's ORM turns
+   * a schema snapshot into instance accessors that exist at runtime but have no
+   * `def` anywhere in source (Rails `db/schema.rb` → `name` / `name=` / `name?`
+   * on the owning model). The codegraph provider reads the snapshot ONCE per
+   * run at the project root and hands it to the language-agnostic pre-pass; the
+   * engine carries no Rails knowledge of its own, exactly as
+   * `codegraphExclusionGlobs` keeps `db/migrate/**` in the Ruby domain.
+   * Absent → no pre-pass for this language. bd tea-rags-mcp-8l5fo.
+   */
+  schemaColumnAccessors?: SchemaColumnAccessorSource;
+}
+
+/**
+ * One schema table and the instance-accessor names its columns synthesize on the
+ * owning model. The COLUMN→accessor expansion (reader / writer / query
+ * predicate, the implicit primary key, timestamps) is the language's own
+ * convention and is already applied here — the consumer sees method names only.
+ */
+export interface SchemaTableColumns {
+  readonly table: string;
+  readonly accessors: readonly string[];
+  /**
+   * Accessor name → the type READING it yields, for the subset of accessors
+   * whose column declares a type the language can name honestly
+   * (bd tea-rags-mcp-2a5oo). A `t.string "name"` column types its reader as
+   * `String`, so a chain continuing past the column hop (`firm.name.strip`) has
+   * a known receiver instead of dying at an untyped hop.
+   *
+   * SPARSE by design and never a total map over {@link accessors}: writers and
+   * query predicates carry no value type, and a column whose declared type has
+   * no single Ruby class (Rails `boolean`, a PG enum) contributes nothing. The
+   * consumer keys these onto the owning model as structured return facts, so a
+   * wrong entry is a wrong edge — absence is always the safe answer.
+   */
+  readonly accessorReturnTypes?: Readonly<Record<string, RubyTypeRef>>;
+}
+
+/**
+ * The per-language half of the project-scope schema-column pre-pass
+ * (bd tea-rags-mcp-8l5fo): where the snapshot lives, how to read it, how a table
+ * name maps to a model name, and which base classes make a class a model. The
+ * trajectory-side pre-pass supplies everything else (the run's class inventory,
+ * the explicit table overrides, the symbol synthesis).
+ */
+export interface SchemaColumnAccessorSource {
+  /** Project-root-relative path of the schema snapshot (`db/schema.rb`). */
+  readonly schemaRelPath: string;
+  /** Parse the snapshot into table → accessor names. Never throws on garbage. */
+  readonly parseSchema: (source: string) => SchemaTableColumns[];
+  /** Convention model name for a table (`firms` → `Firm`). Inflection fallback
+   *  only — an explicit in-source declaration always wins upstream. */
+  readonly modelNameForTable: (table: string) => string;
+  /** A class owns a schema table only if its ancestry reaches one of these. */
+  readonly modelBaseClasses: readonly string[];
 }
 
 /**

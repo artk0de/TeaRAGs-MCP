@@ -8,8 +8,10 @@
  *
  * **Scope of this module:**
  * - Local variable → `LocalBinding` via `resolveLocalBinding` → `RubyTypeRef`.
- * - `@ivar` → `ctx.ivarTypes` (wins; populated run-global by the codegraph
- *   provider, bd 9bliu) or `ctx.classFieldTypes` (fallback — walker-populated).
+ * - `@ivar` → {@link ivarTypeName}: `ctx.ivarTypes` (declared types, merged
+ *   run-global by the codegraph provider — empty until a Sorbet/RBS source
+ *   emits `kind:"ivar"` facts) then `ctx.classFieldTypes` (the live channel:
+ *   walker AST inference over `@x = Const.new`).
  * - Dotted chain receiver (`a.b.c`) → multi-hop threading via {@link returnTypeOf}
  *   seeded from the head segment and walked left-to-right. Capped at
  *   `CODEGRAPH_RB_CHAIN_MAX_HOPS` (default 4).
@@ -17,8 +19,9 @@
  *   container yields the element type (Task 1.6); untyped index → `undefined`.
  *
  * **Wired.** Consumed by the ruby dynamic-dispatch, chain-type, and
- * union-dispatch strategies; `ctx.structuredReturnTypes` / `ctx.ivarTypes` are
- * populated run-global by the codegraph provider (bd 9bliu).
+ * union-dispatch strategies; the codegraph provider merges
+ * `ctx.structuredReturnTypes` / `ctx.ivarTypes` run-global from the per-file
+ * extractions (bd 9bliu) — whatever the type sources put there.
  */
 
 import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
@@ -206,16 +209,29 @@ function resolveChain(receiver: string, atLine: number, ctx: CallContext): RubyT
 
   let current: RubyTypeRef | undefined;
   let startLink = 0;
-  // Const.new-chain (rvw34 gap b): a bare-constant head whose first link is
-  // instance-returning (`new`/`find`/`create!`…) IS an instance of that constant
-  // — `PostStatusService.new` is definitionally a PostStatusService. Zero
-  // fabrication. A bare-const head with a non-instance-returning first link
-  // (`Config.value`) is NOT typed.
+  // Bare-constant head. Two ways the first link can be typed, declared facts FIRST:
+  //
+  //  1. DECLARED (bd tea-rags-mcp-6zpds) — the project itself states what the
+  //     member returns on that constant (`scope :without_deleted` →
+  //     `container(Owner)`, a YARD `@return`, an inherited fact). Custom scopes
+  //     live only here; the generic vocabulary cannot know them.
+  //  2. VOCABULARY (rvw34 gap b) — a framework/Ruby instance-returning verb
+  //     (`new`/`find`/`create!`…) makes the chain an instance of the constant:
+  //     `PostStatusService.new` is definitionally a PostStatusService.
+  //
+  // Both are zero-fabrication. A bare-const head that is neither declared nor
+  // vocabulary (`Config.value`) is still NOT typed.
   const firstLink = links[0];
-  if (
-    firstLink !== undefined &&
+  const headMember = firstLink === undefined ? null : stripArgs(firstLink);
+  const declaredHead =
+    headMember !== null && CONST_HEAD.test(head) ? declaredReturnType(head, headMember, ctx) : undefined;
+  if (declaredHead !== undefined) {
+    current = declaredHead;
+    startLink = 1;
+  } else if (
+    headMember !== null &&
     CONST_HEAD.test(head) &&
-    catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(stripArgs(firstLink))
+    catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(headMember)
   ) {
     current = { form: "instance", name: head };
     startLink = 1;
@@ -285,7 +301,61 @@ function activeRecordQueryReturn(className: string, member: string, ctx: CallCon
 }
 
 /**
- * Resolve the return type of calling `member` on a receiver of type `recv`.
+ * The DECLARED return type at a `<className>.<member>` coordinate: the precise
+ * structured fact, then the same fact inherited through the ancestor MRO. Facts
+ * only — no vocabulary, no flat by-name fallback, no association accessors (those
+ * are instance-only and stay in {@link returnTypeOf}).
+ *
+ * Extracted so the chain-root seed can ask "is this member DECLARED on the root
+ * constant?" through the very channels {@link returnTypeOf} consults, instead of
+ * growing a second lookup that could drift (bd tea-rags-mcp-6zpds).
+ */
+function declaredReturnType(className: string, member: string, ctx: CallContext): RubyTypeRef | undefined {
+  return declaredReturnTypeOn(className, member, ctx, true) ?? inheritedReturnType(className, member, ctx, true);
+}
+
+/**
+ * The structured fact declared AT `<className>.<member>` / `<className>#<member>`.
+ *
+ * Facts are keyed with `#` by default — including `def self.x` `@return`s, which
+ * the engine deliberately answers for class receivers too. A fact that declares
+ * itself class-level (an `@!method self.x` directive) is keyed with `.`, so a
+ * CLASS receiver tries that coordinate first and falls back to the shared `#`
+ * one (bd tea-rags-mcp-8ypeu). Instance receivers never see the `.` key.
+ */
+function declaredReturnTypeOn(
+  className: string,
+  member: string,
+  ctx: CallContext,
+  classReceiver = false,
+): RubyTypeRef | undefined {
+  if (classReceiver) {
+    const classForm = ctx.structuredReturnTypes?.[`${className}.${member}`];
+    if (classForm !== undefined) return classForm;
+  }
+  return ctx.structuredReturnTypes?.[`${className}#${member}`];
+}
+
+/** The structured fact `<member>` inherits from the first ancestor declaring it. */
+function inheritedReturnType(
+  className: string,
+  member: string,
+  ctx: CallContext,
+  classReceiver = false,
+): RubyTypeRef | undefined {
+  for (const ancestor of ctx.classAncestors?.[className] ?? []) {
+    const inherited = declaredReturnTypeOn(ancestor, member, ctx, classReceiver);
+    if (inherited !== undefined) return inherited;
+  }
+  return undefined;
+}
+
+/**
+ * The ONE authority for "what type does calling `member` on a receiver of type
+ * `recv` yield" (bd tea-rags-mcp-j9xpf — same single-authority discipline as
+ * {@link ivarTypeName}). Every reader — the chain engine's hop walk and the
+ * `returnTypeBinding` pass's scope-qualified lookup — MUST go through here, so
+ * the channel precedence below is stated once and cannot drift between callers.
  *
  * Resolution order (first non-undefined wins):
  * 1. `ctx.structuredReturnTypes?.["${recv.name}#${member}"]` — precise structured ref.
@@ -302,7 +372,7 @@ function activeRecordQueryReturn(className: string, member: string, ctx: CallCon
  * Container element-returning methods unwrap to the element type (Task 1.6);
  * union forms are not threaded here (deferred, Task 1.7) — returns `undefined`.
  */
-function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): RubyTypeRef | undefined {
+export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): RubyTypeRef | undefined {
   // Container form: element-returning methods unwrap to the element type (Task 1.6).
   // Non-element methods (size, count, map, …) → undefined (Array/Enumerable = external).
   if (recv.form === "container") {
@@ -313,19 +383,23 @@ function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): Ruby
   if (recv.form !== "class" && recv.form !== "instance") return undefined;
 
   // 1. Precise structured return type for this class#member key.
-  const key = `${recv.name}#${member}`;
-  const direct = ctx.structuredReturnTypes?.[key];
+  const direct = declaredReturnTypeOn(recv.name, member, ctx, recv.form === "class");
   if (direct !== undefined) return direct;
 
   // 2. Rails association DSL: associationTypes[className][accessorName] → modelName.
-  const assocName = ctx.associationTypes?.[recv.name]?.[member];
-  if (assocName !== undefined) return { form: "instance", name: assocName };
+  //    INSTANCE receivers only — `belongs_to :firm` defines `#firm` on instances,
+  //    never on the class object, so `SomeClass.firm` is a different method that
+  //    must fall through to the scoped/flat return channels below (j9xpf: without
+  //    this guard a class-form receiver silently borrows an instance accessor's
+  //    type and shadows the correct one).
+  if (recv.form === "instance") {
+    const assocName = ctx.associationTypes?.[recv.name]?.[member];
+    if (assocName !== undefined) return { form: "instance", name: assocName };
+  }
 
   // 3. Ancestor MRO: walk classAncestors[recv.name] for an inherited return type.
-  for (const ancestor of ctx.classAncestors?.[recv.name] ?? []) {
-    const inherited = ctx.structuredReturnTypes?.[`${ancestor}#${member}`];
-    if (inherited !== undefined) return inherited;
-  }
+  const inherited = inheritedReturnType(recv.name, member, ctx, recv.form === "class");
+  if (inherited !== undefined) return inherited;
 
   // 4. Flat functionReturnTypes fallback — YARD @return map, populated today.
   const flatName = ctx.functionReturnTypes?.[member];
@@ -337,22 +411,57 @@ function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): Ruby
 }
 
 /**
- * Resolve `@ivar` to its type via `ctx.ivarTypes` (wins when present) or the
- * fallback `ctx.classFieldTypes` (already populated by the walker). The
- * enclosing-class key is `ctx.callerScope.join("::")`, mirroring
- * {@link RubyIvarFieldSymbolResolutionStrategy} — the same key that
- * `collectRubyClassAncestors` / `collectRubyIvarFieldTypes` produce.
+ * The ONE authority for "what type does `@ivar` hold inside the caller's class"
+ * (bd tea-rags-mcp-wr7ku). Two channels carry ivar types and every reader must
+ * consult both, in this order:
+ *
+ *  1. `ctx.ivarTypes` — type-SOURCE facts (`RubyTypeFact` of `kind:"ivar"`,
+ *     merged run-global by the codegraph provider). Declared types win.
+ *  2. `ctx.classFieldTypes` — the walker's AST inference over `@x = Const.new`
+ *     assignments (`collectRubyIvarFieldTypes`), per-file. The channel that
+ *     actually carries facts today: no INLINE type source emits `kind:"ivar"`
+ *     yet, so (1) stays empty until a sidecar/Sorbet source lands.
+ *
+ * The enclosing-class key is `ctx.callerScope.join("::")` — the same key
+ * `collectRubyClassAncestors` / `collectRubyIvarFieldTypes` produce. Unknown
+ * ivar → `undefined`; callers own the resulting silence.
  */
-function resolveIvarType(ivar: string, ctx: CallContext): RubyTypeRef | undefined {
+export function ivarTypeName(ivar: string, ctx: CallContext): string | undefined {
   if (ctx.callerScope.length === 0) return undefined;
   const scopeKey = ctx.callerScope.join("::");
+  return ctx.ivarTypes?.[scopeKey]?.[ivar] ?? ctx.classFieldTypes?.[scopeKey]?.[ivar];
+}
 
-  // ivarTypes wins over classFieldTypes (richer source; Task 1.4/1.5 wires population)
-  const fromIvarTypes = ctx.ivarTypes?.[scopeKey]?.[ivar];
-  if (fromIvarTypes !== undefined) return { form: "instance", name: fromIvarTypes };
+/** {@link ivarTypeName} lifted to the engine's structured ref (always instance form). */
+function resolveIvarType(ivar: string, ctx: CallContext): RubyTypeRef | undefined {
+  const name = ivarTypeName(ivar, ctx);
+  return name === undefined ? undefined : { form: "instance", name };
+}
 
-  const fromFieldTypes = ctx.classFieldTypes?.[scopeKey]?.[ivar];
-  if (fromFieldTypes !== undefined) return { form: "instance", name: fromFieldTypes };
-
-  return undefined;
+/**
+ * The type a receiver BOUND TO A METHOD CALL carries — `result = Svc.call(…)`
+ * leaves `result` with no `localBindings` entry (the walker cannot know another
+ * file's return type), only a `localCallBindings` one naming what was called.
+ * This is the ONE authority for that channel (bd tea-rags-mcp-j9xpf), read by
+ * both the `returnTypeBinding` pass and the dynamic-dispatch component that
+ * defers to it, so the two can never disagree about which receivers the exact
+ * path owns.
+ *
+ * Two binding forms, mirroring what the walker records:
+ *  - SCOPE-QUALIFIED (`"Billing::Create.call"`, recorded when the RHS receiver
+ *    was a constant) — the receiver's type is known, so {@link returnTypeOf}
+ *    answers over the CLASS object and every scoped channel applies (structured
+ *    fact at the entry coordinate, ancestor MRO, then the flat map);
+ *  - BARE (`"fetch"`) — no receiver type, so only the flat, project-wide
+ *    `functionReturnTypes` map can answer. Unchanged from before.
+ */
+export function boundCallReturnType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
+  const binding = ctx.localCallBindings?.[receiver];
+  if (binding === undefined) return undefined;
+  const separator = binding.lastIndexOf(".");
+  if (separator <= 0) {
+    const flat = ctx.functionReturnTypes?.[binding];
+    return flat ? { form: "instance", name: flat } : undefined;
+  }
+  return returnTypeOf({ form: "class", name: binding.slice(0, separator) }, binding.slice(separator + 1), ctx);
 }

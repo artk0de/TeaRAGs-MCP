@@ -19,21 +19,32 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type {
+  ClassFieldParamLink,
   DispatchTableDef,
   FileExtraction,
   GlobalSymbolTable,
   HierarchyView,
   InheritanceEdgeRow,
+  KnownTargetCallArgs,
   ResolveRunStatsRow,
+  SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
-import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+import type { RubyTypeRef, SchemaColumnAccessorSource } from "../../../../contracts/types/language.js";
 import type { ProviderRunMetrics } from "../../../../contracts/types/provider.js";
+import { isDebug } from "../../../../infra/runtime.js";
 import { MapHierarchyView } from "../hierarchy-view.js";
+import {
+  deriveClassFieldTypesFromParams,
+  foldKnownTargetParamTypes,
+  type KnownTargetParamTypes,
+} from "./call-arg-param-types.js";
 import { buildHierarchySnapshot } from "./inheritance-edges.js";
 import { RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
+import { collectSchemaColumnModels, synthesizeSchemaColumnDefs } from "./schema-column-synthesis.js";
 import {
   buildSelfDispatchProbe,
   collectSelfInstantiatingClassMethods,
+  deriveServiceEntryReturnTypes,
   discoverSelfDispatchTemplates,
   foldSelfDispatchTemplates,
   type SelfDispatchMethod,
@@ -52,6 +63,11 @@ export interface ReceiverKindTally {
   // (gem/core/runtime-generated/dynamic). Excluded from the inProjectEdgeRecall
   // denominator. Persisted to cg_run_stats.no_in_project_def.
   noInProjectDef: number;
+  // bd tea-rags-mcp-83cl7 — unresolved calls in this bucket whose member is a
+  // CORE/runtime name on an UNTYPED receiver, where a project homonym def
+  // defeats the noInProjectDef gate. Excluded from the inProjectEdgeRecall
+  // denominator. Persisted to cg_run_stats.core_ambiguous.
+  coreAmbiguous: number;
   // bd f2jsb/j0pki — unresolved-but-over-cap-ambiguous dispatch fan-outs in
   // this bucket (subset of attempted − resolved). Its own bucket: NOT a genuine
   // miss, NOT external. Persisted to cg_run_stats.ambiguous_fanout.
@@ -83,6 +99,15 @@ export interface RunStats {
   // bucket (callsAttempted − callsResolved − callsExternalSkipped −
   // callsUnresolvable).
   callsNoInProjectDef: number;
+  // bd tea-rags-mcp-83cl7 — genuine-miss calls whose member IS defined in the
+  // project but is a CORE/runtime name (`each`, `to_s`, `first`) reached through
+  // an UNTYPED receiver: the real callee is the runtime and the project def is a
+  // same-name coincidence. On taxdome this phantom was 4391 of 20964 recorded
+  // recall holes. Excluded from the inProjectEdgeRecall / resolveSuccessRate
+  // denominators exactly like callsNoInProjectDef. Subset of the residual
+  // genuine-miss bucket (callsAttempted − callsResolved − callsExternalSkipped −
+  // callsUnresolvable − callsNoInProjectDef).
+  callsCoreAmbiguous: number;
   // bd f2jsb/j0pki — subset of (callsAttempted − callsResolved) that the
   // dispatch kernel judged over-cap AMBIGUOUS (survivors > corpus-adaptive
   // fan-out cap) and recorded as a cg_ambiguous_fanout aggregate instead of m
@@ -110,6 +135,7 @@ export function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally
       externalSkipped: 0,
       unresolvable: 0,
       noInProjectDef: 0,
+      coreAmbiguous: 0,
       ambiguousFanout: 0,
     };
   }
@@ -138,6 +164,8 @@ export function aggregateReceiverKinds(stats: RunStats): Record<ReceiverKind, Re
       out[kind].resolved += kinds[kind].resolved;
       out[kind].externalSkipped += kinds[kind].externalSkipped;
       out[kind].unresolvable += kinds[kind].unresolvable;
+      out[kind].noInProjectDef += kinds[kind].noInProjectDef;
+      out[kind].coreAmbiguous += kinds[kind].coreAmbiguous;
       out[kind].ambiguousFanout += kinds[kind].ambiguousFanout;
     }
   }
@@ -154,6 +182,7 @@ export function createEmptyRunStats(): RunStats {
     callsExternalSkipped: 0,
     callsUnresolvable: 0,
     callsNoInProjectDef: 0,
+    callsCoreAmbiguous: 0,
     callsAmbiguousFanout: 0,
     byLanguageKind: new Map(),
   };
@@ -189,6 +218,16 @@ export function buildIncludedBy(
 }
 
 export class CodegraphRunState {
+  /**
+   * Persisted-schema column vocabularies contributed by the registered
+   * languages (bd tea-rags-mcp-8l5fo). Collected ONCE by the provider's
+   * constructor (through the same `languageFactory` seam as the exclusion
+   * filter, because `factory.create` is expensive) and injected here. Empty
+   * (default — no factory / no language declares one) ⇒ the schema pre-pass
+   * never runs.
+   */
+  constructor(private readonly schemaColumnSources: readonly SchemaColumnAccessorSource[] = []) {}
+
   /**
    * Per-run counters surfaced via `getRunMetrics()`. Read-and-cleared by
    * `CompletionRunner` at end of each enrichment cycle. Tracked here
@@ -242,6 +281,24 @@ export class CodegraphRunState {
   classExtends: Record<string, string> = {};
 
   /**
+   * Per-run aggregation of `FileExtraction.classSchemaTables`
+   * (bd tea-rags-mcp-8l5fo): `class FQ → explicit ORM table override`. Read ONCE
+   * at the pass-1→pass-2 barrier by the schema-column pre-pass, where it decides
+   * which model owns each `db/schema.rb` table. Same lifecycle as `classExtends`.
+   */
+  schemaTables: Record<string, string> = {};
+
+  /**
+   * Raw contents of the project's persisted-schema snapshot for the CURRENT run,
+   * keyed by the declaring language's `schemaRelPath`. Read ONCE per run from the
+   * project root by {@link loadSchemaSnapshots} — the same one-manifest-read
+   * shape as `gemfileContent` — because the barrier (`seal`) has no `root` of
+   * its own. bd tea-rags-mcp-8l5fo.
+   */
+  schemaSnapshots: Record<string, string> = {};
+  private schemaSnapshotsLoaded = false;
+
+  /**
    * Per-run aggregation of `FileExtraction.functionReturnTypes`
    * (bd tea-rags-mcp-6g9c). `functionName → declaredReturnTypeName` merged
    * across pass-1 files so the Go resolver can bind `x := New(); x.method()`
@@ -266,6 +323,9 @@ export class CodegraphRunState {
    * (`ctx.ivarTypes`) sees a class's annotated ivars regardless of which file
    * declared the class. Same lifecycle as `returnTypes` — last-write-wins on
    * duplicate class keys, reset on finish / empty-run.
+   *
+   * Stays empty while no type source emits `kind:"ivar"` facts (bd
+   * tea-rags-mcp-wr7ku) — an empty map here is expected, not a wiring defect.
    */
   ivarTypes: Record<string, Record<string, string>> = {};
 
@@ -348,6 +408,57 @@ export class CodegraphRunState {
   selfInstantiatingClassMethods: string[] = [];
 
   /**
+   * Per-run accumulation of known-target call-site argument types (bd
+   * tea-rags-mcp-bvalc), DEDUPED by (targets, argTypes): a fold over agreement
+   * is idempotent, so a thousand identical `Foo.new(bar)` sites contribute one
+   * record while two DISAGREEING sites stay two and still conflict. Keeps the
+   * pass-1 heap proportional to distinct call shapes rather than call sites.
+   * Populated for Ruby files only; reset alongside `selfDispatchMethods`.
+   */
+  readonly knownTargetCallArgs = new Map<string, KnownTargetCallArgs>();
+
+  /**
+   * Per-run method-definition index `symbolId → positional param names` (bd
+   * tea-rags-mcp-bvalc), from `ChunkExtraction.paramNames`. Maps an argument
+   * POSITION to a parameter NAME at the barrier and, because it holds only real
+   * definitions, gates which of a call site's constant-lookup candidates is the
+   * actual callee.
+   */
+  paramNames: Record<string, readonly string[]> = {};
+
+  /**
+   * Per-run aggregation of `FileExtraction.classFieldParamLinks` (bd
+   * tea-rags-mcp-bvalc): `fqClass → "@ivar" → (method, param)` for fields copied
+   * verbatim from a parameter. Merged run-global because a class reopened across
+   * files must present ONE link set to the barrier fold.
+   */
+  classFieldParamLinks: Record<string, Record<string, ClassFieldParamLink>> = {};
+
+  /**
+   * Coordinates (`"fqClass|@ivar"`) the walker typed on its own anywhere in the
+   * run (bd tea-rags-mcp-bvalc). The derived-field fold skips these, so
+   * inference and declaration always beat derivation — checked run-global
+   * because the competing assignment may live in another file of a reopened
+   * class. A key SET, not the map: only membership is ever asked.
+   */
+  readonly typedClassFields = new Set<string>();
+
+  /**
+   * Run-global `"<fqType>#<member>" → paramName → type`, folded at the barrier
+   * from `knownTargetCallArgs` (bd tea-rags-mcp-bvalc). Seeded into each
+   * method chunk's `localBindings` during pass-2. Empty until the barrier runs.
+   */
+  paramTypes: KnownTargetParamTypes = {};
+
+  /**
+   * Run-global `fqClass → "@ivar" → typeName` derived at the barrier by joining
+   * `classFieldParamLinks` against `paramTypes` (bd tea-rags-mcp-bvalc).
+   * Overlaid UNDER each file's own `classFieldTypes` in pass-2. Empty until the
+   * barrier runs — an empty overlay leaves the channel byte-identical.
+   */
+  derivedClassFieldTypes: Record<string, Record<string, string>> = {};
+
+  /**
    * Raw `Gemfile` contents for the CURRENT run, read ONCE from the project root
    * by {@link loadGemfile} and attached to every resolver `CallContext` so the
    * Ruby resolver gates DSL grammar to this project's gems (`catalogueForGemfile`).
@@ -378,6 +489,71 @@ export class CodegraphRunState {
   }
 
   /**
+   * Read every registered language's persisted-schema snapshot ONCE per run
+   * (bd tea-rags-mcp-8l5fo). Same shape and rationale as `loadGemfile`: a
+   * root-relative manifest read is in-domain for a file-walking provider, and
+   * the barrier (`seal`) — where the pre-pass runs — never sees `root`. An
+   * absent or unreadable snapshot is a clean no-op (the project simply has no
+   * schema).
+   */
+  loadSchemaSnapshots(root: string): void {
+    if (this.schemaSnapshotsLoaded) return;
+    this.schemaSnapshotsLoaded = true;
+    for (const source of this.schemaColumnSources) {
+      try {
+        this.schemaSnapshots[source.schemaRelPath] = readFileSync(join(root, source.schemaRelPath), "utf8");
+      } catch {
+        // No snapshot for this language in this project — nothing to synthesize.
+      }
+    }
+  }
+
+  /**
+   * Synthesize the persisted-schema column accessors onto their owning models
+   * and publish them into the run's symbol table (bd tea-rags-mcp-8l5fo). Runs
+   * at the pass-1→pass-2 barrier (`seal`), where BOTH inputs are complete for
+   * the first time: the ancestry map (which classes are models) and the
+   * explicit table overrides.
+   *
+   * The definitions are deliberately NOT persisted to `cg_symbols` — they are
+   * derived from a file that is not part of the call graph, and the pre-pass
+   * rebuilds them on every run (same lifecycle as `hierarchyView`).
+   */
+  private applySchemaColumns(symbolTable: GlobalSymbolTable): Record<string, RubyTypeRef> {
+    if (symbolTable.setSchemaColumns === undefined) return {};
+    const definitions: SymbolDefinition[] = [];
+    // Column VALUE types (bd tea-rags-mcp-2a5oo) — returned rather than merged
+    // here, because they rank BELOW every other return fact and the barrier's
+    // derived facts are not all folded yet at this point.
+    const returnTypes: Record<string, RubyTypeRef> = {};
+    for (const source of this.schemaColumnSources) {
+      const snapshot = this.schemaSnapshots[source.schemaRelPath];
+      if (snapshot === undefined) continue;
+      const models = collectSchemaColumnModels({
+        classAncestors: this.ancestors,
+        declaredTables: this.schemaTables,
+        modelBaseClasses: source.modelBaseClasses,
+        symbolTable,
+      });
+      const {
+        definitions: synthesized,
+        returnTypes: synthesizedTypes,
+        stats,
+      } = synthesizeSchemaColumnDefs(source.parseSchema(snapshot), models, source.modelNameForTable);
+      definitions.push(...synthesized);
+      Object.assign(returnTypes, synthesizedTypes);
+      if (isDebug()) {
+        console.error("[GitEnrich] PHASE: CODEGRAPH_SCHEMA_COLUMNS", {
+          schema: source.schemaRelPath,
+          ...stats,
+        });
+      }
+    }
+    symbolTable.setSchemaColumns(definitions);
+    return returnTypes;
+  }
+
+  /**
    * Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2 + cai0/2oky5 + DEFECT 2).
    * Pass-1 is complete, so the run-global maps are frozen: build the hierarchy
    * view and the reverse include-by index ONCE here instead of per file, then
@@ -390,16 +566,81 @@ export class CodegraphRunState {
   async seal(resolveSymbolTable: () => Promise<GlobalSymbolTable>): Promise<void> {
     this.hierarchyView = new MapHierarchyView(buildHierarchySnapshot(this.inheritanceRows));
     this.includedBy = buildIncludedBy(this.ancestors, this.prependedAncestors);
+    // Persisted-schema column accessors (bd tea-rags-mcp-8l5fo). Composed at
+    // this same barrier and for the same reason as the discovery below: only
+    // here are the run-global ancestry map (which classes are models) and the
+    // explicit `self.table_name` overrides both complete. Pass-2's typed and
+    // MRO lookups then find a column exactly like any other member. The column
+    // VALUE types are held back and merged LAST (below).
+    let schemaColumnReturnTypes: Record<string, RubyTypeRef> = {};
+    if (this.schemaColumnSources.length > 0) {
+      schemaColumnReturnTypes = this.applySchemaColumns(await resolveSymbolTable());
+    }
     if (this.selfDispatchMethods.length > 0) {
       const symbolTable = await resolveSymbolTable();
+      const selfDispatchProbe = buildSelfDispatchProbe(symbolTable, this.hierarchyView);
       this.selfDispatchTemplates = foldSelfDispatchTemplates(
-        discoverSelfDispatchTemplates(
-          this.selfDispatchMethods,
-          buildSelfDispatchProbe(symbolTable, this.hierarchyView),
-        ),
+        discoverSelfDispatchTemplates(this.selfDispatchMethods, selfDispatchProbe),
       );
       this.selfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(this.selfDispatchMethods);
+      // Service-entry RETURN threading (bd tea-rags-mcp-j9xpf). The walker
+      // types the SHARED template's return (`KindOfService#call` →
+      // `KindOfService::Result`); call sites name a CONCRETE entry constant.
+      // Both entry channels just discovered enumerate that relation, so the
+      // join belongs HERE — the only point where the walker's run-global
+      // return facts and the wiring hierarchy are both complete. Merged
+      // DERIVED-last into the same map it read: the helper skips coordinates
+      // already carrying a declared fact, so YARD / associations /
+      // body-last-expr keep precedence by construction.
+      const entryReturnTypes = deriveServiceEntryReturnTypes(
+        [...this.selfInstantiatingClassMethods, ...Object.keys(this.selfDispatchTemplates)],
+        this.structuredReturnTypes,
+        selfDispatchProbe.relatedConcreteTypes,
+      );
+      for (const [key, ref] of Object.entries(entryReturnTypes)) {
+        this.structuredReturnTypes[key] = ref;
+      }
     }
+    // Persisted-schema column VALUE types (bd tea-rags-mcp-2a5oo), merged
+    // LAST and only where the coordinate is still empty. A column accessor
+    // has no `def` in source, so ANY other fact at `Model#col` — a YARD
+    // `@return`, an association, a body-inferred return, a service-entry
+    // derivation — describes a real declaration that shadows the column and
+    // must win. The schema is the fallback of last resort, exactly as the
+    // `schemaColumn` resolution strategy is the chain's last pass.
+    for (const [key, ref] of Object.entries(schemaColumnReturnTypes)) {
+      if (!(key in this.structuredReturnTypes)) this.structuredReturnTypes[key] = ref;
+    }
+    // Interprocedural PARAMETER typing, Increment 1 (bd tea-rags-mcp-bvalc).
+    // Composed at this barrier for the same reason as the folds above: only
+    // here is the run's method-definition index complete, so a call site's
+    // constant-lookup candidates can be gated against real defs. The fold
+    // consumes NO resolution result — that is what lets it run before pass-2
+    // rather than needing a fixpoint with it.
+    if (this.knownTargetCallArgs.size > 0) {
+      this.paramTypes = foldKnownTargetParamTypes(this.knownTargetCallArgs.values(), this.paramNames);
+      this.derivedClassFieldTypes = deriveClassFieldTypesFromParams(
+        this.classFieldParamLinks,
+        this.paramTypes,
+        this.typedClassFields,
+      );
+    }
+  }
+
+  /**
+   * Clear the interprocedural parameter-typing run state (bd tea-rags-mcp-bvalc)
+   * — the pass-1 accumulators AND the barrier products. One method rather than
+   * six inline assignments repeated at each of the run-reset seams: a future
+   * field added to this mechanism cannot be forgotten at one of them and leak
+   * facts from a previous run into the next.
+   */
+  private resetInterprocParamState(): void {
+    this.knownTargetCallArgs.clear();
+    this.paramNames = {};
+    this.classFieldParamLinks = {};
+    this.typedClassFields.clear();
+    this.paramTypes = {};
+    this.derivedClassFieldTypes = {};
   }
 
   /**
@@ -423,6 +664,7 @@ export class CodegraphRunState {
       callsExternalSkipped,
       callsUnresolvable,
       callsNoInProjectDef,
+      callsCoreAmbiguous,
     } = this.stats;
     if (extractedFiles === 0 && fileEdgeCount === 0 && methodEdgeCount === 0) {
       this.stats = createEmptyRunStats();
@@ -432,6 +674,9 @@ export class CodegraphRunState {
       this.gemfileLoaded = false;
       this.prependedAncestors = {};
       this.classExtends = {};
+      this.schemaTables = {};
+      this.schemaSnapshots = {};
+      this.schemaSnapshotsLoaded = false;
       this.returnTypes = {};
       this.instantiatedTypes.clear();
       this.ivarTypes = {};
@@ -443,6 +688,7 @@ export class CodegraphRunState {
       this.selfDispatchMethods = [];
       this.selfDispatchTemplates = {};
       this.selfInstantiatingClassMethods = [];
+      this.resetInterprocParamState();
       return undefined;
     }
     // tea-rags-mcp-ykj7 + cai0.2 (Option A) — the denominator excludes
@@ -455,15 +701,23 @@ export class CodegraphRunState {
     // call was external / no-in-project-def.
     const internalAttempted = Math.max(
       1,
-      callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef,
+      callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
     );
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / internalAttempted;
     // inProjectEdgeRecall — graph completeness. A genuine miss whose member has
     // no in-project definition (callsNoInProjectDef) can never yield an edge, so
-    // it is excluded; only misses WITH an in-project def are true recall holes.
+    // it is excluded; likewise a core homonym reached through an untyped receiver
+    // (callsCoreAmbiguous, bd 83cl7) — its in-project def is a same-name
+    // coincidence, the real callee is the runtime. Only the residual misses WITH
+    // an in-project def are true recall holes.
     const missWithInProjectDef = Math.max(
       0,
-      callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef,
+      callsAttempted -
+        callsResolved -
+        callsExternalSkipped -
+        callsUnresolvable -
+        callsNoInProjectDef -
+        callsCoreAmbiguous,
     );
     const recallDenominator = callsResolved + missWithInProjectDef;
     const inProjectEdgeRecall = recallDenominator === 0 ? 0 : callsResolved / recallDenominator;
@@ -497,6 +751,8 @@ export class CodegraphRunState {
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
+    this.schemaSnapshots = {};
+    this.schemaSnapshotsLoaded = false;
     this.prependedAncestors = {};
     return {
       extractedFiles,
@@ -508,6 +764,7 @@ export class CodegraphRunState {
       callsExternalSkipped,
       callsUnresolvable,
       callsNoInProjectDef,
+      callsCoreAmbiguous,
       resolveByReceiverKind,
     };
   }
@@ -532,6 +789,7 @@ export class CodegraphRunState {
           externalSkipped: t.externalSkipped,
           unresolvable: t.unresolvable,
           noInProjectDef: t.noInProjectDef,
+          coreAmbiguous: t.coreAmbiguous,
           ambiguousFanout: t.ambiguousFanout,
         });
       }
@@ -564,6 +822,9 @@ export class CodegraphRunState {
     this.prependedAncestors = {};
     this.includedBy = {};
     this.classExtends = {};
+    this.schemaTables = {};
+    this.schemaSnapshots = {};
+    this.schemaSnapshotsLoaded = false;
     this.returnTypes = {};
     this.instantiatedTypes.clear();
     this.ivarTypes = {};
@@ -575,6 +836,7 @@ export class CodegraphRunState {
     this.selfDispatchMethods = [];
     this.selfDispatchTemplates = {};
     this.selfInstantiatingClassMethods = [];
+    this.resetInterprocParamState();
   }
 
   /**
@@ -590,6 +852,9 @@ export class CodegraphRunState {
     this.gemfileLoaded = false;
     this.prependedAncestors = {};
     this.classExtends = {};
+    this.schemaTables = {};
+    this.schemaSnapshots = {};
+    this.schemaSnapshotsLoaded = false;
     this.returnTypes = {};
     this.instantiatedTypes.clear();
     this.ivarTypes = {};
@@ -601,6 +866,7 @@ export class CodegraphRunState {
     this.selfDispatchMethods = [];
     this.selfDispatchTemplates = {};
     this.selfInstantiatingClassMethods = [];
+    this.resetInterprocParamState();
   }
 
   /**
@@ -626,6 +892,14 @@ export class CodegraphRunState {
     if (extraction.classExtends) {
       for (const [k, v] of Object.entries(extraction.classExtends)) {
         this.classExtends[k] = v;
+      }
+    }
+    // Explicit ORM table overrides (`self.table_name`), merged run-global so
+    // the schema-column pre-pass at the barrier sees every declaration in the
+    // project regardless of which file carries it (bd tea-rags-mcp-8l5fo).
+    if (extraction.classSchemaTables) {
+      for (const [k, v] of Object.entries(extraction.classSchemaTables)) {
+        this.schemaTables[k] = v;
       }
     }
     // Merge file-local function return types into the run-global map so the
@@ -683,5 +957,25 @@ export class CodegraphRunState {
       }
     }
     if (selfDispatchMethods.length > 0) this.selfDispatchMethods.push(...selfDispatchMethods);
+    // Interprocedural param typing, Increment 1 (bd tea-rags-mcp-bvalc).
+    // LIGHT records again: the deduped call-arg shapes, the positional
+    // param-name index off the chunks, the `@ivar = <param>` links, and
+    // the coordinates the walker already typed (the derivation's gate).
+    // Ruby-only, like the self-dispatch candidates — the consuming fold
+    // and resolver paths are Ruby.
+    if (extraction.language === "ruby") {
+      for (const record of extraction.knownTargetCallArgs ?? []) {
+        this.knownTargetCallArgs.set(`${record.targets.join("|")} ${JSON.stringify(record.argTypes)}`, record);
+      }
+      for (const chunk of extraction.chunks) {
+        if (chunk.paramNames !== undefined) this.paramNames[chunk.symbolId] = chunk.paramNames;
+      }
+      for (const [fqClass, fields] of Object.entries(extraction.classFieldParamLinks ?? {})) {
+        this.classFieldParamLinks[fqClass] = { ...this.classFieldParamLinks[fqClass], ...fields };
+      }
+      for (const [fqClass, fields] of Object.entries(extraction.classFieldTypes ?? {})) {
+        for (const ivar of Object.keys(fields)) this.typedClassFields.add(`${fqClass}|${ivar}`);
+      }
+    }
   }
 }

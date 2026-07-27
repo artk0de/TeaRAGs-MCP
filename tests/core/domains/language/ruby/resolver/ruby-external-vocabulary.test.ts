@@ -43,6 +43,38 @@ describe("RubyExternalVocabulary", () => {
     expect(vocab.isQualifiedMemberExternal("handle_details_post")).toBe(false);
   });
 
+  // bd tea-rags-mcp-wr7ku — the external classifier answers the same question the
+  // ivarField strategy does ("what type is @ivar in class C"), so it must read the
+  // same two channels in the same order. A gem-typed ivar recorded ONLY in the
+  // precise `ivarTypes` channel is still honestly external.
+  describe("@ivar receiver honours BOTH ivar type channels", () => {
+    it("flags a gem-typed ivar recorded in the precise ivarTypes channel as external", () => {
+      const callCtx = ctx(new InMemoryGlobalSymbolTable(), {
+        callerScope: ["Foo"],
+        ivarTypes: { Foo: { "@http": "Net::HTTP" } },
+      });
+      expect(vocab.isQualifiedReceiverExternal("@http", callCtx)).toBe(true);
+    });
+
+    it("does NOT flag an ivar typed to an IN-PROJECT class via ivarTypes", () => {
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("app/models/user.rb", [
+        { symbolId: "User", fqName: "User", shortName: "User", relPath: "app/models/user.rb", scope: [] },
+      ]);
+      const callCtx = ctx(table, { callerScope: ["Foo"], ivarTypes: { Foo: { "@user": "User" } } });
+      expect(vocab.isQualifiedReceiverExternal("@user", callCtx)).toBe(false);
+    });
+
+    it("does NOT flag an ivar recorded in NEITHER channel (honest denominator)", () => {
+      const callCtx = ctx(new InMemoryGlobalSymbolTable(), {
+        callerScope: ["Foo"],
+        ivarTypes: { Foo: {} },
+        classFieldTypes: { Foo: {} },
+      });
+      expect(vocab.isQualifiedReceiverExternal("@whatever", callCtx)).toBe(false);
+    });
+  });
+
   describe("core/gem-typed local receiver → external (dnd9s)", () => {
     it("flags a local var typed to a Ruby core class (Hash) even when an in-project method shares the name", () => {
       // `options` typed Hash via localBinding; `merge` also exists on in-project X#merge.
@@ -108,5 +140,58 @@ describe("RubyExternalVocabulary", () => {
       });
       expect(vocab.isQualifiedReceiverExternal("state", callCtx, 5)).toBe(true);
     });
+  });
+});
+
+/**
+ * bd tea-rags-mcp-2a5oo — a `db/schema.rb` column reader now carries its VALUE
+ * type as a structured return fact, so a chain that continues past a column hop
+ * (`firm.name.strip`) has a KNOWN core receiver. The classifier must claim it as
+ * an honest external skip through the SAME channels it already uses for a typed
+ * local — no new path, no new vocabulary.
+ */
+describe("RubyExternalVocabulary — column-typed chain hop (bd tea-rags-mcp-2a5oo)", () => {
+  const vocab = new RubyExternalVocabulary();
+
+  /** Symbol table knowing `Firm` (in-project) and nothing else. */
+  function firmTable(): InMemoryGlobalSymbolTable {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/firm.rb", [
+      { symbolId: "Firm", fqName: "Firm", shortName: "Firm", relPath: "app/models/firm.rb", scope: [] },
+    ]);
+    return table;
+  }
+
+  it("flags a chain whose column hop types to a core class as external", () => {
+    const callCtx = ctx(firmTable(), {
+      localBindings: { firm: [{ line: 1, type: "Firm" }] },
+      structuredReturnTypes: { "Firm#name": { form: "instance", name: "String" } },
+    });
+    expect(vocab.isQualifiedReceiverExternal("firm.name", callCtx, 5)).toBe(true);
+  });
+
+  it("flags a jsonb column hop (Hash) as external too", () => {
+    const callCtx = ctx(firmTable(), {
+      localBindings: { firm: [{ line: 1, type: "Firm" }] },
+      structuredReturnTypes: { "Firm#settings": { form: "instance", name: "Hash" } },
+    });
+    expect(vocab.isQualifiedReceiverExternal("firm.settings", callCtx, 5)).toBe(true);
+  });
+
+  it("does NOT flag the same chain while the column hop is untyped", () => {
+    const callCtx = ctx(firmTable(), { localBindings: { firm: [{ line: 1, type: "Firm" }] } });
+    expect(vocab.isQualifiedReceiverExternal("firm.name", callCtx, 5)).toBe(false);
+  });
+
+  it("does NOT flag a hop whose declared type IS in-project (a real miss stays a miss)", () => {
+    const table = firmTable();
+    table.upsertFile("app/models/owner.rb", [
+      { symbolId: "Owner", fqName: "Owner", shortName: "Owner", relPath: "app/models/owner.rb", scope: [] },
+    ]);
+    const callCtx = ctx(table, {
+      localBindings: { firm: [{ line: 1, type: "Firm" }] },
+      structuredReturnTypes: { "Firm#owner": { form: "instance", name: "Owner" } },
+    });
+    expect(vocab.isQualifiedReceiverExternal("firm.owner", callCtx, 5)).toBe(false);
   });
 });

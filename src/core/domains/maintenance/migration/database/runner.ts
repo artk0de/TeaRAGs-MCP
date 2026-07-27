@@ -9,7 +9,7 @@
  *
  * Migrations are passed in as an array of `{ filename, sql }` records
  * — they live as TS modules under
- * `src/core/infra/migration/database/migrations/` so the compiled
+ * `src/core/domains/maintenance/migration/database/migrations/` so the compiled
  * `build/` artifact ships them as JavaScript (tsc does not copy raw
  * SQL files). Tests may also pass a directory path; the runner then
  * reads `.sql` files from disk in lexical order.

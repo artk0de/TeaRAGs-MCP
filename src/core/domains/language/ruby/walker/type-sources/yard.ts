@@ -37,6 +37,82 @@ function parseYardBracketType(inner: string): string | null {
  * union/container forms). Does NOT break `ast-inference.ts` which
  * consumes `collectYardParamTypes` (the string-returning variant) directly.
  */
+/** A parsed `@!method` directive: its own coordinate + the `@return` its block declares. */
+interface YardMethodDirective {
+  /** 0-based line of the `# @!method ...` directive itself. */
+  readonly line: number;
+  readonly methodName: string;
+  /** `@!method self.NAME` → class coordinate (`Class.NAME`); bare NAME → instance. */
+  readonly classForm: boolean;
+  /** Single-bare-constant `@return [T]` inside the directive's block, else null. */
+  readonly returnBracket: string | null;
+}
+
+/**
+ * `# @!method NAME` / `# @!method self.NAME(args)` directive blocks (bd
+ * tea-rags-mcp-8ypeu). A directive documents a method that does NOT exist as a
+ * following `def` (typically metaprogrammed), so every tag inside its block —
+ * nested (deeper-indented comments) or flat (same-indent comments) — belongs to
+ * the DIRECTIVE's own coordinate, never to the next `def`. Without this, a
+ * `# @!method self.call … @return [Result]` above `def initialize` emits the
+ * poisonous declared fact `Class#initialize → Result`.
+ *
+ * The block ends at: a blank line, a bare `#` separator (claimed, so the next
+ * tag reaches the def), another directive, or any non-comment line.
+ */
+function collectYardMethodDirectives(code: string): {
+  claimedLines: Set<number>;
+  directives: YardMethodDirective[];
+} {
+  const lines = code.split(/\r?\n/);
+  const claimedLines = new Set<number>();
+  const directives: YardMethodDirective[] = [];
+  const directiveRegex = /^(\s*)#\s*@!method\s+(self\.)?(\w+)/;
+  const returnRegex = /^\s*#\s*@return\s+\[([^\]]+)\]/;
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i] ?? "";
+    const dir = directiveRegex.exec(raw);
+    if (!dir) continue;
+    const indent = (dir[1] ?? "").length;
+    // Body indent AFTER the '#' of the directive line itself — the yardstick
+    // nested tags are measured against ('# @!method x' -> 1; '#   @return' -> 3).
+    const directiveBodyIndent = (/^\s*#(\s*)/.exec(raw)?.[1] ?? "").length;
+    claimedLines.add(i);
+    let returnBracket: string | null = null;
+    // The block's SHAPE is set by its first line: deeper-indented (nested — the
+    // canonical YARD form) means a same-indent comment ENDS the block (it
+    // documents the next def); same-indent first line means a flat block that
+    // runs over same-indent comments.
+    let nestedShape: boolean | null = null;
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const blockRaw = lines[j] ?? "";
+      const trimmed = blockRaw.trim();
+      if (trimmed === "" || !trimmed.startsWith("#")) break; // blank / code — block over
+      if (trimmed === "#") {
+        claimedLines.add(j); // bare separator: claimed, but ends the block
+        break;
+      }
+      if (directiveRegex.test(blockRaw)) break; // next directive starts its own block
+      const commentBodyIndent = (/^\s*#(\s*)/.exec(blockRaw)?.[1] ?? "").length;
+      if (nestedShape === null) nestedShape = commentBodyIndent > directiveBodyIndent;
+      if (nestedShape && commentBodyIndent <= directiveBodyIndent) break; // same-indent after nested = next def's doc
+      const blockIndent = blockRaw.length - blockRaw.trimStart().length;
+      if (blockIndent < indent) break; // dedented comment belongs elsewhere
+      claimedLines.add(j);
+      const ret = returnRegex.exec(blockRaw);
+      if (ret) {
+        const inner = (ret[1] ?? "").trim();
+        // Same single-bare-constant discipline as def-bound `@return`s.
+        if (YARD_CONST.test(inner)) returnBracket = inner;
+      }
+    }
+    directives.push({ line: i, methodName: dir[3] ?? "", classForm: dir[2] !== undefined, returnBracket });
+    i = j - 1; // resume after the block (outer loop's i++ lands on j)
+  }
+  return { claimedLines, directives };
+}
+
 function collectYardRawParamBrackets(code: string): Map<number, Record<string, string>> {
   const lines = code.split(/\r?\n/);
   const out = new Map<number, Record<string, string>>();
@@ -46,8 +122,12 @@ function collectYardRawParamBrackets(code: string): Map<number, Record<string, s
   const yardNameFirst = /^\s*#\s*@param\s+(\w+)\s+\[([^\]]+)\]/;
   const yardBracketFirst = /^\s*#\s*@param\s+\[([^\]]+)\]\s+(\w+)/;
   const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
+  // `@!method` directive blocks own their tags (bd 8ypeu) — a directive's
+  // `@param` must not leak onto the following def.
+  const { claimedLines } = collectYardMethodDirectives(code);
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i] ?? "";
+    if (claimedLines.has(i)) continue;
     const nameFirst = yardNameFirst.exec(raw);
     const bracketFirst = nameFirst ? null : yardBracketFirst.exec(raw);
     const name = nameFirst?.[1] ?? bracketFirst?.[2];
@@ -91,8 +171,12 @@ export function collectYardParamTypes(code: string): Map<number, Record<string, 
   const yardNameFirst = /^\s*#\s*@param\s+(\w+)\s+\[([^\]]+)\]/;
   const yardBracketFirst = /^\s*#\s*@param\s+\[([^\]]+)\]\s+(\w+)/;
   const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
+  // `@!method` directive blocks own their tags (bd 8ypeu) — a directive's
+  // `@param` must not leak onto the following def.
+  const { claimedLines } = collectYardMethodDirectives(code);
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i] ?? "";
+    if (claimedLines.has(i)) continue;
     const nameFirst = yardNameFirst.exec(raw);
     const bracketFirst = nameFirst ? null : yardBracketFirst.exec(raw);
     const name = nameFirst?.[1] ?? bracketFirst?.[2];
@@ -141,7 +225,13 @@ export function collectYardReturnTypes(code: string): Record<string, string> {
   const returnRegex = /^\s*#\s*@return\s+\[([^\]]+)\]/;
   const attrRegex = /^\s*#\s*@!attribute\s+\[(?:r|w|rw)\]\s+(\w+)/;
   const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
-  for (const raw of code.split(/\r?\n/)) {
+  // `@!method` directive blocks own every tag inside them (bd 8ypeu) — their
+  // `@return` names the DIRECTIVE's coordinate, never the following def.
+  const { claimedLines } = collectYardMethodDirectives(code);
+  const lines = code.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i] ?? "";
+    if (claimedLines.has(i)) continue;
     const attrMatch = attrRegex.exec(raw);
     if (attrMatch) {
       seenAttrName = attrMatch[1] ?? null;
@@ -182,6 +272,42 @@ export function collectYardReturnTypes(code: string): Record<string, string> {
  * (stub trees in unit tests) yields an empty map → callers fall back to `[]`
  * (the prior flat-key behaviour, preserved for top-level annotations).
  */
+/**
+ * Innermost enclosing class/module scope for an arbitrary 1-based LINE — the
+ * range-based sibling of {@link buildDefScopeMap} for lines that are not defs
+ * (a `@!method` directive sits on a comment line, bd 8ypeu). Same name
+ * resolution (`readScopeResolution`, `::` splitting); DFS order means a later
+ * matching range is always the inner one, so last-match wins. A missing root
+ * (stub trees) yields `() => []` — the flat-key fallback.
+ */
+function buildClassRangeScopeLookup(root: AstNode | undefined): (line: number) => string[] {
+  const ranges: { start: number; end: number; scope: string[] }[] = [];
+  if (root) {
+    const walkRanges = (node: AstNode, scope: string[]): void => {
+      if (node.type === "class" || node.type === "module") {
+        const nameNode = node.childForFieldName("name");
+        if (nameNode) {
+          const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+          const nextScope = [...scope, ...localName.split("::")];
+          ranges.push({ start: node.startPosition.row + 1, end: node.endPosition.row + 1, scope: nextScope });
+          const body = node.childForFieldName("body");
+          for (const child of (body ?? node).children) walkRanges(child, nextScope);
+          return;
+        }
+      }
+      for (const child of node.children) walkRanges(child, scope);
+    };
+    walkRanges(root, []);
+  }
+  return (line: number): string[] => {
+    let found: string[] = [];
+    for (const r of ranges) {
+      if (r.start <= line && line <= r.end) found = r.scope; // DFS: later = inner
+    }
+    return found;
+  };
+}
+
 function buildDefScopeMap(root: AstNode | undefined): Map<number, string[]> {
   const out = new Map<number, string[]>();
   if (!root) return out;
@@ -226,6 +352,26 @@ function collectYardReturnFacts(input: RubyExtractInput): RubyTypeFact[] {
   const attrRegex = /^\s*#\s*@!attribute\s+\[(?:r|w|rw)\]\s+(\w+)/;
   const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
   const lines = input.code.split(/\r?\n/);
+  // `@!method` directives (bd 8ypeu): each block's `@return` types the
+  // DIRECTIVE's own coordinate — `self.NAME` → class form (`Class.NAME`),
+  // bare NAME → instance (`Class#NAME`) — attributed to the ENCLOSING class
+  // scope (the directive documents a metaprogrammed member of that class; a
+  // stub tree yields `[]`, preserving the flat-key fallback).
+  const { claimedLines, directives } = collectYardMethodDirectives(input.code);
+  const classScopeAt = buildClassRangeScopeLookup(input.tree?.rootNode);
+  for (const directive of directives) {
+    if (directive.returnBracket === null) continue;
+    const type = yardBracketToRef(directive.returnBracket);
+    if (!type) continue;
+    facts.push({
+      kind: "return",
+      source: "yard",
+      symbolScope: classScopeAt(directive.line + 1),
+      methodName: directive.methodName,
+      type,
+      ...(directive.classForm ? { classForm: true } : {}),
+    });
+  }
   let pendingReturn: string | null = null;
   // Name of the `@!attribute` that OWNS `pendingReturn` (the nested `@return`
   // under a `@!attribute` directive documents the attribute accessor, not the
@@ -235,6 +381,7 @@ function collectYardReturnFacts(input: RubyExtractInput): RubyTypeFact[] {
   let seenAttrName: string | null = null;
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i] ?? "";
+    if (claimedLines.has(i)) continue;
     const attrMatch = attrRegex.exec(raw);
     if (attrMatch) {
       seenAttrName = attrMatch[1] ?? null;

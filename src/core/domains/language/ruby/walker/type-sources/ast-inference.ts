@@ -253,6 +253,36 @@ export const rubyAstInferenceTypeSource: RubyInlineTypeSource = {
         return;
       }
 
+      // Rescue exception variable: `rescue Const => e` STATES e's type — the
+      // one place in Ruby where a local's class is declared rather than
+      // inferred (bd tea-rags-mcp-02saq). ONE constant binds an instance; a
+      // list binds the union of the listed classes, which the union dispatch
+      // and the external classifier already understand. A bare `rescue => e`
+      // (implicit StandardError) or a list holding anything that is not a
+      // constant binds NOTHING — the same silence discipline as everywhere
+      // else here, since a dynamic exception class is unknowable statically.
+      if (node.type === "rescue") {
+        const bound = node.children.find((c) => c.type === "exception_variable")?.namedChildren[0];
+        if (bound?.type !== "identifier") return;
+        const declared = node.children.find((c) => c.type === "exceptions")?.namedChildren ?? [];
+        if (declared.length === 0) return;
+        const members: RubyTypeRef[] = [];
+        for (const entry of declared) {
+          const name =
+            entry.type === "scope_resolution"
+              ? readScopeResolution(entry)
+              : entry.type === "constant"
+                ? entry.text
+                : null;
+          if (name === null || !YARD_CONST.test(name)) return; // dynamic entry → silence
+          members.push({ form: "instance", name });
+        }
+        const first = members[0];
+        if (first === undefined) return;
+        emitFact(bound.text, members.length === 1 ? first : { form: "union", members }, bound.startPosition.row + 1);
+        return;
+      }
+
       if (node.type !== "assignment" && !isOrAssignment(node)) return;
       const lhs = node.childForFieldName("left");
       const rhs = node.childForFieldName("right");

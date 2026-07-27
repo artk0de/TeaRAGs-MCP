@@ -288,4 +288,94 @@ describe("rubyAstInferenceTypeSource", () => {
       expect(facts.filter((f) => f.name === "x")).toEqual([]);
     });
   });
+
+  // bd tea-rags-mcp-02saq — the rescue clause STATES the exception variable's
+  // type; the walker used to record nothing for it, so every `e.member` call in
+  // a rescue body reached the resolver as an untyped `dynamic` receiver.
+  describe("rescue exception variable (02saq untyped-local widening)", () => {
+    it("binds `rescue Const => e` to that constant as an instance", () => {
+      const code = ["def call", "  risky", "rescue Widget => e", "  e.spin", "end"].join("\n");
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          kind: "local",
+          source: "ast",
+          name: "e",
+          type: { form: "instance", name: "Widget" },
+        }),
+      );
+    });
+
+    it("binds a namespaced exception class verbatim", () => {
+      const code = ["begin", "  risky", "rescue ActiveRecord::RecordInvalid => e", "  e.record", "end"].join("\n");
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.find((f) => f.name === "e")?.type).toEqual({
+        form: "instance",
+        name: "ActiveRecord::RecordInvalid",
+      });
+    });
+
+    it("binds the variable at the rescue clause's own line (flow order)", () => {
+      const code = ["def call", "  risky", "rescue Widget => e", "  e.spin", "end"].join("\n");
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.find((f) => f.name === "e")?.line).toBe(3);
+    });
+
+    it("binds `rescue A, B => e` as a union of the listed classes", () => {
+      const code = ["begin", "  risky", "rescue Widget, Gadget => e", "  e.spin", "end"].join("\n");
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.find((f) => f.name === "e")?.type).toEqual({
+        form: "union",
+        members: [
+          { form: "instance", name: "Widget" },
+          { form: "instance", name: "Gadget" },
+        ],
+      });
+    });
+
+    it("emits NOTHING for a bare `rescue => e` (no class list)", () => {
+      const code = ["begin", "  risky", "rescue => e", "  e.spin", "end"].join("\n");
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.name === "e")).toEqual([]);
+    });
+
+    it("emits NOTHING when the exception list is not all constants", () => {
+      const code = ["begin", "  risky", "rescue Widget, error_class => e", "  e.spin", "end"].join("\n");
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.name === "e")).toEqual([]);
+    });
+
+    it("emits NOTHING when the clause binds no variable", () => {
+      const code = ["begin", "  risky", "rescue Widget", "  fallback", "end"].join("\n");
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toHaveLength(0);
+    });
+
+    it("keeps each clause of a multi-clause rescue on its own line", () => {
+      const code = [
+        "def call",
+        "  risky",
+        "rescue Widget => first",
+        "  first.spin",
+        "rescue Gadget => second",
+        "  second.spin",
+        "end",
+      ].join("\n");
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.find((f) => f.name === "first")).toMatchObject({
+        line: 3,
+        type: { form: "instance", name: "Widget" },
+      });
+      expect(facts.find((f) => f.name === "second")).toMatchObject({
+        line: 5,
+        type: { form: "instance", name: "Gadget" },
+      });
+    });
+
+    it("lets a rescue-bound variable copy-propagate like any other local", () => {
+      const code = ["begin", "  risky", "rescue Widget => e", "  err = e", "  err.spin", "end"].join("\n");
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.find((f) => f.name === "err")?.type).toEqual({ form: "instance", name: "Widget" });
+    });
+  });
 });

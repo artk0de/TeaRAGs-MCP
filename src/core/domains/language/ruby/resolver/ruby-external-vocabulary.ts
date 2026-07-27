@@ -1,6 +1,6 @@
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { ExternalVocabulary } from "../../../../contracts/types/language.js";
-import { isExternalQualifiedMember } from "../dsl/index.js";
+import { isCoreAmbiguousMember, isExternalQualifiedMember } from "../dsl/index.js";
 import { catalogueForGemfile } from "../gemfile.js";
 import { SUPER_RECEIVER_SENTINEL } from "../walker/walker.js";
 import {
@@ -10,7 +10,7 @@ import {
   resolveConstant,
   RUBY_RUNTIME_HOOKS,
 } from "./strategies/index.js";
-import { typeOfReceiver } from "./type-propagation.js";
+import { ivarTypeName, typeOfReceiver } from "./type-propagation.js";
 
 /**
  * Ruby implementation of `ExternalVocabulary`, bridging the `dsl/` framework
@@ -50,23 +50,57 @@ export class RubyExternalVocabulary implements ExternalVocabulary {
     if (atLine !== undefined) return localBindingTypedReceiverIsExternal(receiver, atLine, ctx);
     return false;
   }
+
+  /** bd tea-rags-mcp-83cl7 — the CORE vocabulary fold (`ruby-core`'s
+   *  `coreAmbiguousMembers` facet), the same registry `isExternalBareCall` folds. */
+  isCoreAmbiguousMember(member: string): boolean {
+    return isCoreAmbiguousMember(member);
+  }
+
+  /**
+   * bd tea-rags-mcp-83cl7 — does this receiver carry a KNOWN static type? The
+   * precision guard of the core-homonym bucket: `true` forbids reclassification,
+   * so every branch that cannot PROVE the receiver is untyped answers `true`.
+   *
+   * - `self` / `super` — typed by the enclosing class (`ctx.callerScope`).
+   * - a CONSTANT (`Report.each`) — self-identifying. If it names no project file
+   *   the external arm already claimed the call; if it does, the miss is real.
+   * - `@ivar` / local var / chain — delegated to {@link typeOfReceiver} and
+   *   {@link ivarTypeName}, the SAME authorities the resolution strategies use,
+   *   so the classifier and the chain can never disagree about which receivers
+   *   are typed. (An index-access or provably-external chain receiver never
+   *   arrives here — {@link isQualifiedReceiverExternal} claims it one branch
+   *   earlier, as `externalSkipped`.)
+   * - no `atLine` — position-aware binding lookup is impossible, so answer
+   *   `true` (conservative: the bucket stays empty rather than swallowing a miss).
+   */
+  isReceiverTyped(receiver: string, ctx: CallContext, atLine?: number): boolean {
+    if (receiver === SUPER_RECEIVER_SENTINEL || receiver === "self") return true;
+    if (/^[A-Z]/.test(receiver)) return true;
+    if (IVAR_RECEIVER.test(receiver)) return ivarTypeName(receiver, ctx) !== undefined;
+    if (atLine === undefined) return true;
+    return typeOfReceiver(receiver, atLine, ctx) !== undefined;
+  }
 }
 
 /** A single instance-variable receiver (`@client`); a chained `@a.b` is out of scope. */
 const IVAR_RECEIVER = /^@\w+$/;
 
 /**
- * An `@ivar` receiver whose walker-inferred type (`classFieldTypes`) resolves to
- * NO project file is a gem / stdlib instance (`@http = Net::HTTP.new`): the ivar
- * strategy DROPs it, so it reaches this classifier unresolved and is honestly
- * external — excluded from the resolveSuccessRate denominator, not an internal
- * miss (cai0 imass). An in-project type → false (the strategy resolved it). An
- * unrecorded ivar → false (genuinely attempted-unresolved; we don't know it's a
- * gem, so we never over-shrink the denominator).
+ * An `@ivar` receiver whose inferred type resolves to NO project file is a gem /
+ * stdlib instance (`@http = Net::HTTP.new`): the ivar strategy DROPs it, so it
+ * reaches this classifier unresolved and is honestly external — excluded from the
+ * resolveSuccessRate denominator, not an internal miss (cai0 imass). An
+ * in-project type → false (the strategy resolved it). An unrecorded ivar → false
+ * (genuinely attempted-unresolved; we don't know it's a gem, so we never
+ * over-shrink the denominator).
+ *
+ * The type comes from {@link ivarTypeName} — the same authority the ivar strategy
+ * uses (bd tea-rags-mcp-wr7ku), so the classifier and the strategy can never
+ * disagree about which ivars are typed.
  */
 function ivarTargetsExternal(receiver: string, ctx: CallContext): boolean {
-  if (ctx.callerScope.length === 0) return false;
-  const typeName = ctx.classFieldTypes?.[ctx.callerScope.join("::")]?.[receiver];
+  const typeName = ivarTypeName(receiver, ctx);
   return typeName !== undefined && resolveConstant(typeName, ctx) === null;
 }
 

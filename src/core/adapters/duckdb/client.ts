@@ -83,6 +83,96 @@ const DEFAULT_DB_MEMORY_LIMIT = "2GB";
  */
 const EDGE_INSERT_CHUNK_ROWS = 200;
 
+/**
+ * The `cg_symbols` columns that carry a {@link SymbolDefinition} — the single
+ * source of truth for BOTH write paths (per-file `upsertSymbols` and batched
+ * `upsertSymbolsBulk`) and the hydration SELECT. Order matches
+ * {@link toCgSymbolsRow}'s tuple; a new definition field means editing this
+ * list, that projection and {@link fromCgSymbolsRow} — the three places the
+ * compiler and the round-trip tests hold together.
+ *
+ * `chunk_id` is deliberately absent: it is not part of a definition, it is
+ * backfilled after chunking by `updateSymbolChunkIds`.
+ *
+ * Column names are compile-time literals, never user input; every VALUE goes
+ * through a positional bind.
+ */
+const CG_SYMBOLS_DEF_COLUMNS = [
+  "rel_path",
+  "symbol_id",
+  "fq_name",
+  "short_name",
+  "scope_json",
+  "arity_json",
+  "visibility",
+  "kwargs_json",
+  "accepts_block",
+  "is_abstract_stub",
+] as const;
+
+const CG_SYMBOLS_DEF_INSERT_SQL = `INSERT OR IGNORE INTO cg_symbols (${CG_SYMBOLS_DEF_COLUMNS.join(", ")}) VALUES (${CG_SYMBOLS_DEF_COLUMNS.map(
+  () => "?",
+).join(", ")})`;
+
+/** Raw `cg_symbols` row as read back by {@link DuckDbGraphClient.listAllSymbols}. */
+interface CgSymbolsRow {
+  rel_path: string;
+  symbol_id: string;
+  fq_name: string;
+  short_name: string;
+  scope_json: string;
+  arity_json: string | null;
+  visibility: string | null;
+  kwargs_json: string | null;
+  accepts_block: boolean | null;
+  /** NULL on a row written before migration 016 — read as "not a stub". */
+  is_abstract_stub: boolean | null;
+}
+
+/**
+ * Project a definition onto the `cg_symbols` tuple — the ONE write-direction
+ * mapping point, shared by the per-file and the batched writer so a new field
+ * cannot land on one path and silently miss the other (which is exactly how
+ * `isAbstractStub` shipped unpersisted, bd tea-rags-mcp-eikry).
+ */
+function toCgSymbolsRow(def: SymbolDefinition): unknown[] {
+  return [
+    def.relPath,
+    def.symbolId,
+    def.fqName,
+    def.shortName,
+    JSON.stringify(def.scope ?? []),
+    def.arity ? JSON.stringify(def.arity) : null,
+    def.visibility ?? null,
+    def.kwargs ? JSON.stringify(def.kwargs) : null,
+    def.acceptsBlock ?? null,
+    def.isAbstractStub === true,
+  ];
+}
+
+/**
+ * Rebuild a definition from its persisted row — the ONE read-direction mapping
+ * point (the symbol-table hydration seam every incremental run goes through).
+ * Optional fields stay ABSENT rather than explicitly undefined, so a hydrated
+ * def is shape-identical to a freshly walked one.
+ */
+function fromCgSymbolsRow(row: CgSymbolsRow): SymbolDefinition {
+  return {
+    relPath: row.rel_path,
+    symbolId: row.symbol_id,
+    fqName: row.fq_name,
+    shortName: row.short_name,
+    scope: parseScope(row.scope_json),
+    ...(row.arity_json ? { arity: JSON.parse(row.arity_json) as AritySignature } : {}),
+    ...(row.visibility ? { visibility: row.visibility as SymbolDefinition["visibility"] } : {}),
+    ...(row.kwargs_json ? { kwargs: JSON.parse(row.kwargs_json) as KwargSignature } : {}),
+    ...(row.accepts_block !== null && row.accepts_block !== undefined ? { acceptsBlock: row.accepts_block } : {}),
+    // Only-ever-true, like the walker's mark: an explicit TRUE marks a stub,
+    // and FALSE / NULL (pre-016 row) both mean "not a stub".
+    ...(row.is_abstract_stub === true ? { isAbstractStub: true } : {}),
+  };
+}
+
 export interface DuckDbGraphClientOptions {
   path: string;
   /**
@@ -537,20 +627,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     try {
       await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
       for (const def of definitions) {
-        await this.run(
-          "INSERT OR IGNORE INTO cg_symbols (rel_path, symbol_id, fq_name, short_name, scope_json, arity_json, visibility, kwargs_json, accepts_block) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [
-            def.relPath,
-            def.symbolId,
-            def.fqName,
-            def.shortName,
-            JSON.stringify(def.scope ?? []),
-            def.arity ? JSON.stringify(def.arity) : null,
-            def.visibility ?? null,
-            def.kwargs ? JSON.stringify(def.kwargs) : null,
-            def.acceptsBlock ?? null,
-          ],
-        );
+        await this.run(CG_SYMBOLS_DEF_INSERT_SQL, toCgSymbolsRow(def));
       }
       await this.exec("COMMIT");
     } catch (err) {
@@ -603,35 +680,9 @@ export class DuckDbGraphClient implements GraphDbClient {
       }
       const rows: unknown[][] = [];
       for (const definitions of lastByRelPath.values()) {
-        for (const def of definitions) {
-          rows.push([
-            def.relPath,
-            def.symbolId,
-            def.fqName,
-            def.shortName,
-            JSON.stringify(def.scope ?? []),
-            def.arity ? JSON.stringify(def.arity) : null,
-            def.visibility ?? null,
-            def.kwargs ? JSON.stringify(def.kwargs) : null,
-            def.acceptsBlock ?? null,
-          ]);
-        }
+        for (const def of definitions) rows.push(toCgSymbolsRow(def));
       }
-      await this.insertOrIgnoreBatched(
-        "cg_symbols",
-        [
-          "rel_path",
-          "symbol_id",
-          "fq_name",
-          "short_name",
-          "scope_json",
-          "arity_json",
-          "visibility",
-          "kwargs_json",
-          "accepts_block",
-        ],
-        rows,
-      );
+      await this.insertOrIgnoreBatched("cg_symbols", CG_SYMBOLS_DEF_COLUMNS, rows);
       await this.exec("COMMIT");
     } catch (err) {
       await this.exec("ROLLBACK");
@@ -917,30 +968,8 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async listAllSymbols(): Promise<SymbolDefinition[]> {
-    const rows = await this.queryAll<{
-      rel_path: string;
-      symbol_id: string;
-      fq_name: string;
-      short_name: string;
-      scope_json: string;
-      arity_json: string | null;
-      visibility: string | null;
-      kwargs_json: string | null;
-      accepts_block: boolean | null;
-    }>(
-      "SELECT rel_path, symbol_id, fq_name, short_name, scope_json, arity_json, visibility, kwargs_json, accepts_block FROM cg_symbols",
-    );
-    return rows.map((row) => ({
-      relPath: row.rel_path,
-      symbolId: row.symbol_id,
-      fqName: row.fq_name,
-      shortName: row.short_name,
-      scope: parseScope(row.scope_json),
-      ...(row.arity_json ? { arity: JSON.parse(row.arity_json) as AritySignature } : {}),
-      ...(row.visibility ? { visibility: row.visibility as SymbolDefinition["visibility"] } : {}),
-      ...(row.kwargs_json ? { kwargs: JSON.parse(row.kwargs_json) as KwargSignature } : {}),
-      ...(row.accepts_block !== null && row.accepts_block !== undefined ? { acceptsBlock: row.accepts_block } : {}),
-    }));
+    const rows = await this.queryAll<CgSymbolsRow>(`SELECT ${CG_SYMBOLS_DEF_COLUMNS.join(", ")} FROM cg_symbols`);
+    return rows.map(fromCgSymbolsRow);
   }
 
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
@@ -1257,7 +1286,7 @@ export class DuckDbGraphClient implements GraphDbClient {
         await this.run("DELETE FROM cg_run_stats");
         for (const r of rows) {
           await this.run(
-            "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, ambiguous_fanout) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
               r.language,
               r.receiverKind,
@@ -1266,6 +1295,7 @@ export class DuckDbGraphClient implements GraphDbClient {
               r.externalSkipped,
               r.unresolvable,
               r.noInProjectDef ?? 0,
+              r.coreAmbiguous ?? 0,
               r.ambiguousFanout ?? 0,
             ],
           );
@@ -1287,9 +1317,10 @@ export class DuckDbGraphClient implements GraphDbClient {
       external_skipped: number | bigint;
       unresolvable: number | bigint;
       no_in_project_def: number | bigint;
+      core_ambiguous: number | bigint;
       ambiguous_fanout: number | bigint;
     }>(
-      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, ambiguous_fanout FROM cg_run_stats ORDER BY language, receiver_kind",
+      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout FROM cg_run_stats ORDER BY language, receiver_kind",
     );
     return rows.map((r) => ({
       language: r.language,
@@ -1299,6 +1330,7 @@ export class DuckDbGraphClient implements GraphDbClient {
       externalSkipped: Number(r.external_skipped),
       unresolvable: Number(r.unresolvable),
       noInProjectDef: Number(r.no_in_project_def),
+      coreAmbiguous: Number(r.core_ambiguous),
       ambiguousFanout: Number(r.ambiguous_fanout),
     }));
   }

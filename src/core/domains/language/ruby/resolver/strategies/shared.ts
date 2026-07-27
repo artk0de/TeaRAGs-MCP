@@ -15,6 +15,7 @@ import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
   type CallContext,
+  type SymbolDefinition,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import { ZEITWERK_PREFIX } from "../../walker/walker.js";
@@ -104,6 +105,18 @@ export function receiverChainTailIsExternal(receiver: string): boolean {
 }
 
 /** Last `::`-segment of a (possibly qualified) Ruby constant — `A::B::C` → `C`. */
+/**
+ * A real `def` SHADOWS the schema-synthesized accessor of the same name — Ruby
+ * generates column methods into a module the model includes, so an explicit
+ * `def name` in the class body wins (bd tea-rags-mcp-8l5fo). Applied after the
+ * file/scope narrowing so a model carrying both never looks AMBIGUOUS to
+ * `pickSingleCandidate` and degrades to a file-only edge.
+ */
+export function preferDeclaredOverSchemaColumn(defs: SymbolDefinition[]): SymbolDefinition[] {
+  const declared = defs.filter((def) => def.isSchemaColumn !== true);
+  return declared.length > 0 ? declared : defs;
+}
+
 export function lastConstantSegment(qualified: string): string {
   const parts = qualified.split("::");
   return parts[parts.length - 1] ?? qualified;
@@ -290,7 +303,11 @@ export function resolveInstanceMethodInClassChain(
     klassFile !== null ? { targetRelPath: klassFile, targetSymbolId: null } : null;
 
   if (klassFile !== null) {
-    const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => def.relPath === klassFile);
+    const candidates = preferDeclaredOverSchemaColumn(
+      ctx.symbolTable
+        .lookupByShortName(member, { includeSchemaColumns: true })
+        .filter((def) => def.relPath === klassFile),
+    );
     const target = pickSingleCandidate(candidates, mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   }
@@ -535,6 +552,51 @@ export function resolveTypeStaticMethod(
   return resolveTypeMethodInternal(typeName, member, ctx, mode, new Set(), symbolIdIsClassMethod);
 }
 
+/**
+ * Narrow a self-dispatch HOOK to its concrete definition on `typeName` — the ONE
+ * choke point both narrow-to-1 consumers route through (the constant-entry
+ * strategy `RubySelfDispatchEntrySymbolResolutionStrategy` and the
+ * instance-rooted `redirectSelfDispatchTemplate`), so the terminal policy is
+ * decided once (bd tea-rags-mcp-wceck).
+ *
+ * `resolveTypeInstanceMethod` walks the MRO, so a type that does NOT override the
+ * hook resolves it to the ancestor's definition — and when the base DECLARES the
+ * hook as an abstract stub (`raise NotImplementedError` / empty / bare `super`,
+ * marked by the walker as `SymbolDefinition.isAbstractStub`), that is exactly the
+ * declaration the REDIRECT terminal exists to bypass. Emitting there would point
+ * `get_callers` at a stub, so this returns `null` — the same "no narrow" answer
+ * as a hook that isn't defined at all, letting each consumer fall through (the
+ * strategy CONTINUEs; the redirect keeps its original target).
+ *
+ * `null` for a file-only resolution too: a narrow is method-level or nothing.
+ * Deliberately NOT folded into `resolveTypeInstanceMethod` — a stub is a perfectly
+ * good target for an ordinary typed-receiver call (`plain.process_result` really
+ * does reach the base declaration); it is only in the hook-narrowing terminal
+ * that a stub means "keep looking / keep the original".
+ */
+export function resolveSelfDispatchHookTarget(
+  typeName: string,
+  hook: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  const target = resolveTypeInstanceMethod(typeName, hook, ctx, mode);
+  if (target === null) return null;
+  if (target.targetSymbolId === null) return null; // file-only — never a narrow
+  if (targetIsAbstractStub(target, hook, ctx)) return null;
+  return target;
+}
+
+/** Whether a resolved hook target points at a walker-marked abstract stub. */
+function targetIsAbstractStub(target: SymbolResolutionTarget, hook: string, ctx: CallContext): boolean {
+  return ctx.symbolTable
+    .lookupByShortName(hook)
+    .some(
+      (def) =>
+        def.symbolId === target.targetSymbolId && def.relPath === target.targetRelPath && def.isAbstractStub === true,
+    );
+}
+
 function resolveTypeMethodInternal(
   typeName: string,
   member: string,
@@ -564,12 +626,17 @@ function resolveTypeMethodInternal(
     }
 
     const bareType = lastConstantSegment(typeName);
-    const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
-      if (def.relPath !== targetFile) return false;
-      const tail = def.scope[def.scope.length - 1];
-      if (tail !== typeName && tail !== bareType) return false;
-      return symbolIdFilter === null || symbolIdFilter(def.symbolId, member);
-    });
+    // Schema columns join HERE and only here on the typed path: the lookup is
+    // already narrowed to one class's file and scope, so a synthesized `name`
+    // cannot widen anything (bd tea-rags-mcp-8l5fo).
+    const candidates = preferDeclaredOverSchemaColumn(
+      ctx.symbolTable.lookupByShortName(member, { includeSchemaColumns: true }).filter((def) => {
+        if (def.relPath !== targetFile) return false;
+        const tail = def.scope[def.scope.length - 1];
+        if (tail !== typeName && tail !== bareType) return false;
+        return symbolIdFilter === null || symbolIdFilter(def.symbolId, member);
+      }),
+    );
     const target = pickSingleCandidate(candidates, mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   }

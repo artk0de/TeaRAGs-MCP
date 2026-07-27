@@ -30,7 +30,8 @@
  *   9. chainType (multi-hop dotted chain via propagation engine — terminal guard)
  *  10. arRelationGuard (AR::Relation chain receiver — terminal guard)
  *  11. receiverSetDrop (any remaining receiver-set call — terminal guard)
- *  12. bareCall (bare-call global short-name fallback — last pass)
+ *  12. bareCall (bare-call global short-name fallback)
+ *  13. schemaColumn (bare read of the enclosing model's db/schema.rb column — last pass)
  */
 
 import {
@@ -49,7 +50,6 @@ import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveDispatchViaComponents, resolveViaChain } from "../../resolver-chain.js";
 import { ZEITWERK_PREFIX } from "../walker/walker.js";
 import { RubyExternalVocabulary } from "./ruby-external-vocabulary.js";
-import { redirectSelfDispatchTemplate } from "./template-redirect.js";
 import {
   CONE_MAX_DEFAULT,
   resolveConstant,
@@ -65,6 +65,7 @@ import {
   RubyLocalTypeSymbolResolutionStrategy,
   RubyReceiverSetDropSymbolResolutionStrategy,
   RubyReturnTypeBindingSymbolResolutionStrategy,
+  RubySchemaColumnSymbolResolutionStrategy,
   RubySelfDispatchEntrySymbolResolutionStrategy,
   RubySelfMemberSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
@@ -72,6 +73,7 @@ import {
   RubyUnionDispatchResolver,
   type ResolverConfig,
 } from "./strategies/index.js";
+import { redirectSelfDispatchTemplate } from "./template-redirect.js";
 
 /** Parse `CODEGRAPH_RB_DYNAMIC_CONFIDENCE` (a float in `(0,1]`); `undefined` on absent/invalid. */
 function resolveDynamicConfidence(raw: string | undefined): number | undefined {
@@ -119,6 +121,10 @@ export class RubyCallResolver implements CallResolver {
       new RubyArRelationGuardSymbolResolutionStrategy(cfg),
       new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
       new RubyBareCallSymbolResolutionStrategy(cfg),
+      // After bareCall by design (bd tea-rags-mcp-8l5fo): any DECLARED definition
+      // the caller's MRO offers wins first, and only then does a `db/schema.rb`
+      // column accessor — which has no `def` anywhere — get a chance.
+      new RubySchemaColumnSymbolResolutionStrategy(),
     ];
     this.table = new RubyTableDispatchResolver(cfg);
     this.union = new RubyUnionDispatchResolver(cfg);
@@ -151,6 +157,17 @@ export class RubyCallResolver implements CallResolver {
    */
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
     return this.externalClassifier.targetsExternal(call, ctx);
+  }
+
+  /**
+   * tea-rags-mcp-83cl7 — core-homonym classifier for an UNRESOLVED call the
+   * external arm did not claim. Delegates to the same language-neutral
+   * `ExternalCallClassifier`; the Ruby primitives (core vocabulary fold,
+   * receiver typedness via `typeOfReceiver` / `ivarTypeName`) live in
+   * `RubyExternalVocabulary`.
+   */
+  targetsCoreAmbiguousMember(call: CallRef, ctx: CallContext): boolean {
+    return this.externalClassifier.targetsCoreAmbiguousMember(call, ctx);
   }
 
   /**

@@ -11,6 +11,7 @@ export { RubyArRelationGuardSymbolResolutionStrategy } from "./ruby-ar-relation-
 export { RubyChainTypeSymbolResolutionStrategy } from "./ruby-chain-type.js";
 export { RubyReceiverSetDropSymbolResolutionStrategy } from "./ruby-receiver-set-drop.js";
 export { RubyBareCallSymbolResolutionStrategy } from "./ruby-bare-call.js";
+export { RubySchemaColumnSymbolResolutionStrategy } from "./ruby-schema-column.js";
 export { RubyConeDispatchResolver } from "./ruby-cone-dispatch.js";
 export { RubyConeTypeLocator } from "./ruby-cone-type-locator.js";
 export { RubyUnionDispatchResolver } from "./ruby-union-dispatch.js";

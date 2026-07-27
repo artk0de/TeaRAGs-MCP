@@ -35,7 +35,7 @@ const expectRejected = (cfg, pattern) => {
     created = EmbeddingProviderFactory.create(cfg);
   } catch (err) {
     if (!pattern.test(err.message)) {
-      throw new Error(`rejected, but message did not match ${pattern}: ${err.message}`);
+      throw new Error(`rejected, but message did not match ${pattern}: ${err.message}`, { cause: err });
     }
     return;
   }
@@ -55,22 +55,61 @@ const expectProvider = (cfg, { model, dimensions }) => {
 const MISSING_KEY = /is not set|API key is required/;
 
 const checks = [
-  ["factory rejects unknown provider", () => expectRejected(config({ provider: "unknown-provider" }), /Invalid value|Unknown embedding provider/)],
+  [
+    "factory rejects unknown provider",
+    () => expectRejected(config({ provider: "unknown-provider" }), /Invalid value|Unknown embedding provider/),
+  ],
   ["openai requires an API key", () => expectRejected(config({ provider: "openai" }), MISSING_KEY)],
   ["cohere requires an API key", () => expectRejected(config({ provider: "cohere" }), MISSING_KEY)],
   ["voyage requires an API key", () => expectRejected(config({ provider: "voyage" }), MISSING_KEY)],
-  ["ollama needs no API key, applies code-embedding defaults", () =>
-    expectProvider(config({ provider: "ollama" }), { model: "unclemusclez/jina-embeddings-v2-base-code:latest", dimensions: 768 })],
-  ["openai applies its default model/dimensions", () =>
-    expectProvider(config({ provider: "openai", openaiApiKey: "test-key-123" }), { model: "text-embedding-3-small", dimensions: 1536 })],
-  ["cohere applies its default model/dimensions", () =>
-    expectProvider(config({ provider: "cohere", cohereApiKey: "test-key-123" }), { model: "embed-english-v3.0", dimensions: 1024 })],
-  ["voyage applies its default model/dimensions", () =>
-    expectProvider(config({ provider: "voyage", voyageApiKey: "test-key-123" }), { model: "voyage-2", dimensions: 1024 })],
-  ["a custom model overrides the default and its dimensions", () =>
-    expectProvider(config({ provider: "openai", openaiApiKey: "test-key-123", model: "text-embedding-3-large" }), { model: "text-embedding-3-large", dimensions: 3072 })],
-  ["an explicit dimensions value overrides the model default", () =>
-    expectProvider(config({ provider: "openai", openaiApiKey: "test-key-123", dimensions: 512 }), { model: "text-embedding-3-small", dimensions: 512 })],
+  [
+    "ollama needs no API key, applies code-embedding defaults",
+    () =>
+      expectProvider(config({ provider: "ollama" }), {
+        model: "unclemusclez/jina-embeddings-v2-base-code:latest",
+        dimensions: 768,
+      }),
+  ],
+  [
+    "openai applies its default model/dimensions",
+    () =>
+      expectProvider(config({ provider: "openai", openaiApiKey: "test-key-123" }), {
+        model: "text-embedding-3-small",
+        dimensions: 1536,
+      }),
+  ],
+  [
+    "cohere applies its default model/dimensions",
+    () =>
+      expectProvider(config({ provider: "cohere", cohereApiKey: "test-key-123" }), {
+        model: "embed-english-v3.0",
+        dimensions: 1024,
+      }),
+  ],
+  [
+    "voyage applies its default model/dimensions",
+    () =>
+      expectProvider(config({ provider: "voyage", voyageApiKey: "test-key-123" }), {
+        model: "voyage-2",
+        dimensions: 1024,
+      }),
+  ],
+  [
+    "a custom model overrides the default and its dimensions",
+    () =>
+      expectProvider(config({ provider: "openai", openaiApiKey: "test-key-123", model: "text-embedding-3-large" }), {
+        model: "text-embedding-3-large",
+        dimensions: 3072,
+      }),
+  ],
+  [
+    "an explicit dimensions value overrides the model default",
+    () =>
+      expectProvider(config({ provider: "openai", openaiApiKey: "test-key-123", dimensions: 512 }), {
+        model: "text-embedding-3-small",
+        dimensions: 512,
+      }),
+  ],
 ];
 
 const failures = [];

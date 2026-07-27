@@ -8,11 +8,24 @@
  *
  *   - `Const.new(...)`                          → instance(Const)
  *   - `Const.new(...).freeze` / `.tap { }` tail → instance(Const) (receiver passthrough)
- *   - a local var whose LAST (single) assignment is `Const.new(...)` → instance(Const)
+ *   - a local var OR `@ivar` whose LAST (single) assignment in the body is one of
+ *     the above → instance(Const)
+ *   - a type-guard COERCION ternary `X.is_a?(C) ? X : <expr typing to C>` → instance(C)
  *
  * SILENCE (precision, never fabricate): branching returns, opaque method-call
- * tails, ternaries, reassigned locals, and non-const `new` receivers emit NO
- * fact — a wrong return type poisons every downstream chain hop.
+ * tails, UNGUARDED ternaries, reassigned bindings, and non-const `new` receivers
+ * emit NO fact — a wrong return type poisons every downstream chain hop.
+ *
+ * ── WHY THE IVAR + COERCION-TERNARY SHAPES (bd tea-rags-mcp-j9xpf) ──
+ * The `Const.new` tail types hand-rolled service objects; the DOMINANT Rails
+ * service-object base does neither. Ground truth (taxdome `lib/kind_of_service.rb`,
+ * 2 167 includers) ends its `#call` in the ivar `@result`, assigned exactly once
+ * from `raw.is_a?(KindOfService::Result) ? raw : KindOfService::Result.new(raw)`.
+ * Both additions stay inside the conservative contract: an `@ivar` is a binding
+ * exactly like a local (the same single-assignment discipline applies), and a
+ * type-guard ternary is sound OCCURRENCE typing — the guard PROVES the true
+ * branch is a `C`, and the false branch must independently type to the SAME `C`,
+ * so the ternary carries no union. Neither widens to branching or opaque tails.
  *
  * ── SPEC TENSION (resolved by CONVENTION-bounding, not the run-global gate) ──
  * The design (`2026-07-10-service-result-return-types-design.md`) gates body
@@ -59,13 +72,68 @@ const SERVICE_ENTRY_METHODS = new Set(["call", "perform"]);
 const RECEIVER_PASSTHROUGH_TAIL_METHODS = new Set(["freeze", "tap"]);
 
 /**
+ * Runtime type-guard predicates whose TRUTHY branch proves the receiver is an
+ * instance of the constant argument. `instance_of?` is stricter than `is_a?` /
+ * `kind_of?` (exact class, no ancestry) — strictly narrower, so it is equally
+ * sound for the coercion rule.
+ */
+const TYPE_GUARD_PREDICATES = new Set(["is_a?", "kind_of?", "instance_of?"]);
+
+/** A bare or `::`-scoped Ruby constant name. */
+const CONST_NAME = /^[A-Z]\w*(?:::[A-Z]\w*)*$/;
+
+/** AST node types that BIND a name in a method body — a local var or an `@ivar`. */
+function isBindingNode(node: AstNode | null): boolean {
+  return node?.type === "identifier" || node?.type === "instance_variable";
+}
+
+/** The constant an AST node names (`Result`, `Ns::Result`), or `null` when it is not one. */
+function constNameOf(node: AstNode): string | null {
+  const text = node.type === "scope_resolution" ? readScopeResolution(node) : node.text;
+  return CONST_NAME.test(text) ? text : null;
+}
+
+/**
+ * A type-guard COERCION ternary — `X.is_a?(C) ? X : <expr typing to C>` → `C`.
+ *
+ * Sound occurrence typing, not a widening: the guard proves the CONSEQUENCE
+ * branch (which must be the guarded expression VERBATIM) is a `C`, and the
+ * ALTERNATIVE branch must independently type to the SAME `C` via
+ * {@link tailInstanceConst}. Both branches therefore carry `C` and the ternary
+ * has no union. Any deviation — a different constant on the false branch, a
+ * non-guard condition, a consequence that is not the guarded expression, a
+ * non-constant guard argument — yields `null` (silence).
+ */
+function coercionTernaryConst(node: AstNode, catalogue: RubyDslCatalogue): string | null {
+  if (node.type !== "conditional") return null;
+  const condition = node.childForFieldName("condition");
+  const consequence = node.childForFieldName("consequence");
+  const alternative = node.childForFieldName("alternative");
+  if (!condition || !consequence || !alternative) return null;
+  if (condition.type !== "call" && condition.type !== "method_call") return null;
+  const predicate = condition.childForFieldName("method");
+  const guarded = condition.childForFieldName("receiver");
+  if (!predicate || !guarded || !TYPE_GUARD_PREDICATES.has(predicate.text)) return null;
+  const args = condition.childForFieldName("arguments")?.namedChildren ?? [];
+  if (args.length !== 1) return null;
+  const guardConst = constNameOf(args[0]);
+  if (guardConst === null) return null;
+  // The guard only says something about the expression it tested.
+  if (consequence.text !== guarded.text) return null;
+  return tailInstanceConst(alternative, catalogue) === guardConst ? guardConst : null;
+}
+
+/**
  * The constant an expression evaluates to as an INSTANCE, peeling receiver-
- * passthrough tails (`.freeze` / `.tap { }`) before delegating to
- * {@link constInstanceType}. `null` = not a statically-known instance (silence).
+ * passthrough tails (`.freeze` / `.tap { }`) and type-guard coercion ternaries
+ * before delegating to {@link constInstanceType}. `null` = not a statically-known
+ * instance (silence).
  */
 function tailInstanceConst(node: AstNode, catalogue: RubyDslCatalogue): string | null {
   const direct = constInstanceType(node, catalogue);
   if (direct !== null) return direct;
+  const coerced = coercionTernaryConst(node, catalogue);
+  if (coerced !== null) return coerced;
   if (node.type !== "call" && node.type !== "method_call") return null;
   const method = node.childForFieldName("method");
   const receiver = node.childForFieldName("receiver");
@@ -93,30 +161,38 @@ function lastBodyExpression(body: AstNode): AstNode | null {
 }
 
 /**
- * The constant a bare local-var tail (`result`) was assigned, IFF it is assigned
- * EXACTLY ONCE in the method body with a `Const.new`(-passthrough) RHS. Any
- * reassignment — a second plain assignment, an operator assignment (`+=`/`||=`),
- * a multiple-assignment target, or a reassignment inside a block (blocks share
- * the method's local scope) — yields `null` (silence). Zero assignments (a
- * method-call tail, not a local) also yields `null`.
+ * The constant a bare binding tail — a local var (`result`) or an `@ivar`
+ * (`@result`) — was assigned, IFF it is assigned EXACTLY ONCE in the method body
+ * with a `Const.new`(-passthrough / -coercion) RHS. Any reassignment — a second
+ * plain assignment, an operator assignment (`+=`/`||=`), a multiple-assignment
+ * target, or a reassignment inside a block (blocks share the method's local
+ * scope, and ivars are not block-scoped at all) — yields `null` (silence). Zero
+ * assignments (a method-call tail, or an ivar assigned in another method such as
+ * `initialize`) also yields `null`.
+ *
+ * Ivars and locals share this rule because they share the observable property it
+ * relies on: within ONE body, a single unconditional binding site determines the
+ * value the tail reads. The rule is body-scoped by design — an ivar written by a
+ * sibling method is deliberately NOT consulted (that would need flow analysis
+ * across the class).
  */
-function singleAssignmentConst(body: AstNode, varName: string, catalogue: RubyDslCatalogue): string | null {
-  // One entry per assignment event to `varName`; a plain `varName = EXPR` carries
-  // its RHS, every non-plain event (operator / multiple assignment) carries null.
+function singleAssignmentConst(body: AstNode, bindingName: string, catalogue: RubyDslCatalogue): string | null {
+  // One entry per assignment event to `bindingName`; a plain `bindingName = EXPR`
+  // carries its RHS, every non-plain event (operator / multiple assignment) carries null.
   const events: (AstNode | null)[] = [];
   const scan = (n: AstNode): void => {
-    // Nested def/class/module start a new local scope; blocks do NOT — descend them.
+    // Nested def/class/module start a new scope; blocks do NOT — descend them.
     if (n.type === "method" || n.type === "singleton_method" || n.type === "class" || n.type === "module") return;
     if (n.type === "assignment") {
       const lhs = n.childForFieldName("left");
-      if (lhs?.type === "identifier" && lhs.text === varName) {
+      if (isBindingNode(lhs) && lhs?.text === bindingName) {
         events.push(n.childForFieldName("right"));
-      } else if (lhs?.type === "left_assignment_list" && lhs.namedChildren.some((t) => t.text === varName)) {
+      } else if (lhs?.type === "left_assignment_list" && lhs.namedChildren.some((t) => t.text === bindingName)) {
         events.push(null); // multiple-assignment target — not a clean single-assign
       }
     } else if (n.type === "operator_assignment") {
       const lhs = n.childForFieldName("left");
-      if (lhs?.type === "identifier" && lhs.text === varName) events.push(null); // `+=` / `||=`
+      if (isBindingNode(lhs) && lhs?.text === bindingName) events.push(null); // `+=` / `||=`
     }
     for (const child of n.children) scan(child);
   };
@@ -140,8 +216,9 @@ function emitServiceReturnFact(
   if (!body) return;
   const last = lastBodyExpression(body);
   if (!last) return;
-  const constName =
-    last.type === "identifier" ? singleAssignmentConst(body, last.text, catalogue) : tailInstanceConst(last, catalogue);
+  const constName = isBindingNode(last)
+    ? singleAssignmentConst(body, last.text, catalogue)
+    : tailInstanceConst(last, catalogue);
   if (constName === null) return;
   out.push({
     kind: "return",

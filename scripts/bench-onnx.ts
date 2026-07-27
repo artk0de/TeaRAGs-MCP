@@ -8,10 +8,10 @@
  *   npx tsx scripts/bench-onnx.ts [--warmup] [--session-opts] [--batches N] [--bs N]
  */
 
-import { Worker } from "node:worker_threads";
-import { join, dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { Worker } from "node:worker_threads";
 
 import type { WorkerRequest, WorkerResponse } from "../src/core/adapters/embeddings/onnx/worker-types.js";
 
@@ -54,14 +54,16 @@ function randomText(len: number): string {
 // ---------------------------------------------------------------------------
 
 class BenchWorker {
-  private worker: Worker;
-  private pending = new Map<number, { resolve: (emb: number[][]) => void; reject: (err: Error) => void }>();
+  private readonly worker: Worker;
+  private readonly pending = new Map<number, { resolve: (emb: number[][]) => void; reject: (err: Error) => void }>();
   private readyResolve: (() => void) | null = null;
   private nextId = 0;
 
   constructor() {
     this.worker = new Worker(WORKER_PATH);
-    this.worker.on("message", (msg: WorkerResponse) => this.onMessage(msg));
+    this.worker.on("message", (msg: WorkerResponse) => {
+      this.onMessage(msg);
+    });
     this.worker.on("error", (err) => {
       console.error("Worker error:", err);
       process.exit(1);
@@ -94,6 +96,9 @@ class BenchWorker {
       }
       case "log":
         console.error(`[worker] ${msg.message}`);
+        break;
+      case "calibrated":
+        // Calibration notices carry no payload the benchmark reacts to.
         break;
     }
   }
@@ -175,7 +180,9 @@ async function main(): Promise<void> {
     times.push(batchTime);
 
     if (i === 0) {
-      console.error(`  First batch: ${batchTime.toFixed(0)}ms (${result.length} embeddings × ${result[0].length} dims)`);
+      console.error(
+        `  First batch: ${batchTime.toFixed(0)}ms (${result.length} embeddings × ${result[0].length} dims)`,
+      );
     }
   }
 

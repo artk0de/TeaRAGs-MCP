@@ -74,12 +74,24 @@ const TCK_TABLE = {
   ],
 };
 
+// `CONST[k].new.field` — the chain passed through an instantiator, so `field`
+// names an INSTANCE member of the value class (`Class#field`).
 const dispatchCall = (table: string, field: string, key: string | null): CallRef => ({
   callText: `${table}[k].new.${field}`,
   receiver: null,
   member: field,
   startLine: 1,
-  dispatch: { table, field, key },
+  dispatch: { table, field, key, viaInstance: true },
+});
+
+// `CONST[k].field` — no instantiator hop, so the receiver is the value CLASS
+// itself and `field` names a class method (`Class.field`) — bd tea-rags-mcp-exmwr.
+const classDispatchCall = (table: string, field: string, key: string | null): CallRef => ({
+  callText: `${table}[k].${field}`,
+  receiver: null,
+  member: field,
+  startLine: 1,
+  dispatch: { table, field, key, viaInstance: false },
 });
 
 describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
@@ -237,6 +249,63 @@ describe("RubyTableDispatchResolver (bd tea-rags-mcp-pq02v)", () => {
     // short-name "perform" scoped to "Clone" (last segment of "Jobs::Clone") → 1 match → resolves
     expect(edges).toHaveLength(1);
     expect(edges[0].targetSymbolId).toBe("Clone#perform");
+  });
+
+  describe("call shape decides the symbolId form (bd tea-rags-mcp-exmwr)", () => {
+    const classMethodFiles = (): [string, NamedSymbol[]][] => [
+      [
+        "app/jobs/clone.rb",
+        [
+          sym("Jobs::Clone", "Clone", "app/jobs/clone.rb", ["Jobs"]),
+          sym("Jobs::Clone.build", "build", "app/jobs/clone.rb", ["Jobs", "Clone"]),
+        ],
+      ],
+    ];
+    const tables = {
+      TCK: [{ relPath: "app/services/registry.rb", table: { entries: { Job: "Jobs::Clone" } } }],
+    };
+
+    it("resolves a DIRECT class-method call to the class form Class.method", () => {
+      const edges = edgesOf(
+        resolver.resolveDispatch(
+          classDispatchCall("TCK", "build", "Job"),
+          ctx({ symbolTable: tableWith(...classMethodFiles()), dispatchTables: tables }),
+        ),
+      );
+      expect(edges).toHaveLength(1);
+      expect(edges[0]).toMatchObject({ targetSymbolId: "Jobs::Clone.build", edgeKind: "exact", confidence: 1 });
+    });
+
+    it("does NOT bind a direct class-method call to an instance-form def of the same name", () => {
+      const instanceOnly: [string, NamedSymbol[]][] = [
+        [
+          "app/jobs/clone.rb",
+          [
+            sym("Jobs::Clone", "Clone", "app/jobs/clone.rb", ["Jobs"]),
+            sym("Jobs::Clone#build", "build", "app/jobs/clone.rb", ["Jobs", "Clone"]),
+          ],
+        ],
+      ];
+      expect(
+        edgesOf(
+          resolver.resolveDispatch(
+            classDispatchCall("TCK", "build", "Job"),
+            ctx({ symbolTable: tableWith(...instanceOnly), dispatchTables: tables }),
+          ),
+        ),
+      ).toEqual([]);
+    });
+
+    it("does NOT bind an instantiator-chained call to a class-form def of the same name", () => {
+      expect(
+        edgesOf(
+          resolver.resolveDispatch(
+            dispatchCall("TCK", "build", "Job"),
+            ctx({ symbolTable: tableWith(...classMethodFiles()), dispatchTables: tables }),
+          ),
+        ),
+      ).toEqual([]);
+    });
   });
 
   it("drops a value class whose declaring file is not a Ruby file (.ts extension, line 85)", () => {

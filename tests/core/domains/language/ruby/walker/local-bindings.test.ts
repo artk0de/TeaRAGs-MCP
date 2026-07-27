@@ -261,3 +261,39 @@ describe("collectRubyLocalCallBindingsForChunk — do_block / method_call shape"
     expect(result["x"]).toBe("second_call");
   });
 });
+
+// ---------------------------------------------------------------------------
+// bd tea-rags-mcp-j9xpf — a CONSTANT receiver names the exact type whose method
+// is being called, so the binding keeps it: `result = Billing::X::Create.call(…)`
+// records `Billing::X::Create.call`, not the bare `call`. Without the receiver
+// the resolver can only consult the FLAT, project-wide `functionReturnTypes`
+// keyed by the bare name — and `call` is the single most collided method name in
+// a Rails codebase. Non-constant receivers keep the bare form (their type is not
+// statically known here — that stays the resolver's job).
+// ---------------------------------------------------------------------------
+describe("collectRubyLocalCallBindingsForChunk — constant receiver keeps its scope", () => {
+  it("`x = Svc.call(y)` → scope-qualified `Svc.call`", () => {
+    const result = collectRubyLocalCallBindingsForChunk(parse("x = Svc.call(y)\n"), 1, 1);
+    expect(result["x"]).toBe("Svc.call");
+  });
+
+  it("`x = Billing::Invoices::ApplyStatus.call(y)` → fully-qualified constant preserved", () => {
+    const result = collectRubyLocalCallBindingsForChunk(parse("x = Billing::Invoices::ApplyStatus.call(y)\n"), 1, 1);
+    expect(result["x"]).toBe("Billing::Invoices::ApplyStatus.call");
+  });
+
+  it("`x = client.fetch` (lowercase receiver) keeps the bare method name", () => {
+    const result = collectRubyLocalCallBindingsForChunk(parse("x = client.fetch\n"), 1, 1);
+    expect(result["x"]).toBe("fetch");
+  });
+
+  it("`x = @client.fetch` (ivar receiver) keeps the bare method name", () => {
+    const result = collectRubyLocalCallBindingsForChunk(parse("x = @client.fetch\n"), 1, 1);
+    expect(result["x"]).toBe("fetch");
+  });
+
+  it("`x = Svc.build.call` (chained tail off a constant) keeps the bare method name", () => {
+    const result = collectRubyLocalCallBindingsForChunk(parse("x = Svc.build.call\n"), 1, 1);
+    expect(result["x"]).toBe("call");
+  });
+});

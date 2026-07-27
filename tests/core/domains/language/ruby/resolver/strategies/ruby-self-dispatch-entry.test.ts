@@ -17,6 +17,7 @@ import {
   type CallContext,
   type CallRef,
   type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   RubySelfDispatchEntrySymbolResolutionStrategy,
@@ -64,7 +65,10 @@ const serviceTable = (): InMemoryGlobalSymbolTable =>
         sym("KindOfService.call", "call", KOS_FILE, ["KindOfService"]),
       ],
     ],
-    [CREATE_FILE, [sym("Create", "Create", CREATE_FILE, []), sym("Create#perform", "perform", CREATE_FILE, ["Create"])]],
+    [
+      CREATE_FILE,
+      [sym("Create", "Create", CREATE_FILE, []), sym("Create#perform", "perform", CREATE_FILE, ["Create"])],
+    ],
     [
       REFRESH_FILE,
       [sym("Refresh", "Refresh", REFRESH_FILE, []), sym("Refresh#perform", "perform", REFRESH_FILE, ["Refresh"])],
@@ -146,6 +150,66 @@ describe("RubySelfDispatchEntrySymbolResolutionStrategy (DEFECT 2)", () => {
   });
 });
 
+// bd tea-rags-mcp-wceck — the REDIRECT terminal's guard rail. When the base
+// DECLARES the hook as an abstract stub (`raise NotImplementedError`), the
+// template is discovered for every entry — but an entry constant that does NOT
+// override the hook resolves it, via the MRO, right back to that stub. Emitting
+// there would point `get_callers` at a declaration, so the narrow must fall
+// through exactly like the hook-missing case.
+describe("RubySelfDispatchEntrySymbolResolutionStrategy — abstract-stub hook guard (wceck)", () => {
+  const def = (
+    symbolId: string,
+    shortName: string,
+    relPath: string,
+    scope: string[],
+    isAbstractStub?: true,
+  ): SymbolDefinition => ({
+    symbolId,
+    fqName: symbolId,
+    shortName,
+    relPath,
+    scope,
+    ...(isAbstractStub === true ? { isAbstractStub: true } : {}),
+  });
+
+  const PLAIN_FILE = "app/services/plain.rb";
+
+  // `KindOfService#perform` EXISTS but is a stub; `Create` overrides it for real,
+  // `Plain` inherits the stub.
+  const stubCtx = (): CallContext => {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile(KOS_FILE, [
+      def("KindOfService", "KindOfService", KOS_FILE, []),
+      def("KindOfService.call", "call", KOS_FILE, ["KindOfService"]),
+      def("KindOfService#perform", "perform", KOS_FILE, ["KindOfService"], true),
+    ]);
+    symbolTable.upsertFile(CREATE_FILE, [
+      def("Create", "Create", CREATE_FILE, []),
+      def("Create#perform", "perform", CREATE_FILE, ["Create"]),
+    ]);
+    symbolTable.upsertFile(PLAIN_FILE, [def("Plain", "Plain", PLAIN_FILE, [])]);
+    return ctx({
+      symbolTable,
+      classAncestors: { Create: ["KindOfService"], Plain: ["KindOfService"] },
+      selfDispatchTemplates: { "KindOfService.call": "perform" },
+    });
+  };
+
+  it("REDIRECT: an entry whose constant overrides the stub still narrows to its own concrete hook", () => {
+    const outcome = strat.attempt(entryCall("Create"), stubCtx());
+    expect(outcome.kind === "resolved" && outcome.target).toEqual({
+      targetRelPath: CREATE_FILE,
+      targetSymbolId: "Create#perform",
+    });
+  });
+
+  it("CONTINUES when the entry's own hook resolution lands on the inherited STUB", () => {
+    // `Plain.call` → template → hook `perform` → MRO → `KindOfService#perform`,
+    // a stub. No edge: fall through to the normal passes.
+    expect(strat.attempt(entryCall("Plain"), stubCtx()).kind).toBe("continue");
+  });
+});
+
 // The self-instance delegation shape (DEFECT 2 v2): the entry class method
 // `KindOfService.call` self-INSTANTIATES and delegates to the SAME-named INSTANCE
 // method (`instance = new; instance.call`), and it is that instance method
@@ -162,7 +226,10 @@ const v2Table = (): InMemoryGlobalSymbolTable =>
         sym("KindOfService#call", "call", KOS_FILE, ["KindOfService"]),
       ],
     ],
-    [CREATE_FILE, [sym("Create", "Create", CREATE_FILE, []), sym("Create#perform", "perform", CREATE_FILE, ["Create"])]],
+    [
+      CREATE_FILE,
+      [sym("Create", "Create", CREATE_FILE, []), sym("Create#perform", "perform", CREATE_FILE, ["Create"])],
+    ],
   );
 
 const v2Ctx = (over: Partial<CallContext> = {}): CallContext =>
