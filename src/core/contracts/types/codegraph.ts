@@ -71,6 +71,16 @@ export interface DispatchRef {
   table: string;
   field: string | null;
   key: string | null;
+  /**
+   * Ruby registry overload (bd tea-rags-mcp-exmwr): the call SHAPE that reached
+   * `field`. `true` ⇒ the chain passed through an instantiator
+   * (`CONST[k].new.m`), so `field` names an INSTANCE member (`Class#field`);
+   * `false` ⇒ the member is invoked on the value CLASS itself
+   * (`CONST[k].create!` → `Class.field`). Omitted by table dispatch that has no
+   * receiver-form distinction (the TypeScript tables select a FUNCTION name, not
+   * a member of a receiver), where it reads as "not applicable".
+   */
+  viaInstance?: boolean;
 }
 
 /**

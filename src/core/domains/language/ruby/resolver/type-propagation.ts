@@ -209,16 +209,29 @@ function resolveChain(receiver: string, atLine: number, ctx: CallContext): RubyT
 
   let current: RubyTypeRef | undefined;
   let startLink = 0;
-  // Const.new-chain (rvw34 gap b): a bare-constant head whose first link is
-  // instance-returning (`new`/`find`/`create!`…) IS an instance of that constant
-  // — `PostStatusService.new` is definitionally a PostStatusService. Zero
-  // fabrication. A bare-const head with a non-instance-returning first link
-  // (`Config.value`) is NOT typed.
+  // Bare-constant head. Two ways the first link can be typed, declared facts FIRST:
+  //
+  //  1. DECLARED (bd tea-rags-mcp-6zpds) — the project itself states what the
+  //     member returns on that constant (`scope :without_deleted` →
+  //     `container(Owner)`, a YARD `@return`, an inherited fact). Custom scopes
+  //     live only here; the generic vocabulary cannot know them.
+  //  2. VOCABULARY (rvw34 gap b) — a framework/Ruby instance-returning verb
+  //     (`new`/`find`/`create!`…) makes the chain an instance of the constant:
+  //     `PostStatusService.new` is definitionally a PostStatusService.
+  //
+  // Both are zero-fabrication. A bare-const head that is neither declared nor
+  // vocabulary (`Config.value`) is still NOT typed.
   const firstLink = links[0];
-  if (
-    firstLink !== undefined &&
+  const headMember = firstLink === undefined ? null : stripArgs(firstLink);
+  const declaredHead =
+    headMember !== null && CONST_HEAD.test(head) ? declaredReturnType(head, headMember, ctx) : undefined;
+  if (declaredHead !== undefined) {
+    current = declaredHead;
+    startLink = 1;
+  } else if (
+    headMember !== null &&
     CONST_HEAD.test(head) &&
-    catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(stripArgs(firstLink))
+    catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(headMember)
   ) {
     current = { form: "instance", name: head };
     startLink = 1;
@@ -288,6 +301,56 @@ function activeRecordQueryReturn(className: string, member: string, ctx: CallCon
 }
 
 /**
+ * The DECLARED return type at a `<className>.<member>` coordinate: the precise
+ * structured fact, then the same fact inherited through the ancestor MRO. Facts
+ * only — no vocabulary, no flat by-name fallback, no association accessors (those
+ * are instance-only and stay in {@link returnTypeOf}).
+ *
+ * Extracted so the chain-root seed can ask "is this member DECLARED on the root
+ * constant?" through the very channels {@link returnTypeOf} consults, instead of
+ * growing a second lookup that could drift (bd tea-rags-mcp-6zpds).
+ */
+function declaredReturnType(className: string, member: string, ctx: CallContext): RubyTypeRef | undefined {
+  return declaredReturnTypeOn(className, member, ctx, true) ?? inheritedReturnType(className, member, ctx, true);
+}
+
+/**
+ * The structured fact declared AT `<className>.<member>` / `<className>#<member>`.
+ *
+ * Facts are keyed with `#` by default — including `def self.x` `@return`s, which
+ * the engine deliberately answers for class receivers too. A fact that declares
+ * itself class-level (an `@!method self.x` directive) is keyed with `.`, so a
+ * CLASS receiver tries that coordinate first and falls back to the shared `#`
+ * one (bd tea-rags-mcp-8ypeu). Instance receivers never see the `.` key.
+ */
+function declaredReturnTypeOn(
+  className: string,
+  member: string,
+  ctx: CallContext,
+  classReceiver = false,
+): RubyTypeRef | undefined {
+  if (classReceiver) {
+    const classForm = ctx.structuredReturnTypes?.[`${className}.${member}`];
+    if (classForm !== undefined) return classForm;
+  }
+  return ctx.structuredReturnTypes?.[`${className}#${member}`];
+}
+
+/** The structured fact `<member>` inherits from the first ancestor declaring it. */
+function inheritedReturnType(
+  className: string,
+  member: string,
+  ctx: CallContext,
+  classReceiver = false,
+): RubyTypeRef | undefined {
+  for (const ancestor of ctx.classAncestors?.[className] ?? []) {
+    const inherited = declaredReturnTypeOn(ancestor, member, ctx, classReceiver);
+    if (inherited !== undefined) return inherited;
+  }
+  return undefined;
+}
+
+/**
  * The ONE authority for "what type does calling `member` on a receiver of type
  * `recv` yield" (bd tea-rags-mcp-j9xpf — same single-authority discipline as
  * {@link ivarTypeName}). Every reader — the chain engine's hop walk and the
@@ -320,8 +383,7 @@ export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext
   if (recv.form !== "class" && recv.form !== "instance") return undefined;
 
   // 1. Precise structured return type for this class#member key.
-  const key = `${recv.name}#${member}`;
-  const direct = ctx.structuredReturnTypes?.[key];
+  const direct = declaredReturnTypeOn(recv.name, member, ctx, recv.form === "class");
   if (direct !== undefined) return direct;
 
   // 2. Rails association DSL: associationTypes[className][accessorName] → modelName.
@@ -336,10 +398,8 @@ export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext
   }
 
   // 3. Ancestor MRO: walk classAncestors[recv.name] for an inherited return type.
-  for (const ancestor of ctx.classAncestors?.[recv.name] ?? []) {
-    const inherited = ctx.structuredReturnTypes?.[`${ancestor}#${member}`];
-    if (inherited !== undefined) return inherited;
-  }
+  const inherited = inheritedReturnType(recv.name, member, ctx, recv.form === "class");
+  if (inherited !== undefined) return inherited;
 
   // 4. Flat functionReturnTypes fallback — YARD @return map, populated today.
   const flatName = ctx.functionReturnTypes?.[member];

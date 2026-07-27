@@ -92,6 +92,69 @@ describe("typeOfReceiver — Const.new-chain head seed (rvw34 gap b)", () => {
   });
 });
 
+// ── Const-rooted CUSTOM-scope chains (bd tea-rags-mcp-6zpds) ─────────────────
+//
+// `scope :without_deleted` is NOT in the generic AR query vocabulary, so the
+// const-head seed can only type `Owner.without_deleted.find(id)` by consulting
+// the DECLARED fact the association type source already emits for the scope
+// (`structuredReturnTypes["Owner#without_deleted"] → container(Owner)`).
+// Declared facts are consulted FIRST; the vocabulary seed stays the fallback.
+
+describe("typeOfReceiver — const head typed by a DECLARED fact (bd tea-rags-mcp-6zpds)", () => {
+  const scopeFact = {
+    "Owner#without_deleted": { form: "container" as const, element: { form: "instance" as const, name: "Owner" } },
+  };
+
+  it("types a chain through a declared custom scope on the root constant", () => {
+    const ctx = emptyCtx({ structuredReturnTypes: scopeFact });
+    expect(typeOfReceiver("Owner.without_deleted.find(id)", 1, ctx)).toEqual({ form: "instance", name: "Owner" });
+  });
+
+  it("types the scope call itself as the declared relation (no terminal finder)", () => {
+    const ctx = emptyCtx({ structuredReturnTypes: scopeFact });
+    expect(typeOfReceiver("Owner.without_deleted", 1, ctx)).toEqual({
+      form: "container",
+      element: { form: "instance", name: "Owner" },
+    });
+  });
+
+  it("reaches a scope declared on an ANCESTOR of the root constant (MRO, no duplication)", () => {
+    const ctx = emptyCtx({
+      classAncestors: { Owner: ["SoftDeletable"] },
+      structuredReturnTypes: {
+        "SoftDeletable#without_deleted": { form: "container", element: { form: "instance", name: "Owner" } },
+      },
+    });
+    expect(typeOfReceiver("Owner.without_deleted.find", 1, ctx)).toEqual({ form: "instance", name: "Owner" });
+  });
+
+  it("prefers the CLASS-form coordinate for a class receiver, falling back to the instance one", () => {
+    // `Svc.call` and `Svc#call` are different methods (bd tea-rags-mcp-8ypeu):
+    // a `@!method self.call` fact lands on `Svc.call` and must win for the class
+    // receiver without disturbing the instance coordinate.
+    const ctx = emptyCtx({
+      structuredReturnTypes: {
+        "Svc.call": { form: "instance", name: "ServiceResult" },
+        "Svc#call": { form: "instance", name: "InstanceOnly" },
+      },
+    });
+    expect(typeOfReceiver("Svc.call(x)", 1, ctx)).toEqual({ form: "instance", name: "ServiceResult" });
+  });
+
+  it("still returns undefined for an UNDECLARED method on a constant (no heuristic)", () => {
+    const ctx = emptyCtx({ structuredReturnTypes: scopeFact });
+    expect(typeOfReceiver("Owner.mystery_scope.find(id)", 1, ctx)).toBeUndefined();
+  });
+
+  it("leaves the generic vocabulary seed unchanged when no fact is declared", () => {
+    expect(typeOfReceiver("PostStatusService.new.call", 1, emptyCtx())).toBeUndefined();
+    expect(typeOfReceiver("PostStatusService.new", 1, emptyCtx())).toEqual({
+      form: "instance",
+      name: "PostStatusService",
+    });
+  });
+});
+
 // ── @ivar resolution ─────────────────────────────────────────────────────────
 
 describe("typeOfReceiver — @ivar via classFieldTypes", () => {

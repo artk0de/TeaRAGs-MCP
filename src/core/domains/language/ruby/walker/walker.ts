@@ -1052,11 +1052,30 @@ function collectRubyDispatchTables(root: AstNode): Record<string, DispatchTable>
  * known dispatch-table constant.
  *
  *   CONST            → (not a ref on its own)
- *   CONST[k]         → { table: CONST, field: null, key: staticKeyOf }
- *   CONST[k].new     → same ref, field stays null (Kernel#new pass-through)
- *   CONST[k].new.m   → { table: CONST, field: "m", key }
+ *   CONST[k]         → { table: CONST, field: null, key: staticKeyOf, viaInstance: false }
+ *   CONST[k].new     → same ref, field stays null, viaInstance flips true
+ *   CONST[k].new.m   → { table: CONST, field: "m", key, viaInstance: true }
+ *   CONST[k].m       → { table: CONST, field: "m", key, viaInstance: false }
+ *   CONST[k].create!.m → { table: CONST, field: "m", key, viaInstance: true }
+ *
+ * `viaInstance` records whether an instantiator hop happened, which decides the
+ * symbolId form the resolver looks up: `Class#m` after `.new`, `Class.m` for a
+ * direct class-method call (bd tea-rags-mcp-exmwr).
+ *
+ * `.new` is a PURE pass-through: it names no in-project member, so its own node
+ * carries no field and emits no edge. The other instantiators — the catalogue's
+ * `instanceReturning` facet, i.e. the AR/factory verbs whose return IS an
+ * instance of the receiver class (`create!`, `build`, `find!`, …) — are real
+ * members that a value class MAY define, so their node keeps its field (the
+ * class-form edge) while the NEXT hop continues the chain as an instance member
+ * (bd tea-rags-mcp-va9ng). One hop: a member of an already-instance ref ends the
+ * chain, exactly as before.
  */
-function exprToRubyDispatchRef(node: AstNode, tableNames: ReadonlySet<string>): DispatchRef | null {
+function exprToRubyDispatchRef(
+  node: AstNode,
+  tableNames: ReadonlySet<string>,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): DispatchRef | null {
   if (node.type === "element_reference") {
     const obj = node.childForFieldName("object") ?? node.namedChildren[0];
     if (!obj) return null;
@@ -1065,18 +1084,27 @@ function exprToRubyDispatchRef(node: AstNode, tableNames: ReadonlySet<string>): 
     if (objName === null || !tableNames.has(objName)) return null;
     // The subscript index is the named child after the object.
     const index = node.namedChildren[1] ?? null;
-    return { table: objName, field: null, key: rubyDispatchKeyText(index) };
+    return { table: objName, field: null, key: rubyDispatchKeyText(index), viaInstance: false };
   }
   if (node.type === "call" || node.type === "method_call") {
     const receiver = node.childForFieldName("receiver");
     const method = node.childForFieldName("method");
     if (!receiver || !method) return null;
-    const inner = exprToRubyDispatchRef(receiver, tableNames);
+    const inner = exprToRubyDispatchRef(receiver, tableNames, catalogue);
     if (!inner) return null;
-    // `.new` on a table-bound chain is a pass-through (instantiation, no edge).
-    if (method.text === "new" && inner.field === null) return inner;
-    // Outer `.member` on an entry-ref (field still null) → select the member.
-    if (inner.field === null) return { table: inner.table, field: method.text, key: inner.key };
+    // `.new` on a table-bound chain is a pass-through (instantiation, no edge)
+    // that rebinds the receiver from the CLASS to one of its instances.
+    if (method.text === "new" && inner.field === null) return { ...inner, viaInstance: true };
+    // Outer `.member` on an entry-ref (field still null) → select the member,
+    // carrying the receiver form the chain has reached so far.
+    if (inner.field === null) {
+      return { table: inner.table, field: method.text, key: inner.key, viaInstance: inner.viaInstance };
+    }
+    // Post-factory hop: the inner ref selected a CLASS member that is an
+    // instantiator by framework convention, so this hop lands on an instance.
+    if (inner.viaInstance !== true && catalogue.instanceReturning.has(inner.field)) {
+      return { table: inner.table, field: method.text, key: inner.key, viaInstance: true };
+    }
   }
   return null;
 }
@@ -1561,11 +1589,12 @@ function emitMethodCallRef(
   dynamicSend: boolean,
   dispatchTableNames: ReadonlySet<string>,
   out: CallRef[],
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): void {
   const startLine = node.startPosition.row + 1;
   const callRef: CallRef = { callText: node.text, receiver: receiverText, member: method.text, startLine };
   if (dynamicSend) callRef.dynamicSend = true;
-  const dispatch = exprToRubyDispatchRef(node, dispatchTableNames);
+  const dispatch = exprToRubyDispatchRef(node, dispatchTableNames, catalogue);
   if (dispatch?.field) callRef.dispatch = dispatch;
   // Positional argCount (bd xlnub): excludes block and keyword args
   callRef.argCount = computeArgCount(node);
@@ -1706,7 +1735,7 @@ function collectRubyCalls(
 
       // The macro/method's own literal call edge, plus the block-pass `&:sym`
       // edge if present. Both lifted verbatim into emit helpers.
-      emitMethodCallRef(node, receiverText, method, dynamicSend, dispatchTableNames, out);
+      emitMethodCallRef(node, receiverText, method, dynamicSend, dispatchTableNames, out, catalogue);
       emitBlockPassEdge(node, out);
     }
 
