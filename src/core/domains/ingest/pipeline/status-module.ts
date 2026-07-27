@@ -34,39 +34,60 @@ import { parseMarkerPayload } from "./indexing-marker-codec.js";
 /** If indexing marker says "in progress" for longer than this, report as stale */
 const STALE_INDEXING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
-/**
- * `callsResolved / max(1, attempted − externalSkipped − unresolvable − noInProjectDef)`;
- * 0 when nothing attempted. cai0.2 (Option A): the denominator also excludes
- * calls whose member has no in-project def — they can never resolve to an
- * in-project symbol, so they are not resolver failures — making this rate equal
- * to {@link edgeRecall} (inProjectEdgeRecall) by construction.
- */
-function resolveRate(
-  attempted: number,
-  resolved: number,
-  externalSkipped: number,
-  unresolvable: number,
-  noInProjectDef: number,
-): number {
-  return attempted === 0 ? 0 : resolved / Math.max(1, attempted - externalSkipped - unresolvable - noInProjectDef);
+/** Running tally aggregated from `cg_run_stats` rows (per language or per kind). */
+interface ResolveTally {
+  attempted: number;
+  resolved: number;
+  externalSkipped: number;
+  unresolvable: number;
+  noInProjectDef: number;
+  coreAmbiguous: number;
+  ambiguousFanout: number;
+}
+
+function emptyTally(): ResolveTally {
+  return {
+    attempted: 0,
+    resolved: 0,
+    externalSkipped: 0,
+    unresolvable: 0,
+    noInProjectDef: 0,
+    coreAmbiguous: 0,
+    ambiguousFanout: 0,
+  };
 }
 
 /**
- * Graph completeness: `resolved / (resolved + missWithInProjectDef)`. A genuine
- * miss whose member has no in-project def (`noInProjectDef`) can never yield an
- * edge, so it is excluded — recall reflects only the calls that COULD resolve to
- * a project symbol. 0 when the denominator is empty.
+ * Genuine recall holes in a tally: attempted misses minus every bucket that can
+ * never become an in-project edge — external-library targets (ykj7), dynamic
+ * sends (cai0), members with no in-project def (cai0.2), and core homonyms on an
+ * untyped receiver (83cl7). The single place the exclusion list is written, so
+ * the three rates below can never drift apart.
  */
-function edgeRecall(
-  attempted: number,
-  resolved: number,
-  externalSkipped: number,
-  unresolvable: number,
-  noInProjectDef: number,
-): number {
-  const missWithInProjectDef = Math.max(0, attempted - resolved - externalSkipped - unresolvable - noInProjectDef);
-  const denominator = resolved + missWithInProjectDef;
-  return denominator === 0 ? 0 : resolved / denominator;
+function missWithInProjectDef(t: ResolveTally): number {
+  return Math.max(0, t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef - t.coreAmbiguous);
+}
+
+/**
+ * `resolved / max(1, attempted − <every excluded bucket>)`; 0 when nothing
+ * attempted. cai0.2 (Option A): the denominator excludes calls whose member has
+ * no in-project def — they can never resolve to an in-project symbol, so they
+ * are not resolver failures — making this rate equal to {@link edgeRecall}
+ * (inProjectEdgeRecall) by construction. 83cl7 adds core homonyms on the same
+ * grounds.
+ */
+function resolveRate(t: ResolveTally): number {
+  return t.attempted === 0 ? 0 : t.resolved / Math.max(1, t.resolved + missWithInProjectDef(t));
+}
+
+/**
+ * Graph completeness: `resolved / (resolved + missWithInProjectDef)` — see
+ * {@link missWithInProjectDef} for what is excluded. 0 when the denominator is
+ * empty.
+ */
+function edgeRecall(t: ResolveTally): number {
+  const denominator = t.resolved + missWithInProjectDef(t);
+  return denominator === 0 ? 0 : t.resolved / denominator;
 }
 
 /**
@@ -77,31 +98,9 @@ function edgeRecall(
  * completeness when that aggregate is accepted as coverage. 0 when the
  * denominator is empty.
  */
-function coveredRecall(
-  attempted: number,
-  resolved: number,
-  externalSkipped: number,
-  unresolvable: number,
-  noInProjectDef: number,
-  ambiguousFanout: number,
-): number {
-  const missWithInProjectDef = Math.max(0, attempted - resolved - externalSkipped - unresolvable - noInProjectDef);
-  const denominator = resolved + missWithInProjectDef;
-  return denominator === 0 ? 0 : (resolved + ambiguousFanout) / denominator;
-}
-
-/** Running tally aggregated from `cg_run_stats` rows (per language or per kind). */
-interface ResolveTally {
-  attempted: number;
-  resolved: number;
-  externalSkipped: number;
-  unresolvable: number;
-  noInProjectDef: number;
-  ambiguousFanout: number;
-}
-
-function emptyTally(): ResolveTally {
-  return { attempted: 0, resolved: 0, externalSkipped: 0, unresolvable: 0, noInProjectDef: 0, ambiguousFanout: 0 };
+function coveredRecall(t: ResolveTally): number {
+  const denominator = t.resolved + missWithInProjectDef(t);
+  return denominator === 0 ? 0 : (t.resolved + t.ambiguousFanout) / denominator;
 }
 
 /**
@@ -133,24 +132,34 @@ function buildByReceiverKind(kinds: Map<string, ResolveTally>): CodegraphResolve
     .filter(([, t]) => t.attempted > 0)
     .map(([receiverKind, t]) => ({
       receiverKind,
-      inProjectEdgeRecall: edgeRecall(t.attempted, t.resolved, t.externalSkipped, t.unresolvable, t.noInProjectDef),
-      coveredRecall: coveredRecall(
-        t.attempted,
-        t.resolved,
-        t.externalSkipped,
-        t.unresolvable,
-        t.noInProjectDef,
-        t.ambiguousFanout,
-      ),
+      inProjectEdgeRecall: edgeRecall(t),
+      coveredRecall: coveredRecall(t),
       attempted: t.attempted,
       resolved: t.resolved,
       externalSkipped: t.externalSkipped,
       unresolvable: t.unresolvable,
       callsNoInProjectDef: t.noInProjectDef,
+      callsCoreAmbiguous: t.coreAmbiguous,
       ambiguousFanout: t.ambiguousFanout,
-      resolveSuccessRate: resolveRate(t.attempted, t.resolved, t.externalSkipped, t.unresolvable, t.noInProjectDef),
+      resolveSuccessRate: resolveRate(t),
     }))
     .sort((a, b) => b.attempted - a.attempted);
+}
+
+/**
+ * Accumulate one persisted row into a tally. Columns added by a later migration
+ * default to 0 for rows written before it (`unresolvable` 010, `no_in_project_def`
+ * 011, `ambiguous_fanout` 013, `core_ambiguous` 015) — an old index then reads
+ * its pre-migration rate until the next re-index repopulates the columns.
+ */
+function addRow(t: ResolveTally, r: ResolveRunStatsRow): void {
+  t.attempted += r.attempted;
+  t.resolved += r.resolved;
+  t.externalSkipped += r.externalSkipped;
+  t.unresolvable += r.unresolvable ?? 0;
+  t.noInProjectDef += r.noInProjectDef ?? 0;
+  t.coreAmbiguous += r.coreAmbiguous ?? 0;
+  t.ambiguousFanout += r.ambiguousFanout ?? 0;
 }
 
 /**
@@ -183,41 +192,21 @@ export function summarizeCodegraphResolve(
   // (nested) and the single-language top-level case. The prime `## Codegraph
   // resolve` per-kind section auto-omits when no breakdown is present.
   const debug = isDebug();
-  let attempted = 0;
-  let resolved = 0;
-  let externalSkipped = 0;
-  let unresolvable = 0;
-  let noInProjectDef = 0;
-  let ambiguousFanout = 0;
+  const total = emptyTally();
   const byLang = new Map<string, ResolveTally>();
   // Per-language receiver-kind tally (bd tea-rags-mcp-7m5xz). Unlabeled rows are
   // excluded here exactly as they are for byLanguage. Populated only under DEBUG.
   const byLangKind = new Map<string, Map<string, ResolveTally>>();
   for (const r of rows) {
-    attempted += r.attempted;
-    resolved += r.resolved;
-    externalSkipped += r.externalSkipped;
-    unresolvable += r.unresolvable ?? 0; // pre-cai0 rows default to 0 (field added by migration 010)
-    noInProjectDef += r.noInProjectDef ?? 0; // pre-recall rows default to 0 (column added later)
-    ambiguousFanout += r.ambiguousFanout ?? 0; // pre-013 rows default to 0 (bd f2jsb / j0pki)
+    addRow(total, r);
     if (!r.language) continue; // unlabeled (pre-cnqrg / direct-mode) — aggregate only
     const e = byLang.get(r.language) ?? emptyTally();
-    e.attempted += r.attempted;
-    e.resolved += r.resolved;
-    e.externalSkipped += r.externalSkipped;
-    e.unresolvable += r.unresolvable ?? 0;
-    e.noInProjectDef += r.noInProjectDef ?? 0;
-    e.ambiguousFanout += r.ambiguousFanout ?? 0;
+    addRow(e, r);
     byLang.set(r.language, e);
     if (!debug) continue; // short form: skip receiver-kind tally entirely
     const kinds = byLangKind.get(r.language) ?? new Map<string, ResolveTally>();
     const k = kinds.get(r.receiverKind) ?? emptyTally();
-    k.attempted += r.attempted;
-    k.resolved += r.resolved;
-    k.externalSkipped += r.externalSkipped;
-    k.unresolvable += r.unresolvable ?? 0;
-    k.noInProjectDef += r.noInProjectDef ?? 0;
-    k.ambiguousFanout += r.ambiguousFanout ?? 0;
+    addRow(k, r);
     kinds.set(r.receiverKind, k);
     byLangKind.set(r.language, kinds);
   }
@@ -227,41 +216,31 @@ export function summarizeCodegraphResolve(
     // denominator also excludes noInProjectDef, so it now EQUALS
     // inProjectEdgeRecall (the former "denominator-polluted" gap is closed —
     // collapsing the two fields into one is a separate DTO decision).
-    inProjectEdgeRecall: edgeRecall(attempted, resolved, externalSkipped, unresolvable, noInProjectDef),
+    inProjectEdgeRecall: edgeRecall(total),
     // bd f2jsb / j0pki — dual recall: strict above (ambiguous stays a miss in
     // the denominator), covered below (the aggregate counts as coverage).
-    coveredRecall: coveredRecall(attempted, resolved, externalSkipped, unresolvable, noInProjectDef, ambiguousFanout),
-    callsAttempted: attempted,
-    callsResolved: resolved,
-    callsExternalSkipped: externalSkipped,
-    callsUnresolvable: unresolvable,
-    callsNoInProjectDef: noInProjectDef,
-    ambiguousFanout,
-    ...(debug
-      ? { resolveSuccessRate: resolveRate(attempted, resolved, externalSkipped, unresolvable, noInProjectDef) }
-      : {}),
+    coveredRecall: coveredRecall(total),
+    callsAttempted: total.attempted,
+    callsResolved: total.resolved,
+    callsExternalSkipped: total.externalSkipped,
+    callsUnresolvable: total.unresolvable,
+    callsNoInProjectDef: total.noInProjectDef,
+    callsCoreAmbiguous: total.coreAmbiguous,
+    ambiguousFanout: total.ambiguousFanout,
+    ...(debug ? { resolveSuccessRate: resolveRate(total) } : {}),
   };
   const byLanguage: CodegraphResolveLanguageRow[] = [...byLang.entries()]
-    .filter(([, t]) => attempted > 0 && t.attempted / attempted >= MIN_LANGUAGE_SHARE)
+    .filter(([, t]) => total.attempted > 0 && t.attempted / total.attempted >= MIN_LANGUAGE_SHARE)
     .map(([language, t]) => ({
       language,
-      inProjectEdgeRecall: edgeRecall(t.attempted, t.resolved, t.externalSkipped, t.unresolvable, t.noInProjectDef),
+      inProjectEdgeRecall: edgeRecall(t),
       callsAttempted: t.attempted,
       callsResolved: t.resolved,
       callsExternalSkipped: t.externalSkipped,
       callsUnresolvable: t.unresolvable,
       callsNoInProjectDef: t.noInProjectDef,
-      ...(debug
-        ? {
-            resolveSuccessRate: resolveRate(
-              t.attempted,
-              t.resolved,
-              t.externalSkipped,
-              t.unresolvable,
-              t.noInProjectDef,
-            ),
-          }
-        : {}),
+      callsCoreAmbiguous: t.coreAmbiguous,
+      ...(debug ? { resolveSuccessRate: resolveRate(t) } : {}),
       // Absent unless DEBUG built the tally above.
       ...(debug
         ? { byReceiverKind: buildByReceiverKind(byLangKind.get(language) ?? new Map<string, ResolveTally>()) }

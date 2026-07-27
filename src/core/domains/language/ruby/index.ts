@@ -122,6 +122,8 @@ export class RubyLanguage implements LanguageProvider {
       resolveFileEdges: (extraction, ctx) => callResolver.resolveFileEdges?.(extraction, ctx) ?? [],
       targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
+      targetsCoreAmbiguousMember: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false,
     };
   }
 }

@@ -13,14 +13,24 @@ export function defineFrameworkVocabulary(
   runtimeBuiltins?: ReadonlySet<string>,
   extras?: Pick<
     RubyFrameworkVocabulary,
-    "instanceReturning" | "relationReturning" | "enqueueDispatch" | "activatedBy" | "structuredMacros"
+    | "instanceReturning"
+    | "relationReturning"
+    | "enqueueDispatch"
+    | "activatedBy"
+    | "structuredMacros"
+    | "coreAmbiguousMembers"
   >,
 ): RubyFrameworkVocabulary {
+  const coreAmbiguousMembers = extras?.coreAmbiguousMembers;
   return {
     framework,
     entries,
     runtimeBuiltins,
     hasExternalMember: (member) => member in entries || (runtimeBuiltins?.has(member) ?? false),
+    // bd tea-rags-mcp-83cl7 — the core-member axis is OPT-IN per framework: a gem
+    // verb is external, never a core homonym, so a module without the facet
+    // answers false and can never shrink the recall denominator.
+    hasCoreAmbiguousMember: (member) => coreAmbiguousMembers?.has(member) ?? false,
     ...extras,
   };
 }

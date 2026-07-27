@@ -168,6 +168,17 @@ export interface RubyFrameworkVocabulary {
   readonly runtimeBuiltins?: ReadonlySet<string>;
   /** Is `member` part of this framework's external-callable surface? */
   hasExternalMember: (member: string) => boolean;
+  /**
+   * bd tea-rags-mcp-83cl7 — members of this framework's CORE vocabulary that are
+   * AMBIGUOUS on an untyped receiver: the real callee is the language runtime,
+   * but a project class may define the same short name (`each`, `to_s`,
+   * `first`). Only `ruby-core` populates it — a gem verb is not a core homonym.
+   * Absent ⟺ this framework contributes nothing to the core-member axis.
+   */
+  readonly coreAmbiguousMembers?: ReadonlySet<string>;
+  /** Is `member` a CORE member of this framework (homonym-ambiguous on an
+   *  untyped receiver)? False for a framework with no `coreAmbiguousMembers`. */
+  hasCoreAmbiguousMember: (member: string) => boolean;
   /** Methods that, on a class-CONSTANT receiver, return an INSTANCE of that
    *  constant (constructor + factory + finder). ruby-core: {new}; rails(AR):
    *  find/create!/build/finders. Consumed by ast-inference constInstanceType. */

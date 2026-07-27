@@ -154,6 +154,17 @@ export class RubyCallResolver implements CallResolver {
   }
 
   /**
+   * tea-rags-mcp-83cl7 — core-homonym classifier for an UNRESOLVED call the
+   * external arm did not claim. Delegates to the same language-neutral
+   * `ExternalCallClassifier`; the Ruby primitives (core vocabulary fold,
+   * receiver typedness via `typeOfReceiver` / `ivarTypeName`) live in
+   * `RubyExternalVocabulary`.
+   */
+  targetsCoreAmbiguousMember(call: CallRef, ctx: CallContext): boolean {
+    return this.externalClassifier.targetsCoreAmbiguousMember(call, ctx);
+  }
+
+  /**
    * Fan-out resolution for a Ruby call, composed in precedence order:
    *
    *   1. Registry-literal table (bd tea-rags-mcp-pq02v) — a `CONST[k].new.m`

@@ -1322,6 +1322,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       callsExternalSkipped,
       callsUnresolvable,
       callsNoInProjectDef,
+      callsCoreAmbiguous,
     } = this.runStats;
     if (extractedFiles === 0 && fileEdgeCount === 0 && methodEdgeCount === 0) {
       this.runStats = createEmptyRunStats();
@@ -1355,15 +1356,23 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // call was external / no-in-project-def.
     const internalAttempted = Math.max(
       1,
-      callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef,
+      callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
     );
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / internalAttempted;
     // inProjectEdgeRecall — graph completeness. A genuine miss whose member has
     // no in-project definition (callsNoInProjectDef) can never yield an edge, so
-    // it is excluded; only misses WITH an in-project def are true recall holes.
+    // it is excluded; likewise a core homonym reached through an untyped receiver
+    // (callsCoreAmbiguous, bd 83cl7) — its in-project def is a same-name
+    // coincidence, the real callee is the runtime. Only the residual misses WITH
+    // an in-project def are true recall holes.
     const missWithInProjectDef = Math.max(
       0,
-      callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef,
+      callsAttempted -
+        callsResolved -
+        callsExternalSkipped -
+        callsUnresolvable -
+        callsNoInProjectDef -
+        callsCoreAmbiguous,
     );
     const recallDenominator = callsResolved + missWithInProjectDef;
     const inProjectEdgeRecall = recallDenominator === 0 ? 0 : callsResolved / recallDenominator;
@@ -1409,6 +1418,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       callsExternalSkipped,
       callsUnresolvable,
       callsNoInProjectDef,
+      callsCoreAmbiguous,
       resolveByReceiverKind,
     };
   }
@@ -2014,6 +2024,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           externalSkipped: t.externalSkipped,
           unresolvable: t.unresolvable,
           noInProjectDef: t.noInProjectDef,
+          coreAmbiguous: t.coreAmbiguous,
           ambiguousFanout: t.ambiguousFanout,
         });
       }
@@ -2550,6 +2561,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           // true recall hole, derived in getRunMetrics.
           this.runStats.callsNoInProjectDef += 1;
           kindTally[receiverKind].noInProjectDef += 1;
+        } else if (resolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false) {
+          // tea-rags-mcp-83cl7 — CORE HOMONYM. The member IS defined somewhere
+          // in the project (the branch above did not fire), but it is a core /
+          // runtime name on an UNTYPED receiver (`row.cells.each`), so the real
+          // callee is Enumerable#each and the project def is a same-name
+          // coincidence. Counted here rather than as a recall hole it can never
+          // be — the mirror of the ykj7 external skip, one branch later. Placed
+          // AFTER the two gates above so externalSkipped / noInProjectDef stay
+          // byte-identical; only the residual missWithInProjectDef is carved.
+          this.runStats.callsCoreAmbiguous += 1;
+          kindTally[receiverKind].coreAmbiguous += 1;
         }
       }
     }
@@ -2581,6 +2603,11 @@ interface ReceiverKindTally {
   // (gem/core/runtime-generated/dynamic). Excluded from the inProjectEdgeRecall
   // denominator. Persisted to cg_run_stats.no_in_project_def.
   noInProjectDef: number;
+  // bd tea-rags-mcp-83cl7 — unresolved calls in this bucket whose member is a
+  // CORE/runtime name on an UNTYPED receiver, where a project homonym def
+  // defeats the noInProjectDef gate. Excluded from the inProjectEdgeRecall
+  // denominator. Persisted to cg_run_stats.core_ambiguous.
+  coreAmbiguous: number;
   // bd f2jsb/j0pki — unresolved-but-over-cap-ambiguous dispatch fan-outs in
   // this bucket (subset of attempted − resolved). Its own bucket: NOT a genuine
   // miss, NOT external. Persisted to cg_run_stats.ambiguous_fanout.
@@ -2612,6 +2639,15 @@ interface RunStats {
   // bucket (callsAttempted − callsResolved − callsExternalSkipped −
   // callsUnresolvable).
   callsNoInProjectDef: number;
+  // bd tea-rags-mcp-83cl7 — genuine-miss calls whose member IS defined in the
+  // project but is a CORE/runtime name (`each`, `to_s`, `first`) reached through
+  // an UNTYPED receiver: the real callee is the runtime and the project def is a
+  // same-name coincidence. On taxdome this phantom was 4391 of 20964 recorded
+  // recall holes. Excluded from the inProjectEdgeRecall / resolveSuccessRate
+  // denominators exactly like callsNoInProjectDef. Subset of the residual
+  // genuine-miss bucket (callsAttempted − callsResolved − callsExternalSkipped −
+  // callsUnresolvable − callsNoInProjectDef).
+  callsCoreAmbiguous: number;
   // bd f2jsb/j0pki — subset of (callsAttempted − callsResolved) that the
   // dispatch kernel judged over-cap AMBIGUOUS (survivors > corpus-adaptive
   // fan-out cap) and recorded as a cg_ambiguous_fanout aggregate instead of m
@@ -2639,6 +2675,7 @@ function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally> {
       externalSkipped: 0,
       unresolvable: 0,
       noInProjectDef: 0,
+      coreAmbiguous: 0,
       ambiguousFanout: 0,
     };
   }
@@ -2667,6 +2704,8 @@ function aggregateReceiverKinds(stats: RunStats): Record<ReceiverKind, ReceiverK
       out[kind].resolved += kinds[kind].resolved;
       out[kind].externalSkipped += kinds[kind].externalSkipped;
       out[kind].unresolvable += kinds[kind].unresolvable;
+      out[kind].noInProjectDef += kinds[kind].noInProjectDef;
+      out[kind].coreAmbiguous += kinds[kind].coreAmbiguous;
       out[kind].ambiguousFanout += kinds[kind].ambiguousFanout;
     }
   }
@@ -2683,6 +2722,7 @@ function createEmptyRunStats(): RunStats {
     callsExternalSkipped: 0,
     callsUnresolvable: 0,
     callsNoInProjectDef: 0,
+    callsCoreAmbiguous: 0,
     callsAmbiguousFanout: 0,
     byLanguageKind: new Map(),
   };

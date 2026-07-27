@@ -1257,7 +1257,7 @@ export class DuckDbGraphClient implements GraphDbClient {
         await this.run("DELETE FROM cg_run_stats");
         for (const r of rows) {
           await this.run(
-            "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, ambiguous_fanout) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
               r.language,
               r.receiverKind,
@@ -1266,6 +1266,7 @@ export class DuckDbGraphClient implements GraphDbClient {
               r.externalSkipped,
               r.unresolvable,
               r.noInProjectDef ?? 0,
+              r.coreAmbiguous ?? 0,
               r.ambiguousFanout ?? 0,
             ],
           );
@@ -1287,9 +1288,10 @@ export class DuckDbGraphClient implements GraphDbClient {
       external_skipped: number | bigint;
       unresolvable: number | bigint;
       no_in_project_def: number | bigint;
+      core_ambiguous: number | bigint;
       ambiguous_fanout: number | bigint;
     }>(
-      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, ambiguous_fanout FROM cg_run_stats ORDER BY language, receiver_kind",
+      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout FROM cg_run_stats ORDER BY language, receiver_kind",
     );
     return rows.map((r) => ({
       language: r.language,
@@ -1299,6 +1301,7 @@ export class DuckDbGraphClient implements GraphDbClient {
       externalSkipped: Number(r.external_skipped),
       unresolvable: Number(r.unresolvable),
       noInProjectDef: Number(r.no_in_project_def),
+      coreAmbiguous: Number(r.core_ambiguous),
       ambiguousFanout: Number(r.ambiguous_fanout),
     }));
   }

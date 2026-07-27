@@ -3,6 +3,7 @@ export {
   composeRubyCatalogue,
   enqueueEntrypoint,
   FULL_RUBY_CATALOGUE,
+  isCoreAmbiguousMember,
   isExternalBareCall,
   isExternalQualifiedMember,
   type RubyDslCatalogue,

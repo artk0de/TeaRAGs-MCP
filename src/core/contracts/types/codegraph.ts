@@ -845,6 +845,24 @@ export interface CallResolver {
    * over-shrinks).
    */
   targetsExternalImport?: (call: CallRef, ctx: CallContext) => boolean;
+  /**
+   * Optional: is this UNRESOLVED, non-external call a CORE HOMONYM
+   * (tea-rags-mcp-83cl7)? True when the member belongs to the language's core /
+   * runtime vocabulary (`each`, `to_s`, `first`) AND the receiver is UNTYPED —
+   * the real callee is the runtime, but a project class defining the same short
+   * name defeats the `lookupByShortName === 0` gate and manufactures a phantom
+   * recall hole. Counted as `callsCoreAmbiguous` and excluded from the
+   * `inProjectEdgeRecall` / `resolveSuccessRate` denominators, exactly like
+   * `callsExternalSkipped`.
+   *
+   * Consulted ONLY after `targetsExternalImport` and the no-in-project-def gate,
+   * and never for a resolved call. A TYPED receiver whose class genuinely
+   * defines the member must answer `false` — precision runs in reverse here, a
+   * wrong `true` HIDES a real miss. Mirrors
+   * `LanguageSymbolResolver.targetsCoreAmbiguousMember`; resolvers that omit it
+   * keep every such call in the denominator.
+   */
+  targetsCoreAmbiguousMember?: (call: CallRef, ctx: CallContext) => boolean;
 }
 
 /**
@@ -1464,6 +1482,15 @@ export interface ResolveRunStatsRow {
    * column was added (the recall then collapses to raw capability).
    */
   noInProjectDef?: number;
+  /**
+   * bd tea-rags-mcp-83cl7 — of the `attempted − resolved` misses in this bucket,
+   * how many are CORE HOMONYMS: a core/runtime member (`each`, `to_s`, `first`)
+   * on an UNTYPED receiver, whose in-project def of the same short name is a
+   * coincidence. Excluded from the inProjectEdgeRecall denominator alongside
+   * `noInProjectDef`. Defaults to 0 for rows persisted before the column was
+   * added (recall then reads its pre-83cl7 value).
+   */
+  coreAmbiguous?: number;
   /**
    * bd tea-rags-mcp-f2jsb / j0pki — of the `attempted − resolved` misses in
    * this bucket, how many the dispatch kernel judged over-cap AMBIGUOUS

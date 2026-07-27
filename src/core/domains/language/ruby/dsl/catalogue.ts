@@ -111,6 +111,20 @@ export const enqueueEntrypoint = (member: string): string | undefined => RUBY_EN
 export const isExternalBareCall = (member: string): boolean => FRAMEWORKS.some((f) => f.hasExternalMember(member));
 
 /**
+ * bd tea-rags-mcp-83cl7 — is `member` a Ruby CORE member (Kernel/Object plus the
+ * Enumerable/Array/Hash/String universals)? Fold over the registry, same shape as
+ * {@link isExternalBareCall}; only `ruby-core` declares the facet, so a gem verb
+ * answers false. NOT gem-gated: the core vocabulary is present in every project
+ * regardless of its Gemfile.
+ *
+ * This answers the VOCABULARY half of the core-homonym classification. The
+ * TYPEDNESS half (is the receiver untyped?) lives in `RubyExternalVocabulary` —
+ * both are composed by `ExternalCallClassifier.targetsCoreAmbiguousMember`.
+ */
+export const isCoreAmbiguousMember = (member: string): boolean =>
+  FRAMEWORKS.some((f) => f.hasCoreAmbiguousMember(member));
+
+/**
  * A composed, per-project Ruby DSL catalogue — the same surface as the full
  * module-level `RUBY_*` consts, but built from only the ACTIVE frameworks. The
  * default full catalogue (`composeRubyCatalogue(null)`) is what the `RUBY_*`

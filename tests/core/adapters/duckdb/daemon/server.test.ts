@@ -468,6 +468,7 @@ describe("CodegraphDaemonServer.handle", () => {
         externalSkipped: 0,
         unresolvable: 3,
         noInProjectDef: 0,
+        coreAmbiguous: 0,
         ambiguousFanout: 0,
       },
       {
@@ -478,6 +479,7 @@ describe("CodegraphDaemonServer.handle", () => {
         externalSkipped: 7,
         unresolvable: 0,
         noInProjectDef: 0,
+        coreAmbiguous: 0,
         ambiguousFanout: 0,
       },
     ]);

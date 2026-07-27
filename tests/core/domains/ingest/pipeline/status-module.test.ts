@@ -154,6 +154,7 @@ describe("StatusModule", () => {
           callsExternalSkipped: 50,
           callsUnresolvable: 0,
           callsNoInProjectDef: 0,
+          callsCoreAmbiguous: 0,
           ambiguousFanout: 0,
           resolveSuccessRate: 60 / 70,
         });

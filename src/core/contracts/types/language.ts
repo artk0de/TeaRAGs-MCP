@@ -153,6 +153,28 @@ export interface ExternalVocabulary {
    * classifier treats it as `false` (no behavior change). bd tea-rags-mcp-i9id8.
    */
   isQualifiedMemberExternal?: (member: string) => boolean;
+  /**
+   * bd tea-rags-mcp-83cl7 — is this MEMBER part of the language's CORE
+   * vocabulary (`each`, `to_s`, `first`, `join`)? The VOCABULARY half of the
+   * core-homonym classification; the classifier pairs it with
+   * {@link isReceiverTyped}. Optional: a vocabulary that omits it contributes
+   * nothing to the `coreAmbiguous` bucket (every miss stays in the denominator).
+   */
+  isCoreAmbiguousMember?: (member: string) => boolean;
+  /**
+   * bd tea-rags-mcp-83cl7 — does this receiver have a KNOWN static type
+   * (localBinding / ivar / chain / declared param), or is it a structurally
+   * self-identifying receiver (`self`, `super`, a constant)? The TYPEDNESS half
+   * of the core-homonym classification, and its precision guard: a TYPED
+   * receiver whose class genuinely defines the core-named member must stay a
+   * REAL miss, so returning `true` here forbids the `coreAmbiguous` bucket.
+   *
+   * `atLine` (1-based) is the call's `startLine`, needed for position-aware
+   * local-binding lookup. Optional: a vocabulary that omits the predicate is
+   * treated as "always typed", which disables the bucket entirely — the
+   * conservative direction (never hides a miss).
+   */
+  isReceiverTyped?: (receiver: string, ctx: CallContext, atLine?: number) => boolean;
 }
 
 /**
@@ -439,6 +461,17 @@ export interface LanguageSymbolResolver {
    * every unresolved call in the denominator (conservative — never over-shrinks).
    */
   targetsExternalImport?: (call: CallRef, ctx: CallContext) => boolean;
+  /**
+   * Optional: is this UNRESOLVED, non-external call a CORE HOMONYM
+   * (tea-rags-mcp-83cl7)? A core-vocabulary member (`each`, `to_s`, `first`) on
+   * an UNTYPED receiver, where some project class defines the same short name —
+   * the real callee is the runtime, so counting it as a recall hole is a phantom.
+   * Returning `true` moves the call into `callsCoreAmbiguous`, out of the
+   * `inProjectEdgeRecall` denominator. A TYPED receiver whose class defines the
+   * member must answer `false` (precision runs in reverse — a wrong `true` hides
+   * a real miss). Mirrors `CallResolver.targetsCoreAmbiguousMember`.
+   */
+  targetsCoreAmbiguousMember?: (call: CallRef, ctx: CallContext) => boolean;
 }
 
 /**
