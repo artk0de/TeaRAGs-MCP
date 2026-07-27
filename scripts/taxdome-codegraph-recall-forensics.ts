@@ -4904,6 +4904,10 @@ async function main(): Promise<void> {
     [...runSelfInstantiatingClassMethods, ...Object.keys(runSelfDispatchTemplates)],
     runStructuredReturnTypes,
     selfDispatchProbe.relatedConcreteTypes,
+    // Existence oracle (bd tea-rags-mcp-yt3im), same predicate `RunState.seal`
+    // builds: a declared fact naming a type this run declares nowhere is an
+    // annotation fiction and does not outrank the derivation.
+    (typeName) => symbolTable.lookup(typeName).length > 0 || runAncestors[typeName] !== undefined,
   );
   for (const [key, ref] of Object.entries(entryReturnTypes)) runStructuredReturnTypes[key] = ref;
   // 2a5oo production mirror: column VALUE types merge LAST and only where the
