@@ -54,6 +54,7 @@ import type {
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CallContext,
+  ClassFieldParamLink,
   DispatchTableDef,
   ExtractionSink,
   FileExtraction,
@@ -62,6 +63,7 @@ import type {
   GraphEdges,
   HierarchyView,
   InheritanceEdgeRow,
+  KnownTargetCallArgs,
   ResolveRunStatsRow,
   SymbolDefinition,
   SymbolId,
@@ -101,6 +103,13 @@ import {
   CodegraphSpillIoError,
 } from "../../errors.js";
 import { buildCodegraphExclusionFilter, collectSchemaColumnSources, type CodegraphExclusionOptions } from "../exclusion.js";
+import {
+  deriveClassFieldTypesFromParams,
+  foldKnownTargetParamTypes,
+  mergeDerivedClassFieldTypes,
+  seedParamLocalBindings,
+  type KnownTargetParamTypes,
+} from "./call-arg-param-types.js";
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 import { classifyReceiverKind, RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
@@ -673,6 +682,51 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runSelfInstantiatingClassMethods: string[] = [];
   /**
+   * Per-run accumulation of known-target call-site argument types (bd
+   * tea-rags-mcp-bvalc), DEDUPED by (targets, argTypes): a fold over agreement
+   * is idempotent, so a thousand identical `Foo.new(bar)` sites contribute one
+   * record while two DISAGREEING sites stay two and still conflict. Keeps the
+   * pass-1 heap proportional to distinct call shapes rather than call sites.
+   * Populated for Ruby files only; reset alongside `runSelfDispatchMethods`.
+   */
+  private readonly runKnownTargetCallArgs = new Map<string, KnownTargetCallArgs>();
+  /**
+   * Per-run method-definition index `symbolId → positional param names` (bd
+   * tea-rags-mcp-bvalc), from `ChunkExtraction.paramNames`. Maps an argument
+   * POSITION to a parameter NAME at the barrier and, because it holds only real
+   * definitions, gates which of a call site's constant-lookup candidates is the
+   * actual callee.
+   */
+  private runParamNames: Record<string, readonly string[]> = {};
+  /**
+   * Per-run aggregation of `FileExtraction.classFieldParamLinks` (bd
+   * tea-rags-mcp-bvalc): `fqClass → "@ivar" → (method, param)` for fields copied
+   * verbatim from a parameter. Merged run-global because a class reopened across
+   * files must present ONE link set to the barrier fold.
+   */
+  private runClassFieldParamLinks: Record<string, Record<string, ClassFieldParamLink>> = {};
+  /**
+   * Coordinates (`"fqClass|@ivar"`) the walker typed on its own anywhere in the
+   * run (bd tea-rags-mcp-bvalc). The derived-field fold skips these, so
+   * inference and declaration always beat derivation — checked run-global
+   * because the competing assignment may live in another file of a reopened
+   * class. A key SET, not the map: only membership is ever asked.
+   */
+  private readonly runTypedClassFields = new Set<string>();
+  /**
+   * Run-global `"<fqType>#<member>" → paramName → type`, folded at the barrier
+   * from `runKnownTargetCallArgs` (bd tea-rags-mcp-bvalc). Seeded into each
+   * method chunk's `localBindings` during pass-2. Empty until the barrier runs.
+   */
+  private runParamTypes: KnownTargetParamTypes = {};
+  /**
+   * Run-global `fqClass → "@ivar" → typeName` derived at the barrier by joining
+   * `runClassFieldParamLinks` against `runParamTypes` (bd tea-rags-mcp-bvalc).
+   * Overlaid UNDER each file's own `classFieldTypes` in pass-2. Empty until the
+   * barrier runs — an empty overlay leaves the channel byte-identical.
+   */
+  private runDerivedClassFieldTypes: Record<string, Record<string, string>> = {};
+  /**
    * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
    * Built once at construction from `deps.exclusion` PLUS each registered
    * language's own non-app-code globs (`deps.languageFactory`, bd
@@ -1021,6 +1075,22 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // the entry strategy that consumes the discovered map is Ruby.
         if (extraction.language === "ruby") {
           this.runSelfDispatchMethods.push(...extractSelfDispatchMethods(extraction.chunks));
+          // Interprocedural param typing, Increment 1 (bd tea-rags-mcp-bvalc).
+          // LIGHT records again: the deduped call-arg shapes, the positional
+          // param-name index off the chunks, the `@ivar = <param>` links, and
+          // the coordinates the walker already typed (the derivation's gate).
+          for (const record of extraction.knownTargetCallArgs ?? []) {
+            this.runKnownTargetCallArgs.set(`${record.targets.join("|")} ${JSON.stringify(record.argTypes)}`, record);
+          }
+          for (const chunk of extraction.chunks) {
+            if (chunk.paramNames !== undefined) this.runParamNames[chunk.symbolId] = chunk.paramNames;
+          }
+          for (const [fqClass, fields] of Object.entries(extraction.classFieldParamLinks ?? {})) {
+            this.runClassFieldParamLinks[fqClass] = { ...this.runClassFieldParamLinks[fqClass], ...fields };
+          }
+          for (const [fqClass, fields] of Object.entries(extraction.classFieldTypes ?? {})) {
+            for (const ivar of Object.keys(fields)) this.runTypedClassFields.add(`${fqClass}|${ivar}`);
+          }
         }
 
         const stream = await ensureSpillStream();
@@ -1106,6 +1176,20 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           for (const [key, ref] of Object.entries(entryReturnTypes)) {
             this.runStructuredReturnTypes[key] = ref;
           }
+        }
+        // Interprocedural PARAMETER typing, Increment 1 (bd tea-rags-mcp-bvalc).
+        // Composed at this barrier for the same reason as the two folds above:
+        // only here is the run's method-definition index complete, so a call
+        // site's constant-lookup candidates can be gated against real defs. The
+        // fold consumes NO resolution result — that is what lets it run before
+        // pass-2 rather than needing a fixpoint with it.
+        if (this.runKnownTargetCallArgs.size > 0) {
+          this.runParamTypes = foldKnownTargetParamTypes(this.runKnownTargetCallArgs.values(), this.runParamNames);
+          this.runDerivedClassFieldTypes = deriveClassFieldTypesFromParams(
+            this.runClassFieldParamLinks,
+            this.runParamTypes,
+            this.runTypedClassFields,
+          );
         }
         try {
           if (spillWriteCount > 0) {
@@ -1390,6 +1474,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runSelfDispatchMethods = [];
       this.runSelfDispatchTemplates = {};
       this.runSelfInstantiatingClassMethods = [];
+      this.resetInterprocParamState();
       this.resetNodeFlushState();
       return undefined;
     }
@@ -2173,7 +2258,24 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runSelfDispatchMethods = [];
     this.runSelfDispatchTemplates = {};
     this.runSelfInstantiatingClassMethods = [];
+    this.resetInterprocParamState();
     this.resetNodeFlushState(key);
+  }
+
+  /**
+   * Clear the interprocedural parameter-typing run state (bd tea-rags-mcp-bvalc)
+   * — the pass-1 accumulators AND the barrier products. One method rather than
+   * six inline assignments repeated at each of the three run-reset seams: a
+   * future field added to this mechanism cannot be forgotten at one of them and
+   * leak facts from a previous run into the next.
+   */
+  private resetInterprocParamState(): void {
+    this.runKnownTargetCallArgs.clear();
+    this.runParamNames = {};
+    this.runClassFieldParamLinks = {};
+    this.runTypedClassFields.clear();
+    this.runParamTypes = {};
+    this.runDerivedClassFieldTypes = {};
   }
 
   /**
@@ -2240,6 +2342,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runSelfDispatchMethods = [];
     this.runSelfDispatchTemplates = {};
     this.runSelfInstantiatingClassMethods = [];
+    this.resetInterprocParamState();
     this.resetNodeFlushState();
   };
 
@@ -2480,6 +2583,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       Object.keys(this.runStructuredReturnTypes).length > 0
         ? this.runStructuredReturnTypes
         : extraction.structuredReturnTypes;
+    // `@ivar = <param>` fields completed at the barrier ride the file's OWN
+    // classFieldTypes channel, overlaid UNDERNEATH it (bd tea-rags-mcp-bvalc).
+    // Identity-returns when nothing was derived, so a non-Ruby run — or a Ruby
+    // run where no parameter could be typed — is byte-identical to before.
+    const classFieldTypesForResolver = mergeDerivedClassFieldTypes(
+      extraction.classFieldTypes,
+      this.runDerivedClassFieldTypes,
+    );
     // File-level edges. A resolver that implements `resolveFileEdges` owns its
     // language's full set of file-coupling channels (Ruby: require + Zeitwerk
     // constants + inheritance/mixins). Resolvers that don't fall back to the
@@ -2490,7 +2601,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       callerScope: extraction.fileScope,
       imports: extraction.imports,
       symbolTable,
-      classFieldTypes: extraction.classFieldTypes,
+      classFieldTypes: classFieldTypesForResolver,
       associationTypes: extraction.associationTypes,
       classAncestors: ancestorsForResolver,
       classPrependedAncestors: prependedAncestorsForResolver,
@@ -2513,9 +2624,18 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // call counted here is production code.
     const kindTally = languageKindTally(this.runStats, extraction.language);
     for (const chunk of extraction.chunks) {
+      // Barrier-derived parameter types enter the chunk's own binding map at the
+      // def line — the coordinate a YARD `@param` occupies — so every reader
+      // downstream, the receiver-kind classifier included, sees ONE kind of
+      // fact (bd tea-rags-mcp-bvalc). Names YARD already bound are untouched.
+      const localBindings = seedParamLocalBindings(
+        chunk.localBindings,
+        this.runParamTypes[chunk.symbolId],
+        chunk.startLine,
+      );
       for (const call of chunk.calls) {
         this.runStats.callsAttempted += 1;
-        const receiverKind = classifyReceiverKind(call, chunk.localBindings);
+        const receiverKind = classifyReceiverKind(call, localBindings);
         kindTally[receiverKind].attempted += 1;
         const ctx = {
           callerFile: extraction.relPath,
@@ -2523,9 +2643,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           callerSymbolId: chunk.symbolId,
           imports: extraction.imports,
           symbolTable,
-          classFieldTypes: extraction.classFieldTypes,
+          classFieldTypes: classFieldTypesForResolver,
           associationTypes: extraction.associationTypes,
-          localBindings: chunk.localBindings,
+          localBindings,
           localCallBindings: chunk.localCallBindings,
           functionReturnTypes: returnTypesForResolver,
           // Ruby type-source PRECISE paths (Increment 1, Task 1.5) — these wire

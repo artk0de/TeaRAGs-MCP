@@ -20,6 +20,7 @@ import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
 import { typeOfReceiver } from "../type-propagation.js";
 import { receiverLooksLikeArRelationChain } from "./ruby-ar-relation-guard.js";
 import { RUBY_DUCK_VOCAB } from "./ruby-duck-vocabulary.js";
+import { resolveIvarFieldTarget } from "./ruby-ivar-field.js";
 import { resolveBoundCallTarget } from "./ruby-return-type-binding.js";
 import {
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
@@ -135,6 +136,14 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     // `chainType`. Gated on the resolved TARGET, so a binding the exact path
     // cannot answer still fans out and recall is unchanged.
     if (resolveBoundCallTarget(call, ctx, this.cfg.mode) !== null) return emptyDispatchFanout();
+    // Bare `@ivar` receiver whose type IS known (bd tea-rags-mcp-bvalc). The
+    // `ivarField` strategy pins exactly one target for it, but the fan-out ran
+    // first and buried that target under every same-named def in the project —
+    // `@firm.owner` emitted `Firm#owner` AND `Person#owner`. Same gate shape and
+    // same reasoning as the bound-call one above: gated on the RESOLVED target,
+    // so an ivar the exact path cannot answer still fans out and the resolve
+    // tally is unchanged; only the wrong-type edges beside the right one go.
+    if (resolveIvarFieldTarget(call, ctx, this.cfg.mode) !== null) return emptyDispatchFanout();
     if (receiverLooksLikeArRelationChain(r)) return emptyDispatchFanout(); // AR::Relation chain
     // Index-access receiver (`opts[k]`, `arr[i]`): suppress dynamic fan-out by
     // default (element type is untrackable → ~10%-precision noise). EXCEPTION:

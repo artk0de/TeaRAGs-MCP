@@ -1,7 +1,7 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { resolveLocalBindingType, type LocalBinding } from "../../../../contracts/types/codegraph.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
-import { readScopeResolution, walk } from "./ast-utils.js";
+import { forEachClassScope, readScopeResolution, walk } from "./ast-utils.js";
 import { constInstanceType, isOrAssignment } from "./type-sources/ast-inference.js";
 import { collectYardParamTypes, YARD_CONST } from "./type-sources/yard.js";
 
@@ -41,44 +41,28 @@ export function collectRubyIvarFieldTypes(
 ): Record<string, Record<string, string>> {
   const yardParamsByLine = code ? collectYardParamTypes(code) : new Map<number, Record<string, string>>();
   const out: Record<string, Record<string, string>> = {};
-  const walkScope = (node: AstNode, scope: string[]): void => {
-    if (node.type === "class" || node.type === "module") {
-      const nameNode = node.childForFieldName("name");
-      if (!nameNode) {
-        for (const child of node.children) walkScope(child, scope);
-        return;
+  forEachClassScope(root, (node, fq) => {
+    // Collect typed `@ivar = …` across THIS class's own bodies. Stop at any
+    // nested class/module — those are attributed to their own fq by the
+    // forEachClassScope recursion. Method bodies get a method-scoped type env
+    // (YARD params + local `Const.new`/copy) so a param/local-copy or an
+    // association-chain RHS types the ivar, not just `@x = Const.new`.
+    const fields: Record<string, string> = {};
+    const collectInClass = (n: AstNode): void => {
+      if (n.type === "class" || n.type === "module") return;
+      if (n.type === "method" || n.type === "singleton_method") {
+        const env = methodTypeEnv(n, yardParamsByLine, catalogue);
+        collectIvarAssignmentsInMethod(n, env, fields, associationTypes, catalogue);
+        return; // collectIvarAssignmentsInMethod walks the body
       }
-      const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
-      const fq = scope.length === 0 ? localName : `${scope.join("::")}::${localName}`;
-      const body = node.childForFieldName("body");
-
-      // Collect typed `@ivar = …` across THIS class's own bodies. Stop at any
-      // nested class/module — those are attributed to their own fq via the
-      // walkScope recursion below. Method bodies get a method-scoped type env
-      // (YARD params + local `Const.new`/copy) so a param/local-copy or an
-      // association-chain RHS types the ivar, not just `@x = Const.new`.
-      const fields: Record<string, string> = {};
-      const collectInClass = (n: AstNode): void => {
-        if (n.type === "class" || n.type === "module") return;
-        if (n.type === "method" || n.type === "singleton_method") {
-          const env = methodTypeEnv(n, yardParamsByLine, catalogue);
-          collectIvarAssignmentsInMethod(n, env, fields, associationTypes, catalogue);
-          return; // collectIvarAssignmentsInMethod walks the body
-        }
-        // Class-body-level ivar assignment (rare) — no method env.
-        recordIvarAssignment(n, {}, fields, associationTypes, catalogue);
-        for (const child of n.children) collectInClass(child);
-      };
-      for (const child of (body ?? node).children) collectInClass(child);
-      if (Object.keys(fields).length > 0) out[fq] = { ...(out[fq] ?? {}), ...fields };
-
-      const recurseChildren = body ? body.children : node.children;
-      for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
-      return;
-    }
-    for (const child of node.children) walkScope(child, scope);
-  };
-  walkScope(root, []);
+      // Class-body-level ivar assignment (rare) — no method env.
+      recordIvarAssignment(n, {}, fields, associationTypes, catalogue);
+      for (const child of n.children) collectInClass(child);
+    };
+    const body = node.childForFieldName("body");
+    for (const child of (body ?? node).children) collectInClass(child);
+    if (Object.keys(fields).length > 0) out[fq] = { ...(out[fq] ?? {}), ...fields };
+  });
   return out;
 }
 

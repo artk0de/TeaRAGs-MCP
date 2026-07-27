@@ -62,6 +62,12 @@ import {
   collectRubyLocalCallBindingsForChunk,
   localTypeTrackingEnabled,
 } from "./local-bindings.js";
+import {
+  collectKnownTargetCallArgs,
+  collectRubyClassFieldParamLinks,
+  positionalParamNames,
+  type KnownTargetCallSite,
+} from "./param-arg-types.js";
 import { RubyTypeFactStore } from "./type-fact-store.js";
 import { collectRubyInstantiatedTypes } from "./type-sources/ast-inference.js";
 import { INLINE_TYPE_SOURCES } from "./type-sources/index.js";
@@ -132,6 +138,17 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // Arity + visibility per method def (bd xlnub Task 2). Keyed by 1-based
   // start line — the same line the chunker assigns to the method's chunk.
   const methodSigs = collectRubyMethodSignatures(input.tree.rootNode);
+  // `@ivar` field types (cai0 imass) — hoisted ABOVE the chunk loop because the
+  // known-target arg-hint pass reads them to type an `@ivar` ARGUMENT
+  // (bd tea-rags-mcp-bvalc). Pure, so the position of the call is immaterial;
+  // it is still surfaced on the extraction below, unchanged.
+  const ivarFieldTypes = trackTypes
+    ? collectRubyIvarFieldTypes(input.tree.rootNode, associationTypes, input.code, catalogue)
+    : {};
+  // Per-chunk type environments, in `input.chunks` order, so a known-target call
+  // site can be typed against the bindings of the chunk that OWNS its line
+  // (bd tea-rags-mcp-bvalc). Filled during the chunk loop, read after it.
+  const chunkSites: (KnownTargetCallSite & { startLine: number; endLine: number })[] = [];
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -143,6 +160,10 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     const sig = c.startLine !== undefined ? methodSigs.get(c.startLine) : undefined;
     if (sig !== undefined) {
       base.arity = sig.arity;
+      // Positional names map a call site's argument INDEX to a parameter NAME at
+      // the pass-1→pass-2 barrier (bd tea-rags-mcp-bvalc). Omitted when the
+      // leading required run is empty — nothing to map.
+      if (sig.paramNames.length > 0) base.paramNames = sig.paramNames;
       base.visibility = sig.visibility;
       if (sig.kwargs !== undefined) base.kwargs = sig.kwargs;
       base.acceptsBlock = sig.acceptsBlock;
@@ -169,9 +190,35 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
       // to `<meth's return type>#member` (cai0 a71lj, same channel as Go).
       const callBindings = collectRubyLocalCallBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine, catalogue);
       if (Object.keys(callBindings).length > 0) base.localCallBindings = callBindings;
+      // Type environment a known-target call site on these lines inherits
+      // (bd tea-rags-mcp-bvalc).
+      chunkSites.push({
+        startLine: c.startLine,
+        endLine: c.endLine,
+        scope: c.scope,
+        localBindings: base.localBindings,
+        classFields: ivarFieldTypes[c.scope.join("::")],
+      });
     }
     return base;
   });
+  // Innermost chunk owning a line — the narrowest containing range, ties broken
+  // by deeper scope, mirroring `assignCallsToInnermostChunks`. No chunk contains
+  // the line (a top-level statement) ⇒ file scope with no type environment.
+  const siteContextAt = (line: number): KnownTargetCallSite => {
+    let best: (typeof chunkSites)[number] | undefined;
+    for (const site of chunkSites) {
+      if (line < site.startLine || line > site.endLine) continue;
+      if (
+        best === undefined ||
+        site.endLine - site.startLine < best.endLine - best.startLine ||
+        (site.endLine - site.startLine === best.endLine - best.startLine && site.scope.length > best.scope.length)
+      ) {
+        best = site;
+      }
+    }
+    return best ?? { scope: [] };
+  };
   const out: FileExtraction = {
     relPath: input.relPath,
     language: input.language,
@@ -229,9 +276,17 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // `@ivar` receiver types via the universal `classFieldTypes` channel (cai0
   // imass) — same env gate as the other type-inference paths. Ruby is the 5th
   // language to fill this channel (after TS/Java/Python/Rust).
+  if (Object.keys(ivarFieldTypes).length > 0) out.classFieldTypes = ivarFieldTypes;
+  // Interprocedural parameter typing, Increment 1 (bd tea-rags-mcp-bvalc). Both
+  // channels are HALF-FACTS the pass-1→pass-2 barrier completes: argument types
+  // at syntactically-known callees, and `@ivar = <param>` copies whose type is
+  // whatever that parameter turns out to hold. Same env gate as every other
+  // inference channel.
   if (trackTypes) {
-    const ivarFieldTypes = collectRubyIvarFieldTypes(input.tree.rootNode, associationTypes, input.code, catalogue);
-    if (Object.keys(ivarFieldTypes).length > 0) out.classFieldTypes = ivarFieldTypes;
+    const knownTargetCallArgs = collectKnownTargetCallArgs(input.tree.rootNode, siteContextAt, catalogue);
+    if (knownTargetCallArgs.length > 0) out.knownTargetCallArgs = knownTargetCallArgs;
+    const classFieldParamLinks = collectRubyClassFieldParamLinks(input.tree.rootNode);
+    if (Object.keys(classFieldParamLinks).length > 0) out.classFieldParamLinks = classFieldParamLinks;
   }
   // Precise type-source maps for the resolver's PRECISE propagation paths
   // (Increment 1, Task 1.5). `structuredReturnTypes` keys `"<fqClass>#method"` →
@@ -694,6 +749,7 @@ function collectRubyMethodSignatures(root: AstNode): Map<
   number,
   {
     arity: AritySignature;
+    paramNames: string[];
     visibility: "public" | "private" | "protected";
     kwargs?: KwargSignature;
     acceptsBlock: boolean;
@@ -705,6 +761,7 @@ function collectRubyMethodSignatures(root: AstNode): Map<
     number,
     {
       arity: AritySignature;
+      paramNames: string[];
       visibility: VisMode;
       kwargs?: KwargSignature;
       acceptsBlock: boolean;
@@ -775,6 +832,7 @@ function collectRubyMethodSignatures(root: AstNode): Map<
         const name = nameNode?.text ?? "";
         out.set(stmt.startPosition.row + 1, {
           arity: computeRubyArity(stmt),
+          paramNames: positionalParamNames(stmt),
           visibility: symVis.get(name) ?? currentVis,
           kwargs: computeRubyKwargs(stmt),
           acceptsBlock: computeRubyAcceptsBlock(stmt),
@@ -799,6 +857,7 @@ function collectRubyMethodSignatures(root: AstNode): Map<
             // Inline form: `private def foo; end`
             out.set(firstArg.startPosition.row + 1, {
               arity: computeRubyArity(firstArg),
+              paramNames: positionalParamNames(firstArg),
               visibility: modifier,
               kwargs: computeRubyKwargs(firstArg),
               acceptsBlock: computeRubyAcceptsBlock(firstArg),

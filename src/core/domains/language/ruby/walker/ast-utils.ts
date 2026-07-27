@@ -17,6 +17,39 @@ export function walk(node: AstNode, visit: (n: AstNode) => void): void {
 }
 
 /**
+ * Visit every `class` / `module` declaration with the scope stack that encloses
+ * it, so per-class collectors agree on ONE fully-qualified key. `fq` is the
+ * declaration's own lexical FQ (`Outer::Inner`, compact `class A::B` kept
+ * verbatim); `scope` is the stack ABOVE it. Recursion descends through the
+ * declaration's body, so a nested class is visited with its parent appended —
+ * matching `collectRubyClassAncestors` and `ctx.callerScope.join("::")`.
+ *
+ * An anonymous declaration (`class << self`, no `name` field) is transparent:
+ * the walk passes through it without pushing a scope segment.
+ */
+export function forEachClassScope(
+  root: AstNode,
+  visit: (classNode: AstNode, fq: string, scope: readonly string[]) => void,
+): void {
+  const walkScope = (node: AstNode, scope: string[]): void => {
+    if (node.type === "class" || node.type === "module") {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) {
+        for (const child of node.children) walkScope(child, scope);
+        return;
+      }
+      const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+      visit(node, lexicalScopeFqName(scope, localName), scope);
+      const body = node.childForFieldName("body");
+      for (const child of (body ?? node).children) walkScope(child, [...scope, ...localName.split("::")]);
+      return;
+    }
+    for (const child of node.children) walkScope(child, scope);
+  };
+  walkScope(root, []);
+}
+
+/**
  * Read a `scope_resolution` node into its fully-qualified constant string.
  * `scope_resolution` has fields `scope` (left) and `name` (right); recurse on
  * `scope` when it is another `scope_resolution`, otherwise take its constant

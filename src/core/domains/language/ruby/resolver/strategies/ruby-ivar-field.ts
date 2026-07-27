@@ -1,11 +1,40 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
+import type {
+  AmbiguousResolveMode,
+  CallContext,
+  CallRef,
+  SymbolResolutionTarget,
+} from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { ivarTypeName } from "../type-propagation.js";
 import { resolveTypeMethod, type ResolverConfig } from "./shared.js";
 
 /** A single instance-variable receiver (`@client`); a chained `@a.b` is out of scope. */
 const IVAR_RECEIVER = /^@\w+$/;
+
+/**
+ * The ONE authority for "what does `@ivar.member` resolve to" (bd
+ * tea-rags-mcp-bvalc — same single-authority discipline as {@link ivarTypeName}
+ * and `resolveBoundCallTarget`). Returns the exact target, or `null` when the
+ * receiver is not a bare `@ivar`, carries no known type, or its type declares no
+ * such member.
+ *
+ * Read by the strategy below AND by the dynamic-dispatch component, which must
+ * know whether the exact path ACTUALLY answers before it decides to fan out. Two
+ * separate lookups would drift: a receiver the fan-out believes untyped while
+ * the strategy pins it produces N wrong-type edges that bury the right one.
+ */
+export function resolveIvarFieldTarget(
+  call: CallRef,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  const { receiver } = call;
+  if (!receiver || !IVAR_RECEIVER.test(receiver) || ctx.callerScope.length === 0) return null;
+  const typeName = ivarTypeName(receiver, ctx);
+  if (!typeName) return null;
+  return resolveTypeMethod(typeName, call.member, ctx, mode);
+}
 
 /**
  * `@ivar.X` resolution over the ivar type channels (cai0 imass — the universal
@@ -39,9 +68,7 @@ export class RubyIvarFieldSymbolResolutionStrategy implements SymbolResolutionSt
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     const { receiver } = call;
     if (!receiver || !IVAR_RECEIVER.test(receiver) || ctx.callerScope.length === 0) return CONTINUE;
-    const typeName = ivarTypeName(receiver, ctx);
-    if (!typeName) return DROP;
-    const target = resolveTypeMethod(typeName, call.member, ctx, this.cfg.mode);
+    const target = resolveIvarFieldTarget(call, ctx, this.cfg.mode);
     return target ? resolved(target) : DROP;
   }
 }
