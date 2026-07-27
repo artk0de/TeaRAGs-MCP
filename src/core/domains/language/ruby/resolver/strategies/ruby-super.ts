@@ -88,7 +88,7 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
       // consensus path can still resolve if every including class agrees on the
       // same definer after the module in their MRO (bd cai0/2oky5).
       if (!RUBY_RUNTIME_HOOKS.has(member)) {
-        const consensus = resolveViaIncludingClasses(enclosingClass, member, ctx, this.cfg.mode);
+        const consensus = resolveViaIncludingClasses(enclosingClass, member, ctx, this.cfg.mode, ctx.callerSymbolId);
         if (consensus) return consensus;
       }
       return null;
@@ -104,7 +104,14 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
     const visited = new Set<string>([enclosingClass]);
     let fileOnlyFallback: SymbolResolutionTarget | null = null;
     for (const ancestor of ancestors) {
-      const resolvedTarget = resolveInstanceMethodInClassChain(ancestor, member, ctx, this.cfg.mode, visited);
+      const resolvedTarget = resolveInstanceMethodInClassChain(
+        ancestor,
+        member,
+        ctx,
+        this.cfg.mode,
+        visited,
+        ctx.callerSymbolId,
+      );
       if (resolvedTarget === null) continue;
       if (resolvedTarget.targetSymbolId !== null) return resolvedTarget;
       if (fileOnlyFallback === null) fileOnlyFallback = resolvedTarget;
@@ -115,7 +122,7 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
     // across all of them (consensus → precision 1.0; disagreement → drop).
     // bd cai0/2oky5.
     if (fileOnlyFallback === null && !RUBY_RUNTIME_HOOKS.has(member)) {
-      const consensus = resolveViaIncludingClasses(enclosingClass, member, ctx, this.cfg.mode);
+      const consensus = resolveViaIncludingClasses(enclosingClass, member, ctx, this.cfg.mode, ctx.callerSymbolId);
       if (consensus) return consensus;
     }
     if (fileOnlyFallback !== null && RUBY_RUNTIME_HOOKS.has(member)) return null;
