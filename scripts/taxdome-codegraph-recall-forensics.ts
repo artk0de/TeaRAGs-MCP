@@ -42,13 +42,18 @@ import {
   type KnownTargetCallArgs,
   type LocalBinding,
   type SymbolDefinition,
+  type SymbolResolutionTarget,
 } from "../src/core/contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../src/core/contracts/types/language.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import type { RubyDslCatalogue } from "../src/core/domains/language/ruby/dsl/index.js";
 import { catalogueForGemfile } from "../src/core/domains/language/ruby/gemfile.js";
+import { RUBY_RUNTIME_HOOKS } from "../src/core/domains/language/ruby/resolver/strategies/ruby-super.js";
 import {
+  collectAncestorChain,
+  collectResolvedAncestorChain,
+  firstDefinerAfter,
   resolveConstant,
   resolveTypeInstanceMethod,
   resolveTypeStaticMethod,
@@ -148,6 +153,27 @@ const DUCK_ENABLED = process.env.CODEGRAPH_DUCK_ORACLE === "1";
 // simulation cannot drift from production semantics.
 // ---------------------------------------------------------------------------
 const FIXPOINT_ENABLED = process.env.CODEGRAPH_FIXPOINT_ORACLE === "1";
+
+// ---------------------------------------------------------------------------
+// SUPER-MISS ORACLE (bd tea-rags-mcp-lawlq.5, 2026-07-27). Fourth oracle under
+// the SAME additive, env-gated contract: with CODEGRAPH_SUPER_ORACLE unset
+// nothing extra is recorded or reported, so the A/B recall metrics stay
+// byte-identical. Answers ONE question per unresolved `super` call-site that has
+// an in-project def: WHERE did the ancestor walk lose the definer —
+//   (a) the class has no `classAncestors` entry at all (ancestry is DSL-built /
+//       runtime-built and the walker emitted no heritage edge),
+//   (b) the entry exists but its ancestor VALUES are raw non-FQ text the
+//       resolver's chain walk never canonicalizes (the definer is reachable only
+//       through `collectResolvedAncestorChain`),
+//   (c) the definer IS on the raw chain the resolver walked (a pin failure, not
+//       a hierarchy gap),
+//   (d) the definer exists in-project but on no ancestor at all (genuinely
+//       runtime-built ancestry — the floor).
+// Everything is a fold over the same ctx the real resolver was just handed, and
+// the chain walks are the REAL exported ones, so the categorisation cannot drift
+// from production semantics.
+// ---------------------------------------------------------------------------
+const SUPER_ORACLE_ENABLED = process.env.CODEGRAPH_SUPER_ORACLE === "1";
 /** Hard cap on worklist waves; a run that hits it is reported as NON-converged. */
 const FIXPOINT_MAX_WAVES = 20;
 /** `bounded` drops the wide "any resolvable target" scope back to bvalc-shaped
@@ -588,6 +614,15 @@ function resolvePass2(extraction: FileExtraction): void {
         callsResolved += 1;
         kindTally[receiverKind].resolved += 1;
         outcome = "resolved";
+        if (SUPER_ORACLE_ENABLED && receiverKind === "super") {
+          // Precision probe: `super` can never dispatch to the calling method
+          // itself, so a target equal to `callerSymbolId` is a false edge. The
+          // super bucket is ~170 calls, so the extra resolve is free.
+          const t = resolver.resolve(call, ctx);
+          if (t?.targetSymbolId !== undefined && t.targetSymbolId === chunk.symbolId) {
+            superSelfEdges.push(`${extraction.relPath}:${call.startLine} ${chunk.symbolId}`);
+          }
+        }
       } else if (call.dynamicSend === true) {
         callsUnresolvable += 1;
         kindTally[receiverKind].unresolvable += 1;
@@ -611,6 +646,9 @@ function resolvePass2(extraction: FileExtraction): void {
         // THE RECALL HOLE: unresolved, non-dynamic, non-external, has in-project def.
         recordMiss(call, receiverKind, extraction.relPath, chunk.scope, chunk.symbolId);
         outcome = "miss";
+        if (SUPER_ORACLE_ENABLED && receiverKind === "super") {
+          noteSuperMiss(call, ctx, extraction.relPath, chunk);
+        }
       }
       if (LOCAL_CENSUS_ENABLED) {
         noteLocalCensusCall(call, receiverKind, extraction.relPath, chunk, localBindings, outcome);
@@ -4435,6 +4473,395 @@ function runLocalCensus(): void {
   L("");
 }
 
+// ===========================================================================
+// SUPER-MISS ORACLE (CODEGRAPH_SUPER_ORACLE=1)
+//
+// Per unresolved `super` call-site that HAS an in-project def, reconstruct what
+// the resolver's ancestor walk actually saw and where the definer went missing.
+// The two chain walks are the REAL exported ones — `collectAncestorChain` is
+// literally the traversal `resolveInstanceMethodInClassChain` expresses over
+// `ctx.classAncestors`, `collectResolvedAncestorChain` is the same traversal
+// with each hop FQ-canonicalized (lawlq.3.4) — so "canonical chain reaches the
+// definer, raw chain does not" is a measurement of the production gap, not of a
+// harness re-implementation.
+// ===========================================================================
+const OUT_SUPER = join(OUT_DIR, "super-oracle-report.json");
+
+/** Cause classes for an unresolved `super`, ordered most-specific first. */
+const SUPER_CAT = {
+  runtimeHook: "runtimeHook           Ruby runtime hook (file-only edge suppressed by design)",
+  hostedNestedModule: "hostedNestedModule    nested module (ClassMethods-shape) whose HOST is included",
+  moduleWithIncluders: "moduleWithIncluders   module IS included in-project, consensus walk still failed",
+  orphanScope: "orphanScope           no heritage edge AND nobody includes it (runtime/external)",
+  canonicalizationGap: "canonicalizationGap   definer reachable ONLY via the FQ-canonicalized chain",
+  pinFailure: "pinFailure            definer IS on the raw chain the resolver walked",
+  definerOffChain: "definerOffChain       in-project definer exists, on no ancestor (runtime ancestry)",
+  noOwnerDef: "noOwnerDef            short-name defs exist but none is owned by a class",
+} as const;
+type SuperCat = keyof typeof SUPER_CAT;
+
+/** Why the `resolveViaIncludingClasses` consensus produced nothing. */
+const SUPER_CONSENSUS = {
+  notApplicable: "not a module-scope miss / no includers",
+  notInIncluderMro: "module absent from EVERY includer's MRO",
+  noDefinerAfter: "module in MRO but nothing after it defines the member",
+  disagreement: "includers disagree on the definer (GUARD drop)",
+  wouldResolve: "consensus DOES agree — the walk should have resolved",
+} as const;
+type SuperConsensus = keyof typeof SUPER_CONSENSUS;
+
+interface SuperDefiner {
+  /** Ancestor FQ whose file/owner declares `member`. */
+  readonly klass: string;
+  /** `true` when a def's OWNER fq is exactly this class (not just same file). */
+  readonly ownerMatch: boolean;
+  /** Candidate count in that class's file — >1 is what strict mode drops on. */
+  readonly candidates: number;
+}
+
+interface SuperMissRecord {
+  readonly relPath: string;
+  readonly line: number;
+  readonly enclosingClass: string;
+  readonly enclosingMethod: string;
+  readonly member: string;
+  readonly category: SuperCat;
+  /** `ctx.classAncestors[enclosingClass]` — exactly what the walk iterated. */
+  readonly ancestorsSeen: readonly string[];
+  readonly prependedSeen: readonly string[];
+  readonly superclass: string | null;
+  readonly rawChain: readonly string[];
+  readonly canonicalChain: readonly string[];
+  readonly definersRaw: readonly SuperDefiner[];
+  readonly definersCanonical: readonly SuperDefiner[];
+  /** Heritage channel connecting the enclosing class to the first definer. */
+  readonly channel: "super" | "include" | "extend" | "prepend" | "implements" | "none";
+  /** Owners of every in-project def of `member`, capped for report size. */
+  readonly definerOwnersAnywhere: readonly string[];
+  /** Classes that `include`/`prepend` the enclosing module in-project. */
+  readonly includedByCount: number;
+  /** Enclosing namespace one level up (`Foo::ClassMethods` → `Foo`). */
+  readonly hostModule: string;
+  readonly hostIncludedByCount: number;
+  readonly consensus: SuperConsensus;
+  /**
+   * `includedBy` is keyed by the RAW ancestor text the include SITE wrote
+   * (`include Trackable`), while a module's own key is its FQ
+   * (`Acme::Concerns::Trackable`). These three fields measure that key mismatch:
+   * how many classes mix in the module under its LAST SEGMENT, whether that
+   * segment is an unambiguous alias for this module, and what the consensus walk
+   * would answer if it were keyed by the segment instead.
+   */
+  readonly includedByShortCount: number;
+  readonly shortKeyUnambiguous: boolean;
+  readonly consensusShort: SuperConsensus;
+}
+
+const superMisses: SuperMissRecord[] = [];
+/** Resolved `super` sites whose target IS the calling method — always false. */
+const superSelfEdges: string[] = [];
+
+/** Owner FQ of a def (`A::B#m` → `A::B`); empty for top-level functions. */
+function ownerOfFq(fqName: string): string {
+  const cut = Math.max(fqName.lastIndexOf("#"), fqName.lastIndexOf("."));
+  return cut === -1 ? "" : fqName.slice(0, cut);
+}
+
+/**
+ * Measurement-only mirror of the (non-exported) `canonicalizeAncestorFq` in
+ * `resolver/strategies/shared.ts`: same isKnown predicate, same compact-class
+ * skip, same innermost-nesting-wins prefix walk. Duplicated here rather than
+ * exported because it is a harness-side classifier, not a resolution step.
+ */
+function canonFqForOracle(raw: string, nesting: string, ctx: CallContext): string {
+  const isKnown = (name: string): boolean =>
+    ctx.classAncestors?.[name] !== undefined || ctx.symbolTable.lookup(name).length === 1;
+  if (isKnown(raw)) return raw;
+  if (ctx.compactDeclaredClasses?.has(nesting)) return raw;
+  const segs = nesting.split("::");
+  for (let i = segs.length - 1; i >= 1; i--) {
+    const candidate = `${segs.slice(0, i).join("::")}::${raw}`;
+    if (isKnown(candidate)) return candidate;
+  }
+  return raw;
+}
+
+/** Ancestors of `chain` that declare `member` (file-scoped, as the walk does). */
+function superDefinersIn(chain: readonly string[], member: string, ctx: CallContext): SuperDefiner[] {
+  const defs = symbolTable.lookupByShortName(member, { includeSchemaColumns: true });
+  if (defs.length === 0) return [];
+  const out: SuperDefiner[] = [];
+  for (const klass of chain) {
+    const file = resolveConstant(klass, ctx);
+    const owned = defs.filter((d) => ownerOfFq(d.fqName) === klass || (file !== null && d.relPath === file));
+    if (owned.length === 0) continue;
+    out.push({
+      klass,
+      ownerMatch: owned.some((d) => ownerOfFq(d.fqName) === klass),
+      candidates: file === null ? owned.length : defs.filter((d) => d.relPath === file).length,
+    });
+  }
+  return out;
+}
+
+/** Heritage channel from `enclosingClass` to `definer` (direct edge kind). */
+function superChannelTo(enclosingClass: string, definer: string, ctx: CallContext): SuperMissRecord["channel"] {
+  for (const edge of hierarchyView.getAncestors(enclosingClass)) {
+    const fq = canonFqForOracle(edge.ancestorFqName, enclosingClass, ctx);
+    if (fq === definer) return edge.kind;
+    if (collectResolvedAncestorChain(fq, ctx).includes(definer)) return edge.kind;
+  }
+  return "none";
+}
+
+function noteSuperMiss(call: CallRef, ctx: CallContext, relPath: string, chunk: ChunkExtraction): void {
+  const enclosingClass = ctx.callerScope.join("::");
+  const ancestorsSeen = ctx.classAncestors?.[enclosingClass] ?? [];
+  const prependedSeen = ctx.classPrependedAncestors?.[enclosingClass] ?? [];
+  const rawChain = collectAncestorChain(enclosingClass, ctx);
+  const canonicalChain = collectResolvedAncestorChain(enclosingClass, ctx);
+  const definersRaw = superDefinersIn(rawChain, call.member, ctx);
+  const definersCanonical = superDefinersIn(canonicalChain, call.member, ctx);
+  const owners = [
+    ...new Set(
+      symbolTable
+        .lookupByShortName(call.member, { includeSchemaColumns: true })
+        .map((d) => ownerOfFq(d.fqName))
+        .filter((o) => o.length > 0),
+    ),
+  ];
+
+  const includers = ctx.includedBy?.[enclosingClass] ?? [];
+  const segs = enclosingClass.split("::");
+  const hostModule = segs.length > 1 ? segs.slice(0, -1).join("::") : "";
+  const hostIncluders = hostModule === "" ? [] : (ctx.includedBy?.[hostModule] ?? []);
+  const consensus = superConsensusVerdict(enclosingClass, call.member, includers, ctx);
+  // `include Trackable` inside `module Acme` keys includedBy by "Trackable" while
+  // this module's own key is "Acme::Trackable" — measure what the consensus walk
+  // would answer under the segment key, and whether that key is unambiguous.
+  const shortKey = segs[segs.length - 1];
+  const shortIncluders = shortKey === enclosingClass ? [] : (ctx.includedBy?.[shortKey] ?? []);
+  const shortKeyUnambiguous =
+    shortIncluders.length > 0 &&
+    Object.keys(ctx.classAncestors ?? {}).filter((k) => k === shortKey || k.endsWith(`::${shortKey}`)).length === 1 &&
+    symbolTable.lookup(shortKey).length === 0;
+  const consensusShort =
+    shortIncluders.length === 0 ? "notApplicable" : superConsensusVerdict(shortKey, call.member, shortIncluders, ctx);
+
+  const noHeritage = ancestorsSeen.length === 0 && prependedSeen.length === 0;
+  const category: SuperCat = RUBY_RUNTIME_HOOKS.has(call.member)
+    ? "runtimeHook"
+    : noHeritage && includers.length > 0
+      ? "moduleWithIncluders"
+      : noHeritage && hostIncluders.length > 0
+        ? "hostedNestedModule"
+        : noHeritage
+          ? "orphanScope"
+          : definersRaw.length > 0
+            ? "pinFailure"
+            : definersCanonical.length > 0
+              ? "canonicalizationGap"
+              : owners.length > 0
+                ? "definerOffChain"
+                : "noOwnerDef";
+
+  const firstDefiner = definersCanonical[0]?.klass ?? definersRaw[0]?.klass;
+  superMisses.push({
+    relPath,
+    line: call.startLine,
+    enclosingClass,
+    enclosingMethod: chunk.symbolId,
+    member: call.member,
+    category,
+    ancestorsSeen,
+    prependedSeen,
+    superclass: ctx.classExtends?.[enclosingClass] ?? null,
+    rawChain: rawChain.slice(0, 12),
+    canonicalChain: canonicalChain.slice(0, 12),
+    definersRaw,
+    definersCanonical,
+    channel: firstDefiner === undefined ? "none" : superChannelTo(enclosingClass, firstDefiner, ctx),
+    definerOwnersAnywhere: owners.slice(0, 6),
+    includedByCount: includers.length,
+    hostModule,
+    hostIncludedByCount: hostIncluders.length,
+    consensus,
+    includedByShortCount: shortIncluders.length,
+    shortKeyUnambiguous,
+    consensusShort,
+  });
+}
+
+/**
+ * Why `resolveViaIncludingClasses` produced nothing for a module-scope `super`.
+ * Replays the REAL `firstDefinerAfter` per includer and reports the first
+ * failure mode, so "the consensus path is unreachable" is told apart from "the
+ * consensus path disagreed".
+ */
+function superConsensusVerdict(
+  moduleName: string,
+  member: string,
+  includers: readonly string[],
+  ctx: CallContext,
+): SuperConsensus {
+  if (includers.length === 0) return "notApplicable";
+  let agreed: SymbolResolutionTarget | null = null;
+  let anyInMro = false;
+  for (const klass of includers) {
+    const mro = [...(ctx.classPrependedAncestors?.[klass] ?? []), klass, ...collectAncestorChain(klass, ctx)];
+    if (mro.includes(moduleName)) anyInMro = true;
+    const t = firstDefinerAfter(moduleName, member, klass, ctx, "strict");
+    if (t === null) continue;
+    if (agreed === null) {
+      agreed = t;
+      continue;
+    }
+    const same =
+      agreed.targetSymbolId !== null || t.targetSymbolId !== null
+        ? agreed.targetSymbolId === t.targetSymbolId
+        : agreed.targetRelPath === t.targetRelPath;
+    if (!same) return "disagreement";
+  }
+  if (agreed !== null) return "wouldResolve";
+  return anyInMro ? "noDefinerAfter" : "notInIncluderMro";
+}
+
+/**
+ * Corpus census of the SELF-SCOPE heritage shape: `class C` (or `module C`)
+ * mixing in a module NESTED INSIDE ITSELF (`prepend PerformWrapper` where the
+ * module's FQ is `C::PerformWrapper`). Ruby resolves that bare constant through
+ * `Module.nesting`, whose head is `C` itself — the exact hop
+ * `canonicalizeAncestorFq` never tries, because its prefix walk starts one level
+ * OUTSIDE the nesting class. Counts the edges that are invisible today and would
+ * become visible if the own-scope hop were tried first.
+ */
+function selfScopeHeritageCensus(): { edges: number; samples: string[] } {
+  const isKnownFq = (name: string): boolean =>
+    runAncestors[name] !== undefined || symbolTable.lookup(name).length === 1;
+  const canonUnderCurrentRule = (raw: string, nesting: string): string | null => {
+    if (isKnownFq(raw)) return raw;
+    if (runCompactClasses.has(nesting)) return null;
+    const segs = nesting.split("::");
+    for (let i = segs.length - 1; i >= 1; i--) {
+      const candidate = `${segs.slice(0, i).join("::")}::${raw}`;
+      if (isKnownFq(candidate)) return candidate;
+    }
+    return null;
+  };
+  const seen = new Set<string>();
+  const samples: string[] = [];
+  for (const row of runInheritanceRows) {
+    const raw = row.ancestorFqName;
+    if (raw.includes("::")) continue; // already qualified — nothing to canonicalize
+    const key = `${row.sourceFqName} ${raw} ${row.kind}`;
+    if (seen.has(key)) continue;
+    if (canonUnderCurrentRule(raw, row.sourceFqName) !== null) continue;
+    if (!isKnownFq(`${row.sourceFqName}::${raw}`)) continue;
+    seen.add(key);
+    if (samples.length < 15) samples.push(`${row.sourceFqName} --${row.kind}--> ${row.sourceFqName}::${raw}`);
+  }
+  return { edges: seen.size, samples };
+}
+
+function runSuperOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  const t = kindTally.super;
+  const byCat = new Map<SuperCat, SuperMissRecord[]>();
+  for (const m of superMisses) {
+    const arr = byCat.get(m.category) ?? [];
+    arr.push(m);
+    byCat.set(m.category, arr);
+  }
+  const byChannel: Record<string, number> = {};
+  for (const m of superMisses) byChannel[m.channel] = (byChannel[m.channel] ?? 0) + 1;
+  const byConsensus: Record<string, number> = {};
+  for (const m of superMisses) byConsensus[m.consensus] = (byConsensus[m.consensus] ?? 0) + 1;
+
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  SUPER-MISS ORACLE (bd lawlq.5)");
+  L("═══════════════════════════════════════════════════════════════════");
+  L(
+    `super attempted=${t.attempted} resolved=${t.resolved} extSkip=${t.externalSkipped} ` +
+      `noDef=${t.noInProjectDef} coreAmb=${t.coreAmbiguous} hole=${superMisses.length}`,
+  );
+  L("");
+  L("─── cause class ───────────────────────────────────────────────────");
+  for (const cat of Object.keys(SUPER_CAT) as SuperCat[]) {
+    const arr = byCat.get(cat) ?? [];
+    L(`  ${String(arr.length).padStart(5)}  ${SUPER_CAT[cat]}`);
+  }
+  L("");
+  L("─── heritage channel to the definer ───────────────────────────────");
+  for (const [ch, n] of Object.entries(byChannel).sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(5)}  ${ch}`);
+  }
+  L("");
+  L("─── includer-consensus verdict ────────────────────────────────────");
+  for (const [c, n] of Object.entries(byConsensus).sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(5)}  ${c.padEnd(18)} ${SUPER_CONSENSUS[c as SuperConsensus]}`);
+  }
+  L("");
+  L("─── precision: resolved `super` pointing at the CALLER itself ─────");
+  L(`  self-edges among resolved super sites: ${superSelfEdges.length}`);
+  for (const s of superSelfEdges.slice(0, 10)) L(`     ${s}`);
+  L("");
+  const selfScope = selfScopeHeritageCensus();
+  L("─── self-scope heritage census (nested module mixed into its host) ─");
+  L(`  heritage edges invisible under the current canonicalization: ${selfScope.edges}`);
+  for (const s of selfScope.samples) L(`     ${s}`);
+  L("");
+  L("─── same walk keyed by the module's LAST SEGMENT ──────────────────");
+  const shortWould = superMisses.filter((m) => m.consensusShort === "wouldResolve");
+  L(
+    `  misses whose module is mixed in under a short key : ${superMisses.filter((m) => m.includedByShortCount > 0).length}`,
+  );
+  L(`  of those, segment key is unambiguous              : ${superMisses.filter((m) => m.shortKeyUnambiguous).length}`);
+  L(`  consensus WOULD resolve under the segment key     : ${shortWould.length}`);
+  L(`  … and the segment key is unambiguous              : ${shortWould.filter((m) => m.shortKeyUnambiguous).length}`);
+  L("");
+  for (const cat of Object.keys(SUPER_CAT) as SuperCat[]) {
+    const arr = byCat.get(cat) ?? [];
+    if (arr.length === 0) continue;
+    L(`  ── ${cat} (${arr.length}) ──`);
+    for (const m of arr.slice(0, 12)) {
+      L(
+        `     ${m.relPath}:${m.line}  ${m.enclosingClass}#${m.member}` +
+          `  seen=[${m.ancestorsSeen.join(", ")}]` +
+          `  inc=${m.includedByCount} host=${m.hostModule || "-"}(${m.hostIncludedByCount})` +
+          `  ${m.consensus}` +
+          `  definer=${m.definersCanonical[0]?.klass ?? m.definersRaw[0]?.klass ?? "-"}(${m.channel})`,
+      );
+    }
+    L("");
+  }
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_SUPER,
+    JSON.stringify(
+      {
+        root: ROOT,
+        superKindTally: t,
+        holes: superMisses.length,
+        byCategory: Object.fromEntries(
+          (Object.keys(SUPER_CAT) as SuperCat[]).map((c) => [c, (byCat.get(c) ?? []).length]),
+        ),
+        byChannel,
+        byConsensus,
+        selfScopeHeritage: selfScope,
+        superSelfEdges,
+        misses: superMisses,
+      },
+      null,
+      2,
+    ),
+  );
+  L(`super oracle report → ${OUT_SUPER}`);
+  L("");
+}
+
 // ---------------------------------------------------------------------------
 // MAIN
 // ---------------------------------------------------------------------------
@@ -4782,6 +5209,7 @@ async function main(): Promise<void> {
   writeFileSync(OUT_MISSES, JSON.stringify(payload, null, 2));
   L(`misses dumped: ${misses.length} -> ${OUT_MISSES}`);
   if (ORACLE_ENABLED) runOracle(Date.now() - t0, files.length);
+  if (SUPER_ORACLE_ENABLED) runSuperOracle();
   if (LOCAL_CENSUS_ENABLED) runLocalCensus();
   if (DUCK_ENABLED) runDuckOracle();
   if (FIXPOINT_ENABLED) runFixpointOracle(extractions, Date.now() - t0);
