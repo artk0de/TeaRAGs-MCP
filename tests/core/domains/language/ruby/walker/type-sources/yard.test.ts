@@ -1,3 +1,5 @@
+import Parser from "tree-sitter";
+import RbLang from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,6 +7,7 @@ import {
   collectYardReturnTypes,
   rubyYardTypeSource,
 } from "../../../../../../../src/core/domains/language/ruby/walker/type-sources/yard.js";
+import { RubyTypeFactStore } from "../../../../../../../src/core/domains/language/ruby/walker/type-fact-store.js";
 import type { RubyExtractInput } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
 
 /** Minimal stub for RubyExtractInput — adapter only uses `code`. */
@@ -235,5 +238,141 @@ describe("collectYardReturnTypes", () => {
 
   it("returns empty map for code with no annotations", () => {
     expect(collectYardReturnTypes("def hello; end")).toEqual({});
+  });
+});
+
+// ── @!method directive self-naming (bd tea-rags-mcp-8ypeu) ──────────────────
+//
+// `# @!method self.call` DOCUMENTS a method the class defines dynamically. Its
+// nested `@return` belongs to THAT method, never to whatever `def` happens to
+// follow — attaching it to `def initialize` publishes a wrong declared fact at a
+// real coordinate, and declared facts beat inference by design.
+
+describe("@!method directive does not leak onto the following def (bd tea-rags-mcp-8ypeu)", () => {
+  const taxdomeShape = [
+    "class ApplyStatus",
+    "  # @!method self.call(firm)",
+    "  #   @param firm [Firm]",
+    "  #   @return [ServiceResult]",
+    "  def initialize(firm)",
+    "    @firm = firm",
+    "  end",
+    "end",
+  ].join("\n");
+
+  it("does NOT bind the directive's @return to the following def", () => {
+    expect(collectYardReturnTypes(taxdomeShape)).toEqual({});
+  });
+
+  it("types the directive's OWN coordinate (self.call → the class's call member)", () => {
+    const facts = rubyYardTypeSource.extract(makeInput(taxdomeShape)).filter((f) => f.kind === "return");
+    expect(facts).toHaveLength(1);
+    expect(facts[0]).toMatchObject({
+      methodName: "call",
+      type: { form: "instance", name: "ServiceResult" },
+    });
+  });
+
+  it("keys a self.NAME directive at the CLASS coordinate, never the instance one", () => {
+    // `def self.call` and `def call` are different methods. Storing the class
+    // directive's return under `Class#call` would claim the INSTANCE method
+    // returns it — the same wrong-fact-at-a-real-coordinate bug, one level over.
+    const store = RubyTypeFactStore.fromFacts(rubyYardTypeSource.extract(makeInput(taxdomeShape)));
+    const keys = Object.keys(store.structuredReturnTypesMap());
+    expect(keys).toEqual([".call"]); // stub tree → empty scope; the SEPARATOR is the invariant
+  });
+
+  it("keys a BARE NAME directive at the instance coordinate", () => {
+    const code = ["# @!method render", "#   @return [Fragment]", "def initialize", "end"].join("\n");
+    const store = RubyTypeFactStore.fromFacts(rubyYardTypeSource.extract(makeInput(code)));
+    expect(Object.keys(store.structuredReturnTypesMap())).toEqual(["#render"]);
+  });
+
+  it("attributes the directive's fact to the ENCLOSING class scope", () => {
+    // Real tree: the directive sits on a comment line, so its scope comes from
+    // the class range, not from a def line.
+    const parser = new Parser();
+    parser.setLanguage(RbLang as unknown as Parser.Language);
+    const input = { ...makeInput(taxdomeShape), tree: parser.parse(taxdomeShape) } as RubyExtractInput;
+    const facts = rubyYardTypeSource.extract(input).filter((f) => f.kind === "return");
+    expect(facts).toHaveLength(1);
+    expect(facts[0]?.symbolScope).toEqual(["ApplyStatus"]);
+    expect(facts[0]?.methodName).toBe("call");
+  });
+
+  it("types a BARE @!method name as an instance member of the same class", () => {
+    const code = [
+      "class Widget",
+      "  # @!method render",
+      "  #   @return [Fragment]",
+      "  def initialize",
+      "  end",
+      "end",
+    ].join("\n");
+    const facts = rubyYardTypeSource.extract(makeInput(code)).filter((f) => f.kind === "return");
+    expect(facts).toHaveLength(1);
+    expect(facts[0]).toMatchObject({ methodName: "render", type: { form: "instance", name: "Fragment" } });
+    expect(collectYardReturnTypes(code)).toEqual({});
+  });
+
+  it("leaves a def with its OWN separate docblock untouched", () => {
+    const code = [
+      "# @!method self.call(x)",
+      "#   @return [Result]",
+      "def initialize(x)",
+      "end",
+      "",
+      "# @return [String]",
+      "def label",
+      "end",
+    ].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({ label: "String" });
+  });
+
+  it("claims the rest of the block at the directive's OWN indentation (flat shape)", () => {
+    // taxdome writes both shapes; `services/billing/invoices/apply_status.rb`
+    // — the file this bug was reported from — puts every tag at the directive's
+    // own column, so indentation cannot decide ownership.
+    const code = [
+      "class ApplyStatus",
+      "  # @!method self.call(invoice, status, payload)",
+      "  # @param invoice [Invoice]",
+      "  # @return [KindOfService::Result]",
+      "  def initialize(invoice, status, payload = {})",
+      "  end",
+      "end",
+    ].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({});
+  });
+
+  it("a bare `#` separator ends the directive's block, so the next tag reaches the def", () => {
+    const code = [
+      "# @!method self.call(x)",
+      "#   @return [Result]",
+      "#",
+      "# @return [Widget]",
+      "def initialize(x)",
+      "end",
+    ].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({ initialize: "Widget" });
+  });
+
+  it("leaves BOTH @param orders working across a directive block", () => {
+    const code = [
+      "# @!method self.call(firm)",
+      "#   @return [ServiceResult]",
+      "# @param firm [Firm]",
+      "def initialize(firm)",
+      "end",
+    ].join("\n");
+    expect(collectYardParamTypes(code).get(4)).toEqual({ firm: "Firm" });
+    const bracketFirst = [
+      "# @!method self.call(firm)",
+      "#   @return [ServiceResult]",
+      "# @param [Firm] firm",
+      "def initialize(firm)",
+      "end",
+    ].join("\n");
+    expect(collectYardParamTypes(bracketFirst).get(4)).toEqual({ firm: "Firm" });
   });
 });
