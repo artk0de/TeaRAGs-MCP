@@ -383,6 +383,100 @@ describe("deriveServiceEntryReturnTypes (j9xpf)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// bd tea-rags-mcp-yt3im — EXISTENCE-GATED precedence over declared facts.
+//
+// `@!method self.call` directives own the `Entry.call` (class-form) coordinate
+// (bd 8ypeu) and `declaredReturnTypeOn` reads that form FIRST for a class
+// receiver. On taxdome 251 of those directives declare `@return [ServiceResult]`
+// — a class the corpus declares NOWHERE. The fiction outranked the derivation
+// that names the real `KindOfService::Result`, and the derive's skip-guard never
+// saw the collision because it only ever inspected the `#` sibling.
+//
+// The rule these cases pin: a DECLARED fact keeps its coordinate as long as it
+// names a type the project actually declares. A fact naming nothing is not
+// evidence, so a derived fact at the same coordinate takes it — including the
+// class-form coordinate, whose OWNERSHIP is unchanged (still class-form, still
+// what a class receiver reads first) even when its VALUE is replaced.
+// ---------------------------------------------------------------------------
+describe("deriveServiceEntryReturnTypes — existence-gated precedence (yt3im)", () => {
+  const RESULT: RubyTypeRef = { form: "instance", name: "KindOfService::Result" };
+  const related = (map: Record<string, string[]>) => (type: string) => map[type] ?? [];
+  /** The corpus declares `KindOfService::Result` and `Billing::CreateResult`; nothing else. */
+  const declares = (name: string): boolean => name === "KindOfService::Result" || name === "Billing::CreateResult";
+
+  it("REPLACES a class-form fact whose type the project declares nowhere", () => {
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      {
+        "KindOfService#call": RESULT,
+        "Billing::Create.call": { form: "instance", name: "ServiceResult" },
+      },
+      related({ KindOfService: ["Billing::Create"] }),
+      declares,
+    );
+    // Both coordinates carry the real type: the `#` one for instance receivers,
+    // the `.` one because a class receiver reads it FIRST.
+    expect(derived["Billing::Create.call"]).toEqual(RESULT);
+    expect(derived["Billing::Create#call"]).toEqual(RESULT);
+  });
+
+  it("LEAVES a class-form fact whose type IS declared in-project (8ypeu ownership intact)", () => {
+    const declaredClassForm: RubyTypeRef = { form: "instance", name: "Billing::CreateResult" };
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      { "KindOfService#call": RESULT, "Billing::Create.call": declaredClassForm },
+      related({ KindOfService: ["Billing::Create"] }),
+      declares,
+    );
+    expect(derived["Billing::Create.call"]).toBeUndefined();
+  });
+
+  it("REPLACES an instance-form fact whose type the project declares nowhere", () => {
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      { "KindOfService#call": RESULT, "Billing::Create#call": { form: "instance", name: "ServiceResult" } },
+      related({ KindOfService: ["Billing::Create"] }),
+      declares,
+    );
+    expect(derived["Billing::Create#call"]).toEqual(RESULT);
+  });
+
+  it("never replaces a NON-NOMINAL declared fact — a union/container names no single class to check", () => {
+    const union: RubyTypeRef = {
+      form: "union",
+      members: [{ form: "instance", name: "Nope" }, RESULT],
+    };
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      { "KindOfService#call": RESULT, "Billing::Create#call": union },
+      related({ KindOfService: ["Billing::Create"] }),
+      declares,
+    );
+    expect(derived["Billing::Create#call"]).toBeUndefined();
+  });
+
+  it("derives NOTHING at a fictional class-form coordinate when the template has no fact to thread", () => {
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      { "Billing::Create.call": { form: "instance", name: "ServiceResult" } },
+      related({ KindOfService: ["Billing::Create"] }),
+      declares,
+    );
+    expect(derived).toEqual({});
+  });
+
+  it("with NO existence oracle every declared fact is taken at face value (legacy behaviour)", () => {
+    const fiction: RubyTypeRef = { form: "instance", name: "ServiceResult" };
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      { "KindOfService#call": RESULT, "Billing::Create#call": fiction, "Billing::Create.call": fiction },
+      related({ KindOfService: ["Billing::Create"] }),
+    );
+    expect(derived).toEqual({});
+  });
+});
+
 describe("end-to-end: extract → probe → discover → fold (KindOfService shape)", () => {
   it("produces the KindOfService.call → perform run-global map", () => {
     const chunks: ChunkExtraction[] = [chunk("KindOfService.call", ["KindOfService"], [["self.new", "perform"]])];

@@ -307,6 +307,29 @@ function splitMethodSymbolId(symbolId: string): { type: string; member: string }
  * bases) the FIRST entry wins, keeping the fold order-deterministic rather than
  * last-write-wins.
  *
+ * ── EXISTENCE-GATED PRECEDENCE (bd tea-rags-mcp-yt3im) ──
+ * "Declared wins" presumes the declaration says something checkable. An
+ * annotation naming a class the corpus declares NOWHERE says nothing — taxdome
+ * carries 251 `@!method self.call` directives returning `ServiceResult`, a type
+ * no file defines, while the real one is `KindOfService::Result`. Such a fact is
+ * not evidence, so it does NOT hold its coordinate against a derivation. Two
+ * coordinates are involved, and both must be considered together or the fix does
+ * not land:
+ *   - `<Entry>#<member>` — this fold's home, read by instance receivers;
+ *   - `<Entry>.<member>` — owned by the `@!method self.x` directive (bd 8ypeu)
+ *     and read FIRST by `declaredReturnTypeOn` for a CLASS receiver. A fiction
+ *     parked there shadows the instance-side derivation entirely, which is why
+ *     the old skip-guard (instance coordinate only) never saw the collision.
+ * The class form's OWNERSHIP is untouched: the derivation replaces a fictional
+ * VALUE at a coordinate the directive already claimed, and never CREATES that
+ * coordinate — an absent `.` key still means no directive claimed the class form.
+ * A non-nominal fact (union / container) names no single class to check and is
+ * always taken at face value.
+ *
+ * `isProjectDeclaredType` defaults to "everything is declared", which reduces the
+ * fold to its pre-yt3im behaviour: with no existence oracle no fact can be shown
+ * to be a fiction, so none is demoted.
+ *
  * Pure over the injected `relatedConcreteTypes` — the provider passes the very
  * `SelfDispatchProbe` closure the discovery folded over, so the memoized
  * descendant walk is shared and no hierarchy traversal is repeated.
@@ -315,7 +338,15 @@ export function deriveServiceEntryReturnTypes(
   entrySymbolIds: readonly string[],
   structuredReturnTypes: Readonly<Record<string, RubyTypeRef>>,
   relatedConcreteTypes: (type: string) => readonly string[],
+  isProjectDeclaredType: (typeName: string) => boolean = () => true,
 ): Record<string, RubyTypeRef> {
+  /** Does the declared fact at `key` hold its coordinate against a derivation? */
+  const holdsCoordinate = (key: string): boolean => {
+    const declared = structuredReturnTypes[key];
+    if (declared === undefined) return false;
+    if (declared.form !== "class" && declared.form !== "instance") return true;
+    return isProjectDeclaredType(declared.name);
+  };
   const derived: Record<string, RubyTypeRef> = {};
   for (const symbolId of entrySymbolIds) {
     const split = splitMethodSymbolId(symbolId);
@@ -323,9 +354,15 @@ export function deriveServiceEntryReturnTypes(
     const templateReturn = structuredReturnTypes[`${split.type}#${split.member}`];
     if (templateReturn === undefined) continue;
     for (const entryType of relatedConcreteTypes(split.type)) {
-      const key = `${entryType}#${split.member}`;
-      if (key in structuredReturnTypes || key in derived) continue; // declared wins; first derivation wins
-      derived[key] = templateReturn;
+      const instanceKey = `${entryType}#${split.member}`;
+      const classKey = `${entryType}.${split.member}`;
+      // Instance coordinate: declared wins; first derivation wins.
+      if (!holdsCoordinate(instanceKey) && !(instanceKey in derived)) derived[instanceKey] = templateReturn;
+      // Class coordinate: replace a fiction the directive parked there, never
+      // create one where no directive exists.
+      if (classKey in structuredReturnTypes && !holdsCoordinate(classKey) && !(classKey in derived)) {
+        derived[classKey] = templateReturn;
+      }
     }
   }
   return derived;

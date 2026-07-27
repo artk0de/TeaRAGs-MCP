@@ -592,10 +592,17 @@ export class CodegraphRunState {
       // DERIVED-last into the same map it read: the helper skips coordinates
       // already carrying a declared fact, so YARD / associations /
       // body-last-expr keep precedence by construction.
+      //
+      // The existence oracle (bd tea-rags-mcp-yt3im) is what makes "declared
+      // wins" checkable: a fact naming a type this run declares nowhere — no
+      // symbol-table entry, no ancestry — is an annotation fiction and does not
+      // outrank a derivation. Both inputs are complete exactly here, which is
+      // why the predicate is built at this barrier rather than passed in.
       const entryReturnTypes = deriveServiceEntryReturnTypes(
         [...this.selfInstantiatingClassMethods, ...Object.keys(this.selfDispatchTemplates)],
         this.structuredReturnTypes,
         selfDispatchProbe.relatedConcreteTypes,
+        (typeName) => symbolTable.lookup(typeName).length > 0 || this.ancestors[typeName] !== undefined,
       );
       for (const [key, ref] of Object.entries(entryReturnTypes)) {
         this.structuredReturnTypes[key] = ref;
