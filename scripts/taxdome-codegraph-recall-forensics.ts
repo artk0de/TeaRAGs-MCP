@@ -4039,7 +4039,10 @@ function runFixpointOracle(extractions: FileExtraction[], elapsedBeforeMs: numbe
 // CODEGRAPH_LOCAL_CENSUS unset nothing extra is scanned or reported and the A/B
 // recall metrics are byte-identical.
 // ===========================================================================
-const LOCAL_CENSUS_ENABLED = process.env.CODEGRAPH_LOCAL_CENSUS === "1";
+// The def-param oracle (bd tea-rags-mcp-jawn8) consumes the census records as
+// its numerator, so its flag implies this scan.
+const LOCAL_CENSUS_ENABLED =
+  process.env.CODEGRAPH_LOCAL_CENSUS === "1" || process.env.CODEGRAPH_DEFPARAM_ORACLE === "1";
 const OUT_LOCAL_CENSUS = join(OUT_DIR, "untyped-local-census.json");
 
 /** The syntactic forms that introduce a local binding. Value = report label. */
@@ -4604,6 +4607,548 @@ function runLocalCensus(): void {
     ),
   );
   L(`untyped-local census → ${OUT_LOCAL_CENSUS}`);
+  L("");
+}
+
+// ===========================================================================
+// NON-LEADING DEF-PARAM ORACLE (CODEGRAPH_DEFPARAM_ORACLE=1, bd tea-rags-mcp-jawn8)
+//
+// The census bucket `def param: positional past the leading required run` is a
+// call whose receiver IS a declared positional parameter of its own method and
+// which the walker's position→name index nevertheless does not carry. TWO
+// disjoint causes hide under that one label, and only measurement separates
+// them:
+//
+//   * SIGNATURE GAP — the method's signature never reached `ChunkExtraction`
+//     at all, so `paramNames` is absent even though the parameter sits in a
+//     plain LEADING required run. The position→name mapping is sound and
+//     simply missing.
+//   * END-PINNED — a required positional PAST an optional / splat.
+//     `positionalParamNames` truncates there on purpose: an omitted optional
+//     shifts every later argument, so a FRONT index no longer pins the name.
+//     Ruby still pins it, from the END (`def f(a, b = 1, c)` always binds `c`
+//     to the last argument), which a tail-indexed fold could reach.
+//
+// Widening the index is cheap on its own; it pays only if the callee's call
+// sites deliver a statically typeable argument at that position AND agree on
+// the type. bvalc Increment 1 is input-starved exactly there, so this oracle
+// measures the addressable subset BEFORE anything is built: per
+// (callee, parameter) it folds the SAME agreement rule over the SAME
+// conservatively-typed argument shapes bvalc uses, then asks the symbol table
+// whether the agreed type would define the missed member at all.
+//
+// Same additive, env-gated contract as the oracles above: with the flag unset
+// nothing extra is scanned and the A/B recall metrics are byte-identical. The
+// flag implies CODEGRAPH_LOCAL_CENSUS, whose per-call records are this oracle's
+// numerator.
+// ===========================================================================
+const DEFPARAM_ORACLE_ENABLED = process.env.CODEGRAPH_DEFPARAM_ORACLE === "1";
+const OUT_DEFPARAM = join(OUT_DIR, "defparam-oracle-report.json");
+
+/** Parameter flavours, by the tree-sitter node that declares them. */
+type DpParamKind = "required" | "optional" | "splat" | "hashSplat" | "keyword" | "block" | "destructured" | "other";
+
+function dpParamKind(node: AstNode): DpParamKind {
+  if (node.type === "identifier") return "required";
+  if (node.type === "optional_parameter") return "optional";
+  if (node.type === "splat_parameter") return "splat";
+  if (node.type === "hash_splat_parameter") return "hashSplat";
+  if (node.type === "keyword_parameter") return "keyword";
+  if (node.type === "block_parameter") return "block";
+  if (node.type === "destructured_parameter") return "destructured";
+  return "other";
+}
+
+/** Does this flavour consume a POSITIONAL argument slot at the call site? */
+const DP_CONSUMES_SLOT: ReadonlySet<DpParamKind> = new Set<DpParamKind>([
+  "required",
+  "optional",
+  "splat",
+  "destructured",
+]);
+
+interface DpParam {
+  readonly name: string;
+  readonly kind: DpParamKind;
+  /** Index among the params that consume a positional slot; `null` otherwise. */
+  readonly slot: number | null;
+}
+
+/** Where a def sits relative to the traversal `collectRubyMethodSignatures` does. */
+const DP_DEF_FORMS = ["classBody", "singletonClass", "blockNested", "topLevel"] as const;
+type DpDefForm = (typeof DP_DEF_FORMS)[number];
+
+interface DpDef {
+  readonly symbolId: string;
+  readonly relPath: string;
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly params: readonly DpParam[];
+  /** How many params consume a positional slot — the END-pinning denominator. */
+  readonly slots: number;
+  /** `ChunkExtraction.paramNames`: the index the PRODUCTION fold actually has. */
+  readonly recorded: readonly string[];
+  readonly form: DpDefForm;
+}
+
+/**
+ * Which traversal shape hides a def from the signature collector.
+ * `collectRubyMethodSignatures` walks to the first `class`/`module` and then
+ * iterates that body's DIRECT statements, so a def under a singleton class, a
+ * def nested in a block (`included do … end`), and a def at file scope are all
+ * invisible to it — and therefore carry no `paramNames`, no arity, and no
+ * visibility. Naming the shape turns "the index is missing" into a lead.
+ */
+function dpDefFormOf(node: AstNode): DpDefForm {
+  let sawBlock = false;
+  for (let cursor = node.parent; cursor !== null; cursor = cursor.parent) {
+    if (cursor.type === "singleton_class") return "singletonClass";
+    if (cursor.type === "block" || cursor.type === "do_block") sawBlock = true;
+    if (cursor.type === "class" || cursor.type === "module") return sawBlock ? "blockNested" : "classBody";
+  }
+  return sawBlock ? "blockNested" : "topLevel";
+}
+
+interface DpSite {
+  readonly relPath: string;
+  readonly chunkId: string;
+  readonly scope: readonly string[];
+  readonly line: number;
+  /** `null` ⇒ bare (implicit-self) call. Receiver-ful non-constant → not scanned. */
+  readonly recv: FxExpr | null;
+  readonly member: string;
+  readonly args: readonly FxExpr[];
+  /** Positional list closed early (splat / block / keyword pair): the TAIL index
+   *  of an end-pinned parameter cannot be computed from a truncated list. */
+  readonly truncated: boolean;
+}
+
+/** The slice of a chunk's environment an argument hint is evaluated against. */
+interface DpChunkEnv {
+  readonly relPath: string;
+  /** Enclosing class FQ — the key `@ivar` argument types are stored under. */
+  readonly klass: string;
+  readonly localBindings?: Record<string, LocalBinding[]>;
+}
+
+const dpDefs: DpDef[] = [];
+const dpDefById = new Map<string, DpDef>();
+const dpDefsByFile = new Map<string, DpDef[]>();
+const dpSites: DpSite[] = [];
+const dpChunkEnvs = new Map<string, DpChunkEnv>();
+const dpFileClassFields = new Map<string, Record<string, Record<string, string>>>();
+/** Defs the chunker gave no chunk of their own — unkeyable, counted for honesty. */
+let dpDefsWithoutChunk = 0;
+
+/** ONE extra DFS per file: every def's full parameter list + every const/bare site. */
+function scanDefParamOracleAst(root: AstNode, relPath: string, extraction: FileExtraction): void {
+  if (extraction.classFieldTypes) dpFileClassFields.set(relPath, extraction.classFieldTypes);
+  for (const chunk of extraction.chunks) {
+    dpChunkEnvs.set(chunk.symbolId, {
+      relPath,
+      klass: chunk.scope.join("::"),
+      ...(chunk.localBindings !== undefined ? { localBindings: chunk.localBindings } : {}),
+    });
+  }
+  const owners = fxLineOwners(extraction);
+  const ownerAt = (line: number): ChunkExtraction | undefined => (line < owners.length ? owners[line] : undefined);
+
+  const stack: AstNode[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (node === undefined) break;
+
+    if (node.type === "method" || node.type === "singleton_method") {
+      const line = node.startPosition.row + 1;
+      const owner = ownerAt(line);
+      if (owner?.startLine !== line || owner.endLine === undefined) {
+        dpDefsWithoutChunk += 1;
+      } else {
+        const params: DpParam[] = [];
+        let slots = 0;
+        for (const child of node.childForFieldName("parameters")?.namedChildren ?? []) {
+          const kind = dpParamKind(child);
+          const bound = child.type === "identifier" ? child : child.childForFieldName("name");
+          const consumes = DP_CONSUMES_SLOT.has(kind);
+          const slot = consumes ? slots : null;
+          if (consumes) slots += 1;
+          if (bound?.type === "identifier") params.push({ name: bound.text, kind, slot });
+        }
+        if (params.length > 0) {
+          const def: DpDef = {
+            symbolId: owner.symbolId,
+            relPath,
+            startLine: line,
+            endLine: owner.endLine,
+            params,
+            slots,
+            recorded: owner.paramNames ?? [],
+            form: dpDefFormOf(node),
+          };
+          dpDefs.push(def);
+          if (!dpDefById.has(def.symbolId)) dpDefById.set(def.symbolId, def);
+          const byFile = dpDefsByFile.get(relPath);
+          if (byFile === undefined) dpDefsByFile.set(relPath, [def]);
+          else byFile.push(def);
+        }
+      }
+    }
+
+    if (node.type === "call" || node.type === "method_call") {
+      const method = node.childForFieldName("method");
+      const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list") ?? null;
+      if (method && args) {
+        const receiverNode = node.childForFieldName("receiver");
+        const recv = receiverNode ? fxExprOf(receiverNode, 0) : null;
+        // jawn8 stays inside bvalc's substrate: a callee known from SYNTAX
+        // (constant receiver) or from the caller's own lexical class (bare
+        // call). A receiver-ful non-constant call needs the receiver typed
+        // first — that is the fixpoint a2hrq already measured, not this slice.
+        if (recv === null || recv.k === "const") {
+          const line = node.startPosition.row + 1;
+          const argExprs: FxExpr[] = [];
+          let truncated = false;
+          for (const arg of args.namedChildren) {
+            if (
+              arg.type === "block" ||
+              arg.type === "do_block" ||
+              arg.type === "block_argument" ||
+              arg.type === "splat_argument" ||
+              arg.type === "hash_splat_argument" ||
+              arg.type === "pair"
+            ) {
+              truncated = true;
+              break;
+            }
+            argExprs.push(fxExprOf(arg, 0));
+          }
+          if (argExprs.length > 0) {
+            const owner = ownerAt(line);
+            dpSites.push({
+              relPath,
+              chunkId: owner?.symbolId ?? "",
+              scope: owner?.scope ?? extraction.fileScope,
+              line,
+              recv,
+              member: method.text,
+              args: argExprs,
+              truncated,
+            });
+          }
+        }
+      }
+    }
+
+    for (const c of node.children) stack.push(c);
+  }
+}
+
+/**
+ * The type of ONE argument expression under the BASELINE environment — a
+ * deliberate mirror of bvalc's `argTypeHint`, not of the fixpoint's `fxTypeOf`.
+ * No wave, no derived param types, no derived returns: whatever this oracle
+ * reports is reachable by a mechanism built on Increment 1's substrate alone.
+ */
+function dpTypeOf(expr: FxExpr, site: DpSite): RubyTypeRef | undefined {
+  switch (expr.k) {
+    case "const":
+      return { form: "class", name: expr.name };
+    case "instConst":
+      return { form: "instance", name: expr.name };
+    case "ident": {
+      const binding = resolveLocalBinding(dpChunkEnvs.get(site.chunkId)?.localBindings, expr.name, site.line);
+      if (binding === undefined) return undefined;
+      return binding.typeRef ?? { form: binding.valueKind === "class" ? "class" : "instance", name: binding.type };
+    }
+    case "ivar": {
+      const env = dpChunkEnvs.get(site.chunkId);
+      if (env === undefined) return undefined;
+      const name = dpFileClassFields.get(env.relPath)?.[env.klass]?.[expr.name];
+      return name === undefined ? undefined : { form: "instance", name };
+    }
+    case "call":
+    case "opaque":
+    default:
+      return undefined;
+  }
+}
+
+/** Callee coordinate candidates for a site, in Ruby lookup order. */
+function dpTargetsOf(site: DpSite): string[] {
+  if (site.recv === null) {
+    const klass = site.scope.join("::");
+    if (klass === "") return [];
+    const out: string[] = [];
+    for (const c of [klass, ...fxAncestorsOf(klass)]) out.push(`${c}#${site.member}`, `${c}.${site.member}`);
+    return out;
+  }
+  if (site.recv.k !== "const") return [];
+  const suffix = site.member === "new" ? "#initialize" : `.${site.member}`;
+  const out: string[] = [];
+  for (const fq of constantLookupCandidates(site.scope, site.recv.name)) {
+    out.push(`${fq}${suffix}`);
+    for (const anc of fxAncestorsOf(fq)) out.push(`${anc}${suffix}`);
+  }
+  return out;
+}
+
+/** Which END of the argument list pins a positional parameter, if either. */
+type DpPin = "both" | "front" | "end" | "none";
+
+function dpPinOf(def: DpDef, slot: number): DpPin {
+  const positional = def.params.filter((p) => p.slot !== null);
+  const front = positional.slice(0, slot).every((p) => p.kind === "required");
+  const end = positional.slice(slot + 1).every((p) => p.kind === "required");
+  return front && end ? "both" : front ? "front" : end ? "end" : "none";
+}
+
+/** Argument index a site would bind to this parameter, or `null` when none does. */
+function dpArgIndex(def: DpDef, param: DpParam, pin: DpPin, site: DpSite): number | null {
+  if (param.slot === null) return null;
+  if (pin === "both" || pin === "front") return param.slot;
+  if (pin !== "end" || site.truncated) return null;
+  return site.args.length - (def.slots - param.slot);
+}
+
+/** Per-(callee, parameter) call-site evidence, under the bvalc agreement rule. */
+interface DpEvidence {
+  /** Sites that reach this parameter's argument slot at all. */
+  sites: number;
+  /** Of those, sites whose argument carries a conservative type. */
+  hints: number;
+  type?: RubyTypeRef;
+  conflicted: boolean;
+}
+
+function dpFoldEvidence(): Map<string, Map<string, DpEvidence>> {
+  const out = new Map<string, Map<string, DpEvidence>>();
+  for (const site of dpSites) {
+    const targetId = dpTargetsOf(site).find((candidate) => dpDefById.has(candidate));
+    if (targetId === undefined) continue;
+    const def = dpDefById.get(targetId);
+    if (def === undefined) continue;
+    let byParam = out.get(targetId);
+    if (byParam === undefined) {
+      byParam = new Map<string, DpEvidence>();
+      out.set(targetId, byParam);
+    }
+    for (const param of def.params) {
+      if (param.slot === null) continue;
+      const index = dpArgIndex(def, param, dpPinOf(def, param.slot), site);
+      if (index === null || index < 0 || index >= site.args.length) continue;
+      let slot = byParam.get(param.name);
+      if (slot === undefined) {
+        slot = { sites: 0, hints: 0, conflicted: false };
+        byParam.set(param.name, slot);
+      }
+      slot.sites += 1;
+      const hint = dpTypeOf(site.args[index], site);
+      if (hint === undefined) continue;
+      slot.hints += 1;
+      if (slot.type === undefined) slot.type = hint;
+      else if (fxTypeKey(slot.type) !== fxTypeKey(hint)) slot.conflicted = true;
+    }
+  }
+  return out;
+}
+
+/** Why a census-bucket receiver is invisible to the production position index. */
+const DP_CLASS = {
+  signatureGap: "signature gap    (leading run, but the def has NO recorded paramNames)",
+  endPinned: "end-pinned       (required positional past an optional / splat)",
+  unpinned: "unpinned         (optional / splat on BOTH sides — no index pins it)",
+  alreadyIndexed: "already indexed  (recorded — should not reach the census bucket)",
+  notAParam: "not a parameter  (receiver is not declared by the owning def)",
+  noDef: "no owning def    (line is inside no def this scan keyed)",
+} as const;
+type DpClass = (typeof DP_CLASS)[keyof typeof DP_CLASS];
+
+/** One census-bucket call, joined against the def index and the fold. */
+interface DpVerdict {
+  readonly outcome: LcOutcome;
+  readonly cls: DpClass;
+  readonly relPath: string;
+  readonly line: number;
+  readonly member: string;
+  readonly receiver: string;
+  readonly defId?: string;
+  readonly pin?: DpPin;
+  readonly sites?: number;
+  readonly hints?: number;
+  readonly agreedType?: string;
+  readonly agreedForm?: string;
+  readonly typeInProject?: boolean;
+  readonly wouldResolve?: boolean;
+}
+
+function dpDefAt(relPath: string, line: number): DpDef | undefined {
+  let best: DpDef | undefined;
+  for (const def of dpDefsByFile.get(relPath) ?? []) {
+    if (line < def.startLine || line > def.endLine) continue;
+    if (best === undefined || def.endLine - def.startLine < best.endLine - best.startLine) best = def;
+  }
+  return best;
+}
+
+function dpClassify(record: LcMissRecord, evidence: Map<string, Map<string, DpEvidence>>): DpVerdict {
+  const base = {
+    outcome: record.outcome,
+    relPath: record.relPath,
+    line: record.line,
+    member: record.member,
+    receiver: record.receiver,
+  };
+  const def = dpDefAt(record.relPath, record.line);
+  if (def === undefined) return { ...base, cls: DP_CLASS.noDef };
+  const param = def.params.find((p) => p.name === record.receiver);
+  if (param?.slot === undefined || param.slot === null) {
+    return { ...base, cls: DP_CLASS.notAParam, defId: def.symbolId };
+  }
+  if (def.recorded.includes(param.name)) {
+    return { ...base, cls: DP_CLASS.alreadyIndexed, defId: def.symbolId };
+  }
+  const pin = dpPinOf(def, param.slot);
+  const cls = pin === "end" ? DP_CLASS.endPinned : pin === "none" ? DP_CLASS.unpinned : DP_CLASS.signatureGap;
+  const slot = evidence.get(def.symbolId)?.get(param.name);
+  const verdict: DpVerdict = {
+    ...base,
+    cls,
+    defId: def.symbolId,
+    pin,
+    sites: slot?.sites ?? 0,
+    hints: slot?.hints ?? 0,
+  };
+  if (slot?.type === undefined || slot.conflicted) return verdict;
+  const agreed = slot.type;
+  if (agreed.form !== "instance" && agreed.form !== "class") return verdict;
+  return {
+    ...verdict,
+    agreedType: agreed.name,
+    agreedForm: agreed.form,
+    typeInProject: symbolTable.lookup(agreed.name).length > 0,
+    wouldResolve: lcWouldResolve(agreed.name, record.member),
+  };
+}
+
+/** Printed verdict + JSON report. Runs after PASS-2, alongside the census. */
+function runDefParamOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  const evidence = dpFoldEvidence();
+  const bucket = lcRecords.filter((r) => r.shape === LC_SHAPE.defParamPositional);
+  const verdicts = bucket.map((r) => dpClassify(r, evidence));
+  const misses = verdicts.filter((v) => v.outcome === "miss");
+
+  const tally = (rows: readonly DpVerdict[]) => ({
+    calls: rows.length,
+    withSites: rows.filter((v) => (v.sites ?? 0) > 0).length,
+    withHint: rows.filter((v) => (v.hints ?? 0) > 0).length,
+    agreed: rows.filter((v) => v.agreedType !== undefined).length,
+    typeInProject: rows.filter((v) => v.typeInProject === true).length,
+    addressable: rows.filter((v) => v.wouldResolve === true).length,
+  });
+
+  const classes = [...new Set(verdicts.map((v) => v.cls))].sort();
+  const byClass = classes.map((cls) => ({
+    cls,
+    miss: tally(misses.filter((v) => v.cls === cls)),
+    exposure: tally(verdicts.filter((v) => v.cls === cls)),
+  }));
+  const overallMiss = tally(misses);
+  const overallExposure = tally(verdicts);
+
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  NON-LEADING DEF-PARAM ORACLE — addressability of the census bucket");
+  L("═══════════════════════════════════════════════════════════════════");
+  L(`defs indexed:                    ${dpDefs.length} (unkeyable, no own chunk: ${dpDefsWithoutChunk})`);
+  L(`const / bare call sites scanned: ${dpSites.length}`);
+  L(`callees the fold reached:        ${evidence.size}`);
+  L(`census bucket — misses:          ${misses.length}   (all outcomes: ${verdicts.length})`);
+  L("");
+  L("─── SIGNATURE COVERAGE: defs with params, by traversal shape ──────");
+  L("form              defs   withPositional   recorded   GAP");
+  for (const form of DP_DEF_FORMS) {
+    const rows = dpDefs.filter((d) => d.form === form);
+    const positional = rows.filter((d) => d.slots > 0);
+    const recorded = positional.filter((d) => d.recorded.length > 0);
+    L(
+      `${form.padEnd(16)}  ${String(rows.length).padStart(5)}  ${String(positional.length).padStart(14)}  ` +
+        `${String(recorded.length).padStart(9)}  ${String(positional.length - recorded.length).padStart(5)}`,
+    );
+  }
+  L("");
+  L(
+    "class                                                              calls  sites   hint  agreed  inProj  ADDRESSABLE",
+  );
+  for (const row of byClass) {
+    L(
+      `${row.cls.padEnd(64)}  ${String(row.miss.calls).padStart(5)}  ${String(row.miss.withSites).padStart(5)}  ` +
+        `${String(row.miss.withHint).padStart(5)}  ${String(row.miss.agreed).padStart(6)}  ` +
+        `${String(row.miss.typeInProject).padStart(6)}  ${String(row.miss.addressable).padStart(11)}`,
+    );
+  }
+  L(
+    `${"TOTAL (misses)".padEnd(64)}  ${String(overallMiss.calls).padStart(5)}  ${String(overallMiss.withSites).padStart(5)}  ` +
+      `${String(overallMiss.withHint).padStart(5)}  ${String(overallMiss.agreed).padStart(6)}  ` +
+      `${String(overallMiss.typeInProject).padStart(6)}  ${String(overallMiss.addressable).padStart(11)}`,
+  );
+  L("");
+  L("─── EXPOSURE (every outcome, not only misses) ─────────────────────");
+  L(
+    `calls ${overallExposure.calls}  withSites ${overallExposure.withSites}  withHint ${overallExposure.withHint}  agreed ${overallExposure.agreed}  wouldResolve ${overallExposure.addressable}`,
+  );
+  L("");
+  const wins = misses.filter((v) => v.wouldResolve === true);
+  L(`─── ADDRESSABLE misses (${wins.length}) — first 15 ──`);
+  for (const v of wins.slice(0, 15)) {
+    L(`     ${v.relPath}:${v.line}  ${v.receiver}.${v.member}  →  ${v.agreedForm}:${v.agreedType}  [${v.defId}]`);
+  }
+  L("");
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_DEFPARAM,
+    JSON.stringify(
+      {
+        meta: {
+          bead: "tea-rags-mcp-jawn8",
+          root: ROOT,
+          generatedAt: new Date().toISOString(),
+          defsIndexed: dpDefs.length,
+          defsWithoutChunk: dpDefsWithoutChunk,
+          sitesScanned: dpSites.length,
+          calleesReached: evidence.size,
+          bucketMisses: misses.length,
+          bucketCalls: verdicts.length,
+        },
+        signatureCoverage: Object.fromEntries(
+          DP_DEF_FORMS.map((form) => {
+            const rows = dpDefs.filter((d) => d.form === form);
+            const positional = rows.filter((d) => d.slots > 0);
+            const recorded = positional.filter((d) => d.recorded.length > 0);
+            return [
+              form,
+              {
+                defs: rows.length,
+                withPositional: positional.length,
+                recorded: recorded.length,
+                gap: positional.length - recorded.length,
+              },
+            ];
+          }),
+        ),
+        overall: { miss: overallMiss, exposure: overallExposure },
+        byClass,
+        addressableSamples: wins.slice(0, 40),
+        starvedSamples: misses.filter((v) => (v.hints ?? 0) === 0).slice(0, 20),
+      },
+      null,
+      2,
+    ),
+  );
+  L(`def-param oracle → ${OUT_DEFPARAM}`);
   L("");
 }
 
@@ -5984,6 +6529,7 @@ async function main(): Promise<void> {
       if (ORACLE_ENABLED) scanOracleAst(materializedRoot, relPath);
       if (FIXPOINT_ENABLED) scanFixpointAst(materializedRoot, relPath, extraction);
       if (LOCAL_CENSUS_ENABLED) scanLocalCensusAst(materializedRoot, extraction);
+      if (DEFPARAM_ORACLE_ENABLED) scanDefParamOracleAst(materializedRoot, relPath, extraction);
       if (DUCK_ENABLED && code.includes("table_name")) scanTableNameDecls(materializedRoot, []);
       extractions.push(extraction);
     } catch (err) {
@@ -6315,6 +6861,7 @@ async function main(): Promise<void> {
   if (ORACLE_ENABLED) runOracle(Date.now() - t0, files.length);
   if (SUPER_ORACLE_ENABLED) runSuperOracle();
   if (LOCAL_CENSUS_ENABLED) runLocalCensus();
+  if (DEFPARAM_ORACLE_ENABLED) runDefParamOracle();
   if (DUCK_ENABLED) runDuckOracle();
   if (FIXPOINT_ENABLED) runFixpointOracle(extractions, Date.now() - t0);
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
