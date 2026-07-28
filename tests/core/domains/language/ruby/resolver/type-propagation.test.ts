@@ -61,6 +61,101 @@ describe("typeOfReceiver — local var instance binding", () => {
   });
 });
 
+// ── Nullary self-call receiver (bd tea-rags-mcp-pr7fu) ──────────────────────
+//
+// Ruby has no implicit local declaration, so an identifier in receiver position
+// that the walker never bound cannot be a variable — `current_client.foo` is a
+// zero-arg method call on self or an ancestor, and its return fact types the
+// receiver exactly as a local binding would.
+
+describe("typeOfReceiver — nullary self-call receiver (pr7fu)", () => {
+  it("types an unbound receiver from the fact on the caller's own class", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Firm", "Panel"],
+      structuredReturnTypes: { "Firm::Panel#current_client": { form: "instance", name: "Client" } },
+    });
+    expect(typeOfReceiver("current_client", 12, ctx)).toEqual({ form: "instance", name: "Client" });
+  });
+
+  it("inherits the fact from an ancestor when the caller's class declares none", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Firm::Panel"],
+      classAncestors: { "Firm::Panel": ["Authenticated"] },
+      structuredReturnTypes: { "Authenticated#current_client": { form: "instance", name: "Client" } },
+    });
+    expect(typeOfReceiver("current_client", 12, ctx)).toEqual({ form: "instance", name: "Client" });
+  });
+
+  it("stays SILENT when two ancestors declare different return types", () => {
+    // classAncestors is a flat superclass+include list, not a linearized MRO, so
+    // there is no defensible way to rank the two — and a wrong receiver type
+    // poisons every downstream hop.
+    const ctx = emptyCtx({
+      callerScope: ["Firm::Panel"],
+      classAncestors: { "Firm::Panel": ["Authenticated", "Impersonatable"] },
+      structuredReturnTypes: {
+        "Authenticated#current_client": { form: "instance", name: "Client" },
+        "Impersonatable#current_client": { form: "instance", name: "Employee" },
+      },
+    });
+    expect(typeOfReceiver("current_client", 12, ctx)).toBeUndefined();
+  });
+
+  it("the caller's OWN class shadows a disagreeing ancestor (Ruby's rule)", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Firm::Panel"],
+      classAncestors: { "Firm::Panel": ["Authenticated"] },
+      structuredReturnTypes: {
+        "Firm::Panel#current_client": { form: "instance", name: "Owner" },
+        "Authenticated#current_client": { form: "instance", name: "Client" },
+      },
+    });
+    expect(typeOfReceiver("current_client", 12, ctx)).toEqual({ form: "instance", name: "Owner" });
+  });
+
+  it("a real local binding still wins — the nullary path is the FALLBACK", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Firm::Panel"],
+      localBindings: { current_client: [{ line: 3, type: "Employee" }] },
+      structuredReturnTypes: { "Firm::Panel#current_client": { form: "instance", name: "Client" } },
+    });
+    expect(typeOfReceiver("current_client", 12, ctx)).toEqual({ form: "instance", name: "Employee" });
+  });
+
+  it("threads a CHAIN whose head is a nullary receiver", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Firm::Panel"],
+      structuredReturnTypes: { "Firm::Panel#current_client": { form: "instance", name: "Client" } },
+      associationTypes: { Client: { firm: "Firm" } },
+    });
+    expect(typeOfReceiver("current_client.firm", 12, ctx)).toEqual({ form: "instance", name: "Firm" });
+  });
+
+  it("keeps `self` and `super` unanswered — they are keywords, not members", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Firm::Panel"],
+      structuredReturnTypes: {
+        "Firm::Panel#self": { form: "instance", name: "Bogus" },
+        "Firm::Panel#super": { form: "instance", name: "Bogus" },
+      },
+    });
+    expect(typeOfReceiver("self", 12, ctx)).toBeUndefined();
+    expect(typeOfReceiver("super", 12, ctx)).toBeUndefined();
+  });
+
+  it("stays silent for an unbound receiver no owner declares", () => {
+    const ctx = emptyCtx({ callerScope: ["Firm::Panel"] });
+    expect(typeOfReceiver("whatever", 12, ctx)).toBeUndefined();
+  });
+
+  it("stays silent at a call site with no enclosing class", () => {
+    const ctx = emptyCtx({
+      structuredReturnTypes: { "#current_client": { form: "instance", name: "Client" } },
+    });
+    expect(typeOfReceiver("current_client", 12, ctx)).toBeUndefined();
+  });
+});
+
 // ── Const.new-chain head seed (rvw34 gap b) ──────────────────────────────────
 
 describe("typeOfReceiver — Const.new-chain head seed (rvw34 gap b)", () => {
