@@ -233,6 +233,25 @@ const OWNERFACT_ENABLED = process.env.CODEGRAPH_OWNERFACT_ORACLE === "1";
 // silence gate to get wrong.
 // ---------------------------------------------------------------------------
 const CALLEESHAPE_ENABLED = process.env.CODEGRAPH_CALLEESHAPE_ORACLE === "1";
+
+// ---------------------------------------------------------------------------
+// NULLARY-RECEIVER ORACLE (bd tea-rags-mcp-pr7fu, 2026-07-28). Same additive,
+// env-gated contract. The census's largest deferred tail is 1 800 dynamic/chain
+// misses whose RECEIVER is a bare zero-arg method call on self — `current_client`
+// in `current_client.foo`, not a local variable and not an assignment binding, so
+// no channel types it today.
+//
+// The probe walks the miss set, resolves each such receiver name against the
+// CALLER's MRO, and reports whether a single definer exists and whether an
+// owner-qualified return fact is reachable for it. Where no fact exists it
+// classifies the definer's body tail with the callee-shape classifier, so the
+// same run says which inference extension would unlock how many misses — the
+// demand side that funds bd smvyk.
+// ---------------------------------------------------------------------------
+const NULLARY_ENABLED = process.env.CODEGRAPH_NULLARY_ORACLE === "1";
+/** `"<relPath>|<callerSymbolId>"` → the local-variable names bound in that chunk,
+ *  so a receiver that IS a local can be excluded from the nullary population. */
+const nlChunkLocals = new Map<string, Set<string>>();
 /** One record per pass-1 chunk that carries `localCallBindings`, with the chunk's
  *  own enclosing scope — the key the bare branch would narrow by. */
 const ofChunkBindings: {
@@ -473,8 +492,13 @@ function ingestPass1(extraction: FileExtraction, materializedRoot: AstNode): voi
     for (const [symbolId, indices] of Object.entries(extraction.callbackParams)) runCallbackParams[symbolId] = indices;
   }
   runSelfDispatchMethods.push(...extractSelfDispatchMethods(extraction.chunks));
-  if (OWNERFACT_ENABLED || CALLEESHAPE_ENABLED) {
+  if (OWNERFACT_ENABLED || CALLEESHAPE_ENABLED || NULLARY_ENABLED) {
     for (const chunk of extraction.chunks) {
+      if (NULLARY_ENABLED) {
+        const names = new Set(Object.keys(chunk.localBindings ?? {}));
+        for (const name of Object.keys(chunk.localCallBindings ?? {})) names.add(name);
+        nlChunkLocals.set(`${extraction.relPath}|${chunk.symbolId}`, names);
+      }
       if (chunk.localCallBindings === undefined) continue;
       ofChunkBindings.push({
         relPath: extraction.relPath,
@@ -5572,7 +5596,7 @@ function csTypeOf(node: AstNode): string | null {
 }
 
 /** The shape class of a def's return, for the shapes the current inference misses. */
-function csClassify(defNode: AstNode): string {
+function csClassify(defNode: AstNode, owner = ""): string {
   const body = defNode.childForFieldName("body");
   if (!body) return "no-body";
   const tail = csTail(body);
@@ -5605,12 +5629,44 @@ function csClassify(defNode: AstNode): string {
   }
   if (tail.type === "call" || tail.type === "method_call") {
     const receiver = tail.childForFieldName("receiver");
-    return receiver === null ? "bare self-call tail (interprocedural, same class)" : "qualified call tail (opaque)";
+    if (receiver !== null) return "qualified call tail (opaque)";
+    // A receiver-less tail dispatches on self, so a one-hop closure over the
+    // owner-qualified channel would type it IFF the sibling method has a fact.
+    const callee = tail.childForFieldName("method")?.text;
+    const sibling = callee === undefined || owner.length === 0 ? undefined : ofOwnerFact(owner, callee);
+    return sibling === undefined
+      ? "bare self-call tail — sibling also opaque"
+      : "bare self-call tail — SIBLING HAS A FACT (one-hop closure)";
   }
   if (CS_LITERAL_TYPES.has(tail.type)) return "literal / non-nominal";
   if (tail.type === "constant" || tail.type === "scope_resolution") return "constant reference (class object)";
   if (tail.type === "self") return "self";
-  if (tail.type === "assignment" || tail.type === "operator_assignment") return "assignment as tail";
+  if (tail.type === "assignment" || tail.type === "operator_assignment") {
+    // The VALUE of `x = e` is `e`, and of `x ||= e` it is `e` whenever x was
+    // falsy — the memoized-reader idiom. Whether that is actionable depends
+    // entirely on whether the RHS types, so split the bucket by RHS shape
+    // rather than by the assignment operator.
+    const op = tail.type === "operator_assignment" ? (tail.text.includes("||=") ? "||=" : "other-op") : "=";
+    const rhs = tail.childForFieldName("right");
+    if (op === "other-op") return "assignment tail — non-|| operator";
+    if (!rhs) return "assignment tail — no RHS";
+    if (csTypeOf(rhs) !== null) return `assignment tail (${op}) — RHS TYPED`;
+    if (rhs.type === "call" || rhs.type === "method_call") {
+      const recv = rhs.childForFieldName("receiver");
+      const method = rhs.childForFieldName("method")?.text;
+      if (recv !== null && method !== undefined) {
+        const recvText = recv.type === "scope_resolution" ? readScopeResolution(recv) : recv.text;
+        if (/^[A-Z]\w*(?:::[A-Z]\w*)*$/.test(recvText)) {
+          const known =
+            runStructuredReturnTypes[`${recvText}.${method}`] ?? runStructuredReturnTypes[`${recvText}#${method}`];
+          return known !== undefined
+            ? `assignment tail (${op}) — RHS is Const.m() WITH a fact (one-hop closure)`
+            : `assignment tail (${op}) — RHS is Const.m() with no fact`;
+        }
+      }
+    }
+    return `assignment tail (${op}) — RHS opaque`;
+  }
   return `other: ${tail.type}`;
 }
 
@@ -5685,7 +5741,7 @@ function runCalleeShapeOracle(): void {
             const coord = `${fq}#${nameNode.text}`;
             if (!seenCoord.has(coord)) {
               seenCoord.add(coord);
-              const shape = csClassify(n);
+              const shape = csClassify(n, fq);
               classified += 1;
               shapeCoords.set(shape, (shapeCoords.get(shape) ?? 0) + 1);
               shapeSites.set(shape, (shapeSites.get(shape) ?? 0) + (wanted.get(coord) ?? 0));
@@ -5716,6 +5772,167 @@ function runCalleeShapeOracle(): void {
     const coords = shapeCoords.get(shape) ?? 0;
     L(`  ${String(sites).padStart(6)} sites  ${String(coords).padStart(5)} defs   ${shape}`);
     for (const ex of examples.get(shape) ?? []) L(`                                 e.g. ${ex}`);
+  }
+  L("");
+}
+
+// ---------------------------------------------------------------------------
+// NULLARY-RECEIVER ORACLE (CODEGRAPH_NULLARY_ORACLE=1)
+//
+// Walks the MISS set (not the binding set): every unresolved call whose receiver
+// is — or whose chain HEAD is — a bare identifier that the chunk never bound as a
+// local. In Ruby that identifier can only be a zero-arg method on self or an
+// ancestor, so the caller's MRO decides what it returns.
+// ---------------------------------------------------------------------------
+
+/** A plain lowercase Ruby identifier (never a constant, ivar, index or chain). */
+const NL_IDENTIFIER = /^[a-z_]\w*[?!]?$/;
+
+/** Every distinct owner-qualified return fact for `member` on `klass`'s MRO. */
+function nlFactsOnMro(klass: string, member: string): Set<string> {
+  const out = new Set<string>();
+  for (const owner of [klass, ...(runAncestors[klass] ?? [])]) {
+    const fact = runStructuredReturnTypes[`${owner}#${member}`];
+    const name = fact === undefined ? undefined : tfRefName(fact);
+    if (name !== undefined) out.add(name);
+  }
+  return out;
+}
+
+function runNullaryOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  NULLARY-RECEIVER ORACLE (bd pr7fu)");
+  L("═══════════════════════════════════════════════════════════════════");
+
+  const byKind: Record<string, number> = {};
+  const verdicts: Record<string, number> = {
+    "no enclosing class scope": 0,
+    "receiver is a bound local (excluded)": 0,
+    "no definer on the caller's MRO": 0,
+    "definer on MRO, fact UNIQUE (actionable)": 0,
+    "definer on MRO, facts CONFLICT (must stay silent)": 0,
+    "definer on MRO, NO return fact": 0,
+  };
+  // Uncovered definers, so the same run says which body shape would unlock them.
+  const uncovered = new Map<string, number>(); // "<owner>#<member>" -> misses
+  const byFile = new Map<string, Map<string, string[]>>();
+  let population = 0;
+
+  for (const miss of misses) {
+    if (miss.receiver === null || miss.receiver.includes("[") || miss.receiver.startsWith("@")) continue;
+    const head = miss.receiver.split(".")[0];
+    if (head === undefined || !NL_IDENTIFIER.test(head)) continue;
+    population += 1;
+    byKind[miss.receiverKind] = (byKind[miss.receiverKind] ?? 0) + 1;
+    if (nlChunkLocals.get(`${miss.relPath}|${miss.callerSymbolId}`)?.has(head) === true) {
+      verdicts["receiver is a bound local (excluded)"] += 1;
+      continue;
+    }
+    const scopeKey = miss.enclosingScope.split(" > ").join("::");
+    if (scopeKey.length === 0) {
+      verdicts["no enclosing class scope"] += 1;
+      continue;
+    }
+    const closure = tfAncestorClosure(scopeKey);
+    const definers = symbolTable
+      .lookupByShortName(head)
+      .filter((d) => d.scope.length > 0 && closure.has(d.scope.join("::")));
+    // A bare receiver takes no arguments, so a definer requiring one cannot be it.
+    const nullary = definers.filter((d) => d.arity === undefined || d.arity.minRequired === 0);
+    const owners = new Set(nullary.map((d) => d.scope.join("::")));
+    if (owners.size === 0) {
+      verdicts["no definer on the caller's MRO"] += 1;
+      continue;
+    }
+    const facts = nlFactsOnMro(scopeKey, head);
+    if (facts.size === 1) {
+      verdicts["definer on MRO, fact UNIQUE (actionable)"] += 1;
+      continue;
+    }
+    if (facts.size > 1) {
+      verdicts["definer on MRO, facts CONFLICT (must stay silent)"] += 1;
+      continue;
+    }
+    verdicts["definer on MRO, NO return fact"] += 1;
+    if (owners.size !== 1) continue;
+    const owner = [...owners][0];
+    const coord = `${owner}#${head}`;
+    uncovered.set(coord, (uncovered.get(coord) ?? 0) + 1);
+    for (const def of nullary) {
+      const perFile = byFile.get(def.relPath) ?? new Map<string, string[]>();
+      const members = perFile.get(owner) ?? [];
+      if (!members.includes(head)) members.push(head);
+      perFile.set(owner, members);
+      byFile.set(def.relPath, perFile);
+    }
+  }
+
+  // Classify the uncovered definers' bodies — the demand side that funds smvyk.
+  const shapeMisses = new Map<string, number>();
+  const shapeDefs = new Map<string, number>();
+  const examples = new Map<string, string[]>();
+  const seenCoord = new Set<string>();
+  let parseFailures = 0;
+  for (const [relPath, perFile] of byFile) {
+    let root: AstNode;
+    try {
+      const code = readFileSync(join(ROOT, relPath), "utf8");
+      const parser = new Parser();
+      parser.setLanguage(rbConfig.loadParser());
+      root = materializeTree(parser.parse(code).rootNode, code);
+    } catch {
+      parseFailures += 1;
+      continue;
+    }
+    forEachClassScope(root, (classNode, fq) => {
+      const members = perFile.get(fq);
+      if (members === undefined) return;
+      const scan = (n: AstNode): void => {
+        if (n.type === "class" || n.type === "module") return;
+        if (n.type === "method" || n.type === "singleton_method") {
+          const nameNode = n.childForFieldName("name");
+          if (nameNode !== null && members.includes(nameNode.text)) {
+            const coord = `${fq}#${nameNode.text}`;
+            if (!seenCoord.has(coord)) {
+              seenCoord.add(coord);
+              const shape = csClassify(n, fq);
+              shapeDefs.set(shape, (shapeDefs.get(shape) ?? 0) + 1);
+              shapeMisses.set(shape, (shapeMisses.get(shape) ?? 0) + (uncovered.get(coord) ?? 0));
+              const list = examples.get(shape) ?? [];
+              if (list.length < 4) list.push(`${coord} (${uncovered.get(coord) ?? 0} misses)`);
+              examples.set(shape, list);
+            }
+          }
+          return;
+        }
+        for (const child of n.children) scan(child);
+      };
+      const body = classNode.childForFieldName("body");
+      for (const child of (body ?? classNode).children) scan(child);
+    });
+  }
+
+  L("");
+  L("─── population: misses on a bare-identifier receiver / chain head ──");
+  L(`total recall holes:                       ${misses.length}`);
+  L(`  receiver (or chain head) is a bare identifier: ${population}`);
+  for (const [kind, n] of Object.entries(byKind).sort((a, b) => b[1] - a[1])) {
+    L(`    ${String(n).padStart(6)}  ${kind}`);
+  }
+  L("");
+  L("─── what the caller's MRO says about that receiver ────────────────");
+  for (const [verdict, n] of Object.entries(verdicts).sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(6)}  ${verdict}`);
+  }
+  L("");
+  L(`─── body shape of the UNCOVERED nullary definers (${uncovered.size} coords, files ${byFile.size}, fail ${parseFailures})`);
+  for (const [shape, n] of [...shapeMisses.entries()].sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(6)} misses  ${String(shapeDefs.get(shape) ?? 0).padStart(5)} defs   ${shape}`);
+    for (const ex of examples.get(shape) ?? []) L(`                                  e.g. ${ex}`);
   }
   L("");
 }
@@ -6094,6 +6311,7 @@ async function main(): Promise<void> {
   if (TYPEFACT_ENABLED) runTypefactOracle(declaredBeforeDerive);
   if (OWNERFACT_ENABLED) runOwnerfactOracle();
   if (CALLEESHAPE_ENABLED) runCalleeShapeOracle();
+  if (NULLARY_ENABLED) runNullaryOracle();
   if (ORACLE_ENABLED) runOracle(Date.now() - t0, files.length);
   if (SUPER_ORACLE_ENABLED) runSuperOracle();
   if (LOCAL_CENSUS_ENABLED) runLocalCensus();
