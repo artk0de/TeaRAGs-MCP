@@ -31,6 +31,7 @@ import type { AstNode } from "../src/core/contracts/types/ast.js";
 import {
   resolveLocalBinding,
   resolveLocalBindingType,
+  type AritySignature,
   type CallContext,
   type CallRef,
   type ChunkExtraction,
@@ -40,6 +41,7 @@ import {
   type FileExtraction,
   type InheritanceEdgeRow,
   type KnownTargetCallArgs,
+  type KwargSignature,
   type LocalBinding,
   type SymbolDefinition,
   type SymbolResolutionTarget,
@@ -47,13 +49,26 @@ import {
 import type { RubyTypeRef } from "../src/core/contracts/types/language.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
+import {
+  ArityNarrower,
+  BlockNarrower,
+  DuckVocabularyNarrower,
+  KwargNarrower,
+  LiteralReceiverNarrower,
+  VisibilityNarrower,
+  type DispatchCandidateNarrower,
+} from "../src/core/domains/language/kernel/dispatch-narrowing.js";
+import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
 import type { RubyDslCatalogue } from "../src/core/domains/language/ruby/dsl/index.js";
 import { catalogueForGemfile } from "../src/core/domains/language/ruby/gemfile.js";
+import { RUBY_DUCK_VOCAB } from "../src/core/domains/language/ruby/resolver/strategies/ruby-duck-vocabulary.js";
+import { classifyRubyLiteralReceiver } from "../src/core/domains/language/ruby/resolver/strategies/ruby-dynamic-dispatch.js";
 import { RUBY_RUNTIME_HOOKS } from "../src/core/domains/language/ruby/resolver/strategies/ruby-super.js";
 import {
   collectAncestorChain,
   collectResolvedAncestorChain,
   firstDefinerAfter,
+  isRubyPath,
   resolveConstant,
   resolveTypeInstanceMethod,
   resolveTypeStaticMethod,
@@ -733,7 +748,12 @@ function resolvePass2(extraction: FileExtraction): void {
         selfInstantiatingClassMethods: SELF_DISPATCH_ENABLED ? runSelfInstantiatingClassMethods : undefined,
       };
       let resolved = false;
+      // The fan-out outcome, kept for the signature-gap oracle: an EMPTY outcome
+      // cannot be told apart from "narrowed to zero" after the fact, so the
+      // oracle only simulates where the outcome proves narrowing ran (jn5j0).
+      let dispatchOutcome: DispatchFanoutOutcome | undefined;
       const noteDispatch = (out: DispatchFanoutOutcome | undefined): boolean => {
+        if (SIGGAP_ORACLE_ENABLED && out !== undefined) dispatchOutcome = out;
         const edges = out?.kind === "edges" ? out.edges : [];
         for (const edge of edges) if (edge.targetSymbolId !== null) resolvedTargets.add(edge.targetSymbolId);
         return edges.length > 0;
@@ -803,6 +823,9 @@ function resolvePass2(extraction: FileExtraction): void {
       }
       if (LOCAL_CENSUS_ENABLED) {
         noteLocalCensusCall(call, receiverKind, extraction.relPath, chunk, localBindings, outcome);
+      }
+      if (SIGGAP_ORACLE_ENABLED) {
+        noteSigGapCall(call, ctx, dispatchOutcome, outcome, extraction.relPath);
       }
     }
   }
@@ -5170,6 +5193,498 @@ function runDefParamOracle(): void {
 }
 
 // ===========================================================================
+// SIGNATURE-GAP ORACLE (CODEGRAPH_SIGGAP_ORACLE=1) — bd tea-rags-mcp-jn5j0
+//
+// The def-param oracle above named the defect: `collectRubyMethodSignatures`
+// walks to the first `class`/`module` and iterates that body's DIRECT
+// statements, so every def under a `class << self`, inside a class-body block
+// (`included do … end`), or at file scope carries NO arity / visibility /
+// kwargs / acceptsBlock. It counted the DEFS. This oracle counts the
+// CONSUMERS — the only question that decides whether closing the gap is worth
+// anything.
+//
+// The signature fields have exactly four readers:
+//   1. the untyped-dispatch narrowing cascade (`ArityNarrower`,
+//      `KwargNarrower`, `VisibilityNarrower`, `BlockNarrower`) — measured here
+//      by replaying the REAL narrower classes over the REAL candidate set;
+//   2. `isAbstractStub` → the self-dispatch template probe;
+//   3. `paramNames` → the bvalc call-arg param-type fold;
+//   4. `visibility` → the same cascade (2)–(3) are reported as static exposure.
+//
+// Narrowing can only SHRINK a survivor set, so the reachable transitions are:
+//   • m>1 → 1        unique-survivor promotion (one precise edge replaces a
+//                    discounted fan-out; the call stays resolved);
+//   • m>cap → ≤cap   `ambiguous` becomes edges — a RECALL GAIN;
+//   • m>0 → 0        the fan-out empties — the call loses its edges and, if
+//                    nothing else resolves it, converts to an HONEST hole
+//                    (8ypeu-style: a fake resolved becomes a counted miss).
+// Each is counted separately so the A/B's hole movement can be attributed
+// instead of guessed.
+//
+// The simulation only runs where narrowing PROVABLY ran: the dynamic-dispatch
+// component returns an empty fan-out from a dozen early gates, and an empty
+// outcome cannot be told apart from "narrowed to zero" post hoc. A non-empty
+// outcome (edges, or `ambiguous`) is proof that control reached
+// `resolveNarrowedFanout` over `lookupByShortName(member)` filtered to ruby —
+// the exact set rebuilt here. Calls with a gap candidate but an empty outcome
+// are reported separately as un-simulated exposure.
+//
+// The recovered signature is computed INDEPENDENTLY of the fix, mirroring
+// `computeRubyArity` / `computeRubyKwargs` / `computeRubyAcceptsBlock` and the
+// per-body visibility state machine. That independence is the point: an oracle
+// that shares code with the change it evaluates cannot disagree with it.
+//
+// Same additive, env-gated contract as every oracle above: with the flag unset
+// nothing extra is scanned and the A/B recall metrics are byte-identical.
+// ===========================================================================
+const SIGGAP_ORACLE_ENABLED = process.env.CODEGRAPH_SIGGAP_ORACLE === "1";
+const OUT_SIGGAP = join(OUT_DIR, "siggap-oracle-report.json");
+
+/** Where a def sits relative to the traversal `collectRubyMethodSignatures` does. */
+const SG_DEF_FORMS = ["classBody", "singletonClass", "blockNested", "topLevel"] as const;
+type SgDefForm = (typeof SG_DEF_FORMS)[number];
+type SgVisibility = "public" | "private" | "protected";
+
+/** A def the production traversal never reaches, plus the signature it would
+ *  carry if it did. Keyed by symbolId — the identity the symbol table uses. */
+interface SgRecovered {
+  readonly form: SgDefForm;
+  readonly relPath: string;
+  readonly startLine: number;
+  readonly arity: AritySignature;
+  readonly kwargs?: KwargSignature;
+  readonly visibility: SgVisibility;
+  readonly acceptsBlock: boolean;
+  readonly paramNames: readonly string[];
+  readonly isAbstractStub: boolean;
+}
+
+const sgRecovered = new Map<string, SgRecovered>();
+/** Defs whose form IS reached today — the coverage denominator. */
+let sgClassBodyDefs = 0;
+/** Gap defs the chunker gave no chunk of their own: unkeyable either way. */
+let sgDefsWithoutChunk = 0;
+
+const SG_VISIBILITY_KEYWORDS: ReadonlySet<string> = new Set(["private", "protected", "public"]);
+
+/** Mirror of `computeRubyArity`. */
+function sgArityOf(node: AstNode): AritySignature {
+  const params = node.childForFieldName("parameters");
+  if (!params) return { minRequired: 0, maxPositional: 0, hasSplat: false };
+  let minRequired = 0;
+  let maxPositional = 0;
+  let hasSplat = false;
+  for (const child of params.namedChildren) {
+    if (child.type === "identifier") {
+      minRequired++;
+      maxPositional++;
+    } else if (child.type === "optional_parameter") {
+      maxPositional++;
+    } else if (child.type === "splat_parameter") {
+      hasSplat = true;
+    }
+  }
+  return { minRequired, maxPositional, hasSplat };
+}
+
+/** Mirror of `computeRubyKwargs`. */
+function sgKwargsOf(node: AstNode): KwargSignature | undefined {
+  const params = node.childForFieldName("parameters");
+  if (!params) return undefined;
+  const required: string[] = [];
+  const optional: string[] = [];
+  let hasSplat = false;
+  for (const child of params.namedChildren) {
+    if (child.type === "keyword_parameter") {
+      const nameNode = child.childForFieldName("name") ?? child.namedChildren[0];
+      if (!nameNode) continue;
+      const name = nameNode.text.replace(/:$/, "");
+      if (child.childForFieldName("value") === null) required.push(name);
+      else optional.push(name);
+    } else if (child.type === "hash_splat_parameter") {
+      hasSplat = true;
+    }
+  }
+  if (required.length === 0 && optional.length === 0 && !hasSplat) return undefined;
+  return { required, optional, hasSplat };
+}
+
+/** Mirror of `computeRubyAcceptsBlock`. */
+function sgAcceptsBlockOf(node: AstNode): boolean {
+  const params = node.childForFieldName("parameters");
+  if (params?.namedChildren.some((c) => c.type === "block_parameter")) return true;
+  const body = node.childForFieldName("body");
+  if (!body) return false;
+  const stack: AstNode[] = [body];
+  while (stack.length > 0) {
+    const n = stack.pop();
+    if (n === undefined) break;
+    if (n.type === "yield") return true;
+    for (const c of n.children) stack.push(c);
+  }
+  return false;
+}
+
+/** Mirror of `positionalParamNames`: the LEADING run of plain required params. */
+function sgParamNamesOf(node: AstNode): string[] {
+  const params = node.childForFieldName("parameters");
+  if (!params) return [];
+  const names: string[] = [];
+  for (const child of params.namedChildren) {
+    if (child.type !== "identifier") break;
+    names.push(child.text);
+  }
+  return names;
+}
+
+/** Mirror of `computeRubyIsAbstractStub` (the three declaration-only shapes). */
+function sgIsAbstractStubOf(node: AstNode): boolean {
+  const body = node.childForFieldName("body");
+  if (!body) return true;
+  const statements = body.type === "body_statement" ? body.namedChildren : [body];
+  if (statements.length === 0) return true;
+  if (statements.length > 1) return false;
+  const only = statements[0];
+  if (only.type === "super") return true;
+  if (only.type !== "call" && only.type !== "method_call") return false;
+  const methodField = only.childForFieldName("method") ?? only.children.find((c) => c.type === "identifier");
+  if (!methodField) return false;
+  if (methodField.type === "super") return true;
+  if (only.childForFieldName("receiver")) return false;
+  if (methodField.text !== "raise") return false;
+  const args = only.childForFieldName("arguments") ?? only.children.find((c) => c.type === "argument_list");
+  const first = args?.namedChildren[0];
+  if (!first) return false;
+  if (first.type === "constant" || first.type === "scope_resolution") {
+    return first.text === "NotImplementedError" || first.text === "::NotImplementedError";
+  }
+  if (first.type !== "call" && first.type !== "method_call") return false;
+  const recv = first.childForFieldName("receiver");
+  if (!recv) return false;
+  if (first.childForFieldName("method")?.text !== "new") return false;
+  return recv.text === "NotImplementedError" || recv.text === "::NotImplementedError";
+}
+
+/**
+ * The visibility a def would carry, from the state machine over the statements
+ * of the body that CONTAINS it — bare switch (`private`), inline form
+ * (`private def m`), symbol form (`private :m`, which is position-independent
+ * and therefore scanned over the whole body).
+ */
+function sgVisibilityOf(defNode: AstNode): SgVisibility {
+  const bodyNode = defNode.parent;
+  if (bodyNode === null) return "public";
+  const stmts = bodyNode.namedChildren;
+  const name = defNode.childForFieldName("name")?.text ?? "";
+  const methodFieldOf = (n: AstNode) =>
+    n.childForFieldName("method") ?? n.children.find((c) => c.type === "identifier");
+  const argsOf = (n: AstNode) =>
+    n.childForFieldName("arguments") ?? n.children.find((c) => c.type === "argument_list");
+
+  let current: SgVisibility = "public";
+  let symbolForm: SgVisibility | undefined;
+  for (const stmt of stmts) {
+    if (stmt.type === "identifier" && SG_VISIBILITY_KEYWORDS.has(stmt.text)) {
+      if (stmt.startPosition.row < defNode.startPosition.row) current = stmt.text as SgVisibility;
+      continue;
+    }
+    if (stmt.type !== "call" && stmt.type !== "method_call") continue;
+    if (stmt.childForFieldName("receiver")) continue;
+    const methodField = methodFieldOf(stmt);
+    if (!methodField || !SG_VISIBILITY_KEYWORDS.has(methodField.text)) continue;
+    const modifier = methodField.text as SgVisibility;
+    const args = argsOf(stmt);
+    if (!args || args.namedChildren.length === 0) {
+      if (stmt.startPosition.row < defNode.startPosition.row) current = modifier;
+      continue;
+    }
+    const firstArg = args.namedChildren[0];
+    if (firstArg.type === "method" || firstArg.type === "singleton_method") {
+      if (firstArg.startPosition.row === defNode.startPosition.row) symbolForm = modifier;
+      continue;
+    }
+    for (const arg of args.namedChildren) {
+      if ((arg.type === "simple_symbol" || arg.type === "symbol") && arg.text.replace(/^:/, "") === name) {
+        symbolForm = modifier;
+      }
+    }
+  }
+  return symbolForm ?? current;
+}
+
+/** Which traversal shape hides a def from the signature collector. */
+function sgDefFormOf(node: AstNode): SgDefForm {
+  let sawBlock = false;
+  for (let cursor = node.parent; cursor !== null; cursor = cursor.parent) {
+    if (cursor.type === "singleton_class") return "singletonClass";
+    if (cursor.type === "block" || cursor.type === "do_block") sawBlock = true;
+    if (cursor.type === "class" || cursor.type === "module") return sawBlock ? "blockNested" : "classBody";
+  }
+  return sawBlock ? "blockNested" : "topLevel";
+}
+
+/** ONE extra DFS per file: index every def the production traversal misses. */
+function scanSigGapOracleAst(root: AstNode, relPath: string, extraction: FileExtraction): void {
+  const owners = fxLineOwners(extraction);
+  const stack: AstNode[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (node === undefined) break;
+    for (const child of node.children) stack.push(child);
+    if (node.type !== "method" && node.type !== "singleton_method") continue;
+    const form = sgDefFormOf(node);
+    if (form === "classBody") {
+      sgClassBodyDefs += 1;
+      continue;
+    }
+    const line = node.startPosition.row + 1;
+    const owner = line < owners.length ? owners[line] : undefined;
+    if (owner?.startLine !== line) {
+      sgDefsWithoutChunk += 1;
+      continue;
+    }
+    const kwargs = sgKwargsOf(node);
+    sgRecovered.set(owner.symbolId, {
+      form,
+      relPath,
+      startLine: line,
+      arity: sgArityOf(node),
+      ...(kwargs !== undefined ? { kwargs } : {}),
+      visibility: sgVisibilityOf(node),
+      acceptsBlock: sgAcceptsBlockOf(node),
+      paramNames: sgParamNamesOf(node),
+      isAbstractStub: sgIsAbstractStubOf(node),
+    });
+  }
+}
+
+/** The production cascade, instantiated once — the SAME classes, same order. */
+const SG_NARROWERS: DispatchCandidateNarrower[] = [
+  new DuckVocabularyNarrower(RUBY_DUCK_VOCAB),
+  new LiteralReceiverNarrower(classifyRubyLiteralReceiver),
+  new ArityNarrower(),
+  new KwargNarrower(),
+  new VisibilityNarrower(),
+  new BlockNarrower(),
+];
+
+function sgSurvivors(call: CallRef, candidates: SymbolDefinition[], ctx: CallContext): SymbolDefinition[] {
+  let survivors = candidates;
+  for (const narrower of SG_NARROWERS) {
+    survivors = narrower.narrow(call, survivors, ctx);
+    if (survivors.length === 0) return survivors;
+  }
+  return survivors;
+}
+
+/** Edges `resolveNarrowedFanout` would emit for a survivor count (`-1` = the
+ *  `ambiguous` outcome, which emits none but is NOT a recall hole today). */
+function sgEdgeCount(survivors: number, cap: number): number {
+  if (survivors === 0) return 0;
+  if (survivors === 1) return 1;
+  return survivors > cap ? -1 : survivors;
+}
+
+type SgTransition =
+  | "unchanged"
+  | "fanoutShrunk"
+  | "promotedToUnique"
+  | "emptied"
+  | "ambiguousToEdges"
+  | "ambiguousShrunk";
+
+const sgTransitions: Record<SgTransition, number> = {
+  unchanged: 0,
+  fanoutShrunk: 0,
+  promotedToUnique: 0,
+  emptied: 0,
+  ambiguousToEdges: 0,
+  ambiguousShrunk: 0,
+};
+/** Sample rows for the emptied / promoted / ambiguous-lifted transitions. */
+const sgSamples: {
+  transition: SgTransition;
+  relPath: string;
+  line: number;
+  member: string;
+  before: number;
+  after: number;
+  gapDefs: string[];
+}[] = [];
+
+let sgCallsScanned = 0;
+let sgCallsWithGapCandidate = 0;
+let sgCallsSimulated = 0;
+let sgNarrowingNotObserved = 0;
+let sgEdgesBefore = 0;
+let sgEdgesAfter = 0;
+/** Exposure of gap candidates split by the call's ACTUAL production outcome. */
+const sgExposureByOutcome = new Map<string, number>();
+
+/** Which of the six shapes the survivor count moved through. Narrowing only
+ *  ever SHRINKS, so `after <= before` always holds. */
+function sgTransitionOf(before: number, after: number, edgesBefore: number, edgesAfter: number): SgTransition {
+  if (after === before) return "unchanged";
+  if (after === 0) return "emptied";
+  if (edgesBefore === -1) return edgesAfter === -1 ? "ambiguousShrunk" : "ambiguousToEdges";
+  return after === 1 ? "promotedToUnique" : "fanoutShrunk";
+}
+
+/** Copy a candidate with its recovered signature filled in — what the symbol
+ *  table would hold once the traversal reaches the def. */
+function sgPatched(def: SymbolDefinition): SymbolDefinition {
+  const rec = sgRecovered.get(def.symbolId);
+  if (rec === undefined) return def;
+  return {
+    ...def,
+    arity: rec.arity,
+    ...(rec.kwargs !== undefined ? { kwargs: rec.kwargs } : {}),
+    visibility: rec.visibility,
+    acceptsBlock: rec.acceptsBlock,
+    ...(rec.isAbstractStub ? { isAbstractStub: true } : {}),
+  };
+}
+
+function noteSigGapCall(
+  call: CallRef,
+  ctx: CallContext,
+  dispatchOutcome: DispatchFanoutOutcome | undefined,
+  outcome: string,
+  relPath: string,
+): void {
+  const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((d) => isRubyPath(d.relPath));
+  if (candidates.length === 0) return;
+  sgCallsScanned += 1;
+  const gapDefs = candidates.filter((d) => sgRecovered.has(d.symbolId));
+  if (gapDefs.length === 0) return;
+  sgCallsWithGapCandidate += 1;
+  sgExposureByOutcome.set(outcome, (sgExposureByOutcome.get(outcome) ?? 0) + 1);
+
+  // Narrowing provably ran only when the fan-out produced something.
+  const ran =
+    dispatchOutcome !== undefined &&
+    (dispatchOutcome.kind === "ambiguous" || (dispatchOutcome.kind === "edges" && dispatchOutcome.edges.length > 0));
+  if (!ran) {
+    sgNarrowingNotObserved += 1;
+    return;
+  }
+  sgCallsSimulated += 1;
+
+  const { cap } = dispatchFanoutPolicyFor(ctx.symbolTable);
+  const before = sgSurvivors(call, candidates, ctx).length;
+  const after = sgSurvivors(call, candidates.map(sgPatched), ctx).length;
+  const edgesBefore = sgEdgeCount(before, cap);
+  const edgesAfter = sgEdgeCount(after, cap);
+  sgEdgesBefore += Math.max(0, edgesBefore);
+  sgEdgesAfter += Math.max(0, edgesAfter);
+
+  const transition = sgTransitionOf(before, after, edgesBefore, edgesAfter);
+  sgTransitions[transition] += 1;
+
+  if (transition !== "unchanged" && transition !== "fanoutShrunk" && sgSamples.length < 60) {
+    sgSamples.push({
+      transition,
+      relPath,
+      line: call.startLine,
+      member: call.member,
+      before,
+      after,
+      gapDefs: gapDefs.slice(0, 3).map((d) => d.symbolId),
+    });
+  }
+}
+
+function runSigGapOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  const rows = [...sgRecovered.values()];
+  const byForm = SG_DEF_FORMS.filter((f) => f !== "classBody").map((form) => {
+    const forRows = rows.filter((r) => r.form === form);
+    return {
+      form,
+      defs: forRows.length,
+      withPositional: forRows.filter((r) => r.arity.maxPositional > 0 || r.arity.hasSplat).length,
+      withKwargs: forRows.filter((r) => r.kwargs !== undefined).length,
+      private: forRows.filter((r) => r.visibility === "private").length,
+      abstractStub: forRows.filter((r) => r.isAbstractStub).length,
+      withParamNames: forRows.filter((r) => r.paramNames.length > 0).length,
+    };
+  });
+
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  SIGNATURE-GAP ORACLE (jn5j0) — consumer impact of the walker gap");
+  L("═══════════════════════════════════════════════════════════════════");
+  L(`defs REACHED today (classBody):        ${sgClassBodyDefs}`);
+  L(`defs MISSED, chunk-keyable:            ${rows.length}`);
+  L(`defs MISSED, no chunk of their own:    ${sgDefsWithoutChunk}   (unfixable by traversal alone)`);
+  L("");
+  L("form              defs   positional   kwargs   private   stub   paramNames");
+  for (const r of byForm) {
+    L(
+      `${r.form.padEnd(16)}  ${String(r.defs).padStart(4)}  ${String(r.withPositional).padStart(11)}  ` +
+        `${String(r.withKwargs).padStart(7)}  ${String(r.private).padStart(8)}  ${String(r.abstractStub).padStart(5)}  ` +
+        `${String(r.withParamNames).padStart(11)}`,
+    );
+  }
+  L("");
+  L("─── CONSUMER 1: untyped-dispatch narrowing ────────────────────────");
+  L(`calls with a ruby short-name candidate set: ${sgCallsScanned}`);
+  L(`  … of which contain a GAP def:             ${sgCallsWithGapCandidate}`);
+  L(`  … narrowing provably ran (simulated):     ${sgCallsSimulated}`);
+  L(`  … empty fan-out, gate vs narrow unknown:  ${sgNarrowingNotObserved}`);
+  L("");
+  L("exposure by the call's ACTUAL production outcome:");
+  for (const [k, v] of [...sgExposureByOutcome.entries()].sort((a, b) => b[1] - a[1])) {
+    L(`  ${k.padEnd(20)} ${String(v).padStart(7)}`);
+  }
+  L("");
+  L("simulated transition (recovered signatures fed to the REAL cascade):");
+  for (const [k, v] of Object.entries(sgTransitions)) L(`  ${k.padEnd(20)} ${String(v).padStart(7)}`);
+  L(`edges emitted: before ${sgEdgesBefore}  after ${sgEdgesAfter}  (Δ ${sgEdgesAfter - sgEdgesBefore})`);
+  L("");
+  L(`─── transitions that MOVE the recall tally (${sgSamples.length} sampled) ──`);
+  for (const s of sgSamples.slice(0, 20)) {
+    L(`  ${s.transition.padEnd(18)} ${s.relPath}:${s.line} .${s.member}  ${s.before}→${s.after}  [${s.gapDefs[0]}]`);
+  }
+  L("");
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_SIGGAP,
+    JSON.stringify(
+      {
+        meta: {
+          bead: "tea-rags-mcp-jn5j0",
+          root: ROOT,
+          generatedAt: new Date().toISOString(),
+          defsReachedToday: sgClassBodyDefs,
+          defsMissedKeyable: rows.length,
+          defsMissedWithoutChunk: sgDefsWithoutChunk,
+        },
+        byForm,
+        narrowing: {
+          callsScanned: sgCallsScanned,
+          callsWithGapCandidate: sgCallsWithGapCandidate,
+          callsSimulated: sgCallsSimulated,
+          narrowingNotObserved: sgNarrowingNotObserved,
+          exposureByOutcome: Object.fromEntries(sgExposureByOutcome),
+          transitions: sgTransitions,
+          edgesBefore: sgEdgesBefore,
+          edgesAfter: sgEdgesAfter,
+        },
+        samples: sgSamples,
+      },
+      null,
+      2,
+    ),
+  );
+  L(`signature-gap oracle → ${OUT_SIGGAP}`);
+  L("");
+}
+
+// ===========================================================================
 // SUPER-MISS ORACLE (CODEGRAPH_SUPER_ORACLE=1)
 //
 // Per unresolved `super` call-site that HAS an in-project def, reconstruct what
@@ -6549,6 +7064,7 @@ async function main(): Promise<void> {
       if (FIXPOINT_ENABLED) scanFixpointAst(materializedRoot, relPath, extraction);
       if (LOCAL_CENSUS_ENABLED) scanLocalCensusAst(materializedRoot, extraction);
       if (DEFPARAM_ORACLE_ENABLED) scanDefParamOracleAst(materializedRoot, relPath, extraction);
+      if (SIGGAP_ORACLE_ENABLED) scanSigGapOracleAst(materializedRoot, relPath, extraction);
       if (DUCK_ENABLED && code.includes("table_name")) scanTableNameDecls(materializedRoot, []);
       extractions.push(extraction);
     } catch (err) {
@@ -6881,6 +7397,7 @@ async function main(): Promise<void> {
   if (SUPER_ORACLE_ENABLED) runSuperOracle();
   if (LOCAL_CENSUS_ENABLED) runLocalCensus();
   if (DEFPARAM_ORACLE_ENABLED) runDefParamOracle();
+  if (SIGGAP_ORACLE_ENABLED) runSigGapOracle();
   if (DUCK_ENABLED) runDuckOracle();
   if (FIXPOINT_ENABLED) runFixpointOracle(extractions, Date.now() - t0);
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
