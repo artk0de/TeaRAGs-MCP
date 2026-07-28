@@ -13,6 +13,7 @@ describe("RUBY_CODEGRAPH_EXCLUSION_GLOBS", () => {
   it("is the single source listing the Rails non-app-code path globs", () => {
     expect(RUBY_CODEGRAPH_EXCLUSION_GLOBS).toEqual([
       "**/db/migrate/**",
+      "**/db/post_migrate/**",
       "**/db/data/**",
       "**/db/schema.rb",
       "**/db/data_schema.rb",
@@ -24,6 +25,13 @@ describe("RUBY_CODEGRAPH_EXCLUSION_GLOBS", () => {
     // (`t.datetime` on receiver `t`) — not application call-graph.
     expect(RUBY_CODEGRAPH_EXCLUSION_GLOBS).toContain("**/db/migrate/**");
     expect(RUBY_CODEGRAPH_EXCLUSION_GLOBS).toContain("**/db/data/**");
+  });
+
+  it("covers post-deployment migrations, the second migration directory Rails apps split out", () => {
+    // bd tea-rags-mcp-7s39j — `db/post_migrate` is the post-deployment half of
+    // the same procedural schema DSL (Mastodon, GitLab). Same untyped builder
+    // receivers, same recall hole; it was simply missing from the sibling list.
+    expect(RUBY_CODEGRAPH_EXCLUSION_GLOBS).toContain("**/db/post_migrate/**");
   });
 });
 

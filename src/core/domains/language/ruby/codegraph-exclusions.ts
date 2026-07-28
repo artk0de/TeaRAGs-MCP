@@ -10,6 +10,12 @@
  * false bucket (~1021 holes measured on taxdome, 2026-07-03). `db/schema.rb` /
  * `db/data_schema.rb` are the generated snapshots of the same procedural DSL.
  *
+ * `db/post_migrate` is the POST-DEPLOYMENT half of the same convention — apps
+ * that must run schema changes after the new code is live keep them in a second
+ * directory (Mastodon, GitLab; 516 files in the mastodon checkout). Identical
+ * builder receivers, identical hole, so it belongs beside `db/migrate` rather
+ * than waiting to be discovered per corpus (bd tea-rags-mcp-7s39j).
+ *
  * Ownership: this is Ruby-language knowledge, so it lives in the Ruby language
  * domain — mirroring how the walker / resolver capabilities do — rather than in
  * the language-agnostic `infra/file-classification` or the generic codegraph
@@ -30,6 +36,7 @@
  */
 export const RUBY_CODEGRAPH_EXCLUSION_GLOBS: readonly string[] = [
   "**/db/migrate/**",
+  "**/db/post_migrate/**",
   "**/db/data/**",
   "**/db/schema.rb",
   "**/db/data_schema.rb",

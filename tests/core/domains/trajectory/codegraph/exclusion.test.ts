@@ -208,5 +208,14 @@ describe("buildCodegraphExclusionFilter", () => {
       expect(ig.ignores("app/models/user.rb")).toBe(false);
       expect(ig.ignores("db/seeds.rb")).toBe(false);
     });
+
+    it("excludes post-deployment migrations (db/post_migrate) the same as db/migrate", () => {
+      // bd tea-rags-mcp-7s39j — Mastodon and GitLab split their migrations into
+      // `db/migrate` and `db/post_migrate`; both are the same procedural schema
+      // DSL on an untyped ORM builder.
+      const ig = buildCodegraphExclusionFilter({ excludeTests: false, customPatterns: [] }, languageFactory());
+      expect(ig.ignores("db/post_migrate/20260101_backfill_users.rb")).toBe(true);
+      expect(ig.ignores("backend/db/post_migrate/20260101_backfill_users.rb")).toBe(true);
+    });
   });
 });
