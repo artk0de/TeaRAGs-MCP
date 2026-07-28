@@ -109,7 +109,9 @@ import { materializeTree } from "../src/core/infra/materialize.js";
 // config
 // ---------------------------------------------------------------------------
 const ROOT = process.env.TAXDOME_ROOT ?? join(homedir(), "Dev/Job/taxdome");
-const OUT_DIR = "/Users/artk0re/.claude/jobs/24baee70/tmp";
+// Report/dump destination. Overridable so two sessions can run the harness
+// concurrently without overwriting each other's `taxdome-misses.json`.
+const OUT_DIR = process.env.CODEGRAPH_FORENSICS_OUT ?? "/Users/artk0re/.claude/jobs/24baee70/tmp";
 const OUT_MISSES = join(OUT_DIR, "taxdome-misses.json");
 const OUT_ORACLE = join(OUT_DIR, "g0-oracle-report.json");
 const OUT_DUCK = join(OUT_DIR, "duck-oracle-report.json");
@@ -324,9 +326,24 @@ function buildScannerFilter(root: string): Ignore {
   return ig;
 }
 
-function discoverRubyFiles(root: string): string[] {
+/**
+ * The file set the codegraph actually walks. MUST mirror what
+ * `CodegraphEnrichmentProvider` admits in production
+ * (`symbols/provider.ts` — same `buildCodegraphExclusionFilter`, same
+ * `LanguageFactory`), or the harness measures a population the consumer never
+ * sees.
+ *
+ * The `languageFactory` argument is NOT optional here even though the engine
+ * accepts `undefined`: omitting it silently drops every language's own
+ * non-application-code globs (Ruby's `db/migrate/**`, `db/data/**`,
+ * `db/data_schema.rb` — bd tea-rags-mcp-biwbq), so the harness would walk ~939
+ * Rails migration files production excludes and report their procedural
+ * `t.<column>` builder calls as recall holes. That was the entire
+ * "migration-schema" bucket (bd tea-rags-mcp-2l0pr).
+ */
+function discoverRubyFiles(root: string, languageFactory: LanguageFactory): string[] {
   const scannerFilter = buildScannerFilter(root);
-  const codegraphFilter = buildCodegraphExclusionFilter({ excludeTests: true, customPatterns: [] });
+  const codegraphFilter = buildCodegraphExclusionFilter({ excludeTests: true, customPatterns: [] }, languageFactory);
   const out: string[] = [];
   const walk = (dir: string): void => {
     let entries;
@@ -6496,8 +6513,10 @@ function fmtPct(n: number): string {
 async function main(): Promise<void> {
   const t0 = Date.now();
   console.error(`[forensics] root=${ROOT} gemfile=${gemfileContent ? "loaded" : "MISSING"}`);
-  const files = discoverRubyFiles(ROOT);
-  console.error(`[forensics] discovered ${files.length} ruby files (post test/generated/gitignore filter)`);
+  const files = discoverRubyFiles(ROOT, factory);
+  console.error(
+    `[forensics] discovered ${files.length} ruby files (post test/generated/gitignore/non-app-code filter)`,
+  );
 
   // PASS-1: walk + populate symbol table + run-global maps.
   const extractions: FileExtraction[] = [];
