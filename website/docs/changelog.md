@@ -5,130 +5,96 @@ sidebar_position: 99
 
 ## [1.36.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.35.0...v1.36.0) (2026-07-28)
 
-### Features
+### 🧠 Code intelligence
 
-* **adapters:** persist isAbstractStub in cg_symbols (eikry — incremental-hydration parity) ([f009808](https://github.com/artk0de/TeaRAGs-MCP/commit/f00980860cd45168adb53d2200b76844d647c2c4))
-* **language:** memoized-reader return facts in the owner channel (smvyk) ([4ada07d](https://github.com/artk0de/TeaRAGs-MCP/commit/4ada07dab268759c407c07be9e34c14bef00f056))
-* **language:** owner-qualified return facts on the bare-call branch (rwv3o) ([0e66533](https://github.com/artk0de/TeaRAGs-MCP/commit/0e665336f51547fd480c5068bc0100cde876d39a))
-* **language:** type nullary self-call receivers from the owner channel (pr7fu) ([f65987a](https://github.com/artk0de/TeaRAGs-MCP/commit/f65987a6e174df0f109d9d6ce7f2e9cdcbeff72c))
-* **trajectory:** abstract-stub detection + REDIRECT terminal (bcdfe, wceck) ([c60e904](https://github.com/artk0de/TeaRAGs-MCP/commit/c60e904f9aad7f53e40a99135545f9e78fd843ba)), closes [Form1040#process_result](https://github.com/artk0de/Form1040/issues/process_result)
-* **trajectory:** AR association + query-interface return types (G1) ([f1e38b0](https://github.com/artk0de/TeaRAGs-MCP/commit/f1e38b029c6d78fa1a426875eeec473aa5a5b73f))
-* **trajectory:** constructor-arg param typing, Increment 1 (bvalc) + typed-ivar fan-out deferral ([adcdb77](https://github.com/artk0de/TeaRAGs-MCP/commit/adcdb7761171b7543cbd3c5ab898111407202780)), closes [Firm#owner](https://github.com/artk0de/Firm/issues/owner) [Person#owner](https://github.com/artk0de/Person/issues/owner)
-* **trajectory:** core-ambiguous denominator — stdlib-homonym misses carved out of missWithInProjectDef (83cl7) ([01291f3](https://github.com/artk0de/TeaRAGs-MCP/commit/01291f305a39911bbd73703874964f89338c8466))
-* **trajectory:** instance-rooted self-dispatch template redirect (G4, u7d9l v3) ([3b06b44](https://github.com/artk0de/TeaRAGs-MCP/commit/3b06b44a7a54de4705d43468c3e206e022ae6aa7)), closes [Type#hook](https://github.com/artk0de/Type/issues/hook)
-* **trajectory:** rescue-clause local typing — rescue Const =&gt; e binds e (02saq) ([6ae9bad](https://github.com/artk0de/TeaRAGs-MCP/commit/6ae9bad9d6e09ac2c85d196b45ca3408856be754))
-* **trajectory:** schema column VALUE types — core-typed accessor returns (2a5oo) ([dba1f73](https://github.com/artk0de/TeaRAGs-MCP/commit/dba1f73063665b97b9b65601b624ed519718dd0b)), closes [Widget#compute_total](https://github.com/artk0de/Widget/issues/compute_total)
-* **trajectory:** schema.rb column-declares — synthesize AR column accessors as marked model defs (8l5fo) ([f7e5342](https://github.com/artk0de/TeaRAGs-MCP/commit/f7e53426c15c434fb4b948d55ceb3a4ce00161de))
-* **trajectory:** service call/perform body last-expr return types (G2, absorbs lawlq.1) ([1a5b78e](https://github.com/artk0de/TeaRAGs-MCP/commit/1a5b78e0f49a6e393fae5eef601ff67d2e088cd5)), closes [Class#method](https://github.com/artk0de/Class/issues/method)
-* **trajectory:** service-entry Result return threading (j9xpf) ([9f1e343](https://github.com/artk0de/TeaRAGs-MCP/commit/9f1e34368d0737505824e5b4c13ba50d7d9ceded)), closes [#firm](https://github.com/artk0de/TeaRAGs-MCP/issues/firm) [Result#errors](https://github.com/artk0de/Result/issues/errors) [#data](https://github.com/artk0de/TeaRAGs-MCP/issues/data) [#each](https://github.com/artk0de/TeaRAGs-MCP/issues/each)
-* **trajectory:** super through bare-constant mixin hierarchies (lawlq.5) ([0d534fa](https://github.com/artk0de/TeaRAGs-MCP/commit/0d534fa8c2b631330faaf44f4089b2c3137ce444))
+* Ruby call-graph navigation resolves more callers correctly — through memoized reader methods, bare self-calls, ActiveRecord associations and query methods, schema-declared column accessors, constructor arguments, rescue-clause exception variables, and `super` calls through mixin hierarchies
+* Call-graph navigation follows Rails service-object call chains (e.g. `Create.call(x).successful?`) to their exact target instead of a broad guess across every same-named method
+* Caller and impact lookups (get_callers, blast-radius) now redirect calls on an abstract base method to the concrete override that actually runs — including through typed instance variables and across incremental re-indexes
 
-### Improvements
+### 🩹 Fixes
 
-* **dx:** extend Rails skip-vocabulary, align L2 wording (final-review fixes) ([44bf765](https://github.com/artk0de/TeaRAGs-MCP/commit/44bf765dd81ef0748485b71253bf797dc20fd465))
-* **dx:** lone-ideal-hub accepts locality level in extract-project-patterns gate ([e50449e](https://github.com/artk0de/TeaRAGs-MCP/commit/e50449e5a7259442bc3eef9ffd665ae92aae227e))
-* **dx:** semantic-segment L2 derivation with infra-prefix skip (Rails-aware) ([be1dbe3](https://github.com/artk0de/TeaRAGs-MCP/commit/be1dbe3705362ae442d2124aea359f26bdae2a52))
-* **dx:** template class-declaration Read check in data-driven-generation Step 5 ([6d24321](https://github.com/artk0de/TeaRAGs-MCP/commit/6d243219cc406c3c2dc16089464c53e325573b54))
-
-### Bug Fixes
-
-* **cli:** index worker crash guard — IPC error + stderr instead of silent exit 1 ([b155042](https://github.com/artk0de/TeaRAGs-MCP/commit/b155042f19c5d3b58990ec9541e7268ae0b0360d))
-* **config:** enable the infra layer guard now that no upward edge remains ([7c30892](https://github.com/artk0de/TeaRAGs-MCP/commit/7c30892220a8e7f62f0ff6cbc902eb140e540aa9))
-* **config:** make the foundation eslint zones fire on relative specifiers ([297af63](https://github.com/artk0de/TeaRAGs-MCP/commit/297af63223d40ae3d377f0db36f55b5c3e48e366))
-* **ingest:** enrichment recovery traverses the full unenriched set in batches ([f498f12](https://github.com/artk0de/TeaRAGs-MCP/commit/f498f122cb60c0ffd6753873bcdc70ea9ce9db48))
-* **ingest:** incremental file-progress denominator is the delta, not the full scan ([3b9bfce](https://github.com/artk0de/TeaRAGs-MCP/commit/3b9bfced8f27b26e7f5c7541f4d68f515bdc0568))
-* **scripts:** harness walks the production file set — kill the phantom db/migrate bucket (2l0pr) ([efb8dfc](https://github.com/artk0de/TeaRAGs-MCP/commit/efb8dfc4f8af05c9c61d579981c539cb66add4b4))
-* **test:** correct relative depth in the relocated schema-drift-monitor test ([b63a750](https://github.com/artk0de/TeaRAGs-MCP/commit/b63a750a683f04abd010edb38f49a495a65823a2))
-* **trajectory:** cross-pass acceptExtraction honors codegraph exclusion filter (G3a) ([81154f7](https://github.com/artk0de/TeaRAGs-MCP/commit/81154f7d56da1a0bd754f0055c3c00097ed6b007))
-* **trajectory:** exclude db/post_migrate from the Ruby codegraph (7s39j) ([82b2a40](https://github.com/artk0de/TeaRAGs-MCP/commit/82b2a401e32bb6748d1f1a5d1cebdb7a1cede78a))
-* **trajectory:** existence-gate declared facts against derived returns (yt3im) ([e0940b7](https://github.com/artk0de/TeaRAGs-MCP/commit/e0940b722380afaa9e6cf39e7051e95f7282fa58))
-* **trajectory:** index method signatures outside a plain class body (jn5j0) ([6364554](https://github.com/artk0de/TeaRAGs-MCP/commit/6364554add4574f7f12dfcb772d3f1e7a99265f5))
-* **trajectory:** registry-dispatch symbol form + custom-scope chain roots (exmwr, va9ng, 6zpds) ([2914f6d](https://github.com/artk0de/TeaRAGs-MCP/commit/2914f6d5968edf520d193ef2df804005670e83c7)), closes [Class#m](https://github.com/artk0de/Class/issues/m)
-* **trajectory:** stop the flat return map overriding a known receiver (h4hxh) ([3c746d6](https://github.com/artk0de/TeaRAGs-MCP/commit/3c746d63e43f007fcd8b3ee5dfe26703bb6c8f86))
-* **trajectory:** YARD @!method directive blocks own their tags (8ypeu) ([2e0522e](https://github.com/artk0de/TeaRAGs-MCP/commit/2e0522eb796768df60ba22dda80c6d4c8290e87a)), closes [Class#initialize](https://github.com/artk0de/Class/issues/initialize)
-
-### Documentation
-
-* **codegraph:** G2 harness findings — mechanism proven, taxdome corpus effect zero (idiom tail) ([93a2f35](https://github.com/artk0de/TeaRAGs-MCP/commit/93a2f354b1879022e239ec703bef238d13e3ae0b))
-* **codegraph:** G3b verdict — conf-floor NOT implemented (population already nav-hidden) ([b5bc338](https://github.com/artk0de/TeaRAGs-MCP/commit/b5bc338458e33c4ae9a090715073176cdfe4ba7e))
-* **codegraph:** ruby graph precision wave-2 epic — 5 group designs + parallel plan ([7a6ab3d](https://github.com/artk0de/TeaRAGs-MCP/commit/7a6ab3dcbd8427279d2041b2061f3cfeec098474))
-* **codegraph:** wave-1 harness A/B findings — G1 +493 targets / 85.12%, G4 redirect share ([b7248f5](https://github.com/artk0de/TeaRAGs-MCP/commit/b7248f5d85ab69b96dae0f30fc7c54087fdb251e))
-* **dx:** plan — extract-project-patterns eval-fix wave (gate, L2, declaration read) ([75b0d5b](https://github.com/artk0de/TeaRAGs-MCP/commit/75b0d5b046f7db1649081c3b5f093d0207ea4351))
-* **plans:** record G2 execution log, Task-8 no-move decision, verification ([7f13649](https://github.com/artk0de/TeaRAGs-MCP/commit/7f13649c53e72b287de86f2e5528d5be13e11c93))
-* **rules:** test-invariants rule + architecture-drift refactoring spec ([32d6d20](https://github.com/artk0de/TeaRAGs-MCP/commit/32d6d207d3daf447325064d5a2e4f0b75cad87f3))
-* **rules:** worktree teardown must settle its beads ([bd05595](https://github.com/artk0de/TeaRAGs-MCP/commit/bd055953e6c9e63952d71d7f3892a8e6cae20e6b))
-* **specs:** ceiling verdict addendum 2 — tails waves + denominator parity correction (87.96%) ([f170ed4](https://github.com/artk0de/TeaRAGs-MCP/commit/f170ed468457b06ea339366179383bfabb576e00))
-* **specs:** fix G3 relocation target + cycle-edge wording (final-review triage, bead 9hzqd) ([973396b](https://github.com/artk0de/TeaRAGs-MCP/commit/973396b7fdf95e72537b1e75bd92904908daac57))
-* **specs:** G1 plan — consolidate payload readers onto resolvePayloadValue ([a3e934e](https://github.com/artk0de/TeaRAGs-MCP/commit/a3e934e749a8c4d787c802065206b0418c0d2351))
-* **specs:** G3 plan — break metrics&lt;-&gt;extractors cycle via utils relocation ([95db374](https://github.com/artk0de/TeaRAGs-MCP/commit/95db3748c65b55b18f88e7dbb192a638b46b4fbd))
-* **specs:** G4 plan — fragile-hub invariant tests + conditional extraction ([033ce08](https://github.com/artk0de/TeaRAGs-MCP/commit/033ce089df6ab7dcb28780f5a764d17d2dd282f6))
-* **specs:** infra tidy design — relocate leaked product logic out of core/infra ([0e1fcbc](https://github.com/artk0de/TeaRAGs-MCP/commit/0e1fcbc45f2ce4ac21e445a0e48e495d27a431a2))
-* **specs:** infra tidy implementation plan — 15 tasks across 5 waves ([a9c7136](https://github.com/artk0de/TeaRAGs-MCP/commit/a9c7136587c743d2cc1639f332a38f0913b96369)), closes [1/#4](https://github.com/1/TeaRAGs-MCP/issues/4)
-* **specs:** record the infra-tidy outcome and the T8 drop ([f2b9f11](https://github.com/artk0de/TeaRAGs-MCP/commit/f2b9f112e545b192d681f3587d7a58010099fa52))
-* **specs:** record the W4 revision — guard moves to adapters/qdrant ([3025c0d](https://github.com/artk0de/TeaRAGs-MCP/commit/3025c0dcecbf625d1cca158e1b83556de1f5279b))
-
-### Code Refactoring
-
-* **api:** move request resolution to api/internal, error bases to infra ([e5fc2ab](https://github.com/artk0de/TeaRAGs-MCP/commit/e5fc2ab616ecff0eb949696f7d083a248f869852))
-* **config:** move the migration framework into domains/maintenance ([0453c5b](https://github.com/artk0de/TeaRAGs-MCP/commit/0453c5beab34a86a769ce624fb7138d2d8621bd2))
-* **config:** move the project registry into domains/maintenance ([3309716](https://github.com/artk0de/TeaRAGs-MCP/commit/33097162386ad670d4397f18e41806f36e41f851))
-* **contracts:** collapse the three commit-diff-memo and file-classification duplicates ([19912d3](https://github.com/artk0de/TeaRAGs-MCP/commit/19912d3f0f05902794322bddd06f5b2db8f886b2))
-* **contracts:** home INDEXING_METADATA_ID in contracts/constants ([a37ed78](https://github.com/artk0de/TeaRAGs-MCP/commit/a37ed78b14b68e582a293be21cdcfc702bb61e74))
-* **contracts:** home registry types in contracts, add CollectionRegistryPort ([a074369](https://github.com/artk0de/TeaRAGs-MCP/commit/a07436961eb3b2655ccf487fe730b548ff1c7e70))
-* **drift:** move SchemaDriftMonitor into the maintenance domain ([66bb3a3](https://github.com/artk0de/TeaRAGs-MCP/commit/66bb3a327350706f43904fc8c112a322715fdc2d))
-* **git:** break metrics&lt;-&gt;extractors import cycle via utils relocation ([2c62d0d](https://github.com/artk0de/TeaRAGs-MCP/commit/2c62d0d5f3fc3cf31e53991c2a8782b981b42d8b))
-* **ingest:** decompose applyFileSignals into grouped private helpers (epic tea-rags-mcp-15h1s) ([74a55c6](https://github.com/artk0de/TeaRAGs-MCP/commit/74a55c603b283c892ca95acbc3030809be630aa5))
-* **ingest:** drop the deprecated pipeline/infra/runtime re-export shim ([962265f](https://github.com/artk0de/TeaRAGs-MCP/commit/962265f1637e65eb9b1d41da6aab033dbb9125d0))
-* **qdrant:** move EmbeddingModelGuard into adapters/qdrant ([5c82b4a](https://github.com/artk0de/TeaRAGs-MCP/commit/5c82b4a4e947a2cfc354ea941ae318e78fa24165))
-* **qdrant:** move the required-version reader into adapters/qdrant ([c2e4dd7](https://github.com/artk0de/TeaRAGs-MCP/commit/c2e4dd7b4e56dafa31e3300dcab04bbdf6d4c76a))
-* **signals:** codegraph helpers delegate to canonical resolvePayloadValue ([6b80b3f](https://github.com/artk0de/TeaRAGs-MCP/commit/6b80b3f306fb91a8c8c2fe5a85fb82fff7a54646))
-* **signals:** git stats readPayloadPath delegates to canonical resolver ([965269a](https://github.com/artk0de/TeaRAGs-MCP/commit/965269a87364b21c1c4a37424fd9fcc3a4347b80))
-* **signals:** stats-recompute uses canonical resolvePayloadValue ([3aa02cd](https://github.com/artk0de/TeaRAGs-MCP/commit/3aa02cd63f477ee4cb06ef5d58bdc907cad0b431))
-* **trajectory:** extract CallEdgeResolutionRunner from provider god-module ([4991d61](https://github.com/artk0de/TeaRAGs-MCP/commit/4991d61af16d6aaa2233d32ccb12a4c945bd4d79))
-* **trajectory:** extract codegraph extraction sink; provider becomes a facade ([f497612](https://github.com/artk0de/TeaRAGs-MCP/commit/f497612edf98cb7d178ac94a54e4a9f0c718eb48))
-* **trajectory:** extract CodegraphRunState from provider god-module ([6d0fa89](https://github.com/artk0de/TeaRAGs-MCP/commit/6d0fa89fdedaa9d31ee5b620a1015a563acec00d))
-* **trajectory:** extract GraphBuildFinalizer (pass-2 loop + SCC/PageRank) ([8599383](https://github.com/artk0de/TeaRAGs-MCP/commit/85993836969620f646a1e7c1ab41c50f032c4835))
-* **trajectory:** extract SymbolNodeFlushQueue from provider god-module ([06ebcac](https://github.com/artk0de/TeaRAGs-MCP/commit/06ebcac5b908fa4a3fd2b4f566b3a087d559bdab))
-* **trajectory:** move MapHierarchyView into the codegraph domain ([550bd34](https://github.com/artk0de/TeaRAGs-MCP/commit/550bd346979b0699378a6534315387d49df8acb4))
-* **trajectory:** phase-slice walkCommits into per-phase helpers ([4b5e7e1](https://github.com/artk0de/TeaRAGs-MCP/commit/4b5e7e132f01a79c2a1f0748c7f5cecc49c0723e))
-* **trajectory:** single authority ivarTypeName for [@ivar](https://github.com/ivar) type lookup (wr7ku) ([b7e6aa8](https://github.com/artk0de/TeaRAGs-MCP/commit/b7e6aa80ec878f9ac26cddca8b2cc45c478beafc))
+* Ruby call-graph navigation recognizes methods defined via `class &lt;&lt; self` or inside `included do ... end` blocks, resolves registry-style dispatch and constant-rooted method chains, respects file-exclusion rules on a forced re-index, and no longer returns phantom matches from post-deployment migration scripts
+* Call-graph results no longer follow incorrect type information — a YARD documentation block leaking onto the wrong method, a generic return-type guess overriding an already-known receiver, or a documented return type that names no real class in the project
+* Incremental indexing reports accurate progress instead of an underestimated whole-repo count, worker crashes surface the actual error instead of failing silently, and enrichment recovery heals every unenriched file instead of stopping after the first 10,000
 
 ## [1.35.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.34.1...v1.35.0) (2026-07-08)
 
 ### 🧠 Code intelligence
 
-* Ruby call-graph navigation (get_callers/find_callers) now resolves calls dispatched through a shared abstract method invoked via self — including the common two-hop `ClassName.call -&gt; new.call` service-object delegation pattern — instead of returning no results for these call sites.
+- Ruby call-graph navigation (get_callers/find_callers) now resolves calls
+  dispatched through a shared abstract method invoked via self — including the
+  common two-hop `ClassName.call -&gt; new.call` service-object delegation pattern
+  — instead of returning no results for these call sites.
 
 ### ⚡ Indexing & performance
 
-* Incremental reindexing now updates git-derived file signals (age, churn, ownership) incrementally instead of re-scanning the full git history on every run, including on repositories with rebased or merged branch history — making incremental reindexes on large repos noticeably faster.
-* Indexing no longer stalls the whole run while computing git blame on repositories with deep file histories — blame is now computed off the main thread, with a new tunable concurrency knob for large monorepos.
+- Incremental reindexing now updates git-derived file signals (age, churn,
+  ownership) incrementally instead of re-scanning the full git history on every
+  run, including on repositories with rebased or merged branch history — making
+  incremental reindexes on large repos noticeably faster.
+- Indexing no longer stalls the whole run while computing git blame on
+  repositories with deep file histories — blame is now computed off the main
+  thread, with a new tunable concurrency knob for large monorepos.
 
 ### 🛠 CLI & workflow
 
-* Setup now asks which git history engine to use for indexing — the standard git CLI or a faster in-process alternative (recommended automatically for very large repositories) — configurable per project via a new GIT_ADAPTER setting, and `tune` reports which engine is active.
-* `tea-rags tune --project` now saves the performance settings it measures directly into the project's configuration, so future indexing runs pick them up automatically instead of requiring the generated .env file to be copied in by hand.
-* The CLI indexing progress display now reports code-graph write progress instead of appearing to stall near the end of a run.
+- Setup now asks which git history engine to use for indexing — the standard git
+  CLI or a faster in-process alternative (recommended automatically for very
+  large repositories) — configurable per project via a new GIT_ADAPTER setting,
+  and `tune` reports which engine is active.
+- `tea-rags tune --project` now saves the performance settings it measures
+  directly into the project's configuration, so future indexing runs pick them
+  up automatically instead of requiring the generated .env file to be copied in
+  by hand.
+- The CLI indexing progress display now reports code-graph write progress
+  instead of appearing to stall near the end of a run.
 
 ### 🩹 Fixes
 
-* Code intelligence results (e.g. get_callers) could silently miss up to 255 files' symbols after a full reindex — the call graph now captures every file's symbols instead of dropping a batch's remainder.
-* Call-graph results for Ruby code no longer include meaningless noise entries from call chains rooted in external libraries.
-* Indexing very large repositories no longer risks running out of memory during git-history enrichment — concurrent batches previously each triggered their own full git-history scan, and a hidden concurrency floor ignored lower concurrency settings meant to bound memory use.
-* Indexing large repositories no longer fails with a false timeout while scanning git history — the timeout now resets on activity instead of capping total duration, so long-but-alive scans (including ones with a single giant commit) complete instead of being killed.
-* The embedded Qdrant daemon now self-heals when a previous interrupted reindex leaves behind a corrupted collection, instead of permanently failing to start.
-* `tea-rags tune --project` now works on projects using the embedded Qdrant daemon — previously it failed immediately, either erroring while the daemon was still starting up or misresolving the embedded connection address.
-* CLI indexing commands now wait for the embedded Qdrant daemon to finish recovering after a restart instead of failing immediately, and --json output now reports the actual error instead of exiting silently with no output.
-* A reindex run with no environment variables set now reproduces the project's last configured indexing settings instead of silently falling back to code defaults.
-* Incremental reindexing now automatically cleans up leftover data from previous interrupted full reindexes, instead of it accumulating until the next successful one.
-* Interrupting an indexing run (Ctrl-C) now fully stops its git subprocesses instead of leaving orphaned git processes running in the background.
+- Code intelligence results (e.g. get_callers) could silently miss up to 255
+  files' symbols after a full reindex — the call graph now captures every file's
+  symbols instead of dropping a batch's remainder.
+- Call-graph results for Ruby code no longer include meaningless noise entries
+  from call chains rooted in external libraries.
+- Indexing very large repositories no longer risks running out of memory during
+  git-history enrichment — concurrent batches previously each triggered their
+  own full git-history scan, and a hidden concurrency floor ignored lower
+  concurrency settings meant to bound memory use.
+- Indexing large repositories no longer fails with a false timeout while
+  scanning git history — the timeout now resets on activity instead of capping
+  total duration, so long-but-alive scans (including ones with a single giant
+  commit) complete instead of being killed.
+- The embedded Qdrant daemon now self-heals when a previous interrupted reindex
+  leaves behind a corrupted collection, instead of permanently failing to start.
+- `tea-rags tune --project` now works on projects using the embedded Qdrant
+  daemon — previously it failed immediately, either erroring while the daemon
+  was still starting up or misresolving the embedded connection address.
+- CLI indexing commands now wait for the embedded Qdrant daemon to finish
+  recovering after a restart instead of failing immediately, and --json output
+  now reports the actual error instead of exiting silently with no output.
+- A reindex run with no environment variables set now reproduces the project's
+  last configured indexing settings instead of silently falling back to code
+  defaults.
+- Incremental reindexing now automatically cleans up leftover data from previous
+  interrupted full reindexes, instead of it accumulating until the next
+  successful one.
+- Interrupting an indexing run (Ctrl-C) now fully stops its git subprocesses
+  instead of leaving orphaned git processes running in the background.
 
 ### 🔧 Environment Variables
 
-* `GIT_ADAPTER` · Selects the git history engine used for indexing: the standard git CLI or a faster in-process es-git library (auto-recommended for very large repositories) · default: `git` (new)
-* `TRAJECTORY_GIT_BLAME_POOL_SIZE` · Number of worker threads used to compute git blame off the main thread during indexing · default: `min(4, cpus - 1)` (new)
-* `TRAJECTORY_GIT_CHUNK_CONCURRENCY` · Number of concurrent git-blame operations during chunk-level enrichment; a hidden floor that kept this at a minimum of 10 was removed, so lower values are now honored · default: `10` (changed)
-* `TRAJECTORY_GIT_LOG_TIMEOUT_MS` · Now an inactivity window that resets on any output, instead of a hard cap on the total duration of the bulk git-history scan · default: `60000` (changed)
+- `GIT_ADAPTER` · Selects the git history engine used for indexing: the standard
+  git CLI or a faster in-process es-git library (auto-recommended for very large
+  repositories) · default: `git` (new)
+- `TRAJECTORY_GIT_BLAME_POOL_SIZE` · Number of worker threads used to compute
+  git blame off the main thread during indexing · default: `min(4, cpus - 1)`
+  (new)
+- `TRAJECTORY_GIT_CHUNK_CONCURRENCY` · Number of concurrent git-blame operations
+  during chunk-level enrichment; a hidden floor that kept this at a minimum of
+  10 was removed, so lower values are now honored · default: `10` (changed)
+- `TRAJECTORY_GIT_LOG_TIMEOUT_MS` · Now an inactivity window that resets on any
+  output, instead of a hard cap on the total duration of the bulk git-history
+  scan · default: `60000` (changed)
 
 ## [1.34.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.34.0...v1.34.1) (2026-07-04)
 
