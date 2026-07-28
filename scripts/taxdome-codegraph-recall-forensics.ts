@@ -63,7 +63,7 @@ import {
   ivarTypeName,
   returnTypeOf,
 } from "../src/core/domains/language/ruby/resolver/type-propagation.js";
-import { readScopeResolution } from "../src/core/domains/language/ruby/walker/ast-utils.js";
+import { forEachClassScope, readScopeResolution } from "../src/core/domains/language/ruby/walker/ast-utils.js";
 import { rbNameOf } from "../src/core/domains/language/ruby/walker/index.js";
 import { constantLookupCandidates } from "../src/core/domains/language/ruby/walker/param-arg-types.js";
 import {
@@ -194,6 +194,53 @@ const tfBindingReach = new Map<string, number>();
 const tfChunkCallBindings = new Map<string, Record<string, string>>();
 /** Every class/module FQ this run DECLARES — the existence predicate's corpus. */
 const tfDeclaredConstants = new Set<string>();
+
+// ---------------------------------------------------------------------------
+// OWNER-QUALIFIED RETURN-FACT ORACLE (bd tea-rags-mcp-rwv3o, 2026-07-28). Same
+// additive, env-gated contract as every oracle above: with
+// CODEGRAPH_OWNERFACT_ORACLE unset nothing extra is accumulated or reported and
+// the A/B recall metrics are byte-identical.
+//
+// It sizes the ONE population the h4hxh close deferred: `boundCallReturnType`'s
+// BARE branch (`x = fetch(…)`, receiver has no type at all), which answers from
+// the flat bare-name `functionReturnTypes` map. A read-time uniqueness gate there
+// measured −758 honest edges and was rejected; the proposed fix is UPSTREAM —
+// owner-qualified facts (`Klass#member`) the bare branch can consult through the
+// CALLER's own class + MRO before falling back to the flat map.
+//
+// The probe answers, per bare-branch binding site:
+//   (a) how many sites the flat map serves at all, split corpus-unique vs collided;
+//   (b) of the collided ones, how many have an enclosing-class MRO carrying
+//       EXACTLY ONE definer of that member — the addressable set, the number the
+//       design must be sized to;
+//   (c) of those, how many already carry an owner-qualified return fact today
+//       (`structuredReturnTypes["<owner>#<member>"]`) — the immediately actionable
+//       subset — and how many of those DISAGREE with the flat map's answer (the
+//       corrections the change would make);
+//   (d) how many bare bindings the flat map cannot serve at all (no fact for the
+//       member anywhere) — the callee-return coverage hole (bd smvyk).
+// Everything is a fold over run-global state pass-1 already built.
+// ---------------------------------------------------------------------------
+const OWNERFACT_ENABLED = process.env.CODEGRAPH_OWNERFACT_ORACLE === "1";
+
+// ---------------------------------------------------------------------------
+// CALLEE-RETURN SHAPE ORACLE (bd tea-rags-mcp-smvyk, 2026-07-28). Same additive,
+// env-gated contract. The owner-fact oracle above ends at "1 926 binding sites
+// reach a callee that has NO return fact at all"; this one asks WHY, by
+// classifying the BODY SHAPE of each such callee and weighting the classes by
+// the site reach they carry. The point is to fund inference extensions only
+// where the numbers justify them — a shape carrying 12 sites is not worth a new
+// silence gate to get wrong.
+// ---------------------------------------------------------------------------
+const CALLEESHAPE_ENABLED = process.env.CODEGRAPH_CALLEESHAPE_ORACLE === "1";
+/** One record per pass-1 chunk that carries `localCallBindings`, with the chunk's
+ *  own enclosing scope — the key the bare branch would narrow by. */
+const ofChunkBindings: {
+  relPath: string;
+  symbolId: string;
+  scope: readonly string[];
+  bindings: Record<string, string>;
+}[] = [];
 
 // ---------------------------------------------------------------------------
 // SUPER-MISS ORACLE (bd tea-rags-mcp-lawlq.5, 2026-07-27). Fifth oracle under
@@ -426,6 +473,17 @@ function ingestPass1(extraction: FileExtraction, materializedRoot: AstNode): voi
     for (const [symbolId, indices] of Object.entries(extraction.callbackParams)) runCallbackParams[symbolId] = indices;
   }
   runSelfDispatchMethods.push(...extractSelfDispatchMethods(extraction.chunks));
+  if (OWNERFACT_ENABLED || CALLEESHAPE_ENABLED) {
+    for (const chunk of extraction.chunks) {
+      if (chunk.localCallBindings === undefined) continue;
+      ofChunkBindings.push({
+        relPath: extraction.relPath,
+        symbolId: chunk.symbolId,
+        scope: chunk.scope,
+        bindings: chunk.localCallBindings,
+      });
+    }
+  }
   if (TYPEFACT_ENABLED) {
     for (const chunk of extraction.chunks) {
       if (chunk.scope.length > 0) tfDeclaredConstants.add(chunk.scope.join("::"));
@@ -5225,6 +5283,444 @@ function runTypefactOracle(declaredBeforeDerive: Record<string, RubyTypeRef>): v
 }
 
 // ---------------------------------------------------------------------------
+// OWNER-QUALIFIED RETURN-FACT ORACLE (CODEGRAPH_OWNERFACT_ORACLE=1)
+//
+// One fold over every pass-1 chunk's `localCallBindings`, replaying exactly the
+// lookup the proposed bare-branch narrowing would perform.
+// ---------------------------------------------------------------------------
+
+/**
+ * The owner-qualified return fact a BARE call to `member` inside `klass` would
+ * find — the caller's own coordinate first, then its DIRECT ancestors, mirroring
+ * production `declaredReturnTypeOn` + `inheritedReturnType` (instance `#` form
+ * only: a bare call dispatches on self, never on the class object).
+ */
+function ofOwnerFact(klass: string, member: string): RubyTypeRef | undefined {
+  const own = runStructuredReturnTypes[`${klass}#${member}`];
+  if (own !== undefined) return own;
+  for (const ancestor of runAncestors[klass] ?? []) {
+    const inherited = runStructuredReturnTypes[`${ancestor}#${member}`];
+    if (inherited !== undefined) return inherited;
+  }
+  return undefined;
+}
+
+function runOwnerfactOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  const defCounts = symbolTable.shortNameDefCounts();
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  OWNER-QUALIFIED RETURN-FACT ORACLE (bd rwv3o)");
+  L("═══════════════════════════════════════════════════════════════════");
+
+  let qualifiedSites = 0;
+  let bareSites = 0;
+  let bareNoScope = 0;
+  // Population A: the flat map ANSWERS today (this is `boundCallReturnType`'s
+  // bare branch firing).
+  let flatServed = 0;
+  let flatUnique = 0;
+  let flatCollided = 0;
+  // MRO-definer census over the TRANSITIVE ancestor closure — the addressable-set
+  // question ("exactly one definer in the MRO").
+  const mroDefiners = { zero: 0, one: 0, many: 0 };
+  const mroDefinersCollided = { zero: 0, one: 0, many: 0 };
+  // Production-semantics owner fact (own coordinate + DIRECT ancestors).
+  let ownerFactHit = 0;
+  let ownerFactAgrees = 0;
+  let ownerFactDiffers = 0;
+  let ownerFactHitCollided = 0;
+  let ownerFactDiffersCollided = 0;
+  // Population B: the flat map is SILENT — an owner fact would be a NEW answer.
+  let flatSilent = 0;
+  let silentOwnerFactHit = 0;
+  let silentMroDefinerOne = 0;
+  let silentMroDefinerOneNoFact = 0;
+  const correctionRows = new Map<string, { sites: number; flat: string; owned: string }>();
+  const newAnswerRows = new Map<string, number>();
+  const uncoveredCallees = new Map<string, number>();
+
+  for (const rec of ofChunkBindings) {
+    const scopeKey = rec.scope.join("::");
+    for (const binding of Object.values(rec.bindings)) {
+      if (binding.lastIndexOf(".") > 0) {
+        qualifiedSites += 1;
+        continue;
+      }
+      bareSites += 1;
+      if (scopeKey.length === 0) {
+        bareNoScope += 1;
+        continue;
+      }
+      const member = binding;
+      const flat = runReturnTypes[member];
+      const collided = (defCounts.get(member) ?? 0) > 1;
+      const closure = tfAncestorClosure(scopeKey);
+      const definerOwners = new Set(
+        symbolTable
+          .lookupByShortName(member)
+          .map((d) => d.scope.join("::"))
+          .filter((owner) => owner.length > 0 && closure.has(owner)),
+      );
+      const bucket = definerOwners.size === 0 ? "zero" : definerOwners.size === 1 ? "one" : "many";
+      const owned = ofOwnerFact(scopeKey, member);
+      const ownedName = owned === undefined ? undefined : tfRefName(owned);
+      if (flat === undefined) {
+        flatSilent += 1;
+        if (ownedName !== undefined) {
+          silentOwnerFactHit += 1;
+          newAnswerRows.set(`${scopeKey}#${member}`, (newAnswerRows.get(`${scopeKey}#${member}`) ?? 0) + 1);
+        }
+        if (bucket === "one") {
+          silentMroDefinerOne += 1;
+          if (ownedName === undefined) {
+            silentMroDefinerOneNoFact += 1;
+            uncoveredCallees.set(
+              `${[...definerOwners][0]}#${member}`,
+              (uncoveredCallees.get(`${[...definerOwners][0]}#${member}`) ?? 0) + 1,
+            );
+          }
+        }
+        continue;
+      }
+      flatServed += 1;
+      if (collided) flatCollided += 1;
+      else flatUnique += 1;
+      mroDefiners[bucket] += 1;
+      if (collided) mroDefinersCollided[bucket] += 1;
+      if (ownedName !== undefined) {
+        ownerFactHit += 1;
+        if (collided) ownerFactHitCollided += 1;
+        if (ownedName === flat) {
+          ownerFactAgrees += 1;
+        } else {
+          ownerFactDiffers += 1;
+          if (collided) ownerFactDiffersCollided += 1;
+          const key = `${scopeKey}#${member}`;
+          const row = correctionRows.get(key) ?? { sites: 0, flat, owned: ownedName };
+          row.sites += 1;
+          correctionRows.set(key, row);
+        }
+      }
+    }
+  }
+
+  L("");
+  L("─── bare-branch binding-site census ───────────────────────────────");
+  L(`chunks carrying localCallBindings:        ${ofChunkBindings.length}`);
+  L(`scope-QUALIFIED binding sites (x = C.m):  ${qualifiedSites}`);
+  L(`BARE binding sites (x = m(…)):            ${bareSites}`);
+  L(`  no enclosing class scope (unnarrowable): ${bareNoScope}`);
+  L("");
+  L("─── A. flat map ANSWERS today (the bare branch fires) ─────────────");
+  L(`sites served by the flat map:             ${flatServed}`);
+  L(`  member corpus-UNIQUE (1 def):           ${flatUnique}`);
+  L(`  member COLLIDED (>=2 defs):             ${flatCollided}   <- the h4hxh population`);
+  L("");
+  L("  definers of that member inside the caller's transitive MRO:");
+  L(
+    `    exactly ONE definer  (addressable):   ${mroDefiners.one}   (collided-member subset: ${mroDefinersCollided.one})`,
+  );
+  L(`    NO definer in the MRO:                ${mroDefiners.zero}   (collided subset: ${mroDefinersCollided.zero})`);
+  L(`    TWO OR MORE definers:                 ${mroDefiners.many}   (collided subset: ${mroDefinersCollided.many})`);
+  L("");
+  L("  owner-qualified fact reachable (own coordinate + DIRECT ancestors):");
+  L(`    fact found:                           ${ownerFactHit}   (collided subset: ${ownerFactHitCollided})`);
+  L(`      AGREES with the flat answer:        ${ownerFactAgrees}`);
+  L(`      DIFFERS (a correction):             ${ownerFactDiffers}   (collided subset: ${ownerFactDiffersCollided})`);
+  L("");
+  L("  top corrections by site reach (coordinate: flat -> owner-qualified):");
+  for (const [coord, row] of [...correctionRows.entries()].sort((a, b) => b[1].sites - a[1].sites).slice(0, 15)) {
+    L(`  ${String(row.sites).padStart(6)}  ${coord}:  ${row.flat}  ->  ${row.owned}`);
+  }
+  L("");
+  L("─── B. flat map SILENT (owner fact would be a NEW answer) ─────────");
+  L(`sites with no flat fact at all:           ${flatSilent}`);
+  L(`  owner-qualified fact IS reachable:      ${silentOwnerFactHit}   <- new receiver types`);
+  L(`  exactly one MRO definer:                ${silentMroDefinerOne}`);
+  L(`    ...but that callee has NO return fact: ${silentMroDefinerOneNoFact}   <- bd smvyk coverage hole`);
+  L("");
+  L("  top NEW-answer coordinates by site reach:");
+  for (const [coord, sites] of [...newAnswerRows.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)) {
+    L(`  ${String(sites).padStart(6)}  ${coord}`);
+  }
+  L("");
+  L("  top UNCOVERED callees by site reach (bd smvyk input):");
+  for (const [coord, sites] of [...uncoveredCallees.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25)) {
+    L(`  ${String(sites).padStart(6)}  ${coord}`);
+  }
+  L("");
+}
+
+// ---------------------------------------------------------------------------
+// CALLEE-RETURN SHAPE ORACLE (CODEGRAPH_CALLEESHAPE_ORACLE=1)
+//
+// Population: every `<owner>#<member>` coordinate a bare binding site reaches
+// through the caller's MRO that carries NO return fact in either channel.
+// For each, the DECLARING file is re-parsed once and the def's body tail is
+// classified, so the report says which inference extension would cover how many
+// binding sites.
+// ---------------------------------------------------------------------------
+
+/** Receiver-passthrough tails: the value is the receiver, so its type carries. */
+const CS_PASSTHROUGH_TAILS = new Set(["freeze", "dup", "tap", "presence", "itself"]);
+/** Non-nominal literal tails — nothing a class name could describe. */
+const CS_LITERAL_TYPES = new Set([
+  "string",
+  "integer",
+  "float",
+  "simple_symbol",
+  "symbol_array",
+  "array",
+  "hash",
+  "nil",
+  "true",
+  "false",
+  "regex",
+  "range",
+  "heredoc_beginning",
+  "chained_string",
+  "character",
+  "delimited_symbol",
+]);
+/** Conditional constructs whose VALUE is one of several branch tails. */
+const CS_BRANCHING_TYPES = new Set(["if", "unless", "case", "case_match", "conditional", "if_modifier", "begin"]);
+
+let csCatalogueCache: RubyDslCatalogue | undefined;
+function csCatalogue(): RubyDslCatalogue {
+  csCatalogueCache ??= catalogueForGemfile(gemfileContent);
+  return csCatalogueCache;
+}
+
+/** The last value-producing statement of a body, `return EXPR` unwrapped. */
+function csTail(body: AstNode): AstNode | null {
+  const stmts = body.namedChildren.filter((n) => n.type !== "rescue" && n.type !== "ensure" && n.type !== "else");
+  let last = stmts[stmts.length - 1];
+  if (!last) return null;
+  if (last.type === "return") {
+    const arg = last.namedChildren[0];
+    if (!arg) return null;
+    last = arg.type === "argument_list" ? arg.namedChildren[0] : arg;
+    if (!last) return null;
+  }
+  return last;
+}
+
+/** Every branch tail of a conditional construct (nested conditionals flattened). */
+function csBranchTails(node: AstNode, out: AstNode[] = []): AstNode[] {
+  if (!CS_BRANCHING_TYPES.has(node.type)) {
+    out.push(node);
+    return out;
+  }
+  if (node.type === "conditional") {
+    for (const field of ["consequence", "alternative"]) {
+      const branch = node.childForFieldName(field);
+      if (branch) csBranchTails(branch, out);
+    }
+    return out;
+  }
+  // `if` / `unless` / `case`: each `then`/`else`/`when`/`in` body contributes its tail.
+  for (const child of node.namedChildren) {
+    if (child.type === "then" || child.type === "else" || child.type === "body_statement" || child.type === "begin") {
+      const tail = csTail(child);
+      if (tail) csBranchTails(tail, out);
+    } else if (child.type === "elsif" || child.type === "when" || child.type === "in_clause") {
+      for (const sub of child.namedChildren) {
+        if (sub.type !== "then" && sub.type !== "body_statement") continue;
+        const tail = csTail(sub);
+        if (tail) csBranchTails(tail, out);
+      }
+    }
+  }
+  return out;
+}
+
+/** All plain / operator assignment events to `name` in a body (mirrors body-last-expr). */
+function csAssignments(body: AstNode, name: string): { plain: AstNode[]; orAssign: AstNode[]; other: number } {
+  const plain: AstNode[] = [];
+  const orAssign: AstNode[] = [];
+  let other = 0;
+  const scan = (n: AstNode): void => {
+    if (n.type === "method" || n.type === "singleton_method" || n.type === "class" || n.type === "module") return;
+    const lhs = n.childForFieldName("left");
+    if (n.type === "assignment" && lhs?.text === name) {
+      const rhs = n.childForFieldName("right");
+      if (rhs) plain.push(rhs);
+      else other += 1;
+    } else if (n.type === "operator_assignment" && lhs?.text === name) {
+      const rhs = n.childForFieldName("right");
+      if (rhs && n.text.includes("||=")) orAssign.push(rhs);
+      else other += 1;
+    }
+    for (const child of n.children) scan(child);
+  };
+  for (const child of body.children) scan(child);
+  return { plain, orAssign, other };
+}
+
+/** `constInstanceType`, peeling receiver-passthrough tails first. */
+function csTypeOf(node: AstNode): string | null {
+  const direct = constInstanceType(node, csCatalogue());
+  if (direct !== null) return direct;
+  if (node.type !== "call" && node.type !== "method_call") return null;
+  const method = node.childForFieldName("method");
+  const receiver = node.childForFieldName("receiver");
+  if (!method || !receiver || !CS_PASSTHROUGH_TAILS.has(method.text)) return null;
+  return csTypeOf(receiver);
+}
+
+/** The shape class of a def's return, for the shapes the current inference misses. */
+function csClassify(defNode: AstNode): string {
+  const body = defNode.childForFieldName("body");
+  if (!body) return "no-body";
+  const tail = csTail(body);
+  if (!tail) return "empty-body";
+  if (constInstanceType(tail, csCatalogue()) !== null) return "already-inferable";
+  if (csTypeOf(tail) !== null) return "passthrough-tail (freeze/dup/tap/presence)";
+  if (CS_BRANCHING_TYPES.has(tail.type)) {
+    const branches = csBranchTails(tail);
+    if (branches.length === 0) return "conditional (no branch tails)";
+    const types = branches.map((b) => csTypeOf(b));
+    const named = types.filter((t): t is string => t !== null);
+    if (named.length === types.length && new Set(named).size === 1) return "conditional ALL BRANCHES AGREE";
+    if (named.length > 0) return "conditional partly typed (divergent/untypeable)";
+    return "conditional fully untypeable";
+  }
+  if (tail.type === "identifier" || tail.type === "instance_variable") {
+    const kind = tail.type === "identifier" ? "local" : "ivar";
+    const { plain, orAssign, other } = csAssignments(body, tail.text);
+    if (other > 0) return `${kind} tail — non-plain assignment`;
+    if (plain.length === 0 && orAssign.length === 1) {
+      return csTypeOf(orAssign[0]) !== null
+        ? `${kind} tail — MEMOIZED ||= TYPED`
+        : `${kind} tail — memoized ||= opaque`;
+    }
+    if (plain.length === 1 && orAssign.length === 0) {
+      return csTypeOf(plain[0]) !== null ? `${kind} tail — SINGLE ASSIGN TYPED` : `${kind} tail — single assign opaque`;
+    }
+    if (plain.length + orAssign.length === 0) return `${kind} tail — assigned elsewhere (param/ivar from initialize)`;
+    return `${kind} tail — reassigned (${plain.length} plain, ${orAssign.length} ||=)`;
+  }
+  if (tail.type === "call" || tail.type === "method_call") {
+    const receiver = tail.childForFieldName("receiver");
+    return receiver === null ? "bare self-call tail (interprocedural, same class)" : "qualified call tail (opaque)";
+  }
+  if (CS_LITERAL_TYPES.has(tail.type)) return "literal / non-nominal";
+  if (tail.type === "constant" || tail.type === "scope_resolution") return "constant reference (class object)";
+  if (tail.type === "self") return "self";
+  if (tail.type === "assignment" || tail.type === "operator_assignment") return "assignment as tail";
+  return `other: ${tail.type}`;
+}
+
+function runCalleeShapeOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  CALLEE-RETURN SHAPE ORACLE (bd smvyk)");
+  L("═══════════════════════════════════════════════════════════════════");
+
+  // ── population: uncovered callee coordinates + their binding-site reach ────
+  const wanted = new Map<string, number>(); // "<owner>#<member>" -> sites
+  const byFile = new Map<string, Map<string, string[]>>(); // relPath -> fq -> members
+  let bareSitesScoped = 0;
+  let uncoveredSites = 0;
+  for (const rec of ofChunkBindings) {
+    const scopeKey = rec.scope.join("::");
+    if (scopeKey.length === 0) continue;
+    for (const binding of Object.values(rec.bindings)) {
+      if (binding.lastIndexOf(".") > 0) continue;
+      bareSitesScoped += 1;
+      if (runReturnTypes[binding] !== undefined) continue;
+      if (ofOwnerFact(scopeKey, binding) !== undefined) continue;
+      const closure = tfAncestorClosure(scopeKey);
+      const definers = symbolTable
+        .lookupByShortName(binding)
+        .filter((d) => d.scope.length > 0 && closure.has(d.scope.join("::")));
+      const owners = new Set(definers.map((d) => d.scope.join("::")));
+      if (owners.size !== 1) continue;
+      uncoveredSites += 1;
+      const owner = [...owners][0];
+      const coord = `${owner}#${binding}`;
+      wanted.set(coord, (wanted.get(coord) ?? 0) + 1);
+      for (const def of definers) {
+        const perFile = byFile.get(def.relPath) ?? new Map<string, string[]>();
+        const members = perFile.get(owner) ?? [];
+        if (!members.includes(binding)) members.push(binding);
+        perFile.set(owner, members);
+        byFile.set(def.relPath, perFile);
+      }
+    }
+  }
+
+  // ── classify: re-parse only the declaring files, once each ────────────────
+  const shapeCoords = new Map<string, number>();
+  const shapeSites = new Map<string, number>();
+  const examples = new Map<string, string[]>();
+  let classified = 0;
+  let parseFailures = 0;
+  const seenCoord = new Set<string>();
+  for (const [relPath, perFile] of byFile) {
+    let root: AstNode;
+    try {
+      const code = readFileSync(join(ROOT, relPath), "utf8");
+      const parser = new Parser();
+      parser.setLanguage(rbConfig.loadParser());
+      root = materializeTree(parser.parse(code).rootNode, code);
+    } catch {
+      parseFailures += 1;
+      continue;
+    }
+    forEachClassScope(root, (classNode, fq) => {
+      const members = perFile.get(fq);
+      if (members === undefined) return;
+      const scan = (n: AstNode): void => {
+        if (n.type === "class" || n.type === "module") return;
+        if (n.type === "method" || n.type === "singleton_method") {
+          const nameNode = n.childForFieldName("name");
+          if (nameNode !== null && members.includes(nameNode.text)) {
+            const coord = `${fq}#${nameNode.text}`;
+            if (!seenCoord.has(coord)) {
+              seenCoord.add(coord);
+              const shape = csClassify(n);
+              classified += 1;
+              shapeCoords.set(shape, (shapeCoords.get(shape) ?? 0) + 1);
+              shapeSites.set(shape, (shapeSites.get(shape) ?? 0) + (wanted.get(coord) ?? 0));
+              const list = examples.get(shape) ?? [];
+              if (list.length < 4) list.push(`${coord} (${wanted.get(coord) ?? 0} sites)`);
+              examples.set(shape, list);
+            }
+          }
+          return;
+        }
+        for (const child of n.children) scan(child);
+      };
+      const body = classNode.childForFieldName("body");
+      for (const child of (body ?? classNode).children) scan(child);
+    });
+  }
+
+  L("");
+  L("─── population ────────────────────────────────────────────────────");
+  L(`bare binding sites inside a class:        ${bareSitesScoped}`);
+  L(`  no fact anywhere + exactly ONE MRO definer: ${uncoveredSites} sites over ${wanted.size} coordinates`);
+  L(
+    `  coordinates located in source and classified: ${classified}   (files re-parsed: ${byFile.size}, failures: ${parseFailures})`,
+  );
+  L("");
+  L("─── body-tail shape of the uncovered callee (by SITE reach) ───────");
+  for (const [shape, sites] of [...shapeSites.entries()].sort((a, b) => b[1] - a[1])) {
+    const coords = shapeCoords.get(shape) ?? 0;
+    L(`  ${String(sites).padStart(6)} sites  ${String(coords).padStart(5)} defs   ${shape}`);
+    for (const ex of examples.get(shape) ?? []) L(`                                 e.g. ${ex}`);
+  }
+  L("");
+}
+
+// ---------------------------------------------------------------------------
 // MAIN
 // ---------------------------------------------------------------------------
 let hierarchyView: MapHierarchyView;
@@ -5596,6 +6092,8 @@ async function main(): Promise<void> {
   writeFileSync(OUT_MISSES, JSON.stringify(payload, null, 2));
   L(`misses dumped: ${misses.length} -> ${OUT_MISSES}`);
   if (TYPEFACT_ENABLED) runTypefactOracle(declaredBeforeDerive);
+  if (OWNERFACT_ENABLED) runOwnerfactOracle();
+  if (CALLEESHAPE_ENABLED) runCalleeShapeOracle();
   if (ORACLE_ENABLED) runOracle(Date.now() - t0, files.length);
   if (SUPER_ORACLE_ENABLED) runSuperOracle();
   if (LOCAL_CENSUS_ENABLED) runLocalCensus();
