@@ -204,6 +204,14 @@ export function collectAncestorChain(klass: string, ctx: CallContext, visited: S
  * stores `"Introspection::BaseObject"`), so a raw-string recursion dead-ends at
  * the first hop whose real key is namespaced (`GraphQL::Introspection::BaseObject`).
  * Returns the resolved FQ, or null when nothing matches (caller keeps the raw).
+ *
+ * Covers the NESTING half of Ruby constant lookup: `Module.nesting` — whose HEAD
+ * is the declaring class/module itself — then the outer prefixes. Each hop is a
+ * single symbol-table probe, and keeping it that way is deliberate: this runs
+ * inside the ancestor-chain walk on every bare-call narrowing, so its per-call
+ * cost is multiplied by the whole corpus. The cref-ANCESTOR half of the lookup
+ * costs a probe per ancestor and lives in {@link canonicalizeMixinAlias}, whose
+ * call count is bounded by one module's includer list (bd lawlq.5).
  */
 function canonicalizeAncestorFq(raw: string, nestingKlass: string, ctx: CallContext): string | null {
   // Precision guard (bd lawlq.3.4): a classAncestors key is inherently unique;
@@ -211,17 +219,52 @@ function canonicalizeAncestorFq(raw: string, nestingKlass: string, ctx: CallCont
   // never canonicalizes to the wrong FQ and fabricates a mixin edge.
   const isKnown = (name: string): boolean =>
     ctx.classAncestors?.[name] !== undefined || ctx.symbolTable.lookup(name).length === 1;
+  // `Module.nesting` HEAD is the declaring class itself: `class C; prepend
+  // Wrapper` means `C::Wrapper` whenever that constant exists, shadowing any
+  // outer or top-level `Wrapper`. Legal for COMPACT declarations too (`class
+  // A::B::C` opens `A::B::C`, just not A / A::B), so this hop runs before the
+  // compact bail-out (bd lawlq.5).
+  const ownScope = `${nestingKlass}::${raw}`;
+  if (isKnown(ownScope)) return ownScope;
   if (isKnown(raw)) return raw;
   // A COMPACT class def (`class A::B::C`) does NOT open the intermediate
   // namespaces A / A::B as lexical scopes — a bare `BaseController` superclass
   // resolves at TOP level (`::BaseController`), never `Api::BaseController`. So
   // the nesting prefix-walk would fabricate a wrong in-project FQ; skip it for
   // compact-declared classes (bd lawlq.3.7). Nested defs keep the walk.
-  if (ctx.compactDeclaredClasses?.has(nestingKlass)) return null;
-  const segs = nestingKlass.split("::");
-  // Innermost nesting wins (Ruby constant lookup); try the widest prefix first.
-  for (let i = segs.length - 1; i >= 1; i--) {
-    const candidate = `${segs.slice(0, i).join("::")}::${raw}`;
+  if (!ctx.compactDeclaredClasses?.has(nestingKlass)) {
+    const segs = nestingKlass.split("::");
+    // Innermost nesting wins (Ruby constant lookup); try the widest prefix first.
+    for (let i = segs.length - 1; i >= 1; i--) {
+      const candidate = `${segs.slice(0, i).join("::")}::${raw}`;
+      if (isKnown(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * FQ-canonicalize the constant `includer` wrote to mix a module in. Extends
+ * {@link canonicalizeAncestorFq} with the second half of Ruby constant lookup —
+ * the cref's ANCESTORS — so `class Sub < Base; include Helpers` canonicalizes
+ * `Helpers` to `Base::Helpers` (bd lawlq.5).
+ *
+ * Separate from the nesting-only walk on purpose. This one probes every direct
+ * ancestor of the includer, canonicalizing each ancestor's own name first, so
+ * its cost scales with the hierarchy's width. That is affordable only here,
+ * where the caller is {@link resolveViaIncludingClasses}'s alias retry: at most
+ * one call per includer of one module, and only when the FQ key found nothing.
+ */
+function canonicalizeMixinAlias(alias: string, includer: string, ctx: CallContext): string | null {
+  const nested = canonicalizeAncestorFq(alias, includer, ctx);
+  if (nested !== null) return nested;
+  const isKnown = (name: string): boolean =>
+    ctx.classAncestors?.[name] !== undefined || ctx.symbolTable.lookup(name).length === 1;
+  const parent = ctx.classExtends?.[includer];
+  const ancestors = [...(ctx.classAncestors?.[includer] ?? []), ...(parent === undefined ? [] : [parent])];
+  for (const ancestor of ancestors) {
+    const ancestorFq = canonicalizeAncestorFq(ancestor, includer, ctx) ?? ancestor;
+    const candidate = `${ancestorFq}::${alias}`;
     if (isKnown(candidate)) return candidate;
   }
   return null;
@@ -273,6 +316,13 @@ export function collectResolvedAncestorChain(
  *      (`targetSymbolId: null`) for the FIRST class whose file resolved, keeping
  *      file-level fan accurate for out-of-project parents (`ApplicationRecord`).
  *   5. No class in the chain resolves to a known file → `null` (caller DROPs).
+ *
+ * `excludeSymbolId` removes ONE definition from every candidate set along the
+ * walk. Step 2 pins by short name WITHIN a file, and a module nested in the
+ * class it is mixed into shares that file — so the `super` pass passes its own
+ * `callerSymbolId` here, because `super` can never dispatch to the method that
+ * is executing (bd lawlq.5). Omitted everywhere else: a self-send that resolves
+ * to the calling method is ordinary recursion.
  */
 export function resolveInstanceMethodInClassChain(
   klass: string,
@@ -280,6 +330,7 @@ export function resolveInstanceMethodInClassChain(
   ctx: CallContext,
   mode: AmbiguousResolveMode,
   visited: Set<string>,
+  excludeSymbolId?: string,
 ): SymbolResolutionTarget | null {
   if (visited.has(klass)) return null;
   visited.add(klass);
@@ -293,7 +344,7 @@ export function resolveInstanceMethodInClassChain(
   const prepended = ctx.classPrependedAncestors?.[klass];
   if (prepended) {
     for (let i = prepended.length - 1; i >= 0; i--) {
-      const inherited = resolveInstanceMethodInClassChain(prepended[i], member, ctx, mode, visited);
+      const inherited = resolveInstanceMethodInClassChain(prepended[i], member, ctx, mode, visited, excludeSymbolId);
       if (inherited && inherited.targetSymbolId !== null) return inherited;
     }
   }
@@ -306,7 +357,7 @@ export function resolveInstanceMethodInClassChain(
     const candidates = preferDeclaredOverSchemaColumn(
       ctx.symbolTable
         .lookupByShortName(member, { includeSchemaColumns: true })
-        .filter((def) => def.relPath === klassFile),
+        .filter((def) => def.relPath === klassFile && def.symbolId !== excludeSymbolId),
     );
     const target = pickSingleCandidate(candidates, mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
@@ -315,7 +366,7 @@ export function resolveInstanceMethodInClassChain(
   const ancestors = ctx.classAncestors?.[klass];
   if (ancestors) {
     for (const ancestor of ancestors) {
-      const inherited = resolveInstanceMethodInClassChain(ancestor, member, ctx, mode, visited);
+      const inherited = resolveInstanceMethodInClassChain(ancestor, member, ctx, mode, visited, excludeSymbolId);
       if (inherited === null) continue;
       // Method-level pin wins immediately; remember the first known file as a
       // fallback so a file-only ancestor edge survives if nothing pins later.
@@ -436,6 +487,7 @@ export function firstDefinerAfter(
   klass: string,
   ctx: CallContext,
   mode: AmbiguousResolveMode,
+  excludeSymbolId?: string,
 ): SymbolResolutionTarget | null {
   const prepended = [...(ctx.classPrependedAncestors?.[klass] ?? [])].reverse();
   const mro = [...prepended, klass, ...mroOrderedChain(klass, ctx)];
@@ -444,7 +496,7 @@ export function firstDefinerAfter(
   const visited = new Set<string>(mro.slice(0, idx + 1));
   let fileOnlyFallback: SymbolResolutionTarget | null = null;
   for (let i = idx + 1; i < mro.length; i++) {
-    const t = resolveInstanceMethodInClassChain(mro[i], member, ctx, mode, visited);
+    const t = resolveInstanceMethodInClassChain(mro[i], member, ctx, mode, visited, excludeSymbolId);
     if (t === null) continue;
     if (t.targetSymbolId !== null) return t;
     if (fileOnlyFallback === null) fileOnlyFallback = t;
@@ -460,18 +512,28 @@ export function firstDefinerAfter(
  * all of them: consensus → precision 1.0; ANY disagreement → null (DROP, GUARD).
  * Shared by the `super`-from-module walk (ruby-super) and the bareCall
  * concern-scope fallback (bd tea-rags-mcp-lawlq.3.2 facet-2).
+ *
+ * `includedBy` is keyed by the RAW ancestor text the include SITE wrote, so a
+ * module mixed in under a bare constant (`prepend PerformWrapper` inside
+ * `class Tech::BatchOperationWorker`) has no entry under its own FQ. When the FQ
+ * key is empty the lookup retries under the module's LAST SEGMENT, keeping only
+ * includers whose raw ancestor canonicalizes back to exactly `moduleName` — the
+ * precision gate that stops two same-tailed modules from swapping consensus
+ * (bd lawlq.5). The alias, not the FQ, is what `firstDefinerAfter` must resume
+ * after, because the MRO it linearizes holds the same raw values.
  */
 export function resolveViaIncludingClasses(
   moduleName: string,
   member: string,
   ctx: CallContext,
   mode: AmbiguousResolveMode,
+  excludeSymbolId?: string,
 ): SymbolResolutionTarget | null {
-  const including = ctx.includedBy?.[moduleName];
-  if (!including || including.length === 0) return null;
+  const including = includerAliases(moduleName, ctx);
+  if (including.length === 0) return null;
   let agreed: SymbolResolutionTarget | null = null;
-  for (const klass of including) {
-    const t = firstDefinerAfter(moduleName, member, klass, ctx, mode);
+  for (const { klass, alias } of including) {
+    const t = firstDefinerAfter(alias, member, klass, ctx, mode, excludeSymbolId);
     if (t === null) continue;
     if (agreed === null) {
       agreed = t;
@@ -484,6 +546,25 @@ export function resolveViaIncludingClasses(
     if (!same) return null; // including classes disagree → DROP
   }
   return agreed;
+}
+
+/**
+ * The classes that mix `moduleName` in, each paired with the ANCESTOR NAME that
+ * class actually wrote — the key `includedBy` is built from and the token
+ * `firstDefinerAfter` can locate in a linearized MRO. Direct FQ hits keep the FQ
+ * as their alias; the segment retry only contributes an includer when the raw
+ * name canonicalizes back to this very module (bd lawlq.5).
+ */
+function includerAliases(moduleName: string, ctx: CallContext): { klass: string; alias: string }[] {
+  const direct = ctx.includedBy?.[moduleName] ?? [];
+  if (direct.length > 0) return direct.map((klass) => ({ klass, alias: moduleName }));
+  const segment = lastConstantSegment(moduleName);
+  if (segment === moduleName) return [];
+  const out: { klass: string; alias: string }[] = [];
+  for (const klass of ctx.includedBy?.[segment] ?? []) {
+    if (canonicalizeMixinAlias(segment, klass, ctx) === moduleName) out.push({ klass, alias: segment });
+  }
+  return out;
 }
 
 /**
