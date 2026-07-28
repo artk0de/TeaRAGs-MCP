@@ -306,3 +306,96 @@ describe("boundCallReturnType — the localCallBindings channel (j9xpf)", () => 
     expect(boundCallReturnType("x", emptyCtx())).toBeUndefined();
   });
 });
+
+// ── The flat map's ambiguity gate (bd tea-rags-mcp-h4hxh) ────────────────────
+//
+// `functionReturnTypes` is keyed by BARE method name with no owning class, so a
+// single `# @return [Response]` on one helper types every same-named method in
+// the corpus. On taxdome the map's most collided keys are the ones every Rails
+// codebase reuses — `data` (244 defs), `client` (219), `authorize`, `call`.
+// The fact is only trustworthy when the corpus cannot disagree about which
+// method it describes: at most ONE definition of that short name.
+
+/** Symbol table declaring `defs` definitions that all share `shortName`. */
+const tableWithDefs = (shortName: string, defs: number): InMemoryGlobalSymbolTable => {
+  const table = new InMemoryGlobalSymbolTable();
+  for (let i = 0; i < defs; i++) {
+    const relPath = `app/models/owner_${i}.rb`;
+    table.upsertFile(relPath, [
+      {
+        symbolId: `Owner${i}#${shortName}`,
+        fqName: `Owner${i}#${shortName}`,
+        shortName,
+        relPath,
+        scope: [`Owner${i}`],
+      },
+    ]);
+  }
+  return table;
+};
+
+describe("returnTypeOf — the flat map answers only for an unambiguous member (h4hxh)", () => {
+  it("SKIPS the flat fact when the corpus defines the member on more than one class", () => {
+    const ctx = emptyCtx({
+      functionReturnTypes: { authorize: "Response" },
+      symbolTable: tableWithDefs("authorize", 5),
+    });
+    expect(returnTypeOf({ form: "class", name: "ClientPolicy" }, "authorize", ctx)).toBeUndefined();
+  });
+
+  it("APPLIES the flat fact when the member has exactly one definition corpus-wide", () => {
+    const ctx = emptyCtx({
+      functionReturnTypes: { build_widget: "Widget" },
+      symbolTable: tableWithDefs("build_widget", 1),
+    });
+    expect(returnTypeOf({ form: "class", name: "Factory" }, "build_widget", ctx)).toEqual({
+      form: "instance",
+      name: "Widget",
+    });
+  });
+
+  it("APPLIES the flat fact when the symbol table knows of no definition at all", () => {
+    const ctx = emptyCtx({ functionReturnTypes: { fetch: "HttpResponse" } });
+    expect(returnTypeOf({ form: "class", name: "Client" }, "fetch", ctx)).toEqual({
+      form: "instance",
+      name: "HttpResponse",
+    });
+  });
+
+  it("an ambiguous member does not block the SCOPED channels above it", () => {
+    const ctx = emptyCtx({
+      structuredReturnTypes: { "ClientPolicy#authorize": { form: "instance", name: "Verdict" } },
+      functionReturnTypes: { authorize: "Response" },
+      symbolTable: tableWithDefs("authorize", 5),
+    });
+    expect(returnTypeOf({ form: "instance", name: "ClientPolicy" }, "authorize", ctx)).toEqual({
+      form: "instance",
+      name: "Verdict",
+    });
+  });
+});
+
+describe("boundCallReturnType — the bare branch is deliberately NOT gated (h4hxh scope)", () => {
+  // The gate exists to stop an owner-less fact from overriding a receiver whose
+  // class is already known. A BARE binding has no receiver type at all, so the
+  // flat map is not overriding better knowledge — it is the only knowledge, and
+  // silencing it there cost 758 edges on taxdome that no oracle can convict
+  // one by one. The scope boundary is a measured decision, so it is pinned.
+  it("still answers for a bare binding even when the method name is multiply defined", () => {
+    const ctx = emptyCtx({
+      localCallBindings: { row: "data" },
+      functionReturnTypes: { data: "Data" },
+      symbolTable: tableWithDefs("data", 244),
+    });
+    expect(boundCallReturnType("row", ctx)).toEqual({ form: "instance", name: "Data" });
+  });
+
+  it("a SCOPE-QUALIFIED binding does obey the gate — its receiver class is known", () => {
+    const ctx = emptyCtx({
+      localCallBindings: { verdict: "ClientPolicy.authorize" },
+      functionReturnTypes: { authorize: "Response" },
+      symbolTable: tableWithDefs("authorize", 5),
+    });
+    expect(boundCallReturnType("verdict", ctx)).toBeUndefined();
+  });
+});

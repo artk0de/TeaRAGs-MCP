@@ -336,6 +336,36 @@ function declaredReturnTypeOn(
   return ctx.structuredReturnTypes?.[`${className}#${member}`];
 }
 
+/**
+ * May the FLAT, bare-name `functionReturnTypes` fact answer for `member` when
+ * the receiver's own class is ALREADY KNOWN (bd tea-rags-mcp-h4hxh)?
+ *
+ * The map is keyed by method name alone and carries no owning class, so a single
+ * `# @return [Response]` on one helper's `authorize` speaks for every `authorize`
+ * in the corpus. Channels 1–3 above have already asked the receiver's class and
+ * its ancestors and come back empty, which means any answer this map gives is by
+ * construction some OTHER class's annotation — measured on taxdome: of 871
+ * scope-qualified binding sites where this fallback fires, 805 apply a fact whose
+ * owning class is not in the receiver's MRO and NONE apply one that is.
+ *
+ * The fact is still worth having where the corpus cannot disagree about which
+ * method it describes: at most ONE definition of the short name. Two or more and
+ * it is a coin flip between unrelated classes — the map's most collided taxdome
+ * keys are `initialize` at 3 097 definitions, `perform` at 2 547, `data` at 244.
+ * ZERO definitions still passes: an empty index is absence of evidence, not
+ * evidence of ambiguity, and the fact then describes something the symbol table
+ * does not model (a gem method, a macro-synthesised accessor) exactly as before.
+ *
+ * Deliberately NOT applied to {@link boundCallReturnType}'s bare branch: there
+ * the receiver has no type at all, so the flat map is not overriding better
+ * knowledge — it is the only knowledge. Gating it there measured −758 edges on
+ * taxdome that no oracle can individually convict, so that half stays open as
+ * its own lead (owner-aware facts, not a wider gate).
+ */
+function flatReturnFactMayOverrideKnownReceiver(member: string, ctx: CallContext): boolean {
+  return ctx.symbolTable.lookupByShortName(member).length <= 1;
+}
+
 /** The structured fact `<member>` inherits from the first ancestor declaring it. */
 function inheritedReturnType(
   className: string,
@@ -365,7 +395,10 @@ function inheritedReturnType(
  *    `structuredReturnTypes["${ancestor}#${member}"]`.
  * 4. `ctx.functionReturnTypes?.[member]` → `{form:"instance", name}` — flat
  *    fallback (YARD @return map, already populated today). Applied LAST so the
- *    more-precise paths win when available.
+ *    more-precise paths win when available, and only for a member the corpus
+ *    does not multiply define (see {@link flatReturnFactIsUnambiguous}) — the
+ *    map carries no owning class, so an ambiguous name makes it a guess about
+ *    a receiver whose class is already known.
  * 5. ActiveRecord query interface (G1b) — consulted AFTER every declared fact
  *    (a declared type beats vocabulary), gated on the AR-model check.
  *
@@ -402,8 +435,12 @@ export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext
   if (inherited !== undefined) return inherited;
 
   // 4. Flat functionReturnTypes fallback — YARD @return map, populated today.
+  //    Owner-less, so it answers only for a member the corpus does not multiply
+  //    define (bd tea-rags-mcp-h4hxh).
   const flatName = ctx.functionReturnTypes?.[member];
-  if (flatName !== undefined) return { form: "instance", name: flatName };
+  if (flatName !== undefined && flatReturnFactMayOverrideKnownReceiver(member, ctx)) {
+    return { form: "instance", name: flatName };
+  }
 
   // 5. ActiveRecord query-interface vocabulary — AR-model receivers only,
   //    consulted last so every declared fact above wins over it (G1b).
@@ -453,7 +490,9 @@ function resolveIvarType(ivar: string, ctx: CallContext): RubyTypeRef | undefine
  *    answers over the CLASS object and every scoped channel applies (structured
  *    fact at the entry coordinate, ancestor MRO, then the flat map);
  *  - BARE (`"fetch"`) — no receiver type, so only the flat, project-wide
- *    `functionReturnTypes` map can answer. Unchanged from before.
+ *    `functionReturnTypes` map can answer. Unchanged from before: the h4hxh gate
+ *    applies where the map would OVERRIDE a known receiver class, and here there
+ *    is no class to override.
  */
 export function boundCallReturnType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
   const binding = ctx.localCallBindings?.[receiver];

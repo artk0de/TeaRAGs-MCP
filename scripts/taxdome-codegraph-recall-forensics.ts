@@ -91,6 +91,7 @@ import {
 import {
   buildSelfDispatchProbe,
   collectSelfInstantiatingClassMethods,
+  deriveServiceEntryReturnTypes,
   discoverSelfDispatchTemplates,
   extractSelfDispatchMethods,
   foldSelfDispatchTemplates,
@@ -148,6 +149,46 @@ const DUCK_ENABLED = process.env.CODEGRAPH_DUCK_ORACLE === "1";
 // simulation cannot drift from production semantics.
 // ---------------------------------------------------------------------------
 const FIXPOINT_ENABLED = process.env.CODEGRAPH_FIXPOINT_ORACLE === "1";
+
+// ---------------------------------------------------------------------------
+// TYPE-FACT QUALITY ORACLE (bd tea-rags-mcp-yt3im + tea-rags-mcp-h4hxh,
+// 2026-07-27). Fourth oracle under the SAME additive, env-gated contract: with
+// CODEGRAPH_TYPEFACT_ORACLE unset nothing extra is accumulated or reported and
+// the A/B recall metrics are byte-identical. It measures the two UPSTREAM
+// type-fact defects the 1g7kz member-lookup forensics named, BEFORE either is
+// implemented in src/:
+//
+//   (1) yt3im — a declared `@!method self.x` `@return` whose type name resolves
+//       to NO project class (an annotation fiction) sits at the `Klass.member`
+//       coordinate, which `declaredReturnTypeOn` reads FIRST for a class
+//       receiver, while the j9xpf derive writes the CORRECT type at
+//       `Klass#member` and its skip-guard only ever inspects that other form.
+//       Probe: how many `.`-form facts are fictional, how many of those have a
+//       derived competitor at the sibling coordinate, and how many call sites
+//       each one reaches.
+//
+//   (2) h4hxh — `returnTypeOf` step 4 answers from the FLAT, bare-name
+//       `functionReturnTypes` map even when the receiver's class IS known, so
+//       one `@return` on `Ns::Helper#authorize` types every `SomePolicy.authorize`
+//       receiver in the corpus. Probe: the corpus-uniqueness census of the flat
+//       map's keys, and the exact set of call sites where step 4 fires with a
+//       fact whose owning class is NOT in the receiver's MRO.
+//
+// Everything here is a fold over run-global state the harness already builds.
+// ---------------------------------------------------------------------------
+const TYPEFACT_ENABLED = process.env.CODEGRAPH_TYPEFACT_ORACLE === "1";
+/**
+ * `localCallBindings` VALUE → number of binding sites carrying it, accumulated
+ * over pass-1 when the oracle is on. The value is exactly what
+ * {@link boundCallReturnType} keys on — `"Klass.call"` (scope-qualified) or
+ * `"fetch"` (bare) — so the count IS the reach of the corresponding type fact.
+ */
+const tfBindingReach = new Map<string, number>();
+/** `"<relPath>|<callerSymbolId>"` → that chunk's `localCallBindings`, so the
+ *  oracle can replay a MISS's receiver through the channel that typed it. */
+const tfChunkCallBindings = new Map<string, Record<string, string>>();
+/** Every class/module FQ this run DECLARES — the existence predicate's corpus. */
+const tfDeclaredConstants = new Set<string>();
 /** Hard cap on worklist waves; a run that hits it is reported as NON-converged. */
 const FIXPOINT_MAX_WAVES = 20;
 /** `bounded` drops the wide "any resolvable target" scope back to bvalc-shaped
@@ -359,6 +400,17 @@ function ingestPass1(extraction: FileExtraction, materializedRoot: AstNode): voi
     for (const [symbolId, indices] of Object.entries(extraction.callbackParams)) runCallbackParams[symbolId] = indices;
   }
   runSelfDispatchMethods.push(...extractSelfDispatchMethods(extraction.chunks));
+  if (TYPEFACT_ENABLED) {
+    for (const chunk of extraction.chunks) {
+      if (chunk.scope.length > 0) tfDeclaredConstants.add(chunk.scope.join("::"));
+      if (!chunk.symbolId.includes("#") && !chunk.symbolId.includes(".")) tfDeclaredConstants.add(chunk.symbolId);
+      if (chunk.localCallBindings === undefined) continue;
+      tfChunkCallBindings.set(`${extraction.relPath}|${chunk.symbolId}`, chunk.localCallBindings);
+      for (const binding of Object.values(chunk.localCallBindings)) {
+        tfBindingReach.set(binding, (tfBindingReach.get(binding) ?? 0) + 1);
+      }
+    }
+  }
   // bd tea-rags-mcp-bvalc — interprocedural param typing accumulators.
   for (const record of extraction.knownTargetCallArgs ?? []) {
     runKnownTargetCallArgs.set(`${record.targets.join("|")} ${JSON.stringify(record.argTypes)}`, record);
@@ -4436,6 +4488,304 @@ function runLocalCensus(): void {
 }
 
 // ---------------------------------------------------------------------------
+// TYPE-FACT QUALITY ORACLE (CODEGRAPH_TYPEFACT_ORACLE=1)
+//
+// Two probes, both pure folds over run-global state, run AFTER pass-2 so the
+// miss set is available. Nothing here resolves anything a second time.
+// ---------------------------------------------------------------------------
+
+/** Bare class NAME a `RubyTypeRef` denotes (container unwraps to its element). */
+function tfRefName(ref: RubyTypeRef): string | undefined {
+  if (ref.form === "class" || ref.form === "instance") return ref.name;
+  if (ref.form === "container") return tfRefName(ref.element);
+  return undefined; // union — no single name
+}
+
+/**
+ * Does the project DECLARE this constant? The existence predicate the proposed
+ * gate would use: a class/module chunk under that FQ, an ancestry entry, or a
+ * symbol-table hit. Deliberately site-INDEPENDENT (no `resolveConstant`, which
+ * asks the different question "reachable from here"), because a type FACT is
+ * global — a name no file declares is a fiction wherever it is read.
+ */
+function tfIsProjectClass(name: string): boolean {
+  return tfDeclaredConstants.has(name) || runAncestors[name] !== undefined || symbolTable.lookup(name).length > 0;
+}
+
+/** Transitive ancestor closure of `klass` over `runAncestors` (cycle-guarded). */
+function tfAncestorClosure(klass: string, seen: Set<string> = new Set()): Set<string> {
+  if (seen.has(klass)) return seen;
+  seen.add(klass);
+  for (const ancestor of runAncestors[klass] ?? []) tfAncestorClosure(ancestor, seen);
+  return seen;
+}
+
+/** Split a `localCallBindings` VALUE the way `boundCallReturnType` does. */
+function tfSplitBinding(binding: string): { klass: string; member: string } | null {
+  const at = binding.lastIndexOf(".");
+  if (at <= 0) return null; // bare form
+  return { klass: binding.slice(0, at), member: binding.slice(at + 1) };
+}
+
+/** `declaredReturnTypeOn(klass, member, classReceiver=true)`, replayed. */
+function tfDeclaredOn(klass: string, member: string): RubyTypeRef | undefined {
+  return runStructuredReturnTypes[`${klass}.${member}`] ?? runStructuredReturnTypes[`${klass}#${member}`];
+}
+
+/** `inheritedReturnType` — DIRECT ancestors only, exactly as production walks. */
+function tfInheritedOn(klass: string, member: string): RubyTypeRef | undefined {
+  for (const ancestor of runAncestors[klass] ?? []) {
+    const inherited = tfDeclaredOn(ancestor, member);
+    if (inherited !== undefined) return inherited;
+  }
+  return undefined;
+}
+
+/** Which classes a `<Owner>#<member>` / `<Owner>.<member>` fact naming `type` sits on. */
+function tfFactOwners(member: string, type: string): string[] {
+  const owners: string[] = [];
+  for (const [key, ref] of Object.entries(runStructuredReturnTypes)) {
+    const at = Math.max(key.lastIndexOf("#"), key.lastIndexOf("."));
+    if (at <= 0 || key.slice(at + 1) !== member) continue;
+    if (tfRefName(ref) === type) owners.push(key.slice(0, at));
+  }
+  return owners;
+}
+
+/** Outcome of replaying `returnTypeOf` over a scope-qualified call binding. */
+type TfStep = "declared" | "inherited" | "flatMap" | "silent";
+
+function tfReplayQualified(klass: string, member: string): TfStep {
+  if (tfDeclaredOn(klass, member) !== undefined) return "declared";
+  if (tfInheritedOn(klass, member) !== undefined) return "inherited";
+  return runReturnTypes[member] !== undefined ? "flatMap" : "silent";
+}
+
+function runTypefactOracle(declaredBeforeDerive: Record<string, RubyTypeRef>): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  const defCounts = symbolTable.shortNameDefCounts();
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  TYPE-FACT QUALITY ORACLE (bd yt3im + h4hxh)");
+  L("═══════════════════════════════════════════════════════════════════");
+
+  // ── PROBE 1 (yt3im): class-form declared facts vs derived competitors ────
+  const derived: Record<string, RubyTypeRef> = {};
+  for (const [key, ref] of Object.entries(runStructuredReturnTypes)) {
+    if (!(key in declaredBeforeDerive)) derived[key] = ref;
+  }
+  let classFormFacts = 0;
+  let classFormExistent = 0;
+  let classFormFiction = 0;
+  let flipCandidates = 0;
+  let flipReach = 0;
+  let fictionNoCompetitor = 0;
+  let fictionNoCompetitorReach = 0;
+  let existentWithCompetitor = 0;
+  const flipRows: { coord: string; fiction: string; derived: string; sites: number }[] = [];
+  const fictionByType = new Map<string, number>();
+  for (const [key, ref] of Object.entries(declaredBeforeDerive)) {
+    const at = key.lastIndexOf(".");
+    if (at <= 0 || key.slice(0, at).includes("#")) continue; // not a class-form coordinate
+    const klass = key.slice(0, at);
+    const member = key.slice(at + 1);
+    classFormFacts += 1;
+    const typeName = tfRefName(ref);
+    const existent = typeName !== undefined && tfIsProjectClass(typeName);
+    const competitor = derived[`${klass}#${member}`];
+    const sites = tfBindingReach.get(`${klass}.${member}`) ?? 0;
+    if (existent) {
+      classFormExistent += 1;
+      if (competitor !== undefined) existentWithCompetitor += 1;
+      continue;
+    }
+    classFormFiction += 1;
+    fictionByType.set(typeName ?? "<non-nominal>", (fictionByType.get(typeName ?? "<non-nominal>") ?? 0) + sites);
+    if (competitor === undefined) {
+      fictionNoCompetitor += 1;
+      fictionNoCompetitorReach += sites;
+      continue;
+    }
+    flipCandidates += 1;
+    flipReach += sites;
+    flipRows.push({
+      coord: key,
+      fiction: typeName ?? "<non-nominal>",
+      derived: tfRefName(competitor) ?? "<non-nominal>",
+      sites,
+    });
+  }
+  L("");
+  L("─── PROBE 1 (yt3im): class-form ('.') facts vs j9xpf derivations ──");
+  L(`structuredReturnTypes coordinates:        ${Object.keys(runStructuredReturnTypes).length}`);
+  L(`  declared before the j9xpf derive:       ${Object.keys(declaredBeforeDerive).length}`);
+  L(`  written BY the derive:                  ${Object.keys(derived).length}`);
+  L(`class-form ('.') declared facts:          ${classFormFacts}`);
+  L(`  type IS a declared project class:       ${classFormExistent}`);
+  L(`  type is declared NOWHERE (fiction):     ${classFormFiction}`);
+  L("");
+  L(`FLIP candidates (fiction + derived sibling): ${flipCandidates}   binding sites reached: ${flipReach}`);
+  L(`fiction with NO derived sibling (left as-is): ${fictionNoCompetitor}   sites: ${fictionNoCompetitorReach}`);
+  L(`existent '.' fact WITH a derived sibling (8ypeu ownership kept): ${existentWithCompetitor}`);
+  L("");
+  L("  top FLIP coordinates by binding-site reach:");
+  for (const row of flipRows.sort((a, b) => b.sites - a.sites).slice(0, 15)) {
+    L(`  ${String(row.sites).padStart(6)}  ${row.coord}:  ${row.fiction}  ->  ${row.derived}`);
+  }
+  L("");
+  L("  fictional '.' type names by reach:");
+  for (const [type, sites] of [...fictionByType.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)) {
+    L(`  ${String(sites).padStart(6)}  ${type}`);
+  }
+
+  // ── PROBE 2 (h4hxh): flat bare-name map census ───────────────────────────
+  const flatKeys = Object.keys(runReturnTypes);
+  let unique = 0;
+  let collided = 0;
+  let orphan = 0;
+  const collisionBuckets: Record<string, number> = { "2": 0, "3": 0, "4-9": 0, "10+": 0 };
+  const worst: { key: string; defs: number; type: string }[] = [];
+  for (const key of flatKeys) {
+    const n = defCounts.get(key) ?? 0;
+    if (n === 0) orphan += 1;
+    else if (n === 1) unique += 1;
+    else {
+      collided += 1;
+      const bucket = n === 2 ? "2" : n === 3 ? "3" : n < 10 ? "4-9" : "10+";
+      collisionBuckets[bucket] += 1;
+      worst.push({ key, defs: n, type: runReturnTypes[key] ?? "?" });
+    }
+  }
+  L("");
+  L("─── PROBE 2 (h4hxh): flat bare-name functionReturnTypes census ────");
+  L(`flat map keys:                            ${flatKeys.length}`);
+  L(`  corpus-UNIQUE (exactly 1 def):          ${unique}  (${((unique / Math.max(1, flatKeys.length)) * 100).toFixed(1)}%)`);
+  L(`  COLLIDED (>1 def):                      ${collided}  buckets 2=${collisionBuckets["2"]} 3=${collisionBuckets["3"]} 4-9=${collisionBuckets["4-9"]} 10+=${collisionBuckets["10+"]}`);
+  L(`  no in-project def at all (0):           ${orphan}`);
+  L("");
+  L("  most-collided flat keys (defs x type):");
+  for (const row of worst.sort((a, b) => b.defs - a.defs).slice(0, 15)) {
+    L(`  ${String(row.defs).padStart(6)}  ${row.key} -> ${row.type}`);
+  }
+
+  // Where step 4 actually FIRES, and whether the fact belongs to the receiver.
+  let qualCoords = 0;
+  let qualSites = 0;
+  let ownerInMro = 0;
+  let ownerInMroSites = 0;
+  let ownerForeign = 0;
+  let ownerForeignSites = 0;
+  let ownerUnknown = 0;
+  let ownerUnknownSites = 0;
+  let killedForeignSites = 0;
+  let killedLegitSites = 0;
+  let keptSites = 0;
+  const poison: { binding: string; sites: number; type: string; owners: string; defs: number }[] = [];
+  let bareSites = 0;
+  let bareUniqueSites = 0;
+  for (const [binding, sites] of tfBindingReach) {
+    const split = tfSplitBinding(binding);
+    if (split === null) {
+      if (runReturnTypes[binding] === undefined) continue;
+      bareSites += sites;
+      if ((defCounts.get(binding) ?? 0) === 1) bareUniqueSites += sites;
+      continue;
+    }
+    if (tfReplayQualified(split.klass, split.member) !== "flatMap") continue;
+    const type = runReturnTypes[split.member] ?? "";
+    const owners = tfFactOwners(split.member, type);
+    const closure = tfAncestorClosure(split.klass);
+    const legitimate = owners.some((owner) => closure.has(owner));
+    qualCoords += 1;
+    qualSites += sites;
+    if (owners.length === 0) {
+      ownerUnknown += 1;
+      ownerUnknownSites += sites;
+    } else if (legitimate) {
+      ownerInMro += 1;
+      ownerInMroSites += sites;
+    } else {
+      ownerForeign += 1;
+      ownerForeignSites += sites;
+      poison.push({ binding, sites, type, owners: owners.slice(0, 2).join(","), defs: defCounts.get(split.member) ?? 0 });
+    }
+    if ((defCounts.get(split.member) ?? 0) === 1) keptSites += sites;
+    else if (legitimate) killedLegitSites += sites;
+    else killedForeignSites += sites;
+  }
+  L("");
+  L("  step-4 firings on SCOPE-QUALIFIED bindings (`x = Const.member(…)`):");
+  L(`  coordinates: ${qualCoords}   binding sites: ${qualSites}`);
+  L(`    fact owner IS the receiver class or an ancestor:  ${ownerInMro} coords / ${ownerInMroSites} sites`);
+  L(`    fact owner is a FOREIGN class (wrong-type poison): ${ownerForeign} coords / ${ownerForeignSites} sites`);
+  L(`    fact has no scoped sibling (owner unknown):        ${ownerUnknown} coords / ${ownerUnknownSites} sites`);
+  L("");
+  L("  counterfactual gate «apply step 4 only when the member is corpus-unique»:");
+  L(`    firings KEPT (unique member):                      ${keptSites} sites`);
+  L(`    firings KILLED and demonstrably foreign (win):     ${killedForeignSites} sites`);
+  L(`    firings KILLED though owner was in the MRO (LOSS): ${killedLegitSites} sites`);
+  L("");
+  L("  bare-branch firings (`x = fetch(…)`, no receiver type at all):");
+  L(`    sites: ${bareSites}   of which the member is corpus-unique: ${bareUniqueSites}`);
+  L("");
+  L("  top FOREIGN-fact bindings by site reach:");
+  for (const row of poison.sort((a, b) => b.sites - a.sites).slice(0, 15)) {
+    L(`  ${String(row.sites).padStart(6)}  ${row.binding} -> ${row.type}  [owners: ${row.owners}; defs=${row.defs}]`);
+  }
+
+  // ── Which MISSES ride which defect ───────────────────────────────────────
+  const bucket = { yt3imFiction: 0, h4hxhForeign: 0, h4hxhUnknownOwner: 0, h4hxhBare: 0, other: 0 };
+  const bareCollided = { collided: 0, unique: 0 };
+  let plainReceiverMisses = 0;
+  let boundReceiverMisses = 0;
+  for (const miss of misses) {
+    const { receiver } = miss;
+    if (receiver === null || receiver.includes(".") || receiver.includes("[") || receiver.startsWith("@")) continue;
+    plainReceiverMisses += 1;
+    const binding = tfChunkCallBindings.get(`${miss.relPath}|${miss.callerSymbolId}`)?.[receiver];
+    if (binding === undefined) continue;
+    boundReceiverMisses += 1;
+    const split = tfSplitBinding(binding);
+    if (split === null) {
+      if (runReturnTypes[binding] === undefined) continue;
+      bucket.h4hxhBare += 1;
+      if ((defCounts.get(binding) ?? 0) === 1) bareCollided.unique += 1;
+      else bareCollided.collided += 1;
+      continue;
+    }
+    const step = tfReplayQualified(split.klass, split.member);
+    if (step === "declared") {
+      const fact = tfDeclaredOn(split.klass, split.member);
+      const typeName = fact === undefined ? undefined : tfRefName(fact);
+      if (typeName !== undefined && !tfIsProjectClass(typeName)) bucket.yt3imFiction += 1;
+      else bucket.other += 1;
+      continue;
+    }
+    if (step !== "flatMap") {
+      bucket.other += 1;
+      continue;
+    }
+    const owners = tfFactOwners(split.member, runReturnTypes[split.member] ?? "");
+    const closure = tfAncestorClosure(split.klass);
+    if (owners.length === 0) bucket.h4hxhUnknownOwner += 1;
+    else if (owners.some((owner) => closure.has(owner))) bucket.other += 1;
+    else bucket.h4hxhForeign += 1;
+  }
+  L("");
+  L("─── RECALL MISSES attributable to each defect ─────────────────────");
+  L(`  chunks with call bindings: ${tfChunkCallBindings.size}`);
+  L(`  misses on a plain identifier receiver: ${plainReceiverMisses}   of those call-bound: ${boundReceiverMisses}`);
+  L(`  yt3im — receiver typed by a FICTIONAL declared fact:      ${bucket.yt3imFiction}`);
+  L(`  h4hxh — step 4 applied a FOREIGN class's fact:            ${bucket.h4hxhForeign}`);
+  L(`  h4hxh — step 4 applied a fact with no scoped owner:       ${bucket.h4hxhUnknownOwner}`);
+  L(`  h4hxh — bare-branch flat-map fact (collided=${bareCollided.collided} unique=${bareCollided.unique}): ${bucket.h4hxhBare}`);
+  L(`  receiver typed by a channel neither bug owns:             ${bucket.other}`);
+  L("");
+}
+
+// ---------------------------------------------------------------------------
 // MAIN
 // ---------------------------------------------------------------------------
 let hierarchyView: MapHierarchyView;
@@ -4500,6 +4850,10 @@ async function main(): Promise<void> {
   // `provider.applySchemaColumns`, so the measured numbers reflect production.
   // Deliberately outside the CODEGRAPH_DUCK_ORACLE section: the duck oracle has
   // its own measurement-only schema reader, this is the production path.
+  // Column VALUE types are HELD BACK here and merged LAST, exactly as
+  // `RunState.seal` does (bd tea-rags-mcp-2a5oo): they rank below every other
+  // return fact, including the j9xpf service-entry derivations composed below.
+  let schemaColumnReturnTypes: Record<string, RubyTypeRef> = {};
   {
     const schemaSource = ruby.schemaColumnAccessors;
     let snapshot: string | null = null;
@@ -4522,12 +4876,7 @@ async function main(): Promise<void> {
         schemaSource.modelNameForTable,
       );
       symbolTable.setSchemaColumns(definitions);
-      // 2a5oo production mirror: column VALUE types merge into the run-global
-      // structuredReturnTypes LAST (weakest evidence — declared facts win),
-      // matching the provider's barrier merge order.
-      for (const [k, v] of Object.entries(returnTypes)) {
-        if (!(k in runStructuredReturnTypes)) runStructuredReturnTypes[k] = v;
-      }
+      schemaColumnReturnTypes = returnTypes;
       for (const table of parsedTables) runSchemaColumnsByTable.set(table.table, new Set(table.accessors));
       for (const def of definitions) runSchemaMappedModels.add(def.symbolId.slice(0, def.symbolId.lastIndexOf("#")));
       runSchemaModelNameForTable = schemaSource.modelNameForTable;
@@ -4539,10 +4888,36 @@ async function main(): Promise<void> {
     }
   }
   // DEFECT 2 discovery (always built for the count; threaded into ctx only when enabled).
+  const selfDispatchProbe = buildSelfDispatchProbe(symbolTable, hierarchyView);
   runSelfDispatchTemplates = foldSelfDispatchTemplates(
-    discoverSelfDispatchTemplates(runSelfDispatchMethods, buildSelfDispatchProbe(symbolTable, hierarchyView)),
+    discoverSelfDispatchTemplates(runSelfDispatchMethods, selfDispatchProbe),
   );
   runSelfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(runSelfDispatchMethods);
+  // Service-entry RETURN threading (bd tea-rags-mcp-j9xpf) — the production
+  // barrier composes it right here, between the self-dispatch discovery and the
+  // schema value-type merge. The harness used to skip the step entirely, so its
+  // `structuredReturnTypes` was missing every derived `<Entry>#<member>` fact and
+  // its measured recall understated production. Snapshot the pre-derive map and
+  // keep the derive output so the type-fact oracle can compare the two.
+  const declaredBeforeDerive: Record<string, RubyTypeRef> = { ...runStructuredReturnTypes };
+  const entryReturnTypes = deriveServiceEntryReturnTypes(
+    [...runSelfInstantiatingClassMethods, ...Object.keys(runSelfDispatchTemplates)],
+    runStructuredReturnTypes,
+    selfDispatchProbe.relatedConcreteTypes,
+    // Existence oracle (bd tea-rags-mcp-yt3im), same predicate `RunState.seal`
+    // builds: a declared fact naming a type this run declares nowhere is an
+    // annotation fiction and does not outrank the derivation.
+    (typeName) => symbolTable.lookup(typeName).length > 0 || runAncestors[typeName] !== undefined,
+  );
+  for (const [key, ref] of Object.entries(entryReturnTypes)) runStructuredReturnTypes[key] = ref;
+  // 2a5oo production mirror: column VALUE types merge LAST and only where the
+  // coordinate is still empty — after the j9xpf derivations, never before.
+  for (const [k, v] of Object.entries(schemaColumnReturnTypes)) {
+    if (!(k in runStructuredReturnTypes)) runStructuredReturnTypes[k] = v;
+  }
+  console.error(
+    `[forensics] j9xpf service-entry returns: entries=${runSelfInstantiatingClassMethods.length + Object.keys(runSelfDispatchTemplates).length} derived=${Object.keys(entryReturnTypes).length}`,
+  );
   // bd tea-rags-mcp-bvalc barrier fold — always computed for the report, threaded
   // into ctx only when enabled.
   runParamTypes = foldKnownTargetParamTypes(runKnownTargetCallArgs.values(), runParamNames);
@@ -4781,6 +5156,7 @@ async function main(): Promise<void> {
   };
   writeFileSync(OUT_MISSES, JSON.stringify(payload, null, 2));
   L(`misses dumped: ${misses.length} -> ${OUT_MISSES}`);
+  if (TYPEFACT_ENABLED) runTypefactOracle(declaredBeforeDerive);
   if (ORACLE_ENABLED) runOracle(Date.now() - t0, files.length);
   if (LOCAL_CENSUS_ENABLED) runLocalCensus();
   if (DUCK_ENABLED) runDuckOracle();
