@@ -743,19 +743,49 @@ function computeCallPassesBlock(callNode: AstNode): boolean {
   return args ? args.namedChildren.some((c) => c.type === "block" || c.type === "do_block") : false;
 }
 
+/** Node types that open a fresh method-definition body with its OWN visibility
+ *  state: a class, a module, and a singleton class (`class << self`). Each gets
+ *  its own recursive pass with a `"public"` default — Ruby scopes visibility
+ *  per body, so a `private` in the enclosing class does not reach into
+ *  `class << self` and vice versa (bd tea-rags-mcp-jn5j0). */
+const DEF_BODY_NODE_TYPES: ReadonlySet<string> = new Set(["class", "module", "singleton_class"]);
+
+/** The block (`{ … }` / `do … end`) attached to a statement, either as a direct
+ *  child or inside its argument list — the same two positions
+ *  `computeCallPassesBlock` looks in. `included do … end`,
+ *  `Helper.class_eval do … end` and `concerning :X do … end` all define methods
+ *  inside one, and those defs belong to the enclosing class. */
+function attachedBlockOf(node: AstNode): AstNode | undefined {
+  const direct = node.children.find((c) => c.type === "block" || c.type === "do_block");
+  if (direct) return direct;
+  const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
+  return args?.namedChildren.find((c) => c.type === "block" || c.type === "do_block");
+}
+
 /**
  * Walk the AST and collect arity + visibility for every `method` /
- * `singleton_method` definition found inside a class or module body.
+ * `singleton_method` definition in the file.
  *
  * The map is keyed by the method node's 1-based start line so the caller
  * can look up by `ChunkExtraction.startLine` — the chunker assigns the
  * same line to the method chunk it creates for that node.
  *
- * Visibility state machine per class body (source order):
+ * Visibility state machine per body (source order):
  *   - bare `private`/`protected`/`public` → switches default for subsequent defs
  *   - `private def foo` (inline form) → marks that specific method only
  *   - `private :foo, :bar` (symbol form) → marks those methods by name
- * Default is `"public"` at the start of each class body.
+ * Default is `"public"` at the start of each body.
+ *
+ * Four body shapes carry defs, and all four are traversed (bd
+ * tea-rags-mcp-jn5j0 — the first three used to be blind spots holding 17.6 % of
+ * taxdome's positional-param defs, which therefore reached the narrowing
+ * cascade with no arity, no kwargs and no visibility at all):
+ *   - a plain `class` / `module` body;
+ *   - a `singleton_class` body (`class << self`), whose defs the chunker emits
+ *     as CLASS-level symbols (`A.build`) — the same `.`-form `def self.build`
+ *     produces, so the per-line keys line up without any special casing;
+ *   - a block attached to a class-body call (`included do … end`);
+ *   - file scope, for a `def` with no enclosing class or module.
  */
 function collectRubyMethodSignatures(root: AstNode): Map<
   number,
@@ -780,6 +810,18 @@ function collectRubyMethodSignatures(root: AstNode): Map<
       isAbstractStub: boolean;
     }
   >();
+
+  /** Record one def's signature under its 1-based start line. */
+  const recordDef = (defNode: AstNode, visibility: VisMode): void => {
+    out.set(defNode.startPosition.row + 1, {
+      arity: computeRubyArity(defNode),
+      paramNames: positionalParamNames(defNode),
+      visibility,
+      kwargs: computeRubyKwargs(defNode),
+      acceptsBlock: computeRubyAcceptsBlock(defNode),
+      isAbstractStub: computeRubyIsAbstractStub(defNode),
+    });
+  };
 
   const processClassBody = (classNode: AstNode): void => {
     const body = classNode.childForFieldName("body");
@@ -807,7 +849,7 @@ function collectRubyMethodSignatures(root: AstNode): Map<
     // Nested class/module bodies are skipped — each gets its own recursive call
     // with its own symVis. Bare switches and inline-def forms are pass-2 only.
     for (const stmt of stmts) {
-      if (stmt.type === "class" || stmt.type === "module") continue;
+      if (DEF_BODY_NODE_TYPES.has(stmt.type)) continue;
       if (stmt.type === "call" || stmt.type === "method_call") {
         if (stmt.childForFieldName("receiver")) continue;
         const methodField = methodFieldOf(stmt);
@@ -829,11 +871,18 @@ function collectRubyMethodSignatures(root: AstNode): Map<
     // Pass 2: walk in source order — recurse nested classes, apply bare switches,
     // emit inline-def forms, emit method defs (symVis now fully populated).
     for (const stmt of stmts) {
-      // Nested class/module — recurse with fresh public default
-      if (stmt.type === "class" || stmt.type === "module") {
+      // Nested class / module / singleton class — recurse with fresh public default
+      if (DEF_BODY_NODE_TYPES.has(stmt.type)) {
         processClassBody(stmt);
         continue;
       }
+
+      // A block attached to this statement is another body that can define
+      // methods on the enclosing class (`included do … end`). Checked BEFORE
+      // the visibility-call branch, which short-circuits on a receiver and
+      // would otherwise skip `Helper.class_eval do … end` entirely.
+      const attachedBlock = attachedBlockOf(stmt);
+      if (attachedBlock) processClassBody(attachedBlock);
 
       // Method definition — record arity + current visibility.
       // Precedence: symVis (symbol-form) > currentVis (bare-switch).
@@ -842,14 +891,7 @@ function collectRubyMethodSignatures(root: AstNode): Map<
       if (stmt.type === "method" || stmt.type === "singleton_method") {
         const nameNode = stmt.childForFieldName("name");
         const name = nameNode?.text ?? "";
-        out.set(stmt.startPosition.row + 1, {
-          arity: computeRubyArity(stmt),
-          paramNames: positionalParamNames(stmt),
-          visibility: symVis.get(name) ?? currentVis,
-          kwargs: computeRubyKwargs(stmt),
-          acceptsBlock: computeRubyAcceptsBlock(stmt),
-          isAbstractStub: computeRubyIsAbstractStub(stmt),
-        });
+        recordDef(stmt, symVis.get(name) ?? currentVis);
         continue;
       }
 
@@ -867,14 +909,7 @@ function collectRubyMethodSignatures(root: AstNode): Map<
           const firstArg = args.namedChildren[0];
           if (firstArg.type === "method" || firstArg.type === "singleton_method") {
             // Inline form: `private def foo; end`
-            out.set(firstArg.startPosition.row + 1, {
-              arity: computeRubyArity(firstArg),
-              paramNames: positionalParamNames(firstArg),
-              visibility: modifier,
-              kwargs: computeRubyKwargs(firstArg),
-              acceptsBlock: computeRubyAcceptsBlock(firstArg),
-              isAbstractStub: computeRubyIsAbstractStub(firstArg),
-            });
+            recordDef(firstArg, modifier);
           }
           // Symbol form already resolved in pass 1 — nothing to do here.
         }
@@ -889,14 +924,22 @@ function collectRubyMethodSignatures(root: AstNode): Map<
     }
   };
 
-  // Top-level walk: descend into nodes looking for class/module declarations.
-  // When we find one, processClassBody handles it and its nested classes —
-  // so we do NOT recurse further into it from this outer walk (avoids double-visit).
+  // Top-level walk: descend into nodes looking for def-body declarations.
+  // When we find one, processClassBody handles it and everything nested inside
+  // — so we do NOT recurse further into it from this outer walk (avoids
+  // double-visit). The generic descent is what finds a class declared inside a
+  // conditional or a configuration block, so it must stay.
   const walkTopLevel = (node: AstNode): void => {
-    if (node.type === "class" || node.type === "module") {
+    if (DEF_BODY_NODE_TYPES.has(node.type)) {
       processClassBody(node);
-      return; // processClassBody recurses into nested classes
+      return; // processClassBody recurses into nested bodies
     }
+    // A def reached HERE has no enclosing class or module — file scope. Ruby
+    // makes it a private method on Object, but recording it `public` is the
+    // conservative direction for the narrowing cascade: `VisibilityNarrower`
+    // only ever DROPS `private` candidates, and a top-level helper is a
+    // legitimate dispatch target for a bare call.
+    if (node.type === "method" || node.type === "singleton_method") recordDef(node, "public");
     for (const child of node.children) walkTopLevel(child);
   };
 
@@ -904,15 +947,35 @@ function collectRubyMethodSignatures(root: AstNode): Map<
   return out;
 }
 
+/** Argument-list children that occupy NO positional slot: the two block forms
+ *  (`{ … }` / `do … end`), a block-pass (`&blk`, `&:sym`), and the two keyword
+ *  forms (`k: v`, `**opts`). Everything else fills exactly one slot. */
+const NON_POSITIONAL_ARG_TYPES: ReadonlySet<string> = new Set([
+  "block",
+  "do_block",
+  "block_argument",
+  "pair",
+  "hash_splat_argument",
+]);
+
 /**
- * Count positional arguments at a call site, excluding block arguments
- * (`block`, `do_block`) and keyword arguments (`pair`). No `argument_list`
- * child → 0.
+ * Count positional arguments at a call site. No `argument_list` child → 0.
+ *
+ * Returns `undefined` when the list contains a `splat_argument` (`*args`): the
+ * splat expands to an unknown number of positional slots at runtime, so no
+ * count is knowable. `ArityNarrower` treats `undefined` as "missing evidence ⇒
+ * keep every candidate", which is the only safe reading — a guessed number is
+ * FALSE evidence and drops correct targets (bd tea-rags-mcp-jn5j0).
  */
-function computeArgCount(callNode: AstNode): number {
+function computeArgCount(callNode: AstNode): number | undefined {
   const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
   if (!args) return 0;
-  return args.namedChildren.filter((c) => c.type !== "block" && c.type !== "do_block" && c.type !== "pair").length;
+  let count = 0;
+  for (const child of args.namedChildren) {
+    if (child.type === "splat_argument") return undefined;
+    if (!NON_POSITIONAL_ARG_TYPES.has(child.type)) count += 1;
+  }
+  return count;
 }
 
 /**
@@ -1667,8 +1730,10 @@ function emitMethodCallRef(
   if (dynamicSend) callRef.dynamicSend = true;
   const dispatch = exprToRubyDispatchRef(node, dispatchTableNames, catalogue);
   if (dispatch?.field) callRef.dispatch = dispatch;
-  // Positional argCount (bd xlnub): excludes block and keyword args
-  callRef.argCount = computeArgCount(node);
+  // Positional argCount (bd xlnub): excludes block and keyword args. Left
+  // ABSENT for a splat call, where the count is unknowable (bd jn5j0).
+  const argCount = computeArgCount(node);
+  if (argCount !== undefined) callRef.argCount = argCount;
   // Keyword-arg key-set + double-splat (bd d9o7o).
   const kw = computeCallKwargs(node);
   if (kw.kwargKeys !== undefined) callRef.kwargKeys = kw.kwargKeys;
