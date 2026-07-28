@@ -141,3 +141,45 @@ Four measure-first strikes after the verdict snapshot, final honest rate **87.19
 Deferred WITH numbers (the census's honest tails): nullary-receiver typing 1 800
 · callee-return coverage 1 365 · `create_table` DSL block params 664 · iterator
 block params 572 (VTA-OUT) · non-leading def params 378.
+
+## Addendum 2 — the tails waves (2026-07-28)
+
+Two agent waves closed every deferred tail above. Final honest rate **87.96 %**
+on the PARITY-CORRECTED denominator (see below): 8 488 files, 119 613 resolved,
+16 370 misses.
+
+**Denominator correction (2l0pr).** Every number above this section was
+measured on an inflated denominator: the harness called
+`buildCodegraphExclusionFilter` without the languageFactory argument, so it
+walked 939 `db/migrate`/`db/data` files production has excluded since
+`d0e0d1d7` (biwbq). Parity is now enforced by a required parameter. The
+correction alone is worth ~+0.5 pp — read every historical headline in this
+document as understated by that much. The `create_table` tail (664) died with
+it: all 427 blocks live in excluded files.
+
+**Tails wave 1** (yt3im + h4hxh + lawlq.5, merged `e0b6b08a`): existence-gated
+declared-fact precedence (fictions 251/539, misses on fictions 263→49), step-4
+flat-map gate (805/871 firings provably foreign, 0 legitimate; bare branch left
+open — a naive gate costs −758 honest edges), super bare-constant mixin
+canonicalization (3 missing constant-lookup rules + self-edge guard;
+graphql-ruby 89.11→89.78, bareCall +181). Super-miss mass = runtime-built
+ancestry, permanent floor. Also: the harness barrier had never run the j9xpf
+derive — 2 838 coordinates missing from every measurement above.
+
+**Tails wave 2** (rwv3o + smvyk + pr7fu + jawn8 + 2l0pr, merged `7e8b22df`):
+owner-qualified return-fact channel (addressable measured 298, not 4 143;
+direct contribution ≈0 — it is the channel, not the prize), nullary-receiver
+typing via caller-MRO fact lookup (real population 9 259, not the census's
+1 800; +0.04 pp, hole −56, mostly precision), memoized-tail return inference
+(the one funded shape of 1 678 factless callees). `jawn8` NO-GO: the
+"non-leading def params" census bucket is actually a SIGNATURE GAP —
+`collectRubyMethodSignatures` never indexes `class << self` (1 914 defs),
+block-nested (38), top-level (11) = 17.6 % of positional-param defs carry no
+arity/visibility/kwargs (lead: jn5j0); the bvalc-fold addressable subset is 23.
+
+**Closed by these waves' oracles — do not reopen without new evidence:**
+nullary/bare no-definer-on-MRO mass (5 639 + 2 309 — runtime `helper_method`/
+view-helper inclusion, an include-graph problem, the largest remaining lever),
+`Const.m()` one-hop closure (85 misses, 82 of them nilable — needs union/nilable
+return types first), opaque memoized RHS (108 + 46 — needs bounded intra-class
+flow), db/migrate carves (both dead — excluded in production).
