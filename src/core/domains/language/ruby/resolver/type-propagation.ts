@@ -489,18 +489,46 @@ function resolveIvarType(ivar: string, ctx: CallContext): RubyTypeRef | undefine
  *    was a constant) — the receiver's type is known, so {@link returnTypeOf}
  *    answers over the CLASS object and every scoped channel applies (structured
  *    fact at the entry coordinate, ancestor MRO, then the flat map);
- *  - BARE (`"fetch"`) — no receiver type, so only the flat, project-wide
- *    `functionReturnTypes` map can answer. Unchanged from before: the h4hxh gate
- *    applies where the map would OVERRIDE a known receiver class, and here there
- *    is no class to override.
+ *  - BARE (`"fetch"`) — no receiver was written, but the call is not
+ *    context-free: it dispatches on `self`, so {@link selfMemberReturnType} asks
+ *    the CALLER's own class and its ancestors first (bd tea-rags-mcp-rwv3o).
+ *    Only when no owner-qualified fact sits on that MRO does the flat,
+ *    project-wide `functionReturnTypes` map answer, exactly as before — the
+ *    h4hxh close measured that silencing the flat map here costs 758 honest
+ *    edges, so nothing is taken away, only overridden where a fact that
+ *    demonstrably describes THIS method exists.
  */
 export function boundCallReturnType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
   const binding = ctx.localCallBindings?.[receiver];
   if (binding === undefined) return undefined;
   const separator = binding.lastIndexOf(".");
   if (separator <= 0) {
+    const owned = selfMemberReturnType(binding, ctx);
+    if (owned !== undefined) return owned;
     const flat = ctx.functionReturnTypes?.[binding];
     return flat ? { form: "instance", name: flat } : undefined;
   }
   return returnTypeOf({ form: "class", name: binding.slice(0, separator) }, binding.slice(separator + 1), ctx);
+}
+
+/**
+ * The OWNER-QUALIFIED return fact a receiver-less call to `member` finds by
+ * dispatching on `self` — the caller's own class coordinate, then its ancestors
+ * (bd tea-rags-mcp-rwv3o). Instance (`#`) form only: a bare call binds `self`,
+ * never the class object, so the `.` coordinate an `@!method self.x` directive
+ * claims is deliberately not consulted.
+ *
+ * The point of asking here at all is that the flat `functionReturnTypes` map is
+ * keyed by bare name across the whole corpus, so for a multiply-defined name it
+ * describes some other class's method. A fact sitting on the caller's own MRO
+ * describes the method this call actually reaches, and outranks it.
+ *
+ * `undefined` when the call site has no enclosing class (a top-level `def`, a
+ * bare script statement) — there is no owner to ask, and the caller falls back
+ * to the flat map unchanged.
+ */
+function selfMemberReturnType(member: string, ctx: CallContext): RubyTypeRef | undefined {
+  if (ctx.callerScope.length === 0) return undefined;
+  const scopeKey = ctx.callerScope.join("::");
+  return declaredReturnTypeOn(scopeKey, member, ctx) ?? inheritedReturnType(scopeKey, member, ctx);
 }

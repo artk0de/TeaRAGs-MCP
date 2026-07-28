@@ -1,5 +1,6 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { resolveLocalBindingType, type LocalBinding } from "../../../../contracts/types/codegraph.js";
+import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { forEachClassScope, readScopeResolution, walk } from "./ast-utils.js";
 import { constInstanceType, isOrAssignment } from "./type-sources/ast-inference.js";
@@ -212,21 +213,89 @@ export function collectRubyBodyReturnTypes(
   walk(root, (node) => {
     if (node.type !== "method" && node.type !== "singleton_method") return;
     const nameNode = node.childForFieldName("name");
-    const body = node.childForFieldName("body");
-    if (!nameNode || !body) return;
-    // Last value-producing statement of the body (skip rescue/ensure/else tails).
-    const stmts = body.namedChildren.filter((n) => n.type !== "rescue" && n.type !== "ensure" && n.type !== "else");
-    let last = stmts[stmts.length - 1];
-    if (!last) return;
-    // Explicit `return EXPR` — unwrap to the returned expression.
-    if (last.type === "return") {
-      const arg = last.namedChildren[0];
-      if (!arg) return;
-      last = arg.type === "argument_list" ? arg.namedChildren[0] : arg;
-      if (!last) return;
-    }
-    const type = constInstanceType(last, catalogue);
+    if (!nameNode) return;
+    const type = bodyReturnInstanceType(node, catalogue);
     if (type) out[nameNode.text] = type;
+  });
+  return out;
+}
+
+/**
+ * The constant a method's BODY last expression evaluates to as an INSTANCE, or
+ * `null` for every shape the inference deliberately stays silent on (branching,
+ * opaque call tails, literals, bare identifiers). Explicit `return EXPR` is
+ * unwrapped; `rescue` / `ensure` / `else` tails are skipped, so the tail seen is
+ * the method's normal-path value.
+ *
+ * Shared by the FLAT {@link collectRubyBodyReturnTypes} and the OWNER-KEYED
+ * {@link collectRubyScopedBodyReturnTypes} so the two channels cannot disagree
+ * about which shapes carry a return type — the scoped map is the same inference
+ * under a key that names the declaring class.
+ */
+function bodyReturnInstanceType(method: AstNode, catalogue: RubyDslCatalogue): string | null {
+  const body = method.childForFieldName("body");
+  if (!body) return null;
+  // Last value-producing statement of the body (skip rescue/ensure/else tails).
+  const stmts = body.namedChildren.filter((n) => n.type !== "rescue" && n.type !== "ensure" && n.type !== "else");
+  let last = stmts[stmts.length - 1];
+  if (!last) return null;
+  // Explicit `return EXPR` — unwrap to the returned expression.
+  if (last.type === "return") {
+    const arg = last.namedChildren[0];
+    if (!arg) return null;
+    last = arg.type === "argument_list" ? arg.namedChildren[0] : arg;
+    if (!last) return null;
+  }
+  return constInstanceType(last, catalogue);
+}
+
+/**
+ * The OWNER-QUALIFIED twin of {@link collectRubyBodyReturnTypes} (bd
+ * tea-rags-mcp-rwv3o): the same body-last-expression inference keyed
+ * `"<fqClass>#<method>"` — the engine's `structuredReturnTypes` convention —
+ * instead of by the bare method name.
+ *
+ * ── WHY A SECOND KEY FOR THE SAME INFERENCE ──
+ * The flat map carries no owning class, so one `def data; ReportRow.new; end`
+ * speaks for every `data` in the corpus — on taxdome `data` has 244 definitions.
+ * `returnTypeOf` therefore refuses the flat fact whenever the receiver's class is
+ * known and the member is multiply defined (bd tea-rags-mcp-h4hxh), which leaves
+ * a KNOWN receiver with no answer at all. The same fact under the declaring
+ * class's coordinate has no such ambiguity: it describes exactly one method, so
+ * the engine's precise path (`structuredReturnTypes["Klass#member"]`) can apply
+ * it without a corpus-uniqueness gate, and a bare self-call can find it through
+ * the CALLER's own class and ancestors.
+ *
+ * Singleton defs (`def self.build`) are keyed with `#` like every other
+ * body-inferred fact — the engine reads that coordinate for class receivers too
+ * (see `RubyTypeFactStore.structuredReturnTypesMap`), and only an explicit
+ * `@!method self.x` directive claims the `.` form. A method declared outside any
+ * class has no owner and is skipped; the flat map still carries it.
+ *
+ * Merged by the walker only where the type-fact store has nothing at that
+ * coordinate, so declared sources (YARD, associations, the service-entry
+ * body source) keep their precedence.
+ */
+export function collectRubyScopedBodyReturnTypes(
+  root: AstNode,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): Record<string, RubyTypeRef> {
+  const out: Record<string, RubyTypeRef> = {};
+  forEachClassScope(root, (classNode, fq) => {
+    const scan = (n: AstNode): void => {
+      // Nested class/module bodies belong to their own fq — forEachClassScope
+      // visits them separately.
+      if (n.type === "class" || n.type === "module") return;
+      if (n.type === "method" || n.type === "singleton_method") {
+        const nameNode = n.childForFieldName("name");
+        const type = nameNode === null ? null : bodyReturnInstanceType(n, catalogue);
+        if (nameNode !== null && type !== null) out[`${fq}#${nameNode.text}`] = { form: "instance", name: type };
+        return;
+      }
+      for (const child of n.children) scan(child);
+    };
+    const body = classNode.childForFieldName("body");
+    for (const child of (body ?? classNode).children) scan(child);
   });
   return out;
 }

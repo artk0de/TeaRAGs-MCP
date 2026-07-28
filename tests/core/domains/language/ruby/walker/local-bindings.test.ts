@@ -15,6 +15,7 @@ import {
   collectRubyBodyReturnTypes,
   collectRubyIvarFieldTypes,
   collectRubyLocalCallBindingsForChunk,
+  collectRubyScopedBodyReturnTypes,
   localTypeTrackingEnabled,
 } from "../../../../../../src/core/domains/language/ruby/walker/local-bindings.js";
 
@@ -225,6 +226,80 @@ describe("collectRubyBodyReturnTypes — edge cases", () => {
     const root = parse(`${src}\n`);
     const result = collectRubyBodyReturnTypes(root);
     expect(result["empty_body"]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectRubyScopedBodyReturnTypes — the owner-qualified twin (bd rwv3o)
+//
+// Same inference as collectRubyBodyReturnTypes, keyed by the DECLARING class
+// instead of the bare method name, so a reader that knows the receiver's class
+// (or, for a bare self-call, the caller's class) can ask about THAT method
+// rather than about every same-named method in the corpus.
+// ---------------------------------------------------------------------------
+
+describe("collectRubyScopedBodyReturnTypes", () => {
+  it("keys the inferred return by the declaring class, not the bare method name", () => {
+    const src = ["class Report", "  def data", "    ReportRow.new", "  end", "end"].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({
+      "Report#data": { form: "instance", name: "ReportRow" },
+    });
+  });
+
+  it("qualifies by the full lexical scope, so same-named methods do not collide", () => {
+    const src = [
+      "module Billing",
+      "  class Invoice",
+      "    def data",
+      "      InvoiceRow.new",
+      "    end",
+      "  end",
+      "end",
+      "class Report",
+      "  def data",
+      "    ReportRow.new",
+      "  end",
+      "end",
+    ].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({
+      "Billing::Invoice#data": { form: "instance", name: "InvoiceRow" },
+      "Report#data": { form: "instance", name: "ReportRow" },
+    });
+  });
+
+  it("keys a `def self.x` singleton with `#` — the shared coordinate the engine reads", () => {
+    const src = ["class Factory", "  def self.build", "    Widget.new", "  end", "end"].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({
+      "Factory#build": { form: "instance", name: "Widget" },
+    });
+  });
+
+  it("emits nothing for a method declared outside any class — there is no owner", () => {
+    const src = ["def build", "  Widget.new", "end"].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({});
+  });
+
+  it("stays silent on the shapes the flat inference is silent on", () => {
+    const src = [
+      "class Report",
+      "  def branching",
+      "    cond ? A.new : B.new",
+      "  end",
+      "  def opaque",
+      "    other.thing",
+      "  end",
+      "end",
+    ].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({});
+  });
+
+  it("covers exactly what the flat map covers for a scoped method (same shapes)", () => {
+    const src = ["class Report", "  def load", "    User.find(1)", "  rescue => e", "    nil", "  end", "end"].join(
+      "\n",
+    );
+    const root = parse(`${src}\n`);
+    expect(collectRubyBodyReturnTypes(root)["load"]).toBe("User");
+    expect(collectRubyScopedBodyReturnTypes(root)["Report#load"]).toEqual({ form: "instance", name: "User" });
   });
 });
 

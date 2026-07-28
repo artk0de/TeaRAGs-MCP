@@ -399,3 +399,82 @@ describe("boundCallReturnType — the bare branch is deliberately NOT gated (h4h
     expect(boundCallReturnType("verdict", ctx)).toBeUndefined();
   });
 });
+
+// ── Owner-qualified facts narrow the bare branch (bd tea-rags-mcp-rwv3o) ─────
+//
+// A BARE binding (`row = data(…)`) has no receiver, but it is not context-free:
+// the call dispatches on `self`, so the CALLER's own class and its ancestors are
+// the only definitions that can answer it. When one of those coordinates carries
+// a return fact, it describes THIS `data`, while the flat map describes whichever
+// same-named method the corpus happened to annotate. Owner-qualified first, flat
+// map unchanged behind it — the h4hxh close stays intact because nothing is taken
+// away when no owner fact exists.
+
+describe("boundCallReturnType — owner-qualified facts win over the flat map (rwv3o)", () => {
+  it("reads the fact declared on the CALLER's own class", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Reports", "Builder"],
+      localCallBindings: { row: "data" },
+      structuredReturnTypes: { "Reports::Builder#data": { form: "instance", name: "ReportRow" } },
+      functionReturnTypes: { data: "Data" },
+      symbolTable: tableWithDefs("data", 244),
+    });
+    expect(boundCallReturnType("row", ctx)).toEqual({ form: "instance", name: "ReportRow" });
+  });
+
+  it("inherits the fact from an ancestor when the caller's own class declares none", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Reports", "Builder"],
+      localCallBindings: { row: "data" },
+      classAncestors: { "Reports::Builder": ["BaseBuilder"] },
+      structuredReturnTypes: { "BaseBuilder#data": { form: "instance", name: "ReportRow" } },
+      functionReturnTypes: { data: "Data" },
+      symbolTable: tableWithDefs("data", 244),
+    });
+    expect(boundCallReturnType("row", ctx)).toEqual({ form: "instance", name: "ReportRow" });
+  });
+
+  it("answers where the flat map is SILENT — a new receiver type, not a correction", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Reports", "Builder"],
+      localCallBindings: { row: "data" },
+      structuredReturnTypes: { "Reports::Builder#data": { form: "instance", name: "ReportRow" } },
+    });
+    expect(boundCallReturnType("row", ctx)).toEqual({ form: "instance", name: "ReportRow" });
+  });
+
+  it("falls back to the flat map when no owner-qualified fact matches", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Reports", "Builder"],
+      localCallBindings: { x: "fetch" },
+      structuredReturnTypes: { "Other::Class#fetch": { form: "instance", name: "Wrong" } },
+      functionReturnTypes: { fetch: "HttpResponse" },
+    });
+    expect(boundCallReturnType("x", ctx)).toEqual({ form: "instance", name: "HttpResponse" });
+  });
+
+  it("does not read the CLASS-form ('.') coordinate — a bare call dispatches on self", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Reports", "Builder"],
+      localCallBindings: { row: "data" },
+      structuredReturnTypes: { "Reports::Builder.data": { form: "instance", name: "DirectiveFiction" } },
+      functionReturnTypes: { data: "Data" },
+    });
+    expect(boundCallReturnType("row", ctx)).toEqual({ form: "instance", name: "Data" });
+  });
+
+  it("preserves container / union refs verbatim instead of flattening to a name", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Reports::Builder"],
+      localCallBindings: { rows: "data" },
+      structuredReturnTypes: {
+        "Reports::Builder#data": { form: "container", element: { form: "instance", name: "ReportRow" } },
+      },
+      functionReturnTypes: { data: "Data" },
+    });
+    expect(boundCallReturnType("rows", ctx)).toEqual({
+      form: "container",
+      element: { form: "instance", name: "ReportRow" },
+    });
+  });
+});
