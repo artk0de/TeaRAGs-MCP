@@ -15,6 +15,7 @@ import {
   collectRubyBodyReturnTypes,
   collectRubyIvarFieldTypes,
   collectRubyLocalCallBindingsForChunk,
+  collectRubyScopedBodyReturnTypes,
   localTypeTrackingEnabled,
 } from "../../../../../../src/core/domains/language/ruby/walker/local-bindings.js";
 
@@ -225,6 +226,161 @@ describe("collectRubyBodyReturnTypes — edge cases", () => {
     const root = parse(`${src}\n`);
     const result = collectRubyBodyReturnTypes(root);
     expect(result["empty_body"]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectRubyScopedBodyReturnTypes — the owner-qualified twin (bd rwv3o)
+//
+// Same inference as collectRubyBodyReturnTypes, keyed by the DECLARING class
+// instead of the bare method name, so a reader that knows the receiver's class
+// (or, for a bare self-call, the caller's class) can ask about THAT method
+// rather than about every same-named method in the corpus.
+// ---------------------------------------------------------------------------
+
+describe("collectRubyScopedBodyReturnTypes", () => {
+  it("keys the inferred return by the declaring class, not the bare method name", () => {
+    const src = ["class Report", "  def data", "    ReportRow.new", "  end", "end"].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({
+      "Report#data": { form: "instance", name: "ReportRow" },
+    });
+  });
+
+  it("qualifies by the full lexical scope, so same-named methods do not collide", () => {
+    const src = [
+      "module Billing",
+      "  class Invoice",
+      "    def data",
+      "      InvoiceRow.new",
+      "    end",
+      "  end",
+      "end",
+      "class Report",
+      "  def data",
+      "    ReportRow.new",
+      "  end",
+      "end",
+    ].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({
+      "Billing::Invoice#data": { form: "instance", name: "InvoiceRow" },
+      "Report#data": { form: "instance", name: "ReportRow" },
+    });
+  });
+
+  it("keys a `def self.x` singleton with `#` — the shared coordinate the engine reads", () => {
+    const src = ["class Factory", "  def self.build", "    Widget.new", "  end", "end"].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({
+      "Factory#build": { form: "instance", name: "Widget" },
+    });
+  });
+
+  it("emits nothing for a method declared outside any class — there is no owner", () => {
+    const src = ["def build", "  Widget.new", "end"].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({});
+  });
+
+  it("stays silent on the shapes the flat inference is silent on", () => {
+    const src = [
+      "class Report",
+      "  def branching",
+      "    cond ? A.new : B.new",
+      "  end",
+      "  def opaque",
+      "    other.thing",
+      "  end",
+      "end",
+    ].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({});
+  });
+
+  // ── Memoized-reader tails (bd tea-rags-mcp-smvyk) ─────────────────────────
+  //
+  // `def current_client; @current_client ||= Client.find(id); end` is the single
+  // shape the taxdome census funds: 49 nullary-receiver misses over 13 defs, and
+  // every larger uncovered class (opaque RHS, qualified call tails, literals) is
+  // a genuine floor. The VALUE of `x ||= e` is `e` whenever x was falsy, so the
+  // fact is sound exactly when nothing else can have put another value in x.
+
+  it("types a memoized `@x ||= Const.new` reader", () => {
+    const src = ["class Panel", "  def current_client", "    @current_client ||= Client.find(id)", "  end", "end"].join(
+      "\n",
+    );
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({
+      "Panel#current_client": { form: "instance", name: "Client" },
+    });
+  });
+
+  it("types a plain `@x = Const.new` tail — the value of an assignment IS its RHS", () => {
+    const src = ["class Panel", "  def build", "    @widget = Widget.new", "  end", "end"].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({
+      "Panel#build": { form: "instance", name: "Widget" },
+    });
+  });
+
+  it("types a memoized LOCAL `x ||= Const.new` tail", () => {
+    const src = ["class Panel", "  def build", "    widget ||= Widget.new", "  end", "end"].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))).toEqual({
+      "Panel#build": { form: "instance", name: "Widget" },
+    });
+  });
+
+  it("stays SILENT when a sibling method also writes that ivar (memoization not exclusive)", () => {
+    const src = [
+      "class Panel",
+      "  def reset",
+      "    @current_client = nil",
+      "  end",
+      "  def current_client",
+      "    @current_client ||= Client.find(id)",
+      "  end",
+      "end",
+    ].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))["Panel#current_client"]).toBeUndefined();
+  });
+
+  it("stays SILENT when the memoized local is assigned twice in the body", () => {
+    const src = [
+      "class Panel",
+      "  def build",
+      "    widget = other",
+      "    widget ||= Widget.new",
+      "  end",
+      "end",
+    ].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))["Panel#build"]).toBeUndefined();
+  });
+
+  it("stays SILENT on an opaque RHS — 108 of the census misses look like this", () => {
+    const src = ["class Panel", "  def current_firm", "    @current_firm ||= HostHelper.current_firm(host)", "  end", "end"].join(
+      "\n",
+    );
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))["Panel#current_firm"]).toBeUndefined();
+  });
+
+  it("stays SILENT on a non-`||=` operator tail (`+=` is arithmetic, not memoization)", () => {
+    const src = ["class Panel", "  def total", "    @total += Amount.new", "  end", "end"].join("\n");
+    expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))["Panel#total"]).toBeUndefined();
+  });
+
+  it("leaves the FLAT map untouched — the memoized shape lives in the scoped channel only", () => {
+    const src = ["class Panel", "  def current_client", "    @current_client ||= Client.find(id)", "  end", "end"].join(
+      "\n",
+    );
+    const root = parse(`${src}\n`);
+    expect(collectRubyBodyReturnTypes(root)["current_client"]).toBeUndefined();
+    expect(collectRubyScopedBodyReturnTypes(root)["Panel#current_client"]).toEqual({
+      form: "instance",
+      name: "Client",
+    });
+  });
+
+  it("covers exactly what the flat map covers for a scoped method (same shapes)", () => {
+    const src = ["class Report", "  def load", "    User.find(1)", "  rescue => e", "    nil", "  end", "end"].join(
+      "\n",
+    );
+    const root = parse(`${src}\n`);
+    expect(collectRubyBodyReturnTypes(root)["load"]).toBe("User");
+    expect(collectRubyScopedBodyReturnTypes(root)["Report#load"]).toEqual({ form: "instance", name: "User" });
   });
 });
 

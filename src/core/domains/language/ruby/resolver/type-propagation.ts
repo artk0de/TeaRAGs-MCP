@@ -172,7 +172,12 @@ export function typeOfReceiver(receiver: string, atLine: number, ctx: CallContex
   // (`arr[0]`) is handled above. The explicit chain guard above is the only
   // structural guard needed.
   const binding = resolveLocalBinding(ctx.localBindings, receiver, atLine);
-  if (!binding) return undefined;
+  // ── Nullary self-call receiver (bd tea-rags-mcp-pr7fu) ───────────────────
+  // An unbound lowercase identifier in receiver position is not a variable —
+  // Ruby has no implicit declaration, so `current_client.foo` can only be a
+  // ZERO-ARG method call on self or an ancestor. Its return fact types the
+  // receiver exactly as a local binding would.
+  if (!binding) return nullaryReceiverType(receiver, ctx);
 
   // Prefer the richer typeRef (union / container) when present (INFRA-A);
   // fall back to reconstructing from type + valueKind for plain bindings.
@@ -489,18 +494,99 @@ function resolveIvarType(ivar: string, ctx: CallContext): RubyTypeRef | undefine
  *    was a constant) — the receiver's type is known, so {@link returnTypeOf}
  *    answers over the CLASS object and every scoped channel applies (structured
  *    fact at the entry coordinate, ancestor MRO, then the flat map);
- *  - BARE (`"fetch"`) — no receiver type, so only the flat, project-wide
- *    `functionReturnTypes` map can answer. Unchanged from before: the h4hxh gate
- *    applies where the map would OVERRIDE a known receiver class, and here there
- *    is no class to override.
+ *  - BARE (`"fetch"`) — no receiver was written, but the call is not
+ *    context-free: it dispatches on `self`, so {@link selfMemberReturnType} asks
+ *    the CALLER's own class and its ancestors first (bd tea-rags-mcp-rwv3o).
+ *    Only when no owner-qualified fact sits on that MRO does the flat,
+ *    project-wide `functionReturnTypes` map answer, exactly as before — the
+ *    h4hxh close measured that silencing the flat map here costs 758 honest
+ *    edges, so nothing is taken away, only overridden where a fact that
+ *    demonstrably describes THIS method exists.
  */
 export function boundCallReturnType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
   const binding = ctx.localCallBindings?.[receiver];
   if (binding === undefined) return undefined;
   const separator = binding.lastIndexOf(".");
   if (separator <= 0) {
+    const owned = selfMemberReturnType(binding, ctx);
+    if (owned !== undefined) return owned;
     const flat = ctx.functionReturnTypes?.[binding];
     return flat ? { form: "instance", name: flat } : undefined;
   }
   return returnTypeOf({ form: "class", name: binding.slice(0, separator) }, binding.slice(separator + 1), ctx);
+}
+
+/**
+ * The OWNER-QUALIFIED return fact a receiver-less call to `member` finds by
+ * dispatching on `self` (bd tea-rags-mcp-rwv3o) — the ONE authority for that
+ * question, shared by {@link boundCallReturnType}'s bare branch and
+ * {@link nullaryReceiverType}, so the two consumers cannot drift on which
+ * coordinate answers.
+ *
+ * The point of asking here at all is that the flat `functionReturnTypes` map is
+ * keyed by bare name across the whole corpus, so for a multiply-defined name it
+ * describes some other class's method. A fact sitting on the caller's own MRO
+ * describes the method this call actually reaches, and outranks it.
+ *
+ * Instance (`#`) form only: a bare call binds `self`, never the class object, so
+ * the `.` coordinate an `@!method self.x` directive claims is not consulted.
+ *
+ * Precedence, and why the two levels differ:
+ *  - the CALLER'S OWN class wins outright — a definition on the receiver's own
+ *    class shadows every ancestor, which is Ruby's rule, not a heuristic;
+ *  - ANCESTORS must AGREE. `ctx.classAncestors` is a flat list of superclass +
+ *    includes, NOT a linearized MRO, so "first entry" is not reliably "nearest
+ *    definition". Two ancestors declaring different return types is a question
+ *    this map cannot answer, and a wrong receiver type poisons every downstream
+ *    hop — so the disagreement resolves to silence.
+ *
+ * `undefined` when the call site has no enclosing class (a top-level `def`, a
+ * bare script statement) — there is no owner to ask, and callers fall back to
+ * whatever they did before.
+ */
+function selfMemberReturnType(member: string, ctx: CallContext): RubyTypeRef | undefined {
+  if (ctx.callerScope.length === 0) return undefined;
+  const scopeKey = ctx.callerScope.join("::");
+  const own = declaredReturnTypeOn(scopeKey, member, ctx);
+  if (own !== undefined) return own;
+  let agreed: RubyTypeRef | undefined;
+  for (const ancestor of ctx.classAncestors?.[scopeKey] ?? []) {
+    const inherited = declaredReturnTypeOn(ancestor, member, ctx);
+    if (inherited === undefined) continue;
+    if (agreed === undefined) {
+      agreed = inherited;
+    } else if (JSON.stringify(agreed) !== JSON.stringify(inherited)) {
+      return undefined; // ancestors disagree — the flat list cannot rank them
+    }
+  }
+  return agreed;
+}
+
+/**
+ * A plain lowercase identifier — the only receiver text that can name a nullary
+ * method call. `self` / `super` are keywords the engine already answers
+ * `undefined` for and must not be looked up as members.
+ */
+const NULLARY_RECEIVER = /^[a-z_]\w*[?!]?$/;
+const RECEIVER_KEYWORDS = new Set(["self", "super", "nil", "true", "false", "__method__"]);
+
+/**
+ * The type of a receiver that is a bare NULLARY method call on self
+ * (bd tea-rags-mcp-pr7fu) — `current_client` in `current_client.foo`.
+ *
+ * Ruby has no implicit local declaration, so an identifier the walker never
+ * bound and that appears in receiver position cannot be a variable: it is a
+ * zero-argument method resolved on `self` or an ancestor. That makes its return
+ * fact exactly as authoritative for the receiver's type as a local binding is,
+ * and it reaches the same census bucket the local-binding channel already
+ * covers for `x = current_client()` — the only difference is that the result was
+ * never assigned to a name.
+ *
+ * Gated by {@link selfMemberReturnType}: the caller's own class answers, or its
+ * ancestors must agree. No fact, or a disagreement, yields `undefined` and the
+ * receiver stays untyped exactly as before.
+ */
+function nullaryReceiverType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
+  if (RECEIVER_KEYWORDS.has(receiver) || !NULLARY_RECEIVER.test(receiver)) return undefined;
+  return selfMemberReturnType(receiver, ctx);
 }

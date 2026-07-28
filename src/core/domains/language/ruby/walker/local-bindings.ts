@@ -1,5 +1,6 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { resolveLocalBindingType, type LocalBinding } from "../../../../contracts/types/codegraph.js";
+import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { forEachClassScope, readScopeResolution, walk } from "./ast-utils.js";
 import { constInstanceType, isOrAssignment } from "./type-sources/ast-inference.js";
@@ -212,21 +213,171 @@ export function collectRubyBodyReturnTypes(
   walk(root, (node) => {
     if (node.type !== "method" && node.type !== "singleton_method") return;
     const nameNode = node.childForFieldName("name");
-    const body = node.childForFieldName("body");
-    if (!nameNode || !body) return;
-    // Last value-producing statement of the body (skip rescue/ensure/else tails).
-    const stmts = body.namedChildren.filter((n) => n.type !== "rescue" && n.type !== "ensure" && n.type !== "else");
-    let last = stmts[stmts.length - 1];
-    if (!last) return;
-    // Explicit `return EXPR` — unwrap to the returned expression.
-    if (last.type === "return") {
-      const arg = last.namedChildren[0];
-      if (!arg) return;
-      last = arg.type === "argument_list" ? arg.namedChildren[0] : arg;
-      if (!last) return;
-    }
-    const type = constInstanceType(last, catalogue);
+    if (!nameNode) return;
+    const type = bodyReturnInstanceType(node, catalogue);
     if (type) out[nameNode.text] = type;
+  });
+  return out;
+}
+
+/**
+ * The constant a method's BODY last expression evaluates to as an INSTANCE, or
+ * `null` for every shape the inference deliberately stays silent on (branching,
+ * opaque call tails, literals, bare identifiers). Explicit `return EXPR` is
+ * unwrapped; `rescue` / `ensure` / `else` tails are skipped, so the tail seen is
+ * the method's normal-path value.
+ *
+ * Shared by the FLAT {@link collectRubyBodyReturnTypes} and the OWNER-KEYED
+ * {@link collectRubyScopedBodyReturnTypes} so the two channels cannot disagree
+ * about which shapes carry a return type — the scoped map is the same inference
+ * under a key that names the declaring class.
+ */
+function bodyReturnInstanceType(method: AstNode, catalogue: RubyDslCatalogue): string | null {
+  const tail = bodyTailExpression(method);
+  return tail === null ? null : constInstanceType(tail, catalogue);
+}
+
+/**
+ * The method body's last value-producing expression: `rescue` / `ensure` / `else`
+ * tails skipped so the tail seen is the NORMAL-path value, and an explicit
+ * `return EXPR` unwrapped to `EXPR`. `null` when the body produces no value.
+ */
+function bodyTailExpression(method: AstNode): AstNode | null {
+  const body = method.childForFieldName("body");
+  if (!body) return null;
+  const stmts = body.namedChildren.filter((n) => n.type !== "rescue" && n.type !== "ensure" && n.type !== "else");
+  let last = stmts[stmts.length - 1];
+  if (!last) return null;
+  if (last.type === "return") {
+    const arg = last.namedChildren[0];
+    if (!arg) return null;
+    last = arg.type === "argument_list" ? arg.namedChildren[0] : arg;
+    if (!last) return null;
+  }
+  return last;
+}
+
+/**
+ * How many times `name` is assigned (plain or operator) under `root`.
+ *
+ * A nested class / module is always a different scope and is never entered. A
+ * nested `def` is entered only when counting an `@ivar`: ivars belong to the
+ * INSTANCE, so every method of the class can write the same one, and that is
+ * precisely what the memoization guard needs to see. Locals are method-scoped,
+ * so for them a nested def is a different scope too.
+ */
+function countAssignmentsTo(root: AstNode, name: string, crossMethods: boolean): number {
+  let seen = 0;
+  const scan = (n: AstNode): void => {
+    if (n.type === "class" || n.type === "module") return;
+    if (!crossMethods && (n.type === "method" || n.type === "singleton_method")) return;
+    if (n.type === "assignment" || n.type === "operator_assignment") {
+      if (n.childForFieldName("left")?.text === name) seen += 1;
+    }
+    for (const child of n.children) scan(child);
+  };
+  for (const child of root.children) scan(child);
+  return seen;
+}
+
+/**
+ * The instance type of a MEMOIZED-READER tail — `@x ||= Const.new` / `x = Const.new`
+ * (bd tea-rags-mcp-smvyk). `null` for every other tail.
+ *
+ * ── WHY THIS SHAPE AND NO OTHER ──
+ * The taxdome census classified all 1 678 nullary-receiver misses whose callee
+ * carries no return fact. Ranked by miss reach, the classes are: opaque qualified
+ * call tails (118), memoized tails whose RHS is opaque (108), memoized tails
+ * whose RHS is a `Const.m()` with no fact of its own (85), literals (56), and
+ * then THIS — a memoized tail whose RHS types, 49 misses over 13 defs. Everything
+ * above it is a genuine floor: an opaque RHS has no nominal type to name, and the
+ * `Const.m()` cases bottom out in nilable conditionals (`HostHelper.current_firm`
+ * returns a Firm or nil). The conditional-agree and passthrough-tail shapes the
+ * design anticipated measured 1 and 0 sites respectively, so neither is built.
+ *
+ * ── WHY IT IS SOUND ──
+ * The value of `x = e` IS `e`, unconditionally. The value of `x ||= e` is `e`
+ * whenever `x` was falsy — so the fact holds exactly when nothing else could have
+ * put a different value in `x`. That is checked, not assumed: an `@ivar` must be
+ * assigned exactly once in the whole class body (no sibling method writes it), a
+ * local exactly once in the method. `+=` and `&&=` are arithmetic and guard
+ * idioms, not memoization, and are rejected outright.
+ *
+ * The check is file-scoped, like every walker inference: a class reopened in
+ * another file could assign the same ivar. That is the same bound
+ * `collectRubyIvarFieldTypes` and the service-entry source already accept.
+ */
+function memoizedTailInstanceType(
+  tail: AstNode,
+  method: AstNode,
+  classBody: AstNode,
+  catalogue: RubyDslCatalogue,
+): string | null {
+  const plain = tail.type === "assignment";
+  if (!plain && !isOrAssignment(tail)) return null;
+  const lhs = tail.childForFieldName("left");
+  const rhs = tail.childForFieldName("right");
+  if (!lhs || !rhs) return null;
+  if (lhs.type !== "identifier" && lhs.type !== "instance_variable") return null;
+  const type = constInstanceType(rhs, catalogue);
+  if (type === null) return null;
+  if (plain) return type;
+  const ivar = lhs.type === "instance_variable";
+  return countAssignmentsTo(ivar ? classBody : method, lhs.text, ivar) === 1 ? type : null;
+}
+
+/**
+ * The OWNER-QUALIFIED twin of {@link collectRubyBodyReturnTypes} (bd
+ * tea-rags-mcp-rwv3o): the same body-last-expression inference keyed
+ * `"<fqClass>#<method>"` — the engine's `structuredReturnTypes` convention —
+ * instead of by the bare method name.
+ *
+ * ── WHY A SECOND KEY FOR THE SAME INFERENCE ──
+ * The flat map carries no owning class, so one `def data; ReportRow.new; end`
+ * speaks for every `data` in the corpus — on taxdome `data` has 244 definitions.
+ * `returnTypeOf` therefore refuses the flat fact whenever the receiver's class is
+ * known and the member is multiply defined (bd tea-rags-mcp-h4hxh), which leaves
+ * a KNOWN receiver with no answer at all. The same fact under the declaring
+ * class's coordinate has no such ambiguity: it describes exactly one method, so
+ * the engine's precise path (`structuredReturnTypes["Klass#member"]`) can apply
+ * it without a corpus-uniqueness gate, and a bare self-call can find it through
+ * the CALLER's own class and ancestors.
+ *
+ * Singleton defs (`def self.build`) are keyed with `#` like every other
+ * body-inferred fact — the engine reads that coordinate for class receivers too
+ * (see `RubyTypeFactStore.structuredReturnTypesMap`), and only an explicit
+ * `@!method self.x` directive claims the `.` form. A method declared outside any
+ * class has no owner and is skipped; the flat map still carries it.
+ *
+ * Merged by the walker only where the type-fact store has nothing at that
+ * coordinate, so declared sources (YARD, associations, the service-entry
+ * body source) keep their precedence.
+ */
+export function collectRubyScopedBodyReturnTypes(
+  root: AstNode,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): Record<string, RubyTypeRef> {
+  const out: Record<string, RubyTypeRef> = {};
+  forEachClassScope(root, (classNode, fq) => {
+    const classBody = classNode.childForFieldName("body") ?? classNode;
+    const scan = (n: AstNode): void => {
+      // Nested class/module bodies belong to their own fq — forEachClassScope
+      // visits them separately.
+      if (n.type === "class" || n.type === "module") return;
+      if (n.type === "method" || n.type === "singleton_method") {
+        const nameNode = n.childForFieldName("name");
+        if (nameNode === null) return;
+        const tail = bodyTailExpression(n);
+        const type =
+          tail === null
+            ? null
+            : (constInstanceType(tail, catalogue) ?? memoizedTailInstanceType(tail, n, classBody, catalogue));
+        if (type !== null) out[`${fq}#${nameNode.text}`] = { form: "instance", name: type };
+        return;
+      }
+      for (const child of n.children) scan(child);
+    };
+    for (const child of classBody.children) scan(child);
   });
   return out;
 }

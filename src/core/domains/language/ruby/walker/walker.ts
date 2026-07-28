@@ -60,6 +60,7 @@ import {
   collectRubyBodyReturnTypes,
   collectRubyIvarFieldTypes,
   collectRubyLocalCallBindingsForChunk,
+  collectRubyScopedBodyReturnTypes,
   localTypeTrackingEnabled,
 } from "./local-bindings.js";
 import {
@@ -305,6 +306,17 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // The channel goes live when a Sorbet/RBS source starts emitting ivar facts.
   if (trackTypes) {
     const structuredReturnTypes = store.structuredReturnTypesMap();
+    // Owner-qualified body inference (bd tea-rags-mcp-rwv3o) — the same
+    // last-expression fact `functionReturnTypes` carries flat, under the
+    // declaring class's coordinate so a KNOWN receiver (and a bare self-call
+    // narrowed by the caller's class) can apply it without the flat map's
+    // corpus-uniqueness gate, plus the memoized-reader tail this channel alone
+    // carries (bd tea-rags-mcp-smvyk). Merged only where the store declared
+    // nothing, so YARD / associations / the service-entry source keep precedence
+    // exactly as `DEFAULT_SOURCE_ORDER` states.
+    for (const [key, ref] of Object.entries(collectRubyScopedBodyReturnTypes(input.tree.rootNode, catalogue))) {
+      if (!(key in structuredReturnTypes)) structuredReturnTypes[key] = ref;
+    }
     if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;
     const ivarTypes = store.ivarTypesMap();
     if (Object.keys(ivarTypes).length > 0) out.ivarTypes = ivarTypes;
