@@ -130,7 +130,10 @@ function canonical(overlays: Map<string, Map<string, ChunkSignalOverlay>>): stri
 function persistedBlameJsonPath(): string {
   const dataDir = process.env.TEA_RAGS_DATA_DIR;
   if (!dataDir) throw new Error("blame-cache.test: TEA_RAGS_DATA_DIR not set by vitest.setup.ts");
-  const hash16 = createHash("sha256").update(repo).digest("hex").slice(0, 16);
+  // The namespace keys by repo IDENTITY — the shared git dir, so that linked
+  // worktrees of one repo land in one cache. A plain checkout's is <repo>/.git.
+  const identity = join(repo, ".git");
+  const hash16 = createHash("sha256").update(identity).digest("hex").slice(0, 16);
   return join(dataDir, "git-blame", hash16, "blame.json");
 }
 

@@ -1,11 +1,15 @@
 /**
  * bd tea-rags-mcp-82va1 — persistent tier of the commit-discovery matrix.
  *
- * Layout: `<baseDir>/<sha256(repoRoot).hex.slice(0,16)>/<head>.json` — keyed
- * by repoRoot hash, NOT collection: git history is a repo property shared
- * across every collection indexing that repo (documented deviation from the
- * bd comment's "<collectionHash>" example). Stale-HEAD files are dropped on
- * save, which IS the size cap for the directory (one snapshot per repo).
+ * Layout: `<baseDir>/<sha256(identity).hex.slice(0,16)>/<head>.json` — keyed by
+ * repo IDENTITY (the shared git dir, see repo-identity.ts), NOT collection: git
+ * history is a repo property shared across every collection indexing that repo,
+ * and across every working tree over its object database (documented deviation
+ * from the bd comment's "<collectionHash>" example). Several HEADs coexist in
+ * one directory — a checkout and its linked worktrees each persist their own —
+ * so `save` retains the newest few (see snapshot-retention.ts) rather than
+ * dropping every other file; that retention IS the size cap. Reads fall back to
+ * the pre-identity per-working-tree layout so warm caches survive the upgrade.
  *
  * Everything is best-effort: corrupt / mismatched / oversized payloads
  * degrade silently to null so the discovery rebuilds from git. Sync node:fs
@@ -13,7 +17,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -23,6 +27,8 @@ import type {
   GitCommitDiscoveryPersistence,
   PersistedGitCommitDiscovery,
 } from "./commit-discovery.js";
+import { resolveRepoIdentity } from "./repo-identity.js";
+import { pruneSnapshots } from "./snapshot-retention.js";
 
 const DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
 
@@ -59,12 +65,22 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
   }
 
   load(repoRoot: string, head: string): PersistedGitCommitDiscovery | null {
+    const identity = resolveRepoIdentity(repoRoot);
+    const hit = this.read(join(this.repoDir(identity), `${head}.json`), identity, head);
+    if (hit || identity === repoRoot) return hit;
     return this.read(join(this.repoDir(repoRoot), `${head}.json`), repoRoot, head);
   }
 
   loadLatest(repoRoot: string): PersistedGitCommitDiscovery | null {
+    const identity = resolveRepoIdentity(repoRoot);
+    const hit = this.readLatest(identity);
+    if (hit || identity === repoRoot) return hit;
+    return this.readLatest(repoRoot);
+  }
+
+  private readLatest(identity: string): PersistedGitCommitDiscovery | null {
     try {
-      const dir = this.repoDir(repoRoot);
+      const dir = this.repoDir(identity);
       let newest: string | undefined;
       let newestMtime = -Infinity;
       for (const file of readdirSync(dir)) {
@@ -77,7 +93,7 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
       }
       if (!newest) return null;
       // Same validation as `load` except the head is whatever the file says.
-      return this.read(join(dir, newest), repoRoot);
+      return this.read(join(dir, newest), identity);
     } catch (error) {
       this.debugLog("loadLatest", error);
       return null;
@@ -86,24 +102,20 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
 
   save(repoRoot: string, head: string, sinceIso: string, entries: GitCommitDiscoveryEntry[]): void {
     try {
-      const payload: PersistedGitCommitDiscovery = { version: 1, repoRoot, head, sinceIso, entries };
+      const identity = resolveRepoIdentity(repoRoot);
+      const payload: PersistedGitCommitDiscovery = { version: 1, repoRoot: identity, head, sinceIso, entries };
       const data = JSON.stringify(payload);
       // Oversized matrix → skip persistence; the run keeps its in-memory copy.
       if (Buffer.byteLength(data) > this.maxBytes) return;
 
-      const dir = this.repoDir(repoRoot);
+      const dir = this.repoDir(identity);
       mkdirSync(dir, { recursive: true });
       const target = join(dir, `${head}.json`);
       const tmp = `${target}.tmp`;
       writeFileSync(tmp, data);
       renameSync(tmp, target); // atomic replace
 
-      // Stale-HEAD cleanup — every OTHER *.json is a superseded snapshot.
-      for (const file of readdirSync(dir)) {
-        if (file.endsWith(".json") && file !== `${head}.json`) {
-          unlinkSync(join(dir, file));
-        }
-      }
+      pruneSnapshots(dir);
     } catch (error) {
       // Best-effort persistence: a failed save only costs the next run a log.
       this.debugLog("save", error);
