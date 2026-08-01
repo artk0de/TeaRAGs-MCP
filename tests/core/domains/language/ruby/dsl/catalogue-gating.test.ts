@@ -174,6 +174,26 @@ describe("gem-gated dispatch grammar — cancancan ability (adx5p.9)", () => {
   });
 });
 
+describe("gem-gated type-source grammar — devise scoped receivers (adx5p.9)", () => {
+  it("the `current_` receiver prefix is composed ONLY when devise is declared", () => {
+    expect(composeRubyCatalogue(new Set(["devise"])).instanceReceiverPrefixes.has("current_")).toBe(true);
+    expect(composeRubyCatalogue(new Set(["rails", "pundit"])).instanceReceiverPrefixes.has("current_")).toBe(false);
+  });
+
+  it("a project without devise composes NO receiver prefixes at all (empty facet, not a default)", () => {
+    expect(composeRubyCatalogue(new Set(["rails"])).instanceReceiverPrefixes.size).toBe(0);
+  });
+
+  it("the `devise` model macro is an entry ONLY under the gem", () => {
+    expect(composeRubyCatalogue(new Set(["devise"])).entries.devise).toBeDefined();
+    expect(composeRubyCatalogue(new Set(["rails"])).entries.devise).toBeUndefined();
+  });
+
+  it("null (no Gemfile / gating off) → the devise grammar is active (FULL default)", () => {
+    expect(composeRubyCatalogue(null).instanceReceiverPrefixes.has("current_")).toBe(true);
+  });
+});
+
 describe("gem-gated DECLARES grammars — carrierwave / aasm (bd tea-rags-mcp-o5kwh)", () => {
   it("carrierwave mount_uploader declaring entries are composed ONLY when carrierwave is declared", () => {
     const withCw = composeRubyCatalogue(new Set(["carrierwave"]));

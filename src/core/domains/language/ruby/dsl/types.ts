@@ -196,6 +196,20 @@ export interface RubyFrameworkVocabulary {
    *  perform_later/_now → "perform". Consumed by enqueueEntrypoint. */
   readonly enqueueDispatch?: Readonly<Record<string, string>>;
   /**
+   * Receiver-NAME prefixes whose remainder names the receiver's class
+   * (bd tea-rags-mcp-adx5p.9). A bare, unbound receiver written
+   * `<prefix><scope>` is an INSTANCE of `camelize(scope)` — devise's
+   * `current_user` → `User`, `current_admin_user` → `AdminUser`. The framework
+   * defines a method per scope at runtime, so no file declares it and no fact
+   * channel can answer; this facet states the convention that does.
+   *
+   * Interpreted by `resolver/type-propagation.ts::nullaryReceiverType` AFTER
+   * every declared fact (a project's own `current_user` keeps its declared
+   * return type) and gated there on the derived class existing in the run's
+   * symbol table. Absent ⟺ the framework claims no receiver-name convention.
+   */
+  readonly instanceReceiverPrefixes?: ReadonlySet<string>;
+  /**
    * Names of STRUCTURED class-body macros (`walker/structured/*`) this framework
    * activates. A structured macro walks its own block for inner declarations
    * (`aasm do; state; event; end`, `enum … do`) so it lives in the walker layer,
