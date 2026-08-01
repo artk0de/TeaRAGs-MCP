@@ -14,6 +14,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
  */
 export class RefactoringPreset implements RerankPreset {
   readonly name = "refactoring";
+  readonly filter = { presets: "coreLogic" } as const;
   readonly description = "Large, churning, volatile code — candidates for refactoring";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
   readonly weights: ScoringWeights = {

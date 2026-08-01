@@ -54,7 +54,9 @@ function makeMockReranker() {
     rerank: vi.fn((results: any[]) => results),
     hasCollectionStats: false,
     setCollectionStats: vi.fn(),
+    getCollectionStats: vi.fn().mockReturnValue(undefined),
     getDescriptors: vi.fn().mockReturnValue([]),
+    getFullPreset: vi.fn().mockReturnValue({ signalLevel: undefined }),
     getPreset: vi.fn(),
     getPresetNames: vi.fn().mockReturnValue([]),
   } as any;

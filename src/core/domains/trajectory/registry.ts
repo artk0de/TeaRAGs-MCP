@@ -10,16 +10,26 @@
  * The ingest layer uses getAllEnrichmentProviders() to obtain providers.
  */
 
-import { ConfigValueInvalidError } from "../../infra/errors.js";
 import { mergeQdrantFilters } from "../../adapters/qdrant/filters/utils.js";
 import type { QdrantFilter, QdrantFilterCondition } from "../../adapters/qdrant/types.js";
+import type { FilterPresetDef } from "../../contracts/types/filter-preset.js";
 import type { EnrichmentProvider, FilterDescriptor, FilterLevel } from "../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, Trajectory } from "../../contracts/types/trajectory.js";
+import { ConfigValueInvalidError } from "../../infra/errors.js";
 
 export class TrajectoryRegistry {
   private readonly trajectories: Map<string, Trajectory> = new Map();
+
+  /**
+   * Filter-preset definitions keyed by name. The registry is a pure DATA owner
+   * for these — CSV resolution, AND-merge, and unknown/empty errors live in the
+   * api layer (ExploreOps), which legally imports the compiler (trajectory),
+   * the typed errors (explore), and the filter merge (adapters). Domain
+   * boundaries forbid trajectory importing explore, so no resolution here.
+   */
+  private filterPresets: Map<string, FilterPresetDef> = new Map();
 
   /**
    * Register a trajectory by its key.
@@ -117,6 +127,25 @@ export class TrajectoryRegistry {
     return [...this.trajectories.values()]
       .filter((t): t is Trajectory & { enrichment: EnrichmentProvider } => t.enrichment !== undefined)
       .map((t) => t.enrichment);
+  }
+
+  /**
+   * Replace the registered filter-preset definitions, keyed by `name`.
+   * Called by the composition root after gating presets by registered
+   * trajectory keys. A later call fully replaces the previous map.
+   */
+  setFilterPresets(presets: FilterPresetDef[]): void {
+    this.filterPresets = new Map(presets.map((p) => [p.name, p]));
+  }
+
+  /** Pure lookup of a filter-preset definition by name (undefined when absent). */
+  getFilterPresetDef(name: string): FilterPresetDef | undefined {
+    return this.filterPresets.get(name);
+  }
+
+  /** All registered filter-preset names. */
+  filterPresetNames(): string[] {
+    return [...this.filterPresets.keys()];
   }
 
   /**

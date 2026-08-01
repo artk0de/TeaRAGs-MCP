@@ -22,6 +22,7 @@ import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/t
  */
 export class BlastRadiusPreset implements CompositeRerankPreset {
   readonly name = "blastRadius";
+  readonly filter = { presets: "production" } as const;
   readonly description = "Rank by blast radius — fanIn + churn dominant, structural overlays expose hub-ness";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "trace_path"];
   readonly requires = ["codegraph.symbols", "git"] as const;

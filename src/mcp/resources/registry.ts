@@ -245,7 +245,23 @@ export function buildFiltersDoc(): string {
   md += "→ { low: 1, typical: 3, high: 8, extreme: 20 }\n";
   md += "```\n";
   md += 'means 8 commits = "high" for source code in that codebase. Test code has separate thresholds.\n\n';
-  md += "See `tea-rags://schema/signal-labels` for all label mappings.\n";
+  md += "See `tea-rags://schema/signal-labels` for all label mappings.\n\n";
+  md += "## Named filter presets (`{presets}` shorthand)\n\n";
+  md += "The `filter` param accepts EITHER a raw Qdrant filter object OR a named-presets reference ";
+  md += '`{ presets: "name" }` / `{ presets: "a,b,c" }` (CSV, AND-merged) — they are mutually exclusive ';
+  md += "in one object. Named presets are curated adaptive filter bundles whose thresholds resolve from ";
+  md += "collection percentiles at query time (with cold-start fallbacks), so they scale per repository. ";
+  md += "A `{presets}` filter AND-composes with typed params (minAgeDays, language, …).\n\n";
+  md += "Catalog (gated by registered trajectories):\n\n";
+  md += "- **always available:** `production` (exclude tests/docs/block), `coreLogic` (function/class, no tests), ";
+  md += "`securityPaths` (auth/crypto/secret/token/… paths)\n";
+  md += "- **require git:** `freshLegacyEdits`, `fragileSilo`, `panicZone`, `godMethods`, `battleTested`, ";
+  md += "`abandonedHotspots`\n";
+  md += "- **require codegraph:** `hubs`, `deadCandidates`, `unstableCore`\n\n";
+  md += "**Inventory vs query rule:** hard specific presets (panicZone, abandonedHotspots, …) suit ";
+  md += "query-absent inventory scans where an empty result is a valid answer; query-driven triage should ";
+  md += "rank broadly (no hard specific filter) to preserve recall. Hygiene presets (production/coreLogic) ";
+  md += "are safe in any mode and are the rerank-preset defaults.\n";
   return md;
 }
 

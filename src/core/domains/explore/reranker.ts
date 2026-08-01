@@ -81,6 +81,7 @@ export class Reranker {
   private collectionName?: string;
   private payloadFieldKeys?: string[];
   private recomputeService?: StatsRecomputeService;
+  private resolvedFilterPresetNames: string[] = [];
 
   constructor(
     private readonly descriptors: DerivedSignalDescriptor[],
@@ -98,6 +99,16 @@ export class Reranker {
   /** Whether collection-level stats are currently loaded. */
   get hasCollectionStats(): boolean {
     return this.collectionStats !== undefined;
+  }
+
+  /**
+   * Read the loaded collection stats (undefined when none loaded).
+   * Consumed at search-stage filter resolution so the filter-preset compiler
+   * can resolve adaptive percentile thresholds with the same stats the
+   * reranker uses.
+   */
+  getCollectionStats(): CollectionSignalStats | undefined {
+    return this.collectionStats;
   }
 
   /** Set collection-wide signal stats (computed after indexing). */
@@ -280,6 +291,21 @@ export class Reranker {
   /** Preset names for a specific tool. */
   getPresetNames(tool: string): string[] {
     return this.resolvedPresets.filter((p) => this.matchesTool(p, tool)).map((p) => p.name);
+  }
+
+  /**
+   * Set the registered filter-preset names. Wired at composition time from
+   * TrajectoryRegistry.filterPresetNames() so the MCP schema layer (SchemaBuilder)
+   * can surface them through its single Reranker dependency, mirroring how rerank
+   * preset names are exposed via getPresetNames().
+   */
+  setFilterPresetNames(names: readonly string[]): void {
+    this.resolvedFilterPresetNames = [...names];
+  }
+
+  /** Registered filter-preset names (for the MCP `filter` param `{ presets }` arm). */
+  filterPresetNames(): string[] {
+    return [...this.resolvedFilterPresetNames];
   }
 
   /** Payload signal descriptors (for dynamic resource generation). */

@@ -8,6 +8,7 @@ import { CreateCollectionSchema, createSearchSchemas, IndexCodebaseSchema } from
 // since we only care about coercion of number/boolean fields, not rerank shape.
 const mockSchemaBuilder = {
   buildRerankSchema: () => z.string(),
+  buildFilterSchema: () => z.record(z.string(), z.any()),
 } as unknown as SchemaBuilder;
 
 const { SearchCodeSchema, SemanticSearchSchema, HybridSearchSchema } = createSearchSchemas(mockSchemaBuilder);

@@ -12,7 +12,9 @@ export type ExploreErrorCode =
   | "EXPLORE_HYBRID_NOT_ENABLED"
   | "EXPLORE_INVALID_QUERY"
   | "EXPLORE_INVALID_STRATEGY"
-  | "EXPLORE_CHUNK_NOT_FOUND";
+  | "EXPLORE_CHUNK_NOT_FOUND"
+  | "EXPLORE_UNKNOWN_FILTER_PRESET"
+  | "EXPLORE_EMPTY_FILTER_PRESET";
 
 /**
  * Abstract base for all explore domain errors.
@@ -80,6 +82,30 @@ export class InvalidStrategyError extends ExploreError {
       code: "EXPLORE_INVALID_STRATEGY",
       message: `Unknown search strategy type: ${type}`,
       hint: "Use one of: vector, hybrid, scroll-rank",
+      httpStatus: 400,
+    });
+  }
+}
+
+/** A filter preset name in the `presets` CSV is not registered. */
+export class UnknownFilterPresetError extends ExploreError {
+  constructor(name: string) {
+    super({
+      code: "EXPLORE_UNKNOWN_FILTER_PRESET",
+      message: `Unknown filter preset: "${name}"`,
+      hint: "Use a registered filter-preset name. List available names via the registry.",
+      httpStatus: 400,
+    });
+  }
+}
+
+/** The `presets` CSV contained no resolvable preset names (empty / whitespace only). */
+export class EmptyFilterPresetError extends ExploreError {
+  constructor(input: string) {
+    super({
+      code: "EXPLORE_EMPTY_FILTER_PRESET",
+      message: `No valid filter-preset names in "${input}"`,
+      hint: "Provide a comma-separated list of at least one registered filter-preset name.",
       httpStatus: 400,
     });
   }

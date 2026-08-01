@@ -146,6 +146,23 @@ These are ONE-hop / structural lookups; `trace_path` is the full danger-ranked
 chain. Start with `get_callers`/`get_callees` (cheap), escalate to `trace_path`
 only when the whole route matters.
 
+## Audit mode (optional)
+
+`filter:{presets}` is available but NOT the default for bug-hunt.
+
+Use it ONLY for a **query-absent risk scan** — "what areas of payments are
+high-risk right now?" with no specific symptom. Example:
+
+```json
+{ "filter": { "presets": "panicZone" }, "query": "payments" }
+```
+
+**NEVER use for a symptom search.** A bug may live in a recently-edited stable
+file that `panicZone` (high churn filter) would exclude — killing recall. The
+ranking already handles triage: `bugHunt` preset defaults to `production`
+hygiene filter (excludes tests/docs/boilerplate) without narrowing on churn. Let
+the query drive discovery; the overlay surfaces risk signals after the fact.
+
 ## After root cause found
 
 Pattern found → `find_similar` from chunk ID for copy-paste bugs in other files.

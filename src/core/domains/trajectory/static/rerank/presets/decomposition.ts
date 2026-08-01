@@ -15,6 +15,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
  */
 export class DecompositionPreset implements RerankPreset {
   readonly name = "decomposition";
+  readonly filter = { presets: "coreLogic" } as const;
   readonly description = "Find large, dense methods and blocks — candidates for decomposition";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
   readonly weights: ScoringWeights = {

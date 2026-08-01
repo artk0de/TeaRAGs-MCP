@@ -17,6 +17,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
  */
 export class BugHuntPreset implements RerankPreset {
   readonly name = "bugHunt";
+  readonly filter = { presets: "production" } as const;
   readonly description =
     "Find potential bug hiding spots: burst activity, volatility, high relative churn, and bug fix history";
   readonly tools = ["semantic_search", "hybrid_search", "search_code", "find_similar", "rank_chunks", "trace_path"];

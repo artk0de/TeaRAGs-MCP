@@ -6,6 +6,7 @@
  * that knows which trajectories exist.
  */
 
+import type { FilterPresetDef } from "../../contracts/types/filter-preset.js";
 import type { LanguageFactoryDescriptor } from "../../contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
@@ -16,11 +17,15 @@ import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
 import { LanguageFactory } from "../../domains/language/index.js";
 import { createCodegraphTrajectories, type CodegraphDeps } from "../../domains/trajectory/codegraph/index.js";
+import { CODEGRAPH_FILTER_PRESETS } from "../../domains/trajectory/codegraph/symbols/filter-presets/index.js";
+import { buildCompositeFilterPresets } from "../../domains/trajectory/composite/filter-presets/index.js";
 import { buildCompositePresets } from "../../domains/trajectory/composite/presets/index.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
+import { GIT_FILTER_PRESETS } from "../../domains/trajectory/git/filter-presets/index.js";
 import type { SquashOptions } from "../../domains/trajectory/git/infra/metrics.js";
 import type { GitProviderConfig } from "../../domains/trajectory/git/provider.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
+import { STATIC_FILTER_PRESETS } from "../../domains/trajectory/static/filter-presets/index.js";
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";
 
 export interface CompositionResult {
@@ -70,6 +75,24 @@ export interface CompositionOptions {
   codegraph?: CodegraphDeps;
 }
 
+/**
+ * Assemble the gated filter-preset catalog for a composition.
+ *
+ * Static presets are always-on. Git presets gate on the "git" key;
+ * codegraph presets gate on "codegraph.symbols". Composite presets gate
+ * via `buildCompositeFilterPresets`, which drops any preset whose
+ * `requires` references a non-registered trajectory key. Mirrors the
+ * rerank-preset gating done by `buildCompositePresets`.
+ */
+export function assembleFilterPresets(registeredKeys: ReadonlySet<string>): FilterPresetDef[] {
+  return [
+    ...STATIC_FILTER_PRESETS,
+    ...(registeredKeys.has("git") ? GIT_FILTER_PRESETS : []),
+    ...(registeredKeys.has("codegraph.symbols") ? CODEGRAPH_FILTER_PRESETS : []),
+    ...buildCompositeFilterPresets(registeredKeys),
+  ];
+}
+
 export function createComposition(options: CompositionOptions = {}): CompositionResult {
   // Real LanguageFactoryDescriptor: it ENCAPSULATES construction. All languages are
   // native `domains/language/<lang>` providers built by the factory itself; each
@@ -89,13 +112,21 @@ export function createComposition(options: CompositionOptions = {}): Composition
     }
   }
 
+  // Assemble + gate the filter-preset catalog by registered trajectory
+  // keys, then load it into the registry (pure data owner). Done before
+  // Reranker construction and before validateSignalDependencies so the
+  // validation sees the REAL filter presets alongside the real descriptors.
+  const filterPresets = assembleFilterPresets(new Set(registry.getRegisteredKeys()));
+  registry.setFilterPresets(filterPresets);
+
   const allPayloadSignalDescriptors = registry.getAllPayloadSignalDescriptors();
   // Fail-loud at composition time: if any descriptor's confidence block
   // references a percentile that the support signal doesn't declare
   // (neither stats.labels nor stats.percentilesToCompute), this throws.
-  // Prevents silent fallback to rule.fallback in production due to
-  // misconfigured wiring. See `validateSignalDependencies` for details.
-  validateSignalDependencies(allPayloadSignalDescriptors);
+  // The filter presets are validated too — a filter preset referencing a
+  // pN that the descriptor doesn't declare throws here. Prevents silent
+  // fallback in production. See `validateSignalDependencies` for details.
+  validateSignalDependencies(allPayloadSignalDescriptors, filterPresets);
   const allDerivedSignals = registry.getAllDerivedSignals();
   const allStatsAccumulators = registry.getAllStatsAccumulators();
   // Trajectory presets come from the registry (one trajectory per preset);
@@ -110,6 +141,9 @@ export function createComposition(options: CompositionOptions = {}): Composition
   const compositePresets = buildCompositePresets(new Set(registry.getRegisteredKeys()));
   const resolvedPresets = resolvePresets(registry.getAllPresets(), compositePresets);
   const reranker = new Reranker(allDerivedSignals, resolvedPresets, allPayloadSignalDescriptors);
+  // Passthrough the registered filter-preset names so the MCP schema layer
+  // (SchemaBuilder) can surface them through its single Reranker dependency.
+  reranker.setFilterPresetNames(registry.filterPresetNames());
 
   return {
     registry,

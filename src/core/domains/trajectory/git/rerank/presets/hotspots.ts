@@ -22,6 +22,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
  */
 export class HotspotsPreset implements RerankPreset {
   readonly name = "hotspots";
+  readonly filter = { presets: "production" } as const;
   readonly description =
     "Surface frequently-changing code areas (chunk-level churn, burst activity, timing volatility)";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];

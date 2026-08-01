@@ -80,11 +80,22 @@ export function confidenceDampening(sampleCount: number, threshold: number, powe
 }
 
 // ---------------------------------------------------------------------------
-// Payload value resolution
+// Payload key & value resolution
 // ---------------------------------------------------------------------------
 
 /** Logical codegraph descriptor key → physical nested-symbols path. */
 const CODEGRAPH_PATH_RE = /^codegraph\.(file|chunk)\.(.+)$/;
+
+/**
+ * Map a LOGICAL payload key to its PHYSICAL Qdrant path.
+ * Codegraph signals are stored nested as `codegraph.symbols.{scope}.X` but
+ * addressed logically as `codegraph.{scope}.X`. git/static keys are already physical.
+ * Used by the filter-preset compiler to emit the correct Qdrant condition key.
+ */
+export function toPhysicalPayloadKey(logicalKey: string): string {
+  const m = CODEGRAPH_PATH_RE.exec(logicalKey);
+  return m ? `codegraph.symbols.${m[1]}.${m[2]}` : logicalKey;
+}
 
 /**
  * Resolve a dot-notation payload path to its value — the single source of truth

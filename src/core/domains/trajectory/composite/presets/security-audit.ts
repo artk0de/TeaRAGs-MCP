@@ -10,6 +10,7 @@ import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../.
  */
 export class SecurityAuditCompositePreset implements CompositeRerankPreset {
   readonly name = "securityAudit";
+  readonly filter = { presets: "production" } as const;
   readonly description = "Old security-critical paths with high blast radius (audit priority targets)";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "find_similar", "trace_path"];

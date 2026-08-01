@@ -110,12 +110,12 @@ picomatch. Always extract directory-level prefixes.
 
 Run `rank_chunks` × 4 presets. **All 4 calls in ONE message** (parallel).
 
-| Preset      | Surfaces                                         |
-| ----------- | ------------------------------------------------ |
-| `bugHunt`   | Burst activity + volatility + bug fix rate       |
-| `hotspots`  | Chunk-level churn + burst + instability          |
-| `techDebt`  | Old + churny + bug-prone + dense code            |
-| `dangerous` | Bug-prone + volatile + single-owner (bus factor) |
+| Preset      | Surfaces                                         | Filter preset       |
+| ----------- | ------------------------------------------------ | ------------------- |
+| `bugHunt`   | Burst activity + volatility + bug fix rate       | `panicZone`         |
+| `hotspots`  | Chunk-level churn + burst + instability          | `godMethods`        |
+| `techDebt`  | Old + churny + bug-prone + dense code            | `abandonedHotspots` |
+| `dangerous` | Bug-prone + volatile + single-owner (bus factor) | `fragileSilo`       |
 
 **Codegraph transparency:** when codegraph active (prime `## Enrichment` lists
 `codegraph.symbols`), `techDebt` and `dangerous` already absorb structural
@@ -129,11 +129,18 @@ Parameters per call:
 rank_chunks:
   path: <project>
   rerank: <preset>
-  language: <primary language>     ← omit on polyglot codebases
-  pathPattern: <from Phase 0>
-  metaOnly: false                  ← REQUIRED (content needed for EXPAND)
+  filter: { presets: "<filter-preset>" }   ← dimension-specific (see table above)
+  language: <primary language>             ← omit on polyglot codebases
+  pathPattern: <from Phase 0>              ← AND-composes with filter preset
+  metaOnly: false                          ← REQUIRED (content needed for EXPAND)
   limit: 10
 ```
+
+**Empty dimension result = clean.** Filter preset narrows to that dimension's
+problem population (`godMethods` = oversized methods only) → zero results = "no
+such risk in scope", valid answer. Report "✓ No [dimension] risk detected", do
+NOT widen filter or retry without preset. Two-pass domain-stratified scan (broad
+scope) stays as-is; filter preset AND-composes with `pathPattern` exclusion.
 
 **Polyglot:** 2+ languages each >10% chunks → omit `language` filter. Group by
 language in OUTPUT.

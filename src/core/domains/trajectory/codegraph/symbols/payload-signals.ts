@@ -46,6 +46,9 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
     description: "Martin instability = fanOut / (fanIn + fanOut), in [0,1]",
     stats: {
       labels: { p50: "stable", p75: "mixed", p95: "unstable" },
+      // Filter preset references p90 of instability; labels declare p50/p75/p95,
+      // so declare p90 here for index-time computation.
+      percentilesToCompute: [90],
       confidence: {
         support: "connectionCount",
         score: { threshold: 5, adaptivePercentile: 25 },
