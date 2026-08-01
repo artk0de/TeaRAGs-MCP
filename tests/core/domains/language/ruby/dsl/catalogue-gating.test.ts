@@ -138,6 +138,42 @@ describe("gem-gated grammars — dry / chewy / active_model_serializers (adx5p.9
   });
 });
 
+describe("gem-gated dispatch grammar — cancancan ability (adx5p.9)", () => {
+  const CHECK_VERBS = ["authorize!", "can?", "cannot?", "authorize_resource", "load_and_authorize_resource"] as const;
+
+  it("the permission-check family emits ability-dispatch ONLY when cancancan is declared", () => {
+    const withCanCan = composeRubyCatalogue(new Set(["cancancan"]));
+    const withoutCanCan = composeRubyCatalogue(new Set(["rails", "pundit"]));
+    for (const verb of CHECK_VERBS) {
+      expect(withCanCan.entries[verb]?.emits, verb).toBe("ability-dispatch");
+      expect(withoutCanCan.entries[verb], verb).toBeUndefined();
+    }
+  });
+
+  it("the rule verbs `can` / `cannot` emit the ability subject ref ONLY under the gem", () => {
+    const withCanCan = composeRubyCatalogue(new Set(["cancancan"]));
+    const withoutCanCan = composeRubyCatalogue(new Set(["rails"]));
+    expect(withCanCan.entries.can?.emits).toBe("ability-subject-ref");
+    expect(withCanCan.entries.cannot?.emits).toBe("ability-subject-ref");
+    expect(withoutCanCan.entries.can).toBeUndefined();
+    expect(withoutCanCan.entries.cannot).toBeUndefined();
+  });
+
+  it("activates on the legacy `cancan` gem name too (same grammar, renamed gem)", () => {
+    expect(composeRubyCatalogue(new Set(["cancan"])).entries["authorize!"]?.emits).toBe("ability-dispatch");
+  });
+
+  it("a project without cancancan keeps `can` / `can?` free for its OWN methods (no external steal)", () => {
+    const withoutCanCan = composeRubyCatalogue(new Set(["rails"]));
+    expect(withoutCanCan.isExternalBareCall("can?")).toBe(false);
+    expect(withoutCanCan.isExternalBareCall("can")).toBe(false);
+  });
+
+  it("null (no Gemfile / gating off) → the cancancan grammar is active (FULL default)", () => {
+    expect(composeRubyCatalogue(null).entries["authorize!"]?.emits).toBe("ability-dispatch");
+  });
+});
+
 describe("gem-gated DECLARES grammars — carrierwave / aasm (bd tea-rags-mcp-o5kwh)", () => {
   it("carrierwave mount_uploader declaring entries are composed ONLY when carrierwave is declared", () => {
     const withCw = composeRubyCatalogue(new Set(["carrierwave"]));

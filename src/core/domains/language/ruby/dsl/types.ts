@@ -64,6 +64,8 @@ export type DeclaredMethodSpec = { name: string; kind: MethodKind };
  *   - `'policy-dispatch'`    — Pundit policy method → `{receiver:<Record>Policy, member:<query>?}` (authorize :relay, :update?)
  *   - `'route-action'`       — routed controller action → `{receiver:<Ns::>Controller, member:action}` (get "x", to: "posts#index")
  *   - `'serialized-attribute'` — AMS serializer read → `{receiver:null, member:sym}` per attribute (attributes :id, :name)
+ *   - `'ability-dispatch'`    — CanCanCan permission check → `{receiver:Ability, member:"initialize"}` (authorize! :update, @post)
+ *   - `'ability-subject-ref'` — CanCanCan rule subject → `{receiver:C, member:C}` (can :read, Post)
  */
 export type RubyDslEmits =
   | "self-instance"
@@ -72,7 +74,9 @@ export type RubyDslEmits =
   | "alias-redirect"
   | "policy-dispatch"
   | "route-action"
-  | "serialized-attribute";
+  | "serialized-attribute"
+  | "ability-dispatch"
+  | "ability-subject-ref";
 
 /**
  * How the walker's association type-source (`walker/type-sources/associations.ts`)

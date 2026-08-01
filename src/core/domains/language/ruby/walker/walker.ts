@@ -1585,6 +1585,19 @@ function emitDslEdges(node: AstNode, emits: RubyDslEmits, startLine: number, out
       }
       return;
     }
+    // `authorize! :update, @post` — CanCanCan check → {receiver:Ability, member:initialize} (adx5p.9).
+    case "ability-dispatch": {
+      out.push({ callText: node.text, receiver: CANCAN_ABILITY_CLASS, member: "initialize", startLine });
+      return;
+    }
+    // `can :read, Post` — CanCanCan rule subject → {receiver:C, member:C} (adx5p.9).
+    case "ability-subject-ref": {
+      const subject = abilitySubjectConstant(node);
+      if (subject !== null) {
+        out.push({ callText: node.text, receiver: subject, member: subject, startLine });
+      }
+      return;
+    }
     // `has_many :posts` associations — model constant → {receiver:C, member:C} (duzy).
     case "model-constant-ref": {
       const model = associationModelConstant(node);
@@ -1659,6 +1672,29 @@ function emitBareIdentifierCall(
   ) {
     out.push({ callText: node.text, receiver: null, member: node.text, startLine: node.startPosition.row + 1 });
   }
+}
+
+/**
+ * A DSL macro written in its ARGUMENT-LESS form parses as a bare `identifier`,
+ * never a `call`, so the `emits` dispatch in the call branch never sees it (bd
+ * tea-rags-mcp-adx5p.9). CanCanCan's `load_and_authorize_resource` is the
+ * canonical shape — the class-body filter is almost always written with no
+ * arguments at all, and it is precisely the form that reaches `Ability`.
+ *
+ * Routing bare identifiers through the SAME {@link emitDslEdges} adds edges only
+ * for shapes that need no operands: every operand-reading shape looks up an
+ * argument list first and returns early when there is none. A name bound as a
+ * local variable is skipped, mirroring {@link emitBareIdentifierCall}.
+ */
+function emitBareMacroDslEdge(
+  node: AstNode,
+  localBindings: Set<string>,
+  catalogue: RubyDslCatalogue,
+  out: CallRef[],
+): void {
+  if (node.type !== "identifier" || localBindings.has(node.text) || !isBareIdentifierCallSite(node)) return;
+  const emits = catalogue.entries[node.text]?.emits;
+  if (emits) emitDslEdges(node, emits, node.startPosition.row + 1, out);
 }
 
 /**
@@ -1801,6 +1837,7 @@ function collectRubyCalls(
     emitAliasKeywordEdge(node, out, catalogue);
     emitRegistryConstantRefs(node, out);
     emitBareIdentifierCall(node, enclosingMethod, localBindings, out);
+    emitBareMacroDslEdge(node, localBindings, catalogue, out);
     emitBareSuperEdge(node, enclosingMethod, out);
 
     if (node.type === "call" || node.type === "method_call") {
@@ -2096,6 +2133,34 @@ function punditPolicyTarget(callNode: AstNode): { policy: string; method: string
   if (second?.type !== "simple_symbol") return null; // implicit query (action name) deferred
   const method = stripColon(second.text);
   return { policy, method: method.endsWith("?") ? method : `${method}?` };
+}
+
+/**
+ * The class CanCanCan's `current_ability` builds (bd tea-rags-mcp-adx5p.9). The
+ * gem's own `ControllerAdditions#current_ability` is literally
+ * `@current_ability ||= ::Ability.new(current_user)`, so every permission check
+ * in an app that has not overridden that method reaches THIS constant. A
+ * convention string owned by the interpreter, exactly like Pundit's `Policy`
+ * suffix and routing's `Controller` suffix — `dsl/` stays pure data.
+ */
+const CANCAN_ABILITY_CLASS = "Ability";
+
+/**
+ * The SUBJECT class of a CanCanCan rule — the first constant argument of
+ * `can :read, Post` / `cannot :destroy, Admin::Post` (bd tea-rags-mcp-adx5p.9).
+ * The action comes first and is a symbol (or an array of symbols), so the scan
+ * takes the first `constant` / `scope_resolution` argument wherever it sits.
+ * Returns `null` for a symbol subject (`can :manage, :all`), a hash-only rule,
+ * or an expression — nothing static to point at, so no edge is emitted.
+ */
+function abilitySubjectConstant(callNode: AstNode): string | null {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  for (const arg of args.namedChildren) {
+    if (arg.type === "constant") return arg.text;
+    if (arg.type === "scope_resolution") return readScopeResolution(arg);
+  }
+  return null;
 }
 
 /** Literal text of a `string` / `string_literal` node with the quotes stripped. */

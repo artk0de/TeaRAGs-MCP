@@ -27,6 +27,17 @@ import {
 
 const NAMES = Object.keys(RUBY_DSL);
 
+/** cancancan's permission-CHECK family — every verb whose runtime path builds the
+ *  project's `Ability` (bd tea-rags-mcp-adx5p.9). `can`/`cannot` are the RULE
+ *  declarations inside that class and carry the subject-ref shape instead. */
+const CANCAN_CHECK_VERBS = new Set([
+  "authorize!",
+  "can?",
+  "cannot?",
+  "authorize_resource",
+  "load_and_authorize_resource",
+]);
+
 function parse(src: string) {
   const parser = new Parser();
   parser.setLanguage(RbLang as unknown as Parser.Language);
@@ -76,6 +87,19 @@ describe("emits descriptor — membership parity with the four former dispatch p
     }
   });
 
+  it("`emits === 'ability-dispatch'` ⟺ a cancancan permission-check verb, for ALL names", () => {
+    for (const name of NAMES) {
+      expect(RUBY_DSL[name]?.emits === "ability-dispatch").toBe(CANCAN_CHECK_VERBS.has(name));
+    }
+    for (const name of CANCAN_CHECK_VERBS) expect(RUBY_DSL[name]?.emits).toBe("ability-dispatch");
+  });
+
+  it("`emits === 'ability-subject-ref'` ⟺ a cancancan rule verb (`can`/`cannot`), for ALL names", () => {
+    for (const name of NAMES) {
+      expect(RUBY_DSL[name]?.emits === "ability-subject-ref").toBe(name === "can" || name === "cannot");
+    }
+  });
+
   it("every populated `emits` is one of the known shapes (no stray value)", () => {
     const known = new Set([
       "self-instance",
@@ -85,6 +109,8 @@ describe("emits descriptor — membership parity with the four former dispatch p
       "policy-dispatch",
       "route-action",
       "serialized-attribute",
+      "ability-dispatch",
+      "ability-subject-ref",
     ]);
     for (const name of NAMES) {
       const e = RUBY_DSL[name]?.emits;
@@ -149,6 +175,44 @@ describe("emitDslEdges — per-emits edge shape via extractFromRubyFile", () => 
     const calls = callsOf(src, [{ symbolId: "UserSerializer", scope: ["UserSerializer"], startLine: 1, endLine: 3 }]);
     expect(calls).toContainEqual(expect.objectContaining({ receiver: null, member: "id", startLine: 2 }));
     expect(calls).toContainEqual(expect.objectContaining({ receiver: null, member: "name", startLine: 2 }));
+  });
+
+  it("ability-dispatch: `authorize! :update, @post` (cancancan) → {receiver:'Ability', member:'initialize'}", () => {
+    const src = "class PostsController\n  def update\n    authorize! :update, @post\n  end\nend\n";
+    const calls = callsOf(src, [
+      { symbolId: "PostsController#update", scope: ["PostsController", "update"], startLine: 2, endLine: 4 },
+    ]);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "Ability", member: "initialize" }));
+  });
+
+  it("ability-dispatch: the class-body filter `load_and_authorize_resource` also reaches Ability", () => {
+    const src = "class PostsController\n  load_and_authorize_resource\nend\n";
+    const calls = callsOf(src, [{ symbolId: "PostsController", scope: ["PostsController"], startLine: 1, endLine: 3 }]);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "Ability", member: "initialize" }));
+  });
+
+  it("ability-subject-ref: `can :read, Post` (cancancan) → {receiver:'Post', member:'Post'}", () => {
+    const src = "class Ability\n  def initialize(user)\n    can :read, Post\n  end\nend\n";
+    const calls = callsOf(src, [
+      { symbolId: "Ability#initialize", scope: ["Ability", "initialize"], startLine: 2, endLine: 4 },
+    ]);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "Post", member: "Post", startLine: 3 }));
+  });
+
+  it("ability-subject-ref: a namespaced subject `cannot :destroy, Admin::Post` keeps its full path", () => {
+    const src = "class Ability\n  def initialize(user)\n    cannot :destroy, Admin::Post\n  end\nend\n";
+    const calls = callsOf(src, [
+      { symbolId: "Ability#initialize", scope: ["Ability", "initialize"], startLine: 2, endLine: 4 },
+    ]);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "Admin::Post", member: "Admin::Post" }));
+  });
+
+  it("ability-subject-ref: a symbol subject (`can :manage, :all`) emits NO constant edge", () => {
+    const src = "class Ability\n  def initialize(user)\n    can :manage, :all\n  end\nend\n";
+    const calls = callsOf(src, [
+      { symbolId: "Ability#initialize", scope: ["Ability", "initialize"], startLine: 2, endLine: 4 },
+    ]);
+    expect(calls.filter((c) => c.receiver !== null && c.receiver === c.member)).toHaveLength(0);
   });
 
   it("class-body-only: a receiver-qualified `obj.before_action :x` emits NO synthetic edge", () => {

@@ -29,6 +29,7 @@ import { AASM_VOCABULARY } from "./aasm.js";
 import { ROUTING_VOCABULARY } from "./action-dispatch-routing.js";
 import { ACTIVESUPPORT_VOCABULARY } from "./activesupport.js";
 import { AMS_VOCABULARY } from "./ams.js";
+import { CANCANCAN_VOCABULARY } from "./cancancan.js";
 import { CARRIERWAVE_VOCABULARY } from "./carrierwave.js";
 import { CHEWY_VOCABULARY } from "./chewy.js";
 import { DRY_VOCABULARY } from "./dry.js";
@@ -77,6 +78,7 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   PAPER_TRAIL_VOCABULARY,
   GEOCODER_VOCABULARY,
   STATE_MACHINES_VOCABULARY,
+  CANCANCAN_VOCABULARY,
 ];
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);
