@@ -37,23 +37,25 @@ only, doc chunks excluded, `classLines = max(member endLine) − class startLine
 - documentation file → no fields at all
 - descriptor test: three descriptors registered, labels match spec §A
 
-**Constraint to verify:** `fileSymbolCount` percentiles dedupe by `relativePath`
-(follow `git.file.*` handling in collection stats); add a test proving a
-many-chunk file contributes once.
+**Constraint to verify:** the whole `fileSymbolCount` stats frame — count,
+min/max, mean, stddev, percentiles — dedupes by `relativePath`, implemented at
+the accumulator so no downstream aggregate stays chunk-weighted. Add tests
+proving a many-chunk file contributes once: `count` equals the number of
+distinct files, and the mean does not move when one file's chunk count changes.
 
 **Commit:**
 `feat(chunker): symbol-mass payload signals (memberCount, classLines, fileSymbolCount)`
 
-## T2 — `symbolCount` derived signal + `godClass` preset
+## T2 — `symbolCount` derived signal + `godModule` preset
 
 **Files:**
 
 - `src/core/domains/trajectory/static/rerank/derived-signals/symbol-count.ts`
   (new) — normalizes `fileSymbolCount`, adaptive bounds p95, follow the existing
   derived-signal pattern in the directory
-- `src/core/domains/trajectory/static/rerank/presets/god-class.ts` (new) — exact
-  shape in spec §B (signalLevel file, weights
-  `{similarity: 0.2, symbolCount: 0.8}`, overlayMask, four tools)
+- `src/core/domains/trajectory/static/rerank/presets/god-module.ts` (new) —
+  exact shape in spec §B (class `GodModulePreset`, name `godModule`, signalLevel
+  file, weights `{similarity: 0.2, symbolCount: 0.8}`, overlayMask, four tools)
 - registration: static presets `index.ts`, derived-signals `index.ts`
 
 **Tests first:**
@@ -64,36 +66,44 @@ many-chunk file contributes once.
   contribution, not NaN)
 
 **Commit:**
-`feat(presets): godClass file-level preset + symbolCount derived signal`
+`feat(presets): godModule file-level preset + symbolCount derived signal`
 
-## T3 — composite `decomposition` preset
+## T3 — composite `decomposition` + `godModule` presets
 
 **Files:**
 
 - `src/core/domains/trajectory/composite/presets/decomposition.ts` (new) — exact
   shape in spec §C (`requires: ["codegraph.symbols"]`, chunkFanOut 0.3,
   `groupBy: "parentSymbolId"` preserved)
+- `src/core/domains/trajectory/composite/presets/god-module.ts` (new) — exact
+  shape in spec §C2 (`requires: ["codegraph.symbols"]`, signalLevel file,
+  `symbolCount` 0.5 dominant, `fanIn` / `transitiveImpact` / `isHub` amplifiers)
 - registration in `composite/presets/index.ts` / `buildCompositePresets`
 
 **Tests first:**
 
 - with codegraph registered: resolved `decomposition` weights include
   `chunkFanOut`, `groupBy` survives resolution
-- without codegraph: static variant resolves, no structural keys in weights
+- with codegraph registered: resolved `godModule` weights include `fanIn`,
+  `transitiveImpact`, `isHub`; `symbolCount` stays the dominant weight
+- without codegraph: static variants resolve — `decomposition` with no
+  structural keys, `godModule` with only `similarity` + `symbolCount`
 - `tests/core/domains/explore/rerank-rank-chunks-fixes.test.ts` stays untouched
   and green (imports the static class directly)
 
-**Commit:** `feat(presets): composite decomposition preset with chunkFanOut`
+**Commit:**
+`feat(presets): composite decomposition and godModule presets (codegraph-enriched)`
 
 ## T4 — `risk-assessment` skill rework
 
 **Files (all under `.claude-plugin/tea-rags/skills/risk-assessment/`):**
 
 - `SKILL.md` — per spec §D: Phase 1b (two structural calls in the Phase 1
-  parallel block), delete Phase 4.3, fix-cost classifier table, god-class
-  attribution with primary/fallback paths, `Structural debt` OUTPUT section with
-  `Fix cost` and `Also risk?` columns, budgets ≤14/≤18 (+≤7 fallback), fix the
-  four `references/signal-interpretation.md` links to point at
+  parallel block, `decomposition` + `godModule`), delete Phase 4.3, fix-cost
+  classifier table, god-class attribution with primary/fallback paths,
+  `Structural debt` OUTPUT section with `Fix cost` and `Also risk?` columns,
+  budgets ≤14/≤18 (+≤7 fallback), fix the four
+  `references/signal-interpretation.md` links to point at
   `../../rules/references/signal-interpretation.md`
 - `references/anti-patterns.md` — boundary line vs `refactoring-scan`
 - `.claude-plugin/tea-rags/.claude-plugin/plugin.json` — patch version bump
@@ -109,8 +119,9 @@ follow it.
 
 1. `npx vitest run` — full suite green
 2. `npx tsc --noEmit` (or the project's type-check script) — clean
-3. `git log --oneline main..HEAD` — 5 commits (spec + plan + T1 + T2 + T3 + T4
-   as authored), every commit passed the pre-commit gate
+3. `git log --oneline main..HEAD` — 7 commits (spec + plan + godModule docs
+   amendment + T1 + T2 + T3 + T4 as authored), every commit passed the
+   pre-commit gate
 4. Report: what shipped per task, coverage numbers, anything skipped
 
 Out of scope for the executor: merge to main, push, build+link, reindex, beads
