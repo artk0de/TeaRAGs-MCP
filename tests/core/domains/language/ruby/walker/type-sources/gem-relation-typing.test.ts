@@ -79,3 +79,24 @@ describe("ransack search chains — gem-gated relation typing", () => {
     expect(typeOf(SEARCH_CHAIN)).toEqual(containerOf("Post"));
   });
 });
+
+describe("will_paginate chains — gem-gated relation typing", () => {
+  const PAGINATE_CHAIN = "def call\n  posts = Post.paginate(page: 1, per_page: 20)\nend\n";
+
+  it("`Post.paginate(...)` binds a relation OF Post when will_paginate is declared", () => {
+    expect(typeOf(PAGINATE_CHAIN, "gem 'will_paginate'")).toEqual(containerOf("Post"));
+  });
+
+  it("the same chain binds NOTHING when the project's Gemfile lacks will_paginate", () => {
+    expect(rubyAstInferenceTypeSource.extract(makeInput(PAGINATE_CHAIN, "gem 'rails'"))).toHaveLength(0);
+  });
+
+  it("the `page(...).per_page(...)` form types the same relation", () => {
+    const code = "def call\n  posts = Post.page(2).per_page(10)\nend\n";
+    expect(typeOf(code, "gem 'will_paginate'")).toEqual(containerOf("Post"));
+  });
+
+  it("FULL catalogue (no Gemfile) keeps the will_paginate grammar active — byte-neutral", () => {
+    expect(typeOf(PAGINATE_CHAIN)).toEqual(containerOf("Post"));
+  });
+});

@@ -365,3 +365,30 @@ describe("gem-gated relation grammar — ransack search (bd tea-rags-mcp-lo9u2)"
     expect(full.entries.ransacker).toBeDefined();
   });
 });
+
+describe("gem-gated relation grammar — will_paginate (bd tea-rags-mcp-lo9u2)", () => {
+  it("the pagination scopes are relation-returning ONLY when will_paginate is declared", () => {
+    const withWp = composeRubyCatalogue(new Set(["will_paginate"]));
+    const withoutWp = composeRubyCatalogue(new Set(["rails"]));
+    for (const verb of ["paginate", "page", "per_page"]) {
+      expect(withWp.relationReturning.has(verb), verb).toBe(true);
+      expect(withoutWp.relationReturning.has(verb), verb).toBe(false);
+    }
+  });
+
+  it("contributes NO class-body entries — `self.per_page = 25` is an assignment, not a macro", () => {
+    const withWp = composeRubyCatalogue(new Set(["will_paginate"]));
+    expect(withWp.entries.per_page).toBeUndefined();
+    expect(withWp.entries.paginate).toBeUndefined();
+    expect(withWp.isExternalBareCall("paginate")).toBe(false);
+  });
+
+  it("shares the `page` verb with kaminari — a project on either gem types the chain", () => {
+    expect(composeRubyCatalogue(new Set(["kaminari"])).relationReturning.has("page")).toBe(true);
+    expect(composeRubyCatalogue(new Set(["will_paginate"])).relationReturning.has("page")).toBe(true);
+  });
+
+  it("null (no Gemfile / gating off) → the will_paginate grammar is active (FULL default)", () => {
+    expect(composeRubyCatalogue(null).relationReturning.has("paginate")).toBe(true);
+  });
+});
