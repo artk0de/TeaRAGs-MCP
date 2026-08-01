@@ -29,8 +29,11 @@ import { AASM_VOCABULARY } from "./aasm.js";
 import { ROUTING_VOCABULARY } from "./action-dispatch-routing.js";
 import { ACTIVESUPPORT_VOCABULARY } from "./activesupport.js";
 import { AMS_VOCABULARY } from "./ams.js";
+import { CANCANCAN_VOCABULARY } from "./cancancan.js";
 import { CARRIERWAVE_VOCABULARY } from "./carrierwave.js";
 import { CHEWY_VOCABULARY } from "./chewy.js";
+import { DEVISE_VOCABULARY } from "./devise.js";
+import { DRAPER_VOCABULARY } from "./draper.js";
 import { DRY_VOCABULARY } from "./dry.js";
 import { GEOCODER_VOCABULARY } from "./geocoder.js";
 import { PAPER_TRAIL_VOCABULARY } from "./paper_trail.js";
@@ -77,21 +80,26 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   PAPER_TRAIL_VOCABULARY,
   GEOCODER_VOCABULARY,
   STATE_MACHINES_VOCABULARY,
+  CANCANCAN_VOCABULARY,
+  DEVISE_VOCABULARY,
+  DRAPER_VOCABULARY,
 ];
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);
 
-function composeMethodSet(
-  modules: readonly RubyFrameworkVocabulary[],
-  facet: "instanceReturning" | "relationReturning",
-): ReadonlySet<string> {
+/** Every framework facet that is a plain string SET, foldable by union. */
+type SetFacet = "instanceReturning" | "relationReturning" | "structuredMacros" | "instanceReceiverPrefixes";
+
+/** Union a set-valued facet across the modules — the ONE fold every set facet
+ *  uses, so a new one costs a `SetFacet` member and nothing else. */
+function composeFacetSet(modules: readonly RubyFrameworkVocabulary[], facet: SetFacet): ReadonlySet<string> {
   const out = new Set<string>();
   for (const mod of modules) for (const m of mod[facet] ?? []) out.add(m);
   return out;
 }
 
-export const RUBY_INSTANCE_RETURNING = composeMethodSet(FRAMEWORKS, "instanceReturning");
-export const RUBY_RELATION_RETURNING = composeMethodSet(FRAMEWORKS, "relationReturning");
+export const RUBY_INSTANCE_RETURNING = composeFacetSet(FRAMEWORKS, "instanceReturning");
+export const RUBY_RELATION_RETURNING = composeFacetSet(FRAMEWORKS, "relationReturning");
 
 function composeEnqueueDispatch(modules: readonly RubyFrameworkVocabulary[]): Readonly<Record<string, string>> {
   const out: Record<string, string> = {};
@@ -139,6 +147,9 @@ export interface RubyDslCatalogue {
   /** Active STRUCTURED-macro names (`enum`, `aasm`) — gates the walker's
    *  structured-expander dispatch by gem, the structured analogue of `entries`. */
   readonly activeStructuredMacros: ReadonlySet<string>;
+  /** Active receiver-name prefixes (devise's `current_`) — a bare receiver
+   *  `<prefix><scope>` is an instance of `camelize(scope)` (adx5p.9). */
+  readonly instanceReceiverPrefixes: ReadonlySet<string>;
   isExternalBareCall: (member: string) => boolean;
 }
 
@@ -165,21 +176,16 @@ export function filterActiveFrameworks(
   return frameworks.filter((f) => f.activatedBy === undefined || setsIntersect(f.activatedBy, activeGems));
 }
 
-function composeStructuredMacros(modules: readonly RubyFrameworkVocabulary[]): ReadonlySet<string> {
-  const out = new Set<string>();
-  for (const mod of modules) for (const m of mod.structuredMacros ?? []) out.add(m);
-  return out;
-}
-
 export function composeRubyCatalogue(activeGems: ReadonlySet<string> | null): RubyDslCatalogue {
   const active = filterActiveFrameworks(FRAMEWORKS, activeGems);
   const enqueueDispatch = composeEnqueueDispatch(active);
   return {
     entries: composeEntries(active),
-    instanceReturning: composeMethodSet(active, "instanceReturning"),
-    relationReturning: composeMethodSet(active, "relationReturning"),
+    instanceReturning: composeFacetSet(active, "instanceReturning"),
+    relationReturning: composeFacetSet(active, "relationReturning"),
     enqueueDispatch,
-    activeStructuredMacros: composeStructuredMacros(active),
+    activeStructuredMacros: composeFacetSet(active, "structuredMacros"),
+    instanceReceiverPrefixes: composeFacetSet(active, "instanceReceiverPrefixes"),
     isExternalBareCall: (member) => active.some((f) => f.hasExternalMember(member)),
   };
 }

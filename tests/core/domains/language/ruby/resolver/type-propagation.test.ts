@@ -156,6 +156,95 @@ describe("typeOfReceiver — nullary self-call receiver (pr7fu)", () => {
   });
 });
 
+// ── Devise scoped receiver (bd tea-rags-mcp-adx5p.9) ────────────────────────
+//
+// Devise defines `current_<scope>` per declared scope, and the scope names its
+// model — `current_user` is a `User`. Nothing in the file declares the method,
+// so the fact channels above are all empty; the catalogue's gem-gated receiver
+// prefix supplies the convention, and the symbol table gates it on the model
+// actually existing in the project.
+
+describe("typeOfReceiver — devise scoped receiver (adx5p.9)", () => {
+  const gemfile = 'gem "rails"\ngem "devise"\n';
+
+  /** A symbol table holding class definitions for `names`. */
+  const tableWith = (...names: string[]): InMemoryGlobalSymbolTable => {
+    const table = new InMemoryGlobalSymbolTable();
+    for (const name of names) {
+      table.upsertFile(`app/models/${name.toLowerCase()}.rb`, [
+        { symbolId: name, fqName: name, shortName: name, relPath: `app/models/${name.toLowerCase()}.rb`, scope: [] },
+      ]);
+    }
+    return table;
+  };
+
+  it("types `current_user` as an instance of the scope's model", () => {
+    const ctx = emptyCtx({
+      callerScope: ["PostsController"],
+      gemfileContent: gemfile,
+      symbolTable: tableWith("User"),
+    });
+    expect(typeOfReceiver("current_user", 12, ctx)).toEqual({ form: "instance", name: "User" });
+  });
+
+  it("camelizes a multi-word scope (`current_admin_user` → AdminUser)", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Admin::BaseController"],
+      gemfileContent: gemfile,
+      symbolTable: tableWith("AdminUser"),
+    });
+    expect(typeOfReceiver("current_admin_user", 3, ctx)).toEqual({ form: "instance", name: "AdminUser" });
+  });
+
+  it("stays SILENT when the derived model is not a class the project defines", () => {
+    const ctx = emptyCtx({
+      callerScope: ["PostsController"],
+      gemfileContent: gemfile,
+      symbolTable: tableWith("User"),
+    });
+    expect(typeOfReceiver("current_tenant", 12, ctx)).toBeUndefined();
+  });
+
+  it("stays SILENT when the project does not declare devise (no misfire on a same-named method)", () => {
+    const ctx = emptyCtx({
+      callerScope: ["PostsController"],
+      gemfileContent: 'gem "rails"\n',
+      symbolTable: tableWith("User"),
+    });
+    expect(typeOfReceiver("current_user", 12, ctx)).toBeUndefined();
+  });
+
+  it("a DECLARED fact on the caller's own class wins over the convention", () => {
+    const ctx = emptyCtx({
+      callerScope: ["PostsController"],
+      gemfileContent: gemfile,
+      symbolTable: tableWith("User", "Impersonation"),
+      structuredReturnTypes: { "PostsController#current_user": { form: "instance", name: "Impersonation" } },
+    });
+    expect(typeOfReceiver("current_user", 12, ctx)).toEqual({ form: "instance", name: "Impersonation" });
+  });
+
+  it("threads a CHAIN whose head is a devise scoped receiver", () => {
+    const ctx = emptyCtx({
+      callerScope: ["PostsController"],
+      gemfileContent: gemfile,
+      symbolTable: tableWith("User"),
+      associationTypes: { User: { account: "Account" } },
+    });
+    expect(typeOfReceiver("current_user.account", 12, ctx)).toEqual({ form: "instance", name: "Account" });
+  });
+
+  it("a real local binding still wins — the convention is the LAST fallback", () => {
+    const ctx = emptyCtx({
+      callerScope: ["PostsController"],
+      gemfileContent: gemfile,
+      symbolTable: tableWith("User", "Employee"),
+      localBindings: { current_user: [{ line: 3, type: "Employee" }] },
+    });
+    expect(typeOfReceiver("current_user", 12, ctx)).toEqual({ form: "instance", name: "Employee" });
+  });
+});
+
 // ── Const.new-chain head seed (rvw34 gap b) ──────────────────────────────────
 
 describe("typeOfReceiver — Const.new-chain head seed (rvw34 gap b)", () => {

@@ -19,6 +19,7 @@ export function defineFrameworkVocabulary(
     | "activatedBy"
     | "structuredMacros"
     | "coreAmbiguousMembers"
+    | "instanceReceiverPrefixes"
   >,
 ): RubyFrameworkVocabulary {
   const coreAmbiguousMembers = extras?.coreAmbiguousMembers;

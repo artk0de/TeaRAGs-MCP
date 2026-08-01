@@ -63,7 +63,10 @@ export type DeclaredMethodSpec = { name: string; kind: MethodKind };
  *   - `'alias-redirect'`     — old method name    → `{receiver:null, member:old}`   (alias_method :new, :old)
  *   - `'policy-dispatch'`    — Pundit policy method → `{receiver:<Record>Policy, member:<query>?}` (authorize :relay, :update?)
  *   - `'route-action'`       — routed controller action → `{receiver:<Ns::>Controller, member:action}` (get "x", to: "posts#index")
- *   - `'serialized-attribute'` — AMS serializer read → `{receiver:null, member:sym}` per attribute (attributes :id, :name)
+ *   - `'serialized-attribute'` — AMS serializer read → `{receiver:null, member:sym}` per attribute, plus
+ *                                `{receiver:<Model>, member:sym}` for a pass-through one (attributes :id, :name)
+ *   - `'ability-dispatch'`    — CanCanCan permission check → `{receiver:Ability, member:"initialize"}` (authorize! :update, @post)
+ *   - `'ability-subject-ref'` — CanCanCan rule subject → `{receiver:C, member:C}` (can :read, Post)
  */
 export type RubyDslEmits =
   | "self-instance"
@@ -72,7 +75,9 @@ export type RubyDslEmits =
   | "alias-redirect"
   | "policy-dispatch"
   | "route-action"
-  | "serialized-attribute";
+  | "serialized-attribute"
+  | "ability-dispatch"
+  | "ability-subject-ref";
 
 /**
  * How the walker's association type-source (`walker/type-sources/associations.ts`)
@@ -191,6 +196,20 @@ export interface RubyFrameworkVocabulary {
    *  routes to. sidekiq: perform_async/_in/_at/_bulk → "perform"; rails(ActiveJob):
    *  perform_later/_now → "perform". Consumed by enqueueEntrypoint. */
   readonly enqueueDispatch?: Readonly<Record<string, string>>;
+  /**
+   * Receiver-NAME prefixes whose remainder names the receiver's class
+   * (bd tea-rags-mcp-adx5p.9). A bare, unbound receiver written
+   * `<prefix><scope>` is an INSTANCE of `camelize(scope)` — devise's
+   * `current_user` → `User`, `current_admin_user` → `AdminUser`. The framework
+   * defines a method per scope at runtime, so no file declares it and no fact
+   * channel can answer; this facet states the convention that does.
+   *
+   * Interpreted by `resolver/type-propagation.ts::nullaryReceiverType` AFTER
+   * every declared fact (a project's own `current_user` keeps its declared
+   * return type) and gated there on the derived class existing in the run's
+   * symbol table. Absent ⟺ the framework claims no receiver-name convention.
+   */
+  readonly instanceReceiverPrefixes?: ReadonlySet<string>;
   /**
    * Names of STRUCTURED class-body macros (`walker/structured/*`) this framework
    * activates. A structured macro walks its own block for inner declarations

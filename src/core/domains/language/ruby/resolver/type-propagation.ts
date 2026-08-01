@@ -588,5 +588,42 @@ const RECEIVER_KEYWORDS = new Set(["self", "super", "nil", "true", "false", "__m
  */
 function nullaryReceiverType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
   if (RECEIVER_KEYWORDS.has(receiver) || !NULLARY_RECEIVER.test(receiver)) return undefined;
-  return selfMemberReturnType(receiver, ctx);
+  return selfMemberReturnType(receiver, ctx) ?? scopedReceiverType(receiver, ctx);
+}
+
+/** `blog_post` → `BlogPost`: upcase each `_`-separated segment (Rails camelize). */
+function camelizeScope(snake: string): string {
+  return snake
+    .split("_")
+    .filter((s) => s.length > 0)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join("");
+}
+
+/**
+ * The type a framework SCOPED receiver carries by naming convention
+ * (bd tea-rags-mcp-adx5p.9) — devise's `current_user` is a `User`.
+ *
+ * The framework defines one such method per declared scope at runtime, so no
+ * file declares it and every fact channel {@link selfMemberReturnType} consults
+ * is empty by construction. The catalogue's `instanceReceiverPrefixes` facet
+ * states the convention; which prefixes exist is gem-gated, so a project without
+ * the gem gets none and its own `current_*` method is untouched.
+ *
+ * Two further precision gates, both of which resolve to silence:
+ *  - a DECLARED fact wins — this runs only after `selfMemberReturnType` misses,
+ *    so an app whose `current_user` returns an impersonation keeps that type;
+ *  - the derived class must EXIST in the run's symbol table. `current_tenant` in
+ *    an app with no `Tenant` names something else entirely, and a fabricated
+ *    receiver type poisons every downstream hop.
+ */
+function scopedReceiverType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
+  for (const prefix of catalogueForGemfile(ctx.gemfileContent).instanceReceiverPrefixes) {
+    if (!receiver.startsWith(prefix) || receiver.length === prefix.length) continue;
+    const name = camelizeScope(receiver.slice(prefix.length));
+    if (name.length > 0 && ctx.symbolTable.lookupByShortName(name).length > 0) {
+      return { form: "instance", name };
+    }
+  }
+  return undefined;
 }

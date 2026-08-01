@@ -88,7 +88,7 @@ conclude absence from a graph the index says is incomplete.
 - **Java** — 6-strategy + java.lang stdlib whitelist + overload disambiguation
 - **Rust** — 6-strategy; trait-based dispatch
 - **Ruby** — 13-strategy chain + 4 dispatch components
-  (table/union/cone/dynamic) + 14-grammar DSL catalogue + arity/kwarg-narrowed
+  (table/union/cone/dynamic) + 17-grammar DSL catalogue + arity/kwarg-narrowed
   fan-out (corpus-adaptive p99 cap) + YARD type-source + db/schema.rb column
   accessors
 - **Bash** — function-call extraction only, no dispatch

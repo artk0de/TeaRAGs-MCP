@@ -138,6 +138,88 @@ describe("gem-gated grammars — dry / chewy / active_model_serializers (adx5p.9
   });
 });
 
+describe("gem-gated dispatch grammar — cancancan ability (adx5p.9)", () => {
+  const CHECK_VERBS = ["authorize!", "can?", "cannot?", "authorize_resource", "load_and_authorize_resource"] as const;
+
+  it("the permission-check family emits ability-dispatch ONLY when cancancan is declared", () => {
+    const withCanCan = composeRubyCatalogue(new Set(["cancancan"]));
+    const withoutCanCan = composeRubyCatalogue(new Set(["rails", "pundit"]));
+    for (const verb of CHECK_VERBS) {
+      expect(withCanCan.entries[verb]?.emits, verb).toBe("ability-dispatch");
+      expect(withoutCanCan.entries[verb], verb).toBeUndefined();
+    }
+  });
+
+  it("the rule verbs `can` / `cannot` emit the ability subject ref ONLY under the gem", () => {
+    const withCanCan = composeRubyCatalogue(new Set(["cancancan"]));
+    const withoutCanCan = composeRubyCatalogue(new Set(["rails"]));
+    expect(withCanCan.entries.can?.emits).toBe("ability-subject-ref");
+    expect(withCanCan.entries.cannot?.emits).toBe("ability-subject-ref");
+    expect(withoutCanCan.entries.can).toBeUndefined();
+    expect(withoutCanCan.entries.cannot).toBeUndefined();
+  });
+
+  it("activates on the legacy `cancan` gem name too (same grammar, renamed gem)", () => {
+    expect(composeRubyCatalogue(new Set(["cancan"])).entries["authorize!"]?.emits).toBe("ability-dispatch");
+  });
+
+  it("a project without cancancan keeps `can` / `can?` free for its OWN methods (no external steal)", () => {
+    const withoutCanCan = composeRubyCatalogue(new Set(["rails"]));
+    expect(withoutCanCan.isExternalBareCall("can?")).toBe(false);
+    expect(withoutCanCan.isExternalBareCall("can")).toBe(false);
+  });
+
+  it("null (no Gemfile / gating off) → the cancancan grammar is active (FULL default)", () => {
+    expect(composeRubyCatalogue(null).entries["authorize!"]?.emits).toBe("ability-dispatch");
+  });
+});
+
+describe("gem-gated type-source grammar — devise scoped receivers (adx5p.9)", () => {
+  it("the `current_` receiver prefix is composed ONLY when devise is declared", () => {
+    expect(composeRubyCatalogue(new Set(["devise"])).instanceReceiverPrefixes.has("current_")).toBe(true);
+    expect(composeRubyCatalogue(new Set(["rails", "pundit"])).instanceReceiverPrefixes.has("current_")).toBe(false);
+  });
+
+  it("a project without devise composes NO receiver prefixes at all (empty facet, not a default)", () => {
+    expect(composeRubyCatalogue(new Set(["rails"])).instanceReceiverPrefixes.size).toBe(0);
+  });
+
+  it("the `devise` model macro is an entry ONLY under the gem", () => {
+    expect(composeRubyCatalogue(new Set(["devise"])).entries.devise).toBeDefined();
+    expect(composeRubyCatalogue(new Set(["rails"])).entries.devise).toBeUndefined();
+  });
+
+  it("null (no Gemfile / gating off) → the devise grammar is active (FULL default)", () => {
+    expect(composeRubyCatalogue(null).instanceReceiverPrefixes.has("current_")).toBe(true);
+  });
+});
+
+describe("gem-gated delegation grammar — draper decorators (adx5p.9)", () => {
+  it("the decorator macros are composed ONLY when draper is declared", () => {
+    const withDraper = composeRubyCatalogue(new Set(["draper"]));
+    const withoutDraper = composeRubyCatalogue(new Set(["rails"]));
+    for (const verb of ["delegate_all", "decorates", "decorates_association", "decorates_associations"]) {
+      expect(withDraper.entries[verb], verb).toBeDefined();
+      expect(withoutDraper.entries[verb], verb).toBeUndefined();
+    }
+  });
+
+  it("`decorates_association :author` declares the accessor the decorator gains", () => {
+    const withDraper = composeRubyCatalogue(new Set(["draper"]));
+    expect(withDraper.entries.decorates_association?.declares?.("author")).toEqual([
+      { name: "author", kind: "instance" },
+    ]);
+  });
+
+  it("`delegate_all` is a delegation macro, not an external no-op", () => {
+    expect(composeRubyCatalogue(new Set(["draper"])).entries.delegate_all?.category).toBe("delegation");
+  });
+
+  it("null (no Gemfile / gating off) → the draper grammar is active (FULL default)", () => {
+    expect(composeRubyCatalogue(null).entries.delegate_all).toBeDefined();
+  });
+});
+
 describe("gem-gated DECLARES grammars — carrierwave / aasm (bd tea-rags-mcp-o5kwh)", () => {
   it("carrierwave mount_uploader declaring entries are composed ONLY when carrierwave is declared", () => {
     const withCw = composeRubyCatalogue(new Set(["carrierwave"]));

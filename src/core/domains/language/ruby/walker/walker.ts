@@ -1557,12 +1557,22 @@ function emitDslEdges(node: AstNode, emits: RubyDslEmits, startLine: number, out
       }
       return;
     }
-    // `before_action :auth` callbacks — per leading symbol → {receiver:null, member:sym} (duzy).
     // `attributes :id, :name` (AMS serializer) — each attribute is READ off the
     // serialized resource; identical bare-receiver shape to a callback self-send,
     // so it resolves onto the serializer's custom attribute method when one is
-    // defined and is honestly unresolved for a pass-through attribute (adx5p.9).
-    case "serialized-attribute":
+    // defined. A PASS-THROUGH attribute (no such method) reaches the MODEL
+    // instead, which the serializer names by convention (adx5p.9).
+    case "serialized-attribute": {
+      const model = serializedModelConstant(node);
+      for (const sym of extractCallbackSymbols(node)) {
+        out.push({ callText: node.text, receiver: null, member: sym, startLine });
+        if (model !== null && !enclosingClassDefines(node, sym)) {
+          out.push({ callText: node.text, receiver: model, member: sym, startLine });
+        }
+      }
+      return;
+    }
+    // `before_action :auth` callbacks — per leading symbol → {receiver:null, member:sym} (duzy).
     case "self-instance": {
       for (const sym of extractCallbackSymbols(node)) {
         out.push({ callText: node.text, receiver: null, member: sym, startLine });
@@ -1582,6 +1592,19 @@ function emitDslEdges(node: AstNode, emits: RubyDslEmits, startLine: number, out
       const target = routeActionTarget(node);
       if (target !== null) {
         out.push({ callText: node.text, receiver: target.controller, member: target.action, startLine });
+      }
+      return;
+    }
+    // `authorize! :update, @post` — CanCanCan check → {receiver:Ability, member:initialize} (adx5p.9).
+    case "ability-dispatch": {
+      out.push({ callText: node.text, receiver: CANCAN_ABILITY_CLASS, member: "initialize", startLine });
+      return;
+    }
+    // `can :read, Post` — CanCanCan rule subject → {receiver:C, member:C} (adx5p.9).
+    case "ability-subject-ref": {
+      const subject = abilitySubjectConstant(node);
+      if (subject !== null) {
+        out.push({ callText: node.text, receiver: subject, member: subject, startLine });
       }
       return;
     }
@@ -1659,6 +1682,29 @@ function emitBareIdentifierCall(
   ) {
     out.push({ callText: node.text, receiver: null, member: node.text, startLine: node.startPosition.row + 1 });
   }
+}
+
+/**
+ * A DSL macro written in its ARGUMENT-LESS form parses as a bare `identifier`,
+ * never a `call`, so the `emits` dispatch in the call branch never sees it (bd
+ * tea-rags-mcp-adx5p.9). CanCanCan's `load_and_authorize_resource` is the
+ * canonical shape — the class-body filter is almost always written with no
+ * arguments at all, and it is precisely the form that reaches `Ability`.
+ *
+ * Routing bare identifiers through the SAME {@link emitDslEdges} adds edges only
+ * for shapes that need no operands: every operand-reading shape looks up an
+ * argument list first and returns early when there is none. A name bound as a
+ * local variable is skipped, mirroring {@link emitBareIdentifierCall}.
+ */
+function emitBareMacroDslEdge(
+  node: AstNode,
+  localBindings: Set<string>,
+  catalogue: RubyDslCatalogue,
+  out: CallRef[],
+): void {
+  if (node.type !== "identifier" || localBindings.has(node.text) || !isBareIdentifierCallSite(node)) return;
+  const emits = catalogue.entries[node.text]?.emits;
+  if (emits) emitDslEdges(node, emits, node.startPosition.row + 1, out);
 }
 
 /**
@@ -1801,6 +1847,7 @@ function collectRubyCalls(
     emitAliasKeywordEdge(node, out, catalogue);
     emitRegistryConstantRefs(node, out);
     emitBareIdentifierCall(node, enclosingMethod, localBindings, out);
+    emitBareMacroDslEdge(node, localBindings, catalogue, out);
     emitBareSuperEdge(node, enclosingMethod, out);
 
     if (node.type === "call" || node.type === "method_call") {
@@ -2096,6 +2143,92 @@ function punditPolicyTarget(callNode: AstNode): { policy: string; method: string
   if (second?.type !== "simple_symbol") return null; // implicit query (action name) deferred
   const method = stripColon(second.text);
   return { policy, method: method.endsWith("?") ? method : `${method}?` };
+}
+
+/** The class-name suffix an AMS serializer carries (`UserSerializer` → `User`). */
+const SERIALIZER_SUFFIX = "Serializer";
+
+/** The nearest enclosing `class` node of `node`, or `null` at top level. */
+function enclosingClassNode(node: AstNode): AstNode | null {
+  for (let p = node.parent; p; p = p.parent) {
+    if (p.type === "class") return p;
+    if (p.type === "module") return null; // a module body is not a serializer class
+  }
+  return null;
+}
+
+/**
+ * The MODEL an AMS serializer serializes (bd tea-rags-mcp-adx5p.9). AMS resolves
+ * a resource's serializer as `<Model>Serializer`, so the inverse — the enclosing
+ * class name minus its `Serializer` suffix — names the model the pass-through
+ * attributes are read off. The same convention-inference precedent as Pundit's
+ * `<Record>Policy`, and like it the constant is emitted BARE (last segment only):
+ * `Api::V1::UserSerializer` serializes `User`, and the resolver's constant pass
+ * owns the scope walk.
+ *
+ * `null` when there is no enclosing class or its name carries no suffix — the
+ * class is then not a serializer this convention can speak for.
+ */
+function serializedModelConstant(node: AstNode): string | null {
+  const classNode = enclosingClassNode(node);
+  const nameNode = classNode?.childForFieldName("name");
+  if (!nameNode) return null;
+  const fq = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+  const local = fq.split("::").pop() ?? "";
+  if (!local.endsWith(SERIALIZER_SUFFIX) || local.length === SERIALIZER_SUFFIX.length) return null;
+  return local.slice(0, -SERIALIZER_SUFFIX.length);
+}
+
+/**
+ * Does the class enclosing `node` define `def <name>` in its OWN body (bd
+ * tea-rags-mcp-adx5p.9)? An AMS serializer that defines an attribute method
+ * serves the attribute from THERE, never from the model — so the model read must
+ * not be emitted for it. Nested classes are not descended into: their defs
+ * belong to them.
+ */
+function enclosingClassDefines(node: AstNode, name: string): boolean {
+  const classNode = enclosingClassNode(node);
+  const body = classNode?.childForFieldName("body");
+  if (!body) return false;
+  let found = false;
+  const scan = (n: AstNode): void => {
+    if (found || n.type === "class" || n.type === "module") return;
+    if (n.type === "method" && n.childForFieldName("name")?.text === name) {
+      found = true;
+      return;
+    }
+    for (const child of n.children) scan(child);
+  };
+  for (const child of body.children) scan(child);
+  return found;
+}
+
+/**
+ * The class CanCanCan's `current_ability` builds (bd tea-rags-mcp-adx5p.9). The
+ * gem's own `ControllerAdditions#current_ability` is literally
+ * `@current_ability ||= ::Ability.new(current_user)`, so every permission check
+ * in an app that has not overridden that method reaches THIS constant. A
+ * convention string owned by the interpreter, exactly like Pundit's `Policy`
+ * suffix and routing's `Controller` suffix — `dsl/` stays pure data.
+ */
+const CANCAN_ABILITY_CLASS = "Ability";
+
+/**
+ * The SUBJECT class of a CanCanCan rule — the first constant argument of
+ * `can :read, Post` / `cannot :destroy, Admin::Post` (bd tea-rags-mcp-adx5p.9).
+ * The action comes first and is a symbol (or an array of symbols), so the scan
+ * takes the first `constant` / `scope_resolution` argument wherever it sits.
+ * Returns `null` for a symbol subject (`can :manage, :all`), a hash-only rule,
+ * or an expression — nothing static to point at, so no edge is emitted.
+ */
+function abilitySubjectConstant(callNode: AstNode): string | null {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  for (const arg of args.namedChildren) {
+    if (arg.type === "constant") return arg.text;
+    if (arg.type === "scope_resolution") return readScopeResolution(arg);
+  }
+  return null;
 }
 
 /** Literal text of a `string` / `string_literal` node with the quotes stripped. */
