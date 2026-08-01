@@ -22,7 +22,9 @@ import {
   buildCompositePresets,
   CodeReviewCompositePreset,
   DangerousCompositePreset,
+  DecompositionCompositePreset,
   EntryPointPreset,
+  GodModuleCompositePreset,
   HotspotsCompositePreset,
   OwnershipCompositePreset,
   SecurityAuditCompositePreset,
@@ -41,6 +43,8 @@ describe("CompositeRerankPreset contract", () => {
       new BlastRadiusPreset(),
       new ArchitecturalHubPreset(),
       new EntryPointPreset(),
+      new DecompositionCompositePreset(),
+      new GodModuleCompositePreset(),
     ];
 
     for (const p of composites) {
@@ -95,15 +99,15 @@ describe("buildCompositePresets — declarative requires gating", () => {
     expect(result).toEqual([]);
   });
 
-  it("returns only EntryPointPreset when only codegraph.symbols is registered (no git)", () => {
+  it("returns the git-free composites when only codegraph.symbols is registered", () => {
     const result = buildCompositePresets(new Set(["codegraph.symbols"]));
-    expect(result).toHaveLength(1);
-    expect(result[0]).toBeInstanceOf(EntryPointPreset);
+    expect(result.map((p) => p.name).sort()).toEqual(["decomposition", "entryPoint", "godModule"]);
+    expect(result.some((p) => p instanceof EntryPointPreset)).toBe(true);
   });
 
-  it("returns all 9 composites when both codegraph.symbols AND git are registered", () => {
+  it("returns all 11 composites when both codegraph.symbols AND git are registered", () => {
     const result = buildCompositePresets(new Set(["codegraph.symbols", "git"]));
-    expect(result).toHaveLength(9);
+    expect(result).toHaveLength(11);
     const names = result.map((p) => p.name).sort();
     expect(names).toEqual(
       [
@@ -111,7 +115,9 @@ describe("buildCompositePresets — declarative requires gating", () => {
         "blastRadius",
         "codeReview",
         "dangerous",
+        "decomposition",
         "entryPoint",
+        "godModule",
         "hotspots",
         "ownership",
         "securityAudit",
@@ -122,7 +128,7 @@ describe("buildCompositePresets — declarative requires gating", () => {
 
   it("ignores unknown registered keys (extra keys do not enable extra presets)", () => {
     const result = buildCompositePresets(new Set(["codegraph.symbols", "git", "future-trajectory"]));
-    expect(result).toHaveLength(9);
+    expect(result).toHaveLength(11);
   });
 
   it("dropped composites are silently absent, not error", () => {
