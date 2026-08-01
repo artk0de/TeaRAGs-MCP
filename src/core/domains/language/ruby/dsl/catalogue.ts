@@ -36,6 +36,7 @@ import { DEVISE_VOCABULARY } from "./devise.js";
 import { DRAPER_VOCABULARY } from "./draper.js";
 import { DRY_VOCABULARY } from "./dry.js";
 import { GEOCODER_VOCABULARY } from "./geocoder.js";
+import { KAMINARI_VOCABULARY } from "./kaminari.js";
 import { PAPER_TRAIL_VOCABULARY } from "./paper_trail.js";
 import { PUNDIT_VOCABULARY } from "./pundit.js";
 import { ACTIVE_RECORD_INSTANCE_BUILTINS } from "./rails-runtime.js";
@@ -83,6 +84,7 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   CANCANCAN_VOCABULARY,
   DEVISE_VOCABULARY,
   DRAPER_VOCABULARY,
+  KAMINARI_VOCABULARY,
 ];
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);

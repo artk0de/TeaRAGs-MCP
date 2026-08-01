@@ -286,3 +286,47 @@ describe("gem-gated declaresFixed grammars — paper_trail / geocoder (declaresF
     expect(full.activeStructuredMacros.has("state_machine")).toBe(true); // state_machines
   });
 });
+
+describe("gem-gated relation grammar — kaminari pagination (bd tea-rags-mcp-lo9u2)", () => {
+  const KAMINARI_RELATION_VERBS = ["page", "per", "padding", "without_count"] as const;
+
+  it("the pagination scopes are relation-returning ONLY when kaminari is declared", () => {
+    const withKaminari = composeRubyCatalogue(new Set(["kaminari"]));
+    const withoutKaminari = composeRubyCatalogue(new Set(["rails"]));
+    for (const verb of KAMINARI_RELATION_VERBS) {
+      expect(withKaminari.relationReturning.has(verb), verb).toBe(true);
+      expect(withoutKaminari.relationReturning.has(verb), verb).toBe(false);
+    }
+  });
+
+  it("activates on the kaminari-activerecord sub-gem too (split-gem install)", () => {
+    expect(composeRubyCatalogue(new Set(["kaminari-activerecord"])).relationReturning.has("page")).toBe(true);
+  });
+
+  it("the per-model config macros are entries ONLY under the gem", () => {
+    const withKaminari = composeRubyCatalogue(new Set(["kaminari"]));
+    const withoutKaminari = composeRubyCatalogue(new Set(["rails"]));
+    for (const macro of ["paginates_per", "max_paginates_per"]) {
+      expect(withKaminari.entries[macro], macro).toBeDefined();
+      expect(withoutKaminari.entries[macro], macro).toBeUndefined();
+    }
+  });
+
+  it("a project without kaminari keeps `page` / `per` free for its OWN methods (no external steal)", () => {
+    const withoutKaminari = composeRubyCatalogue(new Set(["rails"]));
+    expect(withoutKaminari.isExternalBareCall("page")).toBe(false);
+    expect(withoutKaminari.isExternalBareCall("per")).toBe(false);
+  });
+
+  it("the config macros declare NOTHING — they tune per-page defaults, not method names", () => {
+    const withKaminari = composeRubyCatalogue(new Set(["kaminari"]));
+    expect(withKaminari.entries.paginates_per?.declares).toBeUndefined();
+    expect(withKaminari.entries.paginates_per?.declaresFixed).toBeUndefined();
+  });
+
+  it("null (no Gemfile / gating off) → the kaminari grammar is active (FULL default)", () => {
+    const full = composeRubyCatalogue(null);
+    expect(full.relationReturning.has("page")).toBe(true);
+    expect(full.entries.paginates_per).toBeDefined();
+  });
+});
