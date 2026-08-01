@@ -89,6 +89,7 @@ import {
   constInstanceType,
   RUBY_BLOCK_ITERATOR_METHODS,
 } from "../src/core/domains/language/ruby/walker/type-sources/ast-inference.js";
+import { collectYardParamTypes } from "../src/core/domains/language/ruby/walker/type-sources/yard.js";
 import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
 import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view.js";
 import {
@@ -281,6 +282,44 @@ const ofChunkBindings: {
   scope: readonly string[];
   bindings: Record<string, string>;
 }[] = [];
+
+// ---------------------------------------------------------------------------
+// BOUNDED INTRA-CLASS FLOW ORACLE (bd tea-rags-mcp-xn6ut, oracle-first gate,
+// 2026-08-01). Same additive, env-gated contract as every oracle above: with
+// CODEGRAPH_INTRACLASS_ORACLE unset nothing extra is folded or reported and the
+// A/B recall metrics are byte-identical.
+//
+// smvyk closed at "a memoized tail whose RHS types" (49 misses, 13 defs) and
+// left the two larger neighbours on the table: 108 misses ride a memoized tail
+// whose RHS is OPAQUE (`def x; @x ||= <untypeable>; end`) and 46 ride a bare
+// binding tail the method never assigns (`def x; @x; end`, written by
+// `initialize` or a sibling). Neither is reachable from a BODY-scoped rule —
+// both need the assignment set of ONE class, which is a bounded intra-class
+// flow, not the interprocedural wave a2hrq closed at ceiling 510.
+//
+// The probe answers, per uncovered coordinate in those two populations:
+//   (a) how many assignment events the whole class body carries for the name
+//       the tail reads (ivars descend into every method, locals stay in their
+//       own — the `countAssignmentsTo` scoping rule, verbatim);
+//   (b) whether the RHS of those events derives a nominal type through the
+//       channels that already exist (`constInstanceType` + receiver-passthrough,
+//       an owner-qualified fact for a `Const.m()` / bare self-call RHS, a YARD
+//       `@param` or local copy inside the assigning method);
+//   (c) which conservatism class the coordinate lands in — SINGLE assignment
+//       (the smvyk `x ||= e` discipline, assigned exactly once in the class),
+//       MEMO + one typed sibling (the relaxed gate), multi-assignment AGREE,
+//       multi-assignment CONFLICT, or underivable;
+//   (d) and, for every derivable coordinate, whether the derived type would
+//       ACTUALLY close the miss — is `miss.member` defined exactly once on that
+//       type's ancestor closure. A type that types nothing recoverable is not
+//       recall, and crediting it would fund a mechanism that pays nothing.
+//
+// Everything is a fold over run-global state pass-1/pass-2 already built plus a
+// re-parse of the DECLARING files only (the same bound runCalleeShapeOracle and
+// runNullaryOracle accept), and the shape classifier is smvyk's own `csClassify`
+// so the populations cannot drift from the census that named them.
+// ---------------------------------------------------------------------------
+const INTRACLASS_ENABLED = process.env.CODEGRAPH_INTRACLASS_ORACLE === "1";
 
 // ---------------------------------------------------------------------------
 // INCLUDE-GRAPH ORACLE (bd tea-rags-mcp-ypist, oracle-first gate for epic
@@ -578,9 +617,9 @@ function ingestPass1(extraction: FileExtraction, materializedRoot: AstNode): voi
     for (const [symbolId, indices] of Object.entries(extraction.callbackParams)) runCallbackParams[symbolId] = indices;
   }
   runSelfDispatchMethods.push(...extractSelfDispatchMethods(extraction.chunks));
-  if (OWNERFACT_ENABLED || CALLEESHAPE_ENABLED || NULLARY_ENABLED || INCLUDEGRAPH_ENABLED) {
+  if (OWNERFACT_ENABLED || CALLEESHAPE_ENABLED || NULLARY_ENABLED || INCLUDEGRAPH_ENABLED || INTRACLASS_ENABLED) {
     for (const chunk of extraction.chunks) {
-      if (NULLARY_ENABLED || INCLUDEGRAPH_ENABLED) {
+      if (NULLARY_ENABLED || INCLUDEGRAPH_ENABLED || INTRACLASS_ENABLED) {
         const names = new Set(Object.keys(chunk.localBindings ?? {}));
         for (const name of Object.keys(chunk.localCallBindings ?? {})) names.add(name);
         nlChunkLocals.set(`${extraction.relPath}|${chunk.symbolId}`, names);
@@ -7070,6 +7109,476 @@ function runNullaryOracle(): void {
 }
 
 // ===========================================================================
+// BOUNDED INTRA-CLASS FLOW ORACLE (CODEGRAPH_INTRACLASS_ORACLE=1) — bd xn6ut
+//
+// Three stages, one fold. Stage 1 rebuilds the nullary oracle's "definer on the
+// MRO, NO return fact" population from the miss set. Stage 2 keeps only the two
+// body shapes xn6ut owns (memoized tail with an opaque RHS; bare binding tail the
+// method never assigns) and censuses the ASSIGNMENT SET of the declaring class for
+// the name each tail reads. Stage 3 asks whether the type that census derives
+// would actually close the miss — the only number that funds a mechanism.
+// ===========================================================================
+const OUT_INTRACLASS = join(OUT_DIR, "intraclass-oracle-report.json");
+
+/** Population A — smvyk's "memoized tail whose RHS is opaque" shape labels. */
+const IC_POP_MEMO: ReadonlySet<string> = new Set([
+  "assignment tail (||=) — RHS opaque",
+  "ivar tail — memoized ||= opaque",
+  "local tail — memoized ||= opaque",
+]);
+/** Population B — smvyk's "tail assigned by another method" shape labels. */
+const IC_POP_CTOR: ReadonlySet<string> = new Set([
+  "ivar tail — assigned elsewhere (param/ivar from initialize)",
+  "local tail — assigned elsewhere (param/ivar from initialize)",
+]);
+/** A bare or `::`-scoped ruby constant — the `Const.m()` RHS gate. */
+const IC_CONST_RE = /^[A-Z]\w*(?:::[A-Z]\w*)*$/;
+
+interface IcAssignEvent {
+  /** `=`, `||=`, or any other assignment form (`+=`, `&&=`, masgn target). */
+  op: "=" | "||=" | "other";
+  /** The def this event sits in (`null` = bare class body) — the type env's scope. */
+  method: AstNode | null;
+  /** True when this event IS the reader's own tail assignment. */
+  own: boolean;
+  /** Derived nominal type, `null` when the RHS names none. */
+  type: string | null;
+  /** Which channel derived it — the report's evidence column. */
+  via: string;
+  /** Grammar type of the RHS node, so the report can say WHY it stayed opaque. */
+  rhsKind: string;
+  /** First line of the RHS source, truncated — the floor's evidence, not a guess. */
+  rhsText: string;
+}
+
+/** YARD `@param` env + `local = Const.new` copy-prop for ONE def (mirrors `methodTypeEnv`). */
+function icMethodEnv(method: AstNode, yardParamsByLine: Map<number, Record<string, string>>): Record<string, string> {
+  const env: Record<string, string> = { ...(yardParamsByLine.get(method.startPosition.row + 1) ?? {}) };
+  const scan = (n: AstNode): void => {
+    if (n.type === "class" || n.type === "module" || n.type === "method" || n.type === "singleton_method") return;
+    if (n.type === "assignment") {
+      const lhs = n.childForFieldName("left");
+      const rhs = n.childForFieldName("right");
+      if (lhs?.type === "identifier" && rhs) {
+        const direct = csTypeOf(rhs);
+        if (direct !== null) env[lhs.text] = direct;
+        else if (rhs.type === "identifier") {
+          const copied = env[rhs.text];
+          if (copied !== undefined) env[lhs.text] = copied;
+        }
+      }
+    }
+    for (const child of n.children) scan(child);
+  };
+  const body = method.childForFieldName("body");
+  for (const child of (body ?? method).children) scan(child);
+  return env;
+}
+
+/**
+ * The nominal type an assignment RHS names, through the channels that already
+ * exist. Ordered by how much the engine trusts them: a direct constructor, an
+ * owner-qualified return fact for a `Const.m()` / bare self-call RHS, then a
+ * YARD-typed param or a typed local copied inside the assigning method.
+ */
+function icRhsType(
+  rhs: AstNode | null,
+  method: AstNode | null,
+  owner: string,
+  yardParamsByLine: Map<number, Record<string, string>>,
+): { type: string | null; via: string } {
+  if (rhs === null) return { type: null, via: "no RHS (non-plain event)" };
+  const direct = csTypeOf(rhs);
+  if (direct !== null) return { type: direct, via: "constInstanceType" };
+  if (rhs.type === "call" || rhs.type === "method_call") {
+    const member = rhs.childForFieldName("method")?.text;
+    const receiver = rhs.childForFieldName("receiver");
+    if (member !== undefined && receiver === null) {
+      const name = ((): string | undefined => {
+        const fact = ofOwnerFact(owner, member);
+        return fact === undefined ? undefined : tfRefName(fact);
+      })();
+      if (name !== undefined) return { type: name, via: "bare self-call owner fact" };
+    }
+    if (member !== undefined && receiver !== null) {
+      const text = receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
+      if (IC_CONST_RE.test(text)) {
+        const fact = runStructuredReturnTypes[`${text}.${member}`] ?? runStructuredReturnTypes[`${text}#${member}`];
+        const name = fact === undefined ? undefined : tfRefName(fact);
+        if (name !== undefined) return { type: name, via: "Const.m() return fact" };
+      }
+    }
+  }
+  if (rhs.type === "identifier" && method !== null) {
+    const typed = icMethodEnv(method, yardParamsByLine)[rhs.text];
+    if (typed !== undefined) return { type: typed, via: "ctor param / typed local copy" };
+  }
+  return { type: null, via: "opaque" };
+}
+
+/**
+ * Every assignment event to `name` in ONE class body, with its derived RHS type.
+ *
+ * Scoping is `countAssignmentsTo`'s, verbatim: a nested class/module is a
+ * different scope and is never entered; a nested def is entered only for an
+ * `@ivar` (ivars belong to the instance, so every sibling method can write the
+ * same one — precisely what a bounded intra-class flow must see), while a local
+ * stays inside its own def.
+ */
+function icAssignEvents(
+  classBody: AstNode,
+  name: string,
+  ivar: boolean,
+  ownMethod: AstNode,
+  tailStart: number,
+  owner: string,
+  yardParamsByLine: Map<number, Record<string, string>>,
+): IcAssignEvent[] {
+  const events: IcAssignEvent[] = [];
+  const scan = (n: AstNode, method: AstNode | null): void => {
+    if (n.type === "class" || n.type === "module") return;
+    let inMethod = method;
+    if (n.type === "method" || n.type === "singleton_method") {
+      if (!ivar && n.startIndex !== ownMethod.startIndex) return;
+      inMethod = n;
+    }
+    if (n.type === "assignment" || n.type === "operator_assignment") {
+      const lhs = n.childForFieldName("left");
+      const masgn = lhs?.type === "left_assignment_list" && lhs.namedChildren.some((t) => t.text === name);
+      if (lhs?.text === name || masgn) {
+        const op: IcAssignEvent["op"] = masgn
+          ? "other"
+          : n.type === "assignment"
+            ? "="
+            : n.text.includes("||=")
+              ? "||="
+              : "other";
+        const rhs = masgn ? null : n.childForFieldName("right");
+        const derived = icRhsType(rhs, inMethod, owner, yardParamsByLine);
+        events.push({
+          op,
+          method: inMethod,
+          own: n.startIndex === tailStart,
+          type: derived.type,
+          via: derived.via,
+          rhsKind: rhs?.type ?? "none",
+          rhsText: (rhs?.text ?? "").split("\n")[0]?.slice(0, 90) ?? "",
+        });
+      }
+    }
+    for (const child of n.children) scan(child, inMethod);
+  };
+  for (const child of classBody.children) scan(child, null);
+  return events;
+}
+
+/** Every parameter NAME a def declares, defaults / splats / kwargs unwrapped. */
+function icParamNames(method: AstNode): Set<string> {
+  const out = new Set<string>();
+  const params = method.childForFieldName("parameters");
+  if (params === null) return out;
+  const scan = (n: AstNode): void => {
+    if (n.type === "identifier") out.add(n.text);
+    for (const child of n.children) scan(child);
+  };
+  for (const child of params.namedChildren) scan(child);
+  return out;
+}
+
+/**
+ * Why a bare tail has NO assignment anywhere in its class — the split that keeps
+ * the zero bucket honest.
+ *
+ * smvyk's `csClassify` labels ANY bare `identifier` tail a "local tail", but in
+ * Ruby a bare identifier the body never binds is a zero-arg method call on self,
+ * not a variable. Crediting those to an intra-class flow would inflate this
+ * epic with the one-hop-closure population that belongs to the owner-fact
+ * channel, so they are named and held out.
+ */
+function icZeroAssignmentKind(readName: string, ivar: boolean, method: AstNode, owner: string): string {
+  if (ivar) return "G0. ivar never assigned in THIS class (attr_writer / class reopened elsewhere)";
+  if (icParamNames(method).has(readName)) return "G1. bare tail is a METHOD PARAM (param typing, not intra-class flow)";
+  const closure = tfAncestorClosure(owner);
+  const definers = symbolTable
+    .lookupByShortName(readName)
+    .filter((d) => d.scope.length > 0 && closure.has(d.scope.join("::")));
+  return definers.length > 0
+    ? "G2. bare tail is a SELF-CALL mislabelled 'local' by csClassify (one-hop closure population)"
+    : "G3. bare tail with no assignment, no param and no definer on the MRO";
+}
+
+/** The conservatism class a coordinate's assignment set lands in. */
+function icVerdict(events: IcAssignEvent[], zeroKind: string): string {
+  if (events.length === 0) return zeroKind;
+  if (events.some((e) => e.op === "other")) return "H. non-plain assignment event (+= / &&= / masgn)";
+  const typed = events.filter((e) => e.type !== null);
+  if (events.length === 1) {
+    return typed.length === 1
+      ? "A. SINGLE assignment class-wide, RHS TYPED (strict single-assignment gate)"
+      : "B. SINGLE assignment class-wide, RHS underivable";
+  }
+  if (typed.length === 0) return "F. multi-assignment, none derivable";
+  if (new Set(typed.map((e) => e.type)).size > 1) return "E. multi-assignment, derived types CONFLICT";
+  const others = events.filter((e) => !e.own);
+  if (events.length === 2 && others.length === 1 && others[0]?.type !== null) {
+    return "C. memo ||= + exactly ONE typed sibling assignment (relaxed gate)";
+  }
+  return "D. multi-assignment, derived types AGREE";
+}
+
+/** The single type an assignment set names, or `null` when it names none / several. */
+function icDerivedType(events: IcAssignEvent[]): string | null {
+  const names = new Set(events.map((e) => e.type).filter((t): t is string => t !== null));
+  return names.size === 1 ? [...names][0] : null;
+}
+
+/** Would the derived type actually close this miss? The recall question, not the typing one. */
+function icRecovery(type: string, member: string): string {
+  if (!tfIsProjectClass(type)) return "type names NO project class (fiction)";
+  const closure = tfAncestorClosure(type);
+  const owners = new Set(
+    symbolTable
+      .lookupByShortName(member)
+      .filter((d) => d.scope.length > 0 && closure.has(d.scope.join("::")))
+      .map((d) => d.scope.join("::")),
+  );
+  if (owners.size === 0) return "member NOT on the derived type's ancestor closure";
+  return owners.size === 1
+    ? "RECOVERABLE — unique definer on the derived type's closure"
+    : "ambiguous — several definers on the closure";
+}
+
+interface IcCoordReport {
+  coord: string;
+  population: "memoized-opaque-RHS" | "assigned-in-another-method";
+  shape: string;
+  readName: string;
+  relPath: string;
+  events: { op: string; type: string | null; via: string; own: boolean; rhsKind: string; rhsText: string }[];
+  verdict: string;
+  derivedType: string | null;
+  misses: number;
+  directReceiverMisses: number;
+  recovery: Record<string, number>;
+}
+
+function runIntraClassOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  BOUNDED INTRA-CLASS FLOW ORACLE (bd xn6ut)");
+  L("═══════════════════════════════════════════════════════════════════");
+
+  // ── stage 1: the nullary "definer on MRO, NO return fact" population ───────
+  const uncovered = new Map<string, MissRecord[]>();
+  const byFile = new Map<string, Map<string, string[]>>();
+  for (const miss of misses) {
+    if (miss.receiver === null || miss.receiver.includes("[") || miss.receiver.startsWith("@")) continue;
+    const head = miss.receiver.split(".")[0];
+    if (head === undefined || !NL_IDENTIFIER.test(head)) continue;
+    if (nlChunkLocals.get(`${miss.relPath}|${miss.callerSymbolId}`)?.has(head) === true) continue;
+    const scopeKey = miss.enclosingScope.split(" > ").join("::");
+    if (scopeKey.length === 0) continue;
+    const closure = tfAncestorClosure(scopeKey);
+    const nullary = symbolTable
+      .lookupByShortName(head)
+      .filter((d) => d.scope.length > 0 && closure.has(d.scope.join("::")))
+      .filter((d) => d.arity === undefined || d.arity.minRequired === 0);
+    const owners = new Set(nullary.map((d) => d.scope.join("::")));
+    if (owners.size !== 1) continue;
+    if (nlFactsOnMro(scopeKey, head).size > 0) continue; // already answered today
+    const owner = [...owners][0];
+    if (owner === undefined) continue;
+    const coord = `${owner}#${head}`;
+    const list = uncovered.get(coord) ?? [];
+    list.push(miss);
+    uncovered.set(coord, list);
+    for (const def of nullary) {
+      const perFile = byFile.get(def.relPath) ?? new Map<string, string[]>();
+      const members = perFile.get(owner) ?? [];
+      if (!members.includes(head)) members.push(head);
+      perFile.set(owner, members);
+      byFile.set(def.relPath, perFile);
+    }
+  }
+
+  // ── stage 2 + 3: shape gate, intra-class census, recovery fold ────────────
+  const reports: IcCoordReport[] = [];
+  const seenCoord = new Set<string>();
+  let parseFailures = 0;
+  for (const [relPath, perFile] of byFile) {
+    let root: AstNode;
+    let code: string;
+    try {
+      code = readFileSync(join(ROOT, relPath), "utf8");
+      const parser = new Parser();
+      parser.setLanguage(rbConfig.loadParser());
+      root = materializeTree(parser.parse(code).rootNode, code);
+    } catch {
+      parseFailures += 1;
+      continue;
+    }
+    const yardParamsByLine = collectYardParamTypes(code);
+    forEachClassScope(root, (classNode, fq) => {
+      const members = perFile.get(fq);
+      if (members === undefined) return;
+      const classBody = classNode.childForFieldName("body") ?? classNode;
+      const scan = (n: AstNode): void => {
+        if (n.type === "class" || n.type === "module") return;
+        if (n.type !== "method" && n.type !== "singleton_method") {
+          for (const child of n.children) scan(child);
+          return;
+        }
+        const nameNode = n.childForFieldName("name");
+        if (nameNode === null || !members.includes(nameNode.text)) return;
+        const coord = `${fq}#${nameNode.text}`;
+        if (seenCoord.has(coord)) return;
+        seenCoord.add(coord);
+        const shape = csClassify(n, fq);
+        const population = IC_POP_MEMO.has(shape)
+          ? ("memoized-opaque-RHS" as const)
+          : IC_POP_CTOR.has(shape)
+            ? ("assigned-in-another-method" as const)
+            : null;
+        if (population === null) return;
+        const body = n.childForFieldName("body");
+        const tail = body === null ? null : csTail(body);
+        if (tail === null) return;
+        const lhs =
+          tail.type === "assignment" || tail.type === "operator_assignment" ? tail.childForFieldName("left") : tail;
+        if (lhs === null || (lhs.type !== "identifier" && lhs.type !== "instance_variable")) return;
+        const events = icAssignEvents(
+          classBody,
+          lhs.text,
+          lhs.type === "instance_variable",
+          n,
+          tail.startIndex,
+          fq,
+          yardParamsByLine,
+        );
+        const verdict = icVerdict(events, icZeroAssignmentKind(lhs.text, lhs.type === "instance_variable", n, fq));
+        const derivedType = icDerivedType(events);
+        const missList = uncovered.get(coord) ?? [];
+        const recovery: Record<string, number> = {};
+        let directReceiverMisses = 0;
+        for (const miss of missList) {
+          const direct = miss.receiver === nameNode.text;
+          if (direct) directReceiverMisses += 1;
+          const key =
+            derivedType === null
+              ? "no type derived"
+              : direct
+                ? icRecovery(derivedType, miss.member)
+                : "receiver is a CHAIN — one hop is not enough";
+          recovery[key] = (recovery[key] ?? 0) + 1;
+        }
+        reports.push({
+          coord,
+          population,
+          shape,
+          readName: lhs.text,
+          relPath,
+          events: events.map((e) => ({
+            op: e.op,
+            type: e.type,
+            via: e.via,
+            own: e.own,
+            rhsKind: e.rhsKind,
+            rhsText: e.rhsText,
+          })),
+          verdict,
+          derivedType,
+          misses: missList.length,
+          directReceiverMisses,
+          recovery,
+        });
+      };
+      for (const child of classBody.children) scan(child);
+    });
+  }
+
+  // ── report ────────────────────────────────────────────────────────────────
+  const totalMisses = [...uncovered.values()].reduce((n, list) => n + list.length, 0);
+  L("");
+  L("─── population (nullary uncovered definers, re-derived) ────────────");
+  L(`coordinates with NO return fact and ONE MRO definer: ${uncovered.size} over ${totalMisses} misses`);
+  L(`  declaring files re-parsed: ${byFile.size} (parse failures ${parseFailures})`);
+  L(`  coordinates whose body shape is an xn6ut population: ${reports.length}`);
+
+  for (const population of ["memoized-opaque-RHS", "assigned-in-another-method"] as const) {
+    const rows = reports.filter((r) => r.population === population);
+    const missCount = rows.reduce((n, r) => n + r.misses, 0);
+    L("");
+    L(`─── population ${population}: ${rows.length} defs / ${missCount} misses ───`);
+    const byVerdict = new Map<string, { defs: number; misses: number }>();
+    for (const row of rows) {
+      const cur = byVerdict.get(row.verdict) ?? { defs: 0, misses: 0 };
+      cur.defs += 1;
+      cur.misses += row.misses;
+      byVerdict.set(row.verdict, cur);
+    }
+    for (const [verdict, cur] of [...byVerdict.entries()].sort((a, b) => b[1].misses - a[1].misses)) {
+      L(`  ${String(cur.misses).padStart(6)} misses  ${String(cur.defs).padStart(4)} defs   ${verdict}`);
+      for (const ex of rows
+        .filter((r) => r.verdict === verdict)
+        .sort((a, b) => b.misses - a.misses)
+        .slice(0, 4)) {
+        L(
+          `                                  e.g. ${ex.coord} (${ex.misses} misses, ${ex.readName} -> ${ex.derivedType ?? "—"})`,
+        );
+      }
+    }
+    L("  ── WHY the assignment RHS stays opaque (grammar shape of every event) ──");
+    const byRhs = new Map<string, { events: number; example: string }>();
+    for (const row of rows) {
+      for (const e of row.events) {
+        if (e.type !== null) continue;
+        const cur = byRhs.get(e.rhsKind) ?? { events: 0, example: e.rhsText };
+        cur.events += 1;
+        byRhs.set(e.rhsKind, cur);
+      }
+    }
+    for (const [kind, cur] of [...byRhs.entries()].sort((a, b) => b[1].events - a[1].events)) {
+      L(`  ${String(cur.events).padStart(6)} events  ${kind.padEnd(22)} e.g. ${cur.example}`);
+    }
+    L("  ── the RECALL question: would the derived type close the miss? ──");
+    const recovery = new Map<string, number>();
+    for (const row of rows) {
+      for (const [key, n] of Object.entries(row.recovery)) recovery.set(key, (recovery.get(key) ?? 0) + n);
+    }
+    for (const [key, n] of [...recovery.entries()].sort((a, b) => b[1] - a[1])) {
+      L(`  ${String(n).padStart(6)} misses  ${key}`);
+    }
+  }
+
+  // The one number the decision gate reads: misses a strict-gate mechanism closes.
+  const strictRecoverable = reports
+    .filter((r) => r.verdict.startsWith("A. "))
+    .reduce((n, r) => n + (r.recovery["RECOVERABLE — unique definer on the derived type's closure"] ?? 0), 0);
+  const relaxedRecoverable = reports
+    .filter((r) => r.verdict.startsWith("C.") || r.verdict.startsWith("D."))
+    .reduce((n, r) => n + (r.recovery["RECOVERABLE — unique definer on the derived type's closure"] ?? 0), 0);
+  L("");
+  L("─── decision gate ─────────────────────────────────────────────────");
+  L(`misses closed by a STRICT single-assignment gate:   ${strictRecoverable}`);
+  L(`misses closed by ALSO accepting agreeing multi-assignment: ${strictRecoverable + relaxedRecoverable}`);
+  L(`total recall holes this run (the miss set):         ${misses.length}`);
+  L("");
+
+  writeFileSync(
+    OUT_INTRACLASS,
+    JSON.stringify(
+      { totalCoords: uncovered.size, totalMisses, strictRecoverable, relaxedRecoverable, reports },
+      null,
+      2,
+    ),
+  );
+  L(`[intraclass] per-coordinate detail -> ${OUT_INTRACLASS}`);
+}
+
+// ===========================================================================
 // INCLUDE-GRAPH ORACLE (CODEGRAPH_INCLUDEGRAPH_ORACLE=1) — bd tea-rags-mcp-ypist
 //
 // Two folds, one classifier. The folds re-derive the exact populations pr7fu
@@ -8054,6 +8563,7 @@ async function main(): Promise<void> {
   if (OWNERFACT_ENABLED) runOwnerfactOracle();
   if (CALLEESHAPE_ENABLED) runCalleeShapeOracle();
   if (NULLARY_ENABLED) runNullaryOracle();
+  if (INTRACLASS_ENABLED) runIntraClassOracle();
   if (INCLUDEGRAPH_ENABLED) runIncludeGraphOracle();
   if (ORACLE_ENABLED) runOracle(Date.now() - t0, files.length);
   if (SUPER_ORACLE_ENABLED) runSuperOracle();
