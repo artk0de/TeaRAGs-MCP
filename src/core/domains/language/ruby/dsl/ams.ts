@@ -16,8 +16,15 @@
  * `emits: "serialized-attribute"` drives `walker/walker.ts::emitDslEdges` to push
  * one `{receiver:null, member:sym}` read per leading attribute symbol — the same
  * bare-receiver shape a callback self-send uses, so an in-project custom method is
- * resolved and a pass-through attribute (no serializer method) is honestly
- * unresolved (no fabricated edge). Gem-gated by `activatedBy`.
+ * resolved onto the serializer.
+ *
+ * A PASS-THROUGH attribute — one the serializer does NOT define — is served from
+ * the MODEL, which the serializer names by convention: AMS looks a resource's
+ * serializer up as `<Model>Serializer`, so `UserSerializer` reads `User#id`. The
+ * interpreter emits that second `{receiver:<Model>, member:sym}` edge only when
+ * the enclosing class defines no `def sym`, which is exactly AMS's own precedence
+ * — a serializer method always wins — so no edge is ever fabricated for an
+ * attribute the serializer implements itself (adx5p.9). Gem-gated by `activatedBy`.
  */
 import { defineFrameworkVocabulary } from "./framework-module.js";
 

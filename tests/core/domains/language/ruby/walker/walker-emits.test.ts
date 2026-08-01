@@ -177,6 +177,37 @@ describe("emitDslEdges — per-emits edge shape via extractFromRubyFile", () => 
     expect(calls).toContainEqual(expect.objectContaining({ receiver: null, member: "name", startLine: 2 }));
   });
 
+  it("serialized-attribute: a PASS-THROUGH attribute also reads the model (`UserSerializer` → `User#id`)", () => {
+    const src = "class UserSerializer\n  attributes :id, :name\nend\n";
+    const calls = callsOf(src, [{ symbolId: "UserSerializer", scope: ["UserSerializer"], startLine: 1, endLine: 3 }]);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "User", member: "id", startLine: 2 }));
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "User", member: "name", startLine: 2 }));
+  });
+
+  it("serialized-attribute: an attribute the serializer DEFINES is NOT read off the model", () => {
+    const src = "class UserSerializer\n  attributes :id, :full_name\n  def full_name\n    'x'\n  end\nend\n";
+    const calls = callsOf(src, [{ symbolId: "UserSerializer", scope: ["UserSerializer"], startLine: 1, endLine: 6 }]);
+    // AMS prefers the serializer's own method, so the model read would be false.
+    expect(calls.filter((c) => c.receiver === "User" && c.member === "full_name")).toHaveLength(0);
+    // The pass-through sibling still reaches the model.
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "User", member: "id" }));
+  });
+
+  it("serialized-attribute: a namespaced serializer infers the bare model constant", () => {
+    const src = "class Api::V1::UserSerializer\n  attributes :id\nend\n";
+    const calls = callsOf(src, [
+      { symbolId: "Api::V1::UserSerializer", scope: ["Api", "V1", "UserSerializer"], startLine: 1, endLine: 3 },
+    ]);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: "User", member: "id" }));
+  });
+
+  it("serialized-attribute: a class with no `Serializer` suffix names no model (bare read only)", () => {
+    const src = "class Payload\n  attributes :id\nend\n";
+    const calls = callsOf(src, [{ symbolId: "Payload", scope: ["Payload"], startLine: 1, endLine: 3 }]);
+    expect(calls).toContainEqual(expect.objectContaining({ receiver: null, member: "id" }));
+    expect(calls.filter((c) => c.receiver !== null && c.member === "id")).toHaveLength(0);
+  });
+
   it("ability-dispatch: `authorize! :update, @post` (cancancan) → {receiver:'Ability', member:'initialize'}", () => {
     const src = "class PostsController\n  def update\n    authorize! :update, @post\n  end\nend\n";
     const calls = callsOf(src, [

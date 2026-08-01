@@ -63,7 +63,8 @@ export type DeclaredMethodSpec = { name: string; kind: MethodKind };
  *   - `'alias-redirect'`     — old method name    → `{receiver:null, member:old}`   (alias_method :new, :old)
  *   - `'policy-dispatch'`    — Pundit policy method → `{receiver:<Record>Policy, member:<query>?}` (authorize :relay, :update?)
  *   - `'route-action'`       — routed controller action → `{receiver:<Ns::>Controller, member:action}` (get "x", to: "posts#index")
- *   - `'serialized-attribute'` — AMS serializer read → `{receiver:null, member:sym}` per attribute (attributes :id, :name)
+ *   - `'serialized-attribute'` — AMS serializer read → `{receiver:null, member:sym}` per attribute, plus
+ *                                `{receiver:<Model>, member:sym}` for a pass-through one (attributes :id, :name)
  *   - `'ability-dispatch'`    — CanCanCan permission check → `{receiver:Ability, member:"initialize"}` (authorize! :update, @post)
  *   - `'ability-subject-ref'` — CanCanCan rule subject → `{receiver:C, member:C}` (can :read, Post)
  */

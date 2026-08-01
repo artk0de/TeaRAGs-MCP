@@ -1557,12 +1557,22 @@ function emitDslEdges(node: AstNode, emits: RubyDslEmits, startLine: number, out
       }
       return;
     }
-    // `before_action :auth` callbacks — per leading symbol → {receiver:null, member:sym} (duzy).
     // `attributes :id, :name` (AMS serializer) — each attribute is READ off the
     // serialized resource; identical bare-receiver shape to a callback self-send,
     // so it resolves onto the serializer's custom attribute method when one is
-    // defined and is honestly unresolved for a pass-through attribute (adx5p.9).
-    case "serialized-attribute":
+    // defined. A PASS-THROUGH attribute (no such method) reaches the MODEL
+    // instead, which the serializer names by convention (adx5p.9).
+    case "serialized-attribute": {
+      const model = serializedModelConstant(node);
+      for (const sym of extractCallbackSymbols(node)) {
+        out.push({ callText: node.text, receiver: null, member: sym, startLine });
+        if (model !== null && !enclosingClassDefines(node, sym)) {
+          out.push({ callText: node.text, receiver: model, member: sym, startLine });
+        }
+      }
+      return;
+    }
+    // `before_action :auth` callbacks — per leading symbol → {receiver:null, member:sym} (duzy).
     case "self-instance": {
       for (const sym of extractCallbackSymbols(node)) {
         out.push({ callText: node.text, receiver: null, member: sym, startLine });
@@ -2133,6 +2143,64 @@ function punditPolicyTarget(callNode: AstNode): { policy: string; method: string
   if (second?.type !== "simple_symbol") return null; // implicit query (action name) deferred
   const method = stripColon(second.text);
   return { policy, method: method.endsWith("?") ? method : `${method}?` };
+}
+
+/** The class-name suffix an AMS serializer carries (`UserSerializer` → `User`). */
+const SERIALIZER_SUFFIX = "Serializer";
+
+/** The nearest enclosing `class` node of `node`, or `null` at top level. */
+function enclosingClassNode(node: AstNode): AstNode | null {
+  for (let p = node.parent; p; p = p.parent) {
+    if (p.type === "class") return p;
+    if (p.type === "module") return null; // a module body is not a serializer class
+  }
+  return null;
+}
+
+/**
+ * The MODEL an AMS serializer serializes (bd tea-rags-mcp-adx5p.9). AMS resolves
+ * a resource's serializer as `<Model>Serializer`, so the inverse — the enclosing
+ * class name minus its `Serializer` suffix — names the model the pass-through
+ * attributes are read off. The same convention-inference precedent as Pundit's
+ * `<Record>Policy`, and like it the constant is emitted BARE (last segment only):
+ * `Api::V1::UserSerializer` serializes `User`, and the resolver's constant pass
+ * owns the scope walk.
+ *
+ * `null` when there is no enclosing class or its name carries no suffix — the
+ * class is then not a serializer this convention can speak for.
+ */
+function serializedModelConstant(node: AstNode): string | null {
+  const classNode = enclosingClassNode(node);
+  const nameNode = classNode?.childForFieldName("name");
+  if (!nameNode) return null;
+  const fq = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+  const local = fq.split("::").pop() ?? "";
+  if (!local.endsWith(SERIALIZER_SUFFIX) || local.length === SERIALIZER_SUFFIX.length) return null;
+  return local.slice(0, -SERIALIZER_SUFFIX.length);
+}
+
+/**
+ * Does the class enclosing `node` define `def <name>` in its OWN body (bd
+ * tea-rags-mcp-adx5p.9)? An AMS serializer that defines an attribute method
+ * serves the attribute from THERE, never from the model — so the model read must
+ * not be emitted for it. Nested classes are not descended into: their defs
+ * belong to them.
+ */
+function enclosingClassDefines(node: AstNode, name: string): boolean {
+  const classNode = enclosingClassNode(node);
+  const body = classNode?.childForFieldName("body");
+  if (!body) return false;
+  let found = false;
+  const scan = (n: AstNode): void => {
+    if (found || n.type === "class" || n.type === "module") return;
+    if (n.type === "method" && n.childForFieldName("name")?.text === name) {
+      found = true;
+      return;
+    }
+    for (const child of n.children) scan(child);
+  };
+  for (const child of body.children) scan(child);
+  return found;
 }
 
 /**
