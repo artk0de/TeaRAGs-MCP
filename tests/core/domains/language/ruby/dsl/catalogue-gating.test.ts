@@ -392,3 +392,33 @@ describe("gem-gated relation grammar — will_paginate (bd tea-rags-mcp-lo9u2)",
     expect(composeRubyCatalogue(null).relationReturning.has("paginate")).toBe(true);
   });
 });
+
+describe("gem-gated declares grammar — dry-initializer param / option (bd tea-rags-mcp-lo9u2)", () => {
+  it("`param` / `option` declare the reader they define, ONLY under a dry gem", () => {
+    const withDry = composeRubyCatalogue(new Set(["dry-initializer"]));
+    const withoutDry = composeRubyCatalogue(new Set(["rails"]));
+    expect(withDry.entries.param?.declares?.("name")).toEqual([{ name: "name", kind: "instance" }]);
+    expect(withDry.entries.option?.declares?.("admin")).toEqual([{ name: "admin", kind: "instance" }]);
+    expect(withoutDry.entries.param).toBeUndefined();
+    expect(withoutDry.entries.option).toBeUndefined();
+  });
+
+  it("declares a READER only — dry-initializer defines attr_reader, and a Struct is immutable", () => {
+    const withDry = composeRubyCatalogue(new Set(["dry-struct"]));
+    expect(withDry.entries.param?.declares?.("name").map((m) => m.name)).not.toContain("name=");
+  });
+
+  it("takes the FIRST symbol only — the second positional arg is a type, not another name", () => {
+    expect(composeRubyCatalogue(new Set(["dry-struct"])).entries.param?.operands).toBe("first-symbol");
+  });
+
+  it("a project without a dry gem keeps `param` / `option` free for its OWN methods", () => {
+    const withoutDry = composeRubyCatalogue(new Set(["rails"]));
+    expect(withoutDry.isExternalBareCall("param")).toBe(false);
+    expect(withoutDry.isExternalBareCall("option")).toBe(false);
+  });
+
+  it("null (no Gemfile / gating off) → the dry declares grammar is active (FULL default)", () => {
+    expect(composeRubyCatalogue(null).entries.param?.declares).toBeDefined();
+  });
+});

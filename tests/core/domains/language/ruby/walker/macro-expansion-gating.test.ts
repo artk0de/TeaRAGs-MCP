@@ -159,3 +159,31 @@ describe("expandClassBodyMacros — structured macro gating (state_machine)", ()
     expect(expandClassBodyMacros(firstStmt(src) as never).map((m) => m.name)).toEqual(["parked?", "ignite", "ignite!"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Generic `declares` gating — dry-initializer `param` / `option`
+// ---------------------------------------------------------------------------
+
+describe("expandClassBodyMacros — generic declares gating (dry-initializer param/option)", () => {
+  const paramSrc = "class Import\n  param :source, Types::String\nend\n";
+  const optionSrc = "class Import\n  option :dry_run, default: proc { false }\nend\n";
+
+  it("synthesises the param reader ONLY when a dry gem is declared", () => {
+    expect(names(firstStmt(paramSrc), "gem 'dry-initializer'")).toEqual(["source"]);
+    expect(names(firstStmt(paramSrc), "gem 'rails'")).toEqual([]);
+  });
+
+  it("synthesises the option reader ONLY when a dry gem is declared", () => {
+    expect(names(firstStmt(optionSrc), "gem 'dry-struct'")).toEqual(["dry_run"]);
+    expect(names(firstStmt(optionSrc), "gem 'rails'")).toEqual([]);
+  });
+
+  it("stops at the first symbol — the coercer constant is a type, not a second reader", () => {
+    const twoSyms = "class Import\n  param :source, Types::String, default: proc { :api }\nend\n";
+    expect(names(firstStmt(twoSyms), "gem 'dry-initializer'")).toEqual(["source"]);
+  });
+
+  it("FULL catalogue keeps the dry declares grammar active — byte-neutral", () => {
+    expect(expandClassBodyMacros(firstStmt(paramSrc) as never).map((m) => m.name)).toEqual(["source"]);
+  });
+});
