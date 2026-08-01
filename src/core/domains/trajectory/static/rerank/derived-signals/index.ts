@@ -6,6 +6,7 @@ import { HeadingRelevanceSignal } from "./heading-relevance.js";
 import { ImportsSignal } from "./imports.js";
 import { PathRiskSignal } from "./path-risk.js";
 import { SimilaritySignal } from "./similarity.js";
+import { SymbolCountSignal } from "./symbol-count.js";
 
 export { ChunkDensitySignal } from "./chunk-density.js";
 export { ChunkSizeSignal } from "./chunk-size.js";
@@ -14,6 +15,7 @@ export { HeadingRelevanceSignal } from "./heading-relevance.js";
 export { ImportsSignal } from "./imports.js";
 export { PathRiskSignal } from "./path-risk.js";
 export { SimilaritySignal } from "./similarity.js";
+export { SymbolCountSignal } from "./symbol-count.js";
 
 export const staticDerivedSignals: DerivedSignalDescriptor[] = [
   new SimilaritySignal(),
@@ -23,4 +25,5 @@ export const staticDerivedSignals: DerivedSignalDescriptor[] = [
   new HeadingRelevanceSignal(),
   new ImportsSignal(),
   new PathRiskSignal(),
+  new SymbolCountSignal(),
 ];

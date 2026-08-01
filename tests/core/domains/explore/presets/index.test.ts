@@ -27,11 +27,12 @@ describe("STATIC_PRESETS", () => {
     expect(weights).toEqual({ similarity: 1.0 });
   });
 
-  it("contains RelevancePreset, DecompositionPreset, and DocumentationRelevancePreset", () => {
-    expect(STATIC_PRESETS).toHaveLength(3);
+  it("contains RelevancePreset, DecompositionPreset, DocumentationRelevancePreset, and GodModulePreset", () => {
+    expect(STATIC_PRESETS).toHaveLength(4);
     expect(STATIC_PRESETS.map((p) => p.name)).toContain("relevance");
     expect(STATIC_PRESETS.map((p) => p.name)).toContain("decomposition");
     expect(STATIC_PRESETS.map((p) => p.name)).toContain("documentationRelevance");
+    expect(STATIC_PRESETS.map((p) => p.name)).toContain("godModule");
   });
 });
 
