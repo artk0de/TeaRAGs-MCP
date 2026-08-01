@@ -86,10 +86,11 @@ describe("typeOfReceiver — nullary self-call receiver (pr7fu)", () => {
     expect(typeOfReceiver("current_client", 12, ctx)).toEqual({ form: "instance", name: "Client" });
   });
 
-  it("stays SILENT when two ancestors declare different return types", () => {
-    // classAncestors is a flat superclass+include list, not a linearized MRO, so
-    // there is no defensible way to rank the two — and a wrong receiver type
-    // poisons every downstream hop.
+  it("picks the MRO-NEAREST fact when two ancestors declare different return types", () => {
+    // bd tea-rags-mcp-uuux9 — this used to resolve to SILENCE, because the flat
+    // `classAncestors` list gave no defensible way to rank the two. The
+    // linearization does: `include Authenticated; include Impersonatable` puts
+    // Impersonatable NEARER, so its fact is the one the call actually reaches.
     const ctx = emptyCtx({
       callerScope: ["Firm::Panel"],
       classAncestors: { "Firm::Panel": ["Authenticated", "Impersonatable"] },
@@ -98,7 +99,45 @@ describe("typeOfReceiver — nullary self-call receiver (pr7fu)", () => {
         "Impersonatable#current_client": { form: "instance", name: "Employee" },
       },
     });
-    expect(typeOfReceiver("current_client", 12, ctx)).toBeUndefined();
+    expect(typeOfReceiver("current_client", 12, ctx)).toEqual({ form: "instance", name: "Employee" });
+  });
+
+  it("prefers an INCLUDED module's fact over the superclass's (uuux9)", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Firm::Panel"],
+      classAncestors: { "Firm::Panel": ["BasePanel", "Impersonatable"] },
+      classExtends: { "Firm::Panel": "BasePanel" },
+      structuredReturnTypes: {
+        "BasePanel#current_client": { form: "instance", name: "Client" },
+        "Impersonatable#current_client": { form: "instance", name: "Employee" },
+      },
+    });
+    expect(typeOfReceiver("current_client", 12, ctx)).toEqual({ form: "instance", name: "Employee" });
+  });
+
+  it("reaches a TRANSITIVE ancestor's fact (uuux9)", () => {
+    // module Impersonatable; include Sessioned — the fact two hops up was
+    // invisible while only the DIRECT ancestor list was consulted.
+    const ctx = emptyCtx({
+      callerScope: ["Firm::Panel"],
+      classAncestors: { "Firm::Panel": ["Impersonatable"], Impersonatable: ["Sessioned"] },
+      structuredReturnTypes: { "Sessioned#current_client": { form: "instance", name: "Client" } },
+    });
+    expect(typeOfReceiver("current_client", 12, ctx)).toEqual({ form: "instance", name: "Client" });
+  });
+
+  it("lets a PREPENDED module shadow the caller's own class (uuux9)", () => {
+    // `prepend Impersonatable` inserts BEFORE the class in Ruby's MRO, so its
+    // definition is the one that runs.
+    const ctx = emptyCtx({
+      callerScope: ["Firm::Panel"],
+      classPrependedAncestors: { "Firm::Panel": ["Impersonatable"] },
+      structuredReturnTypes: {
+        "Firm::Panel#current_client": { form: "instance", name: "Client" },
+        "Impersonatable#current_client": { form: "instance", name: "Employee" },
+      },
+    });
+    expect(typeOfReceiver("current_client", 12, ctx)).toEqual({ form: "instance", name: "Employee" });
   });
 
   it("the caller's OWN class shadows a disagreeing ancestor (Ruby's rule)", () => {

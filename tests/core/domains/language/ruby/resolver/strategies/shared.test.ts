@@ -36,7 +36,9 @@ const ctx = (over: Partial<CallContext> & Pick<CallContext, "symbolTable">): Cal
 
 describe("firstDefinerAfter — MRO after X (cai0/2oky5)", () => {
   it("finds the next definer after an INCLUDED module in C's ancestor chain", () => {
-    // class C: ancestors [M, Base]; Base defines `m`. super from M#m → Base#m.
+    // `class C; include Base; include M; end` — C.ancestors == [C, M, Base], so
+    // `super` from M#m reaches Base#m. The walker stores that class body as
+    // ["Base", "M"]: declaration order, in which the NEARER mixin comes last.
     const symbolTable = tableWith([
       "base.rb",
       [sym("Base", "Base", "base.rb", []), sym("Base#m", "m", "base.rb", ["Base"])],
@@ -45,7 +47,7 @@ describe("firstDefinerAfter — MRO after X (cai0/2oky5)", () => {
       "M",
       "m",
       "C",
-      ctx({ symbolTable, classAncestors: { C: ["M", "Base"] } }),
+      ctx({ symbolTable, classAncestors: { C: ["Base", "M"] } }),
       DEFAULT_AMBIGUOUS_RESOLVE_MODE,
     );
     expect(t).toEqual({ targetRelPath: "base.rb", targetSymbolId: "Base#m" });
@@ -86,8 +88,8 @@ describe("firstDefinerAfter — MRO after X (cai0/2oky5)", () => {
   it("reorders walker-stored [superclass, include] to Ruby MRO [include, superclass] via classExtends (cai0/2oky5 Task 5)", () => {
     // Walker stores classAncestors["Sub"] = ["Base", "M"] (superclass FIRST).
     // Ruby MRO is [M, Base] — includes before the superclass.
-    // classExtends["Sub"] = "Base" identifies the superclass so mroOrderedChain
-    // can move it last, making firstDefinerAfter("M","m","Sub") find Base#m.
+    // classExtends["Sub"] = "Base" identifies the superclass so the linearization
+    // sinks it last, making firstDefinerAfter("M","m","Sub") find Base#m.
     const symbolTable = tableWith([
       "base.rb",
       [sym("Base", "Base", "base.rb", []), sym("Base#m", "m", "base.rb", ["Base"])],
@@ -104,6 +106,34 @@ describe("firstDefinerAfter — MRO after X (cai0/2oky5)", () => {
       DEFAULT_AMBIGUOUS_RESOLVE_MODE,
     );
     expect(t).toEqual({ targetRelPath: "base.rb", targetSymbolId: "Base#m" });
+  });
+
+  // bd tea-rags-mcp-uuux9 — within the include region a LATER `include` sits
+  // NEARER, so `super` from the later module continues into the earlier one and
+  // `super` from the earlier one has nothing after it.
+  it("continues from a LATER include into an EARLIER one (class C; include A; include B)", () => {
+    const symbolTable = tableWith(["a.rb", [sym("A", "A", "a.rb", []), sym("A#m", "m", "a.rb", ["A"])]]);
+    const t = firstDefinerAfter(
+      "B",
+      "m",
+      "C",
+      ctx({ symbolTable, classAncestors: { C: ["A", "B"] } }),
+      DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    );
+    expect(t).toEqual({ targetRelPath: "a.rb", targetSymbolId: "A#m" });
+  });
+
+  it("does NOT continue from an EARLIER include into a later one (nothing after A in the MRO)", () => {
+    const symbolTable = tableWith(["b.rb", [sym("B", "B", "b.rb", []), sym("B#m", "m", "b.rb", ["B"])]]);
+    expect(
+      firstDefinerAfter(
+        "A",
+        "m",
+        "C",
+        ctx({ symbolTable, classAncestors: { C: ["A", "B"] } }),
+        DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+      ),
+    ).toBeNull();
   });
 });
 

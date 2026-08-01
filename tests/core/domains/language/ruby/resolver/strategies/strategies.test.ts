@@ -815,7 +815,11 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
         symbolTable,
         callerScope: [],
         callerSymbolId: "AccountOwnedConcern",
-        classAncestors: { FooController: ["AccountOwnedConcern", "ApplicationController"] },
+        // `class FooController < ApplicationController; include AccountOwnedConcern`
+        // — walker storage order, superclass first, which is also the order that
+        // makes the concern NEARER than the base in FooController's MRO.
+        classAncestors: { FooController: ["ApplicationController", "AccountOwnedConcern"] },
+        classExtends: { FooController: "ApplicationController" },
         includedBy: { AccountOwnedConcern: ["FooController"] },
       }),
     );
@@ -1576,9 +1580,10 @@ describe("RubySuperSymbolResolutionStrategy — module-method super (cai0/2oky5)
   const strat = new RubySuperSymbolResolutionStrategy(cfg);
 
   it("resolves module super to the consensus target when including classes agree", () => {
-    // Module M `def m; super; end` included by A and B; both have MRO [M, Base].
-    // Base defines m. classAncestors[M]=[] so the class-keyed walk misses;
-    // includedBy M:[A,B] supplies the reverse path. Both agree → Base#m.
+    // Module M `def m; super; end` included by A and B; both have MRO [M, Base]
+    // — written `class A < Base; include M`, whose walker storage order is
+    // ["Base", "M"]. Base defines m. classAncestors[M]=[] so the class-keyed walk
+    // misses; includedBy M:[A,B] supplies the reverse path. Both agree → Base#m.
     const symbolTable = tableWith(
       ["app/m.rb", [sym("M", "M", "app/m.rb", [])]],
       ["app/a.rb", [sym("A", "A", "app/a.rb", [])]],
@@ -1591,7 +1596,8 @@ describe("RubySuperSymbolResolutionStrategy — module-method super (cai0/2oky5)
       ctx({
         symbolTable,
         callerScope: ["M"],
-        classAncestors: { M: [], A: ["M", "Base"], B: ["M", "Base"] },
+        classAncestors: { M: [], A: ["Base", "M"], B: ["Base", "M"] },
+        classExtends: { A: "Base", B: "Base" },
         includedBy: { M: ["A", "B"] },
       }),
     );
