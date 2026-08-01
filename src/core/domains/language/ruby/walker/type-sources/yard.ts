@@ -1,5 +1,6 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+import { RUBY_NIL_TYPE_REF, rubyUnionOf } from "../../type-ref.js";
 import { readScopeResolution } from "../ast-utils.js";
 import type { RubyExtractInput } from "../walker.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
@@ -390,9 +391,9 @@ function collectYardReturnFacts(input: RubyExtractInput): RubyTypeFact[] {
     const m = returnRegex.exec(raw);
     if (m) {
       const inner = (m[1] ?? "").trim();
-      // Single bare constant only — a collection `[Array<T>]` return is a
-      // collection, not a dispatch target (matches collectYardReturnTypes).
-      pendingReturn = YARD_CONST.test(inner) ? inner : null;
+      // A bare constant, or a nilable / multi-nominal union — see
+      // `yardReturnBracket` for what stays dropped and why.
+      pendingReturn = yardReturnBracket(inner);
       // Claim this `@return` for the pending attribute (if any). It will attach
       // to a following `def` ONLY when that def IS the attribute reader (same
       // name); `seenAttrName` resets so a later bare `@return` stays def-bound.
@@ -419,11 +420,24 @@ function collectYardReturnFacts(input: RubyExtractInput): RubyTypeFact[] {
 }
 
 /**
- * Parse a single non-comma bracket token ("User", "Array<Post>", "Acme::Post") → RubyTypeRef.
- * Returns undefined for unrecognized / lowercase tokens.
+ * The bracket tokens that name Ruby's ABSENCE rather than a class
+ * (bd tea-rags-mcp-27q0z). `@return [Firm, nil]` is how a Ruby codebase says
+ * "this may not find one" — on taxdome it is 26 of the 33 brackets the channel
+ * used to drop. `NilClass` is the same statement spelled as a class, and both
+ * map to the one arm that dispatches to nothing.
+ *
+ * `TrueClass` / `FalseClass` are deliberately absent: they are real classes and
+ * already parse as nominals, so nothing is gained by special-casing them.
+ */
+const YARD_NIL_TOKENS = new Set(["nil", "NilClass"]);
+
+/**
+ * Parse a single non-comma bracket token ("User", "Array<Post>", "Acme::Post",
+ * "nil") → RubyTypeRef. Returns undefined for unrecognized / lowercase tokens.
  */
 function parseSingleBracketToken(token: string): RubyTypeRef | undefined {
   const trimmed = token.trim();
+  if (YARD_NIL_TOKENS.has(trimmed)) return RUBY_NIL_TYPE_REF;
   const container = YARD_ELEMENT_CONTAINER.exec(trimmed);
   if (container) {
     const element = container[1];
@@ -439,7 +453,9 @@ function parseSingleBracketToken(token: string): RubyTypeRef | undefined {
  *
  * - Bare constant `"User"` / `"Acme::Post"` → `{form:"instance", name}`.
  * - Container `"Array<Post>"` → `{form:"container", element:{form:"instance",name:"Post"}}`.
- * - Union `"A, B"` / `"A, B, C"` → `{form:"union", members:[...]}`.
+ * - Nil literal `"nil"` / `"NilClass"` → the nil arm (bd tea-rags-mcp-27q0z).
+ * - Union `"A, B"` / `"A, nil"` → built through `rubyUnionOf`, which flattens,
+ *   dedupes, and collapses a one-arm result back to that arm.
  *   Any member that fails `YARD_CONST` (or is itself unrecognized) → entire union dropped.
  */
 function yardBracketToRef(raw: string): RubyTypeRef | undefined {
@@ -453,10 +469,40 @@ function yardBracketToRef(raw: string): RubyTypeRef | undefined {
       if (ref === undefined) return undefined; // any invalid member → drop whole union
       members.push(ref);
     }
-    return members.length >= 2 ? { form: "union", members } : members[0];
+    return rubyUnionOf(members);
   }
   // ── Single token (container or bare constant) ────────────────────────────
   return parseSingleBracketToken(trimmed);
+}
+
+/**
+ * The `@return` brackets this channel turns into a FACT, as the raw string
+ * (`null` = stay silent). A return fact keys a coordinate the resolver trusts
+ * over inference, so the shapes accepted are deliberately narrower than
+ * {@link yardBracketToRef} understands:
+ *
+ *  - a single bare constant — the pre-27q0z shape, unchanged;
+ *  - a comma list of bare constants and nil literals carrying AT LEAST ONE
+ *    nominal arm (`[Firm, nil]`, `[User, Actor]`) — the nilable/union widening.
+ *
+ * Everything else stays dropped, and each exclusion earns its place: a
+ * collection return (`[Array<Owner>]`, and now `[Array<Owner>, nil]`) genuinely
+ * IS a collection rather than a dispatch target, an unparseable arm
+ * (`Hash<Integer, Array<Actor>>`) makes the whole bracket a guess, and a
+ * bracket with no nominal arm at all (`[nil]`) states no type — parking it at a
+ * coordinate would shadow the body inference that could still answer there.
+ */
+function yardReturnBracket(inner: string): string | null {
+  if (YARD_CONST.test(inner)) return inner;
+  if (!inner.includes(",")) return null;
+  let nominalArms = 0;
+  for (const raw of inner.split(",")) {
+    const token = raw.trim();
+    if (YARD_NIL_TOKENS.has(token)) continue;
+    if (!YARD_CONST.test(token)) return null;
+    nominalArms += 1;
+  }
+  return nominalArms > 0 ? inner : null;
 }
 
 /**

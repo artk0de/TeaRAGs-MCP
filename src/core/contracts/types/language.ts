@@ -574,11 +574,21 @@ export interface LanguageFactoryDescriptor {
  * `union` fans out to a CHA cone; `container` carries an element type for
  * `Array<Post>` / `Relation<X>` element flow. Lives in contracts because
  * `CallContext.structuredReturnTypes` (Task 1.1) references it.
+ *
+ * `nil` is an arm, not an absence (bd tea-rags-mcp-27q0z). A method that yields
+ * a `Firm` on one path and nothing on another says
+ * `union[instance(Firm), nil]`; without the arm the only two options were to
+ * drop the fact (silence) or to state `Firm` unconditionally (an overstatement
+ * that survives into every downstream hop). It carries no name because there is
+ * nothing to name — `nil.foo` reaches no in-project definition, so the RESOLVER
+ * drops nil arms before dispatch while the fact keeps stating them. Build and
+ * compare these through `domains/language/ruby/type-ref.ts`, never by hand.
  */
 export type RubyTypeRef =
   | { form: "class" | "instance"; name: string }
   | { form: "union"; members: RubyTypeRef[] }
-  | { form: "container"; element: RubyTypeRef };
+  | { form: "container"; element: RubyTypeRef }
+  | { form: "nil" };
 
 export type CodegraphTier = "maximum" | "high" | "moderate" | "minimal" | "none";
 

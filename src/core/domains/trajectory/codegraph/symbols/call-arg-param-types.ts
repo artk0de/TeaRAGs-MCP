@@ -41,6 +41,9 @@ export type KnownTargetParamTypes = Record<string, Record<string, RubyTypeRef>>;
  */
 function typeRefEquals(a: RubyTypeRef, b: RubyTypeRef): boolean {
   if (a.form !== b.form) return false;
+  // The nil arm carries nothing to compare — same form is the whole statement
+  // (bd tea-rags-mcp-27q0z).
+  if (a.form === "nil") return true;
   if (a.form === "container") return typeRefEquals(a.element, (b as { element: RubyTypeRef }).element);
   if (a.form === "union") {
     const other = (b as { members: RubyTypeRef[] }).members;
