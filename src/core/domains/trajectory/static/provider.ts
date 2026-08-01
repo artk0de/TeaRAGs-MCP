@@ -40,6 +40,15 @@ export class StaticPayloadBuilder implements PayloadBuilder {
     if (methodLines) {
       payload.methodLines = methodLines;
     }
+    // Symbol mass (chunker post-pass). Class fields ride class chunks only;
+    // fileSymbolCount is flat on every code chunk. Zero carries no ranking
+    // information and stats ignore non-positive values — omit it.
+    const memberCount = m.memberCount as number | undefined;
+    if (memberCount) payload.memberCount = memberCount;
+    const classLines = m.classLines as number | undefined;
+    if (classLines) payload.classLines = classLines;
+    const fileSymbolCount = m.fileSymbolCount as number | undefined;
+    if (fileSymbolCount) payload.fileSymbolCount = fileSymbolCount;
     // Density: chars per line, dampened for small chunks relative to parent size.
     // Threshold adapts: sqrt(methodLines) for split chunks, sqrt(chunkLines) for standalone.
     const chunkLines = chunk.endLine - chunk.startLine;

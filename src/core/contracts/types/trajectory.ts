@@ -56,6 +56,15 @@ export interface SignalStatsRequest {
   /** Only include points where payload.chunkType matches this value. */
   chunkTypeFilter?: string;
   /**
+   * Treat the signal as file-scoped: contribute at most one value per distinct
+   * `relativePath` to each stats bucket (global, per-language, per-scope).
+   *
+   * Set it whenever the same value is stamped on every chunk of a file (e.g.
+   * `fileSymbolCount`). Without it the distribution describes chunks, not
+   * files, and a many-chunk file dominates its own percentiles.
+   */
+  dedupeByFile?: boolean;
+  /**
    * Display hint for consumers rendering this signal's thresholds (prime digest,
    * get_index_metrics labelMap). The stored labelMap / threshold value always
    * stays RAW — this is a render-time hint only, never a value transform.

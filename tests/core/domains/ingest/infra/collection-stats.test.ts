@@ -1134,4 +1134,107 @@ describe("computeCollectionStats distributions", () => {
       expect(result.distributions.topAuthors[0]?.chunks).toBe(2);
     });
   });
+
+  describe("dedupeByFile", () => {
+    // A file-scoped value repeats on every chunk of its file. Counting it once
+    // per chunk lets a many-chunk file outvote every other file in its own
+    // distribution — the percentiles then describe chunks, not files.
+    const fileScoped: PayloadSignalDescriptor[] = [
+      {
+        key: "fileSymbolCount",
+        type: "number",
+        description: "Distinct code symbols declared in the file",
+        stats: {
+          labels: { p50: "typical", p75: "busy", p95: "god-module" },
+          mean: true,
+          stddev: true,
+          dedupeByFile: true,
+        },
+      },
+    ];
+
+    const chunkScoped: PayloadSignalDescriptor[] = [
+      { ...fileScoped[0], stats: { ...fileScoped[0].stats, dedupeByFile: undefined } },
+    ];
+
+    /** One `heavyChunks`-chunk file at value 1, plus three single-chunk files at 10/20/30. */
+    function skewedPoints(heavyChunks = 40) {
+      const heavy = Array.from({ length: heavyChunks }, () => ({
+        payload: {
+          fileSymbolCount: 1,
+          language: "typescript",
+          chunkType: "function",
+          isDocumentation: false,
+          relativePath: "heavy.ts",
+        },
+      }));
+      const others = [10, 20, 30].map((v, i) => ({
+        payload: {
+          fileSymbolCount: v,
+          language: "typescript",
+          chunkType: "function",
+          isDocumentation: false,
+          relativePath: `light${i}.ts`,
+        },
+      }));
+      return [...heavy, ...others];
+    }
+
+    it("counts a many-chunk file once when the signal declares dedupeByFile", () => {
+      const result = computeCollectionStats(skewedPoints(), fileScoped, ALL_ACCS);
+      const stats = result.perSignal.get("fileSymbolCount")!;
+      expect(stats.count).toBe(4);
+      expect(stats.max).toBe(30);
+      // Median of [1, 10, 20, 30] — the heavy file no longer owns the middle.
+      expect(stats.percentiles[50]).toBe(15);
+    });
+
+    it("keeps every aggregate file-weighted, not only the percentiles", () => {
+      const stats = computeCollectionStats(skewedPoints(), fileScoped, ALL_ACCS).perSignal.get("fileSymbolCount")!;
+      // Mean over the four FILES: (1 + 10 + 20 + 30) / 4.
+      expect(stats.mean).toBeCloseTo(15.25, 10);
+      expect(stats.stddev).toBeCloseTo(Math.sqrt([1, 10, 20, 30].reduce((a, v) => a + (v - 15.25) ** 2, 0) / 4), 10);
+    });
+
+    it("does not move any aggregate when one file's chunk count changes", () => {
+      const thin = computeCollectionStats(skewedPoints(3), fileScoped, ALL_ACCS).perSignal.get("fileSymbolCount")!;
+      const fat = computeCollectionStats(skewedPoints(400), fileScoped, ALL_ACCS).perSignal.get("fileSymbolCount")!;
+      expect(fat).toEqual(thin);
+    });
+
+    it("counts every chunk when the signal does not declare dedupeByFile", () => {
+      const result = computeCollectionStats(skewedPoints(), chunkScoped, ALL_ACCS);
+      const stats = result.perSignal.get("fileSymbolCount")!;
+      expect(stats.count).toBe(43);
+      expect(stats.percentiles[50]).toBe(1);
+      // Chunk-weighted mean: the 40-chunk file drags it down to ~2.4.
+      expect(stats.mean).toBeCloseTo((40 * 1 + 10 + 20 + 30) / 43, 10);
+    });
+
+    it("dedupes the per-language bucket as well as the global one", () => {
+      const pythonSpread = Array.from({ length: 12 }, (_, i) => ({
+        payload: {
+          fileSymbolCount: 7,
+          language: "python",
+          chunkType: "function",
+          isDocumentation: false,
+          relativePath: `mod${i}.py`,
+        },
+      }));
+      const pythonHeavy = Array.from({ length: 40 }, () => ({
+        payload: {
+          fileSymbolCount: 2,
+          language: "python",
+          chunkType: "function",
+          isDocumentation: false,
+          relativePath: "heavy.py",
+        },
+      }));
+      const result = computeCollectionStats([...skewedPoints(), ...pythonSpread, ...pythonHeavy], fileScoped, ALL_ACCS);
+      // Global: 4 typescript files + 13 python files.
+      expect(result.perSignal.get("fileSymbolCount")!.count).toBe(17);
+      const python = result.perLanguage.get("python")?.get("fileSymbolCount");
+      expect(python?.source.count).toBe(13);
+    });
+  });
 });
