@@ -53,3 +53,29 @@ describe("kaminari pagination chains — gem-gated relation typing", () => {
     expect(typeOf(PAGE_CHAIN)).toEqual(containerOf("Post"));
   });
 });
+
+describe("ransack search chains — gem-gated relation typing", () => {
+  const SEARCH_CHAIN = "def call\n  posts = Post.ransack(params[:q]).result\nend\n";
+
+  it("`Post.ransack(q).result` binds a relation OF Post when ransack is declared", () => {
+    expect(typeOf(SEARCH_CHAIN, "gem 'ransack'")).toEqual(containerOf("Post"));
+  });
+
+  it("the same chain binds NOTHING when the project's Gemfile lacks ransack", () => {
+    expect(rubyAstInferenceTypeSource.extract(makeInput(SEARCH_CHAIN, "gem 'rails'"))).toHaveLength(0);
+  });
+
+  it("a terminal instance verb on a search result still yields the model instance", () => {
+    const code = "def call\n  post = Post.ransack(q).result.first\nend\n";
+    expect(typeOf(code, "gem 'ransack'")).toEqual({ form: "instance", name: "Post" });
+  });
+
+  it("a search chain paginates — both gems compose into one relation vocabulary", () => {
+    const code = "def call\n  posts = Post.ransack(q).result(distinct: true).page(1)\nend\n";
+    expect(typeOf(code, "gem 'ransack'\ngem 'kaminari'")).toEqual(containerOf("Post"));
+  });
+
+  it("FULL catalogue (no Gemfile) keeps the search grammar active — byte-neutral", () => {
+    expect(typeOf(SEARCH_CHAIN)).toEqual(containerOf("Post"));
+  });
+});

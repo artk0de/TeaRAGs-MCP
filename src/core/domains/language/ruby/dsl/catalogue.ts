@@ -39,6 +39,7 @@ import { GEOCODER_VOCABULARY } from "./geocoder.js";
 import { KAMINARI_VOCABULARY } from "./kaminari.js";
 import { PAPER_TRAIL_VOCABULARY } from "./paper_trail.js";
 import { PUNDIT_VOCABULARY } from "./pundit.js";
+import { RANSACK_VOCABULARY } from "./ransack.js";
 import { ACTIVE_RECORD_INSTANCE_BUILTINS } from "./rails-runtime.js";
 import { RAILS_VOCABULARY } from "./rails.js";
 import { RUBY_CORE_VOCABULARY } from "./ruby-core.js";
@@ -85,6 +86,7 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   DEVISE_VOCABULARY,
   DRAPER_VOCABULARY,
   KAMINARI_VOCABULARY,
+  RANSACK_VOCABULARY,
 ];
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);

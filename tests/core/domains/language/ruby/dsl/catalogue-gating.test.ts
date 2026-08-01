@@ -330,3 +330,38 @@ describe("gem-gated relation grammar — kaminari pagination (bd tea-rags-mcp-lo
     expect(full.entries.paginates_per).toBeDefined();
   });
 });
+
+describe("gem-gated relation grammar — ransack search (bd tea-rags-mcp-lo9u2)", () => {
+  it("`ransack` / `result` are relation-returning ONLY when ransack is declared", () => {
+    const withRansack = composeRubyCatalogue(new Set(["ransack"]));
+    const withoutRansack = composeRubyCatalogue(new Set(["rails"]));
+    for (const verb of ["ransack", "result"]) {
+      expect(withRansack.relationReturning.has(verb), verb).toBe(true);
+      expect(withoutRansack.relationReturning.has(verb), verb).toBe(false);
+    }
+  });
+
+  it("the `ransacker` custom-attribute macro is an entry ONLY under the gem", () => {
+    expect(composeRubyCatalogue(new Set(["ransack"])).entries.ransacker).toBeDefined();
+    expect(composeRubyCatalogue(new Set(["rails"])).entries.ransacker).toBeUndefined();
+  });
+
+  it("a project without ransack keeps `result` free for its OWN methods (no external steal)", () => {
+    expect(composeRubyCatalogue(new Set(["rails"])).isExternalBareCall("result")).toBe(false);
+  });
+
+  it("the allowlist hooks stay OUT of the vocabulary — Ransack 4 makes the APP define them", () => {
+    // `def self.ransackable_attributes` is in-project source; classifying it
+    // external would steal a real edge from the very def that answers the call.
+    const withRansack = composeRubyCatalogue(new Set(["ransack"]));
+    for (const hook of ["ransackable_attributes", "ransackable_associations", "ransackable_scopes"]) {
+      expect(withRansack.isExternalBareCall(hook), hook).toBe(false);
+    }
+  });
+
+  it("null (no Gemfile / gating off) → the ransack grammar is active (FULL default)", () => {
+    const full = composeRubyCatalogue(null);
+    expect(full.relationReturning.has("ransack")).toBe(true);
+    expect(full.entries.ransacker).toBeDefined();
+  });
+});
