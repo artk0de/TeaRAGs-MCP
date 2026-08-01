@@ -21,7 +21,7 @@ SKILL.md near the top for skim safety; the rest live here.
 - **Classifying from a single signal.** "High churn" alone does not imply any
   class. Check companion signals (`imports`, `bugFixRate`, `ageDays`,
   `blockPenalty`) before picking a label. See
-  `references/signal-interpretation.md`.
+  `../../../rules/references/signal-interpretation.md`.
 - **Treating mono ownership as a risk by default.** Healthy owner of stable
   mature code is an asset. Toxic silo requires pairing with bugFixRate or churn.
 - **Ignoring `imports` when classifying churn-heavy files.** Without fan-in, god
@@ -29,3 +29,16 @@ SKILL.md near the top for skim safety; the rest live here.
 - **Reporting feature-in-progress or boilerplate churn as risks.** High churn on
   a new single-author file with healthy bugFixRate is normal development. High
   churn on a DTO with high blockPenalty is boilerplate, not a hotspot.
+- **Running decomposition as a post-filter over risk hits.** That was the old
+  Phase 4.3, and it made a large but git-quiet method unreachable — it never
+  entered the risk map, so nothing could filter it in. Phase 1b scans the
+  structural axis independently.
+- **Merging structural hits into overlap tiers.** Size is not risk. Structural
+  candidates get their own section, annotated with risk and fix cost.
+- **Claiming `cheap` from missing signals.** Codegraph off → fanIn /
+  transitiveImpact / pageRank score 0 and the fix-cost estimate is partial, not
+  cheap.
+- **Standalone refactoring hunt through this skill.** Want decomposition
+  candidates with no risk question attached → `refactoring-scan`.
+  `risk-assessment` surfaces structural debt only within the assessment scope,
+  annotated with risk and cost.

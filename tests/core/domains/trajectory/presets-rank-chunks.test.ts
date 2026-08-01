@@ -5,6 +5,7 @@ import { STATIC_PRESETS } from "../../../../src/core/domains/trajectory/static/r
 
 const RANK_CHUNKS_PRESETS = new Set([
   "decomposition",
+  "godModule",
   "bugHunt",
   "techDebt",
   "hotspots",
@@ -17,7 +18,7 @@ const RANK_CHUNKS_PRESETS = new Set([
 describe("preset tool lists", () => {
   const allPresets = [...STATIC_PRESETS, ...GIT_PRESETS];
 
-  it("only decomposition, techDebt, hotspots, refactoring, ownership include rank_chunks", () => {
+  it("only the presets on the rank_chunks allow-list include rank_chunks", () => {
     for (const preset of allPresets) {
       if (RANK_CHUNKS_PRESETS.has(preset.name)) {
         expect(preset.tools, `${preset.name} should include rank_chunks`).toContain("rank_chunks");

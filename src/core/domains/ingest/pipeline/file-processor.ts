@@ -11,19 +11,20 @@ import { join, relative } from "node:path";
 
 import type { FileExtraction } from "../../../contracts/types/codegraph.js";
 import { isCompiledJsContent, isJsFamilyPath } from "../../../infra/file-classification/index.js";
+import { isDebug } from "../../../infra/runtime.js";
 import { isTestPath } from "../../../infra/scope-detection.js";
 import type { ChunkLookupEntry, CodeChunk } from "../../../types.js";
 import type { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
 import { classifyQuarantinable, type QuarantineStore } from "../sync/index.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
 import type { ChunkerPool } from "./chunker/infra/pool.js";
+import { assignSymbolMass } from "./chunker/symbol-mass.js";
 import { generateChunkId } from "./chunker/utils/chunk-id.js";
 import { extractImportsExports } from "./chunker/utils/import-extractor.js";
 import { detectLanguage } from "./chunker/utils/language-detector.js";
 import { containsSecrets } from "./chunker/utils/secrets-detector.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { parallelLimit } from "./infra/parallel.js";
-import { isDebug } from "../../../infra/runtime.js";
 
 /**
  * Post-process chunks of a single file:
@@ -234,6 +235,9 @@ export async function processFiles(
 
         // Post-process: doc symbolIds + navigation links
         assignNavigationAndDocSymbolId(chunks, basePath);
+        // Post-process: symbol mass over the file's full chunk array. Runs
+        // after doc symbolIds so documentation chunks are already identifiable.
+        assignSymbolMass(chunks);
 
         // Apply chunk limits if configured
         const chunksToAdd = options.maxChunksPerFile ? chunks.slice(0, options.maxChunksPerFile) : chunks;
@@ -262,6 +266,9 @@ export async function processFiles(
               symbolId: chunk.metadata.symbolId,
               isDocumentation: chunk.metadata.isDocumentation,
               methodLines: chunk.metadata.methodLines,
+              memberCount: chunk.metadata.memberCount,
+              classLines: chunk.metadata.classLines,
+              fileSymbolCount: chunk.metadata.fileSymbolCount,
               headingPath: chunk.metadata.headingPath,
               navigation: chunk.metadata.navigation,
               ...(imports.length > 0 && { imports }),

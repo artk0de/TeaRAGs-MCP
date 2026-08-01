@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { staticDerivedSignals as structuralSignals } from "../../../../src/core/domains/trajectory/static/rerank/derived-signals/index.js";
 
 describe("structuralSignals", () => {
-  it("has 7 descriptors", () => {
-    expect(structuralSignals).toHaveLength(7);
+  it("has 8 descriptors", () => {
+    expect(structuralSignals).toHaveLength(8);
   });
 
   it("structural signals declare correct sources", () => {
@@ -13,6 +13,8 @@ describe("structuralSignals", () => {
         expect(d.sources).toEqual(["methodLines"]);
       } else if (d.name === "chunkDensity") {
         expect(d.sources).toEqual(["methodDensity", "methodLines"]);
+      } else if (d.name === "symbolCount") {
+        expect(d.sources).toEqual(["fileSymbolCount"]);
       } else {
         expect(d.sources).toEqual([]);
       }

@@ -12,15 +12,17 @@ argument-hint: "[scope — domain, subsystem, or 'whole project']"
 
 ## Phase Order (MANDATORY — do not skip any phase)
 
-🛑 STOP — read all 5 phases before scanning.
+🛑 STOP — read all phases before scanning.
 
 1. Phase 1 — SCAN with primary preset
-2. Phase 2 — SCAN with stratified second preset (**MUST run, even if Phase 1
+2. Phase 1b — STRUCTURAL scan (**MUST run in the same parallel block —
+   structural debt is git-blind, a big quiet method never reaches Phase 1**)
+3. Phase 2 — SCAN with stratified second preset (**MUST run, even if Phase 1
    found enough hits — single-preset risk maps are biased**)
-3. Phase 3 — MERGE results with negativeIds dedup (**MUST use negativeIds, NEVER
+4. Phase 3 — MERGE results with negativeIds dedup (**MUST use negativeIds, NEVER
    manual filtering**)
-4. Phase 4 — CLASSIFY into severity tiers
-5. Phase 5 — REPORT pair-diagnostics (**MUST surface signal pairs, single-signal
+5. Phase 4 — CLASSIFY into severity tiers, score fix cost
+6. Phase 5 — REPORT pair-diagnostics (**MUST surface signal pairs, single-signal
    reports are misleading**)
 
 ## Top Anti-patterns (read before scanning)
@@ -31,14 +33,17 @@ argument-hint: "[scope — domain, subsystem, or 'whole project']"
   of slots. Always run stratified second scan with `!**/dominant/**`.
 - **Classifying from a single signal.** "High churn" alone implies no class.
   Check companion signals (`imports`, `bugFixRate`, `ageDays`, `blockPenalty`)
-  before picking a label. See `references/signal-interpretation.md`.
+  before picking a label. See `../../rules/references/signal-interpretation.md`.
+- **Folding structural debt into overlap tiers.** Size is not risk. Structural
+  hits get their own section, annotated with risk, never a tier slot.
 
 Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 
 ---
 
 Multi-dimensional risk scan via rank_chunks × 4 rerank presets, cross-referenced
-by overlap count. Semantic/hybrid search resolves intent-based scopes.
+by overlap count, plus a git-independent structural axis (2 presets) reported
+separately. Semantic/hybrid search resolves intent-based scopes.
 
 ## Rules
 
@@ -51,18 +56,21 @@ by overlap count. Semantic/hybrid search resolves intent-based scopes.
    `Read(path, offset=startLine, limit=endLine-startLine)` using coordinates
    from search results. Never read full files.
 6. **Minimize tool calls.** Batch: all rank_chunks one message, all Critical
-   UUIDs one find_similar, all symbol names one hybrid_search. Target: ≤12 calls
-   domain scope, ≤16 broad scope.
+   UUIDs one find_similar, all symbol names one hybrid_search. Target: ≤14 calls
+   domain scope, ≤18 broad scope. Phase 4 god-class fallback adds ≤7 (2 probes +
+   5 outlines) — only when symbol-mass fields are absent.
 
 ## Flow
 
 ```
 0. SCOPE RESOLUTION   → pathPattern + scopeType
-1. SCAN               → rank_chunks × 4 presets (parallel)
-2. MERGE              → cross-reference by relativePath, assign tiers
+1. SCAN               → rank_chunks × 4 risk presets      ─┐ one parallel block
+1b STRUCTURAL         → rank_chunks × decomposition, godModule ─┘
+2. MERGE              → risk presets ONLY — structural results never enter tiers
 3. EXPAND             → find_similar from Critical only
-4. ENRICH             → partial Read + test coverage + structural axis (codegraph) + classify
-5. OUTPUT             → top-10 risk map + structural risks
+4. ENRICH             → partial Read + test coverage + codegraph axis + fix cost
+                        + god-class attribution + classify
+5. OUTPUT             → top-10 risk map + structural risks + structural debt
 ```
 
 ## Phase 0: SCOPE RESOLUTION
@@ -162,6 +170,33 @@ with results (may be < 4).
 
 One page usually sufficient.
 
+## Phase 1b: STRUCTURAL SCAN
+
+Two more `rank_chunks` calls, SAME message as Phase 1, same `pathPattern`,
+`limit: 10`, `metaOnly: false`.
+
+| Preset          | Axis   | Surfaces                                        |
+| --------------- | ------ | ----------------------------------------------- |
+| `decomposition` | method | Large + dense + high outgoing load (god-method) |
+| `godModule`     | file   | Interface mass — god classes, god modules       |
+
+**Why a separate phase.** Structural debt is git-blind. A 300-line method nobody
+has touched in two years never churns, never bug-fixes, never reaches Phase 1 —
+and never will while decomposition runs as a post-filter over risk hits.
+
+**Results DO NOT enter Phase 2 overlap tiers.** Size is not risk. They get their
+own OUTPUT section, annotated with risk and fix cost.
+
+Degradation:
+
+- **Codegraph off** (prime `## Enrichment` lacks `codegraph.symbols`) →
+  `decomposition` resolves the size-only static variant. Note "god-method lens
+  unavailable — codegraph off". `godModule` resolves the mass-only static
+  variant, still valid.
+- **Symbol-mass fields absent** (overlay carries no `fileSymbolCount` — index
+  predates the signals) → `godModule` ranks flat. Use the Phase 4 fallback
+  finder and label the output accordingly.
+
 ## Phase 2: MERGE
 
 Cross-reference by `relativePath` (primary key). Within same file, chunks
@@ -250,13 +285,7 @@ call covers all candidates.
 - Symbol absent from results → "untested risk zone"
 - Symbol present → note test path (do NOT read test content)
 
-**3. Decomposition check** — Run `rank_chunks` `decomposition` preset, scoped to
-same pathPattern. Cross-reference Critical/High candidates by relativePath. Risk
-candidate also decomposition candidate (methodLines label = high+ from labelMap)
-→ add "Oversized" classification. NOT a 4th MERGE preset — decomposition
-measures size, not risk. Post-filter on already-identified risk zones.
-
-**3b. Structural amplifier + cycles (codegraph axis).** ONLY when prime shows
+**3. Structural amplifier + cycles (codegraph axis).** ONLY when prime shows
 `codegraph.symbols` under `## Enrichment`. Line absent → graph tools not
 registered — skip, note structural risk not assessed (never claim "no cycles" /
 "no hubs"). See search-cascade "Graph navigation" for off-routing.
@@ -274,13 +303,57 @@ registered — skip, note structural risk not assessed (never claim "no cycles" 
   > valid "no cycles (DAG)". Surface findings in OUTPUT Structural risks
   > section.
 
-**4. Risk classification** — from overlay labels + tier + test coverage.
+**4. Fix-cost classifier** — every Critical/High risk candidate AND every Phase
+1b structural candidate. Scored from overlay signals already fetched — zero
+extra calls.
+
+| Input                   | 0                | 1         | 2        |
+| ----------------------- | ---------------- | --------- | -------- |
+| `chunk.fanIn`           | unused / typical | frequent  | central  |
+| `file.transitiveImpact` | local            | regional  | systemic |
+| `chunk.pageRank`        | peripheral       | important | critical |
+| tests (step 2 result)   | present          | absent    | —        |
+
+Sum → 0-2 `cheap`, 3-4 `moderate`, 5+ `expensive`.
+
+Missing tests feeds BOTH risk (defect likelihood) AND cost (refactor safety).
+Intentional: one input, two different quantities.
+
+Codegraph off → those rows score 0; mark the estimate partial, never claim
+`cheap` from missing signals.
+
+**5. God-class attribution** — for `godModule` hits.
+
+Primary path (overlay carries `fileSymbolCount` / `memberCount` / `classLines`)
+— zero extra calls:
+
+- One class holds most of the file's members → **god class**. Report the class
+  symbol with `memberCount` + `classLines`.
+- Symbols spread top-level, no dominant class → **god module**. Report the file
+  with `fileSymbolCount`.
+
+Fallback path (fields absent — index predates symbol-mass signals):
+
+1. `rank_chunks` with
+   `filter: { must: [{ key: "chunkIndex", range: { gte: 20 } }] }`,
+   `metaOnly: true`, `limit: 20`. Any hit = file with ≥21 chunks — exact lower
+   bound, size-unbiased (a class of 40 five-line methods is still caught).
+   Adaptive threshold: empty at 20 → probe 10; >20 files → probe 40. Max 2
+   probes.
+2. Dedupe by `relativePath` → `find_symbol({relativePath})` per candidate,
+   cap 5. Exact member counts from the merged outline (distinct member
+   symbolIds, `#partN` folded), spans from `startLine` / `endLine`.
+
+Label the output "fallback path — index predates symbol-mass signals". Reported
+numbers ALWAYS come from the outline (exact), NEVER from the finder window.
+
+**6. Risk classification** — from overlay labels + tier + test coverage.
 
 **BEFORE picking a class, consult pair diagnostics.** Single overlay signals
-ambiguous. `references/signal-interpretation.md` gives pair/triple rules that
-disambiguate patterns (god module vs bug attractor, healthy owner vs toxic silo,
-active development vs coupling, legacy minefield vs proven stable). Read
-whenever overlay shows more than one strong signal.
+ambiguous. `../../rules/references/signal-interpretation.md` gives pair/triple
+rules that disambiguate patterns (god module vs bug attractor, healthy owner vs
+toxic silo, active development vs coupling, legacy minefield vs proven stable).
+Read whenever overlay shows more than one strong signal.
 
 **Key disambiguators** (always check before classifying):
 
@@ -310,8 +383,8 @@ method inside. Overlay shows both → chunk-level locates exact problem:
 - Bug attractor → find chunk with highest `chunk.bugFixRate`
 - Fossil vs active legacy → `chunk.ageDays` inside old file
 
-See `references/signal-interpretation.md` § "Method-level (chunk) pair
-diagnostics" for the full table.
+See `../../rules/references/signal-interpretation.md` § "Method-level (chunk)
+pair diagnostics" for the full table.
 
 See [references/classification-tiers.md](./references/classification-tiers.md)
 for the full 13-tier table.
@@ -352,14 +425,27 @@ not assessed — codegraph off") when prime has no `codegraph.symbols`.
   high-`fanIn`: `symbol() file.ts:line — fanIn:N, blast-radius`.
 - **Cycles** — from `find_cycles`: `a.ts → b.ts → a.ts` (or "no cycles — DAG").
 
+## Structural debt (independent of git risk)
+
+| # | Symbol | File:Line | Smell | Size | Fix cost | Also risk? |
+|---|--------|-----------|-------|------|----------|------------|
+| 1 | Foo#bar() | foo.ts:120 | god-method | 180 LOC, fanOut:14 god-method | cheap | — |
+| 2 | Baz | baz.ts:1-740 | god-class | 34 members, 661 LOC | expensive | High #3 |
+
 ## Summary
 
 - Critical zones: [count] — require immediate attention
 - High zones: [count] — schedule for review
 - Test gaps: [count] untested files among Critical/High
+- Structural debt: [count] — [count] cheap, [count] also in a risk tier
 - Dominant risk type: [most common classification]
 - Recommendation: [one-sentence next step]
 ```
+
+**Structural debt section** — present whenever Phase 1b ran. Sorted by (size ×
+cheapness): cheap decomposition candidates on top. `Also risk?` is the only link
+back to the risk map; the intersection (structural debt AND risk tier) is the
+"do now" quadrant and gets its own Summary line.
 
 **Label mapping:** Use labelMap from `get_index_metrics` (session start). Show
 raw value + label: `bugFix:58% concerning`.

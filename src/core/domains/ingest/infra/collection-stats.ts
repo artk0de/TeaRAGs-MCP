@@ -54,17 +54,27 @@ function readPayloadPath(payload: Record<string, unknown>, path: string): unknow
 /**
  * Push a signal value to target array if the point passes chunkType filter
  * and the value is a positive number.
+ *
+ * `dedupe` is supplied for signals declaring `stats.dedupeByFile`: the token
+ * identifies (bucket, signal, file), so each distinct file contributes at most
+ * one value to that bucket. Without it a file-scoped value repeated on every
+ * chunk would let a many-chunk file dominate its own distribution.
  */
 function tryPushSignalValue(
   point: { payload: Record<string, unknown> },
   signal: PayloadSignalDescriptor,
   pointChunkType: unknown,
   target: number[],
+  dedupe?: { seen: Set<string>; token: string },
 ): void {
   const filter = signal.stats?.chunkTypeFilter;
   if (filter && pointChunkType !== filter) return;
   const val = readPayloadPath(point.payload, signal.key);
   if (typeof val === "number" && val > 0) {
+    if (dedupe) {
+      if (dedupe.seen.has(dedupe.token)) return;
+      dedupe.seen.add(dedupe.token);
+    }
     target.push(val);
   }
 }
@@ -109,16 +119,28 @@ class SignalValuesAccumulator implements StatsAccumulator<SignalValuesResult> {
   private readonly valueArrays: Map<string, number[]>;
   private readonly perLanguageValues = new Map<string, Map<string, number[]>>();
   private readonly perLanguageScopedValues = new Map<string, Map<string, { source: number[]; test: number[] }>>();
+  /** (bucket, signal, file) tokens already counted for `dedupeByFile` signals. */
+  private readonly seenFileScoped = new Set<string>();
 
   constructor(private readonly statsSignals: PayloadSignalDescriptor[]) {
     this.valueArrays = new Map(statsSignals.map((s) => [s.key, []]));
+  }
+
+  /** Dedupe descriptor for a file-scoped signal in one bucket; undefined otherwise. */
+  private fileScopedDedupe(
+    signal: PayloadSignalDescriptor,
+    ctx: PointContext,
+    bucket: string,
+  ): { seen: Set<string>; token: string } | undefined {
+    if (!signal.stats?.dedupeByFile) return undefined;
+    return { seen: this.seenFileScoped, token: `${bucket}|${signal.key}|${ctx.relPath}` };
   }
 
   accept(point: StatsPoint, ctx: PointContext): void {
     if (ctx.isCodeLanguage && ctx.scope === "source") {
       for (const signal of this.statsSignals) {
         const arr = this.valueArrays.get(signal.key);
-        if (arr) tryPushSignalValue(point, signal, ctx.pointChunkType, arr);
+        if (arr) tryPushSignalValue(point, signal, ctx.pointChunkType, arr, this.fileScopedDedupe(signal, ctx, "all"));
       }
     }
     if (typeof ctx.lang !== "string") return;
@@ -131,7 +153,9 @@ class SignalValuesAccumulator implements StatsAccumulator<SignalValuesResult> {
     }
     for (const signal of this.statsSignals) {
       const langArr = langMap.get(signal.key);
-      if (langArr) tryPushSignalValue(point, signal, ctx.pointChunkType, langArr);
+      if (langArr) {
+        tryPushSignalValue(point, signal, ctx.pointChunkType, langArr, this.fileScopedDedupe(signal, ctx, "lang"));
+      }
     }
 
     if (ctx.scope === null) return;
@@ -145,7 +169,7 @@ class SignalValuesAccumulator implements StatsAccumulator<SignalValuesResult> {
       const scopedArr = scopedMap.get(signal.key);
       if (!scopedArr) continue;
       const target = ctx.scope === "test" ? scopedArr.test : scopedArr.source;
-      tryPushSignalValue(point, signal, ctx.pointChunkType, target);
+      tryPushSignalValue(point, signal, ctx.pointChunkType, target, this.fileScopedDedupe(signal, ctx, ctx.scope));
     }
   }
 

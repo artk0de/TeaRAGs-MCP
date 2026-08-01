@@ -497,6 +497,18 @@ export interface CodeChunk {
     /** Original method/block line count before chunk splitting. Used by decomposition signals. */
     methodLines?: number;
 
+    /**
+     * Symbol mass, stamped by the `symbol-mass.ts` post-pass over the file's
+     * assembled chunk array. Class fields land on class chunks only;
+     * `fileSymbolCount` is flat on every code chunk of the file.
+     */
+    /** Distinct direct members of this class. Class chunks only. */
+    memberCount?: number;
+    /** Real class span in lines (last member's endLine − class startLine). Class chunks only. */
+    classLines?: number;
+    /** Distinct code symbolIds declared in this file. */
+    fileSymbolCount?: number;
+
     /** Heading breadcrumb path for documentation chunks. Internal — stripped from API responses. */
     headingPath?: { depth: number; text: string }[];
 

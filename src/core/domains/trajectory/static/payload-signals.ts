@@ -32,4 +32,25 @@ export const BASE_PAYLOAD_SIGNALS: PayloadSignalDescriptor[] = [
     stats: { labels: { p50: "sparse", p95: "dense" }, chunkTypeFilter: "function" },
   },
   { key: "contentSize", type: "number", description: "Character count of chunk content" },
+  {
+    key: "memberCount",
+    type: "number",
+    description: "Distinct direct members (methods, nested classes) declared by this class",
+    stats: { labels: { p50: "typical", p75: "large", p95: "god-class" }, chunkTypeFilter: "class" },
+  },
+  {
+    key: "classLines",
+    type: "number",
+    description: "Real class span in lines — last member's end line minus the class start line",
+    stats: { labels: { p50: "small", p75: "large", p95: "megaclass" }, chunkTypeFilter: "class" },
+  },
+  {
+    key: "fileSymbolCount",
+    type: "number",
+    description: "Distinct code symbols declared in this file (stamped on every code chunk of the file)",
+    // File-scoped value repeated on every chunk of the file: percentiles must
+    // be taken over distinct files, or a many-chunk file outvotes every other
+    // file in its own distribution.
+    stats: { labels: { p50: "typical", p75: "busy", p95: "god-module" }, dedupeByFile: true },
+  },
 ];

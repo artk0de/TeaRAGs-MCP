@@ -23,20 +23,22 @@ describe("StaticTrajectory", () => {
     expect(keys).toContain("isTest");
   });
 
-  it("has 7 derived signals", () => {
-    expect(trajectory.derivedSignals).toHaveLength(7);
+  it("has 8 derived signals", () => {
+    expect(trajectory.derivedSignals).toHaveLength(8);
     const names = trajectory.derivedSignals.map((d) => d.name);
     expect(names).toContain("similarity");
     expect(names).toContain("chunkSize");
     expect(names).toContain("chunkDensity");
     expect(names).toContain("headingRelevance");
+    expect(names).toContain("symbolCount");
   });
 
-  it("has 3 presets", () => {
-    expect(trajectory.presets).toHaveLength(3);
+  it("has 4 presets", () => {
+    expect(trajectory.presets).toHaveLength(4);
     expect(trajectory.presets.map((p) => p.name)).toContain("relevance");
     expect(trajectory.presets.map((p) => p.name)).toContain("decomposition");
     expect(trajectory.presets.map((p) => p.name)).toContain("documentationRelevance");
+    expect(trajectory.presets.map((p) => p.name)).toContain("godModule");
   });
 
   it("has 7 static filters", () => {
