@@ -78,7 +78,11 @@ import {
   ivarTypeName,
   returnTypeOf,
 } from "../src/core/domains/language/ruby/resolver/type-propagation.js";
-import { forEachClassScope, readScopeResolution } from "../src/core/domains/language/ruby/walker/ast-utils.js";
+import {
+  forEachClassScope,
+  readScopeResolution,
+  walk as walkAst,
+} from "../src/core/domains/language/ruby/walker/ast-utils.js";
 import { rbNameOf } from "../src/core/domains/language/ruby/walker/index.js";
 import { constantLookupCandidates } from "../src/core/domains/language/ruby/walker/param-arg-types.js";
 import {
@@ -277,6 +281,56 @@ const ofChunkBindings: {
   scope: readonly string[];
   bindings: Record<string, string>;
 }[] = [];
+
+// ---------------------------------------------------------------------------
+// INCLUDE-GRAPH ORACLE (bd tea-rags-mcp-ypist, oracle-first gate for epic
+// tea-rags-mcp-95a9l, 2026-08-01). Same additive, env-gated contract as every
+// oracle above: with CODEGRAPH_INCLUDEGRAPH_ORACLE unset nothing extra is
+// scanned or reported and the A/B recall metrics are byte-identical.
+//
+// The nullary oracle (pr7fu) and the owner-fact oracle (rwv3o) both end on the
+// SAME verdict line — "no definer on the caller's MRO" — carrying 5639 misses
+// and 2309 binding sites. Both say the definer EXISTS in-project and the
+// ancestor chain the walker reconstructed never reaches it. Neither says WHY,
+// and the why is what decides which mechanism gets built.
+//
+// This oracle classifies every site in those two populations by the inclusion
+// mechanism that would make its definer reachable at RUNTIME:
+//   (a) `helper_method :x` published from a controller ancestor;
+//   (b) ActionView helper autoinclusion — `app/helpers/**` into a view/helper/
+//       controller context, or an explicit `helper Mod` declaration;
+//   (c) include/prepend/extend executed at runtime — initializer, method body,
+//       `included do`, `class_eval` (the lawlq.5 orphanScope class);
+//   (d) a concern's NESTED scope under the ActiveSupport::Concern convention
+//       (`ClassMethods`, `InstanceMethods`, …) whose parent module is already
+//       on the caller's MRO — the include edge exists, the projection of the
+//       nested scope does not;
+//   (e) a DSL verb the caller's class body invokes whose own body performs the
+//       mixin (gem-style macro-mediated inclusion);
+//   (f) a MODULE with no static and no runtime mixin channel anywhere — the
+//       dynamic floor.
+//
+// A site whose definers carry several mechanisms is counted under the MOST
+// SPECIFIC one (order a → d → b → e → c → f) and tallied separately as
+// ambiguous. Two RESIDUALS are held outside the idiom list on purpose, because
+// crediting them to the epic would inflate the lever:
+//   • `x:ownerIncludableElsewhere` — the owner IS a module statically mixed in
+//     somewhere, just never into this caller (a receiver-typing hole);
+//   • `x:nonMixinOwner` — the owner is a CLASS, so inclusion can never be the
+//     mechanism (`Billing::Invoice#firm` reached from an unrelated caller is a
+//     homonym artefact, not a missing heritage edge).
+// Nested scopes OUTSIDE the concern convention (`KindOfService::Result`) fall
+// into those residuals for the same reason: `Result` is not reachable from an
+// includer of `KindOfService`, so its misses are typing, not inclusion.
+//
+// Every input is a fold over the same materialized AST + symbol table pass-1
+// already builds. The static-mixin recogniser mirrors the walker's own
+// `mixinTargetFromStatement` traversal (direct class/module body statements +
+// `class << self`), so "runtime" here means precisely "the mixin edge the
+// production walker does not emit" — the categorisation cannot drift from what
+// the resolver actually sees.
+// ---------------------------------------------------------------------------
+const INCLUDEGRAPH_ENABLED = process.env.CODEGRAPH_INCLUDEGRAPH_ORACLE === "1";
 
 // ---------------------------------------------------------------------------
 // SUPER-MISS ORACLE (bd tea-rags-mcp-lawlq.5, 2026-07-27). Fifth oracle under
@@ -524,9 +578,9 @@ function ingestPass1(extraction: FileExtraction, materializedRoot: AstNode): voi
     for (const [symbolId, indices] of Object.entries(extraction.callbackParams)) runCallbackParams[symbolId] = indices;
   }
   runSelfDispatchMethods.push(...extractSelfDispatchMethods(extraction.chunks));
-  if (OWNERFACT_ENABLED || CALLEESHAPE_ENABLED || NULLARY_ENABLED) {
+  if (OWNERFACT_ENABLED || CALLEESHAPE_ENABLED || NULLARY_ENABLED || INCLUDEGRAPH_ENABLED) {
     for (const chunk of extraction.chunks) {
-      if (NULLARY_ENABLED) {
+      if (NULLARY_ENABLED || INCLUDEGRAPH_ENABLED) {
         const names = new Set(Object.keys(chunk.localBindings ?? {}));
         for (const name of Object.keys(chunk.localCallBindings ?? {})) names.add(name);
         nlChunkLocals.set(`${extraction.relPath}|${chunk.symbolId}`, names);
@@ -5378,8 +5432,7 @@ function sgVisibilityOf(defNode: AstNode): SgVisibility {
   const name = defNode.childForFieldName("name")?.text ?? "";
   const methodFieldOf = (n: AstNode) =>
     n.childForFieldName("method") ?? n.children.find((c) => c.type === "identifier");
-  const argsOf = (n: AstNode) =>
-    n.childForFieldName("arguments") ?? n.children.find((c) => c.type === "argument_list");
+  const argsOf = (n: AstNode) => n.childForFieldName("arguments") ?? n.children.find((c) => c.type === "argument_list");
 
   let current: SgVisibility = "public";
   let symbolForm: SgVisibility | undefined;
@@ -7006,11 +7059,618 @@ function runNullaryOracle(): void {
     L(`  ${String(n).padStart(6)}  ${verdict}`);
   }
   L("");
-  L(`─── body shape of the UNCOVERED nullary definers (${uncovered.size} coords, files ${byFile.size}, fail ${parseFailures})`);
+  L(
+    `─── body shape of the UNCOVERED nullary definers (${uncovered.size} coords, files ${byFile.size}, fail ${parseFailures})`,
+  );
   for (const [shape, n] of [...shapeMisses.entries()].sort((a, b) => b[1] - a[1])) {
     L(`  ${String(n).padStart(6)} misses  ${String(shapeDefs.get(shape) ?? 0).padStart(5)} defs   ${shape}`);
     for (const ex of examples.get(shape) ?? []) L(`                                  e.g. ${ex}`);
   }
+  L("");
+}
+
+// ===========================================================================
+// INCLUDE-GRAPH ORACLE (CODEGRAPH_INCLUDEGRAPH_ORACLE=1) — bd tea-rags-mcp-ypist
+//
+// Two folds, one classifier. The folds re-derive the exact populations pr7fu
+// and rwv3o report as "no definer on the caller's MRO"; the classifier answers,
+// per site, which inclusion mechanism would put a definer there.
+// ===========================================================================
+const OUT_INCLUDEGRAPH = join(OUT_DIR, "includegraph-oracle-report.json");
+
+/** The three mixin verbs the walker recognises; nothing else is a mixin edge. */
+const IG_MIXIN_VERBS: ReadonlySet<string> = new Set(["include", "extend", "prepend"]);
+/** Constant shape `mixinTargetFromStatement` accepts, verbatim. */
+const IG_CONST_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
+/** A plain lowercase ruby method name (the class-body verb form). */
+const IG_VERB_RE = /^[a-z_]\w*[?!]?$/;
+/** Class-body calls that can never be a mixin-carrying DSL verb. */
+const IG_VERB_STOPWORDS: ReadonlySet<string> = new Set([
+  "include",
+  "extend",
+  "prepend",
+  "require",
+  "require_relative",
+  "require_dependency",
+  "load",
+  "private",
+  "public",
+  "protected",
+  "private_class_method",
+  "public_class_method",
+  "module_function",
+  "attr_reader",
+  "attr_writer",
+  "attr_accessor",
+  "raise",
+  "puts",
+  "freeze",
+  "helper_method",
+  "helper",
+  "new",
+]);
+/** Concern/inheritance hooks — a mixin inside one is not a callable DSL verb. */
+const IG_HOOK_NAMES: ReadonlySet<string> = new Set(["included", "extended", "prepended", "inherited", "initialize"]);
+/** Caller paths an ActionView helper is auto-included into. */
+const IG_VIEW_CONTEXTS = [
+  "app/views/",
+  "app/helpers/",
+  "app/controllers/",
+  "app/mailers/",
+  "app/cells/",
+  "app/components/",
+  "app/presenters/",
+  "app/decorators/",
+];
+/** Machinery that reaches a definer with no inclusion edge at all (the floor). */
+const IG_DYNAMIC_RE = /\bmethod_missing\b|\bdefine_method\b|\bconstantize\b|\bconst_get\b|\bpublic_send\b/;
+/**
+ * The ActiveSupport::Concern nesting convention. Only a nested scope with one of
+ * these tails is a CONCERN projection gap — any other nested constant under an
+ * on-MRO module (`KindOfService::Result`) is lexical coincidence, and calling it
+ * idiom (d) would credit the include-graph epic with a receiver-typing hole.
+ */
+const IG_CONCERN_NEST_TAILS: ReadonlySet<string> = new Set([
+  "ClassMethods",
+  "InstanceMethods",
+  "LocalInstanceMethods",
+  "Helpers",
+  "HelperMethods",
+  "Macros",
+  "Extensions",
+]);
+
+/** class/module FQ → members it publishes to views via `helper_method :x`. */
+const igHelperMethodDecls = new Map<string, Set<string>>();
+/** Every member any `helper_method` declares — an O(1) gate before the walk. */
+const igHelperMethodMembers = new Set<string>();
+/** class FQ → modules pulled in with the controller `helper Mod` verb. */
+const igHelperDecls = new Map<string, Set<string>>();
+/** class/module FQ → bare class-body verbs it invokes (`acts_as_x`, `mount_x`…). */
+const igClassBodyVerbs = new Map<string, Set<string>>();
+/** Every module the walker DOES see mixed in (direct class-body statement). */
+const igStaticMixinTargets = new Set<string>();
+/** Module → the runtime contexts that mix it in; the walker emits no edge for any. */
+const igRuntimeMixinTargets = new Map<string, Set<string>>();
+/** Verb name → the modules that verb's own body mixes in (DSL-mediated mixin). */
+const igVerbMixins = new Map<string, Set<string>>();
+/** Files carrying dynamic-dispatch machinery, for the floor's evidence split. */
+const igDynamicFiles = new Set<string>();
+/** FQ → whether it is declared `module` (mixable) or `class` (never a mixin). */
+const igDeclaredKinds = new Map<string, "class" | "module">();
+/** Sampled runtime-mixin sites, so the report can name the code, not just count it. */
+const igRuntimeSites: { module: string; verb: string; context: string; relPath: string; line: number }[] = [];
+
+/** The constant a mixin call takes as its first argument, or null. */
+function igMixinArgOf(node: AstNode): string | null {
+  const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  const first = args.namedChildren[0];
+  if (!first) return null;
+  const text =
+    first.type === "constant" ? first.text : first.type === "scope_resolution" ? readScopeResolution(first) : null;
+  return text !== null && IG_CONST_RE.test(text) ? text : null;
+}
+
+/** The method-name node of a call, tolerating the receiverless grammar shape. */
+function igMethodNodeOf(node: AstNode): AstNode | null {
+  if (node.type !== "call" && node.type !== "method_call") return null;
+  const explicit = node.childForFieldName("method");
+  if (explicit !== null) return explicit;
+  if (node.childForFieldName("receiver") !== null) return null;
+  return node.children.find((c) => c.type === "identifier") ?? null;
+}
+
+/** Any include/extend/prepend call, with or without an explicit receiver. */
+function igAnyMixinOf(node: AstNode): { name: string; verb: string } | null {
+  const method = igMethodNodeOf(node);
+  if (method === null || !IG_MIXIN_VERBS.has(method.text)) return null;
+  const name = igMixinArgOf(node);
+  return name === null ? null : { name, verb: method.text };
+}
+
+/**
+ * Does the production walker see this mixin? It iterates the DIRECT statements
+ * of a class/module body plus the statements of a `class << self` inside one,
+ * and rejects any receiver — `collectRubyClassAncestors` / `collectRubyInheritanceEdges`.
+ * Everything else is invisible to `ctx.classAncestors`, which is the definition
+ * of a runtime mixin for this oracle.
+ */
+function igIsWalkerVisibleMixin(node: AstNode): boolean {
+  if (node.childForFieldName("receiver") !== null) return false;
+  const hostOf = (n: AstNode): AstNode | null => {
+    const { parent } = n;
+    if (parent === null) return null;
+    return parent.type === "body_statement" ? parent.parent : parent;
+  };
+  const host = hostOf(node);
+  if (host === null) return false;
+  if (host.type === "class" || host.type === "module") return true;
+  if (host.type !== "singleton_class") return false;
+  const outer = hostOf(host);
+  return outer !== null && (outer.type === "class" || outer.type === "module");
+}
+
+/** Where a runtime mixin executes, and the verb (if any) that carries it. */
+function igContextOf(node: AstNode, relPath: string): { label: string; verb: string | null } {
+  for (let cur = node.parent; cur !== null; cur = cur.parent) {
+    if (cur.type === "method" || cur.type === "singleton_method") {
+      const name = cur.childForFieldName("name")?.text ?? null;
+      if (name !== null && IG_HOOK_NAMES.has(name)) return { label: `hook:${name}`, verb: null };
+      return { label: "methodBody", verb: name };
+    }
+    if (cur.type === "block" || cur.type === "do_block") {
+      const verb = cur.parent === null ? null : (igMethodNodeOf(cur.parent)?.text ?? null);
+      return { label: `block:${verb ?? "?"}`, verb: null };
+    }
+  }
+  if (relPath.startsWith("config/initializers/")) return { label: "initializer", verb: null };
+  if (relPath.startsWith("config/")) return { label: "config", verb: null };
+  return { label: "fileScope", verb: null };
+}
+
+/** `:sym` / `"str"` arguments of a class-body declaration such as `helper_method`. */
+function igSymbolArgsOf(node: AstNode): string[] {
+  const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
+  if (!args) return [];
+  const out: string[] = [];
+  for (const arg of args.namedChildren) {
+    if (arg.type === "simple_symbol") out.push(arg.text.replace(/^:/, ""));
+    else if (arg.type === "string") out.push(arg.text.replace(/^['"]|['"]$/g, ""));
+  }
+  return out;
+}
+
+function scanIncludeGraphAst(root: AstNode, relPath: string): void {
+  if (IG_DYNAMIC_RE.test(root.text)) igDynamicFiles.add(relPath);
+
+  // 1. Class-body statements — the mixin edges the walker DOES emit, plus the
+  //    declarations (`helper_method`, `helper`) and the verb inventory that
+  //    idioms (a), (b) and (e) are read from.
+  forEachClassScope(root, (classNode, fq) => {
+    if (classNode.type === "module" || !igDeclaredKinds.has(fq)) {
+      igDeclaredKinds.set(fq, classNode.type === "module" ? "module" : "class");
+    }
+    const visitStatement = (stmt: AstNode): void => {
+      const method = igMethodNodeOf(stmt);
+      if (method === null || stmt.childForFieldName("receiver") !== null) return;
+      const verb = method.text;
+      if (IG_MIXIN_VERBS.has(verb)) {
+        const name = igMixinArgOf(stmt);
+        if (name !== null) igStaticMixinTargets.add(name);
+        return;
+      }
+      if (verb === "helper_method") {
+        const set = igHelperMethodDecls.get(fq) ?? new Set<string>();
+        for (const m of igSymbolArgsOf(stmt)) {
+          set.add(m);
+          igHelperMethodMembers.add(m);
+        }
+        igHelperMethodDecls.set(fq, set);
+        return;
+      }
+      if (verb === "helper") {
+        const mod = igMixinArgOf(stmt);
+        if (mod !== null) {
+          const set = igHelperDecls.get(fq) ?? new Set<string>();
+          set.add(mod);
+          igHelperDecls.set(fq, set);
+        }
+        return;
+      }
+      if (IG_VERB_STOPWORDS.has(verb) || !IG_VERB_RE.test(verb)) return;
+      const verbs = igClassBodyVerbs.get(fq) ?? new Set<string>();
+      verbs.add(verb);
+      igClassBodyVerbs.set(fq, verbs);
+    };
+    const body = classNode.childForFieldName("body");
+    for (const stmt of (body ?? classNode).children) {
+      visitStatement(stmt);
+      if (stmt.type !== "singleton_class") continue;
+      const singBody = stmt.childForFieldName("body");
+      for (const singStmt of (singBody ?? stmt).children) visitStatement(singStmt);
+    }
+  });
+
+  // 2. Every mixin call anywhere in the file, minus the ones step 1 recorded —
+  //    by construction the edges `ctx.classAncestors` never carries.
+  walkAst(root, (node) => {
+    const mixin = igAnyMixinOf(node);
+    if (mixin === null || igIsWalkerVisibleMixin(node)) return;
+    const context = igContextOf(node, relPath);
+    const contexts = igRuntimeMixinTargets.get(mixin.name) ?? new Set<string>();
+    contexts.add(context.label);
+    igRuntimeMixinTargets.set(mixin.name, contexts);
+    if (context.verb !== null) {
+      const mods = igVerbMixins.get(context.verb) ?? new Set<string>();
+      mods.add(mixin.name);
+      igVerbMixins.set(context.verb, mods);
+    }
+    if (igRuntimeSites.length < 500) {
+      igRuntimeSites.push({
+        module: mixin.name,
+        verb: mixin.verb,
+        context: context.label,
+        relPath,
+        line: node.startPosition.row + 1,
+      });
+    }
+  });
+}
+
+/** The FUNDABLE mechanisms, ordered MOST specific → least. */
+const IG_IDIOMS = [
+  "a:helperMethodDecl",
+  "d:concernNestedScope",
+  "b:actionViewHelper",
+  "e:dslVerbMixin",
+  "c:runtimeMixin",
+  "f:noChannelFloor",
+] as const;
+/**
+ * The two residuals epic 95a9l cannot claim, kept OUT of the idiom list on
+ * purpose:
+ *   • the owner IS a module and IS statically mixed in somewhere, just never
+ *     into this caller — a receiver-typing hole;
+ *   • the owner is a CLASS, so inclusion can never be the mechanism at all
+ *     (`Billing::Invoice#firm` reached from an unrelated caller is a homonym /
+ *     receiver-typing artefact, not a missing heritage edge).
+ */
+const IG_RESIDUALS = ["x:ownerIncludableElsewhere", "x:nonMixinOwner"] as const;
+const IG_VERDICTS = [...IG_IDIOMS, ...IG_RESIDUALS] as const;
+type IgVerdict = (typeof IG_VERDICTS)[number];
+
+/** `A::B::C` → `["A::B::C", "A::B", "A"]` — the owner and its enclosing scopes. */
+function igOwnerPrefixes(owner: string): string[] {
+  const parts = owner.split("::");
+  const out: string[] = [];
+  for (let i = parts.length; i > 0; i--) out.push(parts.slice(0, i).join("::"));
+  return out;
+}
+
+/** One site of either population: who calls, from where, on what name. */
+interface IgSite {
+  readonly population: "A" | "B";
+  readonly callerScope: string;
+  readonly callerRelPath: string;
+  readonly member: string;
+}
+
+/** The mechanism that would put `def` on `callerScope`'s MRO, or a residual. */
+function igMechanismFor(site: IgSite, def: SymbolDefinition, closure: ReadonlySet<string>): IgVerdict | null {
+  const owner = def.scope.join("::");
+  if (owner.length === 0) return null;
+  const prefixes = igOwnerPrefixes(owner);
+  // (a) a controller ancestor publishes this exact member into view context.
+  if (igHelperMethodMembers.has(site.member)) {
+    for (const host of tfAncestorClosure(owner)) {
+      if (igHelperMethodDecls.get(host)?.has(site.member) === true) return "a:helperMethodDecl";
+    }
+  }
+  // (d) the definer sits in a concern's CONVENTIONAL nested scope whose parent
+  //     module is already on the MRO — the include edge exists, the projection
+  //     of the nested scope does not.
+  if (IG_CONCERN_NEST_TAILS.has(owner.split("::").pop() ?? "")) {
+    for (const prefix of prefixes.slice(1)) if (closure.has(prefix)) return "d:concernNestedScope";
+  }
+  // (b) ActionView autoinclusion — explicit `helper Mod` first, then the path rule.
+  for (const host of closure) {
+    const declared = igHelperDecls.get(host);
+    if (declared === undefined) continue;
+    for (const prefix of prefixes) if (declared.has(prefix)) return "b:actionViewHelper";
+  }
+  if (def.relPath.startsWith("app/helpers/") && IG_VIEW_CONTEXTS.some((p) => site.callerRelPath.startsWith(p))) {
+    return "b:actionViewHelper";
+  }
+  // (e) a class-body verb the caller (or an ancestor) invokes performs the mixin.
+  for (const host of closure) {
+    const verbs = igClassBodyVerbs.get(host);
+    if (verbs === undefined) continue;
+    for (const verb of verbs) {
+      const mixed = igVerbMixins.get(verb);
+      if (mixed === undefined) continue;
+      for (const prefix of prefixes) if (mixed.has(prefix)) return "e:dslVerbMixin";
+    }
+  }
+  // (c) the owner IS mixed in, by an include the walker never sees.
+  for (const prefix of prefixes) if (igRuntimeMixinTargets.has(prefix)) return "c:runtimeMixin";
+  // Owner reachable by a static mixin elsewhere → a receiver-typing hole.
+  for (const prefix of prefixes) if (igStaticMixinTargets.has(prefix)) return "x:ownerIncludableElsewhere";
+  // (f) a MODULE nobody ever mixes in — reachable only by runtime/dynamic means.
+  //     A CLASS in the same position is not an inclusion question at all.
+  return igDeclaredKinds.get(owner) === "module" ? "f:noChannelFloor" : "x:nonMixinOwner";
+}
+
+/** The within-verdict detail that says WHICH variant of the mechanism fired. */
+function igSubLabel(idiom: IgVerdict, site: IgSite, def: SymbolDefinition, closure: ReadonlySet<string>): string {
+  const owner = def.scope.join("::");
+  const prefixes = igOwnerPrefixes(owner);
+  switch (idiom) {
+    case "x:ownerIncludableElsewhere":
+      return `${igDeclaredKinds.get(owner) ?? "undeclared"} owner, static mixin exists elsewhere`;
+    case "x:nonMixinOwner":
+      return `${igDeclaredKinds.get(owner) ?? "undeclared"} owner, def in ${def.relPath.split("/").slice(0, 2).join("/")}`;
+    case "a:helperMethodDecl":
+      return `caller ${site.callerRelPath.split("/").slice(0, 2).join("/")}`;
+    case "d:concernNestedScope": {
+      const tail = owner.split("::").pop() ?? owner;
+      return `nested scope ::${tail}`;
+    }
+    case "b:actionViewHelper": {
+      for (const host of closure) {
+        const declared = igHelperDecls.get(host);
+        if (declared === undefined) continue;
+        for (const prefix of prefixes) if (declared.has(prefix)) return "explicit `helper Mod`";
+      }
+      return `app/helpers → ${site.callerRelPath.split("/").slice(0, 2).join("/")}`;
+    }
+    case "e:dslVerbMixin": {
+      for (const host of closure) {
+        for (const verb of igClassBodyVerbs.get(host) ?? []) {
+          const mixed = igVerbMixins.get(verb);
+          if (mixed === undefined) continue;
+          for (const prefix of prefixes) if (mixed.has(prefix)) return `verb \`${verb}\``;
+        }
+      }
+      return "verb ?";
+    }
+    case "c:runtimeMixin": {
+      for (const prefix of prefixes) {
+        const contexts = igRuntimeMixinTargets.get(prefix);
+        if (contexts !== undefined) return [...contexts].sort().join(",");
+      }
+      return "?";
+    }
+    case "f:noChannelFloor":
+      return igDynamicFiles.has(site.callerRelPath) || igDynamicFiles.has(def.relPath)
+        ? "dynamic machinery present"
+        : "no dynamic evidence either";
+  }
+}
+
+/**
+ * Population A — the pr7fu verdict "no definer on the caller's MRO", rebuilt
+ * with the SAME gates `runNullaryOracle` applies so the counts must agree.
+ */
+function igCollectPopulationA(): IgSite[] {
+  const out: IgSite[] = [];
+  for (const miss of misses) {
+    if (miss.receiver === null || miss.receiver.includes("[") || miss.receiver.startsWith("@")) continue;
+    const head = miss.receiver.split(".")[0];
+    if (head === undefined || !NL_IDENTIFIER.test(head)) continue;
+    if (nlChunkLocals.get(`${miss.relPath}|${miss.callerSymbolId}`)?.has(head) === true) continue;
+    const scopeKey = miss.enclosingScope.split(" > ").join("::");
+    if (scopeKey.length === 0) continue;
+    const closure = tfAncestorClosure(scopeKey);
+    const onMro = symbolTable
+      .lookupByShortName(head)
+      .filter((d) => d.scope.length > 0 && closure.has(d.scope.join("::")))
+      .filter((d) => d.arity === undefined || d.arity.minRequired === 0);
+    if (onMro.length > 0) continue;
+    out.push({ population: "A", callerScope: scopeKey, callerRelPath: miss.relPath, member: head });
+  }
+  return out;
+}
+
+/**
+ * Population B — the rwv3o census row "NO definer in the MRO" over the bare
+ * branch the flat return-type map already answers, rebuilt with the same gates.
+ */
+function igCollectPopulationB(): IgSite[] {
+  const out: IgSite[] = [];
+  for (const rec of ofChunkBindings) {
+    const scopeKey = rec.scope.join("::");
+    if (scopeKey.length === 0) continue;
+    const closure = tfAncestorClosure(scopeKey);
+    for (const binding of Object.values(rec.bindings)) {
+      if (binding.lastIndexOf(".") > 0) continue; // scope-qualified — not the bare branch
+      if (runReturnTypes[binding] === undefined) continue; // flat map silent — not the 2309
+      const onMro = symbolTable
+        .lookupByShortName(binding)
+        .map((d) => d.scope.join("::"))
+        .filter((owner) => owner.length > 0 && closure.has(owner));
+      if (onMro.length > 0) continue;
+      out.push({ population: "B", callerScope: scopeKey, callerRelPath: rec.relPath, member: binding });
+    }
+  }
+  return out;
+}
+
+function runIncludeGraphOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  const popA = igCollectPopulationA();
+  const popB = igCollectPopulationB();
+  const sites = [...popA, ...popB];
+
+  const counts = new Map<IgVerdict, { total: number; a: number; b: number }>();
+  const definers = new Map<IgVerdict, Map<string, number>>();
+  const detail = new Map<string, number>();
+  const residualOwners = new Map<string, number>();
+  let ambiguous = 0;
+  let noCandidateDef = 0;
+
+  for (const site of sites) {
+    const closure = tfAncestorClosure(site.callerScope);
+    const candidates = symbolTable.lookupByShortName(site.member).filter((d) => d.scope.length > 0);
+    if (candidates.length === 0) {
+      noCandidateDef += 1;
+      continue;
+    }
+    const byVerdict = new Map<IgVerdict, SymbolDefinition[]>();
+    for (const def of candidates) {
+      const verdict = igMechanismFor(site, def, closure);
+      if (verdict === null) continue;
+      const list = byVerdict.get(verdict) ?? [];
+      list.push(def);
+      byVerdict.set(verdict, list);
+    }
+    // The floor and the two residuals are leftovers, not competing mechanisms —
+    // they never make a site ambiguous on their own.
+    const named = IG_VERDICTS.filter((v) => byVerdict.has(v));
+    if (named.filter((v) => v !== "f:noChannelFloor" && !v.startsWith("x:")).length >= 2) ambiguous += 1;
+    const winner = named[0];
+    if (winner === undefined) continue;
+    const row = counts.get(winner) ?? { total: 0, a: 0, b: 0 };
+    row.total += 1;
+    if (site.population === "A") row.a += 1;
+    else row.b += 1;
+    counts.set(winner, row);
+    const perVerdict = definers.get(winner) ?? new Map<string, number>();
+    const carriers = byVerdict.get(winner) ?? [];
+    for (const def of carriers) perVerdict.set(def.symbolId, (perVerdict.get(def.symbolId) ?? 0) + 1);
+    definers.set(winner, perVerdict);
+    if (winner.startsWith("x:")) {
+      for (const def of carriers.slice(0, 4)) {
+        const owner = def.scope.join("::");
+        residualOwners.set(owner, (residualOwners.get(owner) ?? 0) + 1);
+      }
+    }
+    const first = carriers[0];
+    if (first !== undefined) {
+      const key = `${winner} | ${igSubLabel(winner, site, first, closure)}`;
+      detail.set(key, (detail.get(key) ?? 0) + 1);
+    }
+  }
+
+  const total = Math.max(1, sites.length);
+  const pct = (n: number): string => `${((n / total) * 100).toFixed(1)}%`;
+  const classified = IG_IDIOMS.reduce((n, i) => n + (counts.get(i)?.total ?? 0), 0);
+  const residual = IG_RESIDUALS.reduce((n, r) => n + (counts.get(r)?.total ?? 0), 0);
+
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  INCLUDE-GRAPH ORACLE (bd ypist) — how the definer WOULD be reached");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("");
+  L("─── the two no-definer-on-MRO populations ─────────────────────────");
+  L(`A. nullary-receiver misses (pr7fu row):   ${popA.length}`);
+  L(`B. bare binding sites      (rwv3o row):   ${popB.length}`);
+  L(`   combined mass:                         ${sites.length}`);
+  L(`   sites whose member has no in-project def with a scope: ${noCandidateDef}`);
+  L("");
+  L("─── inclusion-mechanism evidence gathered from the corpus ─────────");
+  L(`modules mixed in by a walker-VISIBLE class-body statement: ${igStaticMixinTargets.size}`);
+  L(`modules mixed in ONLY at runtime (walker emits no edge):   ${igRuntimeMixinTargets.size}`);
+  L(
+    `classes declaring \`helper_method\`:                        ${igHelperMethodDecls.size}  (members ${igHelperMethodMembers.size})`,
+  );
+  L(`classes declaring \`helper Mod\`:                           ${igHelperDecls.size}`);
+  L(`DSL verbs whose own body mixes a module in:               ${igVerbMixins.size}`);
+  L(`files carrying dynamic machinery:                         ${igDynamicFiles.size}`);
+  L("");
+  L("─── idiom classification (most specific mechanism wins) ───────────");
+  L("verdict                          sites       %     popA     popB");
+  for (const verdict of IG_VERDICTS) {
+    const row = counts.get(verdict) ?? { total: 0, a: 0, b: 0 };
+    L(
+      `${verdict.padEnd(30)}  ${String(row.total).padStart(6)}  ${pct(row.total).padStart(6)}  ` +
+        `${String(row.a).padStart(6)}  ${String(row.b).padStart(6)}`,
+    );
+  }
+  L("");
+  L(`classified as a fundable idiom (a–f): ${classified}  (${pct(classified)})`);
+  L(`residual, NOT an include-graph hole:  ${residual}  (${pct(residual)})`);
+  L(`member with no scoped in-project def: ${noCandidateDef}  (${pct(noCandidateDef)})`);
+  L(
+    `ambiguous:                            ${ambiguous}  (${pct(ambiguous)})  — 2+ mechanisms (a–e), most specific counted`,
+  );
+  L("");
+  L("─── within-verdict detail (which variant of the mechanism fired) ──");
+  for (const [key, n] of [...detail.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30)) {
+    L(`  ${String(n).padStart(6)}  ${key}`);
+  }
+  L("");
+  for (const verdict of IG_VERDICTS) {
+    const perVerdict = definers.get(verdict);
+    if (perVerdict === undefined || perVerdict.size === 0) continue;
+    const ranked = [...perVerdict.entries()].sort((a, b) => b[1] - a[1]);
+    L(`─── top definers — ${verdict} (${perVerdict.size} distinct) ───`);
+    for (const [symbolId, n] of ranked.slice(0, 20)) L(`  ${String(n).padStart(6)}  ${symbolId}`);
+    L("");
+  }
+  L("─── top RESIDUAL definer owners (receiver-typing candidates) ──────");
+  for (const [owner, n] of [...residualOwners.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
+    L(`  ${String(n).padStart(6)}  ${owner}`);
+  }
+  L("");
+  L("─── sampled runtime-mixin sites (idiom (c) evidence) ──────────────");
+  for (const s of igRuntimeSites.slice(0, 20)) {
+    L(`  ${s.context.padEnd(22)} ${s.verb} ${s.module}   ${s.relPath}:${s.line}`);
+  }
+  L("");
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_INCLUDEGRAPH,
+    JSON.stringify(
+      {
+        meta: {
+          bead: "tea-rags-mcp-ypist",
+          epic: "tea-rags-mcp-95a9l",
+          root: ROOT,
+          generatedAt: new Date().toISOString(),
+          populationA: popA.length,
+          populationB: popB.length,
+          combined: sites.length,
+          noCandidateDef,
+          classified,
+          residual,
+          ambiguous,
+        },
+        evidence: {
+          staticMixinTargets: igStaticMixinTargets.size,
+          runtimeMixinTargets: igRuntimeMixinTargets.size,
+          helperMethodClasses: igHelperMethodDecls.size,
+          helperMethodMembers: igHelperMethodMembers.size,
+          helperDeclClasses: igHelperDecls.size,
+          dslVerbsWithMixin: igVerbMixins.size,
+          dynamicFiles: igDynamicFiles.size,
+          verbMixins: Object.fromEntries([...igVerbMixins].map(([v, m]) => [v, [...m]])),
+        },
+        idioms: Object.fromEntries(IG_VERDICTS.map((v) => [v, counts.get(v) ?? { total: 0, a: 0, b: 0 }])),
+        detail: Object.fromEntries([...detail.entries()].sort((a, b) => b[1] - a[1])),
+        topDefiners: Object.fromEntries(
+          IG_VERDICTS.map((v) => [
+            v,
+            [...(definers.get(v) ?? new Map<string, number>()).entries()]
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 20)
+              .map(([symbolId, sites_]) => ({ symbolId, sites: sites_ })),
+          ]),
+        ),
+        residualOwners: [...residualOwners.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 50)
+          .map(([owner, sites_]) => ({ owner, sites: sites_ })),
+        runtimeMixinSamples: igRuntimeSites.slice(0, 200),
+      },
+      null,
+      2,
+    ),
+  );
+  L(`include-graph oracle → ${OUT_INCLUDEGRAPH}`);
   L("");
 }
 
@@ -7065,6 +7725,7 @@ async function main(): Promise<void> {
       if (LOCAL_CENSUS_ENABLED) scanLocalCensusAst(materializedRoot, extraction);
       if (DEFPARAM_ORACLE_ENABLED) scanDefParamOracleAst(materializedRoot, relPath, extraction);
       if (SIGGAP_ORACLE_ENABLED) scanSigGapOracleAst(materializedRoot, relPath, extraction);
+      if (INCLUDEGRAPH_ENABLED) scanIncludeGraphAst(materializedRoot, relPath);
       if (DUCK_ENABLED && code.includes("table_name")) scanTableNameDecls(materializedRoot, []);
       extractions.push(extraction);
     } catch (err) {
@@ -7393,6 +8054,7 @@ async function main(): Promise<void> {
   if (OWNERFACT_ENABLED) runOwnerfactOracle();
   if (CALLEESHAPE_ENABLED) runCalleeShapeOracle();
   if (NULLARY_ENABLED) runNullaryOracle();
+  if (INCLUDEGRAPH_ENABLED) runIncludeGraphOracle();
   if (ORACLE_ENABLED) runOracle(Date.now() - t0, files.length);
   if (SUPER_ORACLE_ENABLED) runSuperOracle();
   if (LOCAL_CENSUS_ENABLED) runLocalCensus();
