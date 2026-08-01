@@ -11,7 +11,7 @@
  * merges process.env over these), preserving explicit overrides.
  */
 
-import { EMBEDDED_MARKER, type CollectionEntry } from "../../core/api/public/index.js";
+import { EMBEDDED_MARKER, resolveGitCommonDir, type CollectionEntry } from "../../core/api/public/index.js";
 import { replayRegistryEnv } from "../registry-env-replay.js";
 
 /** Structural subset of CollectionRegistry used here — keeps tests fake-friendly. */
@@ -25,8 +25,11 @@ export interface RegistryLookup {
  * Pick the registry entry whose config should seed the worker env:
  * 1. the named project (`--project`),
  * 2. else the entry for this exact path (re-indexing a known project),
- * 3. else the most recently indexed project (new project — borrow last config),
- * 4. else null (empty registry → fall back to ambient env / defaults).
+ * 3. else an entry for ANOTHER working tree of the SAME repository — a linked
+ *    worktree is the same codebase as its checkout, so that entry's backend and
+ *    tuning are a far better seed than whatever was indexed last,
+ * 4. else the most recently indexed project (new project — borrow last config),
+ * 5. else null (empty registry → fall back to ambient env / defaults).
  */
 export function pickRegistryEntry(
   registry: RegistryLookup,
@@ -39,7 +42,20 @@ export function pickRegistryEntry(
   }
   const all = registry.list();
   if (all.length === 0) return null;
-  return all.reduce((latest, e) => (e.indexedAt > latest.indexedAt ? e : latest));
+  const newest = (entries: CollectionEntry[]): CollectionEntry =>
+    entries.reduce((latest, e) => (e.indexedAt > latest.indexedAt ? e : latest));
+
+  const sameRepo = target.path ? entriesSharingRepo(all, target.path) : [];
+  return newest(sameRepo.length > 0 ? sameRepo : all);
+}
+
+/** Entries whose path is a working tree of the same repository as `path`. */
+function entriesSharingRepo(entries: CollectionEntry[], path: string): CollectionEntry[] {
+  const identity = resolveGitCommonDir(path);
+  // Not a repo → `resolveGitCommonDir` echoes the path back; an echo would
+  // match only itself, and that case is already handled by `findByPath`.
+  if (identity === path) return [];
+  return entries.filter((e) => resolveGitCommonDir(e.path) === identity);
 }
 
 /** External Qdrant's conventional port; the embedded daemon never binds it. */

@@ -102,6 +102,9 @@ export type {
 export type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 export { QdrantManager } from "../../adapters/qdrant/client.js";
 export { resolveQdrantUrl, EMBEDDED_MARKER } from "../../adapters/qdrant/embedded/daemon.js";
+// Repo identity — lets the CLI tell that two paths are working trees of ONE
+// repository (a checkout and its linked worktrees), so it can inherit config.
+export { resolveGitCommonDir } from "../../adapters/vcs/git/common-dir.js";
 
 // ── Payload signal descriptor (used by mcp schema-emitting code) ──────
 export type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";

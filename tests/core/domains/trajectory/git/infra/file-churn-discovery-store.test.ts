@@ -142,14 +142,17 @@ describe("FileChurnDiscoveryStore", () => {
     expect(store.load(REPO_ROOT, HEAD_A)).toBeNull();
   });
 
-  it("drops stale head files on save; loadLatest returns the new head", () => {
+  it("keeps the prior head as a top-up base on save; loadLatest returns the new head", () => {
     const store = new FileChurnDiscoveryStore(baseDir);
     store.save(REPO_ROOT, HEAD_A, SINCE_ISO, entries());
     expect(existsSync(join(repoDir(baseDir), `${HEAD_A}.json`))).toBe(true);
 
     store.save(REPO_ROOT, HEAD_B, SINCE_ISO, entries());
 
-    expect(existsSync(join(repoDir(baseDir), `${HEAD_A}.json`))).toBe(false);
+    // Retention keeps the newest few: the prior HEAD stays available as a
+    // `git log old..new` base, and linked worktrees sharing this namespace
+    // no longer evict each other's matrix. Bounding lives in pruneSnapshots.
+    expect(existsSync(join(repoDir(baseDir), `${HEAD_A}.json`))).toBe(true);
     expect(existsSync(join(repoDir(baseDir), `${HEAD_B}.json`))).toBe(true);
     expect(store.loadLatest(REPO_ROOT)?.head).toBe(HEAD_B);
     const raw = JSON.parse(readFileSync(join(repoDir(baseDir), `${HEAD_B}.json`), "utf8")) as { head: string };

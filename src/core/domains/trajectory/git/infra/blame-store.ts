@@ -28,12 +28,20 @@ import { dirname, join } from "node:path";
 
 import type { BlameLine } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
+import { resolveRepoIdentity } from "./repo-identity.js";
 
 const DEFAULT_MAX_BYTES = 128 * 1024 * 1024;
 
 /** On-disk shape v1 — commit table + per-file [lineNumber, sha] pairs. */
 interface PersistedGitBlame {
   version: 1;
+  /**
+   * Repo IDENTITY, not the working tree: the shared git dir when git can
+   * resolve it, else the path handed in. Linked worktrees of one repo share
+   * an object database, so they resolve to the same value and thus one cache
+   * namespace. Files written before that fix carry a working-tree path here
+   * and are still read via the legacy-layout fallback in `load`.
+   */
   repoRoot: string;
   commits: Record<string, { author: string; authorEmail: string; timestamp: number }>;
   files: Record<string, { oid: string; lines: [lineNumber: number, sha: string][] }>;
@@ -62,11 +70,22 @@ export class GitBlameStore {
     this.baseDir = baseDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "git-blame");
   }
 
-  /** Load the repo's persisted blame map; null on ANY failure (silent rebuild). */
+  /**
+   * Load the repo's persisted blame map; null on ANY failure (silent rebuild).
+   *
+   * Reads the shared-git-dir namespace first, then falls back to the pre-fix
+   * per-working-tree layout so a cache warmed by an older release survives the
+   * upgrade (on the next save it is rewritten under the shared identity).
+   */
   load(repoRoot: string): Map<string, { oid: string; lines: BlameLine[] }> | null {
+    const identity = resolveRepoIdentity(repoRoot);
+    return this.read(identity) ?? (identity === repoRoot ? null : this.read(repoRoot));
+  }
+
+  private read(identity: string): Map<string, { oid: string; lines: BlameLine[] }> | null {
     try {
-      const parsed: unknown = JSON.parse(readFileSync(this.blamePath(repoRoot), "utf8"));
-      const snapshot = this.validate(parsed, repoRoot);
+      const parsed: unknown = JSON.parse(readFileSync(this.blamePath(identity), "utf8"));
+      const snapshot = this.validate(parsed, identity);
       if (!snapshot) return null;
       const result = new Map<string, { oid: string; lines: BlameLine[] }>();
       for (const [relPath, file] of Object.entries(snapshot.files)) {
@@ -102,12 +121,13 @@ export class GitBlameStore {
         }
         persistedFiles[relPath] = { oid: file.oid, lines };
       }
-      const payload: PersistedGitBlame = { version: 1, repoRoot, commits, files: persistedFiles };
+      const identity = resolveRepoIdentity(repoRoot);
+      const payload: PersistedGitBlame = { version: 1, repoRoot: identity, commits, files: persistedFiles };
       const data = JSON.stringify(payload);
       // Oversized blame map → skip persistence; the run keeps its in-memory copy.
       if (Buffer.byteLength(data) > this.maxBytes) return;
 
-      const target = this.blamePath(repoRoot);
+      const target = this.blamePath(identity);
       mkdirSync(dirname(target), { recursive: true });
       const tmp = `${target}.tmp`;
       writeFileSync(tmp, data);
@@ -118,20 +138,20 @@ export class GitBlameStore {
     }
   }
 
-  private blamePath(repoRoot: string): string {
-    return join(this.baseDir, createHash("sha256").update(repoRoot).digest("hex").slice(0, 16), "blame.json");
+  private blamePath(identity: string): string {
+    return join(this.baseDir, createHash("sha256").update(identity).digest("hex").slice(0, 16), "blame.json");
   }
 
   /**
-   * ANY validation failure → null (silent rebuild semantics). The repoRoot
+   * ANY validation failure → null (silent rebuild semantics). The identity
    * equality check guards against sha256-prefix collisions between repos;
    * the referenced-sha check guards a truncated/hand-edited commit table.
    */
-  private validate(parsed: unknown, repoRoot: string): PersistedGitBlame | null {
+  private validate(parsed: unknown, identity: string): PersistedGitBlame | null {
     if (typeof parsed !== "object" || parsed === null) return null;
     const snapshot = parsed as Record<string, unknown>;
     if (snapshot.version !== 1) return null;
-    if (snapshot.repoRoot !== repoRoot) return null;
+    if (snapshot.repoRoot !== identity) return null;
     if (typeof snapshot.commits !== "object" || snapshot.commits === null) return null;
     if (typeof snapshot.files !== "object" || snapshot.files === null) return null;
     const commits = snapshot.commits as Record<string, unknown>;
