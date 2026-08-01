@@ -55,18 +55,22 @@ A language-independent post-pass over a file's assembled chunk array, after
 per-language hooks — the pass reads only chunk metadata that every language
 already emits.
 
-| Field             | On                      | Definition                              |
-| ----------------- | ----------------------- | --------------------------------------- |
-| `memberCount`     | class chunks            | distinct member symbolIds of the class  |
-| `classLines`      | class chunks            | `max(member endLine) − class startLine` |
-| `fileSymbolCount` | every code chunk (flat) | distinct code symbolIds in the file     |
+| Field             | On                      | Definition                             |
+| ----------------- | ----------------------- | -------------------------------------- |
+| `memberCount`     | class chunks            | distinct member symbolIds of the class |
+| `classLines`      | class chunks            | class span from descendant end lines   |
+| `fileSymbolCount` | every code chunk (flat) | distinct code symbolIds in the file    |
 
 Counting rules: a member = a chunk whose `parentSymbolId` equals the class
 symbolId; `#partN` split suffixes fold to one member; direct members only —
 nested-class members belong to the nested class. `classLines` is the real class
-span, not the header span. `fileSymbolCount` is stamped flat on every code chunk
-of the file (the `imports` precedent); documentation chunks (`doc:` ids) are
-excluded from both storage and count.
+span, not the header span:
+`max(class endLine, all descendant endLines) − class startLine` — the class's
+own endLine keeps member-less classes measurable, and descendant (not just
+direct-member) endLines let an outer class's span cover a nested class's body.
+`fileSymbolCount` is stamped flat on every code chunk of the file (the `imports`
+precedent); documentation chunks (`doc:` ids) are excluded from both storage and
+count.
 
 Descriptors added to `BASE_PAYLOAD_SIGNALS` with stats labels, extending the
 existing label vocabulary:
