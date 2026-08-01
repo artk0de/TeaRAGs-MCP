@@ -194,6 +194,32 @@ describe("gem-gated type-source grammar — devise scoped receivers (adx5p.9)", 
   });
 });
 
+describe("gem-gated delegation grammar — draper decorators (adx5p.9)", () => {
+  it("the decorator macros are composed ONLY when draper is declared", () => {
+    const withDraper = composeRubyCatalogue(new Set(["draper"]));
+    const withoutDraper = composeRubyCatalogue(new Set(["rails"]));
+    for (const verb of ["delegate_all", "decorates", "decorates_association", "decorates_associations"]) {
+      expect(withDraper.entries[verb], verb).toBeDefined();
+      expect(withoutDraper.entries[verb], verb).toBeUndefined();
+    }
+  });
+
+  it("`decorates_association :author` declares the accessor the decorator gains", () => {
+    const withDraper = composeRubyCatalogue(new Set(["draper"]));
+    expect(withDraper.entries.decorates_association?.declares?.("author")).toEqual([
+      { name: "author", kind: "instance" },
+    ]);
+  });
+
+  it("`delegate_all` is a delegation macro, not an external no-op", () => {
+    expect(composeRubyCatalogue(new Set(["draper"])).entries.delegate_all?.category).toBe("delegation");
+  });
+
+  it("null (no Gemfile / gating off) → the draper grammar is active (FULL default)", () => {
+    expect(composeRubyCatalogue(null).entries.delegate_all).toBeDefined();
+  });
+});
+
 describe("gem-gated DECLARES grammars — carrierwave / aasm (bd tea-rags-mcp-o5kwh)", () => {
   it("carrierwave mount_uploader declaring entries are composed ONLY when carrierwave is declared", () => {
     const withCw = composeRubyCatalogue(new Set(["carrierwave"]));

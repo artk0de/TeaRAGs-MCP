@@ -2,6 +2,7 @@ import type { RubyInlineTypeSource } from "./types.js";
 import { rubyAssociationTypeSource } from "./associations.js";
 import { rubyAstInferenceTypeSource } from "./ast-inference.js";
 import { rubyBodyLastExprTypeSource } from "./body-last-expr.js";
+import { rubyDraperTypeSource } from "./draper.js";
 import { rubyYardTypeSource } from "./yard.js";
 
 /**
@@ -16,6 +17,7 @@ import { rubyYardTypeSource } from "./yard.js";
 export const INLINE_TYPE_SOURCES: readonly RubyInlineTypeSource[] = [
   rubyYardTypeSource,
   rubyAssociationTypeSource,
+  rubyDraperTypeSource,
   rubyBodyLastExprTypeSource,
   rubyAstInferenceTypeSource,
 ];

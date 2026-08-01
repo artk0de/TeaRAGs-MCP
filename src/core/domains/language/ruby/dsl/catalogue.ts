@@ -33,6 +33,7 @@ import { CANCANCAN_VOCABULARY } from "./cancancan.js";
 import { CARRIERWAVE_VOCABULARY } from "./carrierwave.js";
 import { CHEWY_VOCABULARY } from "./chewy.js";
 import { DEVISE_VOCABULARY } from "./devise.js";
+import { DRAPER_VOCABULARY } from "./draper.js";
 import { DRY_VOCABULARY } from "./dry.js";
 import { GEOCODER_VOCABULARY } from "./geocoder.js";
 import { PAPER_TRAIL_VOCABULARY } from "./paper_trail.js";
@@ -81,6 +82,7 @@ const FRAMEWORKS: readonly RubyFrameworkVocabulary[] = [
   STATE_MACHINES_VOCABULARY,
   CANCANCAN_VOCABULARY,
   DEVISE_VOCABULARY,
+  DRAPER_VOCABULARY,
 ];
 
 export const RUBY_DSL: Record<string, RubyDslEntry> = composeEntries(FRAMEWORKS);
