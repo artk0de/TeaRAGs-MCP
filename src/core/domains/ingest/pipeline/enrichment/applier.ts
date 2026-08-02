@@ -20,6 +20,7 @@ import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import { batchSetPayloadWithRetry, type BatchWriteRetryOptions } from "./batch-write.js";
 import { MissedFileTracker } from "./missed-file-tracker.js";
+import type { EnrichmentSkipReason } from "./policy.js";
 import type { MissedFileChunk } from "./types.js";
 
 const BATCH_SIZE = 100;
@@ -94,6 +95,52 @@ export class EnrichmentApplier {
   /** Bounded sample of missed paths (capped at MISSED_PATH_SAMPLE_LIMIT). */
   get missedPathSamples(): readonly string[] {
     return this.missedTracker.samples;
+  }
+
+  /**
+   * Record that the provider's policy declined these points, by writing
+   * `<providerKey>.<level>.skippedAs`.
+   *
+   * `enrichedAt` and `skippedAs` are the two terminal states of one decision,
+   * and this is the second one. Without it, "no enrichedAt" means both "we
+   * missed this" and "policy declined this", so the recovery filter cannot
+   * separate them server-side and drags the entire declined population over the
+   * wire on every run — 51 540 of 89 336 points on taxdome, permanently.
+   *
+   * Grouped by reason so one Qdrant op covers every point sharing it. Writes the
+   * same way file-level stamps already do (`set_payload` with `key`), so the
+   * write replaces only this provider+level sub-tree.
+   */
+  async applySkipStamps(
+    collectionName: string,
+    providerKey: string,
+    level: "file" | "chunk",
+    stamps: readonly { id: string | number; skippedAs: EnrichmentSkipReason }[],
+  ): Promise<number> {
+    if (stamps.length === 0) return 0;
+
+    const pointsByReason = new Map<EnrichmentSkipReason, (string | number)[]>();
+    for (const stamp of stamps) {
+      const points = pointsByReason.get(stamp.skippedAs) ?? [];
+      points.push(stamp.id);
+      pointsByReason.set(stamp.skippedAs, points);
+    }
+
+    const operations = [...pointsByReason].map(([skippedAs, points]) => ({
+      payload: { skippedAs },
+      points,
+      key: `${providerKey}.${level}`,
+    }));
+
+    let stamped = 0;
+    for (let i = 0; i < operations.length; i += BATCH_SIZE) {
+      const batch = operations.slice(i, i + BATCH_SIZE);
+      const ok = await batchSetPayloadWithRetry(this.qdrant, collectionName, batch, this.retryOptions);
+      // A failed stamp batch is not fatal: those points simply stay in the next
+      // run's scan, which is the pre-fix behaviour, not a regression.
+      if (ok) stamped += batch.reduce((sum, op) => sum + op.points.length, 0);
+    }
+    return stamped;
   }
 
   /**

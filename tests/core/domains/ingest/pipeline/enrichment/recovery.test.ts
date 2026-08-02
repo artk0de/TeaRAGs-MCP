@@ -638,3 +638,105 @@ describe("EnrichmentRecovery.recoverAll dangling _run self-heal", () => {
     expect(health.git.chunk.status).toBe("healthy");
   });
 });
+
+describe("EnrichmentRecovery skip stamps (tea-rags-mcp-zt6qr)", () => {
+  // Mirrors the real git policy: generated is out entirely, documentation keeps
+  // file-level signals but never the chunk-level walk.
+  function policyProvider() {
+    return {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+      fileSignalTransform: undefined,
+      shouldEnrich: (f: { classification: { isGenerated: boolean; isDocumentation: boolean } }) => {
+        if (f.classification.isGenerated) return "none";
+        if (f.classification.isDocumentation) return "file-only";
+        return "full";
+      },
+    };
+  }
+
+  function harness(points: { id: string; payload: Record<string, unknown> }[]) {
+    const qdrant = {
+      scrollFiltered: vi.fn().mockResolvedValue(points),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      countPoints: vi.fn().mockResolvedValue(0),
+    };
+    const applier = {
+      applyFileSignals: vi.fn().mockResolvedValue(undefined),
+      applyChunkSignals: vi.fn().mockResolvedValue(0),
+      applySkipStamps: vi.fn().mockResolvedValue(0),
+    };
+    return { qdrant, applier, recovery: new EnrichmentRecovery(qdrant as any, applier as any) };
+  }
+
+  it("treats a point carrying a skip stamp as settled, not as a recovery candidate", async () => {
+    const { qdrant, recovery } = harness([]);
+
+    await recovery.recoverFileLevel("coll", "/repo", policyProvider() as any, "2026-01-01T00:00:00Z");
+
+    // Both terminal markers must be absent for a point to be a candidate:
+    // enrichedAt says "enriched", skippedAs says "policy declined it".
+    const filter = qdrant.scrollFiltered.mock.calls[0][1];
+    expect(filter.must).toEqual(
+      expect.arrayContaining([
+        { is_empty: { key: "git.file.enrichedAt" } },
+        { is_empty: { key: "git.file.skippedAs" } },
+      ]),
+    );
+  });
+
+  it("stamps the points the policy declined instead of dropping them silently", async () => {
+    const { applier, recovery } = harness([
+      { id: "code-1", payload: { relativePath: "app/models/user.rb", startLine: 1, endLine: 9 } },
+      { id: "doc-1", payload: { relativePath: "docs/gotchas.md", startLine: 1, endLine: 4 } },
+    ]);
+
+    await recovery.recoverChunkLevel("coll", "/repo", policyProvider() as any, "2026-01-01T00:00:00Z");
+
+    expect(applier.applySkipStamps).toHaveBeenCalledWith("coll", "git", "chunk", [
+      { id: "doc-1", skippedAs: "documentation" },
+    ]);
+  });
+
+  it("stamps declined points even when the scan leaves nothing to heal", async () => {
+    // The taxdome shape: every match is a policy skip, so the old code returned
+    // early and the same points were rescanned on every subsequent run.
+    const { applier, recovery } = harness([
+      { id: "doc-1", payload: { relativePath: "docs/a.md", startLine: 1, endLine: 4 } },
+      { id: "doc-2", payload: { relativePath: "docs/b.md", startLine: 1, endLine: 4 } },
+    ]);
+
+    const result = await recovery.recoverChunkLevel("coll", "/repo", policyProvider() as any, "2026-01-01T00:00:00Z");
+
+    expect(applier.applySkipStamps).toHaveBeenCalledWith("coll", "git", "chunk", [
+      { id: "doc-1", skippedAs: "documentation" },
+      { id: "doc-2", skippedAs: "documentation" },
+    ]);
+    expect(result.recoveredChunks).toBe(0);
+    expect(result.remainingUnenriched).toBe(0);
+  });
+
+  it("writes no stamp when every scanned point is genuinely owed enrichment", async () => {
+    const { applier, recovery } = harness([
+      { id: "code-1", payload: { relativePath: "app/models/user.rb", startLine: 1, endLine: 9 } },
+    ]);
+
+    await recovery.recoverFileLevel("coll", "/repo", policyProvider() as any, "2026-01-01T00:00:00Z");
+
+    expect(applier.applySkipStamps).not.toHaveBeenCalled();
+  });
+
+  it("keeps countUnenriched free of side effects — counting must not stamp", async () => {
+    const { applier, recovery } = harness([
+      { id: "doc-1", payload: { relativePath: "docs/a.md", startLine: 1, endLine: 4 } },
+    ]);
+
+    const count = await recovery.countUnenriched("coll", policyProvider() as any, "chunk");
+
+    expect(count).toBe(0);
+    expect(applier.applySkipStamps).not.toHaveBeenCalled();
+  });
+});

@@ -12,7 +12,7 @@ import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
-import { enrichmentScope } from "./policy.js";
+import { enrichmentSkipReason, type EnrichmentSkipReason } from "./policy.js";
 import type { EnrichmentProvider, ProviderContext } from "./types.js";
 
 export interface RecoveryResult {
@@ -26,6 +26,25 @@ interface UnenrichedPoint {
   relativePath: string;
   startLine?: number;
   endLine?: number;
+}
+
+/** A point the policy declined, carrying the reason to stamp onto it. */
+interface DeclinedPoint {
+  id: string | number;
+  skippedAs: EnrichmentSkipReason;
+}
+
+/**
+ * One pass over the unenriched set, split by what the policy says about each
+ * point: `owed` is genuine damage recovery must heal, `declined` is deliberate
+ * policy skips that must be stamped so they never come back.
+ *
+ * Kept as a pure query so `countUnenriched` can reuse it without stamping —
+ * counting must not mutate.
+ */
+interface UnenrichedScan {
+  owed: UnenrichedPoint[];
+  declined: DeclinedPoint[];
 }
 
 /**
@@ -86,9 +105,12 @@ export class EnrichmentRecovery {
     provider: EnrichmentProvider,
     enrichedAt: string,
   ): Promise<RecoveryResult> {
-    // scrollUnenriched already drops policy-skipped points (generated files are
-    // unenriched by design), so recovery only sees genuinely-missed files.
-    const unenriched = await this.scrollUnenriched(collectionName, provider, "file");
+    // The scan splits policy-skipped points out (generated files are unenriched
+    // by design), so recovery only heals genuinely-missed files — and stamps the
+    // skipped ones so they leave the candidate set for good.
+    const scan = await this.scanUnenriched(collectionName, provider, "file");
+    await this.stampDeclined(collectionName, provider.key, "file", scan.declined);
+    const unenriched = scan.owed;
 
     if (unenriched.length === 0) {
       return { recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 };
@@ -162,10 +184,12 @@ export class EnrichmentRecovery {
     provider: EnrichmentProvider,
     enrichedAt: string,
   ): Promise<RecoveryResult> {
-    // scrollUnenriched already keeps only "full"-scope points (generated +
-    // documentation chunks are unenriched by design), so recovery never
-    // resurrects skipped chunk signals.
-    const unenriched = await this.scrollUnenriched(collectionName, provider, "chunk");
+    // The scan keeps only "full"-scope points (generated + documentation chunks
+    // are unenriched by design), so recovery never resurrects skipped chunk
+    // signals — it stamps them instead.
+    const scan = await this.scanUnenriched(collectionName, provider, "chunk");
+    await this.stampDeclined(collectionName, provider.key, "chunk", scan.declined);
+    const unenriched = scan.owed;
 
     if (unenriched.length === 0) {
       return { recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 };
@@ -262,12 +286,13 @@ export class EnrichmentRecovery {
       const filter = this.buildUnenrichedFilter(provider.key, level);
       return this.qdrant.countPoints(collectionName, filter);
     }
-    // Policy path: server-side count can't express path-glob skips, so count
-    // via the policy-filtered scroll. This keeps countUnenriched and the
-    // recovery scroll on the SAME set (the invariant buildUnenrichedFilter's
-    // relativePath exclusion already maintains) — a generated/doc file the
-    // policy skips must not keep the marker degraded forever.
-    return (await this.scrollUnenriched(collectionName, provider, level)).length;
+    // Policy path: the server-side count still can't express path-glob skips
+    // for points not yet stamped, so count via the policy-split scan. This keeps
+    // countUnenriched and the recovery scan on the SAME set (the invariant
+    // buildUnenrichedFilter's relativePath exclusion already maintains) — a
+    // generated/doc file the policy skips must not keep the marker degraded
+    // forever. Counting deliberately does NOT stamp: a query must not mutate.
+    return (await this.scanUnenriched(collectionName, provider, level)).owed.length;
   }
 
   /**
@@ -318,8 +343,14 @@ export class EnrichmentRecovery {
    */
   private buildUnenrichedFilter(providerKey: string, level: "file" | "chunk"): Record<string, unknown> {
     const enrichedAtField = `${providerKey}.${level}.enrichedAt`;
+    const skippedAsField = `${providerKey}.${level}.skippedAs`;
     return {
-      must: [{ is_empty: { key: enrichedAtField } }],
+      // Two terminal states, both of which settle a point: it was enriched, or
+      // policy declined it. A candidate carries neither. Without the second
+      // condition the filter cannot express the policy server-side, so the whole
+      // declined population is shipped to the client and discarded there on
+      // every run — see the skip-stamp design spec.
+      must: [{ is_empty: { key: enrichedAtField } }, { is_empty: { key: skippedAsField } }],
       must_not: [
         { key: "_type", match: { value: "indexing_metadata" } },
         { key: "_type", match: { value: "schema_metadata" } },
@@ -334,14 +365,17 @@ export class EnrichmentRecovery {
   }
 
   /**
-   * Scroll Qdrant for chunks missing `{providerKey}.{level}.enrichedAt`.
-   * Excludes the metadata point (INDEXING_METADATA_ID).
+   * Scroll Qdrant for points settled by neither terminal marker, and split them
+   * by what the policy says.
+   *
+   * Pure query — it never writes. Stamping the declined half is the caller's
+   * job, which keeps `countUnenriched` side-effect free.
    */
-  private async scrollUnenriched(
+  private async scanUnenriched(
     collectionName: string,
     provider: EnrichmentProvider,
     level: "file" | "chunk",
-  ): Promise<UnenrichedPoint[]> {
+  ): Promise<UnenrichedScan> {
     const filter = this.buildUnenrichedFilter(provider.key, level);
     const points = await this.qdrant.scrollFiltered(
       collectionName,
@@ -351,24 +385,49 @@ export class EnrichmentRecovery {
       RECOVERY_PAYLOAD_KEYS,
     );
 
-    const result: UnenrichedPoint[] = [];
+    const owed: UnenrichedPoint[] = [];
+    const declined: DeclinedPoint[] = [];
     for (const point of points) {
       const relativePath = typeof point.payload?.relativePath === "string" ? point.payload.relativePath : null;
       if (!relativePath) continue;
       // Per-file enrichment policy: a file the provider declined is unenriched
-      // BY DESIGN — exclude it so neither the recovery pass nor the unenriched
-      // count treats an intentional skip as a degraded miss. file level drops
-      // scope "none"; chunk level keeps only "full" (drops "none" + "file-only").
-      const scope = enrichmentScope(provider, relativePath);
-      if (level === "file" ? scope === "none" : scope !== "full") continue;
-      result.push({
+      // BY DESIGN. It is not a degraded miss and must not be healed — but it
+      // does get stamped, so the next run's filter settles it server-side.
+      const skippedAs = enrichmentSkipReason(provider, relativePath, level);
+      if (skippedAs !== null) {
+        declined.push({ id: point.id, skippedAs });
+        continue;
+      }
+      owed.push({
         id: point.id,
         relativePath,
         startLine: typeof point.payload?.startLine === "number" ? point.payload.startLine : undefined,
         endLine: typeof point.payload?.endLine === "number" ? point.payload.endLine : undefined,
       });
     }
-    return result;
+    return { owed, declined };
+  }
+
+  /**
+   * Persist the policy's decline so it stops costing a scan. Best-effort: a
+   * failed stamp leaves those points in the next run's scan, which is exactly
+   * the pre-fix behaviour, so it degrades rather than breaks.
+   */
+  private async stampDeclined(
+    collectionName: string,
+    providerKey: string,
+    level: "file" | "chunk",
+    declined: readonly DeclinedPoint[],
+  ): Promise<void> {
+    if (declined.length === 0) return;
+    try {
+      await this.applier.applySkipStamps(collectionName, providerKey, level, declined);
+    } catch (error) {
+      console.error(
+        `[EnrichmentRecovery:${providerKey}] skip-stamp write failed (${declined.length} ${level} points):`,
+        error,
+      );
+    }
   }
 }
 
