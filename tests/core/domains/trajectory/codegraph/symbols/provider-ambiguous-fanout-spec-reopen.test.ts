@@ -21,11 +21,16 @@
  * The two scenarios below are byte-identical EXCEPT for whether the
  * `module Capybara` reopening file is extracted. The Gemfile is identical in
  * both (`capybara` declared ONLY in `group :test`). The aggregate appears iff
- * the reopening is in the table — proving the cause is spec-support extraction,
- * NOT the Gemfile group. (Why the spec file gets extracted under
- * CODEGRAPH_EXCLUDE_TESTS at all is the cross-pass `acceptExtraction` bypass —
- * see the report; the `spec/` test glob already classifies these paths as test,
- * see tests/core/infra/file-classification/classify.test.ts.)
+ * the reopening is in the table — proving the cause is the in-project
+ * reopening, NOT the Gemfile group.
+ *
+ * The fixture reopens the gem from `lib/gem_extensions/`, not the live
+ * `spec/support/gem_extensions/`. Since bd tea-rags-mcp-6xxh5 the test
+ * exclusion is unconditional, so a `spec/` file cannot reach the graph through
+ * any entry point — which closes the live taxdome shape for good. The gate
+ * invariant itself is unchanged and still reachable: any non-test in-project
+ * file (a `lib/` monkey-patch) that reopens a gem module defeats it the same
+ * way, so that is what this fixture now uses.
  *
  * Fixture mirrors the DEFECT-1 test (j0pki): `perform` defined in CLASS_COUNT
  * (18) model classes > the DISPATCH_FANOUT_CAP_FLOOR (16), >100 filler
@@ -43,9 +48,9 @@ import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/cl
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DISPATCH_FANOUT_CAP_FLOOR } from "../../../../../../src/core/domains/language/kernel/fanout-policy.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolvePath(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -60,7 +65,7 @@ const GEMFILE = ["source 'https://rubygems.org'", "gem 'rails'", "group :test do
   "\n",
 );
 
-describe("CodegraphEnrichmentProvider — spec/support Capybara reopening defeats the external-root gate (G3a)", () => {
+describe("CodegraphEnrichmentProvider — in-project Capybara reopening defeats the external-root gate (G3a)", () => {
   let tmp: string;
   let root: string;
   let client: DuckDbGraphClient;
@@ -68,12 +73,12 @@ describe("CodegraphEnrichmentProvider — spec/support Capybara reopening defeat
 
   /**
    * Write the shared fixture. `reopenCapybara` toggles ONLY the
-   * `spec/support/gem_extensions/capybara.rb` monkey-patch that reopens
+   * `lib/gem_extensions/capybara.rb` monkey-patch that reopens
    * `module Capybara` — the single independent variable.
    */
   const writeFixture = (reopenCapybara: boolean): string[] => {
     mkdirSync(join(root, "app", "models"), { recursive: true });
-    mkdirSync(join(root, "spec", "support", "gem_extensions"), { recursive: true });
+    mkdirSync(join(root, "lib", "gem_extensions"), { recursive: true });
     writeFileSync(join(root, "Gemfile"), GEMFILE);
 
     const paths: string[] = [];
@@ -86,11 +91,12 @@ describe("CodegraphEnrichmentProvider — spec/support Capybara reopening defeat
     }
 
     // The caller mirrors the live dnd_helpers shape: a chain ROOTED in the
-    // `Capybara` constant reaching `.perform`. Lives in spec/support like the
-    // real file (extraction is not gated here — direct mode, excludeTests off —
-    // exactly as the cross-pass path forwards every chunked file).
+    // `Capybara` constant reaching `.perform`. Lives under lib/ rather than the
+    // real file's spec/support — the codegraph exclusion drops every test path
+    // before extraction, and the gate this pins is about the constant, not the
+    // caller's directory.
     writeFileSync(
-      join(root, "spec", "support", "dnd_helpers.rb"),
+      join(root, "lib", "dnd_helpers.rb"),
       [
         "module DndHelpers",
         "  def drag_and_drop",
@@ -100,24 +106,16 @@ describe("CodegraphEnrichmentProvider — spec/support Capybara reopening defeat
         "",
       ].join("\n"),
     );
-    paths.push("spec/support/dnd_helpers.rb");
+    paths.push("lib/dnd_helpers.rb");
 
     if (reopenCapybara) {
       // The taxdome gem monkey-patch: reopening `module Capybara` makes the
       // constant look IN-PROJECT to resolveConstant.
       writeFileSync(
-        join(root, "spec", "support", "gem_extensions", "capybara.rb"),
-        [
-          "module Capybara",
-          "  class Session",
-          "    def visit_page",
-          "    end",
-          "  end",
-          "end",
-          "",
-        ].join("\n"),
+        join(root, "lib", "gem_extensions", "capybara.rb"),
+        ["module Capybara", "  class Session", "    def visit_page", "    end", "  end", "end", ""].join("\n"),
       );
-      paths.push("spec/support/gem_extensions/capybara.rb");
+      paths.push("lib/gem_extensions/capybara.rb");
     }
     return paths;
   };
@@ -167,7 +165,7 @@ describe("CodegraphEnrichmentProvider — spec/support Capybara reopening defeat
     expect(ambiguous).toBe(0);
   });
 
-  it("gate is DEFEATED when a spec/support file reopens module Capybara — records the aggregate (live dnd_helpers reproduction)", async () => {
+  it("gate is DEFEATED when an in-project file reopens module Capybara — records the aggregate (live dnd_helpers reproduction)", async () => {
     const paths = writeFixture(/* reopenCapybara */ true);
     await provider.streamFileBatch(root, paths);
     await provider.finalizeSignals(root);

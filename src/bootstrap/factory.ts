@@ -42,12 +42,12 @@ import {
   createDatabaseMigrationApplier,
   DATABASE_MIGRATIONS_MODULE_URL,
 } from "../core/domains/maintenance/migration/database/index.js";
+import { CollectionRegistry } from "../core/domains/maintenance/registry/index.js";
+import { SchemaDriftMonitor } from "../core/domains/maintenance/schema-drift-monitor.js";
 import { WorktreeProvisioner } from "../core/domains/maintenance/worktree/index.js";
 import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { CollectionRegistry } from "../core/domains/maintenance/registry/index.js";
 import { setDebug } from "../core/infra/runtime.js";
-import { SchemaDriftMonitor } from "../core/domains/maintenance/schema-drift-monitor.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
@@ -530,7 +530,6 @@ export function wireCodegraph(
     migrationsModulePath: DATABASE_MIGRATIONS_MODULE_URL,
     daemonSocketPath: daemonPaths.socketPath,
     rootDir,
-    excludeTests: codegraph.excludeTests,
     customExcludePatterns: codegraph.customExcludePatterns ?? [],
     dbMemoryLimit: codegraph.dbMemoryLimit,
     dbThreads: codegraph.dbThreads,
@@ -550,13 +549,11 @@ export function wireCodegraph(
     // Threaded to composition roots so NATIVE language providers (ruby, …) build
     // their resolver with the configured mode.
     ambiguousResolveMode: ambiguousMode,
-    // Codegraph-layer exclusion (test files + user-supplied patterns).
-    // The shape mirrors `CodegraphExclusionOptions`; the provider
-    // builds the actual `Ignore` instance at construction time.
-    exclusion: {
-      excludeTests: codegraph.excludeTests,
-      customPatterns: codegraph.customExcludePatterns ?? [],
-    },
+    // Codegraph-layer exclusion (user-supplied patterns; generated + test
+    // files are excluded unconditionally). The shape mirrors
+    // `CodegraphExclusionOptions`; the provider builds the actual `Ignore`
+    // instance at construction time.
+    exclusion: { customPatterns: codegraph.customExcludePatterns ?? [] },
     workerDescriptor,
   };
   const graphFacade = new GraphFacade({ pool, collectionRegistry, resolveActiveCollection });

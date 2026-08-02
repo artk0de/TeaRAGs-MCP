@@ -27,10 +27,10 @@ import { JavascriptCallResolver } from "../../../../../../src/core/domains/langu
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import type { CodegraphWorkerConfig } from "../../../../../../src/core/domains/trajectory/codegraph/factory.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirnameSafe = new URL(".", import.meta.url).pathname;
 const MIG_DIR = join(__dirnameSafe, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -73,7 +73,6 @@ describe("CodegraphEnrichmentProvider — worker integration contract", () => {
       languageModulePath: "/abs/path/to/language-module.js",
       daemonSocketPath: "/tmp/tea-rags-codegraph.sock",
       collectionName: "code_8b243ffe",
-      excludeTests: true,
       customExcludePatterns: ["**/fixtures/**"],
     };
     expect(structuredClone(config)).toEqual(config);

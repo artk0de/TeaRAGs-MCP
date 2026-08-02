@@ -14,9 +14,9 @@ import { JavascriptCallResolver } from "../../../../../../src/core/domains/langu
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -654,9 +654,9 @@ describe("CodegraphEnrichmentProvider", () => {
 
   // tea-rags-mcp-tf1o + hh4m — codegraph-layer test exclusion. Tests are
   // legitimate Qdrant ingest targets but skew the fan-graph (fanIn=0,
-  // fanOut=many). Default `excludeTests:true` keeps them out of the
+  // fanOut=many). The unconditional test exclusion keeps them out of the
   // graph without affecting search-side indexing.
-  it("discoverSupportedFiles skips test files when excludeTests=true", async () => {
+  it("discoverSupportedFiles skips test files", async () => {
     const root = mkdtempSync(join(tmpdir(), "cg-tests-"));
     try {
       mkdirSync(join(root, "src"), { recursive: true });
@@ -674,7 +674,7 @@ describe("CodegraphEnrichmentProvider", () => {
         ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
         collectSymbols,
-        exclusion: { excludeTests: true, customPatterns: [] },
+        exclusion: { customPatterns: [] },
       });
       const overlays = await testExcluder.buildFileSignals(root);
       const keys = [...overlays.keys()].sort();
@@ -725,7 +725,7 @@ describe("CodegraphEnrichmentProvider", () => {
         ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
         collectSymbols,
-        exclusion: { excludeTests: false, customPatterns: ["generated/**"] },
+        exclusion: { customPatterns: ["generated/**"] },
       });
       const overlays = await customExcluder.buildFileSignals(root);
       const keys = [...overlays.keys()].sort();
@@ -738,42 +738,44 @@ describe("CodegraphEnrichmentProvider", () => {
   describe("shouldEnrich", () => {
     const base = { isSource: true, isGenerated: false, isDocumentation: false, isTest: false };
 
-    function buildProvider(excludeTests: boolean): CodegraphEnrichmentProvider {
+    function buildProvider(customPatterns: readonly string[] = []): CodegraphEnrichmentProvider {
       return new CodegraphEnrichmentProvider({
         graphDb: client,
         symbolTable: new InMemoryGlobalSymbolTable(),
         ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
         collectSymbols,
-        exclusion: { excludeTests, customPatterns: [] },
+        exclusion: { customPatterns },
       });
     }
 
-    it("skips generated and test files when excludeTests is on", () => {
-      const strict = buildProvider(true);
+    it("skips generated and test files", () => {
+      const provider = buildProvider();
       expect(
-        strict.shouldEnrich({
+        provider.shouldEnrich({
           relPath: "db/schema.rb",
           classification: { ...base, isSource: false, isGenerated: true },
         }),
       ).toBe("none");
-      expect(strict.shouldEnrich({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } })).toBe(
+      expect(provider.shouldEnrich({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } })).toBe(
         "none",
       );
-      expect(strict.shouldEnrich({ relPath: "app/models/user.rb", classification: base })).toBe("full");
+      expect(provider.shouldEnrich({ relPath: "app/models/user.rb", classification: base })).toBe("full");
     });
 
-    it("keeps test files when excludeTests is off, but generated stays none", () => {
-      const loose = buildProvider(false);
-      expect(loose.shouldEnrich({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } })).toBe(
-        "full",
+    // bd tea-rags-mcp-6xxh5 — the exclusion holds with no exclusion config at
+    // all, because there is no longer a setting that could turn it off.
+    it("skips test files even when the provider was built without exclusion config", () => {
+      const provider = new CodegraphEnrichmentProvider({
+        graphDb: client,
+        symbolTable: new InMemoryGlobalSymbolTable(),
+        ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
+        composer: new DefaultSymbolIdComposer(),
+        collectSymbols,
+      });
+      expect(provider.shouldEnrich({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } })).toBe(
+        "none",
       );
-      expect(
-        loose.shouldEnrich({
-          relPath: "db/schema.rb",
-          classification: { ...base, isSource: false, isGenerated: true },
-        }),
-      ).toBe("none");
     });
   });
 
@@ -918,7 +920,7 @@ describe("CodegraphEnrichmentProvider", () => {
         ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
         composer: new DefaultSymbolIdComposer(),
         collectSymbols,
-        exclusion: { excludeTests: true, customPatterns: [] },
+        exclusion: { customPatterns: [] },
       });
 
       // Caller (EnrichmentCoordinator -> FilePhase) hands the full set of
@@ -944,37 +946,6 @@ describe("CodegraphEnrichmentProvider", () => {
       expect(allFiles.has("config/tests/test_settings.py")).toBe(false);
       expect(allFiles.has("config/management/commands/test_vk_login.py")).toBe(false);
       expect(allFiles.has("domains/engagement/tests/test_admin/test_reaction_admin.py")).toBe(false);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  // Inverse: with excludeTests=false, caller-supplied test paths must
-  // still get processed — codegraphExclusionFilter is a no-op then.
-  it("buildFileSignals walks caller-supplied test paths when excludeTests=false", async () => {
-    const root = mkdtempSync(join(tmpdir(), "cg-paths-no-excl-"));
-    try {
-      mkdirSync(join(root, "src"), { recursive: true });
-      writeFileSync(join(root, "src", "main.ts"), "export function main(): number { return 1; }\n");
-      writeFileSync(join(root, "conftest.py"), "def configure(): return 1\n");
-
-      const symbolTable = new InMemoryGlobalSymbolTable();
-      const noExcluder = new CodegraphEnrichmentProvider({
-        graphDb: client,
-        symbolTable,
-        ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
-        composer: new DefaultSymbolIdComposer(),
-        collectSymbols,
-        exclusion: { excludeTests: false, customPatterns: [] },
-      });
-
-      await noExcluder.buildFileSignals(root, {
-        paths: ["src/main.ts", "conftest.py"],
-      });
-
-      const allFiles = new Set((await client.listAllSymbols()).map((s) => s.relPath));
-      expect(allFiles.has("src/main.ts")).toBe(true);
-      expect(allFiles.has("conftest.py")).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

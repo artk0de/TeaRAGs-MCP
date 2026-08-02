@@ -76,7 +76,6 @@ export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
   { canonical: "CODEGRAPH_DB_MEMORY_LIMIT", aliases: [] },
   { canonical: "CODEGRAPH_DB_MEMORY_LIMIT_MAX", aliases: [] },
   { canonical: "CODEGRAPH_DB_THREADS", aliases: [] },
-  { canonical: "CODEGRAPH_EXCLUDE_TESTS", aliases: [] },
   { canonical: "CODEGRAPH_CUSTOM_EXCLUDE", aliases: [] },
   { canonical: "CODEGRAPH_AMBIGUOUS_RESOLVE_MODE", aliases: [] },
   // embedding.tune (parse.ts `embeddingTune` section). CODE_BATCH_SIZE is a

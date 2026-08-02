@@ -108,7 +108,6 @@ describe("parseAppConfigZod", () => {
       "CODEGRAPH_DB_MEMORY_LIMIT",
       "CODEGRAPH_DB_MEMORY_LIMIT_MAX",
       "CODEGRAPH_DB_THREADS",
-      "CODEGRAPH_EXCLUDE_TESTS",
       "CODEGRAPH_CUSTOM_EXCLUDE",
       "CODEGRAPH_AMBIGUOUS_RESOLVE_MODE",
     ];
@@ -142,7 +141,6 @@ describe("parseAppConfigZod", () => {
       const { codegraph } = parseAppConfigZod();
 
       expect(codegraph.enabled).toBe(false);
-      expect(codegraph.excludeTests).toBe(true);
       expect(codegraph.dbMemoryLimit).toBe("2GB");
       expect(codegraph.dbMemoryLimitMax).toBe("4GB");
       expect(codegraph.dbThreads).toBe(2);
