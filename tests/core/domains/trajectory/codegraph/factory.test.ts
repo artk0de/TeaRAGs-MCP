@@ -43,7 +43,6 @@ describe("createCodegraphEnrichmentProvider", () => {
       migrationsModulePath: MIGRATIONS_MODULE_PATH,
       rootDir: "/tmp/tea-rags-test-root",
       collectionName: "code_test",
-      excludeTests: true,
       customExcludePatterns: [],
     };
     // Worker_threads roundtrip — config MUST survive postMessage.
@@ -102,7 +101,6 @@ describe("createCodegraphEnrichmentProvider", () => {
         languageModulePath: LANGUAGE_MODULE_PATH,
         migrationsModulePath: MIGRATIONS_MODULE_PATH,
         rootDir,
-        excludeTests: true,
         customExcludePatterns: [],
       };
       const provider = await createCodegraphEnrichmentProvider(config);
@@ -130,7 +128,6 @@ describe("createCodegraphEnrichmentProvider", () => {
         languageModulePath: LANGUAGE_MODULE_PATH,
         migrationsModulePath: MIGRATIONS_MODULE_PATH,
         rootDir,
-        excludeTests: true,
         customExcludePatterns: [],
       };
 

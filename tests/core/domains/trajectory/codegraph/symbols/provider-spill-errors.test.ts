@@ -505,7 +505,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
 
   it("discoverSupportedFiles applies codegraphExclusionFilter at directory level", async () => {
     // Covers L996 — codegraphExclusionFilter.ignores(dirRel) for a dir.
-    // Configure provider with excludeTests:true so __tests__/ gets pruned.
+    // __tests__/ is pruned by the unconditional test exclusion.
     const { mkdirSync, writeFileSync } = await import("node:fs");
     const root = join(tmp, "exclusion-root");
     mkdirSync(root, { recursive: true });
@@ -516,7 +516,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
       graphDb: makeStubGraphDb(),
       symbolTable: new InMemoryGlobalSymbolTable(),
       ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
-      exclusion: { excludeTests: true, customPatterns: [] },
+      exclusion: { customPatterns: [] },
       composer: new DefaultSymbolIdComposer(),
       collectSymbols,
     });

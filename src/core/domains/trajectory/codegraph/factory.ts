@@ -29,12 +29,12 @@
 
 import { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
-import type { DatabaseMigrationApplier } from "../../../contracts/types/migration.js";
 import type {
   CollectSymbolsFn,
   LanguageFactoryDescriptor,
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
+import type { DatabaseMigrationApplier } from "../../../contracts/types/migration.js";
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
 import { CodegraphEnrichmentProvider } from "./symbols/provider.js";
 import { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "./symbols/rerank/derived-signals/index.js";
@@ -85,16 +85,9 @@ export interface CodegraphWorkerConfig {
    */
   collectionName?: string;
   /**
-   * Codegraph-layer exclusion of conventional test files from the
-   * call/import graph. Defaults to `true` to match the env-var contract.
-   * Test files still get indexed into Qdrant — this only keeps them out
-   * of the codegraph fan-graph signals (`fanIn` / `fanOut` / hub
-   * detection / PageRank).
-   */
-  excludeTests?: boolean;
-  /**
-   * `.gitignore`-shaped patterns layered on top of the test exclusions.
-   * Sourced from `CODEGRAPH_CUSTOM_EXCLUDE` env var at composition time.
+   * `.gitignore`-shaped patterns layered on top of the unconditional
+   * generated + test exclusions. Sourced from `CODEGRAPH_CUSTOM_EXCLUDE` env
+   * var at composition time.
    */
   customExcludePatterns?: readonly string[];
   /**
@@ -210,10 +203,7 @@ export async function createCodegraphEnrichmentProvider(
       languageFactory,
       derivedSignals: CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
       presets: CODEGRAPH_SYMBOLS_PRESETS,
-      exclusion: {
-        excludeTests: config.excludeTests ?? true,
-        customPatterns: config.customExcludePatterns ?? [],
-      },
+      exclusion: { customPatterns: config.customExcludePatterns ?? [] },
     },
     descriptor,
   );

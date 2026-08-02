@@ -269,6 +269,29 @@ Two findings from the same measurement, each filed separately:
   at `degraded`. Latent only because the variable is empty in every registered
   project.
 
+### How both landed (2026-08-03)
+
+Recorded here rather than by editing the text above, which stays as it was
+written.
+
+`CODEGRAPH_EXCLUDE_TESTS` was removed (`tea-rags-mcp-6xxh5`), but the decision
+went the other way from the reading above: tests are now excluded
+unconditionally instead of being let into the graph. Nothing about the graph
+size changes, because `true` was already the default — so there is no percentile
+shift to validate, and the 30 663 points stamped `skippedAs: "test"` on taxdome
+become permanent by construction rather than stale.
+
+The `CODEGRAPH_CUSTOM_EXCLUDE` gap is closed by `tea-rags-mcp-5ikhf`.
+`shouldEnrich` now consults the same exclusion filter instance the walk uses, so
+a custom-pattern match returns `"none"` and recovery stamps it `"policy"` — the
+catch-all this vocabulary defines for a decline no classification flag explains.
+The same fix covers a second population the finding did not name: each
+language's own non-app-code globs (Ruby's `db/migrate/**`) were in the walk
+filter but not in the policy, so they had the identical defect. Neither
+population is present in any registered project today — a scan of the taxdome
+collection found 0 points carrying neither terminal marker — so both were
+latent, as claimed.
+
 ## Risks
 
 - **Stale stamps after a policy change.** Addressed by the reason field and

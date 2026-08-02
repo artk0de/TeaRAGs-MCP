@@ -121,8 +121,8 @@ export interface RunStats {
   // recordRunStats persists each (language, kind) cell to cg_run_stats so the
   // daemon-readable proxy can break resolveSuccessRate down per language and
   // locate the resolver gap. Lazily grows one entry per language observed in
-  // this run. Test files never reach here — they are excluded upstream at
-  // extraction (CODEGRAPH_EXCLUDE_TESTS, default true).
+  // this run. Test files never reach here — the codegraph exclusion filter
+  // drops them upstream at extraction, unconditionally.
   byLanguageKind: Map<string, Record<ReceiverKind, ReceiverKindTally>>;
 }
 

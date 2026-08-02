@@ -27,13 +27,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
+import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
-
-import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolvePath(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -66,7 +65,7 @@ describe("CodegraphEnrichmentProvider.acceptExtraction — exclusion filter on t
       ...buildTestCodegraphDeps(),
       composer: new DefaultSymbolIdComposer(),
       collectSymbols,
-      exclusion: { excludeTests: true, customPatterns: [] },
+      exclusion: { customPatterns: [] },
     });
   });
 
@@ -92,29 +91,34 @@ describe("CodegraphEnrichmentProvider.acceptExtraction — exclusion filter on t
     expect(spilled).toEqual(["app/models/invoice.rb"]);
   });
 
-  it("with excludeTests:false the same spec paths ARE spilled (filter, not a hardcoded spec/ ban)", () => {
-    const permissive = new CodegraphEnrichmentProvider({
+  // The drop above is filter-driven, not a hardcoded spec/ ban: a custom
+  // pattern with nothing test-shaped about it drops its paths the same way.
+  it("drops a customPattern-matched app path too (the filter decides, not a path convention)", () => {
+    const customExcluder = new CodegraphEnrichmentProvider({
       graphDb: client,
       symbolTable: new InMemoryGlobalSymbolTable(),
       ...buildTestCodegraphDeps(),
       composer: new DefaultSymbolIdComposer(),
       collectSymbols,
-      exclusion: { excludeTests: false, customPatterns: [] },
+      exclusion: { customPatterns: ["app/legacy/**"] },
     });
-    const permissiveCollection = `${COLLECTION}_perm`;
-    const permissiveSpill = join(process.cwd(), ".tea-rags-codegraph-spill", `xpass-${permissiveCollection}.ndjson`);
+    const customCollection = `${COLLECTION}_custom`;
+    const customSpill = join(process.cwd(), ".tea-rags-codegraph-spill", `xpass-${customCollection}.ndjson`);
     try {
-      permissive.acceptExtraction(extractionFor("spec/support/dnd_helpers.rb"), {
-        collectionName: permissiveCollection,
+      customExcluder.acceptExtraction(extractionFor("app/legacy/importer.rb"), {
+        collectionName: customCollection,
       });
-      expect(existsSync(permissiveSpill)).toBe(true);
-      const spilled = readFileSync(permissiveSpill, "utf8")
+      customExcluder.acceptExtraction(extractionFor("app/models/invoice.rb"), {
+        collectionName: customCollection,
+      });
+      expect(existsSync(customSpill)).toBe(true);
+      const spilled = readFileSync(customSpill, "utf8")
         .split("\n")
         .filter((l) => l.length > 0)
         .map((l) => (JSON.parse(l) as FileExtraction).relPath);
-      expect(spilled).toEqual(["spec/support/dnd_helpers.rb"]);
+      expect(spilled).toEqual(["app/models/invoice.rb"]);
     } finally {
-      rmSync(permissiveSpill, { force: true });
+      rmSync(customSpill, { force: true });
     }
   });
 });

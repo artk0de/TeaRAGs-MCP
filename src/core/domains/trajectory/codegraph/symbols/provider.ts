@@ -104,8 +104,8 @@ import { lastSegment } from "./symbol-name.js";
  *             ingest, principally test files. Test sources are valuable
  *             to index for semantic search ("show me tests for X") but
  *             pollute the dependency fan-graph (fanIn=0, fanOut=many
- *             dilutes hub/PageRank signals). Default `excludeTests:true`
- *             keeps the graph clean.
+ *             dilutes hub/PageRank signals), so the exclusion is
+ *             unconditional.
  *
  * Two layers, not a union: the layers carry different semantics. Layer 1
  * is "what the user excluded from indexing entirely" — must be honoured
@@ -332,10 +332,10 @@ export interface CodegraphProviderDeps {
   presets?: RerankPreset[];
   /**
    * Codegraph-layer exclusion config — wired from
-   * `codegraphSchema.excludeTests` + `codegraphSchema.customExcludePatterns`
-   * by the bootstrap factory. Optional: tests/fixtures default to
-   * `{ excludeTests: false, customPatterns: [] }` (no codegraph-layer
-   * exclusions) for predictable behaviour without env wiring.
+   * `codegraphSchema.customExcludePatterns` by the bootstrap factory.
+   * Optional: tests/fixtures default to `{ customPatterns: [] }`, which still
+   * carries the unconditional generated + test exclusions, so a fixture
+   * behaves like production without env wiring.
    */
   exclusion?: CodegraphExclusionOptions;
 }
@@ -456,10 +456,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
    * Built once at construction from `deps.exclusion` PLUS each registered
    * language's own non-app-code globs (`deps.languageFactory`, bd
-   * tea-rags-mcp-biwbq — e.g. Ruby's `db/migrate/**`). Empty filter
-   * (`excludeTests:false`, no custom patterns, no language globs) is a valid
-   * no-op — every `ignores()` call returns false and the layer becomes
-   * transparent.
+   * tea-rags-mcp-biwbq — e.g. Ruby's `db/migrate/**`). Never empty: the
+   * generated + test patterns are unconditional, so the layer always has
+   * something to say.
    */
   private readonly codegraphExclusionFilter: Ignore;
 
@@ -486,7 +485,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       this.runState,
     );
     this.codegraphExclusionFilter = buildCodegraphExclusionFilter(
-      deps.exclusion ?? { excludeTests: false, customPatterns: [] },
+      deps.exclusion ?? { customPatterns: [] },
       deps.languageFactory,
     );
     // Configuration invariant: exactly one routing mode must be picked
@@ -508,15 +507,35 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Codegraph policy: generated files have no human-authored call graph; tests
-   * skew fanOut/isHub/PageRank (high fanOut, fanIn=0) and are excluded when
-   * `excludeTests` is on (the same flag that gates `discoverSupportedFiles`).
+   * Codegraph policy — ONE source of truth for "is this path in scope", shared
+   * with the graph walk (bd tea-rags-mcp-5ikhf).
+   *
+   * The authority is `codegraphExclusionFilter`, the same instance
+   * `discoverSupportedFiles`, `streamFileBatchInner`, `buildFileSignals` and
+   * `acceptExtraction` consult. It carries the unconditional generated + test
+   * patterns, each language's own non-app-code globs (Ruby's `db/migrate/**`)
+   * and the user's `CODEGRAPH_CUSTOM_EXCLUDE`.
+   *
+   * The two must agree or the point is stranded. A path the walk drops can
+   * never receive a `codegraph.symbols.<level>.enrichedAt` — no overlay is read
+   * back for it, and codegraph is skipped by the backfill pass
+   * (`defersChunkEnrichment`). Reporting it as "full" therefore leaves it owed
+   * enrichment forever: `EnrichmentRecovery` re-selects it every run, dispatches
+   * the provider, gets nothing back, and `markRecoveryResult` writes `degraded`
+   * on every single run with nothing it can act on. Declining is what lets the
+   * point be stamped `skippedAs` once and settled server-side.
+   *
+   * `isGenerated` stays as a separate check because the classifier sees things
+   * a path glob cannot: `TEA_RAGS_GENERATED_PATTERNS` and the in-file
+   * `@generated` content markers. `isTest` needs no check — the filter's test
+   * patterns and the classifier's are the same constant.
+   *
    * Docs are irrelevant to the graph and enrich fully (no chunk graph is
-   * emitted for them anyway). Reads the shared FileClassification fact.
+   * emitted for them anyway).
    */
   shouldEnrich(file: { relPath: string; classification: FileClassification }): EnrichmentScope {
     if (file.classification.isGenerated) return "none";
-    if ((this.deps.exclusion?.excludeTests ?? false) && file.classification.isTest) return "none";
+    if (this.codegraphExclusionFilter.ignores(file.relPath)) return "none";
     return "full";
   }
 
@@ -816,7 +835,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // production ingest path threads its full file list as
     // `options.paths` (so `discoverSupportedFiles` is bypassed), and
     // without filtering here test files would land in the dependency
-    // graph despite `excludeTests:true`. The standalone-walk branch
+    // graph despite the exclusion. The standalone-walk branch
     // delegates to `discoverSupportedFiles`, which applies the filter
     // internally — the explicit `.filter` here covers the
     // caller-supplied branch with the same `codegraphExclusionFilter`
@@ -1025,7 +1044,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // file from the file-processor — unlike the batch path (streamFileBatchInner)
     // and buildFileSignals, which filter. Without this guard a test-classified
     // file (spec/support/gem_extensions/capybara.rb reopening `module Capybara`)
-    // enters the graph under CODEGRAPH_EXCLUDE_TESTS, defeats the DEFECT-1
+    // enters the graph despite the test exclusion, defeats the DEFECT-1
     // external-root gate, and re-records the dnd_helpers aggregates on every
     // --force reindex.
     if (this.codegraphExclusionFilter.ignores(extraction.relPath)) return;
@@ -1298,9 +1317,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    *             `.gitignore` / `.contextignore`. Catches `node_modules/`,
    *             `_nuxt/`, `vendor/bundle/`, glob patterns like
    *             `*.min.js`, AND project-specific user rules.
-   *   Layer 2 — `this.codegraphExclusionFilter` (always present;
-   *             empty filter is the no-op case). Carries
-   *             CODEGRAPH_TEST_PATTERNS when `excludeTests:true` plus
+   *   Layer 2 — `this.codegraphExclusionFilter` (always present). Carries
+   *             CODEGRAPH_GENERATED_PATTERNS + CODEGRAPH_TEST_PATTERNS
+   *             unconditionally, each language's own non-app-code globs, plus
    *             any `CODEGRAPH_CUSTOM_EXCLUDE` patterns.
    *
    * Directory-level early skip on both layers is a performance

@@ -186,14 +186,6 @@ export const codegraphSchema = z.object({
    */
   dbThreads: intWithDefault(2),
   /**
-   * When true (default), test files are excluded from codegraph
-   * extraction via `CODEGRAPH_TEST_PATTERNS`. Test files remain indexed
-   * by the main Qdrant ingest path — this flag only gates the
-   * dependency-graph extraction. Setting `CODEGRAPH_EXCLUDE_TESTS=false`
-   * includes tests in fan-graph / PageRank / cycles.
-   */
-  excludeTests: booleanFromEnvWithDefault(true),
-  /**
    * Comma-separated `.gitignore`-shaped patterns added on top of the
    * codegraph exclusion filter. Use to skip vendored copies, generated
    * code, or domain-specific paths the user wants out of the graph.

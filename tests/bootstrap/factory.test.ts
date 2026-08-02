@@ -273,7 +273,6 @@ describe("wireCodegraph", () => {
         enabled: true,
         dbMemoryLimit: "2GB",
         dbThreads: 2,
-        excludeTests: true,
         customExcludePatterns: [],
         ambiguousResolveMode: "strict",
       },

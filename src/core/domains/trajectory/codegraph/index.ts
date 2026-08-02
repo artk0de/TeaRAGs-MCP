@@ -51,10 +51,11 @@ export interface CodegraphDeps {
   /**
    * Codegraph-layer exclusion config — applied AFTER FileScanner's
    * ignoreFilter inside `discoverSupportedFiles`. Wired from
-   * `codegraphSchema.excludeTests` + `codegraphSchema.customExcludePatterns`
-   * by the bootstrap factory. Default (production wiring) is
-   * `{ excludeTests: true, customPatterns: [] }` — tests are kept out of
-   * the dependency graph but main Qdrant ingest still indexes them.
+   * `codegraphSchema.customExcludePatterns` by the bootstrap factory.
+   * Generated and test files are excluded unconditionally by the filter
+   * itself, so the default (production wiring) is `{ customPatterns: [] }` —
+   * tests are kept out of the dependency graph but main Qdrant ingest still
+   * indexes them.
    */
   exclusion: CodegraphExclusionOptions;
   /**

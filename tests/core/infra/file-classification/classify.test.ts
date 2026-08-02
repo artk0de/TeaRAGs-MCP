@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { classify } from "../../../../src/core/infra/file-classification/index.js";
 
@@ -29,7 +29,7 @@ describe("classify", () => {
 
   // G3a boundary: non-`*_spec.rb` files that still live under `spec/`
   // (support helpers, gem monkey-patches, mailer previews) MUST classify as
-  // test so codegraph does not extract them under CODEGRAPH_EXCLUDE_TESTS. A
+  // test so the codegraph exclusion filter keeps them out of the graph. A
   // `spec/support/gem_extensions/capybara.rb` reopening `module Capybara`
   // otherwise makes the gem constant look in-project and defeats the external
   // dispatch gate (dnd_helpers `Capybara…perform` cg_ambiguous_fanout noise).

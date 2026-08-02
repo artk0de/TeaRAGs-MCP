@@ -14,9 +14,10 @@
  *
  * Patterns follow `.gitignore` syntax (the `ignore` npm package). Defaults
  * cover the conventional test file shapes for every language with a
- * codegraph walker. `CODEGRAPH_EXCLUDE_TESTS=false` opts back into
- * including tests; `CODEGRAPH_CUSTOM_EXCLUDE` adds project-specific
- * patterns on top.
+ * codegraph walker. Test exclusion is unconditional (bd tea-rags-mcp-6xxh5) —
+ * a graph over tests answers no architectural question, so there is no
+ * configuration that turns it off. `CODEGRAPH_CUSTOM_EXCLUDE` adds
+ * project-specific patterns on top.
  */
 
 import ignore, { type Ignore } from "ignore";
@@ -44,14 +45,8 @@ export const CODEGRAPH_TEST_PATTERNS: readonly string[] = TEST_PATTERNS;
 
 export interface CodegraphExclusionOptions {
   /**
-   * When true, applies `CODEGRAPH_TEST_PATTERNS`. Default is wired via the
-   * `CODEGRAPH_EXCLUDE_TESTS` env var (default true) so tests stay out of
-   * the graph unless the user opts in.
-   */
-  excludeTests: boolean;
-  /**
    * Project-specific `.gitignore`-shaped patterns layered on top of the
-   * test exclusions. Empty when the user has not set
+   * unconditional generated + test exclusions. Empty when the user has not set
    * `CODEGRAPH_CUSTOM_EXCLUDE`.
    */
   customPatterns: readonly string[];
@@ -64,10 +59,9 @@ export interface CodegraphExclusionOptions {
  * patterns (`tests/`) and file globs (`*.test.ts`) coexist.
  *
  * The returned instance is safe to share across `discoverSupportedFiles`
- * invocations (immutable after construction). Both `excludeTests=false`
- * AND `customPatterns=[]` is a valid configuration — the resulting filter
- * matches nothing, so `ignores()` always returns false. The `ignore`
- * package tolerates an empty add gracefully.
+ * invocations (immutable after construction). An empty `customPatterns` is a
+ * valid configuration — the generated + test layers still apply, and the
+ * `ignore` package tolerates an empty add gracefully.
  *
  * `languageFactory` (optional) contributes each registered language's OWN
  * non-application-code globs (`LanguageProvider.codegraphExclusionGlobs` — e.g.
@@ -82,11 +76,9 @@ export function buildCodegraphExclusionFilter(
   languageFactory?: LanguageFactoryDescriptor,
 ): Ignore {
   const ig = ignore();
-  // Generated files are always excluded — invariant, not configurable.
+  // Generated and test files are always excluded — invariants, not configurable.
   ig.add(CODEGRAPH_GENERATED_PATTERNS as string[]);
-  if (options.excludeTests) {
-    ig.add(CODEGRAPH_TEST_PATTERNS as string[]);
-  }
+  ig.add(CODEGRAPH_TEST_PATTERNS as string[]);
   // Per-language non-app-code globs, owned by each language provider. Aggregated
   // here so no language-specific pattern leaks into this generic engine.
   if (languageFactory) {

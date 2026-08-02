@@ -483,7 +483,7 @@ function buildScannerFilter(root: string): Ignore {
  */
 function discoverRubyFiles(root: string, languageFactory: LanguageFactory): string[] {
   const scannerFilter = buildScannerFilter(root);
-  const codegraphFilter = buildCodegraphExclusionFilter({ excludeTests: true, customPatterns: [] }, languageFactory);
+  const codegraphFilter = buildCodegraphExclusionFilter({ customPatterns: [] }, languageFactory);
   const out: string[] = [];
   const walk = (dir: string): void => {
     let entries;
@@ -10433,7 +10433,7 @@ function noteSingleSegCall(
   relPath: string,
   callerSymbolId: string,
 ): void {
-  const receiver = call.receiver;
+  const { receiver } = call;
   if (receiver === null || !ssIsSingleSegment(receiver)) return;
   const rs = resolver;
   if (rs === undefined) return;
@@ -11055,7 +11055,7 @@ function noteBareDeferCall(
 ): void {
   const rs = resolver;
   if (rs === undefined) return;
-  const receiver = call.receiver;
+  const { receiver } = call;
   const shape = bdCallShape(call);
   const edges = dispatchOutcome?.kind === "edges" ? dispatchOutcome.edges : [];
 
@@ -11783,7 +11783,7 @@ function bcNoteHeadCandidate(
   baseOutcome: LcOutcome,
   relPath: string,
 ): void {
-  const receiver = call.receiver;
+  const { receiver } = call;
   if (!receiver?.includes(".")) return;
   const head = receiver.split(".")[0];
   if (head === undefined || ctx.localCallBindings?.[head] === undefined) return;
@@ -11855,7 +11855,7 @@ function noteBoundCallCall(
   relPath: string,
   callerSymbolId: string,
 ): void {
-  const receiver = call.receiver;
+  const { receiver } = call;
   if (receiver === null) return;
   const dispatchEdges = dispatchOutcome?.kind === "edges" ? dispatchOutcome.edges.length : 0;
   bcNoteHeadCandidate(call, ctx, dispatchEdges, baseOutcome, relPath);

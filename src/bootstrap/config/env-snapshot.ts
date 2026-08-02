@@ -88,7 +88,6 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
   put("CODEGRAPH_DB_MEMORY_LIMIT", codegraph.dbMemoryLimit);
   put("CODEGRAPH_DB_MEMORY_LIMIT_MAX", codegraph.dbMemoryLimitMax);
   put("CODEGRAPH_DB_THREADS", codegraph.dbThreads);
-  put("CODEGRAPH_EXCLUDE_TESTS", codegraph.excludeTests);
   putList("CODEGRAPH_CUSTOM_EXCLUDE", codegraph.customExcludePatterns);
   put("CODEGRAPH_AMBIGUOUS_RESOLVE_MODE", codegraph.ambiguousResolveMode);
 

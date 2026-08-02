@@ -194,9 +194,14 @@ when codegraph is enabled:
 | `CODEGRAPH_DB_PATH`               | data dir  | Override the graph-DB root directory. Per-project files at `<rootDir>/codegraph/<collection>.duckdb`. |
 | `CODEGRAPH_DB_MEMORY_LIMIT`       | `"2GB"`   | Per-project DuckDB RAM ceiling before spilling to a temp dir (prevents OOM on large repos). |
 | `CODEGRAPH_DB_THREADS`            | `2`       | DuckDB worker threads per project. The writer lock — not parallel scan — is the bottleneck, so more threads inflate memory without speeding up. |
-| `CODEGRAPH_EXCLUDE_TESTS`         | `true`    | Exclude test files from the graph (still indexed by Qdrant; only graph extraction is gated). `false` includes tests in fan-graph / PageRank / cycles. |
 | `CODEGRAPH_CUSTOM_EXCLUDE`        | _(empty)_ | Comma-separated `.gitignore`-shaped patterns added to the exclusion filter, e.g. `vendor/**,generated/**,*.pb.go`. |
 | `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE`| `"strict"`| How to resolve short-name calls matching multiple candidates. `strict` drops the edge unless exactly one match; `first` picks the first candidate (higher recall, more noise). |
+
+Test files and generated files are always kept out of the graph, and that is not
+configurable. A test calls production code and nothing calls it, so its edges
+inflate the fan-in and PageRank of whatever it touches without describing any
+real dependency. Both kinds are still indexed by Qdrant and stay searchable —
+only graph extraction skips them.
 
 ## Next Steps
 
