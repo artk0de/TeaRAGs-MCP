@@ -13,6 +13,7 @@ import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../../cont
  */
 export class OwnershipPreset implements RerankPreset {
   readonly name = "ownership";
+  readonly filter = { presets: "production" } as const;
   readonly description = "Code with single dominant author — knowledge transfer risk";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];

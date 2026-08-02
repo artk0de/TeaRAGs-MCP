@@ -22,6 +22,7 @@ import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/t
  */
 export class EntryPointPreset implements CompositeRerankPreset {
   readonly name = "entryPoint";
+  readonly filter = { presets: "production" } as const;
   readonly description = "Composition roots — high outgoing imports per line, no incoming";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];
   readonly requires = ["codegraph.symbols"] as const;

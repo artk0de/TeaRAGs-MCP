@@ -9,6 +9,7 @@ import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../.
  */
 export class OwnershipCompositePreset implements CompositeRerankPreset {
   readonly name = "ownership";
+  readonly filter = { presets: "production" } as const;
   readonly description = "Silo-owned code that other files depend on — prioritised bus-factor target";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];

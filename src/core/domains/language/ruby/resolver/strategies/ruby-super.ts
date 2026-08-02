@@ -2,6 +2,7 @@ import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js
 import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
+import { linearizeAncestors } from "../ancestor-linearization.js";
 import { resolveInstanceMethodInClassChain, resolveViaIncludingClasses, type ResolverConfig } from "./shared.js";
 
 /**
@@ -94,16 +95,24 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
       return null;
     }
     // `super` dispatches to the PARENT, never the enclosing class itself, so
-    // start the MRO walk AT the ancestors with the enclosing class pre-seeded
-    // into `visited`. Each ancestor reuses the shared class-chain walk (the same
-    // traversal the `self.<member>` pass uses) — instance-method (`#`) and
-    // class-form (`.`) candidates both bind by short name, covering
-    // `def self.foo; super; end`. A file-only edge is preferred over `null` when
-    // an ancestor's file is known but the method lives outside the project
-    // (`ApplicationRecord#save` actually on `ActiveRecord::Base`).
+    // start the MRO walk at whatever follows the enclosing class in its
+    // LINEARIZATION, with the enclosing class pre-seeded into `visited`.
+    // Linearized, not the raw `classAncestors` order: the walker stores that as
+    // `[superclass, ...includes]`, whereas Ruby ranks every include AHEAD of the
+    // superclass and a later include ahead of an earlier one — iterating the raw
+    // list sends `super` to the superclass past a mixin that defines the method
+    // (bd tea-rags-mcp-uuux9). Anything BEFORE the class (its `prepend`s) is
+    // excluded by construction: those run before it, so `super` never reaches
+    // them. Each entry reuses the shared class-chain walk (the same traversal the
+    // `self.<member>` pass uses) — instance-method (`#`) and class-form (`.`)
+    // candidates both bind by short name, covering `def self.foo; super; end`. A
+    // file-only edge is preferred over `null` when an ancestor's file is known
+    // but the method lives outside the project (`ApplicationRecord#save`
+    // actually on `ActiveRecord::Base`).
+    const mro = linearizeAncestors(enclosingClass, ctx);
     const visited = new Set<string>([enclosingClass]);
     let fileOnlyFallback: SymbolResolutionTarget | null = null;
-    for (const ancestor of ancestors) {
+    for (const ancestor of mro.slice(mro.indexOf(enclosingClass) + 1)) {
       const resolvedTarget = resolveInstanceMethodInClassChain(
         ancestor,
         member,

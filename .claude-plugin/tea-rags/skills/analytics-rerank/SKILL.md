@@ -76,7 +76,7 @@ Catalog has full list; this is routing tier.
 | "Old + churny + bug-fixed legacy in domain X?"           | `techDebt`                                                                                |
 | "Single-author silos / bus factor in domain X?"          | `ownership`                                                                               |
 | "Review the recent changes in this area"                 | `codeReview` (with `maxAgeDays: 7`)                                                       |
-| "Old code in security-sensitive paths"                   | `securityAudit` (with `pathPattern: "**/auth/**"`)                                        |
+| "Old code in security-sensitive paths"                   | `securityAudit` (with `filter: { presets: "securityPaths" }`)                             |
 | "Recently modified, sprint-review style"                 | `recent`                                                                                  |
 | "Stable, low-bug template code"                          | `proven` / `stable`                                                                       |
 | "Refactor candidates by size+volatility+bug-fix history" | `refactoring`                                                                             |
@@ -200,6 +200,38 @@ labels). Read `references/runtime-introspection.md` for the structure,
 `references/signal-interpretation.md` for pair diagnostics disambiguating
 single-signal ambiguity (god module vs bug attractor, healthy owner vs toxic
 silo, legacy minefield vs proven stable).
+
+## Named filter presets — pairing with rerank
+
+The `filter` param accepts `{ presets: "name" }` (or CSV `"a,b,c"` for AND
+composition) in addition to the raw Qdrant filter object. These are mutually
+exclusive forms: you pass either `{ presets: ... }` OR a raw filter object in
+one call, not both.
+
+Named presets are adaptive: thresholds are collection percentiles (e.g. p75 of
+`commitCount`), not hardcoded numbers. Cold-start fallbacks apply when stats are
+unavailable. The catalog is gated per trajectory: static presets are always
+available; git/codegraph presets require those trajectories to be registered.
+
+**High-value pairings (rerank preset → filter preset):**
+
+| Analytics question                       | Rerank preset   | Filter preset      |
+| ---------------------------------------- | --------------- | ------------------ |
+| Old code in security paths               | `securityAudit` | `securityPaths`    |
+| Fragile silo (silent, low-churn)         | custom (below)  | `fragileSilo`      |
+| Bug-prone + volatile + high blast radius | `dangerous`     | `panicZone`        |
+| Recently active legacy                   | `techDebt`      | `freshLegacyEdits` |
+| Battle-tested critical modules           | `proven`        | `battleTested`     |
+
+**Inventory-vs-query narrowing rule.** A HARD specific filter belongs to
+query-absent inventory mode (the query is empty and you want a specific slice of
+the codebase). When a natural-language query is present, rank broadly — don't
+also hard-filter — so recall is not lost. Hygiene presets (`production`,
+`coreLogic`) are safe in either mode and are the defaults applied automatically
+by those rerank presets.
+
+Full catalog: read `tea-rags://schema/filters` (generated from the live
+registry). Do not memorize from training data — read on demand.
 
 ## Project calibration
 

@@ -51,6 +51,24 @@ Run search-cascade **3 times** with different rerank presets. For each:
 | `decomposition` | Oversized functions/classes — split candidates             |
 | `hotspots`      | High churn + recent activity — stability risks             |
 
+#### Filter presets (apply to each scan call)
+
+Pass `filter: { presets: "godMethods" }` on all three scan calls. This
+pre-filters the Qdrant population to behavioral god-method chunks before
+reranking, which raises signal-to-noise when the scope is behaviorally broad.
+When the scan is purely structural (no query, scope is already narrow), use
+`filter: { presets: "coreLogic" }` instead — it keeps only function/class chunks
+and discards noise (imports, comments, config).
+
+`{presets}` AND-composes with any `pathPattern` already in the call — both
+constraints apply.
+
+**Empty-widen rule.** When a query is present AND all three `godMethods` scan
+results come back empty, re-run the three presets with
+`filter: { presets: "coreLogic" }` (broader population) and note the widening in
+output:
+`> strict filter (godMethods) returned no results — widened to coreLogic`.
+
 ### 2. MERGE
 
 Cross-reference all 3 presets' results by `symbolId` (or `relativePath` +

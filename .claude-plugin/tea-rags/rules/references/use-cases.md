@@ -96,6 +96,33 @@ filters (`modifiedAfter`/`Before`, `minAgeDays`/`maxAgeDays`):
 (language, time window, author, testFile, taskId, `minCommitCount`, doc/code
 split, etc.).
 
+## Named filter presets (`filter: { presets }`)
+
+The `filter` param accepts a named-presets shorthand in addition to a raw Qdrant
+filter (mutually exclusive in one object): `filter: { presets: "name" }` or
+`{ presets: "a,b,c" }` (CSV, AND-merged). Named presets are curated adaptive
+filter bundles whose thresholds resolve from collection percentiles at query
+time (cold-start fallbacks until reindex), so they port across repositories. A
+`{presets}` filter AND-composes with typed sugar params (language, minAgeDays…).
+
+Catalog (gated by registered trajectories):
+
+| Group             | Presets                                                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| always            | `production` (¬test/¬doc/¬block), `coreLogic` (function/class, ¬test), `securityPaths` (auth/crypto/secret/token/… paths) |
+| require git       | `freshLegacyEdits`, `fragileSilo`, `panicZone`, `godMethods`, `battleTested`, `abandonedHotspots`                         |
+| require codegraph | `hubs`, `deadCandidates`, `unstableCore`                                                                                  |
+
+**Inventory vs query rule.** Hard specific presets (panicZone,
+abandonedHotspots, …) suit query-absent inventory scans where an empty result is
+a valid answer (see `tea-rags:risk-assessment`); query-driven triage stays broad
+(no hard specific filter) to preserve recall (`tea-rags:bug-hunt`,
+`tea-rags:explore`). Hygiene presets (`production`/`coreLogic`) are safe in any
+mode and are the default population of the risk/structural rerank presets — so
+`rerank:"techDebt"` already excludes tests/docs/block; `filter: {}` clears that
+default. Full catalog + syntax: `tea-rags://schema/filters`; selection guidance:
+`tea-rags:analytics-rerank` and `tea-rags:filter-building`.
+
 ## Tests as context
 
 DSL test chunking emits two chunk types: `chunkType: "test"` (leaf-scope

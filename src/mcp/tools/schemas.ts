@@ -268,17 +268,11 @@ function typedFilterFields() {
 /**
  * Shared fields for query, limit, filter, pathPattern used in semantic/hybrid search.
  */
-function searchCommonFields() {
+function searchCommonFields(filterSchema: z.ZodTypeAny) {
   return {
     query: z.string().describe("Search query text"),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
-    filter: z
-      .record(z.string(), z.any())
-      .optional()
-      .describe(
-        "Qdrant filter object with must/should/must_not conditions. " +
-          "See tea-rags://schema/filters for syntax and available fields.",
-      ),
+    filter: filterSchema.optional(),
     pathPattern: z
       .string()
       .optional()
@@ -325,10 +319,10 @@ function paginationFields(metaOnlyDefault?: boolean) {
 }
 
 /** Build the shared schema structure used by both semantic_search and hybrid_search. */
-function vectorSearchSchema(rerankSchema: z.ZodTypeAny) {
+function vectorSearchSchema(rerankSchema: z.ZodTypeAny, filterSchema: z.ZodTypeAny) {
   return {
     ...collectionPathFields(),
-    ...searchCommonFields(),
+    ...searchCommonFields(filterSchema),
     ...typedFilterFields(),
     ...levelField(),
     rerank: rerankSchema
@@ -344,8 +338,12 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
   const rankChunksRerankSchema = schemaBuilder.buildRerankSchema("rank_chunks");
   const findSimilarRerankSchema = schemaBuilder.buildRerankSchema("find_similar");
 
-  const SemanticSearchSchema = vectorSearchSchema(semanticSearchRerankSchema);
-  const HybridSearchSchema = vectorSearchSchema(semanticSearchRerankSchema);
+  // Shared `filter` param: raw Qdrant filter OR { presets } reference, with
+  // available filter-preset names surfaced in the description for discovery.
+  const filterSchema = schemaBuilder.buildFilterSchema();
+
+  const SemanticSearchSchema = vectorSearchSchema(semanticSearchRerankSchema, filterSchema);
+  const HybridSearchSchema = vectorSearchSchema(semanticSearchRerankSchema, filterSchema);
 
   const SearchCodeSchema = {
     ...collectionPathFields(),
@@ -374,13 +372,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ),
     ...levelField(),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
-    filter: z
-      .record(z.string(), z.any())
-      .optional()
-      .describe(
-        "Qdrant filter object with must/should/must_not conditions. " +
-          "See tea-rags://schema/filters for syntax and available fields.",
-      ),
+    filter: filterSchema.optional(),
     pathPattern: z
       .string()
       .optional()
@@ -423,13 +415,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
           "supports negative-only. average_vector: averages all positive vectors, fastest. " +
           "sum_scores: sums scores across examples, middle ground.",
       ),
-    filter: z
-      .record(z.string(), z.any())
-      .optional()
-      .describe(
-        "Qdrant filter object with must/should/must_not conditions. " +
-          "See tea-rags://schema/filters for syntax and available fields.",
-      ),
+    filter: filterSchema.optional(),
     pathPattern: z.string().optional().describe("Glob pattern for filtering by file path (e.g. 'src/**/*.ts')"),
     fileExtensions: z.array(z.string()).optional().describe("Filter by file extensions (e.g. ['.ts', '.js'])"),
     rerank: findSimilarRerankSchema

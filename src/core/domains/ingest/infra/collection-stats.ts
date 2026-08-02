@@ -7,6 +7,7 @@
  */
 
 import { resolvePayloadValue } from "../../../contracts/signal-utils.js";
+import type { FilterPresetDef } from "../../../contracts/types/filter-preset.js";
 import {
   STATS_ACCUMULATOR_KEYS,
   type PointContext,
@@ -333,16 +334,67 @@ function collectReferencedPercentiles(signals: PayloadSignalDescriptor[]): Map<s
 }
 
 /**
+ * True when `sig` declares percentile `p` — either via its `stats.labels` keys
+ * (as `pN`) OR via `stats.percentilesToCompute`. Single source of truth for the
+ * "declares a percentile" predicate, shared by the confidence walk and the
+ * filter-preset walk so both check declaration identically.
+ */
+function declaresPercentile(sig: PayloadSignalDescriptor, p: number): boolean {
+  const fromLabels = Object.keys(sig.stats?.labels ?? {}).some((k) => Number(k.slice(1)) === p);
+  if (fromLabels) return true;
+  return (sig.stats?.percentilesToCompute ?? []).includes(p);
+}
+
+/**
+ * Walk every filter preset's conditions and collect the percentiles each
+ * referenced signal must provide. A condition references a percentile when its
+ * `value` is an adaptive `{ percentile: "pN", fallback }` object; literal values
+ * carry no percentile dependency. The signal is resolved by LOGICAL key
+ * (`condition.signal`) — the same form used in the payload descriptor's `key`.
+ */
+function collectFilterReferencedPercentiles(
+  filterPresets: readonly FilterPresetDef[],
+): Map<string, Map<number, string>> {
+  const result = new Map<string, Map<number, string>>();
+  for (const preset of filterPresets) {
+    for (const condition of preset.conditions) {
+      const { value } = condition;
+      if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+      if (!("percentile" in value)) continue;
+      const p = Number(value.percentile.slice(1));
+      if (!Number.isFinite(p)) continue;
+      let perSignal = result.get(condition.signal);
+      if (!perSignal) {
+        perSignal = new Map<number, string>();
+        result.set(condition.signal, perSignal);
+      }
+      if (!perSignal.has(p)) perSignal.set(p, preset.name);
+    }
+  }
+  return result;
+}
+
+/**
  * Validate that every percentile referenced by a descriptor's confidence block
  * is declared on the support signal — either via its `stats.labels` keys
  * (as `pN`) OR via `stats.percentilesToCompute`. Throws at descriptor-load
  * time if any reference is unwired. Loud failure is intentional: silent
  * fallback to `rule.fallback` masks misconfiguration.
  *
+ * Filter presets (optional second arg) extend the same contract: an adaptive
+ * `{ percentile: "pN" }` condition resolves against collection stats at SEARCH
+ * time with no lazy-recompute machinery, so the referenced `pN` MUST be computed
+ * at index time. Each filter-referenced `pN` must therefore be declared on its
+ * signal (labels OR percentilesToCompute) exactly like a confidence reference.
+ * Default `[]` keeps the existing single-arg callers unchanged (back-compat).
+ *
  * Call at composition time after assembling all trajectories' signals into
  * a single descriptor list.
  */
-export function validateSignalDependencies(signals: PayloadSignalDescriptor[]): void {
+export function validateSignalDependencies(
+  signals: PayloadSignalDescriptor[],
+  filterPresets: readonly FilterPresetDef[] = [],
+): void {
   const referenced = collectReferencedPercentiles(signals);
   for (const [supportKey, percentiles] of referenced) {
     const supportSig = signals.find((s) => s.key === supportKey);
@@ -351,19 +403,34 @@ export function validateSignalDependencies(signals: PayloadSignalDescriptor[]): 
         `Signal dependency error: a descriptor references support "${supportKey}" via confidence.support, but no such PayloadSignalDescriptor is declared.`,
       );
     }
-    const declaredFromLabels = new Set<number>(
-      Object.keys(supportSig.stats?.labels ?? {})
-        .map((k) => Number(k.slice(1)))
-        .filter((n) => Number.isFinite(n)),
-    );
-    const declaredFromCompute = new Set<number>(supportSig.stats?.percentilesToCompute ?? []);
     for (const p of percentiles) {
-      if (!declaredFromLabels.has(p) && !declaredFromCompute.has(p)) {
+      if (!declaresPercentile(supportSig, p)) {
         throw new Error(
           `Signal dependency error: a descriptor references "${supportKey}" percentile p${p} ` +
             `(via confidence.score.adaptivePercentile or confidence.label.rules[].whenSupportBelow), ` +
             `but ${supportKey} declares neither p${p} in stats.labels nor ${p} in stats.percentilesToCompute. ` +
             `Add ${p} to ${supportKey}.stats.percentilesToCompute (or p${p} to stats.labels if it should be a labeled tier).`,
+        );
+      }
+    }
+  }
+
+  const filterReferenced = collectFilterReferencedPercentiles(filterPresets);
+  for (const [signalKey, perSignal] of filterReferenced) {
+    const sig = signals.find((s) => s.key === signalKey);
+    for (const [p, presetName] of perSignal) {
+      if (!sig) {
+        throw new Error(
+          `Signal dependency error: filter preset "${presetName}" references signal "${signalKey}" ` +
+            `percentile p${p}, but no such PayloadSignalDescriptor is declared.`,
+        );
+      }
+      if (!declaresPercentile(sig, p)) {
+        throw new Error(
+          `Signal dependency error: filter preset "${presetName}" references "${signalKey}" percentile p${p} ` +
+            `(via an adaptive { percentile } condition), but ${signalKey} declares neither p${p} in stats.labels ` +
+            `nor ${p} in stats.percentilesToCompute. Filter percentiles resolve at search time with no lazy ` +
+            `recompute — add ${p} to ${signalKey}.stats.percentilesToCompute (or p${p} to stats.labels).`,
         );
       }
     }

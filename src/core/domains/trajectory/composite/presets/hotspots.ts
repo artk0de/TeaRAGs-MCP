@@ -14,6 +14,7 @@ import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/t
  */
 export class HotspotsCompositePreset implements CompositeRerankPreset {
   readonly name = "hotspots";
+  readonly filter = { presets: "production" } as const;
   readonly description =
     "Surface frequently-changing code areas with structural awareness (chunk churn + dependency fanIn)";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];

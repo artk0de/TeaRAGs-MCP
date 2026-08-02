@@ -6,8 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { AppConfig, getZodConfig } from "../../src/bootstrap/config/index.js";
 import { createAppContext, createConfiguredServer, loadPrompts, wireCodegraph } from "../../src/bootstrap/factory.js";
 import type { WorkerEnrichmentDescriptor } from "../../src/core/contracts/types/provider.js";
-import type { GitTrajectory as GitTrajectoryType } from "../../src/core/domains/trajectory/git.js";
 import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/index.js";
+import type { GitTrajectory as GitTrajectoryType } from "../../src/core/domains/trajectory/git.js";
 import { loadPromptsConfig } from "../../src/mcp/prompts/index.js";
 
 // vi.hoisted: shared state for the GitTrajectory constructor spy (used in Test 1
@@ -61,7 +61,9 @@ vi.mock("../../src/core/api/internal/facades/explore-facade.js", () => ({
   ExploreFacade: vi.fn().mockImplementation(function () {}),
 }));
 vi.mock("../../src/core/domains/explore/reranker.js", () => ({
-  Reranker: vi.fn().mockImplementation(function () {}),
+  Reranker: vi.fn().mockImplementation(function () {
+    this.setFilterPresetNames = vi.fn();
+  }),
 }));
 vi.mock("../../src/core/domains/explore/rerank/presets/index.js", () => ({
   resolvePresets: vi.fn().mockReturnValue([]),

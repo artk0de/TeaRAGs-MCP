@@ -28,6 +28,8 @@ import { resolveLocalBinding, type CallContext } from "../../../../contracts/typ
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { ACTIVE_RECORD_QUERY_INTERFACE } from "../dsl/rails.js";
 import { catalogueForGemfile } from "../gemfile.js";
+import { rubyNonNilArms, rubyReceiverForm, rubyTypeRefEquals } from "../type-ref.js";
+import { linearizeAncestors } from "./ancestor-linearization.js";
 
 /**
  * Array/Enumerable methods that return a SINGLE ELEMENT from a typed container.
@@ -131,8 +133,19 @@ function chainMaxHops(): number {
  * @returns A {@link RubyTypeRef} when the receiver's static type is known;
  *          `undefined` for unknowable receivers (constants, self, super,
  *          untyped index-access, unbound variables, or chains with an unknown hop).
+ *
+ * Every answer passes through {@link rubyReceiverForm}, so a NILABLE type
+ * (bd tea-rags-mcp-27q0z) reaches callers as the one arm a call on it can
+ * actually dispatch to. The fact channels keep stating `Firm|nil`; receiver
+ * position is where that resolves to `Firm`, because `nil.foo` reaches no
+ * in-project definition.
  */
 export function typeOfReceiver(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined {
+  return rubyReceiverForm(receiverTypeRef(receiver, atLine, ctx));
+}
+
+/** {@link typeOfReceiver}'s lookup, before the receiver-form collapse. */
+function receiverTypeRef(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined {
   // ── Dotted chain: multi-hop threading (Task 1.4) ─────────────────────────
   if (receiver.includes(".")) {
     return resolveChain(receiver, atLine, ctx);
@@ -407,8 +420,8 @@ function inheritedReturnType(
  * 5. ActiveRecord query interface (G1b) — consulted AFTER every declared fact
  *    (a declared type beats vocabulary), gated on the AR-model check.
  *
- * Container element-returning methods unwrap to the element type (Task 1.6);
- * union forms are not threaded here (deferred, Task 1.7) — returns `undefined`.
+ * Container element-returning methods unwrap to the element type (Task 1.6).
+ * A UNION receiver folds over its arms (bd tea-rags-mcp-27q0z, see below).
  */
 export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): RubyTypeRef | undefined {
   // Container form: element-returning methods unwrap to the element type (Task 1.6).
@@ -417,8 +430,8 @@ export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext
     return CONTAINER_ELEMENT_RETURNING_METHODS.has(member) ? recv.element : undefined;
   }
 
-  // Only class/instance forms are threadable beyond the container branch; union deferred.
-  if (recv.form !== "class" && recv.form !== "instance") return undefined;
+  // Union / nil receiver: the agreement fold (bd tea-rags-mcp-27q0z).
+  if (recv.form === "union" || recv.form === "nil") return unionReturnType(recv, member, ctx);
 
   // 1. Precise structured return type for this class#member key.
   const direct = declaredReturnTypeOn(recv.name, member, ctx, recv.form === "class");
@@ -450,6 +463,39 @@ export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext
   // 5. ActiveRecord query-interface vocabulary — AR-model receivers only,
   //    consulted last so every declared fact above wins over it (G1b).
   return activeRecordQueryReturn(recv.name, member, ctx);
+}
+
+/**
+ * What calling `member` on a UNION (or `nil`) receiver yields
+ * (bd tea-rags-mcp-27q0z) — the resolution half of the nilable substrate, kept
+ * beside {@link returnTypeOf} because it is that function's union case and
+ * shares its channel precedence by construction (it RECURSES into it per arm).
+ *
+ * Two rules, and both of them are about not guessing:
+ *
+ *  - the `nil` arm is DROPPED. `nil.foo` reaches no in-project definition —
+ *    Ruby raises — so a nilable receiver can only ever produce the edges its
+ *    nominal arms produce. This is what lets a `Firm`-or-`nil` fact be stated
+ *    honestly at the source and still thread like a plain `Firm` here.
+ *  - the remaining arms must AGREE. Every arm answering the same type is the
+ *    only case where the answer holds no matter which arm the value actually
+ *    was; one silent arm or two different answers is a question this map cannot
+ *    settle, and a wrong receiver type poisons every downstream hop. Same
+ *    conservatism, same reason, as {@link selfMemberReturnType}'s disagreeing
+ *    ancestors.
+ *
+ * A union of nothing but `nil` therefore answers `undefined`, exactly as a bare
+ * `nil` receiver does.
+ */
+function unionReturnType(recv: RubyTypeRef, member: string, ctx: CallContext): RubyTypeRef | undefined {
+  let agreed: RubyTypeRef | undefined;
+  for (const arm of rubyNonNilArms(recv)) {
+    const armReturn = returnTypeOf(arm, member, ctx);
+    if (armReturn === undefined) return undefined; // a silent arm silences the fold
+    if (agreed === undefined) agreed = armReturn;
+    else if (!rubyTypeRefEquals(agreed, armReturn)) return undefined; // arms disagree
+  }
+  return agreed;
 }
 
 /**
@@ -502,8 +548,20 @@ function resolveIvarType(ivar: string, ctx: CallContext): RubyTypeRef | undefine
  *    h4hxh close measured that silencing the flat map here costs 758 honest
  *    edges, so nothing is taken away, only overridden where a fact that
  *    demonstrably describes THIS method exists.
+ *
+ * The answer passes through {@link rubyReceiverForm} for the same reason
+ * {@link typeOfReceiver}'s does (bd tea-rags-mcp-27q0z): this is a RECEIVER
+ * type, and `returnTypeBinding` — its only consumer — pins a SINGLE target and
+ * gives up on anything that is not class/instance form. A `[RuleHit, nil]`
+ * return left as a raw union would silently cost the exact edge the same
+ * annotation used to produce as a bare `[RuleHit]`.
  */
 export function boundCallReturnType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
+  return rubyReceiverForm(boundCallTypeRef(receiver, ctx));
+}
+
+/** {@link boundCallReturnType}'s lookup, before the receiver-form collapse. */
+function boundCallTypeRef(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
   const binding = ctx.localCallBindings?.[receiver];
   if (binding === undefined) return undefined;
   const separator = binding.lastIndexOf(".");
@@ -531,14 +589,20 @@ export function boundCallReturnType(receiver: string, ctx: CallContext): RubyTyp
  * Instance (`#`) form only: a bare call binds `self`, never the class object, so
  * the `.` coordinate an `@!method self.x` directive claims is not consulted.
  *
- * Precedence, and why the two levels differ:
- *  - the CALLER'S OWN class wins outright — a definition on the receiver's own
- *    class shadows every ancestor, which is Ruby's rule, not a heuristic;
- *  - ANCESTORS must AGREE. `ctx.classAncestors` is a flat list of superclass +
- *    includes, NOT a linearized MRO, so "first entry" is not reliably "nearest
- *    definition". Two ancestors declaring different return types is a question
- *    this map cannot answer, and a wrong receiver type poisons every downstream
- *    hop — so the disagreement resolves to silence.
+ * ONE level, not two: the caller's class and its ancestors are asked as a single
+ * {@link linearizeAncestors} walk, and the NEAREST coordinate carrying a fact
+ * answers. That is Ruby's rule stated once — a definition on the class shadows
+ * its ancestors because the class sits ahead of them in its own MRO, and a
+ * `prepend`ed module shadows the class for the same reason.
+ *
+ * It used to be two levels with a disagreement guard: own class outright, then
+ * ancestors that had to AGREE or the answer collapsed to silence. The guard
+ * existed because the raw `classAncestors` list is walker storage order
+ * (`[superclass, ...includes]`), where "first entry" is not "nearest
+ * definition" — so two ancestors declaring different return types was a question
+ * the flat list genuinely could not answer, and a wrong receiver type poisons
+ * every downstream hop. The linearization answers it, so the silence is gone
+ * (bd tea-rags-mcp-uuux9).
  *
  * `undefined` when the call site has no enclosing class (a top-level `def`, a
  * bare script statement) — there is no owner to ask, and callers fall back to
@@ -546,20 +610,11 @@ export function boundCallReturnType(receiver: string, ctx: CallContext): RubyTyp
  */
 function selfMemberReturnType(member: string, ctx: CallContext): RubyTypeRef | undefined {
   if (ctx.callerScope.length === 0) return undefined;
-  const scopeKey = ctx.callerScope.join("::");
-  const own = declaredReturnTypeOn(scopeKey, member, ctx);
-  if (own !== undefined) return own;
-  let agreed: RubyTypeRef | undefined;
-  for (const ancestor of ctx.classAncestors?.[scopeKey] ?? []) {
-    const inherited = declaredReturnTypeOn(ancestor, member, ctx);
-    if (inherited === undefined) continue;
-    if (agreed === undefined) {
-      agreed = inherited;
-    } else if (JSON.stringify(agreed) !== JSON.stringify(inherited)) {
-      return undefined; // ancestors disagree — the flat list cannot rank them
-    }
+  for (const owner of linearizeAncestors(ctx.callerScope.join("::"), ctx)) {
+    const declared = declaredReturnTypeOn(owner, member, ctx);
+    if (declared !== undefined) return declared;
   }
-  return agreed;
+  return undefined;
 }
 
 /**

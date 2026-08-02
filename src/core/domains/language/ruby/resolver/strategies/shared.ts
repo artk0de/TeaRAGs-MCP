@@ -19,6 +19,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import { ZEITWERK_PREFIX } from "../../walker/walker.js";
+import { linearizeAncestors } from "../ancestor-linearization.js";
 import { resolveZeitwerkConstant } from "../zeitwerk.js";
 
 export interface ResolverConfig {
@@ -433,53 +434,19 @@ export function resolveViaSuperclassChain(
 }
 
 /**
- * Flatten a class's ancestor chain in RUBY MRO order — included modules come
- * BEFORE the superclass (mirrors Ruby's C3 MRO for the common single-inheritance
- * case). The Ruby walker stores `classAncestors[C]` as
- * `[superclass, ...includes]` (superclass first — the insertion order from the
- * AST). When `ctx.classExtends[klass]` identifies the superclass we move it to
- * the END of that class's direct-ancestor list so the linearised chain matches
- * Ruby's actual lookup order. When `classExtends` is absent the order is
- * unchanged (no-op for pure module cases or fixtures without a superclass).
- *
- * Does NOT modify `collectAncestorChain` (backbone — used by bareCall narrowing
- * + the main MRO walk). This helper is used ONLY by `firstDefinerAfter`.
- */
-function mroOrderedChain(klass: string, ctx: CallContext, visited: Set<string> = new Set()): string[] {
-  if (visited.has(klass)) return [];
-  visited.add(klass);
-  const raw = ctx.classAncestors?.[klass] ?? [];
-  const superclass = ctx.classExtends?.[klass];
-  // Ruby MRO: included modules come BEFORE the superclass. The walker stores
-  // classAncestors as [superclass, ...includes]; reorder so the superclass is last.
-  const ordered =
-    superclass !== null && superclass !== undefined && raw.includes(superclass)
-      ? [...raw.filter((a) => a !== superclass), superclass]
-      : [...raw];
-  const chain: string[] = [];
-  for (const ancestor of ordered) {
-    if (visited.has(ancestor)) continue;
-    chain.push(ancestor);
-    chain.push(...mroOrderedChain(ancestor, ctx, visited));
-  }
-  return chain;
-}
-
-/**
  * The first ancestor AFTER `startAfter` in `klass`'s prepend-aware MRO that
- * defines `member` (bd cai0/2oky5). Linearizes `klass` as
- * `[reverse(prepended), klass, ...mroOrderedChain(klass)]`, finds
- * `startAfter`, and walks the remainder via `resolveInstanceMethodInClassChain`
- * with a `visited` set pre-seeded up to and including `startAfter` so nothing at
- * or before it is re-walked. Method-level pin wins; file-only is the fallback.
- * Returns `null` when `startAfter` is not in the MRO or nothing after it defines
- * `member`. Backbone-additive — reuses the existing chain walk, does not mutate it.
+ * defines `member` (bd cai0/2oky5). Linearizes `klass` via
+ * {@link linearizeAncestors}, finds `startAfter`, and walks the remainder via
+ * `resolveInstanceMethodInClassChain` with a `visited` set pre-seeded up to and
+ * including `startAfter` so nothing at or before it is re-walked. Method-level
+ * pin wins; file-only is the fallback. Returns `null` when `startAfter` is not in
+ * the MRO or nothing after it defines `member`. Backbone-additive — reuses the
+ * existing chain walk, does not mutate it.
  *
- * Uses `mroOrderedChain` (instead of `collectAncestorChain`) so that when
- * `ctx.classExtends` is present the walker-stored `[superclass, ...includes]`
- * order is corrected to Ruby MRO `[...includes, superclass]` — critical for the
- * dominant `class Sub < Base; include M` pattern where M is stored last in the
- * raw ancestors but must appear BEFORE Base in the MRO (cai0/2oky5 Task 5).
+ * The linearization (rather than `collectAncestorChain`) is what makes "after"
+ * mean what Ruby means: includes rank BEFORE the superclass, and within the
+ * include region a later `include` ranks nearer than an earlier one
+ * (bd tea-rags-mcp-uuux9).
  */
 export function firstDefinerAfter(
   startAfter: string,
@@ -489,8 +456,7 @@ export function firstDefinerAfter(
   mode: AmbiguousResolveMode,
   excludeSymbolId?: string,
 ): SymbolResolutionTarget | null {
-  const prepended = [...(ctx.classPrependedAncestors?.[klass] ?? [])].reverse();
-  const mro = [...prepended, klass, ...mroOrderedChain(klass, ctx)];
+  const mro = linearizeAncestors(klass, ctx);
   const idx = mro.indexOf(startAfter);
   if (idx === -1) return null;
   const visited = new Set<string>(mro.slice(0, idx + 1));

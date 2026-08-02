@@ -72,6 +72,7 @@ function makeMockReranker(overrides: Record<string, any> = {}) {
   return {
     hasCollectionStats: false,
     setCollectionStats: vi.fn(),
+    getCollectionStats: vi.fn().mockReturnValue(undefined),
     getPreset: vi.fn().mockReturnValue({ similarity: 1 }),
     getFullPreset: vi.fn().mockReturnValue({ signalLevel: undefined }),
     getDescriptors: vi.fn().mockReturnValue([]),
@@ -247,5 +248,79 @@ describe("ExploreOps documentation auto-rerank", () => {
 
     expect(getFullPreset).toHaveBeenCalledWith("techDebt", "semantic_search");
     expect(getFullPreset).not.toHaveBeenCalledWith("documentationRelevance", "semantic_search");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4. Collection stats are loaded BEFORE the filter is built
+// ---------------------------------------------------------------------------
+
+describe("ExploreOps stats-before-filter ordering", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("loads collection stats before buildFilter so adaptive percentiles resolve on the first (cold) query", async () => {
+    // Regression for the cold-query bug: ensureStats used to run only inside
+    // executeExplore — AFTER buildFilter. That meant the first query to each
+    // collection resolved {presets} adaptive percentiles with descriptor
+    // FALLBACKS instead of the real Stats. The fix moves ensureStats ahead of
+    // buildFilter in every filter-building path.
+    //
+    // We prove the ordering with a stateful reranker: getCollectionStats only
+    // returns stats AFTER setCollectionStats was called (mirrors the real
+    // reranker). buildFilter reads getCollectionStats via resolveFilterSpec, so
+    // if it ran before ensureStats it would observe `undefined` (fallback path).
+    // The registry's buildMergedFilter is the last thing buildFilter touches —
+    // we capture whether stats were present at that moment.
+
+    const fakeStats = { payloadFieldKeys: ["git.chunk.commitCount"] };
+    let storedStats: unknown;
+
+    const reranker = makeMockReranker({
+      // Mirrors the real Reranker: once stats are set, hasCollectionStats
+      // flips true so the guarded ensureStats inside executeExplore is a
+      // cheap no-op (idempotent — load + setCollectionStats fire exactly once).
+      setRecomputeService: vi.fn(),
+      setCollectionStats: vi.fn((stats: unknown) => {
+        storedStats = stats;
+      }),
+      getCollectionStats: vi.fn(() => storedStats),
+    });
+    Object.defineProperty(reranker, "hasCollectionStats", {
+      get: () => storedStats !== undefined,
+    });
+
+    let statsPresentAtFilterBuild = false;
+    const registry = makeMockRegistry();
+    registry.buildMergedFilter = vi.fn().mockImplementation((_typed: any, rawFilter?: any) => {
+      // At the instant the filter is assembled, the reranker MUST already
+      // hold the collection stats — i.e. ensureStats ran first.
+      statsPresentAtFilterBuild = reranker.getCollectionStats() !== undefined;
+      return rawFilter;
+    });
+
+    const statsCache = {
+      load: vi.fn().mockReturnValue(fakeStats),
+    } as any;
+
+    const facade = new ExploreFacade({
+      qdrant: makeMockQdrant(),
+      embeddings: makeMockEmbeddings(),
+      reranker,
+      registry,
+      statsCache,
+      schemaDriftMonitor: makeMockDriftMonitor(),
+      payloadSignals: [],
+      essentialKeys: [],
+    });
+
+    await facade.semanticSearch({ collection: "code_cold", query: "anything" });
+
+    expect(statsCache.load).toHaveBeenCalledWith("code_cold");
+    expect(reranker.setCollectionStats).toHaveBeenCalledTimes(1);
+    expect(registry.buildMergedFilter).toHaveBeenCalled();
+    // The core assertion: stats were already loaded when the filter was built.
+    expect(statsPresentAtFilterBuild).toBe(true);
   });
 });

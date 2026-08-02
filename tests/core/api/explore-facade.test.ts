@@ -35,8 +35,10 @@ function makeExploreFacade(
   const reranker = {
     hasCollectionStats: opts.rerankerHasStats ?? false,
     setCollectionStats: vi.fn(),
+    getCollectionStats: vi.fn().mockReturnValue(undefined),
     setRecomputeService: vi.fn(),
     getDescriptors: vi.fn().mockReturnValue([]),
+    getFullPreset: vi.fn().mockReturnValue({ signalLevel: undefined }),
     getPreset: vi.fn().mockReturnValue(null),
     rerank: vi.fn((results: any[]) => results),
   } as any;

@@ -11,9 +11,9 @@
 
 import { z } from "zod";
 
-import { ConfigValueInvalidError } from "../../../infra/errors.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { PROJECT_NAME_RE } from "../../../domains/maintenance/registry/constants.js";
+import { ConfigValueInvalidError } from "../../../infra/errors.js";
 
 /**
  * Zod schema for an optional project name. Sourced from PROJECT_NAME_RE
@@ -82,5 +82,35 @@ export class SchemaBuilder {
     const presetSchema = this.buildPresetSchema(tool);
     const weightsSchema = this.buildScoringWeightsSchema();
     return z.union([presetSchema, z.object({ custom: weightsSchema })]);
+  }
+
+  /**
+   * Build the `filter` param union schema: a raw Qdrant filter object OR a
+   * `{ presets }` named-filter-preset reference.
+   *
+   * The raw arm (`z.record(z.string(), z.any())`) is intentionally permissive —
+   * it matches the legacy `filter` param shape, so existing callers passing raw
+   * Qdrant filters still validate (backward compatible). The `{ presets }` arm
+   * requires `presets` to be a string; resolution priority and the CSV split
+   * happen at search-stage filter compilation, not here.
+   *
+   * Available filter-preset names are appended to the description for discovery,
+   * pulled from `Reranker.filterPresetNames()` (a passthrough wired from the
+   * TrajectoryRegistry at composition time). Mirrors how rerank preset names are
+   * surfaced via the schema enum rather than a dynamic MCP resource.
+   */
+  buildFilterSchema(): z.ZodTypeAny {
+    const rawFilterSchema = z.record(z.string(), z.any());
+    const presetsSchema = z.object({ presets: z.string() });
+
+    const names = this.reranker.filterPresetNames();
+    let description =
+      "Qdrant filter object with must/should/must_not conditions. " +
+      "See tea-rags://schema/filters for syntax and available fields.";
+    if (names.length > 0) {
+      description += ` Named filter presets: ${names.join(", ")}. Use { presets: "name,name2" }.`;
+    }
+
+    return z.union([rawFilterSchema, presetsSchema]).describe(description);
   }
 }

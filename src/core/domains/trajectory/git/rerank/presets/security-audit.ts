@@ -14,6 +14,7 @@ import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../../cont
  */
 export class SecurityAuditPreset implements RerankPreset {
   readonly name = "securityAudit";
+  readonly filter = { presets: "production" } as const;
   readonly description = "Old code in security-critical paths needing review";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "find_similar"];

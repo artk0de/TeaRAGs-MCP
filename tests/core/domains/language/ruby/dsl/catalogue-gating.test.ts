@@ -286,3 +286,139 @@ describe("gem-gated declaresFixed grammars — paper_trail / geocoder (declaresF
     expect(full.activeStructuredMacros.has("state_machine")).toBe(true); // state_machines
   });
 });
+
+describe("gem-gated relation grammar — kaminari pagination (bd tea-rags-mcp-lo9u2)", () => {
+  const KAMINARI_RELATION_VERBS = ["page", "per", "padding", "without_count"] as const;
+
+  it("the pagination scopes are relation-returning ONLY when kaminari is declared", () => {
+    const withKaminari = composeRubyCatalogue(new Set(["kaminari"]));
+    const withoutKaminari = composeRubyCatalogue(new Set(["rails"]));
+    for (const verb of KAMINARI_RELATION_VERBS) {
+      expect(withKaminari.relationReturning.has(verb), verb).toBe(true);
+      expect(withoutKaminari.relationReturning.has(verb), verb).toBe(false);
+    }
+  });
+
+  it("activates on the kaminari-activerecord sub-gem too (split-gem install)", () => {
+    expect(composeRubyCatalogue(new Set(["kaminari-activerecord"])).relationReturning.has("page")).toBe(true);
+  });
+
+  it("the per-model config macros are entries ONLY under the gem", () => {
+    const withKaminari = composeRubyCatalogue(new Set(["kaminari"]));
+    const withoutKaminari = composeRubyCatalogue(new Set(["rails"]));
+    for (const macro of ["paginates_per", "max_paginates_per"]) {
+      expect(withKaminari.entries[macro], macro).toBeDefined();
+      expect(withoutKaminari.entries[macro], macro).toBeUndefined();
+    }
+  });
+
+  it("a project without kaminari keeps `page` / `per` free for its OWN methods (no external steal)", () => {
+    const withoutKaminari = composeRubyCatalogue(new Set(["rails"]));
+    expect(withoutKaminari.isExternalBareCall("page")).toBe(false);
+    expect(withoutKaminari.isExternalBareCall("per")).toBe(false);
+  });
+
+  it("the config macros declare NOTHING — they tune per-page defaults, not method names", () => {
+    const withKaminari = composeRubyCatalogue(new Set(["kaminari"]));
+    expect(withKaminari.entries.paginates_per?.declares).toBeUndefined();
+    expect(withKaminari.entries.paginates_per?.declaresFixed).toBeUndefined();
+  });
+
+  it("null (no Gemfile / gating off) → the kaminari grammar is active (FULL default)", () => {
+    const full = composeRubyCatalogue(null);
+    expect(full.relationReturning.has("page")).toBe(true);
+    expect(full.entries.paginates_per).toBeDefined();
+  });
+});
+
+describe("gem-gated relation grammar — ransack search (bd tea-rags-mcp-lo9u2)", () => {
+  it("`ransack` / `result` are relation-returning ONLY when ransack is declared", () => {
+    const withRansack = composeRubyCatalogue(new Set(["ransack"]));
+    const withoutRansack = composeRubyCatalogue(new Set(["rails"]));
+    for (const verb of ["ransack", "result"]) {
+      expect(withRansack.relationReturning.has(verb), verb).toBe(true);
+      expect(withoutRansack.relationReturning.has(verb), verb).toBe(false);
+    }
+  });
+
+  it("the `ransacker` custom-attribute macro is an entry ONLY under the gem", () => {
+    expect(composeRubyCatalogue(new Set(["ransack"])).entries.ransacker).toBeDefined();
+    expect(composeRubyCatalogue(new Set(["rails"])).entries.ransacker).toBeUndefined();
+  });
+
+  it("a project without ransack keeps `result` free for its OWN methods (no external steal)", () => {
+    expect(composeRubyCatalogue(new Set(["rails"])).isExternalBareCall("result")).toBe(false);
+  });
+
+  it("the allowlist hooks stay OUT of the vocabulary — Ransack 4 makes the APP define them", () => {
+    // `def self.ransackable_attributes` is in-project source; classifying it
+    // external would steal a real edge from the very def that answers the call.
+    const withRansack = composeRubyCatalogue(new Set(["ransack"]));
+    for (const hook of ["ransackable_attributes", "ransackable_associations", "ransackable_scopes"]) {
+      expect(withRansack.isExternalBareCall(hook), hook).toBe(false);
+    }
+  });
+
+  it("null (no Gemfile / gating off) → the ransack grammar is active (FULL default)", () => {
+    const full = composeRubyCatalogue(null);
+    expect(full.relationReturning.has("ransack")).toBe(true);
+    expect(full.entries.ransacker).toBeDefined();
+  });
+});
+
+describe("gem-gated relation grammar — will_paginate (bd tea-rags-mcp-lo9u2)", () => {
+  it("the pagination scopes are relation-returning ONLY when will_paginate is declared", () => {
+    const withWp = composeRubyCatalogue(new Set(["will_paginate"]));
+    const withoutWp = composeRubyCatalogue(new Set(["rails"]));
+    for (const verb of ["paginate", "page", "per_page"]) {
+      expect(withWp.relationReturning.has(verb), verb).toBe(true);
+      expect(withoutWp.relationReturning.has(verb), verb).toBe(false);
+    }
+  });
+
+  it("contributes NO class-body entries — `self.per_page = 25` is an assignment, not a macro", () => {
+    const withWp = composeRubyCatalogue(new Set(["will_paginate"]));
+    expect(withWp.entries.per_page).toBeUndefined();
+    expect(withWp.entries.paginate).toBeUndefined();
+    expect(withWp.isExternalBareCall("paginate")).toBe(false);
+  });
+
+  it("shares the `page` verb with kaminari — a project on either gem types the chain", () => {
+    expect(composeRubyCatalogue(new Set(["kaminari"])).relationReturning.has("page")).toBe(true);
+    expect(composeRubyCatalogue(new Set(["will_paginate"])).relationReturning.has("page")).toBe(true);
+  });
+
+  it("null (no Gemfile / gating off) → the will_paginate grammar is active (FULL default)", () => {
+    expect(composeRubyCatalogue(null).relationReturning.has("paginate")).toBe(true);
+  });
+});
+
+describe("gem-gated declares grammar — dry-initializer param / option (bd tea-rags-mcp-lo9u2)", () => {
+  it("`param` / `option` declare the reader they define, ONLY under a dry gem", () => {
+    const withDry = composeRubyCatalogue(new Set(["dry-initializer"]));
+    const withoutDry = composeRubyCatalogue(new Set(["rails"]));
+    expect(withDry.entries.param?.declares?.("name")).toEqual([{ name: "name", kind: "instance" }]);
+    expect(withDry.entries.option?.declares?.("admin")).toEqual([{ name: "admin", kind: "instance" }]);
+    expect(withoutDry.entries.param).toBeUndefined();
+    expect(withoutDry.entries.option).toBeUndefined();
+  });
+
+  it("declares a READER only — dry-initializer defines attr_reader, and a Struct is immutable", () => {
+    const withDry = composeRubyCatalogue(new Set(["dry-struct"]));
+    expect(withDry.entries.param?.declares?.("name").map((m) => m.name)).not.toContain("name=");
+  });
+
+  it("takes the FIRST symbol only — the second positional arg is a type, not another name", () => {
+    expect(composeRubyCatalogue(new Set(["dry-struct"])).entries.param?.operands).toBe("first-symbol");
+  });
+
+  it("a project without a dry gem keeps `param` / `option` free for its OWN methods", () => {
+    const withoutDry = composeRubyCatalogue(new Set(["rails"]));
+    expect(withoutDry.isExternalBareCall("param")).toBe(false);
+    expect(withoutDry.isExternalBareCall("option")).toBe(false);
+  });
+
+  it("null (no Gemfile / gating off) → the dry declares grammar is active (FULL default)", () => {
+    expect(composeRubyCatalogue(null).entries.param?.declares).toBeDefined();
+  });
+});

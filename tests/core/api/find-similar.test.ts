@@ -29,8 +29,10 @@ function createMockDeps() {
     getPreset: vi.fn(),
     getDescriptors: vi.fn().mockReturnValue([]),
     getDescriptorInfo: vi.fn().mockReturnValue([]),
+    getFullPreset: vi.fn().mockReturnValue({ signalLevel: undefined }),
     hasCollectionStats: false,
     setCollectionStats: vi.fn(),
+    getCollectionStats: vi.fn().mockReturnValue(undefined),
   } as unknown as Reranker;
 
   const registry = {

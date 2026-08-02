@@ -17,6 +17,7 @@ import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../.
  */
 export class ArchitecturalHubPreset implements CompositeRerankPreset {
   readonly name = "architecturalHub";
+  readonly filter = { presets: "production" } as const;
   readonly description = "Hub files at the centre of the dependency graph under active churn";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];

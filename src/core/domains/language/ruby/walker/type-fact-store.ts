@@ -21,7 +21,13 @@ const DEFAULT_SOURCE_ORDER: readonly string[] = [
 function refToName(ref: RubyTypeRef): string | undefined {
   if (ref.form === "class" || ref.form === "instance") return ref.name;
   if (ref.form === "container") return refToName(ref.element); // element wins (today's Array<Post> -> Post)
-  return undefined; // union: deferred to Incr 1 (no single name)
+  // union / nil: no single name. A nilable union deliberately does NOT collapse
+  // to its one nominal arm here (bd tea-rags-mcp-27q0z) — this feeds the FLAT,
+  // corpus-wide `functionReturnTypes` / `ivarTypes` channels, where a fact keyed
+  // by bare name already speaks for every same-named method in the project
+  // (bd h4hxh). The nilable form stays in the owner-qualified structured channel
+  // that can afford it.
+  return undefined;
 }
 
 /**

@@ -13,6 +13,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
  */
 export class TechDebtPreset implements RerankPreset {
   readonly name = "techDebt";
+  readonly filter = { presets: "production" } as const;
   readonly description = "Find legacy code with high churn, old age, and frequent bug fixes";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
   readonly weights: ScoringWeights = {
