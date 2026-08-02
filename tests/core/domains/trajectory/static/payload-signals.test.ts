@@ -1,6 +1,6 @@
 /**
  * Symbol-mass descriptors — spec
- * docs/superpowers/specs/2026-08-01-risk-assessment-structural-axis-design.md §A.
+ * docs/superpowers/specs/2026-08-02-module-mass-signals-design.md.
  *
  * A signal without `stats.labels` is silently skipped by IndexMetricsQuery, so
  * the labels are the contract that makes these fields visible in
@@ -19,31 +19,36 @@ function descriptor(key: string): PayloadSignalDescriptor {
 }
 
 describe("symbol-mass payload signals", () => {
-  it("labels memberCount by class-size tier, scoped to class chunks", () => {
+  it("labels memberCount by container-size tier, unfiltered by chunk type", () => {
     const sig = descriptor("memberCount");
     expect(sig.type).toBe("number");
-    expect(sig.stats?.labels).toEqual({ p50: "typical", p75: "large", p95: "god-class" });
-    expect(sig.stats?.chunkTypeFilter).toBe("class");
+    expect(sig.stats?.labels).toEqual({ p50: "typical", p75: "large", p95: "god-module" });
+    // The value exists only on each container's representative chunk, so a
+    // chunkType filter would only re-narrow an already-narrow sample — and
+    // filtering on "class" selected member-LESS classes exclusively.
+    expect(sig.stats?.chunkTypeFilter).toBeUndefined();
   });
 
-  it("labels classLines by span tier, scoped to class chunks", () => {
-    const sig = descriptor("classLines");
+  it("labels moduleLines by file-size tier across every chunk type", () => {
+    const sig = descriptor("moduleLines");
     expect(sig.type).toBe("number");
-    expect(sig.stats?.labels).toEqual({ p50: "small", p75: "large", p95: "megaclass" });
-    expect(sig.stats?.chunkTypeFilter).toBe("class");
+    expect(sig.stats?.labels).toEqual({ p50: "small", p75: "large", p95: "god-module" });
+    expect(sig.stats?.chunkTypeFilter).toBeUndefined();
   });
 
-  it("labels fileSymbolCount by module-mass tier across every chunk type", () => {
-    const sig = descriptor("fileSymbolCount");
+  it("labels fileMethodCount by module-mass tier across every chunk type", () => {
+    const sig = descriptor("fileMethodCount");
     expect(sig.type).toBe("number");
     expect(sig.stats?.labels).toEqual({ p50: "typical", p75: "busy", p95: "god-module" });
     expect(sig.stats?.chunkTypeFilter).toBeUndefined();
   });
 
-  it("computes fileSymbolCount percentiles over distinct files, not chunks", () => {
+  it("computes the file-scoped percentiles over distinct files, not chunks", () => {
     // The value repeats on every chunk of a file; without per-file dedupe a
     // many-chunk file would dominate its own distribution.
-    expect(descriptor("fileSymbolCount").stats?.dedupeByFile).toBe(true);
+    expect(descriptor("fileMethodCount").stats?.dedupeByFile).toBe(true);
+    expect(descriptor("moduleLines").stats?.dedupeByFile).toBe(true);
+    // memberCount is stamped once per container, so it needs no dedupe.
     expect(descriptor("memberCount").stats?.dedupeByFile).toBeUndefined();
   });
 });

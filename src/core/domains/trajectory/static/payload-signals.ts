@@ -35,19 +35,24 @@ export const BASE_PAYLOAD_SIGNALS: PayloadSignalDescriptor[] = [
   {
     key: "memberCount",
     type: "number",
+    // No chunkTypeFilter: the value exists only on the chunk the symbol-mass
+    // pass elected to represent each container, so one class contributes one
+    // value and the sample needs no further narrowing. Filtering on
+    // `chunkType: "class"` used to be that narrowing and instead selected only
+    // member-LESS classes — see the module docblock of `symbol-mass.ts`.
     description: "Distinct direct members (methods, nested classes) declared by this class",
-    stats: { labels: { p50: "typical", p75: "large", p95: "god-class" }, chunkTypeFilter: "class" },
+    stats: { labels: { p50: "typical", p75: "large", p95: "god-module" } },
   },
   {
-    key: "classLines",
+    key: "moduleLines",
     type: "number",
-    description: "Real class span in lines — last member's end line minus the class start line",
-    stats: { labels: { p50: "small", p75: "large", p95: "megaclass" }, chunkTypeFilter: "class" },
+    description: "Physical line count of the file (stamped on every code chunk of the file)",
+    stats: { labels: { p50: "small", p75: "large", p95: "god-module" }, dedupeByFile: true },
   },
   {
-    key: "fileSymbolCount",
+    key: "fileMethodCount",
     type: "number",
-    description: "Distinct code symbols declared in this file (stamped on every code chunk of the file)",
+    description: "Distinct callables — functions, methods, tests — declared in this file",
     // File-scoped value repeated on every chunk of the file: percentiles must
     // be taken over distinct files, or a many-chunk file outvotes every other
     // file in its own distribution.

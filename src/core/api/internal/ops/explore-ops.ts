@@ -20,7 +20,11 @@ import type { SymbolChunkResolver } from "../../../contracts/types/codegraph.js"
 import type { FilterPresetDef, FilterSpec } from "../../../contracts/types/filter-preset.js";
 import type { FilterLevel } from "../../../contracts/types/provider.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
-import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import type {
+  CollectionSignalStats,
+  PayloadSignalDescriptor,
+  SignalFloors,
+} from "../../../contracts/types/trajectory.js";
 import {
   CollectionNotFoundError as DomainCollectionNotFoundError,
   EmptyFilterPresetError,
@@ -70,6 +74,12 @@ export interface ExploreOpsDeps {
   modelGuard?: EmbeddingModelGuard;
   /** Optional — present when codegraph is wired (bootstrap adapts GraphFacade). */
   chunkResolver?: SymbolChunkResolver;
+  /**
+   * Per-language structural-signal floors from the composition root. Reaches
+   * `IndexMetricsQuery` so `get_index_metrics` and prime render the same
+   * floored thresholds the reranker's overlay resolves against.
+   */
+  signalFloors?: ReadonlyMap<string, SignalFloors>;
 }
 
 export class ExploreOps {
@@ -124,7 +134,12 @@ export class ExploreOps {
       this.essentialKeys,
     );
     if (deps.statsCache) {
-      this.indexMetricsQuery = new IndexMetricsQuery(deps.qdrant, deps.statsCache, this.payloadSignals);
+      this.indexMetricsQuery = new IndexMetricsQuery(
+        deps.qdrant,
+        deps.statsCache,
+        this.payloadSignals,
+        deps.signalFloors,
+      );
       this.recomputeService = new StatsRecomputeService(deps.qdrant, deps.statsCache);
     }
   }

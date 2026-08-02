@@ -200,7 +200,7 @@ Degradation:
   `decomposition` resolves the size-only static variant. Note "god-method lens
   unavailable — codegraph off". `godModule` resolves the mass-only static
   variant, still valid.
-- **Symbol-mass fields absent** (overlay carries no `fileSymbolCount` — index
+- **Symbol-mass fields absent** (overlay carries no `fileMethodCount` — index
   predates the signals) → `godModule` ranks flat. Use the Phase 4 fallback
   finder and label the output accordingly.
 
@@ -331,13 +331,13 @@ Codegraph off → those rows score 0; mark the estimate partial, never claim
 
 **5. God-class attribution** — for `godModule` hits.
 
-Primary path (overlay carries `fileSymbolCount` / `memberCount` / `classLines`)
+Primary path (overlay carries `moduleLines` / `fileMethodCount` / `memberCount`)
 — zero extra calls:
 
-- One class holds most of the file's members → **god class**. Report the class
-  symbol with `memberCount` + `classLines`.
-- Symbols spread top-level, no dominant class → **god module**. Report the file
-  with `fileSymbolCount`.
+- One class holds most of the file's callables → **god class**. Report the class
+  symbol with `memberCount`.
+- Callables spread top-level, no dominant class → **god module**. Report the
+  file with `fileMethodCount` + `moduleLines`.
 
 Fallback path (fields absent — index predates symbol-mass signals):
 

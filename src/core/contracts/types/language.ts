@@ -13,6 +13,7 @@
 
 import type { AstNode, MaterializedTree } from "./ast.js";
 import type { ChunkingHook, LanguageChunkClassifier } from "./chunker.js";
+import type { SignalFloors } from "./trajectory.js";
 import type {
   CallContext,
   CallRef,
@@ -566,6 +567,17 @@ export interface LanguageFactoryDescriptor {
   create: (lang: string) => LanguageProvider;
   /** The languages this factory can `create`. */
   supported: () => string[];
+  /**
+   * Per-language {@link SignalFloors}, keyed by language. Mirrors `supported()`
+   * (same native set) and is LIGHTWEIGHT the same way `capabilities()` is — it
+   * imports each language's `signal-floors.ts` const and never constructs a
+   * provider, so no grammar or Parser is loaded.
+   *
+   * Mandatory on the contract so a new language cannot ship without a decision
+   * about its floors; a language where the mass signals carry no meaning
+   * (markdown) declares `{}` explicitly rather than by omission.
+   */
+  signalFloors: () => Map<string, SignalFloors>;
 }
 
 /**

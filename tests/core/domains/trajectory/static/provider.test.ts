@@ -168,22 +168,22 @@ describe("StaticPayloadBuilder", () => {
         chunkType: "class",
         symbolId: "Reranker",
         memberCount: 34,
-        classLines: 661,
-        fileSymbolCount: 41,
+        moduleLines: 688,
+        fileMethodCount: 41,
       } as Record<string, unknown>,
     };
 
     const payload = builder.buildPayload(classChunk, "/project");
 
     expect(payload.memberCount).toBe(34);
-    expect(payload.classLines).toBe(661);
-    expect(payload.fileSymbolCount).toBe(41);
+    expect(payload.moduleLines).toBe(688);
+    expect(payload.fileMethodCount).toBe(41);
   });
 
   it("omits symbol-mass fields when the post-pass emitted none", () => {
     const payload = builder.buildPayload(chunk, "/project");
     expect(payload.memberCount).toBeUndefined();
-    expect(payload.classLines).toBeUndefined();
-    expect(payload.fileSymbolCount).toBeUndefined();
+    expect(payload.moduleLines).toBeUndefined();
+    expect(payload.fileMethodCount).toBeUndefined();
   });
 });
