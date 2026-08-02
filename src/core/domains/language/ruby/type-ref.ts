@@ -39,7 +39,7 @@ export function rubyTypeRefEquals(a: RubyTypeRef, b: RubyTypeRef): boolean {
   if (a.form === "container") return rubyTypeRefEquals(a.element, (b as { element: RubyTypeRef }).element);
   if (a.form === "union") {
     const other = (b as { members: readonly RubyTypeRef[] }).members;
-    return a.members.length === other.length && a.members.every((m, i) => rubyTypeRefEquals(m, other[i] as RubyTypeRef));
+    return a.members.length === other.length && a.members.every((m, i) => rubyTypeRefEquals(m, other[i]));
   }
   return a.name === (b as { name: string }).name;
 }
