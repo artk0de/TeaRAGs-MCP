@@ -78,28 +78,44 @@ describe("DaemonFrameDecoder", () => {
 
   // Complexity guard. The daemon proxies whole result sets (listAllSymbols,
   // getChunkSignalsBulk) as ONE frame, so decode cost must grow with the size
-  // of that frame, not with its square. Asserting the RATIO rather than a wall
-  // time keeps the bound machine-independent: quadratic decoding costs ~16x for
-  // 4x the payload, linear ~4x.
-  it("decodes a large frame in time linear in its size", () => {
-    const timeFor = (megabytes: number): number => {
-      const row = "x".repeat(1024);
-      const rows = Array.from({ length: (megabytes * 1024 * 1024) / (row.length + 3) }, () => row);
-      const wire = Buffer.from(encodeFrame({ id: 1, ok: true, result: rows }));
-      const decoder = new DaemonFrameDecoder();
-      const started = process.hrtime.bigint();
-      const frames = deliver(decoder, wire);
-      const elapsed = Number(process.hrtime.bigint() - started) / 1e6;
-      expect(frames).toHaveLength(1);
-      return elapsed;
+  // of that frame, not with its square.
+  //
+  // The comparison is against the accumulate-and-rescan loop this replaced,
+  // measured on the SAME payload in the SAME process. Contention on a loaded
+  // machine slows both arms alike, so their ratio stays meaningful where an
+  // absolute wall-clock bound — or a size-scaling ratio measured across two
+  // separate timings — does not: the scaling form read 11x under a fully
+  // parallel suite run, ambiguous against a ~15x quadratic and a ~4x linear.
+  // The gap here is ~24x at 16MB, so a 5x floor leaves ample headroom.
+  it("decodes a large frame far faster than re-splitting the whole accumulator", () => {
+    const row = "x".repeat(1024);
+    const rows = Array.from({ length: (16 * 1024 * 1024) / (row.length + 3) }, () => row);
+    const wire = Buffer.from(encodeFrame({ id: 1, ok: true, result: rows }));
+
+    /** The replaced loop, verbatim: client.ts:145-148 before this change. */
+    const legacyDecode = (): string[] => {
+      const out: string[] = [];
+      let buf = "";
+      for (let i = 0; i < wire.length; i += SOCKET_CHUNK) {
+        buf += wire.subarray(i, i + SOCKET_CHUNK).toString("utf8");
+        const parts = buf.split("\n");
+        buf = parts.pop() ?? "";
+        out.push(...parts.filter((p) => p.length > 0));
+      }
+      return out;
     };
 
-    timeFor(1); // warm up the JIT so the first measurement is not the outlier
-    const small = timeFor(4);
-    const large = timeFor(16);
+    const legacyStarted = process.hrtime.bigint();
+    const legacyFrames = legacyDecode();
+    const legacyMs = Number(process.hrtime.bigint() - legacyStarted) / 1e6;
 
-    // 4x the payload. Linear stays near 4x; the accumulate-and-rescan decoder
-    // this replaces measured ~15x on the same machine.
-    expect(large / Math.max(small, 0.5)).toBeLessThan(8);
+    const decoderStarted = process.hrtime.bigint();
+    const frames = deliver(new DaemonFrameDecoder(), wire);
+    const decoderMs = Number(process.hrtime.bigint() - decoderStarted) / 1e6;
+
+    // Same output — the speedup is not bought by decoding less.
+    expect(frames).toEqual(legacyFrames);
+    expect(frames).toHaveLength(1);
+    expect(legacyMs / Math.max(decoderMs, 0.1)).toBeGreaterThan(5);
   });
 });
