@@ -27,10 +27,10 @@ import { extname, join, relative } from "node:path";
 import ignore, { type Ignore } from "ignore";
 import Parser from "tree-sitter";
 
-import type { AstNode } from "../src/core/contracts/types/ast.js";
 // bd tea-rags-mcp-e8feo — the single-segment DROP-surface oracle drives the REAL
 // strategy chain, so it needs the three-state constructors the strategies return.
 import { CONTINUE, DROP, resolved as resolvedOutcome } from "../src/core/contracts/resolution.js";
+import type { AstNode } from "../src/core/contracts/types/ast.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   resolveLocalBinding,
@@ -57,7 +57,6 @@ import type {
 } from "../src/core/contracts/types/language.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
-import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import {
   ArityNarrower,
   BlockNarrower,
@@ -68,11 +67,9 @@ import {
   type DispatchCandidateNarrower,
 } from "../src/core/domains/language/kernel/dispatch-narrowing.js";
 import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
+import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import type { RubyDslCatalogue } from "../src/core/domains/language/ruby/dsl/index.js";
 import { catalogueForGemfile } from "../src/core/domains/language/ruby/gemfile.js";
-import { RUBY_DUCK_VOCAB } from "../src/core/domains/language/ruby/resolver/strategies/ruby-duck-vocabulary.js";
-import { classifyRubyLiteralReceiver } from "../src/core/domains/language/ruby/resolver/strategies/ruby-dynamic-dispatch.js";
-import { RUBY_RUNTIME_HOOKS } from "../src/core/domains/language/ruby/resolver/strategies/ruby-super.js";
 // bd tea-rags-mcp-e8feo — the DROP-surface oracle rebuilds the production chain
 // verbatim (same classes, same order) with ONE slot swapped, so it measures the
 // real precedence rather than a re-implementation of it.
@@ -92,6 +89,9 @@ import {
   RubySelfMemberSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
 } from "../src/core/domains/language/ruby/resolver/strategies/index.js";
+import { RUBY_DUCK_VOCAB } from "../src/core/domains/language/ruby/resolver/strategies/ruby-duck-vocabulary.js";
+import { classifyRubyLiteralReceiver } from "../src/core/domains/language/ruby/resolver/strategies/ruby-dynamic-dispatch.js";
+import { RUBY_RUNTIME_HOOKS } from "../src/core/domains/language/ruby/resolver/strategies/ruby-super.js";
 import {
   collectAncestorChain,
   collectResolvedAncestorChain,
@@ -698,6 +698,7 @@ function ingestPass1(extraction: FileExtraction, materializedRoot: AstNode): voi
     for (const ivar of Object.keys(fields)) runTypedClassFields.add(`${fqClass}|${ivar}`);
   }
   collectRealDefNames(materializedRoot);
+  if (SCOPEKEY_ENABLED) skCollectScopeDeclarations(materializedRoot);
 }
 
 // ---------------------------------------------------------------------------
@@ -838,8 +839,9 @@ function resolvePass2(extraction: FileExtraction): void {
   const instantiatedForResolver =
     runInstantiatedTypes.size > 0 ? runInstantiatedTypes : new Set(extraction.instantiatedTypes ?? []);
   const ivarTypesForResolver = Object.keys(runIvarTypes).length > 0 ? runIvarTypes : extraction.ivarTypes;
-  const structuredReturnTypesForResolver =
-    Object.keys(runStructuredReturnTypes).length > 0 ? runStructuredReturnTypes : extraction.structuredReturnTypes;
+  const structuredReturnTypesForResolver = skWrapMap(
+    Object.keys(runStructuredReturnTypes).length > 0 ? runStructuredReturnTypes : extraction.structuredReturnTypes,
+  );
 
   // bd tea-rags-mcp-bvalc — derived ivar types ride the file's own channel.
   const classFieldTypesForResolver = CTOR_PARAM_TYPES_ENABLED
@@ -967,6 +969,9 @@ function resolvePass2(extraction: FileExtraction): void {
       }
       if (SINGLESEG_ENABLED) {
         noteSingleSegCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath, chunk.symbolId);
+      }
+      if (SCOPEKEY_ENABLED) {
+        noteScopeKeyCall(call, ctx, outcome, receiverKind, extraction.relPath, chunk.symbolId);
       }
     }
   }
@@ -10379,11 +10384,7 @@ function ssSameTarget(a: SymbolResolutionTarget | null, b: SymbolResolutionTarge
 }
 
 /** `RubyCallResolver.resolve` reproduced: chain, then the self-dispatch redirect. */
-function ssRunChain(
-  chain: SymbolResolutionStrategy[],
-  call: CallRef,
-  ctx: CallContext,
-): SymbolResolutionTarget | null {
+function ssRunChain(chain: SymbolResolutionStrategy[], call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
   const target = resolveViaChain(chain, call, ctx);
   if (target === null) return null;
   return redirectSelfDispatchTemplate(target, call, ctx, SS_CFG.mode);
@@ -10456,8 +10457,7 @@ function noteSingleSegCall(
   ssBump2(ssVerdictByBase, verdict, baseOutcome);
 
   const typeName = typeRef === undefined ? undefined : tfRefName(typeRef);
-  const recovery =
-    typeName === undefined ? "receiver has no single-name type" : ssRecovery(typeName, call.member);
+  const recovery = typeName === undefined ? "receiver has no single-name type" : ssRecovery(typeName, call.member);
 
   if (baseOutcome === "miss" && outcome.kind !== "continue") {
     ssHoleTyped += 1;
@@ -10672,10 +10672,12 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
 
   L("");
   L("─── (2d) guard fires but the DISPATCH fan-out already answered ────");
-  L(`exact edge available, fan-out wins anyway: ${ssDispatchShadowedMethod} method-level, ${ssDispatchShadowedFileOnly} file-only`);
+  L(
+    `exact edge available, fan-out wins anyway: ${ssDispatchShadowedMethod} method-level, ${ssDispatchShadowedFileOnly} file-only`,
+  );
   L("  (not a regression — the call is resolved either way. It is the precision");
   L("   ceiling this change does not lift: RubyDynamicDispatchResolver's typeable-");
-  L("   receiver deferral is gated on `r.includes(\".\")`, so a typed BARE receiver");
+  L('   receiver deferral is gated on `r.includes(".")`, so a typed BARE receiver');
   L("   keeps its N discounted `dynamic` edges instead of one exact edge.)");
   for (const e of ssDispatchShadowExamples.slice(0, 8)) {
     L(`    ${e.where} ${e.receiver}.${e.member} type=${e.type} -> would be ${e.wideTarget}`);
@@ -10683,7 +10685,9 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
 
   L("");
   L("─── (2c) unresolved calls that flip to DROP (classification shift, no recall change) ───");
-  L(`unresolved calls the widened guard DROPs: ${ssDropFlipTotal}   of which recall-hole misses: ${ssHoleFlippedToDrop}`);
+  L(
+    `unresolved calls the widened guard DROPs: ${ssDropFlipTotal}   of which recall-hole misses: ${ssHoleFlippedToDrop}`,
+  );
   for (const e of ssDropFlipExamples.slice(0, 8)) {
     L(`    ${e.where} ${e.receiver}.${e.member} [${e.base}] type=${e.type}   (${e.recovery})`);
   }
@@ -10703,7 +10707,12 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
   const projCoreAmb = callsCoreAmbiguous + (deltas.coreAmbiguous ?? 0);
   const baseHole = Math.max(
     0,
-    callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
+    callsAttempted -
+      callsResolved -
+      callsExternalSkipped -
+      callsUnresolvable -
+      callsNoInProjectDef -
+      callsCoreAmbiguous,
   );
   const projHole = Math.max(
     0,
@@ -10733,9 +10742,7 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
   L(
     `inProjectEdgeRecall:  ${fmtPct(baseRecall)} -> ${fmtPct(projRecall)}   (${((projRecall - baseRecall) * 100 >= 0 ? "+" : "") + ((projRecall - baseRecall) * 100).toFixed(4)}pp)`,
   );
-  L(
-    `resolveSuccessRate:   ${fmtPct(callsResolved / baseInternal)} -> ${fmtPct(projResolved / projInternal)}`,
-  );
+  L(`resolveSuccessRate:   ${fmtPct(callsResolved / baseInternal)} -> ${fmtPct(projResolved / projInternal)}`);
   L("");
   L("─── cross-check against the ikyqu design's projection ─────────────");
   L(`recall-hole misses whose single-segment receiver the widened guard TYPES: ${ssHoleTyped}`);
@@ -10808,6 +10815,593 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
   );
   L("");
   L(`single-segment oracle detail -> ${OUT_SINGLESEG}`);
+}
+
+// ===========================================================================
+// SCOPE-FACT COORDINATE-FORM ORACLE (bd tea-rags-mcp-yjh0l,
+// CODEGRAPH_SCOPEKEY_ORACLE=1, 2026-08-02). Same additive, env-gated contract as
+// every oracle above: with the flag unset no map is wrapped, no variant is
+// sealed, nothing extra is resolved, and the A/B recall metrics are
+// byte-identical.
+//
+// THE QUESTION. `scope :without_deleted, -> { … }` defines a CLASS method, but
+// the associations type-source emits its return fact through the same
+// `RubyTypeFact` path every other macro uses, and `structuredReturnTypesMap`
+// keys a fact with `#` unless it declares itself class-level. So the corpus
+// carries `Firm#without_deleted → container(Firm)`, a coordinate that
+// `declaredReturnTypeOn` answers for an INSTANCE receiver — `firm.without_deleted`
+// — which is not a thing in Ruby. The `.` form is strictly more precise: it is
+// consulted FIRST for a class receiver (bd 8ypeu) and NEVER for an instance one.
+//
+// The bead's instruction is to price the switch before making it, because the
+// fact is read through four different entry points and only two of them try the
+// `.` coordinate at all:
+//
+//   * `returnTypeOf`          — classReceiver = (recv.form === "class"): `.` then `#`
+//   * `inheritedReturnType`   — passes the caller's flag through the MRO walk
+//   * `declaredReturnType`    — always classReceiver = true (chain-root seed)
+//   * `selfMemberReturnType`  — classReceiver defaults FALSE: `#` ONLY
+//
+// so a bare `without_deleted` inside `def self.x` reaches the fact through the
+// `#` coordinate today and would lose it under a naive move. That is the whole
+// risk, and it is a counting question, not an argument.
+//
+// HOW IT MEASURES. Three run-global maps are sealed at the barrier through the
+// PRODUCTION seal order — walker facts, then `deriveServiceEntryReturnTypes`,
+// then the schema-column backfill — so the j9xpf template lookup (which reads
+// `<type>#<member>`) and the 2a5oo backfill (which fills a coordinate only when
+// it is still EMPTY, and a moved scope fact frees one) are priced, not assumed:
+//
+//   base  — what production has today (asserted equal to `runStructuredReturnTypes`)
+//   dot   — every live scope-relation fact rekeyed `Owner#m` → `Owner.m`
+//   both  — the `.` twin ADDED, the `#` original kept
+//
+// The three maps are then DIFFED, and every key on which they disagree becomes a
+// WATCHED coordinate. During pass-2 the resolver's map is a Proxy that records
+// each read of a watched key — its coordinate form, whether it hit, and the
+// calling frames — so the consumer map is observed rather than derived from the
+// source. A read is also the divergence trigger: two runs whose reads all agree
+// cannot resolve differently, so re-resolving exactly the calls that touched a
+// watched key is complete, and it is a fraction of a percent of the corpus
+// rather than all of it.
+//
+// Each such call is then re-resolved three times (base / dot / both) through the
+// REAL `resolver.resolve` + `resolveDispatch` with only `ctx.structuredReturnTypes`
+// swapped, and the outcome ladder is replayed verbatim from `resolvePass2`. The
+// base re-resolution is compared against the outcome `resolvePass2` already
+// computed — a fidelity mirror that fails loudly rather than silently.
+// ===========================================================================
+const SCOPEKEY_ENABLED = process.env.CODEGRAPH_SCOPEKEY_ORACLE === "1";
+const OUT_SCOPEKEY = join(OUT_DIR, "scopekey-oracle-report.json");
+const SK_EXAMPLE_CAP = 15;
+
+/** `<owner> <member>` for every `scope :m` DECLARED anywhere in the corpus. */
+const skDeclaredScopeCoords = new Set<string>();
+/** Owners that declared at least one scope, split by declaration node type. */
+const skScopeOwnersModule = new Set<string>();
+const skScopeOwnersClass = new Set<string>();
+let skScopeDeclarations = 0;
+
+/**
+ * Macro names whose `returnShape` is `scope-relation` — read off the SAME
+ * catalogue the walker uses, so a second macro joining that shape is picked up
+ * without editing the oracle. This is DATA (which verbs declare a relation over
+ * self), not the predicate under measurement.
+ */
+function skScopeMacroNames(): Set<string> {
+  const out = new Set<string>();
+  for (const [name, entry] of Object.entries(catalogueForGemfile(gemfileContent).entries)) {
+    if (entry.returnShape === "scope-relation") out.add(name);
+  }
+  return out;
+}
+
+/**
+ * Record one class-body `scope :m` declaration. Mirrors `emitMacroReturnFact`'s
+ * accepted shape — bare call or explicit `self` receiver, first arg a
+ * `simple_symbol` — restated here so the oracle's coordinate set is its own and
+ * a drift between the two shows up as a count mismatch rather than agreement by
+ * construction.
+ */
+function skNoteScopeMacro(node: AstNode, scope: readonly string[], inModule: boolean, macros: Set<string>): void {
+  const receiver = node.childForFieldName("receiver");
+  if (receiver && receiver.type !== "self") return;
+  const method = node.childForFieldName("method") ?? node.children.find((c) => c.type === "identifier");
+  if (!method || !macros.has(method.text)) return;
+  const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
+  if (!args) return;
+  const first = args.namedChildren[0];
+  if (first?.type !== "simple_symbol") return;
+  const member = first.text.startsWith(":") ? first.text.slice(1) : first.text;
+  const owner = scope.join("::");
+  if (member.length === 0 || owner.length === 0) return;
+  skScopeDeclarations += 1;
+  skDeclaredScopeCoords.add(`${owner} ${member}`);
+  (inModule ? skScopeOwnersModule : skScopeOwnersClass).add(owner);
+}
+
+/** Walk one file's AST tracking the enclosing class/module, as the type source does. */
+function skCollectScopeDeclarations(root: AstNode): void {
+  const macros = skScopeMacroNames();
+  const visit = (node: AstNode, scope: readonly string[], inModule: boolean): void => {
+    if (node.type === "class" || node.type === "module") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+        const body = node.childForFieldName("body");
+        const next = [...scope, ...localName.split("::")];
+        for (const child of (body ?? node).children) visit(child, next, node.type === "module");
+        return;
+      }
+      for (const child of node.children) visit(child, scope, inModule);
+      return;
+    }
+    if (node.type === "call" || node.type === "method_call") skNoteScopeMacro(node, scope, inModule, macros);
+    for (const child of node.children) visit(child, scope, inModule);
+  };
+  visit(root, [], false);
+}
+
+// ── the three sealed variants ──────────────────────────────────────────────
+let skVariantBase: Record<string, RubyTypeRef> = {};
+let skVariantDot: Record<string, RubyTypeRef> = {};
+let skVariantBoth: Record<string, RubyTypeRef> = {};
+/** Run-global `Owner#member` keys carrying a LIVE scope-relation fact today. */
+const skScopeFactKeys = new Set<string>();
+/** Every coordinate on which the three sealed maps disagree — the read watch list. */
+const skWatchedKeys = new Set<string>();
+/** A scope fact whose `.` twin is ALREADY claimed by a declared fact. */
+const skDotCollisions: string[] = [];
+/** Per-variant seal statistics, for the write-side half of the report. */
+interface SkSealStats {
+  keys: number;
+  derived: number;
+  schemaBackfill: number;
+}
+const skSeals: Record<string, SkSealStats> = {};
+/** Fidelity: does the oracle's re-sealed base equal the map production built? */
+let skBaseSealMismatch = 0;
+
+function skSplitCoord(key: string): { owner: string; member: string; form: "#" | "." } | null {
+  const hash = key.lastIndexOf("#");
+  if (hash > 0) return { owner: key.slice(0, hash), member: key.slice(hash + 1), form: "#" };
+  const dot = key.lastIndexOf(".");
+  if (dot > 0) return { owner: key.slice(0, dot), member: key.slice(dot + 1), form: "." };
+  return null;
+}
+
+/**
+ * The production barrier's seal order, applied to a candidate walker-fact map:
+ * j9xpf service-entry derivations merged on top, then the 2a5oo schema-column
+ * value types merged ONLY into coordinates still empty. Both steps read the map
+ * being sealed, which is exactly why the variants have to be sealed rather than
+ * patched after the fact.
+ */
+function skSeal(
+  label: string,
+  walkerFacts: Record<string, RubyTypeRef>,
+  entryIds: readonly string[],
+  relatedConcreteTypes: (type: string) => readonly string[],
+  isProjectDeclaredType: (typeName: string) => boolean,
+  schemaColumnReturnTypes: Record<string, RubyTypeRef>,
+): Record<string, RubyTypeRef> {
+  const map: Record<string, RubyTypeRef> = { ...walkerFacts };
+  const derived = deriveServiceEntryReturnTypes(entryIds, map, relatedConcreteTypes, isProjectDeclaredType);
+  for (const [k, v] of Object.entries(derived)) map[k] = v;
+  let backfill = 0;
+  for (const [k, v] of Object.entries(schemaColumnReturnTypes)) {
+    if (!(k in map)) {
+      map[k] = v;
+      backfill += 1;
+    }
+  }
+  skSeals[label] = { keys: Object.keys(map).length, derived: Object.keys(derived).length, schemaBackfill: backfill };
+  return map;
+}
+
+/**
+ * Build the `.`-form and both-forms variants and the watch list, at the barrier,
+ * with every input the production seal had.
+ */
+function skBuildVariants(
+  declaredBeforeDerive: Record<string, RubyTypeRef>,
+  sealedByProduction: Record<string, RubyTypeRef>,
+  entryIds: readonly string[],
+  relatedConcreteTypes: (type: string) => readonly string[],
+  isProjectDeclaredType: (typeName: string) => boolean,
+  schemaColumnReturnTypes: Record<string, RubyTypeRef>,
+): void {
+  // A LIVE scope fact: `Owner#member` declared by a `scope` macro AND still
+  // carrying the scope-relation shape (`container(instance(Owner))`) after the
+  // store's source precedence — a YARD `@return` that outranked it is not one.
+  for (const [key, ref] of Object.entries(declaredBeforeDerive)) {
+    const cut = skSplitCoord(key);
+    if (cut?.form !== "#") continue;
+    if (!skDeclaredScopeCoords.has(`${cut.owner} ${cut.member}`)) continue;
+    if (ref.form !== "container" || ref.element.form !== "instance" || ref.element.name !== cut.owner) continue;
+    skScopeFactKeys.add(key);
+  }
+  const dotFacts: Record<string, RubyTypeRef> = { ...declaredBeforeDerive };
+  const bothFacts: Record<string, RubyTypeRef> = { ...declaredBeforeDerive };
+  for (const key of skScopeFactKeys) {
+    const cut = skSplitCoord(key);
+    if (cut === null) continue;
+    const dotKey = `${cut.owner}.${cut.member}`;
+    const ref = declaredBeforeDerive[key];
+    if (ref === undefined) continue;
+    delete dotFacts[key]; // the move: the `#` coordinate is vacated either way
+    if (dotKey in declaredBeforeDerive) {
+      // An `@!method self.x` directive already owns the class form. Declared
+      // wins — the projection never overwrites it, in either variant.
+      skDotCollisions.push(dotKey);
+      continue;
+    }
+    dotFacts[dotKey] = ref;
+    bothFacts[dotKey] = ref;
+  }
+  const seal = (label: string, facts: Record<string, RubyTypeRef>): Record<string, RubyTypeRef> =>
+    skSeal(label, facts, entryIds, relatedConcreteTypes, isProjectDeclaredType, schemaColumnReturnTypes);
+  skVariantBase = seal("base", declaredBeforeDerive);
+  skVariantDot = seal("dot", dotFacts);
+  skVariantBoth = seal("both", bothFacts);
+  // Fidelity mirror: the re-sealed base must BE the map production resolves with.
+  for (const key of new Set([...Object.keys(skVariantBase), ...Object.keys(sealedByProduction)])) {
+    const a = skVariantBase[key];
+    const b = sealedByProduction[key];
+    if (a === undefined || b === undefined || !rubyTypeRefEquals(a, b)) skBaseSealMismatch += 1;
+  }
+  // The watch list: every coordinate on which the three maps disagree. A run
+  // whose reads all agree cannot resolve differently, so this set is a COMPLETE
+  // divergence trigger, not a heuristic.
+  const same = (x: RubyTypeRef | undefined, y: RubyTypeRef | undefined): boolean =>
+    x === undefined ? y === undefined : y !== undefined && rubyTypeRefEquals(x, y);
+  for (const key of new Set([
+    ...Object.keys(skVariantBase),
+    ...Object.keys(skVariantDot),
+    ...Object.keys(skVariantBoth),
+  ])) {
+    if (!same(skVariantBase[key], skVariantDot[key]) || !same(skVariantBase[key], skVariantBoth[key])) {
+      skWatchedKeys.add(key);
+    }
+  }
+}
+
+// ── read attribution ───────────────────────────────────────────────────────
+interface SkRead {
+  key: string;
+  form: "#" | ".";
+  hit: boolean;
+  reader: string;
+}
+/** Reads since the last call-site hook — drained per call, so it stays small. */
+const skReads: SkRead[] = [];
+const skProxyCache = new WeakMap<object, Record<string, RubyTypeRef>>();
+
+/**
+ * The calling frames of a watched read, so the consumer map names real readers
+ * (`returnTypeOf`, `inheritedReturnType`, `selfMemberReturnType`) instead of
+ * being inferred from the source. Only ever runs on a watched key.
+ */
+function skReaderFrame(): string {
+  const previousLimit = Error.stackTraceLimit;
+  Error.stackTraceLimit = 8;
+  const stack = new Error().stack ?? "";
+  Error.stackTraceLimit = previousLimit;
+  const names: string[] = [];
+  for (const line of stack.split("\n").slice(1)) {
+    const match = /^\s*at\s+(?:async\s+)?([^\s(]+)/.exec(line);
+    if (match === null) continue;
+    const name = match[1] ?? "";
+    if (name.endsWith("skReaderFrame") || name === "Object.get" || name === "Proxy.get") continue;
+    names.push(name);
+    if (names.length === 3) break;
+  }
+  return names.length > 0 ? names.join("<-") : "(unattributed)";
+}
+
+/**
+ * Wrap the resolver-facing map so watched reads are observable. Identity when
+ * the flag is off — the proxy never exists, so pass-2 costs exactly what it did.
+ */
+function skWrapMap(map: Record<string, RubyTypeRef> | undefined): Record<string, RubyTypeRef> | undefined {
+  if (!SCOPEKEY_ENABLED || map === undefined) return map;
+  const cached = skProxyCache.get(map);
+  if (cached !== undefined) return cached;
+  const proxy = new Proxy(map, {
+    get(target, prop, receiver): unknown {
+      if (typeof prop === "string" && skWatchedKeys.has(prop)) {
+        const cut = skSplitCoord(prop);
+        skReads.push({ key: prop, form: cut?.form ?? "#", hit: prop in target, reader: skReaderFrame() });
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+  skProxyCache.set(map, proxy);
+  return proxy;
+}
+
+// ── tallies ────────────────────────────────────────────────────────────────
+/** `"<reader>|<form>|<hit|miss>"` → count. The consumer map, as measured. */
+const skReaderTally: Record<string, number> = {};
+/** Distinct watched coordinates actually HIT, by form. */
+const skCoordsRead: Record<string, Set<string>> = { "#": new Set(), ".": new Set() };
+let skCallsTouching = 0;
+let skReadsTotal = 0;
+/** `"<base>-><variant>"` → count, per variant. */
+const skTransitions: Record<string, Record<string, number>> = { dot: {}, both: {} };
+interface SkVariantRow {
+  gained: number;
+  lost: number;
+  targetChanged: number;
+}
+const skVariantRows: Record<string, SkVariantRow> = {
+  dot: { gained: 0, lost: 0, targetChanged: 0 },
+  both: { gained: 0, lost: 0, targetChanged: 0 },
+};
+/** Baseline mirror: the oracle's re-resolution vs `resolvePass2`'s own verdict. */
+let skMirrorChecked = 0;
+let skMirrorDisagreed = 0;
+interface SkExample {
+  where: string;
+  caller: string;
+  receiver: string;
+  member: string;
+  kind: ReceiverKind;
+  base: LcOutcome;
+  variant: LcOutcome;
+  baseTarget: string;
+  variantTarget: string;
+  readers: string;
+}
+const skExamples: Record<string, SkExample[]> = { dotLost: [], dotGained: [], bothLost: [], bothGained: [] };
+/** Recall-hole subset: watched-key readers whose baseline outcome is a miss. */
+let skHoleTouching = 0;
+/**
+ * `selfMemberReturnType` is the ONLY reader with no `.` fallback, so it is the
+ * whole cost of the switch. Ruby cannot tell from the member alone whether a
+ * bare call binds the class object or an instance — but `ctx.callerSymbolId`
+ * can: a caller keyed `Klass.m` IS a class method, and `scope` is legal there.
+ * Tallying the caller's own coordinate form prices the follow-up that would make
+ * the switch safe (teach that reader the `.` coordinate when the CALLER is
+ * class-level) before anyone builds it. `"<callerForm>|<hit|miss>"` -> count.
+ */
+const skSelfMemberCallerForm: Record<string, number> = {};
+/** Per-transition attribution: did this call's reads include the `#`-only reader? */
+const skTransitionsByReader: Record<string, Record<string, number>> = { dot: {}, both: {} };
+
+function skBump(bag: Record<string, number>, key: string): void {
+  bag[key] = (bag[key] ?? 0) + 1;
+}
+
+function skTargetText(target: SymbolResolutionTarget | null): string {
+  if (target === null) return "-";
+  return target.targetSymbolId ?? `${target.targetRelPath} (file-only)`;
+}
+
+function skSameTarget(a: SymbolResolutionTarget | null, b: SymbolResolutionTarget | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.targetRelPath === b.targetRelPath && a.targetSymbolId === b.targetSymbolId;
+}
+
+/**
+ * `resolvePass2`'s resolve + ladder, replayed against one candidate map. Only
+ * `ctx.structuredReturnTypes` differs, so any movement is attributable to the
+ * coordinate form and nothing else.
+ */
+function skResolveUnder(
+  call: CallRef,
+  ctx: CallContext,
+  map: Record<string, RubyTypeRef>,
+): { outcome: LcOutcome; target: SymbolResolutionTarget | null } {
+  const variantCtx: CallContext = { ...ctx, structuredReturnTypes: map };
+  const dispatch = resolver.resolveDispatch?.(call, variantCtx);
+  const edges = dispatch?.kind === "edges" ? dispatch.edges.length : 0;
+  let target: SymbolResolutionTarget | null = null;
+  if (!call.dispatch && (edges === 0 || (call.dispatchArgs !== undefined && call.dispatchArgs.length > 0))) {
+    target = resolver.resolve(call, variantCtx);
+  }
+  const resolved = call.dispatch ? edges > 0 : edges > 0 || target !== null;
+  if (resolved) return { outcome: "resolved", target };
+  const outcome: LcOutcome =
+    call.dynamicSend === true
+      ? "dynamicSend"
+      : (resolver.targetsExternalImport?.(call, variantCtx) ?? false)
+        ? "externalSkipped"
+        : symbolTable.lookupByShortName(call.member).length === 0
+          ? "noInProjectDef"
+          : (resolver.targetsCoreAmbiguousMember?.(call, variantCtx) ?? false)
+            ? "coreAmbiguous"
+            : "miss";
+  return { outcome, target };
+}
+
+/**
+ * The one call-site hook, invoked from `resolvePass2` after the baseline outcome
+ * is known. Drains the reads the proxy recorded for THIS call; a call that read
+ * no watched coordinate cannot move and costs one array check.
+ */
+function noteScopeKeyCall(
+  call: CallRef,
+  ctx: CallContext,
+  baseOutcome: LcOutcome,
+  receiverKind: ReceiverKind,
+  relPath: string,
+  callerSymbolId: string,
+): void {
+  const reads = skReads.splice(0);
+  if (reads.length === 0) return;
+  skCallsTouching += 1;
+  skReadsTotal += reads.length;
+  if (baseOutcome === "miss") skHoleTouching += 1;
+  const callerForm = callerSymbolId.includes("#") ? "instance caller (#)" : "class caller (.)";
+  let touchedSelfMember = false;
+  for (const read of reads) {
+    skBump(skReaderTally, `${read.reader}|${read.form}|${read.hit ? "hit" : "miss"}`);
+    if (read.hit) skCoordsRead[read.form]?.add(read.key);
+    if (!read.reader.includes("selfMemberReturnType")) continue;
+    touchedSelfMember = true;
+    skBump(skSelfMemberCallerForm, `${callerForm}|${read.form}|${read.hit ? "hit" : "miss"}`);
+  }
+
+  const base = skResolveUnder(call, ctx, skVariantBase);
+  skMirrorChecked += 1;
+  if (base.outcome !== baseOutcome) skMirrorDisagreed += 1;
+
+  const readerSummary = [...new Set(reads.map((r) => `${r.reader}[${r.form}${r.hit ? "!" : "?"}]`))].join(" ");
+  for (const [label, map] of [
+    ["dot", skVariantDot],
+    ["both", skVariantBoth],
+  ] as const) {
+    const variant = skResolveUnder(call, ctx, map);
+    skBump(skTransitions[label] ?? {}, `${base.outcome}->${variant.outcome}`);
+    if (base.outcome !== variant.outcome) {
+      skBump(
+        skTransitionsByReader[label] ?? {},
+        `${base.outcome}->${variant.outcome} | ${touchedSelfMember ? "selfMember read" : "class-receiver reads only"}`,
+      );
+    }
+    const row = skVariantRows[label];
+    if (row === undefined) continue;
+    const example = (): SkExample => ({
+      where: `${relPath}:${call.startLine}`,
+      caller: callerSymbolId,
+      receiver: call.receiver ?? "(bare)",
+      member: call.member,
+      kind: receiverKind,
+      base: base.outcome,
+      variant: variant.outcome,
+      baseTarget: skTargetText(base.target),
+      variantTarget: skTargetText(variant.target),
+      readers: readerSummary,
+    });
+    if (base.outcome !== "resolved" && variant.outcome === "resolved") {
+      row.gained += 1;
+      const bucket = skExamples[`${label}Gained`];
+      if (bucket !== undefined && bucket.length < SK_EXAMPLE_CAP) bucket.push(example());
+    } else if (base.outcome === "resolved" && variant.outcome !== "resolved") {
+      row.lost += 1;
+      const bucket = skExamples[`${label}Lost`];
+      if (bucket !== undefined && bucket.length < SK_EXAMPLE_CAP) bucket.push(example());
+    } else if (base.outcome === "resolved" && !skSameTarget(base.target, variant.target)) {
+      row.targetChanged += 1;
+      const bucket = skExamples[`${label}Lost`];
+      if (bucket !== undefined && bucket.length < SK_EXAMPLE_CAP) bucket.push(example());
+    }
+  }
+}
+
+function runScopeKeyOracle(): void {
+  const L = (s: string): void => {
+    console.log(s);
+  };
+  L("");
+  L("=== SCOPE-FACT COORDINATE-FORM ORACLE (bd yjh0l) =====================");
+  L("");
+  L("--- (a) write side: what the switch would move ---------------------");
+  L(`  scope declarations parsed:                 ${skScopeDeclarations}`);
+  L(`  distinct (owner, member) coordinates:      ${skDeclaredScopeCoords.size}`);
+  L(`  owners declaring a scope - class:          ${skScopeOwnersClass.size}`);
+  L(`  owners declaring a scope - module/concern: ${skScopeOwnersModule.size}`);
+  L(`  LIVE '#'-keyed scope facts in the run map: ${skScopeFactKeys.size}`);
+  L(`  '.' twin already claimed (declared wins):  ${skDotCollisions.length}`);
+  L("");
+  for (const [label, stats] of Object.entries(skSeals)) {
+    L(
+      `  sealed[${label.padEnd(4)}] keys=${String(stats.keys).padStart(7)} ` +
+        `j9xpfDerived=${String(stats.derived).padStart(6)} schemaBackfill=${String(stats.schemaBackfill).padStart(6)}`,
+    );
+  }
+  L(`  base-seal fidelity mismatches vs production: ${skBaseSealMismatch}`);
+  L(`  watched coordinates (maps disagree):         ${skWatchedKeys.size}`);
+  L("");
+  L("--- (b) consumer map: who reads a watched coordinate, at which form -");
+  L(`  calls touching a watched coordinate: ${skCallsTouching}`);
+  L(`  ...of which the baseline MISSES:     ${skHoleTouching}`);
+  L(`  watched reads total:                 ${skReadsTotal}`);
+  L(`  distinct coords HIT as '#':          ${skCoordsRead["#"]?.size ?? 0}`);
+  L(`  distinct coords HIT as '.':          ${skCoordsRead["."]?.size ?? 0}`);
+  L("");
+  L("  reader frames | form | hit-or-miss:");
+  for (const [key, n] of Object.entries(skReaderTally).sort((a, b) => b[1] - a[1])) {
+    L(`    ${String(n).padStart(8)}  ${key}`);
+  }
+  L("");
+  L("  selfMemberReturnType (the '#'-only reader) by CALLER coordinate form:");
+  for (const [key, n] of Object.entries(skSelfMemberCallerForm).sort((a, b) => b[1] - a[1])) {
+    L(`    ${String(n).padStart(8)}  ${key}`);
+  }
+  L("");
+  L("--- (c) A/B: re-resolution under each variant ----------------------");
+  L(`  baseline mirror: checked=${skMirrorChecked} disagreed=${skMirrorDisagreed}`);
+  for (const label of ["dot", "both"] as const) {
+    const row = skVariantRows[label];
+    L("");
+    L(
+      `  variant '${label}': gained=${row?.gained ?? 0} lost=${row?.lost ?? 0} ` +
+        `targetChanged=${row?.targetChanged ?? 0}`,
+    );
+    for (const [transition, n] of Object.entries(skTransitions[label] ?? {}).sort((a, b) => b[1] - a[1])) {
+      const [from, to] = transition.split("->");
+      L(`    ${String(n).padStart(8)}  ${transition}${from === to ? "  (unchanged)" : ""}`);
+    }
+    const attributed = Object.entries(skTransitionsByReader[label] ?? {}).sort((a, b) => b[1] - a[1]);
+    if (attributed.length > 0) {
+      L(`    movement attributed to the reader class that saw a watched coordinate:`);
+      for (const [key, n] of attributed) L(`      ${String(n).padStart(6)}  ${key}`);
+    }
+  }
+  L("");
+  for (const [bucket, rows] of Object.entries(skExamples)) {
+    if (rows.length === 0) continue;
+    L(`--- examples: ${bucket} ---`);
+    for (const row of rows) {
+      L(`    ${row.where}  ${row.caller}`);
+      L(`      ${row.receiver}.${row.member} [${row.kind}]  ${row.base} -> ${row.variant}`);
+      L(`      target ${row.baseTarget} -> ${row.variantTarget}`);
+      L(`      readers ${row.readers}`);
+    }
+    L("");
+  }
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_SCOPEKEY,
+    JSON.stringify(
+      {
+        writeSide: {
+          scopeDeclarations: skScopeDeclarations,
+          distinctCoordinates: skDeclaredScopeCoords.size,
+          ownersClass: skScopeOwnersClass.size,
+          ownersModule: skScopeOwnersModule.size,
+          liveHashKeyedFacts: skScopeFactKeys.size,
+          dotCollisions: skDotCollisions.slice(0, 100),
+          dotCollisionCount: skDotCollisions.length,
+          seals: skSeals,
+          baseSealMismatch: skBaseSealMismatch,
+          watchedCoordinates: skWatchedKeys.size,
+        },
+        consumers: {
+          callsTouching: skCallsTouching,
+          callsTouchingInRecallHole: skHoleTouching,
+          reads: skReadsTotal,
+          distinctCoordsHitHash: skCoordsRead["#"]?.size ?? 0,
+          distinctCoordsHitDot: skCoordsRead["."]?.size ?? 0,
+          byReaderFormOutcome: skReaderTally,
+          selfMemberByCallerForm: skSelfMemberCallerForm,
+        },
+        ab: {
+          mirrorChecked: skMirrorChecked,
+          mirrorDisagreed: skMirrorDisagreed,
+          variants: skVariantRows,
+          transitions: skTransitions,
+          transitionsByReaderClass: skTransitionsByReader,
+        },
+        examples: skExamples,
+      },
+      null,
+      2,
+    ),
+  );
+  L(`scope-key oracle detail -> ${OUT_SCOPEKEY}`);
 }
 
 async function main(): Promise<void> {
@@ -10938,6 +11532,20 @@ async function main(): Promise<void> {
   console.error(
     `[forensics] j9xpf service-entry returns: entries=${runSelfInstantiatingClassMethods.length + Object.keys(runSelfDispatchTemplates).length} derived=${Object.keys(entryReturnTypes).length}`,
   );
+  // bd tea-rags-mcp-yjh0l — seal the `.`-form and both-forms variants HERE, with
+  // the same inputs and in the same order production just used, so the j9xpf
+  // derivation and the 2a5oo schema backfill are re-run against the rekeyed map
+  // rather than patched onto the sealed one.
+  if (SCOPEKEY_ENABLED) {
+    skBuildVariants(
+      declaredBeforeDerive,
+      runStructuredReturnTypes,
+      [...runSelfInstantiatingClassMethods, ...Object.keys(runSelfDispatchTemplates)],
+      selfDispatchProbe.relatedConcreteTypes,
+      (typeName) => symbolTable.lookup(typeName).length > 0 || runAncestors[typeName] !== undefined,
+      schemaColumnReturnTypes,
+    );
+  }
   // bd tea-rags-mcp-bvalc barrier fold — always computed for the report, threaded
   // into ctx only when enabled.
   runParamTypes = foldKnownTargetParamTypes(runKnownTargetCallArgs.values(), runParamNames);
@@ -11192,6 +11800,7 @@ async function main(): Promise<void> {
   if (FIXPOINT_ENABLED) runFixpointOracle(extractions, Date.now() - t0);
   if (CONSTCHAIN_ENABLED) runConstChainOracle(extractions);
   if (SINGLESEG_ENABLED) runSingleSegOracle(extractions);
+  if (SCOPEKEY_ENABLED) runScopeKeyOracle();
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
