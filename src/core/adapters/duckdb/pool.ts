@@ -34,12 +34,7 @@ import { isDebug } from "../../infra/runtime.js";
 import { DuckDbGraphClient } from "./client.js";
 import { getBuildFingerprint } from "./daemon/build-fingerprint.js";
 import type { DaemonGraphDbClient } from "./daemon/client.js";
-import {
-  DEFAULT_EXIT_TIMEOUT_MS,
-  getDaemonPaths,
-  readDaemonPid,
-  waitForDaemonExit,
-} from "./daemon/lifecycle.js";
+import { DEFAULT_EXIT_TIMEOUT_MS, getDaemonPaths, readDaemonPid, waitForDaemonExit } from "./daemon/lifecycle.js";
 import {
   CodegraphDaemonExitTimeoutError,
   CodegraphDaemonStaleBuildError,
@@ -236,13 +231,21 @@ export class GraphDbClientPool {
    * (the sweep deletes those that are neither the active alias target nor backed
    * by a live Qdrant collection).
    *
-   * Scoped strictly to `^<base>_v\d+$` so it never touches another project's
-   * DBs, the unversioned base file, or WAL/spill sidecars. Returns an empty
-   * array when the codegraph dir is missing (nothing indexed yet).
+   * Includes the UNVERSIONED `<base>.duckdb` too (bd tea-rags-mcp-6goqa). It
+   * used to be excluded, which is exactly why the shadow file the incremental
+   * path wrote while addressing collections by their alias was invisible to the
+   * sweep and could never be reclaimed. Returning it is safe because the sweep
+   * skips any name that is the active alias target or is backed by a live
+   * Qdrant collection — and a genuinely unversioned, non-aliased project is the
+   * latter.
+   *
+   * Still scoped to `^<base>(_v\d+)?$` so it never touches another project's
+   * DBs or WAL/spill sidecars. Returns an empty array when the codegraph dir is
+   * missing (nothing indexed yet).
    */
   listCollectionDbNames(baseCollectionName: string): string[] {
     const base = sanitiseCollectionName(baseCollectionName);
-    const pattern = new RegExp(`^(${escapeRegExp(base)}_v\\d+)\\.duckdb$`);
+    const pattern = new RegExp(`^(${escapeRegExp(base)}(?:_v\\d+)?)\\.duckdb$`);
     let entries: string[];
     try {
       entries = readdirSync(this.codegraphDir);

@@ -298,14 +298,19 @@ describe("GraphDbClientPool — per-collection isolation", () => {
     writeFileSync(pool.pathFor("code_abc_v3"), "");
     // A different project's versioned DB — must NOT be returned.
     writeFileSync(pool.pathFor("code_other_v2"), "");
-    // The unversioned base file (legacy / non-versioned) — must NOT be returned.
+    // The unversioned base file. INVARIANT CHANGED (bd tea-rags-mcp-6goqa): this
+    // used to be excluded, which is precisely why the shadow <alias>.duckdb the
+    // incremental path wrote was invisible to the orphan sweep and could never
+    // be reclaimed. It is returned now; the sweep's own guards keep a genuinely
+    // unversioned, non-aliased project safe, because such a name is a live
+    // Qdrant collection.
     writeFileSync(pool.pathFor("code_abc"), "");
     // A WAL sidecar — not a .duckdb file, must NOT be returned.
     writeFileSync(join(codegraphDir, "code_abc_v1.duckdb.wal"), "");
 
     const names = pool.listCollectionDbNames("code_abc");
 
-    expect(names.sort()).toEqual(["code_abc_v1", "code_abc_v3"]);
+    expect(names.sort()).toEqual(["code_abc", "code_abc_v1", "code_abc_v3"]);
   });
 
   it("listCollectionDbNames returns an empty array when the codegraph dir has no matching files", () => {

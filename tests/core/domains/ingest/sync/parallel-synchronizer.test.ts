@@ -69,6 +69,30 @@ describe("ParallelFileSynchronizer", () => {
     return files;
   }
 
+  describe("getCurrentFileHashes", () => {
+    // The codegraph repair check diffs the graph's persisted per-file hashes
+    // against the run's current ones (bd tea-rags-mcp-6goqa). The hashes already
+    // exist — detectChanges computes them for the whole scan — so exposing them
+    // costs no extra I/O. Keyed in the same space FileChanges uses, otherwise
+    // the diff would compare paths that can never match.
+    it("exposes a hash for every file the scan saw, keyed like FileChanges", async () => {
+      const files = await createTestFiles(3);
+      await synchronizer.initialize();
+      const changes = await synchronizer.detectChanges(files);
+
+      const hashes = synchronizer.getCurrentFileHashes();
+
+      expect([...hashes.keys()].sort()).toEqual([...changes.added].sort());
+      for (const hash of hashes.values()) {
+        expect(hash).toMatch(/^[0-9a-f]{64}$/);
+      }
+    });
+
+    it("is empty before any scan, so absence is never mistaken for a match", () => {
+      expect(synchronizer.getCurrentFileHashes().size).toBe(0);
+    });
+  });
+
   describe("Initialization", () => {
     it("should return false when no snapshot exists", async () => {
       const hasSnapshot = await synchronizer.initialize();

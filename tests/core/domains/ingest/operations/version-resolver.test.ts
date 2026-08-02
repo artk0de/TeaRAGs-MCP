@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   computeNewVersion,
+  findAliasTarget,
   maxVersionedCollection,
   parseCollectionVersion,
+  resolveAliasTargetCollection,
 } from "../../../../../src/core/domains/ingest/operations/version-resolver.js";
 
 const BASE = "code_abc";
@@ -91,5 +93,36 @@ describe("computeNewVersion", () => {
         isMigration: true,
       }),
     ).toBe(2);
+  });
+});
+
+describe("resolveAliasTargetCollection", () => {
+  it("resolves an alias to the collection it points at", () => {
+    expect(
+      resolveAliasTargetCollection(BASE, [
+        { aliasName: "code_other", collectionName: "code_other_v3" },
+        { aliasName: BASE, collectionName: `${BASE}_v52` },
+      ]),
+    ).toBe(`${BASE}_v52`);
+  });
+
+  it("falls back to the literal name when no alias matches", () => {
+    expect(resolveAliasTargetCollection(BASE, [{ aliasName: "code_other", collectionName: "code_other_v3" }])).toBe(
+      BASE,
+    );
+  });
+
+  it("falls back to the literal name when there are no aliases at all", () => {
+    expect(resolveAliasTargetCollection(BASE, [])).toBe(BASE);
+  });
+});
+
+describe("findAliasTarget", () => {
+  it("returns the collection an alias points at", () => {
+    expect(findAliasTarget(BASE, [{ aliasName: BASE, collectionName: `${BASE}_v52` }])).toBe(`${BASE}_v52`);
+  });
+
+  it("returns undefined when the name is not an alias, so callers can tell absence from identity", () => {
+    expect(findAliasTarget(BASE, [{ aliasName: "code_other", collectionName: "code_other_v3" }])).toBeUndefined();
   });
 });

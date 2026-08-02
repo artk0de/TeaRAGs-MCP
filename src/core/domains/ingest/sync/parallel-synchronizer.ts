@@ -14,9 +14,9 @@ import { createHash } from "node:crypto";
 import { existsSync, promises as fs } from "node:fs";
 import { join, relative } from "node:path";
 
+import { isDebug } from "../../../infra/runtime.js";
 import type { FileChanges } from "../../../types.js";
 import { parallelLimit } from "../pipeline/infra/parallel.js";
-import { isDebug } from "../../../infra/runtime.js";
 import { ConsistentHash } from "./infra/consistent-hash.js";
 import { MerkleTree } from "./infra/merkle.js";
 import {
@@ -153,6 +153,27 @@ export class ParallelFileSynchronizer {
     if (isDebug()) {
       console.error(`[Sync] updateSnapshot: saved ${fileMetadata.size} files in ${Date.now() - startTime}ms`);
     }
+  }
+
+  /**
+   * Per-file SHA256 for every file the last `detectChanges` scan saw, keyed the
+   * same way `FileChanges` is.
+   *
+   * Read-only projection of the hashes `detectChanges` already computed — no
+   * disk access, nothing recomputed. The codegraph repair check diffs these
+   * against the hashes persisted in `cg_symbols_files` to decide which files
+   * must be re-extracted (bd tea-rags-mcp-6goqa).
+   *
+   * Empty before the first scan, and again after `updateSnapshot` releases the
+   * cache. Callers must read it between the two, which is where the repair
+   * check runs. An empty map means "nothing known", never "everything matches".
+   */
+  getCurrentFileHashes(): Map<string, string> {
+    const hashes = new Map<string, string>();
+    for (const [path, meta] of this.lastComputedHashes ?? []) {
+      hashes.set(path, meta.hash);
+    }
+    return hashes;
   }
 
   /**

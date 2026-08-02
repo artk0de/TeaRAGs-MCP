@@ -26,6 +26,39 @@ export function parseCollectionVersion(collectionName: string, name: string | un
   return match ? parseInt(match[1], 10) : 0;
 }
 
+/** One alias entry as Qdrant reports it. */
+export interface CollectionAliasEntry {
+  aliasName: string;
+  collectionName: string;
+}
+
+/**
+ * The collection an alias points at, or `undefined` when the name is not an
+ * alias. The single lookup both pipelines share.
+ *
+ * `undefined` is load-bearing and distinct from "points at itself": the force
+ * path feeds it to `computeNewVersion` and uses it as the alias's previous
+ * target, where absence means "no alias yet" and must not collapse to the base
+ * name.
+ */
+export function findAliasTarget(collectionName: string, aliases: readonly CollectionAliasEntry[]): string | undefined {
+  return aliases.find((a) => a.aliasName === collectionName)?.collectionName;
+}
+
+/**
+ * The physical collection to address by LITERAL name: the alias target when
+ * there is one, the name itself otherwise.
+ *
+ * Qdrant resolves aliases server-side, so Qdrant calls work either way. Anything
+ * opened by literal name does not — above all the codegraph DuckDB file, which
+ * `GraphDbClientPool.pathFor()` derives straight from the string it is handed.
+ * Addressing that by the alias produced a shadow `<alias>.duckdb` that no reader
+ * ever opened (bd tea-rags-mcp-6goqa).
+ */
+export function resolveAliasTargetCollection(collectionName: string, aliases: readonly CollectionAliasEntry[]): string {
+  return findAliasTarget(collectionName, aliases) ?? collectionName;
+}
+
 /**
  * Highest `_vN` among `allCollections` for the given base. 0 if none exist.
  * Mirrors the regex approach in status-module's findLatestVersionedCollection.

@@ -31,8 +31,10 @@ import { EnrichmentBackfiller } from "./backfiller.js";
 import { ChunkPhase, type BlobReaderFactory } from "./chunk-phase.js";
 import { CompletionRunner } from "./completion-runner.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
+import { computeExtractionRepair } from "./extraction-repair.js";
 import { FilePhase } from "./file-phase.js";
 import { EnrichmentMarkerStore } from "./marker-store.js";
+import { filterFileEnrichPaths } from "./policy.js";
 import type { EnrichmentRecovery } from "./recovery.js";
 import type { EnrichmentProvider, ProviderContext } from "./types.js";
 
@@ -110,6 +112,14 @@ export class EnrichmentCoordinator {
    * the daemon never idle-dies mid-run. No-op when codegraph is disabled.
    */
   private readonly daemonGuard: IndexRunDaemonGuard;
+
+  /**
+   * Per-file SHA256 for the current run, captured by runRepairPass and reused
+   * by the normal file phase (bd tea-rags-mcp-6goqa). Both paths must stamp the
+   * hash, otherwise the path that does not keeps resetting rows to NULL and the
+   * repair set never converges.
+   */
+  private runContentHashes?: ReadonlyMap<string, string>;
 
   /**
    * Optional callback fired after enrichment milestones. Invoked at most twice
@@ -237,6 +247,76 @@ export class EnrichmentCoordinator {
    * corruption; orphan Qdrant points are just clutter — better the
    * latter than the former.
    */
+  /**
+   * Bring each provider's per-file store back in line with the code before the
+   * run's own enrichment starts (bd tea-rags-mcp-6goqa).
+   *
+   * A store drifts whenever a run writes somewhere the readers never look, and
+   * a file only ever heals when it is itself re-extracted — so without this,
+   * stale rows outlive every reindex once their file stops changing. Each
+   * provider that can report what it persisted gets diffed against the run's
+   * eligible files: what drifted or went missing is re-extracted through the
+   * same `runFileSignals` seam the backfiller and recovery use, and rows for
+   * files that are no longer eligible are pruned.
+   *
+   * Silent by design: a repair shows up as extra time, nothing else. Costs one
+   * read per provider when the store already matches. Providers with no
+   * per-file store (git) are skipped rather than assumed clean.
+   *
+   * Returns how many files were re-extracted across all providers. The caller
+   * needs that number: a run with no file changes would otherwise take its
+   * early return and skip the finalize that recomputes the derived tables, so a
+   * repair-only run has to be recognised as real work.
+   */
+  async runRepairPass(collectionName: string, root: string, scanned: ReadonlyMap<string, string>): Promise<number> {
+    let repaired = 0;
+    this.runContentHashes = scanned;
+    for (const provider of this.providers) {
+      const readPersisted = provider.readPersistedFileHashes;
+      if (!readPersisted) continue;
+
+      let persisted: Map<string, string | null>;
+      try {
+        persisted = await readPersisted.call(provider, collectionName);
+      } catch (err) {
+        // A store we cannot read is not a reason to abort the run; the next one
+        // retries. Staying quiet here would hide a permanently broken provider,
+        // so it goes to the pipeline log.
+        pipelineLog.enrichmentPhase("REPAIR_READ_FAILED", {
+          provider: provider.key,
+          collection: collectionName,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        continue;
+      }
+
+      // Eligibility is per provider, so it is narrowed HERE rather than by the
+      // caller: codegraph declines tests and generated files, git takes them.
+      // Handing one pre-filtered set to every provider would make each
+      // provider's orphan list wrong for the others.
+      const providerEligible = new Map<string, string>();
+      for (const path of filterFileEnrichPaths(provider, [...scanned.keys()])) {
+        providerEligible.set(path, scanned.get(path) as string);
+      }
+
+      const { repair, orphans } = computeExtractionRepair(providerEligible, persisted);
+      if (orphans.length > 0) {
+        await provider.handleDeletedPaths?.(orphans, { collectionName });
+      }
+      if (repair.length > 0) {
+        pipelineLog.enrichmentPhase("REPAIR_PASS", {
+          provider: provider.key,
+          collection: collectionName,
+          repaired: repair.length,
+          orphaned: orphans.length,
+        });
+        await this.executor.runFileSignals(provider, root, repair, { collectionName, contentHashes: scanned });
+        repaired += repair.length;
+      }
+    }
+    return repaired;
+  }
+
   async notifyDeletions(paths: string[], collectionName?: string): Promise<void> {
     if (paths.length === 0) return;
     await Promise.all(
@@ -359,7 +439,14 @@ export class EnrichmentCoordinator {
       for (const provider of this.providers) provider.beginExtractionRun?.(collectionName);
     }
 
-    runState.filePhase.init(runState.contexts, collectionName ?? "", runState.runId, runState.startedAt, crossPass);
+    runState.filePhase.init(
+      runState.contexts,
+      collectionName ?? "",
+      runState.runId,
+      runState.startedAt,
+      crossPass,
+      this.runContentHashes,
+    );
     runState.chunkPhase.init(runState.contexts, collectionName ?? "", runState.startedAt);
 
     // markRunStart writes ONLY the `_run` pointer ({runId, startedAt,

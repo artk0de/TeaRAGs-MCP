@@ -216,6 +216,18 @@ export interface ChunkSignalOptions {
 export interface FileSignalOptions {
   /** Optional path subset for backfill / incremental reindex callers. */
   paths?: string[];
+  /**
+   * Per-file SHA256 for the run, keyed by repo-relative path
+   * (bd tea-rags-mcp-6goqa). A provider that keeps a per-file store persists
+   * the hash alongside each row, so a later run can tell a row that is merely
+   * PRESENT from one that is CURRENT — which is what the repair check diffs.
+   *
+   * Sourced from the ingest snapshot, so there is one definition of the hash
+   * and no extra read. Absent in direct/test callers; a row written without it
+   * persists a NULL hash and will be re-extracted, never silently assumed
+   * current. Survives the worker-pool `structuredClone` boundary as a Map.
+   */
+  contentHashes?: ReadonlyMap<string, string>;
   /** Active Qdrant collection name — see ChunkSignalOptions.collectionName. */
   collectionName?: string;
   /**
@@ -382,6 +394,21 @@ export interface EnrichmentProvider {
    * (git).
    */
   readonly defersChunkEnrichment?: boolean;
+  /**
+   * Per-file content hashes this provider has already persisted for
+   * `collectionName`, as `relPath -> hash`, with `null` for a row written
+   * before the provider stored hashes at all (bd tea-rags-mcp-6goqa).
+   *
+   * The coordinator diffs this against the run's eligible files to decide which
+   * files a provider must re-extract before its store matches the code. A
+   * provider that keeps no per-file store simply omits the method and the
+   * repair pass skips it — git does exactly that.
+   *
+   * An empty map means "this provider knows nothing about this collection", so
+   * a collection with no graph yet repairs everything, which is what a freshly
+   * created versioned collection needs.
+   */
+  readPersistedFileHashes?: (collectionName: string) => Promise<Map<string, string | null>>;
   /**
    * Factory for the run-scoped commit discovery (bd tea-rags-mcp-82va1) —
    * the provider owns the window config (chunkMaxAgeMonths / timeout),

@@ -1423,6 +1423,16 @@ export interface GraphDbClient {
   listAllSymbols: () => Promise<SymbolDefinition[]>;
 
   /**
+   * Every file row with the content hash persisted alongside it, `null` where
+   * the row predates the column (bd tea-rags-mcp-6goqa). The repair check diffs
+   * this against the run's current hashes to decide what must be re-extracted.
+   *
+   * Returns an array rather than a Map because the daemon proxies this over
+   * JSON, where a Map does not survive the round trip.
+   */
+  listFileContentHashes: () => Promise<{ relPath: RelPath; contentHash: string | null }[]>;
+
+  /**
    * Backfill the covering-chunk reference for symbols of one file. UPDATE-only
    * — never rewrites identity columns. Keyed by symbolId; symbols absent from
    * the map keep their prior chunk_id (which a preceding upsertSymbols set to
@@ -1549,6 +1559,14 @@ export interface CycleEntry {
 export interface GraphFileNode {
   relPath: RelPath;
   language: string;
+  /**
+   * SHA256 of the file's contents at extraction time, taken from the ingest
+   * snapshot (no extra read). Lets a later run tell a graph row that is merely
+   * PRESENT from one that is CURRENT, which is what the repair check diffs
+   * against (bd tea-rags-mcp-6goqa). Undefined when the caller has no hash
+   * (direct/test writes); that persists as NULL and makes the file re-extract.
+   */
+  contentHash?: string;
 }
 
 /**

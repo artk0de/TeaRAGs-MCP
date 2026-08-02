@@ -445,9 +445,10 @@ export class DuckDbGraphClient implements GraphDbClient {
    * `upsertFilesBulk` (one BEGIN/COMMIT per M files) so both persist identical rows.
    */
   private async upsertFileRows(node: GraphFileNode, edges: GraphEdges): Promise<void> {
-    await this.run("INSERT OR REPLACE INTO cg_symbols_files (rel_path, language) VALUES (?, ?)", [
+    await this.run("INSERT OR REPLACE INTO cg_symbols_files (rel_path, language, content_hash) VALUES (?, ?, ?)", [
       node.relPath,
       node.language,
+      node.contentHash ?? null,
     ]);
     await this.run("DELETE FROM cg_symbols_edges_file WHERE source_rel_path = ?", [node.relPath]);
     await this.run("DELETE FROM cg_symbols_edges_method WHERE source_rel_path = ?", [node.relPath]);
@@ -987,6 +988,13 @@ export class DuckDbGraphClient implements GraphDbClient {
   async listAllSymbols(): Promise<SymbolDefinition[]> {
     const rows = await this.queryAll<CgSymbolsRow>(`SELECT ${CG_SYMBOLS_DEF_COLUMNS.join(", ")} FROM cg_symbols`);
     return rows.map(fromCgSymbolsRow);
+  }
+
+  async listFileContentHashes(): Promise<{ relPath: RelPath; contentHash: string | null }[]> {
+    const rows = await this.queryAll<{ rel_path: string; content_hash: string | null }>(
+      "SELECT rel_path, content_hash FROM cg_symbols_files",
+    );
+    return rows.map((r) => ({ relPath: r.rel_path, contentHash: r.content_hash }));
   }
 
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {

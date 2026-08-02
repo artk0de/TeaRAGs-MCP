@@ -6,6 +6,7 @@
  * File processing logic is delegated to FileProcessor.
  */
 
+import { isDebug } from "../../../infra/runtime.js";
 import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } from "../../../types.js";
 import { NotIndexedError, PartialDeletionError, ReindexFailedError, SnapshotMissingError } from "../errors.js";
 import { cleanupOrphanedVersions, sweepCodegraphOrphans } from "../infra/alias-cleanup.js";
@@ -18,7 +19,6 @@ import {
 import { processRelativeFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
-import { isDebug } from "../../../infra/runtime.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import type { DeletionOutcome } from "../sync/deletion/outcome.js";
 import { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
@@ -26,10 +26,26 @@ import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.
 import { QuarantineStore } from "../sync/index.js";
 import type { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
+import { resolveAliasTargetCollection } from "./version-resolver.js";
 
 interface ReindexContext {
   absolutePath: string;
+  /**
+   * Stable Qdrant alias. Addresses artifacts that must survive a version bump:
+   * the quarantine store and the project registry entry.
+   */
   collectionName: string;
+  /**
+   * Physical, versioned collection the alias points at (equal to
+   * `collectionName` when there is no alias). Addresses everything opened by
+   * LITERAL name — above all the codegraph DuckDB file, which
+   * `GraphDbClientPool.pathFor()` derives from the string it is handed.
+   * Qdrant resolves either name server-side, so passing the alias here looked
+   * harmless while it silently wrote a shadow `<alias>.duckdb` no reader opens
+   * (bd tea-rags-mcp-6goqa). Mirrors `SetupResult.targetCollection` on the
+   * force path.
+   */
+  targetCollection: string;
   synchronizer: ParallelFileSynchronizer;
   scanner: FileScanner;
   currentFiles: string[];
@@ -139,12 +155,14 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       // have shipped, or the file became readable). Computed BEFORE the
       // no-changes / deletion-only early returns so a pure-retry pass is not
       // short-circuited.
+      // Alias, not the versioned target: quarantine survives version bumps so a
+      // poison-pill file stays quarantined across a force reindex.
       const quarantineStore = new QuarantineStore(this.snapshotDir, ctx.collectionName);
       const retryPaths = await this.computeQuarantineRetry(quarantineStore, ctx, changes);
       stats.filesRetried = retryPaths.length;
 
       if (this.hasNoChanges(stats) && retryPaths.length === 0) {
-        await storeIndexingMarker(this.qdrant, this.embeddings, ctx.collectionName, true);
+        await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
         await ctx.synchronizer.deleteCheckpoint();
         stats.durationMs = Date.now() - startTime;
         return stats;
@@ -153,7 +171,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       // Deletion-only: no files to add/modify/retry → skip pipeline init and enrichment
       if (changes.added.length === 0 && changes.modified.length === 0 && retryPaths.length === 0) {
         await this.executeDeletionOnly(ctx, changes, stats, progressCallback);
-        await storeIndexingMarker(this.qdrant, this.embeddings, ctx.collectionName, true);
+        await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
         await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
         await ctx.synchronizer.deleteCheckpoint();
         stats.enrichmentStatus = "skipped";
@@ -161,7 +179,20 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         return stats;
       }
 
-      this.startHeartbeat(ctx.collectionName);
+      // Bring provider stores back in line with the code before the run's own
+      // enrichment (bd tea-rags-mcp-6goqa). Deliberately on THIS path only, so a
+      // repair and the finalize that recomputes cycles + metrics always happen
+      // together — a run that took one of the early returns above would extract
+      // rows and leave the derived tables stale. Silent: the cost shows up as
+      // time, not as a message. Hashes come from the scan detectChanges just
+      // did, so nothing is re-read.
+      await this.enrichment.runRepairPass(
+        ctx.targetCollection,
+        ctx.absolutePath,
+        ctx.synchronizer.getCurrentFileHashes(),
+      );
+
+      this.startHeartbeat(ctx.targetCollection);
       const { chunksAdded, chunksDeleted, processingCtx, chunkMap, filesSkippedDueToDeleteFailure } =
         await this.executeParallelPipelines(
           ctx,
@@ -213,7 +244,9 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     const scanner = this.createScanner();
     const currentFiles = await this.scanFiles(absolutePath, scanner);
 
-    return { absolutePath, collectionName, synchronizer, scanner, currentFiles };
+    const targetCollection = resolveAliasTargetCollection(collectionName, await this.qdrant.aliases.listAliases());
+
+    return { absolutePath, collectionName, targetCollection, synchronizer, scanner, currentFiles };
   }
 
   private async runMigrations(collectionName: string, absolutePath: string): Promise<void> {
@@ -310,7 +343,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     // them hit the client's requestTimeoutMs. Resumed in `finally`; if the
     // process dies between pause and resume, the next reindex's `pauseOptimizer`
     // is idempotent and the subsequent `resumeOptimizer` heals the collection.
-    await this.qdrant.pauseOptimizer(ctx.collectionName);
+    await this.qdrant.pauseOptimizer(ctx.targetCollection);
 
     try {
       const exec = await this.runParallelPipelines(ctx, plan, progressCallback);
@@ -328,7 +361,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       // pass for all accumulated tombstones — a single repack instead of
       // continuous reactive ones during ingest. Failure here is non-fatal:
       // next reindex's pause/resume cycle heals the collection.
-      await this.qdrant.resumeOptimizer(ctx.collectionName).catch((err) => {
+      await this.qdrant.resumeOptimizer(ctx.targetCollection).catch((err) => {
         if (isDebug()) console.error(`[Reindex] resumeOptimizer failed (next reindex will heal):`, err);
       });
     }
@@ -352,7 +385,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     const changedPaths = [...changes.added, ...changes.modified, ...retryPaths];
     const pCtx = this.initProcessing(
-      ctx.collectionName,
+      ctx.targetCollection,
       ctx.absolutePath,
       ctx.scanner,
       changedPaths,
@@ -426,7 +459,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     // modified for the same reason.
     const deletePromise = performDeletion(
       this.qdrant,
-      ctx.collectionName,
+      ctx.targetCollection,
       plan.filesToDelete,
       this.deleteConfig,
       progressCallback,
@@ -437,7 +470,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       // re-walked by the codegraph upsert below. The collection name
       // is forwarded so collection-scoped providers (codegraph) prune
       // the right per-collection DuckDB.
-      async () => this.enrichment.notifyDeletions(plan.providerDeletedOnly, ctx.collectionName),
+      async () => this.enrichment.notifyDeletions(plan.providerDeletedOnly, ctx.targetCollection),
     ).then((outcome) => {
       deletionOutcome = outcome;
       ({ chunksDeleted } = outcome);
@@ -541,13 +574,14 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     const getEnrichmentStatus = await this.finalizeProcessing(
       processingCtx,
       chunkMap,
-      ctx.collectionName,
+      ctx.targetCollection,
       ctx.absolutePath,
     );
 
-    await storeIndexingMarker(this.qdrant, this.embeddings, ctx.collectionName, true);
+    await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
     await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
     await ctx.synchronizer.deleteCheckpoint();
+    // Alias: the registry addresses the stable name, matching the force path.
     await this.recordRegistryEntry(ctx.collectionName, ctx.absolutePath);
 
     const enrichmentResult = getEnrichmentStatus();
@@ -579,22 +613,22 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     pipelineLog.reindexPhase("DELETE_ONLY_START", { files: filesToDelete.length });
 
-    await this.qdrant.pauseOptimizer(ctx.collectionName);
+    await this.qdrant.pauseOptimizer(ctx.targetCollection);
 
     let outcome: DeletionOutcome;
     try {
       outcome = await performDeletion(
         this.qdrant,
-        ctx.collectionName,
+        ctx.targetCollection,
         filesToDelete,
         this.deleteConfig,
         progressCallback,
         // Same provider-notification hook as the parallel path — the
         // deletion-only branch must not skip it.
-        async (paths) => this.enrichment.notifyDeletions(paths, ctx.collectionName),
+        async (paths) => this.enrichment.notifyDeletions(paths, ctx.targetCollection),
       );
     } finally {
-      await this.qdrant.resumeOptimizer(ctx.collectionName).catch((err) => {
+      await this.qdrant.resumeOptimizer(ctx.targetCollection).catch((err) => {
         if (isDebug()) console.error(`[Reindex] resumeOptimizer failed (next reindex will heal):`, err);
       });
     }
