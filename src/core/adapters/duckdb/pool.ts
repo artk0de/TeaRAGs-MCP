@@ -224,6 +224,19 @@ export class GraphDbClientPool {
   }
 
   /**
+   * Whether a graph database file exists for this collection.
+   *
+   * The read path needs it to tell two failures apart that `acquireReader`
+   * reports identically (both throw): a collection that never had a graph —
+   * indexed with codegraph off, so "no edges" is the honest answer — and one
+   * whose graph is there but unreadable (lock held, daemon down, corruption),
+   * where an empty edge list would be a false statement about the code.
+   */
+  hasDatabase(collectionName: string): boolean {
+    return existsSync(this.pathFor(collectionName));
+  }
+
+  /**
    * Enumerate the versioned codegraph DB collection names on disk for a base
    * collection — every `<base>_v<N>.duckdb` file in the codegraph dir, returned
    * as the collection name (suffix stripped). Used by the orphan sweep to find

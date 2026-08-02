@@ -184,14 +184,30 @@ describe("GraphFacade", () => {
     expect(response.cycles).toHaveLength(1);
   });
 
-  // New behaviour for slice-2 pool wiring: when the per-collection
-  // DuckDB can't be opened (lock held by another process, missing
-  // file, init failure), the facade surfaces empty results rather
-  // than propagating the error to the MCP tool. Mirrors the spec
-  // "codegraph optional" guarantee — the MCP server keeps responding.
-  it("returns empty response when the pool cannot open the collection", async () => {
+  // An empty edge list is an ASSERTION ABOUT THE CODE — the caller is entitled
+  // to act on it. "The graph exists but I could not read it" is not that, and
+  // the two used to be the same response. A caller that cannot tell them apart
+  // reads a read failure as "this symbol has no callers" and reasons on from
+  // there. So the split is by whether the graph database is even there.
+  it("surfaces the failure when the graph database exists but cannot be read", async () => {
     const pool = {
       acquireReader: vi.fn().mockRejectedValue(new Error("lock held")),
+      hasDatabase: vi.fn().mockReturnValue(true),
+      peek: vi.fn().mockReturnValue(undefined),
+    } as unknown as GraphDbClientPool;
+    const facade = new GraphFacade({ pool, collectionRegistry: fakeRegistry({}) });
+    await expect(facade.getCallers({ path: "/proj", symbolId: "X" })).rejects.toThrow(/lock held/);
+    await expect(facade.getCallees({ path: "/proj", symbolId: "X" })).rejects.toThrow(/lock held/);
+    await expect(facade.findCycles({ path: "/proj", scope: "file" })).rejects.toThrow(/lock held/);
+  });
+
+  // The "codegraph optional" guarantee is preserved where it actually applies:
+  // a project indexed without codegraph has no graph database at all, and
+  // asking it for edges is answered, not refused.
+  it("returns empty response when the collection has no graph database at all", async () => {
+    const pool = {
+      acquireReader: vi.fn().mockRejectedValue(new Error("no such file")),
+      hasDatabase: vi.fn().mockReturnValue(false),
       peek: vi.fn().mockReturnValue(undefined),
     } as unknown as GraphDbClientPool;
     const facade = new GraphFacade({ pool, collectionRegistry: fakeRegistry({}) });
@@ -446,6 +462,9 @@ describe("GraphFacade#resolveSymbolChunk", () => {
   it("returns null when the read handle cannot be acquired (codegraph absent)", async () => {
     const pool = {
       acquireReader: vi.fn().mockRejectedValue(new Error("no daemon")),
+      // Absent means absent: no graph database on disk, so the empty answer is
+      // the honest one (a graph that exists but will not open now throws).
+      hasDatabase: vi.fn().mockReturnValue(false),
     };
     const facade = new GraphFacade({
       pool: pool as never,
