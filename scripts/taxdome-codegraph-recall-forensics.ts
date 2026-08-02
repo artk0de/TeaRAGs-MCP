@@ -75,8 +75,10 @@ import {
 } from "../src/core/domains/language/ruby/resolver/strategies/shared.js";
 import {
   boundCallReturnType,
+  CONTAINER_ELEMENT_RETURNING_METHODS,
   ivarTypeName,
   returnTypeOf,
+  typeOfReceiver,
 } from "../src/core/domains/language/ruby/resolver/type-propagation.js";
 import {
   forEachClassScope,
@@ -878,6 +880,7 @@ function resolvePass2(extraction: FileExtraction): void {
         callsResolved += 1;
         kindTally[receiverKind].resolved += 1;
         outcome = "resolved";
+        if (CONTAINER_RELATION_ENABLED) noteContainerRelationResolved(call, ctx, extraction.relPath);
         if (SUPER_ORACLE_ENABLED && receiverKind === "super") {
           // Precision probe: `super` can never dispatch to the calling method
           // itself, so a target equal to `callerSymbolId` is a false edge. The
@@ -895,6 +898,7 @@ function resolvePass2(extraction: FileExtraction): void {
         callsExternalSkipped += 1;
         kindTally[receiverKind].externalSkipped += 1;
         outcome = "externalSkipped";
+        if (CONTAINER_RELATION_ENABLED) noteContainerRelationExternal(call, ctx, extraction.relPath);
       } else if (symbolTable.lookupByShortName(call.member).length === 0) {
         callsNoInProjectDef += 1;
         kindTally[receiverKind].noInProjectDef += 1;
@@ -910,6 +914,7 @@ function resolvePass2(extraction: FileExtraction): void {
         // THE RECALL HOLE: unresolved, non-dynamic, non-external, has in-project def.
         recordMiss(call, receiverKind, extraction.relPath, chunk.scope, chunk.symbolId);
         outcome = "miss";
+        if (CONTAINER_RELATION_ENABLED) noteContainerRelationMiss(call, ctx, extraction.relPath, chunk.symbolId);
         if (SUPER_ORACLE_ENABLED && receiverKind === "super") {
           noteSuperMiss(call, ctx, extraction.relPath, chunk);
         }
@@ -8239,6 +8244,715 @@ function runIncludeGraphOracle(): void {
   L("");
 }
 
+// ===========================================================================
+// CONTAINER-RELATION THREADING ORACLE (bd tea-rags-mcp-vfo3e, 2026-08-02)
+//
+// Same additive, env-gated contract as every oracle above: with
+// CODEGRAPH_CONTAINER_RELATION_ORACLE unset nothing extra is captured, walked or
+// reported, and the A/B recall metrics stay byte-identical.
+//
+// It sizes ONE hypothesis. `returnTypeOf`'s container branch answers ONLY the
+// element-returning set — `documents.page(1)`, `documents.where(…)`,
+// `scope.ransack(…)` on a `container(Document)` all return `undefined`, Rails'
+// own relation verbs included — so an identifier-rooted relation chain loses its
+// type at the FIRST query verb and everything downstream is silence. The gem
+// `relationReturning` grammars (kaminari / ransack / will_paginate) cannot cover
+// this: they are read by the walker's CONSTANT-rooted inference, and taxdome's
+// relation chains are identifier-rooted.
+//
+// The probe replays every dotted-chain MISS twice over the same ctx the real
+// resolver was handed:
+//   (a) CURRENT — the production hop walk (`returnTypeOf` verbatim, production's
+//       naive `split(".")`), to find WHERE the chain dies and on what member;
+//   (b) PROPOSED — the same walk with one changed rule: on a container receiver
+//       a relation verb (Rails core + gem `relationReturning` facet + a scope
+//       DECLARED on the element class) PRESERVES the container, and element
+//       extraction stays exactly where it is (the tail).
+// and then asks the honest recovery question: with the proposed terminal type,
+// does `miss.member` actually resolve through the REAL member lookup
+// (`resolveTypeInstanceMethod` / `resolveTypeStaticMethod`)? A container terminal
+// resolves NOTHING — `chainType` CONTINUEs on a non-nominal ref — so those are
+// reported apart, as the denominator shift they are (a typed container receiver
+// makes `localBindingTypedReceiverIsExternal` answer TRUE, moving the call from
+// recall hole to externalSkipped without adding an edge).
+//
+// Both splitters are measured. Production splits the receiver text on EVERY dot,
+// so `documents.where(active: true)` becomes `["documents","where(active:",
+// "true)"]` and the walk dies on a garbage segment rather than on `where`. The
+// balanced splitter says how much of the population is blocked by the splitter
+// instead of by the container rule — a prerequisite, if it is large.
+// ===========================================================================
+const CONTAINER_RELATION_ENABLED = process.env.CODEGRAPH_CONTAINER_RELATION_ORACLE === "1";
+const OUT_CONTAINER_RELATION = join(OUT_DIR, "container-relation-oracle.json");
+
+/** One dotted-chain recall hole, with the ctx the resolver saw. */
+interface CrCandidate {
+  readonly call: CallRef;
+  readonly ctx: CallContext;
+  readonly relPath: string;
+  readonly callerSymbolId: string;
+}
+const crCandidates: CrCandidate[] = [];
+
+/** Capture hook — pass-2 miss branch, gated. Dotted receivers only. */
+function noteContainerRelationMiss(call: CallRef, ctx: CallContext, relPath: string, callerSymbolId: string): void {
+  const { receiver } = call;
+  if (!receiver?.includes(".")) return;
+  crCandidates.push({ call, ctx, relPath, callerSymbolId });
+}
+
+/**
+ * REGRESSION probe over the currently-RESOLVED population — the half a
+ * miss-only oracle cannot see.
+ *
+ * A dotted-chain call whose receiver types to NOTHING today reaches
+ * `RubyDynamicDispatchResolver`'s speculative short-name fan-out (the guard at
+ * `if (r.includes(".")) { … class|instance → defer }` only steps aside for a
+ * NOMINAL type). Give that receiver a nominal type and the fan-out defers to
+ * `chainType`, which either resolves the member exactly or DROPs. So every
+ * chain the proposal newly types is a call that STOPS fanning out — a precision
+ * win when the member is on the element, a RESOLVED→DROP regression when it is
+ * not. This counts both sides before a line of src/ changes.
+ */
+const crResolvedRisk = { seen: 0, newlyNominal: 0, memberHolds: 0, memberLost: 0 };
+const crRegressionSamples: string[] = [];
+const crRegressionMembers = new Map<string, number>();
+
+/**
+ * The BLIND SPOT a miss-only oracle cannot see. A receiver that already types to
+ * a CONTAINER is claimed by `localBindingTypedReceiverIsExternal` (container →
+ * external) long before it can become a recall hole, so every scope / class
+ * method called on a typed relation leaves the run as `externalSkipped`, not as
+ * a miss. Container-preservation only ENLARGES that population — it types more
+ * receivers as containers — so the honest size of the container axis is:
+ *   • containerToday          — receivers already typed container here;
+ *   • …memberOnElement        — of those, how many members ARE defined on the
+ *                               element class (a real edge the run never draws);
+ *   • containerAfterProposal  — receivers the relation-verb rule would newly type;
+ *   • …memberOnElement        — the same question for those.
+ * Nothing here is credited to the recall hole: these calls are outside it today.
+ */
+const crExternal = {
+  seen: 0,
+  containerToday: 0,
+  containerTodayMemberOnElement: 0,
+  containerAfterProposal: 0,
+  containerAfterProposalMemberOnElement: 0,
+};
+const crExternalMembers = new Map<string, number>();
+const crExternalProposalMembers = new Map<string, number>();
+const crExternalSamples: string[] = [];
+
+function noteContainerRelationExternal(call: CallRef, ctx: CallContext, relPath: string): void {
+  const { receiver } = call;
+  if (receiver === null || receiver.length === 0) return;
+  crExternal.seen += 1;
+  const current = typeOfReceiver(receiver, call.startLine, ctx);
+  if (current?.form === "container") {
+    crExternal.containerToday += 1;
+    if (crElementMemberResolves(current.element, call.member, ctx)) {
+      crExternal.containerTodayMemberOnElement += 1;
+      crBump(crExternalMembers, call.member);
+      if (crExternalSamples.length < 25) {
+        crExternalSamples.push(
+          `${relPath}:${call.startLine}  «${receiver}».${call.member}  el=${crTypeLabel(current.element)}`,
+        );
+      }
+    }
+    return;
+  }
+  if (current !== undefined || !receiver.includes(".")) return;
+  const proposed = crWalk(receiver.split("."), call.startLine, ctx, true);
+  if (proposed?.terminal?.form !== "container") return;
+  crExternal.containerAfterProposal += 1;
+  if (crElementMemberResolves(proposed.terminal.element, call.member, ctx)) {
+    crExternal.containerAfterProposalMemberOnElement += 1;
+    crBump(crExternalProposalMembers, call.member);
+  }
+}
+
+/** Is `member` defined on the container's ELEMENT class (scope / class method / instance)? */
+function crElementMemberResolves(element: RubyTypeRef, member: string, ctx: CallContext): boolean {
+  if (element.form !== "instance" && element.form !== "class") return false;
+  const asStatic = resolveTypeStaticMethod(element.name, member, ctx, "strict");
+  if (asStatic !== null && asStatic.targetSymbolId !== null) return true;
+  const asInstance = resolveTypeInstanceMethod(element.name, member, ctx, "strict");
+  return asInstance !== null && asInstance.targetSymbolId !== null;
+}
+
+function noteContainerRelationResolved(call: CallRef, ctx: CallContext, relPath: string): void {
+  const { receiver } = call;
+  if (!receiver?.includes(".")) return;
+  const current = typeOfReceiver(receiver, call.startLine, ctx);
+  if (current !== undefined && (current.form === "class" || current.form === "instance")) return; // already deferred
+  const proposed = crWalk(receiver.split("."), call.startLine, ctx, true);
+  if (proposed === undefined) return;
+  crResolvedRisk.seen += 1;
+  const { terminal } = proposed;
+  if (terminal === undefined || (terminal.form !== "class" && terminal.form !== "instance")) return;
+  crResolvedRisk.newlyNominal += 1;
+  if (crMemberResolves(terminal, call.member, ctx).target !== null) {
+    crResolvedRisk.memberHolds += 1;
+    return;
+  }
+  crResolvedRisk.memberLost += 1;
+  crBump(crRegressionMembers, call.member);
+  if (crRegressionSamples.length < 25) {
+    crRegressionSamples.push(`${relPath}:${call.startLine}  «${receiver}».${call.member}  → ${crTypeLabel(terminal)}`);
+  }
+}
+
+/** A bare constant chain head — `resolveChain`'s `CONST_HEAD`, verbatim. */
+const CR_CONST_HEAD = /^[A-Z]\w*(?:::[A-Z]\w*)*$/;
+/** `@ivar` head. */
+const CR_IVAR_HEAD = /^@\w+$/;
+
+/** `resolveChain`'s `stripArgs`, verbatim. */
+function crStripArgs(segment: string): string {
+  const paren = segment.indexOf("(");
+  return paren === -1 ? segment : segment.slice(0, paren);
+}
+
+/** The hop cap the engine reads per call (`chainMaxHops`), verbatim. */
+function crMaxHops(): number {
+  const raw = process.env.CODEGRAPH_RB_CHAIN_MAX_HOPS;
+  if (raw === undefined) return 4;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 4;
+}
+
+/**
+ * Split on TOP-LEVEL dots only — parens / brackets / braces / string literals
+ * hold the split off. NOT what production does; measured beside the naive split
+ * so the report can separate "blocked by the container rule" from "blocked by
+ * the splitter".
+ */
+function crBalancedSplit(receiver: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = 0;
+  let quote: string | null = null;
+  for (let i = 0; i < receiver.length; i++) {
+    const ch = receiver[i];
+    if (quote !== null) {
+      if (ch === quote && receiver[i - 1] !== "\\") quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") depth += 1;
+    else if (ch === ")" || ch === "]" || ch === "}") depth -= 1;
+    else if (ch === "." && depth === 0) {
+      out.push(receiver.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(receiver.slice(start));
+  return out;
+}
+
+/** `declaredReturnTypeOn` for a CLASS coordinate, mirrored (scopes key on `.`). */
+function crDeclaredOn(className: string, member: string, ctx: CallContext): RubyTypeRef | undefined {
+  return ctx.structuredReturnTypes?.[`${className}.${member}`] ?? ctx.structuredReturnTypes?.[`${className}#${member}`];
+}
+
+/** `declaredReturnType` (own coordinate, then the ancestor MRO), mirrored. */
+function crDeclaredReturnType(className: string, member: string, ctx: CallContext): RubyTypeRef | undefined {
+  const own = crDeclaredOn(className, member, ctx);
+  if (own !== undefined) return own;
+  for (const ancestor of ctx.classAncestors?.[className] ?? []) {
+    const inherited = crDeclaredOn(ancestor, member, ctx);
+    if (inherited !== undefined) return inherited;
+  }
+  return undefined;
+}
+
+/** The PROPOSED container-receiver rule. Element extraction stays first. */
+function crContainerMemberType(
+  recv: RubyTypeRef & { form: "container" },
+  member: string,
+  ctx: CallContext,
+): { type: RubyTypeRef | undefined; via: "element" | "scope" | "vocabulary" | "none" } {
+  if (CONTAINER_ELEMENT_RETURNING_METHODS.has(member)) return { type: recv.element, via: "element" };
+  const { element } = recv;
+  if (element.form === "instance" || element.form === "class") {
+    const declared = crDeclaredReturnType(element.name, member, ctx);
+    if (declared?.form === "container") return { type: declared, via: "scope" };
+  }
+  if (catalogueForGemfile(ctx.gemfileContent).relationReturning.has(member)) return { type: recv, via: "vocabulary" };
+  return { type: undefined, via: "none" };
+}
+
+/** Is `member` a relation verb on a container of `element`, under the proposal? */
+function crIsRelationVerb(element: RubyTypeRef, member: string, ctx: CallContext): boolean {
+  if (CONTAINER_ELEMENT_RETURNING_METHODS.has(member)) return false;
+  if (element.form === "instance" || element.form === "class") {
+    const declared = crDeclaredReturnType(element.name, member, ctx);
+    if (declared?.form === "container") return true;
+  }
+  return catalogueForGemfile(ctx.gemfileContent).relationReturning.has(member);
+}
+
+type CrRoot = "const" | "ivar" | "ident" | "other";
+
+/** `resolveChain`'s seed, mirrored (declared fact, then instance-returning vocabulary). */
+function crSeed(
+  head: string,
+  links: readonly string[],
+  atLine: number,
+  ctx: CallContext,
+): { type: RubyTypeRef | undefined; startLink: number; root: CrRoot } {
+  const root: CrRoot = CR_CONST_HEAD.test(head)
+    ? "const"
+    : CR_IVAR_HEAD.test(head)
+      ? "ivar"
+      : /^[a-z_]\w*[?!]?$/.test(head)
+        ? "ident"
+        : "other";
+  const firstLink = links[0];
+  const headMember = firstLink === undefined ? null : crStripArgs(firstLink);
+  if (headMember !== null && root === "const") {
+    const declared = crDeclaredReturnType(head, headMember, ctx);
+    if (declared !== undefined) return { type: declared, startLink: 1, root };
+    if (catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(headMember)) {
+      return { type: { form: "instance", name: head }, startLink: 1, root };
+    }
+  }
+  return { type: typeOfReceiver(head, atLine, ctx), startLink: 0, root };
+}
+
+interface CrWalk {
+  readonly seed: RubyTypeRef | undefined;
+  readonly root: CrRoot;
+  readonly terminal: RubyTypeRef | undefined;
+  /** Index into `links` of the hop that answered `undefined`; -1 when none did. */
+  readonly blockedAt: number;
+  readonly blockedMember: string | null;
+  readonly blockedRecvForm: string | null;
+  /** `true` when the blocking hop was a container receiver + a KNOWN relation verb. */
+  readonly blockedOnRelationVerb: boolean;
+  /** Relation verbs the PROPOSED rule threaded through, in chain order. */
+  readonly threadedVerbs: string[];
+  readonly overCap: boolean;
+}
+
+/** Walk a split chain. `preserve` switches the container branch to the proposal. */
+function crWalk(segments: readonly string[], atLine: number, ctx: CallContext, preserve: boolean): CrWalk | undefined {
+  const head = segments[0];
+  if (head === undefined || head.length === 0) return undefined;
+  const links = segments.slice(1);
+  const seedInfo = crSeed(head, links, atLine, ctx);
+  const overCap = links.length > crMaxHops();
+  const threadedVerbs: string[] = [];
+  if (overCap) {
+    return {
+      seed: seedInfo.type,
+      root: seedInfo.root,
+      terminal: undefined,
+      blockedAt: -1,
+      blockedMember: null,
+      blockedRecvForm: null,
+      blockedOnRelationVerb: false,
+      threadedVerbs,
+      overCap: true,
+    };
+  }
+  let current = seedInfo.type;
+  if (current === undefined) {
+    return {
+      seed: undefined,
+      root: seedInfo.root,
+      terminal: undefined,
+      blockedAt: -1,
+      blockedMember: null,
+      blockedRecvForm: null,
+      blockedOnRelationVerb: false,
+      threadedVerbs,
+      overCap: false,
+    };
+  }
+  for (let i = seedInfo.startLink; i < links.length; i++) {
+    const member = crStripArgs(links[i]);
+    const recv = current;
+    let next: RubyTypeRef | undefined;
+    if (recv.form === "container" && preserve) {
+      const answer = crContainerMemberType(recv, member, ctx);
+      next = answer.type;
+      if (answer.via === "scope" || answer.via === "vocabulary") threadedVerbs.push(member);
+    } else {
+      next = returnTypeOf(recv, member, ctx);
+    }
+    if (next === undefined) {
+      return {
+        seed: seedInfo.type,
+        root: seedInfo.root,
+        terminal: undefined,
+        blockedAt: i,
+        blockedMember: member,
+        blockedRecvForm: recv.form,
+        blockedOnRelationVerb: recv.form === "container" && crIsRelationVerb(recv.element, member, ctx),
+        threadedVerbs,
+        overCap: false,
+      };
+    }
+    current = next;
+  }
+  return {
+    seed: seedInfo.type,
+    root: seedInfo.root,
+    terminal: current,
+    blockedAt: -1,
+    blockedMember: null,
+    blockedRecvForm: null,
+    blockedOnRelationVerb: false,
+    threadedVerbs,
+    overCap: false,
+  };
+}
+
+/**
+ * Would `member` resolve on this terminal type through the REAL member lookup?
+ * `chainType` only asks class/instance forms — a container/union terminal
+ * CONTINUEs and produces no edge, which is exactly what `null` means here.
+ */
+function crMemberResolves(
+  terminal: RubyTypeRef,
+  member: string,
+  ctx: CallContext,
+): { target: SymbolResolutionTarget | null; exact: boolean } {
+  if (terminal.form !== "class" && terminal.form !== "instance") return { target: null, exact: false };
+  const target =
+    terminal.form === "class"
+      ? resolveTypeStaticMethod(terminal.name, member, ctx, "strict")
+      : resolveTypeInstanceMethod(terminal.name, member, ctx, "strict");
+  return { target, exact: target !== null && target.targetSymbolId !== null };
+}
+
+/** Verdict buckets for one candidate under the proposed rule. */
+const CR_VERDICT = {
+  seedUntyped: "seed-untyped (head carries no type — receiver-typing hole, not ours)",
+  overCap: "over hop-cap (links > CODEGRAPH_RB_CHAIN_MAX_HOPS)",
+  alreadyTyped: "chain ALREADY types today (miss is downstream of the receiver)",
+  blockedElsewhere: "blocked on a NON-container hop (fact hole, not the container rule)",
+  blockedUnknownMember: "blocked on a container + UNKNOWN member (proposal must stay silent)",
+  recoveredExact: "RECOVERED — container threaded, tail extracts, member resolves to a symbol",
+  recoveredFileOnly: "recovered file-only (target with no symbolId — weak edge)",
+  terminalContainer: "terminal stays a CONTAINER — no edge; receiver becomes typed (denominator shift)",
+  terminalTypedNoMember: "terminal types, member NOT on it — DROP, no edge, no metric change",
+} as const;
+type CrVerdict = (typeof CR_VERDICT)[keyof typeof CR_VERDICT];
+
+interface CrRow {
+  readonly relPath: string;
+  readonly line: number;
+  readonly member: string;
+  readonly receiver: string;
+  readonly callerSymbolId: string;
+  readonly root: CrRoot;
+  readonly verdict: CrVerdict;
+  readonly balancedVerdict: CrVerdict;
+  readonly blockedMember: string | null;
+  readonly threadedVerbs: string[];
+  readonly terminal: string;
+  readonly target: string | null;
+  /** Did the NAIVE (production) split mangle this receiver? */
+  readonly naiveMangled: boolean;
+}
+
+/** One splitter's verdict for one candidate. */
+interface CrProjection {
+  readonly verdict: CrVerdict;
+  readonly target: string | null;
+  readonly current: CrWalk;
+  readonly proposed: CrWalk;
+}
+
+/** Replay one candidate under a given segmentation: current rule, then proposal. */
+function crProject(cand: CrCandidate, segments: readonly string[]): CrProjection | undefined {
+  const current = crWalk(segments, cand.call.startLine, cand.ctx, false);
+  const proposed = crWalk(segments, cand.call.startLine, cand.ctx, true);
+  if (current === undefined || proposed === undefined) return undefined;
+  if (current.overCap) return { verdict: CR_VERDICT.overCap, target: null, current, proposed };
+  if (current.seed === undefined) return { verdict: CR_VERDICT.seedUntyped, target: null, current, proposed };
+  if (current.terminal !== undefined) return { verdict: CR_VERDICT.alreadyTyped, target: null, current, proposed };
+  if (current.blockedRecvForm !== "container") {
+    return { verdict: CR_VERDICT.blockedElsewhere, target: null, current, proposed };
+  }
+  if (!current.blockedOnRelationVerb) {
+    return { verdict: CR_VERDICT.blockedUnknownMember, target: null, current, proposed };
+  }
+  const { terminal } = proposed;
+  if (terminal === undefined) return { verdict: CR_VERDICT.blockedElsewhere, target: null, current, proposed };
+  if (terminal.form === "container") return { verdict: CR_VERDICT.terminalContainer, target: null, current, proposed };
+  const hit = crMemberResolves(terminal, cand.call.member, cand.ctx);
+  if (hit.exact && hit.target !== null) {
+    return { verdict: CR_VERDICT.recoveredExact, target: hit.target.targetSymbolId, current, proposed };
+  }
+  if (hit.target !== null) {
+    return { verdict: CR_VERDICT.recoveredFileOnly, target: `file:${hit.target.targetRelPath}`, current, proposed };
+  }
+  return { verdict: CR_VERDICT.terminalTypedNoMember, target: null, current, proposed };
+}
+
+function crTypeLabel(type: RubyTypeRef | undefined): string {
+  if (type === undefined) return "undefined";
+  if (type.form === "class" || type.form === "instance") return `${type.form} ${type.name}`;
+  if (type.form === "container") return `container(${crTypeLabel(type.element)})`;
+  if (type.form === "union") return `union[${type.members.map(crTypeLabel).join("|")}]`;
+  return type.form;
+}
+
+function crBump(map: Map<string, number>, key: string, by = 1): void {
+  map.set(key, (map.get(key) ?? 0) + by);
+}
+
+function runContainerRelationOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  const rows: CrRow[] = [];
+  const verdicts = new Map<string, number>();
+  const balancedVerdicts = new Map<string, number>();
+  const blockedVerbs = new Map<string, number>();
+  const blockedUnknown = new Map<string, number>();
+  const threadedVerbFreq = new Map<string, number>();
+  const recoveredVerbFreq = new Map<string, number>();
+  const recoveredMembers = new Map<string, number>();
+  const rootSplit = new Map<string, number>();
+  const receiverVerbMentions = new Map<string, number>();
+  const elementLookupWins = { primary: 0, balanced: 0 };
+  const elementLookupMembers = new Map<string, number>();
+  let naiveMangledTotal = 0;
+  let safeNav = 0;
+
+  const catalogue = catalogueForGemfile(gemfileContent);
+
+  for (const cand of crCandidates) {
+    const { receiver } = cand.call;
+    if (receiver === null) continue;
+    if (receiver.includes("&.")) safeNav += 1;
+
+    // Which relation verbs the receiver TEXT mentions at all — the census the
+    // bead's "249 ransack sites" line lives in, independent of typing.
+    for (const verb of catalogue.relationReturning) {
+      if (receiver.includes(`.${verb}(`) || receiver.endsWith(`.${verb}`)) crBump(receiverVerbMentions, verb);
+    }
+
+    const naive = receiver.split(".");
+    const balanced = crBalancedSplit(receiver);
+    const mangled = naive.length !== balanced.length;
+    if (mangled) naiveMangledTotal += 1;
+
+    // PRIMARY projection = production's own splitter, because the change under
+    // consideration touches the container branch and NOTHING else. The balanced
+    // split is the upper bound a splitter fix would additionally unlock.
+    const primary = crProject(cand, naive);
+    const upper = crProject(cand, balanced);
+    if (primary === undefined || upper === undefined) continue;
+
+    crBump(rootSplit, primary.current.root);
+    crBump(verdicts, primary.verdict);
+    crBump(balancedVerdicts, upper.verdict);
+
+    // Verb tables read the BALANCED walk: production's split turns
+    // `where(active: true)` into garbage segments, so the naive blocked-member
+    // name is noise while the balanced one is the verb a design must cover.
+    if (upper.current.blockedRecvForm === "container") {
+      if (upper.current.blockedMember !== null) {
+        crBump(upper.current.blockedOnRelationVerb ? blockedVerbs : blockedUnknown, upper.current.blockedMember);
+      }
+      for (const verb of upper.proposed.threadedVerbs) crBump(threadedVerbFreq, verb);
+    }
+    if (primary.verdict === CR_VERDICT.recoveredExact) {
+      crBump(recoveredMembers, cand.call.member);
+      for (const verb of primary.proposed.threadedVerbs) crBump(recoveredVerbFreq, verb);
+    }
+    // A container terminal draws no edge under `chainType` as it stands. Would it
+    // draw one if the member were looked up on the ELEMENT class (the second,
+    // separable mechanism: scope / class-method dispatch on a relation receiver)?
+    const primaryTerminal = primary.proposed.terminal;
+    if (primary.verdict === CR_VERDICT.terminalContainer && primaryTerminal?.form === "container") {
+      if (crElementMemberResolves(primaryTerminal.element, cand.call.member, cand.ctx)) {
+        elementLookupWins.primary += 1;
+        crBump(elementLookupMembers, cand.call.member);
+      }
+    }
+    const upperTerminal = upper.proposed.terminal;
+    if (upper.verdict === CR_VERDICT.terminalContainer && upperTerminal?.form === "container") {
+      if (crElementMemberResolves(upperTerminal.element, cand.call.member, cand.ctx)) elementLookupWins.balanced += 1;
+    }
+
+    rows.push({
+      relPath: cand.relPath,
+      line: cand.call.startLine,
+      member: cand.call.member,
+      receiver,
+      callerSymbolId: cand.callerSymbolId,
+      root: primary.current.root,
+      verdict: primary.verdict,
+      balancedVerdict: upper.verdict,
+      blockedMember: upper.current.blockedMember ?? primary.current.blockedMember,
+      threadedVerbs: upper.proposed.threadedVerbs,
+      terminal: crTypeLabel(primary.proposed.terminal),
+      target: primary.target,
+      naiveMangled: mangled,
+    });
+  }
+
+  const rank = (m: Map<string, number>, n = 25): [string, number][] =>
+    [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
+
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  CONTAINER-RELATION THREADING ORACLE (bd tea-rags-mcp-vfo3e)");
+  L("═══════════════════════════════════════════════════════════════════");
+  L(`all recall holes:                    ${misses.length}`);
+  L(`  ... with a DOTTED-CHAIN receiver:  ${crCandidates.length}`);
+  L(`  ... rows walked:                   ${rows.length}`);
+  L(`safe-navigation (&.) receivers:      ${safeNav}`);
+  L("");
+  L("─── (a) where the chain dies today — PRODUCTION splitter ──────────");
+  for (const [verdict, n] of [...verdicts.entries()].sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(6)}  ${verdict}`);
+  }
+  L("");
+  L("─── same, under a BALANCED splitter (upper bound, NOT this change) ─");
+  for (const [verdict, n] of [...balancedVerdicts.entries()].sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(6)}  ${verdict}`);
+  }
+  L("");
+  L("─── chain-root form (dotted-chain misses) ─────────────────────────");
+  for (const [root, n] of [...rootSplit.entries()].sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(6)}  ${root}-rooted`);
+  }
+  L("");
+  L("─── (b) BLOCKING verb: container receiver + KNOWN relation verb ───");
+  L(`  distinct verbs: ${blockedVerbs.size}   sites: ${[...blockedVerbs.values()].reduce((a, b) => a + b, 0)}`);
+  for (const [verb, n] of rank(blockedVerbs, 40)) L(`  ${String(n).padStart(6)}  .${verb}`);
+  L("");
+  L("─── blocking member on a container that is NOT a known verb ───────");
+  L(`  (the proposal must stay SILENT on every one of these)`);
+  L(`  distinct: ${blockedUnknown.size}   sites: ${[...blockedUnknown.values()].reduce((a, b) => a + b, 0)}`);
+  for (const [member, n] of rank(blockedUnknown, 25)) L(`  ${String(n).padStart(6)}  .${member}`);
+  L("");
+  L("─── relation verbs the PROPOSED rule threads through ──────────────");
+  for (const [verb, n] of rank(threadedVerbFreq, 40)) L(`  ${String(n).padStart(6)}  .${verb}`);
+  L("");
+  L("─── (c) PROJECTED RECOVERY (member must exist on the element) ─────");
+  const recoveredExact = verdicts.get(CR_VERDICT.recoveredExact) ?? 0;
+  const recoveredFileOnly = verdicts.get(CR_VERDICT.recoveredFileOnly) ?? 0;
+  const terminalContainer = verdicts.get(CR_VERDICT.terminalContainer) ?? 0;
+  const terminalNoMember = verdicts.get(CR_VERDICT.terminalTypedNoMember) ?? 0;
+  L(`  exact new edges (symbolId target):   ${recoveredExact}`);
+  L(`  file-only targets (weak edge):       ${recoveredFileOnly}`);
+  L(`  terminal stays container (NO edge):  ${terminalContainer}   <-- miss → externalSkipped, metric-only`);
+  L(`  terminal typed, member absent:       ${terminalNoMember}   <-- DROP, no change`);
+  L(
+    `  => recall-hole change: -${recoveredExact + recoveredFileOnly + terminalContainer} ` +
+      `(of which ${recoveredExact + recoveredFileOnly} are real edges, ${terminalContainer} denominator-only)`,
+  );
+  L("");
+  L("─── recovered members (top) ───────────────────────────────────────");
+  for (const [member, n] of rank(recoveredMembers, 25)) L(`  ${String(n).padStart(6)}  .${member}`);
+  L("");
+  L("─── verbs carrying the recovery ───────────────────────────────────");
+  for (const [verb, n] of rank(recoveredVerbFreq, 25)) L(`  ${String(n).padStart(6)}  .${verb}`);
+  L("");
+  L("─── (c2) element-class lookup ON a container receiver ─────────────");
+  L("  (SEPARABLE second mechanism: chainType CONTINUEs on a container today;");
+  L("   dispatching the member to the ELEMENT class would draw these edges)");
+  L(`  container-terminal misses whose member IS on the element:  ${elementLookupWins.primary} (production split)`);
+  L(`  ... under a balanced splitter:                             ${elementLookupWins.balanced}`);
+  for (const [member, n] of rank(elementLookupMembers, 20)) L(`  ${String(n).padStart(6)}  .${member}`);
+  L("");
+  L("─── (d) BLIND SPOT: container receivers already outside the hole ──");
+  L("  A container-typed receiver is claimed by the external classifier before it");
+  L("  can become a miss, so these calls never appear in the recall hole at all.");
+  L(`  externalSkipped calls with a receiver:              ${crExternal.seen}`);
+  L(`  ... whose receiver types CONTAINER today:           ${crExternal.containerToday}`);
+  L(
+    `  ... ... whose member IS defined on the element:     ${crExternal.containerTodayMemberOnElement}   <-- edges the run never draws`,
+  );
+  L(`  ... newly container under the relation-verb rule:   ${crExternal.containerAfterProposal}`);
+  L(`  ... ... whose member IS defined on the element:     ${crExternal.containerAfterProposalMemberOnElement}`);
+  L("  top members (already-container half):");
+  for (const [member, n] of rank(crExternalMembers, 20)) L(`  ${String(n).padStart(6)}  .${member}`);
+  L("  top members (newly-container half):");
+  for (const [member, n] of rank(crExternalProposalMembers, 20)) L(`  ${String(n).padStart(6)}  .${member}`);
+  L("  samples (already-container half):");
+  for (const s of crExternalSamples) L(`    ${s}`);
+  L("");
+  L("─── (e) REGRESSION RISK on currently-RESOLVED chains ──────────────");
+  L("  A chain the proposal newly types NOMINALLY stops fanning out speculatively");
+  L("  (dynamic dispatch defers to chainType). That is a precision win when the");
+  L("  member is on the element and a resolved→DROP LOSS when it is not.");
+  L(`  resolved dotted-chain calls with a non-nominal receiver: ${crResolvedRisk.seen}`);
+  L(`  ... newly NOMINAL under the proposal:                    ${crResolvedRisk.newlyNominal}`);
+  L(`  ... ... member still resolves (precision win):           ${crResolvedRisk.memberHolds}`);
+  L(`  ... ... member does NOT resolve (RESOLVED → DROP):       ${crResolvedRisk.memberLost}   <-- hard regression`);
+  for (const [member, n] of rank(crRegressionMembers, 15)) L(`  ${String(n).padStart(6)}  .${member}`);
+  for (const s of crRegressionSamples.slice(0, 10)) L(`    ${s}`);
+  L("");
+  L("─── splitter gate (production splits on EVERY dot) ────────────────");
+  L(`  receivers the naive split mangles:   ${naiveMangledTotal} / ${rows.length}`);
+  L(`  verdict rows where the two splitters DISAGREE: ${rows.filter((r) => r.verdict !== r.balancedVerdict).length}`);
+  L("");
+  L("─── relation-verb MENTIONS in miss receiver text (typing-blind) ───");
+  for (const [verb, n] of rank(receiverVerbMentions, 30)) L(`  ${String(n).padStart(6)}  .${verb}`);
+  L("");
+  L("─── sample RECOVERED sites ────────────────────────────────────────");
+  for (const row of rows.filter((r) => r.verdict === CR_VERDICT.recoveredExact).slice(0, 20)) {
+    L(`  ${row.relPath}:${row.line}  «${row.receiver}».${row.member}`);
+    L(`      verbs=[${row.threadedVerbs.join(",")}] terminal=${row.terminal} → ${row.target ?? "-"}`);
+  }
+  L("");
+  L("─── sample CONTAINER-TERMINAL sites (denominator-only) ────────────");
+  for (const row of rows.filter((r) => r.verdict === CR_VERDICT.terminalContainer).slice(0, 15)) {
+    L(`  ${row.relPath}:${row.line}  «${row.receiver}».${row.member}  terminal=${row.terminal}`);
+  }
+  L("");
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_CONTAINER_RELATION,
+    JSON.stringify(
+      {
+        meta: {
+          generatedAt: new Date().toISOString(),
+          allMisses: misses.length,
+          dottedChainMisses: crCandidates.length,
+          walked: rows.length,
+          naiveMangledTotal,
+          splitterDisagreements: rows.filter((r) => r.verdict !== r.balancedVerdict).length,
+          safeNav,
+        },
+        verdicts: Object.fromEntries(verdicts),
+        balancedVerdicts: Object.fromEntries(balancedVerdicts),
+        elementLookupWins,
+        elementLookupMembers: Object.fromEntries(rank(elementLookupMembers, 200)),
+        externalBlindSpot: crExternal,
+        externalBlindSpotMembers: Object.fromEntries(rank(crExternalMembers, 200)),
+        externalBlindSpotProposalMembers: Object.fromEntries(rank(crExternalProposalMembers, 200)),
+        resolvedRegressionRisk: crResolvedRisk,
+        resolvedRegressionMembers: Object.fromEntries(rank(crRegressionMembers, 200)),
+        rootSplit: Object.fromEntries(rootSplit),
+        blockedVerbs: Object.fromEntries(rank(blockedVerbs, 200)),
+        blockedUnknownMembers: Object.fromEntries(rank(blockedUnknown, 200)),
+        threadedVerbs: Object.fromEntries(rank(threadedVerbFreq, 200)),
+        recoveredVerbs: Object.fromEntries(rank(recoveredVerbFreq, 200)),
+        recoveredMembers: Object.fromEntries(rank(recoveredMembers, 200)),
+        receiverVerbMentions: Object.fromEntries(rank(receiverVerbMentions, 200)),
+        rows: rows.slice(0, 4000),
+      },
+      null,
+      2,
+    ),
+  );
+  L(`container-relation oracle → ${OUT_CONTAINER_RELATION}`);
+  L("");
+}
+
 // ---------------------------------------------------------------------------
 // MAIN
 // ---------------------------------------------------------------------------
@@ -8621,6 +9335,7 @@ async function main(): Promise<void> {
   if (NULLARY_ENABLED) runNullaryOracle();
   if (INTRACLASS_ENABLED) runIntraClassOracle();
   if (INCLUDEGRAPH_ENABLED) runIncludeGraphOracle();
+  if (CONTAINER_RELATION_ENABLED) runContainerRelationOracle();
   if (ORACLE_ENABLED) runOracle(Date.now() - t0, files.length);
   if (SUPER_ORACLE_ENABLED) runSuperOracle();
   if (LOCAL_CENSUS_ENABLED) runLocalCensus();
