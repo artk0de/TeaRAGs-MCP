@@ -18,7 +18,7 @@ import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
 import type { ChunkPhase } from "./chunk-phase.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
-import { enrichmentScope } from "./policy.js";
+import { enrichmentScope, enrichmentSkipReason, type EnrichmentSkipReason } from "./policy.js";
 import type { ProviderContext } from "./types.js";
 
 interface FilePhaseState {
@@ -162,12 +162,27 @@ export class FilePhase {
       if (state.prefetchFailed) continue;
 
       const root = ctx.effectiveRoot ?? absolutePath;
+      // Settle the batch's file-level declines before anything can return early
+      // — every path below drops them silently, and a point that ends the run
+      // carrying neither terminal marker is a recovery candidate for the NEXT
+      // run (bd tea-rags-mcp-okra9).
+      const stampWork = this.stampDeclinedFiles(coll, ctx, items, root);
+      if (stampWork) state.fileWork.push(stampWork);
+
       const relPaths = this.uniqueRelPaths(items, root);
       // Per-file enrichment policy: drop files this provider declines entirely
       // ("none"). "file-only" still enriches file-level here — only chunk-phase
       // skips those. Providers without shouldEnrich get "full" (no-op filter).
       const enrichPaths = relPaths.filter((rel) => enrichmentScope(ctx.provider, rel) !== "none");
-      if (enrichPaths.length === 0) continue;
+      if (enrichPaths.length === 0) {
+        // Nothing to enrich, but the provider still belongs in the gate map:
+        // the coordinator drives ChunkPhase off it, and ChunkPhase has to see
+        // this batch to write its own chunk-level stamps. Dropping the provider
+        // here left an all-declined batch (a run of `spec/` under a provider
+        // that excludes tests) unstamped at chunk level.
+        perProvider.set(ctx.key, stampWork ?? Promise.resolve());
+        continue;
+      }
 
       // Fully-deferred providers (codegraph): still DRIVE streamFileBatch so the
       // run sink extracts the batch into the graph during embedding overlap, but
@@ -223,9 +238,10 @@ export class FilePhase {
             items,
             ctx.provider.fileSignalTransform,
             this.runStartedAt,
-            // A file the provider declined entirely ("none") is intentionally
-            // unenriched — counted as ignored, not missed.
-            (rel) => enrichmentScope(ctx.provider, rel) === "none",
+            // A file the provider declined at this level is intentionally
+            // unenriched — counted as ignored, not missed, and never stamped
+            // `enrichedAt` (its terminal marker is the skip stamp).
+            (rel, level) => enrichmentSkipReason(ctx.provider, rel, level) !== null,
           );
           state.streamingApplies++;
           pipelineLog.enrichmentPhase("STREAMING_APPLY", {
@@ -264,10 +280,10 @@ export class FilePhase {
       ctx.provider.fileSignalTransform,
       this.runStartedAt,
       // bd tea-rags-mcp-yl9tv — classify a missing overlay by POLICY, not by
-      // overlay presence: a file the provider declined entirely ("none") is
+      // overlay presence: a file the provider declined at this level is
       // ignored, not a silent bare-stamp. Mirrors the streaming applyFileSignals
       // call above so both apply paths agree on ignored vs missed.
-      (rel) => enrichmentScope(ctx.provider, rel) === "none",
+      (rel, level) => enrichmentSkipReason(ctx.provider, rel, level) !== null,
     );
     state.streamingApplies++;
     state.prefetchEndTime = Date.now();
@@ -354,6 +370,51 @@ export class FilePhase {
         msg,
       );
     }
+  }
+
+  /**
+   * Write `<provider>.file.skippedAs` for the batch's policy-declined files.
+   *
+   * The stamp is the second terminal state of the enrichment decision, and the
+   * one nothing used to write at index time: only `EnrichmentRecovery` did, so
+   * a freshly indexed declined file (a new spec, a new doc) finished the run
+   * carrying neither marker and was settled a run later. This is the drop site,
+   * so it is where the decline gets recorded — the applier's ignored branch
+   * cannot own it, because a batch whose files are ALL declined never reaches
+   * the applier at all.
+   *
+   * Best-effort: a failed stamp write leaves those points in the next run's
+   * recovery scan, which is exactly the pre-fix behaviour, so it degrades
+   * instead of breaking the run.
+   *
+   * @returns the write promise (tracked in `fileWork` so `drain` awaits it), or
+   *   undefined when the batch has nothing declined.
+   */
+  private stampDeclinedFiles(
+    coll: string,
+    ctx: ProviderContext,
+    items: ChunkItem[],
+    root: string,
+  ): Promise<void> | undefined {
+    if (!ctx.provider.shouldEnrich) return undefined;
+    const reasonByRel = new Map<string, EnrichmentSkipReason | null>();
+    const stamps: { id: string; skippedAs: EnrichmentSkipReason }[] = [];
+    for (const item of items) {
+      const rel = relative(root, item.chunk.metadata.filePath);
+      let reason = reasonByRel.get(rel);
+      if (reason === undefined) {
+        reason = enrichmentSkipReason(ctx.provider, rel, "file");
+        reasonByRel.set(rel, reason);
+      }
+      if (reason !== null) stamps.push({ id: item.chunkId, skippedAs: reason });
+    }
+    if (stamps.length === 0) return undefined;
+    return this.applier
+      .applySkipStamps(coll, ctx.key, "file", stamps)
+      .then(() => undefined)
+      .catch((error: unknown) => {
+        console.error(`[Enrichment:${ctx.key}] file skip-stamp write failed (${stamps.length} points):`, error);
+      });
   }
 
   private uniqueRelPaths(items: ChunkItem[], root: string): string[] {

@@ -173,12 +173,19 @@ export class EnrichmentApplier {
     enrichedAt?: string,
     /**
      * Predicate (injected by the caller, which knows the provider's policy):
-     * true ⇒ this file was intentionally skipped by `shouldEnrich === "none"`.
-     * Such a file has no overlay BY DESIGN — count it as ignored (not missed)
-     * and write NO stamp, so it carries no git payload at all. Keeps the
-     * applier provider-agnostic (it never imports the policy itself).
+     * true ⇒ the policy declines this file at that LEVEL. Keeps the applier
+     * provider-agnostic (it never imports the policy itself).
+     *
+     * At "file" level a declined file has no overlay BY DESIGN — count it as
+     * ignored (not missed) and write no `enrichedAt`. Its `skippedAs` stamp is
+     * written by FilePhase, which sees the whole batch including the ones this
+     * apply pass is never called for (bd tea-rags-mcp-okra9).
+     *
+     * At "chunk" level the answer gates the bare chunk stamp below: a file the
+     * policy declines at chunk level gets `skippedAs` from ChunkPhase, and the
+     * two terminal markers must not both land on the same point.
      */
-    isIgnored?: (relativePath: string) => boolean,
+    isIgnored?: (relativePath: string, level: "file" | "chunk") => boolean,
   ): Promise<void> {
     const applyStart = Date.now();
     const byFile = this.groupItemsByFile(items);
@@ -225,7 +232,7 @@ export class EnrichmentApplier {
     fileMetadata: Map<string, FileSignalOverlay>,
     transform: FileSignalTransform | undefined,
     enrichedAt: string | undefined,
-    isIgnored: ((relativePath: string) => boolean) | undefined,
+    isIgnored: ((relativePath: string, level: "file" | "chunk") => boolean) | undefined,
   ): {
     operations: { payload: Record<string, unknown>; points: (string | number)[]; key?: string }[];
     opResidual: ({ relativePath: string; chunk: MissedFileChunk } | null)[];
@@ -246,9 +253,10 @@ export class EnrichmentApplier {
       const data = fileMetadata.get(relativePath);
       if (!data) {
         // Intentional policy skip — record as ignored, NOT missed, and write no
-        // stamp (the file stays free of any git payload). Recovery's
+        // `enrichedAt` (the file gets a `skippedAs` stamp from FilePhase, which
+        // sees the batches this apply pass never runs for). Recovery's
         // scrollUnenriched also filters these, so they never go degraded.
-        if (isIgnored?.(relativePath)) {
+        if (isIgnored?.(relativePath, "file")) {
           this.ignoredPaths.add(relativePath);
           continue;
         }
@@ -260,6 +268,11 @@ export class EnrichmentApplier {
             endLine: item.chunk.endLine,
           })),
         );
+        // A file can be owed enrichment at file level and declined at chunk
+        // level (git takes a doc's file signals but never walks its chunks).
+        // ChunkPhase stamps `skippedAs` on those chunks, so stamping
+        // `enrichedAt` here too would put both terminal states on one point.
+        const chunkDeclined = isIgnored?.(relativePath, "chunk") === true;
         if (enrichedAt) {
           for (const item of fileItems) {
             // File-level stamp: marks "we tried, no git history".
@@ -269,6 +282,7 @@ export class EnrichmentApplier {
               key: `${providerKey}.file`,
             });
             opResidual.push(null);
+            if (chunkDeclined) continue;
             // Chunk-level stamp: same semantics. Without this, recovery keeps
             // counting these chunks forever and forces chunk.status=degraded
             // even though there is nothing retriable.
@@ -380,10 +394,12 @@ export class EnrichmentApplier {
      * overlay — e.g. dropped under concurrency) is a real `missed` tracked for
      * backfill. Without this, a missing overlay was silently bare-stamped and
      * counted neither way, so ignoredFiles swung run-to-run with file timing.
-     * Mirrors `applyFileSignals`. Optional so existing callers stay valid;
-     * absent ⇒ legacy bare-stamp (no provider policy available).
+     * Mirrors `applyFileSignals`, including its level parameter — only "file"
+     * is asked here, since this path writes no chunk-level stamp. Optional so
+     * existing callers stay valid; absent ⇒ legacy bare-stamp (no provider
+     * policy available).
      */
-    isIgnored?: (relativePath: string) => boolean,
+    isIgnored?: (relativePath: string, level: "file" | "chunk") => boolean,
   ): Promise<number> {
     const fileKey = `${providerKey}.file`;
     const ops: {
@@ -394,18 +410,22 @@ export class EnrichmentApplier {
     let appliedFiles = 0;
 
     for (const [relPath, entries] of chunkMap) {
+      // Policy first, overlay second (bd tea-rags-mcp-yl9tv, extended by
+      // okra9). A declined file is ignored — no `enrichedAt` here, since
+      // FilePhase writes its `skippedAs` stamp — whether or not an overlay
+      // exists for it. The overlay can exist: finalizeSignals reads a PERSISTED
+      // graph, so a run made after `excludeTests` was turned on is still handed
+      // rows for spec files indexed under the old config. Enriching one would
+      // put both terminal markers on the same point.
+      if (isIgnored?.(relPath, "file")) {
+        this.ignoredPaths.add(relPath);
+        continue;
+      }
       const overlay = fileOverlays.get(relPath);
       if (!overlay) {
-        // No overlay for this file. Classify by POLICY (bd tea-rags-mcp-yl9tv),
-        // not by overlay presence:
-        //   - policy "none" (e.g. generated / vendored, OR a language the
-        //     provider doesn't graph) ⇒ ignored, NO stamp (carries no payload).
-        //   - otherwise a genuine miss ⇒ track for backfill AND bare-stamp so
-        //     recovery doesn't count it unenriched forever.
-        if (isIgnored?.(relPath)) {
-          this.ignoredPaths.add(relPath);
-          continue;
-        }
+        // A genuine miss (declined by NO policy yet still no overlay — e.g.
+        // dropped under concurrency) ⇒ track for backfill AND bare-stamp so
+        // recovery doesn't count it unenriched forever.
         this.missedTracker.track(
           relPath,
           entries.map((e) => ({ chunkId: e.chunkId, startLine: e.startLine, endLine: e.endLine })),

@@ -676,4 +676,108 @@ describe("ChunkPhase", () => {
       expect((point.payload as any).git.chunk.churnRatio).toBe(1);
     });
   });
+
+  // bd tea-rags-mcp-okra9 — the chunk-level half of the skip stamp. Every path
+  // below this point filters declined files out silently, so unless the drop
+  // site records the decline the run ends with those points unmarked and the
+  // next run's recovery scan pays for them.
+  describe("skip stamps for policy-declined chunks", () => {
+    const declineDocsAtChunkLevel = (f: { classification: { isDocumentation: boolean } }) =>
+      f.classification.isDocumentation ? "file-only" : "full";
+
+    const docItem = {
+      chunkId: "d1",
+      chunk: { metadata: { filePath: "/repo/docs/guide.md" }, startLine: 1, endLine: 20 },
+    } as any;
+
+    it("stamps a file the provider enriches at file level but declines at chunk level", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      const stampSpy = vi.spyOn(applier, "applySkipStamps").mockResolvedValue(1);
+      const ctx = buildCtx({ shouldEnrich: declineDocsAtChunkLevel });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+
+      phase.onBatch("coll", "/repo", [...items, docItem]);
+      await phase.drain();
+
+      expect(stampSpy).toHaveBeenCalledWith("coll", "git", "chunk", [{ id: "d1", skippedAs: "documentation" }]);
+      // The churn walk still runs, for the source file only.
+      expect(ctx.provider.buildChunkSignals).toHaveBeenCalledTimes(1);
+    });
+
+    it("stamps a fully declined batch even though no walk is dispatched", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      const stampSpy = vi.spyOn(applier, "applySkipStamps").mockResolvedValue(1);
+      const ctx = buildCtx({ shouldEnrich: declineDocsAtChunkLevel });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+
+      phase.onBatch("coll", "/repo", [docItem]);
+      await phase.drain();
+
+      expect(stampSpy).toHaveBeenCalledWith("coll", "git", "chunk", [{ id: "d1", skippedAs: "documentation" }]);
+      expect(ctx.provider.buildChunkSignals).not.toHaveBeenCalled();
+    });
+
+    it("stamps a deferred provider's declines at accumulation time", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      const stampSpy = vi.spyOn(applier, "applySkipStamps").mockResolvedValue(1);
+      const ctx = buildCtx({
+        defersChunkEnrichment: true,
+        shouldEnrich: (f: { classification: { isTest: boolean } }) => (f.classification.isTest ? "none" : "full"),
+      });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+
+      phase.onBatch("coll", "/repo", [
+        ...items,
+        {
+          chunkId: "t1",
+          chunk: { metadata: { filePath: "/repo/spec/models/user_spec.rb" }, startLine: 1, endLine: 30 },
+        } as any,
+      ]);
+      await phase.drain();
+
+      expect(stampSpy).toHaveBeenCalledWith("coll", "git", "chunk", [{ id: "t1", skippedAs: "test" }]);
+    });
+
+    it("runDeferredChunk leaves a declined file to its stamp instead of enriching it", async () => {
+      // The accumulated map is deliberately unfiltered — FilePhase.applyFinalize
+      // reads it to tell ignored from missed at FILE level — so the chunk-level
+      // policy has to be applied at the dispatch. Without it the deferred pass
+      // stamps enrichedAt over the skippedAs written at accumulation time and
+      // the point carries both terminal markers.
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      vi.spyOn(applier, "applySkipStamps").mockResolvedValue(1);
+      const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
+      const applySpy = vi.spyOn(applier, "applyChunkSignals").mockResolvedValue(1);
+      const ctx = buildCtx({
+        defersChunkEnrichment: true,
+        buildChunkSignals,
+        shouldEnrich: (f: { classification: { isTest: boolean } }) => (f.classification.isTest ? "none" : "full"),
+      });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+
+      phase.onBatch("coll", "/repo", [
+        ...items,
+        {
+          chunkId: "t1",
+          chunk: { metadata: { filePath: "/repo/spec/models/user_spec.rb" }, startLine: 1, endLine: 30 },
+        } as any,
+      ]);
+      await phase.drain();
+      await phase.runDeferredChunk("coll", ctx as any, "/repo", phase.getDeferredChunkMap("git"));
+
+      const dispatched = buildChunkSignals.mock.calls[0][1] as Map<string, unknown>;
+      expect([...dispatched.keys()]).toEqual(["src/a.ts"]);
+      // allRequestedChunkIds drives the "no signals found" enrichedAt stamp —
+      // the declined chunk must not be in it.
+      expect(applySpy.mock.calls[0][4]).toEqual(new Set(["c1"]));
+    });
+  });
 });
