@@ -1,7 +1,7 @@
 # Enrichment skip stamp — recovery stops rescanning deliberately-skipped points
 
-Bead: `tea-rags-mcp-zt6qr` (P1, `performance`) Date: 2026-08-02 Status: design
-approved, not implemented
+Bead: `tea-rags-mcp-zt6qr` (P1, `performance`) Date: 2026-08-02 Status:
+implemented in `eb687658`, live-validated on taxdome
 
 ## Problem
 
@@ -78,8 +78,15 @@ provider that shipped later.
 A declined point gets a terminal marker alongside `enrichedAt`:
 
 ```text
-<providerKey>.<level>.skippedAs = "generated" | "test" | "documentation"
+<providerKey>.<level>.skippedAs = "generated" | "test" | "documentation" | "policy"
 ```
+
+`"policy"` is the catch-all for a provider that declined without any
+classification flag explaining it. Every declined point MUST get a value: an
+unstamped decline stays in the recovery scan forever, which is the defect this
+vocabulary exists to close. On taxdome it is never reached — all 30 664
+codegraph stamps read `test` — but a provider is free to decline on grounds
+`classify()` knows nothing about, and the stamp has to survive that.
 
 Keyword, not boolean, and not a sentinel written into `enrichedAt`. A sentinel
 would poison a datetime field, break its index and any range query over it. A
@@ -164,10 +171,50 @@ Qdrant walks the collection to evaluate it — measured at roughly 1.4 s per lev
 on 89 336 points. Four levels, so the recovery phase settles at about 6 s,
 against roughly 60 s today.
 
-That is a 10× improvement, not elimination. Eliminating the scan entirely
-requires gating recovery on the previous run's terminal marker, which
-subordinates recovery to the self-report of the run it exists to check. Rejected
-on that ground.
+That is an improvement, not elimination. Eliminating the scan entirely requires
+gating recovery on the previous run's terminal marker, which subordinates
+recovery to the self-report of the run it exists to check. Rejected on that
+ground.
+
+## Measured outcome
+
+Implemented in `eb687658`. Validated on taxdome (`code_27622aef`, 89 299 points)
+as a controlled A/B: same collection, same working tree, back to back, zero
+delta, only the build differs.
+
+| run                      | build      |    wall | qdrant CPU (mean) |
+| ------------------------ | ---------- | ------: | ----------------: |
+| control, pre-fix         | `448475f9` | 166.7 s |              295% |
+| stamping pass (one-time) | `eb687658` | 172.3 s |                 — |
+| steady state, post-stamp | `eb687658` |  15.2 s |              237% |
+
+**11.0×**, about 151 s off every incremental run. Both windows collapse
+together: the recovery scan at the front and `CompletionRunner`'s
+`countUnenriched` in the middle were the same predicate reached by two paths.
+
+The stamping pass costs slightly more than the control because it pays the full
+traversal _and_ writes 51 435 stamps. It happens once per collection.
+
+State after the stamping pass, read straight from Qdrant:
+
+- stamped: `git.chunk` 2 630, `codegraph.symbols.file` 30 664,
+  `codegraph.symbols.chunk` 18 141;
+- recovery candidates remaining: **0 at every provider and level**;
+- every codegraph stamp reads `test` — no `policy` catch-all, so the
+  classification explains every decline;
+- **0** points carry both `enrichedAt` and `skippedAs`, so the two terminal
+  states stayed mutually exclusive;
+- 30 669 → 30 664 and 18 241 → 18 141: the difference is points recovery
+  genuinely healed, now visible instead of buried in discarded traffic.
+
+Pre-fix code run against a stamped collection leaves the stamps intact, so
+reverting to an earlier build is safe.
+
+One caveat on the absolute numbers. Earlier in the same session a pre-fix
+zero-delta run measured 66–68 s, against 166.7 s for the same code here. The
+absolute cost of the scan moves with Qdrant's segment conditioning after a large
+rewrite, so the trustworthy claim is the **ratio** taken back to back on
+identical state, not "66 s became 15 s".
 
 ## Correctness invariants
 
