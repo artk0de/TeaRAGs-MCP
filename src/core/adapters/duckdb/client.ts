@@ -569,9 +569,30 @@ export class DuckDbGraphClient implements GraphDbClient {
     columns: readonly string[],
     rows: readonly (readonly unknown[])[],
   ): Promise<void> {
+    return this.insertBatched(table, columns, rows, "orIgnore");
+  }
+
+  /**
+   * Multi-row `INSERT` in chunks of {@link EDGE_INSERT_CHUNK_ROWS} — the shared
+   * write shape behind every bulk path here (~48x the per-row prepared INSERT,
+   * see that constant's docblock for the measurement).
+   *
+   * `mode` picks the duplicate-PK contract, and the two are NOT interchangeable:
+   * `"orIgnore"` is load-bearing where the same row can legitimately arrive
+   * twice (a file re-importing one module), while `"insert"` keeps a duplicate
+   * loud for callers that clear the table first and therefore treat a collision
+   * as a bug.
+   */
+  private async insertBatched(
+    table: string,
+    columns: readonly string[],
+    rows: readonly (readonly unknown[])[],
+    mode: "insert" | "orIgnore" = "insert",
+  ): Promise<void> {
     if (rows.length === 0) return;
     const tuple = `(${columns.map(() => "?").join(", ")})`;
-    const prefix = `INSERT OR IGNORE INTO ${table} (${columns.join(", ")}) VALUES `;
+    const verb = mode === "orIgnore" ? "INSERT OR IGNORE" : "INSERT";
+    const prefix = `${verb} INTO ${table} (${columns.join(", ")}) VALUES `;
     for (let i = 0; i < rows.length; i += EDGE_INSERT_CHUNK_ROWS) {
       const chunk = rows.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
       await this.run(prefix + chunk.map(() => tuple).join(", "), chunk.flat());
@@ -922,17 +943,14 @@ export class DuckDbGraphClient implements GraphDbClient {
     await this.exec("BEGIN");
     try {
       await this.run("DELETE FROM cg_symbols_cycles WHERE scope = ?", [scope]);
+      const rows: unknown[][] = [];
       for (let cycleId = 0; cycleId < sccs.length; cycleId++) {
         const members = sccs[cycleId];
         for (let position = 0; position < members.length; position++) {
-          await this.run("INSERT INTO cg_symbols_cycles (cycle_id, scope, member, position) VALUES (?, ?, ?, ?)", [
-            cycleId,
-            scope,
-            members[position],
-            position,
-          ]);
+          rows.push([cycleId, scope, members[position], position]);
         }
       }
+      await this.insertBatched("cg_symbols_cycles", ["cycle_id", "scope", "member", "position"], rows);
       await this.exec("COMMIT");
     } catch (err) {
       await this.exec("ROLLBACK");
@@ -948,9 +966,8 @@ export class DuckDbGraphClient implements GraphDbClient {
     await this.exec("BEGIN");
     try {
       await this.exec("DELETE FROM cg_symbols_metrics");
-      for (const [symbolId, rank] of ranks) {
-        await this.run("INSERT INTO cg_symbols_metrics (symbol_id, page_rank) VALUES (?, ?)", [symbolId, String(rank)]);
-      }
+      const rows = [...ranks].map(([symbolId, rank]) => [symbolId, String(rank)]);
+      await this.insertBatched("cg_symbols_metrics", ["symbol_id", "page_rank"], rows);
       await this.exec("COMMIT");
     } catch (err) {
       await this.exec("ROLLBACK");
