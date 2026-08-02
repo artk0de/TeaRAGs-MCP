@@ -172,15 +172,21 @@ export function collectKnownPaths(ctx: CallContext): Iterable<string> {
  * Flatten a class's ancestor chain into a declaration-order list, cycle-guarded
  * via a `visited` set (mirrors the depth-first traversal inside
  * `resolveInstanceMethodInClassChain`). `klass` itself is NOT included — the
- * caller decides whether to prepend it. Used by the bare-call narrowing to walk
- * the MRO nearest-first when filtering ambiguous short-name candidates (brp1).
+ * caller decides whether to prepend it.
  *
  * Kept separate from `resolveInstanceMethodInClassChain`: that function
  * interleaves per-node file resolution + method lookup with a
  * method-pin-wins-immediately short-circuit, which a pre-flattened list cannot
  * express without losing the early return. This helper is the pure structural
- * traversal both the chain walk and the bareCall narrowing express the same
- * single ancestor order with.
+ * traversal.
+ *
+ * **STORAGE order, deliberately unranked** (bd tea-rags-mcp-ymht3). Its one
+ * consumer, `superTargetsExternal`, asks whether EVERY ancestor is out of
+ * project — a membership question, where reordering is a no-op that would still
+ * pay for a full {@link linearizeAncestors} pass per node on every `super`
+ * classification. A consumer that instead takes the FIRST ancestor to answer
+ * needs {@link collectResolvedAncestorChain}, which ranks; the bare-call
+ * narrowing moved there for the FQ canonicalization it also needs (lawlq.3.4).
  */
 export function collectAncestorChain(klass: string, ctx: CallContext, visited: Set<string> = new Set()): string[] {
   if (visited.has(klass)) return [];
@@ -279,6 +285,14 @@ function canonicalizeMixinAlias(alias: string, includer: string, ctx: CallContex
  * `field`/`argument` on the HasFields/HasArguments mixins, 3 hops up an
  * `extend`/superclass chain). Cycle-guarded via `visited`; `klass` itself is
  * NOT included.
+ *
+ * Direct ancestors are emitted in {@link ancestorsInMroOrder}, not walker
+ * storage order (bd tea-rags-mcp-ymht3). Both consumers take the FIRST hop that
+ * answers — `bareCall`'s scope tiers and `schemaColumn`'s column match — so the
+ * order here IS their precedence rule, and storage order hands them the
+ * superclass where Ruby reaches a mixin. ORDER only: the emitted set is the
+ * ancestor closure either way, since `visited` dedups by reachability rather
+ * than by position.
  */
 export function collectResolvedAncestorChain(
   klass: string,
@@ -290,7 +304,7 @@ export function collectResolvedAncestorChain(
   const chain: string[] = [];
   const ancestors = ctx.classAncestors?.[klass];
   if (ancestors) {
-    for (const raw of ancestors) {
+    for (const raw of ancestorsInMroOrder(klass, ancestors, ctx)) {
       const fq = canonicalizeAncestorFq(raw, klass, ctx) ?? raw;
       if (visited.has(fq)) continue;
       chain.push(fq);

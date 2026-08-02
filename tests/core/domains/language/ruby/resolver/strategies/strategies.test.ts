@@ -953,7 +953,17 @@ describe("RubyBareCallSymbolResolutionStrategy", () => {
     );
     const outcome = strat.attempt(
       { callText: "render", receiver: null, member: "render", startLine: 1 },
-      ctx({ symbolTable, callerScope: ["Child"], classAncestors: { Child: ["Parent", "Grandparent"] } }),
+      // `class Child < Parent` / `class Parent < Grandparent` — the walker keys
+      // classAncestors per class and records the `<` in classExtends. Spelling
+      // the chain FLAT (`{ Child: ["Parent", "Grandparent"] }`) would say
+      // something else entirely: two `include`s on Child, whose nearest is the
+      // LAST one (bd tea-rags-mcp-ymht3).
+      ctx({
+        symbolTable,
+        callerScope: ["Child"],
+        classAncestors: { Child: ["Parent"], Parent: ["Grandparent"] },
+        classExtends: { Child: "Parent", Parent: "Grandparent" },
+      }),
     );
     expect(outcome).toEqual({
       kind: "resolved",
