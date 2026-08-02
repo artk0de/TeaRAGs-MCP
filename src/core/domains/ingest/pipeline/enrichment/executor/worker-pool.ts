@@ -48,6 +48,7 @@ import type {
   FileSignalOverlay,
   WorkerEnrichmentDescriptor,
 } from "../../../../../contracts/index.js";
+import { isDebug } from "../../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
 import { ThreadTransport } from "../../infra/thread-transport.js";
 import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
@@ -101,7 +102,10 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
     this.pool = new WorkerDispatchPool<EnrichmentWorkerRequest, EnrichmentWorkerResponse>(
       poolSize,
       new ThreadTransport<EnrichmentWorkerRequest, EnrichmentWorkerResponse>(workerPath),
-      {},
+      // Worker threads get a fresh module registry, so the debug flag does not
+      // survive the boundary on its own — ship it in the init payload or every
+      // marker the thread emits (the entire codegraph pass-2 phase) is dropped.
+      { debug: isDebug() },
       "EnrichmentPool",
       // Liveness timeout DISABLED (0 = unbounded) for enrichment. A single
       // collection-affinity finalize (codegraph streaming SCC + PageRank) can

@@ -41,6 +41,24 @@ export type UnenrichedReader = (coll: string, provider: EnrichmentProvider, leve
 export class CompletionRunner {
   constructor(private readonly deps: CompletionRunnerDeps) {}
 
+  /**
+   * Time one step of the serial tail and report it.
+   *
+   * This sequence is the last thing a run does, after every overlap has been
+   * exhausted, so its cost is wall-clock one-for-one. It used to emit nothing:
+   * two taxdome force-reindexes left 121 s and 261 s of silence between the
+   * final DEFERRED pass and ALL_COMPLETE, unattributable to any step. Reported
+   * on the failure path too — a step that threw still consumed its time.
+   */
+  private async timedStep<T>(step: string, run: () => Promise<T>): Promise<T> {
+    const startedAt = Date.now();
+    try {
+      return await run();
+    } finally {
+      pipelineLog.enrichmentPhase("COMPLETION_STEP", { step, durationMs: Date.now() - startedAt });
+    }
+  }
+
   async run(
     coll: string,
     contexts: ReadonlyMap<string, ProviderContext>,
@@ -73,65 +91,69 @@ export class CompletionRunner {
     // 2. finalize-file pass — deferred whole-repo FILE overlays (codegraph graph
     //    metrics) read back after the run sink finishes, applied by the
     //    accumulated chunkMap. git's finalizeSignals returns an empty map.
-    for (const ctx of contexts.values()) {
-      // Method-existence is no longer guarded here: runFinalize returns an
-      // empty map when the provider has no finalizeSignals (executor smooths
-      // over the optional method), and the size-zero branch below skips the
-      // apply step — equivalent to the old `if (!finalizeSignals) continue`.
-      if (filePhase.hasPrefetchFailed(ctx.key)) continue;
-      const root = ctx.effectiveRoot ?? "";
-      // Cross-pass end-of-file-phase flush: the MAIN-thread provider instance
-      // buffered node defs via `acceptExtraction` and flushed only complete
-      // cadence batches during embedding — its `N mod cadence` remainder is still
-      // buffered. `runFinalize` dispatches to a SEPARATE worker instance whose own
-      // buffer is empty, so flush the MAIN remainder HERE (on `ctx.provider`, the
-      // main instance) and await it BEFORE the worker resolves + upserts edges —
-      // nodes-before-edges across the instance boundary. Mirrors the cross-pass
-      // `beginExtractionRun` call in `coordinator.beginRun`. No-op off cross-pass
-      // (incremental finalize runs on this same instance and owns its own flush)
-      // and for providers without the seam (git omits it).
-      if (filePhase.crossPassEnabled) await ctx.provider.endExtractionRun?.(coll || undefined);
-      // yl9tv Task 5b — thread crossPass so the codegraph worker's finalize
-      // drains the main-written input spill (pass-1) before resolving (pass-2),
-      // instead of relying on a streamFileBatch that no-opped. Other providers
-      // (git) ignore the flag.
-      const fileOverlays = await executor.runFinalize(ctx.provider, root, {
-        collectionName: coll || undefined,
-        crossPass: filePhase.crossPassEnabled,
-      });
-      if (fileOverlays.size > 0) {
-        await filePhase.applyFinalize(coll, ctx, fileOverlays, chunkPhase.getDeferredChunkMap(ctx.key));
+    await this.timedStep("fileFinalize", async () => {
+      for (const ctx of contexts.values()) {
+        // Method-existence is no longer guarded here: runFinalize returns an
+        // empty map when the provider has no finalizeSignals (executor smooths
+        // over the optional method), and the size-zero branch below skips the
+        // apply step — equivalent to the old `if (!finalizeSignals) continue`.
+        if (filePhase.hasPrefetchFailed(ctx.key)) continue;
+        const root = ctx.effectiveRoot ?? "";
+        // Cross-pass end-of-file-phase flush: the MAIN-thread provider instance
+        // buffered node defs via `acceptExtraction` and flushed only complete
+        // cadence batches during embedding — its `N mod cadence` remainder is still
+        // buffered. `runFinalize` dispatches to a SEPARATE worker instance whose own
+        // buffer is empty, so flush the MAIN remainder HERE (on `ctx.provider`, the
+        // main instance) and await it BEFORE the worker resolves + upserts edges —
+        // nodes-before-edges across the instance boundary. Mirrors the cross-pass
+        // `beginExtractionRun` call in `coordinator.beginRun`. No-op off cross-pass
+        // (incremental finalize runs on this same instance and owns its own flush)
+        // and for providers without the seam (git omits it).
+        if (filePhase.crossPassEnabled) await ctx.provider.endExtractionRun?.(coll || undefined);
+        // yl9tv Task 5b — thread crossPass so the codegraph worker's finalize
+        // drains the main-written input spill (pass-1) before resolving (pass-2),
+        // instead of relying on a streamFileBatch that no-opped. Other providers
+        // (git) ignore the flag.
+        const fileOverlays = await executor.runFinalize(ctx.provider, root, {
+          collectionName: coll || undefined,
+          crossPass: filePhase.crossPassEnabled,
+        });
+        if (fileOverlays.size > 0) {
+          await filePhase.applyFinalize(coll, ctx, fileOverlays, chunkPhase.getDeferredChunkMap(ctx.key));
+        }
       }
-    }
-    await filePhase.drain();
+      await filePhase.drain();
+    });
 
     // 3. await the backfill kicked off before the finalize pass (see 2‖3 above).
     //    Must resolve before the terminal file markers below read per-provider
     //    unenriched counts — they must reflect post-backfill state.
-    const backfillOccurred = await backfillPromise;
+    const backfillOccurred = await this.timedStep("backfillAwait", async () => backfillPromise);
 
     // 4. markFileFinal per ctx — reconcile to degraded on residual file-unenriched.
-    for (const ctx of contexts.values()) {
-      const fileUnenriched = await readUnenriched(coll, ctx.provider, "file");
-      const fileStatus = filePhase.hasPrefetchFailed(ctx.key)
-        ? "failed"
-        : fileUnenriched > 0
-          ? "degraded"
-          : "completed";
-      await markerStore.markFileFinal(coll, ctx.key, {
-        runId,
-        status: fileStatus,
-        durationMs: filePhase.getPrefetchDurationMs(ctx.key),
-        unenrichedChunks: fileUnenriched,
-        matchedFiles: applier.matchedFiles,
-        missedFiles: applier.missedFiles,
-        ignoredFiles: applier.ignoredFiles,
-        // Carry the prefetch failure cause into the TERMINAL marker — this
-        // write used to overwrite markPrefetchFailed's errorMessage, leaving
-        // `failed` with no cause anywhere (worker stderr is detached).
-        ...(fileStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
-      });
-    }
+    await this.timedStep("fileMarkers", async () => {
+      for (const ctx of contexts.values()) {
+        const fileUnenriched = await readUnenriched(coll, ctx.provider, "file");
+        const fileStatus = filePhase.hasPrefetchFailed(ctx.key)
+          ? "failed"
+          : fileUnenriched > 0
+            ? "degraded"
+            : "completed";
+        await markerStore.markFileFinal(coll, ctx.key, {
+          runId,
+          status: fileStatus,
+          durationMs: filePhase.getPrefetchDurationMs(ctx.key),
+          unenrichedChunks: fileUnenriched,
+          matchedFiles: applier.matchedFiles,
+          missedFiles: applier.missedFiles,
+          ignoredFiles: applier.ignoredFiles,
+          // Carry the prefetch failure cause into the TERMINAL marker — this
+          // write used to overwrite markPrefetchFailed's errorMessage, leaving
+          // `failed` with no cause anywhere (worker stderr is detached).
+          ...(fileStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
+        });
+      }
+    });
 
     // 5. aggregate metrics
     const fileMetrics = filePhase.getMetrics();
@@ -163,7 +185,7 @@ export class CompletionRunner {
     // Heartbeats now fire at the applier apply-site (EnrichmentApplier.onApply →
     // coordinator.maybeHeartbeat), covering every apply path uniformly. The plain
     // drain() here no longer needs to thread onProgress per-settle.
-    await chunkPhase.drain();
+    await this.timedStep("chunkDrain", async () => chunkPhase.drain());
 
     // 7. deferred-chunk pass — codegraph buildChunkSignals against the finished
     //    graph with the full accumulated chunkMap, applied via applyChunkSignals.
@@ -173,38 +195,42 @@ export class CompletionRunner {
     // here. The previously-tracked limitation (tea-rags-mcp-xlhu) about the
     // codegraph.chunk phase potentially reporting "stalled" during a long
     // PageRank/resolve pass is resolved: the applier-site hook covers it.
-    for (const ctx of contexts.values()) {
-      if (!ctx.provider.defersChunkEnrichment || filePhase.hasPrefetchFailed(ctx.key)) continue;
-      const cm = chunkPhase.getDeferredChunkMap(ctx.key);
-      if (cm.size > 0) {
-        await chunkPhase.runDeferredChunk(coll, ctx, ctx.effectiveRoot ?? "", cm);
+    await this.timedStep("deferredChunk", async () => {
+      for (const ctx of contexts.values()) {
+        if (!ctx.provider.defersChunkEnrichment || filePhase.hasPrefetchFailed(ctx.key)) continue;
+        const cm = chunkPhase.getDeferredChunkMap(ctx.key);
+        if (cm.size > 0) {
+          await chunkPhase.runDeferredChunk(coll, ctx, ctx.effectiveRoot ?? "", cm);
+        }
       }
-    }
+    });
 
     const finalChunkMetrics = chunkPhase.getMetrics();
     metrics.chunkChurnDurationMs = finalChunkMetrics.totalChunkEnrichmentDurationMs;
 
     // 8. markChunkFinal per ctx
-    for (const ctx of contexts.values()) {
-      const chunkUnenriched = await readUnenriched(coll, ctx.provider, "chunk");
-      let chunkStatus: ChunkFinalInput["status"];
-      if (filePhase.hasPrefetchFailed(ctx.key) || chunkPhase.hasChunkEnrichmentFailed(ctx.key)) {
-        chunkStatus = "failed";
-      } else if (chunkUnenriched > 0) {
-        chunkStatus = "degraded";
-      } else {
-        chunkStatus = "completed";
+    await this.timedStep("chunkMarkers", async () => {
+      for (const ctx of contexts.values()) {
+        const chunkUnenriched = await readUnenriched(coll, ctx.provider, "chunk");
+        let chunkStatus: ChunkFinalInput["status"];
+        if (filePhase.hasPrefetchFailed(ctx.key) || chunkPhase.hasChunkEnrichmentFailed(ctx.key)) {
+          chunkStatus = "failed";
+        } else if (chunkUnenriched > 0) {
+          chunkStatus = "degraded";
+        } else {
+          chunkStatus = "completed";
+        }
+        await markerStore.markChunkFinal(coll, ctx.key, {
+          runId,
+          status: chunkStatus,
+          // iqpuu: per-provider wall span — the marker no longer inherits the
+          // cross-provider span (deferred codegraph used to stretch git's).
+          durationMs: finalChunkMetrics.providerDurationsMs[ctx.key] ?? 0,
+          unenrichedChunks: chunkUnenriched,
+          ...(chunkStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
+        });
       }
-      await markerStore.markChunkFinal(coll, ctx.key, {
-        runId,
-        status: chunkStatus,
-        // iqpuu: per-provider wall span — the marker no longer inherits the
-        // cross-provider span (deferred codegraph used to stretch git's).
-        durationMs: finalChunkMetrics.providerDurationsMs[ctx.key] ?? 0,
-        unenrichedChunks: chunkUnenriched,
-        ...(chunkStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
-      });
-    }
+    });
 
     // 9. Re-fire stats callback if backfill wrote post-streaming overlays.
     // First fire (streaming end inside ChunkPhase) preserves the 896f343c

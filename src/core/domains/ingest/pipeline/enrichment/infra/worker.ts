@@ -31,7 +31,7 @@
  *   Returns:  EnrichmentWorkerResponse (fileOverlay | chunkOverlay | released | error)
  */
 
-import { parentPort } from "node:worker_threads";
+import { parentPort, workerData } from "node:worker_threads";
 
 import type {
   ChunkSignalOptions,
@@ -39,12 +39,19 @@ import type {
   FileSignalOptions,
 } from "../../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
+import { applyWorkerDebug } from "../../infra/worker-debug.js";
 import type {
   EnrichmentCallRequest,
   EnrichmentReleaseRequest,
   EnrichmentWorkerRequest,
   EnrichmentWorkerResponse,
 } from "./worker-protocol.js";
+
+// A worker thread starts with its own module registry, so the debug flag is
+// false here until the pool's init payload says otherwise. Without this, every
+// marker this thread emits — the whole codegraph pass-2 phase among them — is
+// dropped silently, which is why that window was never measurable.
+applyWorkerDebug(workerData);
 
 /**
  * Factory shape — providers expose this as the named export referenced by
