@@ -507,14 +507,35 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Codegraph policy: generated files have no human-authored call graph, and
-   * tests skew fanOut/isHub/PageRank (high fanOut, fanIn=0), so both stay out
-   * unconditionally (bd tea-rags-mcp-6xxh5). Docs are irrelevant to the graph
-   * and enrich fully (no chunk graph is emitted for them anyway). Reads the
-   * shared FileClassification fact.
+   * Codegraph policy — ONE source of truth for "is this path in scope", shared
+   * with the graph walk (bd tea-rags-mcp-5ikhf).
+   *
+   * The authority is `codegraphExclusionFilter`, the same instance
+   * `discoverSupportedFiles`, `streamFileBatchInner`, `buildFileSignals` and
+   * `acceptExtraction` consult. It carries the unconditional generated + test
+   * patterns, each language's own non-app-code globs (Ruby's `db/migrate/**`)
+   * and the user's `CODEGRAPH_CUSTOM_EXCLUDE`.
+   *
+   * The two must agree or the point is stranded. A path the walk drops can
+   * never receive a `codegraph.symbols.<level>.enrichedAt` — no overlay is read
+   * back for it, and codegraph is skipped by the backfill pass
+   * (`defersChunkEnrichment`). Reporting it as "full" therefore leaves it owed
+   * enrichment forever: `EnrichmentRecovery` re-selects it every run, dispatches
+   * the provider, gets nothing back, and `markRecoveryResult` writes `degraded`
+   * on every single run with nothing it can act on. Declining is what lets the
+   * point be stamped `skippedAs` once and settled server-side.
+   *
+   * `isGenerated` stays as a separate check because the classifier sees things
+   * a path glob cannot: `TEA_RAGS_GENERATED_PATTERNS` and the in-file
+   * `@generated` content markers. `isTest` needs no check — the filter's test
+   * patterns and the classifier's are the same constant.
+   *
+   * Docs are irrelevant to the graph and enrich fully (no chunk graph is
+   * emitted for them anyway).
    */
   shouldEnrich(file: { relPath: string; classification: FileClassification }): EnrichmentScope {
-    if (file.classification.isGenerated || file.classification.isTest) return "none";
+    if (file.classification.isGenerated) return "none";
+    if (this.codegraphExclusionFilter.ignores(file.relPath)) return "none";
     return "full";
   }
 

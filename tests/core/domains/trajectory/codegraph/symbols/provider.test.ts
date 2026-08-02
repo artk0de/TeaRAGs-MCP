@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import type { GraphDbClient } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { enrichmentSkipReason } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/policy.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../../../../../../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { JavascriptCallResolver } from "../../../../../../src/core/domains/language/javascript/resolver/index.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
@@ -776,6 +777,46 @@ describe("CodegraphEnrichmentProvider", () => {
       expect(provider.shouldEnrich({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } })).toBe(
         "none",
       );
+    });
+
+    // bd tea-rags-mcp-5ikhf — the policy and the graph walk must agree on what
+    // is in scope. A path the walk drops can never receive an enrichedAt, so
+    // reporting it as "full" leaves it owed enrichment forever: recovery
+    // re-selects it every run, gets nothing back, and writes `degraded` on
+    // every single run with nothing it can do about it.
+    describe("agrees with the graph walk about what is out of scope", () => {
+      it("declines a CODEGRAPH_CUSTOM_EXCLUDE match", () => {
+        const provider = buildProvider(["vendored_copies/**", "*.pb.ts"]);
+        expect(provider.shouldEnrich({ relPath: "vendored_copies/lib.ts", classification: base })).toBe("none");
+        expect(provider.shouldEnrich({ relPath: "api/messages.pb.ts", classification: base })).toBe("none");
+        // A path no pattern matches is still owed enrichment.
+        expect(provider.shouldEnrich({ relPath: "src/service.ts", classification: base })).toBe("full");
+      });
+
+      it("declines a path a language provider excludes on its own (Ruby db/migrate)", () => {
+        // buildTestCodegraphDeps injects the real LanguageFactory, so Ruby's
+        // codegraphExclusionGlobs are in the filter — the same globs the walk
+        // applies. Nothing classifies these as generated or test.
+        const provider = buildProvider();
+        expect(provider.shouldEnrich({ relPath: "db/migrate/20260101_create_users.rb", classification: base })).toBe(
+          "none",
+        );
+        expect(provider.shouldEnrich({ relPath: "app/models/user.rb", classification: base })).toBe("full");
+      });
+    });
+
+    // The decline has to be STAMPABLE, otherwise it is the same permanent
+    // scan. enrichmentSkipReason reads the classification, and a custom-pattern
+    // path carries no classification flag — the "policy" catch-all exists for
+    // exactly this, and this pins that it is what such a path gets.
+    it("declines customPattern paths with a reason recovery can stamp", () => {
+      const provider = buildProvider(["vendored_copies/**"]);
+      expect(enrichmentSkipReason(provider, "vendored_copies/lib.ts", "file")).toBe("policy");
+      expect(enrichmentSkipReason(provider, "vendored_copies/lib.ts", "chunk")).toBe("policy");
+      // A test path still reports the more specific reason.
+      expect(enrichmentSkipReason(provider, "src/service.test.ts", "file")).toBe("test");
+      // An in-scope path is owed enrichment — no reason at all.
+      expect(enrichmentSkipReason(provider, "src/service.ts", "file")).toBeNull();
     });
   });
 
