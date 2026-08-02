@@ -348,13 +348,27 @@ export class EnrichmentCoordinator {
    */
   async runRecovery(collectionName: string, absolutePath: string): Promise<void> {
     if (!this.recovery) return;
-    // Recovery uses a transient context map seeded from providers — no
-    // persistent RunState needed (recovery completes synchronously per
-    // collection, before any prefetch).
-    const contexts = new Map<string, ProviderContext>(
-      this.providers.map((p) => [p.key, { key: p.key, provider: p, effectiveRoot: null, ignoreFilter: null }]),
-    );
-    await this.recovery.recoverAll(collectionName, absolutePath, contexts, this.markerStore);
+    // Recovery needs its OWN keep-alive: it runs before `beginRun`, so the
+    // run-scoped window has not opened yet, and its batches reach the codegraph
+    // daemon through a worker — which is connect-only and cannot spawn a daemon
+    // that idle-exited or died. Without this, recovery on an otherwise idle
+    // repo fails with ENOENT on the daemon socket and the provider is reported
+    // `failed` (observed on taxdome: 104 files / 686 chunks left unenriched).
+    // begin never rejects per the guard contract; the catch keeps a stray
+    // rejection from going unhandled.
+    const release = await this.daemonGuard.begin(collectionName).catch(() => NOOP_RELEASE);
+    try {
+      // Recovery uses a transient context map seeded from providers — no
+      // persistent RunState needed (recovery completes synchronously per
+      // collection, before any prefetch).
+      const contexts = new Map<string, ProviderContext>(
+        this.providers.map((p) => [p.key, { key: p.key, provider: p, effectiveRoot: null, ignoreFilter: null }]),
+      );
+      await this.recovery.recoverAll(collectionName, absolutePath, contexts, this.markerStore);
+    } finally {
+      // Never let a failing release mask the recovery outcome.
+      await release().catch(() => undefined);
+    }
   }
 
   /**

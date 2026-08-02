@@ -9,7 +9,7 @@
  * (in-process READ_ONLY attach via `pool.acquireRead`).
  *
  * Transport: newline-delimited JSON over a unix socket (`encodeFrame` /
- * `decodeFrames`). Each connection increments the file refcount on connect and
+ * `DaemonFrameDecoder`). Each connection increments the file refcount on connect and
  * decrements on close; once the refcount has stayed at 0 for `IDLE_SHUTDOWN_MS`
  * the idle watcher tears the daemon down (close server → close pool → unlink
  * lifecycle files → exit), releasing the RW lock for the next cold spawn.
@@ -26,6 +26,7 @@ import { pathToFileURL } from "node:url";
 
 import type { MigrationCapableGraphClient } from "../../../contracts/types/migration.js";
 import { GraphDbClientPool } from "../pool.js";
+import { DaemonFrameDecoder } from "./frame-decoder.js";
 import {
   decrementRefs,
   getDaemonPaths,
@@ -36,7 +37,7 @@ import {
 } from "./lifecycle.js";
 import { DaemonMemoryGovernor, DEFAULT_MEMORY_LIMIT_BASE, DEFAULT_MEMORY_LIMIT_MAX } from "./memory-governor.js";
 import { NoopGlobalSymbolTable } from "./noop-symbol-table.js";
-import { decodeFrames, encodeFrame, type DaemonRequest } from "./protocol.js";
+import { encodeFrame, type DaemonRequest } from "./protocol.js";
 import { CodegraphDaemonServer } from "./server.js";
 
 export interface DaemonRuntimeOptions {
@@ -191,12 +192,12 @@ export function createConnectionHandler(
 ): (sock: Socket) => void {
   return (sock: Socket) => {
     incrementRefs(paths);
-    let buf = "";
+    // Per-connection frame assembly. Large writes (upsertSymbolsBulk,
+    // replacePageRanks) arrive as one frame split over many socket chunks, so
+    // the decoder must scan each chunk once rather than the whole accumulator.
+    const frames = new DaemonFrameDecoder();
     sock.on("data", (chunk: Buffer) => {
-      buf += chunk.toString("utf8");
-      const { frames, rest } = decodeFrames(buf);
-      buf = rest;
-      for (const frame of frames) {
+      for (const frame of frames.push(chunk)) {
         const req = JSON.parse(frame) as DaemonRequest;
         if (req.op === "shutdown") {
           if (!sock.destroyed) sock.write(encodeFrame({ id: req.id, ok: true, result: null }));

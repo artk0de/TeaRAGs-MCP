@@ -21,13 +21,8 @@ import type {
   SymbolDefinition,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
-import {
-  decodeFrames,
-  encodeFrame,
-  type DaemonHandshakeResult,
-  type DaemonOp,
-  type DaemonResponse,
-} from "./protocol.js";
+import { DaemonFrameDecoder } from "./frame-decoder.js";
+import { encodeFrame, type DaemonHandshakeResult, type DaemonOp, type DaemonResponse } from "./protocol.js";
 
 /**
  * Thrown when a daemon-internal op is invoked on the daemon client. In daemon
@@ -75,7 +70,8 @@ function isRetryableConnectError(err: NodeJS.ErrnoException): boolean {
 
 export class DaemonGraphDbClient implements GraphDbClient {
   private sock?: Socket;
-  private buf = "";
+  /** Per-connection frame assembly; replaced on each successful connect. */
+  private frames = new DaemonFrameDecoder();
   private nextId = 1;
   private readonly pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private readonly connectTimeoutMs: number;
@@ -130,11 +126,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
       sock.once("connect", () => {
         sock.removeListener("error", onError);
         this.sock = sock;
+        // A retried connect must not inherit a half-assembled frame from the
+        // attempt that failed.
+        this.frames = new DaemonFrameDecoder();
         sock.on("error", () => {
           /* post-connect peer errors are surfaced via pending-call rejection */
         });
         sock.on("data", (d) => {
-          this.onData(d.toString("utf8"));
+          this.onData(d);
         });
         resolve();
       });
@@ -142,11 +141,8 @@ export class DaemonGraphDbClient implements GraphDbClient {
     });
   }
 
-  private onData(chunk: string): void {
-    this.buf += chunk;
-    const { frames, rest } = decodeFrames(this.buf);
-    this.buf = rest;
-    for (const f of frames) {
+  private onData(chunk: Buffer): void {
+    for (const f of this.frames.push(chunk)) {
       const res = JSON.parse(f) as DaemonResponse;
       const p = this.pending.get(res.id);
       if (!p) continue;
