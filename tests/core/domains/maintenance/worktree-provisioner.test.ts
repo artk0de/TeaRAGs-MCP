@@ -29,6 +29,8 @@ function makeDeps(over: Partial<Record<string, unknown>> = {}, calls: string[] =
     embeddingDimensions: 768,
     qdrantUrl: "http://h",
     qdrantEmbedded: true,
+    embeddingBaseUrl: "http://192.168.1.71:11434",
+    embeddingFallbackUrl: "http://localhost:11434",
     codegraphEnabled: true,
     tuning: { TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5" },
     indexedAt: "t",
@@ -107,6 +109,33 @@ describe("WorktreeProvisioner.create saga", () => {
     const ops = new WorktreeProvisioner(deps);
     await ops.create({ name: "x", createGit: false });
     expect(recorded[0].env).toEqual({ TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5" });
+  });
+
+  it("propagates the embedding endpoints from the source entry to the worktree clone entry", async () => {
+    // A clone indexes the SAME code against the SAME embedding backend, so it
+    // must inherit the endpoints its source was indexed against. Dropping them
+    // sends a worktree reindex to the built-in default (localhost:11434): on a
+    // remote-Ollama setup that host is dead, so the run burns two 240s recovery
+    // budgets and dies before enrichment — no repair pass, no recovery, and a
+    // graph left exactly as stale as the clone found it.
+    const { deps, recorded } = makeDeps();
+    const ops = new WorktreeProvisioner(deps);
+    await ops.create({ name: "x", createGit: false });
+    expect(recorded[0].embeddingBaseUrl).toBe("http://192.168.1.71:11434");
+    expect(recorded[0].embeddingFallbackUrl).toBe("http://localhost:11434");
+  });
+
+  it("omits the embedding endpoints on the clone when the source entry has none", async () => {
+    // Symmetric with the env-snapshot legacy case: absent stays absent rather
+    // than becoming an explicit undefined the registry would serialize.
+    const { deps, recorded, sourceEntry } = makeDeps();
+    const { embeddingBaseUrl: _b, embeddingFallbackUrl: _f, ...legacy } = sourceEntry;
+    deps.registry.findByName = vi.fn(() => legacy);
+    deps.registry.findByPath = vi.fn(() => legacy);
+    const ops = new WorktreeProvisioner(deps);
+    await ops.create({ name: "x", createGit: false });
+    expect("embeddingBaseUrl" in recorded[0]).toBe(false);
+    expect("embeddingFallbackUrl" in recorded[0]).toBe(false);
   });
 
   it("omits the env snapshot on the clone when the source entry has none (legacy entry)", async () => {
