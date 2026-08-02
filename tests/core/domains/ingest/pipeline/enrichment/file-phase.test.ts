@@ -310,7 +310,10 @@ describe("FilePhase", () => {
 
     const twoFiles = [
       { chunkId: "g1", chunk: { metadata: { filePath: "/repo/db/schema.rb" }, startLine: 1, endLine: 10 } } as any,
-      { chunkId: "s1", chunk: { metadata: { filePath: "/repo/app/models/user.rb" }, startLine: 1, endLine: 10 } } as any,
+      {
+        chunkId: "s1",
+        chunk: { metadata: { filePath: "/repo/app/models/user.rb" }, startLine: 1, endLine: 10 },
+      } as any,
     ];
 
     const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
@@ -321,5 +324,85 @@ describe("FilePhase", () => {
 
     // The generated schema.rb is dropped; only the ordinary source is dispatched.
     expect(streamFileBatch).toHaveBeenCalledWith("/repo", ["app/models/user.rb"], expect.anything());
+  });
+
+  // bd tea-rags-mcp-okra9 — the file-level half of the skip stamp. A declined
+  // file used to end the run carrying neither terminal marker, so the NEXT
+  // run's recovery scan was what settled it: one run of lag, and a scan whose
+  // steady-state cost is O(newly-declined per run) instead of O(0).
+  describe("skip stamps for policy-declined files", () => {
+    const declineGenerated = (f: { classification: { isGenerated: boolean } }) =>
+      f.classification.isGenerated ? "none" : "full";
+
+    const schemaItem = {
+      chunkId: "g1",
+      chunk: { metadata: { filePath: "/repo/db/schema.rb" }, startLine: 1, endLine: 10 },
+    } as any;
+
+    it("stamps the declined half of a batch while the rest is enriched normally", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      const marker = new EnrichmentMarkerStore(qdrant as any);
+      vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
+      const stampSpy = vi.spyOn(applier, "applySkipStamps").mockResolvedValue(1);
+
+      const streamFileBatch = vi.fn().mockResolvedValue(new Map());
+      const ctx = buildCtx({ streamFileBatch, shouldEnrich: declineGenerated });
+      const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+
+      phase.onBatch("coll", "/repo", [...items, schemaItem]);
+      await phase.drain();
+
+      expect(stampSpy).toHaveBeenCalledWith("coll", "git", "file", [{ id: "g1", skippedAs: "generated" }]);
+      // The ordinary source still goes through the enrichment dispatch.
+      expect(streamFileBatch).toHaveBeenCalledWith("/repo", ["src/a.ts"], expect.anything());
+    });
+
+    it("stamps an entirely declined batch and still hands the provider to the chunk phase", async () => {
+      // Nothing to enrich here, so the old code dropped the provider from the
+      // returned gate map — which meant ChunkPhase never saw the batch and the
+      // chunk-level stamp never happened either. The gate has to survive an
+      // empty enrichment set.
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      const marker = new EnrichmentMarkerStore(qdrant as any);
+      const stampSpy = vi.spyOn(applier, "applySkipStamps").mockResolvedValue(1);
+
+      const streamFileBatch = vi.fn().mockResolvedValue(new Map());
+      const ctx = buildCtx({ streamFileBatch, shouldEnrich: declineGenerated });
+      const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+
+      const gates = phase.onBatch("coll", "/repo", [schemaItem]);
+      await phase.drain();
+
+      expect(gates.has("git")).toBe(true);
+      expect(stampSpy).toHaveBeenCalledWith("coll", "git", "file", [{ id: "g1", skippedAs: "generated" }]);
+      expect(streamFileBatch).not.toHaveBeenCalled();
+    });
+
+    it("writes no stamp for a provider whose file work already failed", async () => {
+      // Under-stamping is the safe direction: a point left unstamped costs one
+      // more recovery scan, while a wrong stamp hides it from recovery forever.
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      const marker = new EnrichmentMarkerStore(qdrant as any);
+      const stampSpy = vi.spyOn(applier, "applySkipStamps").mockResolvedValue(1);
+
+      const streamFileBatch = vi.fn().mockRejectedValue(new Error("blame exploded"));
+      const ctx = buildCtx({ streamFileBatch, shouldEnrich: declineGenerated });
+      const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+
+      phase.onBatch("coll", "/repo", [...items, schemaItem]);
+      await phase.drain();
+      stampSpy.mockClear();
+
+      phase.onBatch("coll", "/repo", [schemaItem]);
+      await phase.drain();
+
+      expect(stampSpy).not.toHaveBeenCalled();
+    });
   });
 });

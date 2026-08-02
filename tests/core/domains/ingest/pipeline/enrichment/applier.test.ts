@@ -142,6 +142,36 @@ describe("EnrichmentApplier", () => {
       expect(stampedPoints).not.toContain("g1");
     });
 
+    it("withholds the chunk-level enrichedAt stamp when policy declines that file at chunk level", async () => {
+      // A brand-new markdown doc. Git enriches it at FILE level ("file-only")
+      // but never at chunk level, and with no commits behind it yet it lands in
+      // the MISSED branch — which used to bare-stamp `git.chunk.enrichedAt` on
+      // it. ChunkPhase now writes `git.chunk.skippedAs` for the same point, and
+      // the two terminal markers must stay mutually exclusive
+      // (bd tea-rags-mcp-okra9), so the file-level stamp goes out alone.
+      await applier.applyFileSignals(
+        "test-collection",
+        "git",
+        new Map(), // no overlay — the doc has no git history yet
+        "/repo",
+        [
+          {
+            chunkId: "d1",
+            chunk: { metadata: { filePath: "/repo/docs/guide.md" }, startLine: 1, endLine: 20 },
+          } as any,
+        ],
+        undefined,
+        "2026-06-05T00:00:00Z",
+        (_rel, level) => level === "chunk", // policy: owed at file level, declined at chunk level
+      );
+
+      // Still a genuine miss at file level — backfill must keep seeing it.
+      expect(applier.missedFiles).toBe(1);
+      const allOps = mockQdrant.batchSetPayload.mock.calls.flatMap((c: any[]) => c[1] ?? []);
+      expect(allOps.filter((op: any) => op.key === "git.file")).toHaveLength(1);
+      expect(allOps.filter((op: any) => op.key === "git.chunk")).toHaveLength(0);
+    });
+
     it("recovers a transient batchSetPayload failure via retry without throwing", async () => {
       mockQdrant.batchSetPayload.mockRejectedValueOnce(new Error("qdrant unavailable"));
 
@@ -568,6 +598,29 @@ describe("EnrichmentApplier", () => {
 
       expect(applier.ignoredFiles).toBe(0);
       expect(applier.missedFiles).toBe(1);
+    });
+
+    it("declines a file the policy rejects even when a stale overlay exists for it", async () => {
+      // finalizeSignals reads a PERSISTED graph, so a run made after
+      // `excludeTests` was turned on can still be handed an overlay for a spec
+      // file indexed under the old config. Writing it would put `enrichedAt` on
+      // a point FilePhase already stamped `skippedAs` — two terminal states on
+      // one point (bd tea-rags-mcp-okra9). The policy decides, not the overlay.
+      const applied = await applier.applyFinalizeFile(
+        "test-collection",
+        "codegraph.symbols",
+        new Map([["spec/models/user_spec.rb", { fanIn: 3 }]]),
+        new Map([["spec/models/user_spec.rb", [{ chunkId: "t1", startLine: 1, endLine: 30 }]]]),
+        undefined,
+        "2026-06-05T00:00:00Z",
+        (rel) => rel.startsWith("spec/"), // policy: tests are declined
+      );
+
+      expect(applied).toBe(0);
+      expect(applier.ignoredFiles).toBe(1);
+      expect(applier.missedFiles).toBe(0);
+      const allOps = mockQdrant.batchSetPayload.mock.calls.flatMap((c: any[]) => c[1] ?? []);
+      expect(allOps.flatMap((op: any) => op.points ?? [])).not.toContain("t1");
     });
   });
 

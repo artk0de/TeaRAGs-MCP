@@ -25,7 +25,7 @@ import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
-import { enrichmentScope } from "./policy.js";
+import { enrichmentScope, enrichmentSkipReason, type EnrichmentSkipReason } from "./policy.js";
 import type { ProviderContext } from "./types.js";
 
 const CHUNK_ENRICHMENT_CONCURRENCY = 10;
@@ -238,6 +238,11 @@ export class ChunkPhase {
     if (state.prefetchFailed) return;
     const root = ctx.effectiveRoot ?? absolutePath;
     const map = this.extractBatchChunkMap(items, root);
+    // Settle the batch's chunk-level declines here, before either dispatch path
+    // filters them out silently. Both do, so without this the run ends with
+    // those points carrying neither terminal marker and the NEXT run's recovery
+    // scan is what settles them (bd tea-rags-mcp-okra9).
+    this.stampDeclinedChunks(coll, ctx, state, map);
     if (ctx.provider.defersChunkEnrichment) {
       // Fully-deferred provider (codegraph): accumulate the batch's chunkMap
       // once the provider's file work settles (parity with the pre-7gnre
@@ -383,19 +388,30 @@ export class ChunkPhase {
   ): Promise<void> {
     const state = this.states.get(ctx.key);
     if (!state) return;
-    if (chunkMap.size === 0) {
+    // Only "full"-scope files get the deferred resolve, the same rule
+    // runChunkSignals applies to the streaming path. The accumulated map is
+    // deliberately unfiltered — FilePhase.applyFinalize reads it to tell
+    // ignored from missed at FILE level — so the chunk-level policy has to be
+    // applied here, at the dispatch. Without it this pass would stamp
+    // `enrichedAt` over the `skippedAs` written at accumulation time and the
+    // point would carry both terminal markers (bd tea-rags-mcp-okra9).
+    //
+    // A provider without a policy declines nothing, so its map is forwarded
+    // untouched — the same shape policy.ts's filter helpers use.
+    const scoped = ctx.provider.shouldEnrich ? this.filterByEnrichmentPolicy(chunkMap, ctx.provider, root) : chunkMap;
+    if (scoped.size === 0) {
       state.deferredChunkMap.clear();
       return;
     }
 
     const allChunkIds = new Set<string>();
-    for (const entries of chunkMap.values()) {
+    for (const entries of scoped.values()) {
       for (const e of entries) allChunkIds.add(e.chunkId);
     }
 
     if (state.chunkFirstStartAt === 0) state.chunkFirstStartAt = Date.now();
     try {
-      const overlays = await this.executor.runChunkBatch(ctx.provider, root, chunkMap, {
+      const overlays = await this.executor.runChunkBatch(ctx.provider, root, scoped, {
         collectionName: coll,
         skipCache: true,
       });
@@ -404,7 +420,7 @@ export class ChunkPhase {
       pipelineLog.enrichmentPhase("STREAMING_CHUNK_ENRICHMENT_COMPLETE", {
         provider: ctx.key,
         phase: "DEFERRED",
-        files: chunkMap.size,
+        files: scoped.size,
         overlaysApplied: applied,
       });
     } catch (error) {
@@ -614,6 +630,41 @@ export class ChunkPhase {
 
     state.chunkWork.push(work.then(() => undefined));
     return work;
+  }
+
+  /**
+   * Write `<provider>.chunk.skippedAs` for the batch's policy-declined files.
+   *
+   * Mirrors `FilePhase.stampDeclinedFiles` at the other level. The declined set
+   * here is wider: chunk level is declined by "file-only" as well as "none", so
+   * a doc git still file-enriches lands in it.
+   *
+   * Best-effort — a failed write leaves those points in the next run's recovery
+   * scan, which is the pre-fix behaviour rather than a regression. The promise
+   * joins `chunkWork` so `drain` awaits it.
+   */
+  private stampDeclinedChunks(
+    coll: string,
+    ctx: ProviderContext,
+    state: ChunkPhaseState,
+    map: ReadonlyMap<string, ChunkLookupEntry[]>,
+  ): void {
+    if (!ctx.provider.shouldEnrich) return;
+    const stamps: { id: string; skippedAs: EnrichmentSkipReason }[] = [];
+    for (const [rel, entries] of map) {
+      const skippedAs = enrichmentSkipReason(ctx.provider, rel, "chunk");
+      if (skippedAs === null) continue;
+      for (const entry of entries) stamps.push({ id: entry.chunkId, skippedAs });
+    }
+    if (stamps.length === 0) return;
+    state.chunkWork.push(
+      this.applier
+        .applySkipStamps(coll, ctx.key, "chunk", stamps)
+        .then(() => undefined)
+        .catch((error: unknown) => {
+          console.error(`[Enrichment:${ctx.key}] chunk skip-stamp write failed (${stamps.length} points):`, error);
+        }),
+    );
   }
 
   private extractBatchChunkMap(items: ChunkItem[], pathBase: string): Map<string, ChunkLookupEntry[]> {
