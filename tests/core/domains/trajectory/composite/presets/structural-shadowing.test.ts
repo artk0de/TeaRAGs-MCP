@@ -93,13 +93,14 @@ describe("composite godModule", () => {
 
   it("keeps the static attribution numbers in the overlay and adds the graph ones", () => {
     expect(preset.overlayMask.file).toEqual([
-      "fileSymbolCount",
+      "moduleLines",
+      "fileMethodCount",
       "codegraph.file.fanIn",
       "codegraph.file.fanOut",
       "codegraph.file.transitiveImpact",
       "codegraph.file.isHub",
     ]);
-    expect(preset.overlayMask.chunk).toEqual(["memberCount", "classLines"]);
+    expect(preset.overlayMask.chunk).toEqual(["memberCount"]);
   });
 
   it("overrides the static variant when codegraph is registered", () => {
