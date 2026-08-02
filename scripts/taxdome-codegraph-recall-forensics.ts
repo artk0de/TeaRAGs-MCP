@@ -100,6 +100,7 @@ import {
   isRubyPath,
   resolveConstant,
   resolveTypeInstanceMethod,
+  resolveTypeMethod,
   resolveTypeStaticMethod,
   type ResolverConfig,
 } from "../src/core/domains/language/ruby/resolver/strategies/shared.js";
@@ -888,7 +889,10 @@ function resolvePass2(extraction: FileExtraction): void {
       // oracle only simulates where the outcome proves narrowing ran (jn5j0).
       let dispatchOutcome: DispatchFanoutOutcome | undefined;
       const noteDispatch = (out: DispatchFanoutOutcome | undefined): boolean => {
-        if ((SIGGAP_ORACLE_ENABLED || SINGLESEG_ENABLED || BAREDEFER_ENABLED) && out !== undefined) {
+        if (
+          (SIGGAP_ORACLE_ENABLED || SINGLESEG_ENABLED || BAREDEFER_ENABLED || BOUNDCALL_ENABLED) &&
+          out !== undefined
+        ) {
           dispatchOutcome = out;
         }
         const edges = out?.kind === "edges" ? out.edges : [];
@@ -972,6 +976,9 @@ function resolvePass2(extraction: FileExtraction): void {
       }
       if (BAREDEFER_ENABLED) {
         noteBareDeferCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath, chunk.symbolId);
+      }
+      if (BOUNDCALL_ENABLED) {
+        noteBoundCallCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath, chunk.symbolId);
       }
     }
   }
@@ -11450,6 +11457,753 @@ function runBareDeferOracle(extractions: FileExtraction[]): void {
   L(`typed-bare-receiver deferral oracle detail -> ${OUT_BAREDEFER}`);
 }
 
+// ===========================================================================
+// BOUND-CALL CHANNEL ORACLE (CODEGRAPH_BOUNDCALL_ORACLE=1) — bd tea-rags-mcp-in38w
+// Same additive, env-gated contract as every oracle above: with the flag unset
+// nothing extra is computed or reported and the A/B recall metrics are
+// byte-identical.
+//
+// `boundCallReturnType` is the SECOND receiver-typing channel in the Ruby
+// engine. `typeOfReceiver` reads `localBindings` / `ivarTypes` /
+// `classFieldTypes` and threads dotted chains; `boundCallReturnType` reads
+// `localCallBindings` — the name a call's RESULT was assigned to
+// (`x = Svc.call(…)`), which the walker cannot type because the answer lives in
+// another file. The two channels are disjoint by construction, and the second
+// has exactly ONE consumer: `RubyReturnTypeBindingSymbolResolutionStrategy`,
+// slot 4 of the 14-pass chain.
+//
+// The ikyqu premise check sized the leftover at 295 recall-hole misses whose
+// receiver the boundCall channel types and `typeOfReceiver` does not. "The
+// receiver has no type" does not explain those: they have one, it reached its
+// consumer, and no edge came out. This oracle asks WHY, per miss, through the
+// production objects:
+//
+//   (a) PRECEDENCE — a pass ahead of slot 4 answered first, so the channel's
+//       consumer never ran. Decided by walking the REAL chain and recording the
+//       first non-CONTINUE pass, not by reading the array order.
+//   (b) COORDINATE — the type is right and the member is reachable, but not at
+//       the coordinate the resolver looked at: either `resolveConstant` cannot
+//       name ONE file for a declared class, or the return fact is written
+//       UNQUALIFIED (`@return [Result]` inside `A::B` means `A::B::Result`) and
+//       the engine takes the name literally.
+//   (c) CONSUMER — the channel produced something its consumer structurally
+//       declines: `resolveBoundCallTarget` threads class/instance only, so a
+//       container / union / nil return reaches nobody. Measured beside it, the
+//       larger shape of the same defect: DOTTED receivers whose HEAD is
+//       call-bound, where `resolveChain` seeds from `typeOfReceiver(head)` and
+//       so never asks this channel at all.
+//   (d) FLOOR — the type is declared and the member is genuinely not on it, or
+//       the name matches nothing the project declares under any nesting prefix.
+//
+// Every verdict is a production object's own answer: the chain is the real
+// strategy classes in the real order, the terminal is
+// `RubyReturnTypeBindingSymbolResolutionStrategy.attempt` itself, the
+// qualification probe re-asks `resolveTypeMethod` (the very function
+// `resolveBoundCallTarget` calls), the widened chain-head terminal is
+// `chainType`'s own `resolveType{Static,Instance}Method`, and the baseline
+// outcome is the one `resolvePass2` just computed. Nothing here re-implements
+// resolution, so the classification cannot drift from production.
+// ===========================================================================
+const BOUNDCALL_ENABLED = process.env.CODEGRAPH_BOUNDCALL_ORACLE === "1";
+const OUT_BOUNDCALL = join(OUT_DIR, "boundcall-oracle-report.json");
+/** Worked examples kept per bucket — enough to read, small enough to print. */
+const BC_EXAMPLE_CAP = 12;
+const BC_CFG: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
+
+/**
+ * `RubyCallResolver`'s strategy array, restated in production order. Walked pass
+ * by pass so "which pass answered first" is the chain's answer rather than a
+ * reading of `ruby-resolver.ts`; `bcOrderOk` pins the two slots this oracle
+ * reasons about, and the per-call mirror below pins the whole array against the
+ * production resolver.
+ */
+const bcChain: SymbolResolutionStrategy[] = [
+  new RubySuperSymbolResolutionStrategy(BC_CFG),
+  new RubySelfMemberSymbolResolutionStrategy(BC_CFG),
+  new RubyLocalTypeSymbolResolutionStrategy(BC_CFG),
+  new RubyIvarFieldSymbolResolutionStrategy(BC_CFG),
+  new RubyReturnTypeBindingSymbolResolutionStrategy(BC_CFG),
+  new RubyEnqueueDispatchSymbolResolutionStrategy(BC_CFG),
+  new RubySelfDispatchEntrySymbolResolutionStrategy(BC_CFG),
+  new RubyConstantSymbolResolutionStrategy(BC_CFG),
+  new RubyExplicitRequireSymbolResolutionStrategy(BC_CFG),
+  new RubyChainTypeSymbolResolutionStrategy(BC_CFG),
+  new RubyArRelationGuardSymbolResolutionStrategy(BC_CFG),
+  new RubyReceiverSetDropSymbolResolutionStrategy(BC_CFG),
+  new RubyBareCallSymbolResolutionStrategy(BC_CFG),
+  new RubySchemaColumnSymbolResolutionStrategy(),
+];
+/** The boundCall channel's ONE consumer. */
+const BC_RTB_INDEX = 4;
+/** The pass a widened chain-head seed would reach. */
+const BC_CHAINTYPE_INDEX = 9;
+const bcOrderOk =
+  bcChain[BC_RTB_INDEX].name === "returnTypeBinding" && bcChain[BC_CHAINTYPE_INDEX].name === "chainType";
+const bcReturnTypeBinding = bcChain[BC_RTB_INDEX];
+
+/** Strip a trailing argument list from a chain segment (`new(post)` → `new`). */
+function bcStripArgs(segment: string): string {
+  const paren = segment.indexOf("(");
+  return paren === -1 ? segment : segment.slice(0, paren);
+}
+
+/** A `RubyTypeRef` as one short cell. */
+function bcRefText(ref: RubyTypeRef | undefined): string {
+  if (ref === undefined) return "-";
+  if (ref.form === "nil") return "nil";
+  if (ref.form === "container") return `container(${bcRefText(ref.element)})`;
+  if (ref.form === "union") return ref.members.map(bcRefText).join("|");
+  return `${ref.form === "class" ? "class " : ""}${ref.name}`;
+}
+
+/** The single class name a ref names; `undefined` for union / container / nil. */
+function bcRefName(ref: RubyTypeRef | undefined): string | undefined {
+  return ref !== undefined && (ref.form === "class" || ref.form === "instance") ? ref.name : undefined;
+}
+
+/**
+ * Does the project DECLARE this constant? The same question `resolveConstant`
+ * asks first, minus the Zeitwerk convention fallback — a name the symbol table
+ * and the ancestor map both know nothing about cannot own an in-project method,
+ * whatever a return annotation claims.
+ */
+function bcIsProjectClass(name: string): boolean {
+  return runAncestors[name] !== undefined || symbolTable.lookup(name).length > 0;
+}
+
+/** Transitive ancestor closure over `runAncestors`, cycle-guarded. */
+function bcAncestorClosure(klass: string, seen: Set<string> = new Set()): Set<string> {
+  if (seen.has(klass)) return seen;
+  seen.add(klass);
+  for (const ancestor of runAncestors[klass] ?? []) bcAncestorClosure(ancestor, seen);
+  return seen;
+}
+
+/**
+ * The recall gate every ikyqu-family oracle reports with: would this type close
+ * the call by naming EXACTLY ONE definer on its ancestor closure? Restated here
+ * so the boundCall verdicts read on the same scale as the const-chain ones.
+ */
+function bcRecovery(type: string, member: string): string {
+  if (!bcIsProjectClass(type)) return "type names NO project class (fiction)";
+  const closure = bcAncestorClosure(type);
+  const owners = new Set(
+    symbolTable
+      .lookupByShortName(member)
+      .filter((d) => d.scope.length > 0 && closure.has(d.scope.join("::")))
+      .map((d) => d.scope.join("::")),
+  );
+  if (owners.size === 0) return "member NOT on the derived type's ancestor closure";
+  return owners.size === 1
+    ? "RECOVERABLE - unique definer on the derived type's closure"
+    : "ambiguous - several definers on the closure";
+}
+
+/**
+ * The scope a bound-call return fact was WRITTEN in. A scope-qualified binding
+ * names it outright (`Billing::Create.call` → `Billing::Create`); a bare binding
+ * dispatches on `self`, so the caller's own scope owns the fact.
+ */
+function bcFactOwner(binding: string, ctx: CallContext): string {
+  const separator = binding.lastIndexOf(".");
+  return separator > 0 ? binding.slice(0, separator) : ctx.callerScope.join("::");
+}
+
+/**
+ * Ruby's own constant lookup for an UNQUALIFIED return-fact type name, run from
+ * the scope the fact was written in: `<owner>::<name>` first, then each outer
+ * nesting prefix, then the top level. Only candidates the project DECLARES
+ * survive, so a name that qualifies to EXACTLY ONE of them is the only
+ * unambiguous answer and everything else stays a fiction.
+ */
+function bcQualifyCandidates(name: string, owner: string): string[] {
+  if (name.includes("::")) return bcIsProjectClass(name) ? [name] : [];
+  const out = new Set<string>();
+  const segments = owner.length === 0 ? [] : owner.split("::");
+  for (let i = segments.length; i >= 1; i--) {
+    const candidate = `${segments.slice(0, i).join("::")}::${name}`;
+    if (bcIsProjectClass(candidate)) out.add(candidate);
+  }
+  if (bcIsProjectClass(name)) out.add(name);
+  return [...out];
+}
+
+/** The FQ coordinates `member` sits at on exactly this type (no bare-tail match). */
+function bcFqCoordinateDefs(type: string, member: string): SymbolDefinition[] {
+  return symbolTable
+    .lookupByShortName(member, { includeSchemaColumns: true })
+    .filter((d) => d.scope.join("::") === type);
+}
+
+/** The first pass in the real chain that does NOT CONTINUE, and what it answered. */
+function bcFirstNonContinue(call: CallRef, ctx: CallContext): { index: number; name: string; kind: string } {
+  for (let i = 0; i < bcChain.length; i++) {
+    const out = bcChain[i].attempt(call, ctx);
+    if (out.kind !== "continue") return { index: i, name: bcChain[i].name, kind: out.kind };
+  }
+  return { index: -1, name: "(none — chain exhausted)", kind: "continue" };
+}
+
+type BcClass = "a-precedence" | "b-coordinate" | "c-consumer" | "d-floor" | "x-unexpected";
+
+interface BcRow {
+  where: string;
+  caller: string;
+  receiver: string;
+  member: string;
+  kind: ReceiverKind;
+  binding: string;
+  bindingForm: string;
+  factOwner: string;
+  type: string;
+  form: string;
+  cls: BcClass;
+  why: string;
+  recovery: string;
+  chainDiedAt: string;
+  defCount: number;
+}
+
+// ── population A: the bead's 295 — receiver typed by the channel, not by the engine ──
+/** Every recall-hole miss carrying a receiver — the denominator. */
+let bcMissWithReceiver = 0;
+/** ...of those, the ones the boundCall channel types at all. */
+let bcMissBoundCallTyped = 0;
+/** ...of those, the ones `typeOfReceiver` ALSO types (the channel is redundant there). */
+let bcMissBothChannels = 0;
+/** THE population: boundCall types it, `typeOfReceiver` does not. */
+const bcRows: BcRow[] = [];
+/** Same population restricted to a single-token receiver — the 295's own basis. */
+let bcRowsSingleToken = 0;
+const bcByClass: Record<string, number> = {};
+const bcByWhy: Record<string, number> = {};
+const bcByKind: Record<string, number> = {};
+const bcByBindingForm: Record<string, number> = {};
+const bcByForm: Record<string, number> = {};
+const bcTopTypes: Record<string, number> = {};
+const bcTopMembers: Record<string, number> = {};
+const bcRecoveryTally: Record<string, number> = {};
+/** Declared-class subset only: what `resolveConstant` was looking at when it stayed silent. */
+const bcConstLookupTally: Record<string, number> = {};
+/**
+ * Undeclared-name subset: the SHORT name matches a def's scope TAIL somewhere in
+ * the corpus. Informational only — a bare tail is exactly the collision an
+ * unqualified fact creates, so it is never a coordinate the resolver may pin.
+ */
+let bcBareTailOnly = 0;
+const bcExamples: Record<string, BcRow[]> = {};
+/** Fidelity: the oracle's chain vs the production resolver, on the same call. */
+let bcMirrorChecked = 0;
+let bcMirrorDisagreed = 0;
+const bcMirrorExamples: string[] = [];
+
+// ── the qualification probe: what an owner-scoped return fact would buy ──
+const bcQualifyVerdict: Record<string, number> = {};
+let bcQualifyTerminalMethod = 0;
+let bcQualifyTerminalFileOnly = 0;
+let bcQualifyTerminalNull = 0;
+const bcQualifyExamples: string[] = [];
+
+// ── population B: dotted receivers whose HEAD is call-bound (class (c), the big shape) ──
+/** Dotted receiver, engine-untyped, head carries a `localCallBindings` entry. */
+let bcHeadSeen = 0;
+/** ...of those, the head TYPES through the channel. */
+let bcHeadSeeded = 0;
+/** ...of those, the whole chain threads to a single class/instance. */
+let bcHeadThreaded = 0;
+const bcHeadByBase: Record<string, number> = {};
+let bcHeadGainMethod = 0;
+let bcHeadGainFile = 0;
+let bcHeadFlipsToDrop = 0;
+let bcHeadLoss = 0;
+let bcHeadTargetChange = 0;
+const bcHeadGainRecovery: Record<string, number> = {};
+/** Gains split by the baseline bucket they come from — only `miss` is a recall gain. */
+const bcHeadGainByBase: Record<string, number> = {};
+const bcHeadTopTypes: Record<string, number> = {};
+const bcHeadGainExamples: string[] = [];
+const bcHeadLossExamples: string[] = [];
+
+function bcBump(bag: Record<string, number>, key: string): void {
+  bag[key] = (bag[key] ?? 0) + 1;
+}
+
+/**
+ * `resolveChain`'s link walk, seeded from the boundCall channel instead of
+ * `typeOfReceiver`. Everything after the seed is the production authority
+ * (`returnTypeOf`, then the receiver-form collapse), so the only variable under
+ * measurement is where the head's type came from. The hop cap is the module
+ * default; `CODEGRAPH_RB_CHAIN_MAX_HOPS` is not read here, and a run that sets it
+ * would measure a different cap than production.
+ */
+function bcThreadFromBoundHead(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
+  const segments = receiver.split(".");
+  const head = segments[0];
+  const links = segments.slice(1);
+  if (head === undefined || links.length === 0 || links.length > CHAIN_MAX_HOPS_DEFAULT) return undefined;
+  let current = boundCallReturnType(head, ctx);
+  if (current === undefined) return undefined;
+  for (const link of links) {
+    current = returnTypeOf(current, bcStripArgs(link), ctx);
+    if (current === undefined) return undefined;
+  }
+  return rubyReceiverForm(current);
+}
+
+/** `chainType`'s own terminal, applied to a type the widened seed produced. */
+function bcChainTypeTerminal(t: RubyTypeRef, member: string, ctx: CallContext): SymbolResolutionTarget | null {
+  if (t.form !== "class" && t.form !== "instance") return null;
+  const resolve = t.form === "class" ? resolveTypeStaticMethod : resolveTypeInstanceMethod;
+  return resolve(t.name, member, ctx, BC_CFG.mode);
+}
+
+function bcTargetText(target: SymbolResolutionTarget | null): string {
+  if (target === null) return "-";
+  return target.targetSymbolId ?? `${target.targetRelPath} (file-only)`;
+}
+
+/**
+ * Population B's regression channel, measured rather than argued. Seeding the
+ * chain head widens `typeOfReceiver` GLOBALLY, and `RubyDynamicDispatchResolver`
+ * DEFERS to `chainType` for any dotted receiver the engine types
+ * (`r.includes(".")` + class/instance). So a call the fan-out resolves TODAY
+ * would, after the widening, hand itself to `chainType` — which DROPs when the
+ * member is absent from the type. That is the only way this mechanism can lose a
+ * resolution, and it is decidable per call from the fan-out edge count and the
+ * terminal's answer.
+ */
+function bcNoteHeadCandidate(
+  call: CallRef,
+  ctx: CallContext,
+  dispatchEdges: number,
+  baseOutcome: LcOutcome,
+  relPath: string,
+): void {
+  const receiver = call.receiver;
+  if (!receiver?.includes(".")) return;
+  const head = receiver.split(".")[0];
+  if (head === undefined || ctx.localCallBindings?.[head] === undefined) return;
+  // Only receivers the engine leaves UNTYPED, and only heads it leaves untyped:
+  // a head `typeOfReceiver` already answers is seeded today, and this channel
+  // would change nothing about it.
+  if (typeOfReceiver(receiver, call.startLine, ctx) !== undefined) return;
+  if (typeOfReceiver(head, call.startLine, ctx) !== undefined) return;
+  bcHeadSeen += 1;
+  if (boundCallReturnType(head, ctx) === undefined) return;
+  bcHeadSeeded += 1;
+
+  const threaded = bcThreadFromBoundHead(receiver, ctx);
+  const typeName = bcRefName(threaded);
+  if (threaded === undefined || typeName === undefined) return;
+  bcHeadThreaded += 1;
+  bcBump(bcHeadByBase, baseOutcome);
+  bcBump(bcHeadTopTypes, typeName);
+
+  const target = bcChainTypeTerminal(threaded, call.member, ctx);
+  const recovery = bcRecovery(typeName, call.member);
+  const site = `${relPath}:${call.startLine} ${receiver}.${call.member}`;
+
+  if (baseOutcome === "resolved") {
+    // Resolved today. The fan-out is what would defer, so only a fan-out
+    // resolution can move; a chain resolution at a slot BEFORE `chainType` is
+    // untouched by the widening.
+    if (dispatchEdges > 0) {
+      if (target === null) {
+        bcHeadLoss += 1;
+        if (bcHeadLossExamples.length < BC_EXAMPLE_CAP) {
+          bcHeadLossExamples.push(`${site} type=${bcRefText(threaded)} fanout=${dispatchEdges} -> chainType DROPs`);
+        }
+      } else {
+        bcHeadTargetChange += 1;
+      }
+      return;
+    }
+    const first = bcFirstNonContinue(call, ctx);
+    if (first.index > BC_CHAINTYPE_INDEX && target !== null) bcHeadTargetChange += 1;
+    else if (first.index > BC_CHAINTYPE_INDEX && target === null) bcHeadLoss += 1;
+    return;
+  }
+
+  if (target === null) {
+    bcHeadFlipsToDrop += 1;
+    return;
+  }
+  if (target.targetSymbolId === null) bcHeadGainFile += 1;
+  else bcHeadGainMethod += 1;
+  bcBump(bcHeadGainRecovery, recovery);
+  bcBump(bcHeadGainByBase, baseOutcome);
+  if (baseOutcome === "miss" && bcHeadGainExamples.length < BC_EXAMPLE_CAP) {
+    bcHeadGainExamples.push(`${site} type=${bcRefText(threaded)} -> ${bcTargetText(target)}  (${recovery})`);
+  }
+}
+
+/**
+ * The one call-site hook, invoked from `resolvePass2` once the baseline outcome
+ * is known — the context, the dispatch outcome and the receiver kind are all
+ * already computed there, so nothing is rebuilt.
+ */
+function noteBoundCallCall(
+  call: CallRef,
+  ctx: CallContext,
+  dispatchOutcome: DispatchFanoutOutcome | undefined,
+  baseOutcome: LcOutcome,
+  receiverKind: ReceiverKind,
+  relPath: string,
+  callerSymbolId: string,
+): void {
+  const receiver = call.receiver;
+  if (receiver === null) return;
+  const dispatchEdges = dispatchOutcome?.kind === "edges" ? dispatchOutcome.edges.length : 0;
+  bcNoteHeadCandidate(call, ctx, dispatchEdges, baseOutcome, relPath);
+
+  if (baseOutcome !== "miss") return;
+  bcMissWithReceiver += 1;
+  const bound = boundCallReturnType(receiver, ctx);
+  if (bound === undefined) return;
+  bcMissBoundCallTyped += 1;
+  if (typeOfReceiver(receiver, call.startLine, ctx) !== undefined) {
+    bcMissBothChannels += 1;
+    return;
+  }
+  if (!receiver.includes(".")) bcRowsSingleToken += 1;
+
+  // ── the autopsy ───────────────────────────────────────────────────────────
+  const first = bcFirstNonContinue(call, ctx);
+  const rtb = bcReturnTypeBinding.attempt(call, ctx);
+  const binding = ctx.localCallBindings?.[receiver] ?? "(none)";
+  const bindingForm = binding.lastIndexOf(".") > 0 ? "scope-qualified" : "bare";
+  const factOwner = bcFactOwner(binding, ctx);
+  const typeName = bcRefName(bound);
+
+  // Fidelity: this call is a MISS, so the production resolver must answer null.
+  const rs = resolver;
+  const realTarget = rs === undefined ? null : rs.resolve(call, ctx);
+  bcMirrorChecked += 1;
+  if (realTarget !== null) {
+    bcMirrorDisagreed += 1;
+    if (bcMirrorExamples.length < BC_EXAMPLE_CAP) {
+      bcMirrorExamples.push(
+        `${relPath}:${call.startLine} ${receiver}.${call.member} miss but resolver answers ${bcTargetText(realTarget)}`,
+      );
+    }
+  }
+
+  let cls: BcClass;
+  let why: string;
+  if (rtb.kind === "resolved") {
+    cls = "x-unexpected";
+    why = "x: returnTypeBinding DOES produce a target — the miss is not its fault";
+  } else if (first.index !== -1 && first.index < BC_RTB_INDEX) {
+    cls = "a-precedence";
+    why = `a: ${first.name} answers ${first.kind} at slot ${first.index}, ahead of returnTypeBinding`;
+  } else if (typeName === undefined) {
+    cls = "c-consumer";
+    why = `c: return is ${bound.form}-form — resolveBoundCallTarget threads class/instance only`;
+  } else if (resolveConstant(typeName, ctx) !== null) {
+    cls = "x-unexpected";
+    why = "x: resolveConstant names a file, so a file-only edge should have been emitted";
+  } else if (!bcIsProjectClass(typeName)) {
+    // The fact names a class this run declares nowhere. Before calling that a
+    // floor, ask Ruby's own question: an unqualified `@return [Result]` written
+    // inside `A::B` names `A::B::Result` before it names a top-level `Result`.
+    const candidates = bcQualifyCandidates(typeName, factOwner);
+    if (candidates.length === 1) {
+      cls = "b-coordinate";
+      why = "b: unqualified return fact qualifies to exactly ONE declared class from the fact's owner scope";
+      bcBump(bcQualifyVerdict, "unique qualification");
+      const t = resolveTypeMethod(candidates[0], call.member, ctx, BC_CFG.mode);
+      if (t === null) bcQualifyTerminalNull += 1;
+      else if (t.targetSymbolId === null) bcQualifyTerminalFileOnly += 1;
+      else bcQualifyTerminalMethod += 1;
+      if (bcQualifyExamples.length < BC_EXAMPLE_CAP) {
+        bcQualifyExamples.push(
+          `${relPath}:${call.startLine} ${receiver}.${call.member}  ${typeName} @${factOwner || "(top level)"}` +
+            ` -> ${candidates[0]} => ${bcTargetText(t)}`,
+        );
+      }
+    } else if (candidates.length > 1) {
+      cls = "b-coordinate";
+      why = "b: unqualified return fact matches SEVERAL declared classes from the owner scope — ambiguous";
+      bcBump(bcQualifyVerdict, "several qualifications - ambiguous");
+    } else {
+      cls = "d-floor";
+      why = "d: return fact names no declared class under any nesting prefix (gem / stdlib / fiction)";
+      bcBump(bcQualifyVerdict, "no qualification - the name matches nothing the project declares");
+    }
+    const bare = typeName.split("::");
+    const tail = bare[bare.length - 1];
+    if (
+      symbolTable
+        .lookupByShortName(call.member, { includeSchemaColumns: true })
+        .some((d) => d.scope[d.scope.length - 1] === tail)
+    ) {
+      bcBareTailOnly += 1;
+    }
+  } else {
+    const fqCoordinates = bcFqCoordinateDefs(typeName, call.member);
+    if (fqCoordinates.length === 1) {
+      cls = "b-coordinate";
+      why = "b: UNIQUE FQ coordinate on the derived type, resolveConstant silent";
+    } else if (fqCoordinates.length > 1) {
+      cls = "b-coordinate";
+      why = "b: several FQ coordinates on the derived type, resolveConstant silent";
+    } else {
+      cls = "d-floor";
+      why = "d: derived type IS a declared class, member on no coordinate of it";
+    }
+    const known = symbolTable.lookup(typeName).length;
+    bcBump(
+      bcConstLookupTally,
+      known === 0 ? "constant absent from the table (ancestor-only)" : `constant at ${known} coordinates (reopened)`,
+    );
+  }
+
+  const row: BcRow = {
+    where: `${relPath}:${call.startLine}`,
+    caller: callerSymbolId,
+    receiver,
+    member: call.member,
+    kind: receiverKind,
+    binding,
+    bindingForm,
+    factOwner,
+    type: bcRefText(bound),
+    form: bound.form,
+    cls,
+    why,
+    recovery: typeName === undefined ? "receiver type has no single name" : bcRecovery(typeName, call.member),
+    chainDiedAt: `${first.name}/${first.kind}`,
+    defCount: symbolTable.lookupByShortName(call.member).length,
+  };
+  bcRows.push(row);
+  bcBump(bcByClass, cls);
+  bcBump(bcByWhy, why);
+  bcBump(bcByKind, receiverKind);
+  bcBump(bcByBindingForm, bindingForm);
+  bcBump(bcByForm, bound.form);
+  bcBump(bcRecoveryTally, row.recovery);
+  bcBump(bcTopMembers, call.member);
+  if (typeName !== undefined) bcBump(bcTopTypes, typeName);
+  const bucket = (bcExamples[cls] ??= []);
+  if (bucket.length < BC_EXAMPLE_CAP) bucket.push(row);
+}
+
+function runBoundCallOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  const total = bcRows.length;
+  const rank = (bag: Record<string, number>): [string, number][] => Object.entries(bag).sort((a, b) => b[1] - a[1]);
+
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  BOUND-CALL CHANNEL ORACLE (bd tea-rags-mcp-in38w)");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("");
+  L("─── fidelity ─────────────────────────────────────────────────────");
+  L(`strategy-order pins hold (slot 4 = returnTypeBinding, slot 9 = chainType): ${bcOrderOk ? "yes" : "NO"}`);
+  L(`population calls re-asked of the production resolver: ${bcMirrorChecked}   disagreements: ${bcMirrorDisagreed}`);
+  for (const e of bcMirrorExamples) L(`    ${e}`);
+
+  L("");
+  L("─── (1) population re-count at this HEAD ──────────────────────────");
+  L(`recall-hole misses:                                    ${misses.length}`);
+  L(`  ...carrying a receiver:                              ${bcMissWithReceiver}`);
+  L(`  ...typed by boundCallReturnType (any form):          ${bcMissBoundCallTyped}`);
+  L(`  ...also typed by typeOfReceiver (channel redundant): ${bcMissBothChannels}`);
+  L(`  ==> THE POPULATION (boundCall types it, typeOfReceiver does not): ${total}`);
+  L(`      of which single-token receivers (the ikyqu 295 basis):        ${bcRowsSingleToken}`);
+
+  L("");
+  L("─── (2) why each one fails ────────────────────────────────────────");
+  L("class            calls    share");
+  for (const [cls, n] of rank(bcByClass)) {
+    L(`  ${cls.padEnd(14)}${String(n).padStart(7)}   ${((n / Math.max(1, total)) * 100).toFixed(1)}%`);
+  }
+  L("");
+  L("  reason (the measured one, not the assumed one):");
+  for (const [why, n] of rank(bcByWhy)) L(`      ${String(n).padStart(6)}  ${why}`);
+  if (Object.keys(bcConstLookupTally).length > 0) {
+    L("");
+    L("  declared-class subset — what resolveConstant was looking at:");
+    for (const [k, n] of rank(bcConstLookupTally)) L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+  L("");
+  L("  by boundCall return FORM:");
+  for (const [k, n] of rank(bcByForm)) L(`      ${String(n).padStart(6)}  ${k}`);
+  L("  by binding form (what the walker recorded):");
+  for (const [k, n] of rank(bcByBindingForm)) L(`      ${String(n).padStart(6)}  ${k}`);
+  L("  by receiver kind:");
+  for (const [k, n] of rank(bcByKind)) L(`      ${String(n).padStart(6)}  ${k}`);
+  L("  by the ikyqu recall gate (unique definer on the derived type's closure):");
+  for (const [k, n] of rank(bcRecoveryTally)) L(`      ${String(n).padStart(6)}  ${k}`);
+  L("  where the chain actually died:");
+  const diedAt: Record<string, number> = {};
+  for (const r of bcRows) bcBump(diedAt, r.chainDiedAt);
+  for (const [k, n] of rank(diedAt).slice(0, 10)) L(`      ${String(n).padStart(6)}  ${k}`);
+
+  L("");
+  L("─── (2b) the qualification probe — is the FACT the coordinate defect? ───");
+  L("  An unqualified `@return [Result]` written inside `A::B` names `A::B::Result`");
+  L("  in Ruby; the engine takes the name literally, so the type it derives names");
+  L("  no declared class. This asks what Ruby's own lookup would find instead.");
+  for (const [k, n] of rank(bcQualifyVerdict)) L(`      ${String(n).padStart(6)}  ${k}`);
+  L("");
+  L("  terminal (resolveTypeMethod, the SAME function resolveBoundCallTarget calls)");
+  L("  re-asked with the uniquely-qualified name:");
+  L(
+    `      method-level edge: ${bcQualifyTerminalMethod}   file-only edge: ${bcQualifyTerminalFileOnly}   nothing: ${bcQualifyTerminalNull}`,
+  );
+  for (const e of bcQualifyExamples) L(`    ${e}`);
+  L(`  (informational) undeclared names whose SHORT tail matches a def's scope tail: ${bcBareTailOnly}`);
+
+  L("");
+  L("─── (3) top derived types / members over the population ───────────");
+  L("  top derived types (the return fact the channel applied):");
+  for (const [k, n] of rank(bcTopTypes).slice(0, 15)) {
+    L(`      ${String(n).padStart(6)}  ${k}${bcIsProjectClass(k) ? "" : "   <- names no declared class"}`);
+  }
+  L("  top members:");
+  for (const [k, n] of rank(bcTopMembers).slice(0, 15)) L(`      ${String(n).padStart(6)}  ${k}`);
+
+  L("");
+  L("─── (4) worked examples per class ─────────────────────────────────");
+  for (const [cls, rows] of Object.entries(bcExamples).sort()) {
+    L(`  ── ${cls} (${bcByClass[cls] ?? 0}) ──`);
+    for (const r of rows) {
+      L(`    ${r.where} ${r.receiver}.${r.member} [${r.kind}]  binding="${r.binding}" (${r.bindingForm})`);
+      L(`        type=${r.type}  owner=${r.factOwner || "(top level)"}  died at ${r.chainDiedAt}  defs=${r.defCount}`);
+    }
+  }
+
+  L("");
+  L("─── (5) class (c), the larger shape: DOTTED receivers with a call-bound HEAD ───");
+  L("  `resolveChain` seeds the head via `typeOfReceiver`, which never consults");
+  L("  `localCallBindings`. A head bound to a call is therefore untyped, the whole");
+  L("  chain is untyped, and no pass owns the receiver.");
+  L(`dotted receivers, engine-untyped, head carries a localCallBindings entry: ${bcHeadSeen}`);
+  L(`  ...head TYPES through the boundCall channel:                            ${bcHeadSeeded}`);
+  L(`  ...whole chain threads to a single class/instance:                      ${bcHeadThreaded}`);
+  L("  baseline outcome of those:");
+  for (const [k, n] of rank(bcHeadByBase)) L(`      ${String(n).padStart(6)}  ${k}`);
+  L("");
+  L(`  terminal produces a METHOD-level edge: ${bcHeadGainMethod}   file-only edge: ${bcHeadGainFile}`);
+  L(`  terminal produces nothing (would flip an unresolved call to DROP): ${bcHeadFlipsToDrop}`);
+  L(`  REGRESSION channel — calls that LOSE a resolution: ${bcHeadLoss}`);
+  L(`  precision channel — N discounted dynamic edges replaced by one exact edge: ${bcHeadTargetChange}`);
+  L("  gains by the BASELINE bucket they come from (only `miss` is a recall gain):");
+  for (const [k, n] of rank(bcHeadGainByBase)) L(`      ${String(n).padStart(6)}  ${k}`);
+  L("  gains by the ikyqu recall gate:");
+  for (const [k, n] of rank(bcHeadGainRecovery)) L(`      ${String(n).padStart(6)}  ${k}`);
+  L("  top threaded types:");
+  for (const [k, n] of rank(bcHeadTopTypes).slice(0, 10)) L(`      ${String(n).padStart(6)}  ${k}`);
+  for (const e of bcHeadGainExamples) L(`    GAIN  ${e}`);
+  for (const e of bcHeadLossExamples) L(`    LOSS  ${e}`);
+
+  L("");
+  L("─── (6) VERDICT ──────────────────────────────────────────────────");
+  const aCount = bcByClass["a-precedence"] ?? 0;
+  const bCount = bcByClass["b-coordinate"] ?? 0;
+  const cCount = bcByClass["c-consumer"] ?? 0;
+  const dCount = bcByClass["d-floor"] ?? 0;
+  const xCount = bcByClass["x-unexpected"] ?? 0;
+  const qualifyClosable = bcQualifyTerminalMethod + bcQualifyTerminalFileOnly;
+  const headGain = bcHeadGainByBase.miss ?? 0;
+  L(
+    `(a) precedence ${String(aCount).padStart(6)}   (b) coordinate ${String(bCount).padStart(6)}   (c) consumer ${String(cCount).padStart(6)}`,
+  );
+  L(`(d) floor      ${String(dCount).padStart(6)}   (x) unexpected ${String(xCount).padStart(6)}`);
+  L("");
+  const fundable: string[] = [];
+  if (qualifyClosable >= 100) {
+    fundable.push(
+      `owner-scoped qualification of the return fact: ${qualifyClosable} of the ${total} close ` +
+        `(${bcQualifyTerminalMethod} method-level, ${bcQualifyTerminalFileOnly} file-only)`,
+    );
+  }
+  if (headGain >= 100) {
+    fundable.push(
+      `chain-head seeding: ${headGain} recall-hole misses closed, regression channel = ${bcHeadLoss} lost resolutions`,
+    );
+  }
+  if (fundable.length === 0) {
+    L(`NO mechanism reaches 100 misses. Owner-scoped qualification closes ${qualifyClosable};`);
+    L(`chain-head seeding closes ${headGain} against ${bcHeadLoss} lost resolutions.`);
+    L("The population is a measured FLOOR at this HEAD.");
+  } else {
+    for (const f of fundable) L(`CANDIDATE: ${f}`);
+  }
+  L("");
+  L("Kill-tests applied: (1) does an existing strategy already cover it — the real");
+  L("14-pass chain is walked per miss and the pass that answers first is reported;");
+  L("(2) does the terminal produce an EDGE — every candidate is priced through the");
+  L("production resolve function, not through 'the type would be known'.");
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_BOUNDCALL,
+    JSON.stringify(
+      {
+        meta: {
+          generatedAt: new Date().toISOString(),
+          root: ROOT,
+          bead: "tea-rags-mcp-in38w",
+          strategyOrderPinsHold: bcOrderOk,
+          mirrorChecked: bcMirrorChecked,
+          mirrorDisagreed: bcMirrorDisagreed,
+          note: "Oracle only. No resolver change; every verdict is a production object's own answer.",
+        },
+        population: {
+          recallHoleMisses: misses.length,
+          missesWithReceiver: bcMissWithReceiver,
+          missesBoundCallTyped: bcMissBoundCallTyped,
+          missesBothChannels: bcMissBothChannels,
+          population: bcRows.length,
+          populationSingleToken: bcRowsSingleToken,
+        },
+        byClass: bcByClass,
+        byWhy: bcByWhy,
+        byForm: bcByForm,
+        byBindingForm: bcByBindingForm,
+        byReceiverKind: bcByKind,
+        recovery: bcRecoveryTally,
+        constantLookup: bcConstLookupTally,
+        bareTailOnly: bcBareTailOnly,
+        qualification: {
+          verdicts: bcQualifyVerdict,
+          terminalMethodLevel: bcQualifyTerminalMethod,
+          terminalFileOnly: bcQualifyTerminalFileOnly,
+          terminalNull: bcQualifyTerminalNull,
+          examples: bcQualifyExamples,
+        },
+        topTypes: Object.fromEntries(rank(bcTopTypes).slice(0, 40)),
+        topMembers: Object.fromEntries(rank(bcTopMembers).slice(0, 40)),
+        chainHead: {
+          seen: bcHeadSeen,
+          seeded: bcHeadSeeded,
+          threaded: bcHeadThreaded,
+          byBaseline: bcHeadByBase,
+          gainMethodLevel: bcHeadGainMethod,
+          gainFileOnly: bcHeadGainFile,
+          gainByBaseline: bcHeadGainByBase,
+          flipsToDrop: bcHeadFlipsToDrop,
+          loss: bcHeadLoss,
+          targetChange: bcHeadTargetChange,
+          gainRecovery: bcHeadGainRecovery,
+          topTypes: Object.fromEntries(rank(bcHeadTopTypes).slice(0, 30)),
+          gainExamples: bcHeadGainExamples,
+          lossExamples: bcHeadLossExamples,
+        },
+        rows: bcRows,
+      },
+      null,
+      2,
+    ),
+  );
+  L("");
+  L(`boundCall oracle detail -> ${OUT_BOUNDCALL}`);
+}
+
 async function main(): Promise<void> {
   const t0 = Date.now();
   console.error(`[forensics] root=${ROOT} gemfile=${gemfileContent ? "loaded" : "MISSING"}`);
@@ -11833,6 +12587,7 @@ async function main(): Promise<void> {
   if (CONSTCHAIN_ENABLED) runConstChainOracle(extractions);
   if (SINGLESEG_ENABLED) runSingleSegOracle(extractions);
   if (BAREDEFER_ENABLED) runBareDeferOracle(extractions);
+  if (BOUNDCALL_ENABLED) runBoundCallOracle();
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
