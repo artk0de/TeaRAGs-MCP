@@ -19,14 +19,62 @@ function isDocumentationPath(relPath: string): boolean {
 }
 
 /**
+ * Why a provider's policy declined a point at one level. Persisted to
+ * `<provider>.<level>.skippedAs`, which is what lets Qdrant tell a deliberate
+ * skip apart from a miss server-side — see
+ * `docs/superpowers/specs/2026-08-02-enrichment-skip-stamp-design.md`.
+ *
+ * `"policy"` is the catch-all for a provider that declined without any
+ * classification flag explaining it. Every declined point MUST get a value:
+ * an unstamped decline stays in the recovery scan forever, which is the whole
+ * defect this vocabulary exists to close.
+ *
+ * Distinct from `skipReason` in `pipeline/infra/debug-logger.ts`, which records
+ * why a file never reached the chunker at all.
+ */
+export type EnrichmentSkipReason = "generated" | "test" | "documentation" | "policy";
+
+function classifyPath(relPath: string, contentHead?: string) {
+  return classify(relPath, { isDocumentation: isDocumentationPath(relPath), contentHead });
+}
+
+/**
  * Resolve the enrichment scope a provider wants for a repo-relative path.
  * Computes the FileClassification (generated/test/doc/source) and delegates to
  * the provider's policy. Providers without `shouldEnrich` get "full".
  */
 export function enrichmentScope(provider: EnrichmentProvider, relPath: string, contentHead?: string): EnrichmentScope {
   if (!provider.shouldEnrich) return "full";
-  const classification = classify(relPath, { isDocumentation: isDocumentationPath(relPath), contentHead });
-  return provider.shouldEnrich({ relPath, classification });
+  return provider.shouldEnrich({ relPath, classification: classifyPath(relPath, contentHead) });
+}
+
+/**
+ * The reason this path is NOT owed enrichment at `level`, or null when it is.
+ *
+ * Level-aware because the scopes are: file level is declined only by `"none"`,
+ * while chunk level is declined by both `"none"` and `"file-only"` (a doc keeps
+ * its file signals but never the chunk-churn walk).
+ *
+ * The returned reason names the classification that held at decision time, not
+ * the provider's internal reasoning — `shouldEnrich` reports a scope and gains
+ * no new obligation here. Recording the classification is what makes a later
+ * policy change invalidatable by reason instead of wholesale.
+ */
+export function enrichmentSkipReason(
+  provider: EnrichmentProvider,
+  relPath: string,
+  level: "file" | "chunk",
+  contentHead?: string,
+): EnrichmentSkipReason | null {
+  if (!provider.shouldEnrich) return null;
+  const classification = classifyPath(relPath, contentHead);
+  const scope = provider.shouldEnrich({ relPath, classification });
+  const declined = level === "file" ? scope === "none" : scope !== "full";
+  if (!declined) return null;
+  if (classification.isGenerated) return "generated";
+  if (classification.isTest) return "test";
+  if (classification.isDocumentation) return "documentation";
+  return "policy";
 }
 
 /**
