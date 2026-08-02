@@ -216,6 +216,25 @@ absolute cost of the scan moves with Qdrant's segment conditioning after a large
 rewrite, so the trustworthy claim is the **ratio** taken back to back on
 identical state, not "66 s became 15 s".
 
+### Correction to the delta-run figure
+
+The commit message on `eb687658` cites a 288.6 s wall for the profiled 97-file
+delta run and derives "roughly 62% of the run" from it. **That wall clock is
+wrong.** The harness that produced it backgrounded the CLI and only checked
+liveness after each `sleep` completed, so its clock overran to the next sleep
+boundary: the CLI exited at 21:13:56 and the harness stopped counting at
+21:14:37. The true wall was ~247 s, matching the reported `overallMs` of 246.9 s
+plus process startup.
+
+The per-process CPU timeline up to 247 s is unaffected and still attributes ~90
+s to the recovery scan and a second ~90 s to `CompletionRunner`'s counting, so
+the share of the run this change removes goes **up**, to roughly 73%. The A/B
+table above is unaffected: those runs used a foreground harness, where the wall
+clock is the process lifetime.
+
+Traced while investigating `tea-rags-mcp-w39o5`, which was filed off the same
+bad measurement and closed as not-a-bug.
+
 ## Correctness invariants
 
 The bar: no change may make a genuinely-unenriched point invisible to recovery
