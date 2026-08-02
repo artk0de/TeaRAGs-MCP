@@ -344,6 +344,51 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
     });
   });
 
+  // bd tea-rags-mcp-55950 — the deferral above used to require a DOT in the
+  // receiver text, on the same assumption `chainType` itself carried until
+  // e8feo: that a bare identifier is owned by `localType` or `ivarField`. Both
+  // decline a receiver with no `localBindings` entry and no `@`, so once
+  // `nullaryReceiverType` / `scopedReceiverType` started typing those, the exact
+  // chain COULD answer them and the fan-out was answering first — N discounted
+  // `dynamic` edges where one exact edge was available. The gate is typedness,
+  // not shape; these two pin both directions of it.
+  describe("typed BARE receiver defers to chainType as well (55950)", () => {
+    // Two definers of `total`, so without the guard a fan-out IS produced —
+    // which is what makes the guard observable rather than vacuous.
+    const twoTotals = tableWith(
+      [
+        "app/models/invoice.rb",
+        [
+          sym("Invoice", "Invoice", "app/models/invoice.rb", []),
+          sym("Invoice#total", "total", "app/models/invoice.rb", ["Invoice"]),
+        ],
+      ],
+      [
+        "app/models/cart.rb",
+        [sym("Cart", "Cart", "app/models/cart.rb", []), sym("Cart#total", "total", "app/models/cart.rb", ["Cart"])],
+      ],
+    );
+    const call = { callText: "latest_invoice.total", receiver: "latest_invoice", member: "total", startLine: 7 };
+
+    it("returns [] when a bare receiver is typed by a nullary self-call return fact", () => {
+      // `latest_invoice` has no localBindings entry and no `@`, so localType and
+      // ivarField both decline; the caller's own class declares its return type,
+      // which types the receiver to Invoice and hands `chainType` the resolution.
+      const typedBareCtx = ctx({
+        symbolTable: twoTotals,
+        callerScope: ["Billing"],
+        structuredReturnTypes: { "Billing#latest_invoice": { form: "instance", name: "Invoice" } },
+      });
+      expect(edgesOf(resolver.resolveDispatch(call, typedBareCtx))).toEqual([]);
+    });
+
+    it("still fans out when the bare receiver carries no derivable type (recall unchanged)", () => {
+      // Same call, no return fact anywhere — the engine cannot type the receiver,
+      // so the exact chain has nothing to defer TO and the dynamic path stands.
+      expect(edgesOf(resolver.resolveDispatch(call, ctx({ symbolTable: twoTotals }))).length).toBeGreaterThan(0);
+    });
+  });
+
   describe("chain-order safety: typed receiver resolves exact via localType, never reaches member guard", () => {
     // A TYPED receiver (localBindings binds `model` → "Model") with an in-project
     // `Model#update` def resolves EXACT via the localType chain strategy, not

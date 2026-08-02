@@ -177,14 +177,28 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     // external classifier reclassifies to externalSkipped rather than persisting
     // an ambiguous aggregate (taxdome `Capybara…action…release.perform` noise).
     if (chainRootConstantIsExternal(r, ctx)) return emptyDispatchFanout();
-    // Typeable chain receiver: the propagation engine threads it to a known class/
+    // Typeable receiver: the propagation engine threads it to a known class/
     // instance type, so the precise `chainType` strategy (in resolve()) must own it
     // — returning [] here defers to it instead of fanning out speculative dynamic
     // edges. (bd tea-rags-mcp-epydb)
-    if (r.includes(".")) {
-      const t = typeOfReceiver(r, call.startLine, ctx);
-      if (t && (t.form === "class" || t.form === "instance")) return emptyDispatchFanout();
-    }
+    //
+    // The gate is TYPEDNESS, not receiver shape. It used to also require a dot,
+    // mirroring the entry guard `chainType` carried at the time; `chainType`
+    // dropped that guard in bd tea-rags-mcp-e8feo once `nullaryReceiverType` and
+    // `scopedReceiverType` began typing bare identifiers that `localType` (needs a
+    // `localBindings` entry) and `ivarField` (needs an `@`) both decline. Leaving
+    // the dot here kept 1188 taxdome sites fanning out to 3794 discounted
+    // `dynamic` edges where the chain had an exact answer for 848 of them
+    // (bd tea-rags-mcp-55950, `CODEGRAPH_BAREDEFER_ORACLE=1`).
+    //
+    // The 340 sites the chain does NOT answer lose their fan-out — every one of
+    // them because the derived type resolves to no in-project file (`StandardError`,
+    // `Array`, `ActionController::Parameters`, `Faraday`), so the edges being
+    // removed pointed at a coincidental same-named in-project def. All 340
+    // reclassify to `externalSkipped`, and `missWithInProjectDef` does not move by
+    // a single call — the recall hole is untouched, only false positives go.
+    const t = typeOfReceiver(r, call.startLine, ctx);
+    if (t && (t.form === "class" || t.form === "instance")) return emptyDispatchFanout();
     // AR/core instance member on an untyped receiver (`agent.update`): the true
     // target is an external base class (ActiveRecord::Base, ActiveModel). Fanning
     // out to a coincidental in-project def of the same name is wrong-type noise.
