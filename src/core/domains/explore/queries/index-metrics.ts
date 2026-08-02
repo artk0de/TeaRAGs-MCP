@@ -9,19 +9,25 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { IndexMetrics, SignalMetrics } from "../../../api/public/dto/index.js";
-import type { PayloadSignalDescriptor, SignalStats } from "../../../contracts/types/trajectory.js";
+import type { PayloadSignalDescriptor, SignalFloors, SignalStats } from "../../../contracts/types/trajectory.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { NotIndexedError } from "../../ingest/errors.js";
 import { mapMarkerToHealth } from "../../ingest/pipeline/enrichment/health-mapper.js";
 import type { EnrichmentMarkerMap } from "../../ingest/pipeline/enrichment/types.js";
 import { CollectionNotFoundError } from "../errors.js";
+import { applySignalFloors, floorsForSignal } from "../signal-floors.js";
 
 export class IndexMetricsQuery {
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly statsCache: StatsCache,
     private readonly payloadSignals: PayloadSignalDescriptor[],
+    /**
+     * Per-language structural-signal floors from the composition root. Absent
+     * → labelMaps stay purely percentile-derived.
+     */
+    private readonly signalFloors?: ReadonlyMap<string, SignalFloors>,
   ) {}
 
   async run(collectionName: string, sourcePath: string): Promise<IndexMetrics> {
@@ -50,16 +56,34 @@ export class IndexMetricsQuery {
     };
   }
 
-  private buildSignalMetrics(perSignal: Map<string, SignalStats>): Record<string, SignalMetrics> {
+  /**
+   * `language` / `scope` drive the industry floors: they are per-language, and
+   * source-scope only. The global polyglot bucket names no language, so it
+   * passes `undefined` and keeps raw percentiles.
+   */
+  private buildSignalMetrics(
+    perSignal: Map<string, SignalStats>,
+    language?: string,
+    scope: "source" | "test" = "source",
+  ): Record<string, SignalMetrics> {
     const result: Record<string, SignalMetrics> = {};
     for (const [key, signalStats] of perSignal) {
       const descriptor = this.payloadSignals.find((d) => d.key === key);
       if (!descriptor?.stats?.labels) continue;
 
+      const percentiles =
+        scope === "test"
+          ? signalStats.percentiles
+          : applySignalFloors(
+              signalStats.percentiles,
+              descriptor.stats.labels,
+              floorsForSignal(this.signalFloors, language, key),
+            );
+
       const labelMap: Record<string, number> = {};
       for (const [pKey, labelName] of Object.entries(descriptor.stats.labels)) {
         const p = Number(pKey.slice(1));
-        const threshold = signalStats.percentiles[p];
+        const threshold = percentiles[p];
         if (threshold !== undefined) {
           labelMap[labelName] = threshold;
         }
@@ -88,12 +112,12 @@ export class IndexMetricsQuery {
       const langSignals: Record<string, Record<string, SignalMetrics>> = {};
       for (const [key, scopedStats] of langStats) {
         const scoped: Record<string, SignalMetrics> = {};
-        const sourceMetrics = this.buildSignalMetrics(new Map([[key, scopedStats.source]]));
+        const sourceMetrics = this.buildSignalMetrics(new Map([[key, scopedStats.source]]), lang, "source");
         if (sourceMetrics[key]) {
           scoped["source"] = sourceMetrics[key];
         }
         if (scopedStats.test) {
-          const testMetrics = this.buildSignalMetrics(new Map([[key, scopedStats.test]]));
+          const testMetrics = this.buildSignalMetrics(new Map([[key, scopedStats.test]]), lang, "test");
           if (testMetrics[key]) {
             scoped["test"] = testMetrics[key];
           }

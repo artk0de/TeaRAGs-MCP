@@ -499,15 +499,16 @@ export interface CodeChunk {
 
     /**
      * Symbol mass, stamped by the `symbol-mass.ts` post-pass over the file's
-     * assembled chunk array. Class fields land on class chunks only;
-     * `fileSymbolCount` is flat on every code chunk of the file.
+     * assembled chunk array. `memberCount` lands on ONE chunk per container —
+     * the lowest-startLine one — so each class contributes a single value; the
+     * file-scoped fields are flat on every code chunk of the file.
      */
-    /** Distinct direct members of this class. Class chunks only. */
+    /** Distinct direct members of this class. Container representative chunk only. */
     memberCount?: number;
-    /** Real class span in lines (last member's endLine − class startLine). Class chunks only. */
-    classLines?: number;
-    /** Distinct code symbolIds declared in this file. */
-    fileSymbolCount?: number;
+    /** Physical line count of the file. */
+    moduleLines?: number;
+    /** Distinct callables (functions, methods, tests) declared in this file. */
+    fileMethodCount?: number;
 
     /** Heading breadcrumb path for documentation chunks. Internal — stripped from API responses. */
     headingPath?: { depth: number; text: string }[];

@@ -72,7 +72,7 @@ export interface SignalStatsRequest {
    * `relativePath` to each stats bucket (global, per-language, per-scope).
    *
    * Set it whenever the same value is stamped on every chunk of a file (e.g.
-   * `fileSymbolCount`). Without it the distribution describes chunks, not
+   * `fileMethodCount`). Without it the distribution describes chunks, not
    * files, and a many-chunk file dominates its own percentiles.
    */
   dedupeByFile?: boolean;
@@ -161,6 +161,23 @@ export interface PayloadSignalDescriptor {
   /** Include in metaOnly results even without overlay mask. Default: false. */
   essential?: boolean;
 }
+
+/**
+ * Smallest value a label may resolve at, regardless of what the collection's
+ * own percentile says — `threshold = max(percentile, floor)`.
+ *
+ * Keyed signal key → label name → floor. A percentile answers "large FOR THIS
+ * PROJECT", which on a clean codebase always nominates something as the worst
+ * 5% and on a legacy monolith reads a 400-line file as small. The floor is the
+ * absolute half of that verdict, carried from published linter limits (ESLint
+ * `max-lines`, RuboCop `Metrics/ClassLength`, pylint `max-module-lines`, Sonar
+ * S1448), so it is per-LANGUAGE: `domains/language/<lang>/signal-floors.ts`
+ * owns the numbers, `LanguageFactoryDescriptor.signalFloors()` aggregates them.
+ *
+ * Floors are a Metrics-layer concern, never a Stats-layer one: the cached
+ * distribution stays raw and a floor change takes effect on the next query.
+ */
+export type SignalFloors = Readonly<Record<string, Readonly<Record<string, number>>>>;
 
 /** Computed statistics for a single signal across the collection. */
 export interface SignalStats {

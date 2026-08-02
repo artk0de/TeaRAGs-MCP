@@ -30,8 +30,8 @@ describe("GodModulePreset", () => {
 
   it("carries the attribution numbers in the overlay", () => {
     expect(preset.overlayMask).toEqual({
-      file: ["fileSymbolCount"],
-      chunk: ["memberCount", "classLines"],
+      file: ["moduleLines", "fileMethodCount"],
+      chunk: ["memberCount"],
     });
   });
 

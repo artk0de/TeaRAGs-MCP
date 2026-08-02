@@ -237,7 +237,7 @@ export async function processFiles(
         assignNavigationAndDocSymbolId(chunks, basePath);
         // Post-process: symbol mass over the file's full chunk array. Runs
         // after doc symbolIds so documentation chunks are already identifiable.
-        assignSymbolMass(chunks);
+        assignSymbolMass(chunks, code);
 
         // Apply chunk limits if configured
         const chunksToAdd = options.maxChunksPerFile ? chunks.slice(0, options.maxChunksPerFile) : chunks;
@@ -267,8 +267,8 @@ export async function processFiles(
               isDocumentation: chunk.metadata.isDocumentation,
               methodLines: chunk.metadata.methodLines,
               memberCount: chunk.metadata.memberCount,
-              classLines: chunk.metadata.classLines,
-              fileSymbolCount: chunk.metadata.fileSymbolCount,
+              moduleLines: chunk.metadata.moduleLines,
+              fileMethodCount: chunk.metadata.fileMethodCount,
               headingPath: chunk.metadata.headingPath,
               navigation: chunk.metadata.navigation,
               ...(imports.length > 0 && { imports }),

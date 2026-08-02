@@ -7,7 +7,7 @@ import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../../cont
  * Use when: hunting the files that accumulated everything, planning a split,
  *   auditing which modules own an outsized share of the project's symbols.
  * Query examples: "request handling", "user model", "indexing pipeline".
- * Key signals: symbolCount (distinct code symbols declared in the file).
+ * Key signals: symbolCount (distinct callables declared in the file).
  *   Similarity stays at 0.2 so a broad query still ranks by mass.
  *
  * `signalLevel: "file"` — the score is about the file, not the chunk that
@@ -31,7 +31,7 @@ export class GodModulePreset implements RerankPreset {
     symbolCount: 0.8,
   };
   readonly overlayMask: OverlayMask = {
-    file: ["fileSymbolCount"],
-    chunk: ["memberCount", "classLines"],
+    file: ["moduleLines", "fileMethodCount"],
+    chunk: ["memberCount"],
   };
 }

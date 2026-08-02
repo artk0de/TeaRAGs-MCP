@@ -86,8 +86,8 @@ describe("processFiles — symbol-mass post-pass", () => {
     await cleanupTempDir(tempDir);
   });
 
-  it("hands the pipeline chunks carrying memberCount, classLines and fileSymbolCount", async () => {
-    await createTestFile(codebaseDir, "alpha.ts", "class Alpha {}\n");
+  it("hands the pipeline chunks carrying memberCount, moduleLines and fileMethodCount", async () => {
+    await createTestFile(codebaseDir, "alpha.ts", "class Alpha {\n  one() {}\n  two() {}\n}\n");
     const filePath = join(codebaseDir, "alpha.ts");
     const chunkerPool = {
       processFile: vi.fn(async () => ({ chunks: classFileChunks(filePath) })),
@@ -107,15 +107,14 @@ describe("processFiles — symbol-mass post-pass", () => {
     });
 
     expect(submitted).toHaveLength(3);
-    // Every code chunk carries the file's distinct-symbol count.
+    // Every code chunk carries the file-scoped fields — two callables, and the
+    // file's physical line count read from the source the processor loaded.
     for (const chunk of submitted) {
-      expect(chunk.metadata.fileSymbolCount).toBe(3);
+      expect(chunk.metadata.fileMethodCount).toBe(2);
+      expect(chunk.metadata.moduleLines).toBe(5);
     }
-    // Class fields land on the class chunk only, and the span reaches the last
-    // member (91) rather than stopping at the header (4).
+    // memberCount lands on the container's representative chunk only.
     expect(submitted[0].metadata.memberCount).toBe(2);
-    expect(submitted[0].metadata.classLines).toBe(90);
     expect(submitted[1].metadata.memberCount).toBeUndefined();
-    expect(submitted[1].metadata.classLines).toBeUndefined();
   });
 });

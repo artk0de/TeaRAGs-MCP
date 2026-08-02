@@ -14,7 +14,7 @@ describe("structuralSignals", () => {
       } else if (d.name === "chunkDensity") {
         expect(d.sources).toEqual(["methodDensity", "methodLines"]);
       } else if (d.name === "symbolCount") {
-        expect(d.sources).toEqual(["fileSymbolCount"]);
+        expect(d.sources).toEqual(["fileMethodCount"]);
       } else {
         expect(d.sources).toEqual([]);
       }

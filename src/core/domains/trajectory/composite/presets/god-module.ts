@@ -30,12 +30,13 @@ export class GodModuleCompositePreset implements CompositeRerankPreset {
   };
   readonly overlayMask: OverlayMask = {
     file: [
-      "fileSymbolCount",
+      "moduleLines",
+      "fileMethodCount",
       "codegraph.file.fanIn",
       "codegraph.file.fanOut",
       "codegraph.file.transitiveImpact",
       "codegraph.file.isHub",
     ],
-    chunk: ["memberCount", "classLines"],
+    chunk: ["memberCount"],
   };
 }
