@@ -237,6 +237,15 @@ export class CodegraphRunState {
   stats: RunStats = createEmptyRunStats();
 
   /**
+   * Per-file SHA256 for the run, threaded in from `FileSignalOptions`
+   * (bd tea-rags-mcp-6goqa). The graph finalizer stamps each written file row
+   * with its hash so a later run can tell a row that is CURRENT from one that
+   * merely EXISTS. Undefined for direct/test callers, which persists NULL and
+   * makes the file re-extract rather than be assumed current.
+   */
+  contentHashes?: ReadonlyMap<string, string>;
+
+  /**
    * Per-run aggregation of `FileExtraction.classAncestors` across every
    * file walked in pass-1. The resolver needs ancestors keyed by
    * `targetType` (the class a variable is bound to) — that target type's

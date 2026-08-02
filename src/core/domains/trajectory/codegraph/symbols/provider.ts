@@ -793,6 +793,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
+    // Per-file hashes for this run (bd tea-rags-mcp-6goqa) — the finalizer
+    // stamps each written row with one so the next run's repair check can tell
+    // a current row from a stale one. Assigned before any walk so both the
+    // caller-supplied-paths branch and the standalone walk see it.
+    if (options?.contentHashes) this.runState.contentHashes = options.contentHashes;
     // Read the run's Gemfile for gem-gated DSL grammar (adx5p.1) before pass-2
     // resolve reads it off each CallContext. One read per run (guarded).
     this.runState.loadGemfile(root);

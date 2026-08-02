@@ -157,7 +157,18 @@ export class GraphBuildFinalizer {
         }
         // Buffer for the next bulk flush (fired at BULK_FILES / checkpoint / end)
         // instead of one transaction per file.
-        buffer.push({ node: { relPath: extraction.relPath, language: extraction.language }, edges });
+        buffer.push({
+          node: {
+            relPath: extraction.relPath,
+            language: extraction.language,
+            // Stamp the row with the run's hash so the next run can tell a
+            // CURRENT row from one that merely exists (bd tea-rags-mcp-6goqa).
+            // Undefined persists as NULL, which the repair check reads as
+            // "unknown, re-extract" rather than assuming the row is fresh.
+            contentHash: this.runState.contentHashes?.get(extraction.relPath),
+          },
+          edges,
+        });
         this.runState.stats.fileEdgeCount += edges.fileEdges.length;
         this.runState.stats.methodEdgeCount += edges.methodEdges.length;
         processed += 1;

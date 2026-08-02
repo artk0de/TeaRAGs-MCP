@@ -216,6 +216,18 @@ export interface ChunkSignalOptions {
 export interface FileSignalOptions {
   /** Optional path subset for backfill / incremental reindex callers. */
   paths?: string[];
+  /**
+   * Per-file SHA256 for the run, keyed by repo-relative path
+   * (bd tea-rags-mcp-6goqa). A provider that keeps a per-file store persists
+   * the hash alongside each row, so a later run can tell a row that is merely
+   * PRESENT from one that is CURRENT — which is what the repair check diffs.
+   *
+   * Sourced from the ingest snapshot, so there is one definition of the hash
+   * and no extra read. Absent in direct/test callers; a row written without it
+   * persists a NULL hash and will be re-extracted, never silently assumed
+   * current. Survives the worker-pool `structuredClone` boundary as a Map.
+   */
+  contentHashes?: ReadonlyMap<string, string>;
   /** Active Qdrant collection name — see ChunkSignalOptions.collectionName. */
   collectionName?: string;
   /**

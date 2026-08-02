@@ -87,6 +87,8 @@ export class FilePhase {
   private runId = "";
   private runStartedAt = "";
   private crossPass = false;
+  /** Per-file SHA256 for the run — stamped onto provider rows (bd tea-rags-mcp-6goqa). */
+  private contentHashes?: ReadonlyMap<string, string>;
   private chunkPhase: ChunkPhase | null = null;
 
   constructor(
@@ -110,12 +112,14 @@ export class FilePhase {
     runId: string,
     runStartedAt: string,
     crossPass = false,
+    contentHashes?: ReadonlyMap<string, string>,
   ): void {
     this.contexts = new Map(contexts);
     this.coll = coll;
     this.runId = runId;
     this.runStartedAt = runStartedAt;
     this.crossPass = crossPass;
+    this.contentHashes = contentHashes;
     this.states.clear();
     for (const key of contexts.keys()) this.states.set(key, createState());
   }
@@ -187,6 +191,7 @@ export class FilePhase {
             // (the input spill is fed from the chunker's single parse); finalize
             // drains the spill. Off cross-pass it keeps the extractOneFile path.
             crossPass: this.crossPass,
+            contentHashes: this.contentHashes,
           })
           .then(() => undefined)
           .catch(async (error: unknown) => {

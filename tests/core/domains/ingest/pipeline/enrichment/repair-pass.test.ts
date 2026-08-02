@@ -75,11 +75,15 @@ describe("EnrichmentCoordinator.runRepairPass", () => {
       unknown,
       string,
       string[],
-      { collectionName: string },
+      { collectionName: string; contentHashes?: ReadonlyMap<string, string> },
     ];
     expect(root).toBe("/repo");
     expect([...paths].sort()).toEqual(["src/added.ts", "src/drifted.ts"]);
     expect(options.collectionName).toBe("code_x_v1");
+    // Without the hashes reaching extraction the rows persist NULL, the next
+    // run's repair set is maximal again, and the check never converges — the
+    // exact defect live validation caught (bd tea-rags-mcp-ymjxj).
+    expect(options.contentHashes?.get("src/drifted.ts")).toBe("new");
     expect(handleDeletedPaths).toHaveBeenCalledWith(["src/gone.ts"], { collectionName: "code_x_v1" });
   });
 

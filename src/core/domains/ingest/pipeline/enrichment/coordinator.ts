@@ -114,6 +114,14 @@ export class EnrichmentCoordinator {
   private readonly daemonGuard: IndexRunDaemonGuard;
 
   /**
+   * Per-file SHA256 for the current run, captured by runRepairPass and reused
+   * by the normal file phase (bd tea-rags-mcp-6goqa). Both paths must stamp the
+   * hash, otherwise the path that does not keeps resetting rows to NULL and the
+   * repair set never converges.
+   */
+  private runContentHashes?: ReadonlyMap<string, string>;
+
+  /**
    * Optional callback fired after enrichment milestones. Invoked at most twice
    * per run:
    * 1. After ChunkPhase streaming + initial chunk enrichment settles.
@@ -262,6 +270,7 @@ export class EnrichmentCoordinator {
    */
   async runRepairPass(collectionName: string, root: string, scanned: ReadonlyMap<string, string>): Promise<number> {
     let repaired = 0;
+    this.runContentHashes = scanned;
     for (const provider of this.providers) {
       const readPersisted = provider.readPersistedFileHashes;
       if (!readPersisted) continue;
@@ -301,7 +310,7 @@ export class EnrichmentCoordinator {
           repaired: repair.length,
           orphaned: orphans.length,
         });
-        await this.executor.runFileSignals(provider, root, repair, { collectionName });
+        await this.executor.runFileSignals(provider, root, repair, { collectionName, contentHashes: scanned });
         repaired += repair.length;
       }
     }
@@ -430,7 +439,14 @@ export class EnrichmentCoordinator {
       for (const provider of this.providers) provider.beginExtractionRun?.(collectionName);
     }
 
-    runState.filePhase.init(runState.contexts, collectionName ?? "", runState.runId, runState.startedAt, crossPass);
+    runState.filePhase.init(
+      runState.contexts,
+      collectionName ?? "",
+      runState.runId,
+      runState.startedAt,
+      crossPass,
+      this.runContentHashes,
+    );
     runState.chunkPhase.init(runState.contexts, collectionName ?? "", runState.startedAt);
 
     // markRunStart writes ONLY the `_run` pointer ({runId, startedAt,
