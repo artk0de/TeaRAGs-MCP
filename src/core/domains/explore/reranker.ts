@@ -867,14 +867,29 @@ function readPayloadPath(payload: Record<string, unknown>, path: string): unknow
  *
  * This ensures that descriptor sources like "ageDays" resolve to file-level and
  * "chunk.commitCount" resolves to chunk-level, matching the existing convention.
+ *
+ * A DOTLESS key maps onto itself:
+ *   - "moduleLines" -> "moduleLines"
+ *
+ * That case is the whole reason the loop starts at the full segment count —
+ * see the comment on the loop.
  */
 function buildSignalKeyMap(payloadSignals: PayloadSignalDescriptor[]): Map<string, string> {
   const map = new Map<string, string>();
 
   for (const ps of payloadSignals) {
     const segments = ps.key.split(".");
-    // Generate suffix keys from longest (N-1 segments) to shortest (1 segment)
-    for (let len = segments.length - 1; len >= 1; len--) {
+    // Generate suffix keys from the FULL key down to the 1-segment suffix.
+    // Starting at `segments.length` rather than `segments.length - 1` is what
+    // admits DOTLESS keys (bd tea-rags-mcp-u64tm): a key like "moduleLines"
+    // has one segment, so the old bound started the loop at 0 and it never
+    // ran — the signal was absent from the map and `applyLabelResolution`
+    // dropped it at `if (!fullKey) continue`, leaving every top-level static
+    // signal (moduleLines, fileMethodCount, memberCount, methodLines,
+    // methodDensity) as a bare number in the overlay. For a dotted key the
+    // extra iteration maps the full key onto itself, which is a no-op in
+    // practice and keeps the suffix forms below unchanged.
+    for (let len = segments.length; len >= 1; len--) {
       const suffix = segments.slice(segments.length - len).join(".");
       if (len === 1) {
         // 1-segment suffix: only set if not already taken (avoids file/chunk collision)
