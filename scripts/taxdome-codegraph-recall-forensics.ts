@@ -11090,6 +11090,15 @@ function noteBareDeferCall(
     return;
   }
   if (!bdReceiverIsBare(receiver)) return;
+  // `resolveDispatchViaComponents` returns the FIRST non-empty component, so the
+  // outcome `resolvePass2` saw is not necessarily the DYNAMIC component's — a
+  // typed local fans out through the CHA cone, and a `CONST[k]` site through the
+  // table. Those components sit BEFORE this gate and are untouched by it, so
+  // counting them would invent both a gain and a regression channel the change
+  // cannot exercise. `edgeKind: "dynamic"` is set in exactly one place
+  // (`resolveNarrowedFanout`, whose only caller is `RubyDynamicDispatchResolver`),
+  // which makes it an exact discriminator rather than a heuristic.
+  if (!edges.every((e) => e.edgeKind === "dynamic")) return;
 
   // ── the widened gate, restated ───────────────────────────────────────────
   const typeRef = typeOfReceiver(receiver, call.startLine, ctx);
