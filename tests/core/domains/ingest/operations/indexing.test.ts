@@ -14,6 +14,7 @@ import {
 import { OllamaUnavailableError } from "../../../../../src/core/adapters/embeddings/ollama/errors.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
 import { IndexingFailedError } from "../../../../../src/core/domains/ingest/errors.js";
+import { EnrichmentCoordinator } from "../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import type { IngestCodeConfig } from "../../../../../src/core/types.js";
 
 vi.mock("tree-sitter", () => ({
@@ -69,6 +70,27 @@ describe("IndexPipeline", () => {
   });
 
   describe("indexCodebase", () => {
+    it("addresses enrichment by the versioned collection on a force reindex (6goqa)", async () => {
+      // Counterpart to the incremental-path assertion in reindexing.test.ts.
+      // The two pipelines disagreeing about which name addresses which artifact
+      // is what produced the shadow-DuckDB defect, so the table is pinned on
+      // BOTH paths and neither may drift alone.
+      await createTestFile(codebaseDir, "force1.ts", "export const x = 1;");
+      await ingest.indexCodebase(codebaseDir);
+      const status = await ingest.getIndexStatus(codebaseDir);
+      const alias = status.collectionName!;
+
+      const beginRunSpy = vi.spyOn(EnrichmentCoordinator.prototype, "beginRun");
+      await ingest.indexCodebase(codebaseDir, { forceReindex: true });
+
+      const addressed = beginRunSpy.mock.calls.map((c) => c[1]);
+      expect(addressed.length).toBeGreaterThan(0);
+      expect(addressed).not.toContain(alias);
+      expect(addressed.every((n) => typeof n === "string" && /_v\d+$/.test(n))).toBe(true);
+
+      beginRunSpy.mockRestore();
+    });
+
     it("should index a simple codebase", async () => {
       await createTestFile(
         codebaseDir,
