@@ -441,4 +441,32 @@ describe("DaemonGraphDbClient", () => {
     // Bounded: gave up near the configured timeout, not after the default 5s.
     expect(elapsed).toBeLessThan(2000);
   });
+
+  // The daemon proxies whole result sets as one frame, so any response bigger
+  // than a socket chunk (~64KB) reaches the client split across several `data`
+  // events. Non-ASCII content must survive that split: decoding each chunk on
+  // its own turns a straddling multi-byte character into U+FFFD.
+  it("round-trips a response larger than one socket chunk with non-ASCII content intact", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const symbols = Array.from({ length: 4000 }, (_, i) => ({
+      symbolId: `Пользователь${i}#обработать→日本語・🚀`,
+      relPath: `app/models/пользователь_${i}.rb`,
+      kind: "method" as const,
+      startLine: i,
+      endLine: i + 1,
+    }));
+    await echoServer(socketPath, () => symbols);
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const received = await client.listAllSymbols();
+    await client.close();
+
+    // Larger than a single socket chunk, so the split genuinely happened.
+    expect(Buffer.byteLength(JSON.stringify(symbols), "utf8")).toBeGreaterThan(64 * 1024);
+    expect(received).toHaveLength(symbols.length);
+    expect(received.map((s) => s.symbolId)).toEqual(symbols.map((s) => s.symbolId));
+    expect(received.map((s) => s.relPath)).toEqual(symbols.map((s) => s.relPath));
+  });
 });

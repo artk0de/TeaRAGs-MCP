@@ -59,6 +59,50 @@ describe("EnrichmentCoordinator", () => {
       coord.beginRun("/repo", "coll-z");
       await expect(coord.awaitCompletion("coll-z")).resolves.toBeDefined();
     });
+
+    // Recovery runs BEFORE beginRun, so it sits outside the keep-alive window
+    // that beginRun opens. Its batches reach the codegraph daemon through a
+    // worker, and a worker is connect-only — it cannot spawn a daemon that has
+    // idle-exited or died. Without its own keep-alive, recovery on an otherwise
+    // idle repo fails with ENOENT on the daemon socket and the whole provider
+    // is reported `failed`.
+    it("holds the daemon alive for the duration of recovery", async () => {
+      const order: string[] = [];
+      const release = vi.fn(async () => {
+        order.push("release");
+      });
+      const guard = {
+        begin: vi.fn(async () => {
+          order.push("begin");
+          return release;
+        }),
+      };
+      const recovery = {
+        recoverAll: vi.fn(async () => {
+          order.push("recoverAll");
+        }),
+        countUnenriched: vi.fn().mockResolvedValue(0),
+      } as unknown as ConstructorParameters<typeof EnrichmentCoordinator>[2];
+
+      const coord = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery, undefined, guard);
+      await coord.runRecovery("coll-recover", "/repo");
+
+      expect(guard.begin).toHaveBeenCalledWith("coll-recover");
+      expect(order).toEqual(["begin", "recoverAll", "release"]);
+    });
+
+    it("releases the recovery keep-alive even when recovery throws", async () => {
+      const release = vi.fn().mockResolvedValue(undefined);
+      const guard = { begin: vi.fn().mockResolvedValue(release) };
+      const recovery = {
+        recoverAll: vi.fn().mockRejectedValue(new Error("recovery boom")),
+        countUnenriched: vi.fn().mockResolvedValue(0),
+      } as unknown as ConstructorParameters<typeof EnrichmentCoordinator>[2];
+
+      const coord = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery, undefined, guard);
+      await expect(coord.runRecovery("coll-recover", "/repo")).rejects.toThrow("recovery boom");
+      expect(release).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("resolves the effective root at beginRun and streams against it per batch", async () => {
