@@ -29,6 +29,7 @@ import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { ACTIVE_RECORD_QUERY_INTERFACE } from "../dsl/rails.js";
 import { catalogueForGemfile } from "../gemfile.js";
 import { rubyNonNilArms, rubyReceiverForm, rubyTypeRefEquals } from "../type-ref.js";
+import { linearizeAncestors } from "./ancestor-linearization.js";
 
 /**
  * Array/Enumerable methods that return a SINGLE ELEMENT from a typed container.
@@ -588,14 +589,20 @@ function boundCallTypeRef(receiver: string, ctx: CallContext): RubyTypeRef | und
  * Instance (`#`) form only: a bare call binds `self`, never the class object, so
  * the `.` coordinate an `@!method self.x` directive claims is not consulted.
  *
- * Precedence, and why the two levels differ:
- *  - the CALLER'S OWN class wins outright — a definition on the receiver's own
- *    class shadows every ancestor, which is Ruby's rule, not a heuristic;
- *  - ANCESTORS must AGREE. `ctx.classAncestors` is a flat list of superclass +
- *    includes, NOT a linearized MRO, so "first entry" is not reliably "nearest
- *    definition". Two ancestors declaring different return types is a question
- *    this map cannot answer, and a wrong receiver type poisons every downstream
- *    hop — so the disagreement resolves to silence.
+ * ONE level, not two: the caller's class and its ancestors are asked as a single
+ * {@link linearizeAncestors} walk, and the NEAREST coordinate carrying a fact
+ * answers. That is Ruby's rule stated once — a definition on the class shadows
+ * its ancestors because the class sits ahead of them in its own MRO, and a
+ * `prepend`ed module shadows the class for the same reason.
+ *
+ * It used to be two levels with a disagreement guard: own class outright, then
+ * ancestors that had to AGREE or the answer collapsed to silence. The guard
+ * existed because the raw `classAncestors` list is walker storage order
+ * (`[superclass, ...includes]`), where "first entry" is not "nearest
+ * definition" — so two ancestors declaring different return types was a question
+ * the flat list genuinely could not answer, and a wrong receiver type poisons
+ * every downstream hop. The linearization answers it, so the silence is gone
+ * (bd tea-rags-mcp-uuux9).
  *
  * `undefined` when the call site has no enclosing class (a top-level `def`, a
  * bare script statement) — there is no owner to ask, and callers fall back to
@@ -603,20 +610,11 @@ function boundCallTypeRef(receiver: string, ctx: CallContext): RubyTypeRef | und
  */
 function selfMemberReturnType(member: string, ctx: CallContext): RubyTypeRef | undefined {
   if (ctx.callerScope.length === 0) return undefined;
-  const scopeKey = ctx.callerScope.join("::");
-  const own = declaredReturnTypeOn(scopeKey, member, ctx);
-  if (own !== undefined) return own;
-  let agreed: RubyTypeRef | undefined;
-  for (const ancestor of ctx.classAncestors?.[scopeKey] ?? []) {
-    const inherited = declaredReturnTypeOn(ancestor, member, ctx);
-    if (inherited === undefined) continue;
-    if (agreed === undefined) {
-      agreed = inherited;
-    } else if (!rubyTypeRefEquals(agreed, inherited)) {
-      return undefined; // ancestors disagree — the flat list cannot rank them
-    }
+  for (const owner of linearizeAncestors(ctx.callerScope.join("::"), ctx)) {
+    const declared = declaredReturnTypeOn(owner, member, ctx);
+    if (declared !== undefined) return declared;
   }
-  return agreed;
+  return undefined;
 }
 
 /**

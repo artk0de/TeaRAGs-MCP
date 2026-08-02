@@ -52,9 +52,9 @@ import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolvePath(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -89,13 +89,14 @@ describe("CodegraphEnrichmentProvider — super module-method MRO (cai0/2oky5)",
 
   it("resolves a module-method super to the consensus base across including classes", async () => {
     // Fixture: Tracer is included into A and B alongside Base (a module that
-    // defines the target method). Tracer is included FIRST so classAncestors
-    // stores ["Tracer", "Base"] — Tracer appears before Base in the stored MRO,
-    // so firstDefinerAfter("Tracer", "m", A/B) finds Base#m after Tracer.
+    // defines the target method). Tracer is included LAST, which is what puts it
+    // NEAREST in Ruby's MRO — `A.ancestors == [A, Tracer, Base]` — so `A.new.m`
+    // runs Tracer#m and its `super` reaches Base#m. That is the ordering
+    // firstDefinerAfter("Tracer", "m", A/B) has to reproduce.
     writeFileSync(join(root, "base.rb"), "module Base\n  def m; end\nend\n");
     writeFileSync(join(root, "tracer.rb"), "module Tracer\n  def m; super; end\nend\n");
-    writeFileSync(join(root, "a.rb"), "class A\n  include Tracer\n  include Base\nend\n");
-    writeFileSync(join(root, "b.rb"), "class B\n  include Tracer\n  include Base\nend\n");
+    writeFileSync(join(root, "a.rb"), "class A\n  include Base\n  include Tracer\nend\n");
+    writeFileSync(join(root, "b.rb"), "class B\n  include Base\n  include Tracer\nend\n");
 
     await provider.streamFileBatch(root, ["base.rb", "tracer.rb", "a.rb", "b.rb"]);
     await provider.finalizeSignals(root);
