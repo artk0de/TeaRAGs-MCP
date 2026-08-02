@@ -45,7 +45,12 @@ describe("RubyChainTypeSymbolResolutionStrategy", () => {
     expect(strat.attempt(call, ctx({ symbolTable })).kind).toBe("continue");
   });
 
-  it("continues when the receiver has no dot (single-segment — handled by localType/ivar)", () => {
+  // Rewritten from "continues when the receiver has no dot" (bd tea-rags-mcp-e8feo).
+  // That pin asserted the ENTRY GUARD's shape test, not the invariant this pass
+  // carries: a receiver the type engine cannot type is not this pass's case. The
+  // shape test was removed once `nullaryReceiverType` / `scopedReceiverType`
+  // started typing bare identifiers that `localType` and `ivarField` both decline.
+  it("continues when a single-segment receiver carries no derivable type", () => {
     const symbolTable = tableWith();
     const call: CallRef = { callText: "user.save", receiver: "user", member: "save", startLine: 1 };
     expect(strat.attempt(call, ctx({ symbolTable })).kind).toBe("continue");
@@ -227,6 +232,136 @@ describe("RubyChainTypeSymbolResolutionStrategy", () => {
   });
 });
 
+// ── Single-segment receivers the type engine answers (bd tea-rags-mcp-e8feo) ──
+//
+// `nullaryReceiverType` (bd pr7fu — an unbound lowercase identifier in receiver
+// position is a zero-arg self-call) and `scopedReceiverType` (bd adx5p.9 — the
+// devise `current_<scope>` convention) type a BARE identifier that is neither a
+// local binding nor an ivar. `localType` needs a binding it does not have,
+// `ivarField` needs a `@`, so both decline — and the type they compute reaches a
+// consumer only if this pass admits the shape.
+
+describe("RubyChainTypeSymbolResolutionStrategy — single-segment typed receivers", () => {
+  const strat = new RubyChainTypeSymbolResolutionStrategy(cfg);
+  const firmTable = (): InMemoryGlobalSymbolTable =>
+    tableWith([
+      "app/models/firm.rb",
+      [
+        sym("Firm", "Firm", "app/models/firm.rb", []),
+        sym("Firm#clients", "clients", "app/models/firm.rb", ["Firm"]),
+      ],
+    ]);
+
+  it("resolves a bare nullary self-call receiver through the caller's own return fact", () => {
+    const call: CallRef = {
+      callText: "current_firm.clients",
+      receiver: "current_firm",
+      member: "clients",
+      startLine: 12,
+    };
+    const outcome = strat.attempt(
+      call,
+      ctx({
+        symbolTable: firmTable(),
+        callerScope: ["AuthMethods"],
+        structuredReturnTypes: { "AuthMethods#current_firm": { form: "instance", name: "Firm" } },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/firm.rb", targetSymbolId: "Firm#clients" },
+    });
+  });
+
+  it("resolves a devise-convention scoped receiver that no file declares", () => {
+    const call: CallRef = {
+      callText: "current_firm.clients",
+      receiver: "current_firm",
+      member: "clients",
+      startLine: 4,
+    };
+    const outcome = strat.attempt(
+      call,
+      ctx({
+        symbolTable: firmTable(),
+        callerScope: ["ApplicationController"],
+        gemfileContent: 'gem "devise"',
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/firm.rb", targetSymbolId: "Firm#clients" },
+    });
+  });
+
+  it("DROPs when a single-segment receiver's type names no project file (gem / stdlib)", () => {
+    // `Logger` is not in the symbol table and declares no ancestors, so the type
+    // is known and unreachable — the same precision discipline `localType` and
+    // `ivarField` apply to a gem-typed receiver.
+    const call: CallRef = { callText: "logger.info", receiver: "logger", member: "info", startLine: 7 };
+    const outcome = strat.attempt(
+      call,
+      ctx({
+        symbolTable: tableWith(),
+        callerScope: ["Svc"],
+        structuredReturnTypes: { "Svc#logger": { form: "instance", name: "Logger" } },
+      }),
+    );
+    expect(outcome.kind).toBe("drop");
+  });
+
+  it("resolves a class-valued single-segment receiver via the static-method lookup", () => {
+    const symbolTable = tableWith([
+      "app/models/repository.rb",
+      [
+        sym("Repository", "Repository", "app/models/repository.rb", []),
+        sym("Repository.create", "create", "app/models/repository.rb", ["Repository"]),
+      ],
+    ]);
+    const call: CallRef = { callText: "repo.create", receiver: "repo", member: "create", startLine: 3 };
+    const outcome = strat.attempt(
+      call,
+      ctx({
+        symbolTable,
+        callerScope: ["Svc"],
+        structuredReturnTypes: { "Svc#repo": { form: "class", name: "Repository" } },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/repository.rb", targetSymbolId: "Repository.create" },
+    });
+  });
+
+  it("resolves through a nilable single-segment receiver (rubyReceiverForm collapses Firm|nil)", () => {
+    const call: CallRef = {
+      callText: "current_firm.clients",
+      receiver: "current_firm",
+      member: "clients",
+      startLine: 2,
+    };
+    const outcome = strat.attempt(
+      call,
+      ctx({
+        symbolTable: firmTable(),
+        callerScope: ["Svc"],
+        structuredReturnTypes: {
+          "Svc#current_firm": {
+            form: "union",
+            members: [{ form: "instance", name: "Firm" }, { form: "nil" }],
+          },
+        },
+      }),
+    );
+    // `nil.clients` reaches no in-project definition, so receiver position drops
+    // the nil arm — the honest `Firm|nil` fact still yields an exact edge.
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/firm.rb", targetSymbolId: "Firm#clients" },
+    });
+  });
+});
+
 // ── Composition test: chain resolves terminally instead of dynamic-fanning ─
 
 describe("RubyCallResolver composition — chainType before receiverSetDrop", () => {
@@ -276,6 +411,46 @@ describe("RubyCallResolver composition — chainType before receiverSetDrop", ()
     // No localBindings, no structuredReturnTypes → chain type unknown → CONTINUE from chainType
     // → receiverSetDrop fires (receiver is non-null) → resolve returns null
     const target = resolver.resolve(call, ctx({ symbolTable }));
+    expect(target).toBeNull();
+  });
+
+  // bd tea-rags-mcp-e8feo — the end-to-end invariant behind the guard widening.
+  it("resolves a TYPED bare receiver instead of dropping it at receiverSetDrop", () => {
+    const symbolTable = tableWith([
+      "app/models/firm.rb",
+      [
+        sym("Firm", "Firm", "app/models/firm.rb", []),
+        sym("Firm#clients", "clients", "app/models/firm.rb", ["Firm"]),
+      ],
+    ]);
+    const resolver = new RubyCallResolver();
+    const call: CallRef = {
+      callText: "current_firm.clients",
+      receiver: "current_firm",
+      member: "clients",
+      startLine: 20,
+    };
+    // No local binding and no `@` — `localType` and `ivarField` both decline; the
+    // type comes from the caller's own return fact via `nullaryReceiverType`.
+    const target = resolver.resolve(
+      call,
+      ctx({
+        symbolTable,
+        callerScope: ["AuthMethods"],
+        structuredReturnTypes: { "AuthMethods#current_firm": { form: "instance", name: "Firm" } },
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "app/models/firm.rb", targetSymbolId: "Firm#clients" });
+  });
+
+  it("still drops an UNTYPED bare receiver rather than guessing a short-name match", () => {
+    const symbolTable = tableWith([
+      "app/models/firm.rb",
+      [sym("Firm#clients", "clients", "app/models/firm.rb", ["Firm"])],
+    ]);
+    const resolver = new RubyCallResolver();
+    const call: CallRef = { callText: "widget.clients", receiver: "widget", member: "clients", startLine: 20 };
+    const target = resolver.resolve(call, ctx({ symbolTable, callerScope: ["AuthMethods"] }));
     expect(target).toBeNull();
   });
 });
