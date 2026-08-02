@@ -50,7 +50,7 @@ export const BASE_PAYLOAD_SIGNALS: PayloadSignalDescriptor[] = [
     stats: { labels: { p50: "small", p75: "large", p95: "god-module" }, dedupeByFile: true },
   },
   {
-    key: "fileMethodCount",
+    key: "moduleMethodCount",
     type: "number",
     description: "Distinct callables — functions, methods, tests — declared in this file",
     // File-scoped value repeated on every chunk of the file: percentiles must

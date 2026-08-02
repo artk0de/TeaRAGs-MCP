@@ -32,7 +32,7 @@ function sourceOf(lines: number): string {
   return Array.from({ length: lines }, (_, i) => `line ${i + 1}`).join("\n");
 }
 
-describe("assignSymbolMass — fileMethodCount", () => {
+describe("assignSymbolMass — moduleMethodCount", () => {
   it("counts callables only, so a class and its methods contribute N, not N+1", () => {
     const chunks = [
       makeChunk({ chunkType: "class", symbolId: "Alpha" }),
@@ -44,7 +44,7 @@ describe("assignSymbolMass — fileMethodCount", () => {
     assignSymbolMass(chunks, sourceOf(40));
 
     for (const chunk of chunks) {
-      expect(chunk.metadata.fileMethodCount).toBe(3);
+      expect(chunk.metadata.moduleMethodCount).toBe(3);
     }
   });
 
@@ -58,7 +58,7 @@ describe("assignSymbolMass — fileMethodCount", () => {
     assignSymbolMass(chunks, sourceOf(40));
 
     for (const chunk of chunks) {
-      expect(chunk.metadata.fileMethodCount).toBe(0);
+      expect(chunk.metadata.moduleMethodCount).toBe(0);
     }
   });
 
@@ -71,7 +71,7 @@ describe("assignSymbolMass — fileMethodCount", () => {
 
     assignSymbolMass(chunks, sourceOf(40));
 
-    expect(chunks[0].metadata.fileMethodCount).toBe(3);
+    expect(chunks[0].metadata.moduleMethodCount).toBe(3);
   });
 
   it("counts a callable split across several chunks once", () => {
@@ -83,7 +83,7 @@ describe("assignSymbolMass — fileMethodCount", () => {
 
     assignSymbolMass(chunks, sourceOf(40));
 
-    expect(chunks[0].metadata.fileMethodCount).toBe(1);
+    expect(chunks[0].metadata.moduleMethodCount).toBe(1);
   });
 
   it("stamps chunks that carry no symbolId, without counting them", () => {
@@ -91,8 +91,8 @@ describe("assignSymbolMass — fileMethodCount", () => {
 
     assignSymbolMass(chunks, sourceOf(40));
 
-    expect(chunks[0].metadata.fileMethodCount).toBe(1);
-    expect(chunks[1].metadata.fileMethodCount).toBe(1);
+    expect(chunks[0].metadata.moduleMethodCount).toBe(1);
+    expect(chunks[1].metadata.moduleMethodCount).toBe(1);
   });
 });
 
@@ -290,7 +290,7 @@ describe("assignSymbolMass — chunks that get no class fields", () => {
     assignSymbolMass(chunks, sourceOf(45));
 
     for (const chunk of chunks) {
-      expect(chunk.metadata.fileMethodCount).toBe(2);
+      expect(chunk.metadata.moduleMethodCount).toBe(2);
       expect(chunk.metadata.moduleLines).toBe(45);
       expect(chunk.metadata.memberCount).toBeUndefined();
     }
@@ -305,7 +305,7 @@ describe("assignSymbolMass — chunks that get no class fields", () => {
     assignSymbolMass(chunks, sourceOf(200));
 
     for (const chunk of chunks) {
-      expect(chunk.metadata.fileMethodCount).toBeUndefined();
+      expect(chunk.metadata.moduleMethodCount).toBeUndefined();
       expect(chunk.metadata.moduleLines).toBeUndefined();
       expect(chunk.metadata.memberCount).toBeUndefined();
     }
@@ -319,8 +319,8 @@ describe("assignSymbolMass — chunks that get no class fields", () => {
 
     assignSymbolMass(chunks, sourceOf(40));
 
-    expect(chunks[0].metadata.fileMethodCount).toBe(1);
-    expect(chunks[1].metadata.fileMethodCount).toBeUndefined();
+    expect(chunks[0].metadata.moduleMethodCount).toBe(1);
+    expect(chunks[1].metadata.moduleMethodCount).toBeUndefined();
   });
 
   it("is a no-op on an empty chunk array", () => {

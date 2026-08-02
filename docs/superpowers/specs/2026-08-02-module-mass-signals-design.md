@@ -84,11 +84,11 @@ reindex is still required, for the same reason the feature already required one.
 
 ### Signals after the change
 
-| Signal            | Scope                   | Measures                            | Labels                       |
-| ----------------- | ----------------------- | ----------------------------------- | ---------------------------- |
-| `moduleLines`     | file (`dedupeByFile`)   | physical lines of the file          | small / large / god-module   |
-| `fileMethodCount` | file (`dedupeByFile`)   | distinct callables declared in file | typical / busy / god-module  |
-| `memberCount`     | container (1 per class) | direct members of the class         | typical / large / god-module |
+| Signal              | Scope                   | Measures                            | Labels                       |
+| ------------------- | ----------------------- | ----------------------------------- | ---------------------------- |
+| `moduleLines`       | file (`dedupeByFile`)   | physical lines of the file          | small / large / god-module   |
+| `moduleMethodCount` | file (`dedupeByFile`)   | distinct callables declared in file | typical / busy / god-module  |
+| `memberCount`       | container (1 per class) | direct members of the class         | typical / large / god-module |
 
 `classLines` is renamed to `moduleLines` and re-pointed at the file. The class
 span disappears as a signal; class mass is carried by `memberCount`, which is
@@ -106,11 +106,11 @@ counts physical lines by default, so the floors below are directly comparable,
 and no second parse is needed.
 
 `assignSymbolMass(chunks, code)` gains the source text and stamps the value on
-every code chunk of the file, exactly as `fileMethodCount` is stamped. Keeping
+every code chunk of the file, exactly as `moduleMethodCount` is stamped. Keeping
 the computation inside `symbol-mass.ts` holds the colocation rule: one place
 populates all fields of the structure.
 
-### `fileMethodCount`
+### `moduleMethodCount`
 
 Distinct folded `symbolId`s of chunks whose `chunkType` is `function`, `test` or
 `test_setup`. A type-only file scores 0, which is the correct answer for a
@@ -121,7 +121,7 @@ already covers top-level functions elsewhere in the project (`methodLines`,
 
 `SymbolCountSignal` (`static/rerank/derived-signals/symbol-count.ts`) keeps its
 derived-signal name `symbolCount` — the weight key is preset-facing API and no
-preset's meaning changes — but reads `fileMethodCount` and updates its prose.
+preset's meaning changes — but reads `moduleMethodCount` and updates its prose.
 
 ### `memberCount` selection fix
 
@@ -185,16 +185,16 @@ tiers.
 
 #### Values
 
-| Language               | `moduleLines` large / god-module | `memberCount` large / god-module | `fileMethodCount` busy / god-module |
-| ---------------------- | -------------------------------- | -------------------------------- | ----------------------------------- |
-| typescript, javascript | 300 / 600                        | 10 / 20                          | 15 / 30                             |
-| ruby                   | 100 / 250                        | 10 / 20                          | 12 / 25                             |
-| python                 | 500 / 1000                       | 20 / 30                          | 20 / 35                             |
-| java                   | 750 / 1500                       | 20 / 35                          | 20 / 35                             |
-| go                     | 500 / 1000                       | 15 / 30                          | 15 / 30                             |
-| rust                   | 500 / 1000                       | 15 / 30                          | 15 / 30                             |
-| bash                   | 300 / 600                        | —                                | 15 / 30                             |
-| markdown               | `{}`                             | `{}`                             | `{}`                                |
+| Language               | `moduleLines` large / god-module | `memberCount` large / god-module | `moduleMethodCount` busy / god-module |
+| ---------------------- | -------------------------------- | -------------------------------- | ------------------------------------- |
+| typescript, javascript | 300 / 600                        | 10 / 20                          | 15 / 30                               |
+| ruby                   | 100 / 250                        | 10 / 20                          | 12 / 25                               |
+| python                 | 500 / 1000                       | 20 / 30                          | 20 / 35                               |
+| java                   | 750 / 1500                       | 20 / 35                          | 20 / 35                               |
+| go                     | 500 / 1000                       | 15 / 30                          | 15 / 30                               |
+| rust                   | 500 / 1000                       | 15 / 30                          | 15 / 30                               |
+| bash                   | 300 / 600                        | —                                | 15 / 30                               |
+| markdown               | `{}`                             | `{}`                             | `{}`                                  |
 
 Anchors: ESLint `max-lines` 300 · RuboCop `Metrics/ClassLength` and
 `Metrics/ModuleLength` 100 · pylint `max-module-lines` 1000 and
@@ -205,10 +205,11 @@ Go and Rust publish no module-level limit (clippy `too_many_lines` 100 and
 golangci `funlen` 60 both bound functions), so they sit between TypeScript and
 Java.
 
-`fileMethodCount` is the one row without a direct anchor — every published limit
-counts methods per **class**, not per file. The values take the class limit with
-headroom for a file holding a few classes. They are calibration, not citation,
-and should be re-checked against the distribution after the first full reindex.
+`moduleMethodCount` is the one row without a direct anchor — every published
+limit counts methods per **class**, not per file. The values take the class
+limit with headroom for a file holding a few classes. They are calibration, not
+citation, and should be re-checked against the distribution after the first full
+reindex.
 
 `methodLines` gets no floors in this change. Its current
 `small ≤10 / large ≤36 / decomposition_candidate ≤175` is already plausible, and
@@ -246,25 +247,25 @@ presets.
 
 ## Blast radius
 
-| File                                            | Change                                                            |
-| ----------------------------------------------- | ----------------------------------------------------------------- |
-| `chunker/symbol-mass.ts`                        | `moduleLines` + `fileMethodCount` computation, container indexing |
-| `chunker/tree-sitter.ts`                        | untouched — `getChunkType` stays as is                            |
-| `ingest/pipeline/file-processor.ts`             | pass `code`, stamp renamed fields                                 |
-| `core/types.ts`                                 | `CodeChunk.metadata` field renames                                |
-| `trajectory/static/payload-signals.ts`          | descriptors: rename, labels, drop `chunkTypeFilter`               |
-| `trajectory/static/provider.ts`                 | payload writes                                                    |
-| `static/rerank/derived-signals/symbol-count.ts` | reads `fileMethodCount`                                           |
-| `static/rerank/presets/god-module.ts`           | overlay mask                                                      |
-| `composite/presets/god-module.ts`               | overlay mask                                                      |
-| `contracts/types/trajectory.ts`                 | `SignalFloors`                                                    |
-| `contracts/types/language.ts`                   | `LanguageFactoryDescriptor.signalFloors()`                        |
-| `domains/language/<lang>/signal-floors.ts`      | new, 9 files                                                      |
-| `domains/language/factory.ts`                   | `signalFloors()` aggregator                                       |
-| `domains/explore/signal-floors.ts`              | new — `applySignalFloors`                                         |
-| `domains/explore/reranker.ts`                   | floors injection + apply                                          |
-| `domains/explore/queries/index-metrics.ts`      | floors injection + apply                                          |
-| `api/internal/composition.ts`                   | wire floors into explore                                          |
+| File                                            | Change                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------- |
+| `chunker/symbol-mass.ts`                        | `moduleLines` + `moduleMethodCount` computation, container indexing |
+| `chunker/tree-sitter.ts`                        | untouched — `getChunkType` stays as is                              |
+| `ingest/pipeline/file-processor.ts`             | pass `code`, stamp renamed fields                                   |
+| `core/types.ts`                                 | `CodeChunk.metadata` field renames                                  |
+| `trajectory/static/payload-signals.ts`          | descriptors: rename, labels, drop `chunkTypeFilter`                 |
+| `trajectory/static/provider.ts`                 | payload writes                                                      |
+| `static/rerank/derived-signals/symbol-count.ts` | reads `moduleMethodCount`                                           |
+| `static/rerank/presets/god-module.ts`           | overlay mask                                                        |
+| `composite/presets/god-module.ts`               | overlay mask                                                        |
+| `contracts/types/trajectory.ts`                 | `SignalFloors`                                                      |
+| `contracts/types/language.ts`                   | `LanguageFactoryDescriptor.signalFloors()`                          |
+| `domains/language/<lang>/signal-floors.ts`      | new, 9 files                                                        |
+| `domains/language/factory.ts`                   | `signalFloors()` aggregator                                         |
+| `domains/explore/signal-floors.ts`              | new — `applySignalFloors`                                           |
+| `domains/explore/reranker.ts`                   | floors injection + apply                                            |
+| `domains/explore/queries/index-metrics.ts`      | floors injection + apply                                            |
+| `api/internal/composition.ts`                   | wire floors into explore                                            |
 
 ## Testing
 
@@ -276,7 +277,7 @@ intentional invariant change.
    lowest-`startLine` one. This is the D1 regression test and must fail against
    today's `symbol-mass.ts`.
 2. **Counting** — a file of only interfaces and type aliases scores
-   `fileMethodCount: 0`; a class with N methods scores N, not N+1.
+   `moduleMethodCount: 0`; a class with N methods scores N, not N+1.
 3. **`moduleLines`** — equals the file's physical line count, stamped on every
    code chunk, absent from documentation chunks.
 4. **Floors** — `max` semantics both ways (percentile wins above the floor,
@@ -295,5 +296,5 @@ already pending as `fy79n`. Sequence: build + `npm link` in the worktree,
 reconnect MCP,
 `tea-rags index-codebase --project tea-rags --wait-enrichments --force --json`,
 then read `prime` and check the three signals report plausible thresholds.
-`fileMethodCount` floors get re-checked against the observed distribution at
+`moduleMethodCount` floors get re-checked against the observed distribution at
 that point.

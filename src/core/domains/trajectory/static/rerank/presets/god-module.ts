@@ -31,7 +31,7 @@ export class GodModulePreset implements RerankPreset {
     symbolCount: 0.8,
   };
   readonly overlayMask: OverlayMask = {
-    file: ["moduleLines", "fileMethodCount"],
+    file: ["moduleLines", "moduleMethodCount"],
     chunk: ["memberCount"],
   };
 }

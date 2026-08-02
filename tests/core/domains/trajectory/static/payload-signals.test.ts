@@ -36,8 +36,8 @@ describe("symbol-mass payload signals", () => {
     expect(sig.stats?.chunkTypeFilter).toBeUndefined();
   });
 
-  it("labels fileMethodCount by module-mass tier across every chunk type", () => {
-    const sig = descriptor("fileMethodCount");
+  it("labels moduleMethodCount by module-mass tier across every chunk type", () => {
+    const sig = descriptor("moduleMethodCount");
     expect(sig.type).toBe("number");
     expect(sig.stats?.labels).toEqual({ p50: "typical", p75: "busy", p95: "god-module" });
     expect(sig.stats?.chunkTypeFilter).toBeUndefined();
@@ -46,7 +46,7 @@ describe("symbol-mass payload signals", () => {
   it("computes the file-scoped percentiles over distinct files, not chunks", () => {
     // The value repeats on every chunk of a file; without per-file dedupe a
     // many-chunk file would dominate its own distribution.
-    expect(descriptor("fileMethodCount").stats?.dedupeByFile).toBe(true);
+    expect(descriptor("moduleMethodCount").stats?.dedupeByFile).toBe(true);
     expect(descriptor("moduleLines").stats?.dedupeByFile).toBe(true);
     // memberCount is stamped once per container, so it needs no dedupe.
     expect(descriptor("memberCount").stats?.dedupeByFile).toBeUndefined();

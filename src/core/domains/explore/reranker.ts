@@ -885,7 +885,7 @@ function buildSignalKeyMap(payloadSignals: PayloadSignalDescriptor[]): Map<strin
     // has one segment, so the old bound started the loop at 0 and it never
     // ran — the signal was absent from the map and `applyLabelResolution`
     // dropped it at `if (!fullKey) continue`, leaving every top-level static
-    // signal (moduleLines, fileMethodCount, memberCount, methodLines,
+    // signal (moduleLines, moduleMethodCount, memberCount, methodLines,
     // methodDensity) as a bare number in the overlay. For a dotted key the
     // extra iteration maps the full key onto itself, which is a no-op in
     // practice and keeps the suffix forms below unchanged.
