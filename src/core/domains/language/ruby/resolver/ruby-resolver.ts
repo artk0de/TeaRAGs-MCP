@@ -58,6 +58,7 @@ import {
   RubyChainTypeSymbolResolutionStrategy,
   RubyConeDispatchResolver,
   RubyConstantSymbolResolutionStrategy,
+  RubyConventionReceiverSymbolResolutionStrategy,
   RubyDynamicDispatchResolver,
   RubyEnqueueDispatchSymbolResolutionStrategy,
   RubyExplicitRequireSymbolResolutionStrategy,
@@ -119,6 +120,11 @@ export class RubyCallResolver implements CallResolver {
       new RubyExplicitRequireSymbolResolutionStrategy(cfg),
       new RubyChainTypeSymbolResolutionStrategy(cfg),
       new RubyArRelationGuardSymbolResolutionStrategy(cfg),
+      // Last chance before the catch-all DROP (bd tea-rags-mcp-wob7g): a bare
+      // receiver no fact channel typed, named after a class the run declares.
+      // MUST stay here — after `arRelationGuard`, whose DROPs are deliberate,
+      // and after every fact pass, whose answers outrank a naming guess.
+      new RubyConventionReceiverSymbolResolutionStrategy(cfg),
       new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
       new RubyBareCallSymbolResolutionStrategy(cfg),
       // After bareCall by design (bd tea-rags-mcp-8l5fo): any DECLARED definition

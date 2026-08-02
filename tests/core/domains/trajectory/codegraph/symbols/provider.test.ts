@@ -1372,9 +1372,12 @@ describe("CodegraphEnrichmentProvider", () => {
       const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
       // Class names indexed.
       expect(lookup.lookupByShortName("User").length).toBeGreaterThan(0);
-      // Compound class composes via "::". scope_resolution branch.
-      const acmeAuth = lookup.lookupByShortName("Acme::Auth");
-      expect(acmeAuth.length).toBeGreaterThan(0);
+      // Compound class composes via "::". scope_resolution branch. The
+      // symbolId keeps the namespace; the SHORT name is the last `::`
+      // segment, so the class stays reachable by its bare name
+      // (bd tea-rags-mcp-jii03).
+      const acmeAuth = lookup.lookupByShortName("Auth");
+      expect(acmeAuth.map((d) => d.symbolId)).toContain("Acme::Auth");
       // Ruby `def find` is an instance method → joins to its class
       // with `#`. `def self.recent` is a singleton (class) method →
       // joins with `.`. Per symbolid-convention.md the separator
