@@ -27,10 +27,10 @@ import { extname, join, relative } from "node:path";
 import ignore, { type Ignore } from "ignore";
 import Parser from "tree-sitter";
 
-import type { AstNode } from "../src/core/contracts/types/ast.js";
 // bd tea-rags-mcp-e8feo — the single-segment DROP-surface oracle drives the REAL
 // strategy chain, so it needs the three-state constructors the strategies return.
 import { CONTINUE, DROP, resolved as resolvedOutcome } from "../src/core/contracts/resolution.js";
+import type { AstNode } from "../src/core/contracts/types/ast.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   resolveLocalBinding,
@@ -57,7 +57,6 @@ import type {
 } from "../src/core/contracts/types/language.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
-import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import {
   ArityNarrower,
   BlockNarrower,
@@ -68,11 +67,9 @@ import {
   type DispatchCandidateNarrower,
 } from "../src/core/domains/language/kernel/dispatch-narrowing.js";
 import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
+import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import type { RubyDslCatalogue } from "../src/core/domains/language/ruby/dsl/index.js";
 import { catalogueForGemfile } from "../src/core/domains/language/ruby/gemfile.js";
-import { RUBY_DUCK_VOCAB } from "../src/core/domains/language/ruby/resolver/strategies/ruby-duck-vocabulary.js";
-import { classifyRubyLiteralReceiver } from "../src/core/domains/language/ruby/resolver/strategies/ruby-dynamic-dispatch.js";
-import { RUBY_RUNTIME_HOOKS } from "../src/core/domains/language/ruby/resolver/strategies/ruby-super.js";
 // bd tea-rags-mcp-e8feo — the DROP-surface oracle rebuilds the production chain
 // verbatim (same classes, same order) with ONE slot swapped, so it measures the
 // real precedence rather than a re-implementation of it.
@@ -92,6 +89,9 @@ import {
   RubySelfMemberSymbolResolutionStrategy,
   RubySuperSymbolResolutionStrategy,
 } from "../src/core/domains/language/ruby/resolver/strategies/index.js";
+import { RUBY_DUCK_VOCAB } from "../src/core/domains/language/ruby/resolver/strategies/ruby-duck-vocabulary.js";
+import { classifyRubyLiteralReceiver } from "../src/core/domains/language/ruby/resolver/strategies/ruby-dynamic-dispatch.js";
+import { RUBY_RUNTIME_HOOKS } from "../src/core/domains/language/ruby/resolver/strategies/ruby-super.js";
 import {
   collectAncestorChain,
   collectResolvedAncestorChain,
@@ -166,6 +166,12 @@ import {
   foldSelfDispatchTemplates,
   type SelfDispatchMethod,
 } from "../src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.js";
+// The REAL short-name cut the provider uses for `SymbolDefinition.shortName`.
+// It used to be a verbatim copy in this file; the copy silently went stale the
+// moment production changed (bd tea-rags-mcp-jii03 added the `::` split), and a
+// harness whose symbol table is indexed differently from production measures a
+// resolver that does not exist. Import it instead.
+import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { materializeTree } from "../src/core/infra/materialize.js";
 
@@ -440,24 +446,6 @@ const FIXPOINT_MAX_WAVES = 20;
 /** `bounded` drops the wide "any resolvable target" scope back to bvalc-shaped
  *  const-receiver + bare-call sites (runtime fallback; reported either way). */
 const FIXPOINT_WIDE = process.env.CODEGRAPH_FIXPOINT_SCOPE !== "bounded";
-
-// ---------------------------------------------------------------------------
-// verbatim helpers copied from provider.ts (lastSegment) — pure, no logic reuse
-// concern; identical to provider's `lastSegment` used for defs.shortName.
-// ---------------------------------------------------------------------------
-function lastSegment(name: string): string {
-  const slash = name.lastIndexOf("/");
-  if (slash !== -1) return name.slice(slash + 1);
-  const hash = name.lastIndexOf("#");
-  const segment =
-    hash !== -1
-      ? name.slice(hash + 1)
-      : (() => {
-          const dot = name.lastIndexOf(".");
-          return dot === -1 ? name : name.slice(dot + 1);
-        })();
-  return segment.replace(/~\d+$/, "");
-}
 
 // ---------------------------------------------------------------------------
 // File discovery — mirrors discoverSupportedFiles two-layer filter for ruby.
@@ -10400,11 +10388,7 @@ function ssSameTarget(a: SymbolResolutionTarget | null, b: SymbolResolutionTarge
 }
 
 /** `RubyCallResolver.resolve` reproduced: chain, then the self-dispatch redirect. */
-function ssRunChain(
-  chain: SymbolResolutionStrategy[],
-  call: CallRef,
-  ctx: CallContext,
-): SymbolResolutionTarget | null {
+function ssRunChain(chain: SymbolResolutionStrategy[], call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
   const target = resolveViaChain(chain, call, ctx);
   if (target === null) return null;
   return redirectSelfDispatchTemplate(target, call, ctx, SS_CFG.mode);
@@ -10477,8 +10461,7 @@ function noteSingleSegCall(
   ssBump2(ssVerdictByBase, verdict, baseOutcome);
 
   const typeName = typeRef === undefined ? undefined : tfRefName(typeRef);
-  const recovery =
-    typeName === undefined ? "receiver has no single-name type" : ssRecovery(typeName, call.member);
+  const recovery = typeName === undefined ? "receiver has no single-name type" : ssRecovery(typeName, call.member);
 
   if (baseOutcome === "miss" && outcome.kind !== "continue") {
     ssHoleTyped += 1;
@@ -10693,10 +10676,12 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
 
   L("");
   L("─── (2d) guard fires but the DISPATCH fan-out already answered ────");
-  L(`exact edge available, fan-out wins anyway: ${ssDispatchShadowedMethod} method-level, ${ssDispatchShadowedFileOnly} file-only`);
+  L(
+    `exact edge available, fan-out wins anyway: ${ssDispatchShadowedMethod} method-level, ${ssDispatchShadowedFileOnly} file-only`,
+  );
   L("  (not a regression — the call is resolved either way. It is the precision");
   L("   ceiling this change does not lift: RubyDynamicDispatchResolver's typeable-");
-  L("   receiver deferral is gated on `r.includes(\".\")`, so a typed BARE receiver");
+  L('   receiver deferral is gated on `r.includes(".")`, so a typed BARE receiver');
   L("   keeps its N discounted `dynamic` edges instead of one exact edge.)");
   for (const e of ssDispatchShadowExamples.slice(0, 8)) {
     L(`    ${e.where} ${e.receiver}.${e.member} type=${e.type} -> would be ${e.wideTarget}`);
@@ -10704,7 +10689,9 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
 
   L("");
   L("─── (2c) unresolved calls that flip to DROP (classification shift, no recall change) ───");
-  L(`unresolved calls the widened guard DROPs: ${ssDropFlipTotal}   of which recall-hole misses: ${ssHoleFlippedToDrop}`);
+  L(
+    `unresolved calls the widened guard DROPs: ${ssDropFlipTotal}   of which recall-hole misses: ${ssHoleFlippedToDrop}`,
+  );
   for (const e of ssDropFlipExamples.slice(0, 8)) {
     L(`    ${e.where} ${e.receiver}.${e.member} [${e.base}] type=${e.type}   (${e.recovery})`);
   }
@@ -10724,7 +10711,12 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
   const projCoreAmb = callsCoreAmbiguous + (deltas.coreAmbiguous ?? 0);
   const baseHole = Math.max(
     0,
-    callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
+    callsAttempted -
+      callsResolved -
+      callsExternalSkipped -
+      callsUnresolvable -
+      callsNoInProjectDef -
+      callsCoreAmbiguous,
   );
   const projHole = Math.max(
     0,
@@ -10754,9 +10746,7 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
   L(
     `inProjectEdgeRecall:  ${fmtPct(baseRecall)} -> ${fmtPct(projRecall)}   (${((projRecall - baseRecall) * 100 >= 0 ? "+" : "") + ((projRecall - baseRecall) * 100).toFixed(4)}pp)`,
   );
-  L(
-    `resolveSuccessRate:   ${fmtPct(callsResolved / baseInternal)} -> ${fmtPct(projResolved / projInternal)}`,
-  );
+  L(`resolveSuccessRate:   ${fmtPct(callsResolved / baseInternal)} -> ${fmtPct(projResolved / projInternal)}`);
   L("");
   L("─── cross-check against the ikyqu design's projection ─────────────");
   L(`recall-hole misses whose single-segment receiver the widened guard TYPES: ${ssHoleTyped}`);
@@ -11363,7 +11353,12 @@ function runBareDeferOracle(extractions: FileExtraction[]): void {
   const projCoreAmb = callsCoreAmbiguous + (bdLostByBucket.coreAmbiguous ?? 0);
   const baseHole = Math.max(
     0,
-    callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
+    callsAttempted -
+      callsResolved -
+      callsExternalSkipped -
+      callsUnresolvable -
+      callsNoInProjectDef -
+      callsCoreAmbiguous,
   );
   const projHole = Math.max(
     0,
@@ -12212,7 +12207,6 @@ function runBoundCallOracle(): void {
   L("");
   L(`boundCall oracle detail -> ${OUT_BOUNDCALL}`);
 }
-
 
 // ===========================================================================
 // SCOPE-FACT COORDINATE-FORM ORACLE (bd tea-rags-mcp-yjh0l,
@@ -13326,18 +13320,74 @@ function rsClassExists(name: string, ctx: CallContext): boolean {
 }
 
 /**
+ * How the convention probe is parameterised. The two axes were BOTH implicated
+ * by the 2026-08-02 residual report and neither had been measured on its own:
+ *
+ *  - `subtypeGate` — the precision gate the ground-truth grading demanded. All
+ *    75 of 75 measured errors came from one receiver, `actor`, whose derived
+ *    class `Actor` is a polymorphic base (System / Guest / User / Employee).
+ *    Rejecting a derived class that HAS descendants is the mechanical shape of
+ *    "do not guess a concrete type for an abstract base".
+ *  - `singularize` — the plural stem (`clients` → `Client`). It was ON in the
+ *    report's numbers, but a plural receiver names a COLLECTION, not an
+ *    element, so it is priced separately here rather than assumed.
+ */
+interface RsConventionOptions {
+  subtypeGate: boolean;
+  singularize: boolean;
+}
+
+const RS_OPT_UNGATED: RsConventionOptions = { subtypeGate: false, singularize: true };
+const RS_OPT_GATED: RsConventionOptions = { subtypeGate: true, singularize: true };
+const RS_OPT_GATED_NO_PLURAL: RsConventionOptions = { subtypeGate: true, singularize: false };
+
+/** Convention hits the subtype gate rejected, by derived class name. */
+const rsGateRejectBy = new Map<string, number>();
+
+/**
+ * Does this derived class have SUBTYPES? A class with descendants is a
+ * polymorphic base, and a receiver named after it carries a CONCRETE subtype at
+ * runtime — exactly the `actor` → System / Guest / User / Employee shape that
+ * produced every measured convention error.
+ *
+ * The snapshot is keyed by the ancestor text as WRITTEN in the subclass header,
+ * so both the bare name and every fully-qualified declaration of it are asked.
+ */
+function rsHasSubtypes(name: string, ctx: CallContext): boolean {
+  const view = ctx.hierarchy;
+  if (view === undefined) return false;
+  if (view.getDescendants(name).length > 0) return true;
+  for (const def of ctx.symbolTable.lookupByShortName(name)) {
+    if (def.fqName !== name && view.getDescendants(def.fqName).length > 0) return true;
+  }
+  return false;
+}
+
+/**
  * The class a receiver NAMES by convention, gated on that class being reachable
  * — the same reason `scopedReceiverType` gates on existence: a fabricated
  * receiver type poisons every downstream hop. Singular form is tried second so
  * `client` never resolves through `Clients`.
  */
-function rsConventionClass(bare: string, ctx: CallContext): string | undefined {
-  const direct = rsCamelize(bare);
-  if (direct.length > 0 && rsClassExists(direct, ctx)) return direct;
+function rsConventionClass(
+  bare: string,
+  ctx: CallContext,
+  opts: RsConventionOptions = RS_OPT_UNGATED,
+): string | undefined {
+  const accept = (name: string): string | undefined => {
+    if (name.length === 0 || !rsClassExists(name, ctx)) return undefined;
+    if (opts.subtypeGate && rsHasSubtypes(name, ctx)) {
+      rsBump(rsGateRejectBy, name);
+      return undefined;
+    }
+    return name;
+  };
+  const direct = accept(rsCamelize(bare));
+  if (direct !== undefined) return direct;
+  if (!opts.singularize) return undefined;
   const singular = rsSingularize(bare);
   if (singular === bare) return undefined;
-  const stemmed = rsCamelize(singular);
-  return stemmed.length > 0 && rsClassExists(stemmed, ctx) ? stemmed : undefined;
+  return accept(rsCamelize(singular));
 }
 
 /**
@@ -13356,6 +13406,7 @@ class RsConventionReceiverSymbolResolutionStrategy implements SymbolResolutionSt
   constructor(
     private readonly cfg: ResolverConfig,
     private readonly acceptFileOnly: boolean,
+    private readonly opts: RsConventionOptions = RS_OPT_UNGATED,
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
@@ -13364,7 +13415,7 @@ class RsConventionReceiverSymbolResolutionStrategy implements SymbolResolutionSt
     // A real fact channel wins, and hands the single-segment population that
     // `typeOfReceiver` DOES answer back to e8feo / ikyqu untouched.
     if (typeOfReceiver(call.receiver as string, call.startLine, ctx) !== undefined) return CONTINUE;
-    const klass = rsConventionClass(bare, ctx);
+    const klass = rsConventionClass(bare, ctx, this.opts);
     if (klass === undefined) return CONTINUE;
     const target = resolveTypeInstanceMethod(klass, call.member, ctx, this.cfg.mode);
     if (target === null) return CONTINUE;
@@ -13406,6 +13457,15 @@ function rsBuildChain(cfg: ResolverConfig, extra: SymbolResolutionStrategy | nul
 const rsBaseChain = rsBuildChain(RS_CFG, null);
 const rsPinnedChain = rsBuildChain(RS_CFG, new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, false));
 const rsFileOkChain = rsBuildChain(RS_CFG, new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, true));
+/** The two SHIPPABLE shapes: pinned terminal + the mandatory subtype gate. */
+const rsPinnedGatedChain = rsBuildChain(
+  RS_CFG,
+  new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, false, RS_OPT_GATED),
+);
+const rsPinnedGatedNoPluralChain = rsBuildChain(
+  RS_CFG,
+  new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, false, RS_OPT_GATED_NO_PLURAL),
+);
 
 /** Position of `receiverSetDrop` in the base chain — the candidate's insertion point. */
 const RS_SLOT_INDEX = rsBaseChain.findIndex((s) => s.name === "receiverSetDrop");
@@ -13453,11 +13513,47 @@ const rsProbe = {
 const rsTruth = { agree: 0, disagree: 0, factTypeAbsentFromTable: 0 };
 const rsTruthDisagreeBy = new Map<string, number>();
 const rsTruthExample: string[] = [];
+/** The same grading with the subtype gate applied — the shippable shape. */
+const rsTruthGated = { agree: 0, disagree: 0, factTypeAbsentFromTable: 0 };
+const rsTruthGatedDisagreeBy = new Map<string, number>();
+
+/**
+ * EDGE-LEVEL precision for the gated variant — the number that actually decides.
+ *
+ * Grading a guessed CLASS against a fact overstates the damage: a wrong class
+ * only fabricates an edge when the called member also resolves on that class's
+ * MRO, and even then the edge can be harmless (both classes inherit the member
+ * from the same ancestor, so the target symbolId is identical). Split them:
+ *
+ *   silent        — guess disagrees, but its terminal declines: NO edge emitted
+ *   sameTarget    — guess disagrees, both terminals land on the SAME symbolId
+ *   wrongTarget   — guess disagrees and emits a DIFFERENT target: a real error
+ *   rightTarget   — guess agrees with the fact and emits
+ */
+const rsEdgeTruth = { rightTarget: 0, wrongTarget: 0, sameTarget: 0, silent: 0, factHasNoTarget: 0 };
+const rsEdgeWrongBy = new Map<string, number>();
+const rsEdgeWrongExample: string[] = [];
+
+/** Every A/B variant the oracle prices, in report order. */
+const RS_VARIANTS = ["pinned", "fileOk", "pinnedGated", "pinnedGatedNoPlural"] as const;
+type RsVariant = (typeof RS_VARIANTS)[number];
+
+const RS_VARIANT_LABEL: Record<RsVariant, string> = {
+  pinned: "PINNED-ONLY, ungated (the 2026-08-02 reference number)",
+  fileOk: "FILE-OK, ungated (also file-only edges)",
+  pinnedGated: "PINNED-ONLY + subtype gate  <-- SHIPPABLE",
+  pinnedGatedNoPlural: "PINNED-ONLY + subtype gate, no plural stem",
+};
+
+function rsEmptyByVariant<T>(make: () => T): Record<RsVariant, T> {
+  return Object.fromEntries(RS_VARIANTS.map((v) => [v, make()])) as Record<RsVariant, T>;
+}
+
 /** A/B bucket movement, per variant: `<baseOutcome>-><variantOutcome>` → count. */
-const rsMove: Record<"pinned" | "fileOk", Map<string, number>> = { pinned: new Map(), fileOk: new Map() };
-const rsMoveExample: Record<"pinned" | "fileOk", string[]> = { pinned: [], fileOk: [] };
+const rsMove: Record<RsVariant, Map<string, number>> = rsEmptyByVariant(() => new Map<string, number>());
+const rsMoveExample: Record<RsVariant, string[]> = rsEmptyByVariant((): string[] => []);
 /** Distinct NEW method-level targets the candidate would light up. */
-const rsNewTargets: Record<"pinned" | "fileOk", Set<string>> = { pinned: new Set(), fileOk: new Set() };
+const rsNewTargets: Record<RsVariant, Set<string>> = rsEmptyByVariant(() => new Set<string>());
 /** Fidelity guard: the oracle's own no-extra chain vs the production resolver. */
 let rsMirrorChecked = 0;
 let rsMirrorDisagreed = 0;
@@ -13535,23 +13631,70 @@ function rsRunChain(chain: SymbolResolutionStrategy[], call: CallRef, ctx: CallC
 function rsNoteGroundTruth(call: CallRef, ctx: CallContext, bare: string, relPath: string): void {
   const fact = typeOfReceiver(call.receiver as string, call.startLine, ctx);
   if (fact === undefined || (fact.form !== "instance" && fact.form !== "class")) return;
-  const guess = rsConventionClass(bare, ctx);
-  if (guess === undefined) return;
   const factTail = lastConstantSegment(fact.name);
-  if (factTail === guess) {
-    rsTruth.agree += 1;
+  const factIsRefereeable = ctx.symbolTable.lookupByShortName(factTail).length > 0;
+
+  const grade = (
+    guess: string | undefined,
+    tally: { agree: number; disagree: number; factTypeAbsentFromTable: number },
+    disagreeBy: Map<string, number>,
+    keepExample: boolean,
+  ): void => {
+    if (guess === undefined) return;
+    if (factTail === guess) {
+      tally.agree += 1;
+      return;
+    }
+    // A fact naming a type this run declares nowhere cannot referee the guess.
+    if (!factIsRefereeable) {
+      tally.factTypeAbsentFromTable += 1;
+      return;
+    }
+    tally.disagree += 1;
+    rsBump(disagreeBy, `${call.receiver} → guess ${guess}, fact ${factTail}`);
+    if (keepExample && rsTruthExample.length < RS_EXAMPLE_CAP * 3) {
+      rsTruthExample.push(
+        `${relPath}:${call.startLine}  ${call.receiver}.${call.member}  guess=${guess} fact=${factTail}`,
+      );
+    }
+  };
+
+  grade(rsConventionClass(bare, ctx, RS_OPT_UNGATED), rsTruth, rsTruthDisagreeBy, true);
+
+  const gatedGuess = rsConventionClass(bare, ctx, RS_OPT_GATED);
+  grade(gatedGuess, rsTruthGated, rsTruthGatedDisagreeBy, false);
+
+  // ---- edge level: what the SHIPPABLE variant would actually emit here.
+  if (gatedGuess === undefined || !factIsRefereeable) return;
+  /** The method-level target a class would PIN, or null for "emits no edge". */
+  const pinnedOn = (typeName: string): string | null =>
+    resolveTypeInstanceMethod(typeName, call.member, ctx, RS_CFG.mode)?.targetSymbolId ?? null;
+  const guessTargetId = pinnedOn(gatedGuess);
+  if (guessTargetId === null) {
+    if (gatedGuess === factTail) return; // agreement that emits nothing is not evidence
+    rsEdgeTruth.silent += 1;
     return;
   }
-  // A fact naming a type this run declares nowhere cannot referee the guess.
-  if (ctx.symbolTable.lookupByShortName(factTail).length === 0) {
-    rsTruth.factTypeAbsentFromTable += 1;
+  if (gatedGuess === factTail) {
+    rsEdgeTruth.rightTarget += 1;
     return;
   }
-  rsTruth.disagree += 1;
-  rsBump(rsTruthDisagreeBy, `${call.receiver} → guess ${guess}, fact ${factTail}`);
-  if (rsTruthExample.length < RS_EXAMPLE_CAP * 3) {
-    rsTruthExample.push(
-      `${relPath}:${call.startLine}  ${call.receiver}.${call.member}  guess=${guess} fact=${factTail}`,
+  const factTargetId = pinnedOn(factTail);
+  if (factTargetId === null) {
+    // The fact's own class does not declare the member — the fact cannot referee
+    // an edge it would not emit either.
+    rsEdgeTruth.factHasNoTarget += 1;
+    return;
+  }
+  if (factTargetId === guessTargetId) {
+    rsEdgeTruth.sameTarget += 1;
+    return;
+  }
+  rsEdgeTruth.wrongTarget += 1;
+  rsBump(rsEdgeWrongBy, `${call.receiver}.${call.member} → ${guessTargetId} (fact: ${factTargetId})`);
+  if (rsEdgeWrongExample.length < RS_EXAMPLE_CAP * 2) {
+    rsEdgeWrongExample.push(
+      `${relPath}:${call.startLine}  ${call.receiver}.${call.member}  emit=${guessTargetId} truth=${factTargetId}`,
     );
   }
 }
@@ -13688,6 +13831,8 @@ function noteResidualCall(
   for (const [variant, chain] of [
     ["pinned", rsPinnedChain],
     ["fileOk", rsFileOkChain],
+    ["pinnedGated", rsPinnedGatedChain],
+    ["pinnedGatedNoPlural", rsPinnedGatedNoPluralChain],
   ] as const) {
     const target = rsRunChain(chain, call, ctx);
     const nowResolved = rsResolvedFlag(call, dispatchEdges, target);
@@ -13775,10 +13920,44 @@ function runResidualOracle(): void {
     for (const [k, n] of disagreeRows) L(`    ${String(n).padStart(5)}  ${k}`);
   }
   for (const ex of rsTruthExample.slice(0, 8)) L(`    e.g. ${ex}`);
+  const gradedGated = rsTruthGated.agree + rsTruthGated.disagree;
+  L("  WITH the no-subtypes gate applied:");
+  L(`    graded samples:                          ${gradedGated}`);
+  L(`    convention AGREES with the fact:         ${rsTruthGated.agree}`);
+  L(`    convention DISAGREES (would be wrong):   ${rsTruthGated.disagree}`);
+  L(
+    `    accuracy:                                ${gradedGated === 0 ? "n/a" : `${((rsTruthGated.agree / gradedGated) * 100).toFixed(2)}%`}`,
+  );
+  const gatedDisagreeRows = [...rsTruthGatedDisagreeBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15);
+  if (gatedDisagreeRows.length > 0) {
+    L("    surviving disagreements:");
+    for (const [k, n] of gatedDisagreeRows) L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  const emitted = rsEdgeTruth.rightTarget + rsEdgeTruth.wrongTarget + rsEdgeTruth.sameTarget;
+  L("  EDGE-LEVEL grading of the gated variant (what it would actually emit):");
+  L(`    emits the SAME target the fact does:     ${rsEdgeTruth.rightTarget + rsEdgeTruth.sameTarget}`);
+  L(`        of which the class guess AGREED:     ${rsEdgeTruth.rightTarget}`);
+  L(`        of which a different class, same tgt:${rsEdgeTruth.sameTarget}  (shared ancestor — harmless)`);
+  L(`    emits a DIFFERENT target (a real error): ${rsEdgeTruth.wrongTarget}`);
+  L(
+    `    edge accuracy:                           ${emitted === 0 ? "n/a" : `${(((emitted - rsEdgeTruth.wrongTarget) / emitted) * 100).toFixed(2)}%`}`,
+  );
+  L(`    wrong class but terminal DECLINES:       ${rsEdgeTruth.silent}  (no edge — harmless)`);
+  L(`    fact's own class has no such member:     ${rsEdgeTruth.factHasNoTarget}  (unrefereeable)`);
+  for (const [k, n] of [...rsEdgeWrongBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  for (const ex of rsEdgeWrongExample.slice(0, 6)) L(`      e.g. ${ex}`);
+  let gateRejectTotal = 0;
+  for (const n of rsGateRejectBy.values()) gateRejectTotal += n;
+  L(`  subtype-gate rejections (all probes):      ${gateRejectTotal}`);
+  for (const [k, n] of [...rsGateRejectBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
   L("");
 
   L("─── CUT 3b: A/B bucket movement with the candidate spliced in ─────");
-  for (const variant of ["pinned", "fileOk"] as const) {
+  for (const variant of RS_VARIANTS) {
     const rows = [...rsMove[variant].entries()].sort((a, b) => b[1] - a[1]);
     let gained = 0;
     let fromMiss = 0;
@@ -13790,7 +13969,7 @@ function runResidualOracle(): void {
     const resolvedAfter = callsResolved + gained;
     const denomAfter = resolvedAfter + newHole;
     const recallAfter = denomAfter === 0 ? 0 : resolvedAfter / denomAfter;
-    L(`  variant ${variant === "pinned" ? "PINNED-ONLY (method-level targets)" : "FILE-OK (also file-only edges)"}:`);
+    L(`  variant ${RS_VARIANT_LABEL[variant]}:`);
     for (const [k, n] of rows) L(`      ${String(n).padStart(6)}  ${k}`);
     L(`      distinct NEW method targets:  ${rsNewTargets[variant].size}`);
     L(`      hole ${hole} -> ${newHole}   (-${fromMiss})`);
@@ -13849,10 +14028,15 @@ function runResidualOracle(): void {
         residualBuckets: bucketRows.map(([key, n]) => ({ key, n, examples: rsResidualExample.get(key) ?? [] })),
         conventionProbe: rsProbe,
         groundTruth: { ...rsTruth, disagreements: Object.fromEntries(rsTruthDisagreeBy) },
-        abMovement: {
-          pinned: { moves: Object.fromEntries(rsMove.pinned), newTargets: rsNewTargets.pinned.size },
-          fileOk: { moves: Object.fromEntries(rsMove.fileOk), newTargets: rsNewTargets.fileOk.size },
-        },
+        groundTruthGated: { ...rsTruthGated, disagreements: Object.fromEntries(rsTruthGatedDisagreeBy) },
+        edgeLevelGated: { ...rsEdgeTruth, wrongEdges: Object.fromEntries(rsEdgeWrongBy) },
+        subtypeGateRejections: Object.fromEntries(rsGateRejectBy),
+        abMovement: Object.fromEntries(
+          RS_VARIANTS.map((v) => [
+            v,
+            { moves: Object.fromEntries(rsMove[v]), newTargets: rsNewTargets[v].size, label: RS_VARIANT_LABEL[v] },
+          ]),
+        ),
         precision: {
           fanout: { ...rsFanout, distinctTargets: rsFanoutTargets.size, byKind: Object.fromEntries(rsFanoutByKind) },
           fanoutCollapse: { ...rsCollapse, examples: rsCollapseExample },
