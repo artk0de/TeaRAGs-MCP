@@ -531,6 +531,41 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * coordinator. We surface this loudly so bugs surface at the wire-up
    * boundary instead of writing rows to the wrong DB.
    */
+  /**
+   * What this graph currently believes about each file: `relPath -> content
+   * hash`, `null` where the row predates the hash column
+   * (bd tea-rags-mcp-6goqa).
+   *
+   * Read through the pool's READ handle, which is daemon-backed in production —
+   * the daemon owns the RW lock, so a cross-process READ_ONLY attach would
+   * throw while it holds the file. A collection with no graph yet yields an
+   * empty map rather than an error: that is the fresh-`_vN` case, where every
+   * eligible file legitimately needs extracting.
+   */
+  async readPersistedFileHashes(collectionName: string): Promise<Map<string, string | null>> {
+    const hashes = new Map<string, string | null>();
+    if (!this.deps.pool) {
+      const rows = await (this.deps.graphDb as GraphDbClient).listFileContentHashes();
+      for (const row of rows) hashes.set(row.relPath, row.contentHash);
+      return hashes;
+    }
+    let handle;
+    try {
+      handle = await this.deps.pool.acquireReader(collectionName);
+    } catch {
+      // No DuckDB file for this collection yet — nothing persisted.
+      return hashes;
+    }
+    try {
+      for (const row of await handle.graphDb.listFileContentHashes()) {
+        hashes.set(row.relPath, row.contentHash);
+      }
+    } finally {
+      await handle.graphDb.close();
+    }
+    return hashes;
+  }
+
   private async getStore(collectionName?: string): Promise<{
     graphDb: GraphDbClient;
     symbolTable: GlobalSymbolTable;

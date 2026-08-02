@@ -990,6 +990,13 @@ export class DuckDbGraphClient implements GraphDbClient {
     return rows.map(fromCgSymbolsRow);
   }
 
+  async listFileContentHashes(): Promise<{ relPath: RelPath; contentHash: string | null }[]> {
+    const rows = await this.queryAll<{ rel_path: string; content_hash: string | null }>(
+      "SELECT rel_path, content_hash FROM cg_symbols_files",
+    );
+    return rows.map((r) => ({ relPath: r.rel_path, contentHash: r.content_hash }));
+  }
+
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
     if (chunkIds.size === 0) return;
     return this.serialize(async () => {

@@ -220,6 +220,10 @@ export class CodegraphDaemonServer {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.listAllSymbols();
       }
+      case "listFileContentHashes": {
+        const { graphDb } = await this.pool.acquire(collection);
+        return graphDb.listFileContentHashes();
+      }
       case "getTransitiveImpact": {
         const { graphDb } = await this.pool.acquire(collection);
         return graphDb.getTransitiveImpact(p.relPath as RelPath, p.maxDepth as number | undefined);

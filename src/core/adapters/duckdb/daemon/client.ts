@@ -343,6 +343,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("listAllSymbols", {})) as SymbolDefinition[];
   }
 
+  async listFileContentHashes(): Promise<{ relPath: RelPath; contentHash: string | null }[]> {
+    return (await this.call("listFileContentHashes", {})) as { relPath: RelPath; contentHash: string | null }[];
+  }
+
   async getTransitiveImpact(relPath: RelPath, maxDepth?: number): Promise<number> {
     return (await this.call("getTransitiveImpact", { relPath, maxDepth })) as number;
   }

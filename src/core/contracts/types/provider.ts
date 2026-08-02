@@ -383,6 +383,21 @@ export interface EnrichmentProvider {
    */
   readonly defersChunkEnrichment?: boolean;
   /**
+   * Per-file content hashes this provider has already persisted for
+   * `collectionName`, as `relPath -> hash`, with `null` for a row written
+   * before the provider stored hashes at all (bd tea-rags-mcp-6goqa).
+   *
+   * The coordinator diffs this against the run's eligible files to decide which
+   * files a provider must re-extract before its store matches the code. A
+   * provider that keeps no per-file store simply omits the method and the
+   * repair pass skips it — git does exactly that.
+   *
+   * An empty map means "this provider knows nothing about this collection", so
+   * a collection with no graph yet repairs everything, which is what a freshly
+   * created versioned collection needs.
+   */
+  readPersistedFileHashes?: (collectionName: string) => Promise<Map<string, string | null>>;
+  /**
    * Factory for the run-scoped commit discovery (bd tea-rags-mcp-82va1) —
    * the provider owns the window config (chunkMaxAgeMonths / timeout),
    * ChunkPhase owns the instance lifecycle (lazy create at first chunk
