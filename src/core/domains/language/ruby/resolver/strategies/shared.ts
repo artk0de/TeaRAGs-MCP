@@ -301,8 +301,39 @@ export function collectResolvedAncestorChain(
 }
 
 /**
+ * `klass`'s DIRECT ancestors in the order Ruby reaches them, ranked by their
+ * position in {@link linearizeAncestors}: every `include` ahead of the
+ * superclass, a later `include` ahead of an earlier one, and a module the
+ * superclass chain ALREADY carries left behind that superclass rather than
+ * hoisted in front of it (bd tea-rags-mcp-mo5ur).
+ *
+ * Ranking rather than re-deriving "superclass last" locally: the linearization
+ * is the one authority on MRO order in this package (`resolveSuper`,
+ * {@link firstDefinerAfter} and `selfMemberReturnType` all read it), and its
+ * dedup rule is the part a hand-rolled reorder gets wrong.
+ *
+ * ORDER only. The walk that consumes this keeps its own structure — same
+ * ancestors reached, same prepend rule, same file-only fallback — so nothing
+ * about WHICH targets are reachable moves, only which one is found first.
+ *
+ * Ancestors absent from the linearization (a name the hierarchy maps nowhere)
+ * sort last in declaration order; a single ancestor short-circuits, because
+ * there is no order to fix and the linearization walks the whole ancestor
+ * closure to compute one.
+ */
+function ancestorsInMroOrder(klass: string, ancestors: readonly string[], ctx: CallContext): readonly string[] {
+  if (ancestors.length < 2) return ancestors;
+  const mro = linearizeAncestors(klass, ctx);
+  const rank = (name: string): number => {
+    const at = mro.indexOf(name);
+    return at === -1 ? Number.MAX_SAFE_INTEGER : at;
+  };
+  return [...ancestors].sort((a, b) => rank(a) - rank(b));
+}
+
+/**
  * Resolve `<member>` as an instance method on `klass`, walking `classAncestors`
- * (superclass + `include`/`extend` mixins) in declaration order when the class
+ * (superclass + `include`/`extend` mixins) in Ruby's MRO order when the class
  * itself doesn't own it. Shared by the `super` walk (which starts at the
  * ancestors) and the `self.<member>` walk (which starts at the enclosing class
  * itself) so both express the same Ruby MRO traversal once.
@@ -310,9 +341,10 @@ export function collectResolvedAncestorChain(
  *   1. Resolve `klass` to its declaring file via `resolveConstant`.
  *   2. Within that file, look for `<member>` (short-name match scoped to the
  *      file). A unique candidate is a method-level edge.
- *   3. Miss → recurse into `classAncestors[klass]`, accumulating into `visited`
- *      so `A < B < A` cycles short-circuit. The first ancestor that owns
- *      `member` at the method level wins.
+ *   3. Miss → recurse into `classAncestors[klass]`, ranked by
+ *      {@link ancestorsInMroOrder} and accumulating into `visited` so
+ *      `A < B < A` cycles short-circuit. The first ancestor that owns `member`
+ *      at the method level wins.
  *   4. File known but method absent anywhere in the chain → file-only edge
  *      (`targetSymbolId: null`) for the FIRST class whose file resolved, keeping
  *      file-level fan accurate for out-of-project parents (`ApplicationRecord`).
@@ -366,7 +398,7 @@ export function resolveInstanceMethodInClassChain(
 
   const ancestors = ctx.classAncestors?.[klass];
   if (ancestors) {
-    for (const ancestor of ancestors) {
+    for (const ancestor of ancestorsInMroOrder(klass, ancestors, ctx)) {
       const inherited = resolveInstanceMethodInClassChain(ancestor, member, ctx, mode, visited, excludeSymbolId);
       if (inherited === null) continue;
       // Method-level pin wins immediately; remember the first known file as a
@@ -544,8 +576,8 @@ function includerAliases(moduleName: string, ctx: CallContext): { klass: string;
  *   3. Within the type's file, look for `<member>` whose scope tail matches the
  *      type (FQ `Product::IndexForm` or bare `PaginatableForm` — both forms exist
  *      in the table depending on how the class header was declared).
- *   4. Miss → walk `classAncestors` in declaration order; the first ancestor that
- *      method-level-pins `<member>` wins.
+ *   4. Miss → walk `classAncestors` in {@link ancestorsInMroOrder} order; the
+ *      first ancestor that method-level-pins `<member>` wins.
  *   5. File known but method absent → file-only edge (`targetSymbolId: null`),
  *      keeping file-level fan accurate for out-of-project parents (AR `save`).
  *   6. Type's file unknown (gem / stdlib) → `null` (caller DROPs).
@@ -690,7 +722,7 @@ function resolveTypeMethodInternal(
 
   const ancestors = ctx.classAncestors?.[typeName];
   if (ancestors) {
-    for (const ancestor of ancestors) {
+    for (const ancestor of ancestorsInMroOrder(typeName, ancestors, ctx)) {
       const inherited = resolveTypeMethodInternal(ancestor, member, ctx, mode, visited, symbolIdFilter);
       if (inherited && inherited.targetSymbolId !== null) return inherited;
     }
