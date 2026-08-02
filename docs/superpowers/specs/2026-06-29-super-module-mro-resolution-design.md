@@ -161,11 +161,17 @@ Fix (Task 5, additive):
   `resolveInstanceMethodInClassChain`) is NOT mutated. The reorder is gated on
   `classExtends` presence, so non-superclass fixtures are unchanged.
 
-Residual (Minor, matches the pre-existing class-direct backbone, not a
-regression): the reorder is applied per-level via `mroOrderedChain`, but the
-per-element resolution still delegates to `resolveInstanceMethodInClassChain`,
-whose own recursion walks raw `[superclass, ...includes]` order. For a DEEP
-hierarchy where a nested ancestor's superclass AND a nested include BOTH define
-the member, the picked target can be the nested superclass rather than the
-strict-MRO-first nested include. Single-level shapes (the dominant case) are
-exact; the "precision 1.0 by construction" claim narrows to the first-level MRO.
+Residual — CLOSED by bd `tea-rags-mcp-mo5ur`. The backbone no longer walks raw
+`[superclass, ...includes]`: `resolveInstanceMethodInClassChain` and
+`resolveTypeMethodInternal` rank each level's ancestors by their position in
+`linearizeAncestors` (the substrate `mroOrderedChain` became in bd
+`tea-rags-mcp-uuux9`), so the deep-hierarchy case this paragraph described — a
+nested ancestor's superclass beating a nested include — now picks the include,
+and the ranking inherits the linearization's dedup rule, leaving a module the
+superclass chain already carries behind that superclass instead of hoisting it.
+The reorder is ORDER-only by construction: the walk still recurses, so the
+ancestors reached, the prepend rule and the file-only fallback are untouched.
+What remains is narrower and inherent to recursing rather than flattening — a
+mixin's OWN ancestors are walked before the superclass region, where a full
+linearization would rank them after it. Measured on taxdome: neutral
+(`resolveSuccessRate` 88.30% before and after).

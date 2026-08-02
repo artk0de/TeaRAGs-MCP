@@ -371,7 +371,7 @@ describe("RubyCallResolver — compound-receiver association-chain bindings (B1)
     expect(target?.targetRelPath).toBe("app/models/user.rb");
   });
 
-  it("resolves `event.author.name` to User#name when class_name: \"User\" rewrote the hop", () => {
+  it('resolves `event.author.name` to User#name when class_name: "User" rewrote the hop', () => {
     const resolver = new RubyCallResolver();
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("app/models/user.rb", [
@@ -990,7 +990,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
     expect(target?.targetRelPath).toBe("helper.rb");
   });
 
-  it("tries ancestors in declaration order — first match wins", () => {
+  it("tries ancestors in MRO order — the nearest definer wins (mo5ur)", () => {
     const resolver = new RubyCallResolver();
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("foo.rb", [{ symbolId: "Foo", fqName: "Foo", shortName: "Foo", relPath: "foo.rb", scope: [] }]);
@@ -1014,11 +1014,14 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       imports: [],
       symbolTable: table,
       localBindings: { x: [{ line: 1, type: "Foo" }] },
-      // Foo extends First, then includes Second — First wins for `shared`.
+      // Walker STORAGE order, which is not lookup order: whether Foo `extends
+      // First; include Second` or includes both, Ruby ranks Second nearer —
+      // an include sits ahead of the superclass, and a later include ahead of
+      // an earlier one. So `shared` reaches Second#shared.
       classAncestors: { Foo: ["First", "Second"] },
     };
     const target = resolver.resolve({ callText: "x.shared", receiver: "x", member: "shared", startLine: 1 }, ctx);
-    expect(target?.targetSymbolId).toBe("First#shared");
+    expect(target?.targetSymbolId).toBe("Second#shared");
   });
 });
 

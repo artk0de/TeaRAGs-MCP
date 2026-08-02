@@ -384,14 +384,24 @@ function flatReturnFactMayOverrideKnownReceiver(member: string, ctx: CallContext
   return ctx.symbolTable.lookupByShortName(member).length <= 1;
 }
 
-/** The structured fact `<member>` inherits from the first ancestor declaring it. */
+/**
+ * The structured fact `<member>` inherits from the NEAREST ancestor declaring it.
+ *
+ * Same {@link linearizeAncestors} walk as {@link selfMemberReturnType}, and for
+ * the same reason: raw `classAncestors` is walker storage order
+ * (`[superclass, ...includes]`) one level deep, so a first-wins loop over it
+ * hands the superclass's fact to a call Ruby routes through a mixin, and never
+ * sees a fact on a grandparent or on a mixin's own ancestor at all. Walking the
+ * linearization states Ruby's rule once and keeps the two fact channels from
+ * drifting on which coordinate answers (bd tea-rags-mcp-mo5ur).
+ */
 function inheritedReturnType(
   className: string,
   member: string,
   ctx: CallContext,
   classReceiver = false,
 ): RubyTypeRef | undefined {
-  for (const ancestor of ctx.classAncestors?.[className] ?? []) {
+  for (const ancestor of linearizeAncestors(className, ctx)) {
     const inherited = declaredReturnTypeOn(ancestor, member, ctx, classReceiver);
     if (inherited !== undefined) return inherited;
   }
