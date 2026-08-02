@@ -98,6 +98,7 @@ import {
   CONE_MAX_DEFAULT,
   firstDefinerAfter,
   isRubyPath,
+  lastConstantSegment,
   resolveConstant,
   resolveTypeInstanceMethod,
   resolveTypeStaticMethod,
@@ -888,7 +889,9 @@ function resolvePass2(extraction: FileExtraction): void {
       // oracle only simulates where the outcome proves narrowing ran (jn5j0).
       let dispatchOutcome: DispatchFanoutOutcome | undefined;
       const noteDispatch = (out: DispatchFanoutOutcome | undefined): boolean => {
-        if ((SIGGAP_ORACLE_ENABLED || SINGLESEG_ENABLED) && out !== undefined) dispatchOutcome = out;
+        if ((SIGGAP_ORACLE_ENABLED || SINGLESEG_ENABLED || RESIDUAL_ENABLED) && out !== undefined) {
+          dispatchOutcome = out;
+        }
         const edges = out?.kind === "edges" ? out.edges : [];
         for (const edge of edges) if (edge.targetSymbolId !== null) resolvedTargets.add(edge.targetSymbolId);
         return edges.length > 0;
@@ -967,6 +970,9 @@ function resolvePass2(extraction: FileExtraction): void {
       }
       if (SINGLESEG_ENABLED) {
         noteSingleSegCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath, chunk.symbolId);
+      }
+      if (RESIDUAL_ENABLED) {
+        noteResidualCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath);
       }
     }
   }
@@ -11192,7 +11198,670 @@ async function main(): Promise<void> {
   if (FIXPOINT_ENABLED) runFixpointOracle(extractions, Date.now() - t0);
   if (CONSTCHAIN_ENABLED) runConstChainOracle(extractions);
   if (SINGLESEG_ENABLED) runSingleSegOracle(extractions);
+  if (RESIDUAL_ENABLED) runResidualOracle();
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+}
+
+// ===========================================================================
+// RESIDUAL TAXONOMY ORACLE (CODEGRAPH_RESIDUAL_ORACLE=1, 2026-08-02). Same
+// additive, env-gated contract as every oracle above: with the flag unset
+// nothing extra is replayed or reported and the A/B recall metrics are
+// byte-identical.
+//
+// Every oracle before this one starts from a MECHANISM and asks how much of the
+// hole it would close. This one runs the other way: it starts from the WHOLE
+// hole and asks what is left once each already-priced mechanism is subtracted.
+// Three cuts, none of which the existing roster produces:
+//
+//   1. DROP OWNERSHIP — the chain is replayed strategy-by-strategy and the
+//      miss is attributed to the strategy that returned DROP (or `exhausted`
+//      when every pass CONTINUEd). This is the one axis that says WHO swallowed
+//      the call rather than which fact was missing, and it splits "receiver
+//      typed, member absent" (an early terminal guard) from "receiver never
+//      typed at all" (the `receiverSetDrop` catch-all) without guessing.
+//
+//   2. NAMING-CONVENTION RECEIVER TYPING — the candidate mechanism. Rails names
+//      a variable after its class (`user` is a `User`, `@bill` a `Bill`), and
+//      `scopedReceiverType` (adx5p.9) already exploits exactly that convention,
+//      but only behind the `current_*` prefixes the DSL catalogue declares. The
+//      probe prices dropping the prefix requirement: camelize the bare receiver,
+//      require the class to EXIST in the run's symbol table, and resolve the
+//      member on its MRO.
+//
+//      Disjointness is by construction, not by argument: the probe CONTINUEs
+//      whenever `typeOfReceiver` already answers, so every receiver the e8feo /
+//      ikyqu single-segment work owns is handed back untouched and the two
+//      populations cannot double-count.
+//
+//      The vfo3e lesson is respected — the terminal is measured, not assumed.
+//      `resolveTypeMethodInternal` degrades to a FILE-ONLY edge when the class
+//      resolves but declares no such member, so pinned and file-only outcomes
+//      are counted apart and the A/B runs both semantics.
+//
+//   3. CONVENTION ACCURACY ON GROUND TRUTH — the kill test. Every call whose
+//      receiver is a bare/ivar single-segment identifier AND which a REAL fact
+//      channel already types is a labelled example: compare the fact's answer to
+//      what camelize would have guessed. That is the heuristic's measured error
+//      rate on this corpus, taken from the resolver's own answers rather than
+//      from an argument about Rails conventions.
+//
+// Cost discipline: the instrumented replay runs only where it can change an
+// answer — every miss (for cut 1), and elsewhere only after the cheap
+// convention test has already fired. A call resolved or dropped BEFORE the
+// candidate's slot takes the identical path in the variant chain, so it is
+// skipped rather than re-run.
+// ===========================================================================
+const RESIDUAL_ENABLED = process.env.CODEGRAPH_RESIDUAL_ORACLE === "1";
+const OUT_RESIDUAL = join(OUT_DIR, "residual-oracle-report.json");
+/** Worked examples kept per bucket — enough to read, small enough to print. */
+const RS_EXAMPLE_CAP = 12;
+
+const RS_CFG: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
+
+/** Receiver texts that are keywords or literals, never a variable named for a class. */
+const RS_RECEIVER_KEYWORDS = new Set(["self", "super", "nil", "true", "false", "__method__", "it", "_"]);
+/** A bare lowercase identifier, optionally `@`/`@@`-prefixed — the convention's whole surface. */
+const RS_SINGLE_SEGMENT = /^@{0,2}[a-z_][a-z0-9_]*$/;
+
+/** `blog_post` → `BlogPost`. Same transform `scopedReceiverType` uses (adx5p.9). */
+function rsCamelize(snake: string): string {
+  return snake
+    .split("_")
+    .filter((s) => s.length > 0)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join("");
+}
+
+/**
+ * Minimal English singularization — `clients` → `client`, `companies` →
+ * `company`. Deliberately crude: the symbol-table existence gate below is what
+ * actually decides, so an over-eager stem simply fails to name a class and the
+ * probe stays silent.
+ */
+function rsSingularize(name: string): string {
+  if (name.endsWith("ies") && name.length > 3) return `${name.slice(0, -3)}y`;
+  if (/(s|x|z|ch|sh)es$/.test(name)) return name.slice(0, -2);
+  if (name.endsWith("s") && !name.endsWith("ss") && name.length > 1) return name.slice(0, -1);
+  return name;
+}
+
+/** The receiver stripped of its `@`/`@@` sigil, or `undefined` when it is not single-segment. */
+function rsBareIdentifier(receiver: string | null): string | undefined {
+  if (receiver === null || !RS_SINGLE_SEGMENT.test(receiver)) return undefined;
+  const bare = receiver.startsWith("@@") ? receiver.slice(2) : receiver.startsWith("@") ? receiver.slice(1) : receiver;
+  return RS_RECEIVER_KEYWORDS.has(bare) ? undefined : bare;
+}
+
+/** How the existence gate found the class — the two tiers are reported apart. */
+const rsGateTier = { shortName: 0, constantOnly: 0 };
+
+/**
+ * Does this name denote a class the run can actually reach?
+ *
+ * Two tiers, because the SHORT-NAME index alone systematically undercounts.
+ * `SymbolDefinition.shortName` is `lastSegment(symbolId)`, which splits on
+ * `/`, `#` and `.` but NOT on `::` — so a compact-FQ declaration
+ * (`class GettingPaid::Bill`) is indexed under the short name
+ * `"GettingPaid::Bill"` and `lookupByShortName("Bill")` answers zero. Gating on
+ * that index alone (which is what `scopedReceiverType` does today) rejects every
+ * namespaced model in a Rails app of this shape.
+ *
+ * The second tier is `resolveConstant`, the SAME lookup the terminal performs:
+ * exact FQ, then the caller's enclosing-scope prefixes, then the Zeitwerk path
+ * convention over the caller's own import set. It is scope-aware, so it cannot
+ * reach a class the caller could not name.
+ */
+function rsClassExists(name: string, ctx: CallContext): boolean {
+  if (ctx.symbolTable.lookupByShortName(name).length > 0) {
+    rsGateTier.shortName += 1;
+    return true;
+  }
+  if (resolveConstant(name, ctx) !== null) {
+    rsGateTier.constantOnly += 1;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * The class a receiver NAMES by convention, gated on that class being reachable
+ * — the same reason `scopedReceiverType` gates on existence: a fabricated
+ * receiver type poisons every downstream hop. Singular form is tried second so
+ * `client` never resolves through `Clients`.
+ */
+function rsConventionClass(bare: string, ctx: CallContext): string | undefined {
+  const direct = rsCamelize(bare);
+  if (direct.length > 0 && rsClassExists(direct, ctx)) return direct;
+  const singular = rsSingularize(bare);
+  if (singular === bare) return undefined;
+  const stemmed = rsCamelize(singular);
+  return stemmed.length > 0 && rsClassExists(stemmed, ctx) ? stemmed : undefined;
+}
+
+/**
+ * The candidate strategy. Sits immediately BEFORE `receiverSetDrop`, so every
+ * fact-based channel, the Zeitwerk constant pass and the AR-relation guard all
+ * win first and only a call already on its way to the catch-all DROP is offered
+ * a naming-convention guess.
+ *
+ * `acceptFileOnly` selects the terminal policy: `false` demands a method-level
+ * pin (a real `Type#member` symbol), `true` also takes the file-only edge
+ * `resolveTypeInstanceMethod` returns when the class resolves but declares no
+ * such member. Both are built and compared rather than argued.
+ */
+class RsConventionReceiverSymbolResolutionStrategy implements SymbolResolutionStrategy {
+  readonly name = "conventionReceiver";
+  constructor(
+    private readonly cfg: ResolverConfig,
+    private readonly acceptFileOnly: boolean,
+  ) {}
+
+  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    const bare = rsBareIdentifier(call.receiver);
+    if (bare === undefined) return CONTINUE;
+    // A real fact channel wins, and hands the single-segment population that
+    // `typeOfReceiver` DOES answer back to e8feo / ikyqu untouched.
+    if (typeOfReceiver(call.receiver as string, call.startLine, ctx) !== undefined) return CONTINUE;
+    const klass = rsConventionClass(bare, ctx);
+    if (klass === undefined) return CONTINUE;
+    const target = resolveTypeInstanceMethod(klass, call.member, ctx, this.cfg.mode);
+    if (target === null) return CONTINUE;
+    if (target.targetSymbolId === null && !this.acceptFileOnly) return CONTINUE;
+    return resolvedOutcome(target);
+  }
+}
+
+/**
+ * `RubyCallResolver`'s strategy array, rebuilt with `extra` spliced in ahead of
+ * `receiverSetDrop`. The order is restated from `ruby-resolver.ts` rather than
+ * imported for the reason the single-segment oracle gives: an oracle sharing its
+ * chain with the code it evaluates cannot disagree with it. `rsMirrorDisagreed`
+ * validates the no-extra build against the production resolver on every call the
+ * oracle touches, so a re-ordering this copy fails to track cannot pass silently.
+ */
+function rsBuildChain(cfg: ResolverConfig, extra: SymbolResolutionStrategy | null): SymbolResolutionStrategy[] {
+  const head: SymbolResolutionStrategy[] = [
+    new RubySuperSymbolResolutionStrategy(cfg),
+    new RubySelfMemberSymbolResolutionStrategy(cfg),
+    new RubyLocalTypeSymbolResolutionStrategy(cfg),
+    new RubyIvarFieldSymbolResolutionStrategy(cfg),
+    new RubyReturnTypeBindingSymbolResolutionStrategy(cfg),
+    new RubyEnqueueDispatchSymbolResolutionStrategy(cfg),
+    new RubySelfDispatchEntrySymbolResolutionStrategy(cfg),
+    new RubyConstantSymbolResolutionStrategy(cfg),
+    new RubyExplicitRequireSymbolResolutionStrategy(cfg),
+    new RubyChainTypeSymbolResolutionStrategy(cfg),
+    new RubyArRelationGuardSymbolResolutionStrategy(cfg),
+  ];
+  const tail: SymbolResolutionStrategy[] = [
+    new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
+    new RubyBareCallSymbolResolutionStrategy(cfg),
+    new RubySchemaColumnSymbolResolutionStrategy(),
+  ];
+  return extra === null ? [...head, ...tail] : [...head, extra, ...tail];
+}
+
+const rsBaseChain = rsBuildChain(RS_CFG, null);
+const rsPinnedChain = rsBuildChain(RS_CFG, new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, false));
+const rsFileOkChain = rsBuildChain(RS_CFG, new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, true));
+
+/** Position of `receiverSetDrop` in the base chain — the candidate's insertion point. */
+const RS_SLOT_INDEX = rsBaseChain.findIndex((s) => s.name === "receiverSetDrop");
+
+type RsReplay = { owner: string; slotReached: boolean; target: SymbolResolutionTarget | null };
+
+/**
+ * `resolveViaChain` with the winning pass recorded. `owner` is the strategy that
+ * returned the decisive outcome (prefixed `resolved:` when it produced a target),
+ * or `exhausted` when every pass CONTINUEd. `slotReached` says whether the chain
+ * got as far as the candidate's insertion point — the exact precondition under
+ * which splicing a pass in there can change the answer.
+ */
+function rsReplay(call: CallRef, ctx: CallContext): RsReplay {
+  for (let i = 0; i < rsBaseChain.length; i += 1) {
+    const strategy = rsBaseChain[i];
+    const outcome = strategy.attempt(call, ctx);
+    if (outcome.kind === "resolved") {
+      return { owner: `resolved:${strategy.name}`, slotReached: i >= RS_SLOT_INDEX, target: outcome.target };
+    }
+    if (outcome.kind === "drop") {
+      return { owner: strategy.name, slotReached: i >= RS_SLOT_INDEX, target: null };
+    }
+  }
+  return { owner: "exhausted", slotReached: true, target: null };
+}
+
+// ---- state ---------------------------------------------------------------
+/** Misses attributed to the strategy that DROPped them, split by receiver kind. */
+const rsDropOwner = new Map<string, Map<ReceiverKind, number>>();
+/** The residual cut: `dropOwner | texture | receiver-typed? | defCount band`. */
+const rsResidualBucket = new Map<string, number>();
+const rsResidualExample = new Map<string, string[]>();
+/** Convention-probe verdicts over the WHOLE miss set. */
+const rsProbe = {
+  notSingleSegment: 0,
+  keywordOrLiteral: 0,
+  alreadyTyped: 0,
+  noSuchClass: 0,
+  classNoTarget: 0,
+  fileOnly: 0,
+  pinned: 0,
+};
+/** Ground truth: receiver name → what a REAL fact channel says its type is. */
+const rsTruth = { agree: 0, disagree: 0, factTypeAbsentFromTable: 0 };
+const rsTruthDisagreeBy = new Map<string, number>();
+const rsTruthExample: string[] = [];
+/** A/B bucket movement, per variant: `<baseOutcome>-><variantOutcome>` → count. */
+const rsMove: Record<"pinned" | "fileOk", Map<string, number>> = { pinned: new Map(), fileOk: new Map() };
+const rsMoveExample: Record<"pinned" | "fileOk", string[]> = { pinned: [], fileOk: [] };
+/** Distinct NEW method-level targets the candidate would light up. */
+const rsNewTargets: Record<"pinned" | "fileOk", Set<string>> = { pinned: new Set(), fileOk: new Set() };
+/** Fidelity guard: the oracle's own no-extra chain vs the production resolver. */
+let rsMirrorChecked = 0;
+let rsMirrorDisagreed = 0;
+/** Precision side — the core-homonym carve-out and the dynamic fan-out population. */
+const rsCoreAmbByMember = new Map<string, number>();
+const rsCoreAmbByKind = new Map<ReceiverKind, number>();
+const rsFanout = { calls: 0, edges: 0, ambiguousVerdicts: 0, confidenceSum: 0, singleton: 0, wide: 0 };
+const rsFanoutByKind = new Map<string, { calls: number; edges: number }>();
+const rsFanoutTargets = new Set<string>();
+/** Fan-out answers the call, but the convention derives ONE exact target for it. */
+const rsCollapse = {
+  calls: 0,
+  edgesToday: 0,
+  wideCalls: 0,
+  exactAmongFanout: 0,
+  exactMissingFromFanout: 0,
+};
+const rsCollapseExample: string[] = [];
+
+function rsBump(map: Map<string, number>, key: string): void {
+  map.set(key, (map.get(key) ?? 0) + 1);
+}
+
+function rsExample(store: Map<string, string[]>, key: string, text: string): void {
+  const arr = store.get(key) ?? [];
+  if (arr.length < RS_EXAMPLE_CAP) {
+    arr.push(text);
+    store.set(key, arr);
+  }
+}
+
+/** Receiver texture — the shape axis the residual table is cut on. */
+function rsTexture(receiver: string | null): string {
+  if (receiver === null) return "bareCall(null)";
+  if (receiver === "self") return "self";
+  if (RS_SINGLE_SEGMENT.test(receiver)) return receiver.startsWith("@") ? "@ivar" : "single-seg";
+  if (receiver.includes("[")) return "index";
+  if (/^[A-Z]/.test(receiver)) return "Const.chain";
+  if (receiver.includes(".")) return `dot-chain(${Math.min(3, receiver.split(".").length - 1)}hop)`;
+  return "other";
+}
+
+function rsDefBand(n: number): string {
+  if (n === 1) return "def=1";
+  if (n <= 4) return "def=2-4";
+  if (n <= 10) return "def=5-10";
+  if (n <= 40) return "def=11-40";
+  return "def=41+";
+}
+
+/** `resolvePass2`'s resolved/unresolved decision, replayed for a substituted chain. */
+function rsResolvedFlag(call: CallRef, dispatchEdges: number, chainTarget: SymbolResolutionTarget | null): boolean {
+  if (call.dispatch) return dispatchEdges > 0;
+  if (call.dispatchArgs && call.dispatchArgs.length > 0) return chainTarget !== null || dispatchEdges > 0;
+  return dispatchEdges > 0 || chainTarget !== null;
+}
+
+/** Is the exact chain's answer READ at this call site? (Mirror of `resolvePass2`.) */
+function rsChainIsConsulted(call: CallRef, dispatchEdges: number): boolean {
+  if (call.dispatch) return false;
+  if (call.dispatchArgs && call.dispatchArgs.length > 0) return true;
+  return dispatchEdges === 0;
+}
+
+function rsRunChain(chain: SymbolResolutionStrategy[], call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
+  const target = resolveViaChain(chain, call, ctx);
+  return target === null ? null : redirectSelfDispatchTemplate(target, call, ctx, RS_CFG.mode);
+}
+
+/**
+ * Ground-truth sample: this receiver IS typed by a real fact channel, so the
+ * convention's guess can be graded against it. Only single-segment receivers
+ * qualify — that is the whole surface the candidate would act on.
+ */
+function rsNoteGroundTruth(call: CallRef, ctx: CallContext, bare: string, relPath: string): void {
+  const fact = typeOfReceiver(call.receiver as string, call.startLine, ctx);
+  if (fact === undefined || (fact.form !== "instance" && fact.form !== "class")) return;
+  const guess = rsConventionClass(bare, ctx);
+  if (guess === undefined) return;
+  const factTail = lastConstantSegment(fact.name);
+  if (factTail === guess) {
+    rsTruth.agree += 1;
+    return;
+  }
+  // A fact naming a type this run declares nowhere cannot referee the guess.
+  if (ctx.symbolTable.lookupByShortName(factTail).length === 0) {
+    rsTruth.factTypeAbsentFromTable += 1;
+    return;
+  }
+  rsTruth.disagree += 1;
+  rsBump(rsTruthDisagreeBy, `${call.receiver} → guess ${guess}, fact ${factTail}`);
+  if (rsTruthExample.length < RS_EXAMPLE_CAP * 3) {
+    rsTruthExample.push(
+      `${relPath}:${call.startLine}  ${call.receiver}.${call.member}  guess=${guess} fact=${factTail}`,
+    );
+  }
+}
+
+/**
+ * The one call-site hook, invoked from `resolvePass2` once the baseline outcome
+ * is known. Everything it needs is already computed there.
+ */
+function noteResidualCall(
+  call: CallRef,
+  ctx: CallContext,
+  dispatchOutcome: DispatchFanoutOutcome | undefined,
+  baseOutcome: LcOutcome,
+  receiverKind: ReceiverKind,
+  relPath: string,
+): void {
+  // ---- precision side: the fan-out population and the core-homonym carve-out.
+  if (dispatchOutcome !== undefined) {
+    if (dispatchOutcome.kind === "ambiguous") rsFanout.ambiguousVerdicts += 1;
+    else if (dispatchOutcome.edges.length > 0) {
+      rsFanout.calls += 1;
+      rsFanout.edges += dispatchOutcome.edges.length;
+      if (dispatchOutcome.edges.length === 1) rsFanout.singleton += 1;
+      if (dispatchOutcome.edges.length >= 5) rsFanout.wide += 1;
+      for (const edge of dispatchOutcome.edges) {
+        rsFanout.confidenceSum += edge.confidence ?? 1;
+        if (edge.targetSymbolId !== null) rsFanoutTargets.add(edge.targetSymbolId);
+        const row = rsFanoutByKind.get(edge.edgeKind ?? "exact") ?? { calls: 0, edges: 0 };
+        row.edges += 1;
+        rsFanoutByKind.set(edge.edgeKind ?? "exact", row);
+      }
+      const headKind = dispatchOutcome.edges[0].edgeKind ?? "exact";
+      const headRow = rsFanoutByKind.get(headKind);
+      if (headRow) headRow.calls += 1;
+    }
+  }
+  if (baseOutcome === "coreAmbiguous") {
+    rsBump(rsCoreAmbByMember, call.member);
+    rsCoreAmbByKind.set(receiverKind, (rsCoreAmbByKind.get(receiverKind) ?? 0) + 1);
+  }
+
+  const bare = rsBareIdentifier(call.receiver);
+  // ---- ground truth: grade the convention wherever a real fact answers.
+  if (bare !== undefined) rsNoteGroundTruth(call, ctx, bare, relPath);
+
+  const isMiss = baseOutcome === "miss";
+  // Cheap pre-test: outside a miss, only a call the candidate could actually
+  // FIRE on is worth a replay.
+  const conventionFires =
+    bare !== undefined &&
+    typeOfReceiver(call.receiver as string, call.startLine, ctx) === undefined &&
+    rsConventionClass(bare, ctx) !== undefined;
+  if (!isMiss && !conventionFires) return;
+
+  const dispatchEdges = dispatchOutcome?.kind === "edges" ? dispatchOutcome.edges.length : 0;
+
+  // ---- PRECISION cut: a call the DYNAMIC fan-out already answered, on a
+  // receiver the convention can type. `RubyDynamicDispatchResolver`'s
+  // typeable-receiver deferral is gated on `r.includes(".")`, so a BARE
+  // receiver keeps its N discounted `dynamic` edges even when an exact target
+  // is derivable — the collapse N->1 is edges REMOVED, not edges added, and is
+  // priced separately from any recall claim.
+  if (baseOutcome === "resolved") {
+    if (conventionFires && dispatchOutcome?.kind === "edges" && dispatchEdges > 0) {
+      const klass = rsConventionClass(bare, ctx);
+      const exact = klass === undefined ? null : resolveTypeInstanceMethod(klass, call.member, ctx, RS_CFG.mode);
+      if (exact !== null && exact.targetSymbolId !== null) {
+        rsCollapse.calls += 1;
+        rsCollapse.edgesToday += dispatchEdges;
+        if (dispatchEdges >= 5) rsCollapse.wideCalls += 1;
+        const hit = dispatchOutcome.edges.some((e) => e.targetSymbolId === exact.targetSymbolId);
+        if (hit) rsCollapse.exactAmongFanout += 1;
+        else rsCollapse.exactMissingFromFanout += 1;
+        if (rsCollapseExample.length < RS_EXAMPLE_CAP) {
+          rsCollapseExample.push(
+            `${relPath}:${call.startLine}  ${call.receiver ?? "-"}.${call.member}  ${dispatchEdges} dynamic edges -> ${exact.targetSymbolId}${hit ? "" : "  (exact NOT in the fan-out)"}`,
+          );
+        }
+      }
+    }
+    return; // a pass before the slot decided the exact chain's answer
+  }
+
+  const replay = rsReplay(call, ctx);
+
+  if (isMiss) {
+    // ---- cut 1: drop ownership.
+    const byKind = rsDropOwner.get(replay.owner) ?? new Map<ReceiverKind, number>();
+    byKind.set(receiverKind, (byKind.get(receiverKind) ?? 0) + 1);
+    rsDropOwner.set(replay.owner, byKind);
+
+    // ---- cut 2: the residual table.
+    const typed =
+      call.receiver !== null && typeOfReceiver(call.receiver, call.startLine, ctx) !== undefined
+        ? "recv:TYPED"
+        : "recv:untyped";
+    const defs = ctx.symbolTable.lookupByShortName(call.member).length;
+    const key = `${replay.owner} | ${rsTexture(call.receiver)} | ${typed} | ${rsDefBand(defs)}`;
+    rsBump(rsResidualBucket, key);
+    rsExample(rsResidualExample, key, `${relPath}:${call.startLine}  ${call.receiver ?? "-"}.${call.member}`);
+
+    // ---- convention-probe verdict over the miss set.
+    if (bare === undefined) {
+      if (call.receiver !== null && RS_SINGLE_SEGMENT.test(call.receiver)) rsProbe.keywordOrLiteral += 1;
+      else rsProbe.notSingleSegment += 1;
+    } else if (typeOfReceiver(call.receiver as string, call.startLine, ctx) !== undefined) {
+      rsProbe.alreadyTyped += 1;
+    } else {
+      const klass = rsConventionClass(bare, ctx);
+      if (klass === undefined) rsProbe.noSuchClass += 1;
+      else {
+        const t = resolveTypeInstanceMethod(klass, call.member, ctx, RS_CFG.mode);
+        if (t === null) rsProbe.classNoTarget += 1;
+        else if (t.targetSymbolId === null) rsProbe.fileOnly += 1;
+        else rsProbe.pinned += 1;
+      }
+    }
+  }
+
+  // ---- cut 3: the honest A/B, only where splicing can change the answer.
+  if (!replay.slotReached || !rsChainIsConsulted(call, dispatchEdges)) return;
+  // Fidelity: the oracle's own chain must agree with the production resolver.
+  const rs = resolver;
+  if (rs !== undefined) {
+    rsMirrorChecked += 1;
+    const production = rs.resolve(call, ctx);
+    const mine = replay.target === null ? null : redirectSelfDispatchTemplate(replay.target, call, ctx, RS_CFG.mode);
+    const same =
+      production === null || mine === null
+        ? production === mine
+        : production.targetRelPath === mine.targetRelPath && production.targetSymbolId === mine.targetSymbolId;
+    if (!same) rsMirrorDisagreed += 1;
+  }
+  for (const [variant, chain] of [
+    ["pinned", rsPinnedChain],
+    ["fileOk", rsFileOkChain],
+  ] as const) {
+    const target = rsRunChain(chain, call, ctx);
+    const nowResolved = rsResolvedFlag(call, dispatchEdges, target);
+    const after: LcOutcome = nowResolved ? "resolved" : baseOutcome;
+    if (after === baseOutcome) continue;
+    rsBump(rsMove[variant], `${baseOutcome} -> ${after}`);
+    if (target !== null && target.targetSymbolId !== null) rsNewTargets[variant].add(target.targetSymbolId);
+    if (rsMoveExample[variant].length < RS_EXAMPLE_CAP * 2) {
+      rsMoveExample[variant].push(
+        `${relPath}:${call.startLine}  ${call.receiver ?? "-"}.${call.member}  ->  ${target?.targetSymbolId ?? `${target?.targetRelPath ?? "-"} (file-only)`}`,
+      );
+    }
+  }
+}
+
+function runResidualOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  const hole = misses.length;
+  const pct = (n: number) => `${((n / Math.max(1, hole)) * 100).toFixed(1)}%`;
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  RESIDUAL TAXONOMY ORACLE — what is left after every priced bucket");
+  L("═══════════════════════════════════════════════════════════════════");
+  L(`recall hole (misses):                     ${hole}`);
+  L(`chain-fidelity checks / disagreements:    ${rsMirrorChecked} / ${rsMirrorDisagreed}`);
+  L("");
+
+  L("─── CUT 1: which strategy OWNS the drop ───────────────────────────");
+  L("owner                     total   share   by receiverKind");
+  const ownerRows = [...rsDropOwner.entries()]
+    .map(([owner, byKind]) => {
+      let total = 0;
+      for (const n of byKind.values()) total += n;
+      return { owner, byKind, total };
+    })
+    .sort((a, b) => b.total - a.total);
+  for (const row of ownerRows) {
+    const kinds = [...row.byKind.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, n]) => `${k}=${n}`)
+      .join(" ");
+    L(`${row.owner.padEnd(24)}  ${String(row.total).padStart(6)}  ${pct(row.total).padStart(6)}   ${kinds}`);
+  }
+  L("");
+
+  L("─── CUT 2: residual table (owner | texture | typed? | defCount) ───");
+  const bucketRows = [...rsResidualBucket.entries()].sort((a, b) => b[1] - a[1]);
+  L(`distinct buckets: ${bucketRows.length}`);
+  let cumulative = 0;
+  for (const [key, n] of bucketRows.slice(0, 30)) {
+    cumulative += n;
+    L(`  ${String(n).padStart(6)}  ${pct(n).padStart(6)}  ${key}`);
+    for (const ex of (rsResidualExample.get(key) ?? []).slice(0, 2)) L(`            e.g. ${ex}`);
+  }
+  L(`  (top 30 buckets cover ${pct(cumulative)} of the hole)`);
+  L("");
+
+  L("─── CUT 2b: naming-convention probe over the miss set ─────────────");
+  L(`  receiver not a single-segment identifier:  ${rsProbe.notSingleSegment}  ${pct(rsProbe.notSingleSegment)}`);
+  L(`  receiver is a keyword / literal:           ${rsProbe.keywordOrLiteral}  ${pct(rsProbe.keywordOrLiteral)}`);
+  L(`  receiver ALREADY typed (e8feo/ikyqu own):  ${rsProbe.alreadyTyped}  ${pct(rsProbe.alreadyTyped)}`);
+  L(`  convention names no in-project class:      ${rsProbe.noSuchClass}  ${pct(rsProbe.noSuchClass)}`);
+  L(`  class exists, MRO yields NO target:        ${rsProbe.classNoTarget}  ${pct(rsProbe.classNoTarget)}`);
+  L(`  class exists, FILE-ONLY edge:              ${rsProbe.fileOnly}  ${pct(rsProbe.fileOnly)}`);
+  L(`  class exists, METHOD-PINNED edge:          ${rsProbe.pinned}  ${pct(rsProbe.pinned)}   <-- addressable`);
+  L(
+    `  existence-gate tier hits: shortName=${rsGateTier.shortName}  resolveConstant-only=${rsGateTier.constantOnly}  (the short-name index alone misses every compact-FQ class)`,
+  );
+  L("");
+
+  L("─── CUT 3: convention accuracy on GROUND TRUTH (fact-typed recv) ──");
+  const graded = rsTruth.agree + rsTruth.disagree;
+  L(`  graded samples (fact types the receiver):  ${graded}`);
+  L(`    convention AGREES with the fact:         ${rsTruth.agree}`);
+  L(`    convention DISAGREES (would be wrong):   ${rsTruth.disagree}`);
+  L(
+    `    accuracy:                                ${graded === 0 ? "n/a" : `${((rsTruth.agree / graded) * 100).toFixed(2)}%`}`,
+  );
+  L(`  fact names a type absent from the table:   ${rsTruth.factTypeAbsentFromTable}  (unrefereeable)`);
+  const disagreeRows = [...rsTruthDisagreeBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15);
+  if (disagreeRows.length > 0) {
+    L("  top disagreements:");
+    for (const [k, n] of disagreeRows) L(`    ${String(n).padStart(5)}  ${k}`);
+  }
+  for (const ex of rsTruthExample.slice(0, 8)) L(`    e.g. ${ex}`);
+  L("");
+
+  L("─── CUT 3b: A/B bucket movement with the candidate spliced in ─────");
+  for (const variant of ["pinned", "fileOk"] as const) {
+    const rows = [...rsMove[variant].entries()].sort((a, b) => b[1] - a[1]);
+    let gained = 0;
+    let fromMiss = 0;
+    for (const [k, n] of rows) {
+      gained += n;
+      if (k.startsWith("miss ->")) fromMiss += n;
+    }
+    const newHole = hole - fromMiss;
+    const resolvedAfter = callsResolved + gained;
+    const denomAfter = resolvedAfter + newHole;
+    const recallAfter = denomAfter === 0 ? 0 : resolvedAfter / denomAfter;
+    L(`  variant ${variant === "pinned" ? "PINNED-ONLY (method-level targets)" : "FILE-OK (also file-only edges)"}:`);
+    for (const [k, n] of rows) L(`      ${String(n).padStart(6)}  ${k}`);
+    L(`      distinct NEW method targets:  ${rsNewTargets[variant].size}`);
+    L(`      hole ${hole} -> ${newHole}   (-${fromMiss})`);
+    L(
+      `      inProjectEdgeRecall ${fmtPct(callsResolved / Math.max(1, callsResolved + hole))} -> ${fmtPct(recallAfter)}`,
+    );
+    for (const ex of rsMoveExample[variant].slice(0, 6)) L(`      e.g. ${ex}`);
+  }
+  L("");
+
+  L("─── PRECISION SIDE: dispatch fan-out + core-homonym carve-out ─────");
+  L(`  calls with a non-empty fan-out:            ${rsFanout.calls}`);
+  L(`  edges emitted by the fan-out:              ${rsFanout.edges}`);
+  L(`  over-cap ambiguous verdicts (no edge):     ${rsFanout.ambiguousVerdicts}`);
+  L(`  single-target fan-outs:                    ${rsFanout.singleton}`);
+  L(`  fan-outs of 5+ targets:                    ${rsFanout.wide}`);
+  L(
+    `  mean per-edge confidence:                  ${rsFanout.edges === 0 ? "n/a" : (rsFanout.confidenceSum / rsFanout.edges).toFixed(3)}`,
+  );
+  L(`  distinct targets reached by fan-out only:  ${rsFanoutTargets.size}`);
+  for (const [kind, row] of [...rsFanoutByKind.entries()].sort((a, b) => b[1].edges - a[1].edges)) {
+    L(`      ${kind.padEnd(12)} calls=${String(row.calls).padStart(6)}  edges=${String(row.edges).padStart(7)}`);
+  }
+  L("");
+  L("  fan-out COLLAPSE candidates (convention derives one exact target):");
+  L(`      calls the fan-out answers today:       ${rsCollapse.calls}`);
+  L(`      dynamic edges those calls emit today:  ${rsCollapse.edgesToday}   <-- removable`);
+  L(`      of which fan-outs of 5+ targets:       ${rsCollapse.wideCalls}`);
+  L(`      exact target IS among the fan-out:     ${rsCollapse.exactAmongFanout}  (collapse N->1)`);
+  L(`      exact target is NOT in the fan-out:    ${rsCollapse.exactMissingFromFanout}  (fan-out is wrong today)`);
+  for (const ex of rsCollapseExample) L(`      e.g. ${ex}`);
+  L("");
+  let coreAmbTotal = 0;
+  for (const n of rsCoreAmbByKind.values()) coreAmbTotal += n;
+  L(`  coreAmbiguous carve-out:                   ${coreAmbTotal}`);
+  L(
+    `      by kind: ${[...rsCoreAmbByKind.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, n]) => `${k}=${n}`)
+      .join(" ")}`,
+  );
+  L("      top members:");
+  for (const [m, n] of [...rsCoreAmbByMember.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15)) {
+    L(`        ${String(n).padStart(5)}  ${m}`);
+  }
+  L("");
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_RESIDUAL,
+    JSON.stringify(
+      {
+        hole,
+        fidelity: { checked: rsMirrorChecked, disagreed: rsMirrorDisagreed },
+        dropOwner: ownerRows.map((r) => ({ owner: r.owner, total: r.total, byKind: Object.fromEntries(r.byKind) })),
+        residualBuckets: bucketRows.map(([key, n]) => ({ key, n, examples: rsResidualExample.get(key) ?? [] })),
+        conventionProbe: rsProbe,
+        groundTruth: { ...rsTruth, disagreements: Object.fromEntries(rsTruthDisagreeBy) },
+        abMovement: {
+          pinned: { moves: Object.fromEntries(rsMove.pinned), newTargets: rsNewTargets.pinned.size },
+          fileOk: { moves: Object.fromEntries(rsMove.fileOk), newTargets: rsNewTargets.fileOk.size },
+        },
+        precision: {
+          fanout: { ...rsFanout, distinctTargets: rsFanoutTargets.size, byKind: Object.fromEntries(rsFanoutByKind) },
+          fanoutCollapse: { ...rsCollapse, examples: rsCollapseExample },
+          coreAmbiguous: { total: coreAmbTotal, byMember: Object.fromEntries(rsCoreAmbByMember) },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  L(`residual report → ${OUT_RESIDUAL}`);
 }
 
 let includedBy: Record<string, string[]> = {};
