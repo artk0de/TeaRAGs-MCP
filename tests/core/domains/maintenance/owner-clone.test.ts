@@ -82,6 +82,46 @@ describe("owner clone methods", () => {
     expect(existsSync(pool.pathFor("code_dst"))).toBe(true);
   });
 
+  it("GraphDbClientPool.cloneDatabase carries the WAL sidecar across", async () => {
+    // A DuckDB file is only the state as of its last checkpoint; everything
+    // written since lives in the `.wal` beside it. Copying the database alone
+    // silently rolls the clone back to that checkpoint — on this machine the
+    // taxdome WAL was 3.2MB and taxdome-base-td90248's 6.1MB of unmerged graph.
+    const pool = new GraphDbClientPool({
+      rootDir: dir,
+      symbolTableFactory: () => ({ symbols: new Map(), methods: new Map() }) as never,
+      applyMigrations: createDatabaseMigrationApplier(),
+    });
+    const srcPath = pool.pathFor("code_src");
+    mkdirSync(join(dir, "codegraph"), { recursive: true });
+    writeFileSync(srcPath, "fake-duckdb-content");
+    writeFileSync(`${srcPath}.wal`, "fake-wal-content");
+
+    await pool.cloneDatabase("code_src", "code_dst");
+
+    expect(readFileSync(`${pool.pathFor("code_dst")}.wal`, "utf8")).toBe("fake-wal-content");
+  });
+
+  it("GraphDbClientPool.cloneDatabase drops a stale target WAL when the source has none", async () => {
+    // Collection names are reused across reindexes, so the target path may still
+    // carry a WAL from whatever lived there before. Leaving it would replay a
+    // foreign write log over the freshly copied database — worse than the
+    // truncation this method is fixing.
+    const pool = new GraphDbClientPool({
+      rootDir: dir,
+      symbolTableFactory: () => ({ symbols: new Map(), methods: new Map() }) as never,
+      applyMigrations: createDatabaseMigrationApplier(),
+    });
+    const srcPath = pool.pathFor("code_src");
+    mkdirSync(join(dir, "codegraph"), { recursive: true });
+    writeFileSync(srcPath, "fake-duckdb-content");
+    writeFileSync(`${pool.pathFor("code_dst")}.wal`, "stale-wal-from-a-previous-tenant");
+
+    await pool.cloneDatabase("code_src", "code_dst");
+
+    expect(existsSync(`${pool.pathFor("code_dst")}.wal`)).toBe(false);
+  });
+
   it("GraphDbClientPool.cloneDatabase is a no-op when source file is absent", async () => {
     const pool = new GraphDbClientPool({
       rootDir: dir,

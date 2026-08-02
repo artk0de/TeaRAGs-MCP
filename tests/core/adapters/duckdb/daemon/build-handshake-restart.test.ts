@@ -22,20 +22,22 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  CodegraphDaemonExitTimeoutError,
-  CodegraphDaemonStaleBuildError,
-} from "../../../../../src/core/adapters/duckdb/errors.js";
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
-import { DATABASE_MIGRATIONS_MODULE_URL } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { getDaemonPaths, type CodegraphDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import {
   decodeFrames,
   encodeFrame,
   type DaemonRequest,
 } from "../../../../../src/core/adapters/duckdb/daemon/protocol.js";
+import {
+  CodegraphDaemonExitTimeoutError,
+  CodegraphDaemonStaleBuildError,
+} from "../../../../../src/core/adapters/duckdb/errors.js";
 import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
-import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
+import {
+  createDatabaseMigrationApplier,
+  DATABASE_MIGRATIONS_MODULE_URL,
+} from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { setDebug } from "../../../../../src/core/infra/runtime.js";
 
@@ -146,6 +148,58 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
     expect(respawn).not.toHaveBeenCalled();
     // The original daemon is still alive — its pid file was never cleaned up.
     expect(existsSync(paths.pidFile)).toBe(true);
+
+    await pool.closeAll();
+  });
+
+  // The daemon exits by itself after 30s idle, while the pool keeps ONE cached
+  // client per collection for the whole process. So "my daemon is gone" is the
+  // ordinary steady state of any long-lived MCP server, and the cache must not
+  // keep serving a client whose socket died — that turns every later graph call
+  // into a failure no reconnect ever clears, for the life of the process.
+  it("reconnects instead of handing back a client whose connection died", async () => {
+    const paths = makePaths();
+    // A daemon that answers the handshake, then vanishes mid-conversation
+    // exactly once — the shape an idle-exit presents to a client that was
+    // holding a cached socket. It keeps listening, so a reconnect can succeed.
+    let dropped = false;
+    fakeSrv = createServer((sock) => {
+      let buf = "";
+      sock.on("data", (d) => {
+        buf += d.toString("utf8");
+        const { frames, rest } = decodeFrames(buf);
+        buf = rest;
+        for (const f of frames) {
+          const req = JSON.parse(f) as DaemonRequest;
+          if (req.op === "handshake") {
+            sock.write(encodeFrame({ id: req.id, ok: true, result: { buildFingerprint: "SAME-BUILD" } }));
+            continue;
+          }
+          if (!dropped) {
+            dropped = true;
+            sock.destroy();
+            return;
+          }
+          sock.write(encodeFrame({ id: req.id, ok: true, result: true }));
+        }
+      });
+    });
+    fakeSrv.unref();
+    await new Promise<void>((res) => {
+      (fakeSrv as Server).listen(paths.socketPath, () => {
+        res();
+      });
+    });
+
+    const pool = makePool(paths, { buildFingerprint: "SAME-BUILD" });
+
+    const first = await pool.acquireReader("code_hs_gone_v1");
+    await expect(first.graphDb.hasData()).rejects.toThrow(/connection/i);
+
+    // Same collection, so this comes off the cache — and the cached client is
+    // spent. Serving it again would fail every future call in this process.
+    const second = await pool.acquireReader("code_hs_gone_v1");
+    expect(await second.graphDb.hasData()).toBe(true);
 
     await pool.closeAll();
   });

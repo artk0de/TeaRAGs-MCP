@@ -3,9 +3,9 @@ import { resolve } from "node:path";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { WorktreeCreateInput, WorktreeCreateResult, WorktreeRemoveInput } from "../../../contracts/index.js";
 import { resolveCollectionName } from "../../../infra/collection-name.js";
-import type { CollectionRegistry } from "../registry/index.js";
 import { WorktreeCollectionExistsError, WorktreeNotFoundError, WorktreeSourceNotFoundError } from "../errors.js";
 import type { CollectionArtifact, CollectionFootprintFactory, ResolvedCollection } from "../footprint/index.js";
+import type { CollectionRegistry } from "../registry/index.js";
 import {
   ensureGitWorktree as defaultEnsureGitWorktree,
   removeGitWorktree as defaultRemoveGitWorktree,
@@ -106,6 +106,17 @@ export class WorktreeProvisioner {
       // embedded flag — keeps a worktree reindex on the daemon marker, not the
       // source's frozen ephemeral port. Mirrors qdrantUrl propagation above.
       qdrantEmbedded: sourceEntry.qdrantEmbedded,
+      // The clone indexes the same code against the same embedding backend, so
+      // it inherits the endpoints its source was indexed against (mirrors
+      // qdrantUrl / qdrantEmbedded above). Dropping them sent a worktree
+      // reindex to the built-in default instead: on a remote-Ollama setup that
+      // host is dead, so the run burned its recovery budget and died before
+      // enrichment — the clone's graph then stayed exactly as stale as it was
+      // cloned, with no repair pass and no recovery ever reached.
+      ...(sourceEntry.embeddingBaseUrl !== undefined ? { embeddingBaseUrl: sourceEntry.embeddingBaseUrl } : {}),
+      ...(sourceEntry.embeddingFallbackUrl !== undefined
+        ? { embeddingFallbackUrl: sourceEntry.embeddingFallbackUrl }
+        : {}),
       codegraphEnabled: source.codegraphEnabled,
       // The env snapshot travels with the clone — a worktree reindex in a
       // fresh shell re-applies the source project's index-time env set

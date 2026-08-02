@@ -106,7 +106,16 @@ export class GraphFacade {
     let handle: CollectionGraphHandle | undefined;
     try {
       handle = await this.deps.pool.acquireReader(activeCollection);
-    } catch {
+    } catch (err) {
+      // An empty edge list is an assertion about the code, and callers act on
+      // it. Returning one for a graph we simply could not open made a read
+      // failure indistinguishable from "this symbol has no callers" — which is
+      // exactly how a stale graph got mistaken for a modelling limitation.
+      // A collection with no graph database was never indexed with codegraph,
+      // so empty IS the honest answer there and the "codegraph optional"
+      // guarantee still holds; anything else (lock held, daemon unreachable,
+      // corrupt file) is a failure the caller must be told about.
+      if (this.deps.pool.hasDatabase(activeCollection)) throw err;
       return fallback;
     }
     try {
