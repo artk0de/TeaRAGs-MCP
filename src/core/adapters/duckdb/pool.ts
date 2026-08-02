@@ -590,16 +590,34 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Copy the DuckDB file for sourceCollection to targetCollection.
-   * Releases the cached source connection first (implicit checkpoint).
-   * No-op when the source file does not exist (codegraph disabled / not built).
+   * Copy the DuckDB file for sourceCollection to targetCollection, WAL sidecar
+   * included. No-op when the source file does not exist (codegraph disabled /
+   * not built).
+   *
+   * The `.wal` travels with the database because the database file alone is
+   * only the state as of its last checkpoint — everything written since lives
+   * in the sidecar, and a clone that drops it is silently rolled back to that
+   * checkpoint. Mirrors `removeCollection`, which has always treated the pair
+   * as one artifact. A target WAL with no source counterpart is REMOVED rather
+   * than left: collection names get reused, and replaying a previous tenant's
+   * write log over a freshly copied database is worse than the truncation this
+   * copy avoids.
+   *
+   * `release` drops this process's cached client, which checkpoints on close —
+   * but ONLY when the client is in this pool's cache. A database held by the
+   * codegraph daemon (or any other process) is not released here and keeps an
+   * unflushed WAL, which is exactly why the sidecar has to be copied instead of
+   * assumed empty.
    */
   async cloneDatabase(sourceCollection: string, targetCollection: string): Promise<void> {
     await this.release(sourceCollection);
     const from = this.pathFor(sourceCollection);
     if (!existsSync(from)) return;
-    mkdirSync(dirname(this.pathFor(targetCollection)), { recursive: true });
-    await copyFile(from, this.pathFor(targetCollection));
+    const to = this.pathFor(targetCollection);
+    mkdirSync(dirname(to), { recursive: true });
+    await copyFile(from, to);
+    if (existsSync(`${from}.wal`)) await copyFile(`${from}.wal`, `${to}.wal`);
+    else await unlink(`${to}.wal`).catch(() => undefined);
   }
 
   /**
