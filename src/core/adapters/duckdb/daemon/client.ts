@@ -129,8 +129,17 @@ export class DaemonGraphDbClient implements GraphDbClient {
         // A retried connect must not inherit a half-assembled frame from the
         // attempt that failed.
         this.frames = new DaemonFrameDecoder();
-        sock.on("error", () => {
-          /* post-connect peer errors are surfaced via pending-call rejection */
+        // The daemon idle-exits after IDLE_SHUTDOWN_MS and the pool caches this
+        // client for the life of the process, so outliving the daemon is the
+        // normal case. Whichever way the socket goes down, every call waiting
+        // on it has to be told: nothing else settles those promises, and `call`
+        // sets no timeout, so a missed teardown hangs the caller indefinitely
+        // (a graph query was seen waiting 30 minutes at 0% CPU).
+        sock.on("error", (err: Error) => {
+          this.abandon(`daemon connection failed: ${err.message}`);
+        });
+        sock.on("close", () => {
+          this.abandon("daemon closed the connection before the response arrived");
         });
         sock.on("data", (d) => {
           this.onData(d);
@@ -170,11 +179,30 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async close(): Promise<void> {
     this.sock?.end();
+    this.abandon("closed before response arrived");
+  }
+
+  /**
+   * Whether this client still holds a live socket. The pool reads it before
+   * handing a cached client back: a client whose daemon exited is spent, and
+   * reusing it would only produce "call after close" for the rest of the
+   * process's life.
+   */
+  isConnected(): boolean {
+    return this.sock !== undefined;
+  }
+
+  /**
+   * Drop the socket and settle everything waiting on it. Idempotent — the
+   * socket's own `close` event fires after an explicit `close()` too, and by
+   * then `pending` is already empty, so the second pass is a no-op.
+   */
+  private abandon(reason: string): void {
     this.sock = undefined;
-    for (const [, p] of this.pending) {
-      p.reject(new Error("DaemonGraphDbClient closed before response arrived"));
-    }
+    if (this.pending.size === 0) return;
+    const pending = [...this.pending.values()];
     this.pending.clear();
+    for (const p of pending) p.reject(new Error(`DaemonGraphDbClient ${reason}`));
   }
 
   // ── build-version handshake (bd tea-rags-mcp-ji56r) ──

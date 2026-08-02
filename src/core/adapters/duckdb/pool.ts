@@ -374,7 +374,17 @@ export class GraphDbClientPool {
    */
   private async acquireDaemonClient(collectionName: string): Promise<DaemonClientEntry> {
     const cached = this.daemonClients.get(collectionName);
-    if (cached) return cached;
+    if (cached?.client.isConnected()) return cached;
+    if (cached) {
+      // The daemon idle-exits after 30s while this cache lives as long as the
+      // process, so a cached client outliving its daemon is routine. Keeping it
+      // would fail every later graph call with "call after close" until the
+      // process restarts. Drop it and cold-spawn: `respawn` is single-flighted
+      // and alive-checked, so calling it when a daemon is in fact running is a
+      // no-op.
+      this.daemonClients.delete(collectionName);
+      this.options.daemonRestart?.respawn?.();
+    }
     const inflight = this.daemonInflight.get(collectionName);
     if (inflight) return inflight;
 

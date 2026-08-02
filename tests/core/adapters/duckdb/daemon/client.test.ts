@@ -446,6 +446,61 @@ describe("DaemonGraphDbClient", () => {
   // than a socket chunk (~64KB) reaches the client split across several `data`
   // events. Non-ASCII content must survive that split: decoding each chunk on
   // its own turns a straddling multi-byte character into U+FFFD.
+  // The daemon exits on its own after 30s idle (IDLE_SHUTDOWN_MS), and the pool
+  // caches one client per collection for the life of the process — so a client
+  // outliving its daemon is the NORMAL case, not an edge case. A call in flight
+  // when that happens used to sit in `pending` forever: nothing rejects it, and
+  // `call` sets no timeout. Observed as a graph query hanging 30 minutes at 0%
+  // CPU until the MCP idle timeout killed it.
+  it("rejects an in-flight call when the daemon drops the connection", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    srv = createServer((sock: Socket) => {
+      // Accept, take the request, then vanish without answering — what an
+      // idle-exiting daemon looks like from this side.
+      sock.on("data", () => {
+        sock.destroy();
+      });
+    });
+    srv.unref();
+    await new Promise<void>((res) => {
+      (srv as Server).listen(socketPath, () => {
+        res();
+      });
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    await expect(client.getCallers("Foo#bar" as never)).rejects.toThrow(/connection/i);
+  });
+
+  // Once the socket is gone the client must say so immediately rather than
+  // queue another promise nobody will ever settle. The pool reads this to know
+  // the cached client is spent and a reconnect is due.
+  it("reports itself disconnected and fails fast after the daemon drops the connection", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    srv = createServer((sock: Socket) => {
+      sock.on("data", () => {
+        sock.destroy();
+      });
+    });
+    srv.unref();
+    await new Promise<void>((res) => {
+      (srv as Server).listen(socketPath, () => {
+        res();
+      });
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    expect(client.isConnected()).toBe(true);
+    await expect(client.getCallers("Foo#bar" as never)).rejects.toThrow();
+
+    expect(client.isConnected()).toBe(false);
+    await expect(client.getCallers("Foo#bar" as never)).rejects.toThrow(/before init\(\) \/ after close\(\)/);
+  });
+
   it("round-trips a response larger than one socket chunk with non-ASCII content intact", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "d.sock");
