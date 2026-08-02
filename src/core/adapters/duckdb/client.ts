@@ -445,9 +445,10 @@ export class DuckDbGraphClient implements GraphDbClient {
    * `upsertFilesBulk` (one BEGIN/COMMIT per M files) so both persist identical rows.
    */
   private async upsertFileRows(node: GraphFileNode, edges: GraphEdges): Promise<void> {
-    await this.run("INSERT OR REPLACE INTO cg_symbols_files (rel_path, language) VALUES (?, ?)", [
+    await this.run("INSERT OR REPLACE INTO cg_symbols_files (rel_path, language, content_hash) VALUES (?, ?, ?)", [
       node.relPath,
       node.language,
+      node.contentHash ?? null,
     ]);
     await this.run("DELETE FROM cg_symbols_edges_file WHERE source_rel_path = ?", [node.relPath]);
     await this.run("DELETE FROM cg_symbols_edges_method WHERE source_rel_path = ?", [node.relPath]);

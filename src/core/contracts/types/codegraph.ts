@@ -1549,6 +1549,14 @@ export interface CycleEntry {
 export interface GraphFileNode {
   relPath: RelPath;
   language: string;
+  /**
+   * SHA256 of the file's contents at extraction time, taken from the ingest
+   * snapshot (no extra read). Lets a later run tell a graph row that is merely
+   * PRESENT from one that is CURRENT, which is what the repair check diffs
+   * against (bd tea-rags-mcp-6goqa). Undefined when the caller has no hash
+   * (direct/test writes); that persists as NULL and makes the file re-extract.
+   */
+  contentHash?: string;
 }
 
 /**
