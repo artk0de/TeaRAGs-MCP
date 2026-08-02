@@ -155,9 +155,9 @@ lands on the module. Every one of those 55 loses its verdict ("member NOT on the
 derived type's ancestor closure"). Adding M3 removes all 55 and turns the
 composition net-positive. Mechanism 2 must never ship before mechanism 3.
 
-**The ceiling is 8 misses.** Best composition recovers 8 of 16 431 — **+0.05
-pp** of `inProjectEdgeRecall`, at the cost of 940 new run-global facts that
-every downstream hop then trusts.
+**The ceiling is 8 misses.** Best composition recovers 8 of 16 431 — 0.05 % of
+the hole, **+0.006 pp** of `inProjectEdgeRecall` (88.2968 % → 88.3025 %) — at
+the cost of 940 new run-global facts that every downstream hop then trusts.
 
 ### The premise check — where the hole actually is
 
@@ -180,6 +180,8 @@ Split by receiver SHAPE — which strategy is entitled to consume the type:
 
 Of the 363, **282 have a unique definer on the closure** — they are resolvable
 today, from a type the engine already computes, with no new fact of any kind.
+That is 1.72 % of the recall hole, **+0.20 pp** of `inProjectEdgeRecall`
+(88.2968 % → 88.4977 %).
 
 The cause is one line in
 `src/core/domains/language/ruby/resolver/strategies/ruby-chain-type.ts`:
@@ -502,11 +504,11 @@ bead.
 
 | #   | increment                                                           | expected yield (taxdome)     | risk     | blocks on  |
 | --- | ------------------------------------------------------------------- | ---------------------------- | -------- | ---------- |
-| 0   | **`chainType` consumes single-segment typed receivers** (new bead)  | **282 misses, ~+1.7 pp**     | low      | —          |
+| 0   | **`chainType` consumes single-segment typed receivers** (new bead)  | **282 misses, +0.20 pp**     | low      | —          |
 | 1   | Mechanism 3 — concern-scope projection, `.` form                    | 0 alone; unblocks 2          | trivial  | —          |
 | 2   | Mechanism 2 — finder row in `vfo3e`'s container-member policy, WIDE | +2–3 with 1 and 4            | low      | `vfo3e`, 1 |
 | 3   | Mechanism 1 memo-ivar channel                                       | ≤ 9 facts, unmeasured recall | medium   | 4          |
-| 4   | Mechanism 1 — barrier chain fold                                    | 5–6 misses, +0.04 pp         | **high** | —          |
+| 4   | Mechanism 1 — barrier chain fold                                    | 5–6 misses, +0.004 pp        | **high** | —          |
 
 **Increment 0 is the finding.** 363 recall-hole misses carry a receiver the
 engine has ALREADY typed and no strategy reads; 282 of them have a unique
@@ -524,10 +526,10 @@ correctness bug that `vfo3e` will make worse. Do them in that order, together,
 inside `vfo3e`'s change.
 
 **Increment 4 — mechanism 1 — is DO-NOT-BUILD at current evidence.** 689
-run-global facts for 5 recovered misses (+0.04 pp) is the wrong side of the risk
-ledger for a fact channel every downstream hop trusts. It is not wrong, and it
-is not expensive to run; it simply buys almost nothing on this corpus, and the
-false-edge cost it might carry is unmeasured. Revisit only if increment 0 lands
-and the residual hole shifts toward untyped receivers, or if a corpus with
+run-global facts for 5 recovered misses (+0.004 pp) is the wrong side of the
+risk ledger for a fact channel every downstream hop trusts. It is not wrong, and
+it is not expensive to run; it simply buys almost nothing on this corpus, and
+the false-edge cost it might carry is unmeasured. Revisit only if increment 0
+lands and the residual hole shifts toward untyped receivers, or if a corpus with
 heavier `Const.m` delegation (the shape is 2 953 tails here, 2 511 of them
 uncovered) shows a materially different ratio.
