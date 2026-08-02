@@ -75,11 +75,20 @@ import {
 } from "../src/core/domains/language/ruby/resolver/strategies/shared.js";
 import {
   boundCallReturnType,
+  CHAIN_MAX_HOPS_DEFAULT,
   CONTAINER_ELEMENT_RETURNING_METHODS,
   ivarTypeName,
   returnTypeOf,
   typeOfReceiver,
 } from "../src/core/domains/language/ruby/resolver/type-propagation.js";
+// bd tea-rags-mcp-ikyqu — the const-chain oracle states nilable results honestly
+// through the 27q0z algebra instead of inventing a second union representation.
+import {
+  RUBY_NIL_TYPE_REF,
+  rubyReceiverForm,
+  rubyTypeRefEquals,
+  rubyUnionOf,
+} from "../src/core/domains/language/ruby/type-ref.js";
 import {
   forEachClassScope,
   readScopeResolution,
@@ -8964,6 +8973,1114 @@ function fmtPct(n: number): string {
   return `${(n * 100).toFixed(2)}%`;
 }
 
+// ===========================================================================
+// BARRIER-TIME `Const.<chain>` RHS TYPING ORACLE (bd tea-rags-mcp-ikyqu,
+// CODEGRAPH_CONSTCHAIN_ORACLE=1, 2026-08-02). Same additive, env-gated contract
+// as every oracle above: with the flag unset nothing extra is scanned, iterated
+// or reported and the A/B recall metrics are byte-identical.
+//
+// It sizes THREE mechanisms the `current_firm` miss class needs — separately,
+// and composed — before any of them is built:
+//
+//  (1) BARRIER-TIME `Const.<chain>` RHS TYPING. The walker's `constInstanceType`
+//      runs per file with no run-global facts, so a def whose tail is
+//      `Firm.without_deleted.find_by_custom_domain(host)` gets NO return fact:
+//      `without_deleted` is a project scope the vocabulary cannot know, and the
+//      fact describing it lives in another file. At `RunState.seal` every fact
+//      exists, so the chain can be threaded through the REAL `returnTypeOf`.
+//      One def's tail can name another def whose fact the SAME pass derives
+//      (`AuthMethods#current_firm` reads `HostHelper.current_firm`), so the probe
+//      runs a WORKLIST and reports the per-wave gain — the number that decides
+//      whether one barrier pass suffices or the mechanism needs iteration.
+//
+//  (2) CONTAINER × DYNAMIC FINDER. `find_by_<attr>` is not in
+//      `CONTAINER_ELEMENT_RETURNING_METHODS`, so `container(Firm).find_by_x`
+//      answers `undefined` and a chain dies one hop before the model. The probe
+//      measures corpus finder frequency and how many finder call-sites sit on a
+//      receiver the engine ALREADY types as a container — the addressable set.
+//
+//  (3) CONCERN-SCOPE ELEMENT TYPING. `scope :without_deleted` declared inside a
+//      concern is keyed `SoftDeletable#without_deleted → container(SoftDeletable)`,
+//      so an includer reaching it through its MRO gets a relation over the MODULE.
+//      The probe counts scope declarations by owner kind and models the fix as a
+//      barrier PROJECTION onto each includer's own coordinate — a pure fact
+//      addition, which is what lets the real engine evaluate it unchanged.
+//
+// Everything is a fold over run-global state pass-1/pass-2 already built, plus ONE
+// extra DFS per file. The only re-implemented production logic is `resolveChain`'s
+// hop walk — mechanism 2 is a RULE over the container form, not a fact, so it
+// cannot be injected through the fact map. That mirror is validated against the
+// real `typeOfReceiver` on every dotted miss receiver with all mechanisms OFF and
+// the disagreement count is reported, so a drifted mirror cannot pass silently.
+// ===========================================================================
+const CONSTCHAIN_ENABLED = process.env.CODEGRAPH_CONSTCHAIN_ORACLE === "1";
+const OUT_CONSTCHAIN = join(OUT_DIR, "constchain-oracle-report.json");
+
+/** A bare or `::`-scoped ruby constant — the chain-head gate (mirrors `CONST_HEAD`). */
+const CC_CONST_RE = /^[A-Z]\w*(?:::[A-Z]\w*)*$/;
+/** Worklist cap. A variant that hits it is reported as NON-converged. */
+const CC_MAX_WAVES = 8;
+/**
+ * Mirror of `ACTIVE_RECORD_QUERY_INTERFACE.dynamicFinderPrefix`, restated rather
+ * than imported: an oracle that shares the constant with the change it evaluates
+ * cannot disagree with it.
+ */
+const CC_DYNAMIC_FINDER_PREFIX = "find_by_";
+/**
+ * Single-record finders that are NOT dynamic `find_by_<attr>` and NOT in
+ * `CONTAINER_ELEMENT_RETURNING_METHODS`. Measured as the WIDE variant of
+ * mechanism 2 so the narrow (prefix-only) rule can be funded on its own numbers.
+ */
+const CC_EXTRA_FINDERS: ReadonlySet<string> = new Set([
+  "find_by",
+  "find_by!",
+  "find_sole_by",
+  "sole",
+  "take",
+  "take!",
+  "first!",
+  "last!",
+  "find_or_create_by",
+  "find_or_create_by!",
+  "find_or_initialize_by",
+  "create_or_find_by",
+  "create_or_find_by!",
+]);
+
+/** `find_by_<attr>` / `find_by_<attr>!` — requires an attribute suffix. */
+function ccIsDynamicFinder(member: string): boolean {
+  return member.startsWith(CC_DYNAMIC_FINDER_PREFIX) && member.length > CC_DYNAMIC_FINDER_PREFIX.length;
+}
+/** Every single-record finder shape, dynamic or named. */
+function ccIsSingleRecordFinder(member: string): boolean {
+  return ccIsDynamicFinder(member) || CC_EXTRA_FINDERS.has(member);
+}
+
+/** Which chain shape a `Const`-rooted tail carries — the bead's census buckets. */
+type CcShape = "Const.m" | "Const.a.b" | "Const.a.find_by_*" | "Const.a.b.c+";
+
+interface CcDefTail {
+  /** `<enclosing scope>#<method name>` — the `structuredReturnTypes` coordinate. */
+  readonly coord: string;
+  readonly relPath: string;
+  /** Owning chunk symbolId, or `null` when the def has no chunk of its own. */
+  readonly symbolId: string | null;
+  readonly scope: readonly string[];
+  readonly line: number;
+  /** `[Const, m1, m2, …]` — head constant then one entry per hop. */
+  readonly chain: readonly string[];
+  readonly shape: CcShape;
+  /** `X if cond`, a `rescue` arm, or a `&.` hop — the value can be nil. */
+  readonly nilable: boolean;
+  /** The tail was `name ||= RHS` (directly, or through a single-assignment read). */
+  readonly memo: boolean;
+  /** `@ivar` the memo wrote, when the tail memoizes through one. */
+  readonly memoIvar: string | null;
+  /** Today's walk-time `constInstanceType` already types this RHS. */
+  readonly walkTimeTyped: boolean;
+}
+
+const ccDefTails: CcDefTail[] = [];
+/** Every `module X` FQ this run declares — mechanism 3's "element is a concern" gate. */
+const ccModuleScopes = new Set<string>();
+/** Every `class X` FQ this run declares. */
+const ccClassScopes = new Set<string>();
+/** One entry per class-body `scope :name` macro — census (c). */
+const ccScopeDecls: { owner: string; name: string; ownerIsModule: boolean }[] = [];
+/** `"<relPath>|<symbolId>"` → names the chunk binds, so a receiver that IS a local is known. */
+const ccChunkLocals = new Map<string, Set<string>>();
+/** Defs with an enclosing class/module scope — the barrier pass's cost denominator. */
+let ccDefsScanned = 0;
+/** Defs whose tail could be read at all (a body with a last value-producing statement). */
+let ccDefsWithReadableTail = 0;
+
+/** `lhs ||= rhs` — mirrors `isOrAssignment`, restated to keep the oracle independent. */
+function ccIsOrAssignment(node: AstNode): boolean {
+  return node.type === "operator_assignment" && node.children.some((c) => c.text === "||=");
+}
+
+/** Strip a trailing argument list from a chain segment (`new(post)` → `new`). */
+function ccStripArgs(segment: string): string {
+  const paren = segment.indexOf("(");
+  return paren === -1 ? segment : segment.slice(0, paren);
+}
+
+/**
+ * The `[Const, m1, m2, …]` chain a call expression walks, or `null` when it is not
+ * rooted at a constant. A safe-navigation hop (`&.`) sets `sawSafeNav` — the value
+ * can be nil and the caller records that.
+ */
+function ccChainOf(node: AstNode): { chain: string[]; sawSafeNav: boolean } | null {
+  const parts: string[] = [];
+  let sawSafeNav = false;
+  let cursor: AstNode | null = node;
+  while (cursor !== null && (cursor.type === "call" || cursor.type === "method_call")) {
+    const method = cursor.childForFieldName("method");
+    if (!method) return null;
+    if (cursor.children.some((c) => c.text === "&.")) sawSafeNav = true;
+    parts.unshift(method.text);
+    cursor = cursor.childForFieldName("receiver");
+  }
+  if (cursor === null || parts.length === 0) return null;
+  const head =
+    cursor.type === "scope_resolution" ? readScopeResolution(cursor) : cursor.type === "constant" ? cursor.text : null;
+  if (head === null || !CC_CONST_RE.test(head)) return null;
+  parts.unshift(head);
+  return { chain: parts, sawSafeNav };
+}
+
+function ccShapeOf(chain: readonly string[]): CcShape {
+  const hops = chain.length - 1;
+  const last = chain[chain.length - 1] ?? "";
+  if (hops <= 1) return "Const.m";
+  if (hops === 2) return ccIsSingleRecordFinder(last) ? "Const.a.find_by_*" : "Const.a.b";
+  return "Const.a.b.c+";
+}
+
+/**
+ * The RHS of the ONE plain assignment to `name` inside `body`, with whether that
+ * event was a `||=` memo. Mirrors `singleAssignmentConst`'s event discipline:
+ * nested defs/classes are a different scope, blocks are not; any second event, any
+ * operator-assignment other than the memo, and any masgn target yields `null`.
+ */
+function ccSingleAssignment(body: AstNode, name: string): { rhs: AstNode; memo: boolean } | null {
+  const events: { rhs: AstNode | null; memo: boolean }[] = [];
+  const scan = (n: AstNode): void => {
+    if (n.type === "method" || n.type === "singleton_method" || n.type === "class" || n.type === "module") return;
+    if (n.type === "assignment") {
+      const lhs = n.childForFieldName("left");
+      if ((lhs?.type === "identifier" || lhs?.type === "instance_variable") && lhs.text === name) {
+        events.push({ rhs: n.childForFieldName("right"), memo: false });
+      } else if (lhs?.type === "left_assignment_list" && lhs.namedChildren.some((t) => t.text === name)) {
+        events.push({ rhs: null, memo: false });
+      }
+    } else if (n.type === "operator_assignment") {
+      const lhs = n.childForFieldName("left");
+      if ((lhs?.type === "identifier" || lhs?.type === "instance_variable") && lhs.text === name) {
+        events.push({ rhs: ccIsOrAssignment(n) ? n.childForFieldName("right") : null, memo: ccIsOrAssignment(n) });
+      }
+    }
+    for (const child of n.children) scan(child);
+  };
+  for (const child of body.children) scan(child);
+  if (events.length !== 1) return null;
+  const only = events[0];
+  const rhs = only?.rhs;
+  if (rhs === null || rhs === undefined) return null;
+  return { rhs, memo: only?.memo === true };
+}
+
+interface CcTail {
+  node: AstNode;
+  nilable: boolean;
+  memo: boolean;
+  memoIvar: string | null;
+}
+
+/**
+ * The expression a def RETURNS, unwrapped through the shapes that carry a value
+ * without changing which expression produces it: an explicit `return`, an
+ * `if`/`unless` modifier (which makes the value nilable), a `||=` memo, and a bare
+ * binding read whose body assigns it exactly once. A body carrying a `rescue`
+ * arm is nilable for the same reason — the arm can return something else.
+ */
+function ccReturnExpr(defNode: AstNode): CcTail | null {
+  const body = defNode.childForFieldName("body");
+  if (!body) return null;
+  const rescued = body.namedChildren.some((n) => n.type === "rescue" || n.type === "ensure");
+  const stmts = body.namedChildren.filter((n) => n.type !== "rescue" && n.type !== "ensure" && n.type !== "else");
+  let last = stmts[stmts.length - 1];
+  if (!last) return null;
+  if (last.type === "return") {
+    const arg = last.namedChildren[0];
+    if (!arg) return null;
+    const inner = arg.type === "argument_list" ? arg.namedChildren[0] : arg;
+    if (!inner) return null;
+    last = inner;
+  }
+  let nilable = rescued;
+  while (last.type === "if_modifier" || last.type === "unless_modifier") {
+    const inner = last.childForFieldName("body") ?? last.namedChildren[0];
+    if (!inner) return null;
+    nilable = true;
+    last = inner;
+  }
+  if (ccIsOrAssignment(last)) {
+    const lhs = last.childForFieldName("left");
+    const rhs = last.childForFieldName("right");
+    if (!rhs) return null;
+    return { node: rhs, nilable, memo: true, memoIvar: lhs?.type === "instance_variable" ? lhs.text : null };
+  }
+  if (last.type === "identifier" || last.type === "instance_variable") {
+    const single = ccSingleAssignment(body, last.text);
+    if (single === null) return null;
+    return {
+      node: single.rhs,
+      nilable,
+      memo: single.memo,
+      memoIvar: last.type === "instance_variable" ? last.text : null,
+    };
+  }
+  return { node: last, nilable, memo: false, memoIvar: null };
+}
+
+/** Record one class-body `scope :name` declaration with the kind of owner declaring it. */
+function ccNoteScopeDecl(node: AstNode, scope: readonly string[]): void {
+  if (scope.length === 0) return;
+  const receiver = node.childForFieldName("receiver");
+  if (receiver && receiver.type !== "self") return;
+  const method = node.childForFieldName("method") ?? node.children.find((c) => c.type === "identifier");
+  if (method?.text !== "scope") return;
+  const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
+  const first = args?.namedChildren[0];
+  if (first?.type !== "simple_symbol") return;
+  const owner = scope.join("::");
+  ccScopeDecls.push({ owner, name: first.text.replace(/^:/, ""), ownerIsModule: ccModuleScopes.has(owner) });
+}
+
+/** ONE extra DFS per file: index scope declarations, owner kinds, and Const-rooted def tails. */
+function scanConstChainOracleAst(root: AstNode, relPath: string, extraction: FileExtraction): void {
+  for (const chunk of extraction.chunks) {
+    const names = new Set(Object.keys(chunk.localBindings ?? {}));
+    for (const name of Object.keys(chunk.localCallBindings ?? {})) names.add(name);
+    ccChunkLocals.set(`${relPath}|${chunk.symbolId}`, names);
+  }
+  const owners = fxLineOwners(extraction);
+  const catalogue = catalogueForGemfile(gemfileContent);
+  const walkScope = (node: AstNode, scope: readonly string[]): void => {
+    if (node.type === "class" || node.type === "module") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+        const next = [...scope, ...localName.split("::")];
+        (node.type === "module" ? ccModuleScopes : ccClassScopes).add(next.join("::"));
+        const body = node.childForFieldName("body");
+        for (const child of (body ?? node).children) walkScope(child, next);
+        return;
+      }
+      for (const child of node.children) walkScope(child, scope);
+      return;
+    }
+    if (node.type === "call" || node.type === "method_call") ccNoteScopeDecl(node, scope);
+    if ((node.type === "method" || node.type === "singleton_method") && scope.length > 0) {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        ccDefsScanned += 1;
+        const tail = ccReturnExpr(node);
+        if (tail !== null) {
+          ccDefsWithReadableTail += 1;
+          const walked = ccChainOf(tail.node);
+          if (walked !== null) {
+            const line = node.startPosition.row + 1;
+            const owner = line < owners.length ? owners[line] : undefined;
+            ccDefTails.push({
+              coord: `${scope.join("::")}#${nameNode.text}`,
+              relPath,
+              symbolId: owner?.startLine === line ? owner.symbolId : null,
+              scope: [...scope],
+              line,
+              chain: walked.chain,
+              shape: ccShapeOf(walked.chain),
+              nilable: tail.nilable || walked.sawSafeNav,
+              memo: tail.memo,
+              memoIvar: tail.memoIvar,
+              walkTimeTyped: constInstanceType(tail.node, catalogue) !== null,
+            });
+          }
+        }
+      }
+    }
+    for (const child of node.children) walkScope(child, scope);
+  };
+  walkScope(root, []);
+}
+
+// ── mechanism simulation ───────────────────────────────────────────────────
+
+interface CcOpts {
+  /** Barrier-time chain typing of def tails (fact additions, evaluated to fixpoint). */
+  readonly m1: boolean;
+  /** `container(E).find_by_<attr>` → `E|nil` inside the hop walk. */
+  readonly m2: boolean;
+  /** Widen mechanism 2 to every single-record finder shape, not just `find_by_<attr>`. */
+  readonly m2wide: boolean;
+  /** Project a concern's `container(concern)` scope fact onto each includer's coordinate. */
+  readonly m3: boolean;
+}
+
+const CC_BASE_OPTS: CcOpts = { m1: false, m2: false, m2wide: false, m3: false };
+
+/**
+ * What calling `member` on `recv` yields under the simulated mechanisms. The real
+ * `returnTypeOf` answers first and always wins — mechanism 2 only fills a silence
+ * it left, which is what makes the delta additive rather than a re-decision.
+ *
+ * A bang finder (`find_by_x!`) raises instead of returning nil, so it yields the
+ * element outright; the nilable form is reserved for the shapes that really can
+ * answer nothing.
+ */
+function ccReturnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext, opts: CcOpts): RubyTypeRef | undefined {
+  const base = returnTypeOf(recv, member, ctx);
+  if (base !== undefined) return base;
+  if (!opts.m2 || recv.form !== "container") return undefined;
+  const matches = opts.m2wide ? ccIsSingleRecordFinder(member) : ccIsDynamicFinder(member);
+  if (!matches) return undefined;
+  return member.endsWith("!") ? recv.element : rubyUnionOf([recv.element, RUBY_NIL_TYPE_REF]);
+}
+
+/** `declaredReturnType(className, member, classReceiver=true)`, replayed over `facts`. */
+function ccDeclaredReturnType(className: string, member: string, ctx: CallContext): RubyTypeRef | undefined {
+  const facts = ctx.structuredReturnTypes ?? {};
+  const direct = facts[`${className}.${member}`] ?? facts[`${className}#${member}`];
+  if (direct !== undefined) return direct;
+  for (const ancestor of ctx.classAncestors?.[className] ?? []) {
+    const inherited = facts[`${ancestor}.${member}`] ?? facts[`${ancestor}#${member}`];
+    if (inherited !== undefined) return inherited;
+  }
+  return undefined;
+}
+
+/**
+ * `resolveChain`, re-implemented so mechanism 2 can be injected at the hop. Head
+ * seeding follows production exactly — DECLARED facts (own coordinate then MRO)
+ * before the framework `instanceReturning` vocabulary — and the STOP-at-unknown-hop
+ * and hop-cap invariants are preserved.
+ */
+function ccResolveChain(receiver: string, atLine: number, ctx: CallContext, opts: CcOpts): RubyTypeRef | undefined {
+  const segments = receiver.split(".");
+  const head = segments[0];
+  if (!head) return undefined;
+  const links = segments.slice(1);
+  if (links.length > CHAIN_MAX_HOPS_DEFAULT) return undefined;
+  let current: RubyTypeRef | undefined;
+  let startLink = 0;
+  const firstLink = links[0];
+  const headMember = firstLink === undefined ? null : ccStripArgs(firstLink);
+  const declaredHead =
+    headMember !== null && CC_CONST_RE.test(head) ? ccDeclaredReturnType(head, headMember, ctx) : undefined;
+  if (declaredHead !== undefined) {
+    current = declaredHead;
+    startLink = 1;
+  } else if (
+    headMember !== null &&
+    CC_CONST_RE.test(head) &&
+    catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(headMember)
+  ) {
+    current = { form: "instance", name: head };
+    startLink = 1;
+  } else {
+    current = typeOfReceiver(head, atLine, ctx);
+  }
+  if (current === undefined) return undefined;
+  for (let i = startLink; i < links.length; i++) {
+    const link = links[i];
+    if (link === undefined) return undefined;
+    current = ccReturnTypeOf(current, ccStripArgs(link), ctx, opts);
+    if (current === undefined) return undefined;
+  }
+  return current;
+}
+
+/**
+ * The receiver's type under the simulated mechanisms. A receiver with no dot is
+ * handed to the REAL `typeOfReceiver` — mechanism 2 can only fire on a container
+ * hop, which single-segment receivers never take, so mechanisms 1 and 3 reach them
+ * through the fact overlay in `ctx` with no mirror in the way.
+ */
+function ccReceiverType(receiver: string, atLine: number, ctx: CallContext, opts: CcOpts): RubyTypeRef | undefined {
+  if (!receiver.includes(".")) return typeOfReceiver(receiver, atLine, ctx);
+  return rubyReceiverForm(ccResolveChain(receiver, atLine, ctx, opts));
+}
+
+/** Evaluate ONE def tail's chain at barrier time. `undefined` = the chain stays silent. */
+function ccEvalDefChain(tail: CcDefTail, ctx: CallContext, opts: CcOpts): RubyTypeRef | undefined {
+  const head = tail.chain[0];
+  const links = tail.chain.slice(1);
+  const firstLink = links[0];
+  if (head === undefined || firstLink === undefined) return undefined;
+  if (links.length > CHAIN_MAX_HOPS_DEFAULT) return undefined;
+  let current = ccReturnTypeOf({ form: "class", name: head }, firstLink, ctx, opts);
+  if (current === undefined) {
+    if (!catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(firstLink)) return undefined;
+    current = { form: "instance", name: head };
+  }
+  for (let i = 1; i < links.length; i++) {
+    const link = links[i];
+    if (link === undefined) return undefined;
+    current = ccReturnTypeOf(current, link, ctx, opts);
+    if (current === undefined) return undefined;
+  }
+  return tail.nilable ? (rubyUnionOf([current, RUBY_NIL_TYPE_REF]) ?? current) : current;
+}
+
+// ── run-state plumbing for the simulation ──────────────────────────────────
+
+/** Per-file resolver inputs, assembled exactly as `resolvePass2` assembles them. */
+interface CcFileCtx {
+  readonly extraction: FileExtraction;
+  readonly ancestors: Record<string, readonly string[]> | undefined;
+  readonly prepended: Record<string, readonly string[]> | undefined;
+  readonly includedByForResolver: Record<string, string[]>;
+  readonly extendsForResolver: Record<string, string> | undefined;
+  readonly returnTypes: Record<string, string> | undefined;
+  readonly instantiated: ReadonlySet<string>;
+  readonly ivarTypes: Record<string, Record<string, string>> | undefined;
+  readonly classFieldTypes: Record<string, Record<string, string>> | undefined;
+}
+
+const ccFileCtxCache = new Map<string, CcFileCtx>();
+/**
+ * `buildIncludedBy` over the RUN-GLOBAL maps, memoized. `resolvePass2` rebuilds it
+ * per file, which is the O(n²) waste `RunState.seal` was created to stop; every
+ * file in this run reads the same two run-global maps, so the answer is identical
+ * and computing it 8 615 times would dominate the oracle's runtime.
+ */
+let ccRunIncludedBy: Record<string, string[]> | undefined;
+
+function ccFileCtx(extraction: FileExtraction): CcFileCtx {
+  const cached = ccFileCtxCache.get(extraction.relPath);
+  if (cached !== undefined) return cached;
+  const ancestors = Object.keys(runAncestors).length > 0 ? runAncestors : extraction.classAncestors;
+  const prepended =
+    Object.keys(runPrependedAncestors).length > 0 ? runPrependedAncestors : extraction.classPrependedAncestors;
+  const runGlobal = ancestors === runAncestors && prepended === runPrependedAncestors;
+  if (runGlobal) ccRunIncludedBy ??= buildIncludedBy(ancestors ?? {}, prepended ?? {});
+  const built: CcFileCtx = {
+    extraction,
+    ancestors,
+    prepended,
+    includedByForResolver: runGlobal ? (ccRunIncludedBy ?? {}) : buildIncludedBy(ancestors ?? {}, prepended ?? {}),
+    extendsForResolver: Object.keys(runExtends).length > 0 ? runExtends : extraction.classExtends,
+    returnTypes: Object.keys(runReturnTypes).length > 0 ? runReturnTypes : extraction.functionReturnTypes,
+    instantiated: runInstantiatedTypes.size > 0 ? runInstantiatedTypes : new Set(extraction.instantiatedTypes ?? []),
+    ivarTypes: Object.keys(runIvarTypes).length > 0 ? runIvarTypes : extraction.ivarTypes,
+    classFieldTypes: CTOR_PARAM_TYPES_ENABLED
+      ? mergeDerivedClassFieldTypes(extraction.classFieldTypes, runDerivedClassFieldTypes)
+      : extraction.classFieldTypes,
+  };
+  ccFileCtxCache.set(extraction.relPath, built);
+  return built;
+}
+
+/** The overlay a mechanism variant adds on top of the run's own fact maps. */
+interface CcOverlay {
+  readonly facts: Record<string, RubyTypeRef>;
+  readonly ivars: Record<string, Record<string, string>>;
+}
+
+function ccBuildContext(
+  file: CcFileCtx,
+  chunk: ChunkExtraction | null,
+  scope: readonly string[],
+  overlay: CcOverlay,
+): CallContext {
+  const localBindings =
+    CTOR_PARAM_TYPES_ENABLED && chunk !== null
+      ? seedParamLocalBindings(chunk.localBindings, runParamTypes[chunk.symbolId], chunk.startLine)
+      : (chunk?.localBindings ?? undefined);
+  const ivarTypes =
+    Object.keys(overlay.ivars).length === 0 ? file.ivarTypes : ccMergeIvarTypes(file.ivarTypes ?? {}, overlay.ivars);
+  return {
+    callerFile: file.extraction.relPath,
+    callerScope: chunk !== null ? chunk.scope : [...scope],
+    callerSymbolId: chunk?.symbolId ?? "",
+    imports: file.extraction.imports,
+    symbolTable,
+    classFieldTypes: file.classFieldTypes,
+    associationTypes: file.extraction.associationTypes,
+    localBindings,
+    localCallBindings: chunk?.localCallBindings,
+    functionReturnTypes: file.returnTypes,
+    ivarTypes,
+    structuredReturnTypes: overlay.facts,
+    classAncestors: file.ancestors,
+    compactDeclaredClasses: runCompactClasses,
+    gemfileContent,
+    classPrependedAncestors: file.prepended,
+    includedBy: file.includedByForResolver,
+    classExtends: file.extendsForResolver,
+    dispatchTables: runDispatchTables,
+    callbackParams: runCallbackParams,
+    hierarchy: hierarchyView,
+    instantiatedTypes: file.instantiated,
+    selfDispatchTemplates: SELF_DISPATCH_ENABLED ? runSelfDispatchTemplates : undefined,
+    selfInstantiatingClassMethods: SELF_DISPATCH_ENABLED ? runSelfInstantiatingClassMethods : undefined,
+  };
+}
+
+function ccMergeIvarTypes(
+  base: Record<string, Record<string, string>>,
+  extra: Record<string, Record<string, string>>,
+): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = { ...base };
+  for (const [scopeKey, fields] of Object.entries(extra)) {
+    out[scopeKey] = { ...out[scopeKey], ...fields };
+  }
+  return out;
+}
+
+/**
+ * Every class that reaches `owner` through an include/prepend/superclass edge,
+ * transitively. `buildIncludedBy` gives DIRECT children only, and a concern
+ * included by another concern is exactly the shape mechanism 3 must project
+ * through, so the walk is transitive and cycle-guarded.
+ */
+function ccIncluders(owner: string, index: Record<string, string[]>): string[] {
+  const seen = new Set<string>();
+  const stack = [...(index[owner] ?? [])];
+  while (stack.length > 0) {
+    const next = stack.pop();
+    if (next === undefined || seen.has(next)) continue;
+    seen.add(next);
+    for (const child of index[next] ?? []) stack.push(child);
+  }
+  return [...seen];
+}
+
+interface CcVariantResult {
+  readonly key: string;
+  readonly opts: CcOpts;
+  readonly m3Projections: number;
+  readonly newFacts: number;
+  readonly newIvarFacts: number;
+  readonly waves: number[];
+  readonly converged: boolean;
+  readonly byShape: Record<string, number>;
+  /** Miss-level projection. */
+  readonly missNewlyTyped: number;
+  readonly missTypeChanged: number;
+  readonly missStillUntyped: number;
+  readonly recovery: Record<string, number>;
+  readonly changedRecovery: Record<string, number>;
+  /** Derived coordinates whose METHOD name matches the focus — the worked example. */
+  readonly focusFacts: Record<string, string>;
+  /** Per-miss trace for receivers matching the focus, so a zero can be explained. */
+  readonly focusMisses: {
+    receiver: string;
+    scope: string;
+    member: string;
+    before: string;
+    after: string;
+    verdict: string;
+  }[];
+}
+
+/**
+ * Which coordinate / receiver the per-variant trace follows. Defaults to the bead's
+ * worked example so a run with no extra env still explains its own headline.
+ */
+const CC_FOCUS = new RegExp(process.env.CODEGRAPH_CONSTCHAIN_FOCUS ?? "current_firm");
+
+/** A `RubyTypeRef` as one short line — the trace's cell format. */
+function ccRefText(ref: RubyTypeRef | undefined): string {
+  if (ref === undefined) return "—";
+  if (ref.form === "nil") return "nil";
+  if (ref.form === "container") return `container(${ccRefText(ref.element)})`;
+  if (ref.form === "union") return ref.members.map(ccRefText).join("|");
+  return `${ref.form === "class" ? "class " : ""}${ref.name}`;
+}
+
+/**
+ * Build the fact overlay a variant produces, iterating mechanism 1 to fixpoint.
+ * Mechanism 3 is a ONE-SHOT projection: it rewrites no fact, it only writes the
+ * includer-specific coordinate a concern's `container(self)` scope should have
+ * carried, which `declaredReturnTypeOn` consults BEFORE walking the MRO.
+ */
+function ccBuildOverlay(opts: CcOpts): {
+  overlay: CcOverlay;
+  m3Projections: number;
+  newFacts: number;
+  newIvarFacts: number;
+  waves: number[];
+  converged: boolean;
+  byShape: Record<string, number>;
+} {
+  const facts: Record<string, RubyTypeRef> = {};
+  const ivars: Record<string, Record<string, string>> = {};
+  const byShape: Record<string, number> = {};
+  let m3Projections = 0;
+  if (opts.m3) {
+    for (const [key, ref] of Object.entries(runStructuredReturnTypes)) {
+      if (ref.form !== "container" || ref.element.form !== "instance") continue;
+      const hash = key.indexOf("#");
+      if (hash <= 0) continue;
+      const owner = key.slice(0, hash);
+      const member = key.slice(hash + 1);
+      // Only a `scope`-shaped fact ("a relation over MYSELF") declared by a MODULE
+      // is mis-keyed; an association names another model and is already correct.
+      if (!ccModuleScopes.has(owner) || ref.element.name !== owner) continue;
+      for (const includer of ccIncluders(owner, includedBy)) {
+        const coord = `${includer}#${member}`;
+        if (coord in runStructuredReturnTypes || coord in facts) continue;
+        facts[coord] = { form: "container", element: { form: "instance", name: includer } };
+        m3Projections += 1;
+      }
+    }
+  }
+  const waves: number[] = [];
+  let converged = !opts.m1;
+  let newIvarFacts = 0;
+  if (opts.m1) {
+    for (let wave = 1; wave <= CC_MAX_WAVES; wave++) {
+      const snapshot: CcOverlay = { facts: { ...runStructuredReturnTypes, ...facts }, ivars };
+      let added = 0;
+      for (const tail of ccDefTails) {
+        if (tail.coord in runStructuredReturnTypes || tail.coord in facts) continue;
+        const extraction = ccExtractionByPath.get(tail.relPath);
+        if (extraction === undefined) continue;
+        const file = ccFileCtx(extraction);
+        const chunk = tail.symbolId === null ? null : (ccChunkIndex.get(`${tail.relPath}|${tail.symbolId}`) ?? null);
+        const ctx = ccBuildContext(file, chunk, tail.scope, snapshot);
+        const ref = ccEvalDefChain(tail, ctx, opts);
+        if (ref === undefined) continue;
+        facts[tail.coord] = ref;
+        byShape[tail.shape] = (byShape[tail.shape] ?? 0) + 1;
+        added += 1;
+        if (tail.memoIvar !== null) {
+          const name = tfRefName(ref);
+          if (name !== undefined && tfIsProjectClass(name)) {
+            const scopeKey = tail.scope.join("::");
+            const bucket = (ivars[scopeKey] ??= {});
+            if (!(tail.memoIvar in bucket)) {
+              bucket[tail.memoIvar] = name;
+              newIvarFacts += 1;
+            }
+          }
+        }
+      }
+      waves.push(added);
+      if (added === 0) {
+        converged = true;
+        break;
+      }
+    }
+  }
+  return {
+    overlay: { facts: { ...runStructuredReturnTypes, ...facts }, ivars },
+    m3Projections,
+    newFacts: Object.keys(facts).length,
+    newIvarFacts,
+    waves,
+    converged,
+    byShape,
+  };
+}
+
+const ccExtractionByPath = new Map<string, FileExtraction>();
+const ccChunkIndex = new Map<string, ChunkExtraction>();
+
+/** The base overlay: the run's own facts, no mechanism applied. */
+function ccBaseOverlay(): CcOverlay {
+  return { facts: runStructuredReturnTypes, ivars: {} };
+}
+
+function runConstChainOracle(extractions: FileExtraction[]): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  BARRIER-TIME Const.<chain> RHS TYPING ORACLE (bd ikyqu)");
+  L("═══════════════════════════════════════════════════════════════════");
+
+  for (const extraction of extractions) {
+    ccExtractionByPath.set(extraction.relPath, extraction);
+    for (const chunk of extraction.chunks) ccChunkIndex.set(`${extraction.relPath}|${chunk.symbolId}`, chunk);
+  }
+
+  // ── (a) chain-shape census ────────────────────────────────────────────────
+  const shapeRows = new Map<
+    string,
+    { total: number; covered: number; walkTyped: number; memo: number; nilable: number }
+  >();
+  for (const tail of ccDefTails) {
+    const row = shapeRows.get(tail.shape) ?? { total: 0, covered: 0, walkTyped: 0, memo: 0, nilable: 0 };
+    row.total += 1;
+    if (tail.coord in runStructuredReturnTypes) row.covered += 1;
+    if (tail.walkTimeTyped) row.walkTyped += 1;
+    if (tail.memo) row.memo += 1;
+    if (tail.nilable) row.nilable += 1;
+    shapeRows.set(tail.shape, row);
+  }
+  L("");
+  L("─── (a) def tails rooted at a CONSTANT — chain-shape census ───────");
+  L(`defs with an enclosing scope:        ${ccDefsScanned}`);
+  L(`defs with a readable tail:           ${ccDefsWithReadableTail}`);
+  L(`defs whose tail is a Const chain:    ${ccDefTails.length}   <-- the barrier pass's working set`);
+  L("shape                  total   coordCovered   walkTimeTyped   memo(||=)   nilable");
+  for (const [shape, row] of [...shapeRows].sort((a, b) => b[1].total - a[1].total)) {
+    L(
+      `  ${shape.padEnd(20)}${String(row.total).padStart(5)}${String(row.covered).padStart(15)}` +
+        `${String(row.walkTyped).padStart(16)}${String(row.memo).padStart(12)}${String(row.nilable).padStart(10)}`,
+    );
+  }
+
+  // ── (b) dynamic-finder frequency ──────────────────────────────────────────
+  const finderKinds: Record<string, number> = {};
+  const finderRecv: Record<string, number> = {};
+  const finderContainerMembers = new Map<string, number>();
+  const base = ccBaseOverlay();
+  for (const extraction of extractions) {
+    const file = ccFileCtx(extraction);
+    for (const chunk of extraction.chunks) {
+      let ctx: CallContext | null = null;
+      for (const call of chunk.calls) {
+        if (!ccIsSingleRecordFinder(call.member)) continue;
+        const kind = ccIsDynamicFinder(call.member) ? "find_by_<attr>" : call.member;
+        finderKinds[kind] = (finderKinds[kind] ?? 0) + 1;
+        if (call.receiver === null) {
+          finderRecv["bare (self)"] = (finderRecv["bare (self)"] ?? 0) + 1;
+          continue;
+        }
+        ctx ??= ccBuildContext(file, chunk, chunk.scope, base);
+        const type = ccReceiverType(call.receiver, call.startLine, ctx, CC_BASE_OPTS);
+        const label =
+          type === undefined
+            ? "untyped"
+            : type.form === "container"
+              ? "container(E)  <-- mechanism 2 addressable"
+              : type.form;
+        finderRecv[label] = (finderRecv[label] ?? 0) + 1;
+        if (type?.form === "container") {
+          finderContainerMembers.set(call.member, (finderContainerMembers.get(call.member) ?? 0) + 1);
+        }
+      }
+    }
+  }
+  L("");
+  L("─── (b) single-record FINDER call sites, corpus-wide ──────────────");
+  for (const [k, n] of Object.entries(finderKinds).sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(6)}  ${k}`);
+  }
+  L("  receiver type at the finder call site (today's engine):");
+  for (const [k, n] of Object.entries(finderRecv).sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(6)}  ${k}`);
+  }
+  if (finderContainerMembers.size > 0) {
+    L("  top members ON a typed container:");
+    for (const [k, n] of [...finderContainerMembers].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+      L(`  ${String(n).padStart(6)}  ${k}`);
+    }
+  }
+
+  // ── (c) concern-scope keying ──────────────────────────────────────────────
+  const scopesInModules = ccScopeDecls.filter((d) => d.ownerIsModule).length;
+  let containerFactsToModule = 0;
+  let containerFactsToClass = 0;
+  let projectableCoords = 0;
+  let projectionTargets = 0;
+  const topConcerns: { owner: string; members: number; includers: number }[] = [];
+  const perConcern = new Map<string, number>();
+  for (const [key, ref] of Object.entries(runStructuredReturnTypes)) {
+    if (ref.form !== "container" || ref.element.form !== "instance") continue;
+    const hash = key.indexOf("#");
+    if (hash <= 0) continue;
+    const owner = key.slice(0, hash);
+    if (ccModuleScopes.has(ref.element.name)) containerFactsToModule += 1;
+    else containerFactsToClass += 1;
+    if (!ccModuleScopes.has(owner) || ref.element.name !== owner) continue;
+    projectableCoords += 1;
+    const includers = ccIncluders(owner, includedBy).length;
+    projectionTargets += includers;
+    perConcern.set(owner, (perConcern.get(owner) ?? 0) + 1);
+  }
+  for (const [owner, members] of perConcern) {
+    topConcerns.push({ owner, members, includers: ccIncluders(owner, includedBy).length });
+  }
+  L("");
+  L("─── (c) concern-scope keying ──────────────────────────────────────");
+  L(`scope declarations, total:                 ${ccScopeDecls.length}`);
+  L(`  declared in a MODULE (concern):          ${scopesInModules}`);
+  L(`  declared in a CLASS (the model itself):  ${ccScopeDecls.length - scopesInModules}`);
+  L(`modules declared: ${ccModuleScopes.size}   classes declared: ${ccClassScopes.size}`);
+  L(`container facts whose ELEMENT is a module: ${containerFactsToModule}`);
+  L(`container facts whose ELEMENT is a class:  ${containerFactsToClass}`);
+  L(`  of those, "scope over SELF in a concern": ${projectableCoords} coords -> ${projectionTargets} includer coords`);
+  L("  top concerns by projectable coordinate:");
+  for (const row of topConcerns.sort((a, b) => b.members * b.includers - a.members * a.includers).slice(0, 10)) {
+    L(`  ${String(row.members).padStart(4)} coords x ${String(row.includers).padStart(4)} includers  ${row.owner}`);
+  }
+
+  // ── mirror fidelity check ─────────────────────────────────────────────────
+  let mirrorChecked = 0;
+  let mirrorDisagreed = 0;
+  const missWork: { miss: MissRecord; file: CcFileCtx; chunk: ChunkExtraction }[] = [];
+  for (const miss of misses) {
+    if (miss.receiver === null) continue;
+    const extraction = ccExtractionByPath.get(miss.relPath);
+    if (extraction === undefined) continue;
+    const chunk = ccChunkIndex.get(`${miss.relPath}|${miss.callerSymbolId}`);
+    if (chunk === undefined) continue;
+    missWork.push({ miss, file: ccFileCtx(extraction), chunk });
+  }
+  for (const { miss, file, chunk } of missWork) {
+    if (!miss.receiver?.includes(".")) continue;
+    const ctx = ccBuildContext(file, chunk, chunk.scope, base);
+    const real = typeOfReceiver(miss.receiver, miss.line, ctx);
+    const mirrored = ccReceiverType(miss.receiver, miss.line, ctx, CC_BASE_OPTS);
+    mirrorChecked += 1;
+    const agree =
+      real === undefined ? mirrored === undefined : mirrored !== undefined && rubyTypeRefEquals(real, mirrored);
+    if (!agree) mirrorDisagreed += 1;
+  }
+  L("");
+  L("─── mirror fidelity (ccResolveChain vs the real typeOfReceiver) ───");
+  L(`dotted miss receivers checked: ${mirrorChecked}   disagreements: ${mirrorDisagreed}`);
+
+  // ── (d) per-mechanism recovery projection ─────────────────────────────────
+  const variants: { key: string; opts: CcOpts }[] = [
+    { key: "M1 alone (barrier chain typing)", opts: { m1: true, m2: false, m2wide: false, m3: false } },
+    { key: "M2 alone (container x find_by_*)", opts: { m1: false, m2: true, m2wide: false, m3: false } },
+    { key: "M2wide alone (every 1-record finder)", opts: { m1: false, m2: true, m2wide: true, m3: false } },
+    { key: "M3 alone (concern-scope projection)", opts: { m1: false, m2: false, m2wide: false, m3: true } },
+    { key: "M1+M2", opts: { m1: true, m2: true, m2wide: false, m3: false } },
+    { key: "M1+M2+M3", opts: { m1: true, m2: true, m2wide: false, m3: true } },
+    { key: "M1+M2wide+M3", opts: { m1: true, m2: true, m2wide: true, m3: true } },
+  ];
+  const results: CcVariantResult[] = [];
+  // Baseline receiver types, computed once — the delta's left-hand side.
+  const baseTypes: (RubyTypeRef | undefined)[] = missWork.map(({ miss, file, chunk }) => {
+    if (miss.receiver === null) return undefined;
+    return ccReceiverType(miss.receiver, miss.line, ccBuildContext(file, chunk, chunk.scope, base), CC_BASE_OPTS);
+  });
+  for (const variant of variants) {
+    const built = ccBuildOverlay(variant.opts);
+    let missNewlyTyped = 0;
+    let missTypeChanged = 0;
+    let missStillUntyped = 0;
+    const recovery: Record<string, number> = {};
+    const changedRecovery: Record<string, number> = {};
+    const focusMisses: CcVariantResult["focusMisses"] = [];
+    missWork.forEach(({ miss, file, chunk }, i) => {
+      if (miss.receiver === null) return;
+      const ctx = ccBuildContext(file, chunk, chunk.scope, built.overlay);
+      const after = ccReceiverType(miss.receiver, miss.line, ctx, variant.opts);
+      const before = baseTypes[i];
+      const name = after === undefined ? undefined : tfRefName(after);
+      const verdict =
+        after === undefined
+          ? "receiver STILL untyped"
+          : name === undefined
+            ? "type is a union — no single name"
+            : icRecovery(name, miss.member);
+      if (CC_FOCUS.test(miss.receiver) && focusMisses.length < 40) {
+        focusMisses.push({
+          receiver: miss.receiver.replace(/\s+/g, " ").slice(0, 70),
+          scope: miss.enclosingScope.split(" > ").join("::"),
+          member: miss.member,
+          before: ccRefText(before),
+          after: ccRefText(after),
+          verdict,
+        });
+      }
+      if (after === undefined) {
+        missStillUntyped += 1;
+        return;
+      }
+      if (before === undefined) {
+        missNewlyTyped += 1;
+        recovery[verdict] = (recovery[verdict] ?? 0) + 1;
+      } else if (!rubyTypeRefEquals(before, after)) {
+        missTypeChanged += 1;
+        changedRecovery[verdict] = (changedRecovery[verdict] ?? 0) + 1;
+      }
+    });
+    const focusFacts: Record<string, string> = {};
+    for (const [coord, ref] of Object.entries(built.overlay.facts)) {
+      if (coord in runStructuredReturnTypes) continue;
+      if (CC_FOCUS.test(coord)) focusFacts[coord] = ccRefText(ref);
+    }
+    results.push({
+      key: variant.key,
+      opts: variant.opts,
+      m3Projections: built.m3Projections,
+      newFacts: built.newFacts,
+      newIvarFacts: built.newIvarFacts,
+      waves: built.waves,
+      converged: built.converged,
+      byShape: built.byShape,
+      missNewlyTyped,
+      missTypeChanged,
+      missStillUntyped,
+      recovery,
+      changedRecovery,
+      focusFacts,
+      focusMisses,
+    });
+  }
+
+  // ── the premise check: is receiver typing actually the blocker? ───────────
+  //
+  // Every mechanism here buys the same thing — a TYPE for a receiver that has
+  // none. If a large share of the hole already has one, the hole is downstream of
+  // typing and no amount of new facts moves it. Counting that share costs one pass
+  // over the baseline types already computed, and it is the number that decides
+  // whether the bead's premise survives.
+  let baseTypedMisses = 0;
+  const baseTypedVerdicts: Record<string, number> = {};
+  /**
+   * Which STRATEGY owns a typed receiver of this shape. `chainType` — the only
+   * pass that turns a `typeOfReceiver` answer into an exact edge — bails out on a
+   * receiver with no dot and no index, on the documented assumption that
+   * `localType`/`ivarField` already own those. Two channels added since
+   * (`nullaryReceiverType`, `scopedReceiverType`) type a BARE identifier that is
+   * neither a local binding nor an ivar, so that assumption no longer holds and
+   * the type they produce reaches no consumer.
+   */
+  const baseTypedByShape: Record<string, number> = {};
+  const baseTypedUnconsumed: Record<string, number> = {};
+  let boundCallOnlyBase = 0;
+  missWork.forEach(({ miss, file, chunk }, i) => {
+    const before = baseTypes[i];
+    if (before !== undefined) {
+      baseTypedMisses += 1;
+      const name = tfRefName(before);
+      const verdict = name === undefined ? "type is a union — no single name" : icRecovery(name, miss.member);
+      baseTypedVerdicts[verdict] = (baseTypedVerdicts[verdict] ?? 0) + 1;
+      const receiver = miss.receiver ?? "";
+      const trimmed = receiver.trimEnd();
+      const shape = receiver.includes(".")
+        ? "dotted chain (chainType owns it)"
+        : trimmed.endsWith("]") && trimmed.includes("[")
+          ? "index access (chainType owns it)"
+          : receiver.startsWith("@")
+            ? "@ivar (ivarField owns it)"
+            : resolveLocalBinding(ccBuildContext(file, chunk, chunk.scope, base).localBindings, receiver, miss.line)
+              ? "bound local (localType owns it)"
+              : "bare identifier — NO strategy consumes the type";
+      baseTypedByShape[shape] = (baseTypedByShape[shape] ?? 0) + 1;
+      if (shape.startsWith("bare identifier")) {
+        baseTypedUnconsumed[verdict] = (baseTypedUnconsumed[verdict] ?? 0) + 1;
+      }
+      return;
+    }
+    // `boundCallReturnType` is a SECOND receiver channel the chain engine never
+    // consults (`x = Svc.call(…)` then `x.foo`), so a projection built only on
+    // `typeOfReceiver` understates. Sized separately rather than folded in, so the
+    // delta above stays comparable with the validated mirror.
+    if (miss.receiver === null || miss.receiver.includes(".")) return;
+    if (boundCallReturnType(miss.receiver, ccBuildContext(file, chunk, chunk.scope, base)) !== undefined) {
+      boundCallOnlyBase += 1;
+    }
+  });
+  L("");
+  L("─── premise check: is RECEIVER TYPING the blocker at all? ─────────");
+  L(`recall-hole misses with a receiver + a locatable chunk: ${missWork.length} of ${misses.length}`);
+  L(`  receiver ALREADY typed by today's engine:  ${baseTypedMisses}`);
+  for (const [k, n] of Object.entries(baseTypedVerdicts).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+  L("  ...by receiver SHAPE (which strategy consumes the type):");
+  for (const [k, n] of Object.entries(baseTypedByShape).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+  L("  ...bare-identifier subset, by whether a unique definer exists:");
+  for (const [k, n] of Object.entries(baseTypedUnconsumed).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+  L(`  receiver untyped by typeOfReceiver but typed by boundCallReturnType: ${boundCallOnlyBase}`);
+
+  L("");
+  L("─── (d) per-mechanism projection over the recall hole ─────────────");
+  L(`recall-hole misses with a receiver + a locatable chunk: ${missWork.length} of ${misses.length}`);
+  for (const r of results) {
+    const recoverable = r.recovery["RECOVERABLE — unique definer on the derived type's closure"] ?? 0;
+    L("");
+    L(`  ${r.key}`);
+    L(
+      `    new coordinate facts: ${r.newFacts}   ivar facts: ${r.newIvarFacts}   ` +
+        `M3 projections: ${r.m3Projections}`,
+    );
+    L(`    worklist waves: [${r.waves.join(", ")}]   converged: ${r.converged ? "yes" : "NO (hit the cap)"}`);
+    if (Object.keys(r.byShape).length > 0) {
+      L(
+        `    facts by chain shape: ${Object.entries(r.byShape)
+          .map(([k, v]) => `${k}=${v}`)
+          .join("  ")}`,
+      );
+    }
+    L(
+      `    misses NEWLY typed: ${r.missNewlyTyped}   -> RECOVERABLE: ${recoverable}   still untyped: ${r.missStillUntyped}`,
+    );
+    for (const [k, n] of Object.entries(r.recovery).sort((a, b) => b[1] - a[1])) {
+      L(`        ${String(n).padStart(6)}  ${k}`);
+    }
+    if (r.missTypeChanged > 0) {
+      L(`    misses whose receiver type CHANGED: ${r.missTypeChanged}   <-- precision risk`);
+      for (const [k, n] of Object.entries(r.changedRecovery).sort((a, b) => b[1] - a[1])) {
+        L(`        ${String(n).padStart(6)}  ${k}`);
+      }
+    }
+    const focusFactRows = Object.entries(r.focusFacts);
+    if (focusFactRows.length > 0) {
+      L(`    focus facts derived (${focusFactRows.length}):`);
+      for (const [coord, ref] of focusFactRows.slice(0, 12)) L(`        ${coord} -> ${ref}`);
+    }
+    if (r.focusMisses.length > 0) {
+      const byVerdict: Record<string, number> = {};
+      for (const f of r.focusMisses) byVerdict[f.verdict] = (byVerdict[f.verdict] ?? 0) + 1;
+      L(
+        `    focus misses (first ${r.focusMisses.length}): ${Object.entries(byVerdict)
+          .map(([k, n]) => `${n}x ${k}`)
+          .join(" | ")}`,
+      );
+      for (const f of r.focusMisses.slice(0, 6)) {
+        L(`        ${f.receiver}  .${f.member}   before=${f.before} after=${f.after}   [${f.scope}]`);
+      }
+    }
+  }
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_CONSTCHAIN,
+    JSON.stringify(
+      {
+        meta: {
+          generatedAt: new Date().toISOString(),
+          defsScanned: ccDefsScanned,
+          defsWithReadableTail: ccDefsWithReadableTail,
+          defsWithConstChainTail: ccDefTails.length,
+          mirrorChecked,
+          mirrorDisagreed,
+          missWork: missWork.length,
+          baseTypedMisses,
+          baseTypedVerdicts,
+          baseTypedByShape,
+          baseTypedUnconsumed,
+          boundCallOnlyBase,
+        },
+        shapes: Object.fromEntries(shapeRows),
+        finders: { kinds: finderKinds, receiverForms: finderRecv },
+        concernScopes: {
+          declarations: ccScopeDecls.length,
+          inModules: scopesInModules,
+          containerFactsToModule,
+          containerFactsToClass,
+          projectableCoords,
+          projectionTargets,
+          topConcerns: topConcerns.slice(0, 40),
+        },
+        variants: results,
+        sampleTails: ccDefTails
+          .filter((t) => !(t.coord in runStructuredReturnTypes))
+          .slice(0, 200)
+          .map((t) => ({
+            coord: t.coord,
+            relPath: t.relPath,
+            chain: t.chain,
+            shape: t.shape,
+            memo: t.memo,
+            nilable: t.nilable,
+          })),
+      },
+      null,
+      2,
+    ),
+  );
+  L("");
+  L(`const-chain oracle detail -> ${OUT_CONSTCHAIN}`);
+}
+
 async function main(): Promise<void> {
   const t0 = Date.now();
   console.error(`[forensics] root=${ROOT} gemfile=${gemfileContent ? "loaded" : "MISSING"}`);
@@ -9005,6 +10122,7 @@ async function main(): Promise<void> {
       if (DEFPARAM_ORACLE_ENABLED) scanDefParamOracleAst(materializedRoot, relPath, extraction);
       if (SIGGAP_ORACLE_ENABLED) scanSigGapOracleAst(materializedRoot, relPath, extraction);
       if (INCLUDEGRAPH_ENABLED) scanIncludeGraphAst(materializedRoot, relPath);
+      if (CONSTCHAIN_ENABLED) scanConstChainOracleAst(materializedRoot, relPath, extraction);
       if (DUCK_ENABLED && code.includes("table_name")) scanTableNameDecls(materializedRoot, []);
       extractions.push(extraction);
     } catch (err) {
@@ -9343,6 +10461,7 @@ async function main(): Promise<void> {
   if (SIGGAP_ORACLE_ENABLED) runSigGapOracle();
   if (DUCK_ENABLED) runDuckOracle();
   if (FIXPOINT_ENABLED) runFixpointOracle(extractions, Date.now() - t0);
+  if (CONSTCHAIN_ENABLED) runConstChainOracle(extractions);
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
