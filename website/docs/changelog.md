@@ -3,6 +3,129 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.37.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.36.0...v1.37.0) (2026-08-02)
+
+### ⚠ BREAKING CHANGES
+
+* **signals:** module-mass signals — moduleLines, fileMethodCount, container-scoped memberCount (k1uah)
+
+### Features
+
+* **api:** assemble + gate filter-preset registry in composition ([e076e1d](https://github.com/artk0de/TeaRAGs-MCP/commit/e076e1dc55d4f4ad0645124f5471bf32c2c79d0a))
+* **chunker:** symbol-mass payload signals (memberCount, classLines, fileSymbolCount) ([fa7c30a](https://github.com/artk0de/TeaRAGs-MCP/commit/fa7c30ae040cbf56b10ce0ee1dc5ff8196061c78)), closes [#partN](https://github.com/artk0de/TeaRAGs-MCP/issues/partN)
+* **contracts:** filter-preset types (FilterSpec, FilterPresetDef, AdaptiveFilterCondition) ([0d939e0](https://github.com/artk0de/TeaRAGs-MCP/commit/0d939e006f827159606addfd07a86efb5aba87cc))
+* **contracts:** let providers report the per-file hashes they persisted (6goqa) ([c229b51](https://github.com/artk0de/TeaRAGs-MCP/commit/c229b513f209da8a95008c3e31dec7dffeaf51b2))
+* **contracts:** nilable/union Ruby type refs + union receiver resolution (27q0z) ([cb2f073](https://github.com/artk0de/TeaRAGs-MCP/commit/cb2f073113fe8b4ba7d2ebc11dc6be9c1773ead9))
+* **contracts:** persist a per-file content hash on cg_symbols_files (6goqa) ([33054f4](https://github.com/artk0de/TeaRAGs-MCP/commit/33054f4bc4a8a9e729ccc3d238ef6ba22a043f7e))
+* **contracts:** RerankPreset.filter optional default population ([37248ab](https://github.com/artk0de/TeaRAGs-MCP/commit/37248ab63f527c37bfe2cbf5dad5193672a4dd58))
+* **explore:** resolve &#123;presets&#125; filter at search stage with replace semantics ([1eea48d](https://github.com/artk0de/TeaRAGs-MCP/commit/1eea48d408e8ec5008738d3167802e264ab545b9))
+* **filters:** codegraph filter presets (hubs, deadCandidates, unstableCore) ([98dd142](https://github.com/artk0de/TeaRAGs-MCP/commit/98dd142bd50b49cc8cb7e7b0ff197faab32b3aaf))
+* **filters:** composite filter presets (battleTested, abandonedHotspots) + gating builder ([5918b65](https://github.com/artk0de/TeaRAGs-MCP/commit/5918b65ddc39bd3252765ac87269de6b4d89ad85))
+* **filters:** filter-preset compiler with adaptive percentiles, should-group nesting, array/contains ops ([724668e](https://github.com/artk0de/TeaRAGs-MCP/commit/724668e61b753f996d3adba45e4086d62431de61))
+* **filters:** git filter presets (freshLegacyEdits, fragileSilo, panicZone, godMethods) ([005cd83](https://github.com/artk0de/TeaRAGs-MCP/commit/005cd8347007296906de042d810681f31d9cab65))
+* **filters:** registry filter-preset data accessors + typed errors (resolution lives in api layer) ([ee3bb95](https://github.com/artk0de/TeaRAGs-MCP/commit/ee3bb950c742f997523680725b653cba0e6af759))
+* **filters:** static filter presets (production, coreLogic, securityPaths) ([ac299fe](https://github.com/artk0de/TeaRAGs-MCP/commit/ac299fea3381bcd98858d0ed3dd75d09f6c710ff))
+* **ingest:** compute the exact set of files a provider must re-extract (6goqa) ([e5069ca](https://github.com/artk0de/TeaRAGs-MCP/commit/e5069ca4eef468fcb7e09425231decdac39b45ed))
+* **ingest:** expose the run's per-file content hashes (6goqa) ([908c14f](https://github.com/artk0de/TeaRAGs-MCP/commit/908c14f5a013f7b88b6d6a45adae0c0390507fc5))
+* **ingest:** repair a provider's per-file store when it no longer matches the code (6goqa) ([2440fc9](https://github.com/artk0de/TeaRAGs-MCP/commit/2440fc9a440525ca297729c84b0d2ced93c8d107))
+* **ingest:** run the codegraph repair pass on every incremental reindex (6goqa) ([cd9a446](https://github.com/artk0de/TeaRAGs-MCP/commit/cd9a44675a5cb319189fe8e1beeef6da4013fafd))
+* **language:** AMS serializer-to-model attribute dispatch (adx5p.9) ([e084e7a](https://github.com/artk0de/TeaRAGs-MCP/commit/e084e7ae71b2c666b56197764829167ad90f686a))
+* **language:** cancancan ability-dispatch Ruby DSL grammar (gem-gated, adx5p.9) ([750838e](https://github.com/artk0de/TeaRAGs-MCP/commit/750838ec6bd0edcd03f1cb116bbe3c26f1af826c)), closes [Ability#initialize](https://github.com/artk0de/Ability/issues/initialize)
+* **language:** devise scoped-receiver type grammar (gem-gated, adx5p.9) ([6c6565d](https://github.com/artk0de/TeaRAGs-MCP/commit/6c6565dce9bf9bf40e621b1c6f22b7d2c8d80039))
+* **language:** draper decorated-model type grammar (gem-gated, adx5p.9) ([5272778](https://github.com/artk0de/TeaRAGs-MCP/commit/5272778223f7937d46effeeed867f49930cd0ea7))
+* **language:** dry-initializer param/option reader declares (gem-gated, lo9u2) ([5a57e4e](https://github.com/artk0de/TeaRAGs-MCP/commit/5a57e4e09eda44836a1da6fb2dc2be987d814ee7))
+* **language:** kaminari pagination relation grammar (gem-gated, lo9u2) ([201b1d3](https://github.com/artk0de/TeaRAGs-MCP/commit/201b1d3dbd2bb879c426e9245f72687cb32f7559))
+* **language:** ransack search-chain relation grammar (gem-gated, lo9u2) ([b0c07f3](https://github.com/artk0de/TeaRAGs-MCP/commit/b0c07f351e3c43ddc66b5171a678b3370b21def9))
+* **language:** Ruby MRO linearization substrate for ancestor ordering (uuux9) ([5915138](https://github.com/artk0de/TeaRAGs-MCP/commit/59151382c70c535150bfeda343fb94e447af67da))
+* **language:** will_paginate relation grammar (gem-gated, lo9u2) ([2fb5e56](https://github.com/artk0de/TeaRAGs-MCP/commit/2fb5e566d961a99332a20c6a96ab3a41de697e3b))
+* **mcp:** filter param union (raw | &#123;presets&#125;) + filter-preset name discovery ([ec274b9](https://github.com/artk0de/TeaRAGs-MCP/commit/ec274b954c89538cbb737a7899017697caa54eed))
+* **presets:** composite decomposition and godModule presets (codegraph-enriched) ([f67203a](https://github.com/artk0de/TeaRAGs-MCP/commit/f67203a55312d60c7eba720c19c412dd85503584))
+* **presets:** godModule file-level preset + symbolCount derived signal ([9a03942](https://github.com/artk0de/TeaRAGs-MCP/commit/9a03942124c15d62d61ad67f38e77099a085135f))
+* **presets:** hygiene filter defaults on risk/structural rerank presets ([9ad11be](https://github.com/artk0de/TeaRAGs-MCP/commit/9ad11be28fb91a7db10efd431da31441c2cd423d))
+* **scripts:** barrier-time Const.&lt;chain&gt; RHS typing oracle (ikyqu) ([b089b77](https://github.com/artk0de/TeaRAGs-MCP/commit/b089b77e64608bdcbf7c12d14c00312230029445))
+* **scripts:** single-segment receiver DROP-surface oracle (e8feo) ([ccd0581](https://github.com/artk0de/TeaRAGs-MCP/commit/ccd0581ac70102b63e16aaa8a64d13e38e519e86))
+* **signals:** declare filter-referenced percentiles + validate them at composition ([602396a](https://github.com/artk0de/TeaRAGs-MCP/commit/602396a71d13b85fc96b62a1cc5d86ce94e5eb78))
+* **signals:** per-language industry floors under percentile thresholds (k1uah) ([072884b](https://github.com/artk0de/TeaRAGs-MCP/commit/072884b376e682c224d09828d44d3aa71e44b461))
+* **trajectory:** naming-convention receiver typing for Ruby (wob7g) ([ba31323](https://github.com/artk0de/TeaRAGs-MCP/commit/ba313230e79bbf72bc54c53877c25a21cadfc4fb))
+
+### Improvements
+
+* **config:** drop CODEGRAPH_EXCLUDE_TESTS — tests never belong in the graph (6xxh5) ([f2730aa](https://github.com/artk0de/TeaRAGs-MCP/commit/f2730aaa0cefc32cdf72ea567cd5cca249a48397))
+* **debug:** carry the debug flag into enrichment workers and time the tail ([4918720](https://github.com/artk0de/TeaRAGs-MCP/commit/4918720b0520f1cc15b93f2311e1879ed3f5e00c))
+* **dx:** risk-assessment structural axis — Phase 1b, fix cost, god-class attribution ([40e674c](https://github.com/artk0de/TeaRAGs-MCP/commit/40e674cd9a60eedbd8bae5e2f282d4ea59870db8))
+* **language:** chainType consumes single-segment typed receivers (e8feo) ([eb31663](https://github.com/artk0de/TeaRAGs-MCP/commit/eb316633f89b28e7958715ca9443a80c7f416249))
+* **signals:** module-mass signals — moduleLines, fileMethodCount, container-scoped memberCount (k1uah) ([d25d778](https://github.com/artk0de/TeaRAGs-MCP/commit/d25d7780a47f7de68edd5085c708e5dce6d0cd77))
+* **trajectory:** make the pass-2 write cadence configurable ([92bb762](https://github.com/artk0de/TeaRAGs-MCP/commit/92bb762de68a47500e994a0d6fb43d83a09e1bef))
+* **trajectory:** typed BARE receivers defer to chainType (55950) ([35143c4](https://github.com/artk0de/TeaRAGs-MCP/commit/35143c48d76f5f34625f5ac3240375ab63829ce0))
+
+### Bug Fixes
+
+* **adapters:** clone the codegraph WAL sidecar with its database (zncfn) ([f3a71c3](https://github.com/artk0de/TeaRAGs-MCP/commit/f3a71c3625ee14328f8e390fb5a45acdc8589bf9))
+* **adapters:** decode daemon IPC frames in one pass, UTF-8 safe (hr4io) ([9bc4a61](https://github.com/artk0de/TeaRAGs-MCP/commit/9bc4a615fac8496b3618bedbbf41eb0b3c671e4a))
+* **adapters:** let the orphan sweep reclaim shadow codegraph databases (6goqa) ([b37e6a6](https://github.com/artk0de/TeaRAGs-MCP/commit/b37e6a6eb419644e8c6771ce73104a0d5ea93cfa))
+* **adapters:** settle daemon calls when the connection dies (mrh07/6q7ap) ([4b75b92](https://github.com/artk0de/TeaRAGs-MCP/commit/4b75b927d508080746693a7711702f20412d9949))
+* **api:** stop answering an unreadable graph with an empty edge list ([63fdb40](https://github.com/artk0de/TeaRAGs-MCP/commit/63fdb404f1d73d2eee1bcdfa4adc15f713081b73))
+* **bootstrap:** carry the embedding endpoints onto a worktree index clone ([357c2bc](https://github.com/artk0de/TeaRAGs-MCP/commit/357c2bcf499fd4d0d29efeda7126a1ba9321c256))
+* **config:** seed a worktree's index config from its main checkout ([13c51aa](https://github.com/artk0de/TeaRAGs-MCP/commit/13c51aa5c4ec0655c17b2e5dc1f9ae5fd8faf340))
+* **explore:** load collection stats before building filter so adaptive percentiles resolve on first query ([ce93da4](https://github.com/artk0de/TeaRAGs-MCP/commit/ce93da45431f0b5e771537362f4b3e81c88dd180))
+* **explore:** resolve overlay labels for dotless payload keys (u64tm) ([0d284e6](https://github.com/artk0de/TeaRAGs-MCP/commit/0d284e61d31f80e702b90af67a36754f5e1ee106))
+* **filters:** securityPaths full token set (add acl, oauth, jwt per spec) ([18534a3](https://github.com/artk0de/TeaRAGs-MCP/commit/18534a3438f916fb012e75f282a8ef10dd23724f))
+* **git:** key blame and discovery caches by shared git dir, not working tree ([4af914b](https://github.com/artk0de/TeaRAGs-MCP/commit/4af914b81e910d8ce04dd642844a7419b04d9935))
+* **git:** share blame and discovery caches across linked worktrees ([d317546](https://github.com/artk0de/TeaRAGs-MCP/commit/d31754629477f42d30e4841ce7ec307e2b349119))
+* **ingest:** address versioned artifacts by the physical collection on the incremental path (6goqa) ([705a9c2](https://github.com/artk0de/TeaRAGs-MCP/commit/705a9c298b92f21cbe25c0dc74549aa0a3e6316f))
+* **ingest:** hold the codegraph daemon alive across recovery too (bytb6) ([0e54767](https://github.com/artk0de/TeaRAGs-MCP/commit/0e547679defcaa6773b06d096f4da7bab69a6ad5))
+* **ingest:** stamp the run's content hash onto every graph file row (ymjxj/6goqa) ([45eac5f](https://github.com/artk0de/TeaRAGs-MCP/commit/45eac5f7bfa1c257a94c3887ac618e8e58798a10))
+* **ingest:** write the enrichment skip stamp at index time, not one run later (okra9) ([3d385ca](https://github.com/artk0de/TeaRAGs-MCP/commit/3d385cab15b1ee62de68ef8cc46d6d8fd3aa1d78))
+* **language:** dispatch super and self-return facts along the linearized MRO (uuux9) ([ed451ed](https://github.com/artk0de/TeaRAGs-MCP/commit/ed451edfea27052f88492a2611076926e6dbe581)), closes [Base#m](https://github.com/artk0de/Base/issues/m) [Tracer#m](https://github.com/artk0de/Tracer/issues/m)
+* **language:** drop a no-op type assertion that broke the lint gate ([be162ce](https://github.com/artk0de/TeaRAGs-MCP/commit/be162ce9965afc4bb93d3ae86fcbce25bf884470))
+* **scripts:** baredefer oracle counts only DYNAMIC-component fan-outs (55950) ([34acb9b](https://github.com/artk0de/TeaRAGs-MCP/commit/34acb9b633312479c0705b0498517d712e40a94c))
+* **scripts:** harness reads the real lastSegment; gate + edge cuts (jii03/wob7g) ([b01f266](https://github.com/artk0de/TeaRAGs-MCP/commit/b01f266b780738796ad4c8b13bbf77858ae4eb43))
+* **trajectory:** honour customPatterns in codegraph shouldEnrich (5ikhf) ([3defa74](https://github.com/artk0de/TeaRAGs-MCP/commit/3defa740048ff4a2fbe4fbe2d784f83c80025b4b))
+* **trajectory:** lastSegment splits the `::` scope separator (jii03) ([853fb5f](https://github.com/artk0de/TeaRAGs-MCP/commit/853fb5f36289415a8bbefa2cf8abcbd8e78a1ff1))
+* **trajectory:** rank the resolved ancestor chain by MRO (ymht3) ([7c57a9e](https://github.com/artk0de/TeaRAGs-MCP/commit/7c57a9ec7194d538f4da6968d9536bbc3b9a3be3))
+* **trajectory:** rank the Ruby backbone walkers' ancestors by MRO (mo5ur) ([27dd9f7](https://github.com/artk0de/TeaRAGs-MCP/commit/27dd9f7f9fec7c12ca37dae31bb92c5ec48e80d4))
+* **trajectory:** walk the linearized MRO for inherited return facts (mo5ur) ([47cb43d](https://github.com/artk0de/TeaRAGs-MCP/commit/47cb43deb897a25c7a8fa50ffca851e12b1a2e63))
+
+### Performance Improvements
+
+* **adapters:** batch the PageRank and cycle metric writes ([9689509](https://github.com/artk0de/TeaRAGs-MCP/commit/96895092d5cde114b9d9739bcf9fe2867400ff0c))
+* **ingest:** stamp policy-declined points so recovery stops rescanning them (zt6qr) ([eb68765](https://github.com/artk0de/TeaRAGs-MCP/commit/eb687658bb6ea6a9bc7ecb0cbb82b05597d64127))
+
+### Documentation
+
+* **codegraph:** container-relation threading design + defunding verdict (vfo3e) ([2d2affa](https://github.com/artk0de/TeaRAGs-MCP/commit/2d2affaf25eaa87dd34e2726d6a19fc0d2baa508))
+* **ingest:** correct the delta-run wall clock cited for the skip stamp (zt6qr) ([e1cb21f](https://github.com/artk0de/TeaRAGs-MCP/commit/e1cb21fec6fa3e4c52a55a5b07ec2ee74c1de201))
+* **ingest:** design for codegraph collection-name split (6goqa) ([2de3c50](https://github.com/artk0de/TeaRAGs-MCP/commit/2de3c508055d496835478df742b6c62220ea10d6))
+* **ingest:** design the enrichment skip stamp that stops recovery rescanning (zt6qr) ([c0299cd](https://github.com/artk0de/TeaRAGs-MCP/commit/c0299cdce911369fb9411c32d378f4558a97c735))
+* **ingest:** implementation plan for the codegraph collection-name split (6goqa) ([5880762](https://github.com/artk0de/TeaRAGs-MCP/commit/5880762376e7d451fcd590b0672a9557d4f0e1d0))
+* **ingest:** record the measured outcome of the enrichment skip stamp (zt6qr) ([f0fcd4c](https://github.com/artk0de/TeaRAGs-MCP/commit/f0fcd4c8bb5408d5351cb6c6bb174818e53a4c73))
+* **mcp:** document named filter presets in filters resource + fix skill cross-refs ([022fa9e](https://github.com/artk0de/TeaRAGs-MCP/commit/022fa9e2fcb231bc14ed9932a548531084e06250))
+* **plans:** risk-assessment structural axis implementation plan (T1-T4) ([4b6dc15](https://github.com/artk0de/TeaRAGs-MCP/commit/4b6dc1546d170b32953e48245cba19b3826ddac4))
+* **presets:** filter-presets design spec ([7f904f4](https://github.com/artk0de/TeaRAGs-MCP/commit/7f904f458de3e8c6bffbc6831875b8e8de7dbfc9))
+* **presets:** filter-presets implementation plan (21 tasks, 2 streams) ([fd1043d](https://github.com/artk0de/TeaRAGs-MCP/commit/fd1043d2dab9b28be0d718e15efa19986841c8a3))
+* **presets:** revise filter-presets spec after section review ([8b72bf9](https://github.com/artk0de/TeaRAGs-MCP/commit/8b72bf9b6b237212ec02495bbd758f4632bd407c))
+* **scripts:** barrier-time Const.&lt;chain&gt; typing design + do-not-build verdict (ikyqu) ([b8d1859](https://github.com/artk0de/TeaRAGs-MCP/commit/b8d18591c6853002ac753584ab4035c126afa701))
+* **scripts:** correct the recall-delta arithmetic in the ikyqu design ([a0d9fea](https://github.com/artk0de/TeaRAGs-MCP/commit/a0d9fea943f104f132da08c7b1762fe42308d80b))
+* **scripts:** scope-fact coordinate form — measured and deferred (yjh0l) ([1dc521a](https://github.com/artk0de/TeaRAGs-MCP/commit/1dc521a33dc67a9a38ba82bcd7260004b7e4eb40))
+* **signals:** module-mass signal redesign — rename, selection fix, industry floors ([8ac72bc](https://github.com/artk0de/TeaRAGs-MCP/commit/8ac72bcfd67c9c897df83c43743ce5e83a8347a8))
+* **skills:** bug-hunt audit-mode note + explore filter-preset note (query-driven stays broad) ([76f0413](https://github.com/artk0de/TeaRAGs-MCP/commit/76f0413284d2d6ffbaa220aed9c51db60c3f05ec))
+* **skills:** document filter presets in analytics-rerank + filter-building ([d45235c](https://github.com/artk0de/TeaRAGs-MCP/commit/d45235c886b1d1acf891827805a9c3421e4a62a8))
+* **skills:** document named filter presets in use-cases reference ([6d90617](https://github.com/artk0de/TeaRAGs-MCP/commit/6d906170526bd48780a05f77ee0da2ca74bbd71a))
+* **skills:** refactoring-scan applies godMethods/coreLogic with empty-widen ([02cf7b8](https://github.com/artk0de/TeaRAGs-MCP/commit/02cf7b8586902e0d97e9905335ffc4a2e30fdb72))
+* **skills:** reference-lookup skills apply battleTested with relax-on-empty ([5008741](https://github.com/artk0de/TeaRAGs-MCP/commit/500874186b9ee070c325485e7cfc1ca0b01a83c4))
+* **skills:** risk-assessment applies specific filter presets per dimension ([733db2b](https://github.com/artk0de/TeaRAGs-MCP/commit/733db2b53b9b62b0b568b18f9414a19abb180d40))
+* **specs:** godModule rename + composite codegraph-enriched variant ([ac01304](https://github.com/artk0de/TeaRAGs-MCP/commit/ac013043b17e90faf5732579f2c4305d64e48563))
+* **specs:** risk-assessment structural axis — symbol-mass signals, godClass preset, fix-cost ([07d251f](https://github.com/artk0de/TeaRAGs-MCP/commit/07d251f433dc82a450557fd0aac6e5fdeacd6c16))
+* **specs:** sync classLines formula with implementation (descendant span, member-less classes) ([db51a47](https://github.com/artk0de/TeaRAGs-MCP/commit/db51a47563ffeae1f78fb289fb9ca99d2fb74829))
+* **trajectory:** retire the super-module MRO residual caveat (mo5ur) ([7fd642e](https://github.com/artk0de/TeaRAGs-MCP/commit/7fd642ee98c179e7811e7b7a2c032586b71d9f53))
+
+### Code Refactoring
+
+* **filters:** keep setFilterPresets off the read contract (ISP) ([977eae7](https://github.com/artk0de/TeaRAGs-MCP/commit/977eae7fe83b4c5cc9543d44e64783b56746693d))
+* **ingest:** share one alias-target lookup between both index paths (6goqa) ([0c54157](https://github.com/artk0de/TeaRAGs-MCP/commit/0c541576f01b0224b577c8c4a795692098cff274))
+* **signals:** extract toPhysicalPayloadKey shared by stats and filter compiler ([19f2787](https://github.com/artk0de/TeaRAGs-MCP/commit/19f2787379e76991e18e339f68d817cb74d5e827))
+* **signals:** rename fileMethodCount to moduleMethodCount for prefix consistency ([7c2b192](https://github.com/artk0de/TeaRAGs-MCP/commit/7c2b192c18f88ade8105e88129d86d95cfc3add2))
+
 ## [1.36.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.35.0...v1.36.0) (2026-07-28)
 
 ### 🧠 Code intelligence
