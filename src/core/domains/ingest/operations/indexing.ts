@@ -10,6 +10,7 @@
  * - Migration: converts real collection to alias scheme
  */
 
+import { isDebug } from "../../../infra/runtime.js";
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../../types.js";
 import { IndexingFailedError } from "../errors.js";
 import { cleanupOrphanedVersions, sweepCodegraphOrphans } from "../infra/alias-cleanup.js";
@@ -19,11 +20,10 @@ import { BaseIndexingPipeline, type ProcessingContext } from "../pipeline/base.j
 import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
-import { isDebug } from "../../../infra/runtime.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import { QuarantineStore } from "../sync/index.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
-import { computeNewVersion } from "./version-resolver.js";
+import { computeNewVersion, findAliasTarget } from "./version-resolver.js";
 
 /**
  * Result of collection setup phase.
@@ -241,7 +241,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
     // version source. See version-resolver.ts.
     const isAlias = exists ? await this.qdrant.aliases.isAlias(collectionName) : false;
     const aliasTargetCollection = isAlias
-      ? (await this.qdrant.aliases.listAliases()).find((a) => a.aliasName === collectionName)?.collectionName
+      ? findAliasTarget(collectionName, await this.qdrant.aliases.listAliases())
       : undefined;
     const allCollections = await this.qdrant.listCollections();
 
