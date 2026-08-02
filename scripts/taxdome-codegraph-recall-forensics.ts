@@ -6764,6 +6764,58 @@ function csTypeOf(node: AstNode): string | null {
   return csTypeOf(receiver);
 }
 
+/** Every identifier a binding construct introduces, nesting flattened. */
+function csCollectBoundNames(node: AstNode | null, out: Set<string>): void {
+  if (node === null) return;
+  if (node.type === "identifier") {
+    out.add(node.text);
+    return;
+  }
+  for (const child of node.namedChildren) csCollectBoundNames(child, out);
+}
+
+/**
+ * Every local name a def BINDS — params, assignments (single, operator, masgn),
+ * block / lambda params, a `rescue => e` variable, `for` and `case/in` patterns.
+ *
+ * Scoping mirrors `csAssignments`: a nested def / class / module is a different
+ * scope and is never entered. Blocks ARE entered, so a name bound only by a
+ * block param still counts — over-counting a binding keeps a real local out of
+ * the self-call population, which is the safe direction to err in.
+ */
+function csLocalBindings(defNode: AstNode): Set<string> {
+  const names = new Set<string>();
+  csCollectBoundNames(defNode.childForFieldName("parameters"), names);
+  const body = defNode.childForFieldName("body");
+  if (body === null) return names;
+  const scan = (n: AstNode): void => {
+    if (n.type === "method" || n.type === "singleton_method" || n.type === "class" || n.type === "module") return;
+    if (n.type === "assignment" || n.type === "operator_assignment") {
+      const lhs = n.childForFieldName("left");
+      // `self.x = v` / `h[k] = v` bind nothing — their LHS identifiers are a
+      // receiver or a method name, not a new local.
+      if (lhs !== null && lhs.type !== "call" && lhs.type !== "method_call" && lhs.type !== "element_reference") {
+        csCollectBoundNames(lhs, names);
+      }
+    } else if (n.type === "block_parameters" || n.type === "lambda_parameters" || n.type === "exception_variable") {
+      csCollectBoundNames(n, names);
+    } else if (n.type === "for" || n.type === "in_clause") {
+      csCollectBoundNames(n.childForFieldName("pattern"), names);
+    }
+    for (const child of n.children) scan(child);
+  };
+  for (const child of body.children) scan(child);
+  return names;
+}
+
+/** The one-hop-closure label for a receiver-less tail: does the sibling carry a fact? */
+function csBareSelfCallShape(owner: string, callee: string | undefined): string {
+  const sibling = callee === undefined || owner.length === 0 ? undefined : ofOwnerFact(owner, callee);
+  return sibling === undefined
+    ? "bare self-call tail — sibling also opaque"
+    : "bare self-call tail — SIBLING HAS A FACT (one-hop closure)";
+}
+
 /** The shape class of a def's return, for the shapes the current inference misses. */
 function csClassify(defNode: AstNode, owner = ""): string {
   const body = defNode.childForFieldName("body");
@@ -6782,6 +6834,14 @@ function csClassify(defNode: AstNode, owner = ""): string {
     return "conditional fully untypeable";
   }
   if (tail.type === "identifier" || tail.type === "instance_variable") {
+    // A bare identifier the def never binds is NOT a variable read: ruby
+    // dispatches it on self, so `def x; y; end` returns a zero-arg SELF-CALL.
+    // The grammar cannot tell the two apart, so the binding set decides —
+    // otherwise the self-calls land in the intra-class flow population instead
+    // of the one-hop-closure population that owns them (bd qpmzi).
+    if (tail.type === "identifier" && !csLocalBindings(defNode).has(tail.text)) {
+      return csBareSelfCallShape(owner, tail.text);
+    }
     const kind = tail.type === "identifier" ? "local" : "ivar";
     const { plain, orAssign, other } = csAssignments(body, tail.text);
     if (other > 0) return `${kind} tail — non-plain assignment`;
@@ -6801,11 +6861,7 @@ function csClassify(defNode: AstNode, owner = ""): string {
     if (receiver !== null) return "qualified call tail (opaque)";
     // A receiver-less tail dispatches on self, so a one-hop closure over the
     // owner-qualified channel would type it IFF the sibling method has a fact.
-    const callee = tail.childForFieldName("method")?.text;
-    const sibling = callee === undefined || owner.length === 0 ? undefined : ofOwnerFact(owner, callee);
-    return sibling === undefined
-      ? "bare self-call tail — sibling also opaque"
-      : "bare self-call tail — SIBLING HAS A FACT (one-hop closure)";
+    return csBareSelfCallShape(owner, tail.childForFieldName("method")?.text);
   }
   if (CS_LITERAL_TYPES.has(tail.type)) return "literal / non-nominal";
   if (tail.type === "constant" || tail.type === "scope_resolution") return "constant reference (class object)";
