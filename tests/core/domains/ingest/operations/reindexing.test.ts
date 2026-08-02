@@ -110,6 +110,28 @@ describe("ReindexPipeline", () => {
       expect(collections).not.toContain(`${base}_v99`);
     });
 
+    it("addresses enrichment by the physical versioned collection, not the alias (6goqa)", async () => {
+      // The codegraph pool opens its DuckDB file by LITERAL name (pathFor), so
+      // handing it the Qdrant alias writes a shadow <alias>.duckdb that no
+      // reader ever opens. Qdrant itself resolves either name, which is why
+      // this only shows up at the enrichment seam.
+      await createTestFile(codebaseDir, "cg1.ts", "export const x = 1;");
+      await ingest.indexCodebase(codebaseDir);
+      const status = await ingest.getIndexStatus(codebaseDir);
+      const alias = status.collectionName!;
+
+      const beginRunSpy = vi.spyOn(EnrichmentCoordinator.prototype, "beginRun");
+      await createTestFile(codebaseDir, "cg2.ts", "export const y = 2;");
+      await ingest.reindexChanges(codebaseDir);
+
+      const addressed = beginRunSpy.mock.calls.map((c) => c[1]);
+      expect(addressed.length).toBeGreaterThan(0);
+      expect(addressed).not.toContain(alias);
+      expect(addressed.every((n) => typeof n === "string" && /_v\d+$/.test(n))).toBe(true);
+
+      beginRunSpy.mockRestore();
+    });
+
     it("should detect and index new files", async () => {
       await createTestFile(
         codebaseDir,
