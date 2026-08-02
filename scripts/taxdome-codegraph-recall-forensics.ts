@@ -28,7 +28,11 @@ import ignore, { type Ignore } from "ignore";
 import Parser from "tree-sitter";
 
 import type { AstNode } from "../src/core/contracts/types/ast.js";
+// bd tea-rags-mcp-e8feo — the single-segment DROP-surface oracle drives the REAL
+// strategy chain, so it needs the three-state constructors the strategies return.
+import { CONTINUE, DROP, resolved as resolvedOutcome } from "../src/core/contracts/resolution.js";
 import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   resolveLocalBinding,
   resolveLocalBindingType,
   type AritySignature,
@@ -46,9 +50,14 @@ import {
   type SymbolDefinition,
   type SymbolResolutionTarget,
 } from "../src/core/contracts/types/codegraph.js";
-import type { RubyTypeRef } from "../src/core/contracts/types/language.js";
+import type {
+  RubyTypeRef,
+  SymbolResolutionOutcome,
+  SymbolResolutionStrategy,
+} from "../src/core/contracts/types/language.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
+import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import {
   ArityNarrower,
   BlockNarrower,
@@ -64,15 +73,37 @@ import { catalogueForGemfile } from "../src/core/domains/language/ruby/gemfile.j
 import { RUBY_DUCK_VOCAB } from "../src/core/domains/language/ruby/resolver/strategies/ruby-duck-vocabulary.js";
 import { classifyRubyLiteralReceiver } from "../src/core/domains/language/ruby/resolver/strategies/ruby-dynamic-dispatch.js";
 import { RUBY_RUNTIME_HOOKS } from "../src/core/domains/language/ruby/resolver/strategies/ruby-super.js";
+// bd tea-rags-mcp-e8feo — the DROP-surface oracle rebuilds the production chain
+// verbatim (same classes, same order) with ONE slot swapped, so it measures the
+// real precedence rather than a re-implementation of it.
+import {
+  RubyArRelationGuardSymbolResolutionStrategy,
+  RubyBareCallSymbolResolutionStrategy,
+  RubyChainTypeSymbolResolutionStrategy,
+  RubyConstantSymbolResolutionStrategy,
+  RubyEnqueueDispatchSymbolResolutionStrategy,
+  RubyExplicitRequireSymbolResolutionStrategy,
+  RubyIvarFieldSymbolResolutionStrategy,
+  RubyLocalTypeSymbolResolutionStrategy,
+  RubyReceiverSetDropSymbolResolutionStrategy,
+  RubyReturnTypeBindingSymbolResolutionStrategy,
+  RubySchemaColumnSymbolResolutionStrategy,
+  RubySelfDispatchEntrySymbolResolutionStrategy,
+  RubySelfMemberSymbolResolutionStrategy,
+  RubySuperSymbolResolutionStrategy,
+} from "../src/core/domains/language/ruby/resolver/strategies/index.js";
 import {
   collectAncestorChain,
   collectResolvedAncestorChain,
+  CONE_MAX_DEFAULT,
   firstDefinerAfter,
   isRubyPath,
   resolveConstant,
   resolveTypeInstanceMethod,
   resolveTypeStaticMethod,
+  type ResolverConfig,
 } from "../src/core/domains/language/ruby/resolver/strategies/shared.js";
+import { redirectSelfDispatchTemplate } from "../src/core/domains/language/ruby/resolver/template-redirect.js";
 import {
   boundCallReturnType,
   CHAIN_MAX_HOPS_DEFAULT,
@@ -857,7 +888,7 @@ function resolvePass2(extraction: FileExtraction): void {
       // oracle only simulates where the outcome proves narrowing ran (jn5j0).
       let dispatchOutcome: DispatchFanoutOutcome | undefined;
       const noteDispatch = (out: DispatchFanoutOutcome | undefined): boolean => {
-        if (SIGGAP_ORACLE_ENABLED && out !== undefined) dispatchOutcome = out;
+        if ((SIGGAP_ORACLE_ENABLED || SINGLESEG_ENABLED) && out !== undefined) dispatchOutcome = out;
         const edges = out?.kind === "edges" ? out.edges : [];
         for (const edge of edges) if (edge.targetSymbolId !== null) resolvedTargets.add(edge.targetSymbolId);
         return edges.length > 0;
@@ -933,6 +964,9 @@ function resolvePass2(extraction: FileExtraction): void {
       }
       if (SIGGAP_ORACLE_ENABLED) {
         noteSigGapCall(call, ctx, dispatchOutcome, outcome, extraction.relPath);
+      }
+      if (SINGLESEG_ENABLED) {
+        noteSingleSegCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath, chunk.symbolId);
       }
     }
   }
@@ -10081,6 +10115,701 @@ function runConstChainOracle(extractions: FileExtraction[]): void {
   L(`const-chain oracle detail -> ${OUT_CONSTCHAIN}`);
 }
 
+// ===========================================================================
+// SINGLE-SEGMENT RECEIVER DROP-SURFACE ORACLE (bd tea-rags-mcp-e8feo,
+// CODEGRAPH_SINGLESEG_ORACLE=1, 2026-08-02). Same additive, env-gated contract
+// as every oracle above: with the flag unset nothing extra is resolved or
+// reported and the A/B recall metrics are byte-identical.
+//
+// It prices INCREMENT 0 of the ikyqu design
+// (docs/superpowers/specs/2026-08-02-barrier-const-chain-typing-design.md):
+// `chainType` bails on a receiver with no dot and no index access
+//
+//     if (!isDotChain && !isIndexAccess) return CONTINUE;
+//
+// on the docblock assumption that `localType` / `ivarField` own that shape.
+// `nullaryReceiverType` (pr7fu) and `scopedReceiverType` (adx5p.9) type exactly
+// that shape and are owned by NEITHER, so the type is computed and dropped.
+//
+// The bead's caution is that widening the guard widens what can DROP, so the
+// probe measures the DROP surface BEFORE the code change, with PRODUCTION
+// semantics rather than a projection:
+//
+//   * the chain is the REAL `resolveViaChain` over the REAL strategy classes in
+//     the REAL order, with exactly one slot swapped for the widened variant —
+//     no re-implemented precedence, so the "would now DROP" answer is the
+//     resolver's, not the oracle's;
+//   * the outcome ladder (resolved / dynamicSend / externalSkipped /
+//     noInProjectDef / coreAmbiguous / miss) is replayed verbatim from
+//     `resolvePass2`, so a call that merely MOVES BUCKET (external → resolved)
+//     is visible as a denominator movement rather than hidden inside a rate;
+//   * DROP-on-absent-member and CONTINUE-on-absent-member are BOTH simulated
+//     and compared call-by-call, so the semantic choice is decided by a measured
+//     difference instead of an argument.
+//
+// Cost discipline: the hook rides `resolvePass2`, which has already built the
+// context and already run the dispatch fan-out, so the baseline costs nothing
+// extra. The widened chain runs only where the widened guard actually FIRES
+// (a receiver the engine types to a class/instance) — everywhere else the two
+// chains are the same object graph taking the same branch.
+// ===========================================================================
+const SINGLESEG_ENABLED = process.env.CODEGRAPH_SINGLESEG_ORACLE === "1";
+const OUT_SINGLESEG = join(OUT_DIR, "singleseg-oracle-report.json");
+/** Worked examples kept per bucket — enough to read, small enough to print. */
+const SS_EXAMPLE_CAP = 15;
+
+/**
+ * The receiver shape `chainType` refuses today: no dot, no index access. Restated
+ * rather than imported from the strategy — an oracle that shares the predicate
+ * with the code it evaluates cannot disagree with it.
+ */
+function ssIsSingleSegment(receiver: string): boolean {
+  if (receiver.includes(".")) return false;
+  const trimmed = receiver.trimEnd();
+  return !(trimmed.endsWith("]") && trimmed.includes("["));
+}
+
+/**
+ * `chainType` with the dot/index entry guard REMOVED — the candidate change.
+ * Everything after the guard is byte-identical to
+ * `RubyChainTypeSymbolResolutionStrategy`, including the union/container
+ * CONTINUE and the class-vs-instance lookup split, so the only variable under
+ * measurement is the guard itself.
+ *
+ * `dropOnAbsentMember` selects the semantics for "the receiver types but the
+ * type declares no such member": the production strategy DROPs there, and the
+ * alternative is to CONTINUE and let the later passes decide. Both are built and
+ * compared.
+ */
+class SsWidenedChainTypeStrategy implements SymbolResolutionStrategy {
+  readonly name = "chainType(widened)";
+  constructor(
+    private readonly cfg: ResolverConfig,
+    private readonly dropOnAbsentMember: boolean,
+  ) {}
+
+  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    const r = call.receiver;
+    if (!r) return CONTINUE;
+    const t = typeOfReceiver(r, call.startLine, ctx);
+    if (!t || (t.form !== "class" && t.form !== "instance")) return CONTINUE;
+    const resolve = t.form === "class" ? resolveTypeStaticMethod : resolveTypeInstanceMethod;
+    const target = resolve(t.name, call.member, ctx, this.cfg.mode);
+    if (target) return resolvedOutcome(target);
+    return this.dropOnAbsentMember ? DROP : CONTINUE;
+  }
+}
+
+/**
+ * `RubyCallResolver`'s strategy array, rebuilt with `slot` in `chainType`'s
+ * position. The order is copied from `ruby-resolver.ts` and validated against the
+ * production resolver on every call the oracle touches (`ssMirrorDisagreed`), so
+ * a future re-ordering that this array does not track cannot pass silently.
+ */
+function ssBuildChain(cfg: ResolverConfig, slot: SymbolResolutionStrategy): SymbolResolutionStrategy[] {
+  return [
+    new RubySuperSymbolResolutionStrategy(cfg),
+    new RubySelfMemberSymbolResolutionStrategy(cfg),
+    new RubyLocalTypeSymbolResolutionStrategy(cfg),
+    new RubyIvarFieldSymbolResolutionStrategy(cfg),
+    new RubyReturnTypeBindingSymbolResolutionStrategy(cfg),
+    new RubyEnqueueDispatchSymbolResolutionStrategy(cfg),
+    new RubySelfDispatchEntrySymbolResolutionStrategy(cfg),
+    new RubyConstantSymbolResolutionStrategy(cfg),
+    new RubyExplicitRequireSymbolResolutionStrategy(cfg),
+    slot,
+    new RubyArRelationGuardSymbolResolutionStrategy(cfg),
+    new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
+    new RubyBareCallSymbolResolutionStrategy(cfg),
+    new RubySchemaColumnSymbolResolutionStrategy(),
+  ];
+}
+
+const SS_CFG: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
+/** The production guard, driven through the oracle's own chain — the fidelity mirror. */
+const ssBaseChain = ssBuildChain(SS_CFG, new RubyChainTypeSymbolResolutionStrategy(SS_CFG));
+/** The candidate: widened guard, DROP when the member is absent from the closure. */
+const ssDropChain = ssBuildChain(SS_CFG, new SsWidenedChainTypeStrategy(SS_CFG, true));
+/** The alternative: widened guard, CONTINUE when the member is absent. */
+const ssContinueChain = ssBuildChain(SS_CFG, new SsWidenedChainTypeStrategy(SS_CFG, false));
+/** Standalone copy of the widened guard, asked what IT alone would answer. */
+const ssVerdictStrategy = new SsWidenedChainTypeStrategy(SS_CFG, true);
+
+/** What the widened guard answers at a call site, before the rest of the chain runs. */
+type SsVerdict =
+  | "CONTINUE - receiver untyped"
+  | "CONTINUE - type is union/container"
+  | "RESOLVED - method-level target"
+  | "RESOLVED - file-only target"
+  | "DROP - type known, class file unknown";
+
+interface SsExample {
+  where: string;
+  caller: string;
+  receiver: string;
+  member: string;
+  kind: ReceiverKind;
+  type: string;
+  verdict: SsVerdict;
+  base: LcOutcome;
+  wide: LcOutcome;
+  baseTarget: string;
+  wideTarget: string;
+  recovery: string;
+}
+
+interface SsKindRow {
+  total: number;
+  fires: number;
+  gained: number;
+  lost: number;
+  targetChanged: number;
+}
+
+function ssEmptyKindRow(): SsKindRow {
+  return { total: 0, fires: 0, gained: 0, lost: 0, targetChanged: 0 };
+}
+
+/** Population = every call whose receiver is single-segment, by baseline outcome. */
+const ssPopulation: Record<string, number> = {};
+/** Same population, by baseline outcome AND receiver kind. */
+const ssPopulationByKind: Record<string, Record<string, number>> = {};
+const ssVerdictTally: Record<string, number> = {};
+/** Verdict × baseline outcome — which population the widened guard actually reaches. */
+const ssVerdictByBase: Record<string, Record<string, number>> = {};
+/** `"<base>-><wide>"` → count. The identity cells are the untouched population. */
+const ssTransitions: Record<string, number> = {};
+const ssByKind: Record<string, SsKindRow> = {};
+/** Widened guard says RESOLVED but the chain still answers null — an EARLIER pass dropped first. */
+let ssShadowedByEarlierPass = 0;
+/** Newly-resolved edges, split by whether they name a method or only a file. */
+let ssGainMethodLevel = 0;
+let ssGainFileOnly = 0;
+/** Newly-resolved edges by the `icRecovery` gate the ikyqu design projected with. */
+const ssGainRecovery: Record<string, number> = {};
+/** DROP-on-absent vs CONTINUE-on-absent, compared call by call. */
+let ssDropVsContinueChecked = 0;
+let ssDropVsContinueDiffer = 0;
+/** Baseline mirror: the oracle's own chain vs the production resolver. */
+let ssMirrorChecked = 0;
+let ssMirrorDisagreed = 0;
+const ssMirrorExamples: string[] = [];
+const ssGainExamples: SsExample[] = [];
+const ssRegressionExamples: SsExample[] = [];
+const ssDropFlipExamples: SsExample[] = [];
+const ssDispatchShadowExamples: SsExample[] = [];
+/** Guard would emit an EXACT edge, but the dispatch fan-out answered first. */
+let ssDispatchShadowedMethod = 0;
+let ssDispatchShadowedFileOnly = 0;
+/** Recall-hole cross-check against the design's 363 / 282 projection. */
+let ssHoleTyped = 0;
+let ssHoleRecoverable = 0;
+let ssHoleGained = 0;
+let ssHoleFlippedToDrop = 0;
+/** Every unresolved call the widened guard DROPs — the hole subset plus the rest. */
+let ssDropFlipTotal = 0;
+/** Class/module FQs this run declares — the existence half of the recovery gate. */
+const ssDeclaredConstants = new Set<string>();
+
+function ssBump(bag: Record<string, number>, key: string): void {
+  bag[key] = (bag[key] ?? 0) + 1;
+}
+
+function ssBump2(bag: Record<string, Record<string, number>>, outer: string, inner: string): void {
+  const row = (bag[outer] ??= {});
+  row[inner] = (row[inner] ?? 0) + 1;
+}
+
+/**
+ * Does the project DECLARE this constant? Mirrors `tfIsProjectClass`, restated so
+ * the oracle stands alone under its own flag (the typefact accumulator that fills
+ * `tfDeclaredConstants` runs only under `CODEGRAPH_TYPEFACT_ORACLE`).
+ */
+function ssIsProjectClass(name: string): boolean {
+  return ssDeclaredConstants.has(name) || runAncestors[name] !== undefined || symbolTable.lookup(name).length > 0;
+}
+
+/** Transitive ancestor closure over `runAncestors`, cycle-guarded (mirrors `tfAncestorClosure`). */
+function ssAncestorClosure(klass: string, seen: Set<string> = new Set()): Set<string> {
+  if (seen.has(klass)) return seen;
+  seen.add(klass);
+  for (const ancestor of runAncestors[klass] ?? []) ssAncestorClosure(ancestor, seen);
+  return seen;
+}
+
+/**
+ * The ikyqu design's recall gate, restated: would the derived type close this call
+ * by naming EXACTLY ONE definer on its ancestor closure? Reported alongside the
+ * production verdict so the two can be compared — production also emits a
+ * FILE-ONLY edge where this gate says "not on the closure", and that difference is
+ * the whole reason the projection and the measurement disagree.
+ */
+function ssRecovery(type: string, member: string): string {
+  if (!ssIsProjectClass(type)) return "type names NO project class (fiction)";
+  const closure = ssAncestorClosure(type);
+  const owners = new Set(
+    symbolTable
+      .lookupByShortName(member)
+      .filter((d) => d.scope.length > 0 && closure.has(d.scope.join("::")))
+      .map((d) => d.scope.join("::")),
+  );
+  if (owners.size === 0) return "member NOT on the derived type's ancestor closure";
+  return owners.size === 1
+    ? "RECOVERABLE - unique definer on the derived type's closure"
+    : "ambiguous - several definers on the closure";
+}
+
+/** A `RubyTypeRef` as one short cell. Restated so this oracle stands on its own. */
+function ssRefText(ref: RubyTypeRef | undefined): string {
+  if (ref === undefined) return "-";
+  if (ref.form === "nil") return "nil";
+  if (ref.form === "container") return `container(${ssRefText(ref.element)})`;
+  if (ref.form === "union") return ref.members.map(ssRefText).join("|");
+  return `${ref.form === "class" ? "class " : ""}${ref.name}`;
+}
+
+function ssTargetText(target: SymbolResolutionTarget | null): string {
+  if (target === null) return "-";
+  return target.targetSymbolId ?? `${target.targetRelPath} (file-only)`;
+}
+
+function ssSameTarget(a: SymbolResolutionTarget | null, b: SymbolResolutionTarget | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.targetRelPath === b.targetRelPath && a.targetSymbolId === b.targetSymbolId;
+}
+
+/** `RubyCallResolver.resolve` reproduced: chain, then the self-dispatch redirect. */
+function ssRunChain(
+  chain: SymbolResolutionStrategy[],
+  call: CallRef,
+  ctx: CallContext,
+): SymbolResolutionTarget | null {
+  const target = resolveViaChain(chain, call, ctx);
+  if (target === null) return null;
+  return redirectSelfDispatchTemplate(target, call, ctx, SS_CFG.mode);
+}
+
+/**
+ * `resolvePass2`'s resolved/unresolved decision, replayed for a substituted chain
+ * answer. The dispatch fan-out is chain-INDEPENDENT (it runs off
+ * `resolveDispatch`, which this change does not touch), so the baseline's own
+ * fan-out verdict is reused rather than recomputed.
+ */
+function ssResolvedFlag(call: CallRef, dispatchEdges: number, chainTarget: SymbolResolutionTarget | null): boolean {
+  if (call.dispatch) return dispatchEdges > 0;
+  if (call.dispatchArgs && call.dispatchArgs.length > 0) return chainTarget !== null || dispatchEdges > 0;
+  return dispatchEdges > 0 || chainTarget !== null;
+}
+
+/**
+ * Is the exact chain's answer READ at this call site? `resolvePass2` runs the
+ * fan-out first and only falls back to `resolve` when it produced no edge, so a
+ * call the fan-out already answered never sees the chain — and a guard that
+ * "fires" there changes no edge. Counting those as target changes would invent a
+ * regression channel that production cannot exercise.
+ */
+function ssChainIsConsulted(call: CallRef, dispatchEdges: number): boolean {
+  if (call.dispatch) return false;
+  if (call.dispatchArgs && call.dispatchArgs.length > 0) return true;
+  return dispatchEdges === 0;
+}
+
+/**
+ * The one call-site hook, invoked from `resolvePass2` after the baseline outcome
+ * is known. Everything it needs — the context, the dispatch outcome, the receiver
+ * kind — is already computed there.
+ */
+function noteSingleSegCall(
+  call: CallRef,
+  ctx: CallContext,
+  dispatchOutcome: DispatchFanoutOutcome | undefined,
+  baseOutcome: LcOutcome,
+  receiverKind: ReceiverKind,
+  relPath: string,
+  callerSymbolId: string,
+): void {
+  const receiver = call.receiver;
+  if (receiver === null || !ssIsSingleSegment(receiver)) return;
+  const rs = resolver;
+  if (rs === undefined) return;
+
+  ssBump(ssPopulation, baseOutcome);
+  ssBump2(ssPopulationByKind, baseOutcome, receiverKind);
+  const kindRow = (ssByKind[receiverKind] ??= ssEmptyKindRow());
+  kindRow.total += 1;
+
+  // ── what the widened guard alone would answer ────────────────────────────
+  const outcome = ssVerdictStrategy.attempt(call, ctx);
+  const typeRef = typeOfReceiver(receiver, call.startLine, ctx);
+  const typeText = ssRefText(typeRef);
+  const verdict: SsVerdict =
+    outcome.kind === "resolved"
+      ? outcome.target.targetSymbolId === null
+        ? "RESOLVED - file-only target"
+        : "RESOLVED - method-level target"
+      : outcome.kind === "drop"
+        ? "DROP - type known, class file unknown"
+        : typeRef === undefined
+          ? "CONTINUE - receiver untyped"
+          : "CONTINUE - type is union/container";
+  ssBump(ssVerdictTally, verdict);
+  ssBump2(ssVerdictByBase, verdict, baseOutcome);
+
+  const typeName = typeRef === undefined ? undefined : tfRefName(typeRef);
+  const recovery =
+    typeName === undefined ? "receiver has no single-name type" : ssRecovery(typeName, call.member);
+
+  if (baseOutcome === "miss" && outcome.kind !== "continue") {
+    ssHoleTyped += 1;
+    if (recovery.startsWith("RECOVERABLE")) ssHoleRecoverable += 1;
+  }
+
+  // A guard that CONTINUEs changes nothing: the widened chain is the baseline
+  // chain taking the same branch at the same index. Only a firing guard can move
+  // an outcome, so only a firing guard pays for the extra chain runs.
+  if (outcome.kind === "continue") {
+    ssBump(ssTransitions, `${baseOutcome}->${baseOutcome}`);
+    return;
+  }
+  kindRow.fires += 1;
+
+  const dispatchEdges = dispatchOutcome?.kind === "edges" ? dispatchOutcome.edges.length : 0;
+  const baseTarget = ssRunChain(ssBaseChain, call, ctx);
+  const wideTarget = ssRunChain(ssDropChain, call, ctx);
+
+  // ── mirror fidelity: the oracle's chain vs the production resolver ───────
+  const realTarget = rs.resolve(call, ctx);
+  ssMirrorChecked += 1;
+  if (!ssSameTarget(baseTarget, realTarget)) {
+    ssMirrorDisagreed += 1;
+    if (ssMirrorExamples.length < SS_EXAMPLE_CAP) {
+      ssMirrorExamples.push(
+        `${relPath}:${call.startLine} ${receiver}.${call.member} mirror=${ssTargetText(baseTarget)} real=${ssTargetText(realTarget)}`,
+      );
+    }
+  }
+
+  // ── DROP-on-absent vs CONTINUE-on-absent ─────────────────────────────────
+  // They can only differ where the widened guard answers DROP; everywhere else
+  // the two variants return the same outcome object.
+  if (outcome.kind === "drop") {
+    ssDropVsContinueChecked += 1;
+    const continueTarget = ssRunChain(ssContinueChain, call, ctx);
+    if (!ssSameTarget(wideTarget, continueTarget)) ssDropVsContinueDiffer += 1;
+  }
+
+  // ── the widened outcome, through the SAME ladder as the baseline ─────────
+  const wideResolved = ssResolvedFlag(call, dispatchEdges, wideTarget);
+  const baseResolved = baseOutcome === "resolved";
+  let wideOutcome: LcOutcome;
+  if (wideResolved) {
+    wideOutcome = "resolved";
+  } else if (baseResolved) {
+    // The baseline never evaluated the unresolved ladder for this call, so it has
+    // to be evaluated now — verbatim from `resolvePass2`, same order.
+    wideOutcome =
+      call.dynamicSend === true
+        ? "dynamicSend"
+        : (rs.targetsExternalImport?.(call, ctx) ?? false)
+          ? "externalSkipped"
+          : symbolTable.lookupByShortName(call.member).length === 0
+            ? "noInProjectDef"
+            : (rs.targetsCoreAmbiguousMember?.(call, ctx) ?? false)
+              ? "coreAmbiguous"
+              : "miss";
+  } else {
+    // Unresolved before, unresolved after: the ladder's predicates are untouched
+    // by this change, so the bucket is the one the baseline already computed.
+    wideOutcome = baseOutcome;
+  }
+  ssBump(ssTransitions, `${baseOutcome}->${wideOutcome}`);
+
+  const example = (): SsExample => ({
+    where: `${relPath}:${call.startLine}`,
+    caller: callerSymbolId,
+    receiver,
+    member: call.member,
+    kind: receiverKind,
+    type: typeText,
+    verdict,
+    base: baseOutcome,
+    wide: wideOutcome,
+    baseTarget: ssTargetText(baseTarget),
+    wideTarget: ssTargetText(wideTarget),
+    recovery,
+  });
+
+  if (!baseResolved && wideOutcome === "resolved") {
+    kindRow.gained += 1;
+    if (wideTarget?.targetSymbolId === null) ssGainFileOnly += 1;
+    else ssGainMethodLevel += 1;
+    ssBump(ssGainRecovery, recovery);
+    if (baseOutcome === "miss") ssHoleGained += 1;
+    if (ssGainExamples.length < SS_EXAMPLE_CAP) ssGainExamples.push(example());
+  } else if (baseResolved && wideOutcome !== "resolved") {
+    kindRow.lost += 1;
+    if (ssRegressionExamples.length < SS_EXAMPLE_CAP) ssRegressionExamples.push(example());
+  } else if (baseResolved && wideOutcome === "resolved" && !ssSameTarget(baseTarget, wideTarget)) {
+    if (ssChainIsConsulted(call, dispatchEdges)) {
+      // Both resolved through the CHAIN, different edge — a genuine target change.
+      kindRow.targetChanged += 1;
+      if (ssRegressionExamples.length < SS_EXAMPLE_CAP) ssRegressionExamples.push(example());
+    } else {
+      // The fan-out already answered, so production never reads the chain here.
+      // The guard would have produced an EXACT edge and the call keeps its N
+      // discounted `dynamic` ones instead — a precision ceiling this change does
+      // not lift, because `RubyDynamicDispatchResolver`'s typeable-receiver
+      // deferral is gated on `r.includes(".")` and so never fires for these.
+      if (outcome.kind === "resolved" && outcome.target.targetSymbolId !== null) ssDispatchShadowedMethod += 1;
+      else ssDispatchShadowedFileOnly += 1;
+      if (ssDispatchShadowExamples.length < SS_EXAMPLE_CAP) ssDispatchShadowExamples.push(example());
+    }
+  }
+  if (outcome.kind === "drop" && !baseResolved && wideOutcome !== "resolved") {
+    ssDropFlipTotal += 1;
+    if (baseOutcome === "miss") ssHoleFlippedToDrop += 1;
+    if (ssDropFlipExamples.length < SS_EXAMPLE_CAP) ssDropFlipExamples.push(example());
+  }
+
+  // The shadow case: the guard WOULD have answered, but an earlier pass already
+  // dropped the call, so the widened chain never reaches it. Counted because it
+  // is the difference between "the guard fires" and "the guard is consumed".
+  if (outcome.kind === "resolved" && wideTarget === null) ssShadowedByEarlierPass += 1;
+}
+
+function runSingleSegOracle(extractions: FileExtraction[]): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  for (const extraction of extractions) {
+    for (const chunk of extraction.chunks) {
+      if (chunk.scope.length > 0) ssDeclaredConstants.add(chunk.scope.join("::"));
+      if (!chunk.symbolId.includes("#") && !chunk.symbolId.includes(".")) ssDeclaredConstants.add(chunk.symbolId);
+    }
+  }
+
+  const total = Object.values(ssPopulation).reduce((n, v) => n + v, 0);
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  SINGLE-SEGMENT RECEIVER DROP-SURFACE ORACLE (bd e8feo, ikyqu inc. 0)");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("");
+  L("─── (1) population: every call chainType bails on for lack of a dot ───");
+  L(`single-segment receiver call sites: ${total} of ${callsAttempted} attempted`);
+  L("baseline outcome            calls   by receiver kind");
+  for (const [outcome, n] of Object.entries(ssPopulation).sort((a, b) => b[1] - a[1])) {
+    const kinds = Object.entries(ssPopulationByKind[outcome] ?? {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k}=${v}`)
+      .join(" ");
+    L(`  ${outcome.padEnd(22)}${String(n).padStart(8)}   ${kinds}`);
+  }
+
+  L("");
+  L("─── (2) what the WIDENED guard answers, over that population ──────");
+  for (const [verdict, n] of Object.entries(ssVerdictTally).sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(8)}  ${verdict}`);
+    const byBase = Object.entries(ssVerdictByBase[verdict] ?? {}).sort((a, b) => b[1] - a[1]);
+    if (verdict.startsWith("CONTINUE")) continue;
+    for (const [outcome, m] of byBase) L(`            ${String(m).padStart(7)}  baseline ${outcome}`);
+  }
+  L(`  guard fires but an EARLIER pass already dropped the call: ${ssShadowedByEarlierPass}`);
+
+  L("");
+  L("─── mirror fidelity (oracle chain vs the production resolver) ─────");
+  L(`calls checked: ${ssMirrorChecked}   disagreements: ${ssMirrorDisagreed}`);
+  for (const e of ssMirrorExamples) L(`    ${e}`);
+
+  L("");
+  L("─── DROP-on-absent-member vs CONTINUE-on-absent-member ────────────");
+  L(`sites where the widened guard answers DROP: ${ssDropVsContinueChecked}`);
+  L(`  of those, the two semantics produce a DIFFERENT edge: ${ssDropVsContinueDiffer}`);
+  L("  (a single-segment receiver that CONTINUEs past chainType meets arRelationGuard,");
+  L("   which needs a dot, and then receiverSetDrop, which DROPs every receiver-set");
+  L("   call — so the two variants can only differ if some pass between them resolves.)");
+
+  L("");
+  L("─── (2b) outcome transitions (baseline -> widened) ────────────────");
+  const moved = Object.entries(ssTransitions)
+    .filter(([k]) => {
+      const [a, b] = k.split("->");
+      return a !== b;
+    })
+    .sort((a, b) => b[1] - a[1]);
+  if (moved.length === 0) L("  (no call changes bucket)");
+  for (const [k, n] of moved) L(`  ${String(n).padStart(8)}  ${k}`);
+
+  L("");
+  L("─── (2a) newly RESOLVED — the recovery channel ────────────────────");
+  L(`method-level edges: ${ssGainMethodLevel}   file-only edges: ${ssGainFileOnly}`);
+  L("  by the ikyqu recall gate (unique definer on the derived type's closure):");
+  for (const [k, n] of Object.entries(ssGainRecovery).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+  for (const e of ssGainExamples) {
+    L(`    ${e.where} ${e.receiver}.${e.member} [${e.kind}] type=${e.type}`);
+    L(`        ${e.base} -> ${e.wide}   target=${e.wideTarget}   (${e.recovery})`);
+  }
+
+  L("");
+  L("─── (2b) REGRESSION channel — currently resolved, now dropped or moved ───");
+  const lost = Object.values(ssByKind).reduce((n, r) => n + r.lost, 0);
+  const changed = Object.values(ssByKind).reduce((n, r) => n + r.targetChanged, 0);
+  L(`calls that LOSE their resolution: ${lost}   calls whose TARGET changes: ${changed}`);
+  L("kind          population   guard fires   gained   lost   targetChanged");
+  for (const kind of RECEIVER_KINDS) {
+    const row = ssByKind[kind];
+    if (row === undefined) continue;
+    L(
+      `${kind.padEnd(12)}  ${String(row.total).padStart(10)}  ${String(row.fires).padStart(12)}` +
+        `  ${String(row.gained).padStart(7)}  ${String(row.lost).padStart(5)}  ${String(row.targetChanged).padStart(14)}`,
+    );
+  }
+  for (const e of ssRegressionExamples) {
+    L(`    ${e.where} ${e.receiver}.${e.member} [${e.kind}] type=${e.type}`);
+    L(`        ${e.base}(${e.baseTarget}) -> ${e.wide}(${e.wideTarget})`);
+  }
+
+  L("");
+  L("─── (2d) guard fires but the DISPATCH fan-out already answered ────");
+  L(`exact edge available, fan-out wins anyway: ${ssDispatchShadowedMethod} method-level, ${ssDispatchShadowedFileOnly} file-only`);
+  L("  (not a regression — the call is resolved either way. It is the precision");
+  L("   ceiling this change does not lift: RubyDynamicDispatchResolver's typeable-");
+  L("   receiver deferral is gated on `r.includes(\".\")`, so a typed BARE receiver");
+  L("   keeps its N discounted `dynamic` edges instead of one exact edge.)");
+  for (const e of ssDispatchShadowExamples.slice(0, 8)) {
+    L(`    ${e.where} ${e.receiver}.${e.member} type=${e.type} -> would be ${e.wideTarget}`);
+  }
+
+  L("");
+  L("─── (2c) unresolved calls that flip to DROP (classification shift, no recall change) ───");
+  L(`unresolved calls the widened guard DROPs: ${ssDropFlipTotal}   of which recall-hole misses: ${ssHoleFlippedToDrop}`);
+  for (const e of ssDropFlipExamples.slice(0, 8)) {
+    L(`    ${e.where} ${e.receiver}.${e.member} [${e.base}] type=${e.type}   (${e.recovery})`);
+  }
+
+  // ── (3) the net: projected recall with the regression channel subtracted ──
+  const deltas: Record<string, number> = {};
+  for (const [key, n] of Object.entries(ssTransitions)) {
+    const [from, to] = key.split("->");
+    if (from === undefined || to === undefined || from === to) continue;
+    deltas[from] = (deltas[from] ?? 0) - n;
+    deltas[to] = (deltas[to] ?? 0) + n;
+  }
+  const projResolved = callsResolved + (deltas.resolved ?? 0);
+  const projExternal = callsExternalSkipped + (deltas.externalSkipped ?? 0);
+  const projUnresolvable = callsUnresolvable + (deltas.dynamicSend ?? 0);
+  const projNoDef = callsNoInProjectDef + (deltas.noInProjectDef ?? 0);
+  const projCoreAmb = callsCoreAmbiguous + (deltas.coreAmbiguous ?? 0);
+  const baseHole = Math.max(
+    0,
+    callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
+  );
+  const projHole = Math.max(
+    0,
+    callsAttempted - projResolved - projExternal - projUnresolvable - projNoDef - projCoreAmb,
+  );
+  const baseRecall = callsResolved + baseHole === 0 ? 0 : callsResolved / (callsResolved + baseHole);
+  const projRecall = projResolved + projHole === 0 ? 0 : projResolved / (projResolved + projHole);
+  const baseInternal = Math.max(
+    1,
+    callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
+  );
+  const projInternal = Math.max(1, callsAttempted - projExternal - projUnresolvable - projNoDef - projCoreAmb);
+
+  L("");
+  L("─── (3) NET projection — the regression channel already subtracted ───");
+  L("counter                   baseline      projected      delta");
+  const row = (label: string, a: number, b: number): void => {
+    L(`  ${label.padEnd(22)}${String(a).padStart(9)}${String(b).padStart(15)}${String(b - a).padStart(11)}`);
+  };
+  row("callsResolved", callsResolved, projResolved);
+  row("callsExternalSkipped", callsExternalSkipped, projExternal);
+  row("callsUnresolvable", callsUnresolvable, projUnresolvable);
+  row("callsNoInProjectDef", callsNoInProjectDef, projNoDef);
+  row("callsCoreAmbiguous", callsCoreAmbiguous, projCoreAmb);
+  row("missWithInProjectDef", baseHole, projHole);
+  L("");
+  L(
+    `inProjectEdgeRecall:  ${fmtPct(baseRecall)} -> ${fmtPct(projRecall)}   (${((projRecall - baseRecall) * 100 >= 0 ? "+" : "") + ((projRecall - baseRecall) * 100).toFixed(4)}pp)`,
+  );
+  L(
+    `resolveSuccessRate:   ${fmtPct(callsResolved / baseInternal)} -> ${fmtPct(projResolved / projInternal)}`,
+  );
+  L("");
+  L("─── cross-check against the ikyqu design's projection ─────────────");
+  L(`recall-hole misses whose single-segment receiver the widened guard TYPES: ${ssHoleTyped}`);
+  L(`  ...of those, unique definer on the closure (the design's 282):          ${ssHoleRecoverable}`);
+  L(`  ...of those, actually RESOLVED by production semantics:                 ${ssHoleGained}`);
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_SINGLESEG,
+    JSON.stringify(
+      {
+        meta: {
+          generatedAt: new Date().toISOString(),
+          callsAttempted,
+          singleSegmentCalls: total,
+          mirrorChecked: ssMirrorChecked,
+          mirrorDisagreed: ssMirrorDisagreed,
+          shadowedByEarlierPass: ssShadowedByEarlierPass,
+          dropVsContinueChecked: ssDropVsContinueChecked,
+          dropVsContinueDiffer: ssDropVsContinueDiffer,
+        },
+        population: ssPopulation,
+        populationByKind: ssPopulationByKind,
+        verdicts: ssVerdictTally,
+        verdictsByBaselineOutcome: ssVerdictByBase,
+        transitions: ssTransitions,
+        byReceiverKind: ssByKind,
+        gains: { methodLevel: ssGainMethodLevel, fileOnly: ssGainFileOnly, byRecovery: ssGainRecovery },
+        dispatchShadow: { methodLevel: ssDispatchShadowedMethod, fileOnly: ssDispatchShadowedFileOnly },
+        holeCrossCheck: {
+          typed: ssHoleTyped,
+          recoverable: ssHoleRecoverable,
+          gained: ssHoleGained,
+          flippedToDrop: ssHoleFlippedToDrop,
+          dropFlipsAllOutcomes: ssDropFlipTotal,
+        },
+        projection: {
+          baseline: {
+            callsResolved,
+            callsExternalSkipped,
+            callsUnresolvable,
+            callsNoInProjectDef,
+            callsCoreAmbiguous,
+            missWithInProjectDef: baseHole,
+            inProjectEdgeRecall: baseRecall,
+            resolveSuccessRate: callsResolved / baseInternal,
+          },
+          projected: {
+            callsResolved: projResolved,
+            callsExternalSkipped: projExternal,
+            callsUnresolvable: projUnresolvable,
+            callsNoInProjectDef: projNoDef,
+            callsCoreAmbiguous: projCoreAmb,
+            missWithInProjectDef: projHole,
+            inProjectEdgeRecall: projRecall,
+            resolveSuccessRate: projResolved / projInternal,
+          },
+        },
+        examples: {
+          gains: ssGainExamples,
+          regressions: ssRegressionExamples,
+          dispatchShadowed: ssDispatchShadowExamples,
+          dropFlips: ssDropFlipExamples,
+          mirrorDisagreements: ssMirrorExamples,
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  L("");
+  L(`single-segment oracle detail -> ${OUT_SINGLESEG}`);
+}
+
 async function main(): Promise<void> {
   const t0 = Date.now();
   console.error(`[forensics] root=${ROOT} gemfile=${gemfileContent ? "loaded" : "MISSING"}`);
@@ -10462,6 +11191,7 @@ async function main(): Promise<void> {
   if (DUCK_ENABLED) runDuckOracle();
   if (FIXPOINT_ENABLED) runFixpointOracle(extractions, Date.now() - t0);
   if (CONSTCHAIN_ENABLED) runConstChainOracle(extractions);
+  if (SINGLESEG_ENABLED) runSingleSegOracle(extractions);
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
