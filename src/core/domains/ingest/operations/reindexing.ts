@@ -179,6 +179,19 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         return stats;
       }
 
+      // Bring provider stores back in line with the code before the run's own
+      // enrichment (bd tea-rags-mcp-6goqa). Deliberately on THIS path only, so a
+      // repair and the finalize that recomputes cycles + metrics always happen
+      // together — a run that took one of the early returns above would extract
+      // rows and leave the derived tables stale. Silent: the cost shows up as
+      // time, not as a message. Hashes come from the scan detectChanges just
+      // did, so nothing is re-read.
+      await this.enrichment.runRepairPass(
+        ctx.targetCollection,
+        ctx.absolutePath,
+        ctx.synchronizer.getCurrentFileHashes(),
+      );
+
       this.startHeartbeat(ctx.targetCollection);
       const { chunksAdded, chunksDeleted, processingCtx, chunkMap, filesSkippedDueToDeleteFailure } =
         await this.executeParallelPipelines(

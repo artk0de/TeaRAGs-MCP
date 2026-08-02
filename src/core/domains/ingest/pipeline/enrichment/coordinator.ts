@@ -34,6 +34,7 @@ import { InlineEnrichmentExecutor } from "./executor/index.js";
 import { computeExtractionRepair } from "./extraction-repair.js";
 import { FilePhase } from "./file-phase.js";
 import { EnrichmentMarkerStore } from "./marker-store.js";
+import { filterFileEnrichPaths } from "./policy.js";
 import type { EnrichmentRecovery } from "./recovery.js";
 import type { EnrichmentProvider, ProviderContext } from "./types.js";
 
@@ -259,7 +260,7 @@ export class EnrichmentCoordinator {
    * early return and skip the finalize that recomputes the derived tables, so a
    * repair-only run has to be recognised as real work.
    */
-  async runRepairPass(collectionName: string, root: string, eligible: ReadonlyMap<string, string>): Promise<number> {
+  async runRepairPass(collectionName: string, root: string, scanned: ReadonlyMap<string, string>): Promise<number> {
     let repaired = 0;
     for (const provider of this.providers) {
       const readPersisted = provider.readPersistedFileHashes;
@@ -280,7 +281,16 @@ export class EnrichmentCoordinator {
         continue;
       }
 
-      const { repair, orphans } = computeExtractionRepair(eligible, persisted);
+      // Eligibility is per provider, so it is narrowed HERE rather than by the
+      // caller: codegraph declines tests and generated files, git takes them.
+      // Handing one pre-filtered set to every provider would make each
+      // provider's orphan list wrong for the others.
+      const providerEligible = new Map<string, string>();
+      for (const path of filterFileEnrichPaths(provider, [...scanned.keys()])) {
+        providerEligible.set(path, scanned.get(path) as string);
+      }
+
+      const { repair, orphans } = computeExtractionRepair(providerEligible, persisted);
       if (orphans.length > 0) {
         await provider.handleDeletedPaths?.(orphans, { collectionName });
       }
