@@ -11,7 +11,7 @@ import type { LanguageFactoryDescriptor } from "../../contracts/types/language.j
 import type { WorkerEnrichmentDescriptor } from "../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
-import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
+import type { PayloadSignalDescriptor, SignalFloors } from "../../contracts/types/trajectory.js";
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
@@ -44,6 +44,13 @@ export interface CompositionResult {
    * the worker boundary).
    */
   languageFactory: LanguageFactoryDescriptor;
+  /**
+   * Per-language structural-signal floors, resolved once from the language
+   * factory. Handed to every consumer that turns percentiles into labels —
+   * the reranker's overlay and `IndexMetricsQuery`'s labelMap — so neither has
+   * to reach into `domains/language` itself.
+   */
+  signalFloors: Map<string, SignalFloors>;
 }
 
 export interface CompositionOptions {
@@ -140,7 +147,12 @@ export function createComposition(options: CompositionOptions = {}): Composition
   // a non-registered trajectory is silently dropped.
   const compositePresets = buildCompositePresets(new Set(registry.getRegisteredKeys()));
   const resolvedPresets = resolvePresets(registry.getAllPresets(), compositePresets);
-  const reranker = new Reranker(allDerivedSignals, resolvedPresets, allPayloadSignalDescriptors);
+  // Per-language structural floors. The composition root is the only layer
+  // allowed to bridge `domains/language` into `domains/explore` — the explore
+  // domain receives the resolved map, exactly as it receives descriptors and
+  // presets, and never imports the language domain itself.
+  const signalFloors = languageFactory.signalFloors();
+  const reranker = new Reranker(allDerivedSignals, resolvedPresets, allPayloadSignalDescriptors, signalFloors);
   // Passthrough the registered filter-preset names so the MCP schema layer
   // (SchemaBuilder) can surface them through its single Reranker dependency.
   reranker.setFilterPresetNames(registry.filterPresetNames());
@@ -153,5 +165,6 @@ export function createComposition(options: CompositionOptions = {}): Composition
     allStatsAccumulators,
     resolvedPresets,
     languageFactory,
+    signalFloors,
   };
 }

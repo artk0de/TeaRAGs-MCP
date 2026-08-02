@@ -125,6 +125,7 @@ interface CompositionContext {
   reranker: ReturnType<typeof createComposition>["reranker"];
   allPayloadSignalDescriptors: ReturnType<typeof createComposition>["allPayloadSignalDescriptors"];
   allStatsAccumulators: ReturnType<typeof createComposition>["allStatsAccumulators"];
+  signalFloors: ReturnType<typeof createComposition>["signalFloors"];
   schemaBuilder: SchemaBuilder;
 }
 
@@ -275,13 +276,13 @@ function wireComposition(
   // cold-reindex event-loop stall — fans out across GitEnrichmentProvider's own
   // BlameWorkerPool for shallow files while deep blames stay on main's async CLI
   // (bd tea-rags-mcp-dog1v).
-  const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition({
+  const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators, signalFloors } = createComposition({
     // w2dlu T6: the provider builds its per-root VcsGitAdapter from this kind.
     git: { config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter }, squashOpts },
     codegraph,
   });
   const schemaBuilder = new SchemaBuilder(reranker);
-  return { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators, schemaBuilder };
+  return { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators, signalFloors, schemaBuilder };
 }
 
 interface CodegraphContext {
@@ -756,6 +757,7 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     essentialKeys: essentialTrajectoryFields,
     modelGuard: infra.modelGuard,
     chunkResolver: createSymbolChunkResolver(codegraphContext?.graphFacade),
+    signalFloors: composition.signalFloors,
   });
   const app = createApp({
     qdrant: infra.qdrant,

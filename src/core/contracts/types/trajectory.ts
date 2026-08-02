@@ -162,6 +162,23 @@ export interface PayloadSignalDescriptor {
   essential?: boolean;
 }
 
+/**
+ * Smallest value a label may resolve at, regardless of what the collection's
+ * own percentile says — `threshold = max(percentile, floor)`.
+ *
+ * Keyed signal key → label name → floor. A percentile answers "large FOR THIS
+ * PROJECT", which on a clean codebase always nominates something as the worst
+ * 5% and on a legacy monolith reads a 400-line file as small. The floor is the
+ * absolute half of that verdict, carried from published linter limits (ESLint
+ * `max-lines`, RuboCop `Metrics/ClassLength`, pylint `max-module-lines`, Sonar
+ * S1448), so it is per-LANGUAGE: `domains/language/<lang>/signal-floors.ts`
+ * owns the numbers, `LanguageFactoryDescriptor.signalFloors()` aggregates them.
+ *
+ * Floors are a Metrics-layer concern, never a Stats-layer one: the cached
+ * distribution stays raw and a floor change takes effect on the next query.
+ */
+export type SignalFloors = Readonly<Record<string, Readonly<Record<string, number>>>>;
+
 /** Computed statistics for a single signal across the collection. */
 export interface SignalStats {
   count: number;

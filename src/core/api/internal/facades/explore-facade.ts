@@ -12,7 +12,7 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import type { SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
-import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import type { PayloadSignalDescriptor, SignalFloors } from "../../../contracts/types/trajectory.js";
 import {
   CollectionNotFoundError as DomainCollectionNotFoundError,
   InvalidQueryError,
@@ -47,6 +47,8 @@ export interface ExploreFacadeDeps {
   essentialKeys?: string[];
   modelGuard?: EmbeddingModelGuard;
   chunkResolver?: SymbolChunkResolver;
+  /** Per-language structural-signal floors, threaded through to IndexMetricsQuery. */
+  signalFloors?: ReadonlyMap<string, SignalFloors>;
 }
 
 export class ExploreFacade {
@@ -65,6 +67,7 @@ export class ExploreFacade {
       essentialKeys: deps.essentialKeys ?? [],
       modelGuard: deps.modelGuard,
       chunkResolver: deps.chunkResolver,
+      signalFloors: deps.signalFloors,
     });
   }
 

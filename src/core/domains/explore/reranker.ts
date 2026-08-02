@@ -24,10 +24,12 @@ import type {
   CollectionSignalStats,
   PayloadSignalDescriptor,
   SignalConfidence,
+  SignalFloors,
 } from "../../contracts/types/trajectory.js";
 import { detectScope } from "../../infra/scope-detection.js";
 import type { StatsRecomputeService } from "../ingest/infra/stats-recompute.js";
 import { resolveLabel } from "./label-resolver.js";
+import { applySignalFloors, floorsForSignal } from "./signal-floors.js";
 
 // Re-export types as part of search module's public API
 export type { ScoringWeights } from "../../contracts/types/provider.js";
@@ -87,6 +89,12 @@ export class Reranker {
     private readonly descriptors: DerivedSignalDescriptor[],
     private readonly resolvedPresets: RerankPreset[],
     payloadSignals: PayloadSignalDescriptor[] = [],
+    /**
+     * Per-language structural-signal floors, injected by the composition root
+     * from `LanguageFactoryDescriptor.signalFloors()`. Absent (tests, fixtures)
+     * → overlay labels stay purely percentile-derived.
+     */
+    private readonly signalFloors?: ReadonlyMap<string, SignalFloors>,
   ) {
     this.descriptorMap = new Map();
     for (const d of this.descriptors) {
@@ -625,8 +633,21 @@ export class Reranker {
       const signalStats = scope === "test" && scopedStats.test ? scopedStats.test : scopedStats.source;
       if (!signalStats?.percentiles) continue;
 
+      // Industry floors raise source-scope thresholds that sit below a
+      // published limit; test scope stays purely percentile-derived, since
+      // test files are systematically longer and a shared floor would collapse
+      // most of them into the top label.
+      const percentiles =
+        scope === "test"
+          ? signalStats.percentiles
+          : applySignalFloors(
+              signalStats.percentiles,
+              descriptor.stats.labels,
+              floorsForSignal(this.signalFloors, language, fullKey),
+            );
+
       const resolvedConfidence = this.preResolveConfidenceClamp(descriptor.stats.confidence, level);
-      const label = resolveLabel(value, descriptor.stats.labels, signalStats.percentiles, {
+      const label = resolveLabel(value, descriptor.stats.labels, percentiles, {
         siblingValues,
         confidence: resolvedConfidence,
       });
