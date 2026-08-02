@@ -888,7 +888,9 @@ function resolvePass2(extraction: FileExtraction): void {
       // oracle only simulates where the outcome proves narrowing ran (jn5j0).
       let dispatchOutcome: DispatchFanoutOutcome | undefined;
       const noteDispatch = (out: DispatchFanoutOutcome | undefined): boolean => {
-        if ((SIGGAP_ORACLE_ENABLED || SINGLESEG_ENABLED) && out !== undefined) dispatchOutcome = out;
+        if ((SIGGAP_ORACLE_ENABLED || SINGLESEG_ENABLED || BAREDEFER_ENABLED) && out !== undefined) {
+          dispatchOutcome = out;
+        }
         const edges = out?.kind === "edges" ? out.edges : [];
         for (const edge of edges) if (edge.targetSymbolId !== null) resolvedTargets.add(edge.targetSymbolId);
         return edges.length > 0;
@@ -967,6 +969,9 @@ function resolvePass2(extraction: FileExtraction): void {
       }
       if (SINGLESEG_ENABLED) {
         noteSingleSegCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath, chunk.symbolId);
+      }
+      if (BAREDEFER_ENABLED) {
+        noteBareDeferCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath, chunk.symbolId);
       }
     }
   }
@@ -10810,6 +10815,632 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
   L(`single-segment oracle detail -> ${OUT_SINGLESEG}`);
 }
 
+// ===========================================================================
+// TYPED-BARE-RECEIVER DEFERRAL ORACLE (bd tea-rags-mcp-55950,
+// CODEGRAPH_BAREDEFER_ORACLE=1, 2026-08-02). Same additive, env-gated contract
+// as every oracle above: flag unset ⇒ nothing extra is resolved or reported and
+// the A/B recall metrics are byte-identical.
+//
+// It prices the OTHER half of e8feo. That bead widened `chainType` to consume
+// single-segment typed receivers, and its own measurement then found 812 sites
+// where the widened chain WOULD emit one exact edge but never gets asked,
+// because `resolvePass2` runs the dispatch fan-out first and the fan-out already
+// answered. The reason the fan-out answers is a shape test in
+// `RubyDynamicDispatchResolver.resolveDispatch`:
+//
+//     if (r.includes(".")) {
+//       const t = typeOfReceiver(r, call.startLine, ctx);
+//       if (t && (t.form === "class" || t.form === "instance")) return emptyDispatchFanout();
+//     }
+//
+// The typeable-receiver deferral (bd tea-rags-mcp-epydb) only fires for DOTTED
+// receivers, so a typed BARE receiver keeps its N discounted `dynamic` edges
+// instead of deferring to the now-capable exact chain. The candidate change is
+// to delete the `r.includes(".")` condition.
+//
+// What makes this measurable EXACTLY rather than by projection: removing that
+// condition is a pure SUBTRACTION from the fan-out. For a dotted receiver the
+// widened gate IS the current gate. For a bare receiver the gate sits after
+// every earlier `return emptyDispatchFanout()`, so a site that produced fan-out
+// edges is a site that reached the gate. Therefore
+//
+//     widenedDispatch(call) = empty   when production emitted edges
+//                                     AND the receiver has no dot
+//                                     AND typeOfReceiver ⇒ class | instance
+//                           = production(call)   otherwise
+//
+// and the oracle restates only the gate predicate itself — the thing under
+// measurement — never the fan-out, never the chain, never the ladder. The chain
+// answer at a deferring site comes from the PRODUCTION resolver
+// (`resolver.resolve`), the same object `resolvePass2` calls, so "would the
+// chain catch it?" is the resolver's answer and not the oracle's.
+//
+// Because `noteDispatch` sets `resolved = true` for any non-empty fan-out in all
+// three call shapes, every site in this population is `resolved` at baseline.
+// The three questions the bead asks therefore reduce to one A/B per site:
+//
+//   (a) the chain resolves ⇒ N discounted `dynamic` edges collapse to ONE exact
+//       edge. Recall unchanged, precision gained.
+//   (b) the chain answers null ⇒ the call LOSES its resolution. This is the
+//       regression channel the bead demands be priced before code: `chainType`
+//       DROPs when the derived type declares no such member, and DROP-on-absent
+//       is what e8feo shipped.
+//   (c) edge arithmetic: edges removed (Σ fan-out edges over deferring sites)
+//       vs edges added (one per (a)), and the exact/dynamic ratio movement.
+//
+// Cost discipline: the hook rides `resolvePass2` after the fan-out has already
+// run, so the baseline costs one `typeOfReceiver` per bare receiver that
+// actually produced fan-out edges. The extra `resolver.resolve` runs only where
+// the gate FIRES.
+// ===========================================================================
+const BAREDEFER_ENABLED = process.env.CODEGRAPH_BAREDEFER_ORACLE === "1";
+const OUT_BAREDEFER = join(OUT_DIR, "baredefer-oracle-report.json");
+/** Worked examples kept per bucket — enough to read, small enough to print. */
+const BD_EXAMPLE_CAP = 15;
+
+/**
+ * The condition the change deletes. Restated rather than imported from the
+ * resolver: an oracle that shares the predicate with the code it evaluates
+ * cannot disagree with it.
+ *
+ * Index-access receivers (`opts[k]`) are also dot-free, but `receiverIsIndexAccess`
+ * returns empty EARLIER in `resolveDispatch`, so they never produce fan-out edges
+ * and never enter this population.
+ */
+function bdReceiverIsBare(receiver: string): boolean {
+  return !receiver.includes(".");
+}
+
+interface BdExample {
+  where: string;
+  caller: string;
+  receiver: string;
+  member: string;
+  kind: ReceiverKind;
+  type: string;
+  /** Single-name form of `type`, kept so `recovery` can be filled at REPORT time. */
+  typeName: string | undefined;
+  fanoutEdges: number;
+  chainTarget: string;
+  chainTypeVerdict: string;
+  wideOutcome: LcOutcome;
+  /** Filled in `runBareDeferOracle`, once `bdDeclaredConstants` is populated. */
+  recovery: string;
+}
+
+/** One regression row, reduced to what the recovery verdict needs at report time. */
+interface BdLossFact {
+  typeName: string | undefined;
+  member: string;
+}
+
+interface BdKindRow {
+  fires: number;
+  edgesRemoved: number;
+  gained: number;
+  lost: number;
+}
+
+function bdEmptyKindRow(): BdKindRow {
+  return { fires: 0, edgesRemoved: 0, gained: 0, lost: 0 };
+}
+
+/** Global edge census — the denominator behind the exact/dynamic ratio. */
+let bdCallsWithFanout = 0;
+let bdFanoutEdgesTotal = 0;
+const bdFanoutEdgesByKind: Record<string, number> = {};
+let bdExactEdgesTotal = 0;
+/** `dispatchArgs` call shape: chain AND fan-out both run, so the chain must be asked. */
+let bdDispatchArgsCalls = 0;
+/** Over-cap fan-outs (`kind: "ambiguous"`) whose receiver the widened gate would type. */
+let bdAmbiguousWouldDefer = 0;
+
+/** The deferral population: fan-out edges + bare receiver + a class/instance type. */
+let bdFiringSites = 0;
+let bdFiringEdges = 0;
+const bdByKind: Record<string, BdKindRow> = {};
+const bdFiringByCallShape: Record<string, number> = {};
+/** (a) — the chain answers, so N dynamic edges collapse to one exact edge. */
+let bdGainedExact = 0;
+let bdGainedMethodLevel = 0;
+let bdGainedFileOnly = 0;
+const bdGainedByKind: Record<string, number> = {};
+/** (b) — the chain answers null, so the call loses its resolution. */
+let bdLost = 0;
+const bdLostByKind: Record<string, number> = {};
+const bdLostByBucket: Record<string, number> = {};
+/** Call shape, tallied eagerly — the only loss reason that does not need the constant set. */
+const bdLostByShape: Record<string, number> = {};
+/** Raw regression rows; the recovery verdict is computed over them at REPORT time. */
+const bdLossFacts: BdLossFact[] = [];
+const bdLostByMember: Record<string, number> = {};
+/** Gains whose exact edge names only a FILE — target granularity traded away. */
+let bdGainFileOnlyEdgesReplaced = 0;
+/** Fidelity: does the standalone `chainType` verdict match what the CHAIN answers? */
+const bdChainTypeVerdict: Record<string, number> = {};
+let bdOwnedByEarlierPass = 0;
+const bdEarlierPassExamples: string[] = [];
+const bdGainExamples: BdExample[] = [];
+const bdLossExamples: BdExample[] = [];
+/** Per-kind loss examples, so the regression channel can be read by receiver shape. */
+const bdLossExamplesByKind: Record<string, BdExample[]> = {};
+/** Types the widened gate derives at deferring sites — the fiction check. */
+const bdFiringTypes: Record<string, number> = {};
+
+const BD_CFG: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
+/** The PRODUCTION strategy, asked what IT alone answers at a deferring site. */
+const bdChainTypeStrategy = new RubyChainTypeSymbolResolutionStrategy(BD_CFG);
+/** Class/module FQs this run declares — the existence half of the recovery gate. */
+const bdDeclaredConstants = new Set<string>();
+
+function bdBump(bag: Record<string, number>, key: string): void {
+  bag[key] = (bag[key] ?? 0) + 1;
+}
+
+/** Mirrors `ssIsProjectClass`, restated so this oracle stands alone under its own flag. */
+function bdIsProjectClass(name: string): boolean {
+  return bdDeclaredConstants.has(name) || runAncestors[name] !== undefined || symbolTable.lookup(name).length > 0;
+}
+
+/** Transitive ancestor closure over `runAncestors`, cycle-guarded. */
+function bdAncestorClosure(klass: string, seen: Set<string> = new Set()): Set<string> {
+  if (seen.has(klass)) return seen;
+  seen.add(klass);
+  for (const ancestor of runAncestors[klass] ?? []) bdAncestorClosure(ancestor, seen);
+  return seen;
+}
+
+/**
+ * Would the derived type close this call by naming exactly one definer on its
+ * ancestor closure? Reported on the LOSS rows: it separates "the type is fiction,
+ * so the DROP is the change's fault" from "the type is real and the member is
+ * genuinely not on it, so the DROP is correct precision and the fan-out edge it
+ * replaces was a wrong-type guess".
+ */
+function bdRecovery(type: string, member: string): string {
+  if (!bdIsProjectClass(type)) return "type names NO project class (fiction)";
+  const closure = bdAncestorClosure(type);
+  const owners = new Set(
+    symbolTable
+      .lookupByShortName(member)
+      .filter((d) => d.scope.length > 0 && closure.has(d.scope.join("::")))
+      .map((d) => d.scope.join("::")),
+  );
+  if (owners.size === 0) return "member NOT on the derived type's ancestor closure";
+  return owners.size === 1
+    ? "RECOVERABLE - unique definer on the derived type's closure"
+    : "ambiguous - several definers on the closure";
+}
+
+/** A `RubyTypeRef` as one short cell. Restated so this oracle stands on its own. */
+function bdRefText(ref: RubyTypeRef | undefined): string {
+  if (ref === undefined) return "-";
+  if (ref.form === "nil") return "nil";
+  if (ref.form === "container") return `container(${bdRefText(ref.element)})`;
+  if (ref.form === "union") return ref.members.map(bdRefText).join("|");
+  return `${ref.form === "class" ? "class " : ""}${ref.name}`;
+}
+
+function bdTargetText(target: SymbolResolutionTarget | null): string {
+  if (target === null) return "-";
+  return target.targetSymbolId ?? `${target.targetRelPath} (file-only)`;
+}
+
+/** Which of the three `resolvePass2` call shapes this call takes. */
+function bdCallShape(call: CallRef): "dispatch" | "dispatchArgs" | "normal" {
+  if (call.dispatch) return "dispatch";
+  if (call.dispatchArgs && call.dispatchArgs.length > 0) return "dispatchArgs";
+  return "normal";
+}
+
+/**
+ * The one call-site hook, invoked from `resolvePass2` after the baseline outcome
+ * is known. Everything it needs — the context, the fan-out outcome, the receiver
+ * kind — is already computed there.
+ */
+function noteBareDeferCall(
+  call: CallRef,
+  ctx: CallContext,
+  dispatchOutcome: DispatchFanoutOutcome | undefined,
+  baseOutcome: LcOutcome,
+  receiverKind: ReceiverKind,
+  relPath: string,
+  callerSymbolId: string,
+): void {
+  const rs = resolver;
+  if (rs === undefined) return;
+  const receiver = call.receiver;
+  const shape = bdCallShape(call);
+  const edges = dispatchOutcome?.kind === "edges" ? dispatchOutcome.edges : [];
+
+  // ── global edge census (every call, cheap) ───────────────────────────────
+  if (edges.length > 0) {
+    bdCallsWithFanout += 1;
+    bdFanoutEdgesTotal += edges.length;
+    for (const e of edges) bdBump(bdFanoutEdgesByKind, e.edgeKind ?? "exact(default)");
+  }
+  if (shape === "dispatchArgs") {
+    // Both channels run for this shape, so the chain's contribution cannot be
+    // read off `resolved`. Ask it — this shape is rare, and the count is reported.
+    bdDispatchArgsCalls += 1;
+    if (rs.resolve(call, ctx) !== null) bdExactEdgesTotal += 1;
+  } else if (shape === "normal" && edges.length === 0 && baseOutcome === "resolved") {
+    // The fan-out produced nothing, so the chain is the only thing that could
+    // have resolved this call — one exact edge, no extra resolve needed.
+    bdExactEdgesTotal += 1;
+  }
+
+  if (receiver === null || edges.length === 0) {
+    // Over-cap fan-outs carry no edges but DO suppress the exact chain in
+    // production (`resolution-runner` returns "ambiguous" without falling back;
+    // this harness falls back, a pre-existing divergence). Widening the gate
+    // turns such a site into a plain empty fan-out, which in PRODUCTION restores
+    // the exact-chain fallback — a recall channel this harness cannot show.
+    if (
+      receiver !== null &&
+      dispatchOutcome?.kind === "ambiguous" &&
+      bdReceiverIsBare(receiver) &&
+      (() => {
+        const t = typeOfReceiver(receiver, call.startLine, ctx);
+        return t !== undefined && (t.form === "class" || t.form === "instance");
+      })()
+    ) {
+      bdAmbiguousWouldDefer += 1;
+    }
+    return;
+  }
+  if (!bdReceiverIsBare(receiver)) return;
+
+  // ── the widened gate, restated ───────────────────────────────────────────
+  const typeRef = typeOfReceiver(receiver, call.startLine, ctx);
+  if (!typeRef || (typeRef.form !== "class" && typeRef.form !== "instance")) return;
+
+  bdFiringSites += 1;
+  bdFiringEdges += edges.length;
+  bdBump(bdFiringByCallShape, shape);
+  bdBump(bdFiringTypes, bdRefText(typeRef));
+  const kindRow = (bdByKind[receiverKind] ??= bdEmptyKindRow());
+  kindRow.fires += 1;
+  kindRow.edgesRemoved += edges.length;
+
+  // ── what the chain answers once the fan-out steps aside ──────────────────
+  // `resolver.resolve` is the object `resolvePass2` itself calls, so this is the
+  // production answer rather than a rebuilt precedence. The `dispatch` shape has
+  // NO chain fallback at all (`resolution-runner` returns straight from the
+  // fan-out), so deferring there loses the call outright — modelled as null.
+  const chainTarget = shape === "dispatch" ? null : rs.resolve(call, ctx);
+  const ctOutcome = bdChainTypeStrategy.attempt(call, ctx);
+  const ctVerdict =
+    ctOutcome.kind === "resolved"
+      ? ctOutcome.target.targetSymbolId === null
+        ? "chainType RESOLVED - file-only"
+        : "chainType RESOLVED - method-level"
+      : ctOutcome.kind === "drop"
+        ? "chainType DROP - member absent on the derived closure"
+        : "chainType CONTINUE";
+  bdBump(bdChainTypeVerdict, ctVerdict);
+  if (ctOutcome.kind === "resolved" && chainTarget === null) {
+    bdOwnedByEarlierPass += 1;
+    if (bdEarlierPassExamples.length < BD_EXAMPLE_CAP) {
+      bdEarlierPassExamples.push(
+        `${relPath}:${call.startLine} ${receiver}.${call.member} chainType=${bdTargetText(ctOutcome.target)} chain=null`,
+      );
+    }
+  }
+
+  const typeName = tfRefName(typeRef);
+
+  // ── the widened outcome, through the SAME ladder as the baseline ─────────
+  // Every site here is `resolved` at baseline (a non-empty fan-out sets
+  // `resolved` in all three shapes), so the only question is whether the chain
+  // keeps it resolved.
+  let wideOutcome: LcOutcome;
+  if (chainTarget !== null) {
+    wideOutcome = "resolved";
+  } else {
+    // Verbatim from `resolvePass2`, same order.
+    wideOutcome =
+      call.dynamicSend === true
+        ? "dynamicSend"
+        : (rs.targetsExternalImport?.(call, ctx) ?? false)
+          ? "externalSkipped"
+          : symbolTable.lookupByShortName(call.member).length === 0
+            ? "noInProjectDef"
+            : (rs.targetsCoreAmbiguousMember?.(call, ctx) ?? false)
+              ? "coreAmbiguous"
+              : "miss";
+  }
+
+  const example = (): BdExample => ({
+    where: `${relPath}:${call.startLine}`,
+    caller: callerSymbolId,
+    receiver,
+    member: call.member,
+    kind: receiverKind,
+    type: bdRefText(typeRef),
+    typeName,
+    fanoutEdges: edges.length,
+    chainTarget: bdTargetText(chainTarget),
+    chainTypeVerdict: ctVerdict,
+    wideOutcome,
+    recovery: "",
+  });
+
+  if (chainTarget !== null) {
+    bdGainedExact += 1;
+    kindRow.gained += 1;
+    bdBump(bdGainedByKind, receiverKind);
+    if (chainTarget.targetSymbolId === null) {
+      bdGainedFileOnly += 1;
+      bdGainFileOnlyEdgesReplaced += edges.length;
+    } else bdGainedMethodLevel += 1;
+    if (bdGainExamples.length < BD_EXAMPLE_CAP) bdGainExamples.push(example());
+  } else {
+    bdLost += 1;
+    kindRow.lost += 1;
+    bdBump(bdLostByKind, receiverKind);
+    bdBump(bdLostByBucket, wideOutcome);
+    bdBump(bdLostByShape, shape);
+    bdLossFacts.push({ typeName, member: call.member });
+    bdBump(bdLostByMember, call.member);
+    if (bdLossExamples.length < BD_EXAMPLE_CAP) bdLossExamples.push(example());
+    const perKind = (bdLossExamplesByKind[receiverKind] ??= []);
+    if (perKind.length < 5) perKind.push(example());
+  }
+}
+
+function runBareDeferOracle(extractions: FileExtraction[]): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  for (const extraction of extractions) {
+    for (const chunk of extraction.chunks) {
+      if (chunk.scope.length > 0) bdDeclaredConstants.add(chunk.scope.join("::"));
+      if (!chunk.symbolId.includes("#") && !chunk.symbolId.includes(".")) bdDeclaredConstants.add(chunk.symbolId);
+    }
+  }
+
+  // The recovery verdict needs the declared-constant set, which only exists once
+  // the walk is finished — so it is computed HERE, over rows the hook recorded
+  // raw. Computing it inside the hook would have asked an empty set and labelled
+  // every regression "type names NO project class".
+  const recoveryOf = (typeName: string | undefined, member: string): string =>
+    typeName === undefined ? "receiver has no single-name type" : bdRecovery(typeName, member);
+  const bdLostByReason: Record<string, number> = {};
+  for (const fact of bdLossFacts) bdBump(bdLostByReason, recoveryOf(fact.typeName, fact.member));
+  for (const rows of [bdGainExamples, bdLossExamples, ...Object.values(bdLossExamplesByKind)]) {
+    for (const e of rows) e.recovery = recoveryOf(e.typeName, e.member);
+  }
+
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  TYPED-BARE-RECEIVER DEFERRAL ORACLE (bd 55950, epydb gate widening)");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("");
+  L("─── population: fan-out sites the widened epydb gate would defer ──");
+  L(`calls with a non-empty dynamic/cone fan-out:     ${bdCallsWithFanout}`);
+  L(`  ...of those, bare receiver AND typed (FIRING): ${bdFiringSites}`);
+  L(`fan-out edges those firing sites emit today:     ${bdFiringEdges}`);
+  L("by call shape (resolvePass2 branch):");
+  for (const [k, n] of Object.entries(bdFiringByCallShape).sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(8)}  ${k}`);
+  }
+
+  L("");
+  L("─── (a) GAIN — the chain answers, N dynamic edges collapse to 1 exact ───");
+  L(`sites where the exact chain resolves: ${bdGainedExact}`);
+  L(`  method-level: ${bdGainedMethodLevel}   file-only: ${bdGainedFileOnly}`);
+  L(
+    `  granularity traded: ${bdGainFileOnlyEdgesReplaced} fan-out edges at the file-only sites` +
+      ` become ${bdGainedFileOnly} edges naming a FILE, not a method`,
+  );
+  L("  by receiver kind:");
+  for (const [k, n] of Object.entries(bdGainedByKind).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+  for (const e of bdGainExamples.slice(0, 10)) {
+    L(`    ${e.where} ${e.receiver}.${e.member} [${e.kind}] type=${e.type}`);
+    L(`        ${e.fanoutEdges} dynamic edges -> ${e.chainTarget}   (${e.chainTypeVerdict})`);
+  }
+
+  L("");
+  L("─── (b) REGRESSION — the chain answers null, the call LOSES resolution ───");
+  L(`sites that lose their resolution: ${bdLost}`);
+  L("  where the lost call lands in the ladder:");
+  for (const [k, n] of Object.entries(bdLostByBucket).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+  L("  why the chain declined (recovery verdict over the derived type):");
+  for (const [k, n] of Object.entries(bdLostByReason).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+  L("  by call shape:");
+  for (const [k, n] of Object.entries(bdLostByShape).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+  L("  top members:");
+  for (const [k, n] of Object.entries(bdLostByMember)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+  L("  per receiver kind (examples):");
+  for (const kind of RECEIVER_KINDS) {
+    const rows = bdLossExamplesByKind[kind];
+    if (rows === undefined || rows.length === 0) continue;
+    L(`    ${kind} (${bdLostByKind[kind] ?? 0} lost)`);
+    for (const e of rows) {
+      L(`      ${e.where} ${e.receiver}.${e.member} type=${e.type} edges=${e.fanoutEdges} -> ${e.wideOutcome}`);
+      L(`          ${e.chainTypeVerdict}   (${e.recovery})`);
+    }
+  }
+
+  L("");
+  L("─── fidelity: standalone chainType verdict at firing sites ────────");
+  for (const [k, n] of Object.entries(bdChainTypeVerdict).sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(8)}  ${k}`);
+  }
+  L(`  chainType would resolve but an EARLIER pass owns the call: ${bdOwnedByEarlierPass}`);
+  for (const e of bdEarlierPassExamples.slice(0, 6)) L(`      ${e}`);
+  L("  derived types at firing sites (top 12):");
+  for (const [k, n] of Object.entries(bdFiringTypes)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+
+  L("");
+  L("─── per receiver kind ─────────────────────────────────────────────");
+  L("kind          gate fires   edges removed   gained   lost");
+  for (const kind of RECEIVER_KINDS) {
+    const row = bdByKind[kind];
+    if (row === undefined) continue;
+    L(
+      `${kind.padEnd(12)}  ${String(row.fires).padStart(10)}  ${String(row.edgesRemoved).padStart(13)}` +
+        `  ${String(row.gained).padStart(7)}  ${String(row.lost).padStart(5)}`,
+    );
+  }
+
+  // ── (c) edge arithmetic + exact/dynamic ratio ─────────────────────────────
+  const exactBase = bdExactEdgesTotal;
+  const fanBase = bdFanoutEdgesTotal;
+  const exactWide = exactBase + bdGainedExact;
+  const fanWide = fanBase - bdFiringEdges;
+  const ratio = (e: number, f: number): number => (e + f === 0 ? 0 : e / (e + f));
+  const ratioDelta = (ratio(exactWide, fanWide) - ratio(exactBase, fanBase)) * 100;
+  L("");
+  L("─── (c) edge arithmetic — graph precision ─────────────────────────");
+  L(`fan-out edges emitted run-wide:        ${fanBase}`);
+  L(`exact (single-target chain) edges:     ${exactBase}`);
+  L(
+    `edges REMOVED by the deferral:         ${bdFiringEdges}   (${bdFiringSites} sites, mean ${(bdFiringSites === 0 ? 0 : bdFiringEdges / bdFiringSites).toFixed(1)} edges/site)`,
+  );
+  L(`edges ADDED by the deferral:           ${bdGainedExact}`);
+  L(`net edge delta:                        ${bdGainedExact - bdFiringEdges}`);
+  L(
+    `exactRatio (exact / (exact + fan-out)): ${fmtPct(ratio(exactBase, fanBase))} -> ${fmtPct(ratio(exactWide, fanWide))}   (${(ratioDelta >= 0 ? "+" : "") + ratioDelta.toFixed(4)}pp)`,
+  );
+  L("fan-out edges by edgeKind (baseline):");
+  for (const [k, n] of Object.entries(bdFanoutEdgesByKind).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(8)}  ${k}`);
+  }
+  L(`dispatchArgs-shaped calls the census had to re-resolve: ${bdDispatchArgsCalls}`);
+  L(`over-cap ("ambiguous") fan-outs the widened gate would also defer: ${bdAmbiguousWouldDefer}`);
+  L("  (PRODUCTION-only recall channel: resolution-runner returns `ambiguous` with NO");
+  L("   exact-chain fallback, while this harness falls back — so those sites already");
+  L("   read the chain here and the A/B below does not credit them.)");
+
+  // ── the net: recall with the regression channel subtracted ────────────────
+  const projResolved = callsResolved - bdLost;
+  const projExternal = callsExternalSkipped + (bdLostByBucket.externalSkipped ?? 0);
+  const projUnresolvable = callsUnresolvable + (bdLostByBucket.dynamicSend ?? 0);
+  const projNoDef = callsNoInProjectDef + (bdLostByBucket.noInProjectDef ?? 0);
+  const projCoreAmb = callsCoreAmbiguous + (bdLostByBucket.coreAmbiguous ?? 0);
+  const baseHole = Math.max(
+    0,
+    callsAttempted - callsResolved - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
+  );
+  const projHole = Math.max(
+    0,
+    callsAttempted - projResolved - projExternal - projUnresolvable - projNoDef - projCoreAmb,
+  );
+  const baseRecall = callsResolved + baseHole === 0 ? 0 : callsResolved / (callsResolved + baseHole);
+  const projRecall = projResolved + projHole === 0 ? 0 : projResolved / (projResolved + projHole);
+  L("");
+  L("─── NET projection — the regression channel already subtracted ────");
+  L("counter                   baseline      projected      delta");
+  const row = (label: string, a: number, b: number): void => {
+    L(`  ${label.padEnd(22)}${String(a).padStart(9)}${String(b).padStart(15)}${String(b - a).padStart(11)}`);
+  };
+  row("callsResolved", callsResolved, projResolved);
+  row("callsExternalSkipped", callsExternalSkipped, projExternal);
+  row("callsUnresolvable", callsUnresolvable, projUnresolvable);
+  row("callsNoInProjectDef", callsNoInProjectDef, projNoDef);
+  row("callsCoreAmbiguous", callsCoreAmbiguous, projCoreAmb);
+  row("missWithInProjectDef", baseHole, projHole);
+  L("");
+  L(
+    `inProjectEdgeRecall:  ${fmtPct(baseRecall)} -> ${fmtPct(projRecall)}   (${((projRecall - baseRecall) * 100 >= 0 ? "+" : "") + ((projRecall - baseRecall) * 100).toFixed(4)}pp)`,
+  );
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_BAREDEFER,
+    JSON.stringify(
+      {
+        meta: {
+          generatedAt: new Date().toISOString(),
+          callsAttempted,
+          callsWithFanout: bdCallsWithFanout,
+          firingSites: bdFiringSites,
+          firingEdges: bdFiringEdges,
+          firingByCallShape: bdFiringByCallShape,
+          dispatchArgsCalls: bdDispatchArgsCalls,
+          ambiguousWouldDefer: bdAmbiguousWouldDefer,
+          ownedByEarlierPass: bdOwnedByEarlierPass,
+        },
+        gain: {
+          sites: bdGainedExact,
+          methodLevel: bdGainedMethodLevel,
+          fileOnly: bdGainedFileOnly,
+          fanoutEdgesReplacedByFileOnly: bdGainFileOnlyEdgesReplaced,
+          byKind: bdGainedByKind,
+        },
+        regression: {
+          sites: bdLost,
+          byKind: bdLostByKind,
+          byLadderBucket: bdLostByBucket,
+          byReason: bdLostByReason,
+          byCallShape: bdLostByShape,
+          byMember: bdLostByMember,
+        },
+        chainTypeVerdicts: bdChainTypeVerdict,
+        firingTypes: bdFiringTypes,
+        byReceiverKind: bdByKind,
+        edges: {
+          fanoutTotal: fanBase,
+          fanoutByKind: bdFanoutEdgesByKind,
+          exactTotal: exactBase,
+          removed: bdFiringEdges,
+          added: bdGainedExact,
+          exactRatioBaseline: ratio(exactBase, fanBase),
+          exactRatioProjected: ratio(exactWide, fanWide),
+        },
+        projection: {
+          baseline: {
+            callsResolved,
+            callsExternalSkipped,
+            callsUnresolvable,
+            callsNoInProjectDef,
+            callsCoreAmbiguous,
+            missWithInProjectDef: baseHole,
+            inProjectEdgeRecall: baseRecall,
+          },
+          projected: {
+            callsResolved: projResolved,
+            callsExternalSkipped: projExternal,
+            callsUnresolvable: projUnresolvable,
+            callsNoInProjectDef: projNoDef,
+            callsCoreAmbiguous: projCoreAmb,
+            missWithInProjectDef: projHole,
+            inProjectEdgeRecall: projRecall,
+          },
+        },
+        examples: {
+          gains: bdGainExamples,
+          losses: bdLossExamples,
+          lossesByKind: bdLossExamplesByKind,
+          ownedByEarlierPass: bdEarlierPassExamples,
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  L("");
+  L(`typed-bare-receiver deferral oracle detail -> ${OUT_BAREDEFER}`);
+}
+
 async function main(): Promise<void> {
   const t0 = Date.now();
   console.error(`[forensics] root=${ROOT} gemfile=${gemfileContent ? "loaded" : "MISSING"}`);
@@ -11192,6 +11823,7 @@ async function main(): Promise<void> {
   if (FIXPOINT_ENABLED) runFixpointOracle(extractions, Date.now() - t0);
   if (CONSTCHAIN_ENABLED) runConstChainOracle(extractions);
   if (SINGLESEG_ENABLED) runSingleSegOracle(extractions);
+  if (BAREDEFER_ENABLED) runBareDeferOracle(extractions);
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
