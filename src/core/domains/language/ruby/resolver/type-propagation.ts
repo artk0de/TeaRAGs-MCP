@@ -666,6 +666,22 @@ function camelizeScope(snake: string): string {
 }
 
 /**
+ * The class a snake_case identifier NAMES by Rails convention, or `undefined`
+ * when the run declares no such class.
+ *
+ * The existence gate is the whole precision story of both convention tiers: an
+ * identifier that camelizes to a name nothing declares means something else
+ * entirely, and a fabricated receiver type poisons every downstream hop. Shared
+ * so {@link scopedReceiverType} (devise's `current_<scope>`) and the general
+ * tier {@link conventionReceiverType} cannot drift apart on what "the class
+ * exists" means.
+ */
+function conventionClassName(snake: string, ctx: CallContext): string | undefined {
+  const name = camelizeScope(snake);
+  return name.length > 0 && ctx.symbolTable.lookupByShortName(name).length > 0 ? name : undefined;
+}
+
+/**
  * The type a framework SCOPED receiver carries by naming convention
  * (bd tea-rags-mcp-adx5p.9) — devise's `current_user` is a `User`.
  *
@@ -685,10 +701,85 @@ function camelizeScope(snake: string): string {
 function scopedReceiverType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
   for (const prefix of catalogueForGemfile(ctx.gemfileContent).instanceReceiverPrefixes) {
     if (!receiver.startsWith(prefix) || receiver.length === prefix.length) continue;
-    const name = camelizeScope(receiver.slice(prefix.length));
-    if (name.length > 0 && ctx.symbolTable.lookupByShortName(name).length > 0) {
-      return { form: "instance", name };
-    }
+    const name = conventionClassName(receiver.slice(prefix.length), ctx);
+    if (name !== undefined) return { form: "instance", name };
   }
   return undefined;
+}
+
+/**
+ * A bare or `@`/`@@`-prefixed lowercase identifier — the whole surface the
+ * general convention tier acts on. Deliberately narrower than
+ * {@link NULLARY_RECEIVER}: no `?`/`!` suffix (a predicate call is not a
+ * variable named for its class) and no uppercase (a constant is
+ * `RubyConstantSymbolResolutionStrategy`'s case).
+ */
+const CONVENTION_RECEIVER = /^@{0,2}[a-z_][a-z0-9_]*$/;
+
+/**
+ * Receiver texts that are keywords or block placeholders, never a variable
+ * named after its class. Ruby 3.4's implicit block parameter `it` and the
+ * conventional throwaway `_` join the reserved words — an app that happens to
+ * declare an `It` must not have `it.foo` typed as one.
+ */
+const CONVENTION_RECEIVER_KEYWORDS = new Set([...RECEIVER_KEYWORDS, "it", "_"]);
+
+/**
+ * Does this class have SUBTYPES? A class with descendants is a polymorphic
+ * base, and a variable named after it carries a CONCRETE subtype at runtime —
+ * `actor` in a Rails app whose `Actor` is specialised by System / Guest / User
+ * / Employee is an `Employee`, not an `Actor`. Guessing the base fabricates an
+ * edge to a method the receiver may never run.
+ *
+ * That shape is not a hypothesis: on taxdome it is where EVERY measured
+ * convention error came from, and gating on it is what makes this tier
+ * shippable at all (bd tea-rags-mcp-wob7g).
+ *
+ * The hierarchy snapshot is keyed by the ancestor text as WRITTEN in the
+ * subclass header, so both the bare name and every fully-qualified declaration
+ * carrying that short name are asked. No snapshot (a resolver constructed
+ * without one) means no evidence of subtypes, and the convention proceeds —
+ * the caller has already gated on the class existing.
+ */
+function hasDeclaredSubtypes(name: string, ctx: CallContext): boolean {
+  const { hierarchy } = ctx;
+  if (hierarchy === undefined) return false;
+  if (hierarchy.getDescendants(name).length > 0) return true;
+  for (const def of ctx.symbolTable.lookupByShortName(name)) {
+    if (def.fqName !== name && hierarchy.getDescendants(def.fqName).length > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * The type a receiver carries by the GENERAL Rails naming convention
+ * (bd tea-rags-mcp-wob7g) — `payment` is a `Payment`, `@recurring_invoice` a
+ * `RecurringInvoice`.
+ *
+ * This is {@link scopedReceiverType} with the `current_*` prefix requirement
+ * removed. The convention devise's `current_user` relies on is not a devise
+ * convention at all; it is the dominant naming discipline of the language, and
+ * on taxdome it names the receiver of 11% of the entire recall hole.
+ *
+ * Two gates, both measured rather than argued:
+ *  - the class must EXIST in the run ({@link conventionClassName});
+ *  - it must have NO subtypes ({@link hasDeclaredSubtypes}) — see there.
+ *
+ * **Deliberately NOT wired into {@link typeOfReceiver}.** A guess is weaker
+ * evidence than a fact, and `typeOfReceiver` is read by consumers that treat
+ * its answer as one: `chainType` turns a typed receiver whose class declares no
+ * such member into a FILE-ONLY edge (`targetSymbolId: null` — invisible to
+ * `get_callers`, and it inflates fan-in on the biggest models in the app), and
+ * the dynamic component's typed-receiver deferral (bd tea-rags-mcp-55950) would
+ * silently drop the fan-out on the strength of it. The convention is therefore
+ * consumed by ONE strategy, `conventionReceiver`, which sits after every fact
+ * channel and demands a method-level target.
+ */
+export function conventionReceiverType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
+  if (!CONVENTION_RECEIVER.test(receiver)) return undefined;
+  const bare = receiver.replace(/^@{1,2}/, "");
+  if (CONVENTION_RECEIVER_KEYWORDS.has(bare)) return undefined;
+  const name = conventionClassName(bare, ctx);
+  if (name === undefined || hasDeclaredSubtypes(name, ctx)) return undefined;
+  return { form: "instance", name };
 }

@@ -27,9 +27,9 @@ import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolvePath(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -90,16 +90,23 @@ describe("CodegraphEnrichmentProvider — external-member suppression e2e (incre
         ].join("\n"),
       );
 
-      // caller.rb calls both methods on an untyped lowercase receiver `agent`:
-      //   agent.update              → member guard fires → externalSkipped
-      //   agent.handle_details_post → no guard → short-name fan-out → dynamic edge
+      // caller.rb calls both methods on an untyped lowercase receiver `record`:
+      //   record.update              → member guard fires → externalSkipped
+      //   record.handle_details_post → no guard → short-name fan-out → dynamic edge
+      //
+      // The receiver is deliberately NOT named after the class. It used to be
+      // `agent`, which the naming-convention pass (bd tea-rags-mcp-wob7g) now
+      // types as `Agent` — and a TYPED receiver is not what this test is about.
+      // The guard under test is the one that fires when nothing can type the
+      // receiver, so the fixture has to actually present an untyped one; the
+      // convention-typed boundary is pinned by the sibling case below.
       writeFileSync(
         join(root, "caller.rb"),
         [
           "class AgentCaller",
-          "  def process(agent)",
-          "    agent.update",
-          "    agent.handle_details_post",
+          "  def process(record)",
+          "    record.update",
+          "    record.handle_details_post",
           "  end",
           "end",
           "",
@@ -132,7 +139,7 @@ describe("CodegraphEnrichmentProvider — external-member suppression e2e (incre
       // AgentCaller#process is the source symbol. If the fan-out guard fires,
       // the callees must NOT include Agent#update.
       const calleesOfProcess = await client.getCallees("AgentCaller#process");
-      const updateEdge = calleesOfProcess.find((e) => e.callExpression.includes("update"));
+      const updateEdge = calleesOfProcess.find((e) => e.callExpression.includes(".update"));
       expect(
         updateEdge,
         "no dynamic edge must be emitted for agent.update (suppressed by external-member guard)",
@@ -149,6 +156,39 @@ describe("CodegraphEnrichmentProvider — external-member suppression e2e (incre
         "a dynamic edge must be emitted for agent.handle_details_post (fan-out unchanged)",
       ).toBeDefined();
       expect(controlEdge!.targetSymbolId).toBe("Agent#handle_details_post");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // The other side of the same boundary (bd tea-rags-mcp-wob7g). The member
+  // guard's whole justification is that an UNTYPED receiver cannot be pinned to
+  // the in-project definition, so a core ActiveRecord member must not be
+  // guessed. Once the receiver IS typed — here by the naming convention, the
+  // same way a local binding or a return fact would type it — the class's own
+  // MRO answers, and `Agent#update` is the correct target rather than a gem
+  // method. This is the `externalSkipped -> resolved` movement the taxdome A/B
+  // measured (701 calls): denominator growth, not a recall claim.
+  it("a convention-typed receiver resolves the core member on its own class", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-ext-member-typed-"));
+    try {
+      writeFileSync(
+        join(root, "target.rb"),
+        ["class Agent", "  def update", "    true", "  end", "end", ""].join("\n"),
+      );
+      // `agent` names `Agent` by convention, and `Agent` DECLARES `update`.
+      writeFileSync(
+        join(root, "caller.rb"),
+        ["class AgentCaller", "  def process(agent)", "    agent.update", "  end", "end", ""].join("\n"),
+      );
+
+      await provider.streamFileBatch(root, ["target.rb", "caller.rb"]);
+      await provider.finalizeSignals(root);
+
+      const callees = await client.getCallees("AgentCaller#process");
+      const updateEdge = callees.find((e) => e.callExpression.includes(".update"));
+      expect(updateEdge, "the convention types `agent` as Agent, which declares `update`").toBeDefined();
+      expect(updateEdge!.targetSymbolId).toBe("Agent#update");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
