@@ -8,5 +8,5 @@ import type { SignalFloors } from "../../../contracts/types/trajectory.js";
 export const signalFloors: SignalFloors = {
   moduleLines: { large: 500, "god-module": 1000 },
   memberCount: { large: 15, "god-module": 30 },
-  fileMethodCount: { busy: 15, "god-module": 30 },
+  moduleMethodCount: { busy: 15, "god-module": 30 },
 };

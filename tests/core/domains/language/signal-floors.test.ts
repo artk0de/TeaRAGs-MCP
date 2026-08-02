@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import { LanguageFactory } from "../../../../src/core/domains/language/index.js";
 
-const MASS_SIGNALS = ["moduleLines", "fileMethodCount", "memberCount"];
+const MASS_SIGNALS = ["moduleLines", "moduleMethodCount", "memberCount"];
 
 describe("LanguageFactory.signalFloors", () => {
   const factory = new LanguageFactory();

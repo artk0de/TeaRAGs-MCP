@@ -86,7 +86,7 @@ describe("processFiles — symbol-mass post-pass", () => {
     await cleanupTempDir(tempDir);
   });
 
-  it("hands the pipeline chunks carrying memberCount, moduleLines and fileMethodCount", async () => {
+  it("hands the pipeline chunks carrying memberCount, moduleLines and moduleMethodCount", async () => {
     await createTestFile(codebaseDir, "alpha.ts", "class Alpha {\n  one() {}\n  two() {}\n}\n");
     const filePath = join(codebaseDir, "alpha.ts");
     const chunkerPool = {
@@ -110,7 +110,7 @@ describe("processFiles — symbol-mass post-pass", () => {
     // Every code chunk carries the file-scoped fields — two callables, and the
     // file's physical line count read from the source the processor loaded.
     for (const chunk of submitted) {
-      expect(chunk.metadata.fileMethodCount).toBe(2);
+      expect(chunk.metadata.moduleMethodCount).toBe(2);
       expect(chunk.metadata.moduleLines).toBe(5);
     }
     // memberCount lands on the container's representative chunk only.

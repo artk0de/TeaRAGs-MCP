@@ -10,7 +10,7 @@ import type { ExtractContext } from "../../../../../contracts/types/trajectory.j
  * file with 40 private helpers and fanIn=2 is invisible to the graph.
  * Detects: god modules, god classes (a dominant class holding most of the
  *   file's members — the overlay's memberCount decides which).
- * Scoring: `fileMethodCount` normalized to the adaptive p95 bound.
+ * Scoring: `moduleMethodCount` normalized to the adaptive p95 bound.
  * Used in: godModule preset (static and codegraph-enriched variants).
  *
  * Counts callables rather than every declared symbol: a barrel of interfaces
@@ -26,14 +26,14 @@ import type { ExtractContext } from "../../../../../contracts/types/trajectory.j
 export class SymbolCountSignal implements DerivedSignalDescriptor {
   readonly name = "symbolCount";
   readonly description = "Normalized count of distinct callables declared in the file";
-  readonly sources = ["fileMethodCount"];
+  readonly sources = ["moduleMethodCount"];
   readonly defaultBound = 40;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    const count = rawSignals.fileMethodCount;
+    const count = rawSignals.moduleMethodCount;
     // Indices predating the symbol-mass post-pass carry no value at all —
     // contribute nothing rather than poisoning the score with NaN.
     if (typeof count !== "number" || count <= 0) return 0;
-    const bound = ctx?.bounds?.["fileMethodCount"] ?? this.defaultBound;
+    const bound = ctx?.bounds?.["moduleMethodCount"] ?? this.defaultBound;
     return normalize(count, bound);
   }
 }

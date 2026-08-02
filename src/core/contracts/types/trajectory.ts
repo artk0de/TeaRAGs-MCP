@@ -72,7 +72,7 @@ export interface SignalStatsRequest {
    * `relativePath` to each stats bucket (global, per-language, per-scope).
    *
    * Set it whenever the same value is stamped on every chunk of a file (e.g.
-   * `fileMethodCount`). Without it the distribution describes chunks, not
+   * `moduleMethodCount`). Without it the distribution describes chunks, not
    * files, and a many-chunk file dominates its own percentiles.
    */
   dedupeByFile?: boolean;

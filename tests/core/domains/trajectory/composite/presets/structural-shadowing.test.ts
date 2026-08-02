@@ -94,7 +94,7 @@ describe("composite godModule", () => {
   it("keeps the static attribution numbers in the overlay and adds the graph ones", () => {
     expect(preset.overlayMask.file).toEqual([
       "moduleLines",
-      "fileMethodCount",
+      "moduleMethodCount",
       "codegraph.file.fanIn",
       "codegraph.file.fanOut",
       "codegraph.file.transitiveImpact",

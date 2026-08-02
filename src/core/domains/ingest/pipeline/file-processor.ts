@@ -268,7 +268,7 @@ export async function processFiles(
               methodLines: chunk.metadata.methodLines,
               memberCount: chunk.metadata.memberCount,
               moduleLines: chunk.metadata.moduleLines,
-              fileMethodCount: chunk.metadata.fileMethodCount,
+              moduleMethodCount: chunk.metadata.moduleMethodCount,
               headingPath: chunk.metadata.headingPath,
               navigation: chunk.metadata.navigation,
               ...(imports.length > 0 && { imports }),

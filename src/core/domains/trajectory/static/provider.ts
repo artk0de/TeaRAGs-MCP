@@ -48,8 +48,8 @@ export class StaticPayloadBuilder implements PayloadBuilder {
     if (memberCount) payload.memberCount = memberCount;
     const moduleLines = m.moduleLines as number | undefined;
     if (moduleLines) payload.moduleLines = moduleLines;
-    const fileMethodCount = m.fileMethodCount as number | undefined;
-    if (fileMethodCount) payload.fileMethodCount = fileMethodCount;
+    const moduleMethodCount = m.moduleMethodCount as number | undefined;
+    if (moduleMethodCount) payload.moduleMethodCount = moduleMethodCount;
     // Density: chars per line, dampened for small chunks relative to parent size.
     // Threshold adapts: sqrt(methodLines) for split chunks, sqrt(chunkLines) for standalone.
     const chunkLines = chunk.endLine - chunk.startLine;

@@ -508,7 +508,7 @@ export interface CodeChunk {
     /** Physical line count of the file. */
     moduleLines?: number;
     /** Distinct callables (functions, methods, tests) declared in this file. */
-    fileMethodCount?: number;
+    moduleMethodCount?: number;
 
     /** Heading breadcrumb path for documentation chunks. Internal — stripped from API responses. */
     headingPath?: { depth: number; text: string }[];

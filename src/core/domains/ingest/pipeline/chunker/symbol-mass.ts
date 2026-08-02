@@ -7,7 +7,7 @@
  * | Field             | On                      | Meaning                              |
  * | ----------------- | ----------------------- | ------------------------------------ |
  * | `moduleLines`     | every code chunk (flat) | physical line count of the file      |
- * | `fileMethodCount` | every code chunk (flat) | distinct callables declared in file  |
+ * | `moduleMethodCount` | every code chunk (flat) | distinct callables declared in file  |
  * | `memberCount`     | one chunk per container | distinct direct members of the class |
  *
  * One language-independent pass rather than nine per-language hooks: it reads
@@ -34,7 +34,7 @@ import type { CodeChunk } from "../../../../types.js";
 const PART_SUFFIX = /#part\d+$/;
 
 /**
- * Chunk types that denote a CALLABLE — the unit `fileMethodCount` counts. Type
+ * Chunk types that denote a CALLABLE — the unit `moduleMethodCount` counts. Type
  * declarations (`interface`, class headers, `block`) are deliberately absent: a
  * barrel of interfaces declares no behavior, and counting it as module mass
  * flagged type-only files as god modules.
@@ -189,14 +189,14 @@ export function assignSymbolMass(chunks: CodeChunk[], code: string): void {
   if (codeChunks.length === 0) return;
 
   const moduleLines = code.split("\n").length;
-  const fileMethodCount = countCallables(codeChunks);
+  const moduleMethodCount = countCallables(codeChunks);
 
   const containers = indexContainers(codeChunks);
   attributeChunks(codeChunks, containers);
 
   for (const chunk of codeChunks) {
     chunk.metadata.moduleLines = moduleLines;
-    chunk.metadata.fileMethodCount = fileMethodCount;
+    chunk.metadata.moduleMethodCount = moduleMethodCount;
   }
 
   for (const container of containers.values()) {

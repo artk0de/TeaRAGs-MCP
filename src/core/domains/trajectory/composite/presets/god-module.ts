@@ -31,7 +31,7 @@ export class GodModuleCompositePreset implements CompositeRerankPreset {
   readonly overlayMask: OverlayMask = {
     file: [
       "moduleLines",
-      "fileMethodCount",
+      "moduleMethodCount",
       "codegraph.file.fanIn",
       "codegraph.file.fanOut",
       "codegraph.file.transitiveImpact",
