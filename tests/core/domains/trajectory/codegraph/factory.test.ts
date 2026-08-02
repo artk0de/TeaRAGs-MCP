@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type {
   EnrichmentProvider,
@@ -26,6 +26,17 @@ const MIGRATIONS_MODULE_PATH = new URL(
 ).pathname;
 
 describe("createCodegraphEnrichmentProvider", () => {
+  // The factory dynamic-imports the compiled language barrel — every
+  // tree-sitter native grammar in the project. That is a once-per-process cost,
+  // but it used to land inside whichever `it` ran first, leaving that case ~1s
+  // of real work under a 5s budget; on a loaded machine (a full suite runs
+  // dozens of files at once) it overran and the case failed on time, not on
+  // behaviour. Paying it in a hook with a budget sized for a cold native load
+  // keeps the cases themselves fast and honest.
+  beforeAll(async () => {
+    await Promise.all([import(LANGUAGE_MODULE_PATH), import(MIGRATIONS_MODULE_PATH)]);
+  }, 120_000);
+
   it("builds a pool-mode provider from a structured-clone-safe config", async () => {
     const config: CodegraphWorkerConfig = {
       languageModulePath: LANGUAGE_MODULE_PATH,
@@ -89,7 +100,7 @@ describe("createCodegraphEnrichmentProvider", () => {
       // exercised when the collection is first opened via acquireWrite.
       const config: CodegraphWorkerConfig = {
         languageModulePath: LANGUAGE_MODULE_PATH,
-      migrationsModulePath: MIGRATIONS_MODULE_PATH,
+        migrationsModulePath: MIGRATIONS_MODULE_PATH,
         rootDir,
         excludeTests: true,
         customExcludePatterns: [],
@@ -117,7 +128,7 @@ describe("createCodegraphEnrichmentProvider", () => {
 
       const config: CodegraphWorkerConfig = {
         languageModulePath: LANGUAGE_MODULE_PATH,
-      migrationsModulePath: MIGRATIONS_MODULE_PATH,
+        migrationsModulePath: MIGRATIONS_MODULE_PATH,
         rootDir,
         excludeTests: true,
         customExcludePatterns: [],

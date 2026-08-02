@@ -58,6 +58,20 @@ const MAX_EDGES_PER_FILE = 10000;
  */
 const BULK_FILES = 256;
 
+/**
+ * Positive integer from `name`, else `fallback`. Mirrors the pass-1 cadence
+ * knob (`CODEGRAPH_NODE_FLUSH_FILES` in provider.ts) — same parse, same
+ * read-once-at-construction discipline.
+ */
+function positiveIntFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw !== undefined && raw.trim() !== "") {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return fallback;
+}
+
 /** Resolve the (graphDb, symbolTable) pair for the active collection. */
 export type GraphStoreResolver = (
   collectionName?: string,
@@ -84,6 +98,18 @@ async function collectAdjacency(
 }
 
 export class GraphBuildFinalizer {
+  /**
+   * Pass-2 write cadence, read once at construction.
+   *
+   * Overridable via `CODEGRAPH_BULK_FILES` / `CODEGRAPH_CHECKPOINT_EVERY` for
+   * two reasons: tests can cross both boundaries with a handful of files
+   * instead of paying for a production-sized run, and the checkpoint interval
+   * is a live tuning question — its cost on a large repo has never been
+   * measured, and a knob is what makes measuring it possible.
+   */
+  private readonly bulkFiles = positiveIntFromEnv("CODEGRAPH_BULK_FILES", BULK_FILES);
+  private readonly checkpointEvery = positiveIntFromEnv("CODEGRAPH_CHECKPOINT_EVERY", CHECKPOINT_EVERY);
+
   constructor(
     private readonly resolveStore: GraphStoreResolver,
     private readonly resolutionRunner: CallEdgeResolutionRunner,
@@ -144,8 +170,8 @@ export class GraphBuildFinalizer {
             methodEdges: this.runState.stats.methodEdgeCount,
           });
         }
-        if (buffer.length >= BULK_FILES) await flushBuffer();
-        if (processed % CHECKPOINT_EVERY === 0) {
+        if (buffer.length >= this.bulkFiles) await flushBuffer();
+        if (processed % this.checkpointEvery === 0) {
           // Flush the buffered files before the checkpoint so the bounded WAL
           // reflects the whole processed window.
           await flushBuffer();
@@ -155,7 +181,7 @@ export class GraphBuildFinalizer {
       // Flush the sub-batch remainder, then a final checkpoint for any files
       // written since the last one.
       await flushBuffer();
-      if (processed > 0 && processed % CHECKPOINT_EVERY !== 0) {
+      if (processed > 0 && processed % this.checkpointEvery !== 0) {
         await this.checkpoint(graphDb);
       }
     } catch (err) {

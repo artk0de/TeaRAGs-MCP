@@ -36,9 +36,9 @@ import type {
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -67,6 +67,10 @@ interface CrossPassResult {
   runGlobalSnapshot: RunGlobalSnapshot;
   bulkFlushedRelPaths: string[];
   perFileUpsertCount: number;
+  /** Pass-2 `upsertFilesBulk` batch sizes, in call order. */
+  fileFlushSizes: number[];
+  /** Pass-2 `graphDb.checkpoint()` calls. */
+  checkpointCount: number;
 }
 
 function mkExtraction(
@@ -138,6 +142,10 @@ const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
   for (const c of cleanups.splice(0)) await c();
   delete process.env.CODEGRAPH_NODE_FLUSH_FILES;
+  // Vitest can reuse a worker process across files — a leaked cadence would
+  // silently reshape someone else's run.
+  delete process.env.CODEGRAPH_BULK_FILES;
+  delete process.env.CODEGRAPH_CHECKPOINT_EVERY;
   vi.restoreAllMocks();
 });
 
@@ -150,10 +158,15 @@ afterEach(async () => {
  */
 async function runCrossPass(
   extractions: readonly FileExtraction[],
-  opts: { flushFiles: number; bulkReject?: Error },
+  opts: { flushFiles: number; bulkReject?: Error; bulkFiles?: number; checkpointEvery?: number },
 ): Promise<CrossPassResult> {
   // Read once at construction — set BEFORE `new CodegraphEnrichmentProvider`.
   process.env.CODEGRAPH_NODE_FLUSH_FILES = String(opts.flushFiles);
+  // Pass-2 cadence. Shrinking it lets a handful of files cross the same flush
+  // and checkpoint boundaries a production-sized run crosses, so the cadence is
+  // asserted directly instead of inferred from a 550-file bulk run.
+  if (opts.bulkFiles !== undefined) process.env.CODEGRAPH_BULK_FILES = String(opts.bulkFiles);
+  if (opts.checkpointEvery !== undefined) process.env.CODEGRAPH_CHECKPOINT_EVERY = String(opts.checkpointEvery);
   // Unique collection so the direct-mode input spill path never collides with a
   // sibling test file running in parallel under the shared cwd spill dir.
   const collectionName = `eager_${randomUUID().replace(/-/g, "")}`;
@@ -167,6 +180,8 @@ async function runCrossPass(
 
   const bulkSpy = vi.spyOn(client, "upsertSymbolsBulk");
   const perFileSpy = vi.spyOn(client, "upsertSymbols");
+  const fileFlushSpy = vi.spyOn(client, "upsertFilesBulk");
+  const checkpointSpy = vi.spyOn(client, "checkpoint");
   // Make the FIRST bulk flush (the eager one during accept) reject; later flushes
   // (the drain remainder) fall through to the real implementation.
   if (opts.bulkReject) {
@@ -221,8 +236,11 @@ async function runCrossPass(
   const bulkFlushedRelPaths = bulkSpy.mock.calls.flatMap((c) => c[0]).map((e) => e.relPath);
   const perFileUpsertCount = perFileSpy.mock.calls.length;
 
+  const fileFlushSizes = fileFlushSpy.mock.calls.map(([entries]) => entries.length);
+  const checkpointCount = checkpointSpy.mock.calls.length;
+
   if (!runGlobalSnapshot) throw new Error("recordRunStats was not invoked — snapshot missing");
-  return { rows, runGlobalSnapshot, bulkFlushedRelPaths, perFileUpsertCount };
+  return { rows, runGlobalSnapshot, bulkFlushedRelPaths, perFileUpsertCount, fileFlushSizes, checkpointCount };
 }
 
 describe("CodegraphEnrichmentProvider — Task 2 eager batched node flush (cross-pass)", () => {
@@ -289,20 +307,35 @@ describe("CodegraphEnrichmentProvider — Task 2 eager batched node flush (cross
     }
   });
 
-  it("streams a >CHECKPOINT_EVERY file set through the batched flush + checkpoint cadence", async () => {
-    // The pass-2 resolve/upsert loop buffers file writes and flushes them in
-    // BULK_FILES (256) sub-batches, running a `graphDb.checkpoint()` every
-    // CHECKPOINT_EVERY (500) files (plus a final flush + trailing checkpoint for
-    // the remainder). A 550-file run crosses the 256 flush boundary twice, the
-    // 500 checkpoint once, and leaves a sub-batch remainder — exercising the
-    // whole cadence, not just the small-N single-flush path the other cases hit.
-    const many = Array.from({ length: 550 }, (_, i) => {
-      const id = String(i).padStart(4, "0");
+  it("flushes on the bulk boundary, checkpoints on its own, and flushes the remainder", async () => {
+    // The pass-2 loop buffers file writes, flushes when the buffer reaches
+    // BULK_FILES, and additionally flushes + checkpoints every CHECKPOINT_EVERY
+    // files, with a trailing flush and checkpoint for the remainder.
+    //
+    // Driven at bulk=4 / checkpoint=5 over 11 files, which crosses the bulk
+    // boundary twice, the checkpoint boundary twice, and ends mid-batch — the
+    // same set of transitions a production-sized run makes at 256 / 500:
+    //
+    //   f1..f4   buffer hits 4          → flush(4)
+    //   f5       processed hits 5       → flush(1) + checkpoint
+    //   f6..f9   buffer hits 4          → flush(4)
+    //   f10      processed hits 10      → flush(1) + checkpoint
+    //   f11      loop ends mid-batch    → flush(1) + trailing checkpoint
+    const files = Array.from({ length: 11 }, (_, i) => {
+      const id = String(i).padStart(2, "0");
       return mkExtraction(`f${id}.rb`, `K${id}`, `m${id}`);
     });
-    const { rows } = await runCrossPass(many, { flushFiles: Number.MAX_SAFE_INTEGER });
-    // Every file persisted exactly one symbol row across the whole cadence.
-    expect(rows).toHaveLength(550);
-    expect(new Set(rows.map((r) => r.relPath)).size).toBe(550);
+
+    const { rows, fileFlushSizes, checkpointCount } = await runCrossPass(files, {
+      flushFiles: Number.MAX_SAFE_INTEGER,
+      bulkFiles: 4,
+      checkpointEvery: 5,
+    });
+
+    expect(fileFlushSizes).toEqual([4, 1, 4, 1, 1]);
+    expect(checkpointCount).toBe(3);
+    // …and the cadence lost nothing: one row per file, no duplicates.
+    expect(rows).toHaveLength(11);
+    expect(new Set(rows.map((r) => r.relPath)).size).toBe(11);
   });
 });
