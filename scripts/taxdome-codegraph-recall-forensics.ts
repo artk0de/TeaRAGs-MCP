@@ -78,6 +78,7 @@ import {
   RubyBareCallSymbolResolutionStrategy,
   RubyChainTypeSymbolResolutionStrategy,
   RubyConstantSymbolResolutionStrategy,
+  RubyConventionReceiverSymbolResolutionStrategy,
   RubyEnqueueDispatchSymbolResolutionStrategy,
   RubyExplicitRequireSymbolResolutionStrategy,
   RubyIvarFieldSymbolResolutionStrategy,
@@ -110,6 +111,7 @@ import {
   boundCallReturnType,
   CHAIN_MAX_HOPS_DEFAULT,
   CONTAINER_ELEMENT_RETURNING_METHODS,
+  conventionReceiverType,
   ivarTypeName,
   returnTypeOf,
   typeOfReceiver,
@@ -881,7 +883,12 @@ function resolvePass2(extraction: FileExtraction): void {
       let dispatchOutcome: DispatchFanoutOutcome | undefined;
       const noteDispatch = (out: DispatchFanoutOutcome | undefined): boolean => {
         if (
-          (SIGGAP_ORACLE_ENABLED || SINGLESEG_ENABLED || BAREDEFER_ENABLED || BOUNDCALL_ENABLED || RESIDUAL_ENABLED) &&
+          (SIGGAP_ORACLE_ENABLED ||
+            SINGLESEG_ENABLED ||
+            BAREDEFER_ENABLED ||
+            BOUNDCALL_ENABLED ||
+            RESIDUAL_ENABLED ||
+            IVARCONV_ENABLED) &&
           out !== undefined
         ) {
           dispatchOutcome = out;
@@ -976,6 +983,9 @@ function resolvePass2(extraction: FileExtraction): void {
       }
       if (RESIDUAL_ENABLED) {
         noteResidualCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath);
+      }
+      if (IVARCONV_ENABLED) {
+        noteIvarConvCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath);
       }
     }
   }
@@ -13195,6 +13205,7 @@ async function main(): Promise<void> {
   if (BOUNDCALL_ENABLED) runBoundCallOracle();
   if (SCOPEKEY_ENABLED) runScopeKeyOracle();
   if (RESIDUAL_ENABLED) runResidualOracle();
+  if (IVARCONV_ENABLED) runIvarConvOracle();
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
@@ -14048,6 +14059,510 @@ function runResidualOracle(): void {
     ),
   );
   L(`residual report → ${OUT_RESIDUAL}`);
+}
+
+// ===========================================================================
+// C3 — THE ivarField TERMINAL CONVENTION TIER (CODEGRAPH_IVARCONV_ORACLE=1,
+// bd tea-rags-mcp-r2gjj). Same additive, env-gated contract as every oracle
+// above: with the flag unset nothing extra is replayed or reported and the A/B
+// recall metrics are byte-identical.
+//
+// The 2026-08-02 residual taxonomy attributed 2685 misses (16.8% of the hole
+// then) to the `ivarField` terminal. Those receivers are the SAME
+// convention-typable names the wob7g convention pass acts on — `@user`,
+// `@firm`, `@recurring_invoice` — but `ivarField` DROPs at chain position 4 and
+// `conventionReceiver` sits at position 12, so the pass that would type them
+// never sees them. That is a chain-ORDER fact, not a typing fact, and it is
+// what this oracle prices.
+//
+// Three cuts:
+//
+//   1. DROP OWNERSHIP over the CURRENT chain. The residual oracle's own chain
+//      copy predates wob7g (it has no `conventionReceiver` slot), so its owner
+//      table can no longer be read as today's. This one restates the production
+//      array as it stands and validates every replay against the live resolver,
+//      giving the `ivarField` bucket a number measured on the branch under test.
+//
+//   2. THE ADDRESSABLE SUBSET. For each `ivarField`-owned miss, ask the
+//      PRODUCTION `conventionReceiverType` — the wob7g helper, with its
+//      existence gate and its mandatory no-subtypes gate — and then the same
+//      pinned terminal `conventionReceiver` demands. Splitting the declines by
+//      reason (shape / keyword / no such class / subtype-gated / MRO silent /
+//      file-only) is what turns "16.8% of the hole" into a prediction.
+//
+//   3. THE HONEST A/B. The production chain rebuilt with ONE slot swapped: an
+//      `ivarField` that consults the convention when — and only when — every
+//      existing ivar channel has declined. Movement is scored through the same
+//      `resolvePass2` semantics the residual oracle uses (`rsResolvedFlag` /
+//      `rsChainIsConsulted`), so the number is comparable to every prior A/B.
+//
+// Plus the regression channel the bead names: ivars a fact channel ALREADY
+// types are graded against the convention guess (class level and edge level),
+// and any `resolved -> …` transition in the A/B is reported as a defect rather
+// than a trade-off — the tier is strictly additive by construction and the
+// measurement has to show it.
+// ===========================================================================
+const IVARCONV_ENABLED = process.env.CODEGRAPH_IVARCONV_ORACLE === "1";
+const OUT_IVARCONV = join(OUT_DIR, "c3ivar-oracle.json");
+const IC_EXAMPLE_CAP = 15;
+
+const IC_CFG: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
+
+/** A single instance-variable receiver — the `ivarField` entry guard's shape. */
+const IC_IVAR_RECEIVER = /^@\w+$/;
+/** The convention tier's own surface (`CONVENTION_RECEIVER` in type-propagation). */
+const IC_CONVENTION_SHAPE = /^@{0,2}[a-z_][a-z0-9_]*$/;
+
+/**
+ * The candidate: `ivarField` with a convention tier appended AFTER its existing
+ * channels. Wraps the production strategy rather than restating it, so the
+ * entry guard, the fact channels and the DROP semantics cannot drift from what
+ * ships — the tier is reached only on the exact outcome it is meant to replace,
+ * a DROP, and every CONTINUE / resolved answer passes through untouched.
+ *
+ * `requireNoFact` is the axis under test, and it is not cosmetic. An ivar the
+ * fact channels DID type can still reach the DROP: a gem type has no project
+ * file, so the terminal declines and `RubyExternalVocabulary` reclassifies the
+ * call as external (`ivarTargetsExternal`) — honestly out of the denominator.
+ * Letting the convention answer there overrides a DECLARED type with a guess
+ * AND drags the call back into the denominator as a resolution. `true` gates on
+ * "no channel recorded a type at all", which is what "every existing ivar
+ * channel declined" actually means; `false` measures the upper bound so the
+ * cost of the gate is a number rather than an assertion.
+ */
+class IcIvarFieldConventionStrategy implements SymbolResolutionStrategy {
+  readonly name = "ivarField";
+  private readonly inner: RubyIvarFieldSymbolResolutionStrategy;
+  constructor(
+    private readonly cfg: ResolverConfig,
+    private readonly requireNoFact: boolean,
+  ) {
+    this.inner = new RubyIvarFieldSymbolResolutionStrategy(cfg);
+  }
+
+  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    const outcome = this.inner.attempt(call, ctx);
+    if (outcome.kind !== "drop") return outcome;
+    if (this.requireNoFact && ivarTypeName(call.receiver as string, ctx) !== undefined) return outcome;
+    const target = icConventionTarget(call, ctx, this.cfg.mode);
+    return target === null ? outcome : resolvedOutcome(target);
+  }
+}
+
+/**
+ * The tier itself, isolated so the probe and the spliced strategy ask exactly
+ * the same question. Gates, in order: the wob7g helper (`@` stripped, class
+ * exists, no declared subtypes), instance-method MRO walk, and the pinned
+ * terminal — a file-only edge is declined for the reason `conventionReceiver`
+ * declines it (invisible to `get_callers`, inflates file fan-in on the biggest
+ * models in the app).
+ */
+function icConventionTarget(
+  call: CallRef,
+  ctx: CallContext,
+  mode: typeof DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+): SymbolResolutionTarget | null {
+  const { receiver } = call;
+  if (receiver === null) return null;
+  const type = conventionReceiverType(receiver, ctx);
+  if (type?.form !== "instance") return null;
+  const target = resolveTypeInstanceMethod(type.name, call.member, ctx, mode);
+  if (target === null) return null;
+  return target.targetSymbolId === null ? null : target;
+}
+
+/**
+ * `RubyCallResolver`'s strategy array as it stands on this branch, optionally
+ * with the `ivarField` slot swapped for the candidate. Restated rather than
+ * imported for the reason every oracle here gives: a chain shared with the code
+ * it evaluates cannot disagree with it. `icMirrorDisagreed` grades this copy
+ * against the live resolver on every call the oracle replays, so a re-ordering
+ * this copy fails to track cannot pass silently.
+ */
+function icBuildChain(cfg: ResolverConfig, ivarField: SymbolResolutionStrategy): SymbolResolutionStrategy[] {
+  return [
+    new RubySuperSymbolResolutionStrategy(cfg),
+    new RubySelfMemberSymbolResolutionStrategy(cfg),
+    new RubyLocalTypeSymbolResolutionStrategy(cfg),
+    ivarField,
+    new RubyReturnTypeBindingSymbolResolutionStrategy(cfg),
+    new RubyEnqueueDispatchSymbolResolutionStrategy(cfg),
+    new RubySelfDispatchEntrySymbolResolutionStrategy(cfg),
+    new RubyConstantSymbolResolutionStrategy(cfg),
+    new RubyExplicitRequireSymbolResolutionStrategy(cfg),
+    new RubyChainTypeSymbolResolutionStrategy(cfg),
+    new RubyArRelationGuardSymbolResolutionStrategy(cfg),
+    new RubyConventionReceiverSymbolResolutionStrategy(cfg),
+    new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
+    new RubyBareCallSymbolResolutionStrategy(cfg),
+    new RubySchemaColumnSymbolResolutionStrategy(),
+  ];
+}
+
+/** The two shapes priced side by side; `gated` is the shippable one. */
+const IC_VARIANTS = ["gated", "ungated"] as const;
+type IcVariant = (typeof IC_VARIANTS)[number];
+const IC_VARIANT_LABEL: Record<IcVariant, string> = {
+  gated: "tier fires only when NO channel recorded a type   <-- SHIPPABLE",
+  ungated: "tier fires on any ivarField DROP (upper bound, overrides declared gem types)",
+};
+
+const icBaseChain = icBuildChain(IC_CFG, new RubyIvarFieldSymbolResolutionStrategy(IC_CFG));
+const icVariantChain: Record<IcVariant, SymbolResolutionStrategy[]> = {
+  gated: icBuildChain(IC_CFG, new IcIvarFieldConventionStrategy(IC_CFG, true)),
+  ungated: icBuildChain(IC_CFG, new IcIvarFieldConventionStrategy(IC_CFG, false)),
+};
+
+function icEmptyByVariant<T>(make: () => T): Record<IcVariant, T> {
+  return Object.fromEntries(IC_VARIANTS.map((v) => [v, make()])) as Record<IcVariant, T>;
+}
+
+// ---- state ---------------------------------------------------------------
+/** Every miss attributed to the strategy that DROPped it, on the CURRENT chain. */
+const icDropOwner = new Map<string, number>();
+/** The `ivarField`-owned bucket, cut by why the convention tier does or does not fire. */
+const icCut = {
+  total: 0,
+  chainNotConsulted: 0,
+  factRecorded: 0,
+  notConventionShape: 0,
+  keywordOrLiteral: 0,
+  noSuchClass: 0,
+  subtypeGated: 0,
+  mroSilent: 0,
+  fileOnly: 0,
+  pinned: 0,
+};
+const icIvarMissByReceiver = new Map<string, number>();
+const icPinnedByReceiver = new Map<string, number>();
+const icPinnedExample: string[] = [];
+const icSubtypeGatedBy = new Map<string, number>();
+const icNoClassBy = new Map<string, number>();
+
+/** A/B movement through the full `resolvePass2` semantics, per variant. */
+const icMove: Record<IcVariant, Map<string, number>> = icEmptyByVariant(() => new Map<string, number>());
+const icMoveExample: Record<IcVariant, string[]> = icEmptyByVariant((): string[] => []);
+const icNewTargets: Record<IcVariant, Set<string>> = icEmptyByVariant(() => new Set<string>());
+
+/** Fidelity: the oracle's own no-swap chain vs the production resolver. */
+let icMirrorChecked = 0;
+let icMirrorDisagreed = 0;
+
+/**
+ * REGRESSION CHANNEL — ivars a fact channel ALREADY types. The tier can never
+ * fire on them (it runs only on a DROP, and a typed ivar either resolves or is
+ * dropped for a member the type does not declare), so these are pure labelled
+ * examples: what WOULD the convention have said, and would it have emitted a
+ * different edge?
+ */
+const icTyped = { graded: 0, agree: 0, disagree: 0, factAbsentFromTable: 0, noGuess: 0 };
+const icTypedDisagreeBy = new Map<string, number>();
+const icEdge = { rightTarget: 0, sameTarget: 0, wrongTarget: 0, silent: 0 };
+const icEdgeWrongBy = new Map<string, number>();
+const icEdgeWrongExample: string[] = [];
+
+/** The strategy that decided this call on the current chain, and its target. */
+function icReplay(call: CallRef, ctx: CallContext): { owner: string; target: SymbolResolutionTarget | null } {
+  for (const strategy of icBaseChain) {
+    const outcome = strategy.attempt(call, ctx);
+    if (outcome.kind === "resolved") return { owner: `resolved:${strategy.name}`, target: outcome.target };
+    if (outcome.kind === "drop") return { owner: strategy.name, target: null };
+  }
+  return { owner: "exhausted", target: null };
+}
+
+/** Why `conventionReceiverType` declined — diagnostics only, never a decision. */
+function icDeclineReason(receiver: string, ctx: CallContext): "shape" | "keyword" | "noClass" | "subtypes" {
+  if (!IC_CONVENTION_SHAPE.test(receiver)) return "shape";
+  const bare = receiver.replace(/^@{1,2}/, "");
+  if (RS_RECEIVER_KEYWORDS.has(bare)) return "keyword";
+  const name = rsCamelize(bare);
+  if (name.length === 0 || ctx.symbolTable.lookupByShortName(name).length === 0) return "noClass";
+  return "subtypes";
+}
+
+/**
+ * Grade the convention against a REAL ivar fact. Class level first (does
+ * camelize name the type the fact names), then edge level — the number that
+ * decides, because a wrong class only does damage when its MRO also answers the
+ * member, and even then the two can share the definer.
+ */
+function icNoteTypedIvar(call: CallRef, ctx: CallContext, relPath: string): void {
+  const receiver = call.receiver as string;
+  const factName = ivarTypeName(receiver, ctx);
+  if (factName === undefined) return;
+  const guess = conventionReceiverType(receiver, ctx);
+  if (guess?.form !== "instance") {
+    icTyped.noGuess += 1;
+    return;
+  }
+  const factTail = lastConstantSegment(factName);
+  if (ctx.symbolTable.lookupByShortName(factTail).length === 0) {
+    icTyped.factAbsentFromTable += 1;
+    return;
+  }
+  icTyped.graded += 1;
+  const agrees = factTail === guess.name;
+  if (agrees) icTyped.agree += 1;
+  else {
+    icTyped.disagree += 1;
+    rsBump(icTypedDisagreeBy, `${receiver} → guess ${guess.name}, fact ${factTail}`);
+  }
+
+  const pinnedOn = (typeName: string): string | null =>
+    resolveTypeInstanceMethod(typeName, call.member, ctx, IC_CFG.mode)?.targetSymbolId ?? null;
+  const guessTarget = pinnedOn(guess.name);
+  if (guessTarget === null) {
+    if (!agrees) icEdge.silent += 1;
+    return;
+  }
+  if (agrees) {
+    icEdge.rightTarget += 1;
+    return;
+  }
+  const factTarget = pinnedOn(factTail);
+  if (factTarget === guessTarget) {
+    icEdge.sameTarget += 1;
+    return;
+  }
+  icEdge.wrongTarget += 1;
+  rsBump(icEdgeWrongBy, `${receiver}.${call.member} → guess ${guessTarget}, fact ${factTarget ?? "(none)"}`);
+  if (icEdgeWrongExample.length < IC_EXAMPLE_CAP) {
+    icEdgeWrongExample.push(`${relPath}:${call.startLine}  ${receiver}.${call.member}  ${guessTarget} vs ${factTarget}`);
+  }
+}
+
+/** The one call-site hook, invoked from `resolvePass2` once the outcome is known. */
+function noteIvarConvCall(
+  call: CallRef,
+  ctx: CallContext,
+  dispatchOutcome: DispatchFanoutOutcome | undefined,
+  baseOutcome: LcOutcome,
+  _receiverKind: ReceiverKind,
+  relPath: string,
+): void {
+  const { receiver } = call;
+  const isIvar = receiver !== null && IC_IVAR_RECEIVER.test(receiver) && ctx.callerScope.length > 0;
+
+  // ---- regression channel: every fact-typed ivar is a labelled example.
+  if (isIvar) icNoteTypedIvar(call, ctx, relPath);
+
+  // Outside a miss, only a call the tier could actually fire on is worth a replay.
+  const tierCouldFire = isIvar && icConventionTarget(call, ctx, IC_CFG.mode) !== null;
+  if (baseOutcome !== "miss" && !tierCouldFire) return;
+
+  const dispatchEdges = dispatchOutcome?.kind === "edges" ? dispatchOutcome.edges.length : 0;
+  const replay = icReplay(call, ctx);
+
+  if (baseOutcome === "miss") {
+    rsBump(icDropOwner, replay.owner);
+    if (replay.owner === "ivarField") {
+      icCut.total += 1;
+      rsBump(icIvarMissByReceiver, receiver as string);
+      const ivar = receiver as string;
+      const type = conventionReceiverType(ivar, ctx);
+      if (ivarTypeName(ivar, ctx) !== undefined) icCut.factRecorded += 1;
+      if (!rsChainIsConsulted(call, dispatchEdges)) icCut.chainNotConsulted += 1;
+      else if (type?.form !== "instance") {
+        const reason = icDeclineReason(ivar, ctx);
+        if (reason === "shape") icCut.notConventionShape += 1;
+        else if (reason === "keyword") icCut.keywordOrLiteral += 1;
+        else if (reason === "noClass") {
+          icCut.noSuchClass += 1;
+          rsBump(icNoClassBy, ivar);
+        } else {
+          icCut.subtypeGated += 1;
+          rsBump(icSubtypeGatedBy, ivar);
+        }
+      } else {
+        const target = resolveTypeInstanceMethod(type.name, call.member, ctx, IC_CFG.mode);
+        if (target === null) icCut.mroSilent += 1;
+        else if (target.targetSymbolId === null) icCut.fileOnly += 1;
+        else {
+          icCut.pinned += 1;
+          rsBump(icPinnedByReceiver, `${ivar} → ${type.name}`);
+          if (icPinnedExample.length < IC_EXAMPLE_CAP) {
+            icPinnedExample.push(`${relPath}:${call.startLine}  ${ivar}.${call.member}  ->  ${target.targetSymbolId}`);
+          }
+        }
+      }
+    }
+  }
+
+  // ---- cut 3: the honest A/B, only where the chain's answer is READ.
+  if (!rsChainIsConsulted(call, dispatchEdges)) return;
+  const rs = resolver;
+  if (rs !== undefined) {
+    icMirrorChecked += 1;
+    const production = rs.resolve(call, ctx);
+    const mine = replay.target === null ? null : redirectSelfDispatchTemplate(replay.target, call, ctx, IC_CFG.mode);
+    const same =
+      production === null || mine === null
+        ? production === mine
+        : production.targetRelPath === mine.targetRelPath && production.targetSymbolId === mine.targetSymbolId;
+    if (!same) icMirrorDisagreed += 1;
+  }
+  for (const variant of IC_VARIANTS) {
+    const target = rsRunChain(icVariantChain[variant], call, ctx);
+    const after: LcOutcome = rsResolvedFlag(call, dispatchEdges, target) ? "resolved" : baseOutcome;
+    if (after === baseOutcome) continue;
+    rsBump(icMove[variant], `${baseOutcome} -> ${after}`);
+    if (target !== null && target.targetSymbolId !== null) icNewTargets[variant].add(target.targetSymbolId);
+    if (icMoveExample[variant].length < IC_EXAMPLE_CAP * 2) {
+      icMoveExample[variant].push(
+        `${relPath}:${call.startLine}  ${receiver ?? "-"}.${call.member}  ->  ${target?.targetSymbolId ?? "(file-only)"}`,
+      );
+    }
+  }
+}
+
+function runIvarConvOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  const hole = misses.length;
+  const pct = (n: number) => `${((n / Math.max(1, hole)) * 100).toFixed(1)}%`;
+  const share = (n: number) => `${((n / Math.max(1, icCut.total)) * 100).toFixed(1)}%`;
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  C3 — ivarField TERMINAL CONVENTION TIER (bd tea-rags-mcp-r2gjj)");
+  L("═══════════════════════════════════════════════════════════════════");
+  L(`recall hole (misses):                     ${hole}`);
+  L(`chain-fidelity checks / disagreements:    ${icMirrorChecked} / ${icMirrorDisagreed}`);
+  L("");
+
+  L("─── CUT 1: drop ownership on the CURRENT chain ────────────────────");
+  L("owner                     total   share of hole");
+  for (const [owner, n] of [...icDropOwner.entries()].sort((a, b) => b[1] - a[1])) {
+    L(`${owner.padEnd(24)}  ${String(n).padStart(6)}  ${pct(n).padStart(7)}`);
+  }
+  L("");
+
+  L("─── CUT 2: the ivarField bucket, cut by the convention tier ───────");
+  L(`  ivarField-owned misses:                  ${icCut.total}  ${pct(icCut.total)} of the hole`);
+  L(`    a channel DID record a type (gem etc):  ${icCut.factRecorded}  ${share(icCut.factRecorded)}`);
+  L(`    chain answer not read (dispatch call):  ${icCut.chainNotConsulted}  ${share(icCut.chainNotConsulted)}`);
+  L(`    receiver not convention-shaped:         ${icCut.notConventionShape}  ${share(icCut.notConventionShape)}`);
+  L(`    receiver is a keyword / literal:        ${icCut.keywordOrLiteral}  ${share(icCut.keywordOrLiteral)}`);
+  L(`    convention names no in-project class:   ${icCut.noSuchClass}  ${share(icCut.noSuchClass)}`);
+  L(`    class exists but HAS SUBTYPES (gated):  ${icCut.subtypeGated}  ${share(icCut.subtypeGated)}`);
+  L(`    class typed, MRO yields NO target:      ${icCut.mroSilent}  ${share(icCut.mroSilent)}`);
+  L(`    class typed, FILE-ONLY edge (declined): ${icCut.fileOnly}  ${share(icCut.fileOnly)}`);
+  L(`    class typed, METHOD-PINNED edge:        ${icCut.pinned}  ${share(icCut.pinned)}   <-- PREDICTED`);
+  L("");
+  L("  top ivarField-owned miss receivers:");
+  for (const [k, n] of [...icIvarMissByReceiver.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  L("  top PINNED receivers (what the tier would type):");
+  for (const [k, n] of [...icPinnedByReceiver.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  for (const ex of icPinnedExample.slice(0, 8)) L(`      e.g. ${ex}`);
+  L("  top subtype-GATED receivers (precision gate earning its keep):");
+  for (const [k, n] of [...icSubtypeGatedBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  L("  top receivers naming no class:");
+  for (const [k, n] of [...icNoClassBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  L("");
+
+  L("─── CUT 3: A/B with the tier spliced into ivarField ───────────────");
+  const abByVariant = icEmptyByVariant(() => ({ fromMiss: 0, gained: 0, regressions: 0, newHole: 0, recallAfter: 0 }));
+  for (const variant of IC_VARIANTS) {
+    const moveRows = [...icMove[variant].entries()].sort((a, b) => b[1] - a[1]);
+    const ab = abByVariant[variant];
+    for (const [k, n] of moveRows) {
+      ab.gained += n;
+      if (k.startsWith("miss ->")) ab.fromMiss += n;
+      if (k.startsWith("resolved ->")) ab.regressions += n;
+    }
+    ab.newHole = hole - ab.fromMiss;
+    const resolvedAfter = callsResolved + ab.gained;
+    ab.recallAfter = resolvedAfter + ab.newHole === 0 ? 0 : resolvedAfter / (resolvedAfter + ab.newHole);
+    L(`  variant ${IC_VARIANT_LABEL[variant]}:`);
+    for (const [k, n] of moveRows) L(`      ${String(n).padStart(6)}  ${k}`);
+    L(`      distinct NEW method targets:  ${icNewTargets[variant].size}`);
+    L(`      hole ${hole} -> ${ab.newHole}   (-${ab.fromMiss})`);
+    L(
+      `      inProjectEdgeRecall ${fmtPct(callsResolved / Math.max(1, callsResolved + hole))} -> ${fmtPct(ab.recallAfter)}`,
+    );
+    L(`      REGRESSIONS (resolved -> anything):  ${ab.regressions}   <-- MUST be 0`);
+    for (const ex of icMoveExample[variant].slice(0, 8)) L(`      e.g. ${ex}`);
+  }
+  L("");
+
+  L("─── REGRESSION CHANNEL: convention graded on fact-typed ivars ─────");
+  L(`  fact-typed ivar sites graded:            ${icTyped.graded}`);
+  L(`    convention AGREES with the fact:       ${icTyped.agree}`);
+  L(`    convention DISAGREES:                  ${icTyped.disagree}`);
+  L(
+    `    class accuracy:                        ${icTyped.graded === 0 ? "n/a" : `${((icTyped.agree / icTyped.graded) * 100).toFixed(2)}%`}`,
+  );
+  L(`  fact names a type absent from the table: ${icTyped.factAbsentFromTable}  (unrefereeable)`);
+  L(`  convention declines to guess at all:     ${icTyped.noGuess}`);
+  for (const [k, n] of [...icTypedDisagreeBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  const emitted = icEdge.rightTarget + icEdge.sameTarget + icEdge.wrongTarget;
+  L("  EDGE-LEVEL (what the tier would actually emit on these sites):");
+  L(`    emits the SAME target the fact does:   ${icEdge.rightTarget + icEdge.sameTarget}`);
+  L(`        class guess AGREED:                ${icEdge.rightTarget}`);
+  L(`        different class, same target:      ${icEdge.sameTarget}  (shared definer — harmless)`);
+  L(`    emits a DIFFERENT target (real error): ${icEdge.wrongTarget}`);
+  L(
+    `    edge accuracy:                         ${emitted === 0 ? "n/a" : `${(((emitted - icEdge.wrongTarget) / emitted) * 100).toFixed(2)}%`}`,
+  );
+  L(`    wrong class but terminal DECLINES:     ${icEdge.silent}  (no edge — harmless)`);
+  for (const [k, n] of [...icEdgeWrongBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  for (const ex of icEdgeWrongExample.slice(0, 6)) L(`      e.g. ${ex}`);
+  L("");
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_IVARCONV,
+    JSON.stringify(
+      {
+        hole,
+        fidelity: { checked: icMirrorChecked, disagreed: icMirrorDisagreed },
+        dropOwner: Object.fromEntries([...icDropOwner.entries()].sort((a, b) => b[1] - a[1])),
+        ivarFieldCut: icCut,
+        ivarMissByReceiver: Object.fromEntries([...icIvarMissByReceiver.entries()].sort((a, b) => b[1] - a[1])),
+        pinnedByReceiver: Object.fromEntries([...icPinnedByReceiver.entries()].sort((a, b) => b[1] - a[1])),
+        pinnedExamples: icPinnedExample,
+        subtypeGatedByReceiver: Object.fromEntries([...icSubtypeGatedBy.entries()].sort((a, b) => b[1] - a[1])),
+        noClassByReceiver: Object.fromEntries([...icNoClassBy.entries()].sort((a, b) => b[1] - a[1])),
+        recallBefore: callsResolved / Math.max(1, callsResolved + hole),
+        ab: Object.fromEntries(
+          IC_VARIANTS.map((v) => [
+            v,
+            {
+              label: IC_VARIANT_LABEL[v],
+              moves: Object.fromEntries(icMove[v]),
+              newTargets: icNewTargets[v].size,
+              holeBefore: hole,
+              holeAfter: abByVariant[v].newHole,
+              recallAfter: abByVariant[v].recallAfter,
+              regressions: abByVariant[v].regressions,
+              examples: icMoveExample[v],
+            },
+          ]),
+        ),
+        typedIvarGrading: {
+          ...icTyped,
+          disagreements: Object.fromEntries(icTypedDisagreeBy),
+          edge: { ...icEdge, wrongBy: Object.fromEntries(icEdgeWrongBy), examples: icEdgeWrongExample },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  L(`c3 ivar-convention report → ${OUT_IVARCONV}`);
 }
 
 let includedBy: Record<string, string[]> = {};
