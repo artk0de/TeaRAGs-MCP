@@ -59,9 +59,18 @@ export async function storeIndexingMarker(
       return;
     }
 
-    const vectorSize = embeddings.getDimensions();
-    const zeroVector: number[] = new Array<number>(vectorSize).fill(0);
     const collectionInfo = await qdrant.getCollectionInfo(collectionName);
+    // Use the collection's actual vector size (from Qdrant) rather than
+    // embeddings.getDimensions(): the latter falls back to a static model
+    // registry (768 for unknown models), which can mismatch the collection
+    // created with the real dimensions resolved from the provider (e.g.
+    // Ollama /api/show). A zero-vector marker upserted with the wrong size
+    // is rejected by Qdrant (400), so the marker never lands and every
+    // subsequent setPayload/heartbeat on INDEXING_METADATA_ID 404s —
+    // silently breaking enrichment markers. schema-manager.ts already does
+    // this correctly (info.vectorSize).
+    const vectorSize = collectionInfo.vectorSize ?? embeddings.getDimensions();
+    const zeroVector: number[] = new Array<number>(vectorSize).fill(0);
 
     const payload = {
       _type: "indexing_metadata",

@@ -63,6 +63,21 @@ describe("storeIndexingMarker", () => {
       expect((points[0].vector as number[]).every((v) => v === 0)).toBe(true);
     });
 
+    it("prefers collectionInfo.vectorSize over embeddings.getDimensions()", async () => {
+      // Regression: getDimensions() falls back to a static registry (768 for
+      // unknown models) while the collection may have been created with the
+      // real provider-resolved size (e.g. 1024). Upserting a marker with the
+      // wrong vector size makes Qdrant reject it (400), so the marker never
+      // lands and all later setPayload/heartbeat calls 404.
+      mockQdrant.getCollectionInfo.mockResolvedValue({ hybridEnabled: true, vectorSize: 1024 });
+      mockEmbeddings.getDimensions.mockReturnValue(768);
+      await storeIndexingMarker(mockQdrant, mockEmbeddings, "col", false);
+
+      const [, points] = (mockQdrant.addPointsWithSparse as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(points[0].vector).toHaveLength(1024);
+      expect((points[0].vector as number[]).every((v) => v === 0)).toBe(true);
+    });
+
     it("includes _type and startedAt in payload", async () => {
       await storeIndexingMarker(mockQdrant, mockEmbeddings, "col", false);
 
