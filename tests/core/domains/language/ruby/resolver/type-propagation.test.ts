@@ -701,3 +701,161 @@ describe("boundCallReturnType — owner-qualified facts win over the flat map (r
     });
   });
 });
+
+// ── Owner-scoped qualification of an unqualified return fact (bd 7fn5f) ──────
+//
+// `@return [Payment]` written inside `GettingPaid::RefundHelper` names
+// `GettingPaid::Payment` in Ruby — the constant is looked up from the scope the
+// annotation was WRITTEN in, not from the top level. The engine stores the name
+// verbatim, so a fact whose literal text names nothing the project declares
+// derives a fictional receiver type and the call dies there. Qualification runs
+// ONLY in that dead case, and only when exactly one nesting prefix survives.
+
+/** Symbol table declaring each fully-qualified name as a class definition. */
+const tableWithClasses = (...fqNames: readonly string[]): InMemoryGlobalSymbolTable => {
+  const table = new InMemoryGlobalSymbolTable();
+  fqNames.forEach((fqName, i) => {
+    const relPath = `app/models/klass_${i}.rb`;
+    const segments = fqName.split("::");
+    table.upsertFile(relPath, [
+      {
+        symbolId: fqName,
+        fqName,
+        shortName: segments[segments.length - 1],
+        relPath,
+        scope: segments.slice(0, -1),
+      },
+    ]);
+  });
+  return table;
+};
+
+describe("boundCallReturnType — owner-scoped qualification of an unqualified fact (7fn5f)", () => {
+  it("qualifies through the SCOPE-QUALIFIED binding's own constant", () => {
+    const ctx = emptyCtx({
+      localCallBindings: { payment: "GettingPaid::RefundHelper.load" },
+      structuredReturnTypes: { "GettingPaid::RefundHelper.load": { form: "instance", name: "Payment" } },
+      symbolTable: tableWithClasses("GettingPaid::Payment"),
+    });
+    expect(boundCallReturnType("payment", ctx)).toEqual({ form: "instance", name: "GettingPaid::Payment" });
+  });
+
+  it("qualifies a BARE binding through the CALLER's own scope", () => {
+    const ctx = emptyCtx({
+      callerScope: ["GettingPaid", "RefundHelper"],
+      localCallBindings: { payment: "load_payment" },
+      structuredReturnTypes: { "GettingPaid::RefundHelper#load_payment": { form: "instance", name: "Payment" } },
+      symbolTable: tableWithClasses("GettingPaid::Payment"),
+    });
+    expect(boundCallReturnType("payment", ctx)).toEqual({ form: "instance", name: "GettingPaid::Payment" });
+  });
+
+  it("qualifies a fact reaching the bare branch through the FLAT map", () => {
+    const ctx = emptyCtx({
+      callerScope: ["GettingPaid", "RefundHelper"],
+      localCallBindings: { payment: "load_payment" },
+      functionReturnTypes: { load_payment: "Payment" },
+      symbolTable: tableWithClasses("GettingPaid::Payment"),
+    });
+    expect(boundCallReturnType("payment", ctx)).toEqual({ form: "instance", name: "GettingPaid::Payment" });
+  });
+
+  it("walks OUTER nesting prefixes, not just the owner itself", () => {
+    const ctx = emptyCtx({
+      callerScope: ["GettingPaid", "Proposals", "UpdateBill"],
+      localCallBindings: { bill: "load_bill" },
+      structuredReturnTypes: {
+        "GettingPaid::Proposals::UpdateBill#load_bill": { form: "instance", name: "Bill" },
+      },
+      symbolTable: tableWithClasses("GettingPaid::Bill"),
+    });
+    expect(boundCallReturnType("bill", ctx)).toEqual({ form: "instance", name: "GettingPaid::Bill" });
+  });
+
+  it("preserves CLASS form on the qualified ref", () => {
+    const ctx = emptyCtx({
+      callerScope: ["GettingPaid", "RefundHelper"],
+      localCallBindings: { klass: "payment_class" },
+      structuredReturnTypes: { "GettingPaid::RefundHelper#payment_class": { form: "class", name: "Payment" } },
+      symbolTable: tableWithClasses("GettingPaid::Payment"),
+    });
+    expect(boundCallReturnType("klass", ctx)).toEqual({ form: "class", name: "GettingPaid::Payment" });
+  });
+
+  it("leaves a fact whose LITERAL name the project declares untouched", () => {
+    const ctx = emptyCtx({
+      callerScope: ["GettingPaid", "RefundHelper"],
+      localCallBindings: { payment: "load_payment" },
+      structuredReturnTypes: { "GettingPaid::RefundHelper#load_payment": { form: "instance", name: "Payment" } },
+      symbolTable: tableWithClasses("Payment", "GettingPaid::Payment"),
+    });
+    expect(boundCallReturnType("payment", ctx)).toEqual({ form: "instance", name: "Payment" });
+  });
+
+  it("keeps the literal when TWO nesting prefixes declare the name — never guesses", () => {
+    const ctx = emptyCtx({
+      callerScope: ["GettingPaid", "Proposals", "UpdateBill"],
+      localCallBindings: { result: "run" },
+      structuredReturnTypes: { "GettingPaid::Proposals::UpdateBill#run": { form: "instance", name: "Result" } },
+      symbolTable: tableWithClasses("GettingPaid::Result", "GettingPaid::Proposals::Result"),
+    });
+    expect(boundCallReturnType("result", ctx)).toEqual({ form: "instance", name: "Result" });
+  });
+
+  it("keeps the literal when NO nesting prefix declares the name", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Bookkeeping", "QBO", "ApiHelper"],
+      localCallBindings: { response: "post" },
+      structuredReturnTypes: { "Bookkeeping::QBO::ApiHelper#post": { form: "instance", name: "Faraday::Response" } },
+      symbolTable: tableWithClasses("Bookkeeping::Invoice"),
+    });
+    expect(boundCallReturnType("response", ctx)).toEqual({ form: "instance", name: "Faraday::Response" });
+  });
+
+  it("leaves an already-`::`-qualified fiction alone", () => {
+    const ctx = emptyCtx({
+      callerScope: ["GettingPaid", "RefundHelper"],
+      localCallBindings: { payment: "load_payment" },
+      structuredReturnTypes: { "GettingPaid::RefundHelper#load_payment": { form: "instance", name: "Api::Payment" } },
+      symbolTable: tableWithClasses("GettingPaid::Api::Payment"),
+    });
+    expect(boundCallReturnType("payment", ctx)).toEqual({ form: "instance", name: "Api::Payment" });
+  });
+
+  it("accepts a class the run knows only through its ANCESTOR map", () => {
+    const ctx = emptyCtx({
+      callerScope: ["GettingPaid", "RefundHelper"],
+      localCallBindings: { payment: "load_payment" },
+      structuredReturnTypes: { "GettingPaid::RefundHelper#load_payment": { form: "instance", name: "Payment" } },
+      classAncestors: { "GettingPaid::Payment": ["ApplicationRecord"] },
+    });
+    expect(boundCallReturnType("payment", ctx)).toEqual({ form: "instance", name: "GettingPaid::Payment" });
+  });
+
+  it("qualifies nothing when the caller has no enclosing scope", () => {
+    const ctx = emptyCtx({
+      localCallBindings: { payment: "load_payment" },
+      functionReturnTypes: { load_payment: "Payment" },
+      symbolTable: tableWithClasses("GettingPaid::Payment"),
+    });
+    expect(boundCallReturnType("payment", ctx)).toEqual({ form: "instance", name: "Payment" });
+  });
+
+  it("leaves a container ref alone — it names no single constant", () => {
+    const ctx = emptyCtx({
+      callerScope: ["GettingPaid", "RefundHelper"],
+      localCallBindings: { payments: "load_payments" },
+      structuredReturnTypes: {
+        "GettingPaid::RefundHelper#load_payments": {
+          form: "container",
+          element: { form: "instance", name: "Payment" },
+        },
+      },
+      symbolTable: tableWithClasses("GettingPaid::Payment"),
+    });
+    expect(boundCallReturnType("payments", ctx)).toEqual({
+      form: "container",
+      element: { form: "instance", name: "Payment" },
+    });
+  });
+});
