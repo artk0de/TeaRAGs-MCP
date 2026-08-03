@@ -63,6 +63,7 @@ import {
   DuckVocabularyNarrower,
   KwargNarrower,
   LiteralReceiverNarrower,
+  resolveNarrowedFanout,
   VisibilityNarrower,
   type DispatchCandidateNarrower,
 } from "../src/core/domains/language/kernel/dispatch-narrowing.js";
@@ -78,6 +79,7 @@ import {
   RubyBareCallSymbolResolutionStrategy,
   RubyChainTypeSymbolResolutionStrategy,
   RubyConstantSymbolResolutionStrategy,
+  RubyConventionReceiverSymbolResolutionStrategy,
   RubyEnqueueDispatchSymbolResolutionStrategy,
   RubyExplicitRequireSymbolResolutionStrategy,
   RubyIvarFieldSymbolResolutionStrategy,
@@ -96,6 +98,7 @@ import {
   collectAncestorChain,
   collectResolvedAncestorChain,
   CONE_MAX_DEFAULT,
+  DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
   firstDefinerAfter,
   isRubyPath,
   lastConstantSegment,
@@ -110,6 +113,7 @@ import {
   boundCallReturnType,
   CHAIN_MAX_HOPS_DEFAULT,
   CONTAINER_ELEMENT_RETURNING_METHODS,
+  conventionReceiverType,
   ivarTypeName,
   returnTypeOf,
   typeOfReceiver,
@@ -881,7 +885,12 @@ function resolvePass2(extraction: FileExtraction): void {
       let dispatchOutcome: DispatchFanoutOutcome | undefined;
       const noteDispatch = (out: DispatchFanoutOutcome | undefined): boolean => {
         if (
-          (SIGGAP_ORACLE_ENABLED || SINGLESEG_ENABLED || BAREDEFER_ENABLED || BOUNDCALL_ENABLED || RESIDUAL_ENABLED) &&
+          (SIGGAP_ORACLE_ENABLED ||
+            SINGLESEG_ENABLED ||
+            BAREDEFER_ENABLED ||
+            BOUNDCALL_ENABLED ||
+            RESIDUAL_ENABLED ||
+            C2COLLAPSE_ENABLED) &&
           out !== undefined
         ) {
           dispatchOutcome = out;
@@ -976,6 +985,9 @@ function resolvePass2(extraction: FileExtraction): void {
       }
       if (RESIDUAL_ENABLED) {
         noteResidualCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath);
+      }
+      if (C2COLLAPSE_ENABLED) {
+        noteC2CollapseCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath);
       }
     }
   }
@@ -13195,6 +13207,7 @@ async function main(): Promise<void> {
   if (BOUNDCALL_ENABLED) runBoundCallOracle();
   if (SCOPEKEY_ENABLED) runScopeKeyOracle();
   if (RESIDUAL_ENABLED) runResidualOracle();
+  if (C2COLLAPSE_ENABLED) runC2CollapseOracle();
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
@@ -14048,6 +14061,604 @@ function runResidualOracle(): void {
     ),
   );
   L(`residual report → ${OUT_RESIDUAL}`);
+}
+
+// ===========================================================================
+// CONVENTION-COLLAPSE ORACLE (bd tea-rags-mcp-htffz / residual item C2,
+// CODEGRAPH_C2COLLAPSE_ORACLE=1). Same additive, env-gated contract as every
+// oracle above: with the flag unset nothing extra is computed or reported and
+// the A/B recall metrics are byte-identical.
+//
+// It prices the CONVENTION tier of the deferral 55950 shipped for the FACT tier.
+// `RubyDynamicDispatchResolver` steps aside for a receiver `typeOfReceiver`
+// answers (bd epydb, widened to bare receivers by 55950) because the exact chain
+// has one precise edge for it. `RubyConventionReceiverSymbolResolutionStrategy`
+// (bd wob7g) now derives ONE precise edge for a class of receivers
+// `typeOfReceiver` does NOT answer — and the fan-out does not know that, so those
+// sites keep their N discounted `dynamic` edges and the exact edge never lands.
+//
+// The candidate change is one more gate beside the epydb one:
+//
+//     if (resolveConventionReceiverTarget(call, ctx, this.cfg.mode) !== null)
+//       return emptyDispatchFanout();
+//
+// Measurable EXACTLY rather than by projection, for the reason 55950 gives: the
+// gate is a pure SUBTRACTION from the fan-out, sitting after every earlier
+// `return emptyDispatchFanout()`, so a site that produced edges is a site that
+// reached the gate. The convention answer at a firing site comes from the
+// PRODUCTION strategy object, not from a re-implementation of it.
+//
+// Six cuts, in report order:
+//
+//   1. POPULATION — sites whose fan-out is all-`dynamic` and whose receiver the
+//      production convention strategy types with a method-level pin, plus the
+//      edges they emit today (the removable set).
+//   2. CONTAINMENT — is the convention's exact edge ALREADY one of the N? Yes ⇒
+//      the collapse is a strict subtraction of N-1 wrong-type edges. No ⇒ it is
+//      a SWAP, and every one of the N was wrong-type under the convention.
+//   3. CHAIN FIDELITY — the collapsed edge is whatever the CHAIN answers once the
+//      fan-out steps aside, which is the convention's target only if no earlier
+//      pass owns the call. Asked of `resolver.resolve`, the same object
+//      `resolvePass2` calls.
+//   4. RECALL RISK — the `dispatch` call shape has NO chain fallback in
+//      production (`resolution-runner` returns straight from the fan-out), so
+//      deferring there loses the call outright. Counted so the gate can exclude
+//      it. The over-cap `ambiguous` outcome runs the other way: production emits
+//      NOTHING there today, so deferring RESTORES the chain — a recall gain.
+//   5. GATE GAP — the 2026-08-02 residual report priced this item at 2938 calls /
+//      16126 edges / 416 non-containment with the UNGATED convention predicate
+//      (no subtype gate, plural stem on, two-tier class existence). Production
+//      shipped the gated one. Both are computed here and the delta is attributed
+//      per rejected gate, so a shrink reads as a known gate rather than as
+//      mirror infidelity.
+//   6. EDGE TRUTH — the regression channel the bead demands priced BEFORE code.
+//      The C2 population is untyped by every fact channel BY CONSTRUCTION (the
+//      epydb gate already deferred everything a fact types), so it carries no
+//      internal ground truth. The labelled sample is therefore the neighbouring
+//      population: receivers a real fact DOES type and the convention ALSO types.
+//      Graded exactly as wob7g graded it — `silent` / `sameTarget` /
+//      `rightTarget` / `wrongTarget` — with one axis added that the collapse
+//      needs and wob7g did not: is the FACT's target inside the fan-out the
+//      collapse would remove? `wrongTarget AND truth-in-fan-out` is the shape
+//      that loses a true edge; `wrongTarget AND truth-not-in-fan-out` swaps one
+//      wrong edge set for one wrong edge and costs nothing.
+//
+// Cost discipline: the population cut rides `resolvePass2` after the fan-out has
+// already run, so the baseline costs one convention probe per call that produced
+// dynamic edges. `resolver.resolve` and the simulated fan-out run only where the
+// gate FIRES / where both terminals answer.
+// ===========================================================================
+const C2COLLAPSE_ENABLED = process.env.CODEGRAPH_C2COLLAPSE_ORACLE === "1";
+const OUT_C2COLLAPSE = join(OUT_DIR, "c2collapse-oracle-report.json");
+/** Worked examples kept per bucket — enough to read, small enough to print. */
+const C2_EXAMPLE_CAP = 15;
+
+const C2_CFG: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
+/** The PRODUCTION pass the gate would defer to, asked what IT answers. */
+const c2ConventionStrategy = new RubyConventionReceiverSymbolResolutionStrategy(C2_CFG);
+/** `RubyDynamicDispatchResolver`'s narrower stack, restated for the truth cut's simulated fan-out. */
+const C2_NARROWERS: DispatchCandidateNarrower[] = [
+  new DuckVocabularyNarrower(RUBY_DUCK_VOCAB),
+  new LiteralReceiverNarrower(classifyRubyLiteralReceiver),
+  new ArityNarrower(),
+  new KwargNarrower(),
+  new VisibilityNarrower(),
+  new BlockNarrower(),
+];
+
+// ---- global edge census — the denominator behind the exactRatio ------------
+let c2CallsWithFanout = 0;
+let c2FanoutEdgesTotal = 0;
+const c2FanoutEdgesByKind: Record<string, number> = {};
+let c2ExactEdgesTotal = 0;
+let c2DispatchArgsCalls = 0;
+
+// ---- cut 1/2: the population and the containment split --------------------
+let c2Sites = 0;
+let c2Edges = 0;
+const c2ByShape: Record<string, number> = {};
+const c2EdgesByShape: Record<string, number> = {};
+const c2ByKind: Record<string, { sites: number; edges: number; contains: number; lacks: number }> = {};
+let c2Contains = 0;
+let c2ContainsEdges = 0;
+let c2Lacks = 0;
+let c2LacksEdges = 0;
+let c2WideSites = 0;
+const c2ContainsExamples: string[] = [];
+const c2LacksExamples: string[] = [];
+/** Distinct targets the collapse would light up, and the ones it would extinguish. */
+const c2KeptTargets = new Set<string>();
+const c2RemovedTargets = new Set<string>();
+
+// ---- cut 3: what the CHAIN answers once the fan-out steps aside ------------
+let c2ChainAgrees = 0;
+let c2ChainDiffers = 0;
+let c2ChainNull = 0;
+const c2ChainDifferExamples: string[] = [];
+const c2ChainNullByShape: Record<string, number> = {};
+
+// ---- cut 4: recall risk ----------------------------------------------------
+/** `dispatch`-shaped firing sites: production has NO chain fallback, so deferring loses the call. */
+let c2DispatchShapeSites = 0;
+let c2DispatchShapeEdges = 0;
+/** Over-cap fan-outs the gate would also defer — production emits nothing there today. */
+let c2AmbiguousWouldDefer = 0;
+
+// ---- cut 5: the 2026-08-02 residual predicate, replicated -------------------
+let c2RsSites = 0;
+let c2RsEdges = 0;
+let c2RsContains = 0;
+let c2RsLacks = 0;
+const c2GateGapReason: Record<string, number> = {};
+
+// ---- cut 6: the labelled edge-truth sample ---------------------------------
+const c2Truth = {
+  graded: 0,
+  factTypeAbsentFromTable: 0,
+  silent: 0,
+  rightTarget: 0,
+  sameTarget: 0,
+  wrongTarget: 0,
+  factHasNoTarget: 0,
+};
+/** The axis wob7g did not need: is the FACT's target inside the fan-out the collapse removes? */
+const c2TruthInFanout = { rightTarget: 0, sameTarget: 0, wrongTarget: 0 };
+const c2TruthNoFanout = { rightTarget: 0, sameTarget: 0, wrongTarget: 0 };
+const c2WrongExamples: string[] = [];
+
+function c2Bump(bag: Record<string, number>, key: string): void {
+  bag[key] = (bag[key] ?? 0) + 1;
+}
+
+/**
+ * The production convention answer at this site — the strategy object itself, so
+ * the oracle cannot disagree with the pass it is pricing. `null` when the pass
+ * CONTINUEs (wrong receiver shape, a fact already owns it, no such class, the
+ * class has subtypes, or the terminal declines to pin a method).
+ */
+function c2ConventionTarget(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
+  const outcome = c2ConventionStrategy.attempt(call, ctx);
+  return outcome.kind === "resolved" ? outcome.target : null;
+}
+
+/**
+ * The class name the PRODUCTION `conventionClassName` derives — restated (it is
+ * not exported) because it is exactly the predicate cut 5 attributes the gap to.
+ * Single tier: the short-name index only, no plural stem.
+ */
+function c2ProdClassName(bare: string, ctx: CallContext): string | undefined {
+  const name = rsCamelize(bare);
+  return name.length > 0 && ctx.symbolTable.lookupByShortName(name).length > 0 ? name : undefined;
+}
+
+/**
+ * The 2026-08-02 residual predicate: two-tier existence (short-name index, then
+ * the scope-aware `resolveConstant`), plural stem, NO subtype gate. Restated
+ * locally rather than reusing `rsConventionClass`, whose `rsClassExists` mutates
+ * the residual oracle's own tier counters — two flags on at once must not make
+ * either report lie.
+ */
+function c2RsClassName(bare: string, ctx: CallContext): string | undefined {
+  const exists = (name: string): boolean =>
+    name.length > 0 && (ctx.symbolTable.lookupByShortName(name).length > 0 || resolveConstant(name, ctx) !== null);
+  const direct = rsCamelize(bare);
+  if (exists(direct)) return direct;
+  const singular = rsSingularize(bare);
+  if (singular === bare) return undefined;
+  const stemmed = rsCamelize(singular);
+  return exists(stemmed) ? stemmed : undefined;
+}
+
+/** Why the production gate declines a site the residual predicate accepts. */
+function c2GapReason(bare: string, ctx: CallContext): string {
+  const direct = c2ProdClassName(bare, ctx);
+  if (direct === undefined) {
+    const singular = rsSingularize(bare);
+    if (singular !== bare && ctx.symbolTable.lookupByShortName(rsCamelize(singular)).length > 0) {
+      return "plural stem (production does not singularize)";
+    }
+    return "class reachable only via resolveConstant (production gates on the short-name index)";
+  }
+  if (rsHasSubtypes(direct, ctx)) return "subtype gate (polymorphic base)";
+  return "terminal declined (member not pinned on the derived class)";
+}
+
+/** The fan-out `RubyDynamicDispatchResolver` WOULD emit here, as target ids. */
+function c2SimulatedFanoutTargets(call: CallRef, ctx: CallContext): Set<string> {
+  const ids = new Set<string>();
+  const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((d) => isRubyPath(d.relPath));
+  if (candidates.length === 0) return ids;
+  const outcome = resolveNarrowedFanout(call, candidates, ctx, C2_NARROWERS, DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT);
+  if (outcome.kind !== "edges") return ids;
+  for (const e of outcome.edges) if (e.targetSymbolId !== null) ids.add(e.targetSymbolId);
+  return ids;
+}
+
+/**
+ * Cut 6. This receiver IS typed by a real fact channel AND the convention types
+ * it too, so the convention's edge can be graded against the fact's. Same four
+ * buckets wob7g used, plus the fan-out-containment axis the collapse needs.
+ *
+ * Divergence stated honestly: the C2 population itself has NO fact, by
+ * construction. This sample is the neighbouring population — the closest labelled
+ * evidence that exists, not the population under change.
+ */
+function c2NoteEdgeTruth(call: CallRef, ctx: CallContext, relPath: string): void {
+  const receiver = call.receiver;
+  if (receiver === null) return;
+  // Cheap first: the convention's own regex rejects most receivers outright.
+  // The convention only ever yields the `instance` form; narrowing keeps that a
+  // compile-time fact, exactly as the production strategy does.
+  const guess = conventionReceiverType(receiver, ctx);
+  if (guess?.form !== "instance") return;
+  const fact = typeOfReceiver(receiver, call.startLine, ctx);
+  if (fact === undefined || (fact.form !== "instance" && fact.form !== "class")) return;
+  const factTail = lastConstantSegment(fact.name);
+  if (ctx.symbolTable.lookupByShortName(factTail).length === 0) {
+    c2Truth.factTypeAbsentFromTable += 1;
+    return;
+  }
+  c2Truth.graded += 1;
+  const pinnedOn = (typeName: string): string | null =>
+    resolveTypeInstanceMethod(typeName, call.member, ctx, C2_CFG.mode)?.targetSymbolId ?? null;
+  const guessId = pinnedOn(guess.name);
+  if (guessId === null) {
+    // No edge is born, so nothing can be mis-collapsed. Agreement that emits
+    // nothing is not evidence either way.
+    if (guess.name !== factTail) c2Truth.silent += 1;
+    return;
+  }
+  const factId = pinnedOn(factTail);
+  if (factId === null) {
+    c2Truth.factHasNoTarget += 1;
+    return;
+  }
+  const inFanout = c2SimulatedFanoutTargets(call, ctx).has(factId);
+  const bucket = inFanout ? c2TruthInFanout : c2TruthNoFanout;
+  if (guess.name === factTail) {
+    c2Truth.rightTarget += 1;
+    bucket.rightTarget += 1;
+    return;
+  }
+  if (guessId === factId) {
+    c2Truth.sameTarget += 1;
+    bucket.sameTarget += 1;
+    return;
+  }
+  c2Truth.wrongTarget += 1;
+  bucket.wrongTarget += 1;
+  if (c2WrongExamples.length < C2_EXAMPLE_CAP * 2) {
+    c2WrongExamples.push(
+      `${relPath}:${call.startLine}  ${receiver}.${call.member}  emit=${guessId} truth=${factId}` +
+        `  ${inFanout ? "truth IS in the removable fan-out" : "truth NOT in the fan-out"}`,
+    );
+  }
+}
+
+/**
+ * The one call-site hook, invoked from `resolvePass2` after the baseline outcome
+ * is known. Everything it needs is already computed there.
+ */
+function noteC2CollapseCall(
+  call: CallRef,
+  ctx: CallContext,
+  dispatchOutcome: DispatchFanoutOutcome | undefined,
+  baseOutcome: LcOutcome,
+  receiverKind: ReceiverKind,
+  relPath: string,
+): void {
+  const rs = resolver;
+  if (rs === undefined) return;
+  const { receiver } = call;
+  const shape = bdCallShape(call);
+  const edges = dispatchOutcome?.kind === "edges" ? dispatchOutcome.edges : [];
+
+  // ── global edge census (every call, cheap) ───────────────────────────────
+  if (edges.length > 0) {
+    c2CallsWithFanout += 1;
+    c2FanoutEdgesTotal += edges.length;
+    for (const e of edges) c2Bump(c2FanoutEdgesByKind, e.edgeKind ?? "exact(default)");
+  }
+  if (shape === "dispatchArgs") {
+    c2DispatchArgsCalls += 1;
+    if (rs.resolve(call, ctx) !== null) c2ExactEdgesTotal += 1;
+  } else if (shape === "normal" && edges.length === 0 && baseOutcome === "resolved") {
+    c2ExactEdgesTotal += 1;
+  }
+
+  if (receiver === null) return;
+  // ── cut 6, independent of the fan-out ────────────────────────────────────
+  c2NoteEdgeTruth(call, ctx, relPath);
+
+  if (edges.length === 0) {
+    // Over-cap fan-outs carry no edges but DO suppress the exact chain in
+    // production. Deferring turns such a site into a plain empty fan-out, which
+    // restores the chain — a recall channel this harness cannot show (it falls
+    // back to the chain already).
+    if (dispatchOutcome?.kind === "ambiguous" && c2ConventionTarget(call, ctx) !== null) {
+      c2AmbiguousWouldDefer += 1;
+    }
+    return;
+  }
+  // `edgeKind: "dynamic"` is set in exactly one place (`resolveNarrowedFanout`,
+  // whose only caller is `RubyDynamicDispatchResolver`), so it is an exact
+  // discriminator for "the DYNAMIC component produced this outcome" rather than
+  // a heuristic. The cone / table components sit BEFORE the gate and are
+  // untouched by it; counting them would invent a channel the change cannot
+  // exercise.
+  if (!edges.every((e) => e.edgeKind === "dynamic")) return;
+
+  // ── cut 5: the 2026-08-02 predicate, on the same site ────────────────────
+  const bare = rsBareIdentifier(receiver);
+  const rsKlass =
+    bare !== undefined && typeOfReceiver(receiver, call.startLine, ctx) === undefined
+      ? c2RsClassName(bare, ctx)
+      : undefined;
+  const rsTargetId =
+    rsKlass === undefined ? null : (resolveTypeInstanceMethod(rsKlass, call.member, ctx, C2_CFG.mode)?.targetSymbolId ?? null);
+
+  // ── the production gate, asked of the production pass ────────────────────
+  const target = c2ConventionTarget(call, ctx);
+  const targetId = target?.targetSymbolId ?? null;
+
+  if (rsTargetId !== null) {
+    c2RsSites += 1;
+    c2RsEdges += edges.length;
+    if (edges.some((e) => e.targetSymbolId === rsTargetId)) c2RsContains += 1;
+    else c2RsLacks += 1;
+    if (targetId === null && bare !== undefined) c2Bump(c2GateGapReason, c2GapReason(bare, ctx));
+  }
+
+  if (target === null || targetId === null) return;
+
+  c2Sites += 1;
+  c2Edges += edges.length;
+  if (edges.length >= 5) c2WideSites += 1;
+  c2Bump(c2ByShape, shape);
+  c2EdgesByShape[shape] = (c2EdgesByShape[shape] ?? 0) + edges.length;
+  const kindRow = (c2ByKind[receiverKind] ??= { sites: 0, edges: 0, contains: 0, lacks: 0 });
+  kindRow.sites += 1;
+  kindRow.edges += edges.length;
+  if (shape === "dispatch") {
+    c2DispatchShapeSites += 1;
+    c2DispatchShapeEdges += edges.length;
+  }
+
+  // ── cut 2: containment ───────────────────────────────────────────────────
+  const contains = edges.some((e) => e.targetSymbolId === targetId);
+  c2KeptTargets.add(targetId);
+  for (const e of edges) if (e.targetSymbolId !== null && e.targetSymbolId !== targetId) c2RemovedTargets.add(e.targetSymbolId);
+  if (contains) {
+    c2Contains += 1;
+    c2ContainsEdges += edges.length;
+    kindRow.contains += 1;
+    if (c2ContainsExamples.length < C2_EXAMPLE_CAP) {
+      c2ContainsExamples.push(`${relPath}:${call.startLine}  ${receiver}.${call.member}  ${edges.length} -> ${targetId}`);
+    }
+  } else {
+    c2Lacks += 1;
+    c2LacksEdges += edges.length;
+    kindRow.lacks += 1;
+    if (c2LacksExamples.length < C2_EXAMPLE_CAP) {
+      c2LacksExamples.push(
+        `${relPath}:${call.startLine}  ${receiver}.${call.member}  ${edges.length} -> ${targetId}  (SWAP: not in the fan-out)`,
+      );
+    }
+  }
+
+  // ── cut 3: what the chain actually answers ───────────────────────────────
+  // The `dispatch` shape reads no chain in production, so asking it there would
+  // model an edge that never lands.
+  const chainTarget = shape === "dispatch" ? null : rs.resolve(call, ctx);
+  if (chainTarget === null) {
+    c2ChainNull += 1;
+    c2Bump(c2ChainNullByShape, shape);
+  } else if (chainTarget.targetSymbolId === targetId) {
+    c2ChainAgrees += 1;
+  } else {
+    c2ChainDiffers += 1;
+    if (c2ChainDifferExamples.length < C2_EXAMPLE_CAP) {
+      c2ChainDifferExamples.push(
+        `${relPath}:${call.startLine}  ${receiver}.${call.member}  convention=${targetId} chain=${chainTarget.targetSymbolId ?? `${chainTarget.targetRelPath} (file-only)`}`,
+      );
+    }
+  }
+}
+
+function runC2CollapseOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  CONVENTION-COLLAPSE ORACLE (bd htffz / residual C2)");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("");
+  L("─── (1) population: all-dynamic fan-outs the convention pass types ──");
+  L(`calls with a non-empty fan-out:                  ${c2CallsWithFanout}`);
+  L(`  ...all-dynamic AND convention-pinned (FIRING): ${c2Sites}`);
+  L(`fan-out edges those firing sites emit today:     ${c2Edges}   <-- removable`);
+  L(`  mean edges/site: ${(c2Sites === 0 ? 0 : c2Edges / c2Sites).toFixed(2)}   fan-outs of 5+: ${c2WideSites}`);
+  L("by call shape (resolvePass2 branch):");
+  for (const [k, n] of Object.entries(c2ByShape).sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(8)}  ${k}   (${c2EdgesByShape[k] ?? 0} edges)`);
+  }
+  L("by receiver kind:");
+  L("kind            sites     edges   contains     lacks");
+  for (const kind of RECEIVER_KINDS) {
+    const row = c2ByKind[kind];
+    if (row === undefined) continue;
+    L(
+      `${kind.padEnd(12)}  ${String(row.sites).padStart(7)}  ${String(row.edges).padStart(8)}` +
+        `  ${String(row.contains).padStart(9)}  ${String(row.lacks).padStart(8)}`,
+    );
+  }
+
+  L("");
+  L("─── (2) containment: is the convention edge already one of the N? ──");
+  L(`convention edge IS in the fan-out:  ${c2Contains}  (${c2ContainsEdges} edges -> ${c2Contains}; strict subtraction)`);
+  L(`convention edge is NOT in it:       ${c2Lacks}  (${c2LacksEdges} edges -> ${c2Lacks}; SWAP)`);
+  L(`distinct targets kept: ${c2KeptTargets.size}   distinct targets extinguished: ${c2RemovedTargets.size}`);
+  for (const e of c2ContainsExamples.slice(0, 8)) L(`    ${e}`);
+  for (const e of c2LacksExamples.slice(0, 8)) L(`    ${e}`);
+
+  L("");
+  L("─── (3) chain fidelity: what lands once the fan-out steps aside ────");
+  L(`chain answers the SAME target as the convention: ${c2ChainAgrees}`);
+  L(`chain answers a DIFFERENT target (earlier pass): ${c2ChainDiffers}`);
+  L(`chain answers null (no edge at all would land):  ${c2ChainNull}`);
+  for (const [k, n] of Object.entries(c2ChainNullByShape).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+  for (const e of c2ChainDifferExamples.slice(0, 8)) L(`    ${e}`);
+
+  L("");
+  L("─── (4) recall risk ────────────────────────────────────────────────");
+  L(`firing sites of the \`dispatch\` shape (NO chain fallback -> LOSS): ${c2DispatchShapeSites}  (${c2DispatchShapeEdges} edges)`);
+  L(`over-cap "ambiguous" fan-outs the gate would also defer (GAIN):   ${c2AmbiguousWouldDefer}`);
+  L("  (production emits nothing at an over-cap site and does NOT fall back to the");
+  L("   chain; this harness does, so the A/B below does not credit those.)");
+
+  L("");
+  L("─── (5) gate gap vs the 2026-08-02 residual predicate ──────────────");
+  L(`ungated predicate (no subtype gate, plural stem, 2-tier existence): ${c2RsSites} sites / ${c2RsEdges} edges`);
+  L(`  of those: exact IS in the fan-out ${c2RsContains}, NOT in it ${c2RsLacks}`);
+  L(`production predicate (shipped wob7g gate):                          ${c2Sites} sites / ${c2Edges} edges`);
+  L("  sites the ungated predicate accepts and production declines, by reason:");
+  for (const [k, n] of Object.entries(c2GateGapReason).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+
+  L("");
+  L("─── (6) EDGE TRUTH — the regression channel, on the labelled sample ─");
+  L("population: receivers a REAL fact types AND the convention types too.");
+  L("(the C2 population itself carries no fact, by construction — see header)");
+  L(`graded samples:                       ${c2Truth.graded}`);
+  L(`  fact type absent from the table:    ${c2Truth.factTypeAbsentFromTable}  (cannot referee)`);
+  L(`  silent (convention emits no edge):  ${c2Truth.silent}`);
+  L(`  fact's own class pins nothing:      ${c2Truth.factHasNoTarget}`);
+  L(`  rightTarget (guess == fact):        ${c2Truth.rightTarget}`);
+  L(`  sameTarget  (differs, same symbol): ${c2Truth.sameTarget}`);
+  L(`  wrongTarget (differs, real error):  ${c2Truth.wrongTarget}   <-- the regression shape`);
+  const emitted = c2Truth.rightTarget + c2Truth.sameTarget + c2Truth.wrongTarget;
+  L(
+    `  edge accuracy over emitting samples: ${emitted === 0 ? "n/a" : fmtPct((emitted - c2Truth.wrongTarget) / emitted)}` +
+      `  (${emitted} emitting samples)`,
+  );
+  L("  crossed with fan-out containment of the TRUE target:");
+  L(`      truth IS in the removable fan-out: right=${c2TruthInFanout.rightTarget} same=${c2TruthInFanout.sameTarget} wrong=${c2TruthInFanout.wrongTarget}`);
+  L(`      truth NOT in the fan-out:          right=${c2TruthNoFanout.rightTarget} same=${c2TruthNoFanout.sameTarget} wrong=${c2TruthNoFanout.wrongTarget}`);
+  L("  only `wrong AND truth-in-fan-out` LOSES a true edge; `wrong AND not-in-fan-out`");
+  L("  swaps one wrong edge set for one wrong edge and costs nothing.");
+  const lossRate = emitted === 0 ? 0 : c2TruthInFanout.wrongTarget / emitted;
+  L(`  measured loss rate: ${fmtPct(lossRate)}  ->  projected onto ${c2Sites} firing sites: ${(lossRate * c2Sites).toFixed(1)} calls`);
+  for (const e of c2WrongExamples.slice(0, 10)) L(`    ${e}`);
+
+  // ── edge arithmetic + exactRatio ─────────────────────────────────────────
+  // The SHIPPABLE gate excludes the `dispatch` shape (cut 4). `dispatchArgs`
+  // sites already contribute their chain edge to the baseline census, so the
+  // collapse ADDS an exact edge only at `normal`-shaped sites.
+  const shipSites = c2Sites - c2DispatchShapeSites;
+  const shipRemoved = c2Edges - c2DispatchShapeEdges;
+  const shipAdded = c2ByShape.normal ?? 0;
+  const exactBase = c2ExactEdgesTotal;
+  const fanBase = c2FanoutEdgesTotal;
+  const ratio = (e: number, f: number): number => (e + f === 0 ? 0 : e / (e + f));
+  const exactWide = exactBase + shipAdded;
+  const fanWide = fanBase - shipRemoved;
+  const ratioDelta = (ratio(exactWide, fanWide) - ratio(exactBase, fanBase)) * 100;
+  L("");
+  L("─── edge arithmetic — graph precision (shippable gate, no `dispatch`) ─");
+  L(`fan-out edges emitted run-wide:        ${fanBase}`);
+  L(`exact (single-target chain) edges:     ${exactBase}`);
+  L(`edges REMOVED by the collapse:         ${shipRemoved}   (${shipSites} sites)`);
+  L(`edges ADDED by the collapse:           ${shipAdded}`);
+  L(`net edge delta:                        ${shipAdded - shipRemoved}`);
+  L(
+    `exactRatio (exact / (exact + fan-out)): ${fmtPct(ratio(exactBase, fanBase))} -> ${fmtPct(ratio(exactWide, fanWide))}` +
+      `   (${(ratioDelta >= 0 ? "+" : "") + ratioDelta.toFixed(4)}pp)`,
+  );
+  L("fan-out edges by edgeKind (baseline):");
+  for (const [k, n] of Object.entries(c2FanoutEdgesByKind).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(8)}  ${k}`);
+  }
+  L(`dispatchArgs-shaped calls the census had to re-resolve: ${c2DispatchArgsCalls}`);
+  L("");
+  L("─── recall projection ──────────────────────────────────────────────");
+  L("Every firing site is `resolved` at baseline (a non-empty fan-out sets it), and");
+  L("stays resolved after the collapse whenever the chain answers — so call-level");
+  L(`recall moves only through the ${c2ChainNull} chain-null sites and the`);
+  L(`${c2DispatchShapeSites} \`dispatch\`-shaped ones the shippable gate excludes.`);
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_C2COLLAPSE,
+    JSON.stringify(
+      {
+        meta: {
+          generatedAt: new Date().toISOString(),
+          callsAttempted,
+          callsWithFanout: c2CallsWithFanout,
+          dispatchArgsCalls: c2DispatchArgsCalls,
+        },
+        population: {
+          sites: c2Sites,
+          edges: c2Edges,
+          wideSites: c2WideSites,
+          byCallShape: c2ByShape,
+          edgesByCallShape: c2EdgesByShape,
+          byReceiverKind: c2ByKind,
+        },
+        containment: {
+          conventionEdgeInFanout: c2Contains,
+          conventionEdgeInFanoutEdges: c2ContainsEdges,
+          conventionEdgeMissingFromFanout: c2Lacks,
+          conventionEdgeMissingFromFanoutEdges: c2LacksEdges,
+          distinctTargetsKept: c2KeptTargets.size,
+          distinctTargetsExtinguished: c2RemovedTargets.size,
+          examplesContains: c2ContainsExamples,
+          examplesLacks: c2LacksExamples,
+        },
+        chainFidelity: {
+          agrees: c2ChainAgrees,
+          differs: c2ChainDiffers,
+          nulls: c2ChainNull,
+          nullByCallShape: c2ChainNullByShape,
+          examplesDiffer: c2ChainDifferExamples,
+        },
+        recallRisk: {
+          dispatchShapeSites: c2DispatchShapeSites,
+          dispatchShapeEdges: c2DispatchShapeEdges,
+          ambiguousWouldDefer: c2AmbiguousWouldDefer,
+        },
+        gateGap: {
+          ungated: { sites: c2RsSites, edges: c2RsEdges, contains: c2RsContains, lacks: c2RsLacks },
+          production: { sites: c2Sites, edges: c2Edges, contains: c2Contains, lacks: c2Lacks },
+          declinedByReason: c2GateGapReason,
+        },
+        edgeTruth: {
+          ...c2Truth,
+          truthInRemovableFanout: c2TruthInFanout,
+          truthNotInFanout: c2TruthNoFanout,
+          measuredLossRate: emitted === 0 ? 0 : c2TruthInFanout.wrongTarget / emitted,
+          projectedLostCalls: emitted === 0 ? 0 : (c2TruthInFanout.wrongTarget / emitted) * c2Sites,
+          wrongExamples: c2WrongExamples,
+        },
+        edges: {
+          fanoutTotal: fanBase,
+          fanoutByKind: c2FanoutEdgesByKind,
+          exactTotal: exactBase,
+          shippable: { sites: shipSites, removed: shipRemoved, added: shipAdded, net: shipAdded - shipRemoved },
+          exactRatioBaseline: ratio(exactBase, fanBase),
+          exactRatioProjected: ratio(exactWide, fanWide),
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  L("");
+  L(`convention-collapse oracle detail -> ${OUT_C2COLLAPSE}`);
 }
 
 let includedBy: Record<string, string[]> = {};

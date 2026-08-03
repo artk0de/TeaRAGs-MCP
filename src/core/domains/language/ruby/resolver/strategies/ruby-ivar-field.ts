@@ -13,6 +13,23 @@ import { resolveTypeMethod, type ResolverConfig } from "./shared.js";
 const IVAR_RECEIVER = /^@\w+$/;
 
 /**
+ * Does this pass TERMINATE the chain at `call` — resolve or DROP — rather than
+ * CONTINUE? The strategy's own entry guard, named so that later passes can ask
+ * whether they are reachable at all (bd tea-rags-mcp-htffz).
+ *
+ * The DROP below is deliberate and load-bearing, but it also sits NINE slots
+ * ahead of `conventionReceiver`: an untyped `@ivar` inside a class never reaches
+ * the convention pass, however confidently that pass would have typed it. The
+ * dynamic fan-out consults this before deferring to a convention target, so it
+ * cannot trade N discounted edges for an exact edge that never lands. On taxdome
+ * that is 1173 of 2704 convention-typed fan-out sites.
+ */
+export function ivarFieldOwnsReceiver(call: CallRef, ctx: CallContext): boolean {
+  const { receiver } = call;
+  return receiver !== null && IVAR_RECEIVER.test(receiver) && ctx.callerScope.length > 0;
+}
+
+/**
  * The ONE authority for "what does `@ivar.member` resolve to" (bd
  * tea-rags-mcp-bvalc — same single-authority discipline as {@link ivarTypeName}
  * and `resolveBoundCallTarget`). Returns the exact target, or `null` when the
@@ -66,8 +83,7 @@ export class RubyIvarFieldSymbolResolutionStrategy implements SymbolResolutionSt
   constructor(private readonly cfg: ResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const { receiver } = call;
-    if (!receiver || !IVAR_RECEIVER.test(receiver) || ctx.callerScope.length === 0) return CONTINUE;
+    if (!ivarFieldOwnsReceiver(call, ctx)) return CONTINUE;
     const target = resolveIvarFieldTarget(call, ctx, this.cfg.mode);
     return target ? resolved(target) : DROP;
   }
