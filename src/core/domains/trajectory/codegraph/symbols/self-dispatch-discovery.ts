@@ -271,11 +271,11 @@ export function collectSelfInstantiatingClassMethods(methods: readonly SelfDispa
  * Namespace `::` is never a method separator, so a symbolId carrying neither `#`
  * nor `.` (a type-body chunk) yields `null`.
  */
-function splitMethodSymbolId(symbolId: string): { type: string; member: string } | null {
+function splitMethodSymbolId(symbolId: string): { type: string; member: string; classForm: boolean } | null {
   const hash = symbolId.lastIndexOf("#");
-  if (hash > 0) return { type: symbolId.slice(0, hash), member: symbolId.slice(hash + 1) };
+  if (hash > 0) return { type: symbolId.slice(0, hash), member: symbolId.slice(hash + 1), classForm: false };
   const dot = symbolId.lastIndexOf(".");
-  if (dot > 0) return { type: symbolId.slice(0, dot), member: symbolId.slice(dot + 1) };
+  if (dot > 0) return { type: symbolId.slice(0, dot), member: symbolId.slice(dot + 1), classForm: true };
   return null;
 }
 
@@ -351,7 +351,17 @@ export function deriveServiceEntryReturnTypes(
   for (const symbolId of entrySymbolIds) {
     const split = splitMethodSymbolId(symbolId);
     if (split === null) continue;
-    const templateReturn = structuredReturnTypes[`${split.type}#${split.member}`];
+    // Two-coordinate TEMPLATE lookup (bd tea-rags-mcp-z5gqv), mirroring what
+    // `declaredReturnTypeOn` does on the read side: a `.`-form template names a
+    // CLASS method, and the `.` coordinate is what a class receiver reads first.
+    // The `#` fallback carries the load today — that is where every fact is
+    // keyed — and the existence gate applies to the `.` reading for the same
+    // reason it applies to the destination: a fact naming a type the project
+    // declares nowhere is not evidence and must not be threaded onto entries.
+    const templateClassKey = `${split.type}.${split.member}`;
+    const templateReturn =
+      (split.classForm && holdsCoordinate(templateClassKey) ? structuredReturnTypes[templateClassKey] : undefined) ??
+      structuredReturnTypes[`${split.type}#${split.member}`];
     if (templateReturn === undefined) continue;
     for (const entryType of relatedConcreteTypes(split.type)) {
       const instanceKey = `${entryType}#${split.member}`;
