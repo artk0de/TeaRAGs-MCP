@@ -31,6 +31,13 @@ argument-hint: "[scope — domain, subsystem, or 'whole project']"
   skill scans the risk surface.
 - **Single unfiltered scan for broad scope.** Dominant-churn domain takes 100%
   of slots. Always run stratified second scan with `!**/dominant/**`.
+- **Scanning tests and docs as risk.** Dimension presets pick a risk profile,
+  not a code population — tests are often half the corpus and churn hardest.
+  Every Phase 1/1b call carries `testFile: "exclude"` +
+  `documentation: "exclude"`.
+- **One batched hybrid_search for test coverage.** BM25 collapses onto the
+  domain with the biggest test files; every other candidate returns empty and
+  gets reported "untested". Stratify by domain — see Phase 4 step 2.
 - **Classifying from a single signal.** "High churn" alone implies no class.
   Check companion signals (`imports`, `bugFixRate`, `ageDays`, `blockPenalty`)
   before picking a label. See `../../rules/references/signal-interpretation.md`.
@@ -55,10 +62,13 @@ separately. Semantic/hybrid search resolves intent-based scopes.
 5. **Partial reads only.**
    `Read(path, offset=startLine, limit=endLine-startLine)` using coordinates
    from search results. Never read full files.
-6. **Minimize tool calls.** Batch: all rank_chunks one message, all Critical
-   UUIDs one find_similar, all symbol names one hybrid_search. Target: ≤14 calls
-   domain scope, ≤18 broad scope. Phase 4 god-class fallback adds ≤7 (2 probes +
-   5 outlines) — only when symbol-mass fields are absent.
+6. **Minimize tool calls — but never batch across a ranking boundary.** Batch
+   what shares a ranking space: all rank_chunks in one message (separate calls),
+   all Critical UUIDs into one find_similar (vector math, order-free). Do NOT
+   batch symbol names into one `hybrid_search` — BM25 scores the join as one bag
+   of terms and the biggest-file domain takes every slot (see Phase 4 step 2).
+   Target: ≤16 calls domain scope, ≤20 broad scope. Phase 4 god-class fallback
+   adds ≤7 (2 probes + 5 outlines) — only when symbol-mass fields are absent.
 
 ## Flow
 
@@ -132,9 +142,23 @@ rank_chunks:
   filter: { presets: "<filter-preset>" }   ← dimension-specific (see table above)
   language: <primary language>             ← omit on polyglot codebases
   pathPattern: <from Phase 0>              ← AND-composes with filter preset
+  testFile: "exclude"                      ← REQUIRED — see Scan population
+  documentation: "exclude"                 ← REQUIRED — see Scan population
   metaOnly: false                          ← REQUIRED (content needed for EXPAND)
   limit: 10
 ```
+
+**Scan population — production code only (MANDATORY).** Dimension presets
+(`panicZone`, `godMethods`, …) select a RISK profile, not a code population.
+Omit the two exclusions and test + doc chunks compete for the 10 slots on equal
+footing — on a typical index tests alone are ~half the corpus, and test churn
+outranks production churn because tests change with every feature.
+
+**Do NOT substitute `filter: { presets: "production,<dimension>" }`.** That
+preset also drops `chunkType: "block"`, which kills barrel files, config objects
+and top-level constant blocks — legitimate candidates (a barrel re-export with
+`fanIn: 11` is a hub). Explicit `testFile` + `documentation` exclude the same
+tests and docs without the block casualty.
 
 **Empty dimension result = clean.** Filter preset narrows to that dimension's
 problem population (`godMethods` = oversized methods only) → zero results = "no
@@ -179,13 +203,24 @@ One page usually sufficient.
 
 ## Phase 1b: STRUCTURAL SCAN
 
-Two more `rank_chunks` calls, SAME message as Phase 1, same `pathPattern`,
-`limit: 10`, `metaOnly: false`.
+Two more `rank_chunks` calls, SAME message as Phase 1, same `pathPattern`, same
+`testFile`/`documentation` exclusions, `limit: 10`, `metaOnly: false`.
 
 | Preset          | Axis   | Surfaces                                        |
 | --------------- | ------ | ----------------------------------------------- |
 | `decomposition` | method | Large + dense + high outgoing load (god-method) |
 | `godModule`     | file   | Interface mass — god classes, god modules       |
+
+**Scope to the source tree (MANDATORY).** These two presets rank on raw size, so
+a single oversized non-shipping file wins every slot by construction — one
+measurement harness at 14059 LOC / 283 methods took BOTH presets' full output
+and buried every production module. `production` does NOT help here: it filters
+by `isTest`/`isDocumentation`, and a script is neither.
+
+Set `pathPattern` to the source root (`src/**`, `lib/**`, `app/**` — whatever
+Phase 0 resolved) when scope is broad. Narrower Phase 0 scope already implies
+it. Analysis-only trees — `scripts/`, `tools/`, `bench/`, `examples/` — are not
+shipped debt; excluding them is not "hiding" anything.
 
 **Why a separate phase.** Structural debt is git-blind. A 300-line method nobody
 has touched in two years never churns, never bug-fixes, never reaches Phase 1 —
@@ -257,6 +292,8 @@ find_similar:
   path: <project>
   limit: 10
   rerank: bugHunt                       ← surface risky similar, not just similar
+  testFile: "exclude"                   ← REQUIRED — a candidate's own test file
+                                          is its nearest neighbour by embedding
   pathPattern: <see scope rules>
 ```
 
@@ -284,13 +321,40 @@ For **Critical and High** candidates (typically 5-10 chunks):
 **1. Code review** — Content in results (metaOnly=false). Read only when
 surrounding context needed. Use chunk coordinates.
 
-**2. Test coverage check** — ONE `hybrid_search`, all Critical/High symbol names
-joined as query, `pathPattern` targeting the project's test directory
-convention, `metaOnly=true`. BM25 catches exact symbol names in test files. One
-call covers all candidates.
+**2. Test coverage check — stratified, NEVER one batched call.**
 
-- Symbol absent from results → "untested risk zone"
+Candidates come from different domains. Joining every symbol name into one
+`hybrid_search` makes BM25 score them as a single bag of terms, so the domain
+owning the largest test files takes every slot and every other candidate returns
+empty. Empty then reads as "untested" — a fabricated finding, and the most
+damaging output this skill can produce, because it looks like a real result.
+
+Procedure — one call per domain cluster, reusing the Phase 1 stratification:
+
+```text
+1. Group Critical/High candidates by relativePath directory prefix
+   (same grouping as the Phase 1 dominant-domain count).
+2. Per cluster: hybrid_search
+     query      = that cluster's symbol names only
+     testFile   = "only"
+     metaOnly   = true
+     limit      = 15
+3. Verdict per candidate comes ONLY from its own cluster's call.
+```
+
+Typically 2-3 calls, not 1. That is the correct cost — a wrong "untested"
+verdict costs the operator far more than two extra scroll queries.
+
 - Symbol present → note test path (do NOT read test content)
+- Symbol absent **from its own cluster's call** → "untested risk zone"
+- Symbol absent from a call another domain dominated → **no verdict**, re-query
+
+**Exact alternative (preferred when the test path convention is known).**
+`find_symbol({relativePath: "<mirrored test path>", metaOnly: true})` is an
+exact lookup — no BM25, no crowding, no stratification needed. Mirror the source
+path into the test root (`src/core/foo/bar.ts` → `tests/core/foo/bar.test.ts`).
+Miss = genuinely absent. Use this when the layout mirrors predictably; fall back
+to stratified `hybrid_search` when it does not.
 
 **3. Structural amplifier + cycles (codegraph axis).** ONLY when prime shows
 `codegraph.symbols` under `## Enrichment`. Line absent → graph tools not
@@ -298,8 +362,9 @@ registered — skip, note structural risk not assessed (never claim "no cycles" 
 "no hubs"). See search-cascade "Graph navigation" for off-routing.
 
 - **Blast-radius amplifier (`architecturalHub`).** Run `rank_chunks`
-  `rerank="architecturalHub"` scoped to same `pathPattern`. Cross-reference
-  resulting `isHub=true` / high-`fanIn` files with Critical/High candidates by
+  `rerank="architecturalHub"` scoped to same `pathPattern`, same
+  `testFile`/`documentation` exclusions as Phase 1. Cross-reference resulting
+  `isHub=true` / high-`fanIn` files with Critical/High candidates by
   `relativePath`. Risk candidate ALSO a hub = **blast-radius hub** — escalate
   (tag Risk Type, sort to top of its tier): change there ripples across many
   dependents. Amplifier on already-identified risk, NOT a 5th MERGE preset —
@@ -443,7 +508,7 @@ not assessed — codegraph off") when prime has no `codegraph.symbols`.
 
 - Critical zones: [count] — require immediate attention
 - High zones: [count] — schedule for review
-- Test gaps: [count] untested files among Critical/High
+- Test gaps: [count] confirmed-untested among Critical/High ([count] unverified)
 - Structural debt: [count] — [count] cheap, [count] also in a risk tier
 - Dominant risk type: [most common classification]
 - Recommendation: [one-sentence next step]
@@ -453,6 +518,11 @@ not assessed — codegraph off") when prime has no `codegraph.symbols`.
 cheapness): cheap decomposition candidates on top. `Also risk?` is the only link
 back to the risk map; the intersection (structural debt AND risk tier) is the
 "do now" quadrant and gets its own Summary line.
+
+**Tests column vocabulary.** Three states, never two: the test path when found,
+`none` only when the candidate was queried in its own domain cluster and missed,
+`unverified` when coverage was not established for it. Never print `none` for a
+candidate whose only query was one another domain dominated.
 
 **Label mapping:** Use labelMap from `get_index_metrics` (session start). Show
 raw value + label: `bugFix:58% concerning`.
