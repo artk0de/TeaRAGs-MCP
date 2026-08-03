@@ -137,13 +137,21 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     // `chainType`. Gated on the resolved TARGET, so a binding the exact path
     // cannot answer still fans out and recall is unchanged.
     if (resolveBoundCallTarget(call, ctx, this.cfg.mode) !== null) return emptyDispatchFanout();
-    // Bare `@ivar` receiver whose type IS known (bd tea-rags-mcp-bvalc). The
-    // `ivarField` strategy pins exactly one target for it, but the fan-out ran
-    // first and buried that target under every same-named def in the project —
-    // `@firm.owner` emitted `Firm#owner` AND `Person#owner`. Same gate shape and
-    // same reasoning as the bound-call one above: gated on the RESOLVED target,
-    // so an ivar the exact path cannot answer still fans out and the resolve
-    // tally is unchanged; only the wrong-type edges beside the right one go.
+    // Bare `@ivar` receiver the `ivarField` pass ANSWERS (bd tea-rags-mcp-bvalc).
+    // It pins exactly one target, but the fan-out ran first and buried that
+    // target under every same-named def in the project — `@firm.owner` emitted
+    // `Firm#owner` AND `Person#owner`. Same gate shape and same reasoning as the
+    // bound-call one above: gated on the RESOLVED target, so an ivar the exact
+    // path cannot answer still fans out and the resolve tally is unchanged; only
+    // the wrong-type edges beside the right one go.
+    //
+    // "Answers" spans every tier the pass has, which is why this reads the
+    // helper and not a type probe. When the naming convention became its last
+    // tier (bd r2gjj) a receiver no fact typed started resolving here, and a
+    // fact-only gate could not see it: 1173 taxdome sites kept 6343 discounted
+    // `dynamic` edges while the chain emitted their exact edge. Reading the
+    // whole answer collapses them, 1173 of 1173 agreeing with what lands
+    // (bd tea-rags-mcp-eaml5, `CODEGRAPH_C2COLLAPSE_ORACLE=1` cut 3).
     if (resolveIvarFieldTarget(call, ctx, this.cfg.mode) !== null) return emptyDispatchFanout();
     if (receiverLooksLikeArRelationChain(r)) return emptyDispatchFanout(); // AR::Relation chain
     // Index-access receiver (`opts[k]`, `arr[i]`): suppress dynamic fan-out by
@@ -213,11 +221,12 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     // resolve tally is unchanged and only wrong-type edges go.
     //
     // `ivarFieldOwnsReceiver` is the one carve-out, and it is a REACHABILITY fact
-    // rather than a precision one: `ivarField` DROPs an untyped `@ivar` inside a
-    // class nine slots before `conventionReceiver` runs, so deferring for such a
-    // receiver would trade N discounted edges for NO edge at all. Measured: 1173
-    // of the 2704 sites are that shape, and at all 1531 others the chain returns
-    // the convention's own target (`CODEGRAPH_C2COLLAPSE_ORACLE=1`, cut 3).
+    // rather than a precision one: `ivarField` terminates the chain nine slots
+    // before `conventionReceiver` runs, so deferring to that pass for a receiver
+    // `ivarField` DROPs would trade N discounted edges for NO edge at all. The
+    // `@ivar` receivers the convention CAN answer no longer reach this line —
+    // the gate above collapses them through `ivarField`'s own tier (bd eaml5) —
+    // so what remains here is exactly the DROP population the carve-out is for.
     if (!ivarFieldOwnsReceiver(call, ctx) && resolveConventionReceiverTarget(call, ctx, this.cfg.mode) !== null) {
       return emptyDispatchFanout();
     }

@@ -17,12 +17,19 @@ const IVAR_RECEIVER = /^@\w+$/;
  * CONTINUE? The strategy's own entry guard, named so that later passes can ask
  * whether they are reachable at all (bd tea-rags-mcp-htffz).
  *
- * The DROP below is deliberate and load-bearing, but it also sits NINE slots
- * ahead of `conventionReceiver`: an untyped `@ivar` inside a class never reaches
- * the convention pass, however confidently that pass would have typed it. The
- * dynamic fan-out consults this before deferring to a convention target, so it
- * cannot trade N discounted edges for an exact edge that never lands. On taxdome
- * that is 1173 of 2704 convention-typed fan-out sites.
+ * The DROP below is deliberate and load-bearing, and it sits NINE slots ahead of
+ * `conventionReceiver`: an `@ivar` this pass DROPs never reaches that one,
+ * however confidently it would have typed the receiver. The dynamic fan-out
+ * consults this before deferring to a `conventionReceiver` target, so it cannot
+ * trade N discounted edges for an exact edge that never lands.
+ *
+ * What the carve-out no longer has to cover is the convention itself: bd
+ * tea-rags-mcp-r2gjj moved that tier INSIDE this pass (see
+ * {@link resolveIvarConventionTarget}), so a convention-typable `@ivar` is
+ * answered here rather than swallowed. The fan-out's own `@ivar` gate reads
+ * {@link resolveIvarFieldTarget} — the whole answer, both tiers — and collapses
+ * on it (bd tea-rags-mcp-eaml5). This predicate therefore now guards only the
+ * population that still DROPs.
  */
 export function ivarFieldOwnsReceiver(call: CallRef, ctx: CallContext): boolean {
   const { receiver } = call;
@@ -32,14 +39,24 @@ export function ivarFieldOwnsReceiver(call: CallRef, ctx: CallContext): boolean 
 /**
  * The ONE authority for "what does `@ivar.member` resolve to" (bd
  * tea-rags-mcp-bvalc — same single-authority discipline as {@link ivarTypeName}
- * and `resolveBoundCallTarget`). Returns the exact target, or `null` when the
- * receiver is not a bare `@ivar`, carries no known type, or its type declares no
- * such member.
+ * and `resolveBoundCallTarget`). Returns the exact target this pass answers with
+ * through ANY of its tiers, or `null` — the DROP — when the receiver is not a
+ * bare `@ivar`, or no tier can name a type that declares the member.
  *
  * Read by the strategy below AND by the dynamic-dispatch component, which must
  * know whether the exact path ACTUALLY answers before it decides to fan out. Two
  * separate lookups would drift: a receiver the fan-out believes untyped while
  * the strategy pins it produces N wrong-type edges that bury the right one.
+ * Which is exactly what happened between bd r2gjj and bd eaml5 — the convention
+ * tier landed as a second channel of the STRATEGY rather than of this helper, so
+ * the fan-out kept 6343 discounted taxdome edges at 1173 sites whose exact edge
+ * the chain was by then emitting. The tiers live here for that reason: a channel
+ * outside this function is a channel the fan-out cannot see.
+ *
+ * Tier order is the precision order. A recorded fact wins outright, and a fact
+ * that names a type declaring no such member is a DROP rather than a fall
+ * through — {@link resolveIvarConventionTarget} restates that gate as its own,
+ * because "a declared type is never overridden by a guess" is its rule to state.
  */
 export function resolveIvarFieldTarget(
   call: CallRef,
@@ -49,8 +66,8 @@ export function resolveIvarFieldTarget(
   const { receiver } = call;
   if (!receiver || !IVAR_RECEIVER.test(receiver) || ctx.callerScope.length === 0) return null;
   const typeName = ivarTypeName(receiver, ctx);
-  if (!typeName) return null;
-  return resolveTypeMethod(typeName, call.member, ctx, mode);
+  const factTarget = typeName === undefined ? null : resolveTypeMethod(typeName, call.member, ctx, mode);
+  return factTarget ?? resolveIvarConventionTarget(receiver, call.member, ctx, mode);
 }
 
 /**
@@ -137,11 +154,8 @@ export class RubyIvarFieldSymbolResolutionStrategy implements SymbolResolutionSt
   constructor(private readonly cfg: ResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const { receiver } = call;
-    if (receiver === null || !ivarFieldOwnsReceiver(call, ctx)) return CONTINUE;
+    if (!ivarFieldOwnsReceiver(call, ctx)) return CONTINUE;
     const target = resolveIvarFieldTarget(call, ctx, this.cfg.mode);
-    if (target) return resolved(target);
-    const conventional = resolveIvarConventionTarget(receiver, call.member, ctx, this.cfg.mode);
-    return conventional ? resolved(conventional) : DROP;
+    return target ? resolved(target) : DROP;
   }
 }
